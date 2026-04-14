@@ -9,6 +9,12 @@ dist-plugin/
 .vscode/
 .idea/
 
+# Claude Code per-project state (created when running `claude` from this
+# repo for dogfood). Local to the dev machine — settings.local.json,
+# slash-command overrides, session state. The dogfood `.mcp.json` at the
+# repo root IS tracked; everything under .claude/ is not.
+.claude/
+
 # Smoke-test scratch artifacts written by the server repo's test/smoke.ts
 /smoke_probe.*
 /smoke_screenshots/
