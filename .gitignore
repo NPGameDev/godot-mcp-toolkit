@@ -4,3 +4,7 @@
 
 # Iter 08 distribution artifacts (AssetLib zip build output)
 dist-plugin/
+
+# IDE / editor-specific (user-machine paths, not portable)
+.vscode/
+.idea/
