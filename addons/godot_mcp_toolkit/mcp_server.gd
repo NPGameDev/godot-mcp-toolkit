@@ -106,7 +106,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		"editor.save_scene":
 			_cmd_editor_save_scene(peer, id, params)
 		"editor.screenshot":
-			_cmd_editor_screenshot(peer, id)
+			_cmd_editor_screenshot(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -438,10 +438,18 @@ func _cmd_editor_save_scene(peer: WebSocketPeer, id, params) -> void:
 	_send_result(peer, id, {"ok": true, "path": root.scene_file_path})
 
 
-func _cmd_editor_screenshot(peer: WebSocketPeer, id) -> void:
+func _cmd_editor_screenshot(peer: WebSocketPeer, id, params) -> void:
 	# Return PNG bytes inline as base64 — pattern from godot-mcp-pro / godotiq.
 	# Avoids cross-process user:// path resolution and FS races: the TS bridge
 	# never touches disk for this tool.
+	#
+	# Optional `save_path` persists the PNG to res:// for later reference
+	# (e.g. commit-to-repo workflows). Inline bytes are ALWAYS returned —
+	# save_path is additive, not a mode switch.
+	var save_path := ""
+	if typeof(params) == TYPE_DICTIONARY:
+		save_path = str(params.get("save_path", ""))
+
 	var viewport: SubViewport = EditorInterface.get_editor_viewport_2d()
 	if viewport == null:
 		viewport = EditorInterface.get_editor_viewport_3d(0)
@@ -458,10 +466,40 @@ func _cmd_editor_screenshot(peer: WebSocketPeer, id) -> void:
 		_send_result(peer, id, _err("INTERNAL", "save_png_to_buffer returned empty"))
 		return
 
-	_send_result(peer, id, {
+	var persisted_path := ""
+	if not save_path.is_empty():
+		# TODO(iter-18): replace this res://-only prefix check with
+		# FileGuard.resolve_safe(save_path). FileGuard also needs to handle the
+		# res:// vs user:// distinction explicitly — today user:// is rejected
+		# here even though it's a legitimate destination for disposable
+		# screenshots, because we haven't yet defined the policy. See
+		# project_delete_node_crash.md for the related editor-safety notes and
+		# iter-07 follow-up work.
+		if not save_path.begins_with("res://"):
+			_send_result(peer, id, _err("PATH_DENIED", "save_path must start with res://: %s" % save_path))
+			return
+		if not save_path.ends_with(".png"):
+			_send_result(peer, id, _err("INVALID_PARAMS", "save_path must end with .png: %s" % save_path))
+			return
+		var dir_path := save_path.get_base_dir()
+		if not dir_path.is_empty():
+			var dir_err := DirAccess.make_dir_recursive_absolute(dir_path)
+			if dir_err != OK and dir_err != ERR_ALREADY_EXISTS:
+				_send_result(peer, id, _err("INTERNAL", "could not create %s (err %d)" % [dir_path, dir_err]))
+				return
+		var save_err := image.save_png(save_path)
+		if save_err != OK:
+			_send_result(peer, id, _err("INTERNAL", "save_png failed (err %d) for %s" % [save_err, save_path]))
+			return
+		persisted_path = save_path
+
+	var response := {
 		"image_base64": Marshalls.raw_to_base64(png_bytes),
 		"mime_type": "image/png",
 		"width": image.get_width(),
 		"height": image.get_height(),
 		"bytes": png_bytes.size(),
-	})
+	}
+	if not persisted_path.is_empty():
+		response["path"] = persisted_path
+	_send_result(peer, id, response)
