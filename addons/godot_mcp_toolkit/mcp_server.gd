@@ -250,8 +250,23 @@ func _cmd_scene_delete_node(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, _err("INVALID_PATH", "cannot delete edited scene root"))
 		return
 
-	node.queue_free()
+	# Editor-safe deletion: when the node was created via scene.create_node we
+	# set `owner = edited_scene_root` so the editor's SceneTreeDock tracks it.
+	# queue_free() alone (deferred) leaves that tracker pointing at a node
+	# scheduled to die, causing a SIGSEGV on the next editor refresh. Clearing
+	# the owner first unregisters it, then synchronous free() is safe.
+	_detach_recursive(node)
+	var parent := node.get_parent()
+	if parent != null:
+		parent.remove_child(node)
+	node.free()
 	_send_result(peer, id, {"ok": true, "path": path})
+
+
+func _detach_recursive(n: Node) -> void:
+	n.owner = null
+	for child in n.get_children():
+		_detach_recursive(child)
 
 
 func _cmd_node_set_property(peer: WebSocketPeer, id, params) -> void:
@@ -453,8 +468,11 @@ func _cmd_editor_screenshot(peer: WebSocketPeer, id) -> void:
 		bytes_len = f.get_length()
 		f.close()
 
+	# absolute_path lets the TS bridge fs.readFile the PNG without re-deriving
+	# Godot's user:// resolution logic (platform-specific + project-name-dependent).
 	_send_result(peer, id, {
 		"path": save_path,
+		"absolute_path": ProjectSettings.globalize_path(save_path),
 		"width": image.get_width(),
 		"height": image.get_height(),
 		"bytes": bytes_len,

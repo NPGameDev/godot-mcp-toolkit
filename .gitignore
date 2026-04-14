@@ -8,3 +8,6 @@ dist-plugin/
 # IDE / editor-specific (user-machine paths, not portable)
 .vscode/
 .idea/
+
+# Smoke-test scratch artifacts written by the server repo's test/smoke.ts
+/smoke_probe.*
