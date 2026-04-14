@@ -49,7 +49,20 @@ func _try_listen() -> void:
 		print("[MCPServer] listening on %s:%d" % [BIND, PORT])
 		_relisten_countdown = 0
 		return
-	push_warning("[MCPServer] bind %s:%d failed (err %d); retry in %d frames" % [BIND, PORT, err, _RELISTEN_FRAME_INTERVAL])
+	# err 22 = ERR_ALREADY_IN_USE — usually a zombie Godot process from a
+	# prior crash still holding the port. Surface that so the user doesn't
+	# have to look up Godot error codes; a stale process check in Task
+	# Manager / pkill is the typical fix.
+	var hint := " (ERR_ALREADY_IN_USE — likely a stale Godot/MCP process holding the port)" if err == ERR_ALREADY_IN_USE else ""
+	push_warning("[MCPServer] bind %s:%d failed (err %d)%s; retry in %d frames" % [BIND, PORT, err, hint, _RELISTEN_FRAME_INTERVAL])
+	# Discard the (potentially-stuck) TCPServer instance so the next retry
+	# allocates a fresh one. Without this, certain Godot-internal latch
+	# states keep returning ERR_ALREADY_IN_USE even after the actual port
+	# is freed — exactly the regression that made iter-13's retry loop
+	# need a manual plugin disable+re-enable to recover (the disable path
+	# happens to do the same fresh-allocate via stop() + null + start()).
+	_tcp_server.stop()
+	_tcp_server = null
 	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
 
 

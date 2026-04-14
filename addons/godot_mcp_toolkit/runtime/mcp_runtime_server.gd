@@ -84,7 +84,13 @@ func _try_listen() -> void:
 		print("[MCPRuntimeServer] listening on %s:%d" % [BIND, PORT])
 		_relisten_countdown = 0
 		return
-	push_warning("[MCPRuntimeServer] bind %s:%d failed (err %d); retry in %d frames" % [BIND, PORT, err, _RELISTEN_FRAME_INTERVAL])
+	# err 22 = ERR_ALREADY_IN_USE — a prior crashed game/runtime instance
+	# may still hold 9090 briefly. Mirror the editor-side hint.
+	var hint := " (ERR_ALREADY_IN_USE — likely a stale game/runtime process holding the port)" if err == ERR_ALREADY_IN_USE else ""
+	push_warning("[MCPRuntimeServer] bind %s:%d failed (err %d)%s; retry in %d frames" % [BIND, PORT, err, hint, _RELISTEN_FRAME_INTERVAL])
+	# See mcp_server.gd._try_listen for the discard-on-failure rationale.
+	_tcp_server.stop()
+	_tcp_server = null
 	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
 
 
