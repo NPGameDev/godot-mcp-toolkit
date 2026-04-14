@@ -136,6 +136,12 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_signal_disconnect(peer, id, params)
 		"signal.emit":
 			_cmd_signal_emit(peer, id, params)
+		"input.simulate":
+			_cmd_input_simulate(peer, id, params)
+		"animation_player.control":
+			_cmd_animation_player_control(peer, id, params)
+		"game.eval":
+			_cmd_game_eval(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -457,3 +463,168 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 		coerced.append(_coerce_value(a))
 	node.callv("emit_signal", coerced)
 	_send_result(peer, id, {"ok": true})
+
+
+# ---- Tier 3 playtest commands (iter 12) -----------------------------------
+
+
+# input.simulate: build an InputEvent from a JSON-friendly {event_type, event_data}
+# pair and feed it through Input.parse_input_event so it dispatches as if it
+# came from the OS. Limited to events the engine recognises — OS-level
+# global hotkeys aren't reachable from inside a running Godot instance.
+func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var event_type := str(params.get("event_type", ""))
+	var event_data: Dictionary = {}
+	var raw_data = params.get("event_data", null)
+	if typeof(raw_data) == TYPE_DICTIONARY:
+		event_data = raw_data
+	var ev: InputEvent = null
+	match event_type:
+		"key":
+			var key_ev := InputEventKey.new()
+			key_ev.keycode = int(event_data.get("keycode", 0))
+			key_ev.pressed = bool(event_data.get("pressed", true))
+			if event_data.has("physical_keycode"):
+				key_ev.physical_keycode = int(event_data.get("physical_keycode", 0))
+			if event_data.has("unicode"):
+				key_ev.unicode = int(event_data.get("unicode", 0))
+			key_ev.shift_pressed = bool(event_data.get("shift", false))
+			key_ev.ctrl_pressed = bool(event_data.get("ctrl", false))
+			key_ev.alt_pressed = bool(event_data.get("alt", false))
+			key_ev.meta_pressed = bool(event_data.get("meta", false))
+			ev = key_ev
+		"mouse_button":
+			var mb := InputEventMouseButton.new()
+			mb.button_index = int(event_data.get("button_index", MOUSE_BUTTON_LEFT))
+			mb.pressed = bool(event_data.get("pressed", true))
+			var pos = event_data.get("position", null)
+			if typeof(pos) == TYPE_DICTIONARY:
+				mb.position = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+			mb.shift_pressed = bool(event_data.get("shift", false))
+			mb.ctrl_pressed = bool(event_data.get("ctrl", false))
+			mb.alt_pressed = bool(event_data.get("alt", false))
+			mb.meta_pressed = bool(event_data.get("meta", false))
+			ev = mb
+		"mouse_motion":
+			var mm := InputEventMouseMotion.new()
+			var mpos = event_data.get("position", null)
+			if typeof(mpos) == TYPE_DICTIONARY:
+				mm.position = Vector2(float(mpos.get("x", 0.0)), float(mpos.get("y", 0.0)))
+			var rel = event_data.get("relative", null)
+			if typeof(rel) == TYPE_DICTIONARY:
+				mm.relative = Vector2(float(rel.get("x", 0.0)), float(rel.get("y", 0.0)))
+			ev = mm
+		"action":
+			var act := InputEventAction.new()
+			act.action = StringName(str(event_data.get("action", "")))
+			act.pressed = bool(event_data.get("pressed", true))
+			if event_data.has("strength"):
+				act.strength = float(event_data.get("strength", 1.0))
+			ev = act
+		_:
+			_send_result(peer, id, _err("INVALID_PARAMS", "unknown event_type: %s (expected key|mouse_button|mouse_motion|action)" % event_type))
+			return
+	Input.parse_input_event(ev)
+	_send_result(peer, id, {"ok": true, "event_type": event_type})
+
+
+# animation_player.control: drive an AnimationPlayer in the live SceneTree.
+# Returns post-op state so the caller can confirm the seek/play landed
+# without an extra round-trip.
+func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	if path.is_empty():
+		_send_result(peer, id, _err("INVALID_PARAMS", "missing path"))
+		return
+	var node = _resolve_runtime_node(path)
+	if node == null:
+		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		return
+	if not (node is AnimationPlayer):
+		_send_result(peer, id, _err("INVALID_PARAMS", "node is not AnimationPlayer: %s (got %s)" % [path, node.get_class()]))
+		return
+	var ap: AnimationPlayer = node
+	var op := str(params.get("op", ""))
+	match op:
+		"play":
+			var anim := str(params.get("animation", ""))
+			if anim.is_empty():
+				ap.play()
+			else:
+				if not ap.has_animation(anim):
+					_send_result(peer, id, _err("NOT_FOUND", "animation not found: %s" % anim))
+					return
+				ap.play(anim)
+		"pause":
+			ap.pause()
+		"stop":
+			ap.stop()
+		"seek":
+			ap.seek(float(params.get("time", 0.0)), true)
+		_:
+			_send_result(peer, id, _err("INVALID_PARAMS", "unknown op: %s (expected play|pause|stop|seek)" % op))
+			return
+	_send_result(peer, id, {
+		"ok": true,
+		"current_animation": String(ap.current_animation),
+		"current_animation_position": ap.current_animation_position,
+	})
+
+
+# game.eval: DANGER — evaluates GDScript via Expression in the running game's
+# context. Even though the TS-side gate (GODOT_MCP_ALLOW_GAME_EVAL) keeps
+# this absent from the MCP catalogue by default, the runtime command itself
+# is always reachable on port 9090 from anything that can speak the JSON-RPC
+# protocol. Iter 19 generalises this into a proper FeatureGate. For the
+# iter 12-19 dogfood window we mitigate by:
+#   - logging every invocation with a truncated code string to stdout so
+#     accidental use is auditable.
+#   - returning EXECUTE_FAILED via Expression's error path (no stack trace
+#     leak to the bridge).
+const _GAME_EVAL_LOG_CAP := 256
+
+
+func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var code := str(params.get("code", ""))
+	if code.is_empty():
+		_send_result(peer, id, _err("INVALID_PARAMS", "missing code"))
+		return
+
+	var truncated := code.substr(0, _GAME_EVAL_LOG_CAP)
+	if code.length() > _GAME_EVAL_LOG_CAP:
+		truncated += "...[+%d chars]" % (code.length() - _GAME_EVAL_LOG_CAP)
+	print("[game.eval] %s" % truncated)
+
+	var scope_node: Node = null
+	var scope_path := str(params.get("scope_path", ""))
+	if scope_path.is_empty():
+		var tree := get_tree()
+		if tree == null or tree.root == null:
+			_send_result(peer, id, _err("INTERNAL", "scene tree unavailable"))
+			return
+		scope_node = tree.root
+	else:
+		scope_node = _resolve_runtime_node(scope_path)
+		if scope_node == null:
+			_send_result(peer, id, _err("NOT_FOUND", "scope node not found: %s" % scope_path))
+			return
+
+	var expr := Expression.new()
+	var parse_err := expr.parse(code, PackedStringArray())
+	if parse_err != OK:
+		_send_result(peer, id, _err("PARSE_ERROR", expr.get_error_text()))
+		return
+	var result = expr.execute([], scope_node, false)
+	if expr.has_execute_failed():
+		_send_result(peer, id, _err("EXECUTE_FAILED", expr.get_error_text()))
+		return
+	_send_result(peer, id, {"result": _serialize_value(result)})

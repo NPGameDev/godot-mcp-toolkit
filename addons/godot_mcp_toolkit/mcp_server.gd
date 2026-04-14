@@ -125,6 +125,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_resource_load(peer, id, params)
 		"node.get_property_list":
 			_cmd_node_get_property_list(peer, id, params)
+		"scene.diff":
+			_cmd_scene_diff(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -862,6 +864,61 @@ func _cmd_resource_load(peer: WebSocketPeer, id, params) -> void:
 		"path": path,
 		"properties": props,
 		"metadata": metadata,
+	})
+
+
+# scene.diff (iter 12): line-based JSON diff between a caller-supplied
+# `before` snapshot (typically captured via scene.get_tree before mutating)
+# and either an explicit `after` snapshot or the current edited tree.
+# MVP heuristic: pretty-print both with sort_keys=true, take the symmetric
+# difference of lines, label removed lines `- ` and added lines `+ `. A
+# proper structural tree-diff (keyed by node path with property-level
+# annotations) is post-MVP.
+func _cmd_scene_diff(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	if not params.has("before"):
+		_send_result(peer, id, _err("INVALID_PARAMS", "missing before"))
+		return
+	var before = params.get("before")
+	var after = params.get("after", null)
+	if after == null:
+		var root := _get_edited_root()
+		if root == null:
+			_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+			return
+		after = _walk_tree(root, root)
+	# sort_keys=true so dict-key reordering doesn't show up as a diff.
+	var before_str := JSON.stringify(before, "  ", true)
+	var after_str := JSON.stringify(after, "  ", true)
+	if before_str == after_str:
+		_send_result(peer, id, {"changed": false, "diff": "", "added": 0, "removed": 0})
+		return
+	var before_lines := before_str.split("\n", false)
+	var after_lines := after_str.split("\n", false)
+	var before_set := {}
+	for l in before_lines:
+		before_set[l] = true
+	var after_set := {}
+	for l in after_lines:
+		after_set[l] = true
+	var diff_parts := PackedStringArray()
+	var removed := 0
+	for l in before_lines:
+		if not after_set.has(l):
+			diff_parts.append("- " + l)
+			removed += 1
+	var added := 0
+	for l in after_lines:
+		if not before_set.has(l):
+			diff_parts.append("+ " + l)
+			added += 1
+	_send_result(peer, id, {
+		"changed": true,
+		"diff": "\n".join(diff_parts),
+		"added": added,
+		"removed": removed,
 	})
 
 
