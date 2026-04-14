@@ -125,6 +125,14 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_runtime_get_node_state(peer, id, params)
 		"debugger.get_log":
 			_cmd_debugger_get_log(peer, id, params)
+		"signal.list":
+			_cmd_signal_list(peer, id, params)
+		"signal.connect":
+			_cmd_signal_connect(peer, id, params)
+		"signal.disconnect":
+			_cmd_signal_disconnect(peer, id, params)
+		"signal.emit":
+			_cmd_signal_emit(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -282,3 +290,167 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		"total": total,
 		"path": log_path,
 	})
+
+
+# ---- Tier 3 signal commands (iter 11 — Mode B mirror of editor handlers) --
+
+
+# Runtime equivalent of the editor's _resolve_scene_node — uses the LIVE
+# SceneTree root rather than EditorInterface.get_edited_scene_root(). Bare
+# "" / "." resolves to the tree root so callers that just want a top-level
+# signal on the main scene don't need to type the full path.
+func _resolve_runtime_node(path: String):
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		return null
+	if path.is_empty() or path == ".":
+		return tree.root
+	return tree.root.get_node_or_null(path)
+
+
+func _signal_list_of(node: Object) -> Array:
+	var out: Array = []
+	for sig in node.get_signal_list():
+		var args: Array = []
+		for arg in sig.get("args", []):
+			args.append({
+				"name": str(arg.get("name", "")),
+				"type": int(arg.get("type", 0)),
+			})
+		out.append({
+			"name": str(sig.get("name", "")),
+			"args": args,
+		})
+	return out
+
+
+func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	var node = _resolve_runtime_node(path)
+	if node == null:
+		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		return
+	_send_result(peer, id, {"path": path, "signals": _signal_list_of(node)})
+
+
+# Returns the same shape as editor _resolve_signal_pair — see mcp_server.gd.
+# Duplicated here because runtime autoload can't see EditorInterface types;
+# iter 16 SOLID split will hoist this into a shared module.
+func _resolve_runtime_signal_pair(params) -> Dictionary:
+	if typeof(params) != TYPE_DICTIONARY:
+		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
+	var source_path := str(params.get("source_path", ""))
+	var signal_name := str(params.get("signal", ""))
+	var target_path := str(params.get("target_path", ""))
+	var method_name := str(params.get("method", ""))
+	if source_path.is_empty() or signal_name.is_empty() or target_path.is_empty() or method_name.is_empty():
+		return {"code": "INVALID_PARAMS", "error": "source_path, signal, target_path, method are all required"}
+	var source = _resolve_runtime_node(source_path)
+	if source == null:
+		return {"code": "NOT_FOUND", "error": "source node not found: %s" % source_path}
+	var target = _resolve_runtime_node(target_path)
+	if target == null:
+		return {"code": "NOT_FOUND", "error": "target node not found: %s" % target_path}
+	if not source.has_signal(signal_name):
+		return {"code": "INVALID_PARAMS", "error": "signal %s not on %s" % [signal_name, source_path]}
+	if not target.has_method(method_name):
+		return {"code": "INVALID_PARAMS", "error": "method %s not on %s" % [method_name, target_path]}
+	return {
+		"source": source,
+		"target": target,
+		"source_path": source_path,
+		"target_path": target_path,
+		"signal_name": signal_name,
+		"method_name": method_name,
+		"callable": Callable(target, method_name),
+	}
+
+
+func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
+	var r := _resolve_runtime_signal_pair(params)
+	if r.has("error"):
+		_send_result(peer, id, _err(str(r["code"]), str(r["error"])))
+		return
+	var source = r["source"]
+	var callable: Callable = r["callable"]
+	var signal_name: String = str(r["signal_name"])
+	var source_path: String = str(r["source_path"])
+	var target_path: String = str(r["target_path"])
+	var method_name: String = str(r["method_name"])
+	if source.is_connected(signal_name, callable):
+		_send_result(peer, id, {
+			"code": "ALREADY_EXISTS",
+			"source_path": source_path,
+			"signal": signal_name,
+			"target_path": target_path,
+			"method": method_name,
+		})
+		return
+	# No UndoRedo in runtime — connections are ephemeral for the game session
+	# and die when the player exits. Direct connect; surface failure code.
+	# Explicit int annotation because `source` is Variant (Dict value) — type
+	# inference can't reach through to Object.connect's Error return.
+	var err: int = source.connect(signal_name, callable)
+	if err != OK:
+		_send_result(peer, id, _err("CONNECT_FAILED", "connect returned %d" % err))
+		return
+	_send_result(peer, id, {"ok": true})
+
+
+func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
+	var r := _resolve_runtime_signal_pair(params)
+	if r.has("error"):
+		_send_result(peer, id, _err(str(r["code"]), str(r["error"])))
+		return
+	var source = r["source"]
+	var callable: Callable = r["callable"]
+	var signal_name: String = str(r["signal_name"])
+	if not source.is_connected(signal_name, callable):
+		_send_result(peer, id, _err("NOT_FOUND", "no connection to disconnect"))
+		return
+	source.disconnect(signal_name, callable)
+	_send_result(peer, id, {"ok": true})
+
+
+func _coerce_value(v):
+	# Mirror of mcp_server.gd._coerce_value for runtime signal.emit args.
+	if typeof(v) != TYPE_DICTIONARY:
+		return v
+	match str(v.get("type", "")):
+		"Vector2":
+			return Vector2(float(v.get("x", 0.0)), float(v.get("y", 0.0)))
+		"Vector3":
+			return Vector3(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)))
+		"Color":
+			return Color(float(v.get("r", 0.0)), float(v.get("g", 0.0)), float(v.get("b", 0.0)), float(v.get("a", 1.0)))
+		_:
+			return v
+
+
+func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	var signal_name := str(params.get("signal", ""))
+	if signal_name.is_empty():
+		_send_result(peer, id, _err("INVALID_PARAMS", "missing signal"))
+		return
+	var node = _resolve_runtime_node(path)
+	if node == null:
+		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		return
+	if not node.has_signal(signal_name):
+		_send_result(peer, id, _err("INVALID_PARAMS", "signal %s not on %s" % [signal_name, path]))
+		return
+	var raw_args = params.get("args", [])
+	if typeof(raw_args) != TYPE_ARRAY:
+		raw_args = []
+	var coerced: Array = [signal_name]
+	for a in raw_args:
+		coerced.append(_coerce_value(a))
+	node.callv("emit_signal", coerced)
+	_send_result(peer, id, {"ok": true})

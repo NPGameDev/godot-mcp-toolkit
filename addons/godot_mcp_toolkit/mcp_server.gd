@@ -113,6 +113,18 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_scene_open(peer, id, params)
 		"project.get_settings":
 			_cmd_project_get_settings(peer, id, params)
+		"signal.list":
+			_cmd_signal_list(peer, id, params)
+		"signal.connect":
+			_cmd_signal_connect(peer, id, params)
+		"signal.disconnect":
+			_cmd_signal_disconnect(peer, id, params)
+		"signal.emit":
+			_cmd_signal_emit(peer, id, params)
+		"resource.load":
+			_cmd_resource_load(peer, id, params)
+		"node.get_property_list":
+			_cmd_node_get_property_list(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -635,4 +647,254 @@ func _cmd_project_get_settings(peer: WebSocketPeer, id, params) -> void:
 		"settings": settings,
 		"count": settings.size(),
 		"filtered_secret_count": filtered_secrets,
+	})
+
+
+# ---- Tier 3 commands (iter 11) --------------------------------------------
+
+
+# Shared resolver: "." / "" → edited scene root, otherwise NodePath lookup from root.
+# Returns null (+ signals caller to emit NOT_FOUND) if the node can't be found.
+func _resolve_scene_node(path: String):
+	var root := _get_edited_root()
+	if root == null:
+		return null
+	if path.is_empty() or path == ".":
+		return root
+	return root.get_node_or_null(path)
+
+
+func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var root := _get_edited_root()
+	if root == null:
+		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		return
+	var path := str(params.get("path", ""))
+	var node = _resolve_scene_node(path)
+	if node == null:
+		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		return
+	_send_result(peer, id, {"path": path, "signals": _signal_list_of(node)})
+
+
+func _signal_list_of(node: Object) -> Array:
+	# Flattens get_signal_list() into JSON-friendly shape. `args` inside each
+	# signal dict is itself an Array of property-info dicts; we keep name +
+	# type (a TYPE_* int, TS consumer decodes).
+	var out: Array = []
+	for sig in node.get_signal_list():
+		var args: Array = []
+		for arg in sig.get("args", []):
+			args.append({
+				"name": str(arg.get("name", "")),
+				"type": int(arg.get("type", 0)),
+			})
+		out.append({
+			"name": str(sig.get("name", "")),
+			"args": args,
+		})
+	return out
+
+
+# Resolves {source_path, signal, target_path, method} to concrete nodes +
+# validates the signal + method exist. Returns a typed result dict that
+# callers pattern-match on `error`/`code` vs the happy-path fields.
+func _resolve_signal_pair(params) -> Dictionary:
+	if typeof(params) != TYPE_DICTIONARY:
+		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
+	var source_path := str(params.get("source_path", ""))
+	var signal_name := str(params.get("signal", ""))
+	var target_path := str(params.get("target_path", ""))
+	var method_name := str(params.get("method", ""))
+	if source_path.is_empty() or signal_name.is_empty() or target_path.is_empty() or method_name.is_empty():
+		return {"code": "INVALID_PARAMS", "error": "source_path, signal, target_path, method are all required"}
+	var root := _get_edited_root()
+	if root == null:
+		return {"code": "NO_SCENE", "error": "no edited scene"}
+	var source = _resolve_scene_node(source_path)
+	if source == null:
+		return {"code": "NOT_FOUND", "error": "source node not found: %s" % source_path}
+	var target = _resolve_scene_node(target_path)
+	if target == null:
+		return {"code": "NOT_FOUND", "error": "target node not found: %s" % target_path}
+	if not source.has_signal(signal_name):
+		return {"code": "INVALID_PARAMS", "error": "signal %s not on %s" % [signal_name, source_path]}
+	if not target.has_method(method_name):
+		return {"code": "INVALID_PARAMS", "error": "method %s not on %s" % [method_name, target_path]}
+	return {
+		"source": source,
+		"target": target,
+		"source_path": source_path,
+		"target_path": target_path,
+		"signal_name": signal_name,
+		"method_name": method_name,
+		"callable": Callable(target, method_name),
+	}
+
+
+func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
+	var r := _resolve_signal_pair(params)
+	if r.has("error"):
+		_send_result(peer, id, _err(str(r["code"]), str(r["error"])))
+		return
+	var source = r["source"]
+	var callable: Callable = r["callable"]
+	var signal_name: String = str(r["signal_name"])
+	var source_path: String = str(r["source_path"])
+	var target_path: String = str(r["target_path"])
+	var method_name: String = str(r["method_name"])
+	# I3 idempotency: same (signal, callable) already connected → return
+	# ALREADY_EXISTS as a non-error success instead of re-registering.
+	if source.is_connected(signal_name, callable):
+		_send_result(peer, id, {
+			"code": "ALREADY_EXISTS",
+			"source_path": source_path,
+			"signal": signal_name,
+			"target_path": target_path,
+			"method": method_name,
+		})
+		return
+	# Route through UndoRedo so the editor's signal-inspector picks this up
+	# and Ctrl-Z reverses it. execute=true (default) runs the do_method now.
+	var undo_redo := EditorInterface.get_editor_undo_redo()
+	undo_redo.create_action("MCP: connect %s.%s -> %s.%s" % [source_path, signal_name, target_path, method_name])
+	undo_redo.add_do_method(source, "connect", signal_name, callable)
+	undo_redo.add_undo_method(source, "disconnect", signal_name, callable)
+	undo_redo.commit_action()
+	_send_result(peer, id, {"ok": true})
+
+
+func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
+	var r := _resolve_signal_pair(params)
+	if r.has("error"):
+		_send_result(peer, id, _err(str(r["code"]), str(r["error"])))
+		return
+	var source = r["source"]
+	var callable: Callable = r["callable"]
+	var signal_name: String = str(r["signal_name"])
+	var source_path: String = str(r["source_path"])
+	var target_path: String = str(r["target_path"])
+	var method_name: String = str(r["method_name"])
+	if not source.is_connected(signal_name, callable):
+		_send_result(peer, id, _err("NOT_FOUND", "no connection to disconnect"))
+		return
+	var undo_redo := EditorInterface.get_editor_undo_redo()
+	undo_redo.create_action("MCP: disconnect %s.%s -> %s.%s" % [source_path, signal_name, target_path, method_name])
+	undo_redo.add_do_method(source, "disconnect", signal_name, callable)
+	undo_redo.add_undo_method(source, "connect", signal_name, callable)
+	undo_redo.commit_action()
+	_send_result(peer, id, {"ok": true})
+
+
+func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var root := _get_edited_root()
+	if root == null:
+		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		return
+	var path := str(params.get("path", ""))
+	var signal_name := str(params.get("signal", ""))
+	if signal_name.is_empty():
+		_send_result(peer, id, _err("INVALID_PARAMS", "missing signal"))
+		return
+	var node = _resolve_scene_node(path)
+	if node == null:
+		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		return
+	if not node.has_signal(signal_name):
+		_send_result(peer, id, _err("INVALID_PARAMS", "signal %s not on %s" % [signal_name, path]))
+		return
+	var raw_args = params.get("args", [])
+	if typeof(raw_args) != TYPE_ARRAY:
+		raw_args = []
+	var coerced: Array = [signal_name]
+	for a in raw_args:
+		coerced.append(_coerce_value(a))
+	node.callv("emit_signal", coerced)
+	_send_result(peer, id, {"ok": true})
+
+
+const _RESOURCE_SKIP_PROPERTIES: Array[String] = ["image", "mesh_arrays", "surface_arrays", "_data"]
+
+
+func _cmd_resource_load(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	# TODO(iter-18): replace with FileGuard.resolve_safe(path).
+	if not path.begins_with("res://"):
+		_send_result(peer, id, _err("PATH_DENIED", "path must start with res://: %s" % path))
+		return
+	if not ResourceLoader.exists(path):
+		_send_result(peer, id, _err("NOT_FOUND", "resource not found: %s" % path))
+		return
+	var resource := ResourceLoader.load(path)
+	if resource == null:
+		_send_result(peer, id, _err("LOAD_FAILED", "ResourceLoader returned null for %s" % path))
+		return
+	var cls := resource.get_class()
+	var props := {}
+	for prop in resource.get_property_list():
+		var usage: int = int(prop.get("usage", 0))
+		if not (usage & PROPERTY_USAGE_EDITOR):
+			continue
+		var pname := str(prop.get("name", ""))
+		if pname.is_empty() or pname.begins_with("_"):
+			continue
+		# Heavy binary fields explicitly skipped — response caps in iter 20
+		# formalise the limits, but the common offenders are worth pruning
+		# now so tool calls stay usable.
+		if pname in _RESOURCE_SKIP_PROPERTIES:
+			continue
+		props[pname] = _serialize_value(resource.get(pname))
+	var metadata := {}
+	if resource is Texture2D:
+		metadata["width"] = resource.get_width()
+		metadata["height"] = resource.get_height()
+	_send_result(peer, id, {
+		"class": cls,
+		"path": path,
+		"properties": props,
+		"metadata": metadata,
+	})
+
+
+func _cmd_node_get_property_list(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var root := _get_edited_root()
+	if root == null:
+		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		return
+	var path := str(params.get("path", ""))
+	var node = _resolve_scene_node(path)
+	if node == null:
+		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		return
+	var props: Array = []
+	for prop in node.get_property_list():
+		var usage: int = int(prop.get("usage", 0))
+		if not (usage & PROPERTY_USAGE_EDITOR):
+			continue
+		var pname := str(prop.get("name", ""))
+		if pname.is_empty() or pname.begins_with("_"):
+			continue
+		props.append({
+			"name": pname,
+			"type": int(prop.get("type", 0)),
+			"hint": int(prop.get("hint", 0)),
+			"hint_string": str(prop.get("hint_string", "")),
+		})
+	_send_result(peer, id, {
+		"path": path,
+		"class": node.get_class(),
+		"properties": props,
+		"count": props.size(),
 	})
