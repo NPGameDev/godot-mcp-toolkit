@@ -97,6 +97,16 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_node_set_property(peer, id, params)
 		"node.get_property":
 			_cmd_node_get_property(peer, id, params)
+		"script.read":
+			_cmd_script_read(peer, id, params)
+		"script.write":
+			_cmd_script_write(peer, id, params)
+		"editor.get_errors":
+			_cmd_editor_get_errors(peer, id)
+		"editor.save_scene":
+			_cmd_editor_save_scene(peer, id, params)
+		"editor.screenshot":
+			_cmd_editor_screenshot(peer, id)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -321,3 +331,131 @@ func _serialize_value(v):
 			return v
 		_:
 			return var_to_str(v)
+
+
+# ---- Script / editor command helpers (iter 04) ----------------------------
+
+
+func _cmd_script_read(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
+	if not path.begins_with("res://"):
+		_send_result(peer, id, _err("PATH_DENIED", "path must start with res://: %s" % path))
+		return
+	if not FileAccess.file_exists(path):
+		_send_result(peer, id, _err("NOT_FOUND", "file not found: %s" % path))
+		return
+	var content := FileAccess.get_file_as_string(path)
+	var open_err := FileAccess.get_open_error()
+	if open_err != OK:
+		_send_result(peer, id, _err("READ_FAILED", "FileAccess error %d reading %s" % [open_err, path]))
+		return
+	# TODO(iter-18): wrap content in <untrusted kind="script_content" source="<path>"> envelope.
+	_send_result(peer, id, {"content": content})
+
+
+func _cmd_script_write(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
+	if not path.begins_with("res://"):
+		_send_result(peer, id, _err("PATH_DENIED", "path must start with res://: %s" % path))
+		return
+	if not params.has("content"):
+		_send_result(peer, id, _err("INVALID_PARAMS", "missing content"))
+		return
+	var content := str(params.get("content", ""))
+	# I5: never wrap user-destination content — `content` is written to disk verbatim.
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		var open_err := FileAccess.get_open_error()
+		_send_result(peer, id, _err("WRITE_FAILED", "could not open %s for write (err %d)" % [path, open_err]))
+		return
+	file.store_string(content)
+	file.close()
+	# Byte count (UTF-8 encoded), not char count — matters for non-ASCII.
+	var bytes_written := content.to_utf8_buffer().size()
+	_send_result(peer, id, {"ok": true, "bytes": bytes_written})
+
+
+func _cmd_editor_get_errors(peer: WebSocketPeer, id) -> void:
+	# MVP stub. Iter 10 (debugger_get_log) replaces this with proper
+	# EngineDebugger capture of script parse errors and runtime exceptions
+	# routed through the editor's debugger subsystem. Returning an empty
+	# errors list here is explicit about being incomplete so callers can
+	# detect the stub by checking `stub == true`.
+	_send_result(peer, id, {
+		"errors": [],
+		"stub": true,
+		"note": "MVP stub; full error capture lands in iter 10 (debugger_get_log)",
+	})
+
+
+func _cmd_editor_save_scene(peer: WebSocketPeer, id, params) -> void:
+	var root := _get_edited_root()
+	if root == null:
+		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		return
+	var save_path := ""
+	if typeof(params) == TYPE_DICTIONARY:
+		save_path = str(params.get("path", ""))
+	if save_path.is_empty():
+		var err := EditorInterface.save_scene()
+		if err != OK:
+			_send_result(peer, id, _err("SAVE_FAILED", "EditorInterface.save_scene returned %d" % err))
+			return
+	else:
+		# TODO(iter-18): validate save_path through FileGuard.resolve_safe.
+		if not save_path.begins_with("res://"):
+			_send_result(peer, id, _err("PATH_DENIED", "save path must start with res://: %s" % save_path))
+			return
+		EditorInterface.save_scene_as(save_path)
+		# save_scene_as returns void in 4.4; verify by existence.
+		if not FileAccess.file_exists(save_path):
+			_send_result(peer, id, _err("SAVE_FAILED", "save_scene_as did not produce %s" % save_path))
+			return
+	_send_result(peer, id, {"ok": true, "path": root.scene_file_path})
+
+
+func _cmd_editor_screenshot(peer: WebSocketPeer, id) -> void:
+	var viewport: SubViewport = EditorInterface.get_editor_viewport_2d()
+	if viewport == null:
+		viewport = EditorInterface.get_editor_viewport_3d(0)
+	if viewport == null:
+		_send_result(peer, id, _err("INTERNAL", "no editor viewport available"))
+		return
+	var image := viewport.get_texture().get_image()
+	if image == null:
+		_send_result(peer, id, _err("INTERNAL", "viewport texture unavailable (nothing rendered yet?)"))
+		return
+
+	var dir_path := "user://mcp_screenshots"
+	var dir_err := DirAccess.make_dir_recursive_absolute(dir_path)
+	if dir_err != OK and dir_err != ERR_ALREADY_EXISTS:
+		_send_result(peer, id, _err("INTERNAL", "could not create %s (err %d)" % [dir_path, dir_err]))
+		return
+
+	var timestamp := int(Time.get_unix_time_from_system() * 1000.0)
+	var save_path := "%s/%d.png" % [dir_path, timestamp]
+	var save_err := image.save_png(save_path)
+	if save_err != OK:
+		_send_result(peer, id, _err("INTERNAL", "save_png failed (err %d)" % save_err))
+		return
+
+	var bytes_len := 0
+	var f := FileAccess.open(save_path, FileAccess.READ)
+	if f != null:
+		bytes_len = f.get_length()
+		f.close()
+
+	_send_result(peer, id, {
+		"path": save_path,
+		"width": image.get_width(),
+		"height": image.get_height(),
+		"bytes": bytes_len,
+	})
