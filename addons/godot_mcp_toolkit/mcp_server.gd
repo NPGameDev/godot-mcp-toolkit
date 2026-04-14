@@ -13,6 +13,10 @@ const _RELISTEN_FRAME_INTERVAL := 60
 var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
 var _relisten_countdown := 0
+# Tracks the current run of consecutive _try_listen() failures so we can log
+# the first one (with a hint), stay silent during retries, and announce the
+# recovery with the attempt count. Reset on every successful listen.
+var _consecutive_failures := 0
 
 
 func start() -> void:
@@ -32,6 +36,7 @@ func stop() -> void:
 		_tcp_server.stop()
 		_tcp_server = null
 	_relisten_countdown = 0
+	_consecutive_failures = 0
 	print("[MCPServer] stopped")
 
 
@@ -46,15 +51,27 @@ func _try_listen() -> void:
 		_tcp_server = TCPServer.new()
 	var err := _tcp_server.listen(PORT, BIND)
 	if err == OK:
-		print("[MCPServer] listening on %s:%d" % [BIND, PORT])
+		if _consecutive_failures > 0:
+			print("[MCPServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, PORT, _consecutive_failures])
+		else:
+			print("[MCPServer] listening on %s:%d" % [BIND, PORT])
+		_consecutive_failures = 0
 		_relisten_countdown = 0
 		return
-	# err 22 = ERR_ALREADY_IN_USE — usually a zombie Godot process from a
-	# prior crash still holding the port. Surface that so the user doesn't
-	# have to look up Godot error codes; a stale process check in Task
-	# Manager / pkill is the typical fix.
-	var hint := " (ERR_ALREADY_IN_USE — likely a stale Godot/MCP process holding the port)" if err == ERR_ALREADY_IN_USE else ""
-	push_warning("[MCPServer] bind %s:%d failed (err %d)%s; retry in %d frames" % [BIND, PORT, err, hint, _RELISTEN_FRAME_INTERVAL])
+	_consecutive_failures += 1
+	# Log only the FIRST failure of a streak — silent retries afterward
+	# until either success (recovery message above) or the user intervenes.
+	# Avoids the iter-13 pattern of one push_warning per second for the
+	# entire duration a zombie process holds the port.
+	if _consecutive_failures == 1:
+		# err 22 = ERR_ALREADY_IN_USE — usually a zombie Godot process from a
+		# prior crash still holding the port. Surface that so the user doesn't
+		# have to look up Godot error codes; a stale process check in Task
+		# Manager / netstat is the typical fix.
+		var hint := ""
+		if err == ERR_ALREADY_IN_USE:
+			hint = " (ERR_ALREADY_IN_USE — likely a stale Godot/MCP process holding the port; will retry silently every ~1s, watch for the listening / recovered message)"
+		push_warning("[MCPServer] bind %s:%d failed (err %d)%s" % [BIND, PORT, err, hint])
 	# Discard the (potentially-stuck) TCPServer instance so the next retry
 	# allocates a fresh one. Without this, certain Godot-internal latch
 	# states keep returning ERR_ALREADY_IN_USE even after the actual port

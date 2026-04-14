@@ -25,6 +25,9 @@ const _RELISTEN_FRAME_INTERVAL := 60
 var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
 var _relisten_countdown := 0
+# Mirror of mcp_server.gd._consecutive_failures — log first-failure-of-streak
+# then go silent until success/recovery. See that file for rationale.
+var _consecutive_failures := 0
 
 
 func _ready() -> void:
@@ -67,6 +70,7 @@ func _stop_server() -> void:
 		_tcp_server.stop()
 		_tcp_server = null
 	_relisten_countdown = 0
+	_consecutive_failures = 0
 
 
 # iter 13: idempotent re-listen for the runtime socket. Editor-hint /
@@ -81,13 +85,20 @@ func _try_listen() -> void:
 		_tcp_server = TCPServer.new()
 	var err := _tcp_server.listen(PORT, BIND)
 	if err == OK:
-		print("[MCPRuntimeServer] listening on %s:%d" % [BIND, PORT])
+		if _consecutive_failures > 0:
+			print("[MCPRuntimeServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, PORT, _consecutive_failures])
+		else:
+			print("[MCPRuntimeServer] listening on %s:%d" % [BIND, PORT])
+		_consecutive_failures = 0
 		_relisten_countdown = 0
 		return
-	# err 22 = ERR_ALREADY_IN_USE — a prior crashed game/runtime instance
-	# may still hold 9090 briefly. Mirror the editor-side hint.
-	var hint := " (ERR_ALREADY_IN_USE — likely a stale game/runtime process holding the port)" if err == ERR_ALREADY_IN_USE else ""
-	push_warning("[MCPRuntimeServer] bind %s:%d failed (err %d)%s; retry in %d frames" % [BIND, PORT, err, hint, _RELISTEN_FRAME_INTERVAL])
+	_consecutive_failures += 1
+	# Same first-failure-only logging as mcp_server.gd._try_listen.
+	if _consecutive_failures == 1:
+		var hint := ""
+		if err == ERR_ALREADY_IN_USE:
+			hint = " (ERR_ALREADY_IN_USE — likely a stale game/runtime process holding the port; will retry silently every ~1s)"
+		push_warning("[MCPRuntimeServer] bind %s:%d failed (err %d)%s" % [BIND, PORT, err, hint])
 	# See mcp_server.gd._try_listen for the discard-on-failure rationale.
 	_tcp_server.stop()
 	_tcp_server = null
