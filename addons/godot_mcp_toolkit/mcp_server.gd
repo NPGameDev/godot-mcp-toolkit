@@ -4,19 +4,23 @@ extends Node
 const PORT := 6505
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
+# iter 13: throttle re-listen retries to avoid log spam when the port is
+# briefly held by another process (e.g. a second editor instance, a stale
+# debugger). 60 frames ≈ 1s at 60fps; the bridge's reconnect backoff sits
+# on the same order so we don't pile retries on top of the bridge's.
+const _RELISTEN_FRAME_INTERVAL := 60
 
 var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
+var _relisten_countdown := 0
 
 
 func start() -> void:
-	_tcp_server = TCPServer.new()
-	var err := _tcp_server.listen(PORT, BIND)
-	if err != OK:
-		push_error("[MCPServer] failed to bind %s:%d (error %d)" % [BIND, PORT, err])
-		_tcp_server = null
-		return
-	print("[MCPServer] listening on %s:%d" % [BIND, PORT])
+	# Initial listen attempt. _process picks up the retry slack on failure
+	# (iter 13) — start() never blocks plugin enable on a transient bind
+	# error; it just kicks off the loop.
+	_relisten_countdown = 0
+	_try_listen()
 
 
 func stop() -> void:
@@ -27,11 +31,33 @@ func stop() -> void:
 	if _tcp_server != null:
 		_tcp_server.stop()
 		_tcp_server = null
+	_relisten_countdown = 0
 	print("[MCPServer] stopped")
 
 
-func _process(_delta: float) -> void:
+# iter 13: idempotent re-listen. Called from start() and from _process when
+# the TCPServer falls out of the listening state (port stolen, manual stop,
+# etc.). Frame-throttled via _relisten_countdown so failures don't spam.
+func _try_listen() -> void:
+	if _relisten_countdown > 0:
+		_relisten_countdown -= 1
+		return
 	if _tcp_server == null:
+		_tcp_server = TCPServer.new()
+	var err := _tcp_server.listen(PORT, BIND)
+	if err == OK:
+		print("[MCPServer] listening on %s:%d" % [BIND, PORT])
+		_relisten_countdown = 0
+		return
+	push_warning("[MCPServer] bind %s:%d failed (err %d); retry in %d frames" % [BIND, PORT, err, _RELISTEN_FRAME_INTERVAL])
+	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
+
+
+func _process(_delta: float) -> void:
+	# iter 13: keep the listener up across editor cycles. If start() failed
+	# transiently or the port dropped, retry here on the throttle.
+	if _tcp_server == null or not _tcp_server.is_listening():
+		_try_listen()
 		return
 
 	while _tcp_server.is_connection_available():

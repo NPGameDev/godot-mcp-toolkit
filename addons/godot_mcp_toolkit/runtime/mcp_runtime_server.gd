@@ -16,9 +16,15 @@ extends Node
 const PORT := 9090
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
+# iter 13: throttle re-listen retries. Mirrors mcp_server.gd's editor-side
+# loop. Runtime restarts on F5 each game session, so the typical "missed
+# bind" recoverable case is a stale debug session that hasn't released
+# 9090 yet — usually clears in 1-2 frames.
+const _RELISTEN_FRAME_INTERVAL := 60
 
 var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
+var _relisten_countdown := 0
 
 
 func _ready() -> void:
@@ -48,13 +54,8 @@ func _exit_tree() -> void:
 
 
 func _start_server() -> void:
-	_tcp_server = TCPServer.new()
-	var err := _tcp_server.listen(PORT, BIND)
-	if err != OK:
-		push_error("[MCPRuntimeServer] failed to bind %s:%d (error %d)" % [BIND, PORT, err])
-		_tcp_server = null
-		return
-	print("[MCPRuntimeServer] listening on %s:%d" % [BIND, PORT])
+	_relisten_countdown = 0
+	_try_listen()
 
 
 func _stop_server() -> void:
@@ -65,10 +66,34 @@ func _stop_server() -> void:
 	if _tcp_server != null:
 		_tcp_server.stop()
 		_tcp_server = null
+	_relisten_countdown = 0
+
+
+# iter 13: idempotent re-listen for the runtime socket. Editor-hint /
+# release-build gating in _ready already disables _process for the cases
+# where we MUST NOT bind, so this loop only runs in the debug-build
+# game process — exactly where 9090 is supposed to be live.
+func _try_listen() -> void:
+	if _relisten_countdown > 0:
+		_relisten_countdown -= 1
+		return
+	if _tcp_server == null:
+		_tcp_server = TCPServer.new()
+	var err := _tcp_server.listen(PORT, BIND)
+	if err == OK:
+		print("[MCPRuntimeServer] listening on %s:%d" % [BIND, PORT])
+		_relisten_countdown = 0
+		return
+	push_warning("[MCPRuntimeServer] bind %s:%d failed (err %d); retry in %d frames" % [BIND, PORT, err, _RELISTEN_FRAME_INTERVAL])
+	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
 
 
 func _process(_delta: float) -> void:
-	if _tcp_server == null:
+	# iter 13: keep the listener up across transient socket loss. Editor /
+	# release gating from _ready prevents _process from running where it
+	# shouldn't (set_process(false)), so reaching here = debug-build runtime.
+	if _tcp_server == null or not _tcp_server.is_listening():
+		_try_listen()
 		return
 
 	while _tcp_server.is_connection_available():
