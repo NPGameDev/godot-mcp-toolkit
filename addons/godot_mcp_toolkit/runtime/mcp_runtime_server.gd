@@ -23,19 +23,22 @@ var _peers: Array[WebSocketPeer] = []
 
 func _ready() -> void:
 	# I11 + Risk — do not run in the editor process.
-	# Defer the free by one frame: calling `queue_free()` directly inside
-	# `_ready()` can race with the engine's autoload child-registration
-	# sequence and produce a cosmetic `remove_child(null)` warning on
-	# project re-open. `set_process(false)` keeps the _process pump idle
-	# in the meantime.
+	#
+	# Stay in the SceneTree as an inert placeholder rather than freeing:
+	# the autoload tracker holds a pointer to this Node until
+	# `remove_autoload_singleton()` fires (on plugin disable). If we
+	# queue_free ourselves here, that pointer becomes dangling and plugin
+	# disable triggers `root.remove_child(null)` in Godot's internals.
+	# `set_process(false)` + no TCPServer means zero work per frame and
+	# no port bind — the Node's presence is purely bookkeeping.
 	if Engine.is_editor_hint():
 		set_process(false)
-		call_deferred("queue_free")
 		return
 	# Debug-build gate: shipped (release) games must not listen on 9090.
+	# Same quiescent approach — an empty Node at scene-tree root is cheaper
+	# than the subtle edge cases of auto-freeing during SceneTree setup.
 	if not OS.is_debug_build():
 		set_process(false)
-		call_deferred("queue_free")
 		return
 	_start_server()
 
