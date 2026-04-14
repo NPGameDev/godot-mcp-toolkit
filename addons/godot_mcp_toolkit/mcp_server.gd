@@ -250,23 +250,24 @@ func _cmd_scene_delete_node(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, _err("INVALID_PATH", "cannot delete edited scene root"))
 		return
 
-	# Editor-safe deletion: when the node was created via scene.create_node we
-	# set `owner = edited_scene_root` so the editor's SceneTreeDock tracks it.
-	# queue_free() alone (deferred) leaves that tracker pointing at a node
-	# scheduled to die, causing a SIGSEGV on the next editor refresh. Clearing
-	# the owner first unregisters it, then synchronous free() is safe.
-	_detach_recursive(node)
+	# Editor-safe deletion via UndoRedo. Pattern matches godot-mcp-pro and
+	# godotiq: the node is detached from the tree by the action, but
+	# add_undo_reference(node) keeps a reference alive in the undo history,
+	# so the editor's SceneTreeDock / Inspector never see a dangling pointer.
+	# Plain queue_free() or synchronous free() on an editor-owned node is a
+	# SIGSEGV hazard on Godot 4.4.1 Windows when any FileAccess write follows.
 	var parent := node.get_parent()
-	if parent != null:
-		parent.remove_child(node)
-	node.free()
+	if parent == null:
+		_send_result(peer, id, _err("INTERNAL", "node has no parent: %s" % path))
+		return
+	var undo_redo := EditorInterface.get_editor_undo_redo()
+	undo_redo.create_action("MCP: delete %s" % path)
+	undo_redo.add_do_method(parent, "remove_child", node)
+	undo_redo.add_undo_method(parent, "add_child", node)
+	undo_redo.add_undo_method(node, "set_owner", root)
+	undo_redo.add_undo_reference(node)
+	undo_redo.commit_action()
 	_send_result(peer, id, {"ok": true, "path": path})
-
-
-func _detach_recursive(n: Node) -> void:
-	n.owner = null
-	for child in n.get_children():
-		_detach_recursive(child)
 
 
 func _cmd_node_set_property(peer: WebSocketPeer, id, params) -> void:
@@ -438,6 +439,9 @@ func _cmd_editor_save_scene(peer: WebSocketPeer, id, params) -> void:
 
 
 func _cmd_editor_screenshot(peer: WebSocketPeer, id) -> void:
+	# Return PNG bytes inline as base64 — pattern from godot-mcp-pro / godotiq.
+	# Avoids cross-process user:// path resolution and FS races: the TS bridge
+	# never touches disk for this tool.
 	var viewport: SubViewport = EditorInterface.get_editor_viewport_2d()
 	if viewport == null:
 		viewport = EditorInterface.get_editor_viewport_3d(0)
@@ -449,31 +453,15 @@ func _cmd_editor_screenshot(peer: WebSocketPeer, id) -> void:
 		_send_result(peer, id, _err("INTERNAL", "viewport texture unavailable (nothing rendered yet?)"))
 		return
 
-	var dir_path := "user://mcp_screenshots"
-	var dir_err := DirAccess.make_dir_recursive_absolute(dir_path)
-	if dir_err != OK and dir_err != ERR_ALREADY_EXISTS:
-		_send_result(peer, id, _err("INTERNAL", "could not create %s (err %d)" % [dir_path, dir_err]))
+	var png_bytes := image.save_png_to_buffer()
+	if png_bytes.is_empty():
+		_send_result(peer, id, _err("INTERNAL", "save_png_to_buffer returned empty"))
 		return
 
-	var timestamp := int(Time.get_unix_time_from_system() * 1000.0)
-	var save_path := "%s/%d.png" % [dir_path, timestamp]
-	var save_err := image.save_png(save_path)
-	if save_err != OK:
-		_send_result(peer, id, _err("INTERNAL", "save_png failed (err %d)" % save_err))
-		return
-
-	var bytes_len := 0
-	var f := FileAccess.open(save_path, FileAccess.READ)
-	if f != null:
-		bytes_len = f.get_length()
-		f.close()
-
-	# absolute_path lets the TS bridge fs.readFile the PNG without re-deriving
-	# Godot's user:// resolution logic (platform-specific + project-name-dependent).
 	_send_result(peer, id, {
-		"path": save_path,
-		"absolute_path": ProjectSettings.globalize_path(save_path),
+		"image_base64": Marshalls.raw_to_base64(png_bytes),
+		"mime_type": "image/png",
 		"width": image.get_width(),
 		"height": image.get_height(),
-		"bytes": bytes_len,
+		"bytes": png_bytes.size(),
 	})
