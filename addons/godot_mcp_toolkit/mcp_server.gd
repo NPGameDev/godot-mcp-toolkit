@@ -107,6 +107,12 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_editor_save_scene(peer, id, params)
 		"editor.screenshot":
 			_cmd_editor_screenshot(peer, id, params)
+		"editor.reload_scripts":
+			_cmd_editor_reload_scripts(peer, id)
+		"scene.open":
+			_cmd_scene_open(peer, id, params)
+		"project.get_settings":
+			_cmd_project_get_settings(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -387,16 +393,64 @@ func _cmd_script_write(peer: WebSocketPeer, id, params) -> void:
 		return
 	var content := str(params.get("content", ""))
 	# I5: never wrap user-destination content — `content` is written to disk verbatim.
+
+	# Capture prior state so the UndoRedo undo path is correct. If the file
+	# exists we read-and-restore; if it's new, undo deletes. FileAccess reads
+	# can fail — surface that instead of silently losing undo coverage.
+	var existed := FileAccess.file_exists(path)
+	var prior_content := ""
+	if existed:
+		prior_content = FileAccess.get_file_as_string(path)
+		var read_err := FileAccess.get_open_error()
+		if read_err != OK:
+			_send_result(peer, id, _err("READ_FAILED", "could not read prior content of %s (err %d)" % [path, read_err]))
+			return
+
+	# Attempt the write up-front so failures surface as WRITE_FAILED instead of
+	# silently landing as a push_warning during UndoRedo's deferred commit.
+	var write_err := _write_file_raw(path, content)
+	if write_err != OK:
+		_send_result(peer, id, _err("WRITE_FAILED", "could not open %s for write (err %d)" % [path, write_err]))
+		return
+
+	# Wire the already-performed write into the editor's UndoRedo history so
+	# Ctrl-Z restores prior state (or deletes, for new files). `do_method` is
+	# a no-op replay of the write we just committed; `undo_method` reverses it.
+	var undo_redo := EditorInterface.get_editor_undo_redo()
+	undo_redo.create_action("MCP script_write: %s" % path)
+	undo_redo.add_do_method(self, "_write_file_silent", path, content)
+	if existed:
+		undo_redo.add_undo_method(self, "_write_file_silent", path, prior_content)
+	else:
+		undo_redo.add_undo_method(self, "_delete_file_silent", path)
+	# execute=false so UndoRedo doesn't double-apply the do_method we already ran.
+	undo_redo.commit_action(false)
+
+	var bytes_written := content.to_utf8_buffer().size()
+	_send_result(peer, id, {"ok": true, "bytes": bytes_written, "undoable": true})
+
+
+func _write_file_raw(path: String, content: String) -> int:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
-		var open_err := FileAccess.get_open_error()
-		_send_result(peer, id, _err("WRITE_FAILED", "could not open %s for write (err %d)" % [path, open_err]))
-		return
+		return FileAccess.get_open_error()
 	file.store_string(content)
 	file.close()
-	# Byte count (UTF-8 encoded), not char count — matters for non-ASCII.
-	var bytes_written := content.to_utf8_buffer().size()
-	_send_result(peer, id, {"ok": true, "bytes": bytes_written})
+	return OK
+
+
+func _write_file_silent(path: String, content: String) -> void:
+	var err := _write_file_raw(path, content)
+	if err != OK:
+		push_warning("[MCPServer] UndoRedo write of %s failed (err %d)" % [path, err])
+
+
+func _delete_file_silent(path: String) -> void:
+	if not FileAccess.file_exists(path):
+		return
+	var err := DirAccess.remove_absolute(path)
+	if err != OK:
+		push_warning("[MCPServer] UndoRedo delete of %s failed (err %d)" % [path, err])
 
 
 func _cmd_editor_get_errors(peer: WebSocketPeer, id) -> void:
@@ -503,3 +557,81 @@ func _cmd_editor_screenshot(peer: WebSocketPeer, id, params) -> void:
 	if not persisted_path.is_empty():
 		response["path"] = persisted_path
 	_send_result(peer, id, response)
+
+
+# ---- Tier 1 commands (iter 09) --------------------------------------------
+
+
+func _cmd_editor_reload_scripts(peer: WebSocketPeer, id) -> void:
+	# Godot 4.4 has no EditorInterface.reload_scripts() static despite what
+	# older docs suggest (iter-09 plan was drafted against that assumption).
+	# Portable flow: (1) rescan res:// so the FS cache sees on-disk changes,
+	# (2) call Script.reload(true) on each script currently open in the
+	# editor so the script editor + Inspector pick up new content. "true"
+	# preserves runtime state when possible (matches godot-mcp-pro's
+	# _reload_script helper).
+	var fs := EditorInterface.get_resource_filesystem()
+	if fs != null:
+		fs.scan()
+	var reloaded := 0
+	var script_editor := EditorInterface.get_script_editor()
+	if script_editor != null:
+		for open_script in script_editor.get_open_scripts():
+			if open_script is Script:
+				open_script.reload(true)
+				reloaded += 1
+	_send_result(peer, id, {"ok": true, "reloaded": reloaded})
+
+
+func _cmd_scene_open(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
+	if not path.begins_with("res://"):
+		_send_result(peer, id, _err("PATH_DENIED", "path must start with res://: %s" % path))
+		return
+	if not FileAccess.file_exists(path):
+		_send_result(peer, id, _err("NOT_FOUND", "scene not found: %s" % path))
+		return
+	EditorInterface.open_scene_from_path(path)
+	_send_result(peer, id, {"ok": true, "path": path})
+
+
+# MVP secret-key filter. `key` is over-eager (matches input keybinding names
+# with "keycode" etc.) but that's the right default for "lean out of sight
+# rather than risk exfil". Proper scrubbing lands in iter 20.
+const _SECRET_KEY_REGEX := "(?i)password|token|secret|key"
+
+
+func _cmd_project_get_settings(peer: WebSocketPeer, id, params) -> void:
+	var prefix := ""
+	if typeof(params) == TYPE_DICTIONARY:
+		prefix = str(params.get("prefix", ""))
+
+	var re := RegEx.new()
+	var compile_err := re.compile(_SECRET_KEY_REGEX)
+	if compile_err != OK:
+		_send_result(peer, id, _err("INTERNAL", "secret regex failed to compile (err %d)" % compile_err))
+		return
+
+	var settings := {}
+	var filtered_secrets := 0
+	for prop in ProjectSettings.get_property_list():
+		var name := str(prop.get("name", ""))
+		# Empty names and non-path-like Object meta entries are noise.
+		if name.is_empty() or not name.contains("/"):
+			continue
+		if not prefix.is_empty() and not name.begins_with(prefix):
+			continue
+		if re.search(name) != null:
+			filtered_secrets += 1
+			continue
+		settings[name] = _serialize_value(ProjectSettings.get_setting(name))
+
+	_send_result(peer, id, {
+		"settings": settings,
+		"count": settings.size(),
+		"filtered_secret_count": filtered_secrets,
+	})
