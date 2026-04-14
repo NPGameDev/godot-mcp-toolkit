@@ -454,15 +454,16 @@ func _delete_file_silent(path: String) -> void:
 
 
 func _cmd_editor_get_errors(peer: WebSocketPeer, id) -> void:
-	# MVP stub. Iter 10 (debugger_get_log) replaces this with proper
-	# EngineDebugger capture of script parse errors and runtime exceptions
-	# routed through the editor's debugger subsystem. Returning an empty
-	# errors list here is explicit about being incomplete so callers can
-	# detect the stub by checking `stub == true`.
+	# Iter 10 split: runtime log capture is now the `debugger.get_log` command
+	# on the Mode B (port 9090) runtime autoload — that's the right place for
+	# game-side print/push_warning/push_error output. Editor-time script parse
+	# errors (shown in the bottom-panel Output dock before play) still need a
+	# dedicated editor-side hook; left as a stub until a proper
+	# EditorInterface.get_script_editor() signal path is wired.
 	_send_result(peer, id, {
 		"errors": [],
 		"stub": true,
-		"note": "MVP stub; full error capture lands in iter 10 (debugger_get_log)",
+		"note": "editor-time error capture TBD; runtime logs via debugger_get_log (Mode B, iter 10)",
 	})
 
 
