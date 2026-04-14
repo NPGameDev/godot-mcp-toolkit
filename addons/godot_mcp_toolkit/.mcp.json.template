@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "godot-mcp-toolkit": {
+      "command": "cmd",
+      "args": ["/c", "npx", "godot-mcp-server"],
+      "env": { "GODOT_MCP_PORT": "6505" }
+    }
+  }
+}
