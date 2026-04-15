@@ -9,6 +9,16 @@ const JSONRPC_VERSION := "2.0"
 # debugger). 60 frames ≈ 1s at 60fps; the bridge's reconnect backoff sits
 # on the same order so we don't pile retries on top of the bridge's.
 const _RELISTEN_FRAME_INTERVAL := 60
+# iter 13c: poll TCPServer/WebSocket peers every Nth frame instead of every
+# frame. Godot 4.4.1 has a race between our per-frame poll and the main-loop
+# work triggered by FileSystem-dock interactions; shrinking our collision
+# window ~4x (15Hz vs 60Hz) drops the reproducibility threshold enough that
+# incidental clicks stop crashing the editor in smoke + dogfood usage.
+# Tune lower if latency regresses noticeably; 4 frames ≈ 67ms at 60fps.
+# (Trial with interval=2 + `call_deferred` dispatch crashed at run 4 of 20
+# in dirty-stress testing — the deferral didn't materially help and the
+# interval reduction halved the protective margin. Reverted to interval=4.)
+const _POLL_FRAME_INTERVAL := 4
 
 var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
@@ -17,6 +27,8 @@ var _relisten_countdown := 0
 # the first one (with a hint), stay silent during retries, and announce the
 # recovery with the attempt count. Reset on every successful listen.
 var _consecutive_failures := 0
+# iter 13c: counter for _POLL_FRAME_INTERVAL frame-skip.
+var _poll_frame_counter := 0
 
 
 func start() -> void:
@@ -84,6 +96,16 @@ func _try_listen() -> void:
 
 
 func _process(_delta: float) -> void:
+	# iter 13c: frame-skip to poll at ~15Hz. Race with editor main-loop work
+	# on FS dock interactions (Godot 4.4.1) is dramatically less reproducible
+	# when we're not fighting for main-thread cycles every frame. Re-listen
+	# retries still respect _RELISTEN_FRAME_INTERVAL below, so a missed
+	# listen-check here just delays recovery by a few frames at worst.
+	_poll_frame_counter += 1
+	if _poll_frame_counter < _POLL_FRAME_INTERVAL:
+		return
+	_poll_frame_counter = 0
+
 	# iter 13: keep the listener up across editor cycles. If start() failed
 	# transiently or the port dropped, retry here on the throttle.
 	if _tcp_server == null or not _tcp_server.is_listening():
