@@ -209,8 +209,36 @@ func _send_error(peer: WebSocketPeer, id, code: int, message: String) -> void:
 	peer.send_text(JSON.stringify(response))
 
 
-func _err(code: String, error: String) -> Dictionary:
-	return {"code": code, "error": error}
+# I1 error contract (iter 14) — Mode B mirror. See mcp_server.gd for the
+# canonical comment. Duplicated here because the runtime autoload loads
+# before the editor plugin script and can't preload a sibling by class.
+# Iter 16 SOLID split will hoist both copies into a shared module.
+const MCP_ERROR_CODES := [
+	"ALREADY_EXISTS",
+	"CONNECT_FAILED",
+	"DISCONNECTED",
+	"EXECUTE_FAILED",
+	"FEATURE_DISABLED",
+	"FILE_TOO_LARGE",
+	"GAME_NOT_RUNNING",
+	"INTERNAL",
+	"INVALID_CLASS",
+	"INVALID_PARAMS",
+	"INVALID_PATH",
+	"LOAD_FAILED",
+	"NO_SCENE",
+	"NOT_FOUND",
+	"PARSE_ERROR",
+	"PATH_DENIED",
+	"READ_FAILED",
+	"SAVE_FAILED",
+	"TIMEOUT",
+	"WRITE_FAILED",
+]
+
+
+static func mcp_error(code: String, message: String) -> Dictionary:
+	return {"success": false, "error": message, "code": code}
 
 
 func _serialize_value(v):
@@ -227,7 +255,7 @@ func _serialize_value(v):
 func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
 	var viewport := get_viewport()
 	if viewport == null:
-		_send_result(peer, id, _err("INTERNAL", "no viewport available"))
+		_send_result(peer, id, mcp_error("INTERNAL", "no viewport available"))
 		return
 
 	# Wait for any queued draw calls to complete. Without this, get_image
@@ -237,12 +265,12 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
 
 	var image := viewport.get_texture().get_image()
 	if image == null:
-		_send_result(peer, id, _err("INTERNAL", "viewport texture unavailable"))
+		_send_result(peer, id, mcp_error("INTERNAL", "viewport texture unavailable"))
 		return
 
 	var png_bytes := image.save_png_to_buffer()
 	if png_bytes.is_empty():
-		_send_result(peer, id, _err("INTERNAL", "save_png_to_buffer returned empty"))
+		_send_result(peer, id, mcp_error("INTERNAL", "save_png_to_buffer returned empty"))
 		return
 
 	_send_result(peer, id, {
@@ -256,21 +284,21 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
 
 func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("path", ""))
 	if path.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing path"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path"))
 		return
 
 	var tree := get_tree()
 	if tree == null or tree.root == null:
-		_send_result(peer, id, _err("INTERNAL", "scene tree unavailable"))
+		_send_result(peer, id, mcp_error("INTERNAL", "scene tree unavailable"))
 		return
 
 	var node := tree.root.get_node_or_null(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 
 	var props := {}
@@ -320,7 +348,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	var file := FileAccess.open(log_path, FileAccess.READ)
 	if file == null:
 		var open_err := FileAccess.get_open_error()
-		_send_result(peer, id, _err("READ_FAILED", "could not open %s (err %d)" % [log_path, open_err]))
+		_send_result(peer, id, mcp_error("READ_FAILED", "could not open %s (err %d)" % [log_path, open_err]))
 		return
 	var text := file.get_as_text()
 	file.close()
@@ -377,12 +405,12 @@ func _signal_list_of(node: Object) -> Array:
 
 func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("path", ""))
 	var node = _resolve_runtime_node(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 	_send_result(peer, id, {"path": path, "signals": _signal_list_of(node)})
 
@@ -423,7 +451,7 @@ func _resolve_runtime_signal_pair(params) -> Dictionary:
 func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	var r := _resolve_runtime_signal_pair(params)
 	if r.has("error"):
-		_send_result(peer, id, _err(str(r["code"]), str(r["error"])))
+		_send_result(peer, id, mcp_error(str(r["code"]), str(r["error"])))
 		return
 	var source = r["source"]
 	var callable: Callable = r["callable"]
@@ -446,7 +474,7 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	# inference can't reach through to Object.connect's Error return.
 	var err: int = source.connect(signal_name, callable)
 	if err != OK:
-		_send_result(peer, id, _err("CONNECT_FAILED", "connect returned %d" % err))
+		_send_result(peer, id, mcp_error("CONNECT_FAILED", "connect returned %d" % err))
 		return
 	_send_result(peer, id, {"ok": true})
 
@@ -454,13 +482,13 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
 	var r := _resolve_runtime_signal_pair(params)
 	if r.has("error"):
-		_send_result(peer, id, _err(str(r["code"]), str(r["error"])))
+		_send_result(peer, id, mcp_error(str(r["code"]), str(r["error"])))
 		return
 	var source = r["source"]
 	var callable: Callable = r["callable"]
 	var signal_name: String = str(r["signal_name"])
 	if not source.is_connected(signal_name, callable):
-		_send_result(peer, id, _err("NOT_FOUND", "no connection to disconnect"))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no connection to disconnect"))
 		return
 	source.disconnect(signal_name, callable)
 	_send_result(peer, id, {"ok": true})
@@ -483,19 +511,19 @@ func _coerce_value(v):
 
 func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("path", ""))
 	var signal_name := str(params.get("signal", ""))
 	if signal_name.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing signal"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing signal"))
 		return
 	var node = _resolve_runtime_node(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 	if not node.has_signal(signal_name):
-		_send_result(peer, id, _err("INVALID_PARAMS", "signal %s not on %s" % [signal_name, path]))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "signal %s not on %s" % [signal_name, path]))
 		return
 	var raw_args = params.get("args", [])
 	if typeof(raw_args) != TYPE_ARRAY:
@@ -516,7 +544,7 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 # global hotkeys aren't reachable from inside a running Godot instance.
 func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var event_type := str(params.get("event_type", ""))
 	var event_data: Dictionary = {}
@@ -567,7 +595,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 				act.strength = float(event_data.get("strength", 1.0))
 			ev = act
 		_:
-			_send_result(peer, id, _err("INVALID_PARAMS", "unknown event_type: %s (expected key|mouse_button|mouse_motion|action)" % event_type))
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "unknown event_type: %s (expected key|mouse_button|mouse_motion|action)" % event_type))
 			return
 	Input.parse_input_event(ev)
 	_send_result(peer, id, {"ok": true, "event_type": event_type})
@@ -578,18 +606,18 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 # without an extra round-trip.
 func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("path", ""))
 	if path.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing path"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path"))
 		return
 	var node = _resolve_runtime_node(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 	if not (node is AnimationPlayer):
-		_send_result(peer, id, _err("INVALID_PARAMS", "node is not AnimationPlayer: %s (got %s)" % [path, node.get_class()]))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "node is not AnimationPlayer: %s (got %s)" % [path, node.get_class()]))
 		return
 	var ap: AnimationPlayer = node
 	var op := str(params.get("op", ""))
@@ -600,7 +628,7 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 				ap.play()
 			else:
 				if not ap.has_animation(anim):
-					_send_result(peer, id, _err("NOT_FOUND", "animation not found: %s" % anim))
+					_send_result(peer, id, mcp_error("NOT_FOUND", "animation not found: %s" % anim))
 					return
 				ap.play(anim)
 		"pause":
@@ -610,7 +638,7 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 		"seek":
 			ap.seek(float(params.get("time", 0.0)), true)
 		_:
-			_send_result(peer, id, _err("INVALID_PARAMS", "unknown op: %s (expected play|pause|stop|seek)" % op))
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "unknown op: %s (expected play|pause|stop|seek)" % op))
 			return
 	_send_result(peer, id, {
 		"ok": true,
@@ -634,11 +662,11 @@ const _GAME_EVAL_LOG_CAP := 256
 
 func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var code := str(params.get("code", ""))
 	if code.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing code"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing code"))
 		return
 
 	var truncated := code.substr(0, _GAME_EVAL_LOG_CAP)
@@ -651,22 +679,22 @@ func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
 	if scope_path.is_empty():
 		var tree := get_tree()
 		if tree == null or tree.root == null:
-			_send_result(peer, id, _err("INTERNAL", "scene tree unavailable"))
+			_send_result(peer, id, mcp_error("INTERNAL", "scene tree unavailable"))
 			return
 		scope_node = tree.root
 	else:
 		scope_node = _resolve_runtime_node(scope_path)
 		if scope_node == null:
-			_send_result(peer, id, _err("NOT_FOUND", "scope node not found: %s" % scope_path))
+			_send_result(peer, id, mcp_error("NOT_FOUND", "scope node not found: %s" % scope_path))
 			return
 
 	var expr := Expression.new()
 	var parse_err := expr.parse(code, PackedStringArray())
 	if parse_err != OK:
-		_send_result(peer, id, _err("PARSE_ERROR", expr.get_error_text()))
+		_send_result(peer, id, mcp_error("PARSE_ERROR", expr.get_error_text()))
 		return
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
-		_send_result(peer, id, _err("EXECUTE_FAILED", expr.get_error_text()))
+		_send_result(peer, id, mcp_error("EXECUTE_FAILED", expr.get_error_text()))
 		return
 	_send_result(peer, id, {"result": _serialize_value(result)})

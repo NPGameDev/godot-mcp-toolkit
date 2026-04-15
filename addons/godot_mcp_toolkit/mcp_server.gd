@@ -243,8 +243,47 @@ func _get_edited_root() -> Node:
 	return EditorInterface.get_edited_scene_root()
 
 
-func _err(code: String, error: String) -> Dictionary:
-	return {"code": code, "error": error}
+# I1 error contract (iter 14). Canonical list of MCP tool-error codes —
+# UPPER_SNAKE_CASE. Must stay in sync with src/types.ts `ErrorCode` union
+# (server-repo) and the reference table in CLAUDE.md. Iter 16 (SOLID
+# split) hoists this and `mcp_error` into a shared module; duplicated
+# with mcp_runtime_server.gd for now to keep each file self-contained.
+# ALREADY_EXISTS is listed for completeness even though I3 treats it as a
+# non-error success payload (it travels in a happy-path dict, NOT through
+# mcp_error). INVALID_PARAMS is JSON-RPC params-shape (e.g. missing
+# required field); INVALID_CLASS is ClassDB rejection; INVALID_PATH is
+# semantic path refusal (e.g. deleting scene root) distinct from
+# PATH_DENIED (prefix / sandbox refusal — full form in iter 18).
+const MCP_ERROR_CODES := [
+	"ALREADY_EXISTS",
+	"CONNECT_FAILED",
+	"DISCONNECTED",
+	"EXECUTE_FAILED",
+	"FEATURE_DISABLED",
+	"FILE_TOO_LARGE",
+	"GAME_NOT_RUNNING",
+	"INTERNAL",
+	"INVALID_CLASS",
+	"INVALID_PARAMS",
+	"INVALID_PATH",
+	"LOAD_FAILED",
+	"NO_SCENE",
+	"NOT_FOUND",
+	"PARSE_ERROR",
+	"PATH_DENIED",
+	"READ_FAILED",
+	"SAVE_FAILED",
+	"TIMEOUT",
+	"WRITE_FAILED",
+]
+
+
+# mcp_error — canonical failure envelope for tool responses (I1). Returned
+# inside the JSON-RPC `result` payload (NOT the envelope `error` field —
+# that's for transport-level failures). The TS bridge (server-repo)
+# translates `success: false` into an MCP `isError: true` response.
+static func mcp_error(code: String, message: String) -> Dictionary:
+	return {"success": false, "error": message, "code": code}
 
 
 # Returned paths are *relative to the edited scene root* — keeps responses
@@ -258,7 +297,7 @@ func _path_in_scene(scene_root: Node, node: Node) -> String:
 func _cmd_scene_get_tree(peer: WebSocketPeer, id) -> void:
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 	# TODO(iter-18): wrap this tree in an <untrusted kind="scene_tree" source="godot"> envelope at the response layer.
 	_send_result(peer, id, _walk_tree(root, root))
@@ -278,11 +317,11 @@ func _walk_tree(node: Node, scene_root: Node) -> Dictionary:
 
 func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 
 	var cls := str(params.get("class_name", ""))
@@ -291,21 +330,21 @@ func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 	var requested_name := str(params.get("name", cls))
 
 	if cls.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing class_name"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing class_name"))
 		return
 	if not ClassDB.class_exists(cls):
-		_send_result(peer, id, _err("INVALID_CLASS", "unknown class: %s" % cls))
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "unknown class: %s" % cls))
 		return
 	if not ClassDB.can_instantiate(cls):
-		_send_result(peer, id, _err("INVALID_CLASS", "class is not instantiable (abstract, virtual, or editor-only): %s" % cls))
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "class is not instantiable (abstract, virtual, or editor-only): %s" % cls))
 		return
 	if not ClassDB.is_parent_class(cls, "Node"):
-		_send_result(peer, id, _err("INVALID_CLASS", "not a Node subclass: %s" % cls))
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "not a Node subclass: %s" % cls))
 		return
 
 	var parent_node := root.get_node_or_null(parent_path) if not parent_path.is_empty() else root
 	if parent_node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "parent not found: %s" % parent_path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "parent not found: %s" % parent_path))
 		return
 
 	# I3 idempotency: same-name child already present -> return it, don't duplicate.
@@ -316,7 +355,7 @@ func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 
 	var instance = ClassDB.instantiate(cls)
 	if instance == null or not (instance is Node):
-		_send_result(peer, id, _err("INVALID_CLASS", "instantiate failed: %s" % cls))
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "instantiate failed: %s" % cls))
 		return
 
 	instance.name = requested_name
@@ -327,25 +366,25 @@ func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 
 func _cmd_scene_delete_node(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 
 	var path := str(params.get("path", ""))
 	# TODO(iter-18): filter `path` through FileGuard.resolve_safe.
 	if path.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing path"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path"))
 		return
 
 	var node := root.get_node_or_null(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 	if node == root:
-		_send_result(peer, id, _err("INVALID_PATH", "cannot delete edited scene root"))
+		_send_result(peer, id, mcp_error("INVALID_PATH", "cannot delete edited scene root"))
 		return
 
 	# Editor-safe deletion via UndoRedo. Pattern matches godot-mcp-pro and
@@ -356,7 +395,7 @@ func _cmd_scene_delete_node(peer: WebSocketPeer, id, params) -> void:
 	# SIGSEGV hazard on Godot 4.4.1 Windows when any FileAccess write follows.
 	var parent := node.get_parent()
 	if parent == null:
-		_send_result(peer, id, _err("INTERNAL", "node has no parent: %s" % path))
+		_send_result(peer, id, mcp_error("INTERNAL", "node has no parent: %s" % path))
 		return
 	var undo_redo := EditorInterface.get_editor_undo_redo()
 	undo_redo.create_action("MCP: delete %s" % path)
@@ -370,11 +409,11 @@ func _cmd_scene_delete_node(peer: WebSocketPeer, id, params) -> void:
 
 func _cmd_node_set_property(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 
 	var path := str(params.get("path", ""))
@@ -383,12 +422,12 @@ func _cmd_node_set_property(peer: WebSocketPeer, id, params) -> void:
 	# TODO(iter-18): filter `path` through FileGuard.resolve_safe.
 
 	if path.is_empty() or property.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing path or property"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path or property"))
 		return
 
 	var node := root.get_node_or_null(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 
 	var coerced = _coerce_value(raw_value)
@@ -398,11 +437,11 @@ func _cmd_node_set_property(peer: WebSocketPeer, id, params) -> void:
 
 func _cmd_node_get_property(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 
 	var path := str(params.get("path", ""))
@@ -410,12 +449,12 @@ func _cmd_node_get_property(peer: WebSocketPeer, id, params) -> void:
 	# TODO(iter-18): filter `path` through FileGuard.resolve_safe.
 
 	if path.is_empty() or property.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing path or property"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path or property"))
 		return
 
 	var node := root.get_node_or_null(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 
 	_send_result(peer, id, {"value": _serialize_value(node.get(property))})
@@ -452,20 +491,20 @@ func _serialize_value(v):
 
 func _cmd_script_read(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("path", ""))
 	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
 	if not path.begins_with("res://"):
-		_send_result(peer, id, _err("PATH_DENIED", "path must start with res://: %s" % path))
+		_send_result(peer, id, mcp_error("PATH_DENIED", "path must start with res://: %s" % path))
 		return
 	if not FileAccess.file_exists(path):
-		_send_result(peer, id, _err("NOT_FOUND", "file not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "file not found: %s" % path))
 		return
 	var content := FileAccess.get_file_as_string(path)
 	var open_err := FileAccess.get_open_error()
 	if open_err != OK:
-		_send_result(peer, id, _err("READ_FAILED", "FileAccess error %d reading %s" % [open_err, path]))
+		_send_result(peer, id, mcp_error("READ_FAILED", "FileAccess error %d reading %s" % [open_err, path]))
 		return
 	# TODO(iter-18): wrap content in <untrusted kind="script_content" source="<path>"> envelope.
 	_send_result(peer, id, {"content": content})
@@ -473,15 +512,15 @@ func _cmd_script_read(peer: WebSocketPeer, id, params) -> void:
 
 func _cmd_script_write(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("path", ""))
 	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
 	if not path.begins_with("res://"):
-		_send_result(peer, id, _err("PATH_DENIED", "path must start with res://: %s" % path))
+		_send_result(peer, id, mcp_error("PATH_DENIED", "path must start with res://: %s" % path))
 		return
 	if not params.has("content"):
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing content"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing content"))
 		return
 	var content := str(params.get("content", ""))
 	# I5: never wrap user-destination content — `content` is written to disk verbatim.
@@ -495,14 +534,14 @@ func _cmd_script_write(peer: WebSocketPeer, id, params) -> void:
 		prior_content = FileAccess.get_file_as_string(path)
 		var read_err := FileAccess.get_open_error()
 		if read_err != OK:
-			_send_result(peer, id, _err("READ_FAILED", "could not read prior content of %s (err %d)" % [path, read_err]))
+			_send_result(peer, id, mcp_error("READ_FAILED", "could not read prior content of %s (err %d)" % [path, read_err]))
 			return
 
 	# Attempt the write up-front so failures surface as WRITE_FAILED instead of
 	# silently landing as a push_warning during UndoRedo's deferred commit.
 	var write_err := _write_file_raw(path, content)
 	if write_err != OK:
-		_send_result(peer, id, _err("WRITE_FAILED", "could not open %s for write (err %d)" % [path, write_err]))
+		_send_result(peer, id, mcp_error("WRITE_FAILED", "could not open %s for write (err %d)" % [path, write_err]))
 		return
 
 	# Wire the already-performed write into the editor's UndoRedo history so
@@ -562,7 +601,7 @@ func _cmd_editor_get_errors(peer: WebSocketPeer, id) -> void:
 func _cmd_editor_save_scene(peer: WebSocketPeer, id, params) -> void:
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 	var save_path := ""
 	if typeof(params) == TYPE_DICTIONARY:
@@ -570,17 +609,17 @@ func _cmd_editor_save_scene(peer: WebSocketPeer, id, params) -> void:
 	if save_path.is_empty():
 		var err := EditorInterface.save_scene()
 		if err != OK:
-			_send_result(peer, id, _err("SAVE_FAILED", "EditorInterface.save_scene returned %d" % err))
+			_send_result(peer, id, mcp_error("SAVE_FAILED", "EditorInterface.save_scene returned %d" % err))
 			return
 	else:
 		# TODO(iter-18): validate save_path through FileGuard.resolve_safe.
 		if not save_path.begins_with("res://"):
-			_send_result(peer, id, _err("PATH_DENIED", "save path must start with res://: %s" % save_path))
+			_send_result(peer, id, mcp_error("PATH_DENIED", "save path must start with res://: %s" % save_path))
 			return
 		EditorInterface.save_scene_as(save_path)
 		# save_scene_as returns void in 4.4; verify by existence.
 		if not FileAccess.file_exists(save_path):
-			_send_result(peer, id, _err("SAVE_FAILED", "save_scene_as did not produce %s" % save_path))
+			_send_result(peer, id, mcp_error("SAVE_FAILED", "save_scene_as did not produce %s" % save_path))
 			return
 	_send_result(peer, id, {"ok": true, "path": root.scene_file_path})
 
@@ -601,16 +640,16 @@ func _cmd_editor_screenshot(peer: WebSocketPeer, id, params) -> void:
 	if viewport == null:
 		viewport = EditorInterface.get_editor_viewport_3d(0)
 	if viewport == null:
-		_send_result(peer, id, _err("INTERNAL", "no editor viewport available"))
+		_send_result(peer, id, mcp_error("INTERNAL", "no editor viewport available"))
 		return
 	var image := viewport.get_texture().get_image()
 	if image == null:
-		_send_result(peer, id, _err("INTERNAL", "viewport texture unavailable (nothing rendered yet?)"))
+		_send_result(peer, id, mcp_error("INTERNAL", "viewport texture unavailable (nothing rendered yet?)"))
 		return
 
 	var png_bytes := image.save_png_to_buffer()
 	if png_bytes.is_empty():
-		_send_result(peer, id, _err("INTERNAL", "save_png_to_buffer returned empty"))
+		_send_result(peer, id, mcp_error("INTERNAL", "save_png_to_buffer returned empty"))
 		return
 
 	var persisted_path := ""
@@ -623,20 +662,20 @@ func _cmd_editor_screenshot(peer: WebSocketPeer, id, params) -> void:
 		# project_delete_node_crash.md for the related editor-safety notes and
 		# iter-07 follow-up work.
 		if not save_path.begins_with("res://"):
-			_send_result(peer, id, _err("PATH_DENIED", "save_path must start with res://: %s" % save_path))
+			_send_result(peer, id, mcp_error("PATH_DENIED", "save_path must start with res://: %s" % save_path))
 			return
 		if not save_path.ends_with(".png"):
-			_send_result(peer, id, _err("INVALID_PARAMS", "save_path must end with .png: %s" % save_path))
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "save_path must end with .png: %s" % save_path))
 			return
 		var dir_path := save_path.get_base_dir()
 		if not dir_path.is_empty():
 			var dir_err := DirAccess.make_dir_recursive_absolute(dir_path)
 			if dir_err != OK and dir_err != ERR_ALREADY_EXISTS:
-				_send_result(peer, id, _err("INTERNAL", "could not create %s (err %d)" % [dir_path, dir_err]))
+				_send_result(peer, id, mcp_error("INTERNAL", "could not create %s (err %d)" % [dir_path, dir_err]))
 				return
 		var save_err := image.save_png(save_path)
 		if save_err != OK:
-			_send_result(peer, id, _err("INTERNAL", "save_png failed (err %d) for %s" % [save_err, save_path]))
+			_send_result(peer, id, mcp_error("INTERNAL", "save_png failed (err %d) for %s" % [save_err, save_path]))
 			return
 		persisted_path = save_path
 
@@ -678,15 +717,15 @@ func _cmd_editor_reload_scripts(peer: WebSocketPeer, id) -> void:
 
 func _cmd_scene_open(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("path", ""))
 	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
 	if not path.begins_with("res://"):
-		_send_result(peer, id, _err("PATH_DENIED", "path must start with res://: %s" % path))
+		_send_result(peer, id, mcp_error("PATH_DENIED", "path must start with res://: %s" % path))
 		return
 	if not FileAccess.file_exists(path):
-		_send_result(peer, id, _err("NOT_FOUND", "scene not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "scene not found: %s" % path))
 		return
 	EditorInterface.open_scene_from_path(path)
 	_send_result(peer, id, {"ok": true, "path": path})
@@ -706,7 +745,7 @@ func _cmd_project_get_settings(peer: WebSocketPeer, id, params) -> void:
 	var re := RegEx.new()
 	var compile_err := re.compile(_SECRET_KEY_REGEX)
 	if compile_err != OK:
-		_send_result(peer, id, _err("INTERNAL", "secret regex failed to compile (err %d)" % compile_err))
+		_send_result(peer, id, mcp_error("INTERNAL", "secret regex failed to compile (err %d)" % compile_err))
 		return
 
 	var settings := {}
@@ -746,16 +785,16 @@ func _resolve_scene_node(path: String):
 
 func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 	var path := str(params.get("path", ""))
 	var node = _resolve_scene_node(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 	_send_result(peer, id, {"path": path, "signals": _signal_list_of(node)})
 
@@ -818,7 +857,7 @@ func _resolve_signal_pair(params) -> Dictionary:
 func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	var r := _resolve_signal_pair(params)
 	if r.has("error"):
-		_send_result(peer, id, _err(str(r["code"]), str(r["error"])))
+		_send_result(peer, id, mcp_error(str(r["code"]), str(r["error"])))
 		return
 	var source = r["source"]
 	var callable: Callable = r["callable"]
@@ -850,7 +889,7 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
 	var r := _resolve_signal_pair(params)
 	if r.has("error"):
-		_send_result(peer, id, _err(str(r["code"]), str(r["error"])))
+		_send_result(peer, id, mcp_error(str(r["code"]), str(r["error"])))
 		return
 	var source = r["source"]
 	var callable: Callable = r["callable"]
@@ -859,7 +898,7 @@ func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
 	var target_path: String = str(r["target_path"])
 	var method_name: String = str(r["method_name"])
 	if not source.is_connected(signal_name, callable):
-		_send_result(peer, id, _err("NOT_FOUND", "no connection to disconnect"))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no connection to disconnect"))
 		return
 	var undo_redo := EditorInterface.get_editor_undo_redo()
 	undo_redo.create_action("MCP: disconnect %s.%s -> %s.%s" % [source_path, signal_name, target_path, method_name])
@@ -871,23 +910,23 @@ func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
 
 func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 	var path := str(params.get("path", ""))
 	var signal_name := str(params.get("signal", ""))
 	if signal_name.is_empty():
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing signal"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing signal"))
 		return
 	var node = _resolve_scene_node(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 	if not node.has_signal(signal_name):
-		_send_result(peer, id, _err("INVALID_PARAMS", "signal %s not on %s" % [signal_name, path]))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "signal %s not on %s" % [signal_name, path]))
 		return
 	var raw_args = params.get("args", [])
 	if typeof(raw_args) != TYPE_ARRAY:
@@ -904,19 +943,19 @@ const _RESOURCE_SKIP_PROPERTIES: Array[String] = ["image", "mesh_arrays", "surfa
 
 func _cmd_resource_load(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("path", ""))
 	# TODO(iter-18): replace with FileGuard.resolve_safe(path).
 	if not path.begins_with("res://"):
-		_send_result(peer, id, _err("PATH_DENIED", "path must start with res://: %s" % path))
+		_send_result(peer, id, mcp_error("PATH_DENIED", "path must start with res://: %s" % path))
 		return
 	if not ResourceLoader.exists(path):
-		_send_result(peer, id, _err("NOT_FOUND", "resource not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "resource not found: %s" % path))
 		return
 	var resource := ResourceLoader.load(path)
 	if resource == null:
-		_send_result(peer, id, _err("LOAD_FAILED", "ResourceLoader returned null for %s" % path))
+		_send_result(peer, id, mcp_error("LOAD_FAILED", "ResourceLoader returned null for %s" % path))
 		return
 	var cls := resource.get_class()
 	var props := {}
@@ -954,17 +993,17 @@ func _cmd_resource_load(peer: WebSocketPeer, id, params) -> void:
 # annotations) is post-MVP.
 func _cmd_scene_diff(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	if not params.has("before"):
-		_send_result(peer, id, _err("INVALID_PARAMS", "missing before"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing before"))
 		return
 	var before = params.get("before")
 	var after = params.get("after", null)
 	if after == null:
 		var root := _get_edited_root()
 		if root == null:
-			_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+			_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 			return
 		after = _walk_tree(root, root)
 	# sort_keys=true so dict-key reordering doesn't show up as a diff.
@@ -1002,16 +1041,16 @@ func _cmd_scene_diff(peer: WebSocketPeer, id, params) -> void:
 
 func _cmd_node_get_property_list(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, _err("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
 		return
 	var root := _get_edited_root()
 	if root == null:
-		_send_result(peer, id, _err("NO_SCENE", "no edited scene"))
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
 		return
 	var path := str(params.get("path", ""))
 	var node = _resolve_scene_node(path)
 	if node == null:
-		_send_result(peer, id, _err("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 	var props: Array = []
 	for prop in node.get_property_list():
