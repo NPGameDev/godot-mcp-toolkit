@@ -30,23 +30,29 @@ manual zip route, and the server via `npm install -g @npgamedev/godot-mcp-server
 ## Dogfood setup
 
 This repo root **is** a Godot 4.4 project (`project.godot` at root,
-`addons/godot_mcp_toolkit/` at root). In practice, we dogfood from a sibling
-`godot-mcp-dogfood-playground/` project because Godot 4.4.1 has an observed
-crash when the plugin is enabled in this repo's own Godot project (see the
-plan repo's `Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md`).
+`addons/godot_mcp_toolkit/` at root). Opening it in Godot is the test
+environment for the plugin.
 
 ```
 # one-time, in the companion server repo
 cd <server repo root>
 npm install && npm run build
 
-# every session (in the playground, NOT this repo root)
-# 1) open godot-mcp-dogfood-playground/ in Godot 4.4+
+# every session
+# 1) open THIS repo root in Godot 4.4+
 # 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
-# 3) from the playground root (where its .mcp.json lives):
+# 3) from THIS repo root (where .mcp.json lives):
 claude
 # /mcp should list `godot-mcp-toolkit: connected` with 10+ tools.
 ```
+
+**Post-iter-13c:** the `_process` TCPServer poll in `mcp_server.gd` is
+frame-skipped to ~15Hz to mitigate a Godot 4.4.1 main-loop race. Pre-fix
+this repo's dogfood reliably crashed Godot within seconds of `claude`
+starting; post-fix it's stable. Full trial history:
+[plan-repo crash report](https://github.com/NPGameDev/godot-mcp-creation/blob/main/Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md).
+A sibling `godot-mcp-dogfood-playground/` project exists for end-user /
+clean-project verification (e.g. iter 20 AssetLib install checks).
 
 **Pre-iter-20:** this repo's `.mcp.json` (and the byte-identical
 `addons/godot_mcp_toolkit/.mcp.json.template`) use a path-based

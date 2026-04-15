@@ -61,24 +61,31 @@ post-iter-20. The template at `addons/godot_mcp_toolkit/.mcp.json.template`
 is kept byte-identical to the root `.mcp.json` through both states (see iter
 13b + iter 20's swap-back verification).
 
-**Do not launch `claude` from this repo root.** Godot 4.4.1 has an observed
-crash when the plugin is enabled in the dogfood project — see the plan
-repo's `Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md` and
-`memory/project_dogfood_pattern.md`. Use the sibling
-`godot-mcp-dogfood-playground/` project for day-to-day dogfooding instead.
+**Dogfood from this repo root.** Post-iter-13c, the F3 frame-skip mitigation
+in `mcp_server.gd` makes the Godot 4.4.1 TCPServer race effectively
+unreachable under normal use — toolkit-root + `claude` is back to being the
+canonical dogfood workflow. Full crash history in the plan repo's
+`Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md` (Test 3
+confirmed the fix holds in this scenario). The sibling
+`godot-mcp-dogfood-playground/` project is now reserved for clean-project /
+end-user-install verification (mainly used during iter 20 AssetLib prep).
 
 ```
 # one-time
 cd <server-repo>
 npm install && npm run build
 
-# every session, in the playground project (NOT this repo root)
-# 1) open the playground in Godot 4.4+
+# every session
+# 1) open THIS repo root in Godot 4.4+
 # 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
-# 3) from the playground root:
+# 3) from THIS repo root (where .mcp.json lives):
 claude
 # /mcp should list `godot-mcp-toolkit: connected` with 10+ tools.
 ```
+
+Note: Godot writes window-layout state into `project.godot` on open. That
+usually shows up as a one-line diff — `git checkout project.godot` to discard
+if you're not intending to commit layout changes.
 
 ## End-user install
 

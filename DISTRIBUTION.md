@@ -19,11 +19,8 @@
 ## Dogfood setup (contributors)
 
 The toolkit repo root is itself a Godot 4.4 project, so "developing the
-plugin" and "using the plugin against a project" could in principle share a
-workflow. In practice we dogfood from a sibling `godot-mcp-dogfood-playground/`
-project because Godot 4.4.1 has an observed crash when the plugin is enabled
-in this repo's own Godot project (see the plan repo's
-`Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md`).
+plugin" and "using the plugin against a project" share a single workflow:
+open this repo in Godot, run `claude` from its root.
 
 ```
 # one-time, in the server repo
@@ -31,13 +28,23 @@ cd <server repo root>
 npm install
 npm run build
 
-# every session (in the playground, NOT this repo root)
-# 1) open godot-mcp-dogfood-playground/ in Godot 4.4+
+# every session
+# 1) open THIS (toolkit) repo root in Godot 4.4+
 # 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
-# 3) from the playground root (where its .mcp.json lives):
+# 3) from this repo root (where the dogfood .mcp.json lives):
 claude
 # /mcp should list `godot-mcp-toolkit: connected` with 10+ tools.
 ```
+
+**Post-iter-13c note.** The toolkit-root + `claude` path crashed Godot 4.4.1
+pre-iter-13c because of a race between the plugin's per-frame TCPServer poll
+and claude's auto-indexing of the plugin's `.gd` source files (the
+filesystem-importer race). Iter 13c's F3 frame-skip mitigation (toolkit
+commit `5116694`) makes that race unreachable under normal use — confirmed
+2026-04-15 late evening via Test 3 (see the plan repo's crash report). A
+sibling `godot-mcp-dogfood-playground/` project exists and still works; it's
+reserved for clean-project / end-user-install verification (e.g. iter 20
+AssetLib install checks), not day-to-day dogfood.
 
 **Pre-iter-20 note.** This repo's dogfood `.mcp.json` (and the byte-identical
 `addons/godot_mcp_toolkit/.mcp.json.template`) currently use a path-based
