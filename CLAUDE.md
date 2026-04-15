@@ -15,7 +15,7 @@ calling tools, not to agents changing the plugin's internals.
 
 Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
-Claude Code via the companion `godot-mcp-server` npm package).
+Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
 ## MVP tool catalogue (10 tools — iter 08)
 
@@ -50,20 +50,34 @@ Claude Code via the companion `godot-mcp-server` npm package).
 ## Dogfood setup (this repo)
 
 This repo root IS a Godot 4.4 project (`project.godot` at root,
-`addons/godot_mcp_toolkit/` at root). The `.mcp.json` at repo root is the live
-Claude Code config — it runs `npx godot-mcp-server`.
+`addons/godot_mcp_toolkit/` at root). The `.mcp.json` at repo root points at a
+locally-built server bridge.
+
+**Pre-iter-20 note.** Because `@npgamedev/godot-mcp-server` is not yet
+published to npm, the dogfood `.mcp.json` uses a path-based
+`node <abs-path>/dist/index.js` invocation rather than the scoped
+`npx -y @npgamedev/godot-mcp-server` form that end users will use
+post-iter-20. The template at `addons/godot_mcp_toolkit/.mcp.json.template`
+is kept byte-identical to the root `.mcp.json` through both states (see iter
+13b + iter 20's swap-back verification).
+
+**Do not launch `claude` from this repo root.** Godot 4.4.1 has an observed
+crash when the plugin is enabled in the dogfood project — see the plan
+repo's `Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md` and
+`memory/project_dogfood_pattern.md`. Use the sibling
+`godot-mcp-dogfood-playground/` project for day-to-day dogfooding instead.
 
 ```
 # one-time
-cd <godot-mcp-server-repo>
-npm install && npm run build && npm link
+cd <server-repo>
+npm install && npm run build
 
-# every session
-# 1) open this repo root in Godot 4.4+
+# every session, in the playground project (NOT this repo root)
+# 1) open the playground in Godot 4.4+
 # 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
-# 3) from this repo root:
+# 3) from the playground root:
 claude
-# /mcp should list `godot-mcp-toolkit: connected` with 10 tools.
+# /mcp should list `godot-mcp-toolkit: connected` with 10+ tools.
 ```
 
 ## End-user install

@@ -19,26 +19,34 @@
 ## Dogfood setup (contributors)
 
 The toolkit repo root is itself a Godot 4.4 project, so "developing the
-plugin" and "using the plugin against a project" are the same workflow.
+plugin" and "using the plugin against a project" could in principle share a
+workflow. In practice we dogfood from a sibling `godot-mcp-dogfood-playground/`
+project because Godot 4.4.1 has an observed crash when the plugin is enabled
+in this repo's own Godot project (see the plan repo's
+`Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md`).
 
 ```
 # one-time, in the server repo
-cd <godot-mcp-server repo root>
+cd <server repo root>
 npm install
 npm run build
-npm link
 
-# every session
-# 1) open this (toolkit) repo root in Godot 4.4+
+# every session (in the playground, NOT this repo root)
+# 1) open godot-mcp-dogfood-playground/ in Godot 4.4+
 # 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
-# 3) from this repo root (where the dogfood .mcp.json lives):
+# 3) from the playground root (where its .mcp.json lives):
 claude
-# /mcp should list `godot-mcp-toolkit: connected` with 10 tools.
+# /mcp should list `godot-mcp-toolkit: connected` with 10+ tools.
 ```
 
-`.mcp.json` uses `npx godot-mcp-server`, so `npm link` is what points it at
-our local `dist/`. After the package ships on npm, the same `.mcp.json` works
-unchanged for end users.
+**Pre-iter-20 note.** This repo's dogfood `.mcp.json` (and the byte-identical
+`addons/godot_mcp_toolkit/.mcp.json.template`) currently use a path-based
+`node <abs-path>/dist/index.js` invocation rather than
+`npx -y @npgamedev/godot-mcp-server`, because the scoped npm name is not yet
+published (publish is gated on iter 20). Iter 20 publishes to npm and then
+swaps both files back to the scoped-npx form — at which point the dogfood
+`.mcp.json` works unchanged for end users too. See iter 13b for the original
+swap rationale and iter 20's verification for the swap-back.
 
 ## End-user plugin install (manual zip, available today)
 
@@ -57,7 +65,7 @@ unchanged for end users.
 
 ## End-user server install (pairs with either install route above)
 
-1. `npm install -g godot-mcp-server` (requires Node ≥ 20).
+1. `npm install -g @npgamedev/godot-mcp-server` (requires Node ≥ 20).
 2. Copy `addons/godot_mcp_toolkit/.mcp.json.template` up one level into your
    Godot project's root and rename to `.mcp.json`.
 3. From the project root, run `claude` — `/mcp` lists
@@ -87,7 +95,8 @@ synchronised manually until a bump script lands post-MVP.
    Produces `dist-plugin/godot-mcp-toolkit-<version>.zip`. The top-level entry
    inside the zip is `addons/godot_mcp_toolkit/` (no repo-root noise).
 4. In the server repo: `npm pack` to inspect (`tar -tvzf
-   godot-mcp-server-<version>.tgz`), then `npm publish` (requires `npm login`).
+   npgamedev-godot-mcp-server-<version>.tgz` — scoped names yield dashed
+   tarballs), then `npm publish` (requires `npm login`).
 5. In the toolkit repo: `git tag v<version>`, `git push origin v<version>`,
    create a GitHub release, and attach the plugin zip.
 6. (Only after iter 20.) Re-submit to AssetLib via the checklist below — each
@@ -121,8 +130,8 @@ Do not submit before iter 20 completes (see the security gate at the top).
      `https://raw.githubusercontent.com/NPGameDev/godot-mcp-toolkit/<sha>/icon.png`
    - **License:** `MIT`
    - **Description:** short paragraph — what the plugin does, mention the
-     companion `godot-mcp-server` npm package requirement, link to this
-     repo's README.
+     companion `@npgamedev/godot-mcp-server` npm package requirement, link to
+     this repo's README.
    - **Previews:** 1–3 screenshots (editor with plugin enabled + a Claude Code
      transcript showing a tool call in flight).
 5. Submit. Review is manual, typically 1–5 days.

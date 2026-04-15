@@ -9,11 +9,11 @@ npm package (TypeScript, stdio-to-WebSocket bridge).
 ## How the two pieces fit
 
 ```
-Claude Code ── stdio ──▶ godot-mcp-server (npm, Node.js) ── ws://127.0.0.1:6505 ──▶ godot_mcp_toolkit (this plugin, inside the Godot editor)
+Claude Code ── stdio ──▶ @npgamedev/godot-mcp-server (npm, Node.js) ── ws://127.0.0.1:6505 ──▶ godot_mcp_toolkit (this plugin, inside the Godot editor)
 ```
 
 Users install both: the plugin via Godot's AssetLib (once submitted) or the
-manual zip route, and the server via `npm install -g godot-mcp-server`.
+manual zip route, and the server via `npm install -g @npgamedev/godot-mcp-server`.
 
 ## Install
 
@@ -30,27 +30,31 @@ manual zip route, and the server via `npm install -g godot-mcp-server`.
 ## Dogfood setup
 
 This repo root **is** a Godot 4.4 project (`project.godot` at root,
-`addons/godot_mcp_toolkit/` at root). Opening it in Godot is the test
-environment for the plugin.
+`addons/godot_mcp_toolkit/` at root). In practice, we dogfood from a sibling
+`godot-mcp-dogfood-playground/` project because Godot 4.4.1 has an observed
+crash when the plugin is enabled in this repo's own Godot project (see the
+plan repo's `Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md`).
 
 ```
 # one-time, in the companion server repo
-cd <godot-mcp-server repo root>
-npm install && npm run build && npm link
+cd <server repo root>
+npm install && npm run build
 
-# every session
-# 1) open THIS repo root in Godot 4.4+
+# every session (in the playground, NOT this repo root)
+# 1) open godot-mcp-dogfood-playground/ in Godot 4.4+
 # 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
-# 3) from THIS repo root (where .mcp.json lives):
+# 3) from the playground root (where its .mcp.json lives):
 claude
-# /mcp should list `godot-mcp-toolkit: connected` with 10 tools.
+# /mcp should list `godot-mcp-toolkit: connected` with 10+ tools.
 ```
 
-`.mcp.json` is configured to run `npx godot-mcp-server`, so `npm link` alone
-is enough to dogfood changes to the server — no `.mcp.json` edits required.
-
-Windows-first: `.mcp.json` uses `cmd /c npx godot-mcp-server`. On Linux / macOS,
-drop the `cmd /c` wrapper (update the `command` + `args` in `.mcp.json`).
+**Pre-iter-20:** this repo's `.mcp.json` (and the byte-identical
+`addons/godot_mcp_toolkit/.mcp.json.template`) use a path-based
+`node <abs-path>/dist/index.js` invocation, because the scoped
+`@npgamedev/godot-mcp-server` is not yet published. Iter 20 publishes to npm
+and swaps both files back to `cmd /c npx -y @npgamedev/godot-mcp-server` on
+Windows (`npx -y @npgamedev/godot-mcp-server` on Linux / macOS). Post-swap the
+same config works unchanged for end users.
 
 ## Layout
 

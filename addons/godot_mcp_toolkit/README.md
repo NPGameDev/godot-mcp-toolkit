@@ -21,7 +21,7 @@ The plugin is half the stack. You also need the TypeScript MCP server that
 pipes stdio (Claude Code) to the plugin's WebSocket:
 
 ```
-npm install -g godot-mcp-server
+npm install -g @npgamedev/godot-mcp-server
 ```
 
 Requires Node.js ≥ 20. Source + README:
