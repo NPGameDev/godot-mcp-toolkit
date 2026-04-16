@@ -34,8 +34,8 @@ Requires Node.js ≥ 20. Source + README:
    `.mcp.json`.
 2. `cd` to that project root.
 3. Run `claude`. `/mcp` should list `godot-mcp-toolkit` with the full tool
-   catalogue (28 tools default; pass `--lite` in `.mcp.json` args for a
-   16-tool core subset in token-sensitive sessions).
+   catalogue (33 tools default; pass `--lite` in `.mcp.json` args for an
+   18-tool core subset in token-sensitive sessions).
 
 (Iter 21 will add a one-click menu item in the editor's MCP dock that writes
 `.mcp.json` for you.)
@@ -60,13 +60,66 @@ Every `create_*` success payload now carries a `status` field:
 
 - `"created"` — fresh create.
 - `"returned"` — idempotent no-op; the thing already existed (default
-  `if_exists: "return"` path on `scene_create`, plus every node-level
-  create like `scene_create_node` and `signal_connect`).
+  `if_exists: "return"` path on file-level creates `scene_create` /
+  `resource_create`, plus every node-level create like `scene_create_node`,
+  `signal_connect`, and `folder_create` on a pre-existing directory).
 - `"replaced"` — file-level create with `if_exists: "replace"` only.
 
 Error payloads still carry `code` (e.g. `ALREADY_EXISTS` via
 `scene_create`'s `if_exists: "fail"` opt-in). Success payloads do NOT carry
 `code`.
+
+## Iter 15b additions — resource / folder / shader ops
+
+- `resource_create` — author `.tres` / `.res` at a `res://` path for a
+  Resource subclass (engine class or custom `class_name X extends Resource`).
+  Idempotent via the same `status` + `if_exists` contract as `scene_create`:
+  `"return"` (default), `"fail"` (hard `ALREADY_EXISTS`), `"replace"`
+  (overwrite with a `push_warning`). `properties` dict applies engine
+  `set()` per key; unknown keys become `warnings: String[]` entries.
+  Canonical path for data-driven game content (`EnemyData`, `DialogueNode`,
+  themes, materials).
+- `resource_save` — update properties on an existing `.tres` / `.res`.
+  No `status` field (the absence is the discriminator between
+  create and update paths). Same `warnings[]` shape for unknown keys.
+- `resource_delete` — remove a `.tres` / `.res` and its `.uid` companion.
+  No active-use guard (live `RefCounted` refs survive file deletion;
+  detect orphans via `editor_get_errors`).
+- `folder_create` — create a `res://` directory (recursive — intermediates
+  auto-created). Idempotent: `status: "created"` on fresh, `"returned"` if
+  pre-existing. Pairs with `scene_create` / `resource_create`'s
+  `PARENT_NOT_FOUND` recovery.
+- `folder_delete` — remove a directory. `recursive: false` (default) requires
+  an empty directory. Refuses project root, `res://addons`, the toolkit
+  plugin directory, and any folder containing the currently-edited scene or
+  an open script tab (`PATH_IN_USE`).
+- `script_write` / `script_delete` — extension allowlist now includes
+  `.gdshader` and `.gdshaderinc` (shader files are text, same handler;
+  no separate `shader.*` tool). `script_write` also gained an extension
+  guard (previously prefix-only); `.txt` / other non-script extensions now
+  reject with `INVALID_PATH`.
+
+### Supported property-value types for `resource_create` / `resource_save`
+
+JSON-native primitives pass through: `bool`, `int`, `float`, `String`, `null`,
+`Array`, `Dictionary`. Dict-wrapped engine types coerce via the plugin's
+`_coerce_value`:
+
+- `{ "type": "Vector2", "x": 0, "y": 0 }` → `Vector2`
+- `{ "type": "Vector3", "x": 0, "y": 0, "z": 0 }` → `Vector3`
+- `{ "type": "Color", "r": 0, "g": 0, "b": 0, "a": 1 }` → `Color`
+
+`NodePath` values pass as `String` — Godot's `set()` coerces. Sub-resource
+references (`preload("res://...")`) and `Callable` values are NOT supported
+here; edit the `.tres` directly via `script_write` on the file if those are
+needed.
+
+### Side-effect note — custom Resource classes
+
+`resource_create` instantiates a custom `class_name X extends Resource` via
+`script.new()`, which runs `_init()`. If `_init()` has non-trivial side
+effects (global state, signal emission, editor-visible mutations), those
+will fire every time `resource_create` is called for that class.
 
 ## Port
 

@@ -17,13 +17,13 @@ Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
 Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
-## Core tool catalogue (13 MVP-core tools — iter 08 + iter 15)
+## Core tool catalogue (18 MVP-core tools — iter 08 + iter 15 + iter 15b)
 
 Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 `scene_open`, `project_get_settings`, `signal_*`, `resource_load`,
 `scene_diff`, `node_get_property_list`, and the Mode B `runtime_*` family)
-bring the full catalogue to 28 tools (29 with `GODOT_MCP_ALLOW_GAME_EVAL=1`).
-Pass `--lite` in `.mcp.json` args for a 16-tool token-sensitive subset.
+bring the full catalogue to 33 tools (34 with `GODOT_MCP_ALLOW_GAME_EVAL=1`).
+Pass `--lite` in `.mcp.json` args for an 18-tool token-sensitive subset.
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
@@ -32,11 +32,16 @@ Pass `--lite` in `.mcp.json` args for a 16-tool token-sensitive subset.
 | `scene_delete_node`     | Delete node at `path`. UndoRedo-based; refuses to delete the edited-scene root.  |
 | `scene_create`          | Create `.tscn` file at `path` with root `root_type`. Idempotent; `if_exists: return\|fail\|replace`. |
 | `scene_delete`          | Delete `.tscn` file (+ `.uid`). Refuses non-`.tscn` and the currently-edited scene. |
-| `script_delete`         | Delete `.gd` or `.cs` file (+ `.uid`). No open-in-editor guard (see iter-15 Handoff). |
+| `script_delete`         | Delete `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` (+ `.uid`). No open-in-editor guard. |
+| `resource_create`       | Create `.tres`/`.res` at `path` for `resource_class`. Idempotent; `if_exists: return\|fail\|replace`; `properties` + `warnings[]`. |
+| `resource_save`         | Update `.tres`/`.res` properties at `path`. No `status` (absence = update). `warnings[]` for unknown keys. |
+| `resource_delete`       | Delete `.tres`/`.res` (+ `.uid`). No active-use guard (refs persist via RefCounted). |
+| `folder_create`         | Create `res://` directory (recursive). Idempotent: `status: "created"`/`"returned"`. |
+| `folder_delete`         | Delete directory. `recursive:false` default. Refuses root/addons/plugin/open-file parents. |
 | `node_get_property`     | Read a property. Engine types (Vector2, Color, …) come back dict-wrapped.        |
 | `node_set_property`     | Write a property. Pass engine types as `{ type: "Vector2", x: 0, y: 0 }`.        |
 | `script_read`           | Read a GDScript / text file (`res://` only).                                     |
-| `script_write`          | Write a GDScript / text file (`res://` only). Overwrites.                        |
+| `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` at `path` (`res://` only). Overwrites. |
 | `editor_get_errors`     | Return recent compile / runtime errors (MVP stub; iter 10 replaces).             |
 | `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as.                        |
 | `editor_screenshot`     | Capture the editor viewport; returns inline image content (+ optional `save_path`). |
@@ -55,21 +60,27 @@ Pass `--lite` in `.mcp.json` args for a 16-tool token-sensitive subset.
 - **The Godot editor with this plugin enabled must be running** — the bridge
   has no way to launch Godot for you. If `/mcp` shows the server as
   disconnected, check Project Settings → Plugins → "Godot MCP Toolkit".
-- **Idempotency (`status` discriminator, iter 15):** every `create_*` success
-  payload carries a `status` field:
+- **Idempotency (`status` discriminator, iter 15 + iter 15b):** every
+  `create_*` success payload carries a `status` field:
   - `"created"` — fresh create.
   - `"returned"` — the thing already existed (idempotent no-op; default path
-	for `scene_create_node`, `signal_connect`, and `scene_create` with
-	`if_exists: "return"`).
-  - `"replaced"` — only from `scene_create` with `if_exists: "replace"`
-	(file-level); the response also carries `previous_root_type`.
+	for `scene_create_node`, `signal_connect`, `folder_create`, and file-level
+	`scene_create` / `resource_create` with `if_exists: "return"`).
+  - `"replaced"` — only from file-level `scene_create` / `resource_create`
+	with `if_exists: "replace"`; the response also carries
+	`previous_root_type` / `previous_class` respectively.
 
-  Error payloads still carry `code` (`ALREADY_EXISTS` via `scene_create`'s
-  opt-in `if_exists: "fail"`; `INVALID_CLASS`, `INVALID_PATH`,
-  `PARENT_NOT_FOUND`, etc.). Success payloads do NOT carry `code` — the
-  `status` discriminator replaces the legacy `code`-in-success pattern.
-  See the server repo's `CLAUDE.md` **Error code reference** for the canonical
-  list (keep in sync per watch-item #3).
+  `resource_save` is the odd one out: it's an update (not a create), so it
+  carries NO `status` field. The absence is itself the discriminator.
+
+  Error payloads still carry `code` (`ALREADY_EXISTS` via `scene_create` /
+  `resource_create`'s opt-in `if_exists: "fail"`; `INVALID_CLASS`,
+  `INVALID_PATH`, `PARENT_NOT_FOUND`, `NOT_A_RESOURCE`, `DIR_NOT_EMPTY`,
+  `FOLDER_PROTECTED`, `PATH_IN_USE`, `CREATE_DIR_FAILED`, etc.). Success
+  payloads do NOT carry `code` — the `status` discriminator replaces the
+  legacy `code`-in-success pattern. See the server repo's `CLAUDE.md`
+  **Error code reference** for the canonical list (keep in sync per
+  watch-item #3).
 
 ## Dogfood setup (this repo)
 

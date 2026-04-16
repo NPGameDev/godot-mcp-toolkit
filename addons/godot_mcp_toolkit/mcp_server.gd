@@ -207,6 +207,16 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_signal_emit(peer, id, params)
 		"resource.load":
 			_cmd_resource_load(peer, id, params)
+		"resource.create":
+			_cmd_resource_create(peer, id, params)
+		"resource.save":
+			_cmd_resource_save(peer, id, params)
+		"resource.delete":
+			_cmd_resource_delete(peer, id, params)
+		"folder.create":
+			_cmd_folder_create(peer, id, params)
+		"folder.delete":
+			_cmd_folder_delete(peer, id, params)
 		"node.get_property_list":
 			_cmd_node_get_property_list(peer, id, params)
 		"scene.diff":
@@ -263,10 +273,15 @@ func _get_edited_root() -> Node:
 const MCP_ERROR_CODES := [
 	"ALREADY_EXISTS",
 	"CONNECT_FAILED",
+	"CREATE_DIR_FAILED",
+	"DELETE_FAILED",
+	"DIR_NOT_EMPTY",
 	"DISCONNECTED",
+	"EDITED_SCENE",
 	"EXECUTE_FAILED",
 	"FEATURE_DISABLED",
 	"FILE_TOO_LARGE",
+	"FOLDER_PROTECTED",
 	"GAME_NOT_RUNNING",
 	"INTERNAL",
 	"INVALID_CLASS",
@@ -274,9 +289,13 @@ const MCP_ERROR_CODES := [
 	"INVALID_PATH",
 	"LOAD_FAILED",
 	"NO_SCENE",
+	"NOT_A_RESOURCE",
 	"NOT_FOUND",
+	"PACK_FAILED",
+	"PARENT_NOT_FOUND",
 	"PARSE_ERROR",
 	"PATH_DENIED",
+	"PATH_IN_USE",
 	"READ_FAILED",
 	"SAVE_FAILED",
 	"TIMEOUT",
@@ -526,6 +545,14 @@ func _cmd_script_write(peer: WebSocketPeer, id, params) -> void:
 	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
 	if not path.begins_with("res://"):
 		_send_result(peer, id, mcp_error("PATH_DENIED", "path must start with res://: %s" % path))
+		return
+	# Iter 15b: extension allowlist — symmetric with script.delete. Prevents
+	# using script.write as a catch-all file writer (e.g. stuffing a .tscn
+	# under a misleading name). Shaders are text files so they route through
+	# the same handler; a separate shader.* tool would be surface for no gain.
+	var write_ext := path.get_extension().to_lower()
+	if not (write_ext in ["gd", "cs", "gdshader", "gdshaderinc"]):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "script.write only writes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.create for .tscn, resource.create for .tres/.res, or a different tool for other file types" % path))
 		return
 	if not params.has("content"):
 		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing content"))
@@ -1135,7 +1162,7 @@ func _cmd_scene_create(peer: WebSocketPeer, id, params) -> void:
 	if resolved_kind.is_empty():
 		_send_result(peer, id, mcp_error("INVALID_CLASS", "unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % root_type))
 		return
-	if not _class_descends_from_node(root_type):
+	if not _class_descends_from(root_type, "Node"):
 		_send_result(peer, id, mcp_error("INVALID_CLASS", "%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [root_type, _class_base_chain(root_type)]))
 		return
 	if not (if_exists in ["return", "fail", "replace"]):
@@ -1207,16 +1234,19 @@ func _cmd_scene_create(peer: WebSocketPeer, id, params) -> void:
 	_send_result(peer, id, response)
 
 
-# Helper: does `type_name` descend from Node? Walks ClassDB's native
+# Helper: does `type_name` descend from `base`? Walks ClassDB's native
 # hierarchy first, then ProjectSettings.get_global_class_list() for
 # custom GDScript `class_name` / C# `[GlobalClass]` chains. Bounded by
 # hierarchy depth (<10 realistically); parser rejects cyclic inheritance.
-func _class_descends_from_node(type_name: String) -> bool:
+# Iter 15b factor: `scene.create` passes `"Node"`, `resource.create` passes
+# `"Resource"`. Iter 16 (SOLID split) will hoist this into a dedicated
+# type-resolution module.
+func _class_descends_from(type_name: String, base: String) -> bool:
 	if ClassDB.class_exists(type_name):
-		return ClassDB.is_parent_class(type_name, "Node")
+		return ClassDB.is_parent_class(type_name, base)
 	for entry in ProjectSettings.get_global_class_list():
 		if str(entry.get("class", "")) == type_name:
-			return _class_descends_from_node(str(entry.get("base", "")))
+			return _class_descends_from(str(entry.get("base", "")), base)
 	return false
 
 
@@ -1293,8 +1323,8 @@ func _cmd_script_delete(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
 		return
 	var ext := path.get_extension().to_lower()
-	if not (ext in ["gd", "cs"]):
-		_send_result(peer, id, mcp_error("INVALID_PATH", "script.delete only removes .gd or .cs files (got %s); use scene.delete for .tscn or a different tool for other file types" % path))
+	if not (ext in ["gd", "cs", "gdshader", "gdshaderinc"]):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "script.delete only removes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.delete for .tscn, resource.delete for .tres/.res, or a different tool for other file types" % path))
 		return
 	if not FileAccess.file_exists(path):
 		_send_result(peer, id, mcp_error("NOT_FOUND", "no file at %s" % path))
@@ -1314,3 +1344,377 @@ func _cmd_script_delete(peer: WebSocketPeer, id, params) -> void:
 	if dir.file_exists(uid_rel):
 		dir.remove(uid_rel)
 	_send_result(peer, id, {"success": true, "path": path})
+
+
+# ---- Iter 15b: resource / folder operations -----------------------------
+#
+# resource.create / resource.save / resource.delete close the .tres/.res
+# authoring gap (data-driven game content: EnemyData, DialogueNode, themes,
+# materials). folder.create / folder.delete pair with iter 15's
+# PARENT_NOT_FOUND error so agents have a recovery path. Same conventions as
+# iter 15: `status` discriminator on creates, `if_exists` on file-level
+# creates, message templates load-bearing for LLM recovery. All paths
+# res://-only (user:// is iter 19b).
+
+
+# Build a set of property-names from an Object's get_property_list(). Used
+# by resource.create / resource.save to flag unknown keys. Godot's set()
+# silently no-ops on unknown keys, so without this the agent gets false
+# success on typoed property names.
+func _property_names_of(obj: Object) -> Dictionary:
+	var names := {}
+	for prop in obj.get_property_list():
+		var n := str(prop.get("name", ""))
+		if not n.is_empty():
+			names[n] = true
+	return names
+
+
+# Shared apply-properties helper for resource.create / resource.save. Coerces
+# dict-wrapped engine types via _coerce_value, flags unknown keys into
+# warnings, returns the warnings array. Resource is mutated in place.
+func _apply_resource_properties(resource: Resource, properties: Dictionary, resource_class: String) -> Array[String]:
+	var warnings: Array[String] = []
+	var valid := _property_names_of(resource)
+	for key in properties.keys():
+		var key_str := str(key)
+		if not valid.has(key_str):
+			warnings.append("property '%s' unknown on %s; value ignored" % [key_str, resource_class])
+			continue
+		resource.set(key_str, _coerce_value(properties[key]))
+	return warnings
+
+
+func _cmd_resource_create(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	var resource_class := str(params.get("resource_class", ""))
+	var properties: Dictionary = params.get("properties", {}) if typeof(params.get("properties", {})) == TYPE_DICTIONARY else {}
+	var if_exists := str(params.get("if_exists", "return"))
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	var ext := path.get_extension().to_lower()
+	if not (ext in ["tres", "res"]):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "resource.create only writes .tres (text) or .res (binary) files (got %s; use scene.create for .tscn, script.write for .gd/.cs)" % path))
+		return
+	var parent_dir := path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(parent_dir):
+		_send_result(peer, id, mcp_error("PARENT_NOT_FOUND", "parent directory %s does not exist; call folder.create first (resource.create does not auto-create directories)" % parent_dir))
+		return
+	if resource_class.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing resource_class"))
+		return
+	# Class resolution — native (ClassDB) then global (GDScript class_name /
+	# C# [GlobalClass]). Cache for the creation branch below.
+	var resolved_kind := ""
+	var global_entry: Dictionary = {}
+	if ClassDB.class_exists(resource_class):
+		resolved_kind = "native"
+	else:
+		for entry in ProjectSettings.get_global_class_list():
+			if str(entry.get("class", "")) == resource_class:
+				resolved_kind = "global"
+				global_entry = entry
+				break
+	if resolved_kind.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % resource_class))
+		return
+	if not _class_descends_from(resource_class, "Resource"):
+		_send_result(peer, id, mcp_error("NOT_A_RESOURCE", "%s is not a Resource subclass (resolved base chain: %s); resource.create requires a Resource subclass — use scene.create for Node subclasses, script.write for source files" % [resource_class, _class_base_chain(resource_class)]))
+		return
+	if not (if_exists in ["return", "fail", "replace"]):
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "if_exists must be one of 'return'|'fail'|'replace' (got %s); default is 'return'" % if_exists))
+		return
+
+	# Collision branch.
+	var was_replace := false
+	var prev_class := ""
+	if FileAccess.file_exists(path):
+		match if_exists:
+			"return":
+				_send_result(peer, id, {"success": true, "status": "returned", "path": path})
+				return
+			"fail":
+				_send_result(peer, id, mcp_error("ALREADY_EXISTS", "file exists at %s; set if_exists:'replace' to overwrite" % path))
+				return
+			"replace":
+				was_replace = true
+				var prev := ResourceLoader.load(path)
+				prev_class = "<unreadable>" if prev == null else prev.get_class()
+				push_warning("MCP: resource.create replacing %s (was class=%s, now class=%s)" % [path, prev_class, resource_class])
+				# Fall through to creation logic.
+
+	# Creation logic (fresh path OR if_exists == "replace").
+	var resource: Resource = null
+	if resolved_kind == "native":
+		resource = ClassDB.instantiate(resource_class)
+	else:
+		var script_path := str(global_entry.get("path", ""))
+		var script = load(script_path)
+		if script == null:
+			_send_result(peer, id, mcp_error("INVALID_CLASS", "could not load script for %s at %s" % [resource_class, script_path]))
+			return
+		# script.new() runs _init() — documented in README as a side-effect
+		# callers should be aware of for custom Resource subclasses.
+		resource = script.new()
+	if resource == null:
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "instantiation returned null for %s" % resource_class))
+		return
+
+	var warnings := _apply_resource_properties(resource, properties, resource_class)
+
+	var save_err := ResourceSaver.save(resource, path)
+	# Resource is RefCounted — freed automatically when the local goes out of
+	# scope (no queue_free like scene.create's Node template).
+	if save_err != OK:
+		_send_result(peer, id, mcp_error("SAVE_FAILED", "ResourceSaver.save returned %d (path=%s)" % [save_err, path]))
+		return
+
+	var response := {
+		"success": true,
+		"path": path,
+		"resource_class": resource_class,
+		"warnings": warnings,
+	}
+	if was_replace:
+		response["status"] = "replaced"
+		response["previous_class"] = prev_class
+	else:
+		response["status"] = "created"
+	_send_result(peer, id, response)
+
+
+func _cmd_resource_save(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	var raw_props = params.get("properties", null)
+	if typeof(raw_props) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing properties (must be an object)"))
+		return
+	var properties: Dictionary = raw_props
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	var ext := path.get_extension().to_lower()
+	if not (ext in ["tres", "res"]):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "resource.save only updates .tres (text) or .res (binary) files (got %s; use scene.create for .tscn, script.write for .gd/.cs)" % path))
+		return
+	if not FileAccess.file_exists(path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no resource at %s; use resource.create to create" % path))
+		return
+	var resource := ResourceLoader.load(path)
+	if resource == null:
+		_send_result(peer, id, mcp_error("NOT_A_RESOURCE", "file at %s is not a readable Resource (corrupt or wrong extension)" % path))
+		return
+	var resource_class := resource.get_class()
+	var warnings := _apply_resource_properties(resource, properties, resource_class)
+	var save_err := ResourceSaver.save(resource, path)
+	if save_err != OK:
+		_send_result(peer, id, mcp_error("SAVE_FAILED", "ResourceSaver.save returned %d (path=%s)" % [save_err, path]))
+		return
+	# No `status` — resource.save is an update, not a create. The absence of
+	# `status` is itself the discriminator vs resource.create.
+	_send_result(peer, id, {
+		"success": true,
+		"path": path,
+		"resource_class": resource_class,
+		"warnings": warnings,
+	})
+
+
+func _cmd_resource_delete(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	var ext := path.get_extension().to_lower()
+	if not (ext in ["tres", "res"]):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "resource.delete only removes .tres or .res files (got %s); use scene.delete for .tscn, script.delete for .gd/.cs/.gdshader/.gdshaderinc, or a different tool for other file types" % path))
+		return
+	if not FileAccess.file_exists(path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no file at %s" % path))
+		return
+	# No active-use check (deliberate): live-loaded Resources stay resident
+	# in memory when the file is deleted on disk (RefCounted refs persist);
+	# deleted file won't re-load but existing references don't crash. Agent
+	# detects orphan refs via editor_get_errors. Matches Godot's own
+	# FileSystem-dock permissive delete behaviour and script.delete's posture.
+	var dir := DirAccess.open("res://")
+	if dir == null:
+		_send_result(peer, id, mcp_error("INTERNAL", "DirAccess.open(res://) returned null"))
+		return
+	var rel := path.substr("res://".length())
+	var rm_err := dir.remove(rel)
+	if rm_err != OK:
+		_send_result(peer, id, mcp_error("DELETE_FAILED", "DirAccess.remove returned %d (path=%s)" % [rm_err, path]))
+		return
+	# Best-effort .uid companion removal (Godot 4.4+ generates these for
+	# resources too, not just scenes). Silent on miss.
+	var uid_rel := rel + ".uid"
+	if dir.file_exists(uid_rel):
+		dir.remove(uid_rel)
+	_send_result(peer, id, {"success": true, "path": path})
+
+
+func _cmd_folder_create(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	# No extension guard (directories have no extension; get_extension() of a
+	# trailing path segment with no '.' returns empty — the signal itself).
+	# No parent-dir guard (recursive create is the point — all intermediates
+	# are auto-created by make_dir_recursive_absolute).
+	var pre_existed := DirAccess.dir_exists_absolute(path)
+	var err := DirAccess.make_dir_recursive_absolute(path)
+	if err != OK:
+		_send_result(peer, id, mcp_error("CREATE_DIR_FAILED", "DirAccess.make_dir_recursive_absolute returned %d (path=%s)" % [err, path]))
+		return
+	var status := "returned" if pre_existed else "created"
+	_send_result(peer, id, {"success": true, "status": status, "path": path})
+
+
+# Recursive file+subdir walker for folder.delete's recursive:true branch.
+# Returns {files: int, dirs: int, ok: bool, error: String} so the caller can
+# translate the first failure into a DELETE_FAILED without silently
+# half-deleting. Best-effort .uid companion removal rides along per file.
+func _folder_delete_recursive(path: String) -> Dictionary:
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return {"files": 0, "dirs": 0, "ok": false, "error": "DirAccess.open(%s) returned null" % path}
+	var files_removed := 0
+	var dirs_removed := 0
+	# Iterate files first, then subdirs. DirAccess.get_files/get_directories
+	# return snapshots — safe to mutate the directory during iteration.
+	for file_name in dir.get_files():
+		# Skip .uid here — removed inline with their companion below.
+		if file_name.ends_with(".uid"):
+			continue
+		var rm_err := dir.remove(file_name)
+		if rm_err != OK:
+			return {"files": files_removed, "dirs": dirs_removed, "ok": false, "error": "DirAccess.remove %s/%s returned %d" % [path, file_name, rm_err]}
+		files_removed += 1
+		var uid_companion := file_name + ".uid"
+		if dir.file_exists(uid_companion):
+			dir.remove(uid_companion)
+	# Second pass: any stragglers (orphan .uid whose companion was deleted
+	# earlier or never existed). Silent on miss.
+	for file_name in dir.get_files():
+		if file_name.ends_with(".uid"):
+			dir.remove(file_name)
+	for sub_name in dir.get_directories():
+		var sub_path := path + "/" + sub_name
+		var sub_result := _folder_delete_recursive(sub_path)
+		files_removed += int(sub_result.get("files", 0))
+		dirs_removed += int(sub_result.get("dirs", 0))
+		if not bool(sub_result.get("ok", false)):
+			return {"files": files_removed, "dirs": dirs_removed, "ok": false, "error": str(sub_result.get("error", "unknown"))}
+		# Remove the now-empty subdir via the parent handle.
+		var rm_sub_err := dir.remove(sub_name)
+		if rm_sub_err != OK:
+			return {"files": files_removed, "dirs": dirs_removed, "ok": false, "error": "DirAccess.remove (subdir) %s returned %d" % [sub_path, rm_sub_err]}
+		dirs_removed += 1
+	return {"files": files_removed, "dirs": dirs_removed, "ok": true, "error": ""}
+
+
+func _cmd_folder_delete(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	var recursive := bool(params.get("recursive", false))
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	# Root protection. "res://" and "res:///" both resolve to the project
+	# root; refuse either form. get_base_dir() of "res://" returns "" — we
+	# also refuse any path that would traverse above res://.
+	if path == "res://" or path == "res:///" or path.get_base_dir() == "":
+		_send_result(peer, id, mcp_error("FOLDER_PROTECTED", "cannot delete the project root res://; narrow the path"))
+		return
+	# Normalise trailing slash for equality checks below — "res://addons/"
+	# and "res://addons" must both be refused.
+	var norm := path
+	if norm.ends_with("/"):
+		norm = norm.substr(0, norm.length() - 1)
+	if norm == "res://addons" or norm == "res://addons/godot_mcp_toolkit":
+		_send_result(peer, id, mcp_error("FOLDER_PROTECTED", "cannot delete res://addons or the toolkit plugin directory (%s); agent cannot remove its own host" % norm))
+		return
+	if not DirAccess.dir_exists_absolute(path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no folder at %s" % path))
+		return
+	var norm_with_slash := norm + "/"
+	# PATH_IN_USE — currently-edited scene under path.
+	var edited := _get_edited_root()
+	if edited != null:
+		var scene_path := str(edited.scene_file_path)
+		if not scene_path.is_empty() and (scene_path == norm or scene_path.begins_with(norm_with_slash)):
+			_send_result(peer, id, mcp_error("PATH_IN_USE", "folder %s contains the currently-edited scene %s; open a different scene first via scene.open" % [path, scene_path]))
+			return
+	# PATH_IN_USE — open script editor tabs under path.
+	var script_editor := EditorInterface.get_script_editor()
+	if script_editor != null:
+		for open_script in script_editor.get_open_scripts():
+			if not (open_script is Resource):
+				continue
+			var rpath := str((open_script as Resource).resource_path)
+			if rpath.is_empty():
+				continue
+			if rpath == norm or rpath.begins_with(norm_with_slash):
+				_send_result(peer, id, mcp_error("PATH_IN_USE", "folder %s contains open script %s; close the script editor tab first" % [path, rpath]))
+				return
+	# DIR_NOT_EMPTY — count files + subdirs before we commit.
+	var dir := DirAccess.open(path)
+	if dir == null:
+		_send_result(peer, id, mcp_error("INTERNAL", "DirAccess.open(%s) returned null" % path))
+		return
+	var file_count := dir.get_files().size()
+	var subdir_count := dir.get_directories().size()
+	if (file_count + subdir_count) > 0 and not recursive:
+		_send_result(peer, id, mcp_error("DIR_NOT_EMPTY", "folder %s is not empty (contains %d files, %d subdirs); pass recursive:true to delete contents" % [path, file_count, subdir_count]))
+		return
+	# Execute delete.
+	var files_deleted := 0
+	var dirs_deleted := 0
+	if recursive and (file_count + subdir_count) > 0:
+		var result := _folder_delete_recursive(path)
+		files_deleted = int(result.get("files", 0))
+		dirs_deleted = int(result.get("dirs", 0))
+		if not bool(result.get("ok", false)):
+			_send_result(peer, id, mcp_error("DELETE_FAILED", str(result.get("error", "unknown"))))
+			return
+	# Remove the (now-empty) top-level folder via its parent.
+	var parent_path := path.get_base_dir()
+	var parent_dir := DirAccess.open(parent_path)
+	if parent_dir == null:
+		_send_result(peer, id, mcp_error("INTERNAL", "DirAccess.open(%s) returned null" % parent_path))
+		return
+	var top_rm := parent_dir.remove(path.get_file())
+	if top_rm != OK:
+		_send_result(peer, id, mcp_error("DELETE_FAILED", "DirAccess.remove returned %d (path=%s)" % [top_rm, path]))
+		return
+	if recursive and (file_count + subdir_count) > 0:
+		push_warning("MCP: folder.delete recursive %s (%d files, %d subdirs)" % [path, files_deleted, dirs_deleted])
+	_send_result(peer, id, {
+		"success": true,
+		"path": path,
+		"recursive": recursive,
+		"files_deleted": files_deleted,
+		"directories_deleted": dirs_deleted,
+	})
