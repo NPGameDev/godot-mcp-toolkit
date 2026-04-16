@@ -34,8 +34,8 @@ Requires Node.js ≥ 20. Source + README:
    `.mcp.json`.
 2. `cd` to that project root.
 3. Run `claude`. `/mcp` should list `godot-mcp-toolkit` with the full tool
-   catalogue (33 tools default; pass `--lite` in `.mcp.json` args for an
-   18-tool core subset in token-sensitive sessions).
+   catalogue (37 tools default; pass `--lite` in `.mcp.json` args for a
+   20-tool core subset in token-sensitive sessions).
 
 (Iter 21 will add a one-click menu item in the editor's MCP dock that writes
 `.mcp.json` for you.)
@@ -99,7 +99,7 @@ Error payloads still carry `code` (e.g. `ALREADY_EXISTS` via
   guard (previously prefix-only); `.txt` / other non-script extensions now
   reject with `INVALID_PATH`.
 
-### Supported property-value types for `resource_create` / `resource_save`
+### Supported property-value types for `resource_create` / `resource_save` / `node_set_property` / `node_call_method` args
 
 JSON-native primitives pass through: `bool`, `int`, `float`, `String`, `null`,
 `Array`, `Dictionary`. Dict-wrapped engine types coerce via the plugin's
@@ -107,12 +107,58 @@ JSON-native primitives pass through: `bool`, `int`, `float`, `String`, `null`,
 
 - `{ "type": "Vector2", "x": 0, "y": 0 }` → `Vector2`
 - `{ "type": "Vector3", "x": 0, "y": 0, "z": 0 }` → `Vector3`
+- `{ "type": "Vector4", "x": 0, "y": 0, "z": 0, "w": 0 }` → `Vector4`
 - `{ "type": "Color", "r": 0, "g": 0, "b": 0, "a": 1 }` → `Color`
+- `{ "type": "Rect2", "x": 0, "y": 0, "w": 0, "h": 0 }` → `Rect2`
+- `{ "type": "NodePath", "path": "CanvasLayer/HUD" }` → `NodePath`
+- `{ "type": "Resource", "path": "res://art/player.png" }` → loaded via
+  `ResourceLoader.load` (any `Resource` subclass: `Texture2D`, `PackedScene`,
+  `Material`, custom `class_name X extends Resource`, etc.). Missing paths
+  surface as hard `LOAD_FAILED` on `node_set_property` / `node_call_method`
+  (a null texture renders as a pink checkerboard at runtime — caller deserves
+  an error); as a `warnings[]` entry on `resource_create` / `resource_save`
+  (authoring a `.tres` with a placeholder path is a valid probing workflow).
 
-`NodePath` values pass as `String` — Godot's `set()` coerces. Sub-resource
-references (`preload("res://...")`) and `Callable` values are NOT supported
-here; edit the `.tres` directly via `script_write` on the file if those are
-needed.
+Arrays recurse element-wise, so `node_call_method` args can mix primitives
+and typed dicts: `[{type:"Vector2",x:32,y:32}, 0.5, "hello"]`.
+
+Not yet coerced (iter 15d extends): `Transform2D`, `Transform3D`, `Basis`,
+`Quaternion`, `Plane`, `AABB`, `Projection`, the `Packed*Array` family,
+`Callable`, `Signal`. Edit the `.tres` directly via `script_write` on the
+file if you need these before 15d lands.
+
+## Iter 15c additions — playtest + composition + method invocation
+
+- `game_start` — drive the editor's play button via
+  `EditorInterface.play_*_scene()`. `target` accepts `"main"` (uses
+  ProjectSettings `application/run/main_scene`), `"current"` (default —
+  currently-edited scene), or any `res://path.tscn`. `wait_for_runtime: true`
+  (default) polls `127.0.0.1:9090` for up to 5s so the agent can chain
+  Mode-B runtime RPCs without a separate probe. `ALREADY_PLAYING` if a
+  game is already running (stop-then-start is explicit so the agent sees
+  the transition).
+- `game_stop` — `EditorInterface.stop_playing_scene()`. Idempotent in the
+  stop direction: `was_running: false` when nothing was live (no error —
+  the update-shape "make it so" rationale parallels `resource_save`).
+- `scene_instantiate` — drop a `PackedScene` under a parent in the edited
+  scene. UndoRedo-wrapped (crash guard per the `delete_node` pattern).
+  Recursive owner-set (every descendant, not just root) — without it
+  `editor_save_scene` silently drops the instantiated subtree. Silent
+  return on name collision (`status: "returned"`); fresh creates emit
+  `status: "created"`. Optional `as_name` renames the instance; optional
+  `transform` dict applies `position` / `rotation` / `scale` / `size`
+  (silent no-op on unknown keys — subtype-agnostic across
+  `Node2D` / `Node3D` / `Control`).
+- `node_call_method` — invoke a node's method with arguments.
+  `has_method`-gated (`INVALID_METHOD` on miss) so callers can't reach
+  arbitrary symbols. Arguments pass through `_coerce_value` so Resource
+  refs + typed dicts work in `args`. Return value serialises via the
+  same path as `node_get_property` (primitives / Arrays / Dicts
+  round-trip; `Node` refs stringify to their path; `Resource` refs emit
+  `{type:"Resource",path,class}`). Mode A only in 15c — runtime-live
+  node invocation is deferred. Iter 19 adds FeatureGate support
+  (`node_call_method` is off-by-default in `--lite`); ships ungated in
+  15c — same staging as `game_eval`.
 
 ### Side-effect note — custom Resource classes
 

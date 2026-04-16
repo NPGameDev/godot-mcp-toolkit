@@ -17,13 +17,14 @@ Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
 Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
-## Core tool catalogue (18 MVP-core tools — iter 08 + iter 15 + iter 15b)
+## Core tool catalogue (20 MVP-core tools — iter 08 + iter 15 + iter 15b + iter 15c)
 
 Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 `scene_open`, `project_get_settings`, `signal_*`, `resource_load`,
 `scene_diff`, `node_get_property_list`, and the Mode B `runtime_*` family)
-bring the full catalogue to 33 tools (34 with `GODOT_MCP_ALLOW_GAME_EVAL=1`).
-Pass `--lite` in `.mcp.json` args for an 18-tool token-sensitive subset.
+plus iter 15c's playtest/composition additions bring the full catalogue to
+37 tools (38 with `GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite` in
+`.mcp.json` args for a 20-tool token-sensitive subset.
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
@@ -45,6 +46,10 @@ Pass `--lite` in `.mcp.json` args for an 18-tool token-sensitive subset.
 | `editor_get_errors`     | Return recent compile / runtime errors (MVP stub; iter 10 replaces).             |
 | `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as.                        |
 | `editor_screenshot`     | Capture the editor viewport; returns inline image content (+ optional `save_path`). |
+| `game_start`            | Drive editor play button. `target: "main"\|"current"\|res://*.tscn`. `ALREADY_PLAYING` if one is live. Lite. |
+| `game_stop`             | `EditorInterface.stop_playing_scene()`. Idempotent; response carries `was_running: bool`. Full only.          |
+| `scene_instantiate`     | Drop `PackedScene` under a parent. UndoRedo-wrapped + recursive owner-set. Idempotent (`status: "returned"` on name collision). Lite. |
+| `node_call_method`      | Invoke `node.method(args...)` with `_coerce_value`-coerced args. `has_method`-gated. Mode A only in 15c. Full only. |
 
 ## Conventions when driving these tools
 

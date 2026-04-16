@@ -221,6 +221,14 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_node_get_property_list(peer, id, params)
 		"scene.diff":
 			_cmd_scene_diff(peer, id, params)
+		"game.start":
+			_cmd_game_start(peer, id, params)
+		"game.stop":
+			_cmd_game_stop(peer, id, params)
+		"scene.instantiate":
+			_cmd_scene_instantiate(peer, id, params)
+		"node.call_method":
+			_cmd_node_call_method(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -272,6 +280,7 @@ func _get_edited_root() -> Node:
 # PATH_DENIED (prefix / sandbox refusal — full form in iter 18).
 const MCP_ERROR_CODES := [
 	"ALREADY_EXISTS",
+	"ALREADY_PLAYING",
 	"CONNECT_FAILED",
 	"CREATE_DIR_FAILED",
 	"DELETE_FAILED",
@@ -285,6 +294,7 @@ const MCP_ERROR_CODES := [
 	"GAME_NOT_RUNNING",
 	"INTERNAL",
 	"INVALID_CLASS",
+	"INVALID_METHOD",
 	"INVALID_PARAMS",
 	"INVALID_PATH",
 	"LOAD_FAILED",
@@ -457,6 +467,14 @@ func _cmd_node_set_property(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
 		return
 
+	# iter 15c: `{type:"Resource",path}` refs are load-bearing for node-level
+	# properties (a null texture renders as a pink checkerboard at runtime);
+	# surface a hard LOAD_FAILED instead of silently setting null.
+	var missing := _check_resource_paths(raw_value)
+	if missing != "":
+		_send_result(peer, id, mcp_error("LOAD_FAILED", "failed to load resource at %s; verify the path or use resource.create to create it first" % missing))
+		return
+
 	var coerced = _coerce_value(raw_value)
 	node.set(property, coerced)
 	_send_result(peer, id, {"ok": true})
@@ -489,26 +507,107 @@ func _cmd_node_get_property(peer: WebSocketPeer, id, params) -> void:
 
 func _coerce_value(v):
 	# Dict-wrapped engine types: {type:"Vector2",x:..,y:..} -> Vector2(..).
-	# Plain JSON primitives pass through unchanged.
+	# Iter 15c: extended to Vector4/Rect2/NodePath and `{type:"Resource",path}`
+	# (loaded via ResourceLoader — null on miss; callers gate with
+	# `_check_resource_paths` before applying). Arrays recurse so method args
+	# like `[{type:"Resource",...}, 42]` coerce element-by-element. Plain JSON
+	# primitives / non-tagged dicts pass through unchanged.
+	if typeof(v) == TYPE_ARRAY:
+		var out: Array = []
+		for el in v:
+			out.append(_coerce_value(el))
+		return out
 	if typeof(v) != TYPE_DICTIONARY:
 		return v
 	match str(v.get("type", "")):
+		"Resource":
+			# TODO(iter-18): route path through FileGuard.resolve_safe.
+			var p := str(v.get("path", ""))
+			if p.is_empty():
+				return null
+			return ResourceLoader.load(p)
 		"Vector2":
 			return Vector2(float(v.get("x", 0.0)), float(v.get("y", 0.0)))
 		"Vector3":
 			return Vector3(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)))
+		"Vector4":
+			return Vector4(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)), float(v.get("w", 0.0)))
 		"Color":
 			return Color(float(v.get("r", 0.0)), float(v.get("g", 0.0)), float(v.get("b", 0.0)), float(v.get("a", 1.0)))
+		"Rect2":
+			return Rect2(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("w", 0.0)), float(v.get("h", 0.0)))
+		"NodePath":
+			return NodePath(str(v.get("path", "")))
 		_:
 			return v
 
 
+# Pre-coercion gate: recursively scan for `{type:"Resource",path:...}` entries
+# and return the first path whose `ResourceLoader.load` returns null (file
+# missing, corrupt, or non-res://). Empty string means "all Resource refs
+# resolve". Callers translate a non-empty return into LOAD_FAILED (node.*)
+# or a warnings[] entry (resource.*).
+# TODO(iter-18): route each path through FileGuard.resolve_safe.
+func _check_resource_paths(v) -> String:
+	if typeof(v) == TYPE_DICTIONARY:
+		if str(v.get("type", "")) == "Resource":
+			var p := str(v.get("path", ""))
+			if p.is_empty() or ResourceLoader.load(p) == null:
+				return p if not p.is_empty() else "<empty path>"
+		return ""
+	if typeof(v) == TYPE_ARRAY:
+		for el in v:
+			var miss := _check_resource_paths(el)
+			if miss != "":
+				return miss
+	return ""
+
+
 func _serialize_value(v):
-	# JSON-native scalars pass through. Engine types (Vector2, Color, NodePath, ...)
-	# get the lossless var_to_str string form so the TS side can round-trip via str_to_var.
+	# JSON-native scalars pass through. Godot typed values emit structured
+	# dicts symmetric with `_coerce_value`'s type tags so JSON round-trips
+	# cleanly. Node refs stringify to their scene-tree path; Resource refs
+	# emit `{type:"Resource",path,class}`; Object refs that are neither → a
+	# literal `"<unserialisable>"` (iter 15c minimum — Transform2D/Basis/
+	# Quaternion/Packed* fall through to var_to_str for now, iter 15d extends).
 	match typeof(v):
-		TYPE_NIL, TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
+		TYPE_NIL:
+			return null
+		TYPE_BOOL, TYPE_INT, TYPE_FLOAT, TYPE_STRING:
 			return v
+		TYPE_VECTOR2:
+			return {"type": "Vector2", "x": v.x, "y": v.y}
+		TYPE_VECTOR3:
+			return {"type": "Vector3", "x": v.x, "y": v.y, "z": v.z}
+		TYPE_VECTOR4:
+			return {"type": "Vector4", "x": v.x, "y": v.y, "z": v.z, "w": v.w}
+		TYPE_COLOR:
+			return {"type": "Color", "r": v.r, "g": v.g, "b": v.b, "a": v.a}
+		TYPE_RECT2:
+			return {"type": "Rect2", "x": v.position.x, "y": v.position.y, "w": v.size.x, "h": v.size.y}
+		TYPE_NODE_PATH:
+			return {"type": "NodePath", "path": str(v)}
+		TYPE_STRING_NAME:
+			return str(v)
+		TYPE_ARRAY:
+			var arr_out: Array = []
+			for el in v:
+				arr_out.append(_serialize_value(el))
+			return arr_out
+		TYPE_DICTIONARY:
+			var dict_out: Dictionary = {}
+			for k in v.keys():
+				dict_out[str(k)] = _serialize_value(v[k])
+			return dict_out
+		TYPE_OBJECT:
+			if v == null:
+				return null
+			if v is Node:
+				return str((v as Node).get_path())
+			if v is Resource:
+				var r := v as Resource
+				return {"type": "Resource", "path": r.resource_path, "class": r.get_class()}
+			return "<unserialisable>"
 		_:
 			return var_to_str(v)
 
@@ -1381,7 +1480,14 @@ func _apply_resource_properties(resource: Resource, properties: Dictionary, reso
 		if not valid.has(key_str):
 			warnings.append("property '%s' unknown on %s; value ignored" % [key_str, resource_class])
 			continue
-		resource.set(key_str, _coerce_value(properties[key]))
+		var raw_value = properties[key]
+		# iter 15c: Resource refs surface as warnings, not errors — authoring
+		# a .tres with a placeholder path is a valid probing workflow.
+		var missing := _check_resource_paths(raw_value)
+		if missing != "":
+			warnings.append("property '%s': resource not found at %s; value left unchanged" % [key_str, missing])
+			continue
+		resource.set(key_str, _coerce_value(raw_value))
 	return warnings
 
 
@@ -1718,3 +1824,246 @@ func _cmd_folder_delete(peer: WebSocketPeer, id, params) -> void:
 		"files_deleted": files_deleted,
 		"directories_deleted": dirs_deleted,
 	})
+
+
+# ---- iter 15c — playtest + composition + runtime-method invocation --------
+
+# Drive the editor's play button (Mode A). target ∈ {"main","current",res://*}.
+# ALREADY_PLAYING is the stop-then-start discriminator (explicit over silent
+# swap so the agent sees the transition). wait_for_runtime polls Mode B's
+# port 9090 so the agent can chain runtime RPCs without a separate probe.
+func _cmd_game_start(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		params = {}
+	var target := str(params.get("target", "current"))
+	var wait_for_runtime_raw = params.get("wait_for_runtime", true)
+	var wait_for_runtime := bool(wait_for_runtime_raw) if typeof(wait_for_runtime_raw) == TYPE_BOOL else true
+
+	if EditorInterface.is_playing_scene():
+		_send_result(peer, id, mcp_error("ALREADY_PLAYING", "a game is already running; call game.stop first"))
+		return
+
+	match target:
+		"main":
+			EditorInterface.play_main_scene()
+		"current":
+			if EditorInterface.get_edited_scene_root() == null:
+				_send_result(peer, id, mcp_error("NO_SCENE", "no currently-edited scene; use target:'main' or target:<res://path>, or scene.open first"))
+				return
+			EditorInterface.play_current_scene()
+		_:
+			# TODO(iter-18): route `target` through FileGuard.resolve_safe.
+			if not target.begins_with("res://"):
+				_send_result(peer, id, mcp_error("INVALID_PARAMS", "target must be 'main' | 'current' | a res:// scene path (got %s)" % target))
+				return
+			if target.get_extension().to_lower() != "tscn":
+				_send_result(peer, id, mcp_error("INVALID_PATH", "game.start only plays .tscn files (got %s)" % target))
+				return
+			if not FileAccess.file_exists(target):
+				_send_result(peer, id, mcp_error("NOT_FOUND", "no scene file at %s; use scene.create first" % target))
+				return
+			EditorInterface.play_custom_scene(target)
+
+	var runtime_ready := false
+	if wait_for_runtime:
+		runtime_ready = _poll_runtime_ready("127.0.0.1", 9090, 5000)
+
+	_send_result(peer, id, {
+		"success": true,
+		"target": target,
+		"runtime_port": 9090,
+		"runtime_ready": runtime_ready,
+	})
+
+
+# Idempotent in the stop direction: `was_running:false` when nothing was live
+# lets the agent detect "called stop but it was already stopped" without an
+# error payload (same update-shape rationale as resource.save's no-status).
+func _cmd_game_stop(peer: WebSocketPeer, id, _params) -> void:
+	var was_running := EditorInterface.is_playing_scene()
+	EditorInterface.stop_playing_scene()
+	_send_result(peer, id, {
+		"success": true,
+		"was_running": was_running,
+	})
+
+
+# Short-wait TCP probe for Mode B's runtime server. Blocks the editor main
+# thread (up to timeout_ms) — wait_for_runtime=true is the caller's explicit
+# opt-in. Returns false on timeout rather than erroring: some projects don't
+# ship the Mode B autoload, and the agent can still drive the editor side.
+func _poll_runtime_ready(host: String, port: int, timeout_ms: int) -> bool:
+	var deadline := Time.get_ticks_msec() + timeout_ms
+	while Time.get_ticks_msec() < deadline:
+		var stream := StreamPeerTCP.new()
+		if stream.connect_to_host(host, port) == OK:
+			var inner_deadline := Time.get_ticks_msec() + 150
+			while Time.get_ticks_msec() < inner_deadline:
+				stream.poll()
+				var st := stream.get_status()
+				if st == StreamPeerTCP.STATUS_CONNECTED:
+					stream.disconnect_from_host()
+					return true
+				if st == StreamPeerTCP.STATUS_ERROR or st == StreamPeerTCP.STATUS_NONE:
+					break
+				OS.delay_msec(10)
+			stream.disconnect_from_host()
+		OS.delay_msec(100)
+	return false
+
+
+# Drop a PackedScene under an edited-scene parent. UndoRedo-wrapped (crash
+# guard per project_delete_node_crash.md). Recursive owner-set is mandatory:
+# Godot silently drops un-owned children on editor_save_scene. Extends to
+# children added by PackedScene @tool _init hooks, not just the root.
+func _cmd_scene_instantiate(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var root := _get_edited_root()
+	if root == null:
+		_send_result(peer, id, mcp_error("NO_SCENE", "no open scene; use scene.open or scene.create first"))
+		return
+
+	var parent_path := str(params.get("parent_path", ""))
+	var packed_path := str(params.get("packed_path", ""))
+	var as_name := str(params.get("as_name", ""))
+	var transform_raw = params.get("transform", {})
+	var transform: Dictionary = transform_raw if typeof(transform_raw) == TYPE_DICTIONARY else {}
+	# TODO(iter-18): route `parent_path` + `packed_path` through FileGuard.resolve_safe.
+
+	if parent_path.is_empty() or packed_path.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing parent_path or packed_path"))
+		return
+
+	var parent_node := root.get_node_or_null(parent_path)
+	if parent_node == null:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no node at parent_path %s (must be under the currently-edited scene root)" % parent_path))
+		return
+
+	if not packed_path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "packed_path must start with res:// (got %s)" % packed_path))
+		return
+	if packed_path.get_extension().to_lower() != "tscn":
+		_send_result(peer, id, mcp_error("INVALID_PATH", "scene.instantiate only instantiates .tscn files (got %s); use resource.create for .tres, script.write for .gd/.cs" % packed_path))
+		return
+	if not FileAccess.file_exists(packed_path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no scene file at %s; use scene.create first" % packed_path))
+		return
+	var packed := ResourceLoader.load(packed_path)
+	if packed == null:
+		_send_result(peer, id, mcp_error("LOAD_FAILED", "ResourceLoader.load returned null for %s (corrupt file or dependency error — check editor_get_errors)" % packed_path))
+		return
+	if not (packed is PackedScene):
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "file at %s is not a PackedScene (got %s); scene.instantiate only works on .tscn files" % [packed_path, packed.get_class()]))
+		return
+
+	# Node-level idempotency (silent return on name collision — same shape as
+	# scene.create_node / signal.connect / folder.create).
+	var target_name := as_name if as_name != "" else (packed as PackedScene).get_state().get_node_name(0)
+	if parent_node.has_node(NodePath(target_name)):
+		var existing := parent_node.get_node(NodePath(target_name))
+		_send_result(peer, id, {
+			"success": true,
+			"status": "returned",
+			"path": _path_in_scene(root, existing),
+			"class_name": existing.get_class(),
+		})
+		return
+
+	var instance: Node = (packed as PackedScene).instantiate()
+	if instance == null:
+		_send_result(peer, id, mcp_error("LOAD_FAILED", "PackedScene.instantiate returned null for %s" % packed_path))
+		return
+
+	if as_name != "":
+		instance.name = as_name
+
+	# Apply transform dict (e.g. {position:{type:"Vector2",x,y}}). `.set` is a
+	# silent no-op on unknown properties — keeps the call subtype-agnostic
+	# across Node2D/Node3D/Control without per-class has_method dispatch.
+	if not transform.is_empty():
+		for key in transform.keys():
+			instance.set(str(key), _coerce_value(transform[key]))
+
+	# UndoRedo per project_delete_node_crash.md — add_do_reference keeps the
+	# instance alive in the undo history if the add is rolled back.
+	var undo_redo := EditorInterface.get_editor_undo_redo()
+	undo_redo.create_action("MCP: instantiate %s under %s" % [packed_path, parent_path])
+	undo_redo.add_do_method(parent_node, "add_child", instance)
+	undo_redo.add_do_method(self, "_set_owner_recursive", instance, root)
+	undo_redo.add_do_reference(instance)
+	undo_redo.add_undo_method(parent_node, "remove_child", instance)
+	undo_redo.commit_action()
+
+	_send_result(peer, id, {
+		"success": true,
+		"status": "created",
+		"path": _path_in_scene(root, instance),
+		"class_name": instance.get_class(),
+	})
+
+
+# Mode A only in 15c — edited-scene nodes via get_edited_scene_root. Mode B
+# (runtime-live nodes via port 9090) is deferred per iter 15c handoff note;
+# requires physics-step coherence + signal-handler + RefCounted-lifetime
+# care that belongs in its own iter.
+# TODO(iter-19): wrap in FeatureGate.is_enabled("node_call_method").
+func _cmd_node_call_method(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var root := _get_edited_root()
+	if root == null:
+		_send_result(peer, id, mcp_error("NO_SCENE", "no open scene; use scene.open or scene.create first"))
+		return
+
+	var path := str(params.get("path", ""))
+	var method := str(params.get("method", ""))
+	var args_raw = params.get("args", [])
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe; args may
+	# contain `{type:"Resource",path:...}` refs that hit the filesystem.
+
+	if path.is_empty() or method.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path or method"))
+		return
+	if typeof(args_raw) != TYPE_ARRAY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "args must be an Array (got %s)" % typeof(args_raw)))
+		return
+
+	var node := root.get_node_or_null(path)
+	if node == null:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no node at path %s" % path))
+		return
+	if not node.has_method(method):
+		_send_result(peer, id, mcp_error("INVALID_METHOD", "node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [path, method]))
+		return
+
+	# Gate Resource refs in args — same load-bearing rationale as
+	# node.set_property (null resource surfaces as runtime pink checkerboard).
+	var missing := _check_resource_paths(args_raw)
+	if missing != "":
+		_send_result(peer, id, mcp_error("LOAD_FAILED", "failed to load resource at %s; verify the path or use resource.create to create it first" % missing))
+		return
+
+	var coerced_args = _coerce_value(args_raw)
+	if typeof(coerced_args) != TYPE_ARRAY:
+		coerced_args = []
+	push_warning("MCP: node.call_method invoked %s.%s(%d args)" % [path, method, (coerced_args as Array).size()])
+	var result = node.callv(method, coerced_args)
+
+	_send_result(peer, id, {
+		"success": true,
+		"path": path,
+		"method": method,
+		"result": _serialize_value(result),
+	})
+
+
+# Depth-first owner-set. Required after PackedScene.instantiate because
+# editor_save_scene drops any node whose owner is null. PackedScenes with
+# @tool `_init` that add children need ALL descendants owned, not just root.
+func _set_owner_recursive(node: Node, owner: Node) -> void:
+	node.set_owner(owner)
+	for child in node.get_children():
+		_set_owner_recursive(child, owner)
