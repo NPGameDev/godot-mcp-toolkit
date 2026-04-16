@@ -171,6 +171,12 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_scene_create_node(peer, id, params)
 		"scene.delete_node":
 			_cmd_scene_delete_node(peer, id, params)
+		"scene.create":
+			_cmd_scene_create(peer, id, params)
+		"scene.delete":
+			_cmd_scene_delete(peer, id, params)
+		"script.delete":
+			_cmd_script_delete(peer, id, params)
 		"node.set_property":
 			_cmd_node_set_property(peer, id, params)
 		"node.get_property":
@@ -347,10 +353,12 @@ func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, mcp_error("NOT_FOUND", "parent not found: %s" % parent_path))
 		return
 
-	# I3 idempotency: same-name child already present -> return it, don't duplicate.
+	# I3 idempotency (iter 15 status discriminator): same-name child already
+	# present → non-error success with status: "returned"; fresh creates emit
+	# status: "created". `code` lives on error payloads only now.
 	var existing := parent_node.get_node_or_null(NodePath(requested_name))
 	if existing != null:
-		_send_result(peer, id, {"path": _path_in_scene(root, existing), "code": "ALREADY_EXISTS"})
+		_send_result(peer, id, {"success": true, "status": "returned", "path": _path_in_scene(root, existing)})
 		return
 
 	var instance = ClassDB.instantiate(cls)
@@ -361,7 +369,7 @@ func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 	instance.name = requested_name
 	parent_node.add_child(instance)
 	instance.set_owner(root)
-	_send_result(peer, id, {"path": _path_in_scene(root, instance)})
+	_send_result(peer, id, {"success": true, "status": "created", "path": _path_in_scene(root, instance)})
 
 
 func _cmd_scene_delete_node(peer: WebSocketPeer, id, params) -> void:
@@ -865,11 +873,14 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	var source_path: String = str(r["source_path"])
 	var target_path: String = str(r["target_path"])
 	var method_name: String = str(r["method_name"])
-	# I3 idempotency: same (signal, callable) already connected → return
-	# ALREADY_EXISTS as a non-error success instead of re-registering.
+	# I3 idempotency (iter 15 status discriminator): same (signal, callable)
+	# already connected → non-error success with status: "returned" instead
+	# of re-registering. Fresh connects emit status: "created". `code` is
+	# reserved for error payloads now — not carried on success.
 	if source.is_connected(signal_name, callable):
 		_send_result(peer, id, {
-			"code": "ALREADY_EXISTS",
+			"success": true,
+			"status": "returned",
 			"source_path": source_path,
 			"signal": signal_name,
 			"target_path": target_path,
@@ -883,7 +894,14 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	undo_redo.add_do_method(source, "connect", signal_name, callable)
 	undo_redo.add_undo_method(source, "disconnect", signal_name, callable)
 	undo_redo.commit_action()
-	_send_result(peer, id, {"ok": true})
+	_send_result(peer, id, {
+		"success": true,
+		"status": "created",
+		"source_path": source_path,
+		"signal": signal_name,
+		"target_path": target_path,
+		"method": method_name,
+	})
 
 
 func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
@@ -1072,3 +1090,227 @@ func _cmd_node_get_property_list(peer: WebSocketPeer, id, params) -> void:
 		"properties": props,
 		"count": props.size(),
 	})
+
+
+# ---- Iter 15: file-level scene/script operations ------------------------
+#
+# scene.create / scene.delete / script.delete close the clean-start gap
+# surfaced during Test 1 dogfood (no `.tscn` in the project → agent blocked).
+# All three operate on files directly — no UndoRedo integration (those
+# operate on the edited scene, which these tools do NOT assume). Error
+# message templates are load-bearing for LLM recovery; keep wording stable
+# across iter 16's SOLID split.
+
+
+func _cmd_scene_create(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	var root_type := str(params.get("root_type", "Node"))
+	var if_exists := str(params.get("if_exists", "return"))
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	if path.get_extension().to_lower() != "tscn":
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must end with .tscn (got %s; use script.write for .gd files)" % path))
+		return
+	var parent_dir := path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(parent_dir):
+		_send_result(peer, id, mcp_error("PARENT_NOT_FOUND", "parent directory %s does not exist; call folder.create first (scene.create does not auto-create directories)" % parent_dir))
+		return
+	# Class resolution: cache `resolved_kind` + `global_entry` so the
+	# creation branch below doesn't re-scan the global class list.
+	var resolved_kind := ""
+	var global_entry: Dictionary = {}
+	if ClassDB.class_exists(root_type):
+		resolved_kind = "native"
+	else:
+		for entry in ProjectSettings.get_global_class_list():
+			if str(entry.get("class", "")) == root_type:
+				resolved_kind = "global"
+				global_entry = entry
+				break
+	if resolved_kind.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % root_type))
+		return
+	if not _class_descends_from_node(root_type):
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [root_type, _class_base_chain(root_type)]))
+		return
+	if not (if_exists in ["return", "fail", "replace"]):
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "if_exists must be one of 'return'|'fail'|'replace' (got %s); default is 'return'" % if_exists))
+		return
+
+	# Collision branch.
+	var was_replace := false
+	var prev_root_type := ""
+	if FileAccess.file_exists(path):
+		match if_exists:
+			"return":
+				_send_result(peer, id, {"success": true, "status": "returned", "path": path})
+				return
+			"fail":
+				_send_result(peer, id, mcp_error("ALREADY_EXISTS", "file exists at %s; set if_exists:'replace' to overwrite" % path))
+				return
+			"replace":
+				was_replace = true
+				var prev_packed = ResourceLoader.load(path)
+				if prev_packed == null or not (prev_packed is PackedScene):
+					prev_root_type = "<unreadable>"
+				else:
+					var state := (prev_packed as PackedScene).get_state()
+					if state == null or state.get_node_count() == 0:
+						prev_root_type = "<empty>"
+					else:
+						prev_root_type = str(state.get_node_type(0))
+				push_warning("MCP: scene.create replacing %s (was root=%s, now root=%s)" % [path, prev_root_type, root_type])
+				# Fall through to creation logic below.
+
+	# Creation logic (fresh path OR if_exists == "replace").
+	var root: Node = null
+	if resolved_kind == "native":
+		root = ClassDB.instantiate(root_type)
+	else:
+		var script_path := str(global_entry.get("path", ""))
+		var script = load(script_path)
+		if script == null:
+			_send_result(peer, id, mcp_error("INVALID_CLASS", "could not load script for %s at %s" % [root_type, script_path]))
+			return
+		# script.new() runs _init() — rare to matter for scene-root classes
+		# but documented in the toolkit README as a known side-effect.
+		root = script.new()
+	if root == null:
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "instantiation returned null for %s" % root_type))
+		return
+	root.name = path.get_file().get_basename()
+	var packed := PackedScene.new()
+	var pack_err := packed.pack(root)
+	if pack_err != OK:
+		root.queue_free()
+		_send_result(peer, id, mcp_error("PACK_FAILED", "PackedScene.pack returned %d (class=%s, path=%s)" % [pack_err, root_type, path]))
+		return
+	var save_err := ResourceSaver.save(packed, path)
+	# PackedScene holds its own copy after pack(); free the template to
+	# avoid a per-call Node leak in the editor process.
+	root.queue_free()
+	if save_err != OK:
+		_send_result(peer, id, mcp_error("SAVE_FAILED", "ResourceSaver.save returned %d (path=%s)" % [save_err, path]))
+		return
+
+	var response := {"success": true, "path": path, "root_type": root_type}
+	if was_replace:
+		response["status"] = "replaced"
+		response["previous_root_type"] = prev_root_type
+	else:
+		response["status"] = "created"
+	_send_result(peer, id, response)
+
+
+# Helper: does `type_name` descend from Node? Walks ClassDB's native
+# hierarchy first, then ProjectSettings.get_global_class_list() for
+# custom GDScript `class_name` / C# `[GlobalClass]` chains. Bounded by
+# hierarchy depth (<10 realistically); parser rejects cyclic inheritance.
+func _class_descends_from_node(type_name: String) -> bool:
+	if ClassDB.class_exists(type_name):
+		return ClassDB.is_parent_class(type_name, "Node")
+	for entry in ProjectSettings.get_global_class_list():
+		if str(entry.get("class", "")) == type_name:
+			return _class_descends_from_node(str(entry.get("base", "")))
+	return false
+
+
+# Helper: "A -> B -> C" base chain for INVALID_CLASS messages.
+func _class_base_chain(type_name: String) -> String:
+	var chain := PackedStringArray()
+	var current := type_name
+	var depth := 0
+	while not current.is_empty() and depth < 16:
+		chain.append(current)
+		if ClassDB.class_exists(current):
+			var base := ClassDB.get_parent_class(current)
+			if base.is_empty():
+				break
+			current = base
+		else:
+			var found := false
+			for entry in ProjectSettings.get_global_class_list():
+				if str(entry.get("class", "")) == current:
+					current = str(entry.get("base", ""))
+					found = true
+					break
+			if not found:
+				break
+		depth += 1
+	return " -> ".join(chain)
+
+
+func _cmd_scene_delete(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	if path.get_extension().to_lower() != "tscn":
+		_send_result(peer, id, mcp_error("INVALID_PATH", "scene.delete only removes .tscn files (got %s); use a different tool for other file types" % path))
+		return
+	if not FileAccess.file_exists(path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no file at %s" % path))
+		return
+	var edited_root := _get_edited_root()
+	if edited_root != null and edited_root.scene_file_path == path:
+		_send_result(peer, id, mcp_error("EDITED_SCENE", "cannot delete the currently-edited scene %s; open a different scene via scene.open first" % path))
+		return
+	var dir := DirAccess.open("res://")
+	if dir == null:
+		_send_result(peer, id, mcp_error("INTERNAL", "DirAccess.open(res://) returned null"))
+		return
+	var rel := path.substr("res://".length())
+	var rm_err := dir.remove(rel)
+	if rm_err != OK:
+		_send_result(peer, id, mcp_error("DELETE_FAILED", "DirAccess.remove returned %d (path=%s)" % [rm_err, path]))
+		return
+	# Best-effort .uid companion removal (Godot 4.4+). Silent on miss.
+	var uid_rel := rel + ".uid"
+	if dir.file_exists(uid_rel):
+		dir.remove(uid_rel)
+	_send_result(peer, id, {"success": true, "path": path})
+
+
+# Symmetric with scene.delete — same INVALID_PATH / NOT_FOUND / DELETE_FAILED
+# shape, no "currently-edited" guard (script editor has no single "current"
+# analog; matches Godot's own FileSystem-dock permissive delete behaviour).
+func _cmd_script_delete(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	# TODO(iter-18): route `path` through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	var ext := path.get_extension().to_lower()
+	if not (ext in ["gd", "cs"]):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "script.delete only removes .gd or .cs files (got %s); use scene.delete for .tscn or a different tool for other file types" % path))
+		return
+	if not FileAccess.file_exists(path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no file at %s" % path))
+		return
+	var dir := DirAccess.open("res://")
+	if dir == null:
+		_send_result(peer, id, mcp_error("INTERNAL", "DirAccess.open(res://) returned null"))
+		return
+	var rel := path.substr("res://".length())
+	var rm_err := dir.remove(rel)
+	if rm_err != OK:
+		_send_result(peer, id, mcp_error("DELETE_FAILED", "DirAccess.remove returned %d (path=%s)" % [rm_err, path]))
+		return
+	# Best-effort .uid companion removal (Godot 4.4+ generates these for
+	# scripts too, not just scenes). Silent on miss.
+	var uid_rel := rel + ".uid"
+	if dir.file_exists(uid_rel):
+		dir.remove(uid_rel)
+	_send_result(peer, id, {"success": true, "path": path})

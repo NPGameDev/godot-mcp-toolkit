@@ -459,9 +459,14 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	var source_path: String = str(r["source_path"])
 	var target_path: String = str(r["target_path"])
 	var method_name: String = str(r["method_name"])
+	# I3 idempotency (iter 15 status discriminator). Mirror of the editor
+	# copy in mcp_server.gd — kept verbatim because iter 16's SOLID split
+	# will hoist the shared shape into a common module; until then, drift
+	# between editor/runtime copies is a silent-failure hazard.
 	if source.is_connected(signal_name, callable):
 		_send_result(peer, id, {
-			"code": "ALREADY_EXISTS",
+			"success": true,
+			"status": "returned",
 			"source_path": source_path,
 			"signal": signal_name,
 			"target_path": target_path,
@@ -476,7 +481,14 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	if err != OK:
 		_send_result(peer, id, mcp_error("CONNECT_FAILED", "connect returned %d" % err))
 		return
-	_send_result(peer, id, {"ok": true})
+	_send_result(peer, id, {
+		"success": true,
+		"status": "created",
+		"source_path": source_path,
+		"signal": signal_name,
+		"target_path": target_path,
+		"method": method_name,
+	})
 
 
 func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
