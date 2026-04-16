@@ -17,14 +17,16 @@ Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
 Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
-## Core tool catalogue (20 MVP-core tools — iter 08 + iter 15 + iter 15b + iter 15c)
+## Core tool catalogue (26 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d)
 
 Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 `scene_open`, `project_get_settings`, `signal_*`, `resource_load`,
 `scene_diff`, `node_get_property_list`, and the Mode B `runtime_*` family)
-plus iter 15c's playtest/composition additions bring the full catalogue to
-37 tools (38 with `GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite` in
-`.mcp.json` args for a 20-tool token-sensitive subset.
+plus iter 15c's playtest/composition additions and iter 15d's
+content-authoring extensions (`project_set_setting`, `input_map_*`,
+`animation_*`, `tilemap_set_cells`, `editor_screenshot_node`) bring the full
+catalogue to 47 tools (48 with `GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite`
+in `.mcp.json` args for a 26-tool token-sensitive subset.
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
@@ -50,6 +52,16 @@ plus iter 15c's playtest/composition additions bring the full catalogue to
 | `game_stop`             | `EditorInterface.stop_playing_scene()`. Idempotent; response carries `was_running: bool`. Full only.          |
 | `scene_instantiate`     | Drop `PackedScene` under a parent. UndoRedo-wrapped + recursive owner-set. Idempotent (`status: "returned"` on name collision). Lite. |
 | `node_call_method`      | Invoke `node.method(args...)` with `_coerce_value`-coerced args. `has_method`-gated. Mode A only in 15c. Full only. |
+| `project_set_setting`   | Write a `ProjectSettings` key + `ProjectSettings.save`. Refuses `mcp/unsafe/*` and `editor/*`. UPDATE (no `status`); returns `previous_value`. Lite. |
+| `input_map_add_action`  | Register an `InputMap` action with deadzone. Idempotent — `status: "returned"` reports the EXISTING deadzone (not the requested one). Lite. |
+| `input_map_action_add_event` | Bind a `key`/`mouse_button`/`joypad_button`/`joypad_motion` event-dict to an action. Silent-return on equivalent-event duplicate. Lite. |
+| `input_map_action_remove_event` | Unbind a matching event from an action. `NOT_FOUND` if no equivalent event is bound. Full only. |
+| `input_map_remove_action` | Erase an `InputMap` action. Refuses built-in `ui_*` actions (would break editor/engine nav). Full only. |
+| `animation_add_key`     | Insert a `TYPE_VALUE` keyframe on an `AnimationPlayer` track. Auto-creates the track if missing. UndoRedo-wrapped; silent-return on exact-time duplicate. Lite. |
+| `animation_remove_key`  | Remove a keyframe at exact `time`. UndoRedo-wrapped (captured value flows through undo). Full only. |
+| `animation_get_keys`    | Read-only listing: `{ time, value, transition }` per key + `track_type` enum string. No auto-track-create. Lite. |
+| `tilemap_set_cells`     | Batch-paint `TileMap` or `TileMapLayer`. Single UndoRedo action. Returns `cells_written` + `cells_unchanged` + `total`. `source_id: -1` clears. Lite. |
+| `editor_screenshot_node` | Focus + capture a specific node in the editor viewport (`await RenderingServer.frame_post_draw`). Atomic prior-selection restore. Inline base64 PNG. Full only. |
 
 ## Conventions when driving these tools
 

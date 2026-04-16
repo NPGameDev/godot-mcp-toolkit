@@ -34,8 +34,8 @@ Requires Node.js ≥ 20. Source + README:
    `.mcp.json`.
 2. `cd` to that project root.
 3. Run `claude`. `/mcp` should list `godot-mcp-toolkit` with the full tool
-   catalogue (37 tools default; pass `--lite` in `.mcp.json` args for a
-   20-tool core subset in token-sensitive sessions).
+   catalogue (47 tools default; pass `--lite` in `.mcp.json` args for a
+   26-tool core subset in token-sensitive sessions).
 
 (Iter 21 will add a one-click menu item in the editor's MCP dock that writes
 `.mcp.json` for you.)
@@ -110,6 +110,11 @@ JSON-native primitives pass through: `bool`, `int`, `float`, `String`, `null`,
 - `{ "type": "Vector4", "x": 0, "y": 0, "z": 0, "w": 0 }` → `Vector4`
 - `{ "type": "Color", "r": 0, "g": 0, "b": 0, "a": 1 }` → `Color`
 - `{ "type": "Rect2", "x": 0, "y": 0, "w": 0, "h": 0 }` → `Rect2`
+- `{ "type": "Rect2i", "x": 0, "y": 0, "w": 0, "h": 0 }` → `Rect2i` (iter 15d)
+- `{ "type": "Vector2i", "x": 0, "y": 0 }` → `Vector2i` (iter 15d — TileMap coords)
+- `{ "type": "Vector3i", "x": 0, "y": 0, "z": 0 }` → `Vector3i` (iter 15d)
+- `{ "type": "Transform2D", "origin": {x,y}, "x_axis": {x,y}, "y_axis": {x,y} }` → `Transform2D` (iter 15d — animation keyframes)
+- `{ "type": "Transform3D", "basis": { "x": {x,y,z}, "y": {x,y,z}, "z": {x,y,z} }, "origin": {x,y,z} }` → `Transform3D` (iter 15d)
 - `{ "type": "NodePath", "path": "CanvasLayer/HUD" }` → `NodePath`
 - `{ "type": "Resource", "path": "res://art/player.png" }` → loaded via
   `ResourceLoader.load` (any `Resource` subclass: `Texture2D`, `PackedScene`,
@@ -122,10 +127,10 @@ JSON-native primitives pass through: `bool`, `int`, `float`, `String`, `null`,
 Arrays recurse element-wise, so `node_call_method` args can mix primitives
 and typed dicts: `[{type:"Vector2",x:32,y:32}, 0.5, "hello"]`.
 
-Not yet coerced (iter 15d extends): `Transform2D`, `Transform3D`, `Basis`,
+Not yet coerced (add as needs arise — see iter 15c handoff): `Basis`,
 `Quaternion`, `Plane`, `AABB`, `Projection`, the `Packed*Array` family,
 `Callable`, `Signal`. Edit the `.tres` directly via `script_write` on the
-file if you need these before 15d lands.
+file if you need these.
 
 ## Iter 15c additions — playtest + composition + method invocation
 
@@ -166,6 +171,71 @@ file if you need these before 15d lands.
 `script.new()`, which runs `_init()`. If `_init()` has non-trivial side
 effects (global state, signal emission, editor-visible mutations), those
 will fire every time `resource_create` is called for that class.
+
+## Iter 15d additions — content-authoring extensions
+
+Five new domains, ~10 tools. All honour the `status` discriminator + the
+expanded `_coerce_value` set above (5 new type tags: `Vector2i`, `Vector3i`,
+`Rect2i`, `Transform2D`, `Transform3D`).
+
+- `project_set_setting` — write any `ProjectSettings` key + persist via
+  `ProjectSettings.save`. Refuses `mcp/unsafe/*` (toolkit's own gates) and
+  `editor/*` (editor-session state, not project config) — defence-in-depth
+  against an agent disabling its own constraints. UPDATE shape (no
+  `status`); returns `was_set_before` + `previous_value` for observability.
+  Pairs with iter 09's `project_get_settings` reader. **FeatureGate
+  candidate (iter 19)** — high blast-radius (main scene, autoloads,
+  physics tick).
+- `input_map_add_action` / `input_map_action_add_event` /
+  `input_map_action_remove_event` / `input_map_remove_action` — write path
+  for `InputMap`. Persists to `ProjectSettings.input/<action>` via
+  `ProjectSettings.save` (fail-open: in-memory change is observable for
+  this session; persistence-failure surfaces as `push_warning`).
+  `input_map_remove_action` refuses Godot's built-in `ui_*` actions
+  (`ui_accept`, `ui_cancel`, `ui_focus_next`, etc. — full list pinned in
+  `mcp_server.gd`'s `_BUILTIN_UI_ACTIONS` constant; cross-check on Godot
+  upgrade). Event-dict schema:
+  - `{ type: "key", keycode: "SPACE"|"A"|int, shift, ctrl, alt, meta }` —
+    `keycode` accepts symbolic name via `OS.find_keycode_from_string` or raw int.
+  - `{ type: "mouse_button", button_index: int, pressed: bool }`
+  - `{ type: "joypad_button", button_index: int, device: int }` —
+    `device: -1` matches any.
+  - `{ type: "joypad_motion", axis: int, axis_value: float, device: int }`
+- `animation_add_key` / `animation_remove_key` / `animation_get_keys` —
+  `AnimationPlayer` track + keyframe authoring. `TYPE_VALUE` tracks only
+  in 15d (`bezier` / `transform` / `method` / `audio` deferred — see
+  handoff). Auto-creates the value track if `track_path` (e.g.
+  `Sprite2D:position`) doesn't yet exist on the named animation. Bare
+  NodePaths (no `:` property suffix) reject with `INVALID_PARAMS`.
+  UndoRedo-wrapped both directions; silent-return on exact-time duplicate.
+- `tilemap_set_cells` — batch paint `TileMap` (4.2 / pre-deprecated layer
+  API) or `TileMapLayer` (4.3+). Single UndoRedo action across the whole
+  batch. Cell descriptor:
+  `{ x, y, source_id, atlas_x, atlas_y, alternative_tile? }` —
+  `source_id: -1` clears that cell. Returns
+  `{ cells_written, cells_unchanged, total }` so the agent can tell what
+  the batch actually changed (idempotent overwrites count separately).
+  Per-cell `set_cell` calls would saturate the WebSocket on even modest
+  grids (a 32×32 level = 1024 round-trips); batching collapses to one.
+- `editor_screenshot_node` — focus + capture a single node in the editor
+  viewport. Uses `EditorInterface.edit_node` to frame the node, then
+  `await RenderingServer.frame_post_draw` for a clean repaint, then
+  captures from `get_editor_viewport_2d()` or `get_editor_viewport_3d(0)`
+  based on the node's class. Atomic prior-selection restore (best-effort:
+  selection is restored, viewport camera pan is not). Inline base64 PNG
+  same as `editor_screenshot`. Closes the visual-verification gap when
+  the full editor viewport is too wide.
+
+### InputMap persistence note
+
+`InputMap.add_action` / `action_add_event` mutate **in-memory** Godot
+state. The persistence step writes `ProjectSettings.input/<action>` so
+the change survives editor restart. Persistence is **fail-open**:
+`ProjectSettings.save` returning non-OK pushes a warning but the tool
+returns success — the in-memory InputMap is observable for the current
+session's runtime. If a `game_start` runs immediately after, the
+runtime sees the new bindings (Godot loads `InputMap` from
+`ProjectSettings` at game boot from the in-memory entries).
 
 ## Port
 

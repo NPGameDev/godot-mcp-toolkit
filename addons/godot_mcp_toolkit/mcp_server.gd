@@ -229,6 +229,26 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_scene_instantiate(peer, id, params)
 		"node.call_method":
 			_cmd_node_call_method(peer, id, params)
+		"project.set_setting":
+			_cmd_project_set_setting(peer, id, params)
+		"input_map.add_action":
+			_cmd_input_map_add_action(peer, id, params)
+		"input_map.action_add_event":
+			_cmd_input_map_action_add_event(peer, id, params)
+		"input_map.action_remove_event":
+			_cmd_input_map_action_remove_event(peer, id, params)
+		"input_map.remove_action":
+			_cmd_input_map_remove_action(peer, id, params)
+		"animation.add_key":
+			_cmd_animation_add_key(peer, id, params)
+		"animation.remove_key":
+			_cmd_animation_remove_key(peer, id, params)
+		"animation.get_keys":
+			_cmd_animation_get_keys(peer, id, params)
+		"tilemap.set_cells":
+			_cmd_tilemap_set_cells(peer, id, params)
+		"editor.screenshot_node":
+			_cmd_editor_screenshot_node(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -509,9 +529,12 @@ func _coerce_value(v):
 	# Dict-wrapped engine types: {type:"Vector2",x:..,y:..} -> Vector2(..).
 	# Iter 15c: extended to Vector4/Rect2/NodePath and `{type:"Resource",path}`
 	# (loaded via ResourceLoader — null on miss; callers gate with
-	# `_check_resource_paths` before applying). Arrays recurse so method args
-	# like `[{type:"Resource",...}, 42]` coerce element-by-element. Plain JSON
-	# primitives / non-tagged dicts pass through unchanged.
+	# `_check_resource_paths` before applying). Iter 15d: Vector2i/Vector3i/
+	# Rect2i/Transform2D/Transform3D for animation keyframes + tilemap coords.
+	# Arrays recurse so method args like `[{type:"Resource",...}, 42]` coerce
+	# element-by-element. Plain JSON primitives / non-tagged dicts pass through
+	# unchanged. Inverse symmetry lives in `_serialize_value` — keep tags +
+	# fields aligned across edits or round-trip breaks.
 	if typeof(v) == TYPE_ARRAY:
 		var out: Array = []
 		for el in v:
@@ -532,10 +555,39 @@ func _coerce_value(v):
 			return Vector3(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)))
 		"Vector4":
 			return Vector4(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0)), float(v.get("w", 0.0)))
+		"Vector2i":
+			return Vector2i(int(v.get("x", 0)), int(v.get("y", 0)))
+		"Vector3i":
+			return Vector3i(int(v.get("x", 0)), int(v.get("y", 0)), int(v.get("z", 0)))
 		"Color":
 			return Color(float(v.get("r", 0.0)), float(v.get("g", 0.0)), float(v.get("b", 0.0)), float(v.get("a", 1.0)))
 		"Rect2":
 			return Rect2(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("w", 0.0)), float(v.get("h", 0.0)))
+		"Rect2i":
+			return Rect2i(int(v.get("x", 0)), int(v.get("y", 0)), int(v.get("w", 0)), int(v.get("h", 0)))
+		"Transform2D":
+			# Layout: { type, x_axis:{x,y}, y_axis:{x,y}, origin:{x,y} }.
+			var x_axis: Dictionary = v.get("x_axis", {}) if typeof(v.get("x_axis", {})) == TYPE_DICTIONARY else {}
+			var y_axis: Dictionary = v.get("y_axis", {}) if typeof(v.get("y_axis", {})) == TYPE_DICTIONARY else {}
+			var origin2: Dictionary = v.get("origin", {}) if typeof(v.get("origin", {})) == TYPE_DICTIONARY else {}
+			return Transform2D(
+				Vector2(float(x_axis.get("x", 1.0)), float(x_axis.get("y", 0.0))),
+				Vector2(float(y_axis.get("x", 0.0)), float(y_axis.get("y", 1.0))),
+				Vector2(float(origin2.get("x", 0.0)), float(origin2.get("y", 0.0))),
+			)
+		"Transform3D":
+			# Layout: { type, basis:{ x:{x,y,z}, y:{x,y,z}, z:{x,y,z} }, origin:{x,y,z} }.
+			var basis_d: Dictionary = v.get("basis", {}) if typeof(v.get("basis", {})) == TYPE_DICTIONARY else {}
+			var bx: Dictionary = basis_d.get("x", {}) if typeof(basis_d.get("x", {})) == TYPE_DICTIONARY else {}
+			var by: Dictionary = basis_d.get("y", {}) if typeof(basis_d.get("y", {})) == TYPE_DICTIONARY else {}
+			var bz: Dictionary = basis_d.get("z", {}) if typeof(basis_d.get("z", {})) == TYPE_DICTIONARY else {}
+			var origin3: Dictionary = v.get("origin", {}) if typeof(v.get("origin", {})) == TYPE_DICTIONARY else {}
+			var basis := Basis(
+				Vector3(float(bx.get("x", 1.0)), float(bx.get("y", 0.0)), float(bx.get("z", 0.0))),
+				Vector3(float(by.get("x", 0.0)), float(by.get("y", 1.0)), float(by.get("z", 0.0))),
+				Vector3(float(bz.get("x", 0.0)), float(bz.get("y", 0.0)), float(bz.get("z", 1.0))),
+			)
+			return Transform3D(basis, Vector3(float(origin3.get("x", 0.0)), float(origin3.get("y", 0.0)), float(origin3.get("z", 0.0))))
 		"NodePath":
 			return NodePath(str(v.get("path", "")))
 		_:
@@ -568,8 +620,9 @@ func _serialize_value(v):
 	# dicts symmetric with `_coerce_value`'s type tags so JSON round-trips
 	# cleanly. Node refs stringify to their scene-tree path; Resource refs
 	# emit `{type:"Resource",path,class}`; Object refs that are neither → a
-	# literal `"<unserialisable>"` (iter 15c minimum — Transform2D/Basis/
-	# Quaternion/Packed* fall through to var_to_str for now, iter 15d extends).
+	# literal `"<unserialisable>"`. Iter 15d adds Vector2i/Vector3i/Rect2i/
+	# Transform2D/Transform3D so animation.get_keys + node.get_property of
+	# tilemap coords / 2D/3D transforms round-trip through `_coerce_value`.
 	match typeof(v):
 		TYPE_NIL:
 			return null
@@ -581,10 +634,33 @@ func _serialize_value(v):
 			return {"type": "Vector3", "x": v.x, "y": v.y, "z": v.z}
 		TYPE_VECTOR4:
 			return {"type": "Vector4", "x": v.x, "y": v.y, "z": v.z, "w": v.w}
+		TYPE_VECTOR2I:
+			return {"type": "Vector2i", "x": v.x, "y": v.y}
+		TYPE_VECTOR3I:
+			return {"type": "Vector3i", "x": v.x, "y": v.y, "z": v.z}
 		TYPE_COLOR:
 			return {"type": "Color", "r": v.r, "g": v.g, "b": v.b, "a": v.a}
 		TYPE_RECT2:
 			return {"type": "Rect2", "x": v.position.x, "y": v.position.y, "w": v.size.x, "h": v.size.y}
+		TYPE_RECT2I:
+			return {"type": "Rect2i", "x": v.position.x, "y": v.position.y, "w": v.size.x, "h": v.size.y}
+		TYPE_TRANSFORM2D:
+			return {
+				"type": "Transform2D",
+				"x_axis": {"x": v.x.x, "y": v.x.y},
+				"y_axis": {"x": v.y.x, "y": v.y.y},
+				"origin": {"x": v.origin.x, "y": v.origin.y},
+			}
+		TYPE_TRANSFORM3D:
+			return {
+				"type": "Transform3D",
+				"basis": {
+					"x": {"x": v.basis.x.x, "y": v.basis.x.y, "z": v.basis.x.z},
+					"y": {"x": v.basis.y.x, "y": v.basis.y.y, "z": v.basis.y.z},
+					"z": {"x": v.basis.z.x, "y": v.basis.z.y, "z": v.basis.z.z},
+				},
+				"origin": {"x": v.origin.x, "y": v.origin.y, "z": v.origin.z},
+			}
 		TYPE_NODE_PATH:
 			return {"type": "NodePath", "path": str(v)}
 		TYPE_STRING_NAME:
@@ -2067,3 +2143,816 @@ func _set_owner_recursive(node: Node, owner: Node) -> void:
 	node.set_owner(owner)
 	for child in node.get_children():
 		_set_owner_recursive(child, owner)
+
+
+# ---- Iter 15d: project / input_map / animation / tilemap / screenshot_node ----
+#
+# Five domains, ~10 new handlers. All honour the iter 15/15b/15c conventions:
+# `status` discriminator on creates, actionable error messages, _coerce_value
+# applied to property/arg/value ingest, TODO(iter-18) markers at every
+# path-touching site. No new error codes minted (deliberate scope discipline —
+# 14/15/15b/15c surface declared sufficient for authoring workflows).
+
+
+# project.set_setting — write a ProjectSettings key + persist via
+# ProjectSettings.save. UPDATE-shaped (no `status`); returns was_set_before
+# + previous_value for observability. Refuses `mcp/unsafe/*` (those are the
+# toolkit's own gates — use FeatureGate from iter 19) and `editor/*`
+# (editor-session state, not project config). High blast-radius — gated
+# behind FeatureGate in iter 19 (TODO marker below).
+# TODO(iter-19): wrap in FeatureGate.is_enabled("project_set_setting").
+func _cmd_project_set_setting(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var key := str(params.get("key", ""))
+	if key.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "key must be a non-empty string"))
+		return
+	if key.begins_with("mcp/unsafe/"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "refusing to write mcp/unsafe/* from project.set_setting (those are the toolkit's own gates — use the FeatureGate system in iter 19); got key=%s" % key))
+		return
+	if key.begins_with("editor/"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "refusing to write editor/* ProjectSettings from project.set_setting (editor-session state, not project config); got key=%s" % key))
+		return
+	if not params.has("value"):
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing value"))
+		return
+	var raw_value = params.get("value", null)
+	# TODO(iter-18): res:// strings (e.g. application/run/main_scene) and
+	# Resource refs flow through _coerce_value unchanged; route through
+	# FileGuard.resolve_safe at this site once the sandbox lands.
+	var coerced = _coerce_value(raw_value)
+	var was_set_before := ProjectSettings.has_setting(key)
+	var previous_value = ProjectSettings.get_setting(key) if was_set_before else null
+	ProjectSettings.set_setting(key, coerced)
+	var save_err := ProjectSettings.save()
+	if save_err != OK:
+		_send_result(peer, id, mcp_error("SAVE_FAILED", "ProjectSettings.save returned %d (key=%s); change is in-memory but not persisted" % [save_err, key]))
+		return
+	_send_result(peer, id, {
+		"success": true,
+		"key": key,
+		"value": _serialize_value(coerced),
+		"was_set_before": was_set_before,
+		"previous_value": _serialize_value(previous_value) if was_set_before else null,
+	})
+
+
+# ---- Iter 15d: input_map.* ----
+#
+# Four tools writing to the InputMap singleton + mirroring to ProjectSettings
+# input/<action> entries so changes survive editor restart. Persistence is
+# fail-open (push_warning + success) because the in-memory change IS
+# observable for the current session — agent can retry persistence after
+# fixing root cause. Built-in `ui_*` actions are protected from removal.
+# TODO(iter-19): wrap input_map_* in FeatureGate.is_enabled (single-gate;
+# low security risk but persistent ProjectSettings mutation).
+
+
+# Built-in DefaultUIAction list, pinned from Godot 4.4 source. Worth a
+# cross-check at iter 16/17 if upgrading the engine baseline.
+const _BUILTIN_UI_ACTIONS: Array[String] = [
+	"ui_accept", "ui_cancel", "ui_focus_next", "ui_focus_prev",
+	"ui_up", "ui_down", "ui_left", "ui_right",
+	"ui_page_up", "ui_page_down", "ui_home", "ui_end",
+	"ui_cut", "ui_copy", "ui_paste", "ui_undo", "ui_redo",
+	"ui_text_completion_query", "ui_text_completion_accept", "ui_text_completion_replace",
+	"ui_text_newline", "ui_text_newline_blank", "ui_text_newline_above",
+	"ui_text_backspace", "ui_text_backspace_word", "ui_text_backspace_all_to_left",
+	"ui_text_delete", "ui_text_delete_word", "ui_text_delete_all_to_right",
+	"ui_text_caret_left", "ui_text_caret_word_left",
+	"ui_text_caret_right", "ui_text_caret_word_right",
+	"ui_text_caret_up", "ui_text_caret_down",
+	"ui_text_caret_line_start", "ui_text_caret_line_end",
+	"ui_text_caret_page_up", "ui_text_caret_page_down",
+	"ui_text_caret_document_start", "ui_text_caret_document_end",
+	"ui_text_caret_add_below", "ui_text_caret_add_above",
+	"ui_text_scroll_up", "ui_text_scroll_down",
+	"ui_text_select_all", "ui_text_select_word_under_caret",
+	"ui_text_add_selection_for_next_occurrence", "ui_text_clear_carets_and_selection",
+	"ui_text_toggle_insert_mode", "ui_menu", "ui_text_submit",
+	"ui_graph_duplicate", "ui_graph_delete",
+	"ui_filedialog_up_one_level", "ui_filedialog_refresh", "ui_filedialog_show_hidden",
+	"ui_swap_input_direction",
+]
+
+
+# Build an InputEvent from the documented JSON shape. Returns the event
+# instance on success or `{"error": "...", "code": "..."}` on failure so the
+# caller can pattern-match on shape (mirrors _resolve_signal_pair).
+func _build_input_event(event):
+	if typeof(event) != TYPE_DICTIONARY:
+		return {"code": "INVALID_PARAMS", "error": "event must be an object"}
+	var t := str(event.get("type", ""))
+	match t:
+		"key":
+			var raw_kc = event.get("keycode", "")
+			var resolved_kc := 0
+			if typeof(raw_kc) == TYPE_STRING:
+				resolved_kc = OS.find_keycode_from_string(raw_kc)
+				if resolved_kc == 0:
+					return {"code": "INVALID_PARAMS", "error": "unknown keycode '%s'; use symbolic names like 'SPACE' / 'A' / 'F1' or raw ints" % raw_kc}
+			elif typeof(raw_kc) == TYPE_INT or typeof(raw_kc) == TYPE_FLOAT:
+				resolved_kc = int(raw_kc)
+			else:
+				return {"code": "INVALID_PARAMS", "error": "event.keycode must be a string symbolic name or int"}
+			var ek := InputEventKey.new()
+			ek.physical_keycode = resolved_kc
+			ek.shift_pressed = bool(event.get("shift", false))
+			ek.ctrl_pressed = bool(event.get("ctrl", false))
+			ek.alt_pressed = bool(event.get("alt", false))
+			ek.meta_pressed = bool(event.get("meta", false))
+			return ek
+		"mouse_button":
+			var emb := InputEventMouseButton.new()
+			emb.button_index = int(event.get("button_index", 1))
+			emb.pressed = bool(event.get("pressed", true))
+			return emb
+		"joypad_button":
+			var ejb := InputEventJoypadButton.new()
+			ejb.button_index = int(event.get("button_index", 0))
+			ejb.device = int(event.get("device", -1))
+			return ejb
+		"joypad_motion":
+			var ejm := InputEventJoypadMotion.new()
+			ejm.axis = int(event.get("axis", 0))
+			ejm.axis_value = float(event.get("axis_value", 0.0))
+			ejm.device = int(event.get("device", -1))
+			return ejm
+		_:
+			return {"code": "INVALID_PARAMS", "error": "event.type must be one of 'key' | 'mouse_button' | 'joypad_button' | 'joypad_motion' (got %s)" % t}
+
+
+# Inverse of _build_input_event for response payloads. Stable schema across
+# iter 16/17 — agents pattern-match on `type` to round-trip.
+func _serialise_input_event(e: InputEvent) -> Dictionary:
+	if e is InputEventKey:
+		return {
+			"type": "key",
+			"keycode": int((e as InputEventKey).physical_keycode),
+			"shift": (e as InputEventKey).shift_pressed,
+			"ctrl": (e as InputEventKey).ctrl_pressed,
+			"alt": (e as InputEventKey).alt_pressed,
+			"meta": (e as InputEventKey).meta_pressed,
+		}
+	if e is InputEventMouseButton:
+		return {
+			"type": "mouse_button",
+			"button_index": int((e as InputEventMouseButton).button_index),
+			"pressed": (e as InputEventMouseButton).pressed,
+		}
+	if e is InputEventJoypadButton:
+		return {
+			"type": "joypad_button",
+			"button_index": int((e as InputEventJoypadButton).button_index),
+			"device": int((e as InputEventJoypadButton).device),
+		}
+	if e is InputEventJoypadMotion:
+		return {
+			"type": "joypad_motion",
+			"axis": int((e as InputEventJoypadMotion).axis),
+			"axis_value": float((e as InputEventJoypadMotion).axis_value),
+			"device": int((e as InputEventJoypadMotion).device),
+		}
+	return {"type": "unknown", "class": e.get_class()}
+
+
+# Shallow equality across the four supported InputEvent kinds. Used for
+# action_add_event idempotency + action_remove_event match.
+func _input_events_equivalent(a: InputEvent, b: InputEvent) -> bool:
+	if a == null or b == null:
+		return false
+	if a.get_class() != b.get_class():
+		return false
+	if a is InputEventKey and b is InputEventKey:
+		var ak := a as InputEventKey
+		var bk := b as InputEventKey
+		return ak.physical_keycode == bk.physical_keycode \
+			and ak.shift_pressed == bk.shift_pressed \
+			and ak.ctrl_pressed == bk.ctrl_pressed \
+			and ak.alt_pressed == bk.alt_pressed \
+			and ak.meta_pressed == bk.meta_pressed
+	if a is InputEventMouseButton and b is InputEventMouseButton:
+		var am := a as InputEventMouseButton
+		var bm := b as InputEventMouseButton
+		return am.button_index == bm.button_index and am.pressed == bm.pressed
+	if a is InputEventJoypadButton and b is InputEventJoypadButton:
+		var aj := a as InputEventJoypadButton
+		var bj := b as InputEventJoypadButton
+		return aj.button_index == bj.button_index and aj.device == bj.device
+	if a is InputEventJoypadMotion and b is InputEventJoypadMotion:
+		var amo := a as InputEventJoypadMotion
+		var bmo := b as InputEventJoypadMotion
+		return amo.axis == bmo.axis \
+			and amo.device == bmo.device \
+			and is_equal_approx(amo.axis_value, bmo.axis_value)
+	return false
+
+
+# Persist the current InputMap state for `action` to ProjectSettings input/<action>.
+# Best-effort save: warnings on failure but caller still returns success
+# (the in-memory change is observable for this session).
+func _persist_input_action(action: String, deadzone: float) -> void:
+	var events: Array = []
+	for ev in InputMap.action_get_events(action):
+		events.append(ev)
+	ProjectSettings.set_setting("input/" + action, {
+		"deadzone": deadzone,
+		"events": events,
+	})
+	var err := ProjectSettings.save()
+	if err != OK:
+		push_warning("[MCPServer] ProjectSettings.save after input_map mutation failed (err %d, action=%s); change is in-memory only" % [err, action])
+
+
+func _cmd_input_map_add_action(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var action := str(params.get("action", ""))
+	if action.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "action must be a non-empty string"))
+		return
+	var deadzone_raw = params.get("deadzone", 0.5)
+	var deadzone := float(deadzone_raw) if (typeof(deadzone_raw) == TYPE_FLOAT or typeof(deadzone_raw) == TYPE_INT) else 0.5
+	if deadzone < 0.0 or deadzone > 1.0:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "deadzone must be in [0.0, 1.0] (got %f)" % deadzone))
+		return
+	# I3 idempotency: silent return on duplicate. Reports EXISTING deadzone
+	# (observable state); caller would need a dedicated input_map.set_deadzone
+	# tool to update — out of scope for 15d (handoff note).
+	if InputMap.has_action(action):
+		_send_result(peer, id, {
+			"success": true,
+			"status": "returned",
+			"action": action,
+			"deadzone": InputMap.action_get_deadzone(action),
+		})
+		return
+	InputMap.add_action(action, deadzone)
+	_persist_input_action(action, deadzone)
+	_send_result(peer, id, {
+		"success": true,
+		"status": "created",
+		"action": action,
+		"deadzone": deadzone,
+	})
+
+
+func _cmd_input_map_action_add_event(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var action := str(params.get("action", ""))
+	if action.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "action must be a non-empty string"))
+		return
+	if not InputMap.has_action(action):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no action '%s'; call input_map.add_action first" % action))
+		return
+	var built: Variant = _build_input_event(params.get("event", null))
+	if typeof(built) == TYPE_DICTIONARY and built.has("error"):
+		_send_result(peer, id, mcp_error(str(built["code"]), str(built["error"])))
+		return
+	var ev: InputEvent = built
+	# Idempotency: equivalent event already bound → silent return.
+	for existing in InputMap.action_get_events(action):
+		if _input_events_equivalent(existing, ev):
+			_send_result(peer, id, {
+				"success": true,
+				"status": "returned",
+				"action": action,
+				"event": _serialise_input_event(existing),
+			})
+			return
+	InputMap.action_add_event(action, ev)
+	_persist_input_action(action, InputMap.action_get_deadzone(action))
+	_send_result(peer, id, {
+		"success": true,
+		"status": "created",
+		"action": action,
+		"event": _serialise_input_event(ev),
+	})
+
+
+func _cmd_input_map_action_remove_event(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var action := str(params.get("action", ""))
+	if action.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "action must be a non-empty string"))
+		return
+	if not InputMap.has_action(action):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no action '%s'" % action))
+		return
+	var built: Variant = _build_input_event(params.get("event", null))
+	if typeof(built) == TYPE_DICTIONARY and built.has("error"):
+		_send_result(peer, id, mcp_error(str(built["code"]), str(built["error"])))
+		return
+	var ev: InputEvent = built
+	var existing_events := InputMap.action_get_events(action)
+	var matched: InputEvent = null
+	for existing in existing_events:
+		if _input_events_equivalent(existing, ev):
+			matched = existing
+			break
+	if matched == null:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no matching event on action '%s' (found %d events)" % [action, existing_events.size()]))
+		return
+	InputMap.action_erase_event(action, matched)
+	_persist_input_action(action, InputMap.action_get_deadzone(action))
+	# No `status` — symmetric removes are updates, not creates.
+	_send_result(peer, id, {
+		"success": true,
+		"action": action,
+		"event": _serialise_input_event(matched),
+	})
+
+
+func _cmd_input_map_remove_action(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var action := str(params.get("action", ""))
+	if action.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "action must be a non-empty string"))
+		return
+	if not InputMap.has_action(action):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no action '%s'" % action))
+		return
+	if action in _BUILTIN_UI_ACTIONS:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "refusing to remove built-in UI action '%s' (would break editor/engine keyboard navigation); use input_map.action_remove_event to clear its bindings instead" % action))
+		return
+	InputMap.erase_action(action)
+	if ProjectSettings.has_setting("input/" + action):
+		ProjectSettings.clear("input/" + action)
+		var err := ProjectSettings.save()
+		if err != OK:
+			push_warning("[MCPServer] ProjectSettings.save after input_map.remove_action failed (err %d, action=%s)" % [err, action])
+	_send_result(peer, id, {
+		"success": true,
+		"action": action,
+	})
+
+
+# ---- Iter 15d: animation.* ----
+#
+# Three tools authoring AnimationPlayer keyframes (TYPE_VALUE tracks only —
+# transform2d/transform3d/bezier/method/audio deferred per handoff note).
+# UndoRedo-wrapped per project_delete_node_crash.md (matches scene.instantiate).
+
+
+# Resolve player_path → AnimationPlayer + animation_name → Animation.
+# Returns the tuple via dict; caller pattern-matches on `error`/`code`.
+func _resolve_animation(player_path: String, animation_name: String) -> Dictionary:
+	var root := _get_edited_root()
+	if root == null:
+		return {"code": "NO_SCENE", "error": "no edited scene"}
+	if player_path.is_empty():
+		return {"code": "INVALID_PARAMS", "error": "missing player_path"}
+	var node = _resolve_scene_node(player_path)
+	if node == null:
+		return {"code": "NOT_FOUND", "error": "no node at player_path %s" % player_path}
+	if not (node is AnimationPlayer):
+		return {"code": "INVALID_CLASS", "error": "node at %s is not an AnimationPlayer (got %s)" % [player_path, node.get_class()]}
+	var player := node as AnimationPlayer
+	if animation_name.is_empty():
+		return {"code": "INVALID_PARAMS", "error": "missing animation_name"}
+	if not player.has_animation(animation_name):
+		var available: Array = []
+		for n in player.get_animation_list():
+			available.append(str(n))
+			if available.size() >= 10:
+				available.append("…")
+				break
+		return {"code": "NOT_FOUND", "error": "no animation '%s' on player %s; available: %s" % [animation_name, player_path, ", ".join(available)]}
+	return {
+		"player": player,
+		"anim": player.get_animation(animation_name),
+	}
+
+
+func _cmd_animation_add_key(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var player_path := str(params.get("player_path", ""))
+	var animation_name := str(params.get("animation_name", ""))
+	var track_path := str(params.get("track_path", ""))
+	var time_raw = params.get("time", 0.0)
+	var time := float(time_raw) if (typeof(time_raw) == TYPE_FLOAT or typeof(time_raw) == TYPE_INT) else -1.0
+	var track_type := str(params.get("track_type", ""))
+	if not params.has("value"):
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing value"))
+		return
+	var raw_value = params.get("value", null)
+	if time < 0.0:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "time must be >= 0 (got %f)" % time))
+		return
+	if track_path.is_empty() or not track_path.contains(":"):
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "track_path must include a property (e.g. 'Sprite2D:position'); method/transform/bezier tracks not supported in 15d"))
+		return
+	if not track_type.is_empty() and track_type != "value":
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "track_type='%s' not supported in 15d (only 'value' / default); transform2d/transform3d/bezier/method/audio deferred" % track_type))
+		return
+	var resolved := _resolve_animation(player_path, animation_name)
+	if resolved.has("error"):
+		_send_result(peer, id, mcp_error(str(resolved["code"]), str(resolved["error"])))
+		return
+	var anim: Animation = resolved["anim"]
+	# Resource-ref pre-coerce gate (same load-bearing rationale as
+	# node.set_property — null Resource → pink checkerboard at runtime).
+	# TODO(iter-18): _coerce_value Resource path should route through FileGuard.
+	var missing := _check_resource_paths(raw_value)
+	if missing != "":
+		_send_result(peer, id, mcp_error("LOAD_FAILED", "failed to load resource at %s; verify the path or use resource.create to create it first" % missing))
+		return
+	var coerced = _coerce_value(raw_value)
+	# Track resolution.
+	var track_idx := -1
+	var track_path_np := NodePath(track_path)
+	for i in range(anim.get_track_count()):
+		if anim.track_get_path(i) == track_path_np:
+			track_idx = i
+			break
+	if track_idx == -1:
+		track_idx = anim.add_track(Animation.TYPE_VALUE)
+		anim.track_set_path(track_idx, track_path_np)
+	# Idempotency: exact-time key already present → silent return with the
+	# EXISTING value (observable state).
+	var existing_idx := anim.track_find_key(track_idx, time, Animation.FIND_MODE_EXACT)
+	if existing_idx != -1:
+		_send_result(peer, id, {
+			"success": true,
+			"status": "returned",
+			"player_path": player_path,
+			"animation_name": animation_name,
+			"track_path": track_path,
+			"track_idx": track_idx,
+			"time": time,
+			"key_idx": existing_idx,
+			"value": _serialize_value(anim.track_get_key_value(track_idx, existing_idx)),
+		})
+		return
+	# UndoRedo wrap — matches scene.instantiate pattern.
+	var undo_redo := EditorInterface.get_editor_undo_redo()
+	undo_redo.create_action("MCP: animation.add_key %s @ %s" % [track_path, time])
+	undo_redo.add_do_method(anim, "track_insert_key", track_idx, time, coerced)
+	# Undo finds-and-removes by exact time (the index may shift if other
+	# keys are added/removed between do and undo, so resolving fresh here
+	# is more robust than capturing the index now).
+	undo_redo.add_undo_method(self, "_animation_remove_key_at", anim, track_idx, time)
+	undo_redo.add_undo_reference(anim)
+	undo_redo.commit_action()
+	var new_idx := anim.track_find_key(track_idx, time, Animation.FIND_MODE_EXACT)
+	_send_result(peer, id, {
+		"success": true,
+		"status": "created",
+		"player_path": player_path,
+		"animation_name": animation_name,
+		"track_path": track_path,
+		"track_idx": track_idx,
+		"time": time,
+		"key_idx": new_idx,
+		"value": _serialize_value(coerced),
+	})
+
+
+# Helper for UndoRedo undo branch — resolves time → key_idx at undo time
+# rather than capturing at do time (more robust to intervening edits).
+func _animation_remove_key_at(anim: Animation, track_idx: int, time: float) -> void:
+	var idx := anim.track_find_key(track_idx, time, Animation.FIND_MODE_EXACT)
+	if idx != -1:
+		anim.track_remove_key(track_idx, idx)
+
+
+func _animation_insert_key_silent(anim: Animation, track_idx: int, time: float, value) -> void:
+	# UndoRedo undo branch for animation.remove_key — restores the captured
+	# previous value at the same time. Silent; mirror of _animation_remove_key_at.
+	anim.track_insert_key(track_idx, time, value)
+
+
+func _cmd_animation_remove_key(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var player_path := str(params.get("player_path", ""))
+	var animation_name := str(params.get("animation_name", ""))
+	var track_path := str(params.get("track_path", ""))
+	var time_raw = params.get("time", -1.0)
+	var time := float(time_raw) if (typeof(time_raw) == TYPE_FLOAT or typeof(time_raw) == TYPE_INT) else -1.0
+	if time < 0.0:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "time must be >= 0 (got %f)" % time))
+		return
+	if track_path.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing track_path"))
+		return
+	var resolved := _resolve_animation(player_path, animation_name)
+	if resolved.has("error"):
+		_send_result(peer, id, mcp_error(str(resolved["code"]), str(resolved["error"])))
+		return
+	var anim: Animation = resolved["anim"]
+	var track_idx := -1
+	var track_path_np := NodePath(track_path)
+	for i in range(anim.get_track_count()):
+		if anim.track_get_path(i) == track_path_np:
+			track_idx = i
+			break
+	if track_idx == -1:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no track '%s' on animation '%s'" % [track_path, animation_name]))
+		return
+	var key_idx := anim.track_find_key(track_idx, time, Animation.FIND_MODE_EXACT)
+	if key_idx == -1:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no key at time=%f on track '%s'" % [time, track_path]))
+		return
+	var captured_value = anim.track_get_key_value(track_idx, key_idx)
+	var serialised_value = _serialize_value(captured_value)
+	var undo_redo := EditorInterface.get_editor_undo_redo()
+	undo_redo.create_action("MCP: animation.remove_key %s @ %s" % [track_path, time])
+	undo_redo.add_do_method(self, "_animation_remove_key_at", anim, track_idx, time)
+	undo_redo.add_undo_method(self, "_animation_insert_key_silent", anim, track_idx, time, captured_value)
+	undo_redo.add_undo_reference(anim)
+	undo_redo.commit_action()
+	_send_result(peer, id, {
+		"success": true,
+		"player_path": player_path,
+		"animation_name": animation_name,
+		"track_path": track_path,
+		"time": time,
+		"removed_value": serialised_value,
+	})
+
+
+func _cmd_animation_get_keys(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var player_path := str(params.get("player_path", ""))
+	var animation_name := str(params.get("animation_name", ""))
+	var track_path := str(params.get("track_path", ""))
+	if track_path.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing track_path"))
+		return
+	var resolved := _resolve_animation(player_path, animation_name)
+	if resolved.has("error"):
+		_send_result(peer, id, mcp_error(str(resolved["code"]), str(resolved["error"])))
+		return
+	var anim: Animation = resolved["anim"]
+	var track_idx := -1
+	var track_path_np := NodePath(track_path)
+	for i in range(anim.get_track_count()):
+		if anim.track_get_path(i) == track_path_np:
+			track_idx = i
+			break
+	if track_idx == -1:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no track '%s' on animation '%s'" % [track_path, animation_name]))
+		return
+	var keys: Array = []
+	for k in range(anim.track_get_key_count(track_idx)):
+		keys.append({
+			"time": anim.track_get_key_time(track_idx, k),
+			"value": _serialize_value(anim.track_get_key_value(track_idx, k)),
+			"transition": anim.track_get_key_transition(track_idx, k),
+		})
+	_send_result(peer, id, {
+		"success": true,
+		"player_path": player_path,
+		"animation_name": animation_name,
+		"track_path": track_path,
+		"track_idx": track_idx,
+		"track_type": _animation_track_type_name(anim.track_get_type(track_idx)),
+		"length": anim.length,
+		"keys": keys,
+	})
+
+
+func _animation_track_type_name(t: int) -> String:
+	match t:
+		Animation.TYPE_VALUE: return "value"
+		Animation.TYPE_POSITION_3D: return "position_3d"
+		Animation.TYPE_ROTATION_3D: return "rotation_3d"
+		Animation.TYPE_SCALE_3D: return "scale_3d"
+		Animation.TYPE_BLEND_SHAPE: return "blend_shape"
+		Animation.TYPE_METHOD: return "method"
+		Animation.TYPE_BEZIER: return "bezier"
+		Animation.TYPE_AUDIO: return "audio"
+		Animation.TYPE_ANIMATION: return "animation"
+		_: return "unknown(%d)" % t
+
+
+# ---- Iter 15d: tilemap.set_cells ----
+#
+# Batch cell painting under a single UndoRedo action — collapses what would
+# otherwise be N round-trips into one. Supports both TileMap (deprecated in
+# 4.3, still functional in 4.4) and TileMapLayer (4.3+). source_id:-1 clears
+# a cell. Returns cells_written + cells_unchanged for observability.
+
+
+func _cmd_tilemap_set_cells(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var tilemap_path := str(params.get("tilemap_path", ""))
+	var layer := int(params.get("layer", 0))
+	var cells_raw = params.get("cells", null)
+	# TODO(iter-18): route `tilemap_path` through FileGuard.resolve_safe.
+	if tilemap_path.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing tilemap_path"))
+		return
+	if typeof(cells_raw) != TYPE_ARRAY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "cells must be an Array of { x, y, source_id, atlas_x, atlas_y, alternative_tile? } descriptors"))
+		return
+	var cells: Array = cells_raw
+	var node = _resolve_scene_node(tilemap_path)
+	if node == null:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no node at %s" % tilemap_path))
+		return
+	var is_layer := node is TileMapLayer
+	var is_map := node is TileMap
+	if not (is_layer or is_map):
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "node at %s is not a TileMap or TileMapLayer (got %s); tilemap.set_cells only accepts tilemap-family nodes" % [tilemap_path, node.get_class()]))
+		return
+	# Per-cell shape check; bail on first malformed entry.
+	var required_keys := ["x", "y", "source_id", "atlas_x", "atlas_y"]
+	for ci in range(cells.size()):
+		var c = cells[ci]
+		if typeof(c) != TYPE_DICTIONARY:
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "cells[%d] must be an object" % ci))
+			return
+		for k in required_keys:
+			if not c.has(k):
+				_send_result(peer, id, mcp_error("INVALID_PARAMS", "cells[%d] missing required key '%s'" % [ci, k]))
+				return
+	if is_map:
+		var tm := node as TileMap
+		var layer_count := tm.get_layers_count()
+		if layer < 0 or layer >= layer_count:
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "layer %d out of range [0, %d) for TileMap %s" % [layer, layer_count, tilemap_path]))
+			return
+	# Capture before-state per cell so undo can restore. O(n) — handler comment
+	# in the plan flags an optional skip_undo escape hatch for iter 22 if very
+	# large grids surface as an issue.
+	var before_state: Array = []
+	for ci in range(cells.size()):
+		var c: Dictionary = cells[ci]
+		var coord := Vector2i(int(c["x"]), int(c["y"]))
+		var prev_source: int
+		var prev_atlas: Vector2i
+		var prev_alt: int
+		if is_layer:
+			var tl := node as TileMapLayer
+			prev_source = tl.get_cell_source_id(coord)
+			prev_atlas = tl.get_cell_atlas_coords(coord)
+			prev_alt = tl.get_cell_alternative_tile(coord)
+		else:
+			var tm2 := node as TileMap
+			prev_source = tm2.get_cell_source_id(layer, coord)
+			prev_atlas = tm2.get_cell_atlas_coords(layer, coord)
+			prev_alt = tm2.get_cell_alternative_tile(layer, coord)
+		before_state.append({
+			"coord": coord,
+			"source_id": prev_source,
+			"atlas": prev_atlas,
+			"alternative_tile": prev_alt,
+		})
+	# Compute write counts (observability — agent sees no-op writes).
+	var cells_written := 0
+	var cells_unchanged := 0
+	for ci in range(cells.size()):
+		var c: Dictionary = cells[ci]
+		var prev: Dictionary = before_state[ci]
+		var new_source := int(c["source_id"])
+		var new_atlas := Vector2i(int(c["atlas_x"]), int(c["atlas_y"]))
+		var new_alt := int(c.get("alternative_tile", 0))
+		if int(prev["source_id"]) == new_source \
+				and (prev["atlas"] as Vector2i) == new_atlas \
+				and int(prev["alternative_tile"]) == new_alt:
+			cells_unchanged += 1
+		else:
+			cells_written += 1
+	# UndoRedo: single action across the whole batch.
+	var undo_redo := EditorInterface.get_editor_undo_redo()
+	undo_redo.create_action("MCP: tilemap.set_cells %s (%d cells)" % [tilemap_path, cells.size()])
+	undo_redo.add_do_method(self, "_tilemap_apply_batch", node, layer, cells)
+	undo_redo.add_undo_method(self, "_tilemap_restore_batch", node, layer, before_state)
+	undo_redo.add_do_reference(node)
+	undo_redo.commit_action()
+	_send_result(peer, id, {
+		"success": true,
+		"tilemap_path": tilemap_path,
+		"layer": layer,
+		"cells_written": cells_written,
+		"cells_unchanged": cells_unchanged,
+		"total": cells.size(),
+	})
+
+
+func _tilemap_apply_batch(node: Node, layer: int, cells: Array) -> void:
+	var is_layer := node is TileMapLayer
+	for c in cells:
+		var coord := Vector2i(int(c["x"]), int(c["y"]))
+		var source_id := int(c["source_id"])
+		var atlas := Vector2i(int(c["atlas_x"]), int(c["atlas_y"]))
+		var alt := int(c.get("alternative_tile", 0))
+		if is_layer:
+			(node as TileMapLayer).set_cell(coord, source_id, atlas, alt)
+		else:
+			(node as TileMap).set_cell(layer, coord, source_id, atlas, alt)
+
+
+func _tilemap_restore_batch(node: Node, layer: int, before_state: Array) -> void:
+	var is_layer := node is TileMapLayer
+	for s in before_state:
+		var coord: Vector2i = s["coord"]
+		var source_id := int(s["source_id"])
+		var atlas: Vector2i = s["atlas"]
+		var alt := int(s["alternative_tile"])
+		if is_layer:
+			(node as TileMapLayer).set_cell(coord, source_id, atlas, alt)
+		else:
+			(node as TileMap).set_cell(layer, coord, source_id, atlas, alt)
+
+
+# ---- Iter 15d: editor.screenshot_node ----
+#
+# Focus + capture a specific node in the editor viewport. Atomic
+# focus-restore (prior selection preserved). Inline base64 PNG matches iter
+# 07's editor.screenshot pattern. Best-effort framing: edit_node selects the
+# node in the inspector + scene-tree dock; viewport camera is left where it
+# is — known limitation documented in the toolkit README.
+
+
+func _cmd_editor_screenshot_node(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	if path.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path"))
+		return
+	var size_d: Dictionary = params.get("size", {}) if typeof(params.get("size", {})) == TYPE_DICTIONARY else {}
+	var width := int(size_d.get("width", 1280))
+	var height := int(size_d.get("height", 720))
+	if width < 64 or width > 4096 or height < 64 or height > 4096:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "size.width and size.height must be in [64, 4096] (got %dx%d)" % [width, height]))
+		return
+	var root := _get_edited_root()
+	if root == null:
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
+		return
+	var node = _resolve_scene_node(path)
+	if node == null:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no node at %s" % path))
+		return
+	# Capture prior selection so we can restore at the end.
+	var sel := EditorInterface.get_selection()
+	var prior_selection: Array = []
+	if sel != null:
+		for n in sel.get_selected_nodes():
+			prior_selection.append(n)
+		sel.clear()
+		sel.add_node(node)
+	EditorInterface.edit_node(node)
+	# One frame for the editor to repaint with the new selection.
+	await RenderingServer.frame_post_draw
+	# Pick viewport: 3D for Node3D, otherwise the 2D viewport (covers Node2D,
+	# Control, and any non-3D parent like Node).
+	var viewport: SubViewport = null
+	if node is Node3D:
+		viewport = EditorInterface.get_editor_viewport_3d(0)
+	if viewport == null:
+		viewport = EditorInterface.get_editor_viewport_2d()
+	if viewport == null:
+		_send_result(peer, id, mcp_error("INTERNAL", "no editor viewport available"))
+		return
+	var image := viewport.get_texture().get_image()
+	if image == null:
+		_send_result(peer, id, mcp_error("INTERNAL", "viewport texture unavailable (nothing rendered yet?)"))
+		return
+	# Resize to requested dimensions; LANCZOS preserves detail better than
+	# bilinear for mixed UI / sprite content.
+	if image.get_width() != width or image.get_height() != height:
+		image.resize(width, height, Image.INTERPOLATE_LANCZOS)
+	# Restore prior selection. If no prior selection, leave cleared (matches
+	# pre-capture state). Best-effort — if a node was freed between capture
+	# and restore we silently skip (defensive against editor undo / external
+	# scene mutation during the await).
+	if sel != null:
+		sel.clear()
+		for n in prior_selection:
+			if is_instance_valid(n):
+				sel.add_node(n)
+	var png_bytes := image.save_png_to_buffer()
+	if png_bytes.is_empty():
+		_send_result(peer, id, mcp_error("INTERNAL", "save_png_to_buffer returned empty"))
+		return
+	_send_result(peer, id, {
+		"image_base64": Marshalls.raw_to_base64(png_bytes),
+		"mime_type": "image/png",
+		"width": image.get_width(),
+		"height": image.get_height(),
+		"bytes": png_bytes.size(),
+		"path": path,
+	})
