@@ -18,3 +18,9 @@ dist-plugin/
 # Smoke-test scratch artifacts written by the server repo's test/smoke.ts
 /smoke_probe.*
 /smoke_screenshots/
+# Persistent EDITED_SCENE / PATH_IN_USE probes — their editor tabs linger
+# for the session (Godot 4.4.1 has no EditorInterface.close_scene), so the
+# files and parent folder must persist to keep play-test save_all_scenes
+# happy. Swap for true teardown on Godot 4.5.
+/smoke_edited_probe.tscn
+/smoke_path_in_use/
