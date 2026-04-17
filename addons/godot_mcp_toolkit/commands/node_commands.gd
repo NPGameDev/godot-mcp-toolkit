@@ -1,0 +1,211 @@
+@tool
+extends RefCounted
+class_name NodeCommands
+## node.* command handlers — property get/set/list, method calls, script attachment.
+
+
+static func register(registry: MCPCommandRegistry, server: Node) -> void:
+	registry.add("node.get_property", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_node_get_property(parameters), "lite")
+	registry.add("node.set_property", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_node_set_property(parameters), "lite")
+	registry.add("node.get_property_list", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_node_get_property_list(parameters), "lite")
+	registry.add("node.call_method", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_node_call_method(parameters), "full")
+	registry.add("node.set_script", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_node_set_script(parameters), "full")
+
+
+# -- Helpers ------------------------------------------------------------------
+
+
+static func _get_edited_root() -> Node:
+	return EditorInterface.get_edited_scene_root()
+
+
+static func _resolve_scene_node(node_path: String) -> Variant:
+	var root := _get_edited_root()
+	if root == null:
+		return null
+	if node_path.is_empty() or node_path == ".":
+		return root
+	return root.get_node_or_null(node_path)
+
+
+# -- Commands -----------------------------------------------------------------
+
+
+static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
+	var root := _get_edited_root()
+	if root == null:
+		return MCPError.make("NO_SCENE", "no edited scene")
+
+	var node_path := str(parameters.get("path", ""))
+	var property_name := str(parameters.get("property", ""))
+	# TODO(iter-18): filter node_path through FileGuard.resolve_safe.
+
+	if node_path.is_empty() or property_name.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing path or property")
+
+	var node := root.get_node_or_null(node_path)
+	if node == null:
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+
+	return {"value": MCPCoerce.serialize_value(node.get(property_name))}
+
+
+static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
+	var root := _get_edited_root()
+	if root == null:
+		return MCPError.make("NO_SCENE", "no edited scene")
+
+	var node_path := str(parameters.get("path", ""))
+	var property_name := str(parameters.get("property", ""))
+	var raw_value = parameters.get("value", null)
+	# TODO(iter-18): filter node_path through FileGuard.resolve_safe.
+
+	if node_path.is_empty() or property_name.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing path or property")
+
+	var node := root.get_node_or_null(node_path)
+	if node == null:
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+
+	var missing := MCPCoerce.check_resource_paths(raw_value)
+	if missing != "":
+		return MCPError.make("LOAD_FAILED",
+			"failed to load resource at %s; verify the path or use resource.create to create it first" % missing)
+
+	var coerced = MCPCoerce.coerce_value(raw_value)
+	node.set(property_name, coerced)
+	return {"ok": true}
+
+
+static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
+	var root := _get_edited_root()
+	if root == null:
+		return MCPError.make("NO_SCENE", "no edited scene")
+	var node_path := str(parameters.get("path", ""))
+	var node = _resolve_scene_node(node_path)
+	if node == null:
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+	var properties: Array = []
+	for property in node.get_property_list():
+		var usage: int = int(property.get("usage", 0))
+		if not (usage & PROPERTY_USAGE_EDITOR):
+			continue
+		var property_name := str(property.get("name", ""))
+		if property_name.is_empty() or property_name.begins_with("_"):
+			continue
+		properties.append({
+			"name": property_name,
+			"type": int(property.get("type", 0)),
+			"hint": int(property.get("hint", 0)),
+			"hint_string": str(property.get("hint_string", "")),
+		})
+	return {
+		"path": node_path,
+		"class": node.get_class(),
+		"properties": properties,
+		"count": properties.size(),
+	}
+
+
+static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
+	# TODO(iter-19): wrap in FeatureGate.is_enabled("node_call_method").
+	var root := _get_edited_root()
+	if root == null:
+		return MCPError.make("NO_SCENE", "no open scene; use scene.open or scene.create first")
+
+	var node_path := str(parameters.get("path", ""))
+	var method_name := str(parameters.get("method", ""))
+	var args_raw = parameters.get("args", [])
+	# TODO(iter-18): route node_path through FileGuard.resolve_safe; args may
+	# contain {type:"Resource",path:...} refs that hit the filesystem.
+
+	if node_path.is_empty() or method_name.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing path or method")
+	if typeof(args_raw) != TYPE_ARRAY:
+		return MCPError.make("INVALID_PARAMS",
+			"args must be an Array (got %s)" % typeof(args_raw))
+
+	var node := root.get_node_or_null(node_path)
+	if node == null:
+		return MCPError.make("NOT_FOUND", "no node at path %s" % node_path)
+	if not node.has_method(method_name):
+		return MCPError.make("INVALID_METHOD",
+			"node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [
+				node_path, method_name])
+
+	var missing := MCPCoerce.check_resource_paths(args_raw)
+	if missing != "":
+		return MCPError.make("LOAD_FAILED",
+			"failed to load resource at %s; verify the path or use resource.create to create it first" % missing)
+
+	var coerced_args = MCPCoerce.coerce_value(args_raw)
+	if typeof(coerced_args) != TYPE_ARRAY:
+		coerced_args = []
+	push_warning("MCP: node.call_method invoked %s.%s(%d args)" % [
+		node_path, method_name, (coerced_args as Array).size()])
+	var result = node.callv(method_name, coerced_args)
+
+	return {
+		"success": true,
+		"path": node_path,
+		"method": method_name,
+		"result": MCPCoerce.serialize_value(result),
+	}
+
+
+static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
+	var root := _get_edited_root()
+	if root == null:
+		return MCPError.make("NO_SCENE", "no edited scene")
+
+	var node_path := str(parameters.get("path", ""))
+	if node_path.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing path")
+
+	var node := root.get_node_or_null(node_path)
+	if node == null:
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+
+	var script_path := str(parameters.get("script", ""))
+
+	# Detach path: empty script string removes the script.
+	if script_path.is_empty():
+		node.set_script(null)
+		return {"success": true, "path": node_path, "script": null, "properties": []}
+
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(script_path).
+	if not script_path.begins_with("res://"):
+		return MCPError.make("INVALID_PATH",
+			"script must start with res:// (got %s)" % script_path)
+
+	var loaded = ResourceLoader.load(script_path)
+	if loaded == null:
+		return MCPError.make("LOAD_FAILED",
+			"cannot load script at %s; verify the path or use script.write to create it first" % script_path)
+	if not (loaded is Script):
+		return MCPError.make("INVALID_PARAMS",
+			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
+
+	node.set_script(loaded)
+
+	var exports: Array = []
+	for property in loaded.get_script_property_list():
+		var usage: int = int(property.get("usage", 0))
+		if not (usage & PROPERTY_USAGE_EDITOR):
+			continue
+		var property_name := str(property.get("name", ""))
+		if property_name.is_empty() or property_name.begins_with("_"):
+			continue
+		exports.append({
+			"name": property_name,
+			"type": int(property.get("type", 0)),
+			"hint": int(property.get("hint", 0)),
+			"hint_string": str(property.get("hint_string", "")),
+		})
+
+	return {"success": true, "path": node_path, "script": script_path, "properties": exports}

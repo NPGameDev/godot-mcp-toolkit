@@ -15,8 +15,27 @@ var _server: Node = null
 
 
 func _enter_tree() -> void:
+	var registry := MCPCommandRegistry.new()
 	_server = MCPServer.new()
 	_server.name = "MCPServer"
+	_server.set_registry(registry)
+
+	# Register all domain command modules.
+	SceneCommands.register(registry, _server)
+	NodeCommands.register(registry, _server)
+	ScriptCommands.register(registry, _server)
+	EditorCommands.register(registry, _server)
+	ResourceCommands.register(registry, _server)
+	FolderCommands.register(registry, _server)
+	FileCommands.register(registry, _server)
+	SignalCommands.register(registry, _server)
+	PlaytestCommands.register(registry, _server)
+	ProjectCommands.register(registry, _server)
+	InputMapCommands.register(registry, _server)
+	AnimationCommands.register(registry, _server)
+	TilemapCommands.register(registry, _server)
+	AssetCommands.register(registry, _server)
+
 	add_child(_server)
 	_server.start()
 
@@ -29,9 +48,6 @@ func _exit_tree() -> void:
 
 
 func _enable_plugin() -> void:
-	# Fires when the plugin is FIRST enabled (or re-enabled after disable).
-	# Autoload edits persist in project.godot so this is the right boundary
-	# per I12 (not _enter_tree which fires on every editor open).
 	add_autoload_singleton(RUNTIME_AUTOLOAD_NAME, RUNTIME_AUTOLOAD_PATH)
 
 
