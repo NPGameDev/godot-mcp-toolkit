@@ -17,7 +17,7 @@ Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
 Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
-## Core tool catalogue (30 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d + iter 15e + iter 15f + iter 15g)
+## Core tool catalogue (31 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d + iter 15e + iter 15f + iter 15g + iter 15h)
 
 Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 `scene_open`, `project_get_settings`, `signal_*`, `resource_load`,
@@ -25,14 +25,14 @@ Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 plus iter 15c's playtest/composition additions, iter 15d's
 content-authoring extensions, iter 15e's asset-discovery +
 console-reading, and iter 15f's binary-asset import + scan-idle gating
-bring the full catalogue to 53 tools (54 with
+bring the full catalogue to 54 tools (55 with
 `GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite` in `.mcp.json` args for a
-30-tool token-sensitive subset.
+31-tool token-sensitive subset.
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
 | `scene_get_tree`        | Return the edited scene as nested JSON `{ name, class, path, children }`.        |
-| `scene_create_node`     | Create `class_name` under `parent`. Idempotent — `status: "returned"` on collision. |
+| `scene_create_node`     | Create node of `class_name` (engine + user-defined `class_name` classes) under `parent`. Idempotent. |
 | `scene_delete_node`     | Delete node at `path`. UndoRedo-based; refuses to delete the edited-scene root.  |
 | `scene_create`          | Create `.tscn` file at `path` with root `root_type`. Idempotent; `if_exists: return\|fail\|replace`. |
 | `scene_delete`          | Delete `.tscn` file (+ `.uid`). Refuses non-`.tscn` and the currently-edited scene. |
@@ -45,6 +45,7 @@ bring the full catalogue to 53 tools (54 with
 | `folder_delete`         | Delete directory. `recursive:false` default. Refuses root/addons/plugin/open-file parents. |
 | `node_get_property`     | Read a property. Engine types (Vector2, Color, …) come back dict-wrapped.        |
 | `node_set_property`     | Write a property. Pass engine types as `{ type: "Vector2", x: 0, y: 0 }`.        |
+| `node_set_script`       | Attach a script (.gd/.cs) to a node. Returns @export properties. Empty `script` detaches. Lite. |
 | `script_read`           | Read a GDScript / text file (`res://` only).                                     |
 | `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` at `path` (`res://` only). Overwrites. |
 | `editor_get_errors`     | Editor-time error tail (delegates to `editor.get_console` with `level='error'`). Iter 15e: stub replaced with real console reader. |

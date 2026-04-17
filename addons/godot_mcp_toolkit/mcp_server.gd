@@ -183,6 +183,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_script_delete(peer, id, params)
 		"node.set_property":
 			_cmd_node_set_property(peer, id, params)
+		"node.set_script":
+			_cmd_node_set_script(peer, id, params)
 		"node.get_property":
 			_cmd_node_get_property(peer, id, params)
 		"script.read":
@@ -405,14 +407,26 @@ func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 	if cls.is_empty():
 		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing class_name"))
 		return
-	if not ClassDB.class_exists(cls):
-		_send_result(peer, id, mcp_error("INVALID_CLASS", "unknown class: %s" % cls))
+	# Class resolution: ClassDB (engine) first, then global script class list.
+	# Mirrors scene.create's two-stage resolution (iter 15h).
+	var resolved_kind := ""
+	var global_entry: Dictionary = {}
+	if ClassDB.class_exists(cls):
+		resolved_kind = "native"
+		if not ClassDB.can_instantiate(cls):
+			_send_result(peer, id, mcp_error("INVALID_CLASS", "class is not instantiable (abstract, virtual, or editor-only): %s" % cls))
+			return
+	else:
+		for entry in ProjectSettings.get_global_class_list():
+			if str(entry.get("class", "")) == cls:
+				resolved_kind = "global"
+				global_entry = entry
+				break
+	if resolved_kind.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % cls))
 		return
-	if not ClassDB.can_instantiate(cls):
-		_send_result(peer, id, mcp_error("INVALID_CLASS", "class is not instantiable (abstract, virtual, or editor-only): %s" % cls))
-		return
-	if not ClassDB.is_parent_class(cls, "Node"):
-		_send_result(peer, id, mcp_error("INVALID_CLASS", "not a Node subclass: %s" % cls))
+	if not _class_descends_from(cls, "Node"):
+		_send_result(peer, id, mcp_error("INVALID_CLASS", "%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [cls, _class_base_chain(cls)]))
 		return
 
 	var parent_node := root.get_node_or_null(parent_path) if not parent_path.is_empty() else root
@@ -428,7 +442,16 @@ func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, {"success": true, "status": "returned", "path": _path_in_scene(root, existing)})
 		return
 
-	var instance = ClassDB.instantiate(cls)
+	var instance: Node = null
+	if resolved_kind == "native":
+		instance = ClassDB.instantiate(cls)
+	else:
+		var script_path := str(global_entry.get("path", ""))
+		var script = load(script_path)
+		if script == null:
+			_send_result(peer, id, mcp_error("INVALID_CLASS", "could not load script for %s at %s" % [cls, script_path]))
+			return
+		instance = script.new()
 	if instance == null or not (instance is Node):
 		_send_result(peer, id, mcp_error("INVALID_CLASS", "instantiate failed: %s" % cls))
 		return
@@ -437,6 +460,73 @@ func _cmd_scene_create_node(peer: WebSocketPeer, id, params) -> void:
 	parent_node.add_child(instance)
 	instance.set_owner(root)
 	_send_result(peer, id, {"success": true, "status": "created", "path": _path_in_scene(root, instance)})
+
+
+func _cmd_node_set_script(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var root := _get_edited_root()
+	if root == null:
+		_send_result(peer, id, mcp_error("NO_SCENE", "no edited scene"))
+		return
+
+	var path := str(params.get("path", ""))
+	if path.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path"))
+		return
+
+	var node := root.get_node_or_null(path)
+	if node == null:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "node not found: %s" % path))
+		return
+
+	var script_path := str(params.get("script", ""))
+
+	# Detach path: empty script string removes the script.
+	if script_path.is_empty():
+		node.set_script(null)
+		_send_result(peer, id, {"success": true, "path": path, "script": null, "properties": []})
+		return
+
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(script_path).
+	if not script_path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "script must start with res:// (got %s)" % script_path))
+		return
+
+	var loaded = ResourceLoader.load(script_path)
+	if loaded == null:
+		_send_result(peer, id, mcp_error("LOAD_FAILED", "cannot load script at %s; verify the path or use script.write to create it first" % script_path))
+		return
+	if not (loaded is Script):
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()]))
+		return
+
+	node.set_script(loaded)
+
+	# Return @export properties defined by the script — saves a
+	# node.get_property_list round-trip for the agent. We query the Script
+	# object directly (get_script_property_list) instead of the node's
+	# full property list, because node.get_property_list() may not
+	# reflect the newly-attached script's properties until the next
+	# editor frame. Script.get_script_property_list() is immediate and
+	# returns only script-defined properties (no inherited class props).
+	var exports: Array = []
+	for prop in loaded.get_script_property_list():
+		var usage: int = int(prop.get("usage", 0))
+		if not (usage & PROPERTY_USAGE_EDITOR):
+			continue
+		var pname := str(prop.get("name", ""))
+		if pname.is_empty() or pname.begins_with("_"):
+			continue
+		exports.append({
+			"name": pname,
+			"type": int(prop.get("type", 0)),
+			"hint": int(prop.get("hint", 0)),
+			"hint_string": str(prop.get("hint_string", "")),
+		})
+
+	_send_result(peer, id, {"success": true, "path": path, "script": script_path, "properties": exports})
 
 
 func _cmd_scene_delete_node(peer: WebSocketPeer, id, params) -> void:
