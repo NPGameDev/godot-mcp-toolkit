@@ -97,7 +97,7 @@ static func _cmd_scene_get_tree(_server: Node) -> Dictionary:
 
 
 static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	var root_type := str(parameters.get("root_type", "Node"))
 	var if_exists := str(parameters.get("if_exists", "return"))
 	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
@@ -190,7 +190,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
 	if not file_path.begins_with("res://"):
 		return MCPError.make("PATH_DENIED", "path must start with res://: %s" % file_path)
@@ -201,7 +201,7 @@ static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	if file_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "path is required")
 	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
@@ -223,7 +223,7 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
 	if not file_path.begins_with("res://"):
 		return MCPError.make("INVALID_PATH", "path must start with res:// (got %s)" % file_path)
@@ -256,9 +256,9 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
 	var class_name_param := str(parameters.get("class_name", ""))
-	var parent_path := str(parameters.get("parent", ""))
+	var parent_path := str(parameters.get("parent_path", ""))
 	# TODO(iter-18): filter parent_path through FileGuard.resolve_safe.
-	var requested_name := str(parameters.get("name", class_name_param))
+	var requested_name := str(parameters.get("node_name", class_name_param))
 
 	if class_name_param.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing class_name")
@@ -316,10 +316,10 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
-	var node_path := str(parameters.get("path", ""))
+	var node_path := str(parameters.get("node_path", ""))
 	# TODO(iter-18): filter node_path through FileGuard.resolve_safe.
 	if node_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing path")
+		return MCPError.make("INVALID_PARAMS", "missing node_path")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:

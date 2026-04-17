@@ -93,8 +93,8 @@ static func _apply_resource_properties(
 
 
 static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
-	# TODO(iter-18): replace with FileGuard.resolve_safe(path).
+	var file_path := str(parameters.get("file_path", ""))
+	# TODO(iter-18): replace with FileGuard.resolve_safe(file_path).
 	if not file_path.begins_with("res://"):
 		return MCPError.make("PATH_DENIED", "path must start with res://: %s" % file_path)
 	if not ResourceLoader.exists(file_path):
@@ -128,7 +128,7 @@ static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_resource_create(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	var resource_class := str(parameters.get("resource_class", ""))
 	var properties: Dictionary = parameters.get("properties", {}) \
 		if typeof(parameters.get("properties", {})) == TYPE_DICTIONARY else {}
@@ -220,7 +220,7 @@ static func _cmd_resource_create(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_resource_save(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	var raw_properties = parameters.get("properties", null)
 	if typeof(raw_properties) != TYPE_DICTIONARY:
 		return MCPError.make("INVALID_PARAMS",
@@ -256,7 +256,7 @@ static func _cmd_resource_save(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
 	if not file_path.begins_with("res://"):
 		return MCPError.make("INVALID_PATH",

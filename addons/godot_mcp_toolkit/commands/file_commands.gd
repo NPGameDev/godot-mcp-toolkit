@@ -16,9 +16,9 @@ static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 
 
 static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	if file_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing path")
+		return MCPError.make("INVALID_PARAMS", "missing file_path")
 	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
 	if not file_path.begins_with("res://"):
 		return MCPError.make("INVALID_PATH",

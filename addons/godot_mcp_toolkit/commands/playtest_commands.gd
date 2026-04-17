@@ -22,7 +22,7 @@ static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 
 
 static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
-	var target := str(parameters.get("target", "current"))
+	var target := str(parameters.get("scene_path", "current"))
 	var wait_for_runtime_raw = parameters.get("wait_for_runtime", true)
 	var wait_for_runtime := bool(wait_for_runtime_raw) \
 		if typeof(wait_for_runtime_raw) == TYPE_BOOL else true

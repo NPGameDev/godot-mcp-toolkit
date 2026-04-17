@@ -254,9 +254,9 @@ func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
 		return
-	var path := str(params.get("path", ""))
+	var path := str(params.get("node_path", ""))
 	if path.is_empty():
-		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "missing path"))
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "missing node_path"))
 		return
 
 	var tree := get_tree()
@@ -375,7 +375,7 @@ func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
 		return
-	var path := str(params.get("path", ""))
+	var path := str(params.get("node_path", ""))
 	var node = _resolve_runtime_node(path)
 	if node == null:
 		_send_result(peer, id, MCPError.make("NOT_FOUND", "node not found: %s" % path))
@@ -390,11 +390,11 @@ func _resolve_runtime_signal_pair(params) -> Dictionary:
 	if typeof(params) != TYPE_DICTIONARY:
 		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
 	var source_path := str(params.get("source_path", ""))
-	var signal_name := str(params.get("signal", ""))
+	var signal_name := str(params.get("signal_name", ""))
 	var target_path := str(params.get("target_path", ""))
-	var method_name := str(params.get("method", ""))
+	var method_name := str(params.get("method_name", ""))
 	if source_path.is_empty() or signal_name.is_empty() or target_path.is_empty() or method_name.is_empty():
-		return {"code": "INVALID_PARAMS", "error": "source_path, signal, target_path, method are all required"}
+		return {"code": "INVALID_PARAMS", "error": "source_path, signal_name, target_path, method_name are all required"}
 	var source = _resolve_runtime_node(source_path)
 	if source == null:
 		return {"code": "NOT_FOUND", "error": "source node not found: %s" % source_path}
@@ -479,10 +479,10 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
 		return
-	var path := str(params.get("path", ""))
-	var signal_name := str(params.get("signal", ""))
+	var path := str(params.get("node_path", ""))
+	var signal_name := str(params.get("signal_name", ""))
 	if signal_name.is_empty():
-		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "missing signal"))
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "missing signal_name"))
 		return
 	var node = _resolve_runtime_node(path)
 	if node == null:
@@ -574,9 +574,9 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
 		return
-	var path := str(params.get("path", ""))
+	var path := str(params.get("node_path", ""))
 	if path.is_empty():
-		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "missing path"))
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "missing node_path"))
 		return
 	var node = _resolve_runtime_node(path)
 	if node == null:
@@ -586,10 +586,10 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "node is not AnimationPlayer: %s (got %s)" % [path, node.get_class()]))
 		return
 	var ap: AnimationPlayer = node
-	var op := str(params.get("op", ""))
+	var op := str(params.get("operation", ""))
 	match op:
 		"play":
-			var anim := str(params.get("animation", ""))
+			var anim := str(params.get("animation_name", ""))
 			if anim.is_empty():
 				ap.play()
 			else:

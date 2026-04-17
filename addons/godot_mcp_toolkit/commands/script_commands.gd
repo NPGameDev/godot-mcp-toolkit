@@ -22,8 +22,8 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 
 
 static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
-	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
+	var file_path := str(parameters.get("file_path", ""))
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(file_path).
 	if not file_path.begins_with("res://"):
 		return MCPError.make("PATH_DENIED", "path must start with res://: %s" % file_path)
 	if not FileAccess.file_exists(file_path):
@@ -38,8 +38,8 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
-	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
+	var file_path := str(parameters.get("file_path", ""))
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(file_path).
 	if not file_path.begins_with("res://"):
 		return MCPError.make("PATH_DENIED", "path must start with res://: %s" % file_path)
 	var write_extension := file_path.get_extension().to_lower()
@@ -78,7 +78,7 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 
 
 static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("path", ""))
+	var file_path := str(parameters.get("file_path", ""))
 	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
 	if not file_path.begins_with("res://"):
 		return MCPError.make("INVALID_PATH", "path must start with res:// (got %s)" % file_path)

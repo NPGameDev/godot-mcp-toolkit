@@ -47,7 +47,7 @@ static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 	var root := EditorInterface.get_edited_scene_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
-	var save_path := str(parameters.get("path", ""))
+	var save_path := str(parameters.get("file_path", ""))
 	if save_path.is_empty():
 		var save_error := EditorInterface.save_scene()
 		if save_error != OK:
@@ -130,9 +130,9 @@ static func _cmd_editor_reload_scripts() -> Dictionary:
 
 
 static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
-	var node_path := str(parameters.get("path", ""))
+	var node_path := str(parameters.get("node_path", ""))
 	if node_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing path")
+		return MCPError.make("INVALID_PARAMS", "missing node_path")
 	var size_dict: Dictionary = parameters.get("size", {}) if typeof(parameters.get("size", {})) == TYPE_DICTIONARY else {}
 	var width := int(size_dict.get("width", 1280))
 	var height := int(size_dict.get("height", 720))

@@ -45,12 +45,12 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
-	var node_path := str(parameters.get("path", ""))
+	var node_path := str(parameters.get("node_path", ""))
 	var property_name := str(parameters.get("property", ""))
 	# TODO(iter-18): filter node_path through FileGuard.resolve_safe.
 
 	if node_path.is_empty() or property_name.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing path or property")
+		return MCPError.make("INVALID_PARAMS", "missing node_path or property")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
@@ -64,13 +64,13 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
-	var node_path := str(parameters.get("path", ""))
+	var node_path := str(parameters.get("node_path", ""))
 	var property_name := str(parameters.get("property", ""))
 	var raw_value = parameters.get("value", null)
 	# TODO(iter-18): filter node_path through FileGuard.resolve_safe.
 
 	if node_path.is_empty() or property_name.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing path or property")
+		return MCPError.make("INVALID_PARAMS", "missing node_path or property")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
@@ -90,7 +90,7 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
-	var node_path := str(parameters.get("path", ""))
+	var node_path := str(parameters.get("node_path", ""))
 	var node = _resolve_scene_node(node_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
@@ -122,14 +122,14 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no open scene; use scene.open or scene.create first")
 
-	var node_path := str(parameters.get("path", ""))
-	var method_name := str(parameters.get("method", ""))
+	var node_path := str(parameters.get("node_path", ""))
+	var method_name := str(parameters.get("method_name", ""))
 	var args_raw = parameters.get("args", [])
 	# TODO(iter-18): route node_path through FileGuard.resolve_safe; args may
 	# contain {type:"Resource",path:...} refs that hit the filesystem.
 
 	if node_path.is_empty() or method_name.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing path or method")
+		return MCPError.make("INVALID_PARAMS", "missing node_path or method_name")
 	if typeof(args_raw) != TYPE_ARRAY:
 		return MCPError.make("INVALID_PARAMS",
 			"args must be an Array (got %s)" % typeof(args_raw))
@@ -167,15 +167,15 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
-	var node_path := str(parameters.get("path", ""))
+	var node_path := str(parameters.get("node_path", ""))
 	if node_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing path")
+		return MCPError.make("INVALID_PARAMS", "missing node_path")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
 
-	var script_path := str(parameters.get("script", ""))
+	var script_path := str(parameters.get("script_path", ""))
 
 	# Detach path: empty script string removes the script.
 	if script_path.is_empty():

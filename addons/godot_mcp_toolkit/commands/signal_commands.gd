@@ -55,13 +55,13 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 	if typeof(parameters) != TYPE_DICTIONARY:
 		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
 	var source_path := str(parameters.get("source_path", ""))
-	var signal_name := str(parameters.get("signal", ""))
+	var signal_name := str(parameters.get("signal_name", ""))
 	var target_path := str(parameters.get("target_path", ""))
-	var method_name := str(parameters.get("method", ""))
+	var method_name := str(parameters.get("method_name", ""))
 	if source_path.is_empty() or signal_name.is_empty() \
 			or target_path.is_empty() or method_name.is_empty():
 		return {"code": "INVALID_PARAMS",
-			"error": "source_path, signal, target_path, method are all required"}
+			"error": "source_path, signal_name, target_path, method_name are all required"}
 	var root := _get_edited_root()
 	if root == null:
 		return {"code": "NO_SCENE", "error": "no edited scene"}
@@ -97,7 +97,7 @@ static func _cmd_signal_list(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
-	var node_path := str(parameters.get("path", ""))
+	var node_path := str(parameters.get("node_path", ""))
 	var node = _resolve_scene_node(node_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
@@ -165,8 +165,8 @@ static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
-	var node_path := str(parameters.get("path", ""))
-	var signal_name := str(parameters.get("signal", ""))
+	var node_path := str(parameters.get("node_path", ""))
+	var signal_name := str(parameters.get("signal_name", ""))
 	if signal_name.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing signal")
 	var node = _resolve_scene_node(node_path)
