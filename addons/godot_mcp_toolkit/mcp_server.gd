@@ -199,6 +199,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_editor_reload_scripts(peer, id)
 		"scene.open":
 			_cmd_scene_open(peer, id, params)
+		"scene.close":
+			_cmd_scene_close(peer, id, params)
 		"project.get_settings":
 			_cmd_project_get_settings(peer, id, params)
 		"signal.list":
@@ -962,6 +964,35 @@ func _cmd_scene_open(peer: WebSocketPeer, id, params) -> void:
 	_send_result(peer, id, {"ok": true, "path": path})
 
 
+func _cmd_scene_close(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	if path.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "path is required"))
+		return
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	var open_scenes := EditorInterface.get_open_scenes()
+	if not open_scenes.has(path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "scene is not open in any editor tab: %s" % path))
+		return
+	if open_scenes.size() <= 1:
+		_send_result(peer, id, mcp_error("EDITED_SCENE", "cannot close the last open scene tab; open another scene via scene.open first"))
+		return
+	# Switch to the target tab if not already active.
+	var current_root := _get_edited_root()
+	var current_path := current_root.scene_file_path if current_root else ""
+	if current_path != path:
+		EditorInterface.open_scene_from_path(path)
+	# close_scene() closes the currently active tab (Godot 4.5+).
+	EditorInterface.close_scene()
+	_send_result(peer, id, {"success": true, "path": path})
+
+
 # MVP secret-key filter. `key` is over-eager (matches input keybinding names
 # with "keycode" etc.) but that's the right default for "lean out of sight
 # rather than risk exfil". Proper scrubbing lands in iter 20.
@@ -1488,7 +1519,7 @@ func _cmd_scene_delete(peer: WebSocketPeer, id, params) -> void:
 		return
 	var edited_root := _get_edited_root()
 	if edited_root != null and edited_root.scene_file_path == path:
-		_send_result(peer, id, mcp_error("EDITED_SCENE", "cannot delete the currently-edited scene %s; open a different scene via scene.open first" % path))
+		_send_result(peer, id, mcp_error("EDITED_SCENE", "cannot delete the currently-edited scene %s; close it via scene.close first, or open a different scene via scene.open" % path))
 		return
 	var dir := DirAccess.open("res://")
 	if dir == null:

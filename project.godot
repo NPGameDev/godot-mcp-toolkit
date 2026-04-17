@@ -11,8 +11,9 @@ config_version=5
 [application]
 
 config/name="Godot MCP Toolkit"
-config/features=PackedStringArray("4.4", "GL Compatibility")
+config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
+config/mcp_smoke_15d=""
 
 [autoload]
 
