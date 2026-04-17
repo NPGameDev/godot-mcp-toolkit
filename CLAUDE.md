@@ -17,7 +17,7 @@ Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
 Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
-## Core tool catalogue (31 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d + iter 15e + iter 15f + iter 15g + iter 15h)
+## Core tool catalogue (31 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d + iter 15e + iter 15f + iter 15g + iter 15h + iter 15i)
 
 Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 `scene_open`, `project_get_settings`, `signal_*`, `resource_load`,
@@ -25,7 +25,7 @@ Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 plus iter 15c's playtest/composition additions, iter 15d's
 content-authoring extensions, iter 15e's asset-discovery +
 console-reading, and iter 15f's binary-asset import + scan-idle gating
-bring the full catalogue to 54 tools (55 with
+bring the full catalogue to 55 tools (56 with
 `GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite` in `.mcp.json` args for a
 31-tool token-sensitive subset.
 
@@ -70,6 +70,7 @@ bring the full catalogue to 54 tools (55 with
 | `editor_get_console`    | Tail editor Output panel (`user://logs/`). `level_filter`, `since_id` for incremental. Lite. |
 | `asset_import`          | Import binary asset (image/audio/font/3D) into `res://` via `source_path` (filesystem copy) or `base64_data`. Extension allowlist; `if_exists: return\|fail\|replace`. Triggers scan + optional wait. Lite. |
 | `editor_wait_for_idle`  | Poll `EditorFileSystem.is_scanning()` until idle or `timeout_ms` (default 10s, cap 30s). Use after `asset.import`, `editor.reload_scripts`, or file mutations. Full only. |
+| `file_delete`           | Delete any `res://` file and its `.import`/`.uid` companions. Universal fallback for assets not covered by scene/script/resource.delete. Full only. |
 
 ## Conventions when driving these tools
 

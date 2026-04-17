@@ -181,6 +181,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_scene_delete(peer, id, params)
 		"script.delete":
 			_cmd_script_delete(peer, id, params)
+		"file.delete":
+			_cmd_file_delete(peer, id, params)
 		"node.set_property":
 			_cmd_node_set_property(peer, id, params)
 		"node.set_script":
@@ -1657,6 +1659,52 @@ func _cmd_script_delete(peer: WebSocketPeer, id, params) -> void:
 		return
 	# Best-effort .uid companion removal (Godot 4.4+ generates these for
 	# scripts too, not just scenes). Silent on miss.
+	var uid_rel := rel + ".uid"
+	if dir.file_exists(uid_rel):
+		dir.remove(uid_rel)
+	_send_result(peer, id, {"success": true, "path": path})
+
+
+# Generic file deletion — no extension allowlist. Covers imported assets
+# (.png, .wav, .glb, .ttf, etc.) that fall outside scene/script/resource.delete.
+# Cleans up .import + .uid companion files that Godot creates for imported assets.
+func _cmd_file_delete(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("path", ""))
+	if path.is_empty():
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "missing path"))
+		return
+	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	if path.begins_with("res://addons/godot_mcp_toolkit/"):
+		_send_result(peer, id, mcp_error("PATH_DENIED", "cannot delete files inside the MCP toolkit plugin directory"))
+		return
+	if not FileAccess.file_exists(path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "file not found: %s" % path))
+		return
+	var edited_root := _get_edited_root()
+	if edited_root != null and edited_root.scene_file_path == path:
+		_send_result(peer, id, mcp_error("EDITED_SCENE", "cannot delete the currently-edited scene %s; close it via scene.close first, or use scene.delete after closing" % path))
+		return
+	var dir := DirAccess.open("res://")
+	if dir == null:
+		_send_result(peer, id, mcp_error("INTERNAL", "DirAccess.open(res://) returned null"))
+		return
+	var rel := path.substr("res://".length())
+	var rm_err := dir.remove(rel)
+	if rm_err != OK:
+		_send_result(peer, id, mcp_error("DELETE_FAILED", "DirAccess.remove returned %d (path=%s)" % [rm_err, path]))
+		return
+	# Best-effort .import companion removal (Godot creates these for imported
+	# assets — .png, .wav, .glb, etc.). Silent on miss.
+	var import_rel := rel + ".import"
+	if dir.file_exists(import_rel):
+		dir.remove(import_rel)
+	# Best-effort .uid companion removal (Godot 4.4+). Silent on miss.
 	var uid_rel := rel + ".uid"
 	if dir.file_exists(uid_rel):
 		dir.remove(uid_rel)
