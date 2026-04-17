@@ -17,17 +17,17 @@ Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
 Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
-## Core tool catalogue (28 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d + iter 15e)
+## Core tool catalogue (29 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d + iter 15e + iter 15f)
 
 Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 `scene_open`, `project_get_settings`, `signal_*`, `resource_load`,
 `scene_diff`, `node_get_property_list`, and the Mode B `runtime_*` family)
 plus iter 15c's playtest/composition additions, iter 15d's
-content-authoring extensions, and iter 15e's asset-discovery +
-console-reading (`asset_list`, `asset_get_dependencies`,
-`editor_get_console`) bring the full catalogue to 50 tools (51 with
+content-authoring extensions, iter 15e's asset-discovery +
+console-reading, and iter 15f's binary-asset import + scan-idle gating
+bring the full catalogue to 52 tools (53 with
 `GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite` in `.mcp.json` args for a
-28-tool token-sensitive subset.
+29-tool token-sensitive subset.
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
@@ -66,6 +66,8 @@ console-reading (`asset_list`, `asset_get_dependencies`,
 | `asset_list`            | Enumerate `res://` assets with `path_prefix`, `name_glob`, `class_filter` (ancestry-aware), `extension_filter`. Cap 2000. Lite. |
 | `asset_get_dependencies` | Forward deps of a `res://` resource/scene. `include_transitive` for BFS walk. Full only. |
 | `editor_get_console`    | Tail editor Output panel (`user://logs/`). `level_filter`, `since_id` for incremental. Lite. |
+| `asset_import`          | Import binary asset (image/audio/font/3D) into `res://` via `source_path` (filesystem copy) or `base64_data`. Extension allowlist; `if_exists: return\|fail\|replace`. Triggers scan + optional wait. Lite. |
+| `editor_wait_for_idle`  | Poll `EditorFileSystem.is_scanning()` until idle or `timeout_ms` (default 10s, cap 30s). Use after `asset.import`, `editor.reload_scripts`, or file mutations. Full only. |
 
 ## Conventions when driving these tools
 

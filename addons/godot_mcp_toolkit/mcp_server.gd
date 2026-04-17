@@ -259,6 +259,10 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_asset_get_dependencies(peer, id, params)
 		"editor.get_console":
 			_cmd_editor_get_console(peer, id, params)
+		"asset.import":
+			_cmd_asset_import(peer, id, params)
+		"editor.wait_for_idle":
+			_cmd_editor_wait_for_idle(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -2998,7 +3002,7 @@ func _cmd_asset_list(peer: WebSocketPeer, id, params) -> void:
 		return
 	var efs := EditorInterface.get_resource_filesystem()
 	if efs.is_scanning():
-		_send_result(peer, id, mcp_error("FILESYSTEM_NOT_READY", "Godot's EditorFileSystem is mid-scan; retry in 500-2000ms (a wait-for-idle tool is planned for iter 15f or NextSteps)"))
+		_send_result(peer, id, mcp_error("FILESYSTEM_NOT_READY", "Godot's EditorFileSystem is mid-scan; call editor.wait_for_idle to poll until ready, or retry in 500-2000ms"))
 		return
 	if class_filter != "":
 		var found_in_classdb := ClassDB.class_exists(class_filter)
@@ -3090,7 +3094,7 @@ func _cmd_asset_get_dependencies(peer: WebSocketPeer, id, params) -> void:
 		return
 	var efs := EditorInterface.get_resource_filesystem()
 	if efs.is_scanning():
-		_send_result(peer, id, mcp_error("FILESYSTEM_NOT_READY", "Godot's EditorFileSystem is mid-scan; retry in 500-2000ms (a wait-for-idle tool is planned for iter 15f or NextSteps)"))
+		_send_result(peer, id, mcp_error("FILESYSTEM_NOT_READY", "Godot's EditorFileSystem is mid-scan; call editor.wait_for_idle to poll until ready, or retry in 500-2000ms"))
 		return
 
 	var deps: Array = []
@@ -3330,3 +3334,189 @@ func _cmd_editor_get_console(peer: WebSocketPeer, id, params) -> void:
 
 	var result := _read_console_log(limit, level_filter, since_id)
 	_send_result(peer, id, result)
+
+
+# ---- Asset import + editor idle (iter 15f) -----------------------------------
+
+
+const _IMPORT_ALLOWED_EXTENSIONS := [
+	# Images
+	"png", "jpg", "jpeg", "webp", "svg", "bmp", "tga", "hdr", "exr",
+	# Audio
+	"wav", "ogg", "mp3",
+	# 3D models
+	"glb", "gltf", "obj", "fbx", "blend", "dae",
+	# Fonts
+	"ttf", "otf", "woff", "woff2",
+	# Translations
+	"po", "csv",
+	# Video
+	"ogv",
+]
+const _IMPORT_MAX_FILE_BYTES := 50 * 1024 * 1024  # 50 MB filesystem copy
+const _IMPORT_MAX_BASE64_BYTES := 5 * 1024 * 1024  # 5 MB decoded from base64
+
+
+func _cmd_asset_import(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var source_path: String = str(params.get("source_path", ""))
+	var base64_data: String = str(params.get("base64_data", ""))
+	var dest_path: String = str(params.get("dest_path", ""))
+	var if_exists: String = str(params.get("if_exists", "return"))
+	var wait_for_scan_ms: int = int(params.get("wait_for_scan_ms", 5000))
+
+	# --- Guards ---
+	# TODO(iter-18): filter dest_path through FileGuard.resolve_safe.
+	if not dest_path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "dest_path must start with res:// (got %s)" % dest_path))
+		return
+	var ext := dest_path.get_extension().to_lower()
+	if ext not in _IMPORT_ALLOWED_EXTENSIONS:
+		_send_result(peer, id, mcp_error("INVALID_PATH", "extension '%s' not in import allowlist: %s; use script.write for .gd/.cs, resource.create for .tres/.res, scene.create for .tscn" % [ext, ", ".join(PackedStringArray(_IMPORT_ALLOWED_EXTENSIONS))]))
+		return
+	var has_source := source_path != ""
+	var has_base64 := base64_data != ""
+	if has_source and has_base64:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "provide exactly one of source_path or base64_data, not both"))
+		return
+	if not has_source and not has_base64:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "provide source_path (absolute filesystem path) or base64_data (base64-encoded file content)"))
+		return
+	if if_exists not in ["return", "fail", "replace"]:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "if_exists must be one of 'return', 'fail', 'replace' (got '%s')" % if_exists))
+		return
+	if wait_for_scan_ms < 0 or wait_for_scan_ms > 30000:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "wait_for_scan_ms must be in [0, 30000] (got %d); 0 disables wait" % wait_for_scan_ms))
+		return
+
+	# Source-path mode guards
+	# TODO(iter-18): source path allowlist.
+	if has_source:
+		if source_path.begins_with("res://") or source_path.begins_with("user://"):
+			_send_result(peer, id, mcp_error("INVALID_PATH", "source_path must be an absolute filesystem path, not a Godot scheme (got %s)" % source_path))
+			return
+		if not FileAccess.file_exists(source_path):
+			_send_result(peer, id, mcp_error("NOT_FOUND", "source file not found: %s" % source_path))
+			return
+		# Check file size without loading entire file into memory.
+		var fa_check := FileAccess.open(source_path, FileAccess.READ)
+		if fa_check == null:
+			_send_result(peer, id, mcp_error("READ_FAILED", "cannot read source file %s (err %d)" % [source_path, FileAccess.get_open_error()]))
+			return
+		var src_size := fa_check.get_length()
+		fa_check.close()
+		if src_size > _IMPORT_MAX_FILE_BYTES:
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "source file %d bytes exceeds 50 MB limit" % src_size))
+			return
+
+	# Base64 mode guards
+	var decoded_bytes := PackedByteArray()
+	if has_base64:
+		decoded_bytes = Marshalls.base64_to_raw(base64_data)
+		if decoded_bytes.is_empty() and base64_data.length() > 0:
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "base64_data is not valid base64"))
+			return
+		if decoded_bytes.size() > _IMPORT_MAX_BASE64_BYTES:
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "decoded base64 data %d bytes exceeds 5 MB limit" % decoded_bytes.size()))
+			return
+
+	# --- Idempotency (I3) ---
+	var file_existed := FileAccess.file_exists(dest_path)
+	if file_existed:
+		match if_exists:
+			"return":
+				_send_result(peer, id, {"success": true, "status": "returned", "path": dest_path, "source": null})
+				return
+			"fail":
+				_send_result(peer, id, mcp_error("ALREADY_EXISTS", "file already exists at %s; use if_exists:'replace' to overwrite or if_exists:'return' for idempotent no-op" % dest_path))
+				return
+			"replace":
+				pass  # Fall through to overwrite
+
+	# --- Write logic ---
+	# Ensure parent directory exists.
+	var parent_dir := dest_path.get_base_dir()
+	if not DirAccess.dir_exists_absolute(parent_dir):
+		var mkdir_err := DirAccess.make_dir_recursive_absolute(parent_dir)
+		if mkdir_err != OK:
+			_send_result(peer, id, mcp_error("WRITE_FAILED", "cannot create parent directory for %s (err %d)" % [dest_path, mkdir_err]))
+			return
+
+	var bytes_to_write: PackedByteArray
+	var source_label: String
+	if has_source:
+		bytes_to_write = FileAccess.get_file_as_bytes(source_path)
+		if FileAccess.get_open_error() != OK:
+			_send_result(peer, id, mcp_error("READ_FAILED", "cannot read source file %s (err %d)" % [source_path, FileAccess.get_open_error()]))
+			return
+		source_label = "filesystem"
+	else:
+		bytes_to_write = decoded_bytes
+		source_label = "base64"
+
+	var fa := FileAccess.open(dest_path, FileAccess.WRITE)
+	if fa == null:
+		_send_result(peer, id, mcp_error("WRITE_FAILED", "cannot open %s for writing (err %d)" % [dest_path, FileAccess.get_open_error()]))
+		return
+	fa.store_buffer(bytes_to_write)
+	fa.close()
+
+	# --- Post-write import trigger ---
+	# TODO(iter-19): FeatureGate.
+	var efs := EditorInterface.get_resource_filesystem()
+	efs.scan()
+	var warnings: Array[String] = []
+	if wait_for_scan_ms > 0:
+		var elapsed := 0
+		while efs.is_scanning() and elapsed < wait_for_scan_ms:
+			OS.delay_msec(100)
+			elapsed += 100
+		if efs.is_scanning():
+			warnings.append("EditorFileSystem still scanning after %dms — import may not be complete; call editor.wait_for_idle to finish" % wait_for_scan_ms)
+
+	# Attempt to get the file's recognized class from EFS.
+	var file_class: Variant = null
+	# TODO(iter-22): targeted scan mode if large-project feedback emerges.
+	var efs_type := efs.get_file_type(dest_path)
+	if efs_type != "":
+		file_class = efs_type
+
+	var status := "replaced" if file_existed else "created"
+
+	_send_result(peer, id, {
+		"success": true,
+		"status": status,
+		"path": dest_path,
+		"source": source_label,
+		"size_bytes": bytes_to_write.size(),
+		"class": file_class,
+		"warnings": warnings,
+	})
+
+
+func _cmd_editor_wait_for_idle(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		params = {}
+	var timeout_ms: int = int(params.get("timeout_ms", 10000))
+
+	if timeout_ms < 0 or timeout_ms > 30000:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "timeout_ms must be in [0, 30000] (got %d)" % timeout_ms))
+		return
+
+	var efs := EditorInterface.get_resource_filesystem()
+	if not efs.is_scanning():
+		_send_result(peer, id, {"success": true, "was_scanning": false, "waited_ms": 0})
+		return
+
+	var elapsed := 0
+	while efs.is_scanning() and elapsed < timeout_ms:
+		OS.delay_msec(100)
+		elapsed += 100
+
+	if efs.is_scanning():
+		_send_result(peer, id, mcp_error("TIMEOUT", "EditorFileSystem still scanning after %dms; consider increasing timeout_ms or checking editor.get_console for import errors" % timeout_ms))
+		return
+
+	_send_result(peer, id, {"success": true, "was_scanning": true, "waited_ms": elapsed})

@@ -34,8 +34,8 @@ Requires Node.js ≥ 20. Source + README:
    `.mcp.json`.
 2. `cd` to that project root.
 3. Run `claude`. `/mcp` should list `godot-mcp-toolkit` with the full tool
-   catalogue (50 tools default; pass `--lite` in `.mcp.json` args for a
-   28-tool core subset in token-sensitive sessions).
+   catalogue (52 tools default; pass `--lite` in `.mcp.json` args for a
+   29-tool core subset in token-sensitive sessions).
 
 (Iter 21 will add a one-click menu item in the editor's MCP dock that writes
 `.mcp.json` for you.)
@@ -271,6 +271,32 @@ runtime sees the new bindings (Godot loads `InputMap` from
   `null` in 15e; agents that need per-entry timing should use `--verbose`.
 - **`application/config/use_file_logging=false`** → `LOG_UNAVAILABLE` with
   the settings key in the message.
+
+## Iter 15f additions — binary asset import + scan-idle gating
+
+- `asset_import` — import a binary file (image, audio, font, 3D model, etc.)
+  into `res://` via one of two modes: `source_path` (absolute filesystem copy)
+  or `base64_data` (inline base64-encoded bytes). Extension allowlist covers
+  Godot's built-in importer types (`png`, `wav`, `glb`, `ttf`, `ogg`, …);
+  text-based formats with dedicated tools (`.gd`, `.tscn`, `.tres`) are
+  rejected with a message pointing to the correct tool. Idempotent via
+  `if_exists: "return"` (default) / `"fail"` / `"replace"`. Triggers
+  `EditorFileSystem.scan()` after write; `wait_for_scan_ms` (default 5000,
+  cap 30000) polls until the import pipeline finishes. Size limits: 50 MB
+  filesystem, 5 MB decoded base64.
+- `editor_wait_for_idle` — poll `EditorFileSystem.is_scanning()` until idle
+  or `timeout_ms` (default 10000, cap 30000). Returns immediately if not
+  scanning. Use after `asset.import`, `editor.reload_scripts`, or any
+  operation that triggers a filesystem rescan. Replaces the agent-side blind
+  `setTimeout` retry pattern — one deterministic wait instead of N guesses.
+
+### Source-path note
+
+`asset.import` is the first tool to read outside `res://` / `user://`.
+The `source_path` parameter accepts an **absolute OS filesystem path**
+(e.g. `C:\Users\me\sprites\hero.png` on Windows, `/home/me/sprites/hero.png`
+on Linux). Iter 18's `FileGuard` will add a source-path allowlist;
+until then the extension allowlist + size cap provide defence in depth.
 
 ## Port
 
