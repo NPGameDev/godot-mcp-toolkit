@@ -1,6 +1,9 @@
 @tool
 extends Node
 ## WebSocket JSON-RPC framing and peer lifecycle.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 ##
 ## All command logic lives in per-domain modules under commands/.
 ## This file handles: TCP listener, WS peer accept/poll, JSON-RPC parse,

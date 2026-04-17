@@ -1,7 +1,11 @@
 @tool
 extends RefCounted
-class_name ResourceCommands
 ## resource.* command handlers — load, create, save, delete for .tres/.res files.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCoerce = _Hub.MCPCoerce
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 	"image", "mesh_arrays", "surface_arrays", "_data",

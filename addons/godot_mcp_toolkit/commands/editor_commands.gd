@@ -1,7 +1,10 @@
 @tool
 extends RefCounted
-class_name EditorCommands
 ## editor.* command handlers — errors, save, screenshot, reload, console, wait-for-idle.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 const MIN_SCREENSHOT_SIZE := 64

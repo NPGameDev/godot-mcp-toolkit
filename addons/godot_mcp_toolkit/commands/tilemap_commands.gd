@@ -1,7 +1,10 @@
 @tool
 extends RefCounted
-class_name TilemapCommands
 ## tilemap.* command handlers — batch cell painting with UndoRedo.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:

@@ -1,7 +1,9 @@
 @tool
-class_name MCPCommandRegistry
 extends RefCounted
 ## Central dispatch table for MCP commands with tier membership (I14).
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
 ##
 ## Every tool registers via add() with a required tier argument.
 ## The registry is the single source of truth for which tools are lite vs full.

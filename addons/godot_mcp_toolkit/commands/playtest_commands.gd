@@ -1,7 +1,10 @@
 @tool
 extends RefCounted
-class_name PlaytestCommands
 ## game.* command handlers — start/stop editor playtest (Mode A).
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 const RUNTIME_PORT := 9090
 const RUNTIME_HOST := "127.0.0.1"

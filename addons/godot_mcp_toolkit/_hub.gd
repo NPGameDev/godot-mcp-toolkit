@@ -1,0 +1,11 @@
+@tool
+extends RefCounted
+## Centralized preloads for plugin-internal scripts.
+##
+## Every file that needs MCPError, MCPCoerce, or MCPCommandRegistry preloads
+## this hub and re-aliases the constants it needs. Script paths live here only
+## — if a file moves, update this file and nothing else.
+
+const MCPError := preload("res://addons/godot_mcp_toolkit/mcp_error.gd")
+const MCPCoerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
+const MCPCommandRegistry := preload("res://addons/godot_mcp_toolkit/command_registry.gd")

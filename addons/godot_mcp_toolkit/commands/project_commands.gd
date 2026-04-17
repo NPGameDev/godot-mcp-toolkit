@@ -1,7 +1,11 @@
 @tool
 extends RefCounted
-class_name ProjectCommands
 ## project.* command handlers — get_settings, set_setting.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCoerce = _Hub.MCPCoerce
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 

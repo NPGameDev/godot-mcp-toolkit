@@ -1,7 +1,10 @@
 @tool
 extends RefCounted
-class_name FolderCommands
 ## folder.* command handlers — create and delete directories under res://.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:

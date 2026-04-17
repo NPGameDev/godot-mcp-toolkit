@@ -1,7 +1,23 @@
 @tool
 extends EditorPlugin
 
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
+const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
+const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
+const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
+const EditorCommands := preload("res://addons/godot_mcp_toolkit/commands/editor_commands.gd")
+const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resource_commands.gd")
+const FolderCommands := preload("res://addons/godot_mcp_toolkit/commands/folder_commands.gd")
+const FileCommands := preload("res://addons/godot_mcp_toolkit/commands/file_commands.gd")
+const SignalCommands := preload("res://addons/godot_mcp_toolkit/commands/signal_commands.gd")
+const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest_commands.gd")
+const ProjectCommands := preload("res://addons/godot_mcp_toolkit/commands/project_commands.gd")
+const InputMapCommands := preload("res://addons/godot_mcp_toolkit/commands/input_map_commands.gd")
+const AnimationCommands := preload("res://addons/godot_mcp_toolkit/commands/animation_commands.gd")
+const TilemapCommands := preload("res://addons/godot_mcp_toolkit/commands/tilemap_commands.gd")
+const AssetCommands := preload("res://addons/godot_mcp_toolkit/commands/asset_commands.gd")
 
 # Mode B (iter 10) — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:9090. Registered/unregistered via add_autoload_singleton /

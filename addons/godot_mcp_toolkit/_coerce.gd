@@ -1,5 +1,4 @@
 @tool
-class_name MCPCoerce
 extends RefCounted
 ## Shared Variant coercion helper and its serialisation inverse.
 ##

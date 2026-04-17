@@ -13,6 +13,10 @@ extends Node
 ##      to end users' shipped games. iter 10 Risk section calls this out
 ##      as security-critical.
 
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCoerce = _Hub.MCPCoerce
+
 const PORT := 9090
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"

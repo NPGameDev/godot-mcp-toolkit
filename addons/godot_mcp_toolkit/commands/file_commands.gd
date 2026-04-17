@@ -1,7 +1,10 @@
 @tool
 extends RefCounted
-class_name FileCommands
 ## file.* command handlers — generic file deletion for any res:// path.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:

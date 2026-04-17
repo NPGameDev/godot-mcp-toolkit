@@ -1,5 +1,4 @@
 @tool
-class_name MCPError
 extends RefCounted
 ## Shared MCP error contract (I1) — canonical error codes and failure envelope.
 

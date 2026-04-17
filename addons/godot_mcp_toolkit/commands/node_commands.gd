@@ -1,7 +1,11 @@
 @tool
 extends RefCounted
-class_name NodeCommands
 ## node.* command handlers — property get/set/list, method calls, script attachment.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCoerce = _Hub.MCPCoerce
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:

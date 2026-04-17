@@ -1,7 +1,10 @@
 @tool
 extends RefCounted
-class_name InputMapCommands
 ## input_map.* command handlers — add/remove actions and events.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 ## TODO(iter-19): wrap input_map_* in FeatureGate.is_enabled.
 
 const BUILTIN_UI_ACTIONS: Array[String] = [

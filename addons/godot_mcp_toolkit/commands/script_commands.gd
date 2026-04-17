@@ -1,7 +1,10 @@
 @tool
 extends RefCounted
-class_name ScriptCommands
 ## script.* command handlers — read, write, delete for .gd/.cs/.gdshader/.gdshaderinc.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPError = _Hub.MCPError
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"]
 
