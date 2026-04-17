@@ -17,16 +17,17 @@ Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
 Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
-## Core tool catalogue (26 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d)
+## Core tool catalogue (28 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d + iter 15e)
 
 Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 `scene_open`, `project_get_settings`, `signal_*`, `resource_load`,
 `scene_diff`, `node_get_property_list`, and the Mode B `runtime_*` family)
-plus iter 15c's playtest/composition additions and iter 15d's
-content-authoring extensions (`project_set_setting`, `input_map_*`,
-`animation_*`, `tilemap_set_cells`, `editor_screenshot_node`) bring the full
-catalogue to 47 tools (48 with `GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite`
-in `.mcp.json` args for a 26-tool token-sensitive subset.
+plus iter 15c's playtest/composition additions, iter 15d's
+content-authoring extensions, and iter 15e's asset-discovery +
+console-reading (`asset_list`, `asset_get_dependencies`,
+`editor_get_console`) bring the full catalogue to 50 tools (51 with
+`GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite` in `.mcp.json` args for a
+28-tool token-sensitive subset.
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
@@ -45,7 +46,7 @@ in `.mcp.json` args for a 26-tool token-sensitive subset.
 | `node_set_property`     | Write a property. Pass engine types as `{ type: "Vector2", x: 0, y: 0 }`.        |
 | `script_read`           | Read a GDScript / text file (`res://` only).                                     |
 | `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` at `path` (`res://` only). Overwrites. |
-| `editor_get_errors`     | Return recent compile / runtime errors (MVP stub; iter 10 replaces).             |
+| `editor_get_errors`     | Editor-time error tail (delegates to `editor.get_console` with `level='error'`). Iter 15e: stub replaced with real console reader. |
 | `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as.                        |
 | `editor_screenshot`     | Capture the editor viewport; returns inline image content (+ optional `save_path`). |
 | `game_start`            | Drive editor play button. `target: "main"\|"current"\|res://*.tscn`. `ALREADY_PLAYING` if one is live. Lite. |
@@ -62,6 +63,9 @@ in `.mcp.json` args for a 26-tool token-sensitive subset.
 | `animation_get_keys`    | Read-only listing: `{ time, value, transition }` per key + `track_type` enum string. No auto-track-create. Lite. |
 | `tilemap_set_cells`     | Batch-paint `TileMap` or `TileMapLayer`. Single UndoRedo action. Returns `cells_written` + `cells_unchanged` + `total`. `source_id: -1` clears. Lite. |
 | `editor_screenshot_node` | Focus + capture a specific node in the editor viewport (`await RenderingServer.frame_post_draw`). Atomic prior-selection restore. Inline base64 PNG. Full only. |
+| `asset_list`            | Enumerate `res://` assets with `path_prefix`, `name_glob`, `class_filter` (ancestry-aware), `extension_filter`. Cap 2000. Lite. |
+| `asset_get_dependencies` | Forward deps of a `res://` resource/scene. `include_transitive` for BFS walk. Full only. |
+| `editor_get_console`    | Tail editor Output panel (`user://logs/`). `level_filter`, `since_id` for incremental. Lite. |
 
 ## Conventions when driving these tools
 

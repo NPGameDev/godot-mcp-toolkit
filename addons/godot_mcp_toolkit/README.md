@@ -34,8 +34,8 @@ Requires Node.js ≥ 20. Source + README:
    `.mcp.json`.
 2. `cd` to that project root.
 3. Run `claude`. `/mcp` should list `godot-mcp-toolkit` with the full tool
-   catalogue (47 tools default; pass `--lite` in `.mcp.json` args for a
-   26-tool core subset in token-sensitive sessions).
+   catalogue (50 tools default; pass `--lite` in `.mcp.json` args for a
+   28-tool core subset in token-sensitive sessions).
 
 (Iter 21 will add a one-click menu item in the editor's MCP dock that writes
 `.mcp.json` for you.)
@@ -196,10 +196,10 @@ expanded `_coerce_value` set above (5 new type tags: `Vector2i`, `Vector3i`,
   `mcp_server.gd`'s `_BUILTIN_UI_ACTIONS` constant; cross-check on Godot
   upgrade). Event-dict schema:
   - `{ type: "key", keycode: "SPACE"|"A"|int, shift, ctrl, alt, meta }` —
-    `keycode` accepts symbolic name via `OS.find_keycode_from_string` or raw int.
+	`keycode` accepts symbolic name via `OS.find_keycode_from_string` or raw int.
   - `{ type: "mouse_button", button_index: int, pressed: bool }`
   - `{ type: "joypad_button", button_index: int, device: int }` —
-    `device: -1` matches any.
+	`device: -1` matches any.
   - `{ type: "joypad_motion", axis: int, axis_value: float, device: int }`
 - `animation_add_key` / `animation_remove_key` / `animation_get_keys` —
   `AnimationPlayer` track + keyframe authoring. `TYPE_VALUE` tracks only
@@ -236,6 +236,41 @@ returns success — the in-memory InputMap is observable for the current
 session's runtime. If a `game_start` runs immediately after, the
 runtime sees the new bindings (Godot loads `InputMap` from
 `ProjectSettings` at game boot from the in-memory entries).
+
+## Iter 15e additions — asset discovery + editor console
+
+- `asset_list` — enumerate `res://` assets via Godot's `EditorFileSystem`
+  index (no full-load). Filters: `path_prefix`, `name_glob` (case-insensitive
+  `matchn`), `class_filter` (ancestry-aware via `ClassDB.is_parent_class`),
+  `extension_filter`. Returns `[{ path, class, modified_unix }]`. Cap
+  `max_results` at 2000 (default 500). `FILESYSTEM_NOT_READY` if mid-scan.
+- `asset_get_dependencies` — forward dependencies of a `res://` resource or
+  scene. Uses `ResourceLoader.get_dependencies` (O(1) cached after scan).
+  `include_transitive: true` does a breadth-first walk with cycle-safe
+  visited set. Returns `[{ path, raw_path, class }]`.
+- `editor_get_console` — tail the editor's Output panel via `user://logs/`.
+  Params: `limit` (default 200, cap 1000), `level_filter` (`info` /
+  `warning` / `error`), `since_id` for incremental polling. Log-file
+  selection heuristic prefers `godot.log` post-plugin-boot; fallback to
+  most-recent `.log`. Multi-line error blocks (stack traces starting with
+  whitespace or `"   at:"`) are folded into the preceding entry.
+  `LOG_UNAVAILABLE` if no readable log file exists.
+- `editor_get_errors` — **stub replaced** (iter 15e). Now delegates to the
+  `editor.get_console` reader with `level_filter=["error"]`. Response shape
+  unchanged: `{ success, errors: [...], count }`. Accepts optional `limit`.
+
+### Console-reader notes
+
+- **`user://logs/` read exception.** This is a narrow read-only deviation from
+  the `res://`-only path rule. Iter 18's FileGuard will explicitly allowlist
+  `editor.get_console` + `editor.get_errors` for `user://logs/` reads only.
+- **Playtest-rotation ambiguity.** When a Mode-B playtest starts, Godot
+  rotates the editor's log; `editor.get_console` may surface game output
+  instead. Prefer `debugger.get_log` during playtest.
+- **No per-line timestamps** in default Godot log format. `timestamp_unix` is
+  `null` in 15e; agents that need per-entry timing should use `--verbose`.
+- **`application/config/use_file_logging=false`** → `LOG_UNAVAILABLE` with
+  the settings key in the message.
 
 ## Port
 

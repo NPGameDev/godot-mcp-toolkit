@@ -29,9 +29,13 @@ var _relisten_countdown := 0
 var _consecutive_failures := 0
 # iter 13c: counter for _POLL_FRAME_INTERVAL frame-skip.
 var _poll_frame_counter := 0
+# iter 15e: captured at start() so editor.get_console's log-file selection
+# heuristic can prefer post-boot logs over stale rotated ones.
+var _plugin_boot_time: int = 0
 
 
 func start() -> void:
+	_plugin_boot_time = int(Time.get_unix_time_from_system())
 	# Initial listen attempt. _process picks up the retry slack on failure
 	# (iter 13) — start() never blocks plugin enable on a transient bind
 	# error; it just kicks off the loop.
@@ -186,7 +190,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		"script.write":
 			_cmd_script_write(peer, id, params)
 		"editor.get_errors":
-			_cmd_editor_get_errors(peer, id)
+			_cmd_editor_get_errors(peer, id, params)
 		"editor.save_scene":
 			_cmd_editor_save_scene(peer, id, params)
 		"editor.screenshot":
@@ -249,6 +253,12 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_tilemap_set_cells(peer, id, params)
 		"editor.screenshot_node":
 			_cmd_editor_screenshot_node(peer, id, params)
+		"asset.list":
+			_cmd_asset_list(peer, id, params)
+		"asset.get_dependencies":
+			_cmd_asset_get_dependencies(peer, id, params)
+		"editor.get_console":
+			_cmd_editor_get_console(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -310,6 +320,7 @@ const MCP_ERROR_CODES := [
 	"EXECUTE_FAILED",
 	"FEATURE_DISABLED",
 	"FILE_TOO_LARGE",
+	"FILESYSTEM_NOT_READY",
 	"FOLDER_PROTECTED",
 	"GAME_NOT_RUNNING",
 	"INTERNAL",
@@ -318,6 +329,7 @@ const MCP_ERROR_CODES := [
 	"INVALID_PARAMS",
 	"INVALID_PATH",
 	"LOAD_FAILED",
+	"LOG_UNAVAILABLE",
 	"NO_SCENE",
 	"NOT_A_RESOURCE",
 	"NOT_FOUND",
@@ -794,17 +806,22 @@ func _delete_file_silent(path: String) -> void:
 		push_warning("[MCPServer] UndoRedo delete of %s failed (err %d)" % [path, err])
 
 
-func _cmd_editor_get_errors(peer: WebSocketPeer, id) -> void:
-	# Iter 10 split: runtime log capture is now the `debugger.get_log` command
-	# on the Mode B (port 9090) runtime autoload — that's the right place for
-	# game-side print/push_warning/push_error output. Editor-time script parse
-	# errors (shown in the bottom-panel Output dock before play) still need a
-	# dedicated editor-side hook; left as a stub until a proper
-	# EditorInterface.get_script_editor() signal path is wired.
+# Delegates to editor.get_console with level_filter=['error'] (iter 15e).
+# For broader output — warnings, info, import logs — call editor.get_console directly.
+func _cmd_editor_get_errors(peer: WebSocketPeer, id, params) -> void:
+	var limit: int = 50
+	if typeof(params) == TYPE_DICTIONARY:
+		limit = int(params.get("limit", 50))
+	var result := _read_console_log(limit, ["error"], -1)
+	if result.get("success", false) == false:
+		_send_result(peer, id, result)
+		return
+	# Wrap in the legacy editor.get_errors response shape for backwards compat
+	# with iter-04/10's contract: { success, errors: [...], count }.
 	_send_result(peer, id, {
-		"errors": [],
-		"stub": true,
-		"note": "editor-time error capture TBD; runtime logs via debugger_get_log (Mode B, iter 10)",
+		"success": true,
+		"errors": result.get("entries", []),
+		"count": result.get("count", 0),
 	})
 
 
@@ -2956,3 +2973,360 @@ func _cmd_editor_screenshot_node(peer: WebSocketPeer, id, params) -> void:
 		"bytes": png_bytes.size(),
 		"path": path,
 	})
+
+
+# ---- Asset discovery (iter 15e) ---------------------------------------------
+
+
+func _cmd_asset_list(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		params = {}
+	var path_prefix: String = str(params.get("path_prefix", "res://"))
+	var name_glob: String = str(params.get("name_glob", ""))
+	var class_filter: String = str(params.get("class_filter", ""))
+	var extension_filter: Array = params.get("extension_filter", [])
+	if typeof(extension_filter) != TYPE_ARRAY:
+		extension_filter = []
+	var max_results: int = int(params.get("max_results", 500))
+
+	# TODO(iter-18): filter path_prefix through FileGuard.resolve_safe.
+	if not path_prefix.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path_prefix must start with res:// (got %s)" % path_prefix))
+		return
+	if max_results < 1 or max_results > 2000:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "max_results must be in [1, 2000] (got %d); iter-20 adds a configurable ceiling" % max_results))
+		return
+	var efs := EditorInterface.get_resource_filesystem()
+	if efs.is_scanning():
+		_send_result(peer, id, mcp_error("FILESYSTEM_NOT_READY", "Godot's EditorFileSystem is mid-scan; retry in 500-2000ms (a wait-for-idle tool is planned for iter 15f or NextSteps)"))
+		return
+	if class_filter != "":
+		var found_in_classdb := ClassDB.class_exists(class_filter)
+		var found_in_global := false
+		if not found_in_classdb:
+			for gcl in ProjectSettings.get_global_class_list():
+				if gcl.get("class", "") == class_filter:
+					found_in_global = true
+					break
+		if not found_in_classdb and not found_in_global:
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "unknown class_filter '%s'; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name / C# [GlobalClass])" % class_filter))
+			return
+
+	# Normalize extension_filter to lowercase strings
+	var ext_filter: Array[String] = []
+	for ext in extension_filter:
+		ext_filter.append(str(ext).to_lower())
+
+	var root_dir := efs.get_filesystem_path(path_prefix)
+	if root_dir == null:
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no indexed directory at %s (path may exist on disk but not yet scanned — call editor.reload_scripts or wait for is_scanning to clear)" % path_prefix))
+		return
+
+	var entries: Array = []
+	var truncated := _walk_efs_dir(root_dir, name_glob, class_filter, ext_filter, entries, max_results)
+
+	_send_result(peer, id, {
+		"success": true,
+		"entries": entries,
+		"count": entries.size(),
+		"truncated": truncated,
+		"path_prefix": path_prefix,
+		"filters_applied": {
+			"name_glob": name_glob,
+			"class_filter": class_filter,
+			"extension_filter": ext_filter,
+		},
+	})
+
+
+# TODO(iter-22): add cursor pagination if large-project feedback emerges
+func _walk_efs_dir(dir: EditorFileSystemDirectory, name_glob: String, class_filter: String, ext_filter: Array[String], entries: Array, max_count: int) -> bool:
+	for i in range(dir.get_file_count()):
+		if entries.size() >= max_count:
+			return true
+		var file_path := dir.get_file_path(i)
+		var file_name := dir.get_file(i)
+		var file_type := dir.get_file_type(i)
+
+		# Apply filters
+		if name_glob != "" and not file_name.matchn(name_glob):
+			continue
+		if ext_filter.size() > 0 and not file_name.get_extension().to_lower() in ext_filter:
+			continue
+		if class_filter != "":
+			if file_type != class_filter and not ClassDB.is_parent_class(file_type, class_filter):
+				continue
+
+		entries.append({
+			"path": file_path,
+			"class": file_type,
+			"size_bytes": null,
+			"modified_unix": FileAccess.get_modified_time(file_path),
+		})
+
+	for j in range(dir.get_subdir_count()):
+		if entries.size() >= max_count:
+			return true
+		if _walk_efs_dir(dir.get_subdir(j), name_glob, class_filter, ext_filter, entries, max_count):
+			return true
+
+	return false
+
+
+func _cmd_asset_get_dependencies(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "params must be an object"))
+		return
+	var path: String = str(params.get("path", ""))
+	var include_transitive: bool = bool(params.get("include_transitive", false))
+	var max_results: int = int(params.get("max_results", 200))
+
+	# TODO(iter-18): filter path through FileGuard.resolve_safe.
+	if not path.begins_with("res://"):
+		_send_result(peer, id, mcp_error("INVALID_PATH", "path must start with res:// (got %s)" % path))
+		return
+	if not FileAccess.file_exists(path):
+		_send_result(peer, id, mcp_error("NOT_FOUND", "no file at %s" % path))
+		return
+	var efs := EditorInterface.get_resource_filesystem()
+	if efs.is_scanning():
+		_send_result(peer, id, mcp_error("FILESYSTEM_NOT_READY", "Godot's EditorFileSystem is mid-scan; retry in 500-2000ms (a wait-for-idle tool is planned for iter 15f or NextSteps)"))
+		return
+
+	var deps: Array = []
+	var visited: Dictionary = {}
+	var queue: Array[String] = [path]
+	visited[path] = true
+	var truncated := false
+	var depth := 0
+
+	while queue.size() > 0 and not truncated:
+		var current := queue.pop_front() as String
+		var raw_deps := ResourceLoader.get_dependencies(current)
+		for raw_dep in raw_deps:
+			if deps.size() >= max_results:
+				truncated = true
+				break
+			# Format varies by Godot version:
+			# Godot 4.4+: "uid://hash::::res://path" or "uid://hash::Type::res://path"
+			# Earlier:     "res://path::Type" or "res://path::Type::uid://hash"
+			var raw_str := String(raw_dep)
+			var parts: PackedStringArray = raw_str.split("::")
+			var stripped := parts[0]
+			var dep_class := ""
+			# If the first segment is a UID, look for a res:// path in later segments.
+			if stripped.begins_with("uid://"):
+				for p_idx in range(1, parts.size()):
+					if parts[p_idx].begins_with("res://"):
+						stripped = parts[p_idx]
+						break
+			# Extract class from the first non-empty, non-path segment.
+			for p_idx in range(parts.size()):
+				var seg := parts[p_idx]
+				if seg != "" and not seg.begins_with("uid://") and not seg.begins_with("res://"):
+					dep_class = seg
+					break
+			if stripped.is_empty():
+				continue
+			if visited.has(stripped):
+				continue
+			visited[stripped] = true
+			deps.append({
+				"path": stripped,
+				"raw_path": raw_str,
+				"class": dep_class,
+			})
+			if include_transitive:
+				if FileAccess.file_exists(stripped):
+					queue.append(stripped)
+		depth += 1
+		if depth > 50:
+			truncated = true
+
+	var warnings: Array[String] = []
+	if depth > 50:
+		warnings.append("transitive walk exceeded 50 levels — truncated to prevent unbounded recursion")
+
+	_send_result(peer, id, {
+		"success": true,
+		"path": path,
+		"dependencies": deps,
+		"count": deps.size(),
+		"truncated": truncated,
+		"include_transitive": include_transitive,
+		"warnings": warnings,
+	})
+
+
+# ---- Editor console reading (iter 15e) -------------------------------------
+
+
+static func _detect_log_level(line: String) -> String:
+	if line.begins_with("ERROR:") or line.begins_with("USER ERROR:") or line.begins_with("SCRIPT ERROR:"):
+		return "error"
+	if line.begins_with("WARNING:") or line.begins_with("USER WARNING:") or line.begins_with("SCRIPT WARNING:"):
+		return "warning"
+	return "info"
+
+
+# Core console-log reader shared by editor.get_console and editor.get_errors.
+# Returns either a success dict or an mcp_error dict.
+func _read_console_log(limit: int, level_filter: Array, since_id: int) -> Dictionary:
+	# TODO(iter-18): user://logs/ read is a narrow read-only exception to the
+	# res://-only rule, distinct from iter 19b's user:// write tools. Explicitly
+	# allowlist in iter 18's FileGuard module (editor.get_console +
+	# editor.get_errors only — no other tool may read user:// without going
+	# through iter 19b's whitelisted save.* tools).
+	var logs_dir := "user://logs"
+	if not DirAccess.dir_exists_absolute(logs_dir):
+		return mcp_error("LOG_UNAVAILABLE", "no readable log file under user://logs/ (verify ProjectSettings 'application/config/use_file_logging' is true — default is true; playtest may have rotated the editor's log mid-session)")
+
+	var all_files := DirAccess.get_files_at(logs_dir)
+	var log_files: Array[String] = []
+	for f in all_files:
+		if String(f).ends_with(".log"):
+			log_files.append(String(f))
+
+	if log_files.is_empty():
+		return mcp_error("LOG_UNAVAILABLE", "no readable log file under user://logs/ (verify ProjectSettings 'application/config/use_file_logging' is true — default is true; playtest may have rotated the editor's log mid-session)")
+
+	# Selection heuristic: prefer godot.log if recent, else most-recent .log
+	var chosen_file := ""
+	var chosen_mtime: int = 0
+	var warnings: Array[String] = []
+
+	var godot_log := logs_dir + "/godot.log"
+	var godot_log_mtime: int = 0
+	if FileAccess.file_exists(godot_log):
+		godot_log_mtime = FileAccess.get_modified_time(godot_log)
+
+	if godot_log_mtime > 0 and godot_log_mtime >= _plugin_boot_time:
+		chosen_file = godot_log
+		chosen_mtime = godot_log_mtime
+	else:
+		# Find most-recently-modified .log with mtime >= boot time
+		var best_file := ""
+		var best_mtime: int = 0
+		for lf in log_files:
+			var full_path := logs_dir + "/" + lf
+			var mtime := FileAccess.get_modified_time(full_path)
+			if mtime >= _plugin_boot_time and mtime > best_mtime:
+				best_file = full_path
+				best_mtime = mtime
+		if best_file != "":
+			chosen_file = best_file
+			chosen_mtime = best_mtime
+		else:
+			# Fallback: most-recently-modified .log regardless
+			for lf in log_files:
+				var full_path := logs_dir + "/" + lf
+				var mtime := FileAccess.get_modified_time(full_path)
+				if mtime > best_mtime:
+					best_file = full_path
+					best_mtime = mtime
+			if best_file != "":
+				chosen_file = best_file
+				chosen_mtime = best_mtime
+				warnings.append("fallback to stale log — no post-boot log found")
+
+	if chosen_file == "":
+		return mcp_error("LOG_UNAVAILABLE", "no readable log file under user://logs/ (verify ProjectSettings 'application/config/use_file_logging' is true — default is true; playtest may have rotated the editor's log mid-session)")
+
+	var fa := FileAccess.open(chosen_file, FileAccess.READ)
+	if fa == null:
+		return mcp_error("LOG_UNAVAILABLE", "cannot open %s (err %d)" % [chosen_file, FileAccess.get_open_error()])
+	var content := fa.get_as_text()
+	fa.close()
+
+	var lines := content.split("\n")
+	var entries: Array = []
+	var char_offset: int = 0
+
+	for line_idx in range(lines.size()):
+		var line: String = lines[line_idx]
+		if line.strip_edges().is_empty():
+			char_offset += line.length() + 1
+			continue
+
+		var level := _detect_log_level(line)
+
+		# Continuation heuristic: no level prefix (info) + starts with
+		# whitespace + preceding entry is error/warning → append to previous.
+		if level == "info" and entries.size() > 0 and line.length() > 0:
+			var fc := line[0]
+			if fc == " " or fc == "\t" or line.begins_with("   at:"):
+				var prev: Dictionary = entries[-1]
+				if prev["level"] == "error" or prev["level"] == "warning":
+					prev["message"] += "\n" + line
+					char_offset += line.length() + 1
+					continue
+
+		entries.append({
+			"id": char_offset,
+			"level": level,
+			"message": line,
+			"timestamp_unix": null,
+		})
+		char_offset += line.length() + 1
+
+	# Apply level_filter
+	if level_filter.size() > 0:
+		var level_set: Array[String] = []
+		for lf in level_filter:
+			level_set.append(str(lf))
+		var filtered: Array = []
+		for entry in entries:
+			if entry["level"] in level_set:
+				filtered.append(entry)
+		entries = filtered
+
+	# Apply since_id
+	if since_id >= 0:
+		var filtered: Array = []
+		for entry in entries:
+			if entry["id"] > since_id:
+				filtered.append(entry)
+		entries = filtered
+
+	# Slice to last `limit` entries
+	var truncated := entries.size() > limit
+	if truncated:
+		entries = entries.slice(entries.size() - limit)
+
+	var next_id: int = -1
+	if entries.size() > 0:
+		next_id = entries[-1]["id"]
+
+	return {
+		"success": true,
+		"entries": entries,
+		"count": entries.size(),
+		"next_id": next_id,
+		"truncated": truncated,
+		"log_file": chosen_file,
+		"log_mtime": chosen_mtime,
+		"warnings": warnings,
+	}
+
+
+func _cmd_editor_get_console(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		params = {}
+	var limit: int = int(params.get("limit", 200))
+	var level_filter: Array = params.get("level_filter", [])
+	if typeof(level_filter) != TYPE_ARRAY:
+		level_filter = []
+	var since_id: int = int(params.get("since_id", -1))
+
+	# Guards
+	if limit < 1 or limit > 1000:
+		_send_result(peer, id, mcp_error("INVALID_PARAMS", "limit must be in [1, 1000] (got %d)" % limit))
+		return
+	var valid_levels := ["info", "warning", "error"]
+	for lf in level_filter:
+		if not str(lf) in valid_levels:
+			_send_result(peer, id, mcp_error("INVALID_PARAMS", "level_filter entries must be one of 'info' | 'warning' | 'error' (got %s)" % str(lf)))
+			return
+
+	var result := _read_console_log(limit, level_filter, since_id)
+	_send_result(peer, id, result)
