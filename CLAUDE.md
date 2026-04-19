@@ -104,8 +104,12 @@ gates enabled — see **Feature gates** below). Pass `--lite` in
 
 - **Untrusted envelopes.** Read-path outputs (script content, scene tree,
   project settings, error logs, resource properties, animation keys) are
-  wrapped in `<untrusted kind="…" source="…">` envelopes to mark
-  user-authored content for the LLM. Write paths are never wrapped.
+  wrapped in `<untrusted-{nonce} kind="…" source="…">` envelopes
+  (per-call random 8-hex-char nonce) to mark user-authored content for
+  the LLM. Envelope-tag variants in the body are scrubbed before wrapping
+  to prevent tag-breakout injection. Write paths are never wrapped. The
+  envelope is a defense-in-depth hint, not a security boundary — the real
+  boundaries are FileGuard, FeatureGate, token auth, and the audit log.
 
 ## Feature gates (iter 19)
 
