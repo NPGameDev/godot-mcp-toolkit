@@ -16,6 +16,8 @@ extends Node
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
+const MCPUntrusted = _Hub.MCPUntrusted
+const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 const PORT := 9090
 const BIND := "127.0.0.1"
@@ -25,6 +27,7 @@ const JSONRPC_VERSION := "2.0"
 # bind" recoverable case is a stale debug session that hasn't released
 # 9090 yet — usually clears in 1-2 frames.
 const _RELISTEN_FRAME_INTERVAL := 60
+const _AUTH_TIMEOUT_MS := 2000
 
 var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
@@ -32,6 +35,10 @@ var _relisten_countdown := 0
 # Mirror of mcp_server.gd._consecutive_failures — log first-failure-of-streak
 # then go silent until success/recovery. See that file for rationale.
 var _consecutive_failures := 0
+# iter 18: per-peer auth tracking (mirrors mcp_server.gd pattern).
+var _session_token: String = ""
+var _peer_authed: Dictionary = {}
+var _peer_connect_ms: Dictionary = {}
 
 
 func _ready() -> void:
@@ -62,6 +69,19 @@ func _exit_tree() -> void:
 
 func _start_server() -> void:
 	_relisten_countdown = 0
+	# iter 18: runtime uses the same token file as the editor server so the
+	# bridge can authenticate against both with one read. The editor server
+	# writes first (plugin enable runs before game launch). If the file doesn't
+	# exist yet (edge case: game launched standalone without plugin), generate
+	# our own token.
+	var token_path := MCPAuth.get_token_path()
+	var file := FileAccess.open(token_path, FileAccess.READ)
+	if file != null:
+		_session_token = file.get_as_text().strip_edges()
+		file.close()
+	if _session_token.is_empty():
+		_session_token = MCPAuth.generate_token()
+		MCPAuth.write_token(_session_token)
 	_try_listen()
 
 
@@ -70,6 +90,8 @@ func _stop_server() -> void:
 		if peer != null:
 			peer.close(1000)
 	_peers.clear()
+	_peer_authed.clear()
+	_peer_connect_ms.clear()
 	if _tcp_server != null:
 		_tcp_server.stop()
 		_tcp_server = null
@@ -125,8 +147,10 @@ func _process(_delta: float) -> void:
 			push_warning("[MCPRuntimeServer] accept_stream failed (%d)" % accept_err)
 			continue
 		_peers.append(peer)
+		_peer_connect_ms[peer] = Time.get_ticks_msec()
 
 	var closed_peers: Array[WebSocketPeer] = []
+	var now_ms := Time.get_ticks_msec()
 	for peer in _peers:
 		peer.poll()
 		var state := peer.get_ready_state()
@@ -135,12 +159,19 @@ func _process(_delta: float) -> void:
 			continue
 		if state != WebSocketPeer.STATE_OPEN:
 			continue
+		if not _peer_authed.has(peer):
+			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _AUTH_TIMEOUT_MS:
+				peer.close(1008, "auth timeout")
+				closed_peers.append(peer)
+				continue
 		while peer.get_available_packet_count() > 0:
 			var text := peer.get_packet().get_string_from_utf8()
 			_handle_message(peer, text)
 
 	for peer in closed_peers:
 		_peers.erase(peer)
+		_peer_authed.erase(peer)
+		_peer_connect_ms.erase(peer)
 
 
 func _handle_message(peer: WebSocketPeer, text: String) -> void:
@@ -153,6 +184,15 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 	var msg = parser.data
 	if typeof(msg) != TYPE_DICTIONARY:
 		_send_error(peer, null, -32600, "Invalid Request: top-level must be an object")
+		return
+
+	# iter 18: auth handshake.
+	if not _peer_authed.has(peer):
+		if MCPAuth.validate(msg, _session_token):
+			_peer_authed[peer] = true
+			peer.send_text(JSON.stringify({"authed": true}))
+		else:
+			peer.close(1008, "invalid token")
 		return
 
 	var id = msg.get("id", null)
@@ -328,11 +368,8 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	for i in range(start, total):
 		slice.append(all_lines[i])
 
-	# TODO(iter-18): wrap `slice` in an <untrusted kind="game_log" source="godot">
-	# envelope at the response layer. Do not envelope here — the plugin never
-	# writes envelopes.
 	_send_result(peer, id, {
-		"lines": slice,
+		"lines": MCPUntrusted.wrap("game_log", "godot", JSON.stringify(slice)),
 		"count": slice.size(),
 		"total": total,
 		"path": log_path,

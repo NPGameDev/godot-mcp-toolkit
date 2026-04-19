@@ -33,7 +33,6 @@ static func _cmd_tilemap_set_cells(
 	var tilemap_path := str(parameters.get("tilemap_path", ""))
 	var layer := int(parameters.get("layer", 0))
 	var cells_raw = parameters.get("cells", null)
-	# TODO(iter-18): route tilemap_path through FileGuard.resolve_safe.
 	if tilemap_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing tilemap_path")
 	if typeof(cells_raw) != TYPE_ARRAY:

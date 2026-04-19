@@ -4,6 +4,7 @@ extends Node
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 ##
 ## All command logic lives in per-domain modules under commands/.
 ## This file handles: TCP listener, WS peer accept/poll, JSON-RPC parse,
@@ -25,6 +26,9 @@ const _RELISTEN_FRAME_INTERVAL := 60
 # incidental clicks stop crashing the editor in smoke + dogfood usage.
 # Tune lower if latency regresses noticeably; 4 frames ≈ 67ms at 60fps.
 const _POLL_FRAME_INTERVAL := 4
+# iter 18: auth timeout. Peers that don't send a valid auth message
+# within this window are closed with WS close code 1008 (Policy Violation).
+const _AUTH_TIMEOUT_MS := 2000
 
 var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
@@ -40,6 +44,10 @@ var _poll_frame_counter := 0
 var _plugin_boot_time: int = 0
 # iter 16: registry-based dispatch — populated by plugin.gd before start().
 var _registry: MCPCommandRegistry = null
+# iter 18: session token + per-peer auth tracking.
+var _session_token: String = ""
+var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers only)
+var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
 
 
 func set_registry(registry: MCPCommandRegistry) -> void:
@@ -49,6 +57,14 @@ func set_registry(registry: MCPCommandRegistry) -> void:
 func start() -> void:
 	_plugin_boot_time = int(Time.get_unix_time_from_system())
 	_relisten_countdown = 0
+	# iter 18: rotate token each editor session.
+	_session_token = MCPAuth.generate_token()
+	var write_err := MCPAuth.write_token(_session_token)
+	if write_err != OK:
+		push_warning("[MCPServer] failed to write token (err %d); auth will still be enforced but bridge may not find the file" % write_err)
+	else:
+		var token_path := MCPAuth.get_token_path()
+		print("[MCPServer] session token written to %s" % token_path)
 	_try_listen()
 
 
@@ -57,6 +73,8 @@ func stop() -> void:
 		if peer != null:
 			peer.close(1000)
 	_peers.clear()
+	_peer_authed.clear()
+	_peer_connect_ms.clear()
 	if _tcp_server != null:
 		_tcp_server.stop()
 		_tcp_server = null
@@ -116,8 +134,10 @@ func _process(_delta: float) -> void:
 			push_warning("[MCPServer] accept_stream failed (%d)" % accept_error)
 			continue
 		_peers.append(peer)
+		_peer_connect_ms[peer] = Time.get_ticks_msec()
 
 	var closed_peers: Array[WebSocketPeer] = []
+	var now_ms := Time.get_ticks_msec()
 	for peer in _peers:
 		peer.poll()
 		var state := peer.get_ready_state()
@@ -126,12 +146,20 @@ func _process(_delta: float) -> void:
 			continue
 		if state != WebSocketPeer.STATE_OPEN:
 			continue
+		# iter 18: auth timeout — close peers that haven't authed in time.
+		if not _peer_authed.has(peer):
+			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _AUTH_TIMEOUT_MS:
+				peer.close(1008, "auth timeout")
+				closed_peers.append(peer)
+				continue
 		while peer.get_available_packet_count() > 0:
 			var text := peer.get_packet().get_string_from_utf8()
 			_handle_message(peer, text)
 
 	for peer in closed_peers:
 		_peers.erase(peer)
+		_peer_authed.erase(peer)
+		_peer_connect_ms.erase(peer)
 
 
 func _handle_message(peer: WebSocketPeer, text: String) -> void:
@@ -144,6 +172,15 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 	var message = parser.data
 	if typeof(message) != TYPE_DICTIONARY:
 		_send_error(peer, null, -32600, "Invalid Request: top-level must be an object")
+		return
+
+	# iter 18: auth handshake — first message must be {"auth": "<token>"}.
+	if not _peer_authed.has(peer):
+		if MCPAuth.validate(message, _session_token):
+			_peer_authed[peer] = true
+			peer.send_text(JSON.stringify({"authed": true}))
+		else:
+			peer.close(1008, "invalid token")
 		return
 
 	var id = message.get("id", null)

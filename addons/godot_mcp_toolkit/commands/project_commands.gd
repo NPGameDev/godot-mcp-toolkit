@@ -6,6 +6,7 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPUntrusted = _Hub.MCPUntrusted
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 
@@ -44,7 +45,8 @@ static func _cmd_project_get_settings(parameters: Dictionary) -> Dictionary:
 			ProjectSettings.get_setting(property_name))
 
 	return {
-		"settings": settings,
+		"settings": MCPUntrusted.wrap(
+			"project_settings", "godot", JSON.stringify(settings)),
 		"count": settings.size(),
 		"filtered_secret_count": filtered_secrets,
 	}
@@ -64,7 +66,8 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	if not parameters.has("value"):
 		return MCPError.make("INVALID_PARAMS", "missing value")
 	var raw_value = parameters.get("value", null)
-	# TODO(iter-18): route through FileGuard.resolve_safe at this site.
+	# Resource-typed values in raw_value are gated through FileGuard
+	# via MCPCoerce.coerce_value's Resource branch.
 	var coerced = MCPCoerce.coerce_value(raw_value)
 	var was_set_before := ProjectSettings.has_setting(key)
 	var previous_value = ProjectSettings.get_setting(key) if was_set_before else null

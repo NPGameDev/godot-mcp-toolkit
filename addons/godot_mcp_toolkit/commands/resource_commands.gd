@@ -6,6 +6,8 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
+const MCPUntrusted = _Hub.MCPUntrusted
 
 const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 	"image", "mesh_arrays", "surface_arrays", "_data",
@@ -94,9 +96,9 @@ static func _apply_resource_properties(
 
 static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
-	# TODO(iter-18): replace with FileGuard.resolve_safe(file_path).
-	if not file_path.begins_with("res://"):
-		return MCPError.make("PATH_DENIED", "path must start with res://: %s" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not ResourceLoader.exists(file_path):
 		return MCPError.make("NOT_FOUND", "resource not found: %s" % file_path)
 	var resource := ResourceLoader.load(file_path)
@@ -122,7 +124,8 @@ static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 	return {
 		"class": resource_class,
 		"path": file_path,
-		"properties": properties,
+		"properties": MCPUntrusted.wrap(
+			"resource", file_path, JSON.stringify(properties)),
 		"metadata": metadata,
 	}
 
@@ -133,10 +136,9 @@ static func _cmd_resource_create(parameters: Dictionary) -> Dictionary:
 	var properties: Dictionary = parameters.get("properties", {}) \
 		if typeof(parameters.get("properties", {})) == TYPE_DICTIONARY else {}
 	var if_exists := str(parameters.get("if_exists", "return"))
-	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ["tres", "res"]):
 		return MCPError.make("INVALID_PATH",
@@ -226,10 +228,9 @@ static func _cmd_resource_save(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PARAMS",
 			"missing properties (must be an object)")
 	var properties: Dictionary = raw_properties
-	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ["tres", "res"]):
 		return MCPError.make("INVALID_PATH",
@@ -257,10 +258,9 @@ static func _cmd_resource_save(parameters: Dictionary) -> Dictionary:
 
 static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
-	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ["tres", "res"]):
 		return MCPError.make("INVALID_PATH",

@@ -72,10 +72,42 @@ bring the full catalogue to 55 tools (56 with
 | `editor_wait_for_idle`  | Poll `EditorFileSystem.is_scanning()` until idle or `timeout_ms` (default 10s, cap 30s). Use after `asset.import`, `editor.reload_scripts`, or file mutations. Full only. |
 | `file_delete`           | Delete any `res://` file and its `.import`/`.uid` companions. Universal fallback for assets not covered by scene/script/resource.delete. Full only. |
 
+## Security (iter 18)
+
+- **Session-token auth.** On plugin start the editor generates a 32-byte hex
+  token and writes it to `user://mcp_token` (platform-resolved — see table
+  below). The bridge reads this file on every connect/reconnect and sends
+  `{"auth":"<token>"}` as the first WebSocket message. Peers that don't
+  authenticate within 2 s are closed with WS code 1008.
+
+  | Platform | Token path                                                       |
+  |----------|------------------------------------------------------------------|
+  | Windows  | `%APPDATA%\Godot\app_userdata\<project>\mcp_token`               |
+  | macOS    | `~/Library/Application Support/Godot/app_userdata/<project>/mcp_token` |
+  | Linux    | `~/.local/share/godot/app_userdata/<project>/mcp_token`          |
+
+  Override with env `GODOT_MCP_TOKEN_PATH` if needed (e.g. multi-project
+  setups in iter 23).
+
+  **Do not check this file in or share it.** The token rotates on every plugin
+  start; stale tokens are harmless but useless.
+
+- **FileGuard (`file_guard.gd`).** Every command that accepts a file path
+  routes through `FileGuard.resolve_safe(path)`. Rejects `..` segments,
+  absolute OS paths, and non-`res://` prefixes. `editor.screenshot` also
+  allows `user://screenshots/`. Paths that escape the project boundary after
+  canonicalisation are rejected.
+
+- **Untrusted envelopes.** Read-path outputs (script content, scene tree,
+  project settings, error logs, resource properties, animation keys) are
+  wrapped in `<untrusted kind="…" source="…">` envelopes to mark
+  user-authored content for the LLM. Write paths are never wrapped.
+
 ## Conventions when driving these tools
 
-- **Paths always use `res://`.** No absolute filesystem paths. Until iter 18
-  installs `FileGuard`, the plugin accepts `res://` and rejects the rest.
+- **Paths always use `res://`.** No absolute filesystem paths. `FileGuard`
+  rejects anything outside `res://` (plus `user://screenshots/` for
+  screenshots only).
 - **GDScript filenames are `snake_case`**, e.g. `res://player_controller.gd`.
 - **After node mutations, call `editor_save_scene`.** Without it, changes stay
   in memory and are lost on editor close. (File-level `scene_create` /

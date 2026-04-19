@@ -5,6 +5,7 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
 
 const RUNTIME_PORT := 9090
 const RUNTIME_HOST := "127.0.0.1"
@@ -40,10 +41,9 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 					"no currently-edited scene; use target:'main' or target:<res://path>, or scene.open first")
 			EditorInterface.play_current_scene()
 		_:
-			# TODO(iter-18): route target through FileGuard.resolve_safe.
-			if not target.begins_with("res://"):
-				return MCPError.make("INVALID_PARAMS",
-					"target must be 'main' | 'current' | a res:// scene path (got %s)" % target)
+			var guard := MCPFileGuard.resolve_safe(target)
+			if guard["error"] != null:
+				return MCPError.make("PATH_DENIED", str(guard["reason"]))
 			if target.get_extension().to_lower() != "tscn":
 				return MCPError.make("INVALID_PATH",
 					"game.start only plays .tscn files (got %s)" % target)

@@ -5,6 +5,7 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
@@ -19,10 +20,9 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	if file_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing file_path")
-	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.begins_with("res://addons/godot_mcp_toolkit/"):
 		return MCPError.make("PATH_DENIED",
 			"cannot delete files inside the MCP toolkit plugin directory")

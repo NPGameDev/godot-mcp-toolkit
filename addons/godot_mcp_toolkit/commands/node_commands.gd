@@ -6,6 +6,7 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
 
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
@@ -47,7 +48,6 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 
 	var node_path := str(parameters.get("node_path", ""))
 	var property_name := str(parameters.get("property", ""))
-	# TODO(iter-18): filter node_path through FileGuard.resolve_safe.
 
 	if node_path.is_empty() or property_name.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing node_path or property")
@@ -67,7 +67,6 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	var node_path := str(parameters.get("node_path", ""))
 	var property_name := str(parameters.get("property", ""))
 	var raw_value = parameters.get("value", null)
-	# TODO(iter-18): filter node_path through FileGuard.resolve_safe.
 
 	if node_path.is_empty() or property_name.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing node_path or property")
@@ -125,8 +124,8 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var node_path := str(parameters.get("node_path", ""))
 	var method_name := str(parameters.get("method_name", ""))
 	var args_raw = parameters.get("args", [])
-	# TODO(iter-18): route node_path through FileGuard.resolve_safe; args may
-	# contain {type:"Resource",path:...} refs that hit the filesystem.
+	# Resource refs in args are validated via MCPCoerce.check_resource_paths,
+	# which gates through FileGuard. node_path is a scene-tree path, not filesystem.
 
 	if node_path.is_empty() or method_name.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing node_path or method_name")
@@ -182,10 +181,9 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 		node.set_script(null)
 		return {"success": true, "path": node_path, "script": null, "properties": []}
 
-	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(script_path).
-	if not script_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"script must start with res:// (got %s)" % script_path)
+	var guard := MCPFileGuard.resolve_safe(script_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 
 	var loaded = ResourceLoader.load(script_path)
 	if loaded == null:

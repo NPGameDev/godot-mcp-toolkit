@@ -7,6 +7,8 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
+const MCPUntrusted = _Hub.MCPUntrusted
 
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
@@ -93,16 +95,18 @@ static func _cmd_scene_get_tree(_server: Node) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
-	return _walk_tree(root, root)
+	var tree := _walk_tree(root, root)
+	return {"tree": MCPUntrusted.wrap(
+		"scene_tree", str(root.scene_file_path), JSON.stringify(tree))}
 
 
 static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	var root_type := str(parameters.get("root_type", "Node"))
 	var if_exists := str(parameters.get("if_exists", "return"))
-	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH", "path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tscn":
 		return MCPError.make("INVALID_PATH",
 			"path must end with .tscn (got %s; use script.write for .gd files)" % file_path)
@@ -191,9 +195,9 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 
 static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
-	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
-	if not file_path.begins_with("res://"):
-		return MCPError.make("PATH_DENIED", "path must start with res://: %s" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "scene not found: %s" % file_path)
 	EditorInterface.open_scene_from_path(file_path)
@@ -204,9 +208,9 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	if file_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "path is required")
-	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(path).
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH", "path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var open_scenes := EditorInterface.get_open_scenes()
 	if not open_scenes.has(file_path):
 		return MCPError.make("NOT_FOUND",
@@ -224,9 +228,9 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 
 static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
-	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH", "path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tscn":
 		return MCPError.make("INVALID_PATH",
 			"scene.delete only removes .tscn files (got %s); use a different tool for other file types" % file_path)
@@ -257,7 +261,6 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	var class_name_param := str(parameters.get("class_name", ""))
 	var parent_path := str(parameters.get("parent_path", ""))
-	# TODO(iter-18): filter parent_path through FileGuard.resolve_safe.
 	var requested_name := str(parameters.get("node_name", class_name_param))
 
 	if class_name_param.is_empty():
@@ -317,7 +320,6 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
-	# TODO(iter-18): filter node_path through FileGuard.resolve_safe.
 	if node_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing node_path")
 
@@ -350,7 +352,6 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	var as_name := str(parameters.get("as_name", ""))
 	var transform_raw = parameters.get("transform", {})
 	var transform: Dictionary = transform_raw if typeof(transform_raw) == TYPE_DICTIONARY else {}
-	# TODO(iter-18): route parent_path + packed_path through FileGuard.resolve_safe.
 
 	if parent_path.is_empty() or packed_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing parent_path or packed_path")
@@ -360,9 +361,9 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		return MCPError.make("NOT_FOUND",
 			"no node at parent_path %s (must be under the currently-edited scene root)" % parent_path)
 
-	if not packed_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"packed_path must start with res:// (got %s)" % packed_path)
+	var guard := MCPFileGuard.resolve_safe(packed_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if packed_path.get_extension().to_lower() != "tscn":
 		return MCPError.make("INVALID_PATH",
 			"scene.instantiate only instantiates .tscn files (got %s); use resource.create for .tres, script.write for .gd/.cs" % packed_path)

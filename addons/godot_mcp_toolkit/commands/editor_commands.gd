@@ -5,6 +5,8 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
+const MCPUntrusted = _Hub.MCPUntrusted
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 const MIN_SCREENSHOT_SIZE := 64
@@ -36,9 +38,11 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 	var result := _read_console_log(server, limit, ["error"], -1)
 	if result.get("success", false) == false:
 		return result
+	var entries = result.get("entries", [])
 	return {
 		"success": true,
-		"errors": result.get("entries", []),
+		"errors": MCPUntrusted.wrap(
+			"editor_errors", "godot", JSON.stringify(entries)),
 		"count": result.get("count", 0),
 	}
 
@@ -54,10 +58,9 @@ static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 			return MCPError.make("SAVE_FAILED",
 				"EditorInterface.save_scene returned %d" % save_error)
 	else:
-		# TODO(iter-18): validate save_path through FileGuard.resolve_safe.
-		if not save_path.begins_with("res://"):
-			return MCPError.make("PATH_DENIED",
-				"save path must start with res://: %s" % save_path)
+		var guard := MCPFileGuard.resolve_safe(save_path)
+		if guard["error"] != null:
+			return MCPError.make("PATH_DENIED", str(guard["reason"]))
 		EditorInterface.save_scene_as(save_path)
 		if not FileAccess.file_exists(save_path):
 			return MCPError.make("SAVE_FAILED",
@@ -84,10 +87,10 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 
 	var persisted_path := ""
 	if not save_path.is_empty():
-		# TODO(iter-18): replace with FileGuard.resolve_safe(save_path).
-		if not save_path.begins_with("res://"):
-			return MCPError.make("PATH_DENIED",
-				"save_path must start with res://: %s" % save_path)
+		var guard := MCPFileGuard.resolve_safe(
+			save_path, ["res://", "user://screenshots/"])
+		if guard["error"] != null:
+			return MCPError.make("PATH_DENIED", str(guard["reason"]))
 		if not save_path.ends_with(".png"):
 			return MCPError.make("INVALID_PARAMS",
 				"save_path must end with .png: %s" % save_path)
@@ -245,8 +248,8 @@ static func _detect_log_level(line: String) -> String:
 static func _read_console_log(
 	server: Node, limit: int, level_filter: Array, since_id: int,
 ) -> Dictionary:
-	# TODO(iter-18): user://logs/ read is a narrow read-only exception to the
-	# res://-only rule. Explicitly allowlist in iter 18's FileGuard module.
+	# user://logs/ read is a narrow read-only exception to the res://-only rule.
+	# Path is internally constructed (not user-supplied), so no FileGuard gate.
 	var logs_dir := "user://logs"
 	if not DirAccess.dir_exists_absolute(logs_dir):
 		return MCPError.make("LOG_UNAVAILABLE",
@@ -362,7 +365,8 @@ static func _read_console_log(
 
 	return {
 		"success": true,
-		"entries": entries,
+		"entries": MCPUntrusted.wrap(
+			"console", str(chosen_file), JSON.stringify(entries)),
 		"count": entries.size(),
 		"next_id": next_id,
 		"truncated": truncated,

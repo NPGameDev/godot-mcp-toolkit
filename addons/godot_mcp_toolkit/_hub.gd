@@ -9,3 +9,5 @@ extends RefCounted
 const MCPError := preload("res://addons/godot_mcp_toolkit/mcp_error.gd")
 const MCPCoerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const MCPCommandRegistry := preload("res://addons/godot_mcp_toolkit/command_registry.gd")
+const MCPFileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
+const MCPUntrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")

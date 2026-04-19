@@ -5,6 +5,7 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
@@ -19,10 +20,9 @@ static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 
 static func _cmd_folder_create(parameters: Dictionary) -> Dictionary:
 	var folder_path := str(parameters.get("folder_path", ""))
-	# TODO(iter-18): route folder_path through FileGuard.resolve_safe.
-	if not folder_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"path must start with res:// (got %s)" % folder_path)
+	var guard := MCPFileGuard.resolve_safe(folder_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var pre_existed := DirAccess.dir_exists_absolute(folder_path)
 	var error := DirAccess.make_dir_recursive_absolute(folder_path)
 	if error != OK:
@@ -35,10 +35,9 @@ static func _cmd_folder_create(parameters: Dictionary) -> Dictionary:
 static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	var folder_path := str(parameters.get("folder_path", ""))
 	var recursive := bool(parameters.get("recursive", false))
-	# TODO(iter-18): route folder_path through FileGuard.resolve_safe.
-	if not folder_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"path must start with res:// (got %s)" % folder_path)
+	var guard := MCPFileGuard.resolve_safe(folder_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 
 	if folder_path == "res://" or folder_path == "res:///" or folder_path.get_base_dir() == "":
 		return MCPError.make("FOLDER_PROTECTED",

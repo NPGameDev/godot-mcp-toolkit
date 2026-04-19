@@ -5,6 +5,8 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
+const MCPUntrusted = _Hub.MCPUntrusted
 
 const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"]
 
@@ -23,9 +25,9 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 
 static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
-	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(file_path).
-	if not file_path.begins_with("res://"):
-		return MCPError.make("PATH_DENIED", "path must start with res://: %s" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path)
 	var content := FileAccess.get_file_as_string(file_path)
@@ -33,15 +35,14 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 	if open_error != OK:
 		return MCPError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [open_error, file_path])
-	# TODO(iter-18): wrap content in <untrusted> envelope.
-	return {"content": content}
+	return {"content": MCPUntrusted.wrap("script", file_path, content)}
 
 
 static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
-	# TODO(iter-18): replace this prefix check with FileGuard.resolve_safe(file_path).
-	if not file_path.begins_with("res://"):
-		return MCPError.make("PATH_DENIED", "path must start with res://: %s" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var write_extension := file_path.get_extension().to_lower()
 	if not (write_extension in ALLOWED_EXTENSIONS):
 		return MCPError.make("INVALID_PATH",
@@ -79,9 +80,9 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 
 static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
-	# TODO(iter-18): route file_path through FileGuard.resolve_safe.
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH", "path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ALLOWED_EXTENSIONS):
 		return MCPError.make("INVALID_PATH",

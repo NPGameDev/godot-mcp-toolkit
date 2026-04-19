@@ -5,6 +5,7 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
 
 const IMPORT_ALLOWED_EXTENSIONS := [
 	# Images
@@ -87,10 +88,9 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 		extension_filter = []
 	var max_results: int = int(parameters.get("max_results", 500))
 
-	# TODO(iter-18): filter path_prefix through FileGuard.resolve_safe.
-	if not path_prefix.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"path_prefix must start with res:// (got %s)" % path_prefix)
+	var guard := MCPFileGuard.resolve_safe(path_prefix)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if max_results < 1 or max_results > 2000:
 		return MCPError.make("INVALID_PARAMS",
 			"max_results must be in [1, 2000] (got %d); iter-20 adds a configurable ceiling" % max_results)
@@ -143,10 +143,9 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 	var include_transitive: bool = bool(parameters.get("include_transitive", false))
 	var max_results: int = int(parameters.get("max_results", 200))
 
-	# TODO(iter-18): filter path through FileGuard.resolve_safe.
-	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"path must start with res:// (got %s)" % file_path)
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path)
 	var filesystem := EditorInterface.get_resource_filesystem()
@@ -224,10 +223,9 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	var if_exists: String = str(parameters.get("if_exists", "return"))
 	var wait_for_scan_ms: int = int(parameters.get("wait_for_scan_ms", 5000))
 
-	# TODO(iter-18): filter dest_path through FileGuard.resolve_safe.
-	if not dest_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH",
-			"dest_path must start with res:// (got %s)" % dest_path)
+	var guard := MCPFileGuard.resolve_safe(dest_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := dest_path.get_extension().to_lower()
 	if extension not in IMPORT_ALLOWED_EXTENSIONS:
 		return MCPError.make("INVALID_PATH",

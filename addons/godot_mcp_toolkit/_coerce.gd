@@ -8,6 +8,9 @@ extends RefCounted
 ##
 ## Both directions share a symmetric tag vocabulary — keep aligned or round-trip breaks.
 
+# Direct preload (not via _hub) to avoid circular dependency — _hub preloads us.
+const _FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
+
 
 static func coerce_value(value: Variant) -> Variant:
 	if typeof(value) == TYPE_ARRAY:
@@ -19,9 +22,11 @@ static func coerce_value(value: Variant) -> Variant:
 		return value
 	match str(value.get("type", "")):
 		"Resource":
-			# TODO(iter-18): route path through FileGuard.resolve_safe.
 			var resource_path := str(value.get("path", ""))
 			if resource_path.is_empty():
+				return null
+			var guard := _FileGuard.resolve_safe(resource_path)
+			if guard["error"] != null:
 				return null
 			return ResourceLoader.load(resource_path)
 		"Vector2":
@@ -184,15 +189,19 @@ static func serialize_value(value: Variant) -> Variant:
 
 
 ## Pre-coercion gate: recursively scan for {type:"Resource",path:...} entries
-## and return the first path whose ResourceLoader.load returns null.
+## and return the first path that fails FileGuard or ResourceLoader.load.
 ## Empty string means all Resource refs resolve.
-## TODO(iter-18): route each path through FileGuard.resolve_safe.
 static func check_resource_paths(value: Variant) -> String:
 	if typeof(value) == TYPE_DICTIONARY:
 		if str(value.get("type", "")) == "Resource":
 			var resource_path := str(value.get("path", ""))
-			if resource_path.is_empty() or ResourceLoader.load(resource_path) == null:
-				return resource_path if not resource_path.is_empty() else "<empty path>"
+			if resource_path.is_empty():
+				return "<empty path>"
+			var guard := _FileGuard.resolve_safe(resource_path)
+			if guard["error"] != null:
+				return resource_path
+			if ResourceLoader.load(resource_path) == null:
+				return resource_path
 		return ""
 	if typeof(value) == TYPE_ARRAY:
 		for element in value:

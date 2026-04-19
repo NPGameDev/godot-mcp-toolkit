@@ -6,6 +6,7 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPUntrusted = _Hub.MCPUntrusted
 
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
@@ -246,5 +247,7 @@ static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
 		"track_idx": track_index,
 		"track_type": _track_type_name(animation.track_get_type(track_index)),
 		"length": animation.length,
-		"keys": keys,
+		"keys": MCPUntrusted.wrap(
+			"animation", "%s/%s" % [player_path, animation_name],
+			JSON.stringify(keys)),
 	}
