@@ -5,7 +5,7 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
-## TODO(iter-19): wrap input_map_* in FeatureGate.is_enabled.
+const MCPFeatureGate = _Hub.MCPFeatureGate
 
 const BUILTIN_UI_ACTIONS: Array[String] = [
 	"ui_accept", "ui_cancel", "ui_focus_next", "ui_focus_prev",
@@ -183,6 +183,8 @@ static func _persist_input_action(action: String, deadzone: float) -> void:
 
 
 static func _cmd_input_map_add_action(parameters: Dictionary) -> Dictionary:
+	if not MCPFeatureGate.is_enabled("input_map_write"):
+		return MCPFeatureGate.disabled_error("input_map_write")
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
 		return MCPError.make("INVALID_PARAMS", "action must be a non-empty string")
@@ -210,6 +212,8 @@ static func _cmd_input_map_add_action(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_input_map_action_add_event(parameters: Dictionary) -> Dictionary:
+	if not MCPFeatureGate.is_enabled("input_map_write"):
+		return MCPFeatureGate.disabled_error("input_map_write")
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
 		return MCPError.make("INVALID_PARAMS", "action must be a non-empty string")
@@ -239,6 +243,8 @@ static func _cmd_input_map_action_add_event(parameters: Dictionary) -> Dictionar
 
 
 static func _cmd_input_map_action_remove_event(parameters: Dictionary) -> Dictionary:
+	if not MCPFeatureGate.is_enabled("input_map_write"):
+		return MCPFeatureGate.disabled_error("input_map_write")
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
 		return MCPError.make("INVALID_PARAMS", "action must be a non-empty string")
@@ -268,6 +274,8 @@ static func _cmd_input_map_action_remove_event(parameters: Dictionary) -> Dictio
 
 
 static func _cmd_input_map_remove_action(parameters: Dictionary) -> Dictionary:
+	if not MCPFeatureGate.is_enabled("input_map_write"):
+		return MCPFeatureGate.disabled_error("input_map_write")
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
 		return MCPError.make("INVALID_PARAMS", "action must be a non-empty string")

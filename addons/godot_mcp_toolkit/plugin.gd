@@ -3,6 +3,7 @@ extends EditorPlugin
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
 const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
 const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
@@ -31,6 +32,8 @@ var _server: Node = null
 
 
 func _enter_tree() -> void:
+	_register_feature_gate_settings()
+
 	var registry := MCPCommandRegistry.new()
 	_server = MCPServer.new()
 	_server.name = "MCPServer"
@@ -54,6 +57,71 @@ func _enter_tree() -> void:
 
 	add_child(_server)
 	_server.start()
+
+	call_deferred("_check_onboarding")
+
+
+# -- FeatureGate ProjectSettings registration (iter 19) -----------------------
+
+
+func _register_feature_gate_settings() -> void:
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var ps_key: String = entry["ps_key"]
+		if not ProjectSettings.has_setting(ps_key):
+			ProjectSettings.set_setting(ps_key, false)
+		ProjectSettings.set_initial_value(ps_key, false)
+		var gate_label := "dual-gate: env AND PS" if entry["dual_gate"] else "single-gate: env OR PS"
+		ProjectSettings.add_property_info({
+			"name": ps_key,
+			"type": TYPE_BOOL,
+			"hint": PROPERTY_HINT_NONE,
+			"hint_string": "DANGER: %s (%s). Default off." % [entry["risk"], gate_label],
+		})
+
+
+# -- Onboarding dialog (iter 19) ----------------------------------------------
+
+
+const _ONBOARDING_FLAG := "user://mcp_onboarding_v19_shown"
+
+
+func _check_onboarding() -> void:
+	if FileAccess.file_exists(_ONBOARDING_FLAG):
+		return
+	var dialog := AcceptDialog.new()
+	dialog.title = "Godot MCP Toolkit — Feature Gates"
+	dialog.dialog_text = """Some MCP capabilities are now disabled by default for safety:
+
+  game_eval — Arbitrary GDScript execution (dual-gate)
+  node_call_method — Method invocation on nodes (single-gate)
+  project_set_setting — Write ProjectSettings keys (dual-gate)
+  input_map_write — Modify InputMap actions (single-gate)
+
+To enable them, visit:
+  Project Settings → Advanced → mcp/unsafe/
+
+Dual-gate features also require their environment variable
+(e.g. GODOT_MCP_ALLOW_GAME_EVAL=1 in .mcp.json env).
+
+This dialog will not appear again."""
+	dialog.confirmed.connect(func():
+		_write_onboarding_flag()
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(func():
+		_write_onboarding_flag()
+		dialog.queue_free()
+	)
+	EditorInterface.get_base_control().add_child(dialog)
+	dialog.popup_centered()
+
+
+func _write_onboarding_flag() -> void:
+	var f := FileAccess.open(_ONBOARDING_FLAG, FileAccess.WRITE)
+	if f != null:
+		f.store_string("1")
+		f.close()
 
 
 func _exit_tree() -> void:

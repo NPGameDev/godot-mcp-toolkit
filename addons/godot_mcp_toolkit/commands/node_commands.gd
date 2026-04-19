@@ -7,6 +7,7 @@ const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
+const MCPFeatureGate = _Hub.MCPFeatureGate
 
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
@@ -116,7 +117,8 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
-	# TODO(iter-19): wrap in FeatureGate.is_enabled("node_call_method").
+	if not MCPFeatureGate.is_enabled("node_call_method"):
+		return MCPFeatureGate.disabled_error("node_call_method")
 	var root := _get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no open scene; use scene.open or scene.create first")

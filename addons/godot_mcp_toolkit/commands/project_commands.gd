@@ -7,6 +7,7 @@ const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPUntrusted = _Hub.MCPUntrusted
+const MCPFeatureGate = _Hub.MCPFeatureGate
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 
@@ -53,7 +54,8 @@ static func _cmd_project_get_settings(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
-	# TODO(iter-19): wrap in FeatureGate.is_enabled("project_set_setting").
+	if not MCPFeatureGate.is_enabled("project_set_setting"):
+		return MCPFeatureGate.disabled_error("project_set_setting")
 	var key := str(parameters.get("key", ""))
 	if key.is_empty():
 		return MCPError.make("INVALID_PARAMS", "key must be a non-empty string")

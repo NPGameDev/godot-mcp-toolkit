@@ -18,6 +18,7 @@ const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
+const MCPFeatureGate = _Hub.MCPFeatureGate
 
 const PORT := 9090
 const BIND := "127.0.0.1"
@@ -651,19 +652,16 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 
 
 # game.eval: DANGER — evaluates GDScript via Expression in the running game's
-# context. Even though the TS-side gate (GODOT_MCP_ALLOW_GAME_EVAL) keeps
-# this absent from the MCP catalogue by default, the runtime command itself
-# is always reachable on port 9090 from anything that can speak the JSON-RPC
-# protocol. Iter 19 generalises this into a proper FeatureGate. For the
-# iter 12-19 dogfood window we mitigate by:
-#   - logging every invocation with a truncated code string to stdout so
-#     accidental use is auditable.
-#   - returning EXECUTE_FAILED via Expression's error path (no stack trace
-#     leak to the bridge).
+# context. Gated by FeatureGate (iter 19): dual-gate requires BOTH env var
+# AND ProjectSettings flag. Defence-in-depth: even if the TS catalogue
+# exposes the tool (env var set), this handler blocks unless PS is also on.
 const _GAME_EVAL_LOG_CAP := 256
 
 
 func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
+	if not MCPFeatureGate.is_enabled("game_eval"):
+		_send_result(peer, id, MCPFeatureGate.disabled_error("game_eval"))
+		return
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
 		return

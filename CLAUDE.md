@@ -25,9 +25,9 @@ Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 plus iter 15c's playtest/composition additions, iter 15d's
 content-authoring extensions, iter 15e's asset-discovery +
 console-reading, and iter 15f's binary-asset import + scan-idle gating
-bring the full catalogue to 55 tools (56 with
-`GODOT_MCP_ALLOW_GAME_EVAL=1`). Pass `--lite` in `.mcp.json` args for a
-31-tool token-sensitive subset.
+bring the full catalogue to 49 tools by default (56 with all feature
+gates enabled — see **Feature gates** below). Pass `--lite` in
+`.mcp.json` args for a 31-tool token-sensitive subset.
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
@@ -102,6 +102,60 @@ bring the full catalogue to 55 tools (56 with
   project settings, error logs, resource properties, animation keys) are
   wrapped in `<untrusted kind="…" source="…">` envelopes to mark
   user-authored content for the LLM. Write paths are never wrapped.
+
+## Feature gates (iter 19)
+
+Seven features are gated behind explicit opt-in. By default all gates are
+**off** — gated tools are absent from the MCP catalogue entirely and
+plugin-side handlers return `FEATURE_DISABLED` as defence-in-depth.
+
+| Feature               | Gate type | Env var                                  | ProjectSettings key                        | Risk |
+|-----------------------|-----------|------------------------------------------|--------------------------------------------|------|
+| `game_eval`           | **dual**  | `GODOT_MCP_ALLOW_GAME_EVAL`             | `mcp/unsafe/allow_game_eval`               | Arbitrary GDScript via Expression |
+| `os_execute`          | **dual**  | `GODOT_MCP_ALLOW_OS_EXECUTE`            | `mcp/unsafe/allow_os_execute`              | Host-OS shell execution |
+| `project_set_setting` | **dual**  | `GODOT_MCP_ALLOW_PROJECT_SET_SETTING`   | `mcp/unsafe/allow_project_set_setting`     | Write arbitrary ProjectSettings keys |
+| `outbound_http`       | **dual**  | `GODOT_MCP_ALLOW_OUTBOUND_HTTP`         | `mcp/unsafe/allow_outbound_http`           | Outbound HTTP requests |
+| `node_call_method`    | single    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD`      | `mcp/unsafe/allow_node_call_method`        | Method invocation on edited-scene nodes |
+| `input_map_write`     | single    | `GODOT_MCP_ALLOW_INPUT_MAP_WRITE`       | `mcp/unsafe/allow_input_map_write`         | Modify persistent InputMap actions |
+| `write_user_scope`    | single    | `GODOT_MCP_ALLOW_WRITE_USER_SCOPE`      | `mcp/unsafe/allow_write_user_scope`        | Extend file writes to user:// |
+
+- **Dual gate** — BOTH env var (`=1`) AND ProjectSettings must be true.
+- **Single gate** — EITHER env var OR ProjectSettings suffices.
+- **Explicit deny** — Setting `mcp/unsafe/deny_<feature>` to `true` in
+  ProjectSettings always wins, regardless of other flags.
+
+### How to enable
+
+Set the env var in `.mcp.json` `env` block:
+```json
+{ "env": { "GODOT_MCP_ALLOW_NODE_CALL_METHOD": "1" } }
+```
+
+For dual-gate features, also flip the ProjectSettings toggle:
+Project Settings → Advanced Settings → MCP → Unsafe → `allow_<feature>`.
+
+### Breaking changes vs pre-iter-19
+
+- `node_call_method` (was always-on since iter 15c) — now requires
+  `node_call_method` gate (single).
+- `project_set_setting` (was always-on since iter 15d) — now requires
+  `project_set_setting` gate (dual).
+- `input_map_add_action`, `input_map_action_add_event`,
+  `input_map_action_remove_event`, `input_map_remove_action` (always-on
+  since iter 15d) — now require `input_map_write` gate (single).
+
+### Error shape
+
+When a gated tool is called while disabled, the plugin returns:
+```json
+{
+  "success": false,
+  "code": "FEATURE_DISABLED",
+  "error": "Feature '<name>' is disabled …",
+  "risk": "<risk description>",
+  "how_to_enable": "Set env GODOT_MCP_ALLOW_… = 1 [and …]"
+}
+```
 
 ## Conventions when driving these tools
 
