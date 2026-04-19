@@ -19,6 +19,8 @@ const InputMapCommands := preload("res://addons/godot_mcp_toolkit/commands/input
 const AnimationCommands := preload("res://addons/godot_mcp_toolkit/commands/animation_commands.gd")
 const TilemapCommands := preload("res://addons/godot_mcp_toolkit/commands/tilemap_commands.gd")
 const AssetCommands := preload("res://addons/godot_mcp_toolkit/commands/asset_commands.gd")
+const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_commands.gd")
+const MCPFileGuard = _Hub.MCPFileGuard
 
 # Mode B (iter 10) — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:9090. Registered/unregistered via add_autoload_singleton /
@@ -54,11 +56,35 @@ func _enter_tree() -> void:
 	AnimationCommands.register(registry, _server)
 	TilemapCommands.register(registry, _server)
 	AssetCommands.register(registry, _server)
+	SaveCommands.register(registry, _server)
+
+	_validate_user_whitelist()
 
 	add_child(_server)
 	_server.start()
 
 	call_deferred("_check_onboarding")
+
+
+# -- user:// whitelist validation (iter 19c) ------------------------------------
+
+
+func _validate_user_whitelist() -> void:
+	MCPFileGuard.reload_user_whitelist()
+	var wl_path := "res://addons/godot_mcp_toolkit/user_scope_whitelist.json"
+	if not FileAccess.file_exists(wl_path):
+		push_warning("MCP: user_scope_whitelist.json not found at %s; save.* tools will return USER_SCOPE_DISABLED until the file is created" % wl_path)
+		return
+	var f := FileAccess.open(wl_path, FileAccess.READ)
+	if f == null:
+		push_warning("MCP: cannot open user_scope_whitelist.json (error %d); save.* tools will return USER_SCOPE_DISABLED" % FileAccess.get_open_error())
+		return
+	var text := f.get_as_text()
+	f.close()
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("MCP: user_scope_whitelist.json is malformed (expected JSON object); save.* tools will return USER_SCOPE_DISABLED")
+		return
 
 
 # -- FeatureGate ProjectSettings registration (iter 19) -----------------------

@@ -23,11 +23,11 @@ const FEATURES := {
 		"dual_gate": true,
 		"risk": "Host-OS shell execution",
 	},
-	"write_user_scope": {
-		"env_var": "GODOT_MCP_ALLOW_WRITE_USER_SCOPE",
-		"ps_key": "mcp/unsafe/allow_write_user_scope",
-		"dual_gate": false,
-		"risk": "Extend file writes to user://",
+	"read_user_scope": {
+		"env_var": "GODOT_MCP_ALLOW_USER_SCOPE",
+		"ps_key": "mcp/unsafe/allow_user_scope",
+		"dual_gate": true,
+		"risk": "Read/write whitelisted user:// paths",
 	},
 	"outbound_http": {
 		"env_var": "GODOT_MCP_ALLOW_OUTBOUND_HTTP",

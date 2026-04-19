@@ -25,9 +25,9 @@ Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
 plus iter 15c's playtest/composition additions, iter 15d's
 content-authoring extensions, iter 15e's asset-discovery +
 console-reading, and iter 15f's binary-asset import + scan-idle gating
-bring the full catalogue to 49 tools by default (56 with all feature
+bring the full catalogue to 49 tools by default (60 with all feature
 gates enabled — see **Feature gates** below). Pass `--lite` in
-`.mcp.json` args for a 31-tool token-sensitive subset.
+`.mcp.json` args for a 14-tool token-sensitive subset.
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
@@ -71,6 +71,10 @@ gates enabled — see **Feature gates** below). Pass `--lite` in
 | `asset_import`          | Import binary asset (image/audio/font/3D) into `res://` via `source_path` (filesystem copy) or `base64_data`. Extension allowlist; `if_exists: return\|fail\|replace`. Triggers scan + optional wait. Lite. |
 | `editor_wait_for_idle`  | Poll `EditorFileSystem.is_scanning()` until idle or `timeout_ms` (default 10s, cap 30s). Use after `asset.import`, `editor.reload_scripts`, or file mutations. Full only. |
 | `file_delete`           | Delete any `res://` file and its `.import`/`.uid` companions. Universal fallback for assets not covered by scene/script/resource.delete. Full only. |
+| `save_read`             | Read whitelisted `user://` file (default 64 KB cap; max 256 KB). Returns UTF-8 in `<untrusted>` envelope or base64 if non-UTF-8. Gated by `read_user_scope`. Full only. |
+| `save_write`            | Write to whitelisted `user://` file (creates parent dirs). Not idempotent; no `if_exists`. Gated by `read_user_scope`. Full only. |
+| `save_delete`           | Delete whitelisted `user://` file. `NOT_FOUND` if missing. Delete paths configured separately in whitelist. Gated by `read_user_scope`. Full only. |
+| `save_list`             | List files + subdirs in a whitelisted `user://` directory (path must end `/`). Names only. Gated by `read_user_scope`. Full only. |
 
 ## Security (iter 18)
 
@@ -117,7 +121,7 @@ plugin-side handlers return `FEATURE_DISABLED` as defence-in-depth.
 | `outbound_http`       | **dual**  | `GODOT_MCP_ALLOW_OUTBOUND_HTTP`         | `mcp/unsafe/allow_outbound_http`           | Outbound HTTP requests |
 | `node_call_method`    | single    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD`      | `mcp/unsafe/allow_node_call_method`        | Method invocation on edited-scene nodes |
 | `input_map_write`     | single    | `GODOT_MCP_ALLOW_INPUT_MAP_WRITE`       | `mcp/unsafe/allow_input_map_write`         | Modify persistent InputMap actions |
-| `write_user_scope`    | single    | `GODOT_MCP_ALLOW_WRITE_USER_SCOPE`      | `mcp/unsafe/allow_write_user_scope`        | Extend file writes to user:// |
+| `read_user_scope`     | **dual**  | `GODOT_MCP_ALLOW_USER_SCOPE`            | `mcp/unsafe/allow_user_scope`              | Read/write whitelisted user:// paths |
 
 - **Dual gate** — BOTH env var (`=1`) AND ProjectSettings must be true.
 - **Single gate** — EITHER env var OR ProjectSettings suffices.
@@ -133,6 +137,34 @@ Set the env var in `.mcp.json` `env` block:
 
 For dual-gate features, also flip the ProjectSettings toggle:
 Project Settings → Advanced Settings → MCP → Unsafe → `allow_<feature>`.
+
+### user:// whitelist (iter 19c)
+
+The `save.*` tools access `user://` paths filtered by a plugin-author-configured
+whitelist at `addons/godot_mcp_toolkit/user_scope_whitelist.json`. The whitelist
+is NOT agent-configured — the plugin author edits it before shipping; end users
+who enable the gate trust the author's whitelist.
+
+```json
+{
+  "$schema_version": 1,
+  "read":   ["saves/", "logs/"],
+  "write":  ["saves/"],
+  "delete": ["saves/"]
+}
+```
+
+- Entries are relative to `user://`. Trailing `/` = prefix match; no trailing
+  `/` = exact match. No wildcards, no `..`.
+- Separate `read`/`write`/`delete` keys let the author grant "read logs but not
+  write/delete them" granularity.
+- Symlink escape guard: paths that resolve outside `OS.get_user_data_dir()` are
+  rejected regardless of whitelist match.
+
+To enable the `save.*` tools:
+1. Set `GODOT_MCP_ALLOW_USER_SCOPE=1` in `.mcp.json` env block.
+2. Enable `mcp/unsafe/allow_user_scope` in Project Settings → Advanced.
+3. Ensure `user_scope_whitelist.json` exists and is valid JSON.
 
 ### Breaking changes vs pre-iter-19
 
