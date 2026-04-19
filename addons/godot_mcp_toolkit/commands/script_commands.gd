@@ -14,6 +14,8 @@ const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("script.read", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_script_read(parameters), "lite")
+	registry.add("script.read_range", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_script_read_range(parameters), "lite")
 	registry.add("script.write", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_script_write(server, parameters), "lite")
 	registry.add("script.delete", func(parameters: Dictionary) -> Dictionary:
@@ -35,7 +37,54 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 	if open_error != OK:
 		return MCPError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [open_error, file_path])
+	var content_bytes := content.to_utf8_buffer().size()
+	if content_bytes > 262144:
+		var err := MCPError.make("FILE_TOO_LARGE",
+			"file exceeds 256 KB response cap")
+		err["total_bytes"] = content_bytes
+		err["hint"] = "use script_read_range(path, start_line, end_line)"
+		return err
 	return {"content": MCPUntrusted.wrap("script", file_path, content)}
+
+
+static func _cmd_script_read_range(parameters: Dictionary) -> Dictionary:
+	var file_path := str(parameters.get("file_path", ""))
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+	if not FileAccess.file_exists(file_path):
+		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path)
+	if not parameters.has("start_line") or not parameters.has("end_line"):
+		return MCPError.make("INVALID_PARAMS", "start_line and end_line are required")
+	var start_line := int(parameters.get("start_line", 0))
+	var end_line := int(parameters.get("end_line", 0))
+	if start_line < 1:
+		return MCPError.make("INVALID_PARAMS",
+			"start_line must be >= 1 (got %d)" % start_line)
+	if end_line < start_line:
+		return MCPError.make("INVALID_PARAMS",
+			"end_line must be >= start_line (got %d < %d)" % [end_line, start_line])
+	var content := FileAccess.get_file_as_string(file_path)
+	var read_error := FileAccess.get_open_error()
+	if read_error != OK:
+		return MCPError.make("READ_FAILED",
+			"FileAccess error %d reading %s" % [read_error, file_path])
+	var lines := content.split("\n")
+	var total_lines := lines.size()
+	var clamped_start := mini(start_line, total_lines)
+	var clamped_end := mini(end_line, total_lines)
+	var slice := lines.slice(clamped_start - 1, clamped_end)
+	var result_text := "\n".join(slice)
+	var result_bytes := result_text.to_utf8_buffer().size()
+	if result_bytes > 262144:
+		return MCPError.make("FILE_TOO_LARGE",
+			"slice exceeds 256 KB response cap; narrow the line range")
+	return {
+		"content": MCPUntrusted.wrap("script", file_path, result_text),
+		"start_line": clamped_start,
+		"end_line": clamped_end,
+		"total_lines": total_lines,
+	}
 
 
 static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionary:

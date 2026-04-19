@@ -129,6 +129,10 @@ func _process(_delta: float) -> void:
 	while _tcp_server.is_connection_available():
 		var stream := _tcp_server.take_connection()
 		var peer := WebSocketPeer.new()
+		# 1 MB buffers — script.write payloads can reach the 256 KB response
+		# cap, and JSON-RPC framing adds overhead on top of content size.
+		peer.inbound_buffer_size = 1048576
+		peer.outbound_buffer_size = 1048576
 		var accept_error := peer.accept_stream(stream)
 		if accept_error != OK:
 			push_warning("[MCPServer] accept_stream failed (%d)" % accept_error)

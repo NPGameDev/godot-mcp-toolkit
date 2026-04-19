@@ -19,6 +19,7 @@ const MCPCoerce = _Hub.MCPCoerce
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const MCPFeatureGate = _Hub.MCPFeatureGate
+const MCPScrubber = _Hub.MCPScrubber
 
 const PORT := 9090
 const BIND := "127.0.0.1"
@@ -143,6 +144,8 @@ func _process(_delta: float) -> void:
 	while _tcp_server.is_connection_available():
 		var stream := _tcp_server.take_connection()
 		var peer := WebSocketPeer.new()
+		peer.inbound_buffer_size = 1048576
+		peer.outbound_buffer_size = 1048576
 		var accept_err := peer.accept_stream(stream)
 		if accept_err != OK:
 			push_warning("[MCPRuntimeServer] accept_stream failed (%d)" % accept_err)
@@ -369,8 +372,10 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	for i in range(start, total):
 		slice.append(all_lines[i])
 
+	var json_slice := JSON.stringify(slice)
+	var scrubbed := MCPScrubber.scrub(json_slice, "debugger.get_log")
 	_send_result(peer, id, {
-		"lines": MCPUntrusted.wrap("game_log", "godot", JSON.stringify(slice)),
+		"lines": MCPUntrusted.wrap("game_log", "godot", scrubbed["text"]),
 		"count": slice.size(),
 		"total": total,
 		"path": log_path,

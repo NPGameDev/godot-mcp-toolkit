@@ -4,6 +4,7 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
+const MCPAudit = _Hub.MCPAudit
 ##
 ## Every tool registers via add() with a required tier argument.
 ## The registry is the single source of truth for which tools are lite vs full.
@@ -37,4 +38,5 @@ func get_methods_for_tier(tier: String) -> Array[String]:
 func call_command(method: String, parameters: Dictionary) -> Dictionary:
 	if not _commands.has(method):
 		return MCPError.make("NOT_FOUND", "unknown method: " + method)
+	MCPAudit.log_call(method, parameters)
 	return _commands[method]["handler"].call(parameters)

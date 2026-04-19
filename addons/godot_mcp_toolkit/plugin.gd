@@ -31,6 +31,7 @@ const RUNTIME_AUTOLOAD_NAME := "MCPRuntimeServer"
 const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 
 var _server: Node = null
+var _export_plugin: EditorExportPlugin = null
 
 
 func _enter_tree() -> void:
@@ -59,6 +60,9 @@ func _enter_tree() -> void:
 	SaveCommands.register(registry, _server)
 
 	_validate_user_whitelist()
+
+	_export_plugin = preload("res://addons/godot_mcp_toolkit/export_strip.gd").new()
+	add_export_plugin(_export_plugin)
 
 	add_child(_server)
 	_server.start()
@@ -151,6 +155,9 @@ func _write_onboarding_flag() -> void:
 
 
 func _exit_tree() -> void:
+	if _export_plugin != null:
+		remove_export_plugin(_export_plugin)
+		_export_plugin = null
 	if _server != null:
 		_server.stop()
 		_server.queue_free()

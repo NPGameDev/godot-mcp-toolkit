@@ -7,8 +7,7 @@ const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
-
-const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
+const MCPScrubber = _Hub.MCPScrubber
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
 
@@ -362,6 +361,10 @@ static func _read_console_log(
 	var next_id: int = -1
 	if entries.size() > 0:
 		next_id = entries[-1]["id"]
+
+	for entry in entries:
+		var scrubbed := MCPScrubber.scrub(str(entry["message"]), "console")
+		entry["message"] = scrubbed["text"]
 
 	return {
 		"success": true,
