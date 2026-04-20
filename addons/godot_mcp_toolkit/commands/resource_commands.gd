@@ -136,7 +136,7 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ["tres", "res"]):
 		return MCPError.make("INVALID_PATH",
-			"resource.write only writes .tres/.res files (got %s)" % file_path)
+			"resource.write only writes .tres/.res files (got %s); use script.write for .gd" % file_path)
 	var properties: Dictionary = parameters.get("properties", {}) \
 		if typeof(parameters.get("properties", {})) == TYPE_DICTIONARY else {}
 	if FileAccess.file_exists(file_path):
@@ -176,10 +176,10 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 				break
 	if resolved_kind.is_empty():
 		return MCPError.make("INVALID_CLASS",
-			"unknown class %s" % resource_class)
+			"unknown class %s; check ClassDB or ProjectSettings global class list" % resource_class)
 	if not _class_descends_from(resource_class, "Resource"):
 		return MCPError.make("NOT_A_RESOURCE",
-			"%s is not a Resource subclass (chain: %s)" % [
+			"%s is not a Resource subclass (base chain: %s)" % [
 				resource_class, _class_base_chain(resource_class)])
 	var resource: Resource = null
 	if resolved_kind == "native":
