@@ -111,6 +111,30 @@ gates enabled — see **Feature gates** below). Pass `--lite` in
   envelope is a defense-in-depth hint, not a security boundary — the real
   boundaries are FileGuard, FeatureGate, token auth, and the audit log.
 
+## Editor UI (iter 21)
+
+- **MCP dock** — bottom-panel tab ("MCP"). Signal-driven server status (no
+  polling), feature-gate toggles with .mcp.json sync indicators, polled audit
+  log tail (visibility-gated, 500ms Timer). Action buttons: Regenerate Token,
+  Open Full Log, Clear View.
+- **Menu items** — five entries under Project → Tools: Regenerate Token, Show
+  Audit Log, Open Project Settings, Write .mcp.json, Power User Mode. All also
+  registered in the Command Palette (Ctrl+Shift+P → "MCP").
+- **Power User Mode** — sets `mcp/unsafe/allow_all = true` in ProjectSettings
+  (satisfies the PS side of every gate at once). Also writes all feature env
+  vars into `.mcp.json`. Explicit `deny_<feature>` still overrides `allow_all`.
+  Accessible from the dock, the Tools menu, the Command Palette, or the
+  first-run onboarding dialog.
+- **.mcp.json sync** — when toggling a dual-gated feature in the dock, the
+  plugin offers to add/remove the corresponding env var in `.mcp.json`.
+  Out-of-sync states show a warning icon in the dock's feature row.
+- **Plugin disable cleanup** — disabling the plugin via Project Settings →
+  Plugins prompts to delete the orphaned `.mcp.json` at project root.
+- **Export stripping** — `EditorExportPlugin` auto-strips all
+  `addons/godot_mcp_toolkit/` files from exported PCKs (iter 20 `export_strip.gd`).
+- **EditorSettings** (per-user, not committed) — `mcp/personal/dock_default_visible`,
+  `mcp/personal/audit_log_tail_lines`.
+
 ## Feature gates (iter 19)
 
 Seven features are gated behind explicit opt-in. By default all gates are

@@ -29,16 +29,21 @@ Requires Node.js ≥ 20. Source + README:
 
 ## Connect Claude Code
 
-1. Copy `addons/godot_mcp_toolkit/.mcp.json.template` up one level into your
-   Godot project's root (same folder as `project.godot`) and rename it to
-   `.mcp.json`.
-2. `cd` to that project root.
-3. Run `claude`. `/mcp` should list `godot-mcp-toolkit` with the full tool
-   catalogue (52 tools default; pass `--lite` in `.mcp.json` args for a
-   29-tool core subset in token-sensitive sessions).
+**Fastest path (editor menu):** In the Godot editor, go to
+**Project → Tools → MCP: Write .mcp.json**. This copies the template
+into your project root — restart Claude Code to pick it up.
 
-(Iter 21 will add a one-click menu item in the editor's MCP dock that writes
-`.mcp.json` for you.)
+**Manual fallback:** Copy `addons/godot_mcp_toolkit/.mcp.json.template`
+into your project root (same folder as `project.godot`) and rename it to
+`.mcp.json`.
+
+Then `cd` to your project root and run `claude`. `/mcp` should list
+`godot-mcp-toolkit` with the full tool catalogue (52 tools default; pass
+`--lite` in `.mcp.json` args for a 14-tool token-sensitive subset).
+
+**Cleanup note:** If you delete the `addons/godot_mcp_toolkit/` folder
+without disabling the plugin first, `_disable_plugin()` cannot fire.
+Manually delete `.mcp.json` from your project root if uninstalling.
 
 ## Iter 15 additions — file-level scene/script ops
 

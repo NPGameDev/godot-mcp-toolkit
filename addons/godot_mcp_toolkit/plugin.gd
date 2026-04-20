@@ -32,6 +32,25 @@ const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runti
 
 var _server: Node = null
 var _export_plugin: EditorExportPlugin = null
+var _dock: Control = null
+
+# Menu item keys for teardown symmetry (I12).
+const _MENU_ITEMS: Array[String] = [
+	"MCP: Regenerate Token",
+	"MCP: Show Audit Log",
+	"MCP: Open Project Settings",
+	"MCP: Write .mcp.json",
+	"MCP: Power User Mode",
+]
+
+# Command Palette key names for teardown symmetry (I12).
+const _PALETTE_KEYS: Array[String] = [
+	"mcp/regenerate_token",
+	"mcp/show_audit_log",
+	"mcp/open_settings",
+	"mcp/write_mcp_json",
+	"mcp/power_user_mode",
+]
 
 
 func _enter_tree() -> void:
@@ -67,6 +86,29 @@ func _enter_tree() -> void:
 	add_child(_server)
 	_server.start()
 
+	# -- Bottom-panel dock (iter 21) --
+	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
+	_dock.bind(_server, "user://mcp_audit.log")
+	add_control_to_bottom_panel(_dock, "MCP")
+
+	# -- Menu items (iter 21, I12: each add_tool_menu_item has remove in _exit_tree) --
+	add_tool_menu_item("MCP: Regenerate Token", _on_regen_token)
+	add_tool_menu_item("MCP: Show Audit Log", _on_show_audit)
+	add_tool_menu_item("MCP: Open Project Settings", _on_open_settings)
+	add_tool_menu_item("MCP: Write .mcp.json", _on_write_mcp_json)
+	add_tool_menu_item("MCP: Power User Mode", _on_power_user_mode)
+
+	# -- Command Palette (iter 21, I12: each add_command has remove in _exit_tree) --
+	var palette := EditorInterface.get_command_palette()
+	palette.add_command("MCP: Regenerate Token", "mcp/regenerate_token", _on_regen_token)
+	palette.add_command("MCP: Show Audit Log", "mcp/show_audit_log", _on_show_audit)
+	palette.add_command("MCP: Open Project Settings", "mcp/open_settings", _on_open_settings)
+	palette.add_command("MCP: Write .mcp.json", "mcp/write_mcp_json", _on_write_mcp_json)
+	palette.add_command("MCP: Power User Mode", "mcp/power_user_mode", _on_power_user_mode)
+
+	# -- Per-user EditorSettings (iter 21) --
+	_register_editor_settings()
+
 	call_deferred("_check_onboarding")
 
 
@@ -95,6 +137,19 @@ func _validate_user_whitelist() -> void:
 
 
 func _register_feature_gate_settings() -> void:
+	# allow_all — Power User Mode master switch (iter 21).
+	if not ProjectSettings.has_setting("mcp/unsafe/allow_all"):
+		ProjectSettings.set_setting("mcp/unsafe/allow_all", false)
+	ProjectSettings.set_initial_value("mcp/unsafe/allow_all", false)
+	ProjectSettings.add_property_info({
+		"name": "mcp/unsafe/allow_all",
+		"type": TYPE_BOOL,
+		"hint": PROPERTY_HINT_NONE,
+		"hint_string": "DANGER: Enables PS side of ALL feature gates. "
+			+ "Dual-gated features still require their env var. "
+			+ "Explicit deny_<feature> overrides this.",
+	})
+
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var ps_key: String = entry["ps_key"]
@@ -113,30 +168,39 @@ func _register_feature_gate_settings() -> void:
 # -- Onboarding dialog (iter 19) ----------------------------------------------
 
 
-const _ONBOARDING_FLAG := "user://mcp_onboarding_v19_shown"
+const _ONBOARDING_FLAG := "user://mcp_onboarding_v21_shown"
 
 
 func _check_onboarding() -> void:
 	if FileAccess.file_exists(_ONBOARDING_FLAG):
 		return
 	var dialog := AcceptDialog.new()
-	dialog.title = "Godot MCP Toolkit — Feature Gates"
-	dialog.dialog_text = """Some MCP capabilities are now disabled by default for safety:
-
-  game_eval — Arbitrary GDScript execution (dual-gate)
-  node_call_method — Method invocation on nodes (single-gate)
-  project_set_setting — Write ProjectSettings keys (dual-gate)
-  input_map_write — Modify InputMap actions (single-gate)
-
-To enable them, visit:
-  Project Settings → Advanced → mcp/unsafe/
-
-Dual-gate features also require their environment variable
-(e.g. GODOT_MCP_ALLOW_GAME_EVAL=1 in .mcp.json env).
-
-This dialog will not appear again."""
+	dialog.title = "MCP Plugin — First Run Setup"
+	dialog.dialog_text = (
+		"Welcome to the Godot MCP Toolkit.\n\n"
+		+ "Some capabilities (code execution, OS commands, etc.)\n"
+		+ "are disabled by default for safety. Choose your mode:\n\n"
+		+ "Safe Mode (Recommended):\n"
+		+ "  All advanced features off. Enable individually later\n"
+		+ "  via the MCP dock or Project Settings.\n\n"
+		+ "Configure Individually:\n"
+		+ "  Opens Project Settings -> mcp/unsafe/ to pick features.\n\n"
+		+ "Power User Mode:\n"
+		+ "  Enable ALL features. You know the risks.")
+	dialog.ok_button_text = "Safe Mode (Recommended)"
+	dialog.add_button("Configure Individually", true, "configure")
+	dialog.add_button("Power User Mode", true, "power_user")
 	dialog.confirmed.connect(func():
 		_write_onboarding_flag()
+		dialog.queue_free()
+	)
+	dialog.custom_action.connect(func(action: StringName):
+		_write_onboarding_flag()
+		match str(action):
+			"configure":
+				_on_open_settings()
+			"power_user":
+				_on_power_user_mode()
 		dialog.queue_free()
 	)
 	dialog.canceled.connect(func():
@@ -155,9 +219,28 @@ func _write_onboarding_flag() -> void:
 
 
 func _exit_tree() -> void:
+	# I12: teardown symmetry — reverse order of _enter_tree registrations.
+	# Command Palette.
+	var palette := EditorInterface.get_command_palette()
+	for key in _PALETTE_KEYS:
+		palette.remove_command(key)
+
+	# Menu items.
+	for item in _MENU_ITEMS:
+		remove_tool_menu_item(item)
+
+	# Dock (remove + free per I12 note).
+	if _dock != null:
+		remove_control_from_bottom_panel(_dock)
+		_dock.queue_free()
+		_dock = null
+
+	# Export plugin (RefCounted — do NOT queue_free, just null).
 	if _export_plugin != null:
 		remove_export_plugin(_export_plugin)
 		_export_plugin = null
+
+	# Server.
 	if _server != null:
 		_server.stop()
 		_server.queue_free()
@@ -170,3 +253,79 @@ func _enable_plugin() -> void:
 
 func _disable_plugin() -> void:
 	remove_autoload_singleton(RUNTIME_AUTOLOAD_NAME)
+
+	# iter 21: warn about orphaned .mcp.json.
+	var mcp_json_path := ProjectSettings.globalize_path("res://") + ".mcp.json"
+	if FileAccess.file_exists(mcp_json_path):
+		var dialog := ConfirmationDialog.new()
+		dialog.title = "MCP Plugin Disabled"
+		dialog.dialog_text = (
+			"The .mcp.json configuration file is still at your project root:\n"
+			+ mcp_json_path + "\n\n"
+			+ "If you're uninstalling the plugin, you may want to remove it.\n"
+			+ "If you're just disabling temporarily, keep it.")
+		dialog.ok_button_text = "Delete .mcp.json"
+		dialog.cancel_button_text = "Keep"
+		dialog.confirmed.connect(func():
+			DirAccess.remove_absolute(mcp_json_path)
+			print("[MCP] Deleted .mcp.json at %s" % mcp_json_path)
+			dialog.queue_free()
+		)
+		dialog.canceled.connect(func():
+			print("[MCP] .mcp.json kept at %s" % mcp_json_path)
+			dialog.queue_free()
+		)
+		EditorInterface.get_base_control().add_child(dialog)
+		dialog.popup_centered()
+
+
+# -- EditorSettings registration (per-user, not committed to VCS) --------
+
+
+func _register_editor_settings() -> void:
+	var es := EditorInterface.get_editor_settings()
+	var settings := {
+		"mcp/personal/dock_default_visible": [TYPE_BOOL, true],
+		"mcp/personal/audit_log_tail_lines": [TYPE_INT, 50],
+	}
+	for key in settings:
+		if not es.has_setting(key):
+			es.set_setting(key, settings[key][1])
+		es.add_property_info({"name": key, "type": settings[key][0]})
+
+
+# -- Menu / Command Palette handlers (iter 21) ----------------------------
+
+
+func _on_regen_token() -> void:
+	if _server != null:
+		_server.regenerate_token()
+		print("[MCP] Token rotated")
+		var toaster = EditorInterface.get_editor_toaster()
+		if toaster != null:
+			toaster.push_toast("MCP token rotated", 0)
+
+
+func _on_show_audit() -> void:
+	var global_path := ProjectSettings.globalize_path("user://mcp_audit.log")
+	OS.shell_open(global_path)
+
+
+func _on_open_settings() -> void:
+	# No public API to open Project Settings to a specific section.
+	print("[MCP] Navigate to: Project -> Project Settings -> Advanced -> mcp/unsafe/")
+	var toaster = EditorInterface.get_editor_toaster()
+	if toaster != null:
+		toaster.push_toast(
+			"Project -> Project Settings -> Advanced -> mcp/unsafe/", 0,
+			"Enable 'Advanced Settings' to see the MCP feature gates")
+
+
+func _on_write_mcp_json() -> void:
+	if _dock != null:
+		_dock.write_mcp_json()
+
+
+func _on_power_user_mode() -> void:
+	if _dock != null:
+		_dock.toggle_power_user_mode()

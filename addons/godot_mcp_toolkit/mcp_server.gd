@@ -2,6 +2,10 @@
 extends Node
 ## WebSocket JSON-RPC framing and peer lifecycle.
 
+signal client_connected(peer_count: int)
+signal client_disconnected(peer_count: int)
+signal command_received(method: String)
+
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
@@ -52,6 +56,30 @@ var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at ac
 
 func set_registry(registry: MCPCommandRegistry) -> void:
 	_registry = registry
+
+
+func is_listening() -> bool:
+	return _tcp_server != null and _tcp_server.is_listening()
+
+
+func get_authed_peer_count() -> int:
+	return _peer_authed.size()
+
+
+func regenerate_token() -> void:
+	_session_token = MCPAuth.generate_token()
+	var write_err := MCPAuth.write_token(_session_token)
+	if write_err != OK:
+		push_warning("[MCPServer] failed to write rotated token (err %d)" % write_err)
+	else:
+		print("[MCPServer] token rotated, written to %s" % MCPAuth.get_token_path())
+	# Close all existing peers — they must re-auth with the new token.
+	for peer in _peers:
+		if peer != null:
+			peer.close(1008, "token rotated")
+	_peers.clear()
+	_peer_authed.clear()
+	_peer_connect_ms.clear()
 
 
 func start() -> void:
@@ -160,10 +188,15 @@ func _process(_delta: float) -> void:
 			var text := peer.get_packet().get_string_from_utf8()
 			_handle_message(peer, text)
 
+	var had_authed_disconnect := false
 	for peer in closed_peers:
+		if _peer_authed.has(peer):
+			had_authed_disconnect = true
 		_peers.erase(peer)
 		_peer_authed.erase(peer)
 		_peer_connect_ms.erase(peer)
+	if had_authed_disconnect:
+		client_disconnected.emit(_peer_authed.size())
 
 
 func _handle_message(peer: WebSocketPeer, text: String) -> void:
@@ -183,6 +216,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		if MCPAuth.validate(message, _session_token):
 			_peer_authed[peer] = true
 			peer.send_text(JSON.stringify({"authed": true}))
+			client_connected.emit(_peer_authed.size())
 		else:
 			peer.close(1008, "invalid token")
 		return
@@ -210,6 +244,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 
 	var safe_parameters: Dictionary = parameters \
 		if typeof(parameters) == TYPE_DICTIONARY else {}
+	command_received.emit(method)
 	var result: Dictionary = _registry.call_command(method, safe_parameters)
 	_send_result(peer, id, result)
 

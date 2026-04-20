@@ -16,8 +16,9 @@ static func is_enabled(feature: String) -> bool:
 	# Explicit deny always wins.
 	if ProjectSettings.get_setting("mcp/unsafe/deny_" + feature, false):
 		return false
+	var allow_all: bool = ProjectSettings.get_setting("mcp/unsafe/allow_all", false)
+	var ps_ok: bool = allow_all or ProjectSettings.get_setting(str(entry["ps_key"]), false)
 	var env_ok := OS.get_environment(str(entry["env_var"])) == "1"
-	var ps_ok: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
 	return (env_ok and ps_ok) if entry["dual_gate"] else (env_ok or ps_ok)
 
 
