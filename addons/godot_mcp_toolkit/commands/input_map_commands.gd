@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## input_map.* command handlers — add/remove actions and events.
+## input_map.* command handlers — action (add/remove) and event (bind/unbind).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
@@ -39,14 +39,10 @@ const BUILTIN_UI_ACTIONS: Array[String] = [
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
-	registry.add("input_map.add_action", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_input_map_add_action(parameters), "full")
-	registry.add("input_map.action_add_event", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_input_map_action_add_event(parameters), "full")
-	registry.add("input_map.action_remove_event", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_input_map_action_remove_event(parameters), "full")
-	registry.add("input_map.remove_action", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_input_map_remove_action(parameters), "full")
+	registry.add("input_map.action", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_input_map_action(parameters), "full")
+	registry.add("input_map.event", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_input_map_event(parameters), "full")
 
 
 # -- Input event helpers ------------------------------------------------------
@@ -182,114 +178,104 @@ static func _persist_input_action(action: String, deadzone: float) -> void:
 # -- Commands -----------------------------------------------------------------
 
 
-static func _cmd_input_map_add_action(parameters: Dictionary) -> Dictionary:
+static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 	if not MCPFeatureGate.is_enabled("input_map_write"):
 		return MCPFeatureGate.disabled_error("input_map_write")
 	var action := str(parameters.get("action", ""))
-	if action.is_empty():
-		return MCPError.make("INVALID_PARAMS", "action must be a non-empty string")
-	var deadzone_raw = parameters.get("deadzone", 0.5)
-	var deadzone := float(deadzone_raw) \
-		if (typeof(deadzone_raw) == TYPE_FLOAT or typeof(deadzone_raw) == TYPE_INT) else 0.5
-	if deadzone < 0.0 or deadzone > 1.0:
+	if not (action in ["add", "remove"]):
 		return MCPError.make("INVALID_PARAMS",
-			"deadzone must be in [0.0, 1.0] (got %f)" % deadzone)
-	if InputMap.has_action(action):
-		return {
-			"success": true,
-			"status": "returned",
-			"action": action,
-			"deadzone": InputMap.action_get_deadzone(action),
-		}
-	InputMap.add_action(action, deadzone)
-	_persist_input_action(action, deadzone)
-	return {
-		"success": true,
-		"status": "created",
-		"action": action,
-		"deadzone": deadzone,
-	}
-
-
-static func _cmd_input_map_action_add_event(parameters: Dictionary) -> Dictionary:
-	if not MCPFeatureGate.is_enabled("input_map_write"):
-		return MCPFeatureGate.disabled_error("input_map_write")
-	var action := str(parameters.get("action", ""))
-	if action.is_empty():
-		return MCPError.make("INVALID_PARAMS", "action must be a non-empty string")
-	if not InputMap.has_action(action):
-		return MCPError.make("NOT_FOUND",
-			"no action '%s'; call input_map.add_action first" % action)
-	var built: Variant = _build_input_event(parameters.get("event", null))
-	if typeof(built) == TYPE_DICTIONARY and built.has("error"):
-		return MCPError.make(str(built["code"]), str(built["error"]))
-	var event: InputEvent = built
-	for existing in InputMap.action_get_events(action):
-		if _input_events_equivalent(existing, event):
+			"action must be 'add' or 'remove' (got '%s')" % action)
+	var action_name := str(parameters.get("action_name", ""))
+	if action_name.is_empty():
+		return MCPError.make("INVALID_PARAMS", "action_name must be a non-empty string")
+	if action == "add":
+		var deadzone_raw = parameters.get("deadzone", 0.5)
+		var deadzone := float(deadzone_raw) \
+			if (typeof(deadzone_raw) == TYPE_FLOAT or typeof(deadzone_raw) == TYPE_INT) else 0.5
+		if deadzone < 0.0 or deadzone > 1.0:
+			return MCPError.make("INVALID_PARAMS",
+				"deadzone must be in [0.0, 1.0] (got %f)" % deadzone)
+		if InputMap.has_action(action_name):
 			return {
 				"success": true,
 				"status": "returned",
-				"action": action,
-				"event": _serialise_input_event(existing),
+				"action_name": action_name,
+				"deadzone": InputMap.action_get_deadzone(action_name),
 			}
-	InputMap.action_add_event(action, event)
-	_persist_input_action(action, InputMap.action_get_deadzone(action))
-	return {
-		"success": true,
-		"status": "created",
-		"action": action,
-		"event": _serialise_input_event(event),
-	}
+		InputMap.add_action(action_name, deadzone)
+		_persist_input_action(action_name, deadzone)
+		return {
+			"success": true,
+			"status": "created",
+			"action_name": action_name,
+			"deadzone": deadzone,
+		}
+	else:
+		if not InputMap.has_action(action_name):
+			return MCPError.make("NOT_FOUND", "no action '%s'" % action_name)
+		if action_name in BUILTIN_UI_ACTIONS:
+			return MCPError.make("INVALID_PARAMS",
+				"refusing to remove built-in UI action '%s'; use input_map.event to unbind its events instead" % action_name)
+		InputMap.erase_action(action_name)
+		if ProjectSettings.has_setting("input/" + action_name):
+			ProjectSettings.clear("input/" + action_name)
+			var error := ProjectSettings.save()
+			if error != OK:
+				push_warning(
+					"[MCPServer] ProjectSettings.save after input_map.action remove failed (err %d, action=%s)" % [
+						error, action_name])
+		return {"success": true, "action_name": action_name}
 
 
-static func _cmd_input_map_action_remove_event(parameters: Dictionary) -> Dictionary:
+static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 	if not MCPFeatureGate.is_enabled("input_map_write"):
 		return MCPFeatureGate.disabled_error("input_map_write")
 	var action := str(parameters.get("action", ""))
-	if action.is_empty():
-		return MCPError.make("INVALID_PARAMS", "action must be a non-empty string")
-	if not InputMap.has_action(action):
-		return MCPError.make("NOT_FOUND", "no action '%s'" % action)
+	if not (action in ["bind", "unbind"]):
+		return MCPError.make("INVALID_PARAMS",
+			"action must be 'bind' or 'unbind' (got '%s')" % action)
+	var action_name := str(parameters.get("action_name", ""))
+	if action_name.is_empty():
+		return MCPError.make("INVALID_PARAMS", "action_name must be a non-empty string")
+	if not InputMap.has_action(action_name):
+		return MCPError.make("NOT_FOUND",
+			"no action '%s'; call input_map.action with action='add' first" % action_name)
 	var built: Variant = _build_input_event(parameters.get("event", null))
 	if typeof(built) == TYPE_DICTIONARY and built.has("error"):
 		return MCPError.make(str(built["code"]), str(built["error"]))
 	var event: InputEvent = built
-	var existing_events := InputMap.action_get_events(action)
-	var matched: InputEvent = null
-	for existing in existing_events:
-		if _input_events_equivalent(existing, event):
-			matched = existing
-			break
-	if matched == null:
-		return MCPError.make("NOT_FOUND",
-			"no matching event on action '%s' (found %d events)" % [
-				action, existing_events.size()])
-	InputMap.action_erase_event(action, matched)
-	_persist_input_action(action, InputMap.action_get_deadzone(action))
-	return {
-		"success": true,
-		"action": action,
-		"event": _serialise_input_event(matched),
-	}
-
-
-static func _cmd_input_map_remove_action(parameters: Dictionary) -> Dictionary:
-	if not MCPFeatureGate.is_enabled("input_map_write"):
-		return MCPFeatureGate.disabled_error("input_map_write")
-	var action := str(parameters.get("action", ""))
-	if action.is_empty():
-		return MCPError.make("INVALID_PARAMS", "action must be a non-empty string")
-	if not InputMap.has_action(action):
-		return MCPError.make("NOT_FOUND", "no action '%s'" % action)
-	if action in BUILTIN_UI_ACTIONS:
-		return MCPError.make("INVALID_PARAMS",
-			"refusing to remove built-in UI action '%s' (would break editor/engine keyboard navigation); use input_map.action_remove_event to clear its bindings instead" % action)
-	InputMap.erase_action(action)
-	if ProjectSettings.has_setting("input/" + action):
-		ProjectSettings.clear("input/" + action)
-		var error := ProjectSettings.save()
-		if error != OK:
-			push_warning(
-				"[MCPServer] ProjectSettings.save after input_map.remove_action failed (err %d, action=%s)" % [
-					error, action])
-	return {"success": true, "action": action}
+	if action == "bind":
+		for existing in InputMap.action_get_events(action_name):
+			if _input_events_equivalent(existing, event):
+				return {
+					"success": true,
+					"status": "returned",
+					"action_name": action_name,
+					"event": _serialise_input_event(existing),
+				}
+		InputMap.action_add_event(action_name, event)
+		_persist_input_action(action_name, InputMap.action_get_deadzone(action_name))
+		return {
+			"success": true,
+			"status": "created",
+			"action_name": action_name,
+			"event": _serialise_input_event(event),
+		}
+	else:
+		var existing_events := InputMap.action_get_events(action_name)
+		var matched: InputEvent = null
+		for existing in existing_events:
+			if _input_events_equivalent(existing, event):
+				matched = existing
+				break
+		if matched == null:
+			return MCPError.make("NOT_FOUND",
+				"no matching event on action '%s' (found %d events)" % [
+					action_name, existing_events.size()])
+		InputMap.action_erase_event(action_name, matched)
+		_persist_input_action(action_name, InputMap.action_get_deadzone(action_name))
+		return {
+			"success": true,
+			"action_name": action_name,
+			"event": _serialise_input_event(matched),
+		}

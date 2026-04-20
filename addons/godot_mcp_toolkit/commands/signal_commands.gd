@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## signal.* command handlers — list, connect, disconnect, emit on edited-scene nodes.
+## signal.* command handlers — list, manage (connect/disconnect), emit on edited-scene nodes.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
@@ -11,10 +11,8 @@ const MCPCommandRegistry = _Hub.MCPCommandRegistry
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("signal.list", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_signal_list(parameters), "full")
-	registry.add("signal.connect", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_signal_connect(parameters), "full")
-	registry.add("signal.disconnect", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_signal_disconnect(parameters), "full")
+	registry.add("signal.manage", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_signal_manage(parameters), "full")
 	registry.add("signal.emit", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_signal_emit(parameters), "full")
 
@@ -104,7 +102,11 @@ static func _cmd_signal_list(parameters: Dictionary) -> Dictionary:
 	return {"path": node_path, "signals": _signal_list_of(node)}
 
 
-static func _cmd_signal_connect(parameters: Dictionary) -> Dictionary:
+static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
+	var action := str(parameters.get("action", ""))
+	if not (action in ["connect", "disconnect"]):
+		return MCPError.make("INVALID_PARAMS",
+			"action must be 'connect' or 'disconnect' (got '%s')" % action)
 	var resolved := _resolve_signal_pair(parameters)
 	if resolved.has("error"):
 		return MCPError.make(str(resolved["code"]), str(resolved["error"]))
@@ -114,51 +116,46 @@ static func _cmd_signal_connect(parameters: Dictionary) -> Dictionary:
 	var source_path: String = str(resolved["source_path"])
 	var target_path: String = str(resolved["target_path"])
 	var method_name: String = str(resolved["method_name"])
-
-	if source.is_connected(signal_name, callable):
+	if action == "connect":
+		if source.is_connected(signal_name, callable):
+			return {
+				"success": true,
+				"status": "returned",
+				"source_path": source_path,
+				"signal": signal_name,
+				"target_path": target_path,
+				"method": method_name,
+			}
+		var undo_redo := EditorInterface.get_editor_undo_redo()
+		undo_redo.create_action("MCP: connect %s.%s -> %s.%s" % [
+			source_path, signal_name, target_path, method_name])
+		undo_redo.add_do_method(source, "connect", signal_name, callable)
+		undo_redo.add_undo_method(source, "disconnect", signal_name, callable)
+		undo_redo.commit_action()
 		return {
 			"success": true,
-			"status": "returned",
+			"status": "created",
 			"source_path": source_path,
 			"signal": signal_name,
 			"target_path": target_path,
 			"method": method_name,
 		}
-	var undo_redo := EditorInterface.get_editor_undo_redo()
-	undo_redo.create_action("MCP: connect %s.%s -> %s.%s" % [
-		source_path, signal_name, target_path, method_name])
-	undo_redo.add_do_method(source, "connect", signal_name, callable)
-	undo_redo.add_undo_method(source, "disconnect", signal_name, callable)
-	undo_redo.commit_action()
-	return {
-		"success": true,
-		"status": "created",
-		"source_path": source_path,
-		"signal": signal_name,
-		"target_path": target_path,
-		"method": method_name,
-	}
-
-
-static func _cmd_signal_disconnect(parameters: Dictionary) -> Dictionary:
-	var resolved := _resolve_signal_pair(parameters)
-	if resolved.has("error"):
-		return MCPError.make(str(resolved["code"]), str(resolved["error"]))
-	var source = resolved["source"]
-	var callable: Callable = resolved["callable"]
-	var signal_name: String = str(resolved["signal_name"])
-	var source_path: String = str(resolved["source_path"])
-	var target_path: String = str(resolved["target_path"])
-	var method_name: String = str(resolved["method_name"])
-	if not source.is_connected(signal_name, callable):
-		return MCPError.make("NOT_FOUND", "no connection to disconnect")
-	var undo_redo := EditorInterface.get_editor_undo_redo()
-	undo_redo.create_action("MCP: disconnect %s.%s -> %s.%s" % [
-		source_path, signal_name, target_path, method_name])
-	undo_redo.add_do_method(source, "disconnect", signal_name, callable)
-	undo_redo.add_undo_method(source, "connect", signal_name, callable)
-	undo_redo.commit_action()
-	return {"ok": true}
+	else:
+		if not source.is_connected(signal_name, callable):
+			return MCPError.make("NOT_FOUND", "no connection to disconnect")
+		var undo_redo := EditorInterface.get_editor_undo_redo()
+		undo_redo.create_action("MCP: disconnect %s.%s -> %s.%s" % [
+			source_path, signal_name, target_path, method_name])
+		undo_redo.add_do_method(source, "disconnect", signal_name, callable)
+		undo_redo.add_undo_method(source, "connect", signal_name, callable)
+		undo_redo.commit_action()
+		return {
+			"success": true,
+			"source_path": source_path,
+			"signal": signal_name,
+			"target_path": target_path,
+			"method": method_name,
+		}
 
 
 static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:

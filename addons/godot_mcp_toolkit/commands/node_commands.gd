@@ -10,6 +10,43 @@ const MCPFileGuard = _Hub.MCPFileGuard
 const MCPFeatureGate = _Hub.MCPFeatureGate
 
 
+const COMMON_PROPERTIES_BY_CLASS := {
+	"Node": ["name", "process_mode"],
+	"Node2D": ["position", "rotation", "scale", "z_index", "visible", "modulate"],
+	"Node3D": ["position", "rotation", "scale", "visible"],
+	"Control": ["position", "size", "anchor_left", "anchor_right", "anchor_top",
+		"anchor_bottom", "visible", "modulate", "size_flags_horizontal", "size_flags_vertical"],
+	"Sprite2D": ["texture", "centered", "offset", "flip_h", "flip_v", "hframes", "vframes", "frame"],
+	"Sprite3D": ["texture", "centered", "offset", "flip_h", "flip_v"],
+	"CollisionShape2D": ["shape", "disabled"],
+	"CollisionShape3D": ["shape", "disabled"],
+	"RigidBody2D": ["mass", "gravity_scale", "linear_velocity", "angular_velocity"],
+	"RigidBody3D": ["mass", "gravity_scale", "linear_velocity", "angular_velocity"],
+	"CharacterBody2D": ["velocity", "floor_max_angle", "up_direction"],
+	"CharacterBody3D": ["velocity", "floor_max_angle", "up_direction"],
+	"Camera2D": ["zoom", "offset", "position_smoothing_enabled"],
+	"Camera3D": ["fov", "near", "far", "current"],
+	"Area2D": ["monitoring", "monitorable", "gravity"],
+	"Area3D": ["monitoring", "monitorable", "gravity"],
+	"AnimationPlayer": ["current_animation", "autoplay", "speed_scale"],
+	"Timer": ["wait_time", "one_shot", "autostart"],
+	"Label": ["text", "horizontal_alignment", "vertical_alignment", "autowrap_mode"],
+	"Button": ["text", "disabled", "flat"],
+	"TextureRect": ["texture", "stretch_mode"],
+	"AudioStreamPlayer": ["stream", "volume_db", "pitch_scale", "autoplay"],
+	"AudioStreamPlayer2D": ["stream", "volume_db", "pitch_scale", "max_distance"],
+	"AudioStreamPlayer3D": ["stream", "volume_db", "pitch_scale", "max_distance"],
+	"MeshInstance3D": ["mesh", "material_override"],
+	"Light2D": ["energy", "color", "shadow_enabled"],
+	"DirectionalLight3D": ["light_energy", "light_color", "shadow_enabled"],
+	"GPUParticles2D": ["process_material", "emitting", "amount", "lifetime"],
+	"GPUParticles3D": ["process_material", "emitting", "amount", "lifetime"],
+	"LineEdit": ["text", "placeholder_text", "editable", "max_length"],
+	"TextEdit": ["text", "editable"],
+	"RichTextLabel": ["text", "bbcode_enabled"],
+}
+
+
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("node.get_property", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_node_get_property(parameters), "lite")
@@ -86,6 +123,23 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	return {"ok": true}
 
 
+static func _resolve_common_property_names(node: Object) -> Array[String]:
+	var result: Array[String] = []
+	var current := node.get_class()
+	var depth := 0
+	while not current.is_empty() and depth < 16:
+		if COMMON_PROPERTIES_BY_CLASS.has(current):
+			for prop_name in COMMON_PROPERTIES_BY_CLASS[current]:
+				if prop_name not in result:
+					result.append(prop_name)
+		if ClassDB.class_exists(current):
+			current = ClassDB.get_parent_class(current)
+		else:
+			break
+		depth += 1
+	return result
+
+
 static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
@@ -94,6 +148,13 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	var node = _resolve_scene_node(node_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+	var mask := str(parameters.get("mask", "common"))
+	if not (mask in ["common", "all", "groups"]):
+		return MCPError.make("INVALID_PARAMS",
+			"mask must be 'common', 'all', or 'groups' (got '%s')" % mask)
+	var common_names: Array[String] = []
+	if mask == "common":
+		common_names = _resolve_common_property_names(node)
 	var properties: Array = []
 	for property in node.get_property_list():
 		var usage: int = int(property.get("usage", 0))
@@ -102,15 +163,24 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 		var property_name := str(property.get("name", ""))
 		if property_name.is_empty() or property_name.begins_with("_"):
 			continue
-		properties.append({
-			"name": property_name,
-			"type": int(property.get("type", 0)),
-			"hint": int(property.get("hint", 0)),
-			"hint_string": str(property.get("hint_string", "")),
-		})
+		if mask == "common" and property_name not in common_names:
+			continue
+		if mask == "groups":
+			properties.append({
+				"name": property_name,
+				"usage": usage,
+			})
+		else:
+			properties.append({
+				"name": property_name,
+				"type": int(property.get("type", 0)),
+				"hint": int(property.get("hint", 0)),
+				"hint_string": str(property.get("hint_string", "")),
+			})
 	return {
 		"path": node_path,
 		"class": node.get_class(),
+		"mask": mask,
 		"properties": properties,
 		"count": properties.size(),
 	}

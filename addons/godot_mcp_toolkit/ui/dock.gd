@@ -212,12 +212,24 @@ func _on_visibility_changed() -> void:
 func _refresh_status() -> void:
 	if _server == null or _status_label == null:
 		return
+	var profile := _read_mcp_profile()
 	if _server.is_listening():
-		_status_label.text = "Listening on 127.0.0.1:6505"
+		_status_label.text = "Listening on 127.0.0.1:6505 · %s" % profile
 	else:
-		_status_label.text = "Not listening"
+		_status_label.text = "Not listening · %s" % profile
 	var count: int = _server.get_authed_peer_count()
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
+
+
+## Read GODOT_MCP_PROFILE from .mcp.json env block (server-side setting).
+func _read_mcp_profile() -> String:
+	if not MCPJsonSync.has_mcp_json():
+		return "standard"
+	var env := MCPJsonSync.get_all_env_vars()
+	var p: String = str(env.get("GODOT_MCP_PROFILE", "standard")).to_lower()
+	if p in ["minimal", "standard", "full", "custom"]:
+		return p
+	return "standard"
 
 
 # ---------------------------------------------------------------------------

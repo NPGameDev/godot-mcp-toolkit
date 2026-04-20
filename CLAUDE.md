@@ -17,64 +17,75 @@ Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
 and exposes scene, node, script, and editor operations to any MCP client (e.g.
 Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
 
-## Core tool catalogue (31 lite-core tools — iter 08 + iter 15 + iter 15b + iter 15c + iter 15d + iter 15e + iter 15f + iter 15g + iter 15h + iter 15i)
+## Tool catalogue (56 tools — iter 22 profile system)
 
-Additional Tier 1–3 tools from iter 09–12 (`editor_reload_scripts`,
-`scene_open`, `project_get_settings`, `signal_*`, `resource_load`,
-`scene_diff`, `node_get_property_list`, and the Mode B `runtime_*` family)
-plus iter 15c's playtest/composition additions, iter 15d's
-content-authoring extensions, iter 15e's asset-discovery +
-console-reading, and iter 15f's binary-asset import + scan-idle gating
-bring the full catalogue to 49 tools by default (60 with all feature
-gates enabled — see **Feature gates** below). Pass `--lite` in
-`.mcp.json` args for a 14-tool token-sensitive subset.
+Iter 22 replaces the coarse lite/full flag with profiles + lazy-load groups.
+Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
+
+| Profile      | Visible tools |
+|--------------|--------------|
+| **standard** (default) | 31 core + `enable_tool_group` meta-tool + 3 locked stubs |
+| **minimal** | 10 read-only (code-review mode) |
+| **full**     | All 56 tools at startup |
+| **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
+
+`--lite` → `minimal` with deprecation warning. `GODOT_MCP_READ_ONLY=1`
+strips mutating tools from any profile.
+
+### Core tools (always-on in standard profile)
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
-| `scene_get_tree`        | Return the edited scene as nested JSON `{ name, class, path, children }`.        |
-| `scene_create_node`     | Create node of `class_name` (engine + user-defined `class_name` classes) under `parent`. Idempotent. |
-| `scene_delete_node`     | Delete node at `path`. UndoRedo-based; refuses to delete the edited-scene root.  |
-| `scene_create`          | Create `.tscn` file at `path` with root `root_type`. Idempotent; `if_exists: return\|fail\|replace`. |
-| `scene_delete`          | Delete `.tscn` file (+ `.uid`). Refuses non-`.tscn` and the currently-edited scene. |
-| `scene_close`           | Close an open scene tab by path. Refuses the last remaining tab (EDITED_SCENE). NOT_FOUND if not open. Lite. |
-| `script_delete`         | Delete `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` (+ `.uid`). No open-in-editor guard. |
-| `resource_create`       | Create `.tres`/`.res` at `path` for `resource_class`. Idempotent; `if_exists: return\|fail\|replace`; `properties` + `warnings[]`. |
-| `resource_save`         | Update `.tres`/`.res` properties at `path`. No `status` (absence = update). `warnings[]` for unknown keys. |
-| `resource_delete`       | Delete `.tres`/`.res` (+ `.uid`). No active-use guard (refs persist via RefCounted). |
-| `folder_create`         | Create `res://` directory (recursive). Idempotent: `status: "created"`/`"returned"`. |
-| `folder_delete`         | Delete directory. `recursive:false` default. Refuses root/addons/plugin/open-file parents. |
-| `node_get_property`     | Read a property. Engine types (Vector2, Color, …) come back dict-wrapped.        |
-| `node_set_property`     | Write a property. Pass engine types as `{ type: "Vector2", x: 0, y: 0 }`.        |
-| `node_set_script`       | Attach a script (.gd/.cs) to a node. Returns @export properties. Empty `script` detaches. Lite. |
-| `script_read`           | Read a GDScript / text file (`res://` only).                                     |
-| `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` at `path` (`res://` only). Overwrites. |
-| `editor_get_errors`     | Editor-time error tail (delegates to `editor.get_console` with `level='error'`). Iter 15e: stub replaced with real console reader. |
-| `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as.                        |
-| `editor_screenshot`     | Capture the editor viewport; returns inline image content (+ optional `save_path`). |
-| `game_start`            | Drive editor play button. `target: "main"\|"current"\|res://*.tscn`. `ALREADY_PLAYING` if one is live. Lite. |
-| `game_stop`             | `EditorInterface.stop_playing_scene()`. Idempotent; response carries `was_running: bool`. Full only.          |
-| `scene_instantiate`     | Drop `PackedScene` under a parent. UndoRedo-wrapped + recursive owner-set. Idempotent (`status: "returned"` on name collision). Lite. |
-| `node_call_method`      | Invoke `node.method(args...)` with `_coerce_value`-coerced args. `has_method`-gated. Mode A only in 15c. Full only. |
-| `project_set_setting`   | Write a `ProjectSettings` key + `ProjectSettings.save`. Refuses `mcp/unsafe/*` and `editor/*`. UPDATE (no `status`); returns `previous_value`. Lite. |
-| `input_map_add_action`  | Register an `InputMap` action with deadzone. Idempotent — `status: "returned"` reports the EXISTING deadzone (not the requested one). Lite. |
-| `input_map_action_add_event` | Bind a `key`/`mouse_button`/`joypad_button`/`joypad_motion` event-dict to an action. Silent-return on equivalent-event duplicate. Lite. |
-| `input_map_action_remove_event` | Unbind a matching event from an action. `NOT_FOUND` if no equivalent event is bound. Full only. |
-| `input_map_remove_action` | Erase an `InputMap` action. Refuses built-in `ui_*` actions (would break editor/engine nav). Full only. |
-| `animation_add_key`     | Insert a `TYPE_VALUE` keyframe on an `AnimationPlayer` track. Auto-creates the track if missing. UndoRedo-wrapped; silent-return on exact-time duplicate. Lite. |
-| `animation_remove_key`  | Remove a keyframe at exact `time`. UndoRedo-wrapped (captured value flows through undo). Full only. |
-| `animation_get_keys`    | Read-only listing: `{ time, value, transition }` per key + `track_type` enum string. No auto-track-create. Lite. |
-| `tilemap_set_cells`     | Batch-paint `TileMap` or `TileMapLayer`. Single UndoRedo action. Returns `cells_written` + `cells_unchanged` + `total`. `source_id: -1` clears. Lite. |
-| `editor_screenshot_node` | Focus + capture a specific node in the editor viewport (`await RenderingServer.frame_post_draw`). Atomic prior-selection restore. Inline base64 PNG. Full only. |
-| `asset_list`            | Enumerate `res://` assets with `path_prefix`, `name_glob`, `class_filter` (ancestry-aware), `extension_filter`. Cap 2000. Lite. |
-| `asset_get_dependencies` | Forward deps of a `res://` resource/scene. `include_transitive` for BFS walk. Full only. |
-| `editor_get_console`    | Tail editor Output panel (`user://logs/`). `level_filter`, `since_id` for incremental. Lite. |
-| `asset_import`          | Import binary asset (image/audio/font/3D) into `res://` via `source_path` (filesystem copy) or `base64_data`. Extension allowlist; `if_exists: return\|fail\|replace`. Triggers scan + optional wait. Lite. |
-| `editor_wait_for_idle`  | Poll `EditorFileSystem.is_scanning()` until idle or `timeout_ms` (default 10s, cap 30s). Use after `asset.import`, `editor.reload_scripts`, or file mutations. Full only. |
-| `file_delete`           | Delete any `res://` file and its `.import`/`.uid` companions. Universal fallback for assets not covered by scene/script/resource.delete. Full only. |
-| `save_read`             | Read whitelisted `user://` file (default 64 KB cap; max 256 KB). Returns UTF-8 in `<untrusted>` envelope or base64 if non-UTF-8. Gated by `read_user_scope`. Full only. |
-| `save_write`            | Write to whitelisted `user://` file (creates parent dirs). Not idempotent; no `if_exists`. Gated by `read_user_scope`. Full only. |
-| `save_delete`           | Delete whitelisted `user://` file. `NOT_FOUND` if missing. Delete paths configured separately in whitelist. Gated by `read_user_scope`. Full only. |
-| `save_list`             | List files + subdirs in a whitelisted `user://` directory (path must end `/`). Names only. Gated by `read_user_scope`. Full only. |
+| `scene_get_tree`        | Return the edited scene as nested JSON. `depth` (default 2), `include_properties` (default false). |
+| `scene_create_node`     | Create node under `parent`. Idempotent. |
+| `scene_delete_node`     | Delete node at `path`. UndoRedo-based; refuses the root.  |
+| `scene_create`          | Create `.tscn` file. Idempotent; `if_exists: return\|fail\|replace`. |
+| `scene_instantiate`     | Drop `PackedScene` under a parent. UndoRedo-wrapped. Idempotent. |
+| `scene_open`            | Open a scene in the editor. |
+| `scene_diff`            | Compare current edited scene tree against on-disk version. |
+| `node_get_property`     | Read a property. Engine types dict-wrapped. |
+| `node_set_property`     | Write a property. Engine types as `{ type, ... }`. |
+| `node_get_property_list` | List properties. `mask`: "common" (default, curated), "all", or "groups". |
+| `node_set_script`       | Attach/detach script. Returns `@export` properties. |
+| `script_read`           | Read a GDScript / text file (`res://` only). |
+| `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc`. Overwrites. |
+| `script_read_range`     | Read lines N–M of a script file. |
+| `script_delete`         | Delete `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` (+ `.uid`). |
+| `editor_get_errors`     | Editor-time error tail. Summary-first response. |
+| `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as. |
+| `editor_screenshot`     | Capture the editor viewport; inline image content. |
+| `editor_screenshot_node` | Focus + capture a specific node. Inline base64 PNG. |
+| `editor_reload_scripts` | Force GDScript re-parse. |
+| `editor_get_console`    | Tail editor Output panel. `level_filter`, `since_id`. |
+| `editor_wait_for_idle`  | Poll until `EditorFileSystem` idle or timeout. |
+| `project_get_settings`  | Read ProjectSettings. |
+| `game_start`            | Drive editor play button. `target: "main"\|"current"\|res://*.tscn`. |
+| `game_stop`             | Stop the running scene. Idempotent. |
+| `resource_load`         | Load a `.tres`/`.res` and return its properties. |
+| `resource_write`        | Upsert `.tres`/`.res`. Creates if missing (requires `type`), updates otherwise. |
+| `folder_create`         | Create `res://` directory. Idempotent. |
+| `folder_delete`         | Delete directory. Refuses protected paths. |
+| `asset_list`            | Enumerate `res://` assets with filters. |
+| `tilemap_set_cells`     | Batch-paint TileMap. Single UndoRedo action. |
+
+### Lazy-load group tools (via `enable_tool_group`)
+
+| Group                 | Tools |
+|-----------------------|-------|
+| `runtime`             | `runtime_screenshot`, `runtime_get_node_state`, `debugger_get_log`, `input_simulate`, `animation_player_control` |
+| `signals`             | `signal_list`, `signal_manage` (connect/disconnect), `signal_emit` |
+| `animation_authoring` | `animation_keyframe` (add/remove), `animation_get_keys` |
+| `input_map` (gated)   | `input_map_action` (add/remove), `input_map_event` (bind/unbind) |
+| `asset_management`    | `asset_get_dependencies`, `asset_import`, `resource_delete`, `file_delete`, `scene_delete`, `scene_close` |
+| `user_data` (gated)   | `save_read`, `save_write`, `save_delete`, `save_list` |
+
+### Gated tools (locked stubs when disabled)
+
+| Tool                  | Gate env var |
+|-----------------------|-------------|
+| `game_eval`           | `GODOT_MCP_ALLOW_GAME_EVAL` |
+| `node_call_method`    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD` |
+| `project_set_setting` | `GODOT_MCP_ALLOW_PROJECT_SET_SETTING` |
 
 ## Security (iter 18)
 
@@ -194,15 +205,23 @@ To enable the `save.*` tools:
 2. Enable `mcp/unsafe/allow_user_scope` in Project Settings → Advanced.
 3. Ensure `user_scope_whitelist.json` exists and is valid JSON.
 
-### Breaking changes vs pre-iter-19
+### Breaking changes vs pre-iter-22
 
-- `node_call_method` (was always-on since iter 15c) — now requires
-  `node_call_method` gate (single).
-- `project_set_setting` (was always-on since iter 15d) — now requires
-  `project_set_setting` gate (dual).
-- `input_map_add_action`, `input_map_action_add_event`,
-  `input_map_action_remove_event`, `input_map_remove_action` (always-on
-  since iter 15d) — now require `input_map_write` gate (single).
+**Tool merges (iter 22):**
+- `signal_connect` + `signal_disconnect` → `signal_manage` (action: "connect"|"disconnect")
+- `resource_create` + `resource_save` → `resource_write` (upsert — `type` required for new files)
+- `input_map_add_action` + `input_map_remove_action` → `input_map_action` (action: "add"|"remove", `action_name` instead of `action`)
+- `input_map_action_add_event` + `input_map_action_remove_event` → `input_map_event` (action: "bind"|"unbind", `action_name` instead of `action`)
+- `animation_add_key` + `animation_remove_key` → `animation_keyframe` (action: "add"|"remove")
+
+**Profile system (iter 22):**
+- `--lite` deprecated → `GODOT_MCP_PROFILE=minimal`
+- Default profile changed from "full" to "standard" (31 core tools + groups on demand)
+
+**Gate changes (iter 19):**
+- `node_call_method` — now requires `node_call_method` gate.
+- `project_set_setting` — now requires `project_set_setting` gate (dual).
+- `input_map_action`, `input_map_event` — now require `input_map_write` gate.
 
 ### Error shape
 
@@ -232,18 +251,16 @@ When a gated tool is called while disabled, the plugin returns:
 - **The Godot editor with this plugin enabled must be running** — the bridge
   has no way to launch Godot for you. If `/mcp` shows the server as
   disconnected, check Project Settings → Plugins → "Godot MCP Toolkit".
-- **Idempotency (`status` discriminator, iter 15 + iter 15b):** every
-  `create_*` success payload carries a `status` field:
+- **Idempotency (`status` discriminator):** every `create_*` success
+  payload carries a `status` field:
   - `"created"` — fresh create.
   - `"returned"` — the thing already existed (idempotent no-op; default path
-	for `scene_create_node`, `signal_connect`, `folder_create`, and file-level
-	`scene_create` / `resource_create` with `if_exists: "return"`).
-  - `"replaced"` — only from file-level `scene_create` / `resource_create`
-	with `if_exists: "replace"`; the response also carries
-	`previous_root_type` / `previous_class` respectively.
+	for `scene_create_node`, `signal_manage` connect, `folder_create`, and
+	file-level `scene_create` / `resource_write` on new file).
+  - `"replaced"` — file-level `scene_create` with `if_exists: "replace"`.
 
-  `resource_save` is the odd one out: it's an update (not a create), so it
-  carries NO `status` field. The absence is itself the discriminator.
+  `resource_write` on an existing file is an update (upsert) — no `status`
+  field. The absence is itself the discriminator.
 
   Error payloads still carry `code` (`ALREADY_EXISTS` via `scene_create` /
   `resource_create`'s opt-in `if_exists: "fail"`; `INVALID_CLASS`,

@@ -13,7 +13,7 @@ const MCPUntrusted = _Hub.MCPUntrusted
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("scene.get_tree", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_get_tree(server), "lite")
+		return _cmd_scene_get_tree(parameters), "lite")
 	registry.add("scene.create", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_scene_create(parameters), "full")
 	registry.add("scene.open", func(parameters: Dictionary) -> Dictionary:
@@ -43,16 +43,36 @@ static func _path_in_scene(scene_root: Node, node: Node) -> String:
 	return str(scene_root.get_path_to(node))
 
 
-static func _walk_tree(node: Node, scene_root: Node) -> Dictionary:
-	var children: Array = []
-	for child in node.get_children():
-		children.append(_walk_tree(child, scene_root))
-	return {
+static func _walk_tree(
+	node: Node, scene_root: Node, depth: int, include_properties: bool,
+) -> Dictionary:
+	var result := {
 		"name": String(node.name),
 		"class": node.get_class(),
 		"path": _path_in_scene(scene_root, node),
-		"children": children,
 	}
+	if include_properties:
+		var props := {}
+		for property in node.get_property_list():
+			var usage: int = int(property.get("usage", 0))
+			if not (usage & PROPERTY_USAGE_EDITOR):
+				continue
+			var property_name := str(property.get("name", ""))
+			if property_name.is_empty() or property_name.begins_with("_"):
+				continue
+			props[property_name] = MCPCoerce.serialize_value(node.get(property_name))
+		result["properties"] = props
+	if depth != 0:
+		var children: Array = []
+		for child in node.get_children():
+			children.append(_walk_tree(
+				child, scene_root,
+				depth - 1 if depth > 0 else -1,
+				include_properties))
+		result["children"] = children
+	else:
+		result["children"] = []
+	return result
 
 
 static func _class_descends_from(type_name: String, base: String) -> bool:
@@ -91,11 +111,15 @@ static func _class_base_chain(type_name: String) -> String:
 # -- Commands -----------------------------------------------------------------
 
 
-static func _cmd_scene_get_tree(_server: Node) -> Dictionary:
+static func _cmd_scene_get_tree(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
-	var tree := _walk_tree(root, root)
+	var depth_raw = parameters.get("depth", 2)
+	var depth: int = int(depth_raw) \
+		if (typeof(depth_raw) == TYPE_INT or typeof(depth_raw) == TYPE_FLOAT) else 2
+	var include_properties: bool = bool(parameters.get("include_properties", false))
+	var tree := _walk_tree(root, root, depth, include_properties)
 	return {"tree": MCPUntrusted.wrap(
 		"scene_tree", str(root.scene_file_path), JSON.stringify(tree))}
 
@@ -426,7 +450,7 @@ static func _cmd_scene_diff(server: Node, parameters: Dictionary) -> Dictionary:
 		var root := _get_edited_root()
 		if root == null:
 			return MCPError.make("NO_SCENE", "no edited scene")
-		after = _walk_tree(root, root)
+		after = _walk_tree(root, root, -1, false)
 	var before_string := JSON.stringify(before, "  ", true)
 	var after_string := JSON.stringify(after, "  ", true)
 	if before_string == after_string:

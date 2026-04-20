@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## resource.* command handlers — load, create, save, delete for .tres/.res files.
+## resource.* command handlers — load, write (create/update upsert), delete for .tres/.res files.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
@@ -17,10 +17,8 @@ const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("resource.load", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_resource_load(parameters), "full")
-	registry.add("resource.create", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_create(parameters), "full")
-	registry.add("resource.save", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_save(parameters), "full")
+	registry.add("resource.write", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_resource_write(parameters), "full")
 	registry.add("resource.delete", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_resource_delete(parameters), "full")
 
@@ -130,26 +128,42 @@ static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 	}
 
 
-static func _cmd_resource_create(parameters: Dictionary) -> Dictionary:
+static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
-	var resource_class := str(parameters.get("resource_class", ""))
-	var properties: Dictionary = parameters.get("properties", {}) \
-		if typeof(parameters.get("properties", {})) == TYPE_DICTIONARY else {}
-	var if_exists := str(parameters.get("if_exists", "return"))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ["tres", "res"]):
 		return MCPError.make("INVALID_PATH",
-			"resource.create only writes .tres (text) or .res (binary) files (got %s; use scene.create for .tscn, script.write for .gd/.cs)" % file_path)
+			"resource.write only writes .tres/.res files (got %s)" % file_path)
+	var properties: Dictionary = parameters.get("properties", {}) \
+		if typeof(parameters.get("properties", {})) == TYPE_DICTIONARY else {}
+	if FileAccess.file_exists(file_path):
+		var resource := ResourceLoader.load(file_path)
+		if resource == null:
+			return MCPError.make("NOT_A_RESOURCE",
+				"file at %s is not a readable Resource" % file_path)
+		var resource_class := resource.get_class()
+		var warnings := _apply_resource_properties(resource, properties, resource_class)
+		var save_error := ResourceSaver.save(resource, file_path)
+		if save_error != OK:
+			return MCPError.make("SAVE_FAILED",
+				"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
+		return {
+			"success": true,
+			"path": file_path,
+			"resource_class": resource_class,
+			"warnings": warnings,
+		}
+	var resource_class := str(parameters.get("type", ""))
+	if resource_class.is_empty():
+		return MCPError.make("NOT_FOUND",
+			"resource not found at %s; provide 'type' to create it" % file_path)
 	var parent_dir := file_path.get_base_dir()
 	if not DirAccess.dir_exists_absolute(parent_dir):
 		return MCPError.make("PARENT_NOT_FOUND",
-			"parent directory %s does not exist; call folder.create first (resource.create does not auto-create directories)" % parent_dir)
-	if resource_class.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing resource_class")
-
+			"parent directory %s does not exist; call folder.create first" % parent_dir)
 	var resolved_kind := ""
 	var global_entry: Dictionary = {}
 	if ClassDB.class_exists(resource_class):
@@ -162,31 +176,11 @@ static func _cmd_resource_create(parameters: Dictionary) -> Dictionary:
 				break
 	if resolved_kind.is_empty():
 		return MCPError.make("INVALID_CLASS",
-			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % resource_class)
+			"unknown class %s" % resource_class)
 	if not _class_descends_from(resource_class, "Resource"):
 		return MCPError.make("NOT_A_RESOURCE",
-			"%s is not a Resource subclass (resolved base chain: %s); resource.create requires a Resource subclass — use scene.create for Node subclasses, script.write for source files" % [
+			"%s is not a Resource subclass (chain: %s)" % [
 				resource_class, _class_base_chain(resource_class)])
-	if not (if_exists in ["return", "fail", "replace"]):
-		return MCPError.make("INVALID_PARAMS",
-			"if_exists must be one of 'return'|'fail'|'replace' (got %s); default is 'return'" % if_exists)
-
-	var was_replace := false
-	var previous_class := ""
-	if FileAccess.file_exists(file_path):
-		match if_exists:
-			"return":
-				return {"success": true, "status": "returned", "path": file_path}
-			"fail":
-				return MCPError.make("ALREADY_EXISTS",
-					"file exists at %s; set if_exists:'replace' to overwrite" % file_path)
-			"replace":
-				was_replace = true
-				var previous := ResourceLoader.load(file_path)
-				previous_class = "<unreadable>" if previous == null else previous.get_class()
-				push_warning("MCP: resource.create replacing %s (was class=%s, now class=%s)" % [
-					file_path, previous_class, resource_class])
-
 	var resource: Resource = null
 	if resolved_kind == "native":
 		resource = ClassDB.instantiate(resource_class)
@@ -200,49 +194,6 @@ static func _cmd_resource_create(parameters: Dictionary) -> Dictionary:
 	if resource == null:
 		return MCPError.make("INVALID_CLASS",
 			"instantiation returned null for %s" % resource_class)
-
-	var warnings := _apply_resource_properties(resource, properties, resource_class)
-	var save_error := ResourceSaver.save(resource, file_path)
-	if save_error != OK:
-		return MCPError.make("SAVE_FAILED",
-			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
-
-	var response := {
-		"success": true,
-		"path": file_path,
-		"resource_class": resource_class,
-		"warnings": warnings,
-	}
-	if was_replace:
-		response["status"] = "replaced"
-		response["previous_class"] = previous_class
-	else:
-		response["status"] = "created"
-	return response
-
-
-static func _cmd_resource_save(parameters: Dictionary) -> Dictionary:
-	var file_path := str(parameters.get("file_path", ""))
-	var raw_properties = parameters.get("properties", null)
-	if typeof(raw_properties) != TYPE_DICTIONARY:
-		return MCPError.make("INVALID_PARAMS",
-			"missing properties (must be an object)")
-	var properties: Dictionary = raw_properties
-	var guard := MCPFileGuard.resolve_safe(file_path)
-	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
-	var extension := file_path.get_extension().to_lower()
-	if not (extension in ["tres", "res"]):
-		return MCPError.make("INVALID_PATH",
-			"resource.save only updates .tres (text) or .res (binary) files (got %s; use scene.create for .tscn, script.write for .gd/.cs)" % file_path)
-	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND",
-			"no resource at %s; use resource.create to create" % file_path)
-	var resource := ResourceLoader.load(file_path)
-	if resource == null:
-		return MCPError.make("NOT_A_RESOURCE",
-			"file at %s is not a readable Resource (corrupt or wrong extension)" % file_path)
-	var resource_class := resource.get_class()
 	var warnings := _apply_resource_properties(resource, properties, resource_class)
 	var save_error := ResourceSaver.save(resource, file_path)
 	if save_error != OK:
@@ -250,6 +201,7 @@ static func _cmd_resource_save(parameters: Dictionary) -> Dictionary:
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 	return {
 		"success": true,
+		"status": "created",
 		"path": file_path,
 		"resource_class": resource_class,
 		"warnings": warnings,
