@@ -12,11 +12,32 @@ const MCPAudit = _Hub.MCPAudit
 const VALID_TIERS: Array[String] = ["lite", "full"]
 
 var _commands: Dictionary = {}  # method -> { handler: Callable, tier: String }
+var _user_methods: Array[String] = []  # methods registered by user_commands/*.gd
 
 
 func add(method: String, handler: Callable, tier: String) -> void:
 	assert(tier in VALID_TIERS, "tier must be 'lite' or 'full', got: " + tier)
 	_commands[method] = {"handler": handler, "tier": tier}
+
+
+func remove(method: String) -> void:
+	_commands.erase(method)
+	var idx := _user_methods.find(method)
+	if idx >= 0:
+		_user_methods.remove_at(idx)
+
+
+func get_all_methods() -> Array:
+	return _commands.keys()
+
+
+func mark_user(method: String) -> void:
+	if method not in _user_methods:
+		_user_methods.append(method)
+
+
+func get_user_methods() -> Array[String]:
+	return _user_methods.duplicate()
 
 
 func has_command(method: String) -> bool:

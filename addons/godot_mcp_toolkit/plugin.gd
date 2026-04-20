@@ -23,6 +23,7 @@ const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_comm
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPRegistryClient = _Hub.MCPRegistryClient
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
+const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_commands_loader.gd")
 
 # Mode B (iter 10) — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:9090. Registered/unregistered via add_autoload_singleton /
@@ -81,6 +82,9 @@ func _enter_tree() -> void:
 	TilemapCommands.register(registry, _server)
 	AssetCommands.register(registry, _server)
 	SaveCommands.register(registry, _server)
+
+	# User command extensions (iter 25) — profile-exempt, always loaded.
+	UserCommandsLoader.load_all(registry, _server)
 
 	_validate_user_whitelist()
 

@@ -300,6 +300,53 @@ When a gated tool is called while disabled, the plugin returns:
   **Error code reference** for the canonical list (keep in sync per
   watch-item #3).
 
+## Extension points (iter 25)
+
+### User commands (GDScript)
+
+Drop a `.gd` file into `addons/godot_mcp_toolkit/user_commands/` to register
+custom MCP tools. Each file must provide a `register(registry, server)` function:
+
+```gdscript
+@tool
+extends RefCounted
+
+static func register(registry, server: Node) -> void:
+    registry.add("mymod.do_thing", func(params: Dictionary) -> Dictionary:
+        return _cmd_do_thing(params), "full")
+
+static func _cmd_do_thing(params: Dictionary) -> Dictionary:
+    # ... your logic here ...
+    return {"success": true, "data": "hello"}
+```
+
+**Rules:**
+- Commands must use a `<namespace>.<action>` naming convention.
+- Reserved namespaces (`scene.*`, `script.*`, `editor.*`, `node.*`,
+  `runtime.*`, `resource.*`, `folder.*`, `file.*`, `signal.*`,
+  `playtest.*`, `project.*`, `input_map.*`, `animation.*`, `tilemap.*`,
+  `asset.*`, `save.*`, `meta.*`, `game.*`, `diff.*`, `server.*`) are
+  rejected at load time.
+- User commands are **profile-exempt** — they always register regardless
+  of the active profile (minimal/standard/full/custom).
+- User commands run with the same trust level as the plugin itself
+  (they inherit FileGuard, FeatureGate, audit logging).
+- Errors in user command scripts are logged but never crash the plugin.
+- Restart the editor (or disable/re-enable the plugin) to pick up changes.
+
+The TS server discovers user commands via `meta.user_commands` and
+registers them as MCP tools. Claude Code receives a `tools/list_changed`
+notification when new user commands are found.
+
+### MCP Prompts, Resources, Roots (TypeScript)
+
+The server-side exposes:
+- **Prompts** — named workflow templates (`debug-scene`, `write-test`).
+- **Resources** — `godot://scene/{path}`, `godot://script/{path}`,
+  `godot://project/info`, `godot://roots`.
+- **Hooks** — middleware pipeline wrapping every tool call. Logging hook
+  is always on. Rate limiting via `GODOT_MCP_RATE_LIMIT` env var.
+
 ## Dogfood setup (this repo)
 
 This repo root IS a Godot 4.4 project (`project.godot` at root,
