@@ -229,7 +229,7 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	var extension := dest_path.get_extension().to_lower()
 	if extension not in IMPORT_ALLOWED_EXTENSIONS:
 		return MCPError.make("INVALID_PATH",
-			"extension '%s' not in import allowlist: %s; use script.write for .gd/.cs, resource.create for .tres/.res, scene.create for .tscn" % [
+			"extension '%s' not in import allowlist: %s; use script.write for .gd/.cs, resource.write for .tres/.res, scene.create for .tscn" % [
 				extension, ", ".join(PackedStringArray(IMPORT_ALLOWED_EXTENSIONS))])
 	var has_source := source_path != ""
 	var has_base64 := base64_data != ""

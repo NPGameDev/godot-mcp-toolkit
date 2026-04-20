@@ -116,7 +116,7 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	var missing := MCPCoerce.check_resource_paths(raw_value)
 	if missing != "":
 		return MCPError.make("LOAD_FAILED",
-			"failed to load resource at %s; verify the path or use resource.create to create it first" % missing)
+			"failed to load resource at %s; verify the path or use resource.write to create it first" % missing)
 
 	var coerced = MCPCoerce.coerce_value(raw_value)
 	node.set(property_name, coerced)
@@ -216,7 +216,7 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var missing := MCPCoerce.check_resource_paths(args_raw)
 	if missing != "":
 		return MCPError.make("LOAD_FAILED",
-			"failed to load resource at %s; verify the path or use resource.create to create it first" % missing)
+			"failed to load resource at %s; verify the path or use resource.write to create it first" % missing)
 
 	var coerced_args = MCPCoerce.coerce_value(args_raw)
 	if typeof(coerced_args) != TYPE_ARRAY:

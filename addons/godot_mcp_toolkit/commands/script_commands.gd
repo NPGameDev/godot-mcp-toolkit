@@ -95,7 +95,7 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 	var write_extension := file_path.get_extension().to_lower()
 	if not (write_extension in ALLOWED_EXTENSIONS):
 		return MCPError.make("INVALID_PATH",
-			"script.write only writes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.create for .tscn, resource.create for .tres/.res, or a different tool for other file types" % file_path)
+			"script.write only writes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.create for .tscn, resource.write for .tres/.res, or a different tool for other file types" % file_path)
 	if not parameters.has("content"):
 		return MCPError.make("INVALID_PARAMS", "missing content")
 	var content := str(parameters.get("content", ""))

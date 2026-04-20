@@ -390,7 +390,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if packed_path.get_extension().to_lower() != "tscn":
 		return MCPError.make("INVALID_PATH",
-			"scene.instantiate only instantiates .tscn files (got %s); use resource.create for .tres, script.write for .gd/.cs" % packed_path)
+			"scene.instantiate only instantiates .tscn files (got %s); use resource.write for .tres, script.write for .gd/.cs" % packed_path)
 	if not FileAccess.file_exists(packed_path):
 		return MCPError.make("NOT_FOUND",
 			"no scene file at %s; use scene.create first" % packed_path)
