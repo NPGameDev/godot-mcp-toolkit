@@ -15,3 +15,4 @@ const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_regi
 const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
 const MCPScrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
 const MCPAudit := preload("res://addons/godot_mcp_toolkit/audit.gd")
+const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")

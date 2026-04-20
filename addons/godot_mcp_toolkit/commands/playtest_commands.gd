@@ -6,10 +6,11 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
+const MCPRegistryClient = _Hub.MCPRegistryClient
 
-const RUNTIME_PORT := 9090
 const RUNTIME_HOST := "127.0.0.1"
 const RUNTIME_POLL_TIMEOUT_MS := 5000
+const _REGISTRY_POLL_INTERVAL_MS := 100
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
@@ -52,15 +53,28 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 					"no scene file at %s; use scene.create first" % target)
 			EditorInterface.play_custom_scene(target)
 
+	# iter 23: two-phase wait — poll registry for the runtime_port to appear
+	# (the runtime server writes it after binding), then TCP-probe it.
+	var runtime_port := -1
 	var runtime_ready := false
 	if wait_for_runtime:
-		runtime_ready = _poll_runtime_ready(
-			RUNTIME_HOST, RUNTIME_PORT, RUNTIME_POLL_TIMEOUT_MS)
+		var deadline := Time.get_ticks_msec() + RUNTIME_POLL_TIMEOUT_MS
+		# Phase 1: poll registry for runtime_port.
+		while Time.get_ticks_msec() < deadline:
+			runtime_port = MCPRegistryClient.get_runtime_port()
+			if runtime_port > 0:
+				break
+			OS.delay_msec(_REGISTRY_POLL_INTERVAL_MS)
+		# Phase 2: TCP-probe the discovered port.
+		if runtime_port > 0:
+			var remaining := maxi(500, deadline - Time.get_ticks_msec())
+			runtime_ready = _poll_runtime_ready(
+				RUNTIME_HOST, runtime_port, remaining)
 
 	return {
 		"success": true,
 		"target": target,
-		"runtime_port": RUNTIME_PORT,
+		"runtime_port": runtime_port if runtime_port > 0 else null,
 		"runtime_ready": runtime_ready,
 	}
 

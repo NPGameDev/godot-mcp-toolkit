@@ -15,7 +15,8 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 ## dispatch via MCPCommandRegistry, and UndoRedo helper methods referenced
 ## by name from command handlers.
 
-const PORT := 6505
+const PORT_BASE := 6505
+const PORT_RANGE := 11  # 6505..6515 inclusive
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # iter 13: throttle re-listen retries to avoid log spam when the port is
@@ -52,6 +53,8 @@ var _registry: MCPCommandRegistry = null
 var _session_token: String = ""
 var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers only)
 var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
+# iter 23: the actually-bound port after dynamic scan. -1 = never bound.
+var _bound_port: int = -1
 
 
 func set_registry(registry: MCPCommandRegistry) -> void:
@@ -64,6 +67,10 @@ func is_listening() -> bool:
 
 func get_authed_peer_count() -> int:
 	return _peer_authed.size()
+
+
+func get_bound_port() -> int:
+	return _bound_port
 
 
 func regenerate_token() -> void:
@@ -85,6 +92,7 @@ func regenerate_token() -> void:
 func start() -> void:
 	_plugin_boot_time = int(Time.get_unix_time_from_system())
 	_relisten_countdown = 0
+	_bound_port = -1
 	# iter 18: rotate token each editor session.
 	_session_token = MCPAuth.generate_token()
 	var write_err := MCPAuth.write_token(_session_token)
@@ -93,7 +101,7 @@ func start() -> void:
 	else:
 		var token_path := MCPAuth.get_token_path()
 		print("[MCPServer] session token written to %s" % token_path)
-	_try_listen()
+	_scan_and_listen()
 
 
 func stop() -> void:
@@ -108,24 +116,51 @@ func stop() -> void:
 		_tcp_server = null
 	_relisten_countdown = 0
 	_consecutive_failures = 0
+	_bound_port = -1
 	print("[MCPServer] stopped")
 
 
-# iter 13: idempotent re-listen. Called from start() and from _process when
-# the TCPServer falls out of the listening state (port stolen, manual stop,
-# etc.). Frame-throttled via _relisten_countdown so failures don't spam.
+# iter 23: first-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1 and
+# binds the first free port. Sets _bound_port on success. If no port is
+# available, schedules a throttled retry.
+func _scan_and_listen() -> void:
+	for offset in range(PORT_RANGE):
+		var candidate := PORT_BASE + offset
+		var server := TCPServer.new()
+		var err := server.listen(candidate, BIND)
+		if err == OK:
+			_tcp_server = server
+			_bound_port = candidate
+			_consecutive_failures = 0
+			_relisten_countdown = 0
+			print("[MCPServer] listening on %s:%d" % [BIND, _bound_port])
+			return
+		server.stop()
+	# All ports in range exhausted.
+	_consecutive_failures += 1
+	if _consecutive_failures == 1:
+		push_warning("[MCPServer] no free port in %d–%d; will retry every ~1s" % [PORT_BASE, PORT_BASE + PORT_RANGE - 1])
+	_tcp_server = null
+	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
+
+
+# iter 13 / 23: idempotent re-listen. Called from _process when the
+# TCPServer falls out of the listening state. If we already found a port
+# (_bound_port > 0), retry that specific port. Otherwise re-scan the range.
 func _try_listen() -> void:
 	if _relisten_countdown > 0:
 		_relisten_countdown -= 1
 		return
+	if _bound_port < 0:
+		_scan_and_listen()
+		return
+	# Retry the previously-bound port.
 	if _tcp_server == null:
 		_tcp_server = TCPServer.new()
-	var error := _tcp_server.listen(PORT, BIND)
+	var error := _tcp_server.listen(_bound_port, BIND)
 	if error == OK:
 		if _consecutive_failures > 0:
-			print("[MCPServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, PORT, _consecutive_failures])
-		else:
-			print("[MCPServer] listening on %s:%d" % [BIND, PORT])
+			print("[MCPServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, _bound_port, _consecutive_failures])
 		_consecutive_failures = 0
 		_relisten_countdown = 0
 		return
@@ -133,12 +168,8 @@ func _try_listen() -> void:
 	if _consecutive_failures == 1:
 		var hint := ""
 		if error == ERR_ALREADY_IN_USE:
-			hint = " (ERR_ALREADY_IN_USE — likely a stale Godot/MCP process holding the port; will retry silently every ~1s, watch for the listening / recovered message)"
-		push_warning("[MCPServer] bind %s:%d failed (err %d)%s" % [BIND, PORT, error, hint])
-	# Discard the (potentially-stuck) TCPServer instance so the next retry
-	# allocates a fresh one. Without this, certain Godot-internal latch
-	# states keep returning ERR_ALREADY_IN_USE even after the actual port
-	# is freed.
+			hint = " (ERR_ALREADY_IN_USE — will retry silently every ~1s)"
+		push_warning("[MCPServer] rebind %s:%d failed (err %d)%s" % [BIND, _bound_port, error, hint])
 	_tcp_server.stop()
 	_tcp_server = null
 	_relisten_countdown = _RELISTEN_FRAME_INTERVAL

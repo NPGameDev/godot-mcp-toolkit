@@ -20,8 +20,10 @@ const MCPUntrusted = _Hub.MCPUntrusted
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const MCPFeatureGate = _Hub.MCPFeatureGate
 const MCPScrubber = _Hub.MCPScrubber
+const MCPRegistryClient = _Hub.MCPRegistryClient
 
-const PORT := 9090
+const PORT_BASE := 9090
+const PORT_RANGE := 16  # 9090..9105 inclusive
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # iter 13: throttle re-listen retries. Mirrors mcp_server.gd's editor-side
@@ -41,6 +43,8 @@ var _consecutive_failures := 0
 var _session_token: String = ""
 var _peer_authed: Dictionary = {}
 var _peer_connect_ms: Dictionary = {}
+# iter 23: the actually-bound port after dynamic scan. -1 = never bound.
+var _bound_port: int = -1
 
 
 func _ready() -> void:
@@ -71,6 +75,7 @@ func _exit_tree() -> void:
 
 func _start_server() -> void:
 	_relisten_countdown = 0
+	_bound_port = -1
 	# iter 18: runtime uses the same token file as the editor server so the
 	# bridge can authenticate against both with one read. The editor server
 	# writes first (plugin enable runs before game launch). If the file doesn't
@@ -84,7 +89,7 @@ func _start_server() -> void:
 	if _session_token.is_empty():
 		_session_token = MCPAuth.generate_token()
 		MCPAuth.write_token(_session_token)
-	_try_listen()
+	_scan_and_listen()
 
 
 func _stop_server() -> void:
@@ -99,35 +104,60 @@ func _stop_server() -> void:
 		_tcp_server = null
 	_relisten_countdown = 0
 	_consecutive_failures = 0
+	_bound_port = -1
+	# iter 23: best-effort registry cleanup (game may be force-killed).
+	MCPRegistryClient.clear_runtime()
 
 
-# iter 13: idempotent re-listen for the runtime socket. Editor-hint /
-# release-build gating in _ready already disables _process for the cases
-# where we MUST NOT bind, so this loop only runs in the debug-build
-# game process — exactly where 9090 is supposed to be live.
+# iter 23: first-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1
+# and binds the first free port. On success, writes runtime_port to registry.
+func _scan_and_listen() -> void:
+	for offset in range(PORT_RANGE):
+		var candidate := PORT_BASE + offset
+		var server := TCPServer.new()
+		var err := server.listen(candidate, BIND)
+		if err == OK:
+			_tcp_server = server
+			_bound_port = candidate
+			_consecutive_failures = 0
+			_relisten_countdown = 0
+			print("[MCPRuntimeServer] listening on %s:%d" % [BIND, _bound_port])
+			MCPRegistryClient.set_runtime(_bound_port)
+			return
+		server.stop()
+	# All ports in range exhausted — Mode B disabled this session.
+	_consecutive_failures += 1
+	if _consecutive_failures == 1:
+		push_warning("[MCPRuntimeServer] no free port in %d–%d; Mode B tools disabled this session" % [PORT_BASE, PORT_BASE + PORT_RANGE - 1])
+	_tcp_server = null
+	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
+
+
+# iter 13 / 23: idempotent re-listen. If we already found a port
+# (_bound_port > 0), retry that specific port. Otherwise re-scan.
 func _try_listen() -> void:
 	if _relisten_countdown > 0:
 		_relisten_countdown -= 1
 		return
+	if _bound_port < 0:
+		_scan_and_listen()
+		return
+	# Retry the previously-bound port.
 	if _tcp_server == null:
 		_tcp_server = TCPServer.new()
-	var err := _tcp_server.listen(PORT, BIND)
+	var err := _tcp_server.listen(_bound_port, BIND)
 	if err == OK:
 		if _consecutive_failures > 0:
-			print("[MCPRuntimeServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, PORT, _consecutive_failures])
-		else:
-			print("[MCPRuntimeServer] listening on %s:%d" % [BIND, PORT])
+			print("[MCPRuntimeServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, _bound_port, _consecutive_failures])
 		_consecutive_failures = 0
 		_relisten_countdown = 0
 		return
 	_consecutive_failures += 1
-	# Same first-failure-only logging as mcp_server.gd._try_listen.
 	if _consecutive_failures == 1:
 		var hint := ""
 		if err == ERR_ALREADY_IN_USE:
-			hint = " (ERR_ALREADY_IN_USE — likely a stale game/runtime process holding the port; will retry silently every ~1s)"
-		push_warning("[MCPRuntimeServer] bind %s:%d failed (err %d)%s" % [BIND, PORT, err, hint])
-	# See mcp_server.gd._try_listen for the discard-on-failure rationale.
+			hint = " (ERR_ALREADY_IN_USE — will retry silently every ~1s)"
+		push_warning("[MCPRuntimeServer] rebind %s:%d failed (err %d)%s" % [BIND, _bound_port, err, hint])
 	_tcp_server.stop()
 	_tcp_server = null
 	_relisten_countdown = _RELISTEN_FRAME_INTERVAL

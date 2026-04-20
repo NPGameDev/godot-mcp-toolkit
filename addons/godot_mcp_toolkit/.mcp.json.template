@@ -3,7 +3,7 @@
     "godot-mcp-toolkit": {
       "command": "node",
       "args": ["C:/Users/nicol/OneDrive/Desktop/Personal/AIWithGodot/godot-mcp-server/dist/index.js"],
-      "env": { "GODOT_MCP_PORT": "6505" }
+      "env": {}
     }
   }
 }

@@ -13,9 +13,11 @@ calling tools, not to agents changing the plugin's internals.
 
 ## What this plugin does
 
-Runs a localhost WebSocket server (`127.0.0.1:6505`) inside the Godot editor
-and exposes scene, node, script, and editor operations to any MCP client (e.g.
-Claude Code via the companion `@npgamedev/godot-mcp-server` npm package).
+Runs a localhost WebSocket server inside the Godot editor (dynamic port
+`127.0.0.1:6505–6515`) and exposes scene, node, script, and editor operations
+to any MCP client (e.g. Claude Code via the companion
+`@npgamedev/godot-mcp-server` npm package). A runtime server (`127.0.0.1:9090–9105`)
+runs in debug builds for live-game introspection (Mode B).
 
 ## Tool catalogue (56 tools — iter 22 profile system)
 
@@ -86,6 +88,33 @@ strips mutating tools from any profile.
 | `game_eval`           | `GODOT_MCP_ALLOW_GAME_EVAL` |
 | `node_call_method`    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD` |
 | `project_set_setting` | `GODOT_MCP_ALLOW_PROJECT_SET_SETTING` |
+
+## Multi-project support (iter 23)
+
+Multiple Godot editors can run the plugin simultaneously. Each editor
+dynamically allocates a port from the 6505–6515 range (editor) or 9090–9105
+(runtime) and registers itself in a system-wide registry file:
+
+| Platform | Registry path |
+|----------|---------------|
+| Windows  | `%APPDATA%\godot-mcp-toolkit\projects.json` |
+| macOS    | `~/Library/Application Support/godot-mcp-toolkit/projects.json` |
+| Linux    | `~/.local/share/godot-mcp-toolkit/projects.json` |
+
+The TypeScript bridge discovers which port belongs to which project by matching
+`process.cwd()` (or `GODOT_MCP_PROJECT_PATH` env) against the registry.
+
+**Single-project users need no configuration changes.** Port 6505 is tried
+first and will be assigned unless another editor already holds it.
+
+**Decoupled CWD** — if Claude Code's CWD differs from the Godot project root,
+set `GODOT_MCP_PROJECT_PATH` in `.mcp.json`:
+```json
+{ "env": { "GODOT_MCP_PROJECT_PATH": "/absolute/path/to/godot/project" } }
+```
+
+**Direct port override** — `GODOT_MCP_PORT` in `.mcp.json` still works and
+bypasses registry discovery entirely (backwards compat).
 
 ## Security (iter 18)
 

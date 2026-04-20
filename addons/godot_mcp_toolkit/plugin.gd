@@ -21,6 +21,8 @@ const TilemapCommands := preload("res://addons/godot_mcp_toolkit/commands/tilema
 const AssetCommands := preload("res://addons/godot_mcp_toolkit/commands/asset_commands.gd")
 const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_commands.gd")
 const MCPFileGuard = _Hub.MCPFileGuard
+const MCPRegistryClient = _Hub.MCPRegistryClient
+const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 # Mode B (iter 10) — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:9090. Registered/unregistered via add_autoload_singleton /
@@ -33,6 +35,8 @@ const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runti
 var _server: Node = null
 var _export_plugin: EditorExportPlugin = null
 var _dock: Control = null
+# iter 23: playtest-end detection for runtime port cleanup.
+var _was_playing: bool = false
 
 # Menu item keys for teardown symmetry (I12).
 const _MENU_ITEMS: Array[String] = [
@@ -85,6 +89,13 @@ func _enter_tree() -> void:
 
 	add_child(_server)
 	_server.start()
+
+	# iter 23: register in the system-wide project registry so the TS bridge
+	# can discover us by project path. Must come after start() — port unknown
+	# until _scan_and_listen() runs.
+	var bound_port: int = _server.get_bound_port()
+	if bound_port > 0:
+		MCPRegistryClient.register(bound_port, MCPAuth.get_token_path())
 
 	# -- Bottom-panel dock (iter 21) --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
@@ -218,6 +229,15 @@ func _write_onboarding_flag() -> void:
 		f.close()
 
 
+# iter 23: detect playtest end so we can clear runtime_port/runtime_pid from
+# the registry (belt-and-suspenders with runtime's own _exit_tree cleanup).
+func _process(_delta: float) -> void:
+	var playing := EditorInterface.is_playing_scene()
+	if _was_playing and not playing:
+		MCPRegistryClient.clear_runtime()
+	_was_playing = playing
+
+
 func _exit_tree() -> void:
 	# I12: teardown symmetry — reverse order of _enter_tree registrations.
 	# Command Palette.
@@ -240,9 +260,10 @@ func _exit_tree() -> void:
 		remove_export_plugin(_export_plugin)
 		_export_plugin = null
 
-	# Server.
+	# Server + registry.
 	if _server != null:
 		_server.stop()
+		MCPRegistryClient.deregister()
 		_server.queue_free()
 		_server = null
 
