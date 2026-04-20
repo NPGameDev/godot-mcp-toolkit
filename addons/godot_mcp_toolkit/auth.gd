@@ -13,12 +13,16 @@ static func generate_token() -> String:
 
 
 ## Absolute OS path where the token is written / read.
-## Env override: GODOT_MCP_TOKEN_PATH.
+## Per-worktree: hashes the canonical project path so two worktrees of the
+## same repo (same config/name → same user://) get distinct token files.
+## Env override: GODOT_MCP_TOKEN_PATH bypasses the hash.
 static func get_token_path() -> String:
 	var env_path := OS.get_environment("GODOT_MCP_TOKEN_PATH")
 	if not env_path.is_empty():
 		return env_path
-	return "user://mcp_token"
+	var project_path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
+	var suffix := project_path.sha256_text().substr(0, 12)
+	return "user://mcp_token_%s" % suffix
 
 
 ## Write token to disk. Returns OK or an error code.

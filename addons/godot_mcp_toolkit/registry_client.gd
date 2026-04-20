@@ -182,6 +182,12 @@ static func register(port: int, token_path: String) -> void:
 	data = _gc(data)
 	var key := _project_key()
 	var by_path: Dictionary = data["by_path"]
+	# Double-open detection: warn if same path already registered with a live PID.
+	if by_path.has(key):
+		var existing: Dictionary = by_path[key]
+		var existing_pid := int(existing.get("pid", 0))
+		if existing_pid > 0 and OS.is_process_running(existing_pid):
+			push_warning("[MCPRegistry] already registered from PID %d; overwriting with PID %d" % [existing_pid, OS.get_process_id()])
 	by_path[key] = {
 		"port": port,
 		"token_path": token_path,
