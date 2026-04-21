@@ -8,11 +8,14 @@ const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 const _VALID_SECTIONS: Array[String] = ["properties", "methods", "signals", "constants"]
 const _MAX_ENTRIES_PER_SECTION := 200
+const _MAX_SEARCH_RESULTS := 200
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("classdb.get_info", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_classdb_get_info(parameters), "lite")
+	registry.add("classdb.search", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_classdb_search(parameters), "lite")
 
 
 # -- Command -----------------------------------------------------------------
@@ -94,6 +97,113 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 
 	if truncated:
 		result["truncated"] = true
+	return result
+
+
+static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
+	var base_class: String = str(parameters.get("base_class", ""))
+	var pattern: String = str(parameters.get("pattern", ""))
+	var instantiable_only: bool = bool(parameters.get("instantiable_only", true))
+	var include_global: bool = bool(parameters.get("include_global", true))
+
+	# Validate base_class exists if provided.
+	if base_class != "":
+		var base_exists := ClassDB.class_exists(base_class)
+		if not base_exists:
+			for entry in ProjectSettings.get_global_class_list():
+				if entry.get("class", "") == base_class:
+					base_exists = true
+					break
+		if not base_exists:
+			return MCPError.make("UNKNOWN_CLASS",
+				"base_class not found in ClassDB or global class list: %s" % base_class)
+
+	var pattern_lower := pattern.to_lower()
+	var matches: Array = []
+	var total := 0
+
+	# Native classes from ClassDB.
+	for cls in ClassDB.get_class_list():
+		if base_class != "" and cls != base_class \
+				and not ClassDB.is_parent_class(cls, base_class):
+			continue
+		if pattern_lower != "" and cls.to_lower().find(pattern_lower) == -1:
+			continue
+		if instantiable_only and not ClassDB.can_instantiate(cls):
+			continue
+		total += 1
+		if matches.size() < _MAX_SEARCH_RESULTS:
+			matches.append({
+				"name": cls,
+				"parent": ClassDB.get_parent_class(cls),
+				"instantiable": ClassDB.can_instantiate(cls),
+				"source": "native",
+			})
+
+	# Global (user-defined class_name) classes.
+	if include_global:
+		for entry in ProjectSettings.get_global_class_list():
+			var cls: String = str(entry.get("class", ""))
+			var base: String = str(entry.get("base", ""))
+			if cls == "":
+				continue
+			if base_class != "":
+				if cls != base_class and base != base_class:
+					var ancestor_match := false
+					var current := base
+					while current != "":
+						if current == base_class:
+							ancestor_match = true
+							break
+						if ClassDB.class_exists(current):
+							current = ClassDB.get_parent_class(current)
+						else:
+							var found := false
+							for g in ProjectSettings.get_global_class_list():
+								if g.get("class", "") == current:
+									current = str(g.get("base", ""))
+									found = true
+									break
+							if not found:
+								break
+					if not ancestor_match:
+						continue
+			if pattern_lower != "" and cls.to_lower().find(pattern_lower) == -1:
+				continue
+			total += 1
+			if matches.size() < _MAX_SEARCH_RESULTS:
+				matches.append({
+					"name": cls,
+					"parent": base,
+					"instantiable": true,
+					"source": "global",
+					"script_path": str(entry.get("path", "")),
+				})
+
+	# If neither filter was given, return only direct children of Object
+	# to avoid dumping 1000+ classes.
+	if base_class == "" and pattern == "":
+		var top_level: Array = []
+		for m in matches:
+			if m["parent"] == "Object" or m["parent"] == "":
+				top_level.append(m)
+		top_level.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
+		return {
+			"success": true,
+			"count": top_level.size(),
+			"classes": top_level,
+			"_hint": "No filter provided; showing direct children of Object only. Use base_class or pattern to search.",
+		}
+
+	matches.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
+	var result: Dictionary = {
+		"success": true,
+		"count": matches.size(),
+		"classes": matches,
+	}
+	if matches.size() < total:
+		result["truncated"] = true
+		result["total"] = total
 	return result
 
 
