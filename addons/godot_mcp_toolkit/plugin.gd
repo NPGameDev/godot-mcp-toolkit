@@ -20,6 +20,7 @@ const AnimationCommands := preload("res://addons/godot_mcp_toolkit/commands/anim
 const TilemapCommands := preload("res://addons/godot_mcp_toolkit/commands/tilemap_commands.gd")
 const AssetCommands := preload("res://addons/godot_mcp_toolkit/commands/asset_commands.gd")
 const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_commands.gd")
+const ClassdbCommands := preload("res://addons/godot_mcp_toolkit/commands/classdb_commands.gd")
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPRegistryClient = _Hub.MCPRegistryClient
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
@@ -82,6 +83,7 @@ func _enter_tree() -> void:
 	TilemapCommands.register(registry, _server)
 	AssetCommands.register(registry, _server)
 	SaveCommands.register(registry, _server)
+	ClassdbCommands.register(registry, _server)
 
 	# User command extensions (iter 25) — profile-exempt, always loaded.
 	UserCommandsLoader.load_all(registry, _server)

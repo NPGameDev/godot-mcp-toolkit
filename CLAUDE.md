@@ -19,7 +19,7 @@ to any MCP client (e.g. Claude Code via the companion
 `@npgamedev/godot-mcp-server` npm package). A runtime server (`127.0.0.1:9090–9105`)
 runs in debug builds for live-game introspection (Mode B).
 
-## Tool catalogue (56 tools — iter 22 profile system)
+## Tool catalogue (57 tools — iter 22 profile system + iter 26 classdb)
 
 Iter 22 replaces the coarse lite/full flag with profiles + lazy-load groups.
 Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
@@ -28,7 +28,7 @@ Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
 |--------------|--------------|
 | **standard** (default) | 31 core + `enable_tool_group` meta-tool + 3 locked stubs |
 | **minimal** | 10 read-only (code-review mode) |
-| **full**     | All 56 tools at startup |
+| **full**     | All 57 tools at startup |
 | **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
 
 `--lite` → `minimal` with deprecation warning. `GODOT_MCP_READ_ONLY=1`
@@ -69,6 +69,7 @@ strips mutating tools from any profile.
 | `folder_delete`         | Delete directory. Refuses protected paths. |
 | `asset_list`            | Enumerate `res://` assets with filters. |
 | `tilemap_set_cells`     | Batch-paint TileMap. Single UndoRedo action. |
+| `classdb_get_info`      | Inspect any Godot class: properties, methods, signals, constants, inheritance. Engine + user `class_name`. |
 
 ### Lazy-load group tools (via `enable_tool_group`)
 
