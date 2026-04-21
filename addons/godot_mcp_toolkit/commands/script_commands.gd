@@ -13,15 +13,15 @@ const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("script.read", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_read(parameters), "lite")
+		return _cmd_script_read(parameters))
 	registry.add("script.read_range", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_read_range(parameters), "lite")
+		return _cmd_script_read_range(parameters))
 	registry.add("script.write", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_write(server, parameters), "lite")
+		return _cmd_script_write(server, parameters))
 	registry.add("script.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_delete(parameters), "full")
+		return _cmd_script_delete(parameters))
 	registry.add("script.check", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_check(parameters), "lite")
+		return _cmd_script_check(parameters))
 
 
 # -- Commands -----------------------------------------------------------------

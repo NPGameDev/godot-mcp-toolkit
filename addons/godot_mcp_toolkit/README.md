@@ -6,7 +6,7 @@ script, and editor operations inside the Godot editor.
 
 ## Install
 
-**Via Godot Asset Library** (once the plugin is submitted — gated to iter 20):
+**Via Godot Asset Library** (once the plugin is submitted):
 AssetLib tab → search "Godot MCP Toolkit" → Download → Install.
 
 **Via manual zip**: download the latest `godot-mcp-toolkit-*.zip` from the
@@ -45,7 +45,7 @@ Then `cd` to your project root and run `claude`. `/mcp` should list
 without disabling the plugin first, `_disable_plugin()` cannot fire.
 Manually delete `.mcp.json` from your project root if uninstalling.
 
-## Iter 15 additions — file-level scene/script ops
+## File-level scene/script ops
 
 - `scene_create` — create a new `.tscn` at a `res://` path. Idempotent via
   the `status` discriminator (`"created"` / `"returned"` / `"replaced"`).
@@ -74,7 +74,7 @@ Error payloads still carry `code` (e.g. `ALREADY_EXISTS` via
 `scene_create`'s `if_exists: "fail"` opt-in). Success payloads do NOT carry
 `code`.
 
-## Iter 15b additions — resource / folder / shader ops
+## Resource / folder / shader ops
 
 - `resource_create` — author `.tres` / `.res` at a `res://` path for a
   Resource subclass (engine class or custom `class_name X extends Resource`).
@@ -115,11 +115,11 @@ JSON-native primitives pass through: `bool`, `int`, `float`, `String`, `null`,
 - `{ "type": "Vector4", "x": 0, "y": 0, "z": 0, "w": 0 }` → `Vector4`
 - `{ "type": "Color", "r": 0, "g": 0, "b": 0, "a": 1 }` → `Color`
 - `{ "type": "Rect2", "x": 0, "y": 0, "w": 0, "h": 0 }` → `Rect2`
-- `{ "type": "Rect2i", "x": 0, "y": 0, "w": 0, "h": 0 }` → `Rect2i` (iter 15d)
-- `{ "type": "Vector2i", "x": 0, "y": 0 }` → `Vector2i` (iter 15d — TileMap coords)
-- `{ "type": "Vector3i", "x": 0, "y": 0, "z": 0 }` → `Vector3i` (iter 15d)
-- `{ "type": "Transform2D", "origin": {x,y}, "x_axis": {x,y}, "y_axis": {x,y} }` → `Transform2D` (iter 15d — animation keyframes)
-- `{ "type": "Transform3D", "basis": { "x": {x,y,z}, "y": {x,y,z}, "z": {x,y,z} }, "origin": {x,y,z} }` → `Transform3D` (iter 15d)
+- `{ "type": "Rect2i", "x": 0, "y": 0, "w": 0, "h": 0 }` → `Rect2i`
+- `{ "type": "Vector2i", "x": 0, "y": 0 }` → `Vector2i` (TileMap coords)
+- `{ "type": "Vector3i", "x": 0, "y": 0, "z": 0 }` → `Vector3i`
+- `{ "type": "Transform2D", "origin": {x,y}, "x_axis": {x,y}, "y_axis": {x,y} }` → `Transform2D` (animation keyframes)
+- `{ "type": "Transform3D", "basis": { "x": {x,y,z}, "y": {x,y,z}, "z": {x,y,z} }, "origin": {x,y,z} }` → `Transform3D`
 - `{ "type": "NodePath", "path": "CanvasLayer/HUD" }` → `NodePath`
 - `{ "type": "Resource", "path": "res://art/player.png" }` → loaded via
   `ResourceLoader.load` (any `Resource` subclass: `Texture2D`, `PackedScene`,
@@ -132,12 +132,12 @@ JSON-native primitives pass through: `bool`, `int`, `float`, `String`, `null`,
 Arrays recurse element-wise, so `node_call_method` args can mix primitives
 and typed dicts: `[{type:"Vector2",x:32,y:32}, 0.5, "hello"]`.
 
-Not yet coerced (add as needs arise — see iter 15c handoff): `Basis`,
+Not yet coerced (add as needs arise): `Basis`,
 `Quaternion`, `Plane`, `AABB`, `Projection`, the `Packed*Array` family,
 `Callable`, `Signal`. Edit the `.tres` directly via `script_write` on the
 file if you need these.
 
-## Iter 15c additions — playtest + composition + method invocation
+## Playtest + composition + method invocation
 
 - `game_start` — drive the editor's play button via
   `EditorInterface.play_*_scene()`. `target` accepts `"main"` (uses
@@ -165,10 +165,9 @@ file if you need these.
   refs + typed dicts work in `args`. Return value serialises via the
   same path as `node_get_property` (primitives / Arrays / Dicts
   round-trip; `Node` refs stringify to their path; `Resource` refs emit
-  `{type:"Resource",path,class}`). Mode A only in 15c — runtime-live
-  node invocation is deferred. Iter 19 adds FeatureGate support
-  (`node_call_method` is off-by-default in `--lite`); ships ungated in
-  15c — same staging as `game_eval`.
+  `{type:"Resource",path,class}`). Mode A only — runtime-live node
+  invocation is deferred. FeatureGate-protected
+  (`node_call_method` is off-by-default in `--lite`).
 
 ### Side-effect note — custom Resource classes
 
@@ -177,7 +176,7 @@ file if you need these.
 effects (global state, signal emission, editor-visible mutations), those
 will fire every time `resource_create` is called for that class.
 
-## Iter 15d additions — content-authoring extensions
+## Content-authoring extensions
 
 Five new domains, ~10 tools. All honour the `status` discriminator + the
 expanded `_coerce_value` set above (5 new type tags: `Vector2i`, `Vector3i`,
@@ -188,9 +187,8 @@ expanded `_coerce_value` set above (5 new type tags: `Vector2i`, `Vector3i`,
   `editor/*` (editor-session state, not project config) — defence-in-depth
   against an agent disabling its own constraints. UPDATE shape (no
   `status`); returns `was_set_before` + `previous_value` for observability.
-  Pairs with iter 09's `project_get_settings` reader. **FeatureGate
-  candidate (iter 19)** — high blast-radius (main scene, autoloads,
-  physics tick).
+  Pairs with `project_get_settings`. **FeatureGate-protected** — high
+  blast-radius (main scene, autoloads, physics tick).
 - `input_map_add_action` / `input_map_action_add_event` /
   `input_map_action_remove_event` / `input_map_remove_action` — write path
   for `InputMap`. Persists to `ProjectSettings.input/<action>` via
@@ -208,8 +206,7 @@ expanded `_coerce_value` set above (5 new type tags: `Vector2i`, `Vector3i`,
   - `{ type: "joypad_motion", axis: int, axis_value: float, device: int }`
 - `animation_add_key` / `animation_remove_key` / `animation_get_keys` —
   `AnimationPlayer` track + keyframe authoring. `TYPE_VALUE` tracks only
-  in 15d (`bezier` / `transform` / `method` / `audio` deferred — see
-  handoff). Auto-creates the value track if `track_path` (e.g.
+  (`bezier` / `transform` / `method` / `audio` deferred). Auto-creates the value track if `track_path` (e.g.
   `Sprite2D:position`) doesn't yet exist on the named animation. Bare
   NodePaths (no `:` property suffix) reject with `INVALID_PARAMS`.
   UndoRedo-wrapped both directions; silent-return on exact-time duplicate.
@@ -242,7 +239,7 @@ session's runtime. If a `game_start` runs immediately after, the
 runtime sees the new bindings (Godot loads `InputMap` from
 `ProjectSettings` at game boot from the in-memory entries).
 
-## Iter 15e additions — asset discovery + editor console
+## Asset discovery + editor console
 
 - `asset_list` — enumerate `res://` assets via Godot's `EditorFileSystem`
   index (no full-load). Filters: `path_prefix`, `name_glob` (case-insensitive
@@ -260,24 +257,24 @@ runtime sees the new bindings (Godot loads `InputMap` from
   most-recent `.log`. Multi-line error blocks (stack traces starting with
   whitespace or `"   at:"`) are folded into the preceding entry.
   `LOG_UNAVAILABLE` if no readable log file exists.
-- `editor_get_errors` — **stub replaced** (iter 15e). Now delegates to the
+- `editor_get_errors` — **stub replaced**. Now delegates to the
   `editor.get_console` reader with `level_filter=["error"]`. Response shape
   unchanged: `{ success, errors: [...], count }`. Accepts optional `limit`.
 
 ### Console-reader notes
 
 - **`user://logs/` read exception.** This is a narrow read-only deviation from
-  the `res://`-only path rule. Iter 18's FileGuard will explicitly allowlist
+  the `res://`-only path rule. FileGuard explicitly allowlists
   `editor.get_console` + `editor.get_errors` for `user://logs/` reads only.
 - **Playtest-rotation ambiguity.** When a Mode-B playtest starts, Godot
   rotates the editor's log; `editor.get_console` may surface game output
   instead. Prefer `debugger.get_log` during playtest.
 - **No per-line timestamps** in default Godot log format. `timestamp_unix` is
-  `null` in 15e; agents that need per-entry timing should use `--verbose`.
+  `null`; agents that need per-entry timing should use `--verbose`.
 - **`application/config/use_file_logging=false`** → `LOG_UNAVAILABLE` with
   the settings key in the message.
 
-## Iter 15f additions — binary asset import + scan-idle gating
+## Binary asset import + scan-idle gating
 
 - `asset_import` — import a binary file (image, audio, font, 3D model, etc.)
   into `res://` via one of two modes: `source_path` (absolute filesystem copy)
@@ -300,8 +297,8 @@ runtime sees the new bindings (Godot loads `InputMap` from
 `asset.import` is the first tool to read outside `res://` / `user://`.
 The `source_path` parameter accepts an **absolute OS filesystem path**
 (e.g. `C:\Users\me\sprites\hero.png` on Windows, `/home/me/sprites/hero.png`
-on Linux). Iter 18's `FileGuard` will add a source-path allowlist;
-until then the extension allowlist + size cap provide defence in depth.
+on Linux). `FileGuard` provides a source-path allowlist;
+the extension allowlist + size cap provide defence in depth.
 
 ## Port
 

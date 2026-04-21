@@ -15,9 +15,9 @@ const _REGISTRY_POLL_INTERVAL_MS := 100
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("game.start", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_game_start(parameters), "full")
+		return _cmd_game_start(parameters))
 	registry.add("game.stop", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_game_stop(parameters), "full")
+		return _cmd_game_stop(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -53,19 +53,17 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 					"no scene file at %s; use scene.create first" % target)
 			EditorInterface.play_custom_scene(target)
 
-	# iter 23: two-phase wait — poll registry for the runtime_port to appear
-	# (the runtime server writes it after binding), then TCP-probe it.
+	# Two-phase wait — poll registry for the runtime_port to appear (the
+	# runtime server writes it after binding), then TCP-probe it.
 	var runtime_port := -1
 	var runtime_ready := false
 	if wait_for_runtime:
 		var deadline := Time.get_ticks_msec() + RUNTIME_POLL_TIMEOUT_MS
-		# Phase 1: poll registry for runtime_port.
 		while Time.get_ticks_msec() < deadline:
 			runtime_port = MCPRegistryClient.get_runtime_port()
 			if runtime_port > 0:
 				break
 			OS.delay_msec(_REGISTRY_POLL_INTERVAL_MS)
-		# Phase 2: TCP-probe the discovered port.
 		if runtime_port > 0:
 			var remaining := maxi(500, deadline - Time.get_ticks_msec())
 			runtime_ready = _poll_runtime_ready(

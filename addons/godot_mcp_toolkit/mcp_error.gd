@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Shared MCP error contract (I1) — canonical error codes and failure envelope.
+## Shared MCP error contract — canonical error codes and failure envelope.
 
 const CODES: Array[String] = [
 	"ALREADY_EXISTS",

@@ -11,9 +11,9 @@ const MCPUntrusted = _Hub.MCPUntrusted
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("animation.keyframe", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_animation_keyframe(server, parameters), "full")
+		return _cmd_animation_keyframe(server, parameters))
 	registry.add("animation.get_keys", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_animation_get_keys(parameters), "full")
+		return _cmd_animation_get_keys(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------

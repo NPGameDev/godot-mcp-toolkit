@@ -13,23 +13,23 @@ const MCPUntrusted = _Hub.MCPUntrusted
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("scene.get_tree", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_get_tree(parameters), "lite")
+		return _cmd_scene_get_tree(parameters))
 	registry.add("scene.create", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_create(parameters), "full")
+		return _cmd_scene_create(parameters))
 	registry.add("scene.open", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_open(parameters), "lite")
+		return _cmd_scene_open(parameters))
 	registry.add("scene.close", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_close(parameters), "full")
+		return _cmd_scene_close(parameters))
 	registry.add("scene.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_delete(parameters), "full")
+		return _cmd_scene_delete(parameters))
 	registry.add("scene.create_node", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_create_node(parameters), "lite")
+		return _cmd_scene_create_node(parameters))
 	registry.add("scene.delete_node", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_delete_node(parameters), "lite")
+		return _cmd_scene_delete_node(parameters))
 	registry.add("scene.instantiate", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_instantiate(server, parameters), "full")
+		return _cmd_scene_instantiate(server, parameters))
 	registry.add("scene.diff", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_diff(server, parameters), "full")
+		return _cmd_scene_diff(server, parameters))
 
 
 # -- Helpers ------------------------------------------------------------------

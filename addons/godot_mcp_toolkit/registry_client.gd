@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## System-wide project registry for multi-project concurrency (iter 23).
+## System-wide project registry for multi-project concurrency.
 ##
 ## Manages a shared projects.json file at an OS-specific location so
 ## multiple Godot editors can run the MCP plugin simultaneously, each

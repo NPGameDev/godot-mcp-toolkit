@@ -10,9 +10,9 @@ const MCPFileGuard = _Hub.MCPFileGuard
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("folder.create", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_folder_create(parameters), "full")
+		return _cmd_folder_create(parameters))
 	registry.add("folder.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_folder_delete(parameters), "full")
+		return _cmd_folder_delete(parameters))
 
 
 # -- Commands -----------------------------------------------------------------

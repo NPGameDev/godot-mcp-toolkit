@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## save.* command handlers — whitelisted user:// file operations (iter 19c).
+## save.* command handlers — whitelisted user:// file operations.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
@@ -11,13 +11,13 @@ const MCPUntrusted = _Hub.MCPUntrusted
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("save.read", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_save_read(parameters), "full")
+		return _cmd_save_read(parameters))
 	registry.add("save.write", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_save_write(parameters), "full")
+		return _cmd_save_write(parameters))
 	registry.add("save.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_save_delete(parameters), "full")
+		return _cmd_save_delete(parameters))
 	registry.add("save.list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_save_list(parameters), "full")
+		return _cmd_save_list(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -32,7 +32,6 @@ static func _cmd_save_write(parameters: Dictionary) -> Dictionary:
 	if not guard["ok"]:
 		return MCPError.make(str(guard["error_code"]), str(guard["error_message"]))
 	var abs_path: String = guard["absolute_path"]
-	# Ensure parent directory exists (best-effort).
 	DirAccess.make_dir_recursive_absolute(abs_path.get_base_dir())
 	var f := FileAccess.open(abs_path, FileAccess.WRITE)
 	if f == null:
@@ -76,7 +75,7 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 			"total_bytes": total_bytes,
 			"bytes_returned": buffer.size(),
 		}
-	# TODO(iter-20): apply scrubber before envelope.
+	# TODO: apply scrubber before envelope.
 	var wrapped := MCPUntrusted.wrap("user-file", path, text)
 	return {
 		"success": true,

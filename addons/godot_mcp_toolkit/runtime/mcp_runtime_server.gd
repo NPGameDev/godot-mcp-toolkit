@@ -2,7 +2,7 @@
 extends Node
 ## Mode B — runtime-only WebSocket server that lets the MCP bridge reach
 ## into the LIVE game (not the edited scene). Registered as the
-## `MCPRuntimeServer` autoload by plugin.gd (iter 10).
+## `MCPRuntimeServer` autoload by plugin.gd.
 ##
 ## The same script file is loaded at edit time (because it's in an
 ## @tool-enabled plugin) AND at runtime (because it's an autoload). We
@@ -10,8 +10,7 @@ extends Node
 ##   1. Engine.is_editor_hint() — editor process loaded us, not the game.
 ##      Keeping a second WS listener on 9090 while editing is a bug.
 ##   2. not OS.is_debug_build() — release export. Mode B must NOT ship
-##      to end users' shipped games. iter 10 Risk section calls this out
-##      as security-critical.
+##      to end users' shipped games. This is security-critical.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
@@ -26,10 +25,10 @@ const PORT_BASE := 9090
 const PORT_RANGE := 16  # 9090..9105 inclusive
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
-# iter 13: throttle re-listen retries. Mirrors mcp_server.gd's editor-side
-# loop. Runtime restarts on F5 each game session, so the typical "missed
-# bind" recoverable case is a stale debug session that hasn't released
-# 9090 yet — usually clears in 1-2 frames.
+# Throttle re-listen retries. Mirrors mcp_server.gd's editor-side loop.
+# Runtime restarts on F5 each game session, so the typical "missed bind"
+# recoverable case is a stale debug session that hasn't released 9090
+# yet — usually clears in 1-2 frames.
 const _RELISTEN_FRAME_INTERVAL := 60
 const _AUTH_TIMEOUT_MS := 2000
 
@@ -39,16 +38,15 @@ var _relisten_countdown := 0
 # Mirror of mcp_server.gd._consecutive_failures — log first-failure-of-streak
 # then go silent until success/recovery. See that file for rationale.
 var _consecutive_failures := 0
-# iter 18: per-peer auth tracking (mirrors mcp_server.gd pattern).
 var _session_token: String = ""
 var _peer_authed: Dictionary = {}
 var _peer_connect_ms: Dictionary = {}
-# iter 23: the actually-bound port after dynamic scan. -1 = never bound.
+# -1 = never bound.
 var _bound_port: int = -1
 
 
 func _ready() -> void:
-	# I11 + Risk — do not run in the editor process.
+	# Do not run in the editor process.
 	#
 	# Stay in the SceneTree as an inert placeholder rather than freeing:
 	# the autoload tracker holds a pointer to this Node until
@@ -76,11 +74,11 @@ func _exit_tree() -> void:
 func _start_server() -> void:
 	_relisten_countdown = 0
 	_bound_port = -1
-	# iter 18: runtime uses the same token file as the editor server so the
-	# bridge can authenticate against both with one read. The editor server
-	# writes first (plugin enable runs before game launch). If the file doesn't
-	# exist yet (edge case: game launched standalone without plugin), generate
-	# our own token.
+	# Runtime uses the same token file as the editor server so the bridge can
+	# authenticate against both with one read. The editor server writes first
+	# (plugin enable runs before game launch). If the file doesn't exist yet
+	# (edge case: game launched standalone without plugin), generate our own
+	# token.
 	var token_path := MCPAuth.get_token_path()
 	var file := FileAccess.open(token_path, FileAccess.READ)
 	if file != null:
@@ -105,12 +103,12 @@ func _stop_server() -> void:
 	_relisten_countdown = 0
 	_consecutive_failures = 0
 	_bound_port = -1
-	# iter 23: best-effort registry cleanup (game may be force-killed).
+	# Best-effort registry cleanup (game may be force-killed).
 	MCPRegistryClient.clear_runtime()
 
 
-# iter 23: first-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1
-# and binds the first free port. On success, writes runtime_port to registry.
+# First-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1 and binds
+# the first free port. On success, writes runtime_port to registry.
 func _scan_and_listen() -> void:
 	for offset in range(PORT_RANGE):
 		var candidate := PORT_BASE + offset
@@ -133,8 +131,8 @@ func _scan_and_listen() -> void:
 	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
 
 
-# iter 13 / 23: idempotent re-listen. If we already found a port
-# (_bound_port > 0), retry that specific port. Otherwise re-scan.
+# Idempotent re-listen. If we already found a port (_bound_port > 0),
+# retry that specific port. Otherwise re-scan.
 func _try_listen() -> void:
 	if _relisten_countdown > 0:
 		_relisten_countdown -= 1
@@ -142,7 +140,6 @@ func _try_listen() -> void:
 	if _bound_port < 0:
 		_scan_and_listen()
 		return
-	# Retry the previously-bound port.
 	if _tcp_server == null:
 		_tcp_server = TCPServer.new()
 	var err := _tcp_server.listen(_bound_port, BIND)
@@ -164,9 +161,9 @@ func _try_listen() -> void:
 
 
 func _process(_delta: float) -> void:
-	# iter 13: keep the listener up across transient socket loss. Editor /
-	# release gating from _ready prevents _process from running where it
-	# shouldn't (set_process(false)), so reaching here = debug-build runtime.
+	# Keep the listener up across transient socket loss. Editor / release
+	# gating from _ready prevents _process from running where it shouldn't
+	# (set_process(false)), so reaching here = debug-build runtime.
 	if _tcp_server == null or not _tcp_server.is_listening():
 		_try_listen()
 		return
@@ -220,7 +217,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		_send_error(peer, null, -32600, "Invalid Request: top-level must be an object")
 		return
 
-	# iter 18: auth handshake.
+	# Auth handshake.
 	if not _peer_authed.has(peer):
 		if MCPAuth.validate(msg, _session_token):
 			_peer_authed[peer] = true
@@ -287,11 +284,8 @@ func _send_error(peer: WebSocketPeer, id, code: int, message: String) -> void:
 	peer.send_text(JSON.stringify(response))
 
 
-# iter 16: error contract and serialisation now provided by shared MCPError /
-# MCPCoerce modules — no more duplicated mcp_error / _serialize_value here.
 
-
-# ---- Runtime command helpers (iter 10) ------------------------------------
+# ---- Runtime command helpers ------------------------------------------------
 
 
 func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
@@ -347,7 +341,7 @@ func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
 	for prop in node.get_property_list():
 		var usage: int = int(prop.get("usage", 0))
 		# Only inspector-visible properties — avoids engine-internal state
-		# and category headers. Iter 20 adds response-cap enforcement.
+		# and category headers.
 		if not (usage & PROPERTY_USAGE_EDITOR):
 			continue
 		var pname := str(prop.get("name", ""))
@@ -370,7 +364,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	# MVP strategy: read Godot's default log file (`user://logs/godot.log`).
 	# Godot 4 writes this automatically when `application/run/flush_stdout_on_print`
 	# / logging are enabled (the defaults). Ring-buffer + EngineDebugger
-	# hooks are deferred to iter 11+ if needed — the log file covers the
+	# hooks are a future enhancement — the log file covers the
 	# "what did the game print recently" workflow.
 	var limit := _DEFAULT_LOG_LIMIT
 	if typeof(params) == TYPE_DICTIONARY and params.has("limit"):
@@ -412,7 +406,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	})
 
 
-# ---- Tier 3 signal commands (iter 11 — Mode B mirror of editor handlers) --
+# ---- Signal commands (Mode B mirror of editor handlers) ---------------------
 
 
 # Runtime equivalent of the editor's _resolve_scene_node — uses the LIVE
@@ -500,8 +494,7 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	var source_path: String = str(r["source_path"])
 	var target_path: String = str(r["target_path"])
 	var method_name: String = str(r["method_name"])
-	# I3 idempotency (iter 15 status discriminator). Mirror of the editor
-	# copy in SignalCommands.
+	# Idempotency — mirror of the editor copy in SignalCommands.
 	if source.is_connected(signal_name, callable):
 		_send_result(peer, id, {
 			"success": true,
@@ -545,8 +538,6 @@ func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
 	_send_result(peer, id, {"ok": true})
 
 
-# iter 16: _coerce_value removed — callers use MCPCoerce.coerce_value instead.
-
 
 func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
@@ -574,7 +565,7 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 	_send_result(peer, id, {"ok": true})
 
 
-# ---- Tier 3 playtest commands (iter 12) -----------------------------------
+# ---- Playtest commands ------------------------------------------------------
 
 
 # input.simulate: build an InputEvent from a JSON-friendly {event_type, event_data}
@@ -687,9 +678,9 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 
 
 # game.eval: DANGER — evaluates GDScript via Expression in the running game's
-# context. Gated by FeatureGate (iter 19): dual-gate requires BOTH env var
-# AND ProjectSettings flag. Defence-in-depth: even if the TS catalogue
-# exposes the tool (env var set), this handler blocks unless PS is also on.
+# context. Dual-gated: requires BOTH env var AND ProjectSettings flag.
+# Defence-in-depth: even if the TS catalogue exposes the tool (env var set),
+# this handler blocks unless PS is also on.
 const _GAME_EVAL_LOG_CAP := 256
 
 

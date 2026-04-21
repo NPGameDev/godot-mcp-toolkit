@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Untrusted-content envelope wrapper (I5).
+## Untrusted-content envelope wrapper.
 ##
 ## Wraps user-authored / project-authored content in a nonce-tagged
 ## <untrusted-{nonce}> envelope before it is returned to the LLM.

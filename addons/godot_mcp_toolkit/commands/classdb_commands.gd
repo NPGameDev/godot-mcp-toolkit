@@ -13,9 +13,9 @@ const _MAX_SEARCH_RESULTS := 200
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("classdb.get_info", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_classdb_get_info(parameters), "lite")
+		return _cmd_classdb_get_info(parameters))
 	registry.add("classdb.search", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_classdb_search(parameters), "lite")
+		return _cmd_classdb_search(parameters))
 
 
 # -- Command -----------------------------------------------------------------
@@ -106,7 +106,6 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 	var instantiable_only: bool = bool(parameters.get("instantiable_only", true))
 	var include_global: bool = bool(parameters.get("include_global", true))
 
-	# Validate base_class exists if provided.
 	if base_class != "":
 		var base_exists := ClassDB.class_exists(base_class)
 		if not base_exists:

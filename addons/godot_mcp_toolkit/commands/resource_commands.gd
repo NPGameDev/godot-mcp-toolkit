@@ -16,11 +16,11 @@ const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("resource.load", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_load(parameters), "full")
+		return _cmd_resource_load(parameters))
 	registry.add("resource.write", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_write(parameters), "full")
+		return _cmd_resource_write(parameters))
 	registry.add("resource.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_delete(parameters), "full")
+		return _cmd_resource_delete(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------

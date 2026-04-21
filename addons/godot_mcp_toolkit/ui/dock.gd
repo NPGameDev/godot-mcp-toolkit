@@ -301,10 +301,10 @@ func _confirm_env_var_add(env_var: String) -> void:
 	var dialog := ConfirmationDialog.new()
 	dialog.title = "Add env var to .mcp.json?"
 	dialog.dialog_text = (
-		"Also add %s=1 to .mcp.json?\n(Restart Claude Code to apply)" % env_var)
+		"Also add %s=1 to .mcp.json?\n(Restart your MCP client to apply)" % env_var)
 	dialog.confirmed.connect(func():
 		MCPJsonSync.set_env_var(env_var, true)
-		_toast("MCP: .mcp.json updated — restart Claude Code")
+		_toast("MCP: .mcp.json updated — restart your MCP client")
 		_refresh_features()
 		dialog.queue_free()
 	)
@@ -317,10 +317,10 @@ func _confirm_env_var_remove(env_var: String) -> void:
 	var dialog := ConfirmationDialog.new()
 	dialog.title = "Remove env var from .mcp.json?"
 	dialog.dialog_text = (
-		"Also remove %s from .mcp.json?\n(Restart Claude Code to apply)" % env_var)
+		"Also remove %s from .mcp.json?\n(Restart your MCP client to apply)" % env_var)
 	dialog.confirmed.connect(func():
 		MCPJsonSync.set_env_var(env_var, false)
-		_toast("MCP: .mcp.json updated — restart Claude Code")
+		_toast("MCP: .mcp.json updated — restart your MCP client")
 		_refresh_features()
 		dialog.queue_free()
 	)
@@ -402,7 +402,7 @@ func _apply_power_user_mode(enable: bool) -> void:
 
 	if enable:
 		_toast("MCP: Power User Mode — all features enabled", _TOAST_WARNING,
-			"Restart Claude Code to apply env var changes")
+			"Restart your MCP client to apply env var changes")
 	else:
 		_toast("MCP: Power User Mode disabled")
 
@@ -525,7 +525,7 @@ func _do_write_mcp_json(dest: String, content: String) -> void:
 		return
 	file.store_string(content)
 	file.close()
-	_toast("MCP: .mcp.json updated — restart Claude Code", _TOAST_INFO,
+	_toast("MCP: .mcp.json updated — restart your MCP client", _TOAST_INFO,
 		"Wrote to " + dest)
 
 

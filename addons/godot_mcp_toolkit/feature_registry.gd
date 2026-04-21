@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Table-driven feature registry for the FeatureGate system (iter 19).
+## Table-driven feature registry for the FeatureGate system.
 ##
 ## Each entry declares the env var name, ProjectSettings key, gate type
 ## (dual = env AND PS; single = env OR PS), and a human-readable risk

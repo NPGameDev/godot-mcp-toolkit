@@ -14,19 +14,19 @@ const MAX_SCREENSHOT_SIZE := 4096
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("editor.get_errors", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_get_errors(server, parameters), "lite")
+		return _cmd_editor_get_errors(server, parameters))
 	registry.add("editor.save_scene", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_save_scene(parameters), "lite")
+		return _cmd_editor_save_scene(parameters))
 	registry.add("editor.screenshot", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_screenshot(parameters), "lite")
+		return _cmd_editor_screenshot(parameters))
 	registry.add("editor.reload_scripts", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_reload_scripts(), "full")
+		return _cmd_editor_reload_scripts())
 	registry.add("editor.screenshot_node", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_editor_screenshot_node(parameters), "full")
+		return await _cmd_editor_screenshot_node(parameters))
 	registry.add("editor.get_console", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_get_console(server, parameters), "lite")
+		return _cmd_editor_get_console(server, parameters))
 	registry.add("editor.wait_for_idle", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_wait_for_idle(parameters), "full")
+		return _cmd_editor_wait_for_idle(parameters))
 
 
 # -- Commands -----------------------------------------------------------------

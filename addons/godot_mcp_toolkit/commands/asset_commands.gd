@@ -27,11 +27,11 @@ const IMPORT_MAX_BASE64_BYTES := 5 * 1024 * 1024
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("asset.list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_asset_list(parameters), "full")
+		return _cmd_asset_list(parameters))
 	registry.add("asset.get_dependencies", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_asset_get_dependencies(parameters), "full")
+		return _cmd_asset_get_dependencies(parameters))
 	registry.add("asset.import", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_asset_import(parameters), "full")
+		return _cmd_asset_import(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -93,7 +93,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if max_results < 1 or max_results > 2000:
 		return MCPError.make("INVALID_PARAMS",
-			"max_results must be in [1, 2000] (got %d); iter-20 adds a configurable ceiling" % max_results)
+			"max_results must be in [1, 2000] (got %d)" % max_results)
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if filesystem.is_scanning():
 		return MCPError.make("FILESYSTEM_NOT_READY",

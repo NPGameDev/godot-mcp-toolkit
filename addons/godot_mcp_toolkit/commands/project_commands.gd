@@ -14,9 +14,9 @@ const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("project.get_settings", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_project_get_settings(parameters), "lite")
+		return _cmd_project_get_settings(parameters))
 	registry.add("project.set_setting", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_project_set_setting(parameters), "full")
+		return _cmd_project_set_setting(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -61,7 +61,7 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PARAMS", "key must be a non-empty string")
 	if key.begins_with("mcp/unsafe/"):
 		return MCPError.make("INVALID_PATH",
-			"refusing to write mcp/unsafe/* from project.set_setting (those are the toolkit's own gates — use the FeatureGate system in iter 19); got key=%s" % key)
+			"refusing to write mcp/unsafe/* from project.set_setting (those are the toolkit's own gates — use the FeatureGate system); got key=%s" % key)
 	if key.begins_with("editor/"):
 		return MCPError.make("INVALID_PATH",
 			"refusing to write editor/* ProjectSettings from project.set_setting (editor-session state, not project config); got key=%s" % key)

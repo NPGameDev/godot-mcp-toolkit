@@ -49,15 +49,15 @@ const COMMON_PROPERTIES_BY_CLASS := {
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("node.get_property", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_node_get_property(parameters), "lite")
+		return _cmd_node_get_property(parameters))
 	registry.add("node.set_property", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_node_set_property(parameters), "lite")
+		return _cmd_node_set_property(parameters))
 	registry.add("node.get_property_list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_node_get_property_list(parameters), "lite")
+		return _cmd_node_get_property_list(parameters))
 	registry.add("node.call_method", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_node_call_method(parameters), "full")
+		return _cmd_node_call_method(parameters))
 	registry.add("node.set_script", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_node_set_script(parameters), "full")
+		return _cmd_node_set_script(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -248,7 +248,6 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 
 	var script_path := str(parameters.get("script_path", ""))
 
-	# Detach path: empty script string removes the script.
 	if script_path.is_empty():
 		node.set_script(null)
 		return {"success": true, "path": node_path, "script": null, "properties": []}

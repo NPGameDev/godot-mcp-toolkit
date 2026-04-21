@@ -26,9 +26,9 @@ const MCPRegistryClient = _Hub.MCPRegistryClient
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_commands_loader.gd")
 
-# Mode B (iter 10) — runtime autoload that hosts the game-side WS server on
+# Mode B — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:9090. Registered/unregistered via add_autoload_singleton /
-# remove_autoload_singleton per I12 so end-user installs pick it up when they
+# remove_autoload_singleton so end-user installs pick it up when they
 # tick the plugin. Idempotent: if project.godot already carries the entry
 # (e.g., dogfood), Godot keeps the existing value rather than duplicating.
 const RUNTIME_AUTOLOAD_NAME := "MCPRuntimeServer"
@@ -37,10 +37,10 @@ const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runti
 var _server: Node = null
 var _export_plugin: EditorExportPlugin = null
 var _dock: Control = null
-# iter 23: playtest-end detection for runtime port cleanup.
+# Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
 
-# Menu item keys for teardown symmetry (I12).
+# Menu item keys for teardown symmetry.
 const _MENU_ITEMS: Array[String] = [
 	"MCP: Regenerate Token",
 	"MCP: Show Audit Log",
@@ -49,7 +49,7 @@ const _MENU_ITEMS: Array[String] = [
 	"MCP: Power User Mode",
 ]
 
-# Command Palette key names for teardown symmetry (I12).
+# Command Palette key names for teardown symmetry.
 const _PALETTE_KEYS: Array[String] = [
 	"mcp/regenerate_token",
 	"mcp/show_audit_log",
@@ -67,7 +67,6 @@ func _enter_tree() -> void:
 	_server.name = "MCPServer"
 	_server.set_registry(registry)
 
-	# Register all domain command modules.
 	SceneCommands.register(registry, _server)
 	NodeCommands.register(registry, _server)
 	ScriptCommands.register(registry, _server)
@@ -85,7 +84,7 @@ func _enter_tree() -> void:
 	SaveCommands.register(registry, _server)
 	ClassdbCommands.register(registry, _server)
 
-	# User command extensions (iter 25) — profile-exempt, always loaded.
+	# User command extensions — profile-exempt, always loaded.
 	UserCommandsLoader.load_all(registry, _server)
 
 	_validate_user_whitelist()
@@ -96,26 +95,26 @@ func _enter_tree() -> void:
 	add_child(_server)
 	_server.start()
 
-	# iter 23: register in the system-wide project registry so the TS bridge
-	# can discover us by project path. Must come after start() — port unknown
+	# Register in the system-wide project registry so the TS bridge can
+	# discover us by project path. Must come after start() — port unknown
 	# until _scan_and_listen() runs.
 	var bound_port: int = _server.get_bound_port()
 	if bound_port > 0:
 		MCPRegistryClient.register(bound_port, MCPAuth.get_token_path())
 
-	# -- Bottom-panel dock (iter 21) --
+	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
 	_dock.bind(_server, "user://mcp_audit.log")
 	add_control_to_bottom_panel(_dock, "MCP")
 
-	# -- Menu items (iter 21, I12: each add_tool_menu_item has remove in _exit_tree) --
+	# -- Menu items --
 	add_tool_menu_item("MCP: Regenerate Token", _on_regen_token)
 	add_tool_menu_item("MCP: Show Audit Log", _on_show_audit)
 	add_tool_menu_item("MCP: Open Project Settings", _on_open_settings)
 	add_tool_menu_item("MCP: Write .mcp.json", _on_write_mcp_json)
 	add_tool_menu_item("MCP: Power User Mode", _on_power_user_mode)
 
-	# -- Command Palette (iter 21, I12: each add_command has remove in _exit_tree) --
+	# -- Command Palette --
 	var palette := EditorInterface.get_command_palette()
 	palette.add_command("MCP: Regenerate Token", "mcp/regenerate_token", _on_regen_token)
 	palette.add_command("MCP: Show Audit Log", "mcp/show_audit_log", _on_show_audit)
@@ -123,13 +122,13 @@ func _enter_tree() -> void:
 	palette.add_command("MCP: Write .mcp.json", "mcp/write_mcp_json", _on_write_mcp_json)
 	palette.add_command("MCP: Power User Mode", "mcp/power_user_mode", _on_power_user_mode)
 
-	# -- Per-user EditorSettings (iter 21) --
+	# -- Per-user EditorSettings --
 	_register_editor_settings()
 
 	call_deferred("_check_onboarding")
 
 
-# -- user:// whitelist validation (iter 19c) ------------------------------------
+# -- user:// whitelist validation ----------------------------------------------
 
 
 func _validate_user_whitelist() -> void:
@@ -150,11 +149,11 @@ func _validate_user_whitelist() -> void:
 		return
 
 
-# -- FeatureGate ProjectSettings registration (iter 19) -----------------------
+# -- FeatureGate ProjectSettings registration ---------------------------------
 
 
 func _register_feature_gate_settings() -> void:
-	# allow_all — Power User Mode master switch (iter 21).
+	# allow_all — Power User Mode master switch.
 	if not ProjectSettings.has_setting("mcp/unsafe/allow_all"):
 		ProjectSettings.set_setting("mcp/unsafe/allow_all", false)
 	ProjectSettings.set_initial_value("mcp/unsafe/allow_all", false)
@@ -182,7 +181,7 @@ func _register_feature_gate_settings() -> void:
 		})
 
 
-# -- Onboarding dialog (iter 19) ----------------------------------------------
+# -- Onboarding dialog --------------------------------------------------------
 
 
 const _ONBOARDING_FLAG := "user://mcp_onboarding_v21_shown"
@@ -235,7 +234,7 @@ func _write_onboarding_flag() -> void:
 		f.close()
 
 
-# iter 23: detect playtest end so we can clear runtime_port/runtime_pid from
+# Detect playtest end so we can clear runtime_port/runtime_pid from
 # the registry (belt-and-suspenders with runtime's own _exit_tree cleanup).
 func _process(_delta: float) -> void:
 	var playing := EditorInterface.is_playing_scene()
@@ -245,7 +244,7 @@ func _process(_delta: float) -> void:
 
 
 func _exit_tree() -> void:
-	# I12: teardown symmetry — reverse order of _enter_tree registrations.
+	# Teardown symmetry — reverse order of _enter_tree registrations.
 	# Command Palette.
 	var palette := EditorInterface.get_command_palette()
 	for key in _PALETTE_KEYS:
@@ -255,7 +254,7 @@ func _exit_tree() -> void:
 	for item in _MENU_ITEMS:
 		remove_tool_menu_item(item)
 
-	# Dock (remove + free per I12 note).
+	# Dock (remove + free).
 	if _dock != null:
 		remove_control_from_bottom_panel(_dock)
 		_dock.queue_free()
@@ -281,7 +280,7 @@ func _enable_plugin() -> void:
 func _disable_plugin() -> void:
 	remove_autoload_singleton(RUNTIME_AUTOLOAD_NAME)
 
-	# iter 21: warn about orphaned .mcp.json.
+	# Warn about orphaned .mcp.json.
 	var mcp_json_path := ProjectSettings.globalize_path("res://") + ".mcp.json"
 	if FileAccess.file_exists(mcp_json_path):
 		var dialog := ConfirmationDialog.new()
@@ -321,7 +320,7 @@ func _register_editor_settings() -> void:
 		es.add_property_info({"name": key, "type": settings[key][0]})
 
 
-# -- Menu / Command Palette handlers (iter 21) ----------------------------
+# -- Menu / Command Palette handlers --------------------------------------
 
 
 func _on_regen_token() -> void:

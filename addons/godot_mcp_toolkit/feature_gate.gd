@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## FeatureGate — dual/single gate check for unsafe features (iter 19).
+## FeatureGate — dual/single gate check for unsafe features.
 ##
 ## Dual-gate (RCE-class): requires BOTH env var AND ProjectSettings flag.
 ## Single-gate (lower risk): requires env var OR ProjectSettings flag.

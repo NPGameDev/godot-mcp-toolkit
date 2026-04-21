@@ -19,20 +19,20 @@ const PORT_BASE := 6505
 const PORT_RANGE := 11  # 6505..6515 inclusive
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
-# iter 13: throttle re-listen retries to avoid log spam when the port is
+# Throttle re-listen retries to avoid log spam when the port is
 # briefly held by another process (e.g. a second editor instance, a stale
 # debugger). 60 frames ≈ 1s at 60fps; the bridge's reconnect backoff sits
 # on the same order so we don't pile retries on top of the bridge's.
 const _RELISTEN_FRAME_INTERVAL := 60
-# iter 13c: poll TCPServer/WebSocket peers every Nth frame instead of every
-# frame. Godot 4.4.1 has a race between our per-frame poll and the main-loop
+# Poll TCPServer/WebSocket peers every Nth frame instead of every frame.
+# Godot 4.4.1 has a race between our per-frame poll and the main-loop
 # work triggered by FileSystem-dock interactions; shrinking our collision
 # window ~4x (15Hz vs 60Hz) drops the reproducibility threshold enough that
 # incidental clicks stop crashing the editor in smoke + dogfood usage.
 # Tune lower if latency regresses noticeably; 4 frames ≈ 67ms at 60fps.
 const _POLL_FRAME_INTERVAL := 4
-# iter 18: auth timeout. Peers that don't send a valid auth message
-# within this window are closed with WS close code 1008 (Policy Violation).
+# Auth timeout. Peers that don't send a valid auth message within this
+# window are closed with WS close code 1008 (Policy Violation).
 const _AUTH_TIMEOUT_MS := 2000
 
 var _tcp_server: TCPServer = null
@@ -42,20 +42,16 @@ var _relisten_countdown := 0
 # the first one (with a hint), stay silent during retries, and announce the
 # recovery with the attempt count. Reset on every successful listen.
 var _consecutive_failures := 0
-# iter 13c: counter for _POLL_FRAME_INTERVAL frame-skip.
 var _poll_frame_counter := 0
-# iter 15e: captured at start() so editor.get_console's log-file selection
-# heuristic can prefer post-boot logs over stale rotated ones.
+# Captured at start() so editor.get_console's log-file selection heuristic
+# can prefer post-boot logs over stale rotated ones.
 var _plugin_boot_time: int = 0
-# iter 16: registry-based dispatch — populated by plugin.gd before start().
 var _registry: MCPCommandRegistry = null
-# iter 18: session token + per-peer auth tracking.
 var _session_token: String = ""
 var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers only)
 var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
-# iter 23: the actually-bound port after dynamic scan. -1 = never bound.
+# -1 = never bound.
 var _bound_port: int = -1
-# iter 28b: stash original unfocused sleep so we can restore on disconnect.
 # -1 = not yet saved (no active connections have triggered the override).
 var _original_unfocused_sleep_usec: int = -1
 const _ACTIVE_UNFOCUSED_SLEEP_USEC := 16666  # ≈60 fps while MCP clients connected
@@ -97,7 +93,6 @@ func start() -> void:
 	_plugin_boot_time = int(Time.get_unix_time_from_system())
 	_relisten_countdown = 0
 	_bound_port = -1
-	# iter 18: rotate token each editor session.
 	_session_token = MCPAuth.generate_token()
 	var write_err := MCPAuth.write_token(_session_token)
 	if write_err != OK:
@@ -125,9 +120,9 @@ func stop() -> void:
 	print("[MCPServer] stopped")
 
 
-# iter 23: first-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1 and
-# binds the first free port. Sets _bound_port on success. If no port is
-# available, schedules a throttled retry.
+# First-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1 and binds
+# the first free port. Sets _bound_port on success. If no port is available,
+# schedules a throttled retry.
 func _scan_and_listen() -> void:
 	for offset in range(PORT_RANGE):
 		var candidate := PORT_BASE + offset
@@ -149,9 +144,9 @@ func _scan_and_listen() -> void:
 	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
 
 
-# iter 13 / 23: idempotent re-listen. Called from _process when the
-# TCPServer falls out of the listening state. If we already found a port
-# (_bound_port > 0), retry that specific port. Otherwise re-scan the range.
+# Idempotent re-listen. Called from _process when the TCPServer falls out
+# of the listening state. If we already found a port (_bound_port > 0),
+# retry that specific port. Otherwise re-scan the range.
 func _try_listen() -> void:
 	if _relisten_countdown > 0:
 		_relisten_countdown -= 1
@@ -159,7 +154,6 @@ func _try_listen() -> void:
 	if _bound_port < 0:
 		_scan_and_listen()
 		return
-	# Retry the previously-bound port.
 	if _tcp_server == null:
 		_tcp_server = TCPServer.new()
 	var error := _tcp_server.listen(_bound_port, BIND)
@@ -214,7 +208,7 @@ func _process(_delta: float) -> void:
 			continue
 		if state != WebSocketPeer.STATE_OPEN:
 			continue
-		# iter 18: auth timeout — close peers that haven't authed in time.
+		# Auth timeout — close peers that haven't authed in time.
 		if not _peer_authed.has(peer):
 			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _AUTH_TIMEOUT_MS:
 				peer.close(1008, "auth timeout")
@@ -249,7 +243,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		_send_error(peer, null, -32600, "Invalid Request: top-level must be an object")
 		return
 
-	# iter 18: auth handshake — first message must be {"auth": "<token>"}.
+	# Auth handshake — first message must be {"auth": "<token>"}.
 	if not _peer_authed.has(peer):
 		if MCPAuth.validate(message, _session_token):
 			_peer_authed[peer] = true
@@ -310,7 +304,7 @@ func _send_error(peer: WebSocketPeer, id, code: int, error_message: String) -> v
 	peer.send_text(JSON.stringify(response))
 
 
-# -- Unfocused sleep management (iter 28b) ------------------------------------
+# -- Unfocused sleep management -----------------------------------------------
 # When the editor loses focus, Godot's unfocused_low_processor_mode_sleep_usec
 # (default ~100ms) throttles _process to ~10fps. Since we poll WebSocket in
 # _process, this slows MCP interactions to ~2-3Hz. While authenticated clients

@@ -9,7 +9,7 @@ const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("tilemap.set_cells", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tilemap_set_cells(server, parameters), "full")
+		return _cmd_tilemap_set_cells(server, parameters))
 
 
 # -- Helpers ------------------------------------------------------------------

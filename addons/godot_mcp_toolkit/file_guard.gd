@@ -1,13 +1,13 @@
 @tool
 extends RefCounted
-## Filesystem boundary enforcement (I4).
+## Filesystem boundary enforcement.
 ##
 ## Every command that touches the filesystem calls resolve_safe() to
 ## validate and canonicalize the path before any I/O. Default allows
 ## res:// only; callers opt in to additional prefixes (e.g.
 ## user://screenshots/) via the allowed_prefixes parameter.
 ##
-## resolve_safe_user() (iter 19c) extends access to whitelisted user://
+## resolve_safe_user() extends access to whitelisted user://
 ## subpaths behind the read_user_scope FeatureGate + a plugin-author-
 ## configured whitelist at addons/godot_mcp_toolkit/user_scope_whitelist.json.
 

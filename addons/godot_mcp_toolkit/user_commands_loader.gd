@@ -3,7 +3,7 @@ extends RefCounted
 ## Auto-discovers and loads user command extensions from user_commands/*.gd.
 ##
 ## Each .gd file must provide a static register(registry, server) function
-## that calls registry.add(method, handler, tier) for its commands.
+## that calls registry.add(method, handler) for its commands.
 ## Commands under reserved namespaces are rejected.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
@@ -81,7 +81,7 @@ static func _load_one(filename: String, registry: MCPCommandRegistry, server: No
 
 static func _register_meta(registry: MCPCommandRegistry) -> void:
 	registry.add("meta.user_commands", func(params: Dictionary) -> Dictionary:
-		return _cmd_user_commands(registry, params), "full")
+		return _cmd_user_commands(registry, params))
 
 
 static func _cmd_user_commands(registry: MCPCommandRegistry, _params: Dictionary) -> Dictionary:
@@ -90,6 +90,5 @@ static func _cmd_user_commands(registry: MCPCommandRegistry, _params: Dictionary
 	for method: String in methods:
 		result.append({
 			"method": method,
-			"tier": registry.get_tier(method),
 		})
 	return {"success": true, "commands": result}

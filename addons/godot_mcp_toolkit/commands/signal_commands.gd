@@ -10,11 +10,11 @@ const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 	registry.add("signal.list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_signal_list(parameters), "full")
+		return _cmd_signal_list(parameters))
 	registry.add("signal.manage", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_signal_manage(parameters), "full")
+		return _cmd_signal_manage(parameters))
 	registry.add("signal.emit", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_signal_emit(parameters), "full")
+		return _cmd_signal_emit(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------
