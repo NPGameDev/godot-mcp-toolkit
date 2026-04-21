@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  gdscript-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Godot
+        uses: chickensoft-games/setup-godot@v3
+        with:
+          version: 4.5-stable
+          use-dotnet: false
+
+      # Godot 4.5 changed --check-only to require --script <path>, so the
+      # old project-wide `--check-only` no longer works. Instead, launch
+      # the editor in headless mode and grep output for parse errors.
+      - name: GDScript static validation
+        run: |
+          OUTPUT=$(godot --headless --editor --path . --quit-after 1 2>&1) || true
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qE 'SCRIPT ERROR:|Parse Error:'; then
+            echo ""
+            echo "::error::GDScript parse errors detected (see output above)"
+            exit 1
+          fi
+          echo "GDScript validation passed"

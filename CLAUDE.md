@@ -358,6 +358,16 @@ The server-side exposes:
   evaluated but skipped; the Godot editor's built-in formatting and
   `.editorconfig` provide sufficient consistency for GDScript.
 
+## CI/CD (GitHub Actions)
+
+- **CI** (`.github/workflows/ci.yml`) — runs on push/PR to main. Installs
+  Godot headless via `chickensoft-games/setup-godot`, runs
+  `godot --headless --check-only` for GDScript static validation.
+- **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push.
+  Validates tag matches `plugin.cfg` version, builds the plugin zip via
+  `scripts/build-plugin-release.sh`, and uploads it as a GitHub Release
+  artifact.
+
 ## Dogfood setup (this repo)
 
 This repo root IS a Godot 4.4 project (`project.godot` at root,
