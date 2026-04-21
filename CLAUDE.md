@@ -413,7 +413,12 @@ Both repos (toolkit + server) share a single semver. The version lives in:
 validate sync). Future version bumps change both files and tag both repos
 with the same `vX.Y.Z` tag.
 
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for dev environment setup, testing
+workflow, dependency policy, and PR guidelines.
+
 ## Pointer
 
-Execution plan (all 26 iterations, cross-repo):
+Execution plan (all iterations, cross-repo):
 `<plan-repo>/Plan/ExecutionPlan/00-index.md`.
