@@ -55,6 +55,10 @@ var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers on
 var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
 # iter 23: the actually-bound port after dynamic scan. -1 = never bound.
 var _bound_port: int = -1
+# iter 28b: stash original unfocused sleep so we can restore on disconnect.
+# -1 = not yet saved (no active connections have triggered the override).
+var _original_unfocused_sleep_usec: int = -1
+const _ACTIVE_UNFOCUSED_SLEEP_USEC := 16666  # ≈60 fps while MCP clients connected
 
 
 func set_registry(registry: MCPCommandRegistry) -> void:
@@ -111,6 +115,7 @@ func stop() -> void:
 	_peers.clear()
 	_peer_authed.clear()
 	_peer_connect_ms.clear()
+	_restore_unfocused_sleep()
 	if _tcp_server != null:
 		_tcp_server.stop()
 		_tcp_server = null
@@ -227,6 +232,8 @@ func _process(_delta: float) -> void:
 		_peer_authed.erase(peer)
 		_peer_connect_ms.erase(peer)
 	if had_authed_disconnect:
+		if _peer_authed.size() == 0:
+			_restore_unfocused_sleep()
 		client_disconnected.emit(_peer_authed.size())
 
 
@@ -247,6 +254,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		if MCPAuth.validate(message, _session_token):
 			_peer_authed[peer] = true
 			peer.send_text(JSON.stringify({"authed": true}))
+			if _peer_authed.size() == 1:
+				_lower_unfocused_sleep()
 			client_connected.emit(_peer_authed.size())
 		else:
 			peer.close(1008, "invalid token")
@@ -299,6 +308,33 @@ func _send_error(peer: WebSocketPeer, id, code: int, error_message: String) -> v
 		},
 	}
 	peer.send_text(JSON.stringify(response))
+
+
+# -- Unfocused sleep management (iter 28b) ------------------------------------
+# When the editor loses focus, Godot's unfocused_low_processor_mode_sleep_usec
+# (default ~100ms) throttles _process to ~10fps. Since we poll WebSocket in
+# _process, this slows MCP interactions to ~2-3Hz. While authenticated clients
+# are connected, we lower the sleep to keep ~60fps even unfocused.
+
+const _UNFOCUSED_SLEEP_KEY := "interface/editor/unfocused_low_processor_mode_sleep_usec"
+
+
+func _lower_unfocused_sleep() -> void:
+	var es := EditorInterface.get_editor_settings()
+	if es == null:
+		return
+	_original_unfocused_sleep_usec = int(es.get_setting(_UNFOCUSED_SLEEP_KEY))
+	es.set_setting(_UNFOCUSED_SLEEP_KEY, _ACTIVE_UNFOCUSED_SLEEP_USEC)
+
+
+func _restore_unfocused_sleep() -> void:
+	if _original_unfocused_sleep_usec < 0:
+		return
+	var es := EditorInterface.get_editor_settings()
+	if es == null:
+		return
+	es.set_setting(_UNFOCUSED_SLEEP_KEY, _original_unfocused_sleep_usec)
+	_original_unfocused_sleep_usec = -1
 
 
 # -- UndoRedo helper methods ---------------------------------------------------
