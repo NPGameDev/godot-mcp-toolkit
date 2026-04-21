@@ -20,6 +20,8 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 		return _cmd_script_write(server, parameters), "lite")
 	registry.add("script.delete", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_script_delete(parameters), "full")
+	registry.add("script.check", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_script_check(parameters), "lite")
 
 
 # -- Commands -----------------------------------------------------------------
@@ -153,6 +155,49 @@ static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
 
 
 # -- File I/O helpers (referenced by UndoRedo via server node) ----------------
+
+
+static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
+	var file_path := str(parameters.get("file_path", ""))
+	if file_path == "":
+		return MCPError.make("INVALID_PARAMS", "file_path is required")
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+	var extension := file_path.get_extension().to_lower()
+	if extension != "gd":
+		return MCPError.make("INVALID_PARAMS",
+			"script.check only supports .gd files (got .%s)" % extension)
+	if not FileAccess.file_exists(file_path):
+		return MCPError.make("NOT_FOUND", "no file at %s" % file_path)
+
+	var content := FileAccess.get_file_as_string(file_path)
+	var read_error := FileAccess.get_open_error()
+	if read_error != OK:
+		return MCPError.make("READ_FAILED",
+			"FileAccess error %d reading %s" % [read_error, file_path])
+
+	# Approach B: in-process GDScript parse via reload().
+	# Fast (<100ms), non-blocking. Detailed error messages go to the editor
+	# output — call editor_get_errors afterwards for line-level diagnostics.
+	var script := GDScript.new()
+	script.source_code = content
+	var err := script.reload(false)
+
+	var diagnostics: Array = []
+	if err != OK:
+		diagnostics.append({
+			"line": 0,
+			"severity": "error",
+			"message": "GDScript compile error (code %d). Call editor_get_errors for detailed messages with line numbers." % err,
+		})
+
+	return {
+		"success": true,
+		"file_path": file_path,
+		"valid": err == OK,
+		"diagnostics": diagnostics,
+	}
 
 
 static func _write_file_raw(file_path: String, content: String) -> int:

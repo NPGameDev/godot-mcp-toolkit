@@ -19,16 +19,16 @@ to any MCP client (e.g. Claude Code via the companion
 `@npgamedev/godot-mcp-server` npm package). A runtime server (`127.0.0.1:9090–9105`)
 runs in debug builds for live-game introspection (Mode B).
 
-## Tool catalogue (58 tools — iter 22 profile system + iter 26-27 classdb)
+## Tool catalogue (59 tools — iter 22 profiles + iter 26-28 classdb/diagnostics)
 
 Iter 22 replaces the coarse lite/full flag with profiles + lazy-load groups.
 Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
 
 | Profile      | Visible tools |
 |--------------|--------------|
-| **standard** (default) | 31 core + `enable_tool_group` meta-tool + 3 locked stubs |
-| **minimal** | 10 read-only (code-review mode) |
-| **full**     | All 58 tools at startup |
+| **standard** (default) | 34 core + `enable_tool_group` meta-tool + 3 locked stubs |
+| **minimal** | 13 read-only (code-review mode) |
+| **full**     | All 59 tools at startup |
 | **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
 
 `--lite` → `minimal` with deprecation warning. `GODOT_MCP_READ_ONLY=1`
@@ -53,6 +53,7 @@ strips mutating tools from any profile.
 | `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc`. Overwrites. |
 | `script_read_range`     | Read lines N–M of a script file. |
 | `script_delete`         | Delete `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` (+ `.uid`). |
+| `script_check`          | Validate GDScript file. Returns structured diagnostics (errors/warnings with line numbers). Read-only. |
 | `editor_get_errors`     | Editor-time error tail. Summary-first response. |
 | `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as. |
 | `editor_screenshot`     | Capture the editor viewport; inline image content. |
