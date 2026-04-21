@@ -395,6 +395,16 @@ if you're not intending to commit layout changes.
 See [`DISTRIBUTION.md`](./DISTRIBUTION.md) — covers the AssetLib route, the
 manual-zip route, and the server-side `npm install -g` step.
 
+## Version sync policy
+
+Both repos (toolkit + server) share a single semver. The version lives in:
+- **Toolkit:** `addons/godot_mcp_toolkit/plugin.cfg` → `version=`
+- **Server:** `package.json` → `"version"`
+
+`scripts/get-version.sh` extracts the declared version (CI uses this to
+validate sync). Future version bumps change both files and tag both repos
+with the same `vX.Y.Z` tag.
+
 ## Pointer
 
 Execution plan (all 26 iterations, cross-repo):
