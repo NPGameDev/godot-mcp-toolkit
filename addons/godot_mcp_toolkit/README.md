@@ -143,7 +143,7 @@ file if you need these.
   `EditorInterface.play_*_scene()`. `target` accepts `"main"` (uses
   ProjectSettings `application/run/main_scene`), `"current"` (default —
   currently-edited scene), or any `res://path.tscn`. `wait_for_runtime: true`
-  (default) polls `127.0.0.1:9090` for up to 5s so the agent can chain
+  (default) polls `127.0.0.1:6525` for up to 5s so the agent can chain
   Mode-B runtime RPCs without a separate probe. `ALREADY_PLAYING` if a
   game is already running (stop-then-start is explicit so the agent sees
   the transition).

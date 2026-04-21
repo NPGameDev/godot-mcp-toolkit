@@ -104,6 +104,7 @@ func start() -> void:
 
 
 func stop() -> void:
+	set_process(false)
 	for peer in _peers:
 		if peer != null:
 			peer.close(1000)

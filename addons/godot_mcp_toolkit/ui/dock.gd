@@ -47,6 +47,11 @@ func _ready() -> void:
 	visibility_changed.connect(_on_visibility_changed)
 
 
+func _exit_tree() -> void:
+	if _audit_timer != null:
+		_audit_timer.stop()
+
+
 # ---------------------------------------------------------------------------
 # UI construction (programmatic — all dynamic content)
 # ---------------------------------------------------------------------------

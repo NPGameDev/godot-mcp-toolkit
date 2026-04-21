@@ -27,7 +27,7 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_commands_loader.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
-# 127.0.0.1:9090. Registered/unregistered via add_autoload_singleton /
+# 127.0.0.1:6525. Registered/unregistered via add_autoload_singleton /
 # remove_autoload_singleton so end-user installs pick it up when they
 # tick the plugin. Idempotent: if project.godot already carries the entry
 # (e.g., dogfood), Godot keeps the existing value rather than duplicating.

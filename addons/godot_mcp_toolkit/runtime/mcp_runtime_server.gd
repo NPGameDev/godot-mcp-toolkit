@@ -8,7 +8,7 @@ extends Node
 ## @tool-enabled plugin) AND at runtime (because it's an autoload). We
 ## self-destruct in two cases:
 ##   1. Engine.is_editor_hint() — editor process loaded us, not the game.
-##      Keeping a second WS listener on 9090 while editing is a bug.
+##      Keeping a second WS listener on 6525 while editing is a bug.
 ##   2. not OS.is_debug_build() — release export. Mode B must NOT ship
 ##      to end users' shipped games. This is security-critical.
 
@@ -21,13 +21,13 @@ const MCPFeatureGate = _Hub.MCPFeatureGate
 const MCPScrubber = _Hub.MCPScrubber
 const MCPRegistryClient = _Hub.MCPRegistryClient
 
-const PORT_BASE := 9090
-const PORT_RANGE := 16  # 9090..9105 inclusive
+const PORT_BASE := 6525
+const PORT_RANGE := 16  # 6525..6540 inclusive
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # Throttle re-listen retries. Mirrors mcp_server.gd's editor-side loop.
 # Runtime restarts on F5 each game session, so the typical "missed bind"
-# recoverable case is a stale debug session that hasn't released 9090
+# recoverable case is a stale debug session that hasn't released 6525
 # yet — usually clears in 1-2 frames.
 const _RELISTEN_FRAME_INTERVAL := 60
 const _AUTH_TIMEOUT_MS := 2000
@@ -58,7 +58,7 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		set_process(false)
 		return
-	# Debug-build gate: shipped (release) games must not listen on 9090.
+	# Debug-build gate: shipped (release) games must not listen on 6525.
 	# Same quiescent approach — an empty Node at scene-tree root is cheaper
 	# than the subtle edge cases of auto-freeing during SceneTree setup.
 	if not OS.is_debug_build():
@@ -91,6 +91,7 @@ func _start_server() -> void:
 
 
 func _stop_server() -> void:
+	set_process(false)
 	for peer in _peers:
 		if peer != null:
 			peer.close(1000)

@@ -16,7 +16,7 @@ calling tools, not to agents changing the plugin's internals.
 Runs a localhost WebSocket server inside the Godot editor (dynamic port
 `127.0.0.1:6505–6515`) and exposes scene, node, script, and editor operations
 to any MCP client (e.g. Claude Code via the companion
-`@npgamedev/godot-mcp-server` npm package). A runtime server (`127.0.0.1:9090–9105`)
+`@npgamedev/godot-mcp-server` npm package). A runtime server (`127.0.0.1:6525–6540`)
 runs in debug builds for live-game introspection (Mode B).
 
 ## Tool catalogue (59 tools — iter 22 profiles + iter 26-28 classdb/diagnostics)
@@ -95,7 +95,7 @@ strips mutating tools from any profile.
 ## Multi-project support (iter 23)
 
 Multiple Godot editors can run the plugin simultaneously. Each editor
-dynamically allocates a port from the 6505–6515 range (editor) or 9090–9105
+dynamically allocates a port from the 6505–6515 range (editor) or 6525–6540
 (runtime) and registers itself in a system-wide registry file:
 
 | Platform | Registry path |
