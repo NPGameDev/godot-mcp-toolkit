@@ -350,6 +350,14 @@ The server-side exposes:
 - **Hooks** — middleware pipeline wrapping every tool call. Logging hook
   is always on. Rate limiting via `GODOT_MCP_RATE_LIMIT` env var.
 
+## Code style
+
+- **`.editorconfig`** — tab indent for `.gd`/`.cfg`/`.tres`/`.tscn` (Godot
+  convention), 2-space for `.json`/`.md`, UTF-8, LF line endings.
+- **No external linter/formatter** — gdtoolkit (`gdformat`/`gdlint`) was
+  evaluated but skipped; the Godot editor's built-in formatting and
+  `.editorconfig` provide sufficient consistency for GDScript.
+
 ## Dogfood setup (this repo)
 
 This repo root IS a Godot 4.4 project (`project.godot` at root,
