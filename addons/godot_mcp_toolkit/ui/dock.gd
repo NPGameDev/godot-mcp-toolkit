@@ -30,6 +30,7 @@ var _power_user_btn: Button = null
 # Power User warning.
 var _power_user_warning: Label = null
 
+
 # Settings widgets.
 var _script_cap_spinbox: SpinBox = null
 var _ws_buffer_spinbox: SpinBox = null
@@ -575,22 +576,31 @@ func _confirm_disable_power_user() -> void:
 
 
 func _apply_power_user_mode(enable: bool) -> void:
+	if enable:
+		# Snapshot current per-feature PS state (persisted via ProjectSettings).
+		MCPFeatureGate.snapshot_pre_power_user()
+
 	ProjectSettings.set_setting("mcp_toolkit/unsafe/allow_all", enable)
 
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		ProjectSettings.set_setting(str(entry["ps_key"]), enable)
-
-	if enable and MCPJsonSync.has_mcp_json():
+	if enable:
 		for feature in MCPFeatureRegistry.all_features():
 			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-			MCPJsonSync.set_env_var(str(entry["env_var"]), true)
-	elif enable and not MCPJsonSync.has_mcp_json():
-		_offer_create_mcp_json_for_power_user()
-	elif not enable and MCPJsonSync.has_mcp_json():
-		for feature in MCPFeatureRegistry.all_features():
-			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-			MCPJsonSync.set_env_var(str(entry["env_var"]), false)
+			ProjectSettings.set_setting(str(entry["ps_key"]), true)
+		if MCPJsonSync.has_mcp_json():
+			for feature in MCPFeatureRegistry.all_features():
+				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+		else:
+			_offer_create_mcp_json_for_power_user()
+	else:
+		# Restore previous per-feature PS state from persistent cache.
+		MCPFeatureGate.restore_pre_power_user()
+		if MCPJsonSync.has_mcp_json():
+			# Env vars not cached — clear all; user re-enables individually.
+			for feature in MCPFeatureRegistry.all_features():
+				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
 
 	ProjectSettings.save()
 	_refresh_features()

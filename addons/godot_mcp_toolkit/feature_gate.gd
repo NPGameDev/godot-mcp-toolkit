@@ -22,6 +22,45 @@ static func is_enabled(feature: String) -> bool:
 	return (env_ok and ps_ok) if entry["dual_gate"] else (env_ok or ps_ok)
 
 
+## Persist-backed key for the pre-Power-User feature state cache.
+const _CACHE_KEY := "mcp_toolkit/internal/pre_power_user_cache"
+
+
+## Save current per-feature PS + env-var-in-json state before Power User.
+static func snapshot_pre_power_user() -> void:
+	var cache := {}
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		cache[feature] = {
+			"ps": ProjectSettings.get_setting(str(entry["ps_key"]), false),
+		}
+	ProjectSettings.set_setting(_CACHE_KEY, JSON.stringify(cache))
+
+
+## Restore per-feature PS state from the cache. Returns the cache dict
+## (with "ps" bools) so callers can also restore env vars if needed.
+## Clears the cache after restoring.
+static func restore_pre_power_user() -> Dictionary:
+	var raw = ProjectSettings.get_setting(_CACHE_KEY, "")
+	var cache: Dictionary = {}
+	if typeof(raw) == TYPE_STRING and raw != "":
+		var parsed = JSON.parse_string(raw)
+		if typeof(parsed) == TYPE_DICTIONARY:
+			cache = parsed
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var prev: Dictionary = cache.get(feature, {})
+		ProjectSettings.set_setting(str(entry["ps_key"]), prev.get("ps", false))
+	ProjectSettings.set_setting(_CACHE_KEY, "")
+	return cache
+
+
+## Whether a snapshot exists (i.e. Power User was enabled with cache).
+static func has_power_user_cache() -> bool:
+	var raw = ProjectSettings.get_setting(_CACHE_KEY, "")
+	return typeof(raw) == TYPE_STRING and raw != ""
+
+
 static func disabled_error(feature: String) -> Dictionary:
 	var entry = MCPFeatureRegistry.get_entry(feature)
 	if entry == null:
