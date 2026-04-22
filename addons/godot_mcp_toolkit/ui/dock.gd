@@ -439,7 +439,7 @@ func _refresh_features() -> void:
 		var sync_icon: Label = row["sync_icon"]
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 
-		check.set_pressed_no_signal(MCPFeatureGate.is_enabled(feature))
+		check.set_pressed_no_signal(true if allow_all else MCPFeatureGate.is_enabled(feature))
 
 		var ps_ok: bool = allow_all or ProjectSettings.get_setting(str(entry["ps_key"]), false)
 		var env_ok: bool = OS.get_environment(str(entry["env_var"])) == "1"
@@ -576,6 +576,10 @@ func _confirm_disable_power_user() -> void:
 
 func _apply_power_user_mode(enable: bool) -> void:
 	ProjectSettings.set_setting("mcp_toolkit/unsafe/allow_all", enable)
+
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		ProjectSettings.set_setting(str(entry["ps_key"]), enable)
 
 	if enable and MCPJsonSync.has_mcp_json():
 		for feature in MCPFeatureRegistry.all_features():
