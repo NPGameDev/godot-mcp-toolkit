@@ -11,6 +11,7 @@ config_version=5
 [application]
 
 config/name="Godot MCP Toolkit"
+run/main_scene="uid://bompismuom3fi"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
 
@@ -21,3 +22,8 @@ MCPRuntimeServer="*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
+
+[mcp_toolkit]
+
+feature_gates/power_user_warning="POWER USER MODE ACTIVE — All feature gates enabled. The AI agent has full control: code execution, OS commands, project settings writes, and file access outside res://."
+unsafe/power_user_warning="POWER USER MODE ACTIVE — All feature gates enabled. The AI agent has full control: code execution, OS commands, project settings writes, and file access outside res://."

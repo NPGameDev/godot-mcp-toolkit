@@ -326,12 +326,12 @@ custom MCP tools. Each file must provide a `register(registry, server)` function
 extends RefCounted
 
 static func register(registry, server: Node) -> void:
-    registry.add("mymod.do_thing", func(params: Dictionary) -> Dictionary:
-        return _cmd_do_thing(params), "full")
+	registry.add("mymod.do_thing", func(params: Dictionary) -> Dictionary:
+		return _cmd_do_thing(params), "full")
 
 static func _cmd_do_thing(params: Dictionary) -> Dictionary:
-    # ... your logic here ...
-    return {"success": true, "data": "hello"}
+	# ... your logic here ...
+	return {"success": true, "data": "hello"}
 ```
 
 **Rules:**

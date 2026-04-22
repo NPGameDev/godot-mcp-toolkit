@@ -538,6 +538,7 @@ func _notify_restart_required() -> void:
 		+ "for the changes to take effect.")
 	_restart_dialog.ok_button_text = "OK"
 	_restart_dialog.exclusive = false
+	_restart_dialog.add_button("Restart Editor", true, "restart")
 	_restart_dialog.confirmed.connect(func():
 		_restart_dialog.queue_free()
 		_restart_dialog = null
@@ -545,6 +546,10 @@ func _notify_restart_required() -> void:
 	_restart_dialog.canceled.connect(func():
 		_restart_dialog.queue_free()
 		_restart_dialog = null
+	)
+	_restart_dialog.custom_action.connect(func(action: StringName):
+		if action == &"restart":
+			EditorInterface.restart_editor(true)
 	)
 	EditorInterface.get_base_control().add_child(_restart_dialog)
 	_restart_dialog.popup_centered()

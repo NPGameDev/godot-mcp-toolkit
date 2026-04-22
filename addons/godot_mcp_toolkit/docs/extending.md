@@ -11,12 +11,12 @@ The toolkit supports custom MCP tools via the user commands system. Drop a
 extends RefCounted
 
 static func register(registry, server: Node) -> void:
-    registry.add("mymod.do_thing", func(params: Dictionary) -> Dictionary:
-        return _cmd_do_thing(params))
+	registry.add("mymod.do_thing", func(params: Dictionary) -> Dictionary:
+		return _cmd_do_thing(params))
 
 static func _cmd_do_thing(params: Dictionary) -> Dictionary:
-    # Your logic here
-    return {"success": true, "data": "hello"}
+	# Your logic here
+	return {"success": true, "data": "hello"}
 ```
 
 ### Rules

@@ -138,9 +138,9 @@ Do not submit before iter 20 completes (see the security gate at the top).
    - **License:** `MIT`
    - **Description:** short paragraph — what the plugin does, mention the
      companion `@npgamedev/godot-mcp-server` npm package requirement, link to
-     this repo's README.
+	 this repo's README.
    - **Previews:** 1–3 screenshots (editor with plugin enabled + a Claude Code
-     transcript showing a tool call in flight).
+	 transcript showing a tool call in flight).
 5. Submit. Review is manual, typically 1–5 days.
 6. For each subsequent version, submit again through the same form — AssetLib
    tracks versions but not automatically.
