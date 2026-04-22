@@ -239,6 +239,9 @@ func _register_feature_gate_settings() -> void:
 		ProjectSettings.set_order(ps_key, order_idx)
 		order_idx += 1
 
+	# Power User warning — read-only status display at the end of Feature Gates.
+	_register_power_user_warning()
+
 	# Response-limit settings.
 	_register_basic_int("mcp_toolkit/limits/script_read_cap_kb", 256,
 		"Max script content returned by script.read, in KB. Minimum 64.")
@@ -274,6 +277,32 @@ func _register_basic_int(key: String, default_value: int, hint: String) -> void:
 	})
 
 
+
+const _PU_WARNING_KEY := "mcp_toolkit/feature_gates/power_user_warning"
+const _PU_WARNING_TEXT := (
+	"POWER USER MODE ACTIVE — All feature gates enabled. "
+	+ "The AI agent has full control: code execution, OS commands, "
+	+ "project settings writes, and file access outside res://.")
+
+
+func _register_power_user_warning() -> void:
+	if not ProjectSettings.has_setting(_PU_WARNING_KEY):
+		ProjectSettings.set_setting(_PU_WARNING_KEY, "")
+	ProjectSettings.set_initial_value(_PU_WARNING_KEY, "")
+	ProjectSettings.set_as_basic(_PU_WARNING_KEY, true)
+	ProjectSettings.set_order(_PU_WARNING_KEY, 1000)
+	ProjectSettings.add_property_info({
+		"name": _PU_WARNING_KEY, "type": TYPE_STRING,
+		"hint": PROPERTY_HINT_MULTILINE_TEXT,
+		"hint_string": "Read-only status display — value is managed by the plugin.",
+	})
+	_update_power_user_warning()
+
+
+func _update_power_user_warning() -> void:
+	var enabled: bool = ProjectSettings.get_setting(
+		"mcp_toolkit/feature_gates/power_user_mode", false)
+	ProjectSettings.set_setting(_PU_WARNING_KEY, _PU_WARNING_TEXT if enabled else "")
 
 
 # -- Onboarding dialog --------------------------------------------------------
@@ -356,6 +385,7 @@ func _process(_delta: float) -> void:
 
 
 func _sync_power_user_mode(enable: bool) -> void:
+	_update_power_user_warning()
 	# Guard: skip full sync if the dock already applied this change.
 	if enable and MCPFeatureGate.has_power_user_cache():
 		# Dock already snapshotted + set keys — just refresh UI.
@@ -384,6 +414,7 @@ func _sync_power_user_mode(enable: bool) -> void:
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
 				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+	_update_power_user_warning()
 	ProjectSettings.save()
 	_snapshot_feature_states()
 	if _dock != null:
@@ -400,10 +431,15 @@ func _snapshot_feature_states() -> void:
 
 
 func _poll_feature_states() -> void:
-	# If Power User Mode is active, revert any individual gate changes
-	# made from the ProjectSettings UI and warn the user.
+	# Enforce read-only warning text — revert any user edits immediately.
 	var power_user: bool = ProjectSettings.get_setting(
 		"mcp_toolkit/feature_gates/power_user_mode", false)
+	var expected_warning := _PU_WARNING_TEXT if power_user else ""
+	if ProjectSettings.get_setting(_PU_WARNING_KEY, "") != expected_warning:
+		ProjectSettings.set_setting(_PU_WARNING_KEY, expected_warning)
+
+	# If Power User Mode is active, revert any individual gate changes
+	# made from the ProjectSettings UI and warn the user.
 	if power_user:
 		var reverted := false
 		for feature in MCPFeatureRegistry.all_features():
