@@ -41,6 +41,8 @@ var _dock: Control = null
 var _was_playing: bool = false
 # Power User polling — detect changes from ProjectSettings UI.
 var _last_power_user: bool = false
+# Per-feature polling — detect individual gate changes from ProjectSettings UI.
+var _last_feature_states: Dictionary = {}  # { ps_key: bool }
 
 # Menu item keys for teardown symmetry.
 const _MENU_ITEMS: Array[String] = [
@@ -66,6 +68,7 @@ func _enter_tree() -> void:
 	_register_feature_gate_settings()
 	_last_power_user = ProjectSettings.get_setting(
 		"mcp_toolkit/feature_gates/power_user_mode", false)
+	_snapshot_feature_states()
 
 	var registry := MCPCommandRegistry.new()
 	_server = MCPServer.new()
@@ -368,6 +371,9 @@ func _process(_delta: float) -> void:
 		_last_power_user = power_user
 		_sync_power_user_mode(power_user)
 
+	# Detect individual feature gate changes from ProjectSettings UI.
+	_poll_feature_states()
+
 
 func _sync_power_user_mode(enable: bool) -> void:
 	# Guard: skip if the dock already applied this change (snapshot exists
@@ -395,8 +401,38 @@ func _sync_power_user_mode(enable: bool) -> void:
 				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
 	_update_power_user_warning()
 	ProjectSettings.save()
+	_snapshot_feature_states()
 	if _dock != null:
 		_dock._refresh_features()
+		_dock._notify_restart_required()
+
+
+func _snapshot_feature_states() -> void:
+	_last_feature_states.clear()
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		_last_feature_states[str(entry["ps_key"])] = ProjectSettings.get_setting(
+			str(entry["ps_key"]), false)
+
+
+func _poll_feature_states() -> void:
+	if not MCPJsonSync.has_mcp_json():
+		return
+	var changed := false
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var ps_key: String = entry["ps_key"]
+		var current: bool = ProjectSettings.get_setting(ps_key, false)
+		var prev: bool = _last_feature_states.get(ps_key, false)
+		if current != prev:
+			_last_feature_states[ps_key] = current
+			if entry["dual_gate"]:
+				MCPJsonSync.set_env_var(str(entry["env_var"]), current)
+				changed = true
+	if changed:
+		if _dock != null:
+			_dock._refresh_features()
+			_dock._notify_restart_required()
 
 
 func _exit_tree() -> void:

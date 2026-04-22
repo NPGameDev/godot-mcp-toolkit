@@ -500,51 +500,39 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	ProjectSettings.set_setting(str(entry["ps_key"]), enabled)
 	ProjectSettings.save()
 
-	var state_str := "enabled" if enabled else "disabled"
-	_toast("MCP: %s %s" % [feature, state_str])
-
-	if entry["dual_gate"] and MCPJsonSync.has_mcp_json():
-		var env_var: String = entry["env_var"]
-		var has_env := MCPJsonSync.has_env_var(env_var)
-		if enabled and not has_env:
-			_confirm_env_var_add(env_var)
-		elif not enabled and has_env:
-			_confirm_env_var_remove(env_var)
-	elif entry["dual_gate"] and not MCPJsonSync.has_mcp_json() and enabled:
-		_toast(
-			"No .mcp.json found — use MCP: Write .mcp.json or add %s=1 manually"
-			% entry["env_var"], _TOAST_WARNING)
+	# Auto-sync env var in .mcp.json for dual-gate features.
+	var env_changed := false
+	if entry["dual_gate"]:
+		if MCPJsonSync.has_mcp_json():
+			var env_var: String = entry["env_var"]
+			var has_env := MCPJsonSync.has_env_var(env_var)
+			if enabled and not has_env:
+				MCPJsonSync.set_env_var(env_var, true)
+				env_changed = true
+			elif not enabled and has_env:
+				MCPJsonSync.set_env_var(env_var, false)
+				env_changed = true
+		elif not MCPJsonSync.has_mcp_json() and enabled:
+			_toast(
+				"No .mcp.json found — use MCP Toolkit: Write .mcp.json first"
+				, _TOAST_WARNING)
 
 	_refresh_features()
 
+	if env_changed:
+		_notify_restart_required()
 
-func _confirm_env_var_add(env_var: String) -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "Add env var to .mcp.json?"
+
+## Show a dialog telling the user to restart their MCP client.
+func _notify_restart_required() -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = "Restart Required"
 	dialog.dialog_text = (
-		"Also add %s=1 to .mcp.json?\n(Restart your MCP client to apply)" % env_var)
-	dialog.confirmed.connect(func():
-		MCPJsonSync.set_env_var(env_var, true)
-		_toast("MCP: .mcp.json updated — restart your MCP client")
-		_refresh_features()
-		dialog.queue_free()
-	)
-	dialog.canceled.connect(func(): dialog.queue_free())
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
-
-
-func _confirm_env_var_remove(env_var: String) -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "Remove env var from .mcp.json?"
-	dialog.dialog_text = (
-		"Also remove %s from .mcp.json?\n(Restart your MCP client to apply)" % env_var)
-	dialog.confirmed.connect(func():
-		MCPJsonSync.set_env_var(env_var, false)
-		_toast("MCP: .mcp.json updated — restart your MCP client")
-		_refresh_features()
-		dialog.queue_free()
-	)
+		"Settings and .mcp.json have been updated.\n\n"
+		+ "You must restart your MCP client (e.g. Claude Code)\n"
+		+ "for the changes to take effect.")
+	dialog.ok_button_text = "OK"
+	dialog.confirmed.connect(func(): dialog.queue_free())
 	dialog.canceled.connect(func(): dialog.queue_free())
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
@@ -633,12 +621,7 @@ func _apply_power_user_mode(enable: bool) -> void:
 
 	ProjectSettings.save()
 	_refresh_features()
-
-	if enable:
-		_toast("MCP: Power User Mode — all features enabled", _TOAST_WARNING,
-			"Restart your MCP client to apply env var changes")
-	else:
-		_toast("MCP: Power User Mode disabled")
+	_notify_restart_required()
 
 
 func _offer_create_mcp_json_for_power_user() -> void:
