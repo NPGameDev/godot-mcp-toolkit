@@ -63,6 +63,10 @@ func bind(server: Node, audit_path: String) -> void:
 func _ready() -> void:
 	_build_ui()
 	visibility_changed.connect(_on_visibility_changed)
+	# bind() runs before _ready (node not yet in tree), so its refresh
+	# calls exit early on null widgets. Re-run now that UI exists.
+	_refresh_features()
+	_refresh_status()
 
 
 func _exit_tree() -> void:
