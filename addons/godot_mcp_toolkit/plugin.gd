@@ -201,66 +201,80 @@ func _validate_user_whitelist() -> void:
 
 func _register_feature_gate_settings() -> void:
 	# power_user_mode — master switch, registered first so it displays first.
-	if not ProjectSettings.has_setting("mcp_toolkit/unsafe/power_user_mode"):
-		ProjectSettings.set_setting("mcp_toolkit/unsafe/power_user_mode", false)
-	ProjectSettings.set_initial_value("mcp_toolkit/unsafe/power_user_mode", false)
+	_register_basic_bool("mcp_toolkit/unsafe/power_user_mode", false,
+		"WARNING: Enables ALL feature gates and grants the AI agent "
+		+ "full control — code execution, OS commands, project settings writes, "
+		+ "and file access outside res://. Individual gates sync automatically.")
 	ProjectSettings.set_order("mcp_toolkit/unsafe/power_user_mode", 0)
-	ProjectSettings.add_property_info({
-		"name": "mcp_toolkit/unsafe/power_user_mode",
-		"type": TYPE_BOOL,
-		"hint": PROPERTY_HINT_NONE,
-		"hint_string": "WARNING: Enables ALL feature gates and grants the AI agent "
-			+ "full control — code execution, OS commands, project settings writes, "
-			+ "and file access outside res://. Individual gates sync automatically.",
-	})
 
 	var order_idx := 1
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var ps_key: String = entry["ps_key"]
-		if not ProjectSettings.has_setting(ps_key):
-			ProjectSettings.set_setting(ps_key, false)
-		ProjectSettings.set_initial_value(ps_key, false)
+		var gate_label := "dual-gate: env AND PS" if entry["dual_gate"] else "single-gate: env OR PS"
+		_register_basic_bool(ps_key, false,
+			"DANGER: %s (%s). Default off." % [entry["risk"], gate_label])
 		ProjectSettings.set_order(ps_key, order_idx)
 		order_idx += 1
-		var gate_label := "dual-gate: env AND PS" if entry["dual_gate"] else "single-gate: env OR PS"
-		ProjectSettings.add_property_info({
-			"name": ps_key,
-			"type": TYPE_BOOL,
-			"hint": PROPERTY_HINT_NONE,
-			"hint_string": "DANGER: %s (%s). Default off." % [entry["risk"], gate_label],
-		})
+
+	# Power User warning — visible string at the end of the unsafe section.
+	_update_power_user_warning()
 
 	# Response-limit settings.
-	_register_limit_setting("mcp_toolkit/limits/script_read_cap_kb", 256,
+	_register_basic_int("mcp_toolkit/limits/script_read_cap_kb", 256,
 		"Max script content returned by script.read, in KB. Minimum 64.")
-	_register_limit_setting("mcp_toolkit/limits/ws_buffer_kb", 1024,
+	_register_basic_int("mcp_toolkit/limits/ws_buffer_kb", 1024,
 		"WebSocket per-peer buffer size, in KB. Minimum 256.")
 
 	# Audit log settings.
-	if not ProjectSettings.has_setting("mcp_toolkit/audit/enabled"):
-		ProjectSettings.set_setting("mcp_toolkit/audit/enabled", true)
-	ProjectSettings.set_initial_value("mcp_toolkit/audit/enabled", true)
-	ProjectSettings.add_property_info({
-		"name": "mcp_toolkit/audit/enabled",
-		"type": TYPE_BOOL,
-		"hint": PROPERTY_HINT_NONE,
-		"hint_string": "Enable MCP audit log at user://mcp_audit.log.",
-	})
-	_register_limit_setting("mcp_toolkit/audit/max_size_kb", 1024,
+	_register_basic_bool("mcp_toolkit/audit/enabled", true,
+		"Enable MCP audit log at user://mcp_audit.log.")
+	_register_basic_int("mcp_toolkit/audit/max_size_kb", 1024,
 		"Max audit log size in KB. 0 = unlimited. Log truncates to 50% when exceeded.")
 
 
-func _register_limit_setting(key: String, default_value: int, hint: String) -> void:
+func _register_basic_bool(key: String, default_value: bool, hint: String) -> void:
 	if not ProjectSettings.has_setting(key):
 		ProjectSettings.set_setting(key, default_value)
 	ProjectSettings.set_initial_value(key, default_value)
+	ProjectSettings.set_as_basic(key, true)
 	ProjectSettings.add_property_info({
-		"name": key,
-		"type": TYPE_INT,
-		"hint": PROPERTY_HINT_NONE,
-		"hint_string": hint,
+		"name": key, "type": TYPE_BOOL,
+		"hint": PROPERTY_HINT_NONE, "hint_string": hint,
 	})
+
+
+func _register_basic_int(key: String, default_value: int, hint: String) -> void:
+	if not ProjectSettings.has_setting(key):
+		ProjectSettings.set_setting(key, default_value)
+	ProjectSettings.set_initial_value(key, default_value)
+	ProjectSettings.set_as_basic(key, true)
+	ProjectSettings.add_property_info({
+		"name": key, "type": TYPE_INT,
+		"hint": PROPERTY_HINT_NONE, "hint_string": hint,
+	})
+
+
+const _PU_WARNING_KEY := "mcp_toolkit/unsafe/power_user_warning"
+const _PU_WARNING_TEXT := (
+	"POWER USER MODE ACTIVE — All feature gates enabled. "
+	+ "The AI agent has full control: code execution, OS commands, "
+	+ "project settings writes, and file access outside res://.")
+
+
+func _update_power_user_warning() -> void:
+	var enabled: bool = ProjectSettings.get_setting(
+		"mcp_toolkit/unsafe/power_user_mode", false)
+	if enabled:
+		ProjectSettings.set_setting(_PU_WARNING_KEY, _PU_WARNING_TEXT)
+		ProjectSettings.set_as_basic(_PU_WARNING_KEY, true)
+		ProjectSettings.set_order(_PU_WARNING_KEY, 1000)
+		ProjectSettings.add_property_info({
+			"name": _PU_WARNING_KEY, "type": TYPE_STRING,
+			"hint": PROPERTY_HINT_MULTILINE_TEXT, "hint_string": "",
+		})
+	elif ProjectSettings.has_setting(_PU_WARNING_KEY):
+		ProjectSettings.set_setting(_PU_WARNING_KEY, null)
 
 
 # -- Onboarding dialog --------------------------------------------------------
@@ -363,6 +377,7 @@ func _sync_power_user_mode(enable: bool) -> void:
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
 				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+	_update_power_user_warning()
 	ProjectSettings.save()
 	if _dock != null:
 		_dock._refresh_features()
