@@ -524,18 +524,30 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 
 
 ## Show a dialog telling the user to restart their MCP client.
+## Guards against multiple concurrent dialogs.
+var _restart_dialog: AcceptDialog = null
+
 func _notify_restart_required() -> void:
-	var dialog := AcceptDialog.new()
-	dialog.title = "Restart Required"
-	dialog.dialog_text = (
+	if _restart_dialog != null and is_instance_valid(_restart_dialog):
+		return
+	_restart_dialog = AcceptDialog.new()
+	_restart_dialog.title = "Restart Required"
+	_restart_dialog.dialog_text = (
 		"Settings and .mcp.json have been updated.\n\n"
 		+ "You must restart your MCP client (e.g. Claude Code)\n"
 		+ "for the changes to take effect.")
-	dialog.ok_button_text = "OK"
-	dialog.confirmed.connect(func(): dialog.queue_free())
-	dialog.canceled.connect(func(): dialog.queue_free())
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
+	_restart_dialog.ok_button_text = "OK"
+	_restart_dialog.exclusive = false
+	_restart_dialog.confirmed.connect(func():
+		_restart_dialog.queue_free()
+		_restart_dialog = null
+	)
+	_restart_dialog.canceled.connect(func():
+		_restart_dialog.queue_free()
+		_restart_dialog = null
+	)
+	EditorInterface.get_base_control().add_child(_restart_dialog)
+	_restart_dialog.popup_centered()
 
 
 # ---------------------------------------------------------------------------

@@ -376,10 +376,15 @@ func _process(_delta: float) -> void:
 
 
 func _sync_power_user_mode(enable: bool) -> void:
-	# Guard: skip if the dock already applied this change (snapshot exists
-	# when enabling, or was just cleared when disabling).
+	# Guard: skip if the dock already applied this change.
 	if enable and MCPFeatureGate.has_power_user_cache():
 		# Dock already snapshotted + set keys — just refresh UI.
+		if _dock != null:
+			_dock._refresh_features()
+		return
+	if not enable and not MCPFeatureGate.has_power_user_cache():
+		# Dock already restored + cleared cache — just refresh UI.
+		_snapshot_feature_states()
 		if _dock != null:
 			_dock._refresh_features()
 		return
