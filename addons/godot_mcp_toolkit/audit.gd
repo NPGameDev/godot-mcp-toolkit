@@ -12,6 +12,8 @@ const _LOG_PATH := "user://mcp_audit.log"
 
 
 static func log_call(method: String, parameters: Dictionary) -> void:
+	if not ProjectSettings.get_setting("mcp_toolkit/audit/enabled", true):
+		return
 	var timestamp := Time.get_datetime_string_from_system(true) + "Z"
 	var params_hash := JSON.stringify(parameters).sha256_text().substr(0, 12)
 	var line := "%s\t%s\t%s\n" % [timestamp, method, params_hash]
@@ -28,4 +30,28 @@ static func log_call(method: String, parameters: Dictionary) -> void:
 		return
 	file.store_string(line)
 	file.flush()
+	var size := file.get_length()
 	file.close()
+	var max_kb: int = ProjectSettings.get_setting("mcp_toolkit/audit/max_size_kb", 1024)
+	if max_kb > 0 and size > max_kb * 1024:
+		_truncate_log(max_kb * 1024)
+
+
+static func _truncate_log(max_bytes: int) -> void:
+	var file := FileAccess.open(_LOG_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var size := file.get_length()
+	if size <= max_bytes:
+		file.close()
+		return
+	# Keep the most recent ~50% of the limit so we don't truncate on every write.
+	var keep := max_bytes / 2
+	file.seek(size - keep)
+	file.get_line()  # discard partial first line
+	var remaining := file.get_as_text()
+	file.close()
+	var out := FileAccess.open(_LOG_PATH, FileAccess.WRITE)
+	if out != null:
+		out.store_string(remaining)
+		out.close()

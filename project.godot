@@ -22,3 +22,12 @@ MCPRuntimeServer="*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
+
+[mcp]
+
+unsafe/allow_all=true
+
+[mcp_toolkit]
+
+unsafe/allow_all=true
+unsafe/allow_outbound_http=true

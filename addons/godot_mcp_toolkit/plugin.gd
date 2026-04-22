@@ -186,6 +186,19 @@ func _register_feature_gate_settings() -> void:
 	_register_limit_setting("mcp_toolkit/limits/ws_buffer_kb", 1024,
 		"WebSocket per-peer buffer size, in KB. Minimum 256.")
 
+	# Audit log settings.
+	if not ProjectSettings.has_setting("mcp_toolkit/audit/enabled"):
+		ProjectSettings.set_setting("mcp_toolkit/audit/enabled", true)
+	ProjectSettings.set_initial_value("mcp_toolkit/audit/enabled", true)
+	ProjectSettings.add_property_info({
+		"name": "mcp_toolkit/audit/enabled",
+		"type": TYPE_BOOL,
+		"hint": PROPERTY_HINT_NONE,
+		"hint_string": "Enable MCP audit log at user://mcp_audit.log.",
+	})
+	_register_limit_setting("mcp_toolkit/audit/max_size_kb", 1024,
+		"Max audit log size in KB. 0 = unlimited. Log truncates to 50% when exceeded.")
+
 
 func _register_limit_setting(key: String, default_value: int, hint: String) -> void:
 	if not ProjectSettings.has_setting(key):

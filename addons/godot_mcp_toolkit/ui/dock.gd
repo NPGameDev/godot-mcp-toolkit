@@ -199,6 +199,30 @@ func _build_ui() -> void:
 	audit_header.add_theme_font_size_override("font_size", 14)
 	add_child(audit_header)
 
+	var audit_settings_row := HBoxContainer.new()
+	add_child(audit_settings_row)
+
+	var audit_enabled_check := CheckBox.new()
+	audit_enabled_check.text = "Enabled"
+	audit_enabled_check.button_pressed = ProjectSettings.get_setting(
+		"mcp_toolkit/audit/enabled", true)
+	audit_enabled_check.toggled.connect(_on_audit_enabled_toggled)
+	audit_settings_row.add_child(audit_enabled_check)
+
+	var audit_size_label := Label.new()
+	audit_size_label.text = "  Max KB:"
+	audit_settings_row.add_child(audit_size_label)
+
+	var audit_size_spin := SpinBox.new()
+	audit_size_spin.min_value = 0
+	audit_size_spin.max_value = 10240
+	audit_size_spin.step = 128
+	audit_size_spin.value = ProjectSettings.get_setting(
+		"mcp_toolkit/audit/max_size_kb", 1024)
+	audit_size_spin.tooltip_text = "0 = unlimited"
+	audit_size_spin.value_changed.connect(_on_audit_max_size_changed)
+	audit_settings_row.add_child(audit_size_spin)
+
 	_audit_scroll = ScrollContainer.new()
 	_audit_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_audit_scroll.custom_minimum_size.y = 80
@@ -715,6 +739,16 @@ func _on_script_cap_changed(value: float) -> void:
 func _on_ws_buffer_changed(value: float) -> void:
 	var clamped := maxi(256, int(value))
 	ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb", clamped)
+	ProjectSettings.save()
+
+
+func _on_audit_enabled_toggled(enabled: bool) -> void:
+	ProjectSettings.set_setting("mcp_toolkit/audit/enabled", enabled)
+	ProjectSettings.save()
+
+
+func _on_audit_max_size_changed(value: float) -> void:
+	ProjectSettings.set_setting("mcp_toolkit/audit/max_size_kb", int(value))
 	ProjectSettings.save()
 
 
