@@ -265,11 +265,13 @@ func _build_ui() -> void:
 
 	var view_log_btn := Button.new()
 	view_log_btn.text = "View Audit Log"
+	view_log_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	view_log_btn.pressed.connect(show_audit_dialog)
 	audit_btns.add_child(view_log_btn)
 
 	var clear_log_btn := Button.new()
 	clear_log_btn.text = "Clear Audit Log"
+	clear_log_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	clear_log_btn.pressed.connect(_on_clear_audit_log)
 	audit_btns.add_child(clear_log_btn)
 
