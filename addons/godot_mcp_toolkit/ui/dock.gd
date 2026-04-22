@@ -647,8 +647,15 @@ func show_audit_dialog() -> void:
 	if FileAccess.file_exists(path):
 		var file := FileAccess.open(path, FileAccess.READ)
 		if file != null:
-			log_text = file.get_as_text()
+			var full_text := file.get_as_text()
 			file.close()
+			var lines := full_text.split("\n")
+			if lines.size() > 100:
+				var tail := lines.slice(lines.size() - 100)
+				log_text = "\n".join(tail)
+				log_text += "\n\n... Showing last 100 lines. Open the file to view the full log."
+			else:
+				log_text = full_text
 	if log_text.strip_edges().is_empty():
 		log_text = "(audit log is empty)"
 
