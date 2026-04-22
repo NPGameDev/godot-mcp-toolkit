@@ -42,11 +42,11 @@ var _was_playing: bool = false
 
 # Menu item keys for teardown symmetry.
 const _MENU_ITEMS: Array[String] = [
-	"MCP: Regenerate Token",
-	"MCP: Show Audit Log",
-	"MCP: Open Project Settings",
-	"MCP: Write .mcp.json",
-	"MCP: Power User Mode",
+	"MCP Toolkit: Regenerate Token",
+	"MCP Toolkit: Show Audit Log",
+	"MCP Toolkit: Open Project Settings",
+	"MCP Toolkit: Write .mcp.json",
+	"MCP Toolkit: Power User Mode",
 ]
 
 # Command Palette key names for teardown symmetry.
@@ -105,22 +105,22 @@ func _enter_tree() -> void:
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
 	_dock.bind(_server, "user://mcp_audit.log")
-	add_control_to_bottom_panel(_dock, "MCP")
+	add_control_to_bottom_panel(_dock, "MCP Toolkit")
 
 	# -- Menu items --
-	add_tool_menu_item("MCP: Regenerate Token", _on_regen_token)
-	add_tool_menu_item("MCP: Show Audit Log", _on_show_audit)
-	add_tool_menu_item("MCP: Open Project Settings", _on_open_settings)
-	add_tool_menu_item("MCP: Write .mcp.json", _on_write_mcp_json)
-	add_tool_menu_item("MCP: Power User Mode", _on_power_user_mode)
+	add_tool_menu_item("MCP Toolkit: Regenerate Token", _on_regen_token)
+	add_tool_menu_item("MCP Toolkit: Show Audit Log", _on_show_audit)
+	add_tool_menu_item("MCP Toolkit: Open Project Settings", _on_open_settings)
+	add_tool_menu_item("MCP Toolkit: Write .mcp.json", _on_write_mcp_json)
+	add_tool_menu_item("MCP Toolkit: Power User Mode", _on_power_user_mode)
 
 	# -- Command Palette --
 	var palette := EditorInterface.get_command_palette()
-	palette.add_command("MCP: Regenerate Token", "mcp/regenerate_token", _on_regen_token)
-	palette.add_command("MCP: Show Audit Log", "mcp/show_audit_log", _on_show_audit)
-	palette.add_command("MCP: Open Project Settings", "mcp/open_settings", _on_open_settings)
-	palette.add_command("MCP: Write .mcp.json", "mcp/write_mcp_json", _on_write_mcp_json)
-	palette.add_command("MCP: Power User Mode", "mcp/power_user_mode", _on_power_user_mode)
+	palette.add_command("MCP Toolkit: Regenerate Token", "mcp/regenerate_token", _on_regen_token)
+	palette.add_command("MCP Toolkit: Show Audit Log", "mcp/show_audit_log", _on_show_audit)
+	palette.add_command("MCP Toolkit: Open Project Settings", "mcp/open_settings", _on_open_settings)
+	palette.add_command("MCP Toolkit: Write .mcp.json", "mcp/write_mcp_json", _on_write_mcp_json)
+	palette.add_command("MCP Toolkit: Power User Mode", "mcp/power_user_mode", _on_power_user_mode)
 
 	# -- Per-user EditorSettings --
 	_register_editor_settings()
