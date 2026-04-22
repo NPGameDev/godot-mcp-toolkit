@@ -376,7 +376,9 @@ func _process(_delta: float) -> void:
 
 
 func _sync_power_user_mode(enable: bool) -> void:
-	# Guard: skip if the dock already applied this change.
+	# Always update the PS warning text regardless of who triggered the change.
+	_update_power_user_warning()
+	# Guard: skip full sync if the dock already applied this change.
 	if enable and MCPFeatureGate.has_power_user_cache():
 		# Dock already snapshotted + set keys — just refresh UI.
 		if _dock != null:
