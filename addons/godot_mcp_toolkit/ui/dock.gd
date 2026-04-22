@@ -38,15 +38,8 @@ var _feature_lock_warning: Label = null
 var _script_cap_spinbox: SpinBox = null
 var _ws_buffer_spinbox: SpinBox = null
 
-# Info/Help panel widgets.
-var _info_scroll: ScrollContainer = null
-var _info_container: VBoxContainer = null
-var _info_toggle_btn: Button = null
-var _connection_label: Label = null
-var _profile_label: Label = null
-var _tool_count_label: Label = null
-var _version_label: Label = null
-var _tool_list_container: VBoxContainer = null
+# Info/Help dialog (populated on demand).
+var _info_dialog: AcceptDialog = null
 
 # Audit widgets.
 var _audit_container: VBoxContainer = null
@@ -289,16 +282,16 @@ func _build_ui() -> void:
 	clear_btn.pressed.connect(_on_clear_audit_view)
 	audit_btns.add_child(clear_btn)
 
-	# -- Bottom stack (Limits + Actions + Info/Help) --------------------------
-	var bottom := VBoxContainer.new()
-	bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	lower_split.add_child(bottom)
+	# -- Bottom stack (Security & Limits + Info button) -----------------------
+	var bottom_section := _make_section("Security & Response Limits")
+	bottom_section.size_flags_vertical = 0  # fixed height
+	lower_split.add_child(bottom_section)
+	var lc: VBoxContainer = bottom_section.get_meta("content")
 
-	# Response Limits
-	var limits_section := _make_section("Response Limits")
-	limits_section.size_flags_vertical = 0  # fixed height
-	bottom.add_child(limits_section)
-	var lc: VBoxContainer = limits_section.get_meta("content")
+	var regen_btn := Button.new()
+	regen_btn.text = "Regenerate Token"
+	regen_btn.pressed.connect(_on_regen_token)
+	lc.add_child(regen_btn)
 
 	var cap_row := HBoxContainer.new()
 	lc.add_child(cap_row)
@@ -330,103 +323,10 @@ func _build_ui() -> void:
 	_ws_buffer_spinbox.value_changed.connect(_on_ws_buffer_changed)
 	ws_row.add_child(_ws_buffer_spinbox)
 
-	# Actions
-	var action_row := HBoxContainer.new()
-	bottom.add_child(action_row)
-
-	var regen_btn := Button.new()
-	regen_btn.text = "Regenerate Token"
-	regen_btn.pressed.connect(_on_regen_token)
-	action_row.add_child(regen_btn)
-
-	# Info / Help (collapsible)
-	_info_toggle_btn = Button.new()
-	_info_toggle_btn.text = "Info / Help [+]"
-	_info_toggle_btn.pressed.connect(_on_info_toggle_pressed)
-	bottom.add_child(_info_toggle_btn)
-
-	_info_scroll = ScrollContainer.new()
-	_info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_info_scroll.visible = false
-	bottom.add_child(_info_scroll)
-
-	_info_container = VBoxContainer.new()
-	_info_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_info_scroll.add_child(_info_container)
-
-	_connection_label = Label.new()
-	_connection_label.text = "Connection: ..."
-	_connection_label.add_theme_font_size_override("font_size", 11)
-	_info_container.add_child(_connection_label)
-
-	_profile_label = Label.new()
-	_profile_label.text = "Profile: ..."
-	_profile_label.add_theme_font_size_override("font_size", 11)
-	_info_container.add_child(_profile_label)
-
-	_tool_count_label = Label.new()
-	_tool_count_label.text = "Tools: ..."
-	_tool_count_label.add_theme_font_size_override("font_size", 11)
-	_info_container.add_child(_tool_count_label)
-
-	_version_label = Label.new()
-	_version_label.text = "Version: ..."
-	_version_label.add_theme_font_size_override("font_size", 11)
-	_info_container.add_child(_version_label)
-
-	var multi_header := Label.new()
-	multi_header.text = "Multi-Instance Multiplayer"
-	multi_header.add_theme_font_size_override("font_size", 12)
-	_info_container.add_child(multi_header)
-
-	var multi_info := Label.new()
-	multi_info.text = (
-		"A: Two copies (git worktree) - SUPPORTED\n"
-		+ "B: Built-in multi-instance run - MOSTLY SUPPORTED\n"
-		+ "C: Same dir, two editors - NOT SUPPORTED\n"
-		+ "See addons/godot_mcp_toolkit/docs/multi-instance.md for full details.")
-	multi_info.add_theme_font_size_override("font_size", 11)
-	multi_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_info_container.add_child(multi_info)
-
-	var tool_header := Label.new()
-	tool_header.text = "Registered Tools"
-	tool_header.add_theme_font_size_override("font_size", 12)
-	_info_container.add_child(tool_header)
-
-	var tool_scroll := ScrollContainer.new()
-	tool_scroll.custom_minimum_size.y = int(100 * scale)
-	_info_container.add_child(tool_scroll)
-	_tool_list_container = VBoxContainer.new()
-	_tool_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tool_scroll.add_child(_tool_list_container)
-
-	var links_row := HBoxContainer.new()
-	_info_container.add_child(links_row)
-
-	var github_btn := Button.new()
-	github_btn.text = "GitHub"
-	github_btn.pressed.connect(func():
-		OS.shell_open("https://github.com/NPGameDev/godot-mcp-toolkit"))
-	links_row.add_child(github_btn)
-
-	var issues_btn := Button.new()
-	issues_btn.text = "Issues"
-	issues_btn.pressed.connect(func():
-		OS.shell_open("https://github.com/NPGameDev/godot-mcp-toolkit/issues"))
-	links_row.add_child(issues_btn)
-
-	var server_btn := Button.new()
-	server_btn.text = "Server Repo"
-	server_btn.pressed.connect(func():
-		OS.shell_open("https://github.com/NPGameDev/godot-mcp-server"))
-	links_row.add_child(server_btn)
-
-	var contrib_btn := Button.new()
-	contrib_btn.text = "Contributing"
-	contrib_btn.pressed.connect(func():
-		OS.shell_open("https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/CONTRIBUTING.md"))
-	links_row.add_child(contrib_btn)
+	var info_btn := Button.new()
+	info_btn.text = "Info / Help"
+	info_btn.pressed.connect(_show_info_dialog)
+	lc.add_child(info_btn)
 
 	# -- Audit poll timer (visibility-gated) --
 	_audit_timer = Timer.new()
@@ -490,7 +390,6 @@ func _refresh_status() -> void:
 	if _power_user_warning != null:
 		_power_user_warning.visible = (profile == "full")
 	_refresh_runtime_status()
-	_refresh_info_panel()
 
 
 func _refresh_runtime_status() -> void:
@@ -911,76 +810,141 @@ func _on_audit_max_size_changed(value: float) -> void:
 
 
 # ---------------------------------------------------------------------------
-# Info / Help panel
+# Info / Help popup
 # ---------------------------------------------------------------------------
 
-func _on_info_toggle_pressed() -> void:
-	if _info_scroll == null:
+func _show_info_dialog() -> void:
+	if _info_dialog != null and is_instance_valid(_info_dialog):
+		_info_dialog.popup_centered()
 		return
-	_info_scroll.visible = not _info_scroll.visible
-	if _info_toggle_btn != null:
-		_info_toggle_btn.text = "Info / Help [-]" \
-			if _info_scroll.visible else "Info / Help [+]"
-	if _info_scroll.visible:
-		_refresh_info_panel()
 
+	_info_dialog = AcceptDialog.new()
+	_info_dialog.title = "MCP Toolkit — Info / Help"
+	_info_dialog.ok_button_text = "Close"
+	_info_dialog.exclusive = false
+	_info_dialog.min_size = Vector2i(520, 460)
+	_info_dialog.confirmed.connect(func():
+		_info_dialog.queue_free()
+		_info_dialog = null
+	)
+	_info_dialog.canceled.connect(func():
+		_info_dialog.queue_free()
+		_info_dialog = null
+	)
 
-func _refresh_info_panel() -> void:
-	if _info_scroll == null or not _info_scroll.visible:
-		return
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(500, 400)
+	_info_dialog.add_child(scroll)
+
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(vbox)
+
+	# -- Connection info --
+	_add_info_header(vbox, "Connection")
 	var profile := _read_mcp_profile()
 	var display := _display_profile_name(profile)
-
 	if _server != null and _server.is_listening():
 		var port: int = _server.get_bound_port()
 		var peers: int = _server.get_authed_peer_count()
-		_connection_label.text = "Connection: 127.0.0.1:%d · %d peer%s" % [
-			port, peers, "" if peers == 1 else "s"]
+		_add_info_row(vbox, "Address", "127.0.0.1:%d" % port)
+		_add_info_row(vbox, "Peers", "%d connected" % peers)
 	else:
-		_connection_label.text = "Connection: not listening"
+		_add_info_row(vbox, "Address", "not listening")
+	_add_info_row(vbox, "Profile", display)
 
-	_profile_label.text = "Profile: %s" % display
-
-	if _server != null and _server.has_method("get_command_methods"):
-		var methods: Array = _server.get_command_methods()
-		_tool_count_label.text = "Tools: %d registered (plugin-side)" % methods.size()
-	else:
-		_tool_count_label.text = "Tools: (server not ready)"
-
+	# -- Version --
 	var plugin_ver := _get_plugin_version()
 	var vi := Engine.get_version_info()
 	var godot_ver := "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]]
-	_version_label.text = "Plugin: v%s · Godot %s" % [plugin_ver, godot_ver]
+	_add_info_row(vbox, "Plugin", "v%s" % plugin_ver)
+	_add_info_row(vbox, "Godot", godot_ver)
 
-	_refresh_tool_list()
+	# -- Registered tools --
+	_add_info_header(vbox, "Registered Tools")
+	if _server != null and _server.has_method("get_command_methods"):
+		var methods: Array = _server.get_command_methods()
+		methods.sort()
+		var groups: Dictionary = {}
+		for method in methods:
+			var parts := str(method).split(".", true, 1)
+			var domain: String = parts[0] if parts.size() > 0 else "other"
+			if not groups.has(domain):
+				groups[domain] = []
+			groups[domain].append(str(method))
+		var domain_keys: Array = groups.keys()
+		domain_keys.sort()
+		_add_info_row(vbox, "Total", "%d tools" % methods.size())
+		for domain in domain_keys:
+			var tools: Array = groups[domain]
+			var lbl := Label.new()
+			lbl.text = "  %s (%d): %s" % [
+				str(domain).capitalize(), tools.size(),
+				", ".join(PackedStringArray(tools))]
+			lbl.add_theme_font_size_override("font_size", 11)
+			lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			vbox.add_child(lbl)
+	else:
+		_add_info_row(vbox, "Status", "server not ready")
+
+	# -- Multi-instance support --
+	_add_info_header(vbox, "Multi-Instance Multiplayer")
+	var multi := Label.new()
+	multi.text = (
+		"A:  Two copies via git worktree — FULLY SUPPORTED\n"
+		+ "     Each editor gets its own project root, registry entry, and port.\n\n"
+		+ "B:  Built-in multi-instance run (F5 + multiple windows) — MOSTLY SUPPORTED\n"
+		+ "     Runtime server available; editor MCP commands limited to the host.\n\n"
+		+ "C:  Same directory, two editors — NOT SUPPORTED\n"
+		+ "     Port collision and registry overwrite; use Pattern A instead.\n\n"
+		+ "See addons/godot_mcp_toolkit/docs/multi-instance.md for full details.")
+	multi.add_theme_font_size_override("font_size", 11)
+	multi.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(multi)
+
+	# -- Links --
+	_add_info_header(vbox, "Links")
+	var links_row := HBoxContainer.new()
+	vbox.add_child(links_row)
+	for pair in [
+		["GitHub", "https://github.com/NPGameDev/godot-mcp-toolkit"],
+		["Issues", "https://github.com/NPGameDev/godot-mcp-toolkit/issues"],
+		["Server Repo", "https://github.com/NPGameDev/godot-mcp-server"],
+		["Contributing", "https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/CONTRIBUTING.md"],
+	]:
+		var btn := Button.new()
+		btn.text = pair[0]
+		var url: String = pair[1]
+		btn.pressed.connect(func(): OS.shell_open(url))
+		links_row.add_child(btn)
+
+	EditorInterface.get_base_control().add_child(_info_dialog)
+	_info_dialog.popup_centered()
 
 
-func _refresh_tool_list() -> void:
-	if _tool_list_container == null:
-		return
-	for child in _tool_list_container.get_children():
-		child.queue_free()
-	if _server == null or not _server.has_method("get_command_methods"):
-		return
-	var methods: Array = _server.get_command_methods()
-	methods.sort()
-	var groups: Dictionary = {}
-	for method in methods:
-		var parts := str(method).split(".", true, 1)
-		var domain: String = parts[0] if parts.size() > 0 else "other"
-		if not groups.has(domain):
-			groups[domain] = []
-		groups[domain].append(str(method))
-	var domain_keys: Array = groups.keys()
-	domain_keys.sort()
-	for domain in domain_keys:
-		var tools: Array = groups[domain]
-		var lbl := Label.new()
-		lbl.text = "%s: %s" % [str(domain).capitalize(), ", ".join(
-			PackedStringArray(tools))]
-		lbl.add_theme_font_size_override("font_size", 10)
-		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_tool_list_container.add_child(lbl)
+func _add_info_header(parent: VBoxContainer, title: String) -> void:
+	parent.add_child(HSeparator.new())
+	var lbl := Label.new()
+	lbl.text = title
+	lbl.add_theme_font_size_override("font_size", 13)
+	parent.add_child(lbl)
+
+
+func _add_info_row(parent: VBoxContainer, key: String, value: String) -> void:
+	var row := HBoxContainer.new()
+	parent.add_child(row)
+	var k := Label.new()
+	k.text = key + ":"
+	k.custom_minimum_size.x = 80
+	k.add_theme_font_size_override("font_size", 12)
+	row.add_child(k)
+	var v := Label.new()
+	v.text = value
+	v.add_theme_font_size_override("font_size", 12)
+	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(v)
 
 
 func _get_plugin_version() -> String:
