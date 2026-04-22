@@ -8,6 +8,7 @@ extends VBoxContainer
 const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
 const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -22,6 +23,7 @@ var _audit_timer: Timer = null
 var _status_label: Label = null
 var _peer_label: Label = null
 var _activity_label: Label = null
+var _runtime_label: Label = null
 
 # Feature rows: { feature_name: { check: CheckBox, sync_icon: Label } }
 var _feature_rows: Dictionary = {}
@@ -100,6 +102,12 @@ func _build_ui() -> void:
 	_activity_label = Label.new()
 	_activity_label.text = "Last activity: —"
 	add_child(_activity_label)
+
+	_runtime_label = Label.new()
+	_runtime_label.text = "Runtime: not running"
+	_runtime_label.add_theme_font_size_override("font_size", 11)
+	_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	add_child(_runtime_label)
 
 	_power_user_warning = Label.new()
 	_power_user_warning.text = (
@@ -414,7 +422,24 @@ func _refresh_status() -> void:
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
 	if _power_user_warning != null:
 		_power_user_warning.visible = (profile == "full")
+	_refresh_runtime_status()
 	_refresh_info_panel()
+
+
+func _refresh_runtime_status() -> void:
+	if _runtime_label == null:
+		return
+	if EditorInterface.is_playing_scene():
+		var rt_port := MCPRegistryClient.get_runtime_port()
+		if rt_port > 0:
+			_runtime_label.text = "Runtime: listening on 127.0.0.1:%d" % rt_port
+			_runtime_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
+		else:
+			_runtime_label.text = "Runtime: game running, waiting for port..."
+			_runtime_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	else:
+		_runtime_label.text = "Runtime: not running (start playtest with F5)"
+		_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 
 
 ## Read GODOT_MCP_PROFILE from .mcp.json env block (server-side setting).
@@ -637,6 +662,7 @@ func _offer_create_mcp_json_for_power_user() -> void:
 # ---------------------------------------------------------------------------
 
 func _refresh_audit_tail() -> void:
+	_refresh_runtime_status()
 	if _audit_container == null:
 		return
 	var path := _audit_path
