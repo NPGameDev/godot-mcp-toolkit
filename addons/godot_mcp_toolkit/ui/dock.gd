@@ -172,7 +172,7 @@ func _build_ui() -> void:
 	_script_cap_spinbox.max_value = 4096
 	_script_cap_spinbox.step = 64
 	_script_cap_spinbox.value = ProjectSettings.get_setting(
-		"mcp/limits/script_read_cap_kb", 256)
+		"mcp_toolkit/limits/script_read_cap_kb", 256)
 	_script_cap_spinbox.value_changed.connect(_on_script_cap_changed)
 	cap_row.add_child(_script_cap_spinbox)
 
@@ -187,7 +187,7 @@ func _build_ui() -> void:
 	_ws_buffer_spinbox.max_value = 8192
 	_ws_buffer_spinbox.step = 256
 	_ws_buffer_spinbox.value = ProjectSettings.get_setting(
-		"mcp/limits/ws_buffer_kb", 1024)
+		"mcp_toolkit/limits/ws_buffer_kb", 1024)
 	_ws_buffer_spinbox.value_changed.connect(_on_ws_buffer_changed)
 	ws_row.add_child(_ws_buffer_spinbox)
 
@@ -400,7 +400,7 @@ func _read_mcp_profile() -> String:
 func _refresh_features() -> void:
 	if _power_user_btn == null:
 		return
-	var allow_all: bool = ProjectSettings.get_setting("mcp/unsafe/allow_all", false)
+	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/unsafe/allow_all", false)
 	_power_user_btn.text = "Disable Power User Mode" if allow_all else "Enable All (Power User)"
 
 	for feature in _feature_rows:
@@ -428,7 +428,7 @@ func _refresh_features() -> void:
 				sync_icon.visible = true
 				sync_icon.tooltip_text = (
 					"Env var set but ProjectSettings disabled"
-					+ " — enable in Project Settings -> mcp/unsafe/"
+					+ " — enable in Project Settings -> mcp_toolkit/unsafe/"
 				)
 
 
@@ -495,7 +495,7 @@ func _confirm_env_var_remove(env_var: String) -> void:
 # ---------------------------------------------------------------------------
 
 func _on_power_user_pressed() -> void:
-	var allow_all: bool = ProjectSettings.get_setting("mcp/unsafe/allow_all", false)
+	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/unsafe/allow_all", false)
 	if allow_all:
 		_confirm_disable_power_user()
 	else:
@@ -545,7 +545,7 @@ func _confirm_disable_power_user() -> void:
 
 
 func _apply_power_user_mode(enable: bool) -> void:
-	ProjectSettings.set_setting("mcp/unsafe/allow_all", enable)
+	ProjectSettings.set_setting("mcp_toolkit/unsafe/allow_all", enable)
 
 	if enable and MCPJsonSync.has_mcp_json():
 		for feature in MCPFeatureRegistry.all_features():
@@ -708,13 +708,13 @@ func _display_profile_name(profile: String) -> String:
 
 func _on_script_cap_changed(value: float) -> void:
 	var clamped := maxi(64, int(value))
-	ProjectSettings.set_setting("mcp/limits/script_read_cap_kb", clamped)
+	ProjectSettings.set_setting("mcp_toolkit/limits/script_read_cap_kb", clamped)
 	ProjectSettings.save()
 
 
 func _on_ws_buffer_changed(value: float) -> void:
 	var clamped := maxi(256, int(value))
-	ProjectSettings.set_setting("mcp/limits/ws_buffer_kb", clamped)
+	ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb", clamped)
 	ProjectSettings.save()
 
 

@@ -154,11 +154,11 @@ func _validate_user_whitelist() -> void:
 
 func _register_feature_gate_settings() -> void:
 	# allow_all — Power User Mode master switch.
-	if not ProjectSettings.has_setting("mcp/unsafe/allow_all"):
-		ProjectSettings.set_setting("mcp/unsafe/allow_all", false)
-	ProjectSettings.set_initial_value("mcp/unsafe/allow_all", false)
+	if not ProjectSettings.has_setting("mcp_toolkit/unsafe/allow_all"):
+		ProjectSettings.set_setting("mcp_toolkit/unsafe/allow_all", false)
+	ProjectSettings.set_initial_value("mcp_toolkit/unsafe/allow_all", false)
 	ProjectSettings.add_property_info({
-		"name": "mcp/unsafe/allow_all",
+		"name": "mcp_toolkit/unsafe/allow_all",
 		"type": TYPE_BOOL,
 		"hint": PROPERTY_HINT_NONE,
 		"hint_string": "DANGER: Enables PS side of ALL feature gates. "
@@ -181,9 +181,9 @@ func _register_feature_gate_settings() -> void:
 		})
 
 	# Response-limit settings.
-	_register_limit_setting("mcp/limits/script_read_cap_kb", 256,
+	_register_limit_setting("mcp_toolkit/limits/script_read_cap_kb", 256,
 		"Max script content returned by script.read, in KB. Minimum 64.")
-	_register_limit_setting("mcp/limits/ws_buffer_kb", 1024,
+	_register_limit_setting("mcp_toolkit/limits/ws_buffer_kb", 1024,
 		"WebSocket per-peer buffer size, in KB. Minimum 256.")
 
 
@@ -223,7 +223,7 @@ func _check_onboarding() -> void:
 		+ "  Default profile. Advanced features off. Enable individually\n"
 		+ "  via the MCP dock or Project Settings.\n\n"
 		+ "Configure Individually:\n"
-		+ "  Opens Project Settings -> mcp/unsafe/ to pick features.\n\n"
+		+ "  Opens Project Settings -> mcp_toolkit/unsafe/ to pick features.\n\n"
 		+ "Power User Mode:\n"
 		+ "  Enable ALL features and set profile to Power User.\n"
 		+ "  Includes tools that can modify project settings, execute\n"
@@ -336,8 +336,8 @@ func _disable_plugin() -> void:
 func _register_editor_settings() -> void:
 	var es := EditorInterface.get_editor_settings()
 	var settings := {
-		"mcp/personal/dock_default_visible": [TYPE_BOOL, true],
-		"mcp/personal/audit_log_tail_lines": [TYPE_INT, 50],
+		"mcp_toolkit/personal/dock_default_visible": [TYPE_BOOL, true],
+		"mcp_toolkit/personal/audit_log_tail_lines": [TYPE_INT, 50],
 	}
 	for key in settings:
 		if not es.has_setting(key):
@@ -364,11 +364,11 @@ func _on_show_audit() -> void:
 
 func _on_open_settings() -> void:
 	# No public API to open Project Settings to a specific section.
-	print("[MCP] Navigate to: Project -> Project Settings -> Advanced -> mcp/unsafe/")
+	print("[MCP] Navigate to: Project -> Project Settings -> Advanced -> mcp_toolkit/unsafe/")
 	var toaster = EditorInterface.get_editor_toaster()
 	if toaster != null:
 		toaster.push_toast(
-			"Project -> Project Settings -> Advanced -> mcp/unsafe/", 0,
+			"Project -> Project Settings -> Advanced -> mcp_toolkit/unsafe/", 0,
 			"Enable 'Advanced Settings' to see the MCP feature gates")
 
 

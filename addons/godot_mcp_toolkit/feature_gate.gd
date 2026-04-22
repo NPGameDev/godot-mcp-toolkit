@@ -4,7 +4,7 @@ extends RefCounted
 ##
 ## Dual-gate (RCE-class): requires BOTH env var AND ProjectSettings flag.
 ## Single-gate (lower risk): requires env var OR ProjectSettings flag.
-## Explicit deny (mcp/unsafe/deny_<feature>) always wins.
+## Explicit deny (mcp_toolkit/unsafe/deny_<feature>) always wins.
 
 const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
 
@@ -14,9 +14,9 @@ static func is_enabled(feature: String) -> bool:
 	if entry == null:
 		return false
 	# Explicit deny always wins.
-	if ProjectSettings.get_setting("mcp/unsafe/deny_" + feature, false):
+	if ProjectSettings.get_setting("mcp_toolkit/unsafe/deny_" + feature, false):
 		return false
-	var allow_all: bool = ProjectSettings.get_setting("mcp/unsafe/allow_all", false)
+	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/unsafe/allow_all", false)
 	var ps_ok: bool = allow_all or ProjectSettings.get_setting(str(entry["ps_key"]), false)
 	var env_ok := OS.get_environment(str(entry["env_var"])) == "1"
 	return (env_ok and ps_ok) if entry["dual_gate"] else (env_ok or ps_ok)

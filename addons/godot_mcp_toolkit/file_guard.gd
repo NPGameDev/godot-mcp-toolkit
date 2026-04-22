@@ -63,7 +63,7 @@ static func resolve_safe_user(path: String, mode: String) -> Dictionary:
 		return {
 			"ok": false,
 			"error_code": "USER_SCOPE_DISABLED",
-			"error_message": "user:// access is disabled; enable via env GODOT_MCP_ALLOW_USER_SCOPE=1 AND Project Settings mcp/unsafe/allow_user_scope=true",
+			"error_message": "user:// access is disabled; enable via env GODOT_MCP_ALLOW_USER_SCOPE=1 AND Project Settings mcp_toolkit/unsafe/allow_user_scope=true",
 		}
 	# Reject .. segments — directory traversal.
 	for segment in path.replace("\\", "/").split("/"):

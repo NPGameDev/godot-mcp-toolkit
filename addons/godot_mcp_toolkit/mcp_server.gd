@@ -194,7 +194,7 @@ func _process(_delta: float) -> void:
 	while _tcp_server.is_connection_available():
 		var stream := _tcp_server.take_connection()
 		var peer := WebSocketPeer.new()
-		var buffer_kb: int = ProjectSettings.get_setting("mcp/limits/ws_buffer_kb", 1024)
+		var buffer_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
 		peer.inbound_buffer_size = buffer_kb * 1024
 		peer.outbound_buffer_size = buffer_kb * 1024
 		var accept_error := peer.accept_stream(stream)

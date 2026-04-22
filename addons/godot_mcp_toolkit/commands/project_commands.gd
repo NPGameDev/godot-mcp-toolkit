@@ -59,9 +59,9 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	var key := str(parameters.get("key", ""))
 	if key.is_empty():
 		return MCPError.make("INVALID_PARAMS", "key must be a non-empty string")
-	if key.begins_with("mcp/unsafe/"):
+	if key.begins_with("mcp_toolkit/"):
 		return MCPError.make("INVALID_PATH",
-			"refusing to write mcp/unsafe/* from project.set_setting (those are the toolkit's own gates — use the FeatureGate system); got key=%s" % key)
+			"refusing to write mcp_toolkit/* from project.set_setting (those are the toolkit's own settings — use the FeatureGate system or dock UI); got key=%s" % key)
 	if key.begins_with("editor/"):
 		return MCPError.make("INVALID_PATH",
 			"refusing to write editor/* ProjectSettings from project.set_setting (editor-session state, not project config); got key=%s" % key)
