@@ -309,7 +309,7 @@ func _build_ui() -> void:
 		"A: Two copies (git worktree) - SUPPORTED\n"
 		+ "B: Built-in multi-instance run - MOSTLY SUPPORTED\n"
 		+ "C: Same dir, two editors - NOT SUPPORTED\n"
-		+ "See docs/multi-instance.md for full details.")
+		+ "See addons/godot_mcp_toolkit/docs/multi-instance.md for full details.")
 	multi_info.add_theme_font_size_override("font_size", 11)
 	multi_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_info_container.add_child(multi_info)
