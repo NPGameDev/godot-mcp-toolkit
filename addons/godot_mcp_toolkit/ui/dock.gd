@@ -1,9 +1,10 @@
 @tool
 extends VBoxContainer
-## MCP bottom-panel dock — signal-driven status, polled audit log.
+## MCP bottom-panel dock — signal-driven status with polled runtime label.
 ##
-## Created and bound by plugin.gd. Signal-driven for server status
-## (no polling delay); visibility-gated Timer for audit log tail.
+## Created and bound by plugin.gd. Server status is signal-driven
+## (no polling delay); a lightweight timer polls the runtime label
+## during playtests so it updates without requiring server events.
 
 const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
 const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
@@ -43,6 +44,9 @@ var _info_dialog: AcceptDialog = null
 # Audit log dialog (populated on demand).
 var _audit_dialog: AcceptDialog = null
 
+# Lightweight timer for runtime-status polling during playtests.
+var _runtime_timer: Timer = null
+
 
 func bind(server: Node, audit_path: String) -> void:
 	_server = server
@@ -56,17 +60,27 @@ func bind(server: Node, audit_path: String) -> void:
 
 func _ready() -> void:
 	_build_ui()
-	visibility_changed.connect(_on_visibility_changed)
 	# bind() runs before _ready (node not yet in tree), so its refresh
 	# calls exit early on null widgets. Re-run now that UI exists.
 	_refresh_features()
 	_refresh_status()
+	# Lightweight timer so runtime label updates during playtests without
+	# requiring server events (e.g. port discovery, playtest end).
+	_runtime_timer = Timer.new()
+	_runtime_timer.wait_time = 1.0
+	_runtime_timer.timeout.connect(_refresh_runtime_status)
+	add_child(_runtime_timer)
+	_runtime_timer.start()
 
 
 func _exit_tree() -> void:
-	if _audit_dialog != null and is_instance_valid(_audit_dialog):
-		_audit_dialog.queue_free()
-		_audit_dialog = null
+	for dialog in [_audit_dialog, _info_dialog, _pu_lock_dialog, _restart_dialog]:
+		if dialog != null and is_instance_valid(dialog):
+			dialog.queue_free()
+	_audit_dialog = null
+	_info_dialog = null
+	_pu_lock_dialog = null
+	_restart_dialog = null
 
 
 # ---------------------------------------------------------------------------
@@ -346,10 +360,6 @@ func _on_command_received(method: String) -> void:
 		_activity_label.text = "Last activity: %s" % method
 
 
-func _on_visibility_changed() -> void:
-	pass
-
-
 # ---------------------------------------------------------------------------
 # Status refresh
 # ---------------------------------------------------------------------------
@@ -417,7 +427,7 @@ func _refresh_features() -> void:
 		var sync_icon: Label = row["sync_icon"]
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 
-		check.set_pressed_no_signal(true if allow_all else MCPFeatureGate.is_enabled(feature))
+		check.set_pressed_no_signal(true if allow_all else ProjectSettings.get_setting(str(entry["ps_key"]), false))
 		check.disabled = allow_all
 		if allow_all:
 			check.tooltip_text = "Disable Power User Mode to toggle individual gates"
@@ -688,7 +698,7 @@ func show_audit_dialog() -> void:
 		_audit_dialog = null
 	)
 
-	var open_file_btn := _audit_dialog.add_button("Open File", true, "open_file")
+	_audit_dialog.add_button("Open File", true, "open_file")
 	_audit_dialog.custom_action.connect(func(action: StringName):
 		if action == "open_file":
 			var global_path := ProjectSettings.globalize_path(path)
@@ -724,14 +734,24 @@ func show_audit_dialog() -> void:
 
 
 func _on_clear_audit_log() -> void:
-	var path := _audit_path
-	if path.is_empty():
-		path = "user://addons/godot_mcp_toolkit/mcp_audit.log"
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file != null:
-		file.store_string("")
-		file.close()
-	_toast("Audit log cleared")
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Clear Audit Log?"
+	dialog.dialog_text = "This will permanently delete all audit log entries."
+	dialog.ok_button_text = "Clear"
+	dialog.confirmed.connect(func():
+		var path := _audit_path
+		if path.is_empty():
+			path = "user://addons/godot_mcp_toolkit/mcp_audit.log"
+		var file := FileAccess.open(path, FileAccess.WRITE)
+		if file != null:
+			file.store_string("")
+			file.close()
+		_toast("Audit log cleared")
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(func(): dialog.queue_free())
+	EditorInterface.get_base_control().add_child(dialog)
+	dialog.popup_centered()
 
 
 # ---------------------------------------------------------------------------

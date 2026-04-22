@@ -217,14 +217,10 @@ func _migrate_stale_settings() -> void:
 				ProjectSettings.set_setting("mcp_toolkit/feature_gates/power_user_mode", true)
 			ProjectSettings.set_setting(old_key, null)
 			removed += 1
-	# Remove power_user_warning display keys — warning now lives only in the dock.
-	for warn_key in [
-		"mcp_toolkit/unsafe/power_user_warning",
-		"mcp_toolkit/feature_gates/power_user_warning",
-	]:
-		if ProjectSettings.has_setting(warn_key):
-			ProjectSettings.set_setting(warn_key, null)
-			removed += 1
+	# Remove stale power_user_warning from old unsafe/ namespace.
+	if ProjectSettings.has_setting("mcp_toolkit/unsafe/power_user_warning"):
+		ProjectSettings.set_setting("mcp_toolkit/unsafe/power_user_warning", null)
+		removed += 1
 	# Remove internal cache from ProjectSettings — now stored in user:// file.
 	if ProjectSettings.has_setting("mcp_toolkit/internal/pre_power_user_cache"):
 		ProjectSettings.set_setting("mcp_toolkit/internal/pre_power_user_cache", null)
@@ -581,7 +577,6 @@ func _register_editor_settings() -> void:
 	var es := EditorInterface.get_editor_settings()
 	var settings := {
 		"mcp_toolkit/personal/dock_default_visible": [TYPE_BOOL, true],
-		"mcp_toolkit/personal/audit_log_tail_lines": [TYPE_INT, 50],
 	}
 	for key in settings:
 		if not es.has_setting(key):
