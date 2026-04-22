@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Append-only MCP audit log at user://mcp_audit.log.
+## Append-only MCP audit log at user://addons/godot_mcp_toolkit/mcp_audit.log.
 ##
 ## Each tool dispatch writes one line:
 ##   <ISO8601Z>\t<method>\t<params_sha256_hex[:12]>
@@ -8,7 +8,7 @@ extends RefCounted
 ## Opened and flushed per write for crash safety. Invoked by
 ## CommandRegistry.call_command before handler dispatch.
 
-const _LOG_PATH := "user://mcp_audit.log"
+const _LOG_PATH := "user://addons/godot_mcp_toolkit/mcp_audit.log"
 
 
 static func log_call(method: String, parameters: Dictionary) -> void:
@@ -23,6 +23,10 @@ static func log_call(method: String, parameters: Dictionary) -> void:
 		if file != null:
 			file.seek_end()
 	else:
+		# Ensure directory exists on first write.
+		var dir := DirAccess.open("user://")
+		if dir != null and not dir.dir_exists("addons/godot_mcp_toolkit"):
+			dir.make_dir_recursive("addons/godot_mcp_toolkit")
 		file = FileAccess.open(_LOG_PATH, FileAccess.WRITE)
 	if file == null:
 		push_warning("MCP audit: could not open %s (err %d)" % [

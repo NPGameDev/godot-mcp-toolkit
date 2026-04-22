@@ -23,7 +23,7 @@ static func is_enabled(feature: String) -> bool:
 
 
 ## File-backed cache for pre-Power-User feature states.
-const _CACHE_PATH := "user://mcp_power_user_cache.json"
+const _CACHE_PATH := "user://addons/godot_mcp_toolkit/mcp_power_user_cache.json"
 
 
 ## Save current per-feature PS state before Power User.

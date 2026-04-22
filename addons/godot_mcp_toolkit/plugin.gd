@@ -64,6 +64,7 @@ const _PALETTE_KEYS: Array[String] = [
 
 
 func _enter_tree() -> void:
+	_migrate_user_data_paths()
 	_migrate_stale_settings()
 	_register_feature_gate_settings()
 	_last_power_user = ProjectSettings.get_setting(
@@ -112,7 +113,7 @@ func _enter_tree() -> void:
 
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
-	_dock.bind(_server, "user://mcp_audit.log")
+	_dock.bind(_server, "user://addons/godot_mcp_toolkit/mcp_audit.log")
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
 
 	# -- Menu items --
@@ -141,6 +142,42 @@ func _enter_tree() -> void:
 
 const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+
+
+func _migrate_user_data_paths() -> void:
+	# Ensure the namespaced user:// directory exists.
+	var dir := DirAccess.open("user://")
+	if dir != null and not dir.dir_exists("addons/godot_mcp_toolkit"):
+		dir.make_dir_recursive("addons/godot_mcp_toolkit")
+
+	# Move files from user:// root to user://addons/godot_mcp_toolkit/.
+	var migrations := [
+		["user://mcp_audit.log", "user://addons/godot_mcp_toolkit/mcp_audit.log"],
+		["user://mcp_power_user_cache.json", "user://addons/godot_mcp_toolkit/mcp_power_user_cache.json"],
+		["user://mcp_onboarding_v35_shown", "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"],
+	]
+	# Token files are per-worktree (user://mcp_token_<hash>).
+	var project_path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
+	var suffix := project_path.sha256_text().substr(0, 12)
+	migrations.append([
+		"user://mcp_token_%s" % suffix,
+		"user://addons/godot_mcp_toolkit/mcp_token_%s" % suffix,
+	])
+
+	var moved := 0
+	for pair in migrations:
+		var old_path: String = pair[0]
+		var new_path: String = pair[1]
+		if FileAccess.file_exists(old_path) and not FileAccess.file_exists(new_path):
+			var content := FileAccess.get_file_as_bytes(old_path)
+			var out := FileAccess.open(new_path, FileAccess.WRITE)
+			if out != null:
+				out.store_buffer(content)
+				out.close()
+				DirAccess.remove_absolute(old_path)
+				moved += 1
+	if moved > 0:
+		print("[MCP] Migrated %d file(s) to user://addons/godot_mcp_toolkit/" % moved)
 
 
 func _migrate_stale_settings() -> void:
@@ -250,7 +287,7 @@ func _register_feature_gate_settings() -> void:
 
 	# Audit log settings.
 	_register_basic_bool("mcp_toolkit/audit/enabled", true,
-		"Enable MCP audit log at user://mcp_audit.log.")
+		"Enable MCP audit log at user://addons/godot_mcp_toolkit/mcp_audit.log.")
 	_register_basic_int("mcp_toolkit/audit/max_size_kb", 1024,
 		"Max audit log size in KB. 0 = unlimited. Log truncates to 50% when exceeded.")
 
@@ -308,7 +345,7 @@ func _update_power_user_warning() -> void:
 # -- Onboarding dialog --------------------------------------------------------
 
 
-const _ONBOARDING_FLAG := "user://mcp_onboarding_v35_shown"
+const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"
 
 
 func _check_onboarding() -> void:
@@ -568,7 +605,7 @@ func _on_show_audit() -> void:
 	if _dock != null:
 		_dock.show_audit_dialog()
 	else:
-		var global_path := ProjectSettings.globalize_path("user://mcp_audit.log")
+		var global_path := ProjectSettings.globalize_path("user://addons/godot_mcp_toolkit/mcp_audit.log")
 		OS.shell_open(global_path)
 
 

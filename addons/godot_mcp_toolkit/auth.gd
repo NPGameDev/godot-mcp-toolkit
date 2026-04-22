@@ -3,8 +3,9 @@ extends RefCounted
 ## Session-token authentication for the MCP WebSocket transport.
 ##
 ## On each server start a fresh 32-byte hex token is generated, written
-## to user://mcp_token (or GODOT_MCP_TOKEN_PATH), and required as the
-## first WebSocket message from every connecting client.
+## to user://addons/godot_mcp_toolkit/mcp_token_<hash> (or
+## GODOT_MCP_TOKEN_PATH), and required as the first WebSocket message
+## from every connecting client.
 
 
 ## Generate a fresh 64-char hex token (32 random bytes).
@@ -22,7 +23,7 @@ static func get_token_path() -> String:
 		return env_path
 	var project_path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
 	var suffix := project_path.sha256_text().substr(0, 12)
-	return "user://mcp_token_%s" % suffix
+	return "user://addons/godot_mcp_toolkit/mcp_token_%s" % suffix
 
 
 ## Write token to disk. Returns OK or an error code.
