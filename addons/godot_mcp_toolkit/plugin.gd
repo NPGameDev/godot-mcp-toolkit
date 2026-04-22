@@ -423,6 +423,26 @@ func _snapshot_feature_states() -> void:
 
 
 func _poll_feature_states() -> void:
+	# If Power User Mode is active, revert any individual gate changes
+	# made from the ProjectSettings UI and warn the user.
+	var power_user: bool = ProjectSettings.get_setting(
+		"mcp_toolkit/feature_gates/power_user_mode", false)
+	if power_user:
+		var reverted := false
+		for feature in MCPFeatureRegistry.all_features():
+			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+			var ps_key: String = entry["ps_key"]
+			var current: bool = ProjectSettings.get_setting(ps_key, false)
+			if not current:
+				ProjectSettings.set_setting(ps_key, true)
+				_last_feature_states[ps_key] = true
+				reverted = true
+		if reverted:
+			ProjectSettings.save()
+			if _dock != null:
+				_dock._warn_power_user_locked()
+		return
+
 	if not MCPJsonSync.has_mcp_json():
 		return
 	var changed := false

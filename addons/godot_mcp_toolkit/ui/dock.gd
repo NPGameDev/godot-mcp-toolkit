@@ -29,8 +29,9 @@ var _runtime_label: Label = null
 var _feature_rows: Dictionary = {}
 var _power_user_btn: Button = null
 
-# Power User warning.
+# Power User warnings.
 var _power_user_warning: Label = null
+var _feature_lock_warning: Label = null
 
 
 # Settings widgets.
@@ -126,6 +127,15 @@ func _build_ui() -> void:
 	feat_header.text = "Feature Gates"
 	feat_header.add_theme_font_size_override("font_size", 14)
 	add_child(feat_header)
+
+	_feature_lock_warning = Label.new()
+	_feature_lock_warning.text = (
+		"Power User Mode is active — disable it to toggle individual gates.")
+	_feature_lock_warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_feature_lock_warning.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	_feature_lock_warning.add_theme_font_size_override("font_size", 11)
+	_feature_lock_warning.visible = false
+	add_child(_feature_lock_warning)
 
 	var feat_scroll := ScrollContainer.new()
 	feat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -462,6 +472,8 @@ func _refresh_features() -> void:
 		return
 	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/feature_gates/power_user_mode", false)
 	_power_user_btn.text = "Disable Power User Mode" if allow_all else "Enable All (Power User)"
+	if _feature_lock_warning != null:
+		_feature_lock_warning.visible = allow_all
 
 	for feature in _feature_rows:
 		var row: Dictionary = _feature_rows[feature]
@@ -470,6 +482,11 @@ func _refresh_features() -> void:
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 
 		check.set_pressed_no_signal(true if allow_all else MCPFeatureGate.is_enabled(feature))
+		check.disabled = allow_all
+		if allow_all:
+			check.tooltip_text = "Disable Power User Mode to toggle individual gates"
+		else:
+			check.tooltip_text = str(entry["risk"])
 
 		var ps_ok: bool = allow_all or ProjectSettings.get_setting(str(entry["ps_key"]), false)
 		var env_ok: bool = OS.get_environment(str(entry["env_var"])) == "1"
@@ -493,6 +510,14 @@ func _refresh_features() -> void:
 
 
 func _on_feature_toggled(enabled: bool, feature: String) -> void:
+	# Block individual toggles while Power User Mode is active.
+	var allow_all: bool = ProjectSettings.get_setting(
+		"mcp_toolkit/feature_gates/power_user_mode", false)
+	if allow_all:
+		var row: Dictionary = _feature_rows[feature]
+		row["check"].set_pressed_no_signal(true)
+		_warn_power_user_locked()
+		return
 	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 	if entry == null:
 		return
@@ -521,6 +546,32 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 
 	if env_changed:
 		_notify_restart_required()
+
+
+## Warn the user that individual gates are locked while Power User Mode is on.
+var _pu_lock_dialog: AcceptDialog = null
+
+func _warn_power_user_locked() -> void:
+	if _pu_lock_dialog != null and is_instance_valid(_pu_lock_dialog):
+		return
+	_pu_lock_dialog = AcceptDialog.new()
+	_pu_lock_dialog.title = "Power User Mode Active"
+	_pu_lock_dialog.dialog_text = (
+		"Individual feature gates cannot be changed while\n"
+		+ "Power User Mode is enabled.\n\n"
+		+ "Disable Power User Mode first to toggle gates individually.")
+	_pu_lock_dialog.ok_button_text = "OK"
+	_pu_lock_dialog.exclusive = false
+	_pu_lock_dialog.confirmed.connect(func():
+		_pu_lock_dialog.queue_free()
+		_pu_lock_dialog = null
+	)
+	_pu_lock_dialog.canceled.connect(func():
+		_pu_lock_dialog.queue_free()
+		_pu_lock_dialog = null
+	)
+	EditorInterface.get_base_control().add_child(_pu_lock_dialog)
+	_pu_lock_dialog.popup_centered()
 
 
 ## Show a dialog telling the user to restart their MCP client.
