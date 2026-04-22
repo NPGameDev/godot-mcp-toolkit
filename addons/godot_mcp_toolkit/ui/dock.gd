@@ -81,15 +81,64 @@ func _exit_tree() -> void:
 # UI construction (programmatic — all dynamic content)
 # ---------------------------------------------------------------------------
 
+
+func _make_section_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	var scale := EditorInterface.get_editor_scale()
+	# Sample the editor Panel stylebox for a theme-adaptive base color.
+	var base := Color(0.22, 0.22, 0.22)
+	var theme := EditorInterface.get_editor_theme()
+	if theme:
+		var sb = theme.get_stylebox("panel", "Panel")
+		if sb is StyleBoxFlat:
+			base = sb.bg_color
+	style.bg_color = base.darkened(0.12)
+	style.border_color = base.lightened(0.15)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(int(3 * scale))
+	style.content_margin_left = 8.0 * scale
+	style.content_margin_right = 8.0 * scale
+	style.content_margin_top = 6.0 * scale
+	style.content_margin_bottom = 6.0 * scale
+	return style
+
+
+## Build a styled section card with a header and content VBox.
+## Access the content VBox via  section.get_meta("content").
+func _make_section(title: String) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _make_section_style())
+	panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
+
+	var outer := VBoxContainer.new()
+	outer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	panel.add_child(outer)
+
+	var header := Label.new()
+	header.text = title
+	header.add_theme_font_size_override("font_size", 13)
+	outer.add_child(header)
+	outer.add_child(HSeparator.new())
+
+	var content := VBoxContainer.new()
+	content.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	outer.add_child(content)
+	panel.set_meta("content", content)
+	return panel
+
+
 func _build_ui() -> void:
-	# -- Status section --
-	var status_header := Label.new()
-	status_header.text = "Server Status"
-	status_header.add_theme_font_size_override("font_size", 14)
-	add_child(status_header)
+	var scale := EditorInterface.get_editor_scale()
+	add_theme_constant_override("separation", int(4 * scale))
+
+	# == Status section (compact, pinned at top) ==============================
+	var status_section := _make_section("Server Status")
+	status_section.size_flags_vertical = 0  # fixed height
+	add_child(status_section)
+	var sc: VBoxContainer = status_section.get_meta("content")
 
 	var status_row := HBoxContainer.new()
-	add_child(status_row)
+	sc.add_child(status_row)
 
 	_status_label = Label.new()
 	_status_label.text = "... starting"
@@ -102,13 +151,14 @@ func _build_ui() -> void:
 
 	_activity_label = Label.new()
 	_activity_label.text = "Last activity: —"
-	add_child(_activity_label)
+	_activity_label.add_theme_font_size_override("font_size", 11)
+	sc.add_child(_activity_label)
 
 	_runtime_label = Label.new()
 	_runtime_label.text = "Runtime: not running"
 	_runtime_label.add_theme_font_size_override("font_size", 11)
 	_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	add_child(_runtime_label)
+	sc.add_child(_runtime_label)
 
 	_power_user_warning = Label.new()
 	_power_user_warning.text = (
@@ -118,15 +168,19 @@ func _build_ui() -> void:
 	_power_user_warning.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 	_power_user_warning.add_theme_font_size_override("font_size", 11)
 	_power_user_warning.visible = false
-	add_child(_power_user_warning)
+	sc.add_child(_power_user_warning)
 
-	add_child(HSeparator.new())
+	# == Main resizable area (Feature Gates / Audit / bottom) =================
+	var main_split := VSplitContainer.new()
+	main_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	main_split.split_offset = int(200 * scale)
+	add_child(main_split)
 
-	# -- Features section --
-	var feat_header := Label.new()
-	feat_header.text = "Feature Gates"
-	feat_header.add_theme_font_size_override("font_size", 14)
-	add_child(feat_header)
+	# -- Feature Gates section (top pane) -------------------------------------
+	var feat_section := _make_section("Feature Gates")
+	feat_section.custom_minimum_size.y = int(80 * scale)
+	main_split.add_child(feat_section)
+	var fc: VBoxContainer = feat_section.get_meta("content")
 
 	_feature_lock_warning = Label.new()
 	_feature_lock_warning.text = (
@@ -135,12 +189,11 @@ func _build_ui() -> void:
 	_feature_lock_warning.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 	_feature_lock_warning.add_theme_font_size_override("font_size", 11)
 	_feature_lock_warning.visible = false
-	add_child(_feature_lock_warning)
+	fc.add_child(_feature_lock_warning)
 
 	var feat_scroll := ScrollContainer.new()
 	feat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	feat_scroll.custom_minimum_size.y = 120
-	add_child(feat_scroll)
+	fc.add_child(feat_scroll)
 
 	var feat_vbox := VBoxContainer.new()
 	feat_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -161,6 +214,7 @@ func _build_ui() -> void:
 		var badge := Label.new()
 		badge.text = "(dual)" if entry["dual_gate"] else "(single)"
 		badge.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		badge.add_theme_font_size_override("font_size", 11)
 		row.add_child(badge)
 
 		var sync_icon := Label.new()
@@ -175,56 +229,22 @@ func _build_ui() -> void:
 	_power_user_btn = Button.new()
 	_power_user_btn.text = "Enable All (Power User)"
 	_power_user_btn.pressed.connect(_on_power_user_pressed)
-	feat_vbox.add_child(_power_user_btn)
+	fc.add_child(_power_user_btn)
 
-	add_child(HSeparator.new())
+	# -- Lower split (Audit / bottom stack) -----------------------------------
+	var lower_split := VSplitContainer.new()
+	lower_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	lower_split.split_offset = int(150 * scale)
+	main_split.add_child(lower_split)
 
-	# -- Settings section (response limits) --
-	var settings_header := Label.new()
-	settings_header.text = "Response Limits"
-	settings_header.add_theme_font_size_override("font_size", 14)
-	add_child(settings_header)
-
-	var cap_row := HBoxContainer.new()
-	add_child(cap_row)
-	var cap_label := Label.new()
-	cap_label.text = "Script read cap (KB):"
-	cap_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cap_row.add_child(cap_label)
-	_script_cap_spinbox = SpinBox.new()
-	_script_cap_spinbox.min_value = 64
-	_script_cap_spinbox.max_value = 4096
-	_script_cap_spinbox.step = 64
-	_script_cap_spinbox.value = ProjectSettings.get_setting(
-		"mcp_toolkit/limits/script_read_cap_kb", 256)
-	_script_cap_spinbox.value_changed.connect(_on_script_cap_changed)
-	cap_row.add_child(_script_cap_spinbox)
-
-	var ws_row := HBoxContainer.new()
-	add_child(ws_row)
-	var ws_label := Label.new()
-	ws_label.text = "WebSocket buffer (KB):"
-	ws_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ws_row.add_child(ws_label)
-	_ws_buffer_spinbox = SpinBox.new()
-	_ws_buffer_spinbox.min_value = 256
-	_ws_buffer_spinbox.max_value = 8192
-	_ws_buffer_spinbox.step = 256
-	_ws_buffer_spinbox.value = ProjectSettings.get_setting(
-		"mcp_toolkit/limits/ws_buffer_kb", 1024)
-	_ws_buffer_spinbox.value_changed.connect(_on_ws_buffer_changed)
-	ws_row.add_child(_ws_buffer_spinbox)
-
-	add_child(HSeparator.new())
-
-	# -- Audit section --
-	var audit_header := Label.new()
-	audit_header.text = "Audit Log (recent)"
-	audit_header.add_theme_font_size_override("font_size", 14)
-	add_child(audit_header)
+	# -- Audit Log section (top of lower split) -------------------------------
+	var audit_section := _make_section("Audit Log")
+	audit_section.custom_minimum_size.y = int(80 * scale)
+	lower_split.add_child(audit_section)
+	var ac: VBoxContainer = audit_section.get_meta("content")
 
 	var audit_settings_row := HBoxContainer.new()
-	add_child(audit_settings_row)
+	ac.add_child(audit_settings_row)
 
 	var audit_enabled_check := CheckBox.new()
 	audit_enabled_check.text = "Enabled"
@@ -235,6 +255,7 @@ func _build_ui() -> void:
 
 	var audit_size_label := Label.new()
 	audit_size_label.text = "  Max KB:"
+	audit_size_label.add_theme_font_size_override("font_size", 11)
 	audit_settings_row.add_child(audit_size_label)
 
 	var audit_size_spin := SpinBox.new()
@@ -249,15 +270,14 @@ func _build_ui() -> void:
 
 	_audit_scroll = ScrollContainer.new()
 	_audit_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_audit_scroll.custom_minimum_size.y = 80
-	add_child(_audit_scroll)
+	ac.add_child(_audit_scroll)
 
 	_audit_container = VBoxContainer.new()
 	_audit_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_audit_scroll.add_child(_audit_container)
 
 	var audit_btns := HBoxContainer.new()
-	add_child(audit_btns)
+	ac.add_child(audit_btns)
 
 	var open_log_btn := Button.new()
 	open_log_btn.text = "Open Full Log"
@@ -269,29 +289,66 @@ func _build_ui() -> void:
 	clear_btn.pressed.connect(_on_clear_audit_view)
 	audit_btns.add_child(clear_btn)
 
-	add_child(HSeparator.new())
+	# -- Bottom stack (Limits + Actions + Info/Help) --------------------------
+	var bottom := VBoxContainer.new()
+	bottom.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	lower_split.add_child(bottom)
 
-	# -- Action buttons --
+	# Response Limits
+	var limits_section := _make_section("Response Limits")
+	limits_section.size_flags_vertical = 0  # fixed height
+	bottom.add_child(limits_section)
+	var lc: VBoxContainer = limits_section.get_meta("content")
+
+	var cap_row := HBoxContainer.new()
+	lc.add_child(cap_row)
+	var cap_label := Label.new()
+	cap_label.text = "Script read cap (KB):"
+	cap_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cap_row.add_child(cap_label)
+	_script_cap_spinbox = SpinBox.new()
+	_script_cap_spinbox.min_value = 64
+	_script_cap_spinbox.max_value = 4096
+	_script_cap_spinbox.step = 64
+	_script_cap_spinbox.value = ProjectSettings.get_setting(
+		"mcp_toolkit/limits/script_read_cap_kb", 256)
+	_script_cap_spinbox.value_changed.connect(_on_script_cap_changed)
+	cap_row.add_child(_script_cap_spinbox)
+
+	var ws_row := HBoxContainer.new()
+	lc.add_child(ws_row)
+	var ws_label := Label.new()
+	ws_label.text = "WebSocket buffer (KB):"
+	ws_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ws_row.add_child(ws_label)
+	_ws_buffer_spinbox = SpinBox.new()
+	_ws_buffer_spinbox.min_value = 256
+	_ws_buffer_spinbox.max_value = 8192
+	_ws_buffer_spinbox.step = 256
+	_ws_buffer_spinbox.value = ProjectSettings.get_setting(
+		"mcp_toolkit/limits/ws_buffer_kb", 1024)
+	_ws_buffer_spinbox.value_changed.connect(_on_ws_buffer_changed)
+	ws_row.add_child(_ws_buffer_spinbox)
+
+	# Actions
 	var action_row := HBoxContainer.new()
-	add_child(action_row)
+	bottom.add_child(action_row)
 
 	var regen_btn := Button.new()
 	regen_btn.text = "Regenerate Token"
 	regen_btn.pressed.connect(_on_regen_token)
 	action_row.add_child(regen_btn)
 
-	add_child(HSeparator.new())
-
-	# -- Info / Help section (collapsible) --
+	# Info / Help (collapsible)
 	_info_toggle_btn = Button.new()
 	_info_toggle_btn.text = "Info / Help [+]"
 	_info_toggle_btn.pressed.connect(_on_info_toggle_pressed)
-	add_child(_info_toggle_btn)
+	bottom.add_child(_info_toggle_btn)
 
 	_info_scroll = ScrollContainer.new()
 	_info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	_info_scroll.visible = false
-	add_child(_info_scroll)
+	bottom.add_child(_info_scroll)
 
 	_info_container = VBoxContainer.new()
 	_info_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -338,7 +395,7 @@ func _build_ui() -> void:
 	_info_container.add_child(tool_header)
 
 	var tool_scroll := ScrollContainer.new()
-	tool_scroll.custom_minimum_size.y = 100
+	tool_scroll.custom_minimum_size.y = int(100 * scale)
 	_info_container.add_child(tool_scroll)
 	_tool_list_container = VBoxContainer.new()
 	_tool_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
