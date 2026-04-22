@@ -39,6 +39,8 @@ var _export_plugin: EditorExportPlugin = null
 var _dock: Control = null
 # Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
+# Power User polling — detect changes from ProjectSettings UI.
+var _last_power_user: bool = false
 
 # Menu item keys for teardown symmetry.
 const _MENU_ITEMS: Array[String] = [
@@ -60,7 +62,10 @@ const _PALETTE_KEYS: Array[String] = [
 
 
 func _enter_tree() -> void:
+	_migrate_stale_settings()
 	_register_feature_gate_settings()
+	_last_power_user = ProjectSettings.get_setting(
+		"mcp_toolkit/unsafe/power_user_mode", false)
 
 	var registry := MCPCommandRegistry.new()
 	_server = MCPServer.new()
@@ -128,6 +133,41 @@ func _enter_tree() -> void:
 	call_deferred("_check_onboarding")
 
 
+# -- Stale settings migration --------------------------------------------------
+
+
+const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
+const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+
+
+func _migrate_stale_settings() -> void:
+	# Remove leftover mcp/ keys from the pre-rename era.
+	var stale_keys := [
+		"mcp/unsafe/allow_all",
+		"mcp/unsafe/allow_game_eval",
+		"mcp/unsafe/allow_os_execute",
+		"mcp/unsafe/allow_user_scope",
+		"mcp/unsafe/allow_outbound_http",
+		"mcp/unsafe/allow_node_call_method",
+		"mcp/unsafe/allow_project_set_setting",
+		"mcp/unsafe/allow_input_map_write",
+	]
+	var removed := 0
+	for key in stale_keys:
+		if ProjectSettings.has_setting(key):
+			ProjectSettings.set_setting(key, null)
+			removed += 1
+	# Migrate allow_all → power_user_mode.
+	if ProjectSettings.has_setting("mcp_toolkit/unsafe/allow_all"):
+		var val = ProjectSettings.get_setting("mcp_toolkit/unsafe/allow_all", false)
+		ProjectSettings.set_setting("mcp_toolkit/unsafe/power_user_mode", val)
+		ProjectSettings.set_setting("mcp_toolkit/unsafe/allow_all", null)
+		removed += 1
+	if removed > 0:
+		ProjectSettings.save()
+		print("[MCP] Migrated %d stale settings" % removed)
+
+
 # -- user:// whitelist validation ----------------------------------------------
 
 
@@ -153,17 +193,17 @@ func _validate_user_whitelist() -> void:
 
 
 func _register_feature_gate_settings() -> void:
-	# allow_all — Power User Mode master switch.
-	if not ProjectSettings.has_setting("mcp_toolkit/unsafe/allow_all"):
-		ProjectSettings.set_setting("mcp_toolkit/unsafe/allow_all", false)
-	ProjectSettings.set_initial_value("mcp_toolkit/unsafe/allow_all", false)
+	# power_user_mode — master switch (was allow_all).
+	if not ProjectSettings.has_setting("mcp_toolkit/unsafe/power_user_mode"):
+		ProjectSettings.set_setting("mcp_toolkit/unsafe/power_user_mode", false)
+	ProjectSettings.set_initial_value("mcp_toolkit/unsafe/power_user_mode", false)
 	ProjectSettings.add_property_info({
-		"name": "mcp_toolkit/unsafe/allow_all",
+		"name": "mcp_toolkit/unsafe/power_user_mode",
 		"type": TYPE_BOOL,
 		"hint": PROPERTY_HINT_NONE,
-		"hint_string": "DANGER: Enables PS side of ALL feature gates. "
-			+ "Dual-gated features still require their env var. "
-			+ "Explicit deny_<feature> overrides this.",
+		"hint_string": "WARNING: Enables ALL feature gates and grants the AI agent "
+			+ "full control — code execution, OS commands, project settings writes, "
+			+ "and file access outside res://. Individual gates sync automatically.",
 	})
 
 	for feature in MCPFeatureRegistry.all_features():
@@ -279,6 +319,42 @@ func _process(_delta: float) -> void:
 	if _was_playing and not playing:
 		MCPRegistryClient.clear_runtime()
 	_was_playing = playing
+
+	# Detect Power User toggle from ProjectSettings UI.
+	var power_user: bool = ProjectSettings.get_setting(
+		"mcp_toolkit/unsafe/power_user_mode", false)
+	if power_user != _last_power_user:
+		_last_power_user = power_user
+		_sync_power_user_mode(power_user)
+
+
+func _sync_power_user_mode(enable: bool) -> void:
+	# Guard: skip if the dock already applied this change (snapshot exists
+	# when enabling, or was just cleared when disabling).
+	if enable and MCPFeatureGate.has_power_user_cache():
+		# Dock already snapshotted + set keys — just refresh UI.
+		if _dock != null:
+			_dock._refresh_features()
+		return
+	if enable:
+		MCPFeatureGate.snapshot_pre_power_user()
+		for feature in MCPFeatureRegistry.all_features():
+			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+			ProjectSettings.set_setting(str(entry["ps_key"]), true)
+		if MCPJsonSync.has_mcp_json():
+			for feature in MCPFeatureRegistry.all_features():
+				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+	else:
+		MCPFeatureGate.restore_pre_power_user()
+		if MCPJsonSync.has_mcp_json():
+			for feature in MCPFeatureRegistry.all_features():
+				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+	ProjectSettings.save()
+	if _dock != null:
+		_dock._refresh_features()
 
 
 func _exit_tree() -> void:
