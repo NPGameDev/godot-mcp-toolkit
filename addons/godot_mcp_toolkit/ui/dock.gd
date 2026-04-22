@@ -260,10 +260,18 @@ func _build_ui() -> void:
 	audit_size_spin.value_changed.connect(_on_audit_max_size_changed)
 	audit_settings_row.add_child(audit_size_spin)
 
+	var audit_btns := HBoxContainer.new()
+	ac.add_child(audit_btns)
+
 	var view_log_btn := Button.new()
 	view_log_btn.text = "View Audit Log"
 	view_log_btn.pressed.connect(show_audit_dialog)
-	ac.add_child(view_log_btn)
+	audit_btns.add_child(view_log_btn)
+
+	var clear_log_btn := Button.new()
+	clear_log_btn.text = "Clear Audit Log"
+	clear_log_btn.pressed.connect(_on_clear_audit_log)
+	audit_btns.add_child(clear_log_btn)
 
 	# -- Bottom stack (Security & Limits + Info button) -----------------------
 	var bottom_section := _make_section("Security & Response Limits")
@@ -711,6 +719,17 @@ func show_audit_dialog() -> void:
 	_audit_dialog.popup_centered()
 	await get_tree().process_frame
 	scroll.scroll_vertical = scroll.get_v_scroll_bar().max_value
+
+
+func _on_clear_audit_log() -> void:
+	var path := _audit_path
+	if path.is_empty():
+		path = "user://mcp_audit.log"
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file != null:
+		file.store_string("")
+		file.close()
+	_toast("Audit log cleared")
 
 
 # ---------------------------------------------------------------------------
