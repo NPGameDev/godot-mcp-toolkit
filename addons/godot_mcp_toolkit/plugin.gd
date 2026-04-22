@@ -354,7 +354,6 @@ func _check_onboarding() -> void:
 		+ "Your MCP client sees tools based on the active profile\n"
 		+ "(set via GODOT_MCP_PROFILE in .mcp.json):\n\n"
 		+ "  Standard (default) — 34 core tools + groups on demand\n"
-		+ "  Minimal — 13 read-only tools for code review\n"
 		+ "  Power User — All 59 tools (includes unsafe operations)\n\n"
 		+ "Some capabilities (code execution, OS commands) are\n"
 		+ "disabled by default for safety. Choose your setup:\n\n"
@@ -366,7 +365,9 @@ func _check_onboarding() -> void:
 		+ "Power User Mode:\n"
 		+ "  Enable ALL features and set profile to Power User.\n"
 		+ "  Includes tools that can modify project settings, execute\n"
-		+ "  code, and write outside res://. Use with caution.")
+		+ "  code, and write outside res://. Use with caution.\n\n"
+		+ "Tip: A read-only Minimal profile (13 tools) is also available\n"
+		+ "via GODOT_MCP_PROFILE=minimal for code review workflows.")
 	dialog.ok_button_text = "Standard (Recommended)"
 	dialog.add_button("Configure Individually", true, "configure")
 	dialog.add_button("Power User Mode", true, "power_user")
