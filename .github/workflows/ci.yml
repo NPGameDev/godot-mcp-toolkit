@@ -13,9 +13,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Godot
-        uses: chickensoft-games/setup-godot@v2
+        # pinned to v2.4.1 — update SHA manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789
         with:
-          version: 4.5-stable
+          version: 4.5.0
           use-dotnet: false
 
       # Godot 4.5 changed --check-only to require --script <path>, so the
