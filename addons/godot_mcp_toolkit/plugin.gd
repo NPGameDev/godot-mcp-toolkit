@@ -151,6 +151,7 @@ func _migrate_stale_settings() -> void:
 		"mcp/unsafe/allow_node_call_method",
 		"mcp/unsafe/allow_project_set_setting",
 		"mcp/unsafe/allow_input_map_write",
+		"application/config/mcp_smoke_15d",
 	]
 	var removed := 0
 	for key in stale_keys:

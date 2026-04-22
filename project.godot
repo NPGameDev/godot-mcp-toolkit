@@ -13,7 +13,6 @@ config_version=5
 config/name="Godot MCP Toolkit"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
-config/mcp_smoke_15d=""
 
 [autoload]
 
@@ -22,8 +21,3 @@ MCPRuntimeServer="*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
-
-[mcp_toolkit]
-
-unsafe/allow_input_map_write=true
-internal/pre_power_user_cache=""
