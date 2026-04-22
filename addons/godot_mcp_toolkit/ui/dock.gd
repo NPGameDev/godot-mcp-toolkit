@@ -35,6 +35,7 @@ var _script_cap_spinbox: SpinBox = null
 var _ws_buffer_spinbox: SpinBox = null
 
 # Info/Help panel widgets.
+var _info_scroll: ScrollContainer = null
 var _info_container: VBoxContainer = null
 var _info_toggle_btn: Button = null
 var _connection_label: Label = null
@@ -264,9 +265,14 @@ func _build_ui() -> void:
 	_info_toggle_btn.pressed.connect(_on_info_toggle_pressed)
 	add_child(_info_toggle_btn)
 
+	_info_scroll = ScrollContainer.new()
+	_info_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_info_scroll.visible = false
+	add_child(_info_scroll)
+
 	_info_container = VBoxContainer.new()
-	_info_container.visible = false
-	add_child(_info_container)
+	_info_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_info_scroll.add_child(_info_container)
 
 	_connection_label = Label.new()
 	_connection_label.text = "Connection: ..."
@@ -757,18 +763,18 @@ func _on_audit_max_size_changed(value: float) -> void:
 # ---------------------------------------------------------------------------
 
 func _on_info_toggle_pressed() -> void:
-	if _info_container == null:
+	if _info_scroll == null:
 		return
-	_info_container.visible = not _info_container.visible
+	_info_scroll.visible = not _info_scroll.visible
 	if _info_toggle_btn != null:
 		_info_toggle_btn.text = "Info / Help [-]" \
-			if _info_container.visible else "Info / Help [+]"
-	if _info_container.visible:
+			if _info_scroll.visible else "Info / Help [+]"
+	if _info_scroll.visible:
 		_refresh_info_panel()
 
 
 func _refresh_info_panel() -> void:
-	if _info_container == null or not _info_container.visible:
+	if _info_scroll == null or not _info_scroll.visible:
 		return
 	var profile := _read_mcp_profile()
 	var display := _display_profile_name(profile)
