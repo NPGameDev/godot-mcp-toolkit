@@ -28,7 +28,7 @@ Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
 |--------------|--------------|
 | **standard** (default) | 34 core + `enable_tool_group` meta-tool + 3 locked stubs |
 | **minimal** | 13 read-only (code-review mode) |
-| **full**     | All 59 tools at startup |
+| **full** (Power User) | All 59 tools at startup |
 | **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
 
 `--lite` → `minimal` with deprecation warning. `GODOT_MCP_READ_ONLY=1`
@@ -154,15 +154,26 @@ bypasses registry discovery entirely (backwards compat).
   envelope is a defense-in-depth hint, not a security boundary — the real
   boundaries are FileGuard, FeatureGate, token auth, and the audit log.
 
-## Editor UI (iter 21)
+## Editor UI (iter 21 + 35)
 
 - **MCP dock** — bottom-panel tab ("MCP"). Signal-driven server status (no
   polling), feature-gate toggles with .mcp.json sync indicators, polled audit
   log tail (visibility-gated, 500ms Timer). Action buttons: Regenerate Token,
-  Open Full Log, Clear View.
+  Open Full Log, Clear View. Response limit settings (script read cap, WS
+  buffer size) stored in ProjectSettings `mcp/limits/`. Collapsible Info/Help
+  panel with connection status, profile info, tool list grouped by domain,
+  version info, multi-instance guidance, and quick-link buttons.
 - **Menu items** — five entries under Project → Tools: Regenerate Token, Show
   Audit Log, Open Project Settings, Write .mcp.json, Power User Mode. All also
   registered in the Command Palette (Ctrl+Shift+P → "MCP").
+- **Power User warning** — when the active profile is "full" (Power User),
+  the dock displays a persistent yellow warning about unsafe tool access.
+  The server also emits a one-time startup warning to stderr.
+- **Profile-aware display** — the dock status line shows "Power User" instead
+  of the raw internal name "full". Other profiles show their capitalized name.
+- **Response limits** — configurable in the dock's "Response Limits" section.
+  Script read cap (default 256 KB, min 64 KB) and WebSocket buffer (default
+  1024 KB, min 256 KB). Stored in ProjectSettings `mcp/limits/`.
 - **Power User Mode** — sets `mcp/unsafe/allow_all = true` in ProjectSettings
   (satisfies the PS side of every gate at once). Also writes all feature env
   vars into `.mcp.json`. Explicit `deny_<feature>` still overrides `allow_all`.

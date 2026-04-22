@@ -73,6 +73,12 @@ func get_bound_port() -> int:
 	return _bound_port
 
 
+func get_command_methods() -> Array:
+	if _registry == null:
+		return []
+	return _registry.get_all_methods()
+
+
 func regenerate_token() -> void:
 	_session_token = MCPAuth.generate_token()
 	var write_err := MCPAuth.write_token(_session_token)
@@ -188,10 +194,9 @@ func _process(_delta: float) -> void:
 	while _tcp_server.is_connection_available():
 		var stream := _tcp_server.take_connection()
 		var peer := WebSocketPeer.new()
-		# 1 MB buffers — script.write payloads can reach the 256 KB response
-		# cap, and JSON-RPC framing adds overhead on top of content size.
-		peer.inbound_buffer_size = 1048576
-		peer.outbound_buffer_size = 1048576
+		var buffer_kb: int = ProjectSettings.get_setting("mcp/limits/ws_buffer_kb", 1024)
+		peer.inbound_buffer_size = buffer_kb * 1024
+		peer.outbound_buffer_size = buffer_kb * 1024
 		var accept_error := peer.accept_stream(stream)
 		if accept_error != OK:
 			push_warning("[MCPServer] accept_stream failed (%d)" % accept_error)

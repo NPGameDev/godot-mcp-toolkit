@@ -27,6 +27,22 @@ var _activity_label: Label = null
 var _feature_rows: Dictionary = {}
 var _power_user_btn: Button = null
 
+# Power User warning.
+var _power_user_warning: Label = null
+
+# Settings widgets.
+var _script_cap_spinbox: SpinBox = null
+var _ws_buffer_spinbox: SpinBox = null
+
+# Info/Help panel widgets.
+var _info_container: VBoxContainer = null
+var _info_toggle_btn: Button = null
+var _connection_label: Label = null
+var _profile_label: Label = null
+var _tool_count_label: Label = null
+var _version_label: Label = null
+var _tool_list_container: VBoxContainer = null
+
 # Audit widgets.
 var _audit_container: VBoxContainer = null
 var _audit_scroll: ScrollContainer = null
@@ -79,6 +95,16 @@ func _build_ui() -> void:
 	_activity_label.text = "Last activity: —"
 	add_child(_activity_label)
 
+	_power_user_warning = Label.new()
+	_power_user_warning.text = (
+		"WARNING: Power User profile active — includes tools that can "
+		+ "modify project settings, execute code, and write outside res://.")
+	_power_user_warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_power_user_warning.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	_power_user_warning.add_theme_font_size_override("font_size", 11)
+	_power_user_warning.visible = false
+	add_child(_power_user_warning)
+
 	add_child(HSeparator.new())
 
 	# -- Features section --
@@ -129,6 +155,44 @@ func _build_ui() -> void:
 
 	add_child(HSeparator.new())
 
+	# -- Settings section (response limits) --
+	var settings_header := Label.new()
+	settings_header.text = "Response Limits"
+	settings_header.add_theme_font_size_override("font_size", 14)
+	add_child(settings_header)
+
+	var cap_row := HBoxContainer.new()
+	add_child(cap_row)
+	var cap_label := Label.new()
+	cap_label.text = "Script read cap (KB):"
+	cap_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	cap_row.add_child(cap_label)
+	_script_cap_spinbox = SpinBox.new()
+	_script_cap_spinbox.min_value = 64
+	_script_cap_spinbox.max_value = 4096
+	_script_cap_spinbox.step = 64
+	_script_cap_spinbox.value = ProjectSettings.get_setting(
+		"mcp/limits/script_read_cap_kb", 256)
+	_script_cap_spinbox.value_changed.connect(_on_script_cap_changed)
+	cap_row.add_child(_script_cap_spinbox)
+
+	var ws_row := HBoxContainer.new()
+	add_child(ws_row)
+	var ws_label := Label.new()
+	ws_label.text = "WebSocket buffer (KB):"
+	ws_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	ws_row.add_child(ws_label)
+	_ws_buffer_spinbox = SpinBox.new()
+	_ws_buffer_spinbox.min_value = 256
+	_ws_buffer_spinbox.max_value = 8192
+	_ws_buffer_spinbox.step = 256
+	_ws_buffer_spinbox.value = ProjectSettings.get_setting(
+		"mcp/limits/ws_buffer_kb", 1024)
+	_ws_buffer_spinbox.value_changed.connect(_on_ws_buffer_changed)
+	ws_row.add_child(_ws_buffer_spinbox)
+
+	add_child(HSeparator.new())
+
 	# -- Audit section --
 	var audit_header := Label.new()
 	audit_header.text = "Audit Log (recent)"
@@ -167,6 +231,92 @@ func _build_ui() -> void:
 	regen_btn.text = "Regenerate Token"
 	regen_btn.pressed.connect(_on_regen_token)
 	action_row.add_child(regen_btn)
+
+	add_child(HSeparator.new())
+
+	# -- Info / Help section (collapsible) --
+	_info_toggle_btn = Button.new()
+	_info_toggle_btn.text = "Info / Help [+]"
+	_info_toggle_btn.pressed.connect(_on_info_toggle_pressed)
+	add_child(_info_toggle_btn)
+
+	_info_container = VBoxContainer.new()
+	_info_container.visible = false
+	add_child(_info_container)
+
+	_connection_label = Label.new()
+	_connection_label.text = "Connection: ..."
+	_connection_label.add_theme_font_size_override("font_size", 11)
+	_info_container.add_child(_connection_label)
+
+	_profile_label = Label.new()
+	_profile_label.text = "Profile: ..."
+	_profile_label.add_theme_font_size_override("font_size", 11)
+	_info_container.add_child(_profile_label)
+
+	_tool_count_label = Label.new()
+	_tool_count_label.text = "Tools: ..."
+	_tool_count_label.add_theme_font_size_override("font_size", 11)
+	_info_container.add_child(_tool_count_label)
+
+	_version_label = Label.new()
+	_version_label.text = "Version: ..."
+	_version_label.add_theme_font_size_override("font_size", 11)
+	_info_container.add_child(_version_label)
+
+	var multi_header := Label.new()
+	multi_header.text = "Multi-Instance Multiplayer"
+	multi_header.add_theme_font_size_override("font_size", 12)
+	_info_container.add_child(multi_header)
+
+	var multi_info := Label.new()
+	multi_info.text = (
+		"A: Two copies (git worktree) - SUPPORTED\n"
+		+ "B: Built-in multi-instance run - MOSTLY SUPPORTED\n"
+		+ "C: Same dir, two editors - NOT SUPPORTED\n"
+		+ "See docs/multi-instance.md for full details.")
+	multi_info.add_theme_font_size_override("font_size", 11)
+	multi_info.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_info_container.add_child(multi_info)
+
+	var tool_header := Label.new()
+	tool_header.text = "Registered Tools"
+	tool_header.add_theme_font_size_override("font_size", 12)
+	_info_container.add_child(tool_header)
+
+	var tool_scroll := ScrollContainer.new()
+	tool_scroll.custom_minimum_size.y = 100
+	_info_container.add_child(tool_scroll)
+	_tool_list_container = VBoxContainer.new()
+	_tool_list_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tool_scroll.add_child(_tool_list_container)
+
+	var links_row := HBoxContainer.new()
+	_info_container.add_child(links_row)
+
+	var github_btn := Button.new()
+	github_btn.text = "GitHub"
+	github_btn.pressed.connect(func():
+		OS.shell_open("https://github.com/NPGameDev/godot-mcp-toolkit"))
+	links_row.add_child(github_btn)
+
+	var issues_btn := Button.new()
+	issues_btn.text = "Issues"
+	issues_btn.pressed.connect(func():
+		OS.shell_open("https://github.com/NPGameDev/godot-mcp-toolkit/issues"))
+	links_row.add_child(issues_btn)
+
+	var server_btn := Button.new()
+	server_btn.text = "Server Repo"
+	server_btn.pressed.connect(func():
+		OS.shell_open("https://github.com/NPGameDev/godot-mcp-server"))
+	links_row.add_child(server_btn)
+
+	var contrib_btn := Button.new()
+	contrib_btn.text = "Contributing"
+	contrib_btn.pressed.connect(func():
+		OS.shell_open("https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/CONTRIBUTING.md"))
+	links_row.add_child(contrib_btn)
 
 	# -- Audit poll timer (visibility-gated) --
 	_audit_timer = Timer.new()
@@ -218,12 +368,18 @@ func _refresh_status() -> void:
 	if _server == null or _status_label == null:
 		return
 	var profile := _read_mcp_profile()
+	var display := _display_profile_name(profile)
+	var port: int = _server.get_bound_port()
+	var port_str := str(port) if port > 0 else "6505"
 	if _server.is_listening():
-		_status_label.text = "Listening on 127.0.0.1:6505 · %s" % profile
+		_status_label.text = "Listening on 127.0.0.1:%s · %s" % [port_str, display]
 	else:
-		_status_label.text = "Not listening · %s" % profile
+		_status_label.text = "Not listening · %s" % display
 	var count: int = _server.get_authed_peer_count()
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
+	if _power_user_warning != null:
+		_power_user_warning.visible = (profile == "full")
+	_refresh_info_panel()
 
 
 ## Read GODOT_MCP_PROFILE from .mcp.json env block (server-side setting).
@@ -532,6 +688,115 @@ func _do_write_mcp_json(dest: String, content: String) -> void:
 	file.close()
 	_toast("MCP: .mcp.json updated — restart your MCP client", _TOAST_INFO,
 		"Wrote to " + dest)
+
+
+# ---------------------------------------------------------------------------
+# Display name helper
+# ---------------------------------------------------------------------------
+
+func _display_profile_name(profile: String) -> String:
+	match profile:
+		"full":
+			return "Power User"
+		_:
+			return profile.capitalize()
+
+
+# ---------------------------------------------------------------------------
+# Settings handlers
+# ---------------------------------------------------------------------------
+
+func _on_script_cap_changed(value: float) -> void:
+	var clamped := maxi(64, int(value))
+	ProjectSettings.set_setting("mcp/limits/script_read_cap_kb", clamped)
+	ProjectSettings.save()
+
+
+func _on_ws_buffer_changed(value: float) -> void:
+	var clamped := maxi(256, int(value))
+	ProjectSettings.set_setting("mcp/limits/ws_buffer_kb", clamped)
+	ProjectSettings.save()
+
+
+# ---------------------------------------------------------------------------
+# Info / Help panel
+# ---------------------------------------------------------------------------
+
+func _on_info_toggle_pressed() -> void:
+	if _info_container == null:
+		return
+	_info_container.visible = not _info_container.visible
+	if _info_toggle_btn != null:
+		_info_toggle_btn.text = "Info / Help [-]" \
+			if _info_container.visible else "Info / Help [+]"
+	if _info_container.visible:
+		_refresh_info_panel()
+
+
+func _refresh_info_panel() -> void:
+	if _info_container == null or not _info_container.visible:
+		return
+	var profile := _read_mcp_profile()
+	var display := _display_profile_name(profile)
+
+	if _server != null and _server.is_listening():
+		var port: int = _server.get_bound_port()
+		var peers: int = _server.get_authed_peer_count()
+		_connection_label.text = "Connection: 127.0.0.1:%d · %d peer%s" % [
+			port, peers, "" if peers == 1 else "s"]
+	else:
+		_connection_label.text = "Connection: not listening"
+
+	_profile_label.text = "Profile: %s" % display
+
+	if _server != null and _server.has_method("get_command_methods"):
+		var methods: Array = _server.get_command_methods()
+		_tool_count_label.text = "Tools: %d registered (plugin-side)" % methods.size()
+	else:
+		_tool_count_label.text = "Tools: (server not ready)"
+
+	var plugin_ver := _get_plugin_version()
+	var vi := Engine.get_version_info()
+	var godot_ver := "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]]
+	_version_label.text = "Plugin: v%s · Godot %s" % [plugin_ver, godot_ver]
+
+	_refresh_tool_list()
+
+
+func _refresh_tool_list() -> void:
+	if _tool_list_container == null:
+		return
+	for child in _tool_list_container.get_children():
+		child.queue_free()
+	if _server == null or not _server.has_method("get_command_methods"):
+		return
+	var methods: Array = _server.get_command_methods()
+	methods.sort()
+	var groups: Dictionary = {}
+	for method in methods:
+		var parts := str(method).split(".", true, 1)
+		var domain: String = parts[0] if parts.size() > 0 else "other"
+		if not groups.has(domain):
+			groups[domain] = []
+		groups[domain].append(str(method))
+	var domain_keys: Array = groups.keys()
+	domain_keys.sort()
+	for domain in domain_keys:
+		var tools: Array = groups[domain]
+		var lbl := Label.new()
+		lbl.text = "%s: %s" % [str(domain).capitalize(), ", ".join(
+			PackedStringArray(tools))]
+		lbl.add_theme_font_size_override("font_size", 10)
+		lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_tool_list_container.add_child(lbl)
+
+
+func _get_plugin_version() -> String:
+	var cfg := ConfigFile.new()
+	var err := cfg.load("res://addons/godot_mcp_toolkit/plugin.cfg")
+	if err != OK:
+		return "unknown"
+	return cfg.get_value("plugin", "version", "unknown")
 
 
 # ---------------------------------------------------------------------------

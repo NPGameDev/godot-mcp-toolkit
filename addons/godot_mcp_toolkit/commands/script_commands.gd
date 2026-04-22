@@ -40,9 +40,10 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [open_error, file_path])
 	var content_bytes := content.to_utf8_buffer().size()
-	if content_bytes > 262144:
+	var cap_kb: int = ProjectSettings.get_setting("mcp/limits/script_read_cap_kb", 256)
+	if content_bytes > cap_kb * 1024:
 		var err := MCPError.make("FILE_TOO_LARGE",
-			"file exceeds 256 KB response cap")
+			"file exceeds %d KB response cap" % cap_kb)
 		err["total_bytes"] = content_bytes
 		err["hint"] = "use script_read_range(path, start_line, end_line)"
 		return err
@@ -78,9 +79,10 @@ static func _cmd_script_read_range(parameters: Dictionary) -> Dictionary:
 	var slice := lines.slice(clamped_start - 1, clamped_end)
 	var result_text := "\n".join(slice)
 	var result_bytes := result_text.to_utf8_buffer().size()
-	if result_bytes > 262144:
+	var range_cap_kb: int = ProjectSettings.get_setting("mcp/limits/script_read_cap_kb", 256)
+	if result_bytes > range_cap_kb * 1024:
 		return MCPError.make("FILE_TOO_LARGE",
-			"slice exceeds 256 KB response cap; narrow the line range")
+			"slice exceeds %d KB response cap; narrow the line range" % range_cap_kb)
 	return {
 		"content": MCPUntrusted.wrap("script", file_path, result_text),
 		"start_line": clamped_start,

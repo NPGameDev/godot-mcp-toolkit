@@ -180,11 +180,29 @@ func _register_feature_gate_settings() -> void:
 			"hint_string": "DANGER: %s (%s). Default off." % [entry["risk"], gate_label],
 		})
 
+	# Response-limit settings.
+	_register_limit_setting("mcp/limits/script_read_cap_kb", 256,
+		"Max script content returned by script.read, in KB. Minimum 64.")
+	_register_limit_setting("mcp/limits/ws_buffer_kb", 1024,
+		"WebSocket per-peer buffer size, in KB. Minimum 256.")
+
+
+func _register_limit_setting(key: String, default_value: int, hint: String) -> void:
+	if not ProjectSettings.has_setting(key):
+		ProjectSettings.set_setting(key, default_value)
+	ProjectSettings.set_initial_value(key, default_value)
+	ProjectSettings.add_property_info({
+		"name": key,
+		"type": TYPE_INT,
+		"hint": PROPERTY_HINT_NONE,
+		"hint_string": hint,
+	})
+
 
 # -- Onboarding dialog --------------------------------------------------------
 
 
-const _ONBOARDING_FLAG := "user://mcp_onboarding_v21_shown"
+const _ONBOARDING_FLAG := "user://mcp_onboarding_v35_shown"
 
 
 func _check_onboarding() -> void:
@@ -194,16 +212,23 @@ func _check_onboarding() -> void:
 	dialog.title = "MCP Plugin — First Run Setup"
 	dialog.dialog_text = (
 		"Welcome to the Godot MCP Toolkit.\n\n"
-		+ "Some capabilities (code execution, OS commands, etc.)\n"
-		+ "are disabled by default for safety. Choose your mode:\n\n"
-		+ "Safe Mode (Recommended):\n"
-		+ "  All advanced features off. Enable individually later\n"
+		+ "Your MCP client sees tools based on the active profile\n"
+		+ "(set via GODOT_MCP_PROFILE in .mcp.json):\n\n"
+		+ "  Standard (default) — 34 core tools + groups on demand\n"
+		+ "  Minimal — 13 read-only tools for code review\n"
+		+ "  Power User — All 59 tools (includes unsafe operations)\n\n"
+		+ "Some capabilities (code execution, OS commands) are\n"
+		+ "disabled by default for safety. Choose your setup:\n\n"
+		+ "Standard (Recommended):\n"
+		+ "  Default profile. Advanced features off. Enable individually\n"
 		+ "  via the MCP dock or Project Settings.\n\n"
 		+ "Configure Individually:\n"
 		+ "  Opens Project Settings -> mcp/unsafe/ to pick features.\n\n"
 		+ "Power User Mode:\n"
-		+ "  Enable ALL features. You know the risks.")
-	dialog.ok_button_text = "Safe Mode (Recommended)"
+		+ "  Enable ALL features and set profile to Power User.\n"
+		+ "  Includes tools that can modify project settings, execute\n"
+		+ "  code, and write outside res://. Use with caution.")
+	dialog.ok_button_text = "Standard (Recommended)"
 	dialog.add_button("Configure Individually", true, "configure")
 	dialog.add_button("Power User Mode", true, "power_user")
 	dialog.confirmed.connect(func():
