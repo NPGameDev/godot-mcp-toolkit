@@ -37,6 +37,7 @@ const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runti
 var _server: Node = null
 var _export_plugin: EditorExportPlugin = null
 var _dock: Control = null
+var _onboarding_wizard: AcceptDialog = null
 # Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
 # Power User polling — detect changes from ProjectSettings UI.
@@ -155,6 +156,7 @@ func _migrate_user_data_paths() -> void:
 		["user://mcp_audit.log", "user://addons/godot_mcp_toolkit/mcp_audit.log"],
 		["user://mcp_power_user_cache.json", "user://addons/godot_mcp_toolkit/mcp_power_user_cache.json"],
 		["user://mcp_onboarding_v35_shown", "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"],
+		["user://mcp_onboarding_v35b_shown", "user://addons/godot_mcp_toolkit/mcp_onboarding_v35b_shown"],
 	]
 	# Token files are per-worktree (user://mcp_token_<hash>).
 	var project_path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
@@ -338,58 +340,160 @@ func _update_power_user_warning() -> void:
 	ProjectSettings.set_setting(_PU_WARNING_KEY, _PU_WARNING_TEXT if enabled else "")
 
 
-# -- Onboarding dialog --------------------------------------------------------
+# -- Guided onboarding wizard -------------------------------------------------
 
 
-const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"
+const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35b_shown"
+# Projects that already saw the v35 single-dialog onboarding skip the wizard.
+const _ONBOARDING_FLAG_V35 := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"
+
+var _wizard_step: int = 0
+var _wizard_buttons: Array = []  # Tracked custom buttons for per-step cleanup.
+const _WIZARD_STEP_COUNT := 5
 
 
 func _check_onboarding() -> void:
 	if FileAccess.file_exists(_ONBOARDING_FLAG):
 		return
+	if FileAccess.file_exists(_ONBOARDING_FLAG_V35):
+		_write_onboarding_flag()
+		return
+
+	_wizard_step = 0
+	_wizard_buttons.clear()
 	var dialog := AcceptDialog.new()
-	dialog.title = "MCP Plugin — First Run Setup"
-	dialog.dialog_text = (
-		"Welcome to the Godot MCP Toolkit.\n\n"
-		+ "Your MCP client sees tools based on the active profile\n"
-		+ "(set via GODOT_MCP_PROFILE in .mcp.json):\n\n"
-		+ "  Standard (default) — 34 core tools + groups on demand\n"
-		+ "  Power User — All 59 tools (includes unsafe operations)\n\n"
-		+ "Some capabilities (code execution, OS commands) are\n"
-		+ "disabled by default for safety. Choose your setup:\n\n"
-		+ "Standard (Recommended):\n"
-		+ "  Default profile. Advanced features off. Enable individually\n"
-		+ "  via the MCP dock or Project Settings.\n\n"
-		+ "Configure Individually:\n"
-		+ "  Opens Project Settings -> mcp_toolkit/feature_gates/ to pick features.\n\n"
-		+ "Power User Mode:\n"
-		+ "  Enable ALL features and set profile to Power User.\n"
-		+ "  Includes tools that can modify project settings, execute\n"
-		+ "  code, and write outside res://. Use with caution.\n\n"
-		+ "Tip: A read-only Minimal profile (13 tools) is also available\n"
-		+ "via GODOT_MCP_PROFILE=minimal for code review workflows.")
-	dialog.ok_button_text = "Standard (Recommended)"
-	dialog.add_button("Configure Individually", true, "configure")
-	dialog.add_button("Power User Mode", true, "power_user")
-	dialog.confirmed.connect(func():
-		_write_onboarding_flag()
-		dialog.queue_free()
-	)
-	dialog.custom_action.connect(func(action: StringName):
-		_write_onboarding_flag()
-		match str(action):
-			"configure":
-				_on_open_settings()
-			"power_user":
-				_on_power_user_mode()
-		dialog.queue_free()
-	)
+	dialog.exclusive = false
+	dialog.min_size = Vector2i(480, 260)
+
+	dialog.confirmed.connect(_wizard_advance.bind(dialog))
+	dialog.custom_action.connect(_wizard_custom_action.bind(dialog))
 	dialog.canceled.connect(func():
 		_write_onboarding_flag()
-		dialog.queue_free()
+		_free_wizard()
 	)
+
+	_onboarding_wizard = dialog
+	_wizard_apply_step(dialog)
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
+
+
+func _wizard_apply_step(dialog: AcceptDialog) -> void:
+	dialog.title = "MCP Toolkit — Setup Wizard (%d of %d)" % [
+		_wizard_step + 1, _WIZARD_STEP_COUNT]
+
+	# Free all tracked custom buttons from the previous step.
+	for btn in _wizard_buttons:
+		if is_instance_valid(btn):
+			btn.queue_free()
+	_wizard_buttons.clear()
+
+	match _wizard_step:
+		0:
+			dialog.dialog_text = (
+				"Welcome to the Godot MCP Toolkit!\n\n"
+				+ "Your AI coding assistant sees tools based on the active profile.\n"
+				+ "Choose your starting configuration:\n\n"
+				+ "  Standard (default) — core tools, unsafe ops disabled\n"
+				+ "  Power User — all tools, including code execution & OS commands\n\n"
+				+ "You can change this anytime in the MCP dock.")
+			dialog.ok_button_text = "Standard (Recommended)"
+			_wizard_buttons.append(dialog.add_button("Power User Mode", true, "power_user"))
+
+		1:
+			dialog.dialog_text = (
+				"This is your MCP control center — server status,\n"
+				+ "feature gates, and audit log.\n\n"
+				+ "The dock is now visible in the bottom panel.")
+			dialog.ok_button_text = "Next"
+			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
+			# Action: show the dock.
+			if _dock != null:
+				make_bottom_panel_item_visible(_dock)
+
+		2:
+			dialog.dialog_text = (
+				"Toggle individual capabilities here. Dual-gate features\n"
+				+ "need both a ProjectSettings toggle and an env var in .mcp.json.\n\n"
+				+ "Open Project Settings to see Feature Gates.")
+			dialog.ok_button_text = "Next"
+			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
+			# Action: open Project Settings to Feature Gates.
+			_on_open_settings()
+
+		3:
+			dialog.dialog_text = (
+				"Your MCP client reads .mcp.json from the project root.\n"
+				+ "Use 'Write .mcp.json' to create or update it.\n")
+			var has_mcp_json := FileAccess.file_exists(
+				ProjectSettings.globalize_path("res://") + ".mcp.json")
+			if has_mcp_json:
+				dialog.dialog_text += "\n.mcp.json already exists — you're all set."
+			else:
+				dialog.dialog_text += "\nNo .mcp.json found. Create one now?"
+				_wizard_buttons.append(
+					dialog.add_button("Create .mcp.json", true, "create_mcp"))
+			dialog.ok_button_text = "Next"
+			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
+
+		4:
+			dialog.dialog_text = (
+				"Use 'Info / Help' in the dock for connection status,\n"
+				+ "tool list, and documentation links.\n\n"
+				+ "You're all set! The Info panel is now open.")
+			dialog.ok_button_text = "Finish"
+			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
+			# Action: open the Info dialog.
+			if _dock != null:
+				_dock._show_info_dialog()
+
+	# "Skip Tour" always last (rightmost).
+	_wizard_buttons.append(dialog.add_button("Skip Tour", true, "skip"))
+
+
+func _wizard_advance(dialog: AcceptDialog) -> void:
+	if _wizard_step == 0:
+		# Step 0 OK = "Standard (Recommended)" — no action needed, default profile.
+		pass
+	if _wizard_step >= _WIZARD_STEP_COUNT - 1:
+		# Final step — finish.
+		_write_onboarding_flag()
+		_free_wizard()
+		return
+	_wizard_step += 1
+	_wizard_apply_step(dialog)
+
+
+func _wizard_custom_action(action: StringName, dialog: AcceptDialog) -> void:
+	match str(action):
+		"skip":
+			_write_onboarding_flag()
+			_free_wizard()
+		"back":
+			if _wizard_step > 0:
+				_wizard_step -= 1
+				_wizard_apply_step(dialog)
+		"power_user":
+			# Trigger Power User flow — the dock shows its own confirmation dialog.
+			if _dock != null:
+				_dock.toggle_power_user_mode()
+			# Advance to step 1 after choosing.
+			_wizard_step = 1
+			_wizard_apply_step(dialog)
+		"standard":
+			# Explicit standard choice — advance.
+			_wizard_step = 1
+			_wizard_apply_step(dialog)
+		"create_mcp":
+			if _dock != null:
+				_dock.write_mcp_json()
+
+
+func _free_wizard() -> void:
+	_wizard_buttons.clear()
+	if _onboarding_wizard != null and is_instance_valid(_onboarding_wizard):
+		_onboarding_wizard.queue_free()
+	_onboarding_wizard = null
 
 
 func _write_onboarding_flag() -> void:
@@ -511,6 +615,9 @@ func _poll_feature_states() -> void:
 
 func _exit_tree() -> void:
 	# Teardown symmetry — reverse order of _enter_tree registrations.
+	# Onboarding wizard (if still open).
+	_free_wizard()
+
 	# Command Palette.
 	var palette := EditorInterface.get_command_palette()
 	for key in _PALETTE_KEYS:
