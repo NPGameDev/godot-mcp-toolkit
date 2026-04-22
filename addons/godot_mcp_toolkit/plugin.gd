@@ -218,7 +218,7 @@ func _register_feature_gate_settings() -> void:
 		order_idx += 1
 
 	# Power User warning — visible string at the end of the unsafe section.
-	_update_power_user_warning()
+	_register_power_user_warning()
 
 	# Response-limit settings.
 	_register_basic_int("mcp_toolkit/limits/script_read_cap_kb", 256,
@@ -262,19 +262,24 @@ const _PU_WARNING_TEXT := (
 	+ "project settings writes, and file access outside res://.")
 
 
+func _register_power_user_warning() -> void:
+	if not ProjectSettings.has_setting(_PU_WARNING_KEY):
+		ProjectSettings.set_setting(_PU_WARNING_KEY, "")
+	ProjectSettings.set_initial_value(_PU_WARNING_KEY, "")
+	ProjectSettings.set_as_basic(_PU_WARNING_KEY, true)
+	ProjectSettings.set_order(_PU_WARNING_KEY, 1000)
+	ProjectSettings.add_property_info({
+		"name": _PU_WARNING_KEY, "type": TYPE_STRING,
+		"hint": PROPERTY_HINT_MULTILINE_TEXT, "hint_string": "",
+	})
+	_update_power_user_warning()
+
+
 func _update_power_user_warning() -> void:
 	var enabled: bool = ProjectSettings.get_setting(
 		"mcp_toolkit/unsafe/power_user_mode", false)
-	if enabled:
-		ProjectSettings.set_setting(_PU_WARNING_KEY, _PU_WARNING_TEXT)
-		ProjectSettings.set_as_basic(_PU_WARNING_KEY, true)
-		ProjectSettings.set_order(_PU_WARNING_KEY, 1000)
-		ProjectSettings.add_property_info({
-			"name": _PU_WARNING_KEY, "type": TYPE_STRING,
-			"hint": PROPERTY_HINT_MULTILINE_TEXT, "hint_string": "",
-		})
-	elif ProjectSettings.has_setting(_PU_WARNING_KEY):
-		ProjectSettings.set_setting(_PU_WARNING_KEY, null)
+	ProjectSettings.set_setting(_PU_WARNING_KEY, _PU_WARNING_TEXT if enabled else "")
+	ProjectSettings.notify_property_list_changed()
 
 
 # -- Onboarding dialog --------------------------------------------------------
