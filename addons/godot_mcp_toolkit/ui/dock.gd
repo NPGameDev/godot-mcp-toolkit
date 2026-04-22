@@ -435,7 +435,7 @@ func _read_mcp_profile() -> String:
 func _refresh_features() -> void:
 	if _power_user_btn == null:
 		return
-	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/unsafe/power_user_mode", false)
+	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/feature_gates/power_user_mode", false)
 	_power_user_btn.text = "Disable Power User Mode" if allow_all else "Enable All (Power User)"
 
 	for feature in _feature_rows:
@@ -463,7 +463,7 @@ func _refresh_features() -> void:
 				sync_icon.visible = true
 				sync_icon.tooltip_text = (
 					"Env var set but ProjectSettings disabled"
-					+ " — enable in Project Settings -> mcp_toolkit/unsafe/"
+					+ " — enable in Project Settings -> mcp_toolkit/feature_gates/"
 				)
 
 
@@ -530,7 +530,7 @@ func _confirm_env_var_remove(env_var: String) -> void:
 # ---------------------------------------------------------------------------
 
 func _on_power_user_pressed() -> void:
-	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/unsafe/power_user_mode", false)
+	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/feature_gates/power_user_mode", false)
 	if allow_all:
 		_confirm_disable_power_user()
 	else:
@@ -584,7 +584,7 @@ func _apply_power_user_mode(enable: bool) -> void:
 		# Snapshot current per-feature PS state (persisted via ProjectSettings).
 		MCPFeatureGate.snapshot_pre_power_user()
 
-	ProjectSettings.set_setting("mcp_toolkit/unsafe/power_user_mode", enable)
+	ProjectSettings.set_setting("mcp_toolkit/feature_gates/power_user_mode", enable)
 
 	if enable:
 		for feature in MCPFeatureRegistry.all_features():

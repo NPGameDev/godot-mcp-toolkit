@@ -65,7 +65,7 @@ func _enter_tree() -> void:
 	_migrate_stale_settings()
 	_register_feature_gate_settings()
 	_last_power_user = ProjectSettings.get_setting(
-		"mcp_toolkit/unsafe/power_user_mode", false)
+		"mcp_toolkit/feature_gates/power_user_mode", false)
 
 	var registry := MCPCommandRegistry.new()
 	_server = MCPServer.new()
@@ -141,7 +141,7 @@ const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd
 
 
 func _migrate_stale_settings() -> void:
-	# Remove leftover mcp/ keys from the pre-rename era.
+	# Remove leftover keys from previous namespace eras.
 	var stale_keys := [
 		"mcp/unsafe/allow_all",
 		"mcp/unsafe/allow_game_eval",
@@ -158,12 +158,23 @@ func _migrate_stale_settings() -> void:
 		if ProjectSettings.has_setting(key):
 			ProjectSettings.set_setting(key, null)
 			removed += 1
-	# Migrate old power_user_mode paths → current unsafe/power_user_mode.
-	for old_key in ["mcp_toolkit/unsafe/allow_all", "mcp_toolkit/power_user_mode"]:
+	# Migrate unsafe/ → feature_gates/ per-feature keys.
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var new_key: String = entry["ps_key"]  # already feature_gates/
+		var old_key := new_key.replace("feature_gates/", "unsafe/")
 		if ProjectSettings.has_setting(old_key):
 			var val = ProjectSettings.get_setting(old_key, false)
 			if val:
-				ProjectSettings.set_setting("mcp_toolkit/unsafe/power_user_mode", true)
+				ProjectSettings.set_setting(new_key, true)
+			ProjectSettings.set_setting(old_key, null)
+			removed += 1
+	# Migrate old power_user_mode paths → current feature_gates/power_user_mode.
+	for old_key in ["mcp_toolkit/unsafe/allow_all", "mcp_toolkit/unsafe/power_user_mode", "mcp_toolkit/power_user_mode"]:
+		if ProjectSettings.has_setting(old_key):
+			var val = ProjectSettings.get_setting(old_key, false)
+			if val:
+				ProjectSettings.set_setting("mcp_toolkit/feature_gates/power_user_mode", true)
 			ProjectSettings.set_setting(old_key, null)
 			removed += 1
 	# Remove internal cache from ProjectSettings — now stored in user:// file.
@@ -201,11 +212,11 @@ func _validate_user_whitelist() -> void:
 
 func _register_feature_gate_settings() -> void:
 	# power_user_mode — master switch, registered first so it displays first.
-	_register_basic_bool("mcp_toolkit/unsafe/power_user_mode", false,
+	_register_basic_bool("mcp_toolkit/feature_gates/power_user_mode", false,
 		"WARNING: Enables ALL feature gates and grants the AI agent "
 		+ "full control — code execution, OS commands, project settings writes, "
 		+ "and file access outside res://. Individual gates sync automatically.")
-	ProjectSettings.set_order("mcp_toolkit/unsafe/power_user_mode", 0)
+	ProjectSettings.set_order("mcp_toolkit/feature_gates/power_user_mode", 0)
 
 	var order_idx := 1
 	for feature in MCPFeatureRegistry.all_features():
@@ -217,7 +228,7 @@ func _register_feature_gate_settings() -> void:
 		ProjectSettings.set_order(ps_key, order_idx)
 		order_idx += 1
 
-	# Power User warning — visible string at the end of the unsafe section.
+	# Power User warning — visible string at the end of the Feature Gates section.
 	_register_power_user_warning()
 
 	# Response-limit settings.
@@ -255,7 +266,7 @@ func _register_basic_int(key: String, default_value: int, hint: String) -> void:
 	})
 
 
-const _PU_WARNING_KEY := "mcp_toolkit/unsafe/power_user_warning"
+const _PU_WARNING_KEY := "mcp_toolkit/feature_gates/power_user_warning"
 const _PU_WARNING_TEXT := (
 	"POWER USER MODE ACTIVE — All feature gates enabled. "
 	+ "The AI agent has full control: code execution, OS commands, "
@@ -277,7 +288,7 @@ func _register_power_user_warning() -> void:
 
 func _update_power_user_warning() -> void:
 	var enabled: bool = ProjectSettings.get_setting(
-		"mcp_toolkit/unsafe/power_user_mode", false)
+		"mcp_toolkit/feature_gates/power_user_mode", false)
 	ProjectSettings.set_setting(_PU_WARNING_KEY, _PU_WARNING_TEXT if enabled else "")
 	ProjectSettings.notify_property_list_changed()
 
@@ -306,7 +317,7 @@ func _check_onboarding() -> void:
 		+ "  Default profile. Advanced features off. Enable individually\n"
 		+ "  via the MCP dock or Project Settings.\n\n"
 		+ "Configure Individually:\n"
-		+ "  Opens Project Settings -> mcp_toolkit/unsafe/ to pick features.\n\n"
+		+ "  Opens Project Settings -> mcp_toolkit/feature_gates/ to pick features.\n\n"
 		+ "Power User Mode:\n"
 		+ "  Enable ALL features and set profile to Power User.\n"
 		+ "  Includes tools that can modify project settings, execute\n"
@@ -352,7 +363,7 @@ func _process(_delta: float) -> void:
 
 	# Detect Power User toggle from ProjectSettings UI.
 	var power_user: bool = ProjectSettings.get_setting(
-		"mcp_toolkit/unsafe/power_user_mode", false)
+		"mcp_toolkit/feature_gates/power_user_mode", false)
 	if power_user != _last_power_user:
 		_last_power_user = power_user
 		_sync_power_user_mode(power_user)
@@ -484,12 +495,12 @@ func _on_show_audit() -> void:
 
 func _on_open_settings() -> void:
 	# No public API to open Project Settings to a specific section.
-	print("[MCP] Navigate to: Project -> Project Settings -> Advanced -> mcp_toolkit/unsafe/")
+	print("[MCP] Navigate to: Project -> Project Settings -> mcp_toolkit/feature_gates/")
 	var toaster = EditorInterface.get_editor_toaster()
 	if toaster != null:
 		toaster.push_toast(
-			"Project -> Project Settings -> Advanced -> mcp_toolkit/unsafe/", 0,
-			"Enable 'Advanced Settings' to see the MCP feature gates")
+			"Project -> Project Settings -> Mcp Toolkit -> Feature Gates", 0,
+			"MCP Toolkit feature gates and settings")
 
 
 func _on_write_mcp_json() -> void:
