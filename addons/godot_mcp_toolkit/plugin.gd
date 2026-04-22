@@ -565,8 +565,11 @@ func _on_regen_token() -> void:
 
 
 func _on_show_audit() -> void:
-	var global_path := ProjectSettings.globalize_path("user://mcp_audit.log")
-	OS.shell_open(global_path)
+	if _dock != null:
+		_dock.show_audit_dialog()
+	else:
+		var global_path := ProjectSettings.globalize_path("user://mcp_audit.log")
+		OS.shell_open(global_path)
 
 
 func _on_open_settings() -> void:

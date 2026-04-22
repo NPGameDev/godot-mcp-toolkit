@@ -17,7 +17,6 @@ const _TOAST_ERROR := 2
 
 var _server: Node = null
 var _audit_path: String = ""
-var _audit_timer: Timer = null
 
 # Status widgets.
 var _status_label: Label = null
@@ -41,9 +40,8 @@ var _ws_buffer_spinbox: SpinBox = null
 # Info/Help dialog (populated on demand).
 var _info_dialog: AcceptDialog = null
 
-# Audit widgets.
-var _audit_container: VBoxContainer = null
-var _audit_scroll: ScrollContainer = null
+# Audit log dialog (populated on demand).
+var _audit_dialog: AcceptDialog = null
 
 
 func bind(server: Node, audit_path: String) -> void:
@@ -66,8 +64,9 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	if _audit_timer != null:
-		_audit_timer.stop()
+	if _audit_dialog != null and is_instance_valid(_audit_dialog):
+		_audit_dialog.queue_free()
+		_audit_dialog = null
 
 
 # ---------------------------------------------------------------------------
@@ -232,7 +231,7 @@ func _build_ui() -> void:
 
 	# -- Audit Log section (top of lower split) -------------------------------
 	var audit_section := _make_section("Audit Log")
-	audit_section.custom_minimum_size.y = int(80 * scale)
+	audit_section.size_flags_vertical = 0  # fixed height
 	lower_split.add_child(audit_section)
 	var ac: VBoxContainer = audit_section.get_meta("content")
 
@@ -261,26 +260,10 @@ func _build_ui() -> void:
 	audit_size_spin.value_changed.connect(_on_audit_max_size_changed)
 	audit_settings_row.add_child(audit_size_spin)
 
-	_audit_scroll = ScrollContainer.new()
-	_audit_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	ac.add_child(_audit_scroll)
-
-	_audit_container = VBoxContainer.new()
-	_audit_container.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_audit_scroll.add_child(_audit_container)
-
-	var audit_btns := HBoxContainer.new()
-	ac.add_child(audit_btns)
-
-	var open_log_btn := Button.new()
-	open_log_btn.text = "Open Full Log"
-	open_log_btn.pressed.connect(_on_open_audit_log)
-	audit_btns.add_child(open_log_btn)
-
-	var clear_btn := Button.new()
-	clear_btn.text = "Clear View"
-	clear_btn.pressed.connect(_on_clear_audit_view)
-	audit_btns.add_child(clear_btn)
+	var view_log_btn := Button.new()
+	view_log_btn.text = "View Audit Log"
+	view_log_btn.pressed.connect(show_audit_dialog)
+	ac.add_child(view_log_btn)
 
 	# -- Bottom stack (Security & Limits + Info button) -----------------------
 	var bottom_section := _make_section("Security & Response Limits")
@@ -328,13 +311,6 @@ func _build_ui() -> void:
 	info_btn.pressed.connect(_show_info_dialog)
 	lc.add_child(info_btn)
 
-	# -- Audit poll timer (visibility-gated) --
-	_audit_timer = Timer.new()
-	_audit_timer.wait_time = 0.5
-	_audit_timer.timeout.connect(_refresh_audit_tail)
-	add_child(_audit_timer)
-	if visible:
-		_audit_timer.start()
 
 
 # ---------------------------------------------------------------------------
@@ -361,13 +337,7 @@ func _on_command_received(method: String) -> void:
 
 
 func _on_visibility_changed() -> void:
-	if _audit_timer == null:
-		return
-	if visible:
-		_audit_timer.start()
-		_refresh_audit_tail()
-	else:
-		_audit_timer.stop()
+	pass
 
 
 # ---------------------------------------------------------------------------
@@ -665,57 +635,75 @@ func _offer_create_mcp_json_for_power_user() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Audit log (polled — visibility-gated via Timer)
+# Audit log popup
 # ---------------------------------------------------------------------------
 
-func _refresh_audit_tail() -> void:
-	_refresh_runtime_status()
-	if _audit_container == null:
-		return
+func show_audit_dialog() -> void:
+	# Read the log file.
 	var path := _audit_path
 	if path.is_empty():
 		path = "user://mcp_audit.log"
-	if not FileAccess.file_exists(path):
-		return
-	var file := FileAccess.open(path, FileAccess.READ)
-	if file == null:
-		return
-	var size := file.get_length()
-	if size > 4096:
-		file.seek(size - 4096)
-		file.get_line()  # skip partial first line
-	var lines := PackedStringArray()
-	while not file.eof_reached():
-		var line := file.get_line()
-		if not line.is_empty():
-			lines.append(line)
-	file.close()
+	var log_text := ""
+	if FileAccess.file_exists(path):
+		var file := FileAccess.open(path, FileAccess.READ)
+		if file != null:
+			log_text = file.get_as_text()
+			file.close()
+	if log_text.strip_edges().is_empty():
+		log_text = "(audit log is empty)"
 
-	var start_idx := maxi(0, lines.size() - 10)
-	var display_lines := lines.slice(start_idx)
+	# Reuse or create dialog.
+	if _audit_dialog != null and is_instance_valid(_audit_dialog):
+		_audit_dialog.queue_free()
+		_audit_dialog = null
 
-	for child in _audit_container.get_children():
-		child.queue_free()
-	for line in display_lines:
-		var lbl := Label.new()
-		lbl.text = line
-		lbl.add_theme_font_size_override("font_size", 11)
-		_audit_container.add_child(lbl)
+	_audit_dialog = AcceptDialog.new()
+	_audit_dialog.title = "MCP Toolkit — Audit Log"
+	_audit_dialog.ok_button_text = "Close"
+	_audit_dialog.exclusive = false
+	_audit_dialog.min_size = Vector2i(620, 480)
+	_audit_dialog.confirmed.connect(func():
+		_audit_dialog.queue_free()
+		_audit_dialog = null
+	)
+	_audit_dialog.canceled.connect(func():
+		_audit_dialog.queue_free()
+		_audit_dialog = null
+	)
 
+	var open_file_btn := _audit_dialog.add_button("Open File", true, "open_file")
+	_audit_dialog.custom_action.connect(func(action: StringName):
+		if action == "open_file":
+			var global_path := ProjectSettings.globalize_path(path)
+			OS.shell_open(global_path)
+	)
 
-func _on_open_audit_log() -> void:
-	var path := _audit_path
-	if path.is_empty():
-		path = "user://mcp_audit.log"
-	var global_path := ProjectSettings.globalize_path(path)
-	OS.shell_open(global_path)
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_audit_dialog.add_child(vbox)
 
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.custom_minimum_size = Vector2(600, 400)
+	vbox.add_child(scroll)
 
-func _on_clear_audit_view() -> void:
-	if _audit_container == null:
-		return
-	for child in _audit_container.get_children():
-		child.queue_free()
+	var text_label := RichTextLabel.new()
+	text_label.bbcode_enabled = false
+	text_label.fit_content = true
+	text_label.scroll_active = false  # scroll handled by parent ScrollContainer
+	text_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_label.selection_enabled = true
+	text_label.text = log_text
+	text_label.add_theme_font_size_override("normal_font_size", 11)
+	scroll.add_child(text_label)
+
+	# Scroll to bottom after layout pass.
+	EditorInterface.get_base_control().add_child(_audit_dialog)
+	_audit_dialog.popup_centered()
+	await get_tree().process_frame
+	scroll.scroll_vertical = scroll.get_v_scroll_bar().max_value
 
 
 # ---------------------------------------------------------------------------
