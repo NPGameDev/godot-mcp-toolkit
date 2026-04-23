@@ -125,6 +125,8 @@ Security is a first-class design goal — not an afterthought.
 - **Untrusted envelopes** — Content returned from the editor is wrapped in per-call nonce-tagged envelopes, mitigating prompt injection from file contents.
 - **Localhost only** — The WebSocket server binds `127.0.0.1` exclusively. Never `0.0.0.0`.
 
+> **Disclaimer:** We take security seriously and design every layer with defense-in-depth, but no software is immune to misuse or unforeseen vulnerabilities. This project is provided under the [MIT License](LICENSE) with no warranty. You are responsible for evaluating whether it meets your security requirements before use.
+
 ## Tools
 
 55+ tools across 13 domains. See the [server README](https://github.com/NPGameDev/godot-mcp-server#tool-reference) for the complete reference.
