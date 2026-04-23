@@ -181,14 +181,14 @@ When Godot runs with `--headless`, the plugin loads and the WebSocket server sta
 
 The companion server supports built-in profiles that control which tools your AI assistant sees:
 
-| Profile | Tools | Use case |
-|---------|-------|----------|
-| **minimal** | ~12 | Read-only exploration and code review |
-| **standard** (default) | ~34 | Day-to-day development with on-demand group access |
-| **Power User** | ~55 (all) | Full access including feature-gated tools |
-| **custom** | user-defined | Cherry-pick tools by name |
+| Profile | Tools | Context cost | Use case |
+|---------|-------|-------------|----------|
+| **minimal** | 13 | ~1,300 tokens | Read-only exploration and code review |
+| **standard** (default) | 38 | ~3,600 tokens | Day-to-day development with on-demand group access |
+| **Power User** | 59 | ~5,700 tokens | Full access including feature-gated tools |
+| **custom** | user-defined | varies | Cherry-pick tools by name |
 
-Set via `GODOT_MCP_PROFILE` environment variable in `.mcp.json`. See the [server README](https://github.com/NPGameDev/godot-mcp-server#profiles) for details.
+Token costs represent the one-time MCP catalogue registration overhead (with schema minification). Set via `GODOT_MCP_PROFILE` environment variable in `.mcp.json`. See the [server README](https://github.com/NPGameDev/godot-mcp-server#profiles) for details and the [token efficiency report](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/token-efficiency.md) for per-tool breakdowns.
 
 ## Godot version support
 
