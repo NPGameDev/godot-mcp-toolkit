@@ -27,6 +27,12 @@ static func godot_minor() -> int:
 	return Engine.get_version_info().get("minor", 0)
 
 
+## True when running under `godot --headless` (no display server).
+## Use to gate tools that require a viewport or running game.
+static func is_headless() -> bool:
+	return DisplayServer.get_name() == "headless"
+
+
 ## Safely get EditorUndoRedoManager via dynamic dispatch.
 ## Returns null on Godot < 4.4 (where the method doesn't exist).
 ## Callers must handle null by skipping undo registration.

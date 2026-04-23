@@ -99,6 +99,100 @@ companion `@npgamedev/godot-mcp-server` uses this to:
 Environment variable `GODOT_MCP_HIDE_UNAVAILABLE=1` is reserved for future
 use (hiding version-incompatible tools from `tools/list`).
 
+## Headless mode (`--headless`)
+
+**Tested:** Godot 4.2.0, 4.2.2, 4.3.0, 4.4.1, 4.5.0, 4.5.2, 4.6.2 on Windows.
+
+When Godot runs with `--headless --editor`, the plugin loads, the WebSocket
+server starts, and the vast majority of tools function identically to GUI mode.
+Results are consistent across all tested versions.
+
+### Detection
+
+`_Hub.is_headless()` checks `DisplayServer.get_name() == "headless"`. Tools
+that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
+
+### Per-tool headless matrix
+
+| Tool | Headless | Notes |
+|------|----------|-------|
+| `script_read` | ✅ | |
+| `script_write` | ✅ | |
+| `script_read_range` | ✅ | |
+| `script_delete` | ✅ | |
+| `script_check` | ✅ | |
+| `folder_create` | ✅ | |
+| `folder_delete` | ✅ | |
+| `file_delete` | ✅ | |
+| `scene_create` | ✅ | File-based |
+| `scene_delete` | ✅ | File-based |
+| `scene_open` | ✅ | `EditorInterface.open_scene_from_path()` works headless |
+| `scene_close` | ✅ | Requires 4.5+ (same as GUI mode) |
+| `scene_get_tree` | ✅ | Requires a scene opened via `scene_open` |
+| `scene_create_node` | ✅ | |
+| `scene_delete_node` | ✅ | |
+| `scene_instantiate` | ✅ | |
+| `scene_diff` | ✅ | |
+| `node_get_property` | ✅ | |
+| `node_set_property` | ✅ | |
+| `node_get_property_list` | ✅ | |
+| `node_set_script` | ✅ | |
+| `node_call_method` | ✅ | Feature-gated |
+| `signal_list` | ✅ | |
+| `signal_manage` | ✅ | |
+| `signal_emit` | ✅ | Feature-gated |
+| `resource_load` | ✅ | |
+| `resource_write` | ✅ | |
+| `resource_delete` | ✅ | |
+| `asset_list` | ✅ | |
+| `asset_get_dependencies` | ✅ | |
+| `asset_import` | ✅ | |
+| `save_read` | ✅ | Feature-gated |
+| `save_write` | ✅ | Feature-gated |
+| `save_delete` | ✅ | Feature-gated |
+| `save_list` | ✅ | Feature-gated |
+| `classdb_get_info` | ✅ | |
+| `classdb_search` | ✅ | |
+| `project_get_settings` | ✅ | |
+| `project_set_setting` | ✅ | Feature-gated |
+| `input_map_action` | ✅ | |
+| `input_map_event` | ✅ | Feature-gated |
+| `animation_keyframe` | ✅ | |
+| `animation_get_keys` | ✅ | |
+| `tilemap_set_cells` | ✅ | |
+| `editor_save_scene` | ✅ | |
+| `editor_reload_scripts` | ✅ | |
+| `editor_get_console` | ✅ | |
+| `editor_get_errors` | ✅ | |
+| `editor_wait_for_idle` | ✅ | |
+| `game_start` | ✅ | Game process launches; no display |
+| `game_stop` | ✅ | |
+| `editor_screenshot` | ❌ | Returns `HEADLESS_UNSUPPORTED` |
+| `editor_screenshot_node` | ❌ | Returns `HEADLESS_UNSUPPORTED` |
+| `runtime_screenshot` | ❌ | Requires display in game process |
+| `runtime_get_node_state` | ⚠️ | Requires game with runtime server |
+| `debugger_get_log` | ⚠️ | Requires game with runtime server |
+| `input_simulate` | ❌ | Requires display for input events |
+| `animation_player_control` | ⚠️ | Requires game with runtime server |
+| `game_eval` | ⚠️ | Requires game with runtime server |
+
+✅ = works &nbsp; ⚠️ = depends on runtime server availability &nbsp; ❌ = requires display
+
+### CI/pipeline usage
+
+Headless mode enables CI pipelines and SSH-only workflows. A typical CI setup:
+
+```bash
+godot --headless --editor --path /path/to/project &
+# Wait for plugin to start, then use MCP tools via the server
+npx @npgamedev/godot-mcp-server
+```
+
+File-based tools (scripts, resources, scenes, folders), ClassDB introspection,
+and project settings all work without any display. Scene tree operations also
+work — `scene_open` loads scenes programmatically and the full node/signal
+tool chain functions from there.
+
 ## Forward compatibility
 
 The `has_method()` + `call()` pattern is inherently forward-compatible.

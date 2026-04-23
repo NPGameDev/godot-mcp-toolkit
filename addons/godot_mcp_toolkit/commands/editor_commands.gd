@@ -68,6 +68,9 @@ static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
+	if _Hub.is_headless():
+		return MCPError.make("HEADLESS_UNSUPPORTED",
+			"editor.screenshot requires a display server (no viewport in headless mode)")
 	var save_path := str(parameters.get("save_path", ""))
 
 	var viewport: SubViewport = EditorInterface.get_editor_viewport_2d()
@@ -132,6 +135,9 @@ static func _cmd_editor_reload_scripts() -> Dictionary:
 
 
 static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
+	if _Hub.is_headless():
+		return MCPError.make("HEADLESS_UNSUPPORTED",
+			"editor.screenshot_node requires a display server (no viewport in headless mode)")
 	var node_path := str(parameters.get("node_path", ""))
 	if node_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing node_path")
