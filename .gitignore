@@ -15,7 +15,10 @@ dist-plugin/
 # repo root IS tracked; everything under .claude/ is not.
 .claude/
 
-# Smoke-test scratch artifacts written by the server repo's test/smoke.ts
-/smoke_probe.*
-/smoke_screenshots/
-/smoke_import_b64.png
+# Smoke-test and eval-suite scratch artifacts (server repo's test/smoke.ts
+# and test/eval/). Broad pattern catches crash-leftover files at repo root.
+/smoke*
+/eval_*
+
+# OS / shell crash artifacts
+*.stackdump
