@@ -82,6 +82,14 @@ The plugin runs a localhost-only WebSocket server inside the Godot editor. The c
 - **Editor channel** (port 6505) — operates on the edited scene via `EditorInterface`.
 - **Runtime channel** (port 6525) — operates on the live `SceneTree` during playtests.
 
+### Runtime channel (Mode B)
+
+During playtests, the plugin injects an autoload node that opens a second WebSocket server on port 6525 (range 6525–6540). This enables runtime tools: inspecting live nodes, capturing game screenshots, simulating input, reading game logs, and evaluating GDScript expressions.
+
+The runtime channel activates automatically when your AI assistant uses `game_start` with `wait_for_runtime: true` (the default). It shuts down when the playtest ends. Override the port with `GODOT_MCP_RUNTIME_PORT` in your `.mcp.json` env block.
+
+Runtime tools are only available in debug builds (`OS.is_debug_build()` gated) and are never included in exported games.
+
 ## Dock UI
 
 The bottom-panel dock provides at-a-glance status and full control:
@@ -147,7 +155,7 @@ The companion server supports built-in profiles that control which tools your AI
 |---------|-------|----------|
 | **minimal** | ~12 | Read-only exploration and code review |
 | **standard** (default) | ~34 | Day-to-day development with on-demand group access |
-| **Power User** | all | Full access including feature-gated tools |
+| **Power User** | ~55 (all) | Full access including feature-gated tools |
 | **custom** | user-defined | Cherry-pick tools by name |
 
 Set via `GODOT_MCP_PROFILE` environment variable in `.mcp.json`. See the [server README](https://github.com/NPGameDev/godot-mcp-server#profiles) for details.
