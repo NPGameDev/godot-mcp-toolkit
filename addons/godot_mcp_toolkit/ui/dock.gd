@@ -899,6 +899,23 @@ func _show_info_dialog() -> void:
 	_add_info_row(vbox, "Plugin", "v%s" % plugin_ver)
 	_add_info_row(vbox, "Godot", godot_ver)
 
+	# -- Response limits --
+	_add_info_header(vbox, "Response Limits")
+	var script_cap_kb: int = ProjectSettings.get_setting(
+		"mcp_toolkit/limits/script_read_cap_kb", 256)
+	var ws_buffer_kb: int = ProjectSettings.get_setting(
+		"mcp_toolkit/limits/ws_buffer_kb", 1024)
+	_add_info_row(vbox, "Script read cap", "%d KB" % script_cap_kb)
+	_add_info_row(vbox, "WS buffer", "%d KB" % ws_buffer_kb)
+	var limits_note := Label.new()
+	limits_note.text = (
+		"Editable in Project Settings → Mcp Toolkit → Limits.\n"
+		+ "The TS bridge can override these via GODOT_MCP_SCRIPT_READ_LIMIT\n"
+		+ "and GODOT_MCP_WS_BUFFER_LIMIT env vars (sent after auth).")
+	limits_note.add_theme_font_size_override("font_size", 11)
+	limits_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(limits_note)
+
 	# -- Registered tools --
 	_add_info_header(vbox, "Registered Tools")
 	if _server != null and _server.has_method("get_command_methods"):
