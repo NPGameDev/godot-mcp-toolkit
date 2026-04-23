@@ -13,7 +13,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - godot-version: "4.2.2"
+          - godot-version: "4.2.0"
             check-method: "check-only"
           - godot-version: "4.5.0"
             check-method: "editor"
