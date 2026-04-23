@@ -1,104 +1,172 @@
 # Godot MCP Toolkit
 
-A Godot 4.4+ editor plugin that hosts a localhost (`127.0.0.1:6505`) WebSocket
-server so Claude Code — or any MCP-compatible client — can drive scene, node,
-script, and editor operations directly inside the Godot editor. Pairs with
-the companion [`godot-mcp-server`](https://github.com/NPGameDev/godot-mcp-server)
-npm package (TypeScript, stdio-to-WebSocket bridge).
+[![CI](https://github.com/NPGameDev/godot-mcp-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/NPGameDev/godot-mcp-toolkit/actions/workflows/ci.yml)
+![Godot 4.x](https://img.shields.io/badge/Godot-4.x-478CBF?logo=godotengine&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-## How the two pieces fit
+AI-assisted Godot development through the [Model Context Protocol](https://modelcontextprotocol.io). Your AI coding assistant can create scenes, edit scripts, inspect nodes, run playtests, and more — directly inside the Godot editor.
 
-```
-Claude Code ── stdio ──▶ @npgamedev/godot-mcp-server (npm, Node.js) ── ws://127.0.0.1:6505 ──▶ godot_mcp_toolkit (this plugin, inside the Godot editor)
-```
+## What it does
 
-Users install both: the plugin via Godot's AssetLib (once submitted) or the
-manual zip route, and the server via `npm install -g @npgamedev/godot-mcp-server`.
+Godot MCP Toolkit turns the Godot 4.x editor into an MCP server. Any MCP-compatible AI coding assistant can connect and perform 55+ operations: creating scenes and nodes, reading and writing scripts, managing resources, running playtests, inspecting the class database, and controlling the editor — all without leaving the conversation.
 
-## Install
+Tested primarily with [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Compatible with any MCP client that supports the Model Context Protocol.
 
-- **End users**: see [`DISTRIBUTION.md`](./DISTRIBUTION.md) — covers the
-  AssetLib route, the manual-zip route, and the `.mcp.json` placement step.
-- **Developers / dogfood** (this repo itself): see the "Dogfood setup" section
-  below.
+## Quick start
 
-> ⚠️ No releases have been tagged yet. The first public release is gated
-> to iteration 20 in the planning repo (adds transport auth, filesystem
-> sandbox, response caps, secret scrubbing, audit log). Pre-iter-20 use is
-> internal dogfood only. See `DISTRIBUTION.md` for the gate rationale.
+### 1. Install the plugin
 
-## Dogfood setup
+- **Godot AssetLib:** Inside the editor, go to AssetLib tab, search "Godot MCP Toolkit", Download, Install.
+- **Manual:** Download from [GitHub Releases](https://github.com/NPGameDev/godot-mcp-toolkit/releases), extract into your project's `addons/` directory.
 
-This repo root **is** a Godot 4.4 project (`project.godot` at root,
-`addons/godot_mcp_toolkit/` at root). Opening it in Godot is the test
-environment for the plugin.
+### 2. Enable the plugin
+
+Project Settings &rarr; Plugins &rarr; **Godot MCP Toolkit** &rarr; check **Active**.
+
+The dock panel appears at the bottom of the editor. The output log should show:
 
 ```
-# one-time, in the companion server repo
-cd <server repo root>
-npm install && npm run build
-
-# every session
-# 1) open THIS repo root in Godot 4.4+
-# 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
-# 3) from THIS repo root (where .mcp.json lives):
-claude
-# /mcp should list `godot-mcp-toolkit: connected` with 10+ tools.
+[MCP] WebSocket server listening on 127.0.0.1:6505
 ```
 
-**Post-iter-13c:** the `_process` TCPServer poll in `mcp_server.gd` is
-frame-skipped to ~15Hz to mitigate a Godot 4.4.1 main-loop race. Pre-fix
-this repo's dogfood reliably crashed Godot within seconds of `claude`
-starting; post-fix it's stable. Full trial history:
-[plan-repo crash report](https://github.com/NPGameDev/godot-mcp-creation/blob/main/Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md).
-A sibling `godot-mcp-dogfood-playground/` project exists for end-user /
-clean-project verification (e.g. iter 20 AssetLib install checks).
+### 3. Install and configure the MCP server
 
-**Pre-iter-20:** this repo's `.mcp.json` (and the byte-identical
-`addons/godot_mcp_toolkit/.mcp.json.template`) use a path-based
-`node <abs-path>/dist/index.js` invocation, because the scoped
-`@npgamedev/godot-mcp-server` is not yet published. Iter 20 publishes to npm
-and swaps both files back to `cmd /c npx -y @npgamedev/godot-mcp-server` on
-Windows (`npx -y @npgamedev/godot-mcp-server` on Linux / macOS). Post-swap the
-same config works unchanged for end users.
+```bash
+npm install -g @npgamedev/godot-mcp-server
+```
 
-## Layout
+In your Godot project root, create `.mcp.json`:
 
-- `addons/godot_mcp_toolkit/` — the plugin. This is what the AssetLib zip
-  contains (and only this).
-- `project.godot`, `icon.svg`, `icon.png`, `Main.tscn` — the dogfood Godot
-  project at the repo root.
-- `.mcp.json` — live Claude Code dogfood config. Kept byte-identical to
-  `addons/godot_mcp_toolkit/.mcp.json.template` (the copy shipped via
-  AssetLib for end users to promote into their own project root).
-- `scripts/build-plugin-release.{sh,ps1}` — build the AssetLib zip from
-  `addons/godot_mcp_toolkit/`.
-- `DISTRIBUTION.md` — release process + AssetLib submission checklist +
-  security gate.
-- `CLAUDE.md` — user-facing Claude Code conventions for driving the 10 MCP
-  tools.
-- `ATTRIBUTIONS.md` — upstream notices for studied reference projects.
+```json
+{
+  "mcpServers": {
+    "godot-mcp-toolkit": {
+      "command": "npx",
+      "args": ["-y", "@npgamedev/godot-mcp-server"]
+    }
+  }
+}
+```
 
-## Tool catalogue (10, iter 08)
+<details>
+<summary>Windows: use the cmd wrapper</summary>
 
-`scene_get_tree`, `scene_create_node`, `scene_delete_node`,
-`node_get_property`, `node_set_property`, `script_read`, `script_write`,
-`editor_get_errors`, `editor_save_scene`, `editor_screenshot`.
+```json
+{
+  "mcpServers": {
+    "godot-mcp-toolkit": {
+      "command": "cmd",
+      "args": ["/c", "npx", "-y", "@npgamedev/godot-mcp-server"]
+    }
+  }
+}
+```
 
-See [`CLAUDE.md`](./CLAUDE.md) for one-line descriptions and calling
-conventions.
+</details>
 
-## Port
+The plugin also offers **Project &rarr; Tools &rarr; MCP Toolkit: Write .mcp.json** to generate this file automatically.
 
-`127.0.0.1:6505` — localhost-only bind (never `0.0.0.0`). Override with the
-`GODOT_MCP_PORT` env var on the server side.
+### 4. Connect your AI assistant
 
-## Status
+Launch your MCP client from the project root. It discovers the plugin and authenticates automatically. The dock's peer count increments on connection.
 
-MVP (iteration 08 of 26). Full execution plan (toolkit + server):
-<https://github.com/NPGameDev/godot-mcp-creation> → `Plan/ExecutionPlan/00-index.md`.
+## Architecture
 
-## Licence
+```
+MCP client ── stdio ──> @npgamedev/godot-mcp-server ── ws://127.0.0.1:6505 ──> godot-mcp-toolkit
+(AI agent)               (Node.js, npm)                                         (this plugin)
+```
 
-MIT — see [`LICENSE`](./LICENSE). Upstream notices in
-[`ATTRIBUTIONS.md`](./ATTRIBUTIONS.md).
+The plugin runs a localhost-only WebSocket server inside the Godot editor. The companion [`godot-mcp-server`](https://github.com/NPGameDev/godot-mcp-server) npm package bridges your AI assistant (stdio/MCP) to the plugin (WebSocket). Two channels:
+
+- **Editor channel** (port 6505) — operates on the edited scene via `EditorInterface`.
+- **Runtime channel** (port 6525) — operates on the live `SceneTree` during playtests.
+
+## Dock UI
+
+The bottom-panel dock provides at-a-glance status and full control:
+
+| Section | What it shows |
+|---------|---------------|
+| **Server Status** | Listening address, connected peers, last activity, runtime port during playtests |
+| **Feature Gates** | Toggle switches for gated capabilities with risk indicators and sync status |
+| **Audit Log** | Enable/disable, size cap, view/clear the append-only tool-call log |
+| **Security & Limits** | Regenerate auth token, configure script-read and WebSocket buffer caps |
+
+The **Info / Help** button opens a panel showing connection details, the full registered tool list, plugin and Godot version info, and quick links to documentation and issues.
+
+### Menu items
+
+Available under **Project &rarr; Tools** and in the Command Palette (Ctrl+Shift+P):
+
+- **Regenerate Token** — rotate the session auth token
+- **Show Audit Log** — view last 100 audit entries
+- **Open Project Settings** — jump to MCP Toolkit settings
+- **Write .mcp.json** — generate the MCP client config file
+- **Power User Mode** — enable all feature gates (with risk confirmation)
+
+## Security
+
+Security is a first-class design goal — not an afterthought.
+
+- **Session auth** — A random 64-character hex token is generated on every plugin start. The MCP server reads it from disk automatically; unauthorized WebSocket connections are rejected.
+- **Filesystem sandbox** — All file operations are restricted to `res://` by default. Path traversal (`..`), absolute OS paths, and symlink escapes are blocked by `FileGuard`.
+- **Feature gates** — Dangerous capabilities (shell execution, arbitrary eval, user-data access) require explicit opt-in. Seven individually gated features, most requiring dual opt-in (environment variable AND project setting). A master "Power User" toggle enables all at once with a risk confirmation dialog.
+- **Audit log** — Every tool call is logged with an ISO-8601 timestamp and parameter hash. Append-only, per-write flush for crash safety, configurable max size.
+- **Response caps** — Script reads and WebSocket buffers are size-limited to prevent accidental exfiltration of large files.
+- **Untrusted envelopes** — Content returned from the editor is wrapped in per-call nonce-tagged envelopes, mitigating prompt injection from file contents.
+- **Localhost only** — The WebSocket server binds `127.0.0.1` exclusively. Never `0.0.0.0`.
+
+## Tools
+
+55+ tools across 13 domains. See the [server README](https://github.com/NPGameDev/godot-mcp-server#tool-reference) for the complete reference.
+
+| Domain | Count | Examples |
+|--------|-------|----------|
+| Scene | 9 | Get tree, create/delete nodes, create/open/close scenes, instantiate, diff |
+| Node | 5 | Get/set properties, list properties, set script, call method\* |
+| Script | 5 | Read, write, read range, delete, check (structured diagnostics) |
+| Editor | 9 | Save, screenshot, reload scripts, console output, wait for idle, project settings |
+| Resource | 3 | Load, write/create, delete |
+| Folder & File | 3 | Create/delete folders, delete files |
+| Asset | 3 | List, dependencies, import (image/audio/font/3D) |
+| Playtest | 2 | Start/stop game with runtime connection |
+| Runtime | 6 | Screenshot, node inspection, game log, input simulation, animation, eval\* |
+| Signals | 3 | List, connect/disconnect, emit |
+| Animation | 2 | Add/remove keyframes, list keys |
+| Input Map | 2 | Add/remove actions and events\* |
+| User Data | 4 | Read/write/delete/list `user://` files\* |
+
+\*Feature-gated — requires explicit opt-in.
+
+## Profiles
+
+The companion server supports built-in profiles that control which tools your AI assistant sees:
+
+| Profile | Tools | Use case |
+|---------|-------|----------|
+| **minimal** | ~12 | Read-only exploration and code review |
+| **standard** (default) | ~34 | Day-to-day development with on-demand group access |
+| **Power User** | all | Full access including feature-gated tools |
+| **custom** | user-defined | Cherry-pick tools by name |
+
+Set via `GODOT_MCP_PROFILE` environment variable in `.mcp.json`. See the [server README](https://github.com/NPGameDev/godot-mcp-server#profiles) for details.
+
+## Godot version
+
+Requires Godot 4.x. <!-- Full version matrix: [COMPATIBILITY.md](COMPATIBILITY.md) -->
+
+## Enabling and disabling
+
+- **Enable:** Project Settings &rarr; Plugins &rarr; "Godot MCP Toolkit" &rarr; check Active.
+- **Disable:** Uncheck Active. A dialog offers to clean up the `.mcp.json` file.
+
+The plugin runs only in the editor (`@tool` scripts) and is automatically stripped from exported builds by the bundled export plugin.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE). Upstream notices in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
