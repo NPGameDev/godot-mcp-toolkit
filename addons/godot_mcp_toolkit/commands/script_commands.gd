@@ -33,7 +33,7 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 	if guard["error"] != null:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path)
+		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path, MCPError.HINT_FILE_PATH)
 	var content := FileAccess.get_file_as_string(file_path)
 	var open_error := FileAccess.get_open_error()
 	if open_error != OK:
@@ -56,7 +56,7 @@ static func _cmd_script_read_range(parameters: Dictionary) -> Dictionary:
 	if guard["error"] != null:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path)
+		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path, MCPError.HINT_FILE_PATH)
 	if not parameters.has("start_line") or not parameters.has("end_line"):
 		return MCPError.make("INVALID_PARAMS", "start_line and end_line are required")
 	var start_line := int(parameters.get("start_line", 0))
@@ -142,7 +142,7 @@ static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PATH",
 			"script.delete only removes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.delete for .tscn, resource.delete for .tres/.res, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "no file at %s" % file_path)
+		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 	var directory := DirAccess.open("res://")
 	if directory == null:
 		return MCPError.make("INTERNAL", "DirAccess.open(res://) returned null")
@@ -172,7 +172,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PARAMS",
 			"script.check only supports .gd files (got .%s)" % extension)
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "no file at %s" % file_path)
+		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 
 	var content := FileAccess.get_file_as_string(file_path)
 	var read_error := FileAccess.get_open_error()

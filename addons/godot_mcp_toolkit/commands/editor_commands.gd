@@ -157,7 +157,7 @@ static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
 	else:
 		node = root.get_node_or_null(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "no node at %s" % node_path)
+		return MCPError.make("NOT_FOUND", "no node at %s" % node_path, MCPError.HINT_NODE_PATH)
 
 	var selection := EditorInterface.get_selection()
 	var prior_selection: Array = []

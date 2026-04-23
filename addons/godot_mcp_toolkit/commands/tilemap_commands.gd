@@ -41,7 +41,7 @@ static func _cmd_tilemap_set_cells(
 	var cells: Array = cells_raw
 	var node = _resolve_scene_node(tilemap_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "no node at %s" % tilemap_path)
+		return MCPError.make("NOT_FOUND", "no node at %s" % tilemap_path, MCPError.HINT_NODE_PATH)
 	var is_layer: bool = node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	var is_map := node is TileMap
 	if not (is_layer or is_map):

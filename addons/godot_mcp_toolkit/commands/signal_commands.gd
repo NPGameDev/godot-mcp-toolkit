@@ -98,7 +98,7 @@ static func _cmd_signal_list(parameters: Dictionary) -> Dictionary:
 	var node_path := str(parameters.get("node_path", ""))
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 	return {"path": node_path, "signals": _signal_list_of(node)}
 
 
@@ -174,7 +174,7 @@ static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PARAMS", "missing signal")
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 	if not node.has_signal(signal_name):
 		return MCPError.make("INVALID_PARAMS",
 			"signal %s not on %s" % [signal_name, node_path])

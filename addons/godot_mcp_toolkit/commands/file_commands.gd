@@ -27,7 +27,7 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("PATH_DENIED",
 			"cannot delete files inside the MCP toolkit plugin directory")
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path)
+		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path, MCPError.HINT_FILE_PATH)
 	var edited_root := EditorInterface.get_edited_scene_root()
 	if edited_root != null and edited_root.scene_file_path == file_path:
 		return MCPError.make("EDITED_SCENE",

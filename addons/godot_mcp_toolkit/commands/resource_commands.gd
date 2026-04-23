@@ -98,7 +98,7 @@ static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 	if guard["error"] != null:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not ResourceLoader.exists(file_path):
-		return MCPError.make("NOT_FOUND", "resource not found: %s" % file_path)
+		return MCPError.make("NOT_FOUND", "resource not found: %s" % file_path, MCPError.HINT_FILE_PATH)
 	var resource := ResourceLoader.load(file_path)
 	if resource == null:
 		return MCPError.make("LOAD_FAILED",
@@ -159,7 +159,7 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	var resource_class := str(parameters.get("type", ""))
 	if resource_class.is_empty():
 		return MCPError.make("NOT_FOUND",
-			"resource not found at %s; provide 'type' to create it" % file_path)
+			"resource not found at %s; provide 'type' to create it" % file_path, MCPError.HINT_FILE_PATH)
 	var parent_dir := file_path.get_base_dir()
 	if not DirAccess.dir_exists_absolute(parent_dir):
 		return MCPError.make("PARENT_NOT_FOUND",
@@ -176,7 +176,7 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 				break
 	if resolved_kind.is_empty():
 		return MCPError.make("INVALID_CLASS",
-			"unknown class %s; check ClassDB or ProjectSettings global class list" % resource_class)
+			"unknown class %s; check ClassDB or ProjectSettings global class list" % resource_class, MCPError.HINT_CLASS_NAME)
 	if not _class_descends_from(resource_class, "Resource"):
 		return MCPError.make("NOT_A_RESOURCE",
 			"%s is not a Resource subclass (base chain: %s)" % [
@@ -218,7 +218,7 @@ static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PATH",
 			"resource.delete only removes .tres or .res files (got %s); use scene.delete for .tscn, script.delete for .gd/.cs/.gdshader/.gdshaderinc, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "no file at %s" % file_path)
+		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 	var directory := DirAccess.open("res://")
 	if directory == null:
 		return MCPError.make("INTERNAL", "DirAccess.open(res://) returned null")

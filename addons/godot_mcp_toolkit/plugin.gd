@@ -94,6 +94,9 @@ func _enter_tree() -> void:
 	SaveCommands.register(registry, _server)
 	ClassdbCommands.register(registry, _server)
 
+	# Transport-level meta command — server-side limit overrides.
+	registry.add("meta.set_limits", _server.apply_limits)
+
 	# User command extensions — profile-exempt, always loaded.
 	UserCommandsLoader.load_all(registry, _server)
 

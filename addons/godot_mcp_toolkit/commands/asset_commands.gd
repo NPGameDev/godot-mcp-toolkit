@@ -117,7 +117,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 	var root_directory := filesystem.get_filesystem_path(path_prefix)
 	if root_directory == null:
 		return MCPError.make("NOT_FOUND",
-			"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.reload_scripts or wait for is_scanning to clear)" % path_prefix)
+			"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.reload_scripts or wait for is_scanning to clear)" % path_prefix, MCPError.HINT_FILE_PATH)
 
 	var entries: Array = []
 	var truncated := _walk_filesystem_directory(
@@ -147,7 +147,7 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 	if guard["error"] != null:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "no file at %s" % file_path)
+		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if filesystem.is_scanning():
 		return MCPError.make("FILESYSTEM_NOT_READY",
@@ -253,7 +253,7 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 				"source_path must be an absolute filesystem path, not a Godot scheme (got %s)" % source_path)
 		if not FileAccess.file_exists(source_path):
 			return MCPError.make("NOT_FOUND",
-				"source file not found: %s" % source_path)
+				"source file not found: %s" % source_path, MCPError.HINT_FILE_PATH)
 		var source_file := FileAccess.open(source_path, FileAccess.READ)
 		if source_file == null:
 			return MCPError.make("READ_FAILED",

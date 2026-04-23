@@ -151,7 +151,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 				break
 	if resolved_kind.is_empty():
 		return MCPError.make("INVALID_CLASS",
-			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % root_type)
+			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % root_type, MCPError.HINT_CLASS_NAME)
 	if not _class_descends_from(root_type, "Node"):
 		return MCPError.make("INVALID_CLASS",
 			"%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [root_type, _class_base_chain(root_type)])
@@ -223,7 +223,7 @@ static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 	if guard["error"] != null:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "scene not found: %s" % file_path)
+		return MCPError.make("NOT_FOUND", "scene not found: %s" % file_path, MCPError.HINT_FILE_PATH)
 	EditorInterface.open_scene_from_path(file_path)
 	return {"ok": true, "path": file_path}
 
@@ -238,7 +238,7 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 	var open_scenes := EditorInterface.get_open_scenes()
 	if not open_scenes.has(file_path):
 		return MCPError.make("NOT_FOUND",
-			"scene is not open in any editor tab: %s" % file_path)
+			"scene is not open in any editor tab: %s" % file_path, MCPError.HINT_FILE_PATH)
 	if open_scenes.size() <= 1:
 		return MCPError.make("EDITED_SCENE",
 			"cannot close the last open scene tab; open another scene via scene.open first")
@@ -262,7 +262,7 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PATH",
 			"scene.delete only removes .tscn files (got %s); use a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "no file at %s" % file_path)
+		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 	var edited_root := _get_edited_root()
 	if edited_root != null and edited_root.scene_file_path == file_path:
 		return MCPError.make("EDITED_SCENE",
@@ -308,7 +308,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 				break
 	if resolved_kind.is_empty():
 		return MCPError.make("INVALID_CLASS",
-			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % class_name_param)
+			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % class_name_param, MCPError.HINT_CLASS_NAME)
 	if not _class_descends_from(class_name_param, "Node"):
 		return MCPError.make("INVALID_CLASS",
 			"%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [
@@ -316,7 +316,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	var parent_node := root.get_node_or_null(parent_path) if not parent_path.is_empty() else root
 	if parent_node == null:
-		return MCPError.make("NOT_FOUND", "parent not found: %s" % parent_path)
+		return MCPError.make("NOT_FOUND", "parent not found: %s" % parent_path, MCPError.HINT_NODE_PATH)
 
 	var existing := parent_node.get_node_or_null(NodePath(requested_name))
 	if existing != null:
@@ -352,7 +352,7 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 	if node == root:
 		return MCPError.make("INVALID_PATH", "cannot delete edited scene root")
 
@@ -390,7 +390,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	var parent_node := root.get_node_or_null(parent_path)
 	if parent_node == null:
 		return MCPError.make("NOT_FOUND",
-			"no node at parent_path %s (must be under the currently-edited scene root)" % parent_path)
+			"no node at parent_path %s (must be under the currently-edited scene root)" % parent_path, MCPError.HINT_NODE_PATH)
 
 	var guard := MCPFileGuard.resolve_safe(packed_path)
 	if guard["error"] != null:
@@ -400,7 +400,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 			"scene.instantiate only instantiates .tscn files (got %s); use resource.write for .tres, script.write for .gd/.cs" % packed_path)
 	if not FileAccess.file_exists(packed_path):
 		return MCPError.make("NOT_FOUND",
-			"no scene file at %s; use scene.create first" % packed_path)
+			"no scene file at %s; use scene.create first" % packed_path, MCPError.HINT_FILE_PATH)
 	var packed := ResourceLoader.load(packed_path)
 	if packed == null:
 		return MCPError.make("LOAD_FAILED",

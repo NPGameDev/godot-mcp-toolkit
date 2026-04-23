@@ -44,6 +44,24 @@ const CODES: Array[String] = [
 	"WRITE_FAILED",
 ]
 
+## Hint constants for common dead-end recovery at call sites.
+const HINT_NODE_PATH := "Use scene.get_tree to list valid node paths."
+const HINT_FILE_PATH := "Use asset.list to search for files. Paths must start with res://"
+const HINT_CLASS_NAME := "Use classdb.search to find valid class names."
 
-static func make(code: String, message: String) -> Dictionary:
-	return {"success": false, "error": message, "code": code}
+## Default hints auto-attached to error codes that always benefit from
+## the same recovery guidance, regardless of call site context.
+const DEFAULT_HINTS := {
+	"TIMEOUT": "The editor may be busy. Try editor.wait_for_idle before retrying.",
+	"UNSUPPORTED": "Check COMPATIBILITY.md for version requirements.",
+	"PATH_DENIED": "Paths must use res:// format. Example: res://scenes/main.tscn",
+}
+
+
+static func make(code: String, message: String, hint: String = "") -> Dictionary:
+	var result := {"success": false, "error": message, "code": code}
+	if hint != "":
+		result["hint"] = hint
+	elif DEFAULT_HINTS.has(code):
+		result["hint"] = DEFAULT_HINTS[code]
+	return result

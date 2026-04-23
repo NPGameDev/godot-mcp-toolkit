@@ -92,7 +92,7 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 
 	return {"value": MCPCoerce.serialize_value(node.get(property_name))}
 
@@ -111,7 +111,7 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 
 	var missing := MCPCoerce.check_resource_paths(raw_value)
 	if missing != "":
@@ -147,7 +147,7 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	var node_path := str(parameters.get("node_path", ""))
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 	var mask := str(parameters.get("mask", "common"))
 	if not (mask in ["common", "all", "groups"]):
 		return MCPError.make("INVALID_PARAMS",
@@ -207,7 +207,7 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "no node at path %s" % node_path)
+		return MCPError.make("NOT_FOUND", "no node at path %s" % node_path, MCPError.HINT_NODE_PATH)
 	if not node.has_method(method_name):
 		return MCPError.make("INVALID_METHOD",
 			"node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [
@@ -244,7 +244,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path)
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 
 	var script_path := str(parameters.get("script_path", ""))
 

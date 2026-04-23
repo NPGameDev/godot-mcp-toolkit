@@ -50,7 +50,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 					"game.start only plays .tscn files (got %s)" % target)
 			if not FileAccess.file_exists(target):
 				return MCPError.make("NOT_FOUND",
-					"no scene file at %s; use scene.create first" % target)
+					"no scene file at %s; use scene.create first" % target, MCPError.HINT_FILE_PATH)
 			EditorInterface.play_custom_scene(target)
 
 	# Two-phase wait — poll registry for the runtime_port to appear (the

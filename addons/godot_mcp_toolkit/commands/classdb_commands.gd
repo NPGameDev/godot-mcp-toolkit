@@ -58,7 +58,7 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 
 	if not is_native and not is_global:
 		return MCPError.make("UNKNOWN_CLASS",
-			"class not found in ClassDB or global class list: %s" % cls)
+			"class not found in ClassDB or global class list: %s" % cls, MCPError.HINT_CLASS_NAME)
 
 	var result: Dictionary = {"success": true, "class_name": cls}
 	var truncated := false
@@ -115,7 +115,7 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 					break
 		if not base_exists:
 			return MCPError.make("UNKNOWN_CLASS",
-				"base_class not found in ClassDB or global class list: %s" % base_class)
+				"base_class not found in ClassDB or global class list: %s" % base_class, MCPError.HINT_CLASS_NAME)
 
 	var pattern_lower := pattern.to_lower()
 	var matches: Array = []
