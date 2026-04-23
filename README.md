@@ -149,6 +149,31 @@ Security is a first-class design goal — not an afterthought.
 
 \*Feature-gated — requires explicit opt-in.
 
+### Headless mode compatibility
+
+When Godot runs with `--headless`, the plugin still loads and the WebSocket server starts normally. However, tools that depend on a rendered viewport or a running game instance will not function. The table below summarizes expected headless behavior by domain.
+
+| Domain | Headless | Notes |
+|--------|----------|-------|
+| Script | ✅ | File I/O and `script_check` (shells out to `godot --check-only`) |
+| Folder & File | ✅ | Pure filesystem operations |
+| Resource | ✅ | Load, write, delete — file-based |
+| Asset | ✅ | List, dependencies, import — uses EditorFileSystem metadata |
+| User Data | ✅ | File I/O on `user://` paths |
+| ClassDB | ✅ | Engine metadata — always available |
+| Project Settings | ✅ | `project_get_settings`, `project_set_setting` |
+| Editor (non-visual) | ✅ | Save, reload scripts, console, errors, wait for idle |
+| Scene (file ops) | ✅ | `scene_create`, `scene_delete` — file-based |
+| Scene (tree ops) | ⚠️ | `scene_get_tree`, `scene_create_node`, `scene_open`, etc. — depend on EditorInterface scene state |
+| Node | ⚠️ | Property read/write and signal tools operate on the edited scene tree |
+| Animation / Input Map | ⚠️ | Operate on editor-side data; may require an open scene |
+| Screenshots | ❌ | `editor_screenshot`, `editor_screenshot_node`, `runtime_screenshot` — no viewport to capture |
+| Playtest & Runtime | ❌ | `game_start/stop`, `runtime_*`, `game_eval`, `input_simulate` — require a running game with display |
+
+✅ works &nbsp; ⚠️ depends on editor scene state &nbsp; ❌ requires display or running game
+
+> **Note:** Headless mode has not been exhaustively tested across all Godot 4.x versions. Tools marked ⚠️ may work if a scene is loaded programmatically, but behavior may vary.
+
 ## Profiles
 
 The companion server supports built-in profiles that control which tools your AI assistant sees:
