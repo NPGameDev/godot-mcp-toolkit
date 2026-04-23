@@ -294,6 +294,7 @@ func _register_feature_gate_settings() -> void:
 		"Max script content returned by script.read, in KB. Minimum 64.")
 	_register_basic_int("mcp_toolkit/limits/ws_buffer_kb", 1024,
 		"WebSocket per-peer buffer size, in KB. Minimum 256.")
+	_register_limits_note()
 
 	# Audit log settings.
 	_register_basic_bool("mcp_toolkit/audit/enabled", true,
@@ -323,6 +324,24 @@ func _register_basic_int(key: String, default_value: int, hint: String) -> void:
 		"hint": PROPERTY_HINT_NONE, "hint_string": hint,
 	})
 
+
+
+const _LIMITS_NOTE_KEY := "mcp_toolkit/limits/env_override_note"
+const _LIMITS_NOTE_TEXT := (
+	"These values can be overridden by GODOT_MCP_SCRIPT_READ_LIMIT and "
+	+ "GODOT_MCP_WS_BUFFER_LIMIT env vars in .mcp.json. "
+	+ "When set, the env var values take priority on connect.")
+
+
+func _register_limits_note() -> void:
+	ProjectSettings.set_setting(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
+	ProjectSettings.set_initial_value(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
+	ProjectSettings.set_as_basic(_LIMITS_NOTE_KEY, true)
+	ProjectSettings.add_property_info({
+		"name": _LIMITS_NOTE_KEY, "type": TYPE_STRING,
+		"hint": PROPERTY_HINT_MULTILINE_TEXT,
+		"hint_string": "Read-only — env var override information.",
+	})
 
 
 const _PU_WARNING_KEY := "mcp_toolkit/feature_gates/power_user_warning"
@@ -609,12 +628,14 @@ func _snapshot_feature_states() -> void:
 
 
 func _poll_feature_states() -> void:
-	# Enforce read-only warning text — revert any user edits immediately.
+	# Enforce read-only text fields — revert any user edits immediately.
 	var power_user: bool = ProjectSettings.get_setting(
 		"mcp_toolkit/feature_gates/power_user_mode", false)
 	var expected_warning := _PU_WARNING_TEXT if power_user else ""
 	if ProjectSettings.get_setting(_PU_WARNING_KEY, "") != expected_warning:
 		ProjectSettings.set_setting(_PU_WARNING_KEY, expected_warning)
+	if ProjectSettings.get_setting(_LIMITS_NOTE_KEY, "") != _LIMITS_NOTE_TEXT:
+		ProjectSettings.set_setting(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
 
 	# If Power User Mode is active, revert any individual gate changes
 	# made from the ProjectSettings UI and warn the user.
