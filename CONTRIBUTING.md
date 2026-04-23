@@ -5,7 +5,7 @@ need to get started.
 
 ## Prerequisites
 
-- **Godot 4.x** (4.4+ recommended)
+- **Godot 4.2+** (4.4+ recommended)
 - **Node.js >= 20** (for the companion server)
 - **Git**
 

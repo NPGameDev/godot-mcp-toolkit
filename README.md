@@ -1,14 +1,14 @@
 # Godot MCP Toolkit
 
 [![CI](https://github.com/NPGameDev/godot-mcp-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/NPGameDev/godot-mcp-toolkit/actions/workflows/ci.yml)
-![Godot 4.x](https://img.shields.io/badge/Godot-4.x-478CBF?logo=godotengine&logoColor=white)
+![Godot 4.2+](https://img.shields.io/badge/Godot-4.2%2B-478CBF?logo=godotengine&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 AI-assisted Godot development through the [Model Context Protocol](https://modelcontextprotocol.io). Your AI coding assistant can create scenes, edit scripts, inspect nodes, run playtests, and more — directly inside the Godot editor.
 
 ## What it does
 
-Godot MCP Toolkit turns the Godot 4.x editor into an MCP server. Any MCP-compatible AI coding assistant can connect and perform 55+ operations: creating scenes and nodes, reading and writing scripts, managing resources, running playtests, inspecting the class database, and controlling the editor — all without leaving the conversation.
+Godot MCP Toolkit turns the Godot 4.2+ editor into an MCP server. Any MCP-compatible AI coding assistant can connect and perform 55+ operations: creating scenes and nodes, reading and writing scripts, managing resources, running playtests, inspecting the class database, and controlling the editor — all without leaving the conversation.
 
 Tested primarily with [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Compatible with any MCP client that supports the Model Context Protocol.
 
