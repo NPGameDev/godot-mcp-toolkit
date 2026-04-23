@@ -58,6 +58,10 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		set_process(false)
 		return
+	# --check-only is a parse-only pass — no runtime server needed.
+	if "--check-only" in OS.get_cmdline_args():
+		set_process(false)
+		return
 	# Debug-build gate: shipped (release) games must not listen on 6525.
 	# Same quiescent approach — an empty Node at scene-tree root is cheaper
 	# than the subtle edge cases of auto-freeing during SceneTree setup.

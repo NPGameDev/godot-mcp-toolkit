@@ -344,6 +344,7 @@ func _update_power_user_warning() -> void:
 
 
 const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35b_shown"
+const _ONBOARDING_PROGRESS := "user://addons/godot_mcp_toolkit/mcp_onboarding_progress"
 # Projects that already saw the v35 single-dialog onboarding skip the wizard.
 const _ONBOARDING_FLAG_V35 := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"
 
@@ -359,12 +360,19 @@ func _check_onboarding() -> void:
 		_write_onboarding_flag()
 		return
 
+	# Resume from saved progress (e.g. after Power User restart).
 	_wizard_step = 0
+	if FileAccess.file_exists(_ONBOARDING_PROGRESS):
+		var f := FileAccess.open(_ONBOARDING_PROGRESS, FileAccess.READ)
+		if f != null:
+			_wizard_step = clampi(f.get_line().to_int(), 0, _WIZARD_STEP_COUNT - 1)
+			f.close()
 	_wizard_buttons.clear()
 	var dialog := AcceptDialog.new()
 	dialog.exclusive = false
 	dialog.min_size = Vector2i(480, 260)
 
+	# AcceptDialog auto-hides on confirmed — re-show after advancing.
 	dialog.confirmed.connect(_wizard_advance.bind(dialog))
 	dialog.custom_action.connect(_wizard_custom_action.bind(dialog))
 	dialog.canceled.connect(func():
@@ -415,7 +423,7 @@ func _wizard_apply_step(dialog: AcceptDialog) -> void:
 			dialog.dialog_text = (
 				"Toggle individual capabilities here. Dual-gate features\n"
 				+ "need both a ProjectSettings toggle and an env var in .mcp.json.\n\n"
-				+ "Open Project Settings to see Feature Gates.")
+				+ "Navigate to: MCP Toolkit > Feature Gates")
 			dialog.ok_button_text = "Next"
 			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
 			# Action: open Project Settings to Feature Gates.
@@ -438,17 +446,16 @@ func _wizard_apply_step(dialog: AcceptDialog) -> void:
 
 		4:
 			dialog.dialog_text = (
-				"Use 'Info / Help' in the dock for connection status,\n"
-				+ "tool list, and documentation links.\n\n"
-				+ "You're all set! The Info panel is now open.")
-			dialog.ok_button_text = "Finish"
+				"The 'Info / Help' button at the bottom of the MCP dock\n"
+				+ "shows connection status, tool list, and documentation links.\n\n"
+				+ "You're all set!")
+			dialog.ok_button_text = "Close"
 			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
-			# Action: open the Info dialog.
-			if _dock != null:
-				_dock._show_info_dialog()
+			_wizard_buttons.append(dialog.add_button("Open Info", true, "open_info"))
 
-	# "Skip Tour" always last (rightmost).
-	_wizard_buttons.append(dialog.add_button("Skip Tour", true, "skip"))
+	# "Skip Tour" available on steps 1–3 (not step 0: profile required; not step 4: nothing to skip).
+	if _wizard_step > 0 and _wizard_step < _WIZARD_STEP_COUNT - 1:
+		_wizard_buttons.append(dialog.add_button("Skip Tour", true, "skip"))
 
 
 func _wizard_advance(dialog: AcceptDialog) -> void:
@@ -461,7 +468,10 @@ func _wizard_advance(dialog: AcceptDialog) -> void:
 		_free_wizard()
 		return
 	_wizard_step += 1
+	_save_onboarding_progress()
 	_wizard_apply_step(dialog)
+	# AcceptDialog auto-hides on confirmed — re-show for the next step.
+	dialog.popup_centered()
 
 
 func _wizard_custom_action(action: StringName, dialog: AcceptDialog) -> void:
@@ -477,13 +487,21 @@ func _wizard_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 			# Trigger Power User flow — the dock shows its own confirmation dialog.
 			if _dock != null:
 				_dock.toggle_power_user_mode()
-			# Advance to step 1 after choosing.
+			# Advance to step 1 after choosing. Save progress in case the
+			# user restarts the editor (Power User toggle suggests a restart).
 			_wizard_step = 1
+			_save_onboarding_progress()
 			_wizard_apply_step(dialog)
 		"standard":
 			# Explicit standard choice — advance.
 			_wizard_step = 1
+			_save_onboarding_progress()
 			_wizard_apply_step(dialog)
+		"open_info":
+			_write_onboarding_flag()
+			_free_wizard()
+			if _dock != null:
+				_dock._show_info_dialog()
 		"create_mcp":
 			if _dock != null:
 				_dock.write_mcp_json()
@@ -500,6 +518,16 @@ func _write_onboarding_flag() -> void:
 	var f := FileAccess.open(_ONBOARDING_FLAG, FileAccess.WRITE)
 	if f != null:
 		f.store_string("1")
+		f.close()
+	# Clean up progress file — wizard is done.
+	if FileAccess.file_exists(_ONBOARDING_PROGRESS):
+		DirAccess.remove_absolute(_ONBOARDING_PROGRESS)
+
+
+func _save_onboarding_progress() -> void:
+	var f := FileAccess.open(_ONBOARDING_PROGRESS, FileAccess.WRITE)
+	if f != null:
+		f.store_string(str(_wizard_step))
 		f.close()
 
 
