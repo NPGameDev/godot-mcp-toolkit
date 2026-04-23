@@ -42,7 +42,7 @@ static func _cmd_tilemap_set_cells(
 	var node = _resolve_scene_node(tilemap_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND", "no node at %s" % tilemap_path)
-	var is_layer := node is TileMapLayer
+	var is_layer := node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	var is_map := node is TileMap
 	if not (is_layer or is_map):
 		return MCPError.make("INVALID_CLASS",
@@ -76,10 +76,9 @@ static func _cmd_tilemap_set_cells(
 		var previous_atlas: Vector2i
 		var previous_alternative: int
 		if is_layer:
-			var tile_layer := node as TileMapLayer
-			previous_source = tile_layer.get_cell_source_id(coord)
-			previous_atlas = tile_layer.get_cell_atlas_coords(coord)
-			previous_alternative = tile_layer.get_cell_alternative_tile(coord)
+			previous_source = node.get_cell_source_id(coord)
+			previous_atlas = node.get_cell_atlas_coords(coord)
+			previous_alternative = node.get_cell_alternative_tile(coord)
 		else:
 			var tile_map := node as TileMap
 			previous_source = tile_map.get_cell_source_id(layer, coord)

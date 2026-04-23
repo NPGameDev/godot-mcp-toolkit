@@ -189,11 +189,11 @@ Set via `GODOT_MCP_PROFILE` environment variable in `.mcp.json`. See the [server
 
 ## Godot version support
 
-**Minimum:** Godot 4.3 &nbsp; **Recommended:** Godot 4.5+
+**Minimum:** Godot 4.2 &nbsp; **Recommended:** Godot 4.5+
 
 | Godot | Level | Notes |
 |-------|-------|-------|
-| 4.3 | Core | All tools work; undo history and toast notifications degraded |
+| 4.2 – 4.3 | Core | All tools work; undo history and toast notifications degraded |
 | 4.4 | Full UI | Undo history and toasts restored; `scene_close` unavailable |
 | 4.5+ | Full | All tools and UI features |
 

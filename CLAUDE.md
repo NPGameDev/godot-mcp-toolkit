@@ -21,7 +21,7 @@ runs in debug builds for live-game introspection (Mode B).
 
 ## Godot version compatibility (iter 37)
 
-**Minimum:** 4.3 &nbsp; **Full:** 4.5+ &nbsp; **Tested up to:** 4.6
+**Minimum:** 4.2 &nbsp; **Full:** 4.5+ &nbsp; **Tested up to:** 4.6
 
 All version-dependent API calls use `has_method()` + `call()` (dynamic
 dispatch) — never direct static calls behind an `if` version check.
@@ -33,9 +33,10 @@ Centralized helpers in `_hub.gd`: `godot_minor()`, `get_undo_redo()`,
 use these instead of calling version-dependent EditorInterface methods
 directly.
 
-**Degradation on 4.3:** UndoRedo unavailable (operations work, no undo
-history); toast notifications silently skipped. **On 4.4:** everything
-except `scene_close`. **On 4.5+:** full functionality.
+**Degradation on 4.2–4.3:** UndoRedo unavailable (operations work, no undo
+history); toast notifications silently skipped; TileMapLayer unavailable on
+4.2 (legacy TileMap still works). **On 4.4:** everything except
+`scene_close`. **On 4.5+:** full functionality.
 
 `scene_close` is the only tool with a `godotMinVersion` gate (returns
 `UNSUPPORTED` on < 4.5). The server-side version-check hook enforces
@@ -46,7 +47,7 @@ controls the startup warning threshold only — no functionality restricted.
 
 **Constraint for contributors:** `Dictionary[K, V]` (typed dictionaries),
 `@export_tool_button`, and `@abstract` are 4.4+/4.5+ syntax that causes
-parse errors on older Godot. Do not use while minimum remains 4.3.
+parse errors on older Godot. Do not use while minimum remains 4.2.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix.
 

@@ -9,6 +9,17 @@ on:
 jobs:
   gdscript-check:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - godot-version: "4.2.2"
+            check-method: "check-only"
+          - godot-version: "4.5.0"
+            check-method: "editor"
+          - godot-version: "4.6.2"
+            check-method: "editor"
+    name: GDScript check (Godot ${{ matrix.godot-version }})
     steps:
       - uses: actions/checkout@v4
 
@@ -16,19 +27,32 @@ jobs:
         # pinned to v2.4.1 — update SHA manually after reviewing changelogs
         uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789
         with:
-          version: 4.5.0
+          version: ${{ matrix.godot-version }}
           use-dotnet: false
 
-      # Godot 4.5 changed --check-only to require --script <path>, so the
-      # old project-wide `--check-only` no longer works. Instead, launch
-      # the editor in headless mode and grep output for parse errors.
-      - name: GDScript static validation
+      # 4.2–4.4: --check-only does a project-wide parse and exits.
+      - name: GDScript static validation (--check-only)
+        if: matrix.check-method == 'check-only'
+        run: |
+          OUTPUT=$(timeout 30 godot --headless --check-only 2>&1) || true
+          echo "$OUTPUT"
+          if echo "$OUTPUT" | grep -qE 'SCRIPT ERROR:|Parse Error:'; then
+            echo ""
+            echo "::error::GDScript parse errors detected on Godot ${{ matrix.godot-version }} (see output above)"
+            exit 1
+          fi
+          echo "GDScript validation passed (Godot ${{ matrix.godot-version }})"
+
+      # 4.5+: --check-only requires --script <path>, so launch the editor
+      # headless and grep output for parse errors.
+      - name: GDScript static validation (editor mode)
+        if: matrix.check-method == 'editor'
         run: |
           OUTPUT=$(godot --headless --editor --path . --quit-after 1 2>&1) || true
           echo "$OUTPUT"
           if echo "$OUTPUT" | grep -qE 'SCRIPT ERROR:|Parse Error:'; then
             echo ""
-            echo "::error::GDScript parse errors detected (see output above)"
+            echo "::error::GDScript parse errors detected on Godot ${{ matrix.godot-version }} (see output above)"
             exit 1
           fi
-          echo "GDScript validation passed"
+          echo "GDScript validation passed (Godot ${{ matrix.godot-version }})"

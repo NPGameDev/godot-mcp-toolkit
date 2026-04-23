@@ -1,6 +1,6 @@
 # Godot Version Compatibility
 
-**Minimum supported:** Godot 4.3  
+**Minimum supported:** Godot 4.2  
 **Full functionality:** Godot 4.5+  
 **Recommended:** Godot 4.5+  
 **Tested up to:** Godot 4.6
@@ -12,15 +12,16 @@ untested versions and logs a startup warning.
 
 | Godot version | Support level | Notes |
 |---------------|---------------|-------|
-| 4.0 - 4.2    | Not supported | EditorInterface API shape differs too much |
-| **4.3**       | Core          | All tools work; some UI degradation (see below) |
+| 4.0 - 4.1    | Not supported | EditorInterface is not a global singleton; would require wrapping 70+ call sites |
+| **4.2**       | Core          | All tools work; some UI degradation (see below) |
+| **4.3**       | Core          | TileMapLayer support added (tilemap tool auto-detects) |
 | **4.4**       | Full UI       | Toast notifications and undo history restored |
 | **4.5+**      | Full          | All tools and UI features available |
 | 4.7+ (future) | Expected      | `has_method()` guards are forward-compatible; startup warning only |
 
 ## Tool compatibility matrix
 
-All 55+ MCP tools work on Godot 4.3+ unless noted below.
+All 55+ MCP tools work on Godot 4.2+ unless noted below.
 
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
@@ -29,13 +30,15 @@ All 55+ MCP tools work on Godot 4.3+ unless noted below.
 
 ### Degraded behavior by version
 
-**Godot 4.3 (minimum):**
+**Godot 4.2 – 4.3 (minimum):**
 - UndoRedo history is unavailable for node mutations (`scene_create_node`,
   `scene_delete_node`, `scene_instantiate`), script attachment
   (`node_set_script`), signal management (`signal_manage`), animation
   keyframes (`animation_keyframe`), and tilemap edits (`tilemap_set_cells`).
   Operations still execute correctly but cannot be undone via Edit > Undo.
 - Toast notifications silently skip (no user-visible impact on tool behavior).
+- On 4.2 specifically, TileMapLayer nodes do not exist (introduced in 4.3).
+  The tilemap tool still works with legacy `TileMap` nodes.
 
 **Godot 4.4:**
 - UndoRedo history works for all operations.
@@ -108,9 +111,11 @@ restrict any functionality.
 
 ## Future development constraints
 
+- **Typed for loops** (`for x: Type in arr:`) require Godot 4.2+. Used in
+  `user_commands_loader.gd`. Safe at current minimum.
 - **Typed dictionaries** (`Dictionary[K, V]`) require Godot 4.4+. Not
   currently used in the codebase. If the minimum supported version remains
-  4.3, this syntax must not appear in any `.gd` file.
+  4.2, this syntax must not appear in any `.gd` file.
 - **`@export_tool_button`** requires Godot 4.4+. Same constraint.
 - **`@abstract`** requires Godot 4.5+. Same constraint.
 - **`EditorDock`** (4.6) is experimental. The plugin uses the deprecated

@@ -382,26 +382,26 @@ func _animation_insert_key_silent(animation: Animation, track_index: int, time: 
 
 
 func _tilemap_apply_batch(node: Node, layer: int, cells: Array) -> void:
-	var is_layer := node is TileMapLayer
+	var is_layer := node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	for cell in cells:
 		var coord := Vector2i(int(cell["x"]), int(cell["y"]))
 		var source_id := int(cell["source_id"])
 		var atlas := Vector2i(int(cell["atlas_x"]), int(cell["atlas_y"]))
 		var alternative := int(cell.get("alternative_tile", 0))
 		if is_layer:
-			(node as TileMapLayer).set_cell(coord, source_id, atlas, alternative)
+			node.set_cell(coord, source_id, atlas, alternative)
 		else:
 			(node as TileMap).set_cell(layer, coord, source_id, atlas, alternative)
 
 
 func _tilemap_restore_batch(node: Node, layer: int, before_state: Array) -> void:
-	var is_layer := node is TileMapLayer
+	var is_layer := node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	for state in before_state:
 		var coord: Vector2i = state["coord"]
 		var source_id := int(state["source_id"])
 		var atlas: Vector2i = state["atlas"]
 		var alternative := int(state["alternative_tile"])
 		if is_layer:
-			(node as TileMapLayer).set_cell(coord, source_id, atlas, alternative)
+			node.set_cell(coord, source_id, atlas, alternative)
 		else:
 			(node as TileMap).set_cell(layer, coord, source_id, atlas, alternative)
