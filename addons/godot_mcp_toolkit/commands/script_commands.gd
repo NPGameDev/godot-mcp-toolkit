@@ -118,17 +118,18 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		return MCPError.make("WRITE_FAILED",
 			"could not open %s for write (err %d)" % [file_path, write_error])
 
-	var undo_redo := EditorInterface.get_editor_undo_redo()
-	undo_redo.create_action("MCP script_write: %s" % file_path)
-	undo_redo.add_do_method(server, "_write_file_silent", file_path, content)
-	if existed:
-		undo_redo.add_undo_method(server, "_write_file_silent", file_path, prior_content)
-	else:
-		undo_redo.add_undo_method(server, "_delete_file_silent", file_path)
-	undo_redo.commit_action(false)
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP script_write: %s" % file_path)
+		undo_redo.add_do_method(server, "_write_file_silent", file_path, content)
+		if existed:
+			undo_redo.add_undo_method(server, "_write_file_silent", file_path, prior_content)
+		else:
+			undo_redo.add_undo_method(server, "_delete_file_silent", file_path)
+		undo_redo.commit_action(false)
 
 	var bytes_written := content.to_utf8_buffer().size()
-	return {"ok": true, "bytes": bytes_written, "undoable": true}
+	return {"ok": true, "bytes": bytes_written, "undoable": undo_redo != null}
 
 
 static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:

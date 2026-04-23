@@ -16,3 +16,41 @@ const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd"
 const MCPScrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
 const MCPAudit := preload("res://addons/godot_mcp_toolkit/audit.gd")
 const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
+
+
+# -- Version helpers (Godot 4.x cross-version compat) -----------------------
+
+## Latest minor version tested. Versions above this still run but log a notice.
+const GODOT_TESTED_MAX_MINOR := 6
+
+static func godot_minor() -> int:
+	return Engine.get_version_info().get("minor", 0)
+
+
+## Safely get EditorUndoRedoManager via dynamic dispatch.
+## Returns null on Godot < 4.4 (where the method doesn't exist).
+## Callers must handle null by skipping undo registration.
+static func get_undo_redo():
+	if EditorInterface.has_method("get_editor_undo_redo"):
+		return EditorInterface.call("get_editor_undo_redo")
+	return null
+
+
+## Safely get EditorToaster via dynamic dispatch.
+## Returns null on Godot < 4.4 (where the method doesn't exist).
+static func get_toaster():
+	if EditorInterface.has_method("get_editor_toaster"):
+		return EditorInterface.call("get_editor_toaster")
+	return null
+
+
+## Safely get the editor Theme via dynamic dispatch.
+## Returns null if unavailable (pre-4.6 or not yet exposed).
+## Fallback: EditorInterface.get_base_control().get_theme().
+static func get_editor_theme() -> Theme:
+	if EditorInterface.has_method("get_editor_theme"):
+		return EditorInterface.call("get_editor_theme")
+	var base := EditorInterface.get_base_control()
+	if base != null:
+		return base.get_theme()
+	return null

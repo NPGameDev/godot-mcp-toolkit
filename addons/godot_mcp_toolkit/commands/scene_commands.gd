@@ -244,9 +244,12 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 			"cannot close the last open scene tab; open another scene via scene.open first")
 	var current_root := _get_edited_root()
 	var current_path := current_root.scene_file_path if current_root else ""
+	if not EditorInterface.has_method("close_scene"):
+		return MCPError.make("UNSUPPORTED",
+			"scene.close requires Godot 4.5+ (connected: 4.%d)" % _Hub.godot_minor())
 	if current_path != file_path:
 		EditorInterface.open_scene_from_path(file_path)
-	EditorInterface.close_scene()
+	EditorInterface.call("close_scene")
 	return {"success": true, "path": file_path}
 
 
@@ -356,13 +359,17 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 	var parent := node.get_parent()
 	if parent == null:
 		return MCPError.make("INTERNAL", "node has no parent: %s" % node_path)
-	var undo_redo := EditorInterface.get_editor_undo_redo()
-	undo_redo.create_action("MCP: delete %s" % node_path)
-	undo_redo.add_do_method(parent, "remove_child", node)
-	undo_redo.add_undo_method(parent, "add_child", node)
-	undo_redo.add_undo_method(node, "set_owner", root)
-	undo_redo.add_undo_reference(node)
-	undo_redo.commit_action()
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: delete %s" % node_path)
+		undo_redo.add_do_method(parent, "remove_child", node)
+		undo_redo.add_undo_method(parent, "add_child", node)
+		undo_redo.add_undo_method(node, "set_owner", root)
+		undo_redo.add_undo_reference(node)
+		undo_redo.commit_action()
+	else:
+		parent.remove_child(node)
+		node.queue_free()
 	return {"ok": true, "path": node_path}
 
 
@@ -425,13 +432,17 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		for key in transform.keys():
 			instance.set(str(key), MCPCoerce.coerce_value(transform[key]))
 
-	var undo_redo := EditorInterface.get_editor_undo_redo()
-	undo_redo.create_action("MCP: instantiate %s under %s" % [packed_path, parent_path])
-	undo_redo.add_do_method(parent_node, "add_child", instance)
-	undo_redo.add_do_method(server, "_set_owner_recursive", instance, root)
-	undo_redo.add_do_reference(instance)
-	undo_redo.add_undo_method(parent_node, "remove_child", instance)
-	undo_redo.commit_action()
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: instantiate %s under %s" % [packed_path, parent_path])
+		undo_redo.add_do_method(parent_node, "add_child", instance)
+		undo_redo.add_do_method(server, "_set_owner_recursive", instance, root)
+		undo_redo.add_do_reference(instance)
+		undo_redo.add_undo_method(parent_node, "remove_child", instance)
+		undo_redo.commit_action()
+	else:
+		parent_node.add_child(instance)
+		server._set_owner_recursive(instance, root)
 
 	return {
 		"success": true,

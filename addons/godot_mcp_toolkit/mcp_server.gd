@@ -253,7 +253,11 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 	if not _peer_authed.has(peer):
 		if MCPAuth.validate(message, _session_token):
 			_peer_authed[peer] = true
-			peer.send_text(JSON.stringify({"authed": true}))
+			var vi := Engine.get_version_info()
+			peer.send_text(JSON.stringify({
+				"authed": true,
+				"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
+			}))
 			if _peer_authed.size() == 1:
 				_lower_unfocused_sleep()
 			client_connected.emit(_peer_authed.size())

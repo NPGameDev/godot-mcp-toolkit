@@ -124,16 +124,25 @@ func _enter_tree() -> void:
 	add_tool_menu_item("MCP Toolkit: Write .mcp.json", _on_write_mcp_json)
 	add_tool_menu_item("MCP Toolkit: Power User Mode", _on_power_user_mode)
 
-	# -- Command Palette --
-	var palette := EditorInterface.get_command_palette()
-	palette.add_command("MCP Toolkit: Regenerate Token", "mcp/regenerate_token", _on_regen_token)
-	palette.add_command("MCP Toolkit: Show Audit Log", "mcp/show_audit_log", _on_show_audit)
-	palette.add_command("MCP Toolkit: Open Project Settings", "mcp/open_settings", _on_open_settings)
-	palette.add_command("MCP Toolkit: Write .mcp.json", "mcp/write_mcp_json", _on_write_mcp_json)
-	palette.add_command("MCP Toolkit: Power User Mode", "mcp/power_user_mode", _on_power_user_mode)
+	# -- Command Palette (4.0+; guard anyway for safety) --
+	if EditorInterface.has_method("get_command_palette"):
+		var palette = EditorInterface.call("get_command_palette")
+		if palette != null:
+			palette.add_command("MCP Toolkit: Regenerate Token", "mcp/regenerate_token", _on_regen_token)
+			palette.add_command("MCP Toolkit: Show Audit Log", "mcp/show_audit_log", _on_show_audit)
+			palette.add_command("MCP Toolkit: Open Project Settings", "mcp/open_settings", _on_open_settings)
+			palette.add_command("MCP Toolkit: Write .mcp.json", "mcp/write_mcp_json", _on_write_mcp_json)
+			palette.add_command("MCP Toolkit: Power User Mode", "mcp/power_user_mode", _on_power_user_mode)
 
 	# -- Per-user EditorSettings --
 	_register_editor_settings()
+
+	# Warn about untested future Godot versions (but don't block).
+	var _minor := _Hub.godot_minor()
+	if _minor > _Hub.GODOT_TESTED_MAX_MINOR:
+		push_warning("[MCP] Godot 4.%d detected — latest tested version is 4.%d. "
+			+ "The plugin will run normally but some features may behave unexpectedly. "
+			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues" % [_minor, _Hub.GODOT_TESTED_MAX_MINOR])
 
 	call_deferred("_check_onboarding")
 
@@ -647,9 +656,11 @@ func _exit_tree() -> void:
 	_free_wizard()
 
 	# Command Palette.
-	var palette := EditorInterface.get_command_palette()
-	for key in _PALETTE_KEYS:
-		palette.remove_command(key)
+	if EditorInterface.has_method("get_command_palette"):
+		var palette = EditorInterface.call("get_command_palette")
+		if palette != null:
+			for key in _PALETTE_KEYS:
+				palette.remove_command(key)
 
 	# Menu items.
 	for item in _MENU_ITEMS:
@@ -727,7 +738,7 @@ func _on_regen_token() -> void:
 	if _server != null:
 		_server.regenerate_token()
 		print("[MCP] Token rotated")
-		var toaster = EditorInterface.get_editor_toaster()
+		var toaster = _Hub.get_toaster()
 		if toaster != null:
 			toaster.push_toast("MCP token rotated", 0)
 
@@ -744,7 +755,7 @@ func _on_open_settings() -> void:
 	var root := EditorInterface.get_base_control().get_tree().root
 	var dialog := _find_node_by_class(root, "ProjectSettingsEditor")
 	if not dialog is Window:
-		var toaster = EditorInterface.get_editor_toaster()
+		var toaster = _Hub.get_toaster()
 		if toaster != null:
 			toaster.push_toast(
 				"Project -> Project Settings -> Mcp Toolkit -> Feature Gates", 0)

@@ -140,13 +140,16 @@ static func _cmd_animation_keyframe(
 				"value": MCPCoerce.serialize_value(
 					animation.track_get_key_value(track_index, existing_index)),
 			}
-		var undo_redo := EditorInterface.get_editor_undo_redo()
-		undo_redo.create_action("MCP: animation.keyframe add %s @ %s" % [track_path, time])
-		undo_redo.add_do_method(animation, "track_insert_key", track_index, time, coerced)
-		undo_redo.add_undo_method(
-			server, "_animation_remove_key_at", animation, track_index, time)
-		undo_redo.add_undo_reference(animation)
-		undo_redo.commit_action()
+		var undo_redo = _Hub.get_undo_redo()
+		if undo_redo != null:
+			undo_redo.create_action("MCP: animation.keyframe add %s @ %s" % [track_path, time])
+			undo_redo.add_do_method(animation, "track_insert_key", track_index, time, coerced)
+			undo_redo.add_undo_method(
+				server, "_animation_remove_key_at", animation, track_index, time)
+			undo_redo.add_undo_reference(animation)
+			undo_redo.commit_action()
+		else:
+			animation.track_insert_key(track_index, time, coerced)
 		var new_index := animation.track_find_key(
 			track_index, time, Animation.FIND_MODE_EXACT)
 		return {
@@ -181,14 +184,17 @@ static func _cmd_animation_keyframe(
 				"no key at time=%f on track '%s'" % [time, track_path])
 		var captured_value = animation.track_get_key_value(track_index, key_index)
 		var serialised_value = MCPCoerce.serialize_value(captured_value)
-		var undo_redo := EditorInterface.get_editor_undo_redo()
-		undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time])
-		undo_redo.add_do_method(
-			server, "_animation_remove_key_at", animation, track_index, time)
-		undo_redo.add_undo_method(
-			server, "_animation_insert_key_silent", animation, track_index, time, captured_value)
-		undo_redo.add_undo_reference(animation)
-		undo_redo.commit_action()
+		var undo_redo = _Hub.get_undo_redo()
+		if undo_redo != null:
+			undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time])
+			undo_redo.add_do_method(
+				server, "_animation_remove_key_at", animation, track_index, time)
+			undo_redo.add_undo_method(
+				server, "_animation_insert_key_silent", animation, track_index, time, captured_value)
+			undo_redo.add_undo_reference(animation)
+			undo_redo.commit_action()
+		else:
+			server._animation_remove_key_at(animation, track_index, time)
 		return {
 			"success": true,
 			"player_path": player_path,

@@ -187,9 +187,19 @@ The companion server supports built-in profiles that control which tools your AI
 
 Set via `GODOT_MCP_PROFILE` environment variable in `.mcp.json`. See the [server README](https://github.com/NPGameDev/godot-mcp-server#profiles) for details.
 
-## Godot version
+## Godot version support
 
-Requires Godot 4.x. <!-- Full version matrix: [COMPATIBILITY.md](COMPATIBILITY.md) -->
+**Minimum:** Godot 4.3 &nbsp; **Recommended:** Godot 4.5+
+
+| Godot | Level | Notes |
+|-------|-------|-------|
+| 4.3 | Core | All tools work; undo history and toast notifications degraded |
+| 4.4 | Full UI | Undo history and toasts restored; `scene_close` unavailable |
+| 4.5+ | Full | All tools and UI features |
+
+Future Godot versions (4.7+) are not blocked — the plugin uses runtime capability checks.
+
+Full version matrix: [COMPATIBILITY.md](COMPATIBILITY.md)
 
 ## Enabling and disabling
 

@@ -126,12 +126,15 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 				"target_path": target_path,
 				"method": method_name,
 			}
-		var undo_redo := EditorInterface.get_editor_undo_redo()
-		undo_redo.create_action("MCP: connect %s.%s -> %s.%s" % [
-			source_path, signal_name, target_path, method_name])
-		undo_redo.add_do_method(source, "connect", signal_name, callable)
-		undo_redo.add_undo_method(source, "disconnect", signal_name, callable)
-		undo_redo.commit_action()
+		var undo_redo = _Hub.get_undo_redo()
+		if undo_redo != null:
+			undo_redo.create_action("MCP: connect %s.%s -> %s.%s" % [
+				source_path, signal_name, target_path, method_name])
+			undo_redo.add_do_method(source, "connect", signal_name, callable)
+			undo_redo.add_undo_method(source, "disconnect", signal_name, callable)
+			undo_redo.commit_action()
+		else:
+			source.connect(signal_name, callable)
 		return {
 			"success": true,
 			"status": "created",
@@ -143,12 +146,15 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 	else:
 		if not source.is_connected(signal_name, callable):
 			return MCPError.make("NOT_FOUND", "no connection to disconnect")
-		var undo_redo := EditorInterface.get_editor_undo_redo()
-		undo_redo.create_action("MCP: disconnect %s.%s -> %s.%s" % [
-			source_path, signal_name, target_path, method_name])
-		undo_redo.add_do_method(source, "disconnect", signal_name, callable)
-		undo_redo.add_undo_method(source, "connect", signal_name, callable)
-		undo_redo.commit_action()
+		var undo_redo = _Hub.get_undo_redo()
+		if undo_redo != null:
+			undo_redo.create_action("MCP: disconnect %s.%s -> %s.%s" % [
+				source_path, signal_name, target_path, method_name])
+			undo_redo.add_do_method(source, "disconnect", signal_name, callable)
+			undo_redo.add_undo_method(source, "connect", signal_name, callable)
+			undo_redo.commit_action()
+		else:
+			source.disconnect(signal_name, callable)
 		return {
 			"success": true,
 			"source_path": source_path,

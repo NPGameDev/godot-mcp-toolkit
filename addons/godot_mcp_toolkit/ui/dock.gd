@@ -10,6 +10,7 @@ const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_regi
 const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -93,7 +94,7 @@ func _make_section_style() -> StyleBoxFlat:
 	var scale := EditorInterface.get_editor_scale()
 	# Sample the editor Panel stylebox for a theme-adaptive base color.
 	var base := Color(0.22, 0.22, 0.22)
-	var theme := EditorInterface.get_editor_theme()
+	var theme := _Hub.get_editor_theme()
 	if theme:
 		var sb = theme.get_stylebox("panel", "Panel")
 		if sb is StyleBoxFlat:
@@ -999,7 +1000,7 @@ func _toast(msg: String, severity: int = _TOAST_INFO, tooltip_text: String = "")
 	if not Engine.is_editor_hint():
 		return
 	print("[MCP] %s" % msg)
-	# EditorToaster available in Godot 4.5+.
-	var toaster = EditorInterface.get_editor_toaster()
+	# EditorToaster available in Godot 4.4+ (dynamic dispatch for compat).
+	var toaster = _Hub.get_toaster()
 	if toaster != null:
 		toaster.push_toast(msg, severity, tooltip_text)
