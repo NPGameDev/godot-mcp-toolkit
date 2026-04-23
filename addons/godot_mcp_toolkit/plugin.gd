@@ -760,13 +760,13 @@ func _on_open_settings() -> void:
 	else:
 		dialog.popup_centered_clamped(Vector2i(900, 700))
 
-	# Fallback: toggle Advanced Settings (custom plugin settings are hidden
-	# behind it) then select the section via tree traversal.
-	# update_category_list() from the toggle is synchronous — one process
-	# frame is enough for the tree items to exist.
+	# Fallback: temporarily enable Advanced so the custom section is visible,
+	# select it, then disable Advanced again so the user doesn't see the clutter.
 	_enable_advanced_settings(dialog)
-	get_tree().create_timer(0.05).timeout.connect(
-		_select_mcp_section.bind(dialog))
+	get_tree().create_timer(0.05).timeout.connect(func():
+		_select_mcp_section(dialog)
+		_disable_advanced_settings(dialog)
+	)
 
 
 func _enable_advanced_settings(dialog: Window) -> void:
@@ -775,10 +775,19 @@ func _enable_advanced_settings(dialog: Window) -> void:
 	for btn in buttons:
 		var cb := btn as CheckButton
 		if cb.text.to_lower().contains("advanced") and not cb.button_pressed:
-			# set_pressed (button_pressed=) already emits toggled internally,
-			# which triggers SectionedInspector.update_category_list().
 			cb.button_pressed = true
 			return
+
+
+func _disable_advanced_settings(dialog: Window) -> void:
+	var buttons: Array = []
+	_collect_nodes_by_class(dialog, "CheckButton", buttons)
+	for btn in buttons:
+		var cb := btn as CheckButton
+		if cb.text.to_lower().contains("advanced") and cb.button_pressed:
+			cb.button_pressed = false
+			return
+
 
 
 func _select_mcp_section(dialog: Window) -> void:
