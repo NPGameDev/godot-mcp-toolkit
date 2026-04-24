@@ -783,7 +783,7 @@ func _on_regen_token() -> void:
 # Write .mcp.json (public — also called from plugin.gd menu item)
 # ---------------------------------------------------------------------------
 
-func write_mcp_json() -> void:
+func write_mcp_json(force_overwrite: bool = false) -> void:
 	var template_path := "res://addons/godot_mcp_toolkit/.mcp.json.template"
 	if not FileAccess.file_exists(template_path):
 		_toast("Template not found: " + template_path, _TOAST_ERROR)
@@ -791,7 +791,7 @@ func write_mcp_json() -> void:
 	var content := FileAccess.get_file_as_string(template_path)
 	var dest := MCPJsonSync.get_mcp_json_path()
 
-	if FileAccess.file_exists(dest):
+	if FileAccess.file_exists(dest) and not force_overwrite:
 		var dialog := ConfirmationDialog.new()
 		dialog.title = ".mcp.json already exists"
 		dialog.dialog_text = (

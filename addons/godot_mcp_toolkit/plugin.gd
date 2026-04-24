@@ -380,6 +380,7 @@ const _ONBOARDING_PROGRESS := "user://addons/godot_mcp_toolkit/mcp_onboarding_pr
 const _ONBOARDING_FLAG_V35 := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"
 
 var _wizard_step: int = 0
+var _wizard_mcp_exists: bool = false  # Tracks .mcp.json state for step-1 variants.
 var _wizard_buttons: Array = []  # Tracked custom buttons for per-step cleanup.
 const _WIZARD_STEP_COUNT := 5
 
@@ -440,40 +441,44 @@ func _wizard_apply_step(dialog: AcceptDialog) -> void:
 			_wizard_buttons.append(dialog.add_button("Power User Mode", true, "power_user"))
 
 		1:
+			# .mcp.json — two variants based on whether the file already exists.
+			_wizard_mcp_exists = FileAccess.file_exists(
+				ProjectSettings.globalize_path("res://") + ".mcp.json")
+			if _wizard_mcp_exists:
+				dialog.dialog_text = (
+					"Your MCP client reads .mcp.json from the project root\n"
+					+ "to locate and configure the server.\n\n"
+					+ "An .mcp.json already exists in your project.")
+				dialog.ok_button_text = "Continue (keep existing .mcp.json)"
+				_wizard_buttons.append(
+					dialog.add_button("Overwrite with clean .mcp.json", true, "overwrite_mcp"))
+			else:
+				dialog.dialog_text = (
+					"Your MCP client reads .mcp.json from the project root\n"
+					+ "to locate and configure the server.\n\n"
+					+ "No .mcp.json was found — this file is required for your\n"
+					+ "MCP client to connect to the toolkit.")
+				dialog.ok_button_text = "Create .mcp.json"
+
+		2:
+			# MCP control center — show the dock.
 			dialog.dialog_text = (
 				"This is your MCP control center — server status,\n"
 				+ "feature gates, and audit log.\n\n"
 				+ "The dock is now visible in the bottom panel.")
 			dialog.ok_button_text = "Next"
-			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
-			# Action: show the dock.
 			if _dock != null:
 				make_bottom_panel_item_visible(_dock)
 
-		2:
+		3:
+			# Feature gates — open Project Settings.
 			dialog.dialog_text = (
 				"Toggle individual capabilities here. Dual-gate features\n"
 				+ "need both a ProjectSettings toggle and an env var in .mcp.json.\n\n"
 				+ "Navigate to: MCP Toolkit > Feature Gates")
 			dialog.ok_button_text = "Next"
 			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
-			# Action: open Project Settings to Feature Gates.
 			_on_open_settings()
-
-		3:
-			dialog.dialog_text = (
-				"Your MCP client reads .mcp.json from the project root.\n"
-				+ "Use 'Write .mcp.json' to create or update it.\n")
-			var has_mcp_json := FileAccess.file_exists(
-				ProjectSettings.globalize_path("res://") + ".mcp.json")
-			if has_mcp_json:
-				dialog.dialog_text += "\n.mcp.json already exists — you're all set."
-			else:
-				dialog.dialog_text += "\nNo .mcp.json found. Create one now?"
-				_wizard_buttons.append(
-					dialog.add_button("Create .mcp.json", true, "create_mcp"))
-			dialog.ok_button_text = "Next"
-			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
 
 		4:
 			dialog.dialog_text = (
@@ -484,8 +489,9 @@ func _wizard_apply_step(dialog: AcceptDialog) -> void:
 			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
 			_wizard_buttons.append(dialog.add_button("Open Info", true, "open_info"))
 
-	# "Skip Tour" available on steps 1–3 (not step 0: profile required; not step 4: nothing to skip).
-	if _wizard_step > 0 and _wizard_step < _WIZARD_STEP_COUNT - 1:
+	# "Skip Tour" on steps 2–3 (not 0: profile required;
+	# not 1: .mcp.json required; not 4: nothing to skip).
+	if _wizard_step >= 2 and _wizard_step <= 3:
 		_wizard_buttons.append(dialog.add_button("Skip Tour", true, "skip"))
 
 
@@ -493,6 +499,10 @@ func _wizard_advance(dialog: AcceptDialog) -> void:
 	if _wizard_step == 0:
 		# Step 0 OK = "Standard (Recommended)" — no action needed, default profile.
 		pass
+	elif _wizard_step == 1 and not _wizard_mcp_exists:
+		# Step 1 OK = "Create .mcp.json" — write the file now.
+		if _dock != null:
+			_dock.write_mcp_json()
 	if _wizard_step >= _WIZARD_STEP_COUNT - 1:
 		# Final step — finish.
 		_write_onboarding_flag()
@@ -528,14 +538,17 @@ func _wizard_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 			_wizard_step = 1
 			_save_onboarding_progress()
 			_wizard_apply_step(dialog)
+		"overwrite_mcp":
+			if _dock != null:
+				_dock.write_mcp_json(true)
+			_wizard_step += 1
+			_save_onboarding_progress()
+			_wizard_apply_step(dialog)
 		"open_info":
 			_write_onboarding_flag()
 			_free_wizard()
 			if _dock != null:
 				_dock._show_info_dialog()
-		"create_mcp":
-			if _dock != null:
-				_dock.write_mcp_json()
 
 
 func _free_wizard() -> void:
