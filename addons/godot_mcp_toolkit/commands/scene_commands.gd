@@ -164,7 +164,8 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	if FileAccess.file_exists(file_path):
 		match if_exists:
 			"return":
-				return {"success": true, "status": "returned", "path": file_path}
+				return {"success": true, "status": "returned", "path": file_path,
+					"root_name": file_path.get_file().get_basename(), "root_path": "."}
 			"fail":
 				return MCPError.make("ALREADY_EXISTS",
 					"file exists at %s; set if_exists:'replace' to overwrite" % file_path)
@@ -208,7 +209,8 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 
-	var response := {"success": true, "path": file_path, "root_type": root_type}
+	var response := {"success": true, "path": file_path, "root_type": root_type,
+		"root_name": file_path.get_file().get_basename(), "root_path": "."}
 	if was_replace:
 		response["status"] = "replaced"
 		response["previous_root_type"] = previous_root_type

@@ -207,7 +207,9 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "no node at path %s" % node_path, MCPError.HINT_NODE_PATH)
+		return MCPError.make("NOT_FOUND",
+			"no node at path %s. For runtime nodes, use signal_emit(mode='runtime') + runtime_get_node_state instead." % node_path,
+			MCPError.HINT_NODE_PATH)
 	if not node.has_method(method_name):
 		return MCPError.make("INVALID_METHOD",
 			"node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [
@@ -225,12 +227,15 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 		node_path, method_name, (coerced_args as Array).size()])
 	var result = node.callv(method_name, coerced_args)
 
-	return {
+	var response := {
 		"success": true,
 		"path": node_path,
 		"method": method_name,
 		"result": MCPCoerce.serialize_value(result),
 	}
+	if result == null:
+		response["hint"] = "Return value was null. Editor-side callv() cannot capture return values from non-@tool scripts — the method signature is visible but the body does not execute. Use game.start + runtime tools (runtime_get_node_state, signal_emit) to drive and observe runtime state."
+	return response
 
 
 static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:

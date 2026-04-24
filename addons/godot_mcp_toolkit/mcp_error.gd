@@ -45,7 +45,7 @@ const CODES: Array[String] = [
 ]
 
 ## Hint constants for common dead-end recovery at call sites.
-const HINT_NODE_PATH := "Use scene.get_tree to list valid node paths."
+const HINT_NODE_PATH := "Use scene.get_tree to list valid node paths. Root node is always path '.'."
 const HINT_FILE_PATH := "Use asset.list to search for files. Paths must start with res://"
 const HINT_CLASS_NAME := "Use classdb.search to find valid class names."
 
@@ -55,6 +55,9 @@ const DEFAULT_HINTS := {
 	"TIMEOUT": "The editor may be busy. Try editor.wait_for_idle before retrying.",
 	"UNSUPPORTED": "Check COMPATIBILITY.md for version requirements.",
 	"PATH_DENIED": "Paths must use res:// format. Example: res://scenes/main.tscn",
+	"LOG_UNAVAILABLE": "Log file could not be read. Check that file logging is enabled in ProjectSettings (application/config/use_file_logging). If the editor just started, the log may not exist yet.",
+	"PARENT_NOT_FOUND": "Parent directory does not exist. Use folder.create to create it first.",
+	"GAME_NOT_RUNNING": "No running game detected. Use game.start first. If the MCP Runtime autoload is missing, re-enable the plugin in Project Settings.",
 }
 
 

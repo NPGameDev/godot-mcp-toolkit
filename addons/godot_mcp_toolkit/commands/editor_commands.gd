@@ -115,6 +115,8 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 		"height": image.get_height(),
 		"bytes": png_bytes.size(),
 	}
+	if image.get_width() < 16 or image.get_height() < 16:
+		response["warning"] = "Screenshot captured only %dx%d — editor may be minimized or running headless. Use script_check and editor_get_console for non-visual verification." % [image.get_width(), image.get_height()]
 	if not persisted_path.is_empty():
 		response["path"] = persisted_path
 	return response
@@ -237,6 +239,20 @@ static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 	return {"success": true, "was_scanning": true, "waited_ms": elapsed}
 
 
+# -- Helpers ------------------------------------------------------------------
+
+
+static func _godot_error_name(code: int) -> String:
+	match code:
+		0: return "OK"
+		7: return "ERR_FILE_NOT_FOUND"
+		12: return "ERR_CANT_OPEN"
+		13: return "ERR_CANT_WRITE"
+		31: return "ERR_FILE_CANT_WRITE"
+		32: return "ERR_FILE_CANT_READ"
+		_: return "Error(%d)" % code
+
+
 # -- Console log reader -------------------------------------------------------
 
 
@@ -312,8 +328,9 @@ static func _read_console_log(
 
 	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
 	if file_handle == null:
+		var open_err := FileAccess.get_open_error()
 		return MCPError.make("LOG_UNAVAILABLE",
-			"cannot open %s (err %d)" % [chosen_file, FileAccess.get_open_error()])
+			"cannot open %s (%s)" % [chosen_file, _godot_error_name(open_err)])
 	var content := file_handle.get_as_text()
 	file_handle.close()
 

@@ -69,12 +69,15 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 			runtime_ready = _poll_runtime_ready(
 				RUNTIME_HOST, runtime_port, remaining)
 
-	return {
+	var response := {
 		"success": true,
 		"target": target,
 		"runtime_port": runtime_port if runtime_port > 0 else null,
 		"runtime_ready": runtime_ready,
 	}
+	if wait_for_runtime and not runtime_ready:
+		response["hint"] = "Runtime not ready. Checklist: (1) Is the MCP Runtime autoload enabled? Re-enable the plugin in Project Settings > Plugins if missing. (2) Is port 6525 available? (3) Check editor_get_console for runtime startup errors. (4) For Standard profile: call enable_tool_group(['runtime']) to load runtime tools."
+	return response
 
 
 static func _cmd_game_stop(_parameters: Dictionary) -> Dictionary:
