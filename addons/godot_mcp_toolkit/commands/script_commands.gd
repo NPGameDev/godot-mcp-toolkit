@@ -121,11 +121,11 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action("MCP script_write: %s" % file_path)
-		undo_redo.add_do_method(server, "_write_file_silent", file_path, content)
+		undo_redo.add_do_method(server.undo_helpers, "_write_file_silent", file_path, content)
 		if existed:
-			undo_redo.add_undo_method(server, "_write_file_silent", file_path, prior_content)
+			undo_redo.add_undo_method(server.undo_helpers, "_write_file_silent", file_path, prior_content)
 		else:
-			undo_redo.add_undo_method(server, "_delete_file_silent", file_path)
+			undo_redo.add_undo_method(server.undo_helpers, "_delete_file_silent", file_path)
 		undo_redo.commit_action(false)
 
 	var bytes_written := content.to_utf8_buffer().size()

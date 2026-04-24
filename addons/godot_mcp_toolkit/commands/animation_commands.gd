@@ -145,7 +145,7 @@ static func _cmd_animation_keyframe(
 			undo_redo.create_action("MCP: animation.keyframe add %s @ %s" % [track_path, time])
 			undo_redo.add_do_method(animation, "track_insert_key", track_index, time, coerced)
 			undo_redo.add_undo_method(
-				server, "_animation_remove_key_at", animation, track_index, time)
+				server.undo_helpers, "_animation_remove_key_at", animation, track_index, time)
 			undo_redo.add_undo_reference(animation)
 			undo_redo.commit_action()
 		else:
@@ -188,13 +188,13 @@ static func _cmd_animation_keyframe(
 		if undo_redo != null:
 			undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time])
 			undo_redo.add_do_method(
-				server, "_animation_remove_key_at", animation, track_index, time)
+				server.undo_helpers, "_animation_remove_key_at", animation, track_index, time)
 			undo_redo.add_undo_method(
-				server, "_animation_insert_key_silent", animation, track_index, time, captured_value)
+				server.undo_helpers, "_animation_insert_key_silent", animation, track_index, time, captured_value)
 			undo_redo.add_undo_reference(animation)
 			undo_redo.commit_action()
 		else:
-			server._animation_remove_key_at(animation, track_index, time)
+			server.undo_helpers._animation_remove_key_at(animation, track_index, time)
 		return {
 			"success": true,
 			"player_path": player_path,

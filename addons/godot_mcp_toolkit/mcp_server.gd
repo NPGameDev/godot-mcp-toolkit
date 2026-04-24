@@ -1,6 +1,10 @@
 @tool
 extends Node
 ## WebSocket JSON-RPC framing and peer lifecycle.
+##
+## All command logic lives in per-domain modules under commands/.
+## This file handles: TCP listener, WS peer accept/poll, JSON-RPC parse,
+## and dispatch via MCPCommandRegistry.
 
 signal client_connected(peer_count: int)
 signal client_disconnected(peer_count: int)
@@ -9,11 +13,7 @@ signal command_received(method: String)
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
-##
-## All command logic lives in per-domain modules under commands/.
-## This file handles: TCP listener, WS peer accept/poll, JSON-RPC parse,
-## dispatch via MCPCommandRegistry, and UndoRedo helper methods referenced
-## by name from command handlers.
+const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
 
 const PORT_BASE := 6505
 const PORT_RANGE := 11  # 6505..6515 inclusive
@@ -21,7 +21,7 @@ const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # Throttle re-listen retries to avoid log spam when the port is
 # briefly held by another process (e.g. a second editor instance, a stale
-# debugger). 60 frames ≈ 1s at 60fps; the bridge's reconnect backoff sits
+# debugger). 60 frames ~= 1s at 60fps; the bridge's reconnect backoff sits
 # on the same order so we don't pile retries on top of the bridge's.
 const _RELISTEN_FRAME_INTERVAL := 60
 # Poll TCPServer/WebSocket peers every Nth frame instead of every frame.
@@ -29,7 +29,7 @@ const _RELISTEN_FRAME_INTERVAL := 60
 # work triggered by FileSystem-dock interactions; shrinking our collision
 # window ~4x (15Hz vs 60Hz) drops the reproducibility threshold enough that
 # incidental clicks stop crashing the editor in smoke + dogfood usage.
-# Tune lower if latency regresses noticeably; 4 frames ≈ 67ms at 60fps.
+# Tune lower if latency regresses noticeably; 4 frames ~= 67ms at 60fps.
 const _POLL_FRAME_INTERVAL := 4
 # Auth timeout. Peers that don't send a valid auth message within this
 # window are closed with WS close code 1008 (Policy Violation).
@@ -54,7 +54,12 @@ var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at ac
 var _bound_port: int = -1
 # -1 = not yet saved (no active connections have triggered the override).
 var _original_unfocused_sleep_usec: int = -1
-const _ACTIVE_UNFOCUSED_SLEEP_USEC := 16666  # ≈60 fps while MCP clients connected
+const _ACTIVE_UNFOCUSED_SLEEP_USEC := 16666  # ~= 60 fps while MCP clients connected
+
+## Node holding UndoRedo helper methods that domain commands reference by
+## string name. Populated in start(); command closures access it via
+## server.undo_helpers.
+var undo_helpers: Node = null
 
 
 func set_registry(registry: MCPCommandRegistry) -> void:
@@ -71,24 +76,6 @@ func get_authed_peer_count() -> int:
 
 func get_bound_port() -> int:
 	return _bound_port
-
-
-func apply_limits(parameters: Dictionary) -> Dictionary:
-	var script_cap = parameters.get("script_read_cap_kb", null)
-	var ws_buf = parameters.get("ws_buffer_kb", null)
-	if script_cap != null:
-		ProjectSettings.set_setting("mcp_toolkit/limits/script_read_cap_kb",
-			maxi(int(script_cap), 64))
-	if ws_buf != null:
-		ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb",
-			maxi(int(ws_buf), 256))
-	return {
-		"success": true,
-		"script_read_cap_kb": int(ProjectSettings.get_setting(
-			"mcp_toolkit/limits/script_read_cap_kb", 256)),
-		"ws_buffer_kb": int(ProjectSettings.get_setting(
-			"mcp_toolkit/limits/ws_buffer_kb", 1024)),
-	}
 
 
 func get_command_methods() -> Array:
@@ -114,6 +101,10 @@ func regenerate_token() -> void:
 
 
 func start() -> void:
+	if undo_helpers == null:
+		undo_helpers = UndoRedoHelpers.new()
+		undo_helpers.name = "UndoRedoHelpers"
+		add_child(undo_helpers)
 	_plugin_boot_time = int(Time.get_unix_time_from_system())
 	_relisten_countdown = 0
 	_bound_port = -1
@@ -145,6 +136,9 @@ func stop() -> void:
 	print("[MCPServer] stopped")
 
 
+# -- Networking ----------------------------------------------------------------
+
+
 # First-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1 and binds
 # the first free port. Sets _bound_port on success. If no port is available,
 # schedules a throttled retry.
@@ -164,7 +158,7 @@ func _scan_and_listen() -> void:
 	# All ports in range exhausted.
 	_consecutive_failures += 1
 	if _consecutive_failures == 1:
-		push_warning("[MCPServer] no free port in %d–%d; will retry every ~1s" % [PORT_BASE, PORT_BASE + PORT_RANGE - 1])
+		push_warning("[MCPServer] no free port in %d-%d; will retry every ~1s" % [PORT_BASE, PORT_BASE + PORT_RANGE - 1])
 	_tcp_server = null
 	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
 
@@ -199,6 +193,9 @@ func _try_listen() -> void:
 	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
 
 
+# -- Frame loop ----------------------------------------------------------------
+
+
 func _process(_delta: float) -> void:
 	_poll_frame_counter += 1
 	if _poll_frame_counter < _POLL_FRAME_INTERVAL:
@@ -209,6 +206,12 @@ func _process(_delta: float) -> void:
 		_try_listen()
 		return
 
+	_accept_pending_peers()
+	var closed := _poll_connected_peers()
+	_cleanup_closed_peers(closed)
+
+
+func _accept_pending_peers() -> void:
 	while _tcp_server.is_connection_available():
 		var stream := _tcp_server.take_connection()
 		var peer := WebSocketPeer.new()
@@ -222,13 +225,15 @@ func _process(_delta: float) -> void:
 		_peers.append(peer)
 		_peer_connect_ms[peer] = Time.get_ticks_msec()
 
-	var closed_peers: Array[WebSocketPeer] = []
+
+func _poll_connected_peers() -> Array[WebSocketPeer]:
+	var closed: Array[WebSocketPeer] = []
 	var now_ms := Time.get_ticks_msec()
 	for peer in _peers:
 		peer.poll()
 		var state := peer.get_ready_state()
 		if state == WebSocketPeer.STATE_CLOSED:
-			closed_peers.append(peer)
+			closed.append(peer)
 			continue
 		if state != WebSocketPeer.STATE_OPEN:
 			continue
@@ -236,14 +241,17 @@ func _process(_delta: float) -> void:
 		if not _peer_authed.has(peer):
 			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _AUTH_TIMEOUT_MS:
 				peer.close(1008, "auth timeout")
-				closed_peers.append(peer)
+				closed.append(peer)
 				continue
 		while peer.get_available_packet_count() > 0:
 			var text := peer.get_packet().get_string_from_utf8()
 			_handle_message(peer, text)
+	return closed
 
+
+func _cleanup_closed_peers(closed: Array[WebSocketPeer]) -> void:
 	var had_authed_disconnect := false
-	for peer in closed_peers:
+	for peer in closed:
 		if _peer_authed.has(peer):
 			had_authed_disconnect = true
 		_peers.erase(peer)
@@ -253,6 +261,9 @@ func _process(_delta: float) -> void:
 		if _peer_authed.size() == 0:
 			_restore_unfocused_sleep()
 		client_disconnected.emit(_peer_authed.size())
+
+
+# -- Message handling ----------------------------------------------------------
 
 
 func _handle_message(peer: WebSocketPeer, text: String) -> void:
@@ -267,22 +278,29 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		_send_error(peer, null, -32600, "Invalid Request: top-level must be an object")
 		return
 
-	# Auth handshake — first message must be {"auth": "<token>"}.
 	if not _peer_authed.has(peer):
-		if MCPAuth.validate(message, _session_token):
-			_peer_authed[peer] = true
-			var vi := Engine.get_version_info()
-			peer.send_text(JSON.stringify({
-				"authed": true,
-				"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
-			}))
-			if _peer_authed.size() == 1:
-				_lower_unfocused_sleep()
-			client_connected.emit(_peer_authed.size())
-		else:
-			peer.close(1008, "invalid token")
+		_handle_auth(peer, message)
 		return
 
+	_dispatch_rpc(peer, message)
+
+
+func _handle_auth(peer: WebSocketPeer, message: Dictionary) -> void:
+	if MCPAuth.validate(message, _session_token):
+		_peer_authed[peer] = true
+		var vi := Engine.get_version_info()
+		peer.send_text(JSON.stringify({
+			"authed": true,
+			"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
+		}))
+		if _peer_authed.size() == 1:
+			_lower_unfocused_sleep()
+		client_connected.emit(_peer_authed.size())
+	else:
+		peer.close(1008, "invalid token")
+
+
+func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 	var id = message.get("id", null)
 	# Godot's JSON parser returns every number as float; coerce whole-float ids
 	# back to int so {"id": 1} round-trips as {"id": 1}, not {"id": 1.0}.
@@ -357,69 +375,3 @@ func _restore_unfocused_sleep() -> void:
 		return
 	es.set_setting(_UNFOCUSED_SLEEP_KEY, _original_unfocused_sleep_usec)
 	_original_unfocused_sleep_usec = -1
-
-
-# -- UndoRedo helper methods ---------------------------------------------------
-#
-# These are referenced by STRING NAME from domain command files via
-# EditorUndoRedoManager.add_do_method / add_undo_method. They must live on
-# this Node so UndoRedo can call them. Do not move to static helpers.
-
-
-func _write_file_silent(path: String, content: String) -> void:
-	var file := FileAccess.open(path, FileAccess.WRITE)
-	if file == null:
-		push_warning("[MCPServer] UndoRedo write of %s failed (err %d)" % [path, FileAccess.get_open_error()])
-		return
-	file.store_string(content)
-	file.close()
-
-
-func _delete_file_silent(path: String) -> void:
-	if not FileAccess.file_exists(path):
-		return
-	var error := DirAccess.remove_absolute(path)
-	if error != OK:
-		push_warning("[MCPServer] UndoRedo delete of %s failed (err %d)" % [path, error])
-
-
-func _set_owner_recursive(node: Node, owner: Node) -> void:
-	node.set_owner(owner)
-	for child in node.get_children():
-		_set_owner_recursive(child, owner)
-
-
-func _animation_remove_key_at(animation: Animation, track_index: int, time: float) -> void:
-	var key_index := animation.track_find_key(track_index, time, Animation.FIND_MODE_EXACT)
-	if key_index != -1:
-		animation.track_remove_key(track_index, key_index)
-
-
-func _animation_insert_key_silent(animation: Animation, track_index: int, time: float, value) -> void:
-	animation.track_insert_key(track_index, time, value)
-
-
-func _tilemap_apply_batch(node: Node, layer: int, cells: Array) -> void:
-	var is_layer := node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
-	for cell in cells:
-		var coord := Vector2i(int(cell["x"]), int(cell["y"]))
-		var source_id := int(cell["source_id"])
-		var atlas := Vector2i(int(cell["atlas_x"]), int(cell["atlas_y"]))
-		var alternative := int(cell.get("alternative_tile", 0))
-		if is_layer:
-			node.set_cell(coord, source_id, atlas, alternative)
-		else:
-			(node as TileMap).set_cell(layer, coord, source_id, atlas, alternative)
-
-
-func _tilemap_restore_batch(node: Node, layer: int, before_state: Array) -> void:
-	var is_layer := node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
-	for state in before_state:
-		var coord: Vector2i = state["coord"]
-		var source_id := int(state["source_id"])
-		var atlas: Vector2i = state["atlas"]
-		var alternative := int(state["alternative_tile"])
-		if is_layer:
-			node.set_cell(coord, source_id, atlas, alternative)
-		else:
-			(node as TileMap).set_cell(layer, coord, source_id, atlas, alternative)

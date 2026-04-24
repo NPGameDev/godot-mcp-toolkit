@@ -3,8 +3,15 @@ extends EditorPlugin
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
-const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
+const MCPFileGuard = _Hub.MCPFileGuard
+const MCPRegistryClient = _Hub.MCPRegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
+const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
+const SettingsMigration := preload("res://addons/godot_mcp_toolkit/settings_migration.gd")
+const FeatureGateSettings := preload("res://addons/godot_mcp_toolkit/feature_gate_settings.gd")
+const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
+const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
+const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_commands_loader.gd")
 const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
@@ -21,10 +28,7 @@ const TilemapCommands := preload("res://addons/godot_mcp_toolkit/commands/tilema
 const AssetCommands := preload("res://addons/godot_mcp_toolkit/commands/asset_commands.gd")
 const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_commands.gd")
 const ClassdbCommands := preload("res://addons/godot_mcp_toolkit/commands/classdb_commands.gd")
-const MCPFileGuard = _Hub.MCPFileGuard
-const MCPRegistryClient = _Hub.MCPRegistryClient
-const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
-const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_commands_loader.gd")
+const MetaCommands := preload("res://addons/godot_mcp_toolkit/commands/meta_commands.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:6525. Registered/unregistered via add_autoload_singleton /
@@ -34,43 +38,30 @@ const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_command
 const RUNTIME_AUTOLOAD_NAME := "MCPRuntimeServer"
 const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 
+# Data-driven menu / command-palette registration.
+const _ACTIONS := [
+	{"label": "MCP Toolkit: Regenerate Token", "key": "mcp/regenerate_token", "method": "_on_regen_token"},
+	{"label": "MCP Toolkit: Show Audit Log", "key": "mcp/show_audit_log", "method": "_on_show_audit"},
+	{"label": "MCP Toolkit: Open Project Settings", "key": "mcp/open_settings", "method": "_on_open_settings"},
+	{"label": "MCP Toolkit: Write .mcp.json", "key": "mcp/write_mcp_json", "method": "_on_write_mcp_json"},
+	{"label": "MCP Toolkit: Power User Mode", "key": "mcp/power_user_mode", "method": "_on_power_user_mode"},
+]
+
 var _server: Node = null
 var _export_plugin: EditorExportPlugin = null
 var _dock: Control = null
-var _onboarding_wizard: AcceptDialog = null
+var _wizard: OnboardingWizard = null
+var _feature_settings: FeatureGateSettings = null
 # Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
-# Power User polling — detect changes from ProjectSettings UI.
-var _last_power_user: bool = false
-# Per-feature polling — detect individual gate changes from ProjectSettings UI.
-var _last_feature_states: Dictionary = {}  # { ps_key: bool }
-
-# Menu item keys for teardown symmetry.
-const _MENU_ITEMS: Array[String] = [
-	"MCP Toolkit: Regenerate Token",
-	"MCP Toolkit: Show Audit Log",
-	"MCP Toolkit: Open Project Settings",
-	"MCP Toolkit: Write .mcp.json",
-	"MCP Toolkit: Power User Mode",
-]
-
-# Command Palette key names for teardown symmetry.
-const _PALETTE_KEYS: Array[String] = [
-	"mcp/regenerate_token",
-	"mcp/show_audit_log",
-	"mcp/open_settings",
-	"mcp/write_mcp_json",
-	"mcp/power_user_mode",
-]
 
 
 func _enter_tree() -> void:
-	_migrate_user_data_paths()
-	_migrate_stale_settings()
-	_register_feature_gate_settings()
-	_last_power_user = ProjectSettings.get_setting(
-		"mcp_toolkit/feature_gates/power_user_mode", false)
-	_snapshot_feature_states()
+	SettingsMigration.migrate_user_data_paths()
+	SettingsMigration.migrate_stale_settings()
+
+	_feature_settings = FeatureGateSettings.new()
+	_feature_settings.register_all()
 
 	var registry := MCPCommandRegistry.new()
 	_server = MCPServer.new()
@@ -93,9 +84,7 @@ func _enter_tree() -> void:
 	AssetCommands.register(registry, _server)
 	SaveCommands.register(registry, _server)
 	ClassdbCommands.register(registry, _server)
-
-	# Transport-level meta command — server-side limit overrides.
-	registry.add("meta.set_limits", _server.apply_limits)
+	MetaCommands.register(registry)
 
 	# User command extensions — profile-exempt, always loaded.
 	UserCommandsLoader.load_all(registry, _server)
@@ -120,22 +109,7 @@ func _enter_tree() -> void:
 	_dock.bind(_server, "user://addons/godot_mcp_toolkit/mcp_audit.log")
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
 
-	# -- Menu items --
-	add_tool_menu_item("MCP Toolkit: Regenerate Token", _on_regen_token)
-	add_tool_menu_item("MCP Toolkit: Show Audit Log", _on_show_audit)
-	add_tool_menu_item("MCP Toolkit: Open Project Settings", _on_open_settings)
-	add_tool_menu_item("MCP Toolkit: Write .mcp.json", _on_write_mcp_json)
-	add_tool_menu_item("MCP Toolkit: Power User Mode", _on_power_user_mode)
-
-	# -- Command Palette (4.0+; guard anyway for safety) --
-	if EditorInterface.has_method("get_command_palette"):
-		var palette = EditorInterface.call("get_command_palette")
-		if palette != null:
-			palette.add_command("MCP Toolkit: Regenerate Token", "mcp/regenerate_token", _on_regen_token)
-			palette.add_command("MCP Toolkit: Show Audit Log", "mcp/show_audit_log", _on_show_audit)
-			palette.add_command("MCP Toolkit: Open Project Settings", "mcp/open_settings", _on_open_settings)
-			palette.add_command("MCP Toolkit: Write .mcp.json", "mcp/write_mcp_json", _on_write_mcp_json)
-			palette.add_command("MCP Toolkit: Power User Mode", "mcp/power_user_mode", _on_power_user_mode)
+	_register_menus()
 
 	# -- Per-user EditorSettings --
 	_register_editor_settings()
@@ -147,561 +121,35 @@ func _enter_tree() -> void:
 			+ "The plugin will run normally but some features may behave unexpectedly. "
 			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues" % [_minor, _Hub.GODOT_TESTED_MAX_MINOR])
 
+	_wizard = OnboardingWizard.new(self, _dock)
 	call_deferred("_check_onboarding")
 
 
-# -- Stale settings migration --------------------------------------------------
-
-
-const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
-const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
-
-
-func _migrate_user_data_paths() -> void:
-	# Ensure the namespaced user:// directory exists.
-	var dir := DirAccess.open("user://")
-	if dir != null and not dir.dir_exists("addons/godot_mcp_toolkit"):
-		dir.make_dir_recursive("addons/godot_mcp_toolkit")
-
-	# Move files from user:// root to user://addons/godot_mcp_toolkit/.
-	var migrations := [
-		["user://mcp_audit.log", "user://addons/godot_mcp_toolkit/mcp_audit.log"],
-		["user://mcp_power_user_cache.json", "user://addons/godot_mcp_toolkit/mcp_power_user_cache.json"],
-		["user://mcp_onboarding_v35_shown", "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"],
-		["user://mcp_onboarding_v35b_shown", "user://addons/godot_mcp_toolkit/mcp_onboarding_v35b_shown"],
-	]
-	# Token files are per-worktree (user://mcp_token_<hash>).
-	var project_path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
-	var suffix := project_path.sha256_text().substr(0, 12)
-	migrations.append([
-		"user://mcp_token_%s" % suffix,
-		"user://addons/godot_mcp_toolkit/mcp_token_%s" % suffix,
-	])
-
-	var moved := 0
-	for pair in migrations:
-		var old_path: String = pair[0]
-		var new_path: String = pair[1]
-		if FileAccess.file_exists(old_path) and not FileAccess.file_exists(new_path):
-			var content := FileAccess.get_file_as_bytes(old_path)
-			var out := FileAccess.open(new_path, FileAccess.WRITE)
-			if out != null:
-				out.store_buffer(content)
-				out.close()
-				DirAccess.remove_absolute(old_path)
-				moved += 1
-	if moved > 0:
-		print("[MCP] Migrated %d file(s) to user://addons/godot_mcp_toolkit/" % moved)
-
-
-func _migrate_stale_settings() -> void:
-	# Remove leftover keys from previous namespace eras.
-	var stale_keys := [
-		"mcp/unsafe/allow_all",
-		"mcp/unsafe/allow_game_eval",
-		"mcp/unsafe/allow_os_execute",
-		"mcp/unsafe/allow_user_scope",
-		"mcp/unsafe/allow_outbound_http",
-		"mcp/unsafe/allow_node_call_method",
-		"mcp/unsafe/allow_project_set_setting",
-		"mcp/unsafe/allow_input_map_write",
-		"application/config/mcp_smoke_15d",
-	]
-	var removed := 0
-	for key in stale_keys:
-		if ProjectSettings.has_setting(key):
-			ProjectSettings.set_setting(key, null)
-			removed += 1
-	# Migrate unsafe/ → feature_gates/ per-feature keys.
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		var new_key: String = entry["ps_key"]  # already feature_gates/
-		var old_key := new_key.replace("feature_gates/", "unsafe/")
-		if ProjectSettings.has_setting(old_key):
-			var val = ProjectSettings.get_setting(old_key, false)
-			if val:
-				ProjectSettings.set_setting(new_key, true)
-			ProjectSettings.set_setting(old_key, null)
-			removed += 1
-	# Migrate old power_user_mode paths → current feature_gates/power_user_mode.
-	for old_key in ["mcp_toolkit/unsafe/allow_all", "mcp_toolkit/unsafe/power_user_mode", "mcp_toolkit/power_user_mode"]:
-		if ProjectSettings.has_setting(old_key):
-			var val = ProjectSettings.get_setting(old_key, false)
-			if val:
-				ProjectSettings.set_setting("mcp_toolkit/feature_gates/power_user_mode", true)
-			ProjectSettings.set_setting(old_key, null)
-			removed += 1
-	# Remove stale power_user_warning from old unsafe/ namespace.
-	if ProjectSettings.has_setting("mcp_toolkit/unsafe/power_user_warning"):
-		ProjectSettings.set_setting("mcp_toolkit/unsafe/power_user_warning", null)
-		removed += 1
-	# Remove internal cache from ProjectSettings — now stored in user:// file.
-	if ProjectSettings.has_setting("mcp_toolkit/internal/pre_power_user_cache"):
-		ProjectSettings.set_setting("mcp_toolkit/internal/pre_power_user_cache", null)
-		removed += 1
-	if removed > 0:
-		ProjectSettings.save()
-		print("[MCP] Migrated %d stale settings" % removed)
-
-
-# -- user:// whitelist validation ----------------------------------------------
-
-
-func _validate_user_whitelist() -> void:
-	MCPFileGuard.reload_user_whitelist()
-	var wl_path := "res://addons/godot_mcp_toolkit/user_scope_whitelist.json"
-	if not FileAccess.file_exists(wl_path):
-		push_warning("MCP: user_scope_whitelist.json not found at %s; save.* tools will return USER_SCOPE_DISABLED until the file is created" % wl_path)
-		return
-	var f := FileAccess.open(wl_path, FileAccess.READ)
-	if f == null:
-		push_warning("MCP: cannot open user_scope_whitelist.json (error %d); save.* tools will return USER_SCOPE_DISABLED" % FileAccess.get_open_error())
-		return
-	var text := f.get_as_text()
-	f.close()
-	var parsed = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_warning("MCP: user_scope_whitelist.json is malformed (expected JSON object); save.* tools will return USER_SCOPE_DISABLED")
-		return
-
-
-# -- FeatureGate ProjectSettings registration ---------------------------------
-
-
-func _register_feature_gate_settings() -> void:
-	# power_user_mode — master switch, registered first so it displays first.
-	_register_basic_bool("mcp_toolkit/feature_gates/power_user_mode", false,
-		"WARNING: Enables ALL feature gates and grants the AI agent "
-		+ "full control — code execution, OS commands, project settings writes, "
-		+ "and file access outside res://. Individual gates sync automatically.")
-	ProjectSettings.set_order("mcp_toolkit/feature_gates/power_user_mode", 0)
-
-	var order_idx := 1
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		var ps_key: String = entry["ps_key"]
-		var gate_label := "dual-gate: env AND PS" if entry["dual_gate"] else "single-gate: env OR PS"
-		_register_basic_bool(ps_key, false,
-			"DANGER: %s (%s). Default off." % [entry["risk"], gate_label])
-		ProjectSettings.set_order(ps_key, order_idx)
-		order_idx += 1
-
-	# Power User warning — read-only status display at the end of Feature Gates.
-	_register_power_user_warning()
-
-	# Response-limit settings.
-	_register_basic_int("mcp_toolkit/limits/script_read_cap_kb", 256,
-		"Max script content returned by script.read, in KB. Minimum 64.")
-	_register_basic_int("mcp_toolkit/limits/ws_buffer_kb", 1024,
-		"WebSocket per-peer buffer size, in KB. Minimum 256.")
-	_register_limits_note()
-
-	# Audit log settings.
-	_register_basic_bool("mcp_toolkit/audit/enabled", true,
-		"Enable MCP audit log at user://addons/godot_mcp_toolkit/mcp_audit.log.")
-	_register_basic_int("mcp_toolkit/audit/max_size_kb", 1024,
-		"Max audit log size in KB. 0 = unlimited. Log truncates to 50% when exceeded.")
-
-
-func _register_basic_bool(key: String, default_value: bool, hint: String) -> void:
-	if not ProjectSettings.has_setting(key):
-		ProjectSettings.set_setting(key, default_value)
-	ProjectSettings.set_initial_value(key, default_value)
-	ProjectSettings.set_as_basic(key, true)
-	ProjectSettings.add_property_info({
-		"name": key, "type": TYPE_BOOL,
-		"hint": PROPERTY_HINT_NONE, "hint_string": hint,
-	})
-
-
-func _register_basic_int(key: String, default_value: int, hint: String) -> void:
-	if not ProjectSettings.has_setting(key):
-		ProjectSettings.set_setting(key, default_value)
-	ProjectSettings.set_initial_value(key, default_value)
-	ProjectSettings.set_as_basic(key, true)
-	ProjectSettings.add_property_info({
-		"name": key, "type": TYPE_INT,
-		"hint": PROPERTY_HINT_NONE, "hint_string": hint,
-	})
-
-
-
-const _LIMITS_NOTE_KEY := "mcp_toolkit/limits/env_override_note"
-const _LIMITS_NOTE_TEXT := (
-	"These values can be overridden by GODOT_MCP_SCRIPT_READ_LIMIT and "
-	+ "GODOT_MCP_WS_BUFFER_LIMIT env vars in .mcp.json. "
-	+ "When set, the env var values take priority on connect.")
-
-
-func _register_limits_note() -> void:
-	ProjectSettings.set_setting(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
-	ProjectSettings.set_initial_value(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
-	ProjectSettings.set_as_basic(_LIMITS_NOTE_KEY, true)
-	ProjectSettings.add_property_info({
-		"name": _LIMITS_NOTE_KEY, "type": TYPE_STRING,
-		"hint": PROPERTY_HINT_MULTILINE_TEXT,
-		"hint_string": "Read-only — env var override information.",
-	})
-
-
-const _PU_WARNING_KEY := "mcp_toolkit/feature_gates/power_user_warning"
-const _PU_WARNING_TEXT := (
-	"POWER USER MODE ACTIVE — All feature gates enabled. "
-	+ "The AI agent has full control: code execution, OS commands, "
-	+ "project settings writes, and file access outside res://.")
-
-
-func _register_power_user_warning() -> void:
-	if not ProjectSettings.has_setting(_PU_WARNING_KEY):
-		ProjectSettings.set_setting(_PU_WARNING_KEY, "")
-	ProjectSettings.set_initial_value(_PU_WARNING_KEY, "")
-	ProjectSettings.set_as_basic(_PU_WARNING_KEY, true)
-	ProjectSettings.set_order(_PU_WARNING_KEY, 1000)
-	ProjectSettings.add_property_info({
-		"name": _PU_WARNING_KEY, "type": TYPE_STRING,
-		"hint": PROPERTY_HINT_MULTILINE_TEXT,
-		"hint_string": "Read-only status display — value is managed by the plugin.",
-	})
-	_update_power_user_warning()
-
-
-func _update_power_user_warning() -> void:
-	var enabled: bool = ProjectSettings.get_setting(
-		"mcp_toolkit/feature_gates/power_user_mode", false)
-	ProjectSettings.set_setting(_PU_WARNING_KEY, _PU_WARNING_TEXT if enabled else "")
-
-
-# -- Guided onboarding wizard -------------------------------------------------
-
-
-const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35b_shown"
-const _ONBOARDING_PROGRESS := "user://addons/godot_mcp_toolkit/mcp_onboarding_progress"
-# Projects that already saw the v35 single-dialog onboarding skip the wizard.
-const _ONBOARDING_FLAG_V35 := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"
-
-var _wizard_step: int = 0
-var _wizard_mcp_exists: bool = false  # Tracks .mcp.json state for step-1 variants.
-var _wizard_buttons: Array = []  # Tracked custom buttons for per-step cleanup.
-const _WIZARD_STEP_COUNT := 5
-
-
 func _check_onboarding() -> void:
-	if FileAccess.file_exists(_ONBOARDING_FLAG):
-		return
-	if FileAccess.file_exists(_ONBOARDING_FLAG_V35):
-		_write_onboarding_flag()
-		return
-
-	# Resume from saved progress (e.g. after Power User restart).
-	_wizard_step = 0
-	if FileAccess.file_exists(_ONBOARDING_PROGRESS):
-		var f := FileAccess.open(_ONBOARDING_PROGRESS, FileAccess.READ)
-		if f != null:
-			_wizard_step = clampi(f.get_line().to_int(), 0, _WIZARD_STEP_COUNT - 1)
-			f.close()
-	_wizard_buttons.clear()
-	var dialog := AcceptDialog.new()
-	dialog.exclusive = false
-	dialog.min_size = Vector2i(480, 260)
-
-	# AcceptDialog auto-hides on confirmed — re-show after advancing.
-	dialog.confirmed.connect(_wizard_advance.bind(dialog))
-	dialog.custom_action.connect(_wizard_custom_action.bind(dialog))
-	dialog.canceled.connect(func():
-		_write_onboarding_flag()
-		_free_wizard()
-	)
-
-	_onboarding_wizard = dialog
-	_wizard_apply_step(dialog)
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
+	_wizard.check_and_show()
 
 
-func _wizard_apply_step(dialog: AcceptDialog) -> void:
-	dialog.title = "MCP Toolkit — Setup Wizard (%d of %d)" % [
-		_wizard_step + 1, _WIZARD_STEP_COUNT]
-
-	# Free all tracked custom buttons from the previous step.
-	for btn in _wizard_buttons:
-		if is_instance_valid(btn):
-			btn.queue_free()
-	_wizard_buttons.clear()
-
-	match _wizard_step:
-		0:
-			dialog.dialog_text = (
-				"Welcome to the Godot MCP Toolkit!\n\n"
-				+ "Your AI coding assistant sees tools based on the active profile.\n"
-				+ "Choose your starting configuration:\n\n"
-				+ "  Standard (default) — core tools, unsafe ops disabled\n"
-				+ "  Power User — all tools, including code execution & OS commands\n\n"
-				+ "You can change this anytime in the MCP dock.")
-			dialog.ok_button_text = "Standard (Recommended)"
-			_wizard_buttons.append(dialog.add_button("Power User Mode", true, "power_user"))
-
-		1:
-			# .mcp.json — two variants based on whether the file already exists.
-			_wizard_mcp_exists = FileAccess.file_exists(
-				ProjectSettings.globalize_path("res://") + ".mcp.json")
-			if _wizard_mcp_exists:
-				dialog.dialog_text = (
-					"Your MCP client reads .mcp.json from the project root\n"
-					+ "to locate and configure the server.\n\n"
-					+ "An .mcp.json already exists in your project.")
-				dialog.ok_button_text = "Continue (keep existing .mcp.json)"
-				_wizard_buttons.append(
-					dialog.add_button("Overwrite with clean .mcp.json", true, "overwrite_mcp"))
-			else:
-				dialog.dialog_text = (
-					"Your MCP client reads .mcp.json from the project root\n"
-					+ "to locate and configure the server.\n\n"
-					+ "No .mcp.json was found — this file is required for your\n"
-					+ "MCP client to connect to the toolkit.")
-				dialog.ok_button_text = "Create .mcp.json"
-
-		2:
-			# MCP control center — show the dock.
-			dialog.dialog_text = (
-				"This is your MCP control center — server status,\n"
-				+ "feature gates, and audit log.\n\n"
-				+ "The dock is now visible in the bottom panel.")
-			dialog.ok_button_text = "Next"
-			if _dock != null:
-				make_bottom_panel_item_visible(_dock)
-
-		3:
-			# Feature gates — open Project Settings.
-			dialog.dialog_text = (
-				"Toggle individual capabilities here. Dual-gate features\n"
-				+ "need both a ProjectSettings toggle and an env var in .mcp.json.\n\n"
-				+ "Navigate to: MCP Toolkit > Feature Gates")
-			dialog.ok_button_text = "Next"
-			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
-			_on_open_settings()
-
-		4:
-			dialog.dialog_text = (
-				"The 'Info / Help' button at the bottom of the MCP dock\n"
-				+ "shows connection status, tool list, and documentation links.\n\n"
-				+ "You're all set!")
-			dialog.ok_button_text = "Close"
-			_wizard_buttons.append(dialog.add_button("Back", true, "back"))
-			_wizard_buttons.append(dialog.add_button("Open Info", true, "open_info"))
-
-	# "Skip Tour" on steps 2–3 (not 0: profile required;
-	# not 1: .mcp.json required; not 4: nothing to skip).
-	if _wizard_step >= 2 and _wizard_step <= 3:
-		_wizard_buttons.append(dialog.add_button("Skip Tour", true, "skip"))
-
-
-func _wizard_advance(dialog: AcceptDialog) -> void:
-	if _wizard_step == 0:
-		# Step 0 OK = "Standard (Recommended)" — no action needed, default profile.
-		pass
-	elif _wizard_step == 1 and not _wizard_mcp_exists:
-		# Step 1 OK = "Create .mcp.json" — write the file now.
-		if _dock != null:
-			_dock.write_mcp_json()
-	if _wizard_step >= _WIZARD_STEP_COUNT - 1:
-		# Final step — finish.
-		_write_onboarding_flag()
-		_free_wizard()
-		return
-	_wizard_step += 1
-	_save_onboarding_progress()
-	_wizard_apply_step(dialog)
-	# AcceptDialog auto-hides on confirmed — re-show for the next step.
-	dialog.popup_centered()
-
-
-func _wizard_custom_action(action: StringName, dialog: AcceptDialog) -> void:
-	match str(action):
-		"skip":
-			_write_onboarding_flag()
-			_free_wizard()
-		"back":
-			if _wizard_step > 0:
-				_wizard_step -= 1
-				_wizard_apply_step(dialog)
-		"power_user":
-			# Trigger Power User flow — the dock shows its own confirmation dialog.
-			if _dock != null:
-				_dock.toggle_power_user_mode()
-			# Advance to step 1 after choosing. Save progress in case the
-			# user restarts the editor (Power User toggle suggests a restart).
-			_wizard_step = 1
-			_save_onboarding_progress()
-			_wizard_apply_step(dialog)
-		"standard":
-			# Explicit standard choice — advance.
-			_wizard_step = 1
-			_save_onboarding_progress()
-			_wizard_apply_step(dialog)
-		"overwrite_mcp":
-			if _dock != null:
-				_dock.write_mcp_json(true)
-			_wizard_step += 1
-			_save_onboarding_progress()
-			_wizard_apply_step(dialog)
-		"open_info":
-			_write_onboarding_flag()
-			_free_wizard()
-			if _dock != null:
-				_dock._show_info_dialog()
-
-
-func _free_wizard() -> void:
-	_wizard_buttons.clear()
-	if _onboarding_wizard != null and is_instance_valid(_onboarding_wizard):
-		_onboarding_wizard.queue_free()
-	_onboarding_wizard = null
-
-
-func _write_onboarding_flag() -> void:
-	var f := FileAccess.open(_ONBOARDING_FLAG, FileAccess.WRITE)
-	if f != null:
-		f.store_string("1")
-		f.close()
-	# Clean up progress file — wizard is done.
-	if FileAccess.file_exists(_ONBOARDING_PROGRESS):
-		DirAccess.remove_absolute(_ONBOARDING_PROGRESS)
-
-
-func _save_onboarding_progress() -> void:
-	var f := FileAccess.open(_ONBOARDING_PROGRESS, FileAccess.WRITE)
-	if f != null:
-		f.store_string(str(_wizard_step))
-		f.close()
-
-
-# Detect playtest end so we can clear runtime_port/runtime_pid from
-# the registry (belt-and-suspenders with runtime's own _exit_tree cleanup).
 func _process(_delta: float) -> void:
+	_detect_playtest_end()
+	_feature_settings.poll(_dock)
+
+
+func _detect_playtest_end() -> void:
 	var playing := EditorInterface.is_playing_scene()
 	if _was_playing and not playing:
 		MCPRegistryClient.clear_runtime()
 	_was_playing = playing
 
-	# Detect Power User toggle from ProjectSettings UI.
-	var power_user: bool = ProjectSettings.get_setting(
-		"mcp_toolkit/feature_gates/power_user_mode", false)
-	if power_user != _last_power_user:
-		_last_power_user = power_user
-		_sync_power_user_mode(power_user)
-
-	# Detect individual feature gate changes from ProjectSettings UI.
-	_poll_feature_states()
-
-
-func _sync_power_user_mode(enable: bool) -> void:
-	_update_power_user_warning()
-	# Guard: skip full sync if the dock already applied this change.
-	if enable and MCPFeatureGate.has_power_user_cache():
-		# Dock already snapshotted + set keys — just refresh UI.
-		if _dock != null:
-			_dock._refresh_features()
-		return
-	if not enable and not MCPFeatureGate.has_power_user_cache():
-		# Dock already restored + cleared cache — just refresh UI.
-		_snapshot_feature_states()
-		if _dock != null:
-			_dock._refresh_features()
-		return
-	if enable:
-		MCPFeatureGate.snapshot_pre_power_user()
-		for feature in MCPFeatureRegistry.all_features():
-			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-			ProjectSettings.set_setting(str(entry["ps_key"]), true)
-		if MCPJsonSync.has_mcp_json():
-			for feature in MCPFeatureRegistry.all_features():
-				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
-	else:
-		MCPFeatureGate.restore_pre_power_user()
-		if MCPJsonSync.has_mcp_json():
-			for feature in MCPFeatureRegistry.all_features():
-				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
-	_update_power_user_warning()
-	ProjectSettings.save()
-	_snapshot_feature_states()
-	if _dock != null:
-		_dock._refresh_features()
-		_dock._notify_restart_required()
-
-
-func _snapshot_feature_states() -> void:
-	_last_feature_states.clear()
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		_last_feature_states[str(entry["ps_key"])] = ProjectSettings.get_setting(
-			str(entry["ps_key"]), false)
-
-
-func _poll_feature_states() -> void:
-	# Enforce read-only text fields — revert any user edits immediately.
-	var power_user: bool = ProjectSettings.get_setting(
-		"mcp_toolkit/feature_gates/power_user_mode", false)
-	var expected_warning := _PU_WARNING_TEXT if power_user else ""
-	if ProjectSettings.get_setting(_PU_WARNING_KEY, "") != expected_warning:
-		ProjectSettings.set_setting(_PU_WARNING_KEY, expected_warning)
-	if ProjectSettings.get_setting(_LIMITS_NOTE_KEY, "") != _LIMITS_NOTE_TEXT:
-		ProjectSettings.set_setting(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
-
-	# If Power User Mode is active, revert any individual gate changes
-	# made from the ProjectSettings UI and warn the user.
-	if power_user:
-		var reverted := false
-		for feature in MCPFeatureRegistry.all_features():
-			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-			var ps_key: String = entry["ps_key"]
-			var current: bool = ProjectSettings.get_setting(ps_key, false)
-			if not current:
-				ProjectSettings.set_setting(ps_key, true)
-				_last_feature_states[ps_key] = true
-				reverted = true
-		if reverted:
-			ProjectSettings.save()
-			if _dock != null:
-				_dock._warn_power_user_locked()
-		return
-
-	if not MCPJsonSync.has_mcp_json():
-		return
-	var changed := false
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		var ps_key: String = entry["ps_key"]
-		var current: bool = ProjectSettings.get_setting(ps_key, false)
-		var prev: bool = _last_feature_states.get(ps_key, false)
-		if current != prev:
-			_last_feature_states[ps_key] = current
-			if entry["dual_gate"]:
-				MCPJsonSync.set_env_var(str(entry["env_var"]), current)
-				changed = true
-	if changed:
-		if _dock != null:
-			_dock._refresh_features()
-			_dock._notify_restart_required()
-
 
 func _exit_tree() -> void:
 	# Teardown symmetry — reverse order of _enter_tree registrations.
 	# Onboarding wizard (if still open).
-	_free_wizard()
+	if _wizard != null:
+		_wizard.free_if_open()
+		_wizard = null
 
-	# Command Palette.
-	if EditorInterface.has_method("get_command_palette"):
-		var palette = EditorInterface.call("get_command_palette")
-		if palette != null:
-			for key in _PALETTE_KEYS:
-				palette.remove_command(key)
-
-	# Menu items.
-	for item in _MENU_ITEMS:
-		remove_tool_menu_item(item)
+	# Menus + command palette.
+	_unregister_menus()
 
 	# Dock (remove + free).
 	if _dock != null:
@@ -754,21 +202,35 @@ func _disable_plugin() -> void:
 		dialog.popup_centered()
 
 
-# -- EditorSettings registration (per-user, not committed to VCS) --------
+# -- Menu registration ---------------------------------------------------------
 
 
-func _register_editor_settings() -> void:
-	var es := EditorInterface.get_editor_settings()
-	var settings := {
-		"mcp_toolkit/personal/dock_default_visible": [TYPE_BOOL, true],
-	}
-	for key in settings:
-		if not es.has_setting(key):
-			es.set_setting(key, settings[key][1])
-		es.add_property_info({"name": key, "type": settings[key][0]})
+func _register_menus() -> void:
+	for action in _ACTIONS:
+		add_tool_menu_item(action["label"], Callable(self, action["method"]))
+	# -- Command Palette (4.0+; guard anyway for safety) --
+	if EditorInterface.has_method("get_command_palette"):
+		var palette = EditorInterface.call("get_command_palette")
+		if palette != null:
+			for action in _ACTIONS:
+				palette.add_command(
+					action["label"], action["key"],
+					Callable(self, action["method"]))
 
 
-# -- Menu / Command Palette handlers --------------------------------------
+func _unregister_menus() -> void:
+	# Command Palette.
+	if EditorInterface.has_method("get_command_palette"):
+		var palette = EditorInterface.call("get_command_palette")
+		if palette != null:
+			for action in _ACTIONS:
+				palette.remove_command(action["key"])
+	# Menu items.
+	for action in _ACTIONS:
+		remove_tool_menu_item(action["label"])
+
+
+# -- Menu handlers -------------------------------------------------------------
 
 
 func _on_regen_token() -> void:
@@ -789,127 +251,7 @@ func _on_show_audit() -> void:
 
 
 func _on_open_settings() -> void:
-	var root := EditorInterface.get_base_control().get_tree().root
-	var dialog := _find_node_by_class(root, "ProjectSettingsEditor")
-	if not dialog is Window:
-		var toaster = _Hub.get_toaster()
-		if toaster != null:
-			toaster.push_toast(
-				"Project -> Project Settings -> Mcp Toolkit -> Feature Gates", 0)
-		return
-
-	# Try the C++ fast-path: popup_project_settings() refreshes the section
-	# tree internally, then set_general_page() selects the section directly.
-	if dialog.has_method("popup_project_settings"):
-		dialog.call("popup_project_settings", false)
-		if dialog.has_method("set_general_page"):
-			dialog.call("set_general_page", "Mcp Toolkit/Feature Gates")
-			return
-	else:
-		dialog.popup_centered_clamped(Vector2i(900, 700))
-
-	# Fallback: temporarily enable Advanced so the custom section is visible,
-	# select it, then disable Advanced again so the user doesn't see the clutter.
-	_enable_advanced_settings(dialog)
-	get_tree().create_timer(0.05).timeout.connect(func():
-		_select_mcp_section(dialog)
-		_disable_advanced_settings(dialog)
-	)
-
-
-func _enable_advanced_settings(dialog: Window) -> void:
-	var buttons: Array = []
-	_collect_nodes_by_class(dialog, "CheckButton", buttons)
-	for btn in buttons:
-		var cb := btn as CheckButton
-		if cb.text.to_lower().contains("advanced") and not cb.button_pressed:
-			cb.button_pressed = true
-			return
-
-
-func _disable_advanced_settings(dialog: Window) -> void:
-	var buttons: Array = []
-	_collect_nodes_by_class(dialog, "CheckButton", buttons)
-	for btn in buttons:
-		var cb := btn as CheckButton
-		if cb.text.to_lower().contains("advanced") and cb.button_pressed:
-			cb.button_pressed = false
-			return
-
-
-
-func _select_mcp_section(dialog: Window) -> void:
-	# Ensure the General tab is active (tab 0).
-	var tab := _find_node_by_class(dialog, "TabContainer") as TabContainer
-	if tab != null:
-		tab.current_tab = 0
-	var trees: Array = []
-	_collect_nodes_by_class(dialog, "Tree", trees)
-	for tree_node in trees:
-		var tree: Tree = tree_node as Tree
-		var root_item := tree.get_root()
-		if root_item == null:
-			continue
-		# Try "Feature Gates" first (child), then "Mcp Toolkit" (parent),
-		# then any item containing "mcp".
-		var target := _find_tree_item(root_item, "Feature Gates")
-		if target == null:
-			target = _find_tree_item(root_item, "Mcp Toolkit")
-		if target == null:
-			target = _find_tree_item_contains(root_item, "mcp")
-		if target != null:
-			var parent := target.get_parent()
-			while parent != null:
-				parent.collapsed = false
-				parent = parent.get_parent()
-			target.select(0)
-			tree.item_selected.emit()
-			return
-
-
-static func _collect_nodes_by_class(node: Node, cls: String, result: Array, depth: int = 15) -> void:
-	if node.get_class() == cls:
-		result.append(node)
-	if depth <= 0:
-		return
-	for child in node.get_children():
-		_collect_nodes_by_class(child, cls, result, depth - 1)
-
-
-static func _find_tree_item(item: TreeItem, text: String) -> TreeItem:
-	if item.get_text(0).to_lower() == text.to_lower():
-		return item
-	var child := item.get_first_child()
-	while child != null:
-		var found := _find_tree_item(child, text)
-		if found != null:
-			return found
-		child = child.get_next()
-	return null
-
-
-static func _find_tree_item_contains(item: TreeItem, substr: String) -> TreeItem:
-	if item.get_text(0).to_lower().contains(substr.to_lower()):
-		return item
-	var child := item.get_first_child()
-	while child != null:
-		var found := _find_tree_item_contains(child, substr)
-		if found != null:
-			return found
-		child = child.get_next()
-	return null
-
-
-static func _find_node_by_class(node: Node, cls: String, depth: int = 15) -> Node:
-	if node.get_class() == cls:
-		return node
-	if depth <= 0:
-		return null
-	for child in node.get_children():
-		var found := _find_node_by_class(child, cls, depth - 1)
-		if found != null:
-			return found
-	return null
+	SettingsNavigator.open_mcp_settings()
 
 
 func _on_write_mcp_json() -> void:
@@ -920,3 +262,38 @@ func _on_write_mcp_json() -> void:
 func _on_power_user_mode() -> void:
 	if _dock != null:
 		_dock.toggle_power_user_mode()
+
+
+# -- Whitelist validation ------------------------------------------------------
+
+
+func _validate_user_whitelist() -> void:
+	MCPFileGuard.reload_user_whitelist()
+	var wl_path := "res://addons/godot_mcp_toolkit/user_scope_whitelist.json"
+	if not FileAccess.file_exists(wl_path):
+		push_warning("MCP: user_scope_whitelist.json not found at %s; save.* tools will return USER_SCOPE_DISABLED until the file is created" % wl_path)
+		return
+	var f := FileAccess.open(wl_path, FileAccess.READ)
+	if f == null:
+		push_warning("MCP: cannot open user_scope_whitelist.json (error %d); save.* tools will return USER_SCOPE_DISABLED" % FileAccess.get_open_error())
+		return
+	var text := f.get_as_text()
+	f.close()
+	var parsed = JSON.parse_string(text)
+	if typeof(parsed) != TYPE_DICTIONARY:
+		push_warning("MCP: user_scope_whitelist.json is malformed (expected JSON object); save.* tools will return USER_SCOPE_DISABLED")
+		return
+
+
+# -- EditorSettings registration (per-user, not committed to VCS) -------------
+
+
+func _register_editor_settings() -> void:
+	var es := EditorInterface.get_editor_settings()
+	var settings := {
+		"mcp_toolkit/personal/dock_default_visible": [TYPE_BOOL, true],
+	}
+	for key in settings:
+		if not es.has_setting(key):
+			es.set_setting(key, settings[key][1])
+		es.add_property_info({"name": key, "type": settings[key][0]})

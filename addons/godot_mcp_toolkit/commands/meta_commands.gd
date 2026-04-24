@@ -1,0 +1,29 @@
+@tool
+extends RefCounted
+## meta.* transport-level commands — server-side limit overrides.
+
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPCommandRegistry = _Hub.MCPCommandRegistry
+
+
+static func register(registry: MCPCommandRegistry) -> void:
+	registry.add("meta.set_limits", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_set_limits(parameters))
+
+
+static func _cmd_set_limits(parameters: Dictionary) -> Dictionary:
+	var script_cap = parameters.get("script_read_cap_kb", null)
+	var ws_buf = parameters.get("ws_buffer_kb", null)
+	if script_cap != null:
+		ProjectSettings.set_setting("mcp_toolkit/limits/script_read_cap_kb",
+			maxi(int(script_cap), 64))
+	if ws_buf != null:
+		ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb",
+			maxi(int(ws_buf), 256))
+	return {
+		"success": true,
+		"script_read_cap_kb": int(ProjectSettings.get_setting(
+			"mcp_toolkit/limits/script_read_cap_kb", 256)),
+		"ws_buffer_kb": int(ProjectSettings.get_setting(
+			"mcp_toolkit/limits/ws_buffer_kb", 1024)),
+	}

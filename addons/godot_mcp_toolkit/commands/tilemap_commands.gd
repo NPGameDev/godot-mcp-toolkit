@@ -111,13 +111,13 @@ static func _cmd_tilemap_set_cells(
 		undo_redo.create_action(
 			"MCP: tilemap.set_cells %s (%d cells)" % [tilemap_path, cells.size()])
 		undo_redo.add_do_method(
-			server, "_tilemap_apply_batch", node, layer, cells)
+			server.undo_helpers, "_tilemap_apply_batch", node, layer, cells)
 		undo_redo.add_undo_method(
-			server, "_tilemap_restore_batch", node, layer, before_state)
+			server.undo_helpers, "_tilemap_restore_batch", node, layer, before_state)
 		undo_redo.add_do_reference(node)
 		undo_redo.commit_action()
 	else:
-		server._tilemap_apply_batch(node, layer, cells)
+		server.undo_helpers._tilemap_apply_batch(node, layer, cells)
 	return {
 		"success": true,
 		"tilemap_path": tilemap_path,

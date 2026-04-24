@@ -436,13 +436,13 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	if undo_redo != null:
 		undo_redo.create_action("MCP: instantiate %s under %s" % [packed_path, parent_path])
 		undo_redo.add_do_method(parent_node, "add_child", instance)
-		undo_redo.add_do_method(server, "_set_owner_recursive", instance, root)
+		undo_redo.add_do_method(server.undo_helpers, "_set_owner_recursive", instance, root)
 		undo_redo.add_do_reference(instance)
 		undo_redo.add_undo_method(parent_node, "remove_child", instance)
 		undo_redo.commit_action()
 	else:
 		parent_node.add_child(instance)
-		server._set_owner_recursive(instance, root)
+		server.undo_helpers._set_owner_recursive(instance, root)
 
 	return {
 		"success": true,
