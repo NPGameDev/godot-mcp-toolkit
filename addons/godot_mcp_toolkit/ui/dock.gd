@@ -200,6 +200,7 @@ func _build_ui() -> void:
 
 	var feat_scroll := ScrollContainer.new()
 	feat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	feat_scroll.custom_minimum_size.y = int(30 * scale)
 	fc.add_child(feat_scroll)
 
 	var feat_vbox := VBoxContainer.new()
@@ -301,35 +302,34 @@ func _build_ui() -> void:
 	regen_btn.pressed.connect(_on_regen_token)
 	lc.add_child(regen_btn)
 
-	var cap_row := HBoxContainer.new()
-	lc.add_child(cap_row)
+	var limits_row := HBoxContainer.new()
+	lc.add_child(limits_row)
 	var cap_label := Label.new()
-	cap_label.text = "Script read cap (KB):"
-	cap_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	cap_row.add_child(cap_label)
+	cap_label.text = "Script cap:"
+	limits_row.add_child(cap_label)
 	_script_cap_spinbox = SpinBox.new()
 	_script_cap_spinbox.min_value = 64
 	_script_cap_spinbox.max_value = 4096
 	_script_cap_spinbox.step = 64
+	_script_cap_spinbox.suffix = "KB"
+	_script_cap_spinbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_script_cap_spinbox.value = ProjectSettings.get_setting(
 		"mcp_toolkit/limits/script_read_cap_kb", 256)
 	_script_cap_spinbox.value_changed.connect(_on_script_cap_changed)
-	cap_row.add_child(_script_cap_spinbox)
-
-	var ws_row := HBoxContainer.new()
-	lc.add_child(ws_row)
+	limits_row.add_child(_script_cap_spinbox)
 	var ws_label := Label.new()
-	ws_label.text = "WebSocket buffer (KB):"
-	ws_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	ws_row.add_child(ws_label)
+	ws_label.text = "WS buffer:"
+	limits_row.add_child(ws_label)
 	_ws_buffer_spinbox = SpinBox.new()
 	_ws_buffer_spinbox.min_value = 256
 	_ws_buffer_spinbox.max_value = 8192
 	_ws_buffer_spinbox.step = 256
+	_ws_buffer_spinbox.suffix = "KB"
+	_ws_buffer_spinbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_ws_buffer_spinbox.value = ProjectSettings.get_setting(
 		"mcp_toolkit/limits/ws_buffer_kb", 1024)
 	_ws_buffer_spinbox.value_changed.connect(_on_ws_buffer_changed)
-	ws_row.add_child(_ws_buffer_spinbox)
+	limits_row.add_child(_ws_buffer_spinbox)
 
 	var limits_note := Label.new()
 	limits_note.text = "These may be overridden by env vars in .mcp.json on connect."
