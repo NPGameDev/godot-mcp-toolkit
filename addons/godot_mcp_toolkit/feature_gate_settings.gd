@@ -40,6 +40,7 @@ const PROFILE_POWER_USER := 2
 
 var _last_profile: int = PROFILE_STANDARD
 var _last_feature_states: Dictionary = {}  # { ps_key: bool } — snapshot for change detection
+var _last_mcp_enforce_msec: int = 0  # throttle for periodic .mcp.json enforcement
 
 
 func register_all() -> void:
@@ -48,6 +49,8 @@ func register_all() -> void:
 	_register_audit()
 	_last_profile = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	snapshot_feature_states()
+	# Startup enforcement: correct stale .mcp.json env vars for locked profiles.
+	_enforce_profile_env_vars(null)
 
 
 func poll(dock: Control) -> void:
@@ -220,6 +223,7 @@ func _sync_profile_change(new_profile: int, old_profile: int, dock: Control) -> 
 	snapshot_feature_states()
 	if dock != null:
 		dock._refresh_features()
+		dock._refresh_status()
 		dock._broadcast_config_reloaded()
 
 
@@ -266,16 +270,51 @@ func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 		snapshot_feature_states()
 		if dock != null:
 			dock._refresh_features()
+			dock._refresh_status()
 			dock._broadcast_config_reloaded()
 		dialog.queue_free()
 	)
 	dialog.canceled.connect(func():
 		if dock != null:
 			dock._refresh_features()
+			dock._refresh_status()
 		dialog.queue_free()
 	)
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
+
+
+# -- Profile env-var enforcement -----------------------------------------------
+
+
+## Enforce .mcp.json env vars for locked profiles (Power User / Minimal).
+## PU must have all feature env vars = "1"; Minimal must have none.
+## Corrects manual .mcp.json edits that would desync the TS server's tool
+## catalogue from the plugin-side gate checks.
+func _enforce_profile_env_vars(dock: Control) -> void:
+	if not MCPJsonSync.has_mcp_json():
+		return
+	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
+	if profile == PROFILE_STANDARD:
+		return  # Standard: user-controlled, no enforcement.
+	var env := MCPJsonSync.get_all_env_vars()
+	var needs_fix := false
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var env_var: String = entry["env_var"]
+		if profile == PROFILE_POWER_USER and env.get(env_var, "") != "1":
+			needs_fix = true
+			break
+		elif profile == PROFILE_MINIMAL and env.has(env_var):
+			needs_fix = true
+			break
+	if not needs_fix:
+		return
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		MCPJsonSync.set_env_var(str(entry["env_var"]), profile == PROFILE_POWER_USER)
+	if dock != null:
+		dock._broadcast_config_reloaded()
 
 
 # -- Bidirectional sync --------------------------------------------------------
@@ -315,6 +354,11 @@ func _poll_feature_states(dock: Control) -> void:
 			ProjectSettings.save()
 			if dock != null:
 				dock._warn_profile_locked(PROFILE_POWER_USER)
+		# Periodically enforce .mcp.json env vars (~every 2 s).
+		var now := Time.get_ticks_msec()
+		if now - _last_mcp_enforce_msec >= 2000:
+			_last_mcp_enforce_msec = now
+			_enforce_profile_env_vars(dock)
 		return
 
 	# Minimal: force all PS bools false, warn on user changes.
@@ -332,6 +376,11 @@ func _poll_feature_states(dock: Control) -> void:
 			ProjectSettings.save()
 			if dock != null:
 				dock._warn_profile_locked(PROFILE_MINIMAL)
+		# Periodically enforce .mcp.json env vars (~every 2 s).
+		var now := Time.get_ticks_msec()
+		if now - _last_mcp_enforce_msec >= 2000:
+			_last_mcp_enforce_msec = now
+			_enforce_profile_env_vars(dock)
 		return
 
 	# Standard: bidirectional sync between PS bools and .mcp.json env vars.
