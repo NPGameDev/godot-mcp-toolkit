@@ -76,7 +76,7 @@ static func disabled_error(feature: String) -> Dictionary:
 			"error": "unknown feature: " + feature,
 			"code": "FEATURE_DISABLED",
 		}
-	var how_to_enable := "Set %s=1 in .mcp.json env, or enable in the MCP Toolkit dock." % entry["env_var"]
+	var how_to_enable: String = "Set %s=1 in .mcp.json env, or enable in the MCP Toolkit dock." % entry["env_var"]
 	return {
 		"success": false,
 		"error": "%s is disabled" % feature,

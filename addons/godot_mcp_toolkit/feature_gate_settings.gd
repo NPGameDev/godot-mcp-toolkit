@@ -41,6 +41,12 @@ const PROFILE_POWER_USER := 2
 var _last_profile: int = PROFILE_STANDARD
 var _last_feature_states: Dictionary = {}  # { ps_key: bool } — snapshot for change detection
 var _last_mcp_enforce_msec: int = 0  # throttle for periodic .mcp.json enforcement
+var _events: RefCounted = null  # GateEvents signal bus
+
+
+func bind_events(events: RefCounted) -> void:
+	_events = events
+	_events.profile_acknowledged.connect(acknowledge_profile)
 
 
 func register_all() -> void:
@@ -50,16 +56,16 @@ func register_all() -> void:
 	_last_profile = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	snapshot_feature_states()
 	# Startup enforcement: correct stale .mcp.json env vars for locked profiles.
-	_enforce_profile_env_vars(null)
+	_enforce_profile_env_vars()
 
 
-func poll(dock: Control) -> void:
+func poll() -> void:
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	if profile != _last_profile:
 		var old_profile := _last_profile
 		_last_profile = profile
-		_sync_profile_change(profile, old_profile, dock)
-	_poll_feature_states(dock)
+		_sync_profile_change(profile, old_profile)
+	_poll_feature_states()
 
 
 ## Allow callers (e.g. dock) to acknowledge a profile change they already
@@ -188,12 +194,12 @@ func _update_status_text() -> void:
 # -- Profile sync --------------------------------------------------------------
 
 
-func _sync_profile_change(new_profile: int, old_profile: int, dock: Control) -> void:
+func _sync_profile_change(new_profile: int, old_profile: int) -> void:
 	_update_status_text()
 
 	# Guard: if the dock already applied this change, just refresh UI.
 	if new_profile == PROFILE_POWER_USER:
-		_confirm_power_user_from_ps(old_profile, dock)
+		_confirm_power_user_from_ps(old_profile)
 		return
 
 	if new_profile == PROFILE_MINIMAL:
@@ -221,13 +227,12 @@ func _sync_profile_change(new_profile: int, old_profile: int, dock: Control) -> 
 	_update_status_text()
 	ProjectSettings.save()
 	snapshot_feature_states()
-	if dock != null:
-		dock._refresh_features()
-		dock._refresh_status()
-		dock._broadcast_config_reloaded()
+	_emit_features_changed()
+	_emit_status_changed()
+	_emit_config_reloaded()
 
 
-func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
+func _confirm_power_user_from_ps(old_profile: int) -> void:
 	# Snapshot Standard gates IMMEDIATELY — before the poll loop can corrupt
 	# them.  The PS profile is already POWER_USER (user changed it in the
 	# Inspector), so the poll would enforce all-true on the next frame,
@@ -268,16 +273,14 @@ func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 		_update_status_text()
 		ProjectSettings.save()
 		snapshot_feature_states()
-		if dock != null:
-			dock._refresh_features()
-			dock._refresh_status()
-			dock._broadcast_config_reloaded()
+		_emit_features_changed()
+		_emit_status_changed()
+		_emit_config_reloaded()
 		dialog.queue_free()
 	)
 	dialog.canceled.connect(func():
-		if dock != null:
-			dock._refresh_features()
-			dock._refresh_status()
+		_emit_features_changed()
+		_emit_status_changed()
 		dialog.queue_free()
 	)
 	EditorInterface.get_base_control().add_child(dialog)
@@ -291,7 +294,7 @@ func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 ## PU must have all feature env vars = "1"; Minimal must have none.
 ## Corrects manual .mcp.json edits that would desync the TS server's tool
 ## catalogue from the plugin-side gate checks.
-func _enforce_profile_env_vars(dock: Control) -> void:
+func _enforce_profile_env_vars() -> void:
 	if not MCPJsonSync.has_mcp_json():
 		return
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
@@ -313,14 +316,13 @@ func _enforce_profile_env_vars(dock: Control) -> void:
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		MCPJsonSync.set_env_var(str(entry["env_var"]), profile == PROFILE_POWER_USER)
-	if dock != null:
-		dock._broadcast_config_reloaded()
+	_emit_config_reloaded()
 
 
 # -- Bidirectional sync --------------------------------------------------------
 
 
-func _poll_feature_states(dock: Control) -> void:
+func _poll_feature_states() -> void:
 	# Enforce read-only text fields — revert any user edits immediately.
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	var expected_status: String
@@ -352,13 +354,12 @@ func _poll_feature_states(dock: Control) -> void:
 				reverted = true
 		if reverted:
 			ProjectSettings.save()
-			if dock != null:
-				dock._warn_profile_locked(PROFILE_POWER_USER)
+			_emit_profile_lock_warning(PROFILE_POWER_USER)
 		# Periodically enforce .mcp.json env vars (~every 2 s).
 		var now := Time.get_ticks_msec()
 		if now - _last_mcp_enforce_msec >= 2000:
 			_last_mcp_enforce_msec = now
-			_enforce_profile_env_vars(dock)
+			_enforce_profile_env_vars()
 		return
 
 	# Minimal: force all PS bools false, warn on user changes.
@@ -374,13 +375,12 @@ func _poll_feature_states(dock: Control) -> void:
 				reverted = true
 		if reverted:
 			ProjectSettings.save()
-			if dock != null:
-				dock._warn_profile_locked(PROFILE_MINIMAL)
+			_emit_profile_lock_warning(PROFILE_MINIMAL)
 		# Periodically enforce .mcp.json env vars (~every 2 s).
 		var now := Time.get_ticks_msec()
 		if now - _last_mcp_enforce_msec >= 2000:
 			_last_mcp_enforce_msec = now
-			_enforce_profile_env_vars(dock)
+			_enforce_profile_env_vars()
 		return
 
 	# Standard: bidirectional sync between PS bools and .mcp.json env vars.
@@ -404,6 +404,28 @@ func _poll_feature_states(dock: Control) -> void:
 				ProjectSettings.set_setting(ps_key, mcp_on)
 				_last_feature_states[ps_key] = mcp_on
 	if ps_changed:
-		if dock != null:
-			dock._refresh_features()
-			dock._broadcast_config_reloaded()
+		_emit_features_changed()
+		_emit_config_reloaded()
+
+
+# -- Signal bus helpers --------------------------------------------------------
+
+
+func _emit_features_changed() -> void:
+	if _events != null:
+		_events.features_changed.emit()
+
+
+func _emit_status_changed() -> void:
+	if _events != null:
+		_events.status_changed.emit()
+
+
+func _emit_config_reloaded() -> void:
+	if _events != null:
+		_events.config_reloaded.emit()
+
+
+func _emit_profile_lock_warning(profile: int) -> void:
+	if _events != null:
+		_events.profile_lock_warning.emit(profile)

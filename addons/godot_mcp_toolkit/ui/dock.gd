@@ -24,7 +24,7 @@ const PROFILE_POWER_USER := 2
 
 var _server: Node = null
 var _audit_path: String = ""
-var _feature_settings = null  # FeatureGateSettings reference (set via bind_feature_settings)
+var _events: RefCounted = null  # GateEvents signal bus
 
 # Status widgets.
 var _status_label: Label = null
@@ -67,8 +67,12 @@ func bind(server: Node, audit_path: String) -> void:
 	_refresh_features()
 
 
-func bind_feature_settings(fs) -> void:
-	_feature_settings = fs
+func bind_events(events: RefCounted) -> void:
+	_events = events
+	_events.features_changed.connect(_refresh_features)
+	_events.status_changed.connect(_refresh_status)
+	_events.config_reloaded.connect(_broadcast_config_reloaded)
+	_events.profile_lock_warning.connect(_warn_profile_locked)
 
 
 func _ready() -> void:
@@ -670,8 +674,8 @@ func _apply_profile(new_profile: int) -> void:
 	_refresh_status()
 	_broadcast_config_reloaded()
 
-	if _feature_settings != null:
-		_feature_settings.acknowledge_profile(new_profile)
+	if _events != null:
+		_events.profile_acknowledged.emit(new_profile)
 
 
 func _offer_create_mcp_json(profile: int) -> void:

@@ -9,6 +9,7 @@ const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const SettingsMigration := preload("res://addons/godot_mcp_toolkit/settings_migration.gd")
 const FeatureGateSettings := preload("res://addons/godot_mcp_toolkit/feature_gate_settings.gd")
+const GateEvents := preload("res://addons/godot_mcp_toolkit/gate_events.gd")
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_commands_loader.gd")
@@ -52,6 +53,7 @@ var _export_plugin: EditorExportPlugin = null
 var _dock: Control = null
 var _wizard: OnboardingWizard = null
 var _feature_settings: FeatureGateSettings = null
+var _events: GateEvents = null
 # Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
 
@@ -60,7 +62,9 @@ func _enter_tree() -> void:
 	SettingsMigration.migrate_user_data_paths()
 	SettingsMigration.migrate_stale_settings()
 
+	_events = GateEvents.new()
 	_feature_settings = FeatureGateSettings.new()
+	_feature_settings.bind_events(_events)
 	_feature_settings.register_all()
 
 	var registry := MCPCommandRegistry.new()
@@ -107,7 +111,7 @@ func _enter_tree() -> void:
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
 	_dock.bind(_server, "user://addons/godot_mcp_toolkit/mcp_audit.log")
-	_dock.bind_feature_settings(_feature_settings)
+	_dock.bind_events(_events)
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
 
 	_register_menus()
@@ -132,7 +136,7 @@ func _check_onboarding() -> void:
 
 func _process(_delta: float) -> void:
 	_detect_playtest_end()
-	_feature_settings.poll(_dock)
+	_feature_settings.poll()
 
 
 func _detect_playtest_end() -> void:
