@@ -219,10 +219,24 @@ func _sync_profile_change(new_profile: int, old_profile: int, dock: Control) -> 
 	snapshot_feature_states()
 	if dock != null:
 		dock._refresh_features()
-		dock._notify_restart_required()
+		dock._broadcast_config_reloaded()
 
 
 func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
+	# Snapshot Standard gates IMMEDIATELY — before the poll loop can corrupt
+	# them.  The PS profile is already POWER_USER (user changed it in the
+	# Inspector), so _poll_feature_states would enforce all-true on the next
+	# frame, overwriting the real Standard values.
+	if old_profile == PROFILE_STANDARD:
+		MCPFeatureGate.snapshot_standard_gates()
+
+	# Revert the PS profile to the old value while the dialog is pending.
+	# This keeps the poll loop from enforcing Power User rules (all gates
+	# forced true + "locked" popup) before the user has confirmed.
+	ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", old_profile)
+	_last_profile = old_profile
+	_update_profile_warning()
+
 	var features := MCPFeatureRegistry.all_features()
 	var lines := PackedStringArray()
 	for feature in features:
@@ -238,8 +252,8 @@ func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 		+ "and project. Only enable if you trust the AI context.")
 	dialog.ok_button_text = "I Understand — Switch"
 	dialog.confirmed.connect(func():
-		if old_profile == PROFILE_STANDARD:
-			MCPFeatureGate.snapshot_standard_gates()
+		# Snapshot was already taken above — go straight to applying.
+		ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", PROFILE_POWER_USER)
 		for feature in MCPFeatureRegistry.all_features():
 			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 			ProjectSettings.set_setting(str(entry["ps_key"]), true)
@@ -248,20 +262,17 @@ func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
+		_last_profile = PROFILE_POWER_USER
 		_update_profile_warning()
 		ProjectSettings.save()
 		snapshot_feature_states()
 		if dock != null:
 			dock._refresh_features()
-			dock._notify_restart_required()
+			dock._broadcast_config_reloaded()
 		dialog.queue_free()
 	)
 	dialog.canceled.connect(func():
-		# Revert profile to previous value.
-		ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", old_profile)
-		_last_profile = old_profile
-		_update_profile_warning()
-		ProjectSettings.save()
+		# Profile is already at old_profile — just refresh the UI.
 		if dock != null:
 			dock._refresh_features()
 		dialog.queue_free()
@@ -291,7 +302,7 @@ func _reconcile_standard_env_vars(dock: Control) -> void:
 			MCPJsonSync.set_env_var(str(entry["env_var"]), false)
 			changed = true
 	if changed and dock != null:
-		dock._notify_restart_required()
+		dock._broadcast_config_reloaded()
 
 
 # -- Per-feature polling -------------------------------------------------------
@@ -363,4 +374,4 @@ func _poll_feature_states(dock: Control) -> void:
 	if changed:
 		if dock != null:
 			dock._refresh_features()
-			dock._notify_restart_required()
+			dock._broadcast_config_reloaded()

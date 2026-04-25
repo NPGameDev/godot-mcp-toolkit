@@ -84,6 +84,19 @@ func get_command_methods() -> Array:
 	return _registry.get_all_methods()
 
 
+## Send a notification to all authenticated WebSocket peers.
+## Used by the dock to signal config changes (e.g. profile / gate updates)
+## so the MCP server can reload its tool list without a restart.
+func broadcast_notification(notification_type: String, params: Dictionary = {}) -> void:
+	var payload := {"notification": notification_type}
+	if not params.is_empty():
+		payload["params"] = params
+	var message := JSON.stringify(payload)
+	for peer in _peer_authed:
+		if peer is WebSocketPeer and peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			peer.send_text(message)
+
+
 func regenerate_token() -> void:
 	_session_token = MCPAuth.generate_token()
 	var write_err := MCPAuth.write_token(_session_token)

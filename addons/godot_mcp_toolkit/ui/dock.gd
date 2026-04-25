@@ -86,13 +86,12 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for dialog in [_audit_dialog, _info_dialog, _profile_lock_dialog, _restart_dialog]:
+	for dialog in [_audit_dialog, _info_dialog, _profile_lock_dialog]:
 		if dialog != null and is_instance_valid(dialog):
 			dialog.queue_free()
 	_audit_dialog = null
 	_info_dialog = null
 	_profile_lock_dialog = null
-	_restart_dialog = null
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +481,7 @@ func _refresh_features() -> void:
 				MCPJsonSync.set_env_var(env_var, false)
 				any_reconciled = true
 		if any_reconciled:
-			_notify_restart_required()
+			_broadcast_config_reloaded()
 
 
 func _on_feature_toggled(enabled: bool, feature: String) -> void:
@@ -520,7 +519,7 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	_refresh_features()
 
 	if env_changed:
-		_notify_restart_required()
+		_broadcast_config_reloaded()
 
 
 ## Warn the user that individual gates are locked by the active profile.
@@ -550,36 +549,22 @@ func _warn_profile_locked(profile: int) -> void:
 	_profile_lock_dialog.popup_centered()
 
 
-## Show a dialog telling the user to restart their MCP client.
-## Guards against multiple concurrent dialogs.
-var _restart_dialog: AcceptDialog = null
-
-func _notify_restart_required() -> void:
-	if _restart_dialog != null and is_instance_valid(_restart_dialog):
+## Broadcast a config_reloaded notification to all connected MCP server
+## peers so they re-read .mcp.json and rebuild their tool list live.
+func _broadcast_config_reloaded() -> void:
+	if _server == null:
 		return
-	_restart_dialog = AcceptDialog.new()
-	_restart_dialog.title = "Restart Required"
-	_restart_dialog.dialog_text = (
-		"Settings and .mcp.json have been updated.\n\n"
-		+ "You must restart your MCP client (e.g. Claude Code)\n"
-		+ "for the changes to take effect.")
-	_restart_dialog.ok_button_text = "OK"
-	_restart_dialog.exclusive = false
-	_restart_dialog.add_button("Restart Editor", true, "restart")
-	_restart_dialog.confirmed.connect(func():
-		_restart_dialog.queue_free()
-		_restart_dialog = null
-	)
-	_restart_dialog.canceled.connect(func():
-		_restart_dialog.queue_free()
-		_restart_dialog = null
-	)
-	_restart_dialog.custom_action.connect(func(action: StringName):
-		if action == &"restart":
-			EditorInterface.restart_editor(true)
-	)
-	EditorInterface.get_base_control().add_child(_restart_dialog)
-	_restart_dialog.popup_centered()
+	var profile: int = ProjectSettings.get_setting(
+		"mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
+	var profile_str: String
+	match profile:
+		PROFILE_MINIMAL:
+			profile_str = "minimal"
+		PROFILE_POWER_USER:
+			profile_str = "power_user"
+		_:
+			profile_str = "standard"
+	_server.broadcast_notification("config_reloaded", {"profile": profile_str})
 
 
 # ---------------------------------------------------------------------------
@@ -683,7 +668,7 @@ func _apply_profile(new_profile: int) -> void:
 	ProjectSettings.save()
 	_refresh_features()
 	_refresh_status()
-	_notify_restart_required()
+	_broadcast_config_reloaded()
 
 	if _feature_settings != null:
 		_feature_settings.acknowledge_profile(new_profile)
