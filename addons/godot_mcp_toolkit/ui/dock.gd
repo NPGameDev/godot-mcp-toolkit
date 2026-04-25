@@ -40,6 +40,7 @@ var _previous_profile: int = PROFILE_STANDARD
 # Profile warnings.
 var _power_user_warning: Label = null
 var _feature_lock_warning: Label = null
+var _mcp_json_hint: Label = null
 
 
 # Settings widgets.
@@ -208,6 +209,14 @@ func _build_ui() -> void:
 	_feature_lock_warning.add_theme_font_size_override("font_size", 11)
 	_feature_lock_warning.visible = false
 	fc.add_child(_feature_lock_warning)
+
+	_mcp_json_hint = Label.new()
+	_mcp_json_hint.text = "No .mcp.json found — toggle any gate to create one."
+	_mcp_json_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_mcp_json_hint.add_theme_color_override("font_color", Color(1.0, 0.6, 0.3))
+	_mcp_json_hint.add_theme_font_size_override("font_size", 11)
+	_mcp_json_hint.visible = false
+	fc.add_child(_mcp_json_hint)
 
 	var feat_scroll := ScrollContainer.new()
 	feat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -429,6 +438,11 @@ func _refresh_features() -> void:
 	_profile_dropdown.select(profile)
 	_previous_profile = profile
 
+	# Show hint when .mcp.json is missing.
+	var has_mcp := MCPJsonSync.has_mcp_json()
+	if _mcp_json_hint != null:
+		_mcp_json_hint.visible = not has_mcp
+
 	# Update warning labels.
 	if _feature_lock_warning != null:
 		match profile:
@@ -445,7 +459,7 @@ func _refresh_features() -> void:
 					+ "switch to Standard to toggle individual gates.")
 				_feature_lock_warning.visible = true
 
-	# Update gate checkboxes.
+	# Update gate checkboxes — .mcp.json env vars are the source of truth.
 	for feature in _feature_rows:
 		var row: Dictionary = _feature_rows[feature]
 		var check: CheckBox = row["check"]
@@ -457,31 +471,17 @@ func _refresh_features() -> void:
 				check.disabled = true
 				check.tooltip_text = "Feature gates are disabled in Minimal profile"
 			PROFILE_STANDARD:
-				check.set_pressed_no_signal(
-					ProjectSettings.get_setting(str(entry["ps_key"]), false))
+				if has_mcp:
+					check.set_pressed_no_signal(
+						MCPJsonSync.has_env_var(str(entry["env_var"])))
+				else:
+					check.set_pressed_no_signal(false)
 				check.disabled = false
 				check.tooltip_text = str(entry["risk"])
 			PROFILE_POWER_USER:
 				check.set_pressed_no_signal(true)
 				check.disabled = true
 				check.tooltip_text = "Switch to Standard to toggle individual gates"
-
-	# Silent reconciliation: sync PS -> .mcp.json for any mismatches.
-	if MCPJsonSync.has_mcp_json():
-		var any_reconciled := false
-		for feature in MCPFeatureRegistry.all_features():
-			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-			var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-			var env_var: String = entry["env_var"]
-			var has_env := MCPJsonSync.has_env_var(env_var)
-			if ps_on and not has_env:
-				MCPJsonSync.set_env_var(env_var, true)
-				any_reconciled = true
-			elif not ps_on and has_env:
-				MCPJsonSync.set_env_var(env_var, false)
-				any_reconciled = true
-		if any_reconciled:
-			_broadcast_config_reloaded()
 
 
 func _on_feature_toggled(enabled: bool, feature: String) -> void:
@@ -497,29 +497,26 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	if entry == null:
 		return
 
+	# Ensure .mcp.json exists — auto-create if missing.
+	var ensure_err := MCPJsonSync.ensure_mcp_json()
+	if ensure_err != OK:
+		_toast("Failed to create .mcp.json (err %d)" % ensure_err, _TOAST_ERROR)
+		_feature_rows[feature]["check"].set_pressed_no_signal(not enabled)
+		return
+
+	# Write to .mcp.json (source of truth).
+	var err := MCPJsonSync.set_env_var(str(entry["env_var"]), enabled)
+	if err != OK:
+		_toast("Could not update .mcp.json — file may be malformed.", _TOAST_WARNING)
+		_feature_rows[feature]["check"].set_pressed_no_signal(not enabled)
+		return
+
+	# Sync PS mirror for immediate Inspector update.
 	ProjectSettings.set_setting(str(entry["ps_key"]), enabled)
 	ProjectSettings.save()
 
-	# Auto-sync env var in .mcp.json for all features.
-	var env_changed := false
-	if MCPJsonSync.has_mcp_json():
-		var env_var: String = entry["env_var"]
-		var has_env := MCPJsonSync.has_env_var(env_var)
-		if enabled and not has_env:
-			MCPJsonSync.set_env_var(env_var, true)
-			env_changed = true
-		elif not enabled and has_env:
-			MCPJsonSync.set_env_var(env_var, false)
-			env_changed = true
-	elif not MCPJsonSync.has_mcp_json() and enabled:
-		_toast(
-			"No .mcp.json found — use MCP Toolkit: Write .mcp.json first"
-			, _TOAST_WARNING)
-
 	_refresh_features()
-
-	if env_changed:
-		_broadcast_config_reloaded()
+	_broadcast_config_reloaded()
 
 
 ## Warn the user that individual gates are locked by the active profile.
@@ -634,6 +631,7 @@ func _apply_profile(new_profile: int) -> void:
 
 	match new_profile:
 		PROFILE_MINIMAL:
+			# Write .mcp.json (source of truth) + sync PS mirrors.
 			for feature in MCPFeatureRegistry.all_features():
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				ProjectSettings.set_setting(str(entry["ps_key"]), false)
@@ -645,14 +643,16 @@ func _apply_profile(new_profile: int) -> void:
 			else:
 				_offer_create_mcp_json(new_profile)
 		PROFILE_STANDARD:
+			# Restore cached env vars to .mcp.json, then sync PS from .mcp.json.
 			MCPFeatureGate.restore_standard_gates()
 			if MCPJsonSync.has_mcp_json():
 				for feature in MCPFeatureRegistry.all_features():
 					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-					var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-					MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+					ProjectSettings.set_setting(str(entry["ps_key"]),
+						MCPJsonSync.has_env_var(str(entry["env_var"])))
 				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
 		PROFILE_POWER_USER:
+			# Write .mcp.json (source of truth) + sync PS mirrors.
 			for feature in MCPFeatureRegistry.all_features():
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				ProjectSettings.set_setting(str(entry["ps_key"]), true)
@@ -696,11 +696,12 @@ func _sync_env_vars_for_profile(profile: int) -> void:
 		match profile:
 			PROFILE_MINIMAL:
 				MCPJsonSync.set_env_var(str(entry["env_var"]), false)
+				ProjectSettings.set_setting(str(entry["ps_key"]), false)
 			PROFILE_POWER_USER:
 				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+				ProjectSettings.set_setting(str(entry["ps_key"]), true)
 			_:
-				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+				pass  # Standard: env var state managed by restore_standard_gates
 	match profile:
 		PROFILE_MINIMAL:
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
@@ -708,6 +709,7 @@ func _sync_env_vars_for_profile(profile: int) -> void:
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
 		_:
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
+	ProjectSettings.save()
 
 
 # ---------------------------------------------------------------------------

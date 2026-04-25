@@ -95,8 +95,8 @@ static func migrate_stale_settings() -> void:
 			ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", val)
 		ProjectSettings.set_setting("mcp_toolkit/profile", null)
 		removed += 1
-	# Remove stale power_user_warning (renamed to profile_warning).
-	for old_warn in ["mcp_toolkit/unsafe/power_user_warning", "mcp_toolkit/feature_gates/power_user_warning"]:
+	# Remove stale warning keys (renamed to status).
+	for old_warn in ["mcp_toolkit/unsafe/power_user_warning", "mcp_toolkit/feature_gates/power_user_warning", "mcp_toolkit/feature_gates/profile_warning"]:
 		if ProjectSettings.has_setting(old_warn):
 			ProjectSettings.set_setting(old_warn, null)
 			removed += 1

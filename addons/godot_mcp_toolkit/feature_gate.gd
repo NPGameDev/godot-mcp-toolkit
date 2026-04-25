@@ -1,50 +1,51 @@
 @tool
 extends RefCounted
-## FeatureGate — dual/single gate check for unsafe features.
+## FeatureGate — .mcp.json env-var gate check for unsafe features.
 ##
-## Dual-gate (RCE-class): requires BOTH env var AND ProjectSettings flag.
-## Single-gate (lower risk): requires env var OR ProjectSettings flag.
-## Explicit deny (mcp_toolkit/feature_gates/deny_<feature>) always wins.
+## Gate state lives solely in .mcp.json env vars (read via MCPJsonSync).
+## Profile mode (Minimal/Standard/Power User) and admin deny keys
+## (deny_<feature>) remain in ProjectSettings as overrides.
+##
+## Check order: deny (PS) → profile (PS) → env var (.mcp.json).
 
 const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
+const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 
 
 static func is_enabled(feature: String) -> bool:
 	var entry = MCPFeatureRegistry.get_entry(feature)
 	if entry == null:
 		return false
-	# Explicit deny always wins.
+	# Explicit deny (PS-only safety override) always wins.
 	if ProjectSettings.get_setting("mcp_toolkit/feature_gates/deny_" + feature, false):
 		return false
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", 1)
 	if profile == 0:  # Minimal — all gates disabled.
 		return false
-	var allow_all: bool = (profile == 2)  # Power User
-	var ps_ok: bool = allow_all or ProjectSettings.get_setting(str(entry["ps_key"]), false)
-	var env_ok := OS.get_environment(str(entry["env_var"])) == "1"
-	return (env_ok and ps_ok) if entry["dual_gate"] else (env_ok or ps_ok)
+	if profile == 2:  # Power User — all gates enabled.
+		return true
+	# Standard — .mcp.json env var is the sole gate check.
+	return MCPJsonSync.has_env_var(str(entry["env_var"]))
 
 
 ## File-backed cache for Standard-profile feature states.
 const _CACHE_PATH := "user://addons/godot_mcp_toolkit/mcp_power_user_cache.json"
 
 
-## Save current per-feature PS state before leaving Standard profile.
+## Save current per-feature env var state before leaving Standard profile.
 static func snapshot_standard_gates() -> void:
 	var cache := {}
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		cache[feature] = {
-			"ps": ProjectSettings.get_setting(str(entry["ps_key"]), false),
-		}
+		cache[feature] = MCPJsonSync.has_env_var(str(entry["env_var"]))
 	var f := FileAccess.open(_CACHE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(cache))
 		f.close()
 
 
-## Restore per-feature PS state from the cache. Returns the cache dict
-## so callers can also restore env vars if needed. Deletes the cache file.
+## Restore per-feature env var state from the cache. Writes env vars
+## back to .mcp.json. Deletes the cache file. Returns the cache dict.
 static func restore_standard_gates() -> Dictionary:
 	var cache: Dictionary = {}
 	if FileAccess.file_exists(_CACHE_PATH):
@@ -56,8 +57,8 @@ static func restore_standard_gates() -> Dictionary:
 				cache = parsed
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		var prev: Dictionary = cache.get(feature, {})
-		ProjectSettings.set_setting(str(entry["ps_key"]), prev.get("ps", false))
+		var was_on: bool = bool(cache.get(feature, false))
+		MCPJsonSync.set_env_var(str(entry["env_var"]), was_on)
 	DirAccess.remove_absolute(_CACHE_PATH)
 	return cache
 
@@ -75,13 +76,7 @@ static func disabled_error(feature: String) -> Dictionary:
 			"error": "unknown feature: " + feature,
 			"code": "FEATURE_DISABLED",
 		}
-	var how_to_enable: String
-	if entry["dual_gate"]:
-		how_to_enable = "Set env %s=1 AND enable Project Settings → %s." % [
-			entry["env_var"], entry["ps_key"]]
-	else:
-		how_to_enable = "Set env %s=1 OR enable Project Settings → %s." % [
-			entry["env_var"], entry["ps_key"]]
+	var how_to_enable := "Set %s=1 in .mcp.json env, or enable in the MCP Toolkit dock." % entry["env_var"]
 	return {
 		"success": false,
 		"error": "%s is disabled" % feature,

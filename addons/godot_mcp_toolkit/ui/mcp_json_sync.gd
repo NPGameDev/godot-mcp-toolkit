@@ -76,6 +76,33 @@ static func set_env_var_string(env_var_name: String, value: String) -> Error:
 	return OK
 
 
+static func ensure_mcp_json() -> Error:
+	var path := get_mcp_json_path()
+	if FileAccess.file_exists(path):
+		return OK
+	var content: String
+	var template_path := "res://addons/godot_mcp_toolkit/.mcp.json.template"
+	if FileAccess.file_exists(template_path):
+		content = FileAccess.get_file_as_string(template_path)
+	else:
+		var template := {
+			"mcpServers": {
+				"godot-mcp-toolkit": {
+					"command": "npx",
+					"args": ["-y", "godot-mcp-server"],
+					"env": {}
+				}
+			}
+		}
+		content = JSON.stringify(template, "\t")
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f == null:
+		return FileAccess.get_open_error()
+	f.store_string(content)
+	f.close()
+	return OK
+
+
 static func get_all_env_vars() -> Dictionary:
 	return _read_server_env()
 

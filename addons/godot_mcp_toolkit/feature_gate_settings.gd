@@ -1,7 +1,12 @@
 @tool
 extends RefCounted
-## Feature-gate ProjectSettings registration and change-detection polling.
-## Owns the profile sync logic and per-feature gate change detection.
+## Feature-gate ProjectSettings registration and bidirectional sync.
+##
+## .mcp.json env vars are the sole source of truth for gate state.
+## PS bools are registered as a mirror UI — the Inspector and dock both
+## reflect .mcp.json. Changes from either side are synced bidirectionally
+## by the poll loop: PS change → write .mcp.json; .mcp.json change →
+## update PS display.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPFeatureGate = _Hub.MCPFeatureGate
@@ -14,7 +19,7 @@ const _LIMITS_NOTE_TEXT := (
 	+ "GODOT_MCP_WS_BUFFER_LIMIT env vars in .mcp.json. "
 	+ "When set, the env var values take priority on connect.")
 
-const _PROFILE_WARNING_KEY := "mcp_toolkit/feature_gates/profile_warning"
+const _STATUS_KEY := "mcp_toolkit/feature_gates/status"
 const _PU_WARNING_TEXT := (
 	"POWER USER MODE ACTIVE — All feature gates enabled. "
 	+ "The AI agent has full control: code execution, OS commands, "
@@ -24,6 +29,9 @@ const _MINIMAL_WARNING_TEXT := (
 	"MINIMAL PROFILE ACTIVE — All feature gates disabled. "
 	+ "Only core read-only tools are available. "
 	+ "Individual gates cannot be changed — switch to Standard to toggle.")
+const _MCP_JSON_MISSING_TEXT := (
+	"No .mcp.json found — toggle any gate here or in the MCP Toolkit "
+	+ "dock to create one automatically.")
 
 # Profile enum values matching the PROPERTY_HINT_ENUM order.
 const PROFILE_MINIMAL := 0
@@ -31,8 +39,7 @@ const PROFILE_STANDARD := 1
 const PROFILE_POWER_USER := 2
 
 var _last_profile: int = PROFILE_STANDARD
-var _last_feature_states: Dictionary = {}  # { ps_key: bool }
-var _startup_reconciliation_done: bool = false
+var _last_feature_states: Dictionary = {}  # { ps_key: bool } — snapshot for change detection
 
 
 func register_all() -> void:
@@ -44,11 +51,6 @@ func register_all() -> void:
 
 
 func poll(dock: Control) -> void:
-	# One-time startup reconciliation on the first poll cycle.
-	if not _startup_reconciliation_done:
-		_startup_reconciliation_done = true
-		_reconcile_standard_env_vars(dock)
-
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	if profile != _last_profile:
 		var old_profile := _last_profile
@@ -89,18 +91,18 @@ func _register_feature_gates() -> void:
 	})
 	ProjectSettings.set_order("mcp_toolkit/feature_gates/profile", 0)
 
+	# Per-feature PS bools — mirror UI for .mcp.json env vars.
 	var order_idx := 1
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var ps_key: String = entry["ps_key"]
-		var gate_label := "dual-gate: env AND PS" if entry["dual_gate"] else "single-gate: env OR PS"
 		_register_basic_bool(ps_key, false,
-			"DANGER: %s (%s). Default off." % [entry["risk"], gate_label])
+			"DANGER: %s. Mirrors .mcp.json env var. Default off." % entry["risk"])
 		ProjectSettings.set_order(ps_key, order_idx)
 		order_idx += 1
 
-	# Power User warning — read-only status display at the end of Feature Gates.
-	_register_profile_warning()
+	# Profile warning — read-only status display at the end of Feature Gates.
+	_register_status_field()
 
 
 func _register_limits() -> void:
@@ -151,48 +153,47 @@ func _register_limits_note() -> void:
 	})
 
 
-func _register_profile_warning() -> void:
-	if not ProjectSettings.has_setting(_PROFILE_WARNING_KEY):
-		ProjectSettings.set_setting(_PROFILE_WARNING_KEY, "")
-	ProjectSettings.set_initial_value(_PROFILE_WARNING_KEY, "")
-	ProjectSettings.set_as_basic(_PROFILE_WARNING_KEY, true)
-	ProjectSettings.set_order(_PROFILE_WARNING_KEY, 1000)
+func _register_status_field() -> void:
+	if not ProjectSettings.has_setting(_STATUS_KEY):
+		ProjectSettings.set_setting(_STATUS_KEY, "")
+	ProjectSettings.set_initial_value(_STATUS_KEY, "")
+	ProjectSettings.set_as_basic(_STATUS_KEY, true)
+	ProjectSettings.set_order(_STATUS_KEY, 1000)
 	ProjectSettings.add_property_info({
-		"name": _PROFILE_WARNING_KEY, "type": TYPE_STRING,
+		"name": _STATUS_KEY, "type": TYPE_STRING,
 		"hint": PROPERTY_HINT_MULTILINE_TEXT,
 		"hint_string": "Read-only status display — value is managed by the plugin.",
 	})
-	_update_profile_warning()
+	_update_status_text()
 
 
-func _update_profile_warning() -> void:
+func _update_status_text() -> void:
+	# .mcp.json missing takes priority — gates cannot function without it.
+	if not MCPJsonSync.has_mcp_json():
+		ProjectSettings.set_setting(_STATUS_KEY, _MCP_JSON_MISSING_TEXT)
+		return
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	match profile:
 		PROFILE_POWER_USER:
-			ProjectSettings.set_setting(_PROFILE_WARNING_KEY, _PU_WARNING_TEXT)
+			ProjectSettings.set_setting(_STATUS_KEY, _PU_WARNING_TEXT)
 		PROFILE_MINIMAL:
-			ProjectSettings.set_setting(_PROFILE_WARNING_KEY, _MINIMAL_WARNING_TEXT)
+			ProjectSettings.set_setting(_STATUS_KEY, _MINIMAL_WARNING_TEXT)
 		_:
-			ProjectSettings.set_setting(_PROFILE_WARNING_KEY, "")
+			ProjectSettings.set_setting(_STATUS_KEY, "")
 
 
 # -- Profile sync --------------------------------------------------------------
 
 
 func _sync_profile_change(new_profile: int, old_profile: int, dock: Control) -> void:
-	_update_profile_warning()
+	_update_status_text()
 
 	# Guard: if the dock already applied this change, just refresh UI.
-	# The dock creates the cache when leaving Standard and calls
-	# acknowledge_profile() afterward, so this code path only runs when
-	# the change was made from ProjectSettings UI.
 	if new_profile == PROFILE_POWER_USER:
-		# Power User from PS UI — needs confirmation dialog.
 		_confirm_power_user_from_ps(old_profile, dock)
 		return
 
 	if new_profile == PROFILE_MINIMAL:
-		# Minimal from PS UI — apply directly.
 		if old_profile == PROFILE_STANDARD:
 			MCPFeatureGate.snapshot_standard_gates()
 		for feature in MCPFeatureRegistry.all_features():
@@ -205,16 +206,16 @@ func _sync_profile_change(new_profile: int, old_profile: int, dock: Control) -> 
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
 
 	elif new_profile == PROFILE_STANDARD:
-		# Standard from PS UI — restore cached gates.
 		MCPFeatureGate.restore_standard_gates()
+		# Sync PS from .mcp.json (restore writes env vars there).
 		if MCPJsonSync.has_mcp_json():
 			for feature in MCPFeatureRegistry.all_features():
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+				ProjectSettings.set_setting(str(entry["ps_key"]),
+					MCPJsonSync.has_env_var(str(entry["env_var"])))
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
 
-	_update_profile_warning()
+	_update_status_text()
 	ProjectSettings.save()
 	snapshot_feature_states()
 	if dock != null:
@@ -225,17 +226,15 @@ func _sync_profile_change(new_profile: int, old_profile: int, dock: Control) -> 
 func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 	# Snapshot Standard gates IMMEDIATELY — before the poll loop can corrupt
 	# them.  The PS profile is already POWER_USER (user changed it in the
-	# Inspector), so _poll_feature_states would enforce all-true on the next
-	# frame, overwriting the real Standard values.
+	# Inspector), so the poll would enforce all-true on the next frame,
+	# overwriting the real Standard values.
 	if old_profile == PROFILE_STANDARD:
 		MCPFeatureGate.snapshot_standard_gates()
 
 	# Revert the PS profile to the old value while the dialog is pending.
-	# This keeps the poll loop from enforcing Power User rules (all gates
-	# forced true + "locked" popup) before the user has confirmed.
 	ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", old_profile)
 	_last_profile = old_profile
-	_update_profile_warning()
+	_update_status_text()
 
 	var features := MCPFeatureRegistry.all_features()
 	var lines := PackedStringArray()
@@ -252,18 +251,17 @@ func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 		+ "and project. Only enable if you trust the AI context.")
 	dialog.ok_button_text = "I Understand — Switch"
 	dialog.confirmed.connect(func():
-		# Snapshot was already taken above — go straight to applying.
 		ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", PROFILE_POWER_USER)
-		for feature in MCPFeatureRegistry.all_features():
-			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-			ProjectSettings.set_setting(str(entry["ps_key"]), true)
+		for feat in MCPFeatureRegistry.all_features():
+			var ent: Dictionary = MCPFeatureRegistry.get_entry(feat)
+			ProjectSettings.set_setting(str(ent["ps_key"]), true)
 		if MCPJsonSync.has_mcp_json():
-			for feature in MCPFeatureRegistry.all_features():
-				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+			for feat in MCPFeatureRegistry.all_features():
+				var ent: Dictionary = MCPFeatureRegistry.get_entry(feat)
+				MCPJsonSync.set_env_var(str(ent["env_var"]), true)
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
 		_last_profile = PROFILE_POWER_USER
-		_update_profile_warning()
+		_update_status_text()
 		ProjectSettings.save()
 		snapshot_feature_states()
 		if dock != null:
@@ -272,7 +270,6 @@ func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 		dialog.queue_free()
 	)
 	dialog.canceled.connect(func():
-		# Profile is already at old_profile — just refresh the UI.
 		if dock != null:
 			dock._refresh_features()
 		dialog.queue_free()
@@ -281,51 +278,29 @@ func _confirm_power_user_from_ps(old_profile: int, dock: Control) -> void:
 	dialog.popup_centered()
 
 
-# -- Startup reconciliation ---------------------------------------------------
-
-
-func _reconcile_standard_env_vars(dock: Control) -> void:
-	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
-	if profile != PROFILE_STANDARD:
-		return
-	if not MCPJsonSync.has_mcp_json():
-		return
-	var changed := false
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-		var has_env := MCPJsonSync.has_env_var(str(entry["env_var"]))
-		if ps_on and not has_env:
-			MCPJsonSync.set_env_var(str(entry["env_var"]), true)
-			changed = true
-		elif not ps_on and has_env:
-			MCPJsonSync.set_env_var(str(entry["env_var"]), false)
-			changed = true
-	if changed and dock != null:
-		dock._broadcast_config_reloaded()
-
-
-# -- Per-feature polling -------------------------------------------------------
+# -- Bidirectional sync --------------------------------------------------------
 
 
 func _poll_feature_states(dock: Control) -> void:
 	# Enforce read-only text fields — revert any user edits immediately.
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
-	var expected_warning: String
-	match profile:
-		PROFILE_POWER_USER:
-			expected_warning = _PU_WARNING_TEXT
-		PROFILE_MINIMAL:
-			expected_warning = _MINIMAL_WARNING_TEXT
-		_:
-			expected_warning = ""
-	if ProjectSettings.get_setting(_PROFILE_WARNING_KEY, "") != expected_warning:
-		ProjectSettings.set_setting(_PROFILE_WARNING_KEY, expected_warning)
+	var expected_status: String
+	if not MCPJsonSync.has_mcp_json():
+		expected_status = _MCP_JSON_MISSING_TEXT
+	else:
+		match profile:
+			PROFILE_POWER_USER:
+				expected_status = _PU_WARNING_TEXT
+			PROFILE_MINIMAL:
+				expected_status = _MINIMAL_WARNING_TEXT
+			_:
+				expected_status = ""
+	if ProjectSettings.get_setting(_STATUS_KEY, "") != expected_status:
+		ProjectSettings.set_setting(_STATUS_KEY, expected_status)
 	if ProjectSettings.get_setting(_LIMITS_NOTE_KEY, "") != _LIMITS_NOTE_TEXT:
 		ProjectSettings.set_setting(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
 
-	# If Power User profile is active, revert any individual gate changes
-	# made from the ProjectSettings UI and warn the user.
+	# Power User: force all PS bools true, warn on user changes.
 	if profile == PROFILE_POWER_USER:
 		var reverted := false
 		for feature in MCPFeatureRegistry.all_features():
@@ -342,7 +317,7 @@ func _poll_feature_states(dock: Control) -> void:
 				dock._warn_profile_locked(PROFILE_POWER_USER)
 		return
 
-	# If Minimal profile is active, revert any individual gate set to true.
+	# Minimal: force all PS bools false, warn on user changes.
 	if profile == PROFILE_MINIMAL:
 		var reverted := false
 		for feature in MCPFeatureRegistry.all_features():
@@ -359,19 +334,27 @@ func _poll_feature_states(dock: Control) -> void:
 				dock._warn_profile_locked(PROFILE_MINIMAL)
 		return
 
-	if not MCPJsonSync.has_mcp_json():
-		return
-	var changed := false
+	# Standard: bidirectional sync between PS bools and .mcp.json env vars.
+	var ps_changed := false
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var ps_key: String = entry["ps_key"]
-		var current: bool = ProjectSettings.get_setting(ps_key, false)
-		var prev: bool = _last_feature_states.get(ps_key, false)
-		if current != prev:
-			_last_feature_states[ps_key] = current
-			MCPJsonSync.set_env_var(str(entry["env_var"]), current)
-			changed = true
-	if changed:
+		var env_var: String = entry["env_var"]
+		var ps_current: bool = ProjectSettings.get_setting(ps_key, false)
+		var ps_last: bool = _last_feature_states.get(ps_key, false)
+		if ps_current != ps_last:
+			# PS changed by user (Inspector toggle) → ensure .mcp.json and push.
+			MCPJsonSync.ensure_mcp_json()
+			MCPJsonSync.set_env_var(env_var, ps_current)
+			_last_feature_states[ps_key] = ps_current
+			ps_changed = true
+		elif MCPJsonSync.has_mcp_json():
+			# Check if .mcp.json changed (dock toggle / external edit) → pull to PS.
+			var mcp_on: bool = MCPJsonSync.has_env_var(env_var)
+			if mcp_on != ps_current:
+				ProjectSettings.set_setting(ps_key, mcp_on)
+				_last_feature_states[ps_key] = mcp_on
+	if ps_changed:
 		if dock != null:
 			dock._refresh_features()
 			dock._broadcast_config_reloaded()
