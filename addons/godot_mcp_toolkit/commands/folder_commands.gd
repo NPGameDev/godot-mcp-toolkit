@@ -19,6 +19,9 @@ static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 
 
 static func _cmd_folder_create(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["folder_path"])
+	if err != null:
+		return err
 	var folder_path := str(parameters.get("folder_path", ""))
 	var guard := MCPFileGuard.resolve_safe(folder_path)
 	if guard["error"] != null:
@@ -33,6 +36,9 @@ static func _cmd_folder_create(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["folder_path"])
+	if err != null:
+		return err
 	var folder_path := str(parameters.get("folder_path", ""))
 	var recursive := bool(parameters.get("recursive", false))
 	var guard := MCPFileGuard.resolve_safe(folder_path)

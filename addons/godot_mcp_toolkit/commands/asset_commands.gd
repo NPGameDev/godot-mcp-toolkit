@@ -139,6 +139,9 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path: String = str(parameters.get("file_path", ""))
 	var include_transitive: bool = bool(parameters.get("include_transitive", false))
 	var max_results: int = int(parameters.get("max_results", 200))

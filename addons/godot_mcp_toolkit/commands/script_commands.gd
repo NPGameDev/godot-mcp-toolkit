@@ -28,6 +28,9 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 
 
 static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
@@ -42,15 +45,18 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 	var content_bytes := content.to_utf8_buffer().size()
 	var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/script_read_cap_kb", 256)
 	if content_bytes > cap_kb * 1024:
-		var err := MCPError.make("FILE_TOO_LARGE",
+		var size_err := MCPError.make("FILE_TOO_LARGE",
 			"file exceeds %d KB response cap" % cap_kb)
-		err["total_bytes"] = content_bytes
-		err["hint"] = "use script_read_range(path, start_line, end_line)"
-		return err
+		size_err["total_bytes"] = content_bytes
+		size_err["hint"] = "use script_read_range(path, start_line, end_line)"
+		return size_err
 	return {"content": MCPUntrusted.wrap("script", file_path, content)}
 
 
 static func _cmd_script_read_range(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
@@ -92,6 +98,9 @@ static func _cmd_script_read_range(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
@@ -139,12 +148,16 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		undo_redo.commit_action(false)
 
 	var bytes_written := content.to_utf8_buffer().size()
-	var result := {"ok": true, "bytes": bytes_written, "undoable": undo_redo != null,
-		"dirs_created": dirs_created}
+	var result := {"ok": true, "bytes": bytes_written, "undoable": undo_redo != null}
+	if dirs_created:
+		result["dirs_created"] = true
 	return result
 
 
 static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:

@@ -125,6 +125,9 @@ static func _cmd_scene_get_tree(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var root_type := str(parameters.get("root_type", "Node"))
 	var if_exists := str(parameters.get("if_exists", "return"))
@@ -215,8 +218,9 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 
 	var response := {"success": true, "path": file_path, "root_type": root_type,
-		"root_name": file_path.get_file().get_basename(), "root_path": ".",
-		"dirs_created": dirs_created}
+		"root_name": file_path.get_file().get_basename(), "root_path": "."}
+	if dirs_created:
+		response["dirs_created"] = true
 	if was_replace:
 		response["status"] = "replaced"
 		response["previous_root_type"] = previous_root_type
@@ -226,6 +230,9 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
@@ -262,6 +269,9 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:

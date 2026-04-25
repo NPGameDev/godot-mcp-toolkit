@@ -93,6 +93,9 @@ static func _apply_resource_properties(
 
 
 static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
@@ -129,6 +132,9 @@ static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
@@ -210,12 +216,16 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 		"path": file_path,
 		"resource_class": resource_class,
 		"warnings": warnings,
-		"dirs_created": dirs_created,
 	}
+	if dirs_created:
+		create_result["dirs_created"] = true
 	return create_result
 
 
 static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path"])
+	if err != null:
+		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:

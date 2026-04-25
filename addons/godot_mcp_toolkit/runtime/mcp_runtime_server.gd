@@ -588,30 +588,61 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			"events array is required and must not be empty"))
 		return
 
+	var summary_mode: bool = bool(params.get("summary", true))
+	var total: int = events.size()
+	var results: Array = []
 	var processed := 0
-	for event in events:
+
+	for i in total:
+		var event = events[i]
 		if typeof(event) != TYPE_DICTIONARY:
-			_send_result(peer, id, MCPError.make("INVALID_PARAMS", "each event must be an object"))
+			var err := MCPError.make("INVALID_PARAMS", "event at index %d must be an object" % i)
+			err["events_processed"] = processed
+			if not summary_mode:
+				err["results"] = results
+			_send_result(peer, id, err)
 			return
 		var et := str(event.get("event_type", ""))
 		var ed: Dictionary = {}
 		var raw = event.get("event_data", null)
 		if typeof(raw) == TYPE_DICTIONARY:
 			ed = raw
-		var delay_ms := int(event.get("delay_ms", 0))
+		var delay_before_ms := int(event.get("delay_before_ms", 0))
+		var delay_after_ms := int(event.get("delay_after_ms", 0))
+		if delay_before_ms > 0:
+			OS.delay_msec(delay_before_ms)
+		var event_result := {"index": i, "total": total, "type": et, "dispatched": true}
 		if et == "click":
+			var click_delay := int(ed.get("click_delay_ms", 50))
 			_dispatch_click(ed)
+			event_result["click_delay_ms"] = click_delay
 		else:
 			var ev := _build_input_event(et, ed)
 			if ev == null:
-				_send_result(peer, id, MCPError.make("INVALID_PARAMS",
-					"unknown event_type at index %d: %s (expected key|mouse_button|mouse_motion|action|click)" % [processed, et]))
+				event_result["dispatched"] = false
+				event_result["error"] = "unknown event_type (expected key|mouse_button|mouse_motion|action|click)"
+				results.append(event_result)
+				var err := MCPError.make("INVALID_PARAMS",
+					"unknown event_type at index %d: %s" % [i, et])
+				err["events_processed"] = processed
+				if summary_mode:
+					err["failed_at"] = event_result
+				else:
+					err["results"] = results
+				_send_result(peer, id, err)
 				return
 			Input.parse_input_event(ev)
+		results.append(event_result)
 		processed += 1
-		if delay_ms > 0:
-			OS.delay_msec(delay_ms)
-	_send_result(peer, id, {"ok": true, "events_processed": processed})
+		if delay_after_ms > 0:
+			OS.delay_msec(delay_after_ms)
+
+	if summary_mode:
+		_send_result(peer, id, {"ok": true, "events_processed": processed,
+			"total": total, "last_event": results.back()})
+	else:
+		_send_result(peer, id, {"ok": true, "events_processed": processed,
+			"total": total, "results": results})
 
 
 func _build_input_event(event_type: String, event_data: Dictionary) -> InputEvent:
