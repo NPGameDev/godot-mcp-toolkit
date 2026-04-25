@@ -135,9 +135,14 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PATH",
 			"path must end with .tscn (got %s; use script.write for .gd files)" % file_path)
 	var parent_dir := file_path.get_base_dir()
+	var dirs_created := false
 	if not DirAccess.dir_exists_absolute(parent_dir):
-		return MCPError.make("PARENT_NOT_FOUND",
-			"parent directory %s does not exist; call folder.create first (scene.create does not auto-create directories)" % parent_dir)
+		var mkdir_err := DirAccess.make_dir_recursive_absolute(parent_dir)
+		if mkdir_err != OK:
+			return MCPError.make("PARENT_NOT_FOUND",
+				"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
+		push_warning("MCP: auto-created directory %s for scene.create" % parent_dir)
+		dirs_created = true
 
 	var resolved_kind := ""
 	var global_entry: Dictionary = {}
@@ -210,7 +215,8 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 
 	var response := {"success": true, "path": file_path, "root_type": root_type,
-		"root_name": file_path.get_file().get_basename(), "root_path": "."}
+		"root_name": file_path.get_file().get_basename(), "root_path": ".",
+		"dirs_created": dirs_created}
 	if was_replace:
 		response["status"] = "replaced"
 		response["previous_root_type"] = previous_root_type

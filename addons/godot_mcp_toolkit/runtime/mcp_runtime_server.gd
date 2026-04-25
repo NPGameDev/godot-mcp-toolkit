@@ -244,6 +244,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 	match method:
 		"echo":
 			_send_result(peer, id, params)
+		"ping":
+			_send_result(peer, id, {"ok": true})
 		"runtime.screenshot":
 			_cmd_runtime_screenshot(peer, id)
 		"runtime.get_node_state":
@@ -573,20 +575,46 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 # ---- Playtest commands ------------------------------------------------------
 
 
-# input.simulate: build an InputEvent from a JSON-friendly {event_type, event_data}
-# pair and feed it through Input.parse_input_event so it dispatches as if it
-# came from the OS. Limited to events the engine recognises — OS-level
-# global hotkeys aren't reachable from inside a running Godot instance.
+# input.simulate: process an array of {event_type, event_data, delay_ms?} and
+# feed them through Input.parse_input_event sequentially with optional delays.
 func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
 		return
-	var event_type := str(params.get("event_type", ""))
-	var event_data: Dictionary = {}
-	var raw_data = params.get("event_data", null)
-	if typeof(raw_data) == TYPE_DICTIONARY:
-		event_data = raw_data
-	var ev: InputEvent = null
+
+	var events = params.get("events", null)
+	if typeof(events) != TYPE_ARRAY or events.is_empty():
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS",
+			"events array is required and must not be empty"))
+		return
+
+	var processed := 0
+	for event in events:
+		if typeof(event) != TYPE_DICTIONARY:
+			_send_result(peer, id, MCPError.make("INVALID_PARAMS", "each event must be an object"))
+			return
+		var et := str(event.get("event_type", ""))
+		var ed: Dictionary = {}
+		var raw = event.get("event_data", null)
+		if typeof(raw) == TYPE_DICTIONARY:
+			ed = raw
+		var delay_ms := int(event.get("delay_ms", 0))
+		if et == "click":
+			_dispatch_click(ed)
+		else:
+			var ev := _build_input_event(et, ed)
+			if ev == null:
+				_send_result(peer, id, MCPError.make("INVALID_PARAMS",
+					"unknown event_type at index %d: %s (expected key|mouse_button|mouse_motion|action|click)" % [processed, et]))
+				return
+			Input.parse_input_event(ev)
+		processed += 1
+		if delay_ms > 0:
+			OS.delay_msec(delay_ms)
+	_send_result(peer, id, {"ok": true, "events_processed": processed})
+
+
+func _build_input_event(event_type: String, event_data: Dictionary) -> InputEvent:
 	match event_type:
 		"key":
 			var key_ev := InputEventKey.new()
@@ -600,7 +628,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			key_ev.ctrl_pressed = bool(event_data.get("ctrl", false))
 			key_ev.alt_pressed = bool(event_data.get("alt", false))
 			key_ev.meta_pressed = bool(event_data.get("meta", false))
-			ev = key_ev
+			return key_ev
 		"mouse_button":
 			var mb := InputEventMouseButton.new()
 			mb.button_index = int(event_data.get("button_index", MOUSE_BUTTON_LEFT))
@@ -612,7 +640,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			mb.ctrl_pressed = bool(event_data.get("ctrl", false))
 			mb.alt_pressed = bool(event_data.get("alt", false))
 			mb.meta_pressed = bool(event_data.get("meta", false))
-			ev = mb
+			return mb
 		"mouse_motion":
 			var mm := InputEventMouseMotion.new()
 			var mpos = event_data.get("position", null)
@@ -621,19 +649,42 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			var rel = event_data.get("relative", null)
 			if typeof(rel) == TYPE_DICTIONARY:
 				mm.relative = Vector2(float(rel.get("x", 0.0)), float(rel.get("y", 0.0)))
-			ev = mm
+			return mm
 		"action":
 			var act := InputEventAction.new()
 			act.action = StringName(str(event_data.get("action", "")))
 			act.pressed = bool(event_data.get("pressed", true))
 			if event_data.has("strength"):
 				act.strength = float(event_data.get("strength", 1.0))
-			ev = act
+			return act
 		_:
-			_send_result(peer, id, MCPError.make("INVALID_PARAMS", "unknown event_type: %s (expected key|mouse_button|mouse_motion|action)" % event_type))
-			return
-	Input.parse_input_event(ev)
-	_send_result(peer, id, {"ok": true, "event_type": event_type})
+			return null
+
+
+## click: press + delay + release at a position (50 ms default internal delay).
+func _dispatch_click(event_data: Dictionary) -> void:
+	var mb_press := InputEventMouseButton.new()
+	mb_press.button_index = int(event_data.get("button_index", MOUSE_BUTTON_LEFT))
+	mb_press.pressed = true
+	var pos = event_data.get("position", null)
+	if typeof(pos) == TYPE_DICTIONARY:
+		mb_press.position = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+	mb_press.shift_pressed = bool(event_data.get("shift", false))
+	mb_press.ctrl_pressed = bool(event_data.get("ctrl", false))
+	mb_press.alt_pressed = bool(event_data.get("alt", false))
+	mb_press.meta_pressed = bool(event_data.get("meta", false))
+	Input.parse_input_event(mb_press)
+	var click_delay := int(event_data.get("click_delay_ms", 50))
+	OS.delay_msec(click_delay)
+	var mb_release := InputEventMouseButton.new()
+	mb_release.button_index = mb_press.button_index
+	mb_release.pressed = false
+	mb_release.position = mb_press.position
+	mb_release.shift_pressed = mb_press.shift_pressed
+	mb_release.ctrl_pressed = mb_press.ctrl_pressed
+	mb_release.alt_pressed = mb_press.alt_pressed
+	mb_release.meta_pressed = mb_press.meta_pressed
+	Input.parse_input_event(mb_release)
 
 
 # animation_player.control: drive an AnimationPlayer in the live SceneTree.

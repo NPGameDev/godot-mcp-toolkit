@@ -7,6 +7,7 @@ const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPRegistryClient = _Hub.MCPRegistryClient
+const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 const RUNTIME_HOST := "127.0.0.1"
 const RUNTIME_POLL_TIMEOUT_MS := 5000
@@ -89,24 +90,67 @@ static func _cmd_game_stop(_parameters: Dictionary) -> Dictionary:
 # -- Runtime probe ------------------------------------------------------------
 
 
+## WebSocket health-check: connect, authenticate, send ping, wait for response.
+## Only reports true when the full JSON-RPC layer is operational (no false
+## positives from a TCP-only probe).
 static func _poll_runtime_ready(
 	host: String, port: int, timeout_ms: int,
 ) -> bool:
+	var token_path := MCPAuth.get_token_path()
+	var token_file := FileAccess.open(token_path, FileAccess.READ)
+	if token_file == null:
+		return false
+	var token := token_file.get_as_text().strip_edges()
+	token_file.close()
+	if token.is_empty():
+		return false
+
 	var deadline := Time.get_ticks_msec() + timeout_ms
 	while Time.get_ticks_msec() < deadline:
-		var stream := StreamPeerTCP.new()
-		if stream.connect_to_host(host, port) == OK:
-			var inner_deadline := Time.get_ticks_msec() + 150
-			while Time.get_ticks_msec() < inner_deadline:
-				stream.poll()
-				var status := stream.get_status()
-				if status == StreamPeerTCP.STATUS_CONNECTED:
-					stream.disconnect_from_host()
-					return true
-				if status == StreamPeerTCP.STATUS_ERROR \
-						or status == StreamPeerTCP.STATUS_NONE:
-					break
+		var ws := WebSocketPeer.new()
+		var err := ws.connect_to_url("ws://%s:%d" % [host, port])
+		if err != OK:
+			OS.delay_msec(100)
+			continue
+
+		var auth_sent := false
+		var ping_sent := false
+		while Time.get_ticks_msec() < deadline:
+			ws.poll()
+			var state := ws.get_ready_state()
+			if state == WebSocketPeer.STATE_CLOSED \
+					or state == WebSocketPeer.STATE_CLOSING:
+				break
+			if state != WebSocketPeer.STATE_OPEN:
 				OS.delay_msec(10)
-			stream.disconnect_from_host()
+				continue
+
+			if not auth_sent:
+				ws.send_text(JSON.stringify({"auth": token}))
+				auth_sent = true
+				OS.delay_msec(10)
+				continue
+
+			while ws.get_available_packet_count() > 0:
+				var text := ws.get_packet().get_string_from_utf8()
+				var parser := JSON.new()
+				if parser.parse(text) != OK:
+					continue
+				var msg = parser.data
+				if typeof(msg) != TYPE_DICTIONARY:
+					continue
+				if not ping_sent:
+					if msg.get("authed", false) == true:
+						ws.send_text(JSON.stringify({
+							"jsonrpc": "2.0", "method": "ping", "id": 0}))
+						ping_sent = true
+				else:
+					if msg.has("result"):
+						ws.close(1000)
+						return true
+
+			OS.delay_msec(10)
+
+		ws.close()
 		OS.delay_msec(100)
 	return false

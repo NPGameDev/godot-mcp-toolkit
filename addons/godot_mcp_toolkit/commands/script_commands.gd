@@ -104,6 +104,16 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		return MCPError.make("INVALID_PARAMS", "missing content")
 	var content := str(parameters.get("content", ""))
 
+	var parent_dir := file_path.get_base_dir()
+	var dirs_created := false
+	if not DirAccess.dir_exists_absolute(parent_dir):
+		var mkdir_err := DirAccess.make_dir_recursive_absolute(parent_dir)
+		if mkdir_err != OK:
+			return MCPError.make("PARENT_NOT_FOUND",
+				"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
+		push_warning("MCP: auto-created directory %s for script.write" % parent_dir)
+		dirs_created = true
+
 	var existed := FileAccess.file_exists(file_path)
 	var prior_content := ""
 	if existed:
@@ -129,7 +139,9 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		undo_redo.commit_action(false)
 
 	var bytes_written := content.to_utf8_buffer().size()
-	return {"ok": true, "bytes": bytes_written, "undoable": undo_redo != null}
+	var result := {"ok": true, "bytes": bytes_written, "undoable": undo_redo != null,
+		"dirs_created": dirs_created}
+	return result
 
 
 static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:

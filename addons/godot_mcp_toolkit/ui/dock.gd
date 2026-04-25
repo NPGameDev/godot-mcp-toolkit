@@ -393,7 +393,7 @@ func _refresh_status() -> void:
 	var count: int = _server.get_authed_peer_count()
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
 	if _power_user_warning != null:
-		_power_user_warning.visible = (profile == "full")
+		_power_user_warning.visible = (profile == "power_user" or profile == "full")
 	_refresh_runtime_status()
 
 
@@ -419,7 +419,9 @@ func _read_mcp_profile() -> String:
 		return "standard"
 	var env := MCPJsonSync.get_all_env_vars()
 	var p: String = str(env.get("GODOT_MCP_PROFILE", "standard")).to_lower()
-	if p in ["minimal", "standard", "full", "custom"]:
+	if p == "full":
+		p = "power_user"
+	if p in ["minimal", "standard", "power_user"]:
 		return p
 	return "standard"
 
@@ -828,7 +830,7 @@ func _do_write_mcp_json(dest: String, content: String) -> void:
 
 func _display_profile_name(profile: String) -> String:
 	match profile:
-		"full":
+		"power_user", "full":
 			return "Power User"
 		_:
 			return profile.capitalize()

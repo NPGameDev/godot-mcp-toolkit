@@ -161,9 +161,14 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NOT_FOUND",
 			"resource not found at %s; provide 'type' to create it" % file_path, MCPError.HINT_FILE_PATH)
 	var parent_dir := file_path.get_base_dir()
+	var dirs_created := false
 	if not DirAccess.dir_exists_absolute(parent_dir):
-		return MCPError.make("PARENT_NOT_FOUND",
-			"parent directory %s does not exist; call folder.create first" % parent_dir)
+		var mkdir_err := DirAccess.make_dir_recursive_absolute(parent_dir)
+		if mkdir_err != OK:
+			return MCPError.make("PARENT_NOT_FOUND",
+				"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
+		push_warning("MCP: auto-created directory %s for resource.write" % parent_dir)
+		dirs_created = true
 	var resolved_kind := ""
 	var global_entry: Dictionary = {}
 	if ClassDB.class_exists(resource_class):
@@ -199,13 +204,15 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	if save_error != OK:
 		return MCPError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
-	return {
+	var create_result := {
 		"success": true,
 		"status": "created",
 		"path": file_path,
 		"resource_class": resource_class,
 		"warnings": warnings,
+		"dirs_created": dirs_created,
 	}
+	return create_result
 
 
 static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:

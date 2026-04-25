@@ -124,8 +124,14 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 
 static func _cmd_editor_reload_scripts() -> Dictionary:
 	var filesystem := EditorInterface.get_resource_filesystem()
+	var scan_waited_ms := 0
 	if filesystem != null:
 		filesystem.scan()
+		# Block until scan completes — synchronous RPC semantics.
+		var scan_deadline := Time.get_ticks_msec() + 5000
+		while filesystem.is_scanning() and Time.get_ticks_msec() < scan_deadline:
+			OS.delay_msec(100)
+			scan_waited_ms += 100
 	var reloaded := 0
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor != null:
@@ -133,7 +139,7 @@ static func _cmd_editor_reload_scripts() -> Dictionary:
 			if open_script is Script:
 				open_script.reload(true)
 				reloaded += 1
-	return {"ok": true, "reloaded": reloaded}
+	return {"ok": true, "reloaded": reloaded, "scan_waited_ms": scan_waited_ms}
 
 
 static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
