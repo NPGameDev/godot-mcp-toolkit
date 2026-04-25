@@ -16,18 +16,21 @@ static func is_enabled(feature: String) -> bool:
 	# Explicit deny always wins.
 	if ProjectSettings.get_setting("mcp_toolkit/feature_gates/deny_" + feature, false):
 		return false
-	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/feature_gates/power_user_mode", false)
+	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", 1)
+	if profile == 0:  # Minimal — all gates disabled.
+		return false
+	var allow_all: bool = (profile == 2)  # Power User
 	var ps_ok: bool = allow_all or ProjectSettings.get_setting(str(entry["ps_key"]), false)
 	var env_ok := OS.get_environment(str(entry["env_var"])) == "1"
 	return (env_ok and ps_ok) if entry["dual_gate"] else (env_ok or ps_ok)
 
 
-## File-backed cache for pre-Power-User feature states.
+## File-backed cache for Standard-profile feature states.
 const _CACHE_PATH := "user://addons/godot_mcp_toolkit/mcp_power_user_cache.json"
 
 
-## Save current per-feature PS state before Power User.
-static func snapshot_pre_power_user() -> void:
+## Save current per-feature PS state before leaving Standard profile.
+static func snapshot_standard_gates() -> void:
 	var cache := {}
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
@@ -42,7 +45,7 @@ static func snapshot_pre_power_user() -> void:
 
 ## Restore per-feature PS state from the cache. Returns the cache dict
 ## so callers can also restore env vars if needed. Deletes the cache file.
-static func restore_pre_power_user() -> Dictionary:
+static func restore_standard_gates() -> Dictionary:
 	var cache: Dictionary = {}
 	if FileAccess.file_exists(_CACHE_PATH):
 		var f := FileAccess.open(_CACHE_PATH, FileAccess.READ)
@@ -59,8 +62,8 @@ static func restore_pre_power_user() -> Dictionary:
 	return cache
 
 
-## Whether a snapshot exists (i.e. Power User was enabled with cache).
-static func has_power_user_cache() -> bool:
+## Whether a gate-state cache exists (Standard gates were snapshotted).
+static func has_standard_cache() -> bool:
 	return FileAccess.file_exists(_CACHE_PATH)
 
 

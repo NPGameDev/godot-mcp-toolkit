@@ -107,6 +107,7 @@ func _enter_tree() -> void:
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
 	_dock.bind(_server, "user://addons/godot_mcp_toolkit/mcp_audit.log")
+	_dock.bind_feature_settings(_feature_settings)
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
 
 	_register_menus()

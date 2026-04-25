@@ -73,18 +73,33 @@ static func migrate_stale_settings() -> void:
 				ProjectSettings.set_setting(new_key, true)
 			ProjectSettings.set_setting(old_key, null)
 			removed += 1
-	# Migrate old power_user_mode paths -> current feature_gates/power_user_mode.
+	# Migrate old power_user_mode paths -> mcp_toolkit/profile enum.
 	for old_key in ["mcp_toolkit/unsafe/allow_all", "mcp_toolkit/unsafe/power_user_mode", "mcp_toolkit/power_user_mode"]:
 		if ProjectSettings.has_setting(old_key):
 			var val = ProjectSettings.get_setting(old_key, false)
 			if val:
-				ProjectSettings.set_setting("mcp_toolkit/feature_gates/power_user_mode", true)
+				ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", 2)  # Power User
 			ProjectSettings.set_setting(old_key, null)
 			removed += 1
-	# Remove stale power_user_warning from old unsafe/ namespace.
-	if ProjectSettings.has_setting("mcp_toolkit/unsafe/power_user_warning"):
-		ProjectSettings.set_setting("mcp_toolkit/unsafe/power_user_warning", null)
+	# Migrate feature_gates/power_user_mode boolean -> mcp_toolkit/profile enum.
+	if ProjectSettings.has_setting("mcp_toolkit/feature_gates/power_user_mode"):
+		var was_pu = ProjectSettings.get_setting("mcp_toolkit/feature_gates/power_user_mode", false)
+		if was_pu:
+			ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", 2)  # Power User
+		ProjectSettings.set_setting("mcp_toolkit/feature_gates/power_user_mode", null)
 		removed += 1
+	# Clean up stale mcp_toolkit/profile (wrong path — should be feature_gates/profile).
+	if ProjectSettings.has_setting("mcp_toolkit/profile"):
+		var val = ProjectSettings.get_setting("mcp_toolkit/profile", 1)
+		if val is int and val != 1 and not ProjectSettings.has_setting("mcp_toolkit/feature_gates/profile"):
+			ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", val)
+		ProjectSettings.set_setting("mcp_toolkit/profile", null)
+		removed += 1
+	# Remove stale power_user_warning (renamed to profile_warning).
+	for old_warn in ["mcp_toolkit/unsafe/power_user_warning", "mcp_toolkit/feature_gates/power_user_warning"]:
+		if ProjectSettings.has_setting(old_warn):
+			ProjectSettings.set_setting(old_warn, null)
+			removed += 1
 	# Remove internal cache from ProjectSettings — now stored in user:// file.
 	if ProjectSettings.has_setting("mcp_toolkit/internal/pre_power_user_cache"):
 		ProjectSettings.set_setting("mcp_toolkit/internal/pre_power_user_cache", null)

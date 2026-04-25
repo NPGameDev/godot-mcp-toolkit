@@ -17,8 +17,14 @@ const _TOAST_INFO := 0
 const _TOAST_WARNING := 1
 const _TOAST_ERROR := 2
 
+# Profile enum values (must match feature_gate_settings.gd).
+const PROFILE_MINIMAL := 0
+const PROFILE_STANDARD := 1
+const PROFILE_POWER_USER := 2
+
 var _server: Node = null
 var _audit_path: String = ""
+var _feature_settings = null  # FeatureGateSettings reference (set via bind_feature_settings)
 
 # Status widgets.
 var _status_label: Label = null
@@ -26,11 +32,12 @@ var _peer_label: Label = null
 var _activity_label: Label = null
 var _runtime_label: Label = null
 
-# Feature rows: { feature_name: { check: CheckBox, sync_icon: Label } }
+# Feature rows: { feature_name: { check: CheckBox } }
 var _feature_rows: Dictionary = {}
-var _power_user_btn: Button = null
+var _profile_dropdown: OptionButton = null
+var _previous_profile: int = PROFILE_STANDARD
 
-# Power User warnings.
+# Profile warnings.
 var _power_user_warning: Label = null
 var _feature_lock_warning: Label = null
 
@@ -59,6 +66,10 @@ func bind(server: Node, audit_path: String) -> void:
 	_refresh_features()
 
 
+func bind_feature_settings(fs) -> void:
+	_feature_settings = fs
+
+
 func _ready() -> void:
 	_build_ui()
 	# bind() runs before _ready (node not yet in tree), so its refresh
@@ -75,12 +86,12 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for dialog in [_audit_dialog, _info_dialog, _pu_lock_dialog, _restart_dialog]:
+	for dialog in [_audit_dialog, _info_dialog, _profile_lock_dialog, _restart_dialog]:
 		if dialog != null and is_instance_valid(dialog):
 			dialog.queue_free()
 	_audit_dialog = null
 	_info_dialog = null
-	_pu_lock_dialog = null
+	_profile_lock_dialog = null
 	_restart_dialog = null
 
 
@@ -191,7 +202,8 @@ func _build_ui() -> void:
 
 	_feature_lock_warning = Label.new()
 	_feature_lock_warning.text = (
-		"Power User Mode is active — disable it to toggle individual gates.")
+		"Power User profile is active — "
+		+ "switch to Standard to toggle individual gates.")
 	_feature_lock_warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_feature_lock_warning.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 	_feature_lock_warning.add_theme_font_size_override("font_size", 11)
@@ -219,25 +231,17 @@ func _build_ui() -> void:
 		check.toggled.connect(_on_feature_toggled.bind(feature))
 		row.add_child(check)
 
-		var badge := Label.new()
-		badge.text = "(dual)" if entry["dual_gate"] else "(single)"
-		badge.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-		badge.add_theme_font_size_override("font_size", 11)
-		row.add_child(badge)
+		_feature_rows[feature] = {"check": check}
 
-		var sync_icon := Label.new()
-		sync_icon.text = "!"
-		sync_icon.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-		sync_icon.visible = false
-		sync_icon.tooltip_text = ""
-		row.add_child(sync_icon)
-
-		_feature_rows[feature] = {"check": check, "sync_icon": sync_icon}
-
-	_power_user_btn = Button.new()
-	_power_user_btn.text = "Enable All (Power User)"
-	_power_user_btn.pressed.connect(_on_power_user_pressed)
-	fc.add_child(_power_user_btn)
+	_profile_dropdown = OptionButton.new()
+	_profile_dropdown.add_item("Minimal", PROFILE_MINIMAL)
+	_profile_dropdown.add_item("Standard", PROFILE_STANDARD)
+	_profile_dropdown.add_item("Power User", PROFILE_POWER_USER)
+	_profile_dropdown.select(PROFILE_STANDARD)
+	_profile_dropdown.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_profile_dropdown.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_profile_dropdown.item_selected.connect(_on_profile_selected)
+	fc.add_child(_profile_dropdown)
 
 	# -- Lower split (Audit / bottom stack) -----------------------------------
 	var lower_split := VSplitContainer.new()
@@ -382,7 +386,7 @@ func _on_command_received(method: String) -> void:
 func _refresh_status() -> void:
 	if _server == null or _status_label == null:
 		return
-	var profile := _read_mcp_profile()
+	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	var display := _display_profile_name(profile)
 	var port: int = _server.get_bound_port()
 	var port_str := str(port) if port > 0 else "6505"
@@ -393,7 +397,7 @@ func _refresh_status() -> void:
 	var count: int = _server.get_authed_peer_count()
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
 	if _power_user_warning != null:
-		_power_user_warning.visible = (profile == "power_user" or profile == "full")
+		_power_user_warning.visible = (profile == PROFILE_POWER_USER)
 	_refresh_runtime_status()
 
 
@@ -413,73 +417,82 @@ func _refresh_runtime_status() -> void:
 		_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 
 
-## Read GODOT_MCP_PROFILE from .mcp.json env block (server-side setting).
-func _read_mcp_profile() -> String:
-	if not MCPJsonSync.has_mcp_json():
-		return "standard"
-	var env := MCPJsonSync.get_all_env_vars()
-	var p: String = str(env.get("GODOT_MCP_PROFILE", "standard")).to_lower()
-	if p == "full":
-		p = "power_user"
-	if p in ["minimal", "standard", "power_user"]:
-		return p
-	return "standard"
-
-
 # ---------------------------------------------------------------------------
 # Feature toggle + .mcp.json sync
 # ---------------------------------------------------------------------------
 
 func _refresh_features() -> void:
-	if _power_user_btn == null:
+	if _profile_dropdown == null:
 		return
-	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/feature_gates/power_user_mode", false)
-	_power_user_btn.text = "Disable Power User Mode" if allow_all else "Enable All (Power User)"
-	if _feature_lock_warning != null:
-		_feature_lock_warning.visible = allow_all
+	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 
+	# Sync dropdown selection.
+	_profile_dropdown.select(profile)
+	_previous_profile = profile
+
+	# Update warning labels.
+	if _feature_lock_warning != null:
+		match profile:
+			PROFILE_MINIMAL:
+				_feature_lock_warning.text = (
+					"Feature gates are disabled in Minimal profile. "
+					+ "Switch to Standard to toggle individual gates.")
+				_feature_lock_warning.visible = true
+			PROFILE_STANDARD:
+				_feature_lock_warning.visible = false
+			PROFILE_POWER_USER:
+				_feature_lock_warning.text = (
+					"Power User profile is active — "
+					+ "switch to Standard to toggle individual gates.")
+				_feature_lock_warning.visible = true
+
+	# Update gate checkboxes.
 	for feature in _feature_rows:
 		var row: Dictionary = _feature_rows[feature]
 		var check: CheckBox = row["check"]
-		var sync_icon: Label = row["sync_icon"]
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 
-		check.set_pressed_no_signal(true if allow_all else ProjectSettings.get_setting(str(entry["ps_key"]), false))
-		check.disabled = allow_all
-		if allow_all:
-			check.tooltip_text = "Disable Power User Mode to toggle individual gates"
-		else:
-			check.tooltip_text = str(entry["risk"])
+		match profile:
+			PROFILE_MINIMAL:
+				check.set_pressed_no_signal(false)
+				check.disabled = true
+				check.tooltip_text = "Feature gates are disabled in Minimal profile"
+			PROFILE_STANDARD:
+				check.set_pressed_no_signal(
+					ProjectSettings.get_setting(str(entry["ps_key"]), false))
+				check.disabled = false
+				check.tooltip_text = str(entry["risk"])
+			PROFILE_POWER_USER:
+				check.set_pressed_no_signal(true)
+				check.disabled = true
+				check.tooltip_text = "Switch to Standard to toggle individual gates"
 
-		var ps_ok: bool = allow_all or ProjectSettings.get_setting(str(entry["ps_key"]), false)
-		var env_ok: bool = OS.get_environment(str(entry["env_var"])) == "1"
-		var has_env_in_json := MCPJsonSync.has_env_var(str(entry["env_var"])) \
-			if MCPJsonSync.has_mcp_json() else false
-
-		sync_icon.visible = false
-		if entry["dual_gate"]:
-			if ps_ok and not env_ok and not has_env_in_json:
-				sync_icon.visible = true
-				sync_icon.tooltip_text = (
-					"ProjectSettings enabled but %s not found in .mcp.json"
-					+ " — feature won't activate until the env var is also set"
-				) % entry["env_var"]
-			elif (has_env_in_json or env_ok) and not ps_ok:
-				sync_icon.visible = true
-				sync_icon.tooltip_text = (
-					"Env var set but ProjectSettings disabled"
-					+ " — enable in Project Settings -> mcp_toolkit/feature_gates/"
-				)
+	# Silent reconciliation: sync PS -> .mcp.json for any mismatches.
+	if MCPJsonSync.has_mcp_json():
+		var any_reconciled := false
+		for feature in MCPFeatureRegistry.all_features():
+			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+			var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+			var env_var: String = entry["env_var"]
+			var has_env := MCPJsonSync.has_env_var(env_var)
+			if ps_on and not has_env:
+				MCPJsonSync.set_env_var(env_var, true)
+				any_reconciled = true
+			elif not ps_on and has_env:
+				MCPJsonSync.set_env_var(env_var, false)
+				any_reconciled = true
+		if any_reconciled:
+			_notify_restart_required()
 
 
 func _on_feature_toggled(enabled: bool, feature: String) -> void:
-	# Block individual toggles while Power User Mode is active.
-	var allow_all: bool = ProjectSettings.get_setting(
-		"mcp_toolkit/feature_gates/power_user_mode", false)
-	if allow_all:
+	# Block individual toggles while profile is locked.
+	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
+	if profile != PROFILE_STANDARD:
 		var row: Dictionary = _feature_rows[feature]
-		row["check"].set_pressed_no_signal(true)
-		_warn_power_user_locked()
+		var expected: bool = (profile == PROFILE_POWER_USER)
+		row["check"].set_pressed_no_signal(expected)
+		_warn_profile_locked(profile)
 		return
 	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 	if entry == null:
@@ -488,22 +501,21 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	ProjectSettings.set_setting(str(entry["ps_key"]), enabled)
 	ProjectSettings.save()
 
-	# Auto-sync env var in .mcp.json for dual-gate features.
+	# Auto-sync env var in .mcp.json for all features.
 	var env_changed := false
-	if entry["dual_gate"]:
-		if MCPJsonSync.has_mcp_json():
-			var env_var: String = entry["env_var"]
-			var has_env := MCPJsonSync.has_env_var(env_var)
-			if enabled and not has_env:
-				MCPJsonSync.set_env_var(env_var, true)
-				env_changed = true
-			elif not enabled and has_env:
-				MCPJsonSync.set_env_var(env_var, false)
-				env_changed = true
-		elif not MCPJsonSync.has_mcp_json() and enabled:
-			_toast(
-				"No .mcp.json found — use MCP Toolkit: Write .mcp.json first"
-				, _TOAST_WARNING)
+	if MCPJsonSync.has_mcp_json():
+		var env_var: String = entry["env_var"]
+		var has_env := MCPJsonSync.has_env_var(env_var)
+		if enabled and not has_env:
+			MCPJsonSync.set_env_var(env_var, true)
+			env_changed = true
+		elif not enabled and has_env:
+			MCPJsonSync.set_env_var(env_var, false)
+			env_changed = true
+	elif not MCPJsonSync.has_mcp_json() and enabled:
+		_toast(
+			"No .mcp.json found — use MCP Toolkit: Write .mcp.json first"
+			, _TOAST_WARNING)
 
 	_refresh_features()
 
@@ -511,30 +523,31 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 		_notify_restart_required()
 
 
-## Warn the user that individual gates are locked while Power User Mode is on.
-var _pu_lock_dialog: AcceptDialog = null
+## Warn the user that individual gates are locked by the active profile.
+var _profile_lock_dialog: AcceptDialog = null
 
-func _warn_power_user_locked() -> void:
-	if _pu_lock_dialog != null and is_instance_valid(_pu_lock_dialog):
+func _warn_profile_locked(profile: int) -> void:
+	if _profile_lock_dialog != null and is_instance_valid(_profile_lock_dialog):
 		return
-	_pu_lock_dialog = AcceptDialog.new()
-	_pu_lock_dialog.title = "Power User Mode Active"
-	_pu_lock_dialog.dialog_text = (
+	var profile_name: String = "Power User" if profile == PROFILE_POWER_USER else "Minimal"
+	_profile_lock_dialog = AcceptDialog.new()
+	_profile_lock_dialog.title = "%s Profile Active" % profile_name
+	_profile_lock_dialog.dialog_text = (
 		"Individual feature gates cannot be changed while\n"
-		+ "Power User Mode is enabled.\n\n"
-		+ "Disable Power User Mode first to toggle gates individually.")
-	_pu_lock_dialog.ok_button_text = "OK"
-	_pu_lock_dialog.exclusive = false
-	_pu_lock_dialog.confirmed.connect(func():
-		_pu_lock_dialog.queue_free()
-		_pu_lock_dialog = null
+		+ "%s profile is active.\n\n" % profile_name
+		+ "Switch to Standard profile to toggle gates individually.")
+	_profile_lock_dialog.ok_button_text = "OK"
+	_profile_lock_dialog.exclusive = false
+	_profile_lock_dialog.confirmed.connect(func():
+		_profile_lock_dialog.queue_free()
+		_profile_lock_dialog = null
 	)
-	_pu_lock_dialog.canceled.connect(func():
-		_pu_lock_dialog.queue_free()
-		_pu_lock_dialog = null
+	_profile_lock_dialog.canceled.connect(func():
+		_profile_lock_dialog.queue_free()
+		_profile_lock_dialog = null
 	)
-	EditorInterface.get_base_control().add_child(_pu_lock_dialog)
-	_pu_lock_dialog.popup_centered()
+	EditorInterface.get_base_control().add_child(_profile_lock_dialog)
+	_profile_lock_dialog.popup_centered()
 
 
 ## Show a dialog telling the user to restart their MCP client.
@@ -570,23 +583,32 @@ func _notify_restart_required() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Power User Mode
+# Profile switching
 # ---------------------------------------------------------------------------
 
-func _on_power_user_pressed() -> void:
-	var allow_all: bool = ProjectSettings.get_setting("mcp_toolkit/feature_gates/power_user_mode", false)
-	if allow_all:
-		_confirm_disable_power_user()
-	else:
-		_confirm_enable_power_user()
+func _on_profile_selected(index: int) -> void:
+	_request_profile_switch(index)
 
 
 ## Public entry point — also called from plugin.gd menu item / onboarding.
 func toggle_power_user_mode() -> void:
-	_on_power_user_pressed()
+	var current: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
+	if current == PROFILE_POWER_USER:
+		_request_profile_switch(PROFILE_STANDARD)
+	else:
+		_request_profile_switch(PROFILE_POWER_USER)
 
 
-func _confirm_enable_power_user() -> void:
+func _request_profile_switch(target: int) -> void:
+	if target == _previous_profile:
+		return
+	if target == PROFILE_POWER_USER:
+		_confirm_switch_to_power_user()
+	else:
+		_apply_profile(target)
+
+
+func _confirm_switch_to_power_user() -> void:
 	var features := MCPFeatureRegistry.all_features()
 	var lines := PackedStringArray()
 	for feature in features:
@@ -594,81 +616,113 @@ func _confirm_enable_power_user() -> void:
 		lines.append("  - %s: %s" % [feature, entry["risk"]])
 
 	var dialog := ConfirmationDialog.new()
-	dialog.title = "Enable Power User Mode?"
+	dialog.title = "Switch to Power User?"
 	dialog.dialog_text = (
 		"This enables ALL gated features:\n\n"
 		+ "\n".join(lines)
 		+ "\n\nThis gives the AI agent full control over your editor\n"
 		+ "and project. Only enable if you trust the AI context.")
-	dialog.ok_button_text = "I Understand — Enable All"
+	dialog.ok_button_text = "I Understand — Switch"
 	dialog.confirmed.connect(func():
-		_apply_power_user_mode(true)
+		_apply_profile(PROFILE_POWER_USER)
 		dialog.queue_free()
 	)
-	dialog.canceled.connect(func(): dialog.queue_free())
+	dialog.canceled.connect(func():
+		# Revert dropdown to previous value.
+		if _profile_dropdown != null:
+			_profile_dropdown.select(_previous_profile)
+		dialog.queue_free()
+	)
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
 
 
-func _confirm_disable_power_user() -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "Disable Power User Mode?"
-	dialog.dialog_text = "All features will revert to their individual settings."
-	dialog.confirmed.connect(func():
-		_apply_power_user_mode(false)
-		dialog.queue_free()
-	)
-	dialog.canceled.connect(func(): dialog.queue_free())
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
+func _apply_profile(new_profile: int) -> void:
+	var old_profile: int = _previous_profile
 
+	# Snapshot Standard gates when leaving Standard.
+	if old_profile == PROFILE_STANDARD:
+		MCPFeatureGate.snapshot_standard_gates()
 
-func _apply_power_user_mode(enable: bool) -> void:
-	if enable:
-		# Snapshot current per-feature PS state (persisted via ProjectSettings).
-		MCPFeatureGate.snapshot_pre_power_user()
+	# Set profile in ProjectSettings.
+	ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", new_profile)
 
-	ProjectSettings.set_setting("mcp_toolkit/feature_gates/power_user_mode", enable)
-
-	if enable:
-		for feature in MCPFeatureRegistry.all_features():
-			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-			ProjectSettings.set_setting(str(entry["ps_key"]), true)
-		if MCPJsonSync.has_mcp_json():
+	match new_profile:
+		PROFILE_MINIMAL:
 			for feature in MCPFeatureRegistry.all_features():
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
-		else:
-			_offer_create_mcp_json_for_power_user()
-	else:
-		# Restore previous per-feature PS state from persistent cache.
-		MCPFeatureGate.restore_pre_power_user()
-		if MCPJsonSync.has_mcp_json():
-			# Env vars not cached — clear all; user re-enables individually.
+				ProjectSettings.set_setting(str(entry["ps_key"]), false)
+			if MCPJsonSync.has_mcp_json():
+				for feature in MCPFeatureRegistry.all_features():
+					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+					MCPJsonSync.set_env_var(str(entry["env_var"]), false)
+				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
+			else:
+				_offer_create_mcp_json(new_profile)
+		PROFILE_STANDARD:
+			MCPFeatureGate.restore_standard_gates()
+			if MCPJsonSync.has_mcp_json():
+				for feature in MCPFeatureRegistry.all_features():
+					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+					var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+					MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
+		PROFILE_POWER_USER:
 			for feature in MCPFeatureRegistry.all_features():
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+				ProjectSettings.set_setting(str(entry["ps_key"]), true)
+			if MCPJsonSync.has_mcp_json():
+				for feature in MCPFeatureRegistry.all_features():
+					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+					MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
+			else:
+				_offer_create_mcp_json(new_profile)
 
+	_previous_profile = new_profile
 	ProjectSettings.save()
 	_refresh_features()
+	_refresh_status()
 	_notify_restart_required()
 
+	if _feature_settings != null:
+		_feature_settings.acknowledge_profile(new_profile)
 
-func _offer_create_mcp_json_for_power_user() -> void:
+
+func _offer_create_mcp_json(profile: int) -> void:
 	var dialog := ConfirmationDialog.new()
 	dialog.title = "No .mcp.json found"
 	dialog.dialog_text = "No .mcp.json found at project root.\nCreate it now?"
 	dialog.confirmed.connect(func():
 		write_mcp_json()
-		for feature in MCPFeatureRegistry.all_features():
-			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-			MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+		_sync_env_vars_for_profile(profile)
 		dialog.queue_free()
 	)
 	dialog.canceled.connect(func(): dialog.queue_free())
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
+
+
+func _sync_env_vars_for_profile(profile: int) -> void:
+	if not MCPJsonSync.has_mcp_json():
+		return
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		match profile:
+			PROFILE_MINIMAL:
+				MCPJsonSync.set_env_var(str(entry["env_var"]), false)
+			PROFILE_POWER_USER:
+				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+			_:
+				var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+				MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+	match profile:
+		PROFILE_MINIMAL:
+			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
+		PROFILE_POWER_USER:
+			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
+		_:
+			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
 
 
 # ---------------------------------------------------------------------------
@@ -828,12 +882,23 @@ func _do_write_mcp_json(dest: String, content: String) -> void:
 # Display name helper
 # ---------------------------------------------------------------------------
 
-func _display_profile_name(profile: String) -> String:
-	match profile:
+func _display_profile_name(profile) -> String:
+	if profile is int:
+		match profile:
+			PROFILE_MINIMAL:
+				return "Minimal"
+			PROFILE_POWER_USER:
+				return "Power User"
+			_:
+				return "Standard"
+	# Legacy string fallback (e.g. from _read_mcp_profile).
+	match str(profile):
 		"power_user", "full":
 			return "Power User"
+		"minimal":
+			return "Minimal"
 		_:
-			return profile.capitalize()
+			return "Standard"
 
 
 # ---------------------------------------------------------------------------
@@ -897,7 +962,7 @@ func _show_info_dialog() -> void:
 
 	# -- Connection info --
 	_add_info_header(vbox, "Connection")
-	var profile := _read_mcp_profile()
+	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	var display := _display_profile_name(profile)
 	if _server != null and _server.is_listening():
 		var port: int = _server.get_bound_port()

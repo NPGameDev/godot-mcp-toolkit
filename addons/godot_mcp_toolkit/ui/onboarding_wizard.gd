@@ -122,8 +122,8 @@ func _apply_step(dialog: AcceptDialog) -> void:
 		3:
 			# Feature gates — open Project Settings.
 			dialog.dialog_text = (
-				"Toggle individual capabilities here. Dual-gate features\n"
-				+ "need both a ProjectSettings toggle and an env var in .mcp.json.\n\n"
+				"Toggle individual capabilities here. Changes sync to\n"
+				+ "your MCP configuration automatically.\n\n"
 				+ "Navigate to: MCP Toolkit > Feature Gates")
 			dialog.ok_button_text = "Next"
 			_buttons.append(dialog.add_button("Back", true, "back"))

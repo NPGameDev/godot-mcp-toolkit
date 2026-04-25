@@ -25,12 +25,4 @@ enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
 
 [mcp_toolkit]
 
-feature_gates/power_user_mode=true
-feature_gates/allow_game_eval=true
-feature_gates/allow_os_execute=true
-feature_gates/allow_user_scope=true
-feature_gates/allow_outbound_http=true
-feature_gates/allow_node_call_method=true
-feature_gates/allow_project_set_setting=true
-feature_gates/allow_input_map_write=true
-feature_gates/power_user_warning="POWER USER MODE ACTIVE — All feature gates enabled. The AI agent has full control: code execution, OS commands, project settings writes, and file access outside res://."
+feature_gates/profile=1
