@@ -79,6 +79,12 @@ func register_all() -> void:
 			# Neither PS nor .mcp.json has state — seed from PS defaults.
 			_bootstrap_sidecar_from_ps()
 	snapshot_feature_states()
+	# If sidecar bootstrap failed (e.g. .godot/ not ready during reimport),
+	# schedule a deferred retry after Godot finishes initialization.
+	if not _sidecar_was_present:
+		var tree := Engine.get_main_loop() as SceneTree
+		if tree:
+			tree.create_timer(2.0).timeout.connect(retry_bootstrap)
 
 
 func poll() -> void:
@@ -103,6 +109,18 @@ func snapshot_feature_states() -> void:
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		_last_feature_states[str(entry["ps_key"])] = ProjectSettings.get_setting(
 			str(entry["ps_key"]), false)
+
+
+## Retry sidecar bootstrap — called via deferred timer if the initial
+## bootstrap in register_all() failed (e.g. .godot/ not ready during reimport).
+func retry_bootstrap() -> void:
+	if FileAccess.file_exists(MCPStateFile.get_path()):
+		return
+	_bootstrap_sidecar_from_ps()
+	if _sidecar_was_present:
+		snapshot_feature_states()
+		_emit_features_changed()
+		_emit_config_reloaded()
 
 
 ## P3: Bootstrap sidecar from .mcp.json env vars (one-time migration).
