@@ -470,7 +470,10 @@ func _refresh_features() -> void:
 					+ "switch to Standard to toggle individual gates.")
 				_feature_lock_warning.visible = true
 
-	# Update gate checkboxes — sidecar is the runtime source of truth.
+	# Update gate checkboxes — sidecar is the runtime source of truth,
+	# with PS fallback when sidecar is missing (e.g. after .godot/ deletion).
+	var sidecar_gates := MCPStateFile.get_current_gates()
+	var sidecar_has_gates := not sidecar_gates.is_empty()
 	for feature in _feature_rows:
 		var row: Dictionary = _feature_rows[feature]
 		var check: CheckBox = row["check"]
@@ -482,8 +485,12 @@ func _refresh_features() -> void:
 				check.disabled = true
 				check.tooltip_text = "Feature gates are disabled in Minimal profile"
 			PROFILE_STANDARD:
-				check.set_pressed_no_signal(
-					MCPStateFile.is_gate_enabled(str(entry["env_var"])))
+				var enabled: bool
+				if sidecar_has_gates:
+					enabled = sidecar_gates.get(str(entry["env_var"]), false) == true
+				else:
+					enabled = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+				check.set_pressed_no_signal(enabled)
 				check.disabled = false
 				check.tooltip_text = str(entry["risk"])
 			PROFILE_POWER_USER:

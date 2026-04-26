@@ -380,6 +380,11 @@ func _poll_feature_states() -> void:
 	# so locked profiles can also recover.
 	if not FileAccess.file_exists(MCPStateFile.get_path()):
 		_bootstrap_sidecar_from_ps()
+		if _sidecar_was_present:
+			# Bootstrap just succeeded — notify dock and bridge.
+			snapshot_feature_states()
+			_emit_features_changed()
+			_emit_config_reloaded()
 
 	# Read sidecar once for all sync operations below.
 	var sidecar_data := MCPStateFile.read()

@@ -40,6 +40,20 @@ static func write(profile: String, gates: Dictionary) -> Error:
 static func set_gate(env_var_name: String, enabled: bool) -> Error:
 	var data := read()
 	var gates: Dictionary = data.get("gates", {})
+	# Seed missing gates/profile from PS to prevent partial sidecar writes.
+	if gates.size() < MCPFeatureRegistry.all_features().size():
+		var ps_gates := gates_from_ps()
+		for key in ps_gates:
+			if not gates.has(key):
+				gates[key] = ps_gates[key]
+	if str(data.get("profile", "")).is_empty():
+		var p: int = ProjectSettings.get_setting(
+			"mcp_toolkit/feature_gates/profile",
+			MCPFeatureRegistry.PROFILE_STANDARD)
+		match p:
+			MCPFeatureRegistry.PROFILE_MINIMAL: data["profile"] = "minimal"
+			MCPFeatureRegistry.PROFILE_POWER_USER: data["profile"] = "power_user"
+			_: data["profile"] = "standard"
 	gates[env_var_name] = enabled
 	data["gates"] = gates
 	return _atomic_write(data)
