@@ -728,21 +728,6 @@ func _apply_profile(new_profile: int) -> void:
 		_events.profile_acknowledged.emit(new_profile)
 
 
-func _offer_create_mcp_json(profile: int) -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.exclusive = false
-	dialog.title = "No .mcp.json found"
-	dialog.dialog_text = "No .mcp.json found at project root.\nCreate it now?"
-	dialog.confirmed.connect(func():
-		write_mcp_json()
-		_sync_full_state_to_mcp_json()
-		dialog.queue_free()
-	)
-	dialog.canceled.connect(func(): dialog.queue_free())
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
-
-
 # ---------------------------------------------------------------------------
 # Audit log popup
 # ---------------------------------------------------------------------------
