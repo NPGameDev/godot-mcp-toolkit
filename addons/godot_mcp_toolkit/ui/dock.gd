@@ -1150,7 +1150,10 @@ func _get_plugin_version() -> String:
 func _toast(msg: String, severity: int = _TOAST_INFO, tooltip_text: String = "") -> void:
 	if not Engine.is_editor_hint():
 		return
-	print("[MCP] %s" % msg)
+	if severity >= _TOAST_WARNING:
+		push_warning("[MCP] %s" % msg)
+	else:
+		print("[MCP] %s" % msg)
 	# EditorToaster available in Godot 4.4+ (dynamic dispatch for compat).
 	var toaster = _Hub.get_toaster()
 	if toaster != null:

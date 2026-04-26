@@ -52,7 +52,10 @@ func broadcast_config_reloaded() -> void:
 func _show_toast(msg: String, severity: int = INFO) -> void:
 	if not Engine.is_editor_hint():
 		return
-	print("[MCP] %s" % msg)
+	if severity >= WARNING:
+		push_warning("[MCP] %s" % msg)
+	else:
+		print("[MCP] %s" % msg)
 	var toaster = _Hub.get_toaster()
 	if toaster != null:
 		toaster.push_toast(msg, severity)
