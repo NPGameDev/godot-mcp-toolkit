@@ -3,9 +3,11 @@ extends RefCounted
 ## Session-token authentication for the MCP WebSocket transport.
 ##
 ## On each server start a fresh 32-byte hex token is generated, written
-## to user://addons/godot_mcp_toolkit/mcp_token_<hash> (or
-## GODOT_MCP_TOKEN_PATH), and required as the first WebSocket message
+## to user://addons/godot_mcp_toolkit/project_instance_<hash>/mcp_token
+## (or GODOT_MCP_TOKEN_PATH), and required as the first WebSocket message
 ## from every connecting client.
+
+const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 
 
 ## Generate a fresh 64-char hex token (32 random bytes).
@@ -14,20 +16,19 @@ static func generate_token() -> String:
 
 
 ## Absolute OS path where the token is written / read.
-## Per-worktree: hashes the canonical project path so two worktrees of the
-## same repo (same config/name → same user://) get distinct token files.
+## Per-instance: lives in user://…/project_instance_<hash>/mcp_token so
+## two worktrees of the same repo get distinct files.
 ## Env override: GODOT_MCP_TOKEN_PATH bypasses the hash.
 static func get_token_path() -> String:
 	var env_path := OS.get_environment("GODOT_MCP_TOKEN_PATH")
 	if not env_path.is_empty():
 		return env_path
-	var project_path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
-	var suffix := project_path.sha256_text().substr(0, 12)
-	return "user://addons/godot_mcp_toolkit/mcp_token_%s" % suffix
+	return MCPProjectPaths.instance_dir() + "mcp_token"
 
 
 ## Write token to disk. Returns OK or an error code.
 static func write_token(token: String) -> int:
+	MCPProjectPaths.ensure_dirs()
 	var path := get_token_path()
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:

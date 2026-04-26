@@ -722,7 +722,7 @@ func show_audit_dialog() -> void:
 	# Read the log file.
 	var path := _audit_path
 	if path.is_empty():
-		path = "user://addons/godot_mcp_toolkit/mcp_audit.log"
+		path = _Hub.MCPAudit.get_log_path()
 	var log_text := ""
 	if FileAccess.file_exists(path):
 		var file := FileAccess.open(path, FileAccess.READ)
@@ -802,7 +802,7 @@ func _on_clear_audit_log() -> void:
 	dialog.confirmed.connect(func():
 		var path := _audit_path
 		if path.is_empty():
-			path = "user://addons/godot_mcp_toolkit/mcp_audit.log"
+			path = _Hub.MCPAudit.get_log_path()
 		var file := FileAccess.open(path, FileAccess.WRITE)
 		if file != null:
 			file.store_string("")

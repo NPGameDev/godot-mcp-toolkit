@@ -2,7 +2,8 @@
 extends RefCounted
 ## FeatureGate — gate check for unsafe features.
 ##
-## Runtime gate state lives in the sidecar (.godot/mcp_toolkit_state.json)
+## Runtime gate state lives in the sidecar
+## (user://…/project_instance_<hash>/mcp_toolkit_state.json)
 ## with .mcp.json env vars as a migration fallback.
 ## Profile mode (Minimal/Standard/Power User) and admin deny keys
 ## (deny_<feature>) remain in ProjectSettings as overrides.
@@ -37,16 +38,43 @@ static func is_enabled(feature: String) -> bool:
 
 
 ## File-backed cache for Standard-profile feature states.
-const _CACHE_PATH := "user://addons/godot_mcp_toolkit/mcp_standard_gates_cache.json"
-const _CACHE_PATH_LEGACY := "user://addons/godot_mcp_toolkit/mcp_power_user_cache.json"
+const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
+const _CACHE_FILENAME := "mcp_standard_gates_cache.json"
+
+
+static func _get_cache_path() -> String:
+	return MCPProjectPaths.instance_dir() + _CACHE_FILENAME
 
 
 ## Migrate legacy cache file (renamed in 41d-quater).
+## Checks both the old flat paths and the legacy name.
 static func _migrate_cache() -> void:
-	if not FileAccess.file_exists(_CACHE_PATH) and FileAccess.file_exists(_CACHE_PATH_LEGACY):
-		var dir := DirAccess.open("user://addons/godot_mcp_toolkit/")
+	var cache_path := _get_cache_path()
+	if FileAccess.file_exists(cache_path):
+		return
+	# Check legacy name in new location.
+	var legacy_new := MCPProjectPaths.instance_dir() + "mcp_power_user_cache.json"
+	if FileAccess.file_exists(legacy_new):
+		var dir := DirAccess.open(MCPProjectPaths.instance_dir())
 		if dir != null:
-			dir.rename("mcp_power_user_cache.json", "mcp_standard_gates_cache.json")
+			dir.rename("mcp_power_user_cache.json", _CACHE_FILENAME)
+		return
+	# Check old flat paths (pre-instance-dir migration).
+	var old_path := "user://addons/godot_mcp_toolkit/mcp_standard_gates_cache.json"
+	var old_legacy := "user://addons/godot_mcp_toolkit/mcp_power_user_cache.json"
+	var source := ""
+	if FileAccess.file_exists(old_path):
+		source = old_path
+	elif FileAccess.file_exists(old_legacy):
+		source = old_legacy
+	if not source.is_empty():
+		MCPProjectPaths.ensure_dirs()
+		var content := FileAccess.get_file_as_bytes(source)
+		var out := FileAccess.open(cache_path, FileAccess.WRITE)
+		if out != null:
+			out.store_buffer(content)
+			out.close()
+			DirAccess.remove_absolute(source)
 
 
 ## Save current per-feature gate state before leaving Standard profile.
@@ -71,7 +99,7 @@ static func snapshot_standard_gates() -> void:
 			break
 	if not any_on and has_standard_cache():
 		return
-	var f := FileAccess.open(_CACHE_PATH, FileAccess.WRITE)
+	var f := FileAccess.open(_get_cache_path(), FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(cache))
 		f.close()
@@ -82,8 +110,8 @@ static func snapshot_standard_gates() -> void:
 static func restore_standard_gates() -> Dictionary:
 	_migrate_cache()
 	var cache: Dictionary = {}
-	if FileAccess.file_exists(_CACHE_PATH):
-		var f := FileAccess.open(_CACHE_PATH, FileAccess.READ)
+	if FileAccess.file_exists(_get_cache_path()):
+		var f := FileAccess.open(_get_cache_path(), FileAccess.READ)
 		if f != null:
 			var parsed = JSON.parse_string(f.get_as_text())
 			f.close()
@@ -104,7 +132,7 @@ static func restore_standard_gates() -> Dictionary:
 ## Whether a gate-state cache exists (Standard gates were snapshotted).
 static func has_standard_cache() -> bool:
 	_migrate_cache()
-	return FileAccess.file_exists(_CACHE_PATH)
+	return FileAccess.file_exists(_get_cache_path())
 
 
 # -- Dangerous-gate session tracking (H7) ------------------------------------

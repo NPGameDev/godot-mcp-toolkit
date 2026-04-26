@@ -2,12 +2,12 @@
 extends RefCounted
 ## Feature-gate ProjectSettings registration and bidirectional sync.
 ##
-## The sidecar (.godot/mcp_toolkit_state.json) is the runtime source of
-## truth for gate state. PS bools are a mirror UI — the Inspector and
-## dock both reflect the sidecar. Changes from either side are synced
-## bidirectionally: PS change → write sidecar; sidecar change → update PS.
-## .mcp.json is read-only — used only for one-time sidecar bootstrap
-## (migration from pre-sidecar plugin versions).
+## The sidecar (user://…/project_instance_<hash>/mcp_toolkit_state.json)
+## is the runtime source of truth for gate state. PS bools are a mirror
+## UI — the Inspector and dock both reflect the sidecar. Changes from
+## either side are synced bidirectionally: PS change → write sidecar;
+## sidecar change → update PS. .mcp.json is read-only — used only for
+## one-time sidecar bootstrap (migration from pre-sidecar plugin versions).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPFeatureGate = _Hub.MCPFeatureGate
@@ -43,7 +43,7 @@ const PROFILE_POWER_USER := MCPFeatureRegistry.PROFILE_POWER_USER
 var _last_profile: int = PROFILE_STANDARD
 var _last_feature_states: Dictionary = {}  # { ps_key: bool } — snapshot for change detection
 var _last_mcp_json_present: bool = false  # L1: track .mcp.json presence transitions
-var _sidecar_was_present: bool = false  # P2: detect sidecar loss (.godot/ deletion)
+var _sidecar_was_present: bool = false  # P2: detect sidecar loss (manual deletion)
 var _events: RefCounted = null  # GateEvents signal bus
 
 
@@ -58,9 +58,11 @@ func register_all() -> void:
 	_register_audit()
 	_last_profile = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	_last_mcp_json_present = MCPJsonSync.has_mcp_json()
-	# Bootstrap sidecar if missing. Discriminate P2 (.godot/ deleted, PS bools
+	# Bootstrap sidecar if missing. Discriminate P2 (sidecar lost, PS bools
 	# are correct) from P3 (first-time migration from pre-sidecar plugin):
 	# non-default PS bools prove a prior session → P2; all default → P3.
+	# Since the sidecar now lives under user:// (always writable at startup),
+	# bootstrap should never fail — no deferred retry needed.
 	_sidecar_was_present = FileAccess.file_exists(MCPStateFile.get_path())
 	if not _sidecar_was_present:
 		var has_nondefault_ps := false
@@ -70,7 +72,7 @@ func register_all() -> void:
 				has_nondefault_ps = true
 				break
 		if has_nondefault_ps:
-			# P2: PS bools are authoritative — .godot/ was deleted.
+			# P2: PS bools are authoritative — sidecar was deleted.
 			_bootstrap_sidecar_from_ps()
 		elif _last_mcp_json_present:
 			# P3: first-time migration from pre-sidecar plugin.
@@ -79,12 +81,6 @@ func register_all() -> void:
 			# Neither PS nor .mcp.json has state — seed from PS defaults.
 			_bootstrap_sidecar_from_ps()
 	snapshot_feature_states()
-	# If sidecar bootstrap failed (e.g. .godot/ not ready during reimport),
-	# schedule a deferred retry after Godot finishes initialization.
-	if not _sidecar_was_present:
-		var tree := Engine.get_main_loop() as SceneTree
-		if tree:
-			tree.create_timer(2.0).timeout.connect(retry_bootstrap)
 
 
 func poll() -> void:
@@ -109,18 +105,6 @@ func snapshot_feature_states() -> void:
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		_last_feature_states[str(entry["ps_key"])] = ProjectSettings.get_setting(
 			str(entry["ps_key"]), false)
-
-
-## Retry sidecar bootstrap — called via deferred timer if the initial
-## bootstrap in register_all() failed (e.g. .godot/ not ready during reimport).
-func retry_bootstrap() -> void:
-	if FileAccess.file_exists(MCPStateFile.get_path()):
-		return
-	_bootstrap_sidecar_from_ps()
-	if _sidecar_was_present:
-		snapshot_feature_states()
-		_emit_features_changed()
-		_emit_config_reloaded()
 
 
 ## P3: Bootstrap sidecar from .mcp.json env vars (one-time migration).
@@ -199,7 +183,7 @@ func _register_limits() -> void:
 
 func _register_audit() -> void:
 	_register_basic_bool("mcp_toolkit/audit/enabled", true,
-		"Enable MCP audit log at user://addons/godot_mcp_toolkit/mcp_audit.log.")
+		"Enable MCP audit log at user://addons/godot_mcp_toolkit/project_instance_<hash>/mcp_audit.log.")
 	_register_basic_int("mcp_toolkit/audit/max_size_kb", 1024,
 		"Max audit log size in KB. 0 = unlimited. Log truncates to 50% when exceeded.")
 
@@ -393,9 +377,9 @@ func _poll_feature_states() -> void:
 	if ProjectSettings.get_setting(_LIMITS_NOTE_KEY, "") != _LIMITS_NOTE_TEXT:
 		ProjectSettings.set_setting(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
 
-	# P2: Sidecar recovery — recreate from PS if missing (covers .godot/
-	# deletion and failed startup bootstrap). Runs before profile enforcement
-	# so locked profiles can also recover.
+	# P2: Sidecar recovery — recreate from PS if missing (covers manual
+	# deletion). Runs before profile enforcement so locked profiles can
+	# also recover.
 	if not FileAccess.file_exists(MCPStateFile.get_path()):
 		_bootstrap_sidecar_from_ps()
 		if _sidecar_was_present:

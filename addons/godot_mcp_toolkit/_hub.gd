@@ -18,6 +18,7 @@ const MCPAudit := preload("res://addons/godot_mcp_toolkit/audit.gd")
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 const MCPStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
+const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
 
 

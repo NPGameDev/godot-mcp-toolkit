@@ -121,7 +121,7 @@ func _enter_tree() -> void:
 	_notifier = GateNotifier.new()
 	_notifier.bind(_server, _events)
 
-	_dock.bind(_server, "user://addons/godot_mcp_toolkit/mcp_audit.log")
+	_dock.bind(_server, _Hub.MCPAudit.get_log_path())
 	_dock.bind_events(_events)
 	_dock.bind_notifier(_notifier)
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
@@ -279,7 +279,7 @@ func _on_show_audit() -> void:
 	if _dock != null:
 		_dock.show_audit_dialog()
 	else:
-		var global_path := ProjectSettings.globalize_path("user://addons/godot_mcp_toolkit/mcp_audit.log")
+		var global_path := ProjectSettings.globalize_path(_Hub.MCPAudit.get_log_path())
 		OS.shell_open(global_path)
 
 

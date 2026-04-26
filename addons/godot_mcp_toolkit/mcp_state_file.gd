@@ -2,18 +2,20 @@
 extends RefCounted
 ## Sidecar state file — persists runtime gate/profile state per-project.
 ##
-## Lives at .godot/mcp_toolkit_state.json (gitignored, per-project).
-## Claude Code does not watch .godot/ contents, so writes here do NOT
+## Lives at user://addons/godot_mcp_toolkit/project_instance_<hash>/
+## mcp_toolkit_state.json (per-instance, survives .godot/ deletion).
+## Claude Code does not watch user:// contents, so writes here do NOT
 ## trigger an MCP server restart. The auth response and config_reloaded
 ## notification deliver this state to the bridge directly.
 
 const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
+const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 
 const _FILENAME := "mcp_toolkit_state.json"
 
 
 static func get_path() -> String:
-	return ProjectSettings.globalize_path("res://") + ".godot/" + _FILENAME
+	return MCPProjectPaths.instance_dir() + _FILENAME
 
 
 static func read() -> Dictionary:
@@ -100,13 +102,9 @@ static func gates_from_ps() -> Dictionary:
 
 static func _atomic_write(data: Dictionary) -> Error:
 	var path := get_path()
-	# Ensure .godot/ directory exists (it should, but guard anyway).
+	# Ensure per-instance directory exists.
+	MCPProjectPaths.ensure_dirs()
 	var dir_path := path.get_base_dir()
-	if not DirAccess.dir_exists_absolute(dir_path):
-		var err := DirAccess.make_dir_recursive_absolute(dir_path)
-		if err != OK:
-			push_warning("[MCPStateFile] cannot create directory %s (err %d)" % [dir_path, err])
-			return err
 	var tmp_path := path + ".tmp"
 	var f := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if f == null:

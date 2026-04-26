@@ -1,0 +1,35 @@
+@tool
+extends RefCounted
+## Centralized per-project-instance user:// path computation.
+##
+## Per-instance files live under
+##   user://addons/godot_mcp_toolkit/project_instance_<hash>/
+## where <hash> is the first 12 chars of SHA-256(canonical project root).
+## This isolates multi-instance and multi-worktree setups — two editors
+## open on different worktrees of the same repo get separate directories.
+##
+## Shared files (e.g. onboarding marker) remain directly under
+##   user://addons/godot_mcp_toolkit/
+
+
+const _PLUGIN_DIR := "user://addons/godot_mcp_toolkit/"
+
+
+## 12-char hex hash of the canonical project root path.
+static func project_hash() -> String:
+	var path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
+	return path.sha256_text().substr(0, 12)
+
+
+## Per-instance directory path (with trailing slash).
+## e.g. "user://addons/godot_mcp_toolkit/project_instance_a1b2c3d4e5f6/"
+static func instance_dir() -> String:
+	return _PLUGIN_DIR + "project_instance_%s/" % project_hash()
+
+
+## Ensure both the plugin dir and per-instance subdir exist.
+## Safe to call multiple times (idempotent).
+static func ensure_dirs() -> void:
+	var inst := instance_dir()
+	if not DirAccess.dir_exists_absolute(inst):
+		DirAccess.make_dir_recursive_absolute(inst)
