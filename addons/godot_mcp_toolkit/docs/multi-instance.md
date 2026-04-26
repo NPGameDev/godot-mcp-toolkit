@@ -26,8 +26,21 @@ git worktree add ../MyGame-client client-branch
   (or `GODOT_MCP_PROJECT_PATH`) against the registry.
 - Per-worktree token hashing ensures auth tokens don't collide.
 
-**Only limitation:** shared `user://logs/godot.log` if both copies have the
-same `config/name` in Project Settings.
+**Log contention caveat:** Both copies share `user://logs/godot.log` if they
+have the same `config/name` in Project Settings. This affects MCP log commands:
+
+- `editor_get_console(source:"file")` and `debugger_get_log(source:"file")`
+  read this shared log, so output from both instances is interleaved.
+- On **Godot 4.5+**, `source:"buffer"` uses the in-memory LogBuffer (Logger
+  API), which is isolated per editor process — no cross-instance contamination.
+  Prefer `source:"buffer"` for multi-instance setups.
+- On **Godot 4.2–4.4**, buffer mode falls back to file-tail, so it reads the
+  same shared log file and is equally affected by interleaving.
+
+**Workaround:** Give each copy a distinct `application/config/name` in Project
+Settings. Godot uses this to derive the `user://` directory path, which
+separates the log files. With git worktrees this is easy — change the name in
+the worktree copy only.
 
 ---
 
