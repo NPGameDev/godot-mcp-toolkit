@@ -20,8 +20,8 @@ static func get_path() -> String:
 
 static func read() -> Dictionary:
 	var path := get_path()
-	if not FileAccess.file_exists(path):
-		return {}
+	# Skip file_exists() — it can return stale true on Windows after a
+	# failed rename-based write.  open(READ) is the authoritative check.
 	var f := FileAccess.open(path, FileAccess.READ)
 	if f == null:
 		return {}

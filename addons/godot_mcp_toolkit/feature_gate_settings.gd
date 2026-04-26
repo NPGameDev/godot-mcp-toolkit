@@ -63,7 +63,9 @@ func register_all() -> void:
 	# non-default PS bools prove a prior session → P2; all default → P3.
 	# Since the sidecar now lives under user:// (always writable at startup),
 	# bootstrap should never fail — no deferred retry needed.
-	_sidecar_was_present = FileAccess.file_exists(MCPStateFile.get_path())
+	# Use read() instead of file_exists() — the latter can return stale true
+	# on Windows after a failed rename-based write from a prior session.
+	_sidecar_was_present = not MCPStateFile.read().is_empty()
 	if not _sidecar_was_present:
 		var has_nondefault_ps := false
 		for feature in MCPFeatureRegistry.all_features():
@@ -379,8 +381,8 @@ func _poll_feature_states() -> void:
 
 	# P2: Sidecar recovery — recreate from PS if missing (covers manual
 	# deletion). Runs before profile enforcement so locked profiles can
-	# also recover.
-	if not FileAccess.file_exists(MCPStateFile.get_path()):
+	# also recover.  Use read() — file_exists() can lie on Windows.
+	if MCPStateFile.read().is_empty():
 		_bootstrap_sidecar_from_ps()
 		if _sidecar_was_present:
 			# Bootstrap just succeeded — notify dock and bridge.
