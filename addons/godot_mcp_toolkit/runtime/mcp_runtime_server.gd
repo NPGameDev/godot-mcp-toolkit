@@ -399,14 +399,20 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	# source == "file" — original log-file reader.
 	var log_path := "user://logs/godot.log"
 	if not FileAccess.file_exists(log_path):
-		_send_result(peer, id, {
-			"lines": [],
-			"count": 0,
-			"total": 0,
-			"path": log_path,
-			"source": "file",
-			"note": "log file not yet written — new game with no prints, or flush_stdout_on_print disabled",
-		})
+		var file_logging_enabled: bool = ProjectSettings.get_setting(
+			"debug/file_logging/enable_file_logging", false)
+		if not file_logging_enabled:
+			_send_result(peer, id, MCPError.make("LOG_UNAVAILABLE",
+				"file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart; alternatively use source=\"buffer\" (default) which captures all output in real-time"))
+		else:
+			_send_result(peer, id, {
+				"lines": [],
+				"count": 0,
+				"total": 0,
+				"path": log_path,
+				"source": "file",
+				"note": "log file not yet written — new game with no prints, or file flush pending",
+			})
 		return
 
 	var file := FileAccess.open(log_path, FileAccess.READ)
