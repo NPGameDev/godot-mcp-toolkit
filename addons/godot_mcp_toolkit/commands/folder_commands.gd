@@ -110,7 +110,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("DELETE_FAILED",
 			"DirAccess.remove returned %d (path=%s)" % [top_remove, folder_path])
 	if recursive and (file_count + subdir_count) > 0:
-		push_warning("MCP: folder.delete recursive %s (%d files, %d subdirs)" % [
+		push_warning("[MCPTools] folder.delete recursive %s (%d files, %d subdirs)" % [
 			folder_path, files_deleted, dirs_deleted])
 	return {
 		"success": true,

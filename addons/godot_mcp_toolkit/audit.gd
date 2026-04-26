@@ -29,7 +29,7 @@ static func log_call(method: String, parameters: Dictionary) -> void:
 			dir.make_dir_recursive("addons/godot_mcp_toolkit")
 		file = FileAccess.open(_LOG_PATH, FileAccess.WRITE)
 	if file == null:
-		push_warning("MCP audit: could not open %s (err %d)" % [
+		push_warning("[MCPAudit] could not open %s (err %d)" % [
 			_LOG_PATH, FileAccess.get_open_error()])
 		return
 	file.store_string(line)

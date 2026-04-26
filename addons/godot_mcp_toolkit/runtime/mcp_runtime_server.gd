@@ -792,7 +792,6 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 # this handler blocks unless PS is also on.
 const _GAME_EVAL_LOG_CAP := 256
 
-
 func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
 	if not MCPFeatureGate.is_enabled("game_eval"):
 		_send_result(peer, id, MCPFeatureGate.disabled_error("game_eval"))
@@ -808,7 +807,7 @@ func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
 	var truncated := code.substr(0, _GAME_EVAL_LOG_CAP)
 	if code.length() > _GAME_EVAL_LOG_CAP:
 		truncated += "...[+%d chars]" % (code.length() - _GAME_EVAL_LOG_CAP)
-	print("[game.eval] %s" % truncated)
+	print("[MCPTools] game.eval: %s" % truncated)
 
 	var scope_node: Node = null
 	var scope_path := str(params.get("scope_path", ""))

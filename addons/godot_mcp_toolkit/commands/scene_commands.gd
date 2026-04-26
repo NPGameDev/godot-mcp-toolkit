@@ -144,7 +144,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		if mkdir_err != OK:
 			return MCPError.make("PARENT_NOT_FOUND",
 				"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
-		push_warning("MCP: auto-created directory %s for scene.create" % parent_dir)
+		push_warning("[MCPTools] auto-created directory %s for scene.create" % parent_dir)
 		dirs_created = true
 
 	var resolved_kind := ""
@@ -188,7 +188,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 						previous_root_type = "<empty>"
 					else:
 						previous_root_type = str(state.get_node_type(0))
-				push_warning("MCP: scene.create replacing %s (was root=%s, now root=%s)" % [
+				push_warning("[MCPTools] scene.create replacing %s (was root=%s, now root=%s)" % [
 					file_path, previous_root_type, root_type])
 
 	var root: Node = null

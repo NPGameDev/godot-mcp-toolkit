@@ -44,7 +44,7 @@ static func _load_one(filename: String, registry: MCPCommandRegistry, server: No
 	var path := CUSTOM_DIR.path_join(filename)
 	var script: GDScript = load(path) as GDScript
 	if script == null:
-		push_warning("MCP: failed to load user command script: %s" % filename)
+		push_warning("[MCPTools] failed to load user command script: %s" % filename)
 		return false
 	var before: Array = registry.get_all_methods()
 	# User scripts may use static register() or instance register().
@@ -55,7 +55,7 @@ static func _load_one(filename: String, registry: MCPCommandRegistry, server: No
 		if instance.has_method("register"):
 			instance.register(registry, server)
 		else:
-			push_warning("MCP: user command '%s' missing register(registry, server) — skipped" % filename)
+			push_warning("[MCPTools] user command '%s' missing register(registry, server) — skipped" % filename)
 			return false
 	# Validate newly registered methods against reserved namespaces.
 	var after: Array = registry.get_all_methods()
@@ -67,14 +67,14 @@ static func _load_one(filename: String, registry: MCPCommandRegistry, server: No
 		for prefix: String in RESERVED_PREFIXES:
 			if method.begins_with(prefix):
 				registry.remove(method)
-				push_warning("MCP: user command '%s' rejected: '%s' uses reserved namespace '%s*'" % [filename, method, prefix])
+				push_warning("[MCPTools] user command '%s' rejected: '%s' uses reserved namespace '%s*'" % [filename, method, prefix])
 				rejected = true
 				break
 		if not rejected:
 			registry.mark_user(method)
 			new_count += 1
 	if new_count == 0:
-		push_warning("MCP: user command '%s' registered zero new commands" % filename)
+		push_warning("[MCPTools] user command '%s' registered zero new commands" % filename)
 		return false
 	return true
 

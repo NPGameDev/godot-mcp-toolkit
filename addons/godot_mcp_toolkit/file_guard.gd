@@ -45,7 +45,7 @@ static func _load_user_whitelist() -> Variant:
 		for entry in entries:
 			var s := str(entry)
 			if s == "" or s == "/" or s.find("..") != -1:
-				push_warning("MCP: whitelist entry '%s' in '%s' rejected — too broad or contains .." % [s, mode])
+				push_warning("[MCPTools] whitelist entry '%s' in '%s' rejected — too broad or contains .." % [s, mode])
 				continue
 			clean.append(s)
 		parsed[mode] = clean

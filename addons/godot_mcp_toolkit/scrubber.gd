@@ -30,5 +30,5 @@ static func scrub(text: String, source: String = "") -> Dictionary:
 		redaction_count += matches.size()
 		out = regex.sub(out, "[REDACTED]", true)
 	if redaction_count > 0 and not source.is_empty():
-		push_warning("MCP scrubber: %d redactions applied to %s" % [redaction_count, source])
+		push_warning("[MCPScrubber] %d redactions applied to %s" % [redaction_count, source])
 	return {"text": out, "redaction_count": redaction_count}

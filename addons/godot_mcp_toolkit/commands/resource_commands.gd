@@ -173,7 +173,7 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 		if mkdir_err != OK:
 			return MCPError.make("PARENT_NOT_FOUND",
 				"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
-		push_warning("MCP: auto-created directory %s for resource.write" % parent_dir)
+		push_warning("[MCPTools] auto-created directory %s for resource.write" % parent_dir)
 		dirs_created = true
 	var resolved_kind := ""
 	var global_entry: Dictionary = {}

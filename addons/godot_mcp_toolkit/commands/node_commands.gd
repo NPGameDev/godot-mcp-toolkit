@@ -223,7 +223,7 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var coerced_args = MCPCoerce.coerce_value(args_raw)
 	if typeof(coerced_args) != TYPE_ARRAY:
 		coerced_args = []
-	push_warning("MCP: node.call_method invoked %s.%s(%d args)" % [
+	print("[MCPTools] node.call_method invoked %s.%s(%d args)" % [
 		node_path, method_name, (coerced_args as Array).size()])
 	var result = node.callv(method_name, coerced_args)
 
