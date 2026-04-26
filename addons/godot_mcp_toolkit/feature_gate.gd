@@ -43,6 +43,8 @@ static func _migrate_cache() -> void:
 
 ## Save current per-feature env var state before leaving Standard profile.
 static func snapshot_standard_gates() -> void:
+	if not MCPJsonSync.has_mcp_json():
+		return  # L3: don't overwrite valid cache with all-false
 	_migrate_cache()
 	var cache := {}
 	for feature in MCPFeatureRegistry.all_features():
