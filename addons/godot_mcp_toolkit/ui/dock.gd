@@ -6,11 +6,12 @@ extends VBoxContainer
 ## (no polling delay); a lightweight timer polls the runtime label
 ## during playtests so it updates without requiring server events.
 
-const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
-const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
-const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
-const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
+const MCPFeatureGate = _Hub.MCPFeatureGate
+const MCPJsonSync = _Hub.MCPJsonSync
+const MCPStateFile = _Hub.MCPStateFile
+const MCPRegistryClient = _Hub.MCPRegistryClient
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -513,22 +514,10 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 		_show_danger_confirmation(feature)
 		return
 
-	# Ensure .mcp.json exists — auto-create if missing.
-	var was_missing := not MCPJsonSync.has_mcp_json()
-	var ensure_err := MCPJsonSync.ensure_mcp_json()
-	if ensure_err != OK:
-		_toast("Failed to create .mcp.json (err %d)" % ensure_err, _TOAST_ERROR)
-		_feature_rows[feature]["check"].set_pressed_no_signal(not enabled)
-		return
-
-	# L2: Sync full state when .mcp.json was just created.
-	if was_missing:
-		_sync_full_state_to_mcp_json()
-
-	# Write to .mcp.json (source of truth).
-	var err := MCPJsonSync.set_env_var(str(entry["env_var"]), enabled)
+	# Write to sidecar (runtime source of truth).
+	var err := MCPStateFile.set_gate(str(entry["env_var"]), enabled)
 	if err != OK:
-		_toast("Could not update .mcp.json — file may be malformed.", _TOAST_WARNING)
+		_toast("Could not update gate state (err %d)" % err, _TOAST_WARNING)
 		_feature_rows[feature]["check"].set_pressed_no_signal(not enabled)
 		return
 
@@ -617,6 +606,7 @@ func _show_danger_confirmation(feature: String) -> void:
 
 
 ## L2: After .mcp.json is newly created, sync full profile + all gates.
+## Also seeds the sidecar so runtime state is immediately available.
 func _sync_full_state_to_mcp_json() -> void:
 	var profile: int = ProjectSettings.get_setting(
 		"mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
@@ -626,10 +616,14 @@ func _sync_full_state_to_mcp_json() -> void:
 		PROFILE_POWER_USER: profile_str = "power_user"
 		_: profile_str = "standard"
 	MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", profile_str)
+	var gates := {}
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
 		MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+		gates[str(entry["env_var"])] = ps_on
+	# Seed sidecar alongside .mcp.json.
+	MCPStateFile.write(profile_str, gates)
 
 
 # ---------------------------------------------------------------------------
@@ -706,42 +700,25 @@ func _apply_profile(new_profile: int) -> void:
 
 	match new_profile:
 		PROFILE_MINIMAL:
-			# Write .mcp.json (source of truth) + sync PS mirrors.
+			# Sync PS mirrors + write sidecar (runtime source of truth).
 			for feature in MCPFeatureRegistry.all_features():
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				ProjectSettings.set_setting(str(entry["ps_key"]), false)
-			if MCPJsonSync.has_mcp_json():
-				for feature in MCPFeatureRegistry.all_features():
-					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-					var err := MCPJsonSync.set_env_var(str(entry["env_var"]), false)
-					if err != OK:
-						push_warning("_apply_profile: set_env_var(%s) failed: %d" % [entry["env_var"], err])
-				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
-			else:
-				_offer_create_mcp_json(new_profile)
+			MCPStateFile.write("minimal", MCPStateFile.build_gates_dict(false))
 		PROFILE_STANDARD:
-			# Restore cached env vars to .mcp.json, then sync PS from .mcp.json.
+			# Restore cached gates to sidecar, then sync PS from sidecar.
 			MCPFeatureGate.restore_standard_gates()
-			if MCPJsonSync.has_mcp_json():
-				for feature in MCPFeatureRegistry.all_features():
-					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-					ProjectSettings.set_setting(str(entry["ps_key"]),
-						MCPJsonSync.is_gate_enabled(str(entry["env_var"])))
-				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
+			var sidecar_gates := MCPStateFile.get_current_gates()
+			for feature in MCPFeatureRegistry.all_features():
+				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+				var on: bool = sidecar_gates.get(str(entry["env_var"]), false) == true
+				ProjectSettings.set_setting(str(entry["ps_key"]), on)
 		PROFILE_POWER_USER:
-			# Write .mcp.json (source of truth) + sync PS mirrors.
+			# Sync PS mirrors + write sidecar (runtime source of truth).
 			for feature in MCPFeatureRegistry.all_features():
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				ProjectSettings.set_setting(str(entry["ps_key"]), true)
-			if MCPJsonSync.has_mcp_json():
-				for feature in MCPFeatureRegistry.all_features():
-					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-					var err := MCPJsonSync.set_env_var(str(entry["env_var"]), true)
-					if err != OK:
-						push_warning("_apply_profile: set_env_var(%s) failed: %d" % [entry["env_var"], err])
-				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
-			else:
-				_offer_create_mcp_json(new_profile)
+			MCPStateFile.write("power_user", MCPStateFile.build_gates_dict(true))
 
 	_previous_profile = new_profile
 	ProjectSettings.save()

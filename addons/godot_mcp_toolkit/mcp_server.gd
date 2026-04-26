@@ -12,6 +12,7 @@ signal command_received(method: String)
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const _MCPStateFile = _Hub.MCPStateFile
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
 
@@ -307,9 +308,24 @@ func _handle_auth(peer: WebSocketPeer, message: Dictionary) -> void:
 	if MCPAuth.validate(message, _session_token):
 		_peer_authed[peer] = true
 		var vi := Engine.get_version_info()
+		var state := _MCPStateFile.read()
+		var gates: Dictionary = state.get("gates", {})
+		var profile_str: String = state.get("profile", "")
+		# Fallback: if sidecar is empty, derive from PS + .mcp.json.
+		if gates.is_empty():
+			gates = _MCPStateFile.gates_from_ps()
+			profile_str = ""
+		if profile_str.is_empty():
+			var p: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", 1)
+			match p:
+				0: profile_str = "minimal"
+				2: profile_str = "power_user"
+				_: profile_str = "standard"
 		peer.send_text(JSON.stringify({
 			"authed": true,
 			"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
+			"profile": profile_str,
+			"gates": gates,
 		}))
 		if _peer_authed.size() == 1:
 			_lower_unfocused_sleep()

@@ -1,15 +1,19 @@
 @tool
 extends RefCounted
-## FeatureGate — .mcp.json env-var gate check for unsafe features.
+## FeatureGate — gate check for unsafe features.
 ##
-## Gate state lives solely in .mcp.json env vars (read via MCPJsonSync).
+## Runtime gate state lives in the sidecar (.godot/mcp_toolkit_state.json)
+## with .mcp.json env vars as a migration fallback.
 ## Profile mode (Minimal/Standard/Power User) and admin deny keys
 ## (deny_<feature>) remain in ProjectSettings as overrides.
 ##
-## Check order: deny (PS) → profile (PS) → env var (.mcp.json).
+## Check order: deny (PS) → profile (PS) → sidecar gate.
 
+# Direct preloads (not via _Hub) to avoid circular dependency —
+# _hub.gd preloads this file.
 const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const MCPStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
 
 
 static func is_enabled(feature: String) -> bool:
@@ -24,8 +28,12 @@ static func is_enabled(feature: String) -> bool:
 		return false
 	if profile == 2:  # Power User — all gates enabled.
 		return true
-	# Standard — .mcp.json env var is the sole gate check.
-	return MCPJsonSync.is_gate_enabled(str(entry["env_var"]))
+	# Standard — sidecar is the runtime source of truth, .mcp.json as fallback.
+	var env_var: String = str(entry["env_var"])
+	var sidecar_gates := MCPStateFile.get_current_gates()
+	if sidecar_gates.has(env_var):
+		return sidecar_gates[env_var] == true
+	return MCPJsonSync.is_gate_enabled(env_var)
 
 
 ## File-backed cache for Standard-profile feature states.
@@ -41,23 +49,36 @@ static func _migrate_cache() -> void:
 			dir.rename("mcp_power_user_cache.json", "mcp_standard_gates_cache.json")
 
 
-## Save current per-feature env var state before leaving Standard profile.
+## Save current per-feature gate state before leaving Standard profile.
 static func snapshot_standard_gates() -> void:
-	if not MCPJsonSync.has_mcp_json():
-		return  # L3: don't overwrite valid cache with all-false
 	_migrate_cache()
+	var sidecar_gates := MCPStateFile.get_current_gates()
 	var cache := {}
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		cache[feature] = MCPJsonSync.is_gate_enabled(str(entry["env_var"]))
+		var env_var: String = str(entry["env_var"])
+		if sidecar_gates.has(env_var):
+			cache[feature] = sidecar_gates[env_var] == true
+		elif MCPJsonSync.has_mcp_json():
+			cache[feature] = MCPJsonSync.is_gate_enabled(env_var)
+		else:
+			cache[feature] = false
+	# L3: don't overwrite valid cache with all-false.
+	var any_on := false
+	for v in cache.values():
+		if v:
+			any_on = true
+			break
+	if not any_on and has_standard_cache():
+		return
 	var f := FileAccess.open(_CACHE_PATH, FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(cache))
 		f.close()
 
 
-## Restore per-feature env var state from the cache. Writes env vars
-## back to .mcp.json. Deletes the cache file. Returns the cache dict.
+## Restore per-feature gate state from the cache. Writes gates to the
+## sidecar. Deletes the cache file. Returns the cache dict.
 static func restore_standard_gates() -> Dictionary:
 	_migrate_cache()
 	var cache: Dictionary = {}
@@ -68,19 +89,15 @@ static func restore_standard_gates() -> Dictionary:
 			f.close()
 			if typeof(parsed) == TYPE_DICTIONARY:
 				cache = parsed
-	# L3: Ensure .mcp.json exists before writing env vars.
-	var ensure_err := MCPJsonSync.ensure_mcp_json()
-	if ensure_err != OK:
-		push_warning("restore_standard_gates: could not create .mcp.json (err %d)" % ensure_err)
-		return cache  # Keep cache — don't delete on failure
-	var all_ok := true
+	# Build full gates dict from cache and write to sidecar in one pass.
+	var gates := {}
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var was_on: bool = bool(cache.get(feature, false))
-		if MCPJsonSync.set_env_var(str(entry["env_var"]), was_on) != OK:
-			all_ok = false
-	if not all_ok:
-		push_warning("restore_standard_gates: some env-var writes failed")
+		gates[str(entry["env_var"])] = was_on
+	var err := MCPStateFile.write("standard", gates)
+	if err != OK:
+		push_warning("[MCPStateFile] restore_standard_gates: sidecar write failed (err %d)" % err)
 	return cache
 
 

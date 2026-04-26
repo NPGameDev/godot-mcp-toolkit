@@ -11,7 +11,8 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPFeatureGate = _Hub.MCPFeatureGate
 const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
-const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const MCPJsonSync = _Hub.MCPJsonSync
+const MCPStateFile = _Hub.MCPStateFile
 
 const _LIMITS_NOTE_KEY := "mcp_toolkit/limits/env_override_note"
 const _LIMITS_NOTE_TEXT := (
@@ -42,6 +43,8 @@ var _last_profile: int = PROFILE_STANDARD
 var _last_feature_states: Dictionary = {}  # { ps_key: bool } — snapshot for change detection
 var _last_mcp_enforce_msec: int = 0  # throttle for periodic .mcp.json enforcement
 var _last_mcp_json_present: bool = false  # L1: track .mcp.json presence transitions
+var _sidecar_was_present: bool = false  # P2: detect sidecar loss (.godot/ deletion)
+var _last_mcp_json_check_msec: int = 0  # throttle for periodic .mcp.json external-edit checks
 var _events: RefCounted = null  # GateEvents signal bus
 
 # P1: Cached .mcp.json env vars — reduces file I/O from ~420/sec to ~1/2s.
@@ -62,8 +65,15 @@ func register_all() -> void:
 	_register_audit()
 	_last_profile = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	_last_mcp_json_present = MCPJsonSync.has_mcp_json()
+	# P3: Bootstrap sidecar from .mcp.json on first load (migration).
+	_sidecar_was_present = FileAccess.file_exists(MCPStateFile.get_path())
+	if not _sidecar_was_present and _last_mcp_json_present:
+		_bootstrap_sidecar_from_mcp_json()
+	elif not _sidecar_was_present:
+		# No .mcp.json either — seed sidecar from PS bools.
+		_bootstrap_sidecar_from_ps()
 	snapshot_feature_states()
-	# Startup enforcement: correct stale .mcp.json env vars for locked profiles.
+	# Startup enforcement: correct stale sidecar for locked profiles.
 	_enforce_profile_env_vars()
 
 
@@ -104,6 +114,35 @@ func _read_mcp_env() -> Dictionary:
 
 func _invalidate_mcp_env_cache() -> void:
 	_mcp_env_cache_valid = false
+
+
+## P3: Bootstrap sidecar from .mcp.json env vars (one-time migration).
+func _bootstrap_sidecar_from_mcp_json() -> void:
+	var mcp_env := MCPJsonSync.get_all_env_vars()
+	var profile_str: String = str(mcp_env.get("GODOT_MCP_PROFILE", "standard"))
+	if profile_str.is_empty():
+		profile_str = "standard"
+	var gates := {}
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		gates[str(entry["env_var"])] = mcp_env.get(str(entry["env_var"]), "") == "1"
+	MCPStateFile.write(profile_str, gates)
+	_sidecar_was_present = true
+	print("[MCPStateFile] bootstrapped sidecar from .mcp.json (profile=%s)" % profile_str)
+
+
+## Seed sidecar from current ProjectSettings bools when neither .mcp.json
+## nor sidecar exists (fresh install, or after .godot/ + .mcp.json deletion).
+func _bootstrap_sidecar_from_ps() -> void:
+	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
+	var profile_str: String
+	match profile:
+		PROFILE_MINIMAL: profile_str = "minimal"
+		PROFILE_POWER_USER: profile_str = "power_user"
+		_: profile_str = "standard"
+	MCPStateFile.write(profile_str, MCPStateFile.gates_from_ps())
+	_sidecar_was_present = true
+	print("[MCPStateFile] seeded sidecar from ProjectSettings (profile=%s)" % profile_str)
 
 
 # -- Registration helpers -----------------------------------------------------
@@ -231,23 +270,18 @@ func _sync_profile_change(new_profile: int, old_profile: int) -> void:
 		for feature in MCPFeatureRegistry.all_features():
 			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 			ProjectSettings.set_setting(str(entry["ps_key"]), false)
-		if MCPJsonSync.has_mcp_json():
-			for feature in MCPFeatureRegistry.all_features():
-				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-				MCPJsonSync.set_env_var(str(entry["env_var"]), false)
-			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
-			_invalidate_mcp_env_cache()
+		MCPStateFile.write("minimal", MCPStateFile.build_gates_dict(false))
+		_invalidate_mcp_env_cache()
 
 	elif new_profile == PROFILE_STANDARD:
 		MCPFeatureGate.restore_standard_gates()
 		_invalidate_mcp_env_cache()
-		# Sync PS from .mcp.json (restore writes env vars there).
-		if MCPJsonSync.has_mcp_json():
-			for feature in MCPFeatureRegistry.all_features():
-				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-				ProjectSettings.set_setting(str(entry["ps_key"]),
-					MCPJsonSync.is_gate_enabled(str(entry["env_var"])))
-			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
+		# Sync PS from sidecar (restore writes gates there).
+		var sidecar_gates := MCPStateFile.get_current_gates()
+		for feature in MCPFeatureRegistry.all_features():
+			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+			var on: bool = sidecar_gates.get(str(entry["env_var"]), false) == true
+			ProjectSettings.set_setting(str(entry["ps_key"]), on)
 
 	_update_status_text()
 	ProjectSettings.save()
@@ -298,11 +332,7 @@ func _confirm_power_user_from_ps(old_profile: int) -> void:
 		for feat in MCPFeatureRegistry.all_features():
 			var ent: Dictionary = MCPFeatureRegistry.get_entry(feat)
 			ProjectSettings.set_setting(str(ent["ps_key"]), true)
-		if MCPJsonSync.has_mcp_json():
-			for feat in MCPFeatureRegistry.all_features():
-				var ent: Dictionary = MCPFeatureRegistry.get_entry(feat)
-				MCPJsonSync.set_env_var(str(ent["env_var"]), true)
-			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
+		MCPStateFile.write("power_user", MCPStateFile.build_gates_dict(true))
 		_last_profile = PROFILE_POWER_USER
 		_invalidate_mcp_env_cache()
 		_update_status_text()
@@ -332,27 +362,22 @@ func _confirm_power_user_from_ps(old_profile: int) -> void:
 ## Corrects manual .mcp.json edits that would desync the TS server's tool
 ## catalogue from the plugin-side gate checks.
 func _enforce_profile_env_vars() -> void:
-	if not MCPJsonSync.has_mcp_json():
-		return
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	if profile == PROFILE_STANDARD:
 		return  # Standard: user-controlled, no enforcement.
-	var env := MCPJsonSync.get_all_env_vars()
+	var expected_on: bool = (profile == PROFILE_POWER_USER)
+	var sidecar_gates := MCPStateFile.get_current_gates()
 	var needs_fix := false
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var env_var: String = entry["env_var"]
-		if profile == PROFILE_POWER_USER and env.get(env_var, "") != "1":
-			needs_fix = true
-			break
-		elif profile == PROFILE_MINIMAL and env.has(env_var):
+		if sidecar_gates.get(env_var, false) != expected_on:
 			needs_fix = true
 			break
 	if not needs_fix:
 		return
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		MCPJsonSync.set_env_var(str(entry["env_var"]), profile == PROFILE_POWER_USER)
+	var profile_str: String = "power_user" if expected_on else "minimal"
+	MCPStateFile.write(profile_str, MCPStateFile.build_gates_dict(expected_on))
 	_invalidate_mcp_env_cache()
 	_emit_config_reloaded()
 
@@ -430,10 +455,16 @@ func _poll_feature_states() -> void:
 			_enforce_profile_env_vars()
 		return
 
-	# Standard: bidirectional sync between PS bools and .mcp.json env vars.
-	var mcp_env := _read_mcp_env()  # P1: cached, ~1 read per 2s
+	# P2: Detect sidecar loss (.godot/ deletion) — recreate from PS bools.
+	var sidecar_exists := FileAccess.file_exists(MCPStateFile.get_path())
+	if _sidecar_was_present and not sidecar_exists:
+		_bootstrap_sidecar_from_ps()
+	_sidecar_was_present = sidecar_exists or _sidecar_was_present
+
+	# Standard: bidirectional sync between PS bools and sidecar.
+	var sidecar_gates := MCPStateFile.get_current_gates()
 	var ps_changed := false
-	var mcp_changed := false
+	var sidecar_changed := false
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var ps_key: String = entry["ps_key"]
@@ -448,23 +479,45 @@ func _poll_feature_states() -> void:
 					_last_feature_states[ps_key] = false
 					_show_ps_danger_confirmation(feature, ps_key, env_var)
 					continue
-			# PS changed by user (Inspector toggle) → ensure .mcp.json and push.
-			MCPJsonSync.ensure_mcp_json()
-			MCPJsonSync.set_env_var(env_var, ps_current)
+			# PS changed by user (Inspector toggle) → write to sidecar.
+			MCPStateFile.set_gate(env_var, ps_current)
 			_invalidate_mcp_env_cache()
 			_last_feature_states[ps_key] = ps_current
 			ps_changed = true
-		elif mcp_present:
-			# Check if .mcp.json changed (dock toggle / external edit) → pull to PS.
+		else:
+			# Check if sidecar changed (dock toggle) → pull to PS.
+			var sidecar_on: bool = sidecar_gates.get(env_var, false) == true
+			if sidecar_on != ps_current:
+				ProjectSettings.set_setting(ps_key, sidecar_on)
+				_last_feature_states[ps_key] = sidecar_on
+				sidecar_changed = true
+
+	# Periodically check .mcp.json for external edits (~every 4s).
+	var now := Time.get_ticks_msec()
+	if mcp_present and now - _last_mcp_json_check_msec >= 4000:
+		_last_mcp_json_check_msec = now
+		var mcp_env := _read_mcp_env()
+		for feature in MCPFeatureRegistry.all_features():
+			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+			var env_var: String = entry["env_var"]
 			var mcp_on: bool = mcp_env.get(env_var, "") == "1"
-			if mcp_on != ps_current:
-				ProjectSettings.set_setting(ps_key, mcp_on)
-				_last_feature_states[ps_key] = mcp_on
-				mcp_changed = true
+			var sidecar_on: bool = sidecar_gates.get(env_var, false) == true
+			if mcp_on != sidecar_on:
+				# External .mcp.json edit — sync to sidecar + PS.
+				MCPStateFile.set_gate(env_var, mcp_on)
+				ProjectSettings.set_setting(str(entry["ps_key"]), mcp_on)
+				_last_feature_states[str(entry["ps_key"])] = mcp_on
+				sidecar_changed = true
+		# Also check profile in .mcp.json.
+		var mcp_profile: String = str(mcp_env.get("GODOT_MCP_PROFILE", ""))
+		var sidecar_profile := MCPStateFile.get_profile()
+		if not mcp_profile.is_empty() and mcp_profile != sidecar_profile:
+			MCPStateFile.set_profile(mcp_profile)
+
 	if ps_changed:
 		_emit_features_changed()
 		_emit_config_reloaded()
-	elif mcp_changed:
+	elif sidecar_changed:
 		_emit_features_changed()
 		_emit_config_reloaded()
 
@@ -494,8 +547,7 @@ func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: Stri
 	_ps_danger_dialog.confirmed.connect(func():
 		MCPFeatureGate.mark_warned(feature)
 		ProjectSettings.set_setting(ps_key, true)
-		MCPJsonSync.ensure_mcp_json()
-		MCPJsonSync.set_env_var(env_var, true)
+		MCPStateFile.set_gate(env_var, true)
 		_invalidate_mcp_env_cache()
 		_last_feature_states[ps_key] = true
 		ProjectSettings.save()
