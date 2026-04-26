@@ -29,36 +29,45 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 	var wait_for_runtime_raw = parameters.get("wait_for_runtime", true)
 	var wait_for_runtime := bool(wait_for_runtime_raw) \
 		if typeof(wait_for_runtime_raw) == TYPE_BOOL else true
+	var runtime_poll_raw = parameters.get("runtime_poll", false)
+	var runtime_poll := bool(runtime_poll_raw) \
+		if typeof(runtime_poll_raw) == TYPE_BOOL else false
 
-	if EditorInterface.is_playing_scene():
-		return MCPError.make("ALREADY_PLAYING",
-			"a game is already running; call game.stop first")
+	if runtime_poll:
+		if not EditorInterface.is_playing_scene():
+			return MCPError.make("GAME_NOT_RUNNING",
+				"no game is running; call game.start first")
+	else:
+		if EditorInterface.is_playing_scene():
+			return MCPError.make("ALREADY_PLAYING",
+				"a game is already running; call game.stop first, or use runtime_poll:true to re-probe the runtime connection")
 
-	match target:
-		"main":
-			EditorInterface.play_main_scene()
-		"current":
-			if EditorInterface.get_edited_scene_root() == null:
-				return MCPError.make("NO_SCENE",
-					"no currently-edited scene; use target:'main' or target:<res://path>, or scene.open first")
-			EditorInterface.play_current_scene()
-		_:
-			var guard := MCPFileGuard.resolve_safe(target)
-			if guard["error"] != null:
-				return MCPError.make("PATH_DENIED", str(guard["reason"]))
-			if target.get_extension().to_lower() != "tscn":
-				return MCPError.make("INVALID_PATH",
-					"game.start only plays .tscn files (got %s)" % target)
-			if not FileAccess.file_exists(target):
-				return MCPError.make("NOT_FOUND",
-					"no scene file at %s; use scene.create first" % target, MCPError.HINT_FILE_PATH)
-			EditorInterface.play_custom_scene(target)
+		match target:
+			"main":
+				EditorInterface.play_main_scene()
+			"current":
+				if EditorInterface.get_edited_scene_root() == null:
+					return MCPError.make("NO_SCENE",
+						"no currently-edited scene; use target:'main' or target:<res://path>, or scene.open first")
+				EditorInterface.play_current_scene()
+			_:
+				var guard := MCPFileGuard.resolve_safe(target)
+				if guard["error"] != null:
+					return MCPError.make("PATH_DENIED", str(guard["reason"]))
+				if target.get_extension().to_lower() != "tscn":
+					return MCPError.make("INVALID_PATH",
+						"game.start only plays .tscn files (got %s)" % target)
+				if not FileAccess.file_exists(target):
+					return MCPError.make("NOT_FOUND",
+						"no scene file at %s; use scene.create first" % target, MCPError.HINT_FILE_PATH)
+				EditorInterface.play_custom_scene(target)
 
 	# Two-phase wait — poll registry for the runtime_port to appear (the
-	# runtime server writes it after binding), then TCP-probe it.
+	# runtime server writes it after binding), then WS health-check it.
 	var runtime_port := -1
 	var runtime_ready := false
-	if wait_for_runtime:
+	var runtime_failure := ""
+	if wait_for_runtime or runtime_poll:
 		var deadline := Time.get_ticks_msec() + RUNTIME_POLL_TIMEOUT_MS
 		while Time.get_ticks_msec() < deadline:
 			runtime_port = MCPRegistryClient.get_runtime_port()
@@ -67,8 +76,13 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 			OS.delay_msec(_REGISTRY_POLL_INTERVAL_MS)
 		if runtime_port > 0:
 			var remaining := maxi(500, deadline - Time.get_ticks_msec())
-			runtime_ready = _poll_runtime_ready(
+			var probe := _poll_runtime_ready(
 				RUNTIME_HOST, runtime_port, remaining)
+			runtime_ready = probe["ready"]
+			if not runtime_ready:
+				runtime_failure = str(probe.get("failure", "unknown"))
+		else:
+			runtime_failure = "registry_timeout"
 
 	var response := {
 		"success": true,
@@ -76,8 +90,23 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 		"runtime_port": runtime_port if runtime_port > 0 else null,
 		"runtime_ready": runtime_ready,
 	}
-	if wait_for_runtime and not runtime_ready:
-		response["hint"] = "Runtime not ready. Checklist: (1) Is the MCP Runtime autoload enabled? Re-enable the plugin in Project Settings > Plugins if missing. (2) Is port 6525 available? (3) Check editor_get_console for runtime startup errors. (4) For Standard profile: call enable_tool_group(['runtime']) to load runtime tools."
+	if runtime_poll:
+		response["runtime_poll"] = true
+	if (wait_for_runtime or runtime_poll) and not runtime_ready:
+		response["runtime_failure"] = runtime_failure
+		match runtime_failure:
+			"registry_timeout":
+				response["hint"] = "Runtime port never appeared in registry — the MCP Runtime autoload may not be enabled. Re-enable the plugin in Project Settings > Plugins, or check editor_get_console for startup errors."
+			"token_read_failed":
+				response["hint"] = "Could not read auth token — the token file may be missing or empty. Re-enable the plugin in Project Settings > Plugins."
+			"ws_connect_timeout":
+				response["hint"] = "Port %d found but WebSocket connection failed — the runtime server may have crashed on startup. Check editor_get_console for errors." % runtime_port
+			"auth_timeout":
+				response["hint"] = "WebSocket connected but auth handshake timed out — the token may be stale. Re-enable the plugin in Project Settings > Plugins to regenerate it."
+			"ping_timeout":
+				response["hint"] = "Authenticated but ping/pong timed out — the runtime server may be overloaded. Use runtime_poll:true to retry without restarting the game."
+			_:
+				response["hint"] = "Runtime not ready (%s). Checklist: (1) Is the MCP Runtime autoload enabled? (2) Is port 6525 available? (3) Check editor_get_console for errors. (4) For Standard profile: call enable_tool_group(['runtime']) to load runtime tools." % runtime_failure
 	return response
 
 
@@ -93,18 +122,22 @@ static func _cmd_game_stop(_parameters: Dictionary) -> Dictionary:
 ## WebSocket health-check: connect, authenticate, send ping, wait for response.
 ## Only reports true when the full JSON-RPC layer is operational (no false
 ## positives from a TCP-only probe).
+## Returns {"ready": true} on success, or {"ready": false, "failure": <stage>}
+## where stage is one of: token_read_failed, ws_connect_timeout, auth_timeout,
+## ping_timeout.
 static func _poll_runtime_ready(
 	host: String, port: int, timeout_ms: int,
-) -> bool:
+) -> Dictionary:
 	var token_path := MCPAuth.get_token_path()
 	var token_file := FileAccess.open(token_path, FileAccess.READ)
 	if token_file == null:
-		return false
+		return {"ready": false, "failure": "token_read_failed"}
 	var token := token_file.get_as_text().strip_edges()
 	token_file.close()
 	if token.is_empty():
-		return false
+		return {"ready": false, "failure": "token_read_failed"}
 
+	var furthest := "ws_connect_timeout"
 	var deadline := Time.get_ticks_msec() + timeout_ms
 	while Time.get_ticks_msec() < deadline:
 		var ws := WebSocketPeer.new()
@@ -125,6 +158,9 @@ static func _poll_runtime_ready(
 				OS.delay_msec(10)
 				continue
 
+			if furthest == "ws_connect_timeout":
+				furthest = "auth_timeout"
+
 			if not auth_sent:
 				ws.send_text(JSON.stringify({"auth": token}))
 				auth_sent = true
@@ -144,13 +180,14 @@ static func _poll_runtime_ready(
 						ws.send_text(JSON.stringify({
 							"jsonrpc": "2.0", "method": "ping", "id": 0}))
 						ping_sent = true
+						furthest = "ping_timeout"
 				else:
 					if msg.has("result"):
 						ws.close(1000)
-						return true
+						return {"ready": true}
 
 			OS.delay_msec(10)
 
 		ws.close()
 		OS.delay_msec(100)
-	return false
+	return {"ready": false, "failure": furthest}
