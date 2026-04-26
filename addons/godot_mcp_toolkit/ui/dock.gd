@@ -522,6 +522,7 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	ProjectSettings.set_setting(str(entry["ps_key"]), enabled)
 	ProjectSettings.save()
 
+	_ensure_mcp_json_with_state()
 	_refresh_features()
 	if _notifier != null:
 		_notifier.broadcast_config_reloaded()
@@ -623,6 +624,18 @@ func _sync_full_state_to_mcp_json() -> void:
 	MCPStateFile.write(profile_str, gates)
 
 
+## Create .mcp.json if missing and populate it with current gate state.
+## No-op when the file already exists. Called from toggle/profile paths
+## to fulfill the dock hint promise ("toggle any gate to create one").
+func _ensure_mcp_json_with_state() -> void:
+	if MCPJsonSync.has_mcp_json():
+		return
+	var err := MCPJsonSync.ensure_mcp_json()
+	if err != OK:
+		return
+	_sync_full_state_to_mcp_json()
+
+
 # ---------------------------------------------------------------------------
 # Profile switching
 # ---------------------------------------------------------------------------
@@ -719,6 +732,7 @@ func _apply_profile(new_profile: int) -> void:
 
 	_previous_profile = new_profile
 	ProjectSettings.save()
+	_ensure_mcp_json_with_state()
 	_refresh_features()
 	_refresh_status()
 	if _notifier != null:
@@ -726,21 +740,6 @@ func _apply_profile(new_profile: int) -> void:
 
 	if _events != null:
 		_events.profile_acknowledged.emit(new_profile)
-
-
-func _offer_create_mcp_json(profile: int) -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.exclusive = false
-	dialog.title = "No .mcp.json found"
-	dialog.dialog_text = "No .mcp.json found at project root.\nCreate it now?"
-	dialog.confirmed.connect(func():
-		write_mcp_json()
-		_sync_full_state_to_mcp_json()
-		dialog.queue_free()
-	)
-	dialog.canceled.connect(func(): dialog.queue_free())
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
 
 
 # ---------------------------------------------------------------------------
@@ -894,7 +893,8 @@ func _do_write_mcp_json(dest: String, content: String) -> void:
 		return
 	file.store_string(content)
 	file.close()
-	_toast("MCP: .mcp.json updated — restart your MCP client", _TOAST_INFO,
+	_sync_full_state_to_mcp_json()
+	_toast("MCP: .mcp.json created with current gate configuration", _TOAST_INFO,
 		"Wrote to " + dest)
 
 

@@ -394,7 +394,13 @@ func _poll_feature_states() -> void:
 		_last_mcp_json_present = mcp_present
 		_emit_features_changed()
 		_emit_status_changed()
-		if not mcp_present:
+		if mcp_present:
+			# .mcp.json just appeared — snapshot its values so the 4s
+			# external-edit check won't misidentify them as external edits.
+			_mcp_json_snapshot = MCPJsonSync.get_all_env_vars()
+			_invalidate_mcp_env_cache()
+		else:
+			_mcp_json_snapshot = {}
 			return  # No file — skip per-feature sync
 
 	# Enforce read-only text fields — revert any user edits immediately.
