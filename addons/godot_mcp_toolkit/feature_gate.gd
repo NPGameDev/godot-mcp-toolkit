@@ -79,10 +79,8 @@ static func restore_standard_gates() -> Dictionary:
 		var was_on: bool = bool(cache.get(feature, false))
 		if MCPJsonSync.set_env_var(str(entry["env_var"]), was_on) != OK:
 			all_ok = false
-	if all_ok:
-		DirAccess.remove_absolute(_CACHE_PATH)
-	else:
-		push_warning("restore_standard_gates: some writes failed; cache preserved")
+	if not all_ok:
+		push_warning("restore_standard_gates: some env-var writes failed")
 	return cache
 
 
