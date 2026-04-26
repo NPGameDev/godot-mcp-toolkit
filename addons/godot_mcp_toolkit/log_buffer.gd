@@ -30,6 +30,7 @@ static var _next_id: int = 0
 
 static var _use_logger: bool = false
 static var _setup_done: bool = false
+static var _logger_ref = null  # prevent GC — OS.add_logger() holds a raw C++ pointer
 
 # -- File-tail state (4.2-4.4 only) ------------------------------------------
 
@@ -140,10 +141,10 @@ static func _setup_logger() -> void:
 		_use_logger = false
 		_setup_file_tail()
 		return
-	var logger = script.new()
+	_logger_ref = script.new()
 	# Pass a reference to this script so the logger can call push().
-	logger.set_meta("_log_buffer", load("res://addons/godot_mcp_toolkit/log_buffer.gd"))
-	OS.add_logger(logger)
+	_logger_ref.set_meta("_log_buffer", load("res://addons/godot_mcp_toolkit/log_buffer.gd"))
+	OS.add_logger(_logger_ref)
 
 
 const _LOGGER_SOURCE := '
