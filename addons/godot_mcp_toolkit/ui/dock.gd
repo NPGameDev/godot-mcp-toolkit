@@ -222,7 +222,7 @@ func _build_ui() -> void:
 	fc.add_child(_feature_lock_warning)
 
 	_mcp_json_hint = Label.new()
-	_mcp_json_hint.text = "No .mcp.json found — use Project > Tools > MCP Toolkit: Write .mcp.json"
+	_mcp_json_hint.text = "No .mcp.json found — use Project > Tools > MCP Toolkit > Write .mcp.json"
 	_mcp_json_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_mcp_json_hint.add_theme_color_override("font_color", Color(1.0, 0.6, 0.3))
 	_mcp_json_hint.add_theme_font_size_override("font_size", 11)

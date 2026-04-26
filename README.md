@@ -64,7 +64,7 @@ In your Godot project root, create `.mcp.json`:
 
 </details>
 
-The plugin also offers **Project &rarr; Tools &rarr; MCP Toolkit: Write .mcp.json** to generate this file automatically.
+The plugin also offers **Project &rarr; Tools &rarr; MCP Toolkit &rarr; Write .mcp.json** to generate this file automatically.
 
 ### 4. Connect your AI assistant
 

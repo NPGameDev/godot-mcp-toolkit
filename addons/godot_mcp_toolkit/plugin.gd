@@ -41,13 +41,17 @@ const RUNTIME_AUTOLOAD_NAME := "MCPRuntimeServer"
 const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 
 # Data-driven menu / command-palette registration.
+# "label" is the command-palette name (prefixed for discoverability);
+# "menu_label" is the short name shown inside the Tools > MCP Toolkit submenu.
 const _ACTIONS := [
-	{"label": "MCP Toolkit: Regenerate Token", "key": "mcp/regenerate_token", "method": "_on_regen_token"},
-	{"label": "MCP Toolkit: Show Audit Log", "key": "mcp/show_audit_log", "method": "_on_show_audit"},
-	{"label": "MCP Toolkit: Open Project Settings", "key": "mcp/open_settings", "method": "_on_open_settings"},
-	{"label": "MCP Toolkit: Write .mcp.json", "key": "mcp/write_mcp_json", "method": "_on_write_mcp_json"},
-	{"label": "MCP Toolkit: Power User Mode", "key": "mcp/power_user_mode", "method": "_on_power_user_mode"},
+	{"label": "MCP Toolkit: Regenerate Token", "menu_label": "Regenerate Token", "key": "mcp/regenerate_token", "method": "_on_regen_token"},
+	{"label": "MCP Toolkit: Show Audit Log", "menu_label": "Show Audit Log", "key": "mcp/show_audit_log", "method": "_on_show_audit"},
+	{"label": "MCP Toolkit: Open Project Settings", "menu_label": "Open Project Settings", "key": "mcp/open_settings", "method": "_on_open_settings"},
+	{"label": "MCP Toolkit: Write .mcp.json", "menu_label": "Write .mcp.json", "key": "mcp/write_mcp_json", "method": "_on_write_mcp_json"},
+	{"label": "MCP Toolkit: Power User Mode", "menu_label": "Power User Mode", "key": "mcp/power_user_mode", "method": "_on_power_user_mode"},
 ]
+
+var _tool_submenu: PopupMenu = null
 
 var _server: Node = null
 var _export_plugin: EditorExportPlugin = null
@@ -220,8 +224,13 @@ func _disable_plugin() -> void:
 
 
 func _register_menus() -> void:
-	for action in _ACTIONS:
-		add_tool_menu_item(action["label"], Callable(self, action["method"]))
+	# Tools > MCP Toolkit submenu.
+	_tool_submenu = PopupMenu.new()
+	_tool_submenu.name = "MCPToolkitMenu"
+	for i in _ACTIONS.size():
+		_tool_submenu.add_item(_ACTIONS[i]["menu_label"], i)
+	_tool_submenu.id_pressed.connect(_on_submenu_id_pressed)
+	add_tool_submenu_item("MCP Toolkit", _tool_submenu)
 	# -- Command Palette (4.0+; guard anyway for safety) --
 	if EditorInterface.has_method("get_command_palette"):
 		var palette = EditorInterface.call("get_command_palette")
@@ -239,9 +248,19 @@ func _unregister_menus() -> void:
 		if palette != null:
 			for action in _ACTIONS:
 				palette.remove_command(action["key"])
-	# Menu items.
-	for action in _ACTIONS:
-		remove_tool_menu_item(action["label"])
+	# Submenu.
+	remove_tool_menu_item("MCP Toolkit")
+	if _tool_submenu != null:
+		_tool_submenu.queue_free()
+		_tool_submenu = null
+
+
+# -- Submenu router ------------------------------------------------------------
+
+
+func _on_submenu_id_pressed(id: int) -> void:
+	if id >= 0 and id < _ACTIONS.size():
+		Callable(self, _ACTIONS[id]["method"]).call()
 
 
 # -- Menu handlers -------------------------------------------------------------

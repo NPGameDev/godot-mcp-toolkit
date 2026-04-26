@@ -32,8 +32,8 @@ const _MINIMAL_WARNING_TEXT := (
 	+ "Only core read-only tools are available. "
 	+ "Individual gates cannot be changed — switch to Standard to toggle.")
 const _MCP_JSON_MISSING_TEXT := (
-	"No .mcp.json found — use 'MCP Toolkit: Write .mcp.json' from "
-	+ "Project > Tools menu to create one.")
+	"No .mcp.json found — use Project > Tools > MCP Toolkit > "
+	+ "Write .mcp.json to create one.")
 
 # Profile enum values — canonical definition in MCPFeatureRegistry.
 const PROFILE_MINIMAL := MCPFeatureRegistry.PROFILE_MINIMAL
