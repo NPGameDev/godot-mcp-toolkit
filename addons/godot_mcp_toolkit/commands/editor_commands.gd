@@ -323,9 +323,14 @@ static func _read_console_log(
 	# user://logs/ read is a narrow read-only exception to the res://-only rule.
 	# Path is internally constructed (not user-supplied), so no FileGuard gate.
 	var logs_dir := "user://logs"
+	var file_logging_enabled: bool = ProjectSettings.get_setting(
+		"debug/file_logging/enable_file_logging", false)
 	if not DirAccess.dir_exists_absolute(logs_dir):
+		if not file_logging_enabled:
+			return MCPError.make("LOG_UNAVAILABLE",
+				"file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor; alternatively use source=\"buffer\" (default) which captures all output in real-time")
 		return MCPError.make("LOG_UNAVAILABLE",
-			"no readable log file under user://logs/ (verify ProjectSettings 'application/config/use_file_logging' is true — default is true; playtest may have rotated the editor's log mid-session)")
+			"no log directory at user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
 
 	var all_files := DirAccess.get_files_at(logs_dir)
 	var log_files: Array[String] = []
@@ -333,14 +338,19 @@ static func _read_console_log(
 		if String(file_name).ends_with(".log"):
 			log_files.append(String(file_name))
 	if log_files.is_empty():
+		if not file_logging_enabled:
+			return MCPError.make("LOG_UNAVAILABLE",
+				"file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor; alternatively use source=\"buffer\" (default) which captures all output in real-time")
 		return MCPError.make("LOG_UNAVAILABLE",
-			"no readable log file under user://logs/ (verify ProjectSettings 'application/config/use_file_logging' is true — default is true; playtest may have rotated the editor's log mid-session)")
+			"no .log files under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
 
 	var plugin_boot_time: int = server.get("_plugin_boot_time") if server.get("_plugin_boot_time") != null else 0
 
 	var chosen_file := ""
 	var chosen_mtime: int = 0
 	var warnings: Array[String] = []
+	if not file_logging_enabled:
+		warnings.append("file logging is disabled — data may be stale from a previous session; use source=\"buffer\" for real-time output")
 
 	var godot_log := logs_dir + "/godot.log"
 	var godot_log_mtime: int = 0
@@ -375,11 +385,14 @@ static func _read_console_log(
 
 	if chosen_file == "":
 		return MCPError.make("LOG_UNAVAILABLE",
-			"no readable log file under user://logs/ (verify ProjectSettings 'application/config/use_file_logging' is true — default is true; playtest may have rotated the editor's log mid-session)")
+			"no readable log file under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging; playtest may have rotated the editor's log mid-session")
 
 	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
 	if file_handle == null:
 		var open_err := FileAccess.get_open_error()
+		if FileAccess.file_exists(chosen_file):
+			return MCPError.make("LOG_BUSY",
+				"log file exists but cannot be read right now (%s) — transient lock during file flush, retry in 1-2 seconds; consider using source=\"buffer\" instead" % _godot_error_name(open_err))
 		return MCPError.make("LOG_UNAVAILABLE",
 			"cannot open %s (%s)" % [chosen_file, _godot_error_name(open_err)])
 	var content := file_handle.get_as_text()

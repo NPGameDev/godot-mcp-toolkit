@@ -412,7 +412,12 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	var file := FileAccess.open(log_path, FileAccess.READ)
 	if file == null:
 		var open_err := FileAccess.get_open_error()
-		_send_result(peer, id, MCPError.make("READ_FAILED", "could not open %s (err %d)" % [log_path, open_err]))
+		if FileAccess.file_exists(log_path):
+			_send_result(peer, id, MCPError.make("LOG_BUSY",
+				"log file exists but cannot be read right now (err %d) — transient lock during flush, retry in 1-2s; consider source=\"buffer\" instead" % open_err))
+		else:
+			_send_result(peer, id, MCPError.make("LOG_UNAVAILABLE",
+				"log file disappeared at %s — possible log rotation; retry or use source=\"buffer\"" % log_path))
 		return
 	var text := file.get_as_text()
 	file.close()
