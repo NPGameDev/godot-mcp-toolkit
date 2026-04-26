@@ -4,15 +4,7 @@
 			"args": [
 				"C:/Users/nicol/OneDrive/Desktop/Personal/AIWithGodot/godot-mcp-server/dist/index.js"
 			],
-			"command": "node",
-			"env": {
-				"GODOT_MCP_ALLOW_GAME_EVAL": "1",
-				"GODOT_MCP_ALLOW_NODE_CALL_METHOD": "1",
-				"GODOT_MCP_ALLOW_OS_EXECUTE": "1",
-				"GODOT_MCP_ALLOW_OUTBOUND_HTTP": "1",
-				"GODOT_MCP_ALLOW_USER_SCOPE": "1",
-				"GODOT_MCP_PROFILE": "standard"
-			}
+			"command": "node"
 		}
 	}
 }
