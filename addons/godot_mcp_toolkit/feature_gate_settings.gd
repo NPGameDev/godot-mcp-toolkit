@@ -261,6 +261,10 @@ var _pu_confirm_dialog: ConfirmationDialog = null
 
 func _confirm_power_user_from_ps(old_profile: int) -> void:
 	if _pu_confirm_dialog != null and is_instance_valid(_pu_confirm_dialog):
+		# D1: dialog already pending — revert PS profile and tracking to
+		# prevent the enforcement loop from applying PU unconfirmed.
+		ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", old_profile)
+		_last_profile = old_profile
 		return
 	# Snapshot Standard gates IMMEDIATELY — before the poll loop can corrupt
 	# them.  The PS profile is already POWER_USER (user changed it in the
