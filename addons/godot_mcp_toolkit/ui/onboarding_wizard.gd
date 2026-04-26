@@ -13,15 +13,17 @@ const _STEP_COUNT := 5
 
 var _plugin: EditorPlugin
 var _dock: Control
+var _notifier: RefCounted = null  # GateNotifier
 var _dialog: AcceptDialog = null
 var _step: int = 0
 var _mcp_exists: bool = false  # Tracks .mcp.json state for step-1 variants.
 var _buttons: Array = []  # Tracked custom buttons for per-step cleanup.
 
 
-func _init(plugin: EditorPlugin, dock: Control) -> void:
+func _init(plugin: EditorPlugin, dock: Control, notifier: RefCounted = null) -> void:
 	_plugin = plugin
 	_dock = dock
+	_notifier = notifier
 
 
 func check_and_show() -> void:
@@ -38,6 +40,8 @@ func check_and_show() -> void:
 		if f != null:
 			_step = clampi(f.get_line().to_int(), 0, _STEP_COUNT - 1)
 			f.close()
+	if _notifier != null:
+		_notifier._wizard_active = true
 	_buttons.clear()
 	var dialog := AcceptDialog.new()
 	dialog.exclusive = false
@@ -58,6 +62,8 @@ func check_and_show() -> void:
 
 
 func free_if_open() -> void:
+	if _notifier != null:
+		_notifier._wizard_active = false
 	_buttons.clear()
 	if _dialog != null and is_instance_valid(_dialog):
 		_dialog.queue_free()

@@ -206,14 +206,13 @@ bypasses registry discovery entirely (backwards compat).
 - **Response limits** — configurable in the dock's "Response Limits" section.
   Script read cap (default 256 KB, min 64 KB) and WebSocket buffer (default
   1024 KB, min 256 KB). Stored in ProjectSettings `mcp/limits/`.
-- **Power User Mode** — sets `mcp/unsafe/allow_all = true` in ProjectSettings
-  (satisfies the PS side of every gate at once). Also writes all feature env
-  vars into `.mcp.json`. Explicit `deny_<feature>` still overrides `allow_all`.
-  Accessible from the dock, the Tools menu, the Command Palette, or the
-  first-run onboarding dialog.
-- **.mcp.json sync** — when toggling a dual-gated feature in the dock, the
-  plugin offers to add/remove the corresponding env var in `.mcp.json`.
-  Out-of-sync states show a warning icon in the dock's feature row.
+- **Power User Mode** — enables all feature gates via `.mcp.json` env vars
+  (source of truth) and syncs PS mirror bools. Explicit `deny_<feature>`
+  still overrides. Accessible from the dock, the Tools menu, the Command
+  Palette, or the first-run onboarding dialog.
+- **.mcp.json sync** — toggling any gate in the dock or PS Inspector
+  immediately writes the corresponding env var to `.mcp.json`. The dock
+  shows a warning when `.mcp.json` is missing.
 - **Plugin disable cleanup** — disabling the plugin via Project Settings →
   Plugins prompts to delete the orphaned `.mcp.json` at project root.
 - **Export stripping** — `EditorExportPlugin` auto-strips all
@@ -221,26 +220,35 @@ bypasses registry discovery entirely (backwards compat).
 - **EditorSettings** (per-user, not committed) — `mcp/personal/dock_default_visible`,
   `mcp/personal/audit_log_tail_lines`.
 
-## Feature gates (iter 19)
+## Feature gates (iter 19 + 41d-ter refactor)
 
 Seven features are gated behind explicit opt-in. By default all gates are
 **off** — gated tools are absent from the MCP catalogue entirely and
 plugin-side handlers return `FEATURE_DISABLED` as defence-in-depth.
 
-| Feature               | Gate type | Env var                                  | ProjectSettings key                        | Risk |
-|-----------------------|-----------|------------------------------------------|--------------------------------------------|------|
-| `game_eval`           | **dual**  | `GODOT_MCP_ALLOW_GAME_EVAL`             | `mcp/unsafe/allow_game_eval`               | Arbitrary GDScript via Expression |
-| `os_execute`          | **dual**  | `GODOT_MCP_ALLOW_OS_EXECUTE`            | `mcp/unsafe/allow_os_execute`              | Host-OS shell execution |
-| `project_set_setting` | **dual**  | `GODOT_MCP_ALLOW_PROJECT_SET_SETTING`   | `mcp/unsafe/allow_project_set_setting`     | Write arbitrary ProjectSettings keys |
-| `outbound_http`       | **dual**  | `GODOT_MCP_ALLOW_OUTBOUND_HTTP`         | `mcp/unsafe/allow_outbound_http`           | Outbound HTTP requests |
-| `node_call_method`    | single    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD`      | `mcp/unsafe/allow_node_call_method`        | Method invocation on edited-scene nodes |
-| `input_map_write`     | single    | `GODOT_MCP_ALLOW_INPUT_MAP_WRITE`       | `mcp/unsafe/allow_input_map_write`         | Modify persistent InputMap actions |
-| `read_user_scope`     | **dual**  | `GODOT_MCP_ALLOW_USER_SCOPE`            | `mcp/unsafe/allow_user_scope`              | Read/write whitelisted user:// paths |
+**Gate model (env-var-only):** `.mcp.json` env vars are the sole source of
+truth for gate state. ProjectSettings bools under
+`mcp_toolkit/feature_gates/` are a **mirror UI** — changes from the dock
+or PS Inspector sync bidirectionally with `.mcp.json`. There is no
+dual/single gate distinction; all gates follow the same check order:
 
-- **Dual gate** — BOTH env var (`=1`) AND ProjectSettings must be true.
-- **Single gate** — EITHER env var OR ProjectSettings suffices.
-- **Explicit deny** — Setting `mcp/unsafe/deny_<feature>` to `true` in
-  ProjectSettings always wins, regardless of other flags.
+1. **Deny** (PS) — `mcp_toolkit/feature_gates/deny_<feature>` always wins
+2. **Profile** (PS) — Minimal disables all; Power User enables all
+3. **Env var** (.mcp.json) — `GODOT_MCP_ALLOW_*=1` enables in Standard
+
+| Feature               | Env var                                  | PS mirror key                                      | Risk |
+|-----------------------|------------------------------------------|----------------------------------------------------|------|
+| `game_eval`           | `GODOT_MCP_ALLOW_GAME_EVAL`             | `mcp_toolkit/feature_gates/allow_game_eval`        | Arbitrary GDScript via Expression |
+| `os_execute`          | `GODOT_MCP_ALLOW_OS_EXECUTE`            | `mcp_toolkit/feature_gates/allow_os_execute`       | Host-OS shell execution |
+| `project_set_setting` | `GODOT_MCP_ALLOW_PROJECT_SET_SETTING`   | `mcp_toolkit/feature_gates/allow_project_set_setting` | Write arbitrary ProjectSettings keys |
+| `outbound_http`       | `GODOT_MCP_ALLOW_OUTBOUND_HTTP`         | `mcp_toolkit/feature_gates/allow_outbound_http`    | Outbound HTTP requests |
+| `node_call_method`    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD`      | `mcp_toolkit/feature_gates/allow_node_call_method` | Method invocation on edited-scene nodes |
+| `input_map_write`     | `GODOT_MCP_ALLOW_INPUT_MAP_WRITE`       | `mcp_toolkit/feature_gates/allow_input_map_write`  | Modify persistent InputMap actions |
+| `read_user_scope`     | `GODOT_MCP_ALLOW_USER_SCOPE`            | `mcp_toolkit/feature_gates/allow_user_scope`       | Read/write whitelisted user:// paths |
+
+**Dangerous-gate confirmation:** Three RCE-class features (`os_execute`,
+`game_eval`, `node_call_method`) show a confirmation dialog the first time
+they are enabled in Standard profile. Once per editor session per feature.
 
 ### How to enable
 
@@ -249,8 +257,8 @@ Set the env var in `.mcp.json` `env` block:
 { "env": { "GODOT_MCP_ALLOW_NODE_CALL_METHOD": "1" } }
 ```
 
-For dual-gate features, also flip the ProjectSettings toggle:
-Project Settings → Advanced Settings → MCP → Unsafe → `allow_<feature>`.
+Or toggle the gate in the MCP Toolkit dock or Project Settings →
+Mcp Toolkit → Feature Gates (changes sync to `.mcp.json` automatically).
 
 ### user:// whitelist (iter 19c)
 
@@ -310,6 +318,34 @@ When a gated tool is called while disabled, the plugin returns:
   "how_to_enable": "Set env GODOT_MCP_ALLOW_… = 1 [and …]"
 }
 ```
+
+## Hot-reload troubleshooting
+
+When gate or profile changes are made in the dock or PS Inspector, the
+plugin writes `.mcp.json`, broadcasts `config_reloaded` to the TS bridge,
+and the bridge calls `server.sendToolListChanged()`. The full diagnostic
+chain logs:
+
+1. `[MCPServer] broadcasting config_reloaded to N authed peers` (plugin)
+2. `[godot-mcp] plugin notification: config_reloaded` (bridge)
+3. `[godot-mcp] gate states from plugin: {...}` (server)
+4. `[godot-mcp] config reloaded: old → new — N tools registered` (server)
+5. `[godot-mcp] sending notifications/tools/list_changed` (server)
+
+If all 5 log lines appear but the MCP client still shows stale tools:
+
+- **Claude Code v2.1.0+:** The tool *registry* updates automatically via
+  `tools/list_changed`. However, the deferred-tools mechanism caches
+  schemas after `ToolSearch` — the model must re-run `ToolSearch` for any
+  tool it previously fetched to see updated parameters or descriptions.
+- **After `/compact`:** Deferred tool names can vanish entirely — run
+  `ToolSearch` to rediscover them.
+- **`/mcp` reconnect** forces a full re-fetch and is the most reliable
+  workaround if tool state appears stale.
+- **Other MCP clients** (Claude Desktop, Cursor) may require a full
+  restart — they have worse `tools/list_changed` support.
+- The dock shows a toast after config changes with a ToolSearch/`/mcp`
+  hint when an MCP client is connected.
 
 ## Conventions when driving these tools
 

@@ -16,9 +16,14 @@ static func has_mcp_json() -> bool:
 	return FileAccess.file_exists(get_mcp_json_path())
 
 
-static func has_env_var(env_var_name: String) -> bool:
+static func is_gate_enabled(env_var_name: String) -> bool:
 	var data := _read_server_env()
 	return data.get(env_var_name, "") == "1"
+
+
+## Legacy alias — use is_gate_enabled() for new code.
+static func has_env_var(env_var_name: String) -> bool:
+	return is_gate_enabled(env_var_name)
 
 
 static func set_env_var(env_var_name: String, enabled: bool) -> Error:

@@ -1,0 +1,60 @@
+@tool
+extends RefCounted
+## Broadcasts config_reloaded to the MCP server and shows gate-toggle
+## toasts via EditorToaster.  Dock-independent — works even when the
+## dock panel is hidden or the user is toggling from PS Inspector.
+
+const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
+const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+
+const INFO := 0
+const WARNING := 1
+
+var _server: Node = null
+var _events: RefCounted = null
+var _wizard_active: bool = false
+
+
+func bind(server: Node, events: RefCounted) -> void:
+	_server = server
+	_events = events
+	if _events != null:
+		_events.config_reloaded.connect(broadcast_config_reloaded)
+
+
+func broadcast_config_reloaded() -> void:
+	if _server == null:
+		return
+	var profile: int = ProjectSettings.get_setting(
+		"mcp_toolkit/feature_gates/profile", MCPFeatureRegistry.PROFILE_STANDARD)
+	var profile_str: String
+	match profile:
+		MCPFeatureRegistry.PROFILE_MINIMAL: profile_str = "minimal"
+		MCPFeatureRegistry.PROFILE_POWER_USER: profile_str = "power_user"
+		_: profile_str = "standard"
+	var gates := {}
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		gates[feature] = MCPJsonSync.is_gate_enabled(str(entry["env_var"]))
+	_server.broadcast_notification("config_reloaded", {
+		"profile": profile_str,
+		"gates": gates,
+	})
+	if _wizard_active:
+		return
+	if _server.get_authed_peer_count() > 0:
+		_show_toast("Config sent to MCP server. If tools appear stale, re-run ToolSearch or /mcp.")
+	else:
+		_show_toast("Gate config updated in .mcp.json.")
+
+
+func _show_toast(msg: String, severity: int = INFO) -> void:
+	if not Engine.is_editor_hint():
+		return
+	print("[MCP] %s" % msg)
+	var toaster = _Hub.get_toaster()
+	if toaster != null:
+		toaster.push_toast(msg, severity)
+	if _events != null:
+		_events.gate_toast_requested.emit(msg, severity)

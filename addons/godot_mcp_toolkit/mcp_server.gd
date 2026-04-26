@@ -92,9 +92,13 @@ func broadcast_notification(notification_type: String, params: Dictionary = {}) 
 	if not params.is_empty():
 		payload["params"] = params
 	var message := JSON.stringify(payload)
+	var count := 0
 	for peer in _peer_authed:
 		if peer is WebSocketPeer and peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			peer.send_text(message)
+			count += 1
+	print("[MCPServer] broadcasting %s to %d authed peer%s" % [
+		notification_type, count, "" if count == 1 else "s"])
 
 
 func regenerate_token() -> void:

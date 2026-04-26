@@ -17,14 +17,15 @@ const _TOAST_INFO := 0
 const _TOAST_WARNING := 1
 const _TOAST_ERROR := 2
 
-# Profile enum values (must match feature_gate_settings.gd).
-const PROFILE_MINIMAL := 0
-const PROFILE_STANDARD := 1
-const PROFILE_POWER_USER := 2
+# Profile enum values — canonical definition in MCPFeatureRegistry.
+const PROFILE_MINIMAL := MCPFeatureRegistry.PROFILE_MINIMAL
+const PROFILE_STANDARD := MCPFeatureRegistry.PROFILE_STANDARD
+const PROFILE_POWER_USER := MCPFeatureRegistry.PROFILE_POWER_USER
 
 var _server: Node = null
 var _audit_path: String = ""
 var _events: RefCounted = null  # GateEvents signal bus
+var _notifier: RefCounted = null  # GateNotifier
 
 # Status widgets.
 var _status_label: Label = null
@@ -71,8 +72,11 @@ func bind_events(events: RefCounted) -> void:
 	_events = events
 	_events.features_changed.connect(_refresh_features)
 	_events.status_changed.connect(_refresh_status)
-	_events.config_reloaded.connect(_broadcast_config_reloaded)
 	_events.profile_lock_warning.connect(_warn_profile_locked)
+
+
+func bind_notifier(notifier: RefCounted) -> void:
+	_notifier = notifier
 
 
 func _ready() -> void:
@@ -91,12 +95,14 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for dialog in [_audit_dialog, _info_dialog, _profile_lock_dialog]:
+	for dialog in [_audit_dialog, _info_dialog, _profile_lock_dialog, _pu_confirm_dialog, _danger_dialog]:
 		if dialog != null and is_instance_valid(dialog):
 			dialog.queue_free()
 	_audit_dialog = null
 	_info_dialog = null
 	_profile_lock_dialog = null
+	_pu_confirm_dialog = null
+	_danger_dialog = null
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +483,7 @@ func _refresh_features() -> void:
 			PROFILE_STANDARD:
 				if has_mcp:
 					check.set_pressed_no_signal(
-						MCPJsonSync.has_env_var(str(entry["env_var"])))
+						MCPJsonSync.is_gate_enabled(str(entry["env_var"])))
 				else:
 					check.set_pressed_no_signal(false)
 				check.disabled = false
@@ -501,12 +507,23 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	if entry == null:
 		return
 
+	# H7: Dangerous-gate confirmation for RCE-class features.
+	if enabled and MCPFeatureGate.needs_danger_warning(feature):
+		_feature_rows[feature]["check"].set_pressed_no_signal(false)
+		_show_danger_confirmation(feature)
+		return
+
 	# Ensure .mcp.json exists — auto-create if missing.
+	var was_missing := not MCPJsonSync.has_mcp_json()
 	var ensure_err := MCPJsonSync.ensure_mcp_json()
 	if ensure_err != OK:
 		_toast("Failed to create .mcp.json (err %d)" % ensure_err, _TOAST_ERROR)
 		_feature_rows[feature]["check"].set_pressed_no_signal(not enabled)
 		return
+
+	# L2: Sync full state when .mcp.json was just created.
+	if was_missing:
+		_sync_full_state_to_mcp_json()
 
 	# Write to .mcp.json (source of truth).
 	var err := MCPJsonSync.set_env_var(str(entry["env_var"]), enabled)
@@ -520,7 +537,13 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	ProjectSettings.save()
 
 	_refresh_features()
-	_broadcast_config_reloaded()
+	if _notifier != null:
+		_notifier.broadcast_config_reloaded()
+
+	# S1: Snapshot PS state so poll() won't re-detect this dock-initiated change.
+	if _events != null:
+		_events.profile_acknowledged.emit(
+			ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD))
 
 
 ## Warn the user that individual gates are locked by the active profile.
@@ -550,22 +573,51 @@ func _warn_profile_locked(profile: int) -> void:
 	_profile_lock_dialog.popup_centered()
 
 
-## Broadcast a config_reloaded notification to all connected MCP server
-## peers so they re-read .mcp.json and rebuild their tool list live.
-func _broadcast_config_reloaded() -> void:
-	if _server == null:
+## H7: Dangerous-gate confirmation for RCE-class features.
+var _danger_dialog: ConfirmationDialog = null
+
+func _show_danger_confirmation(feature: String) -> void:
+	if _danger_dialog != null and is_instance_valid(_danger_dialog):
 		return
+	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
+	_danger_dialog = ConfirmationDialog.new()
+	_danger_dialog.title = "Enable %s?" % feature
+	_danger_dialog.dialog_text = (
+		"WARNING: This is a potentially dangerous capability.\n\n"
+		+ "%s\n\n" % warn_text
+		+ "Risk level: %s\n\n" % entry["risk"]
+		+ "Only enable if you trust the current AI context.")
+	_danger_dialog.ok_button_text = "I Understand — Enable"
+	_danger_dialog.confirmed.connect(func():
+		MCPFeatureGate.mark_warned(feature)
+		# Proceed with the toggle as if the user just pressed the checkbox.
+		_on_feature_toggled(true, feature)
+		_danger_dialog.queue_free()
+		_danger_dialog = null
+	)
+	_danger_dialog.canceled.connect(func():
+		_danger_dialog.queue_free()
+		_danger_dialog = null
+	)
+	EditorInterface.get_base_control().add_child(_danger_dialog)
+	_danger_dialog.popup_centered()
+
+
+## L2: After .mcp.json is newly created, sync full profile + all gates.
+func _sync_full_state_to_mcp_json() -> void:
 	var profile: int = ProjectSettings.get_setting(
 		"mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	var profile_str: String
 	match profile:
-		PROFILE_MINIMAL:
-			profile_str = "minimal"
-		PROFILE_POWER_USER:
-			profile_str = "power_user"
-		_:
-			profile_str = "standard"
-	_server.broadcast_notification("config_reloaded", {"profile": profile_str})
+		PROFILE_MINIMAL: profile_str = "minimal"
+		PROFILE_POWER_USER: profile_str = "power_user"
+		_: profile_str = "standard"
+	MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", profile_str)
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+		MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
 
 
 # ---------------------------------------------------------------------------
@@ -594,33 +646,39 @@ func _request_profile_switch(target: int) -> void:
 		_apply_profile(target)
 
 
+var _pu_confirm_dialog: ConfirmationDialog = null
+
 func _confirm_switch_to_power_user() -> void:
+	if _pu_confirm_dialog != null and is_instance_valid(_pu_confirm_dialog):
+		return
 	var features := MCPFeatureRegistry.all_features()
 	var lines := PackedStringArray()
 	for feature in features:
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		lines.append("  - %s: %s" % [feature, entry["risk"]])
 
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "Switch to Power User?"
-	dialog.dialog_text = (
+	_pu_confirm_dialog = ConfirmationDialog.new()
+	_pu_confirm_dialog.title = "Switch to Power User?"
+	_pu_confirm_dialog.dialog_text = (
 		"This enables ALL gated features:\n\n"
 		+ "\n".join(lines)
 		+ "\n\nThis gives the AI agent full control over your editor\n"
 		+ "and project. Only enable if you trust the AI context.")
-	dialog.ok_button_text = "I Understand — Switch"
-	dialog.confirmed.connect(func():
+	_pu_confirm_dialog.ok_button_text = "I Understand — Switch"
+	_pu_confirm_dialog.confirmed.connect(func():
 		_apply_profile(PROFILE_POWER_USER)
-		dialog.queue_free()
+		_pu_confirm_dialog.queue_free()
+		_pu_confirm_dialog = null
 	)
-	dialog.canceled.connect(func():
+	_pu_confirm_dialog.canceled.connect(func():
 		# Revert dropdown to previous value.
 		if _profile_dropdown != null:
 			_profile_dropdown.select(_previous_profile)
-		dialog.queue_free()
+		_pu_confirm_dialog.queue_free()
+		_pu_confirm_dialog = null
 	)
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
+	EditorInterface.get_base_control().add_child(_pu_confirm_dialog)
+	_pu_confirm_dialog.popup_centered()
 
 
 func _apply_profile(new_profile: int) -> void:
@@ -642,7 +700,9 @@ func _apply_profile(new_profile: int) -> void:
 			if MCPJsonSync.has_mcp_json():
 				for feature in MCPFeatureRegistry.all_features():
 					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-					MCPJsonSync.set_env_var(str(entry["env_var"]), false)
+					var err := MCPJsonSync.set_env_var(str(entry["env_var"]), false)
+					if err != OK:
+						push_warning("_apply_profile: set_env_var(%s) failed: %d" % [entry["env_var"], err])
 				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
 			else:
 				_offer_create_mcp_json(new_profile)
@@ -653,7 +713,7 @@ func _apply_profile(new_profile: int) -> void:
 				for feature in MCPFeatureRegistry.all_features():
 					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 					ProjectSettings.set_setting(str(entry["ps_key"]),
-						MCPJsonSync.has_env_var(str(entry["env_var"])))
+						MCPJsonSync.is_gate_enabled(str(entry["env_var"])))
 				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
 		PROFILE_POWER_USER:
 			# Write .mcp.json (source of truth) + sync PS mirrors.
@@ -663,7 +723,9 @@ func _apply_profile(new_profile: int) -> void:
 			if MCPJsonSync.has_mcp_json():
 				for feature in MCPFeatureRegistry.all_features():
 					var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-					MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+					var err := MCPJsonSync.set_env_var(str(entry["env_var"]), true)
+					if err != OK:
+						push_warning("_apply_profile: set_env_var(%s) failed: %d" % [entry["env_var"], err])
 				MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
 			else:
 				_offer_create_mcp_json(new_profile)
@@ -672,7 +734,8 @@ func _apply_profile(new_profile: int) -> void:
 	ProjectSettings.save()
 	_refresh_features()
 	_refresh_status()
-	_broadcast_config_reloaded()
+	if _notifier != null:
+		_notifier.broadcast_config_reloaded()
 
 	if _events != null:
 		_events.profile_acknowledged.emit(new_profile)
@@ -684,7 +747,7 @@ func _offer_create_mcp_json(profile: int) -> void:
 	dialog.dialog_text = "No .mcp.json found at project root.\nCreate it now?"
 	dialog.confirmed.connect(func():
 		write_mcp_json()
-		_sync_env_vars_for_profile(profile)
+		_sync_full_state_to_mcp_json()
 		dialog.queue_free()
 	)
 	dialog.canceled.connect(func(): dialog.queue_free())

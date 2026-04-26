@@ -12,6 +12,7 @@ const FeatureGateSettings := preload("res://addons/godot_mcp_toolkit/feature_gat
 const GateEvents := preload("res://addons/godot_mcp_toolkit/gate_events.gd")
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
+const GateNotifier := preload("res://addons/godot_mcp_toolkit/gate_notifier.gd")
 const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_commands_loader.gd")
 const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
@@ -53,6 +54,7 @@ var _export_plugin: EditorExportPlugin = null
 var _dock: Control = null
 var _wizard: OnboardingWizard = null
 var _feature_settings: FeatureGateSettings = null
+var _notifier: GateNotifier = null
 var _events: GateEvents = null
 # Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
@@ -110,8 +112,12 @@ func _enter_tree() -> void:
 
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
+	_notifier = GateNotifier.new()
+	_notifier.bind(_server, _events)
+
 	_dock.bind(_server, "user://addons/godot_mcp_toolkit/mcp_audit.log")
 	_dock.bind_events(_events)
+	_dock.bind_notifier(_notifier)
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
 
 	_register_menus()
@@ -126,7 +132,7 @@ func _enter_tree() -> void:
 			+ "The plugin will run normally but some features may behave unexpectedly. "
 			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues" % [_minor, _Hub.GODOT_TESTED_MAX_MINOR])
 
-	_wizard = OnboardingWizard.new(self, _dock)
+	_wizard = OnboardingWizard.new(self, _dock, _notifier)
 	call_deferred("_check_onboarding")
 
 

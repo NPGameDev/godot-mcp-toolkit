@@ -33,15 +33,22 @@ const _MCP_JSON_MISSING_TEXT := (
 	"No .mcp.json found — toggle any gate here or in the MCP Toolkit "
 	+ "dock to create one automatically.")
 
-# Profile enum values matching the PROPERTY_HINT_ENUM order.
-const PROFILE_MINIMAL := 0
-const PROFILE_STANDARD := 1
-const PROFILE_POWER_USER := 2
+# Profile enum values — canonical definition in MCPFeatureRegistry.
+const PROFILE_MINIMAL := MCPFeatureRegistry.PROFILE_MINIMAL
+const PROFILE_STANDARD := MCPFeatureRegistry.PROFILE_STANDARD
+const PROFILE_POWER_USER := MCPFeatureRegistry.PROFILE_POWER_USER
 
 var _last_profile: int = PROFILE_STANDARD
 var _last_feature_states: Dictionary = {}  # { ps_key: bool } — snapshot for change detection
 var _last_mcp_enforce_msec: int = 0  # throttle for periodic .mcp.json enforcement
+var _last_mcp_json_present: bool = false  # L1: track .mcp.json presence transitions
 var _events: RefCounted = null  # GateEvents signal bus
+
+# P1: Cached .mcp.json env vars — reduces file I/O from ~420/sec to ~1/2s.
+var _mcp_env_cache: Dictionary = {}
+var _mcp_env_cache_valid: bool = false
+var _mcp_env_cache_msec: int = 0
+const _MCP_ENV_CACHE_TTL_MS := 2000
 
 
 func bind_events(events: RefCounted) -> void:
@@ -54,6 +61,7 @@ func register_all() -> void:
 	_register_limits()
 	_register_audit()
 	_last_profile = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
+	_last_mcp_json_present = MCPJsonSync.has_mcp_json()
 	snapshot_feature_states()
 	# Startup enforcement: correct stale .mcp.json env vars for locked profiles.
 	_enforce_profile_env_vars()
@@ -72,6 +80,7 @@ func poll() -> void:
 ## applied, preventing the next poll from re-running _sync_profile_change.
 func acknowledge_profile(profile: int) -> void:
 	_last_profile = profile
+	_invalidate_mcp_env_cache()
 	snapshot_feature_states()
 
 
@@ -81,6 +90,20 @@ func snapshot_feature_states() -> void:
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		_last_feature_states[str(entry["ps_key"])] = ProjectSettings.get_setting(
 			str(entry["ps_key"]), false)
+
+
+func _read_mcp_env() -> Dictionary:
+	var now := Time.get_ticks_msec()
+	if _mcp_env_cache_valid and (now - _mcp_env_cache_msec < _MCP_ENV_CACHE_TTL_MS):
+		return _mcp_env_cache
+	_mcp_env_cache = MCPJsonSync.get_all_env_vars() if MCPJsonSync.has_mcp_json() else {}
+	_mcp_env_cache_valid = true
+	_mcp_env_cache_msec = now
+	return _mcp_env_cache
+
+
+func _invalidate_mcp_env_cache() -> void:
+	_mcp_env_cache_valid = false
 
 
 # -- Registration helpers -----------------------------------------------------
@@ -213,15 +236,17 @@ func _sync_profile_change(new_profile: int, old_profile: int) -> void:
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				MCPJsonSync.set_env_var(str(entry["env_var"]), false)
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
+			_invalidate_mcp_env_cache()
 
 	elif new_profile == PROFILE_STANDARD:
 		MCPFeatureGate.restore_standard_gates()
+		_invalidate_mcp_env_cache()
 		# Sync PS from .mcp.json (restore writes env vars there).
 		if MCPJsonSync.has_mcp_json():
 			for feature in MCPFeatureRegistry.all_features():
 				var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 				ProjectSettings.set_setting(str(entry["ps_key"]),
-					MCPJsonSync.has_env_var(str(entry["env_var"])))
+					MCPJsonSync.is_gate_enabled(str(entry["env_var"])))
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
 
 	_update_status_text()
@@ -232,7 +257,11 @@ func _sync_profile_change(new_profile: int, old_profile: int) -> void:
 	_emit_config_reloaded()
 
 
+var _pu_confirm_dialog: ConfirmationDialog = null
+
 func _confirm_power_user_from_ps(old_profile: int) -> void:
+	if _pu_confirm_dialog != null and is_instance_valid(_pu_confirm_dialog):
+		return
 	# Snapshot Standard gates IMMEDIATELY — before the poll loop can corrupt
 	# them.  The PS profile is already POWER_USER (user changed it in the
 	# Inspector), so the poll would enforce all-true on the next frame,
@@ -251,15 +280,15 @@ func _confirm_power_user_from_ps(old_profile: int) -> void:
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		lines.append("  - %s: %s" % [feature, entry["risk"]])
 
-	var dialog := ConfirmationDialog.new()
-	dialog.title = "Switch to Power User?"
-	dialog.dialog_text = (
+	_pu_confirm_dialog = ConfirmationDialog.new()
+	_pu_confirm_dialog.title = "Switch to Power User?"
+	_pu_confirm_dialog.dialog_text = (
 		"This enables ALL gated features:\n\n"
 		+ "\n".join(lines)
 		+ "\n\nThis gives the AI agent full control over your editor\n"
 		+ "and project. Only enable if you trust the AI context.")
-	dialog.ok_button_text = "I Understand — Switch"
-	dialog.confirmed.connect(func():
+	_pu_confirm_dialog.ok_button_text = "I Understand — Switch"
+	_pu_confirm_dialog.confirmed.connect(func():
 		ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", PROFILE_POWER_USER)
 		for feat in MCPFeatureRegistry.all_features():
 			var ent: Dictionary = MCPFeatureRegistry.get_entry(feat)
@@ -270,21 +299,24 @@ func _confirm_power_user_from_ps(old_profile: int) -> void:
 				MCPJsonSync.set_env_var(str(ent["env_var"]), true)
 			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
 		_last_profile = PROFILE_POWER_USER
+		_invalidate_mcp_env_cache()
 		_update_status_text()
 		ProjectSettings.save()
 		snapshot_feature_states()
 		_emit_features_changed()
 		_emit_status_changed()
 		_emit_config_reloaded()
-		dialog.queue_free()
+		_pu_confirm_dialog.queue_free()
+		_pu_confirm_dialog = null
 	)
-	dialog.canceled.connect(func():
+	_pu_confirm_dialog.canceled.connect(func():
 		_emit_features_changed()
 		_emit_status_changed()
-		dialog.queue_free()
+		_pu_confirm_dialog.queue_free()
+		_pu_confirm_dialog = null
 	)
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
+	EditorInterface.get_base_control().add_child(_pu_confirm_dialog)
+	_pu_confirm_dialog.popup_centered()
 
 
 # -- Profile env-var enforcement -----------------------------------------------
@@ -316,6 +348,7 @@ func _enforce_profile_env_vars() -> void:
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		MCPJsonSync.set_env_var(str(entry["env_var"]), profile == PROFILE_POWER_USER)
+	_invalidate_mcp_env_cache()
 	_emit_config_reloaded()
 
 
@@ -323,6 +356,15 @@ func _enforce_profile_env_vars() -> void:
 
 
 func _poll_feature_states() -> void:
+	# L1: Detect .mcp.json presence transitions.
+	var mcp_present := MCPJsonSync.has_mcp_json()
+	if mcp_present != _last_mcp_json_present:
+		_last_mcp_json_present = mcp_present
+		_emit_features_changed()
+		_emit_status_changed()
+		if not mcp_present:
+			return  # No file — skip per-feature sync
+
 	# Enforce read-only text fields — revert any user edits immediately.
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	var expected_status: String
@@ -384,6 +426,7 @@ func _poll_feature_states() -> void:
 		return
 
 	# Standard: bidirectional sync between PS bools and .mcp.json env vars.
+	var mcp_env := _read_mcp_env()  # P1: cached, ~1 read per 2s
 	var ps_changed := false
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
@@ -392,20 +435,68 @@ func _poll_feature_states() -> void:
 		var ps_current: bool = ProjectSettings.get_setting(ps_key, false)
 		var ps_last: bool = _last_feature_states.get(ps_key, false)
 		if ps_current != ps_last:
+			# H7: Dangerous-gate check when enabling from PS Inspector.
+			if ps_current and not ps_last:
+				if MCPFeatureGate.needs_danger_warning(feature):
+					ProjectSettings.set_setting(ps_key, false)
+					_last_feature_states[ps_key] = false
+					_show_ps_danger_confirmation(feature, ps_key, env_var)
+					continue
 			# PS changed by user (Inspector toggle) → ensure .mcp.json and push.
 			MCPJsonSync.ensure_mcp_json()
 			MCPJsonSync.set_env_var(env_var, ps_current)
+			_invalidate_mcp_env_cache()
 			_last_feature_states[ps_key] = ps_current
 			ps_changed = true
-		elif MCPJsonSync.has_mcp_json():
+		elif mcp_present:
 			# Check if .mcp.json changed (dock toggle / external edit) → pull to PS.
-			var mcp_on: bool = MCPJsonSync.has_env_var(env_var)
+			var mcp_on: bool = mcp_env.get(env_var, "") == "1"
 			if mcp_on != ps_current:
 				ProjectSettings.set_setting(ps_key, mcp_on)
 				_last_feature_states[ps_key] = mcp_on
 	if ps_changed:
 		_emit_features_changed()
 		_emit_config_reloaded()
+
+
+# -- H7: Dangerous-gate confirmation from PS Inspector -----------------------
+
+var _ps_danger_dialog: ConfirmationDialog = null
+
+func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: String) -> void:
+	if _ps_danger_dialog != null and is_instance_valid(_ps_danger_dialog):
+		return
+	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
+	_ps_danger_dialog = ConfirmationDialog.new()
+	_ps_danger_dialog.title = "Enable %s?" % feature
+	_ps_danger_dialog.dialog_text = (
+		"WARNING: This is a potentially dangerous capability.\n\n"
+		+ "%s\n\n" % warn_text
+		+ "Risk level: %s\n\n" % entry["risk"]
+		+ "Only enable if you trust the current AI context.")
+	_ps_danger_dialog.ok_button_text = "I Understand — Enable"
+	_ps_danger_dialog.confirmed.connect(func():
+		MCPFeatureGate.mark_warned(feature)
+		ProjectSettings.set_setting(ps_key, true)
+		MCPJsonSync.ensure_mcp_json()
+		MCPJsonSync.set_env_var(env_var, true)
+		_invalidate_mcp_env_cache()
+		_last_feature_states[ps_key] = true
+		ProjectSettings.save()
+		snapshot_feature_states()
+		_emit_features_changed()
+		_emit_config_reloaded()
+		_ps_danger_dialog.queue_free()
+		_ps_danger_dialog = null
+	)
+	_ps_danger_dialog.canceled.connect(func():
+		_emit_features_changed()
+		_ps_danger_dialog.queue_free()
+		_ps_danger_dialog = null
+	)
+	EditorInterface.get_base_control().add_child(_ps_danger_dialog)
+	_ps_danger_dialog.popup_centered()
 
 
 # -- Signal bus helpers --------------------------------------------------------

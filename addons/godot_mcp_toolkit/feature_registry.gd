@@ -15,16 +15,24 @@ extends RefCounted
 ## filtering (feature_gate.ts) reads from this table — no secondary
 ## manifest.
 
+const PROFILE_MINIMAL := 0
+const PROFILE_STANDARD := 1
+const PROFILE_POWER_USER := 2
+
 const FEATURES := {
 	"game_eval": {
 		"env_var": "GODOT_MCP_ALLOW_GAME_EVAL",
 		"ps_key": "mcp_toolkit/feature_gates/allow_game_eval",
 		"risk": "Arbitrary GDScript via Expression",
+		"warn_on_enable": true,
+		"warn_text": "Allows the AI to evaluate arbitrary GDScript expressions in the running game via the Expression class.",
 	},
 	"os_execute": {
 		"env_var": "GODOT_MCP_ALLOW_OS_EXECUTE",
 		"ps_key": "mcp_toolkit/feature_gates/allow_os_execute",
 		"risk": "Host-OS shell execution",
+		"warn_on_enable": true,
+		"warn_text": "Allows the AI to run arbitrary operating-system commands, including file operations and process management.",
 	},
 	"read_user_scope": {
 		"env_var": "GODOT_MCP_ALLOW_USER_SCOPE",
@@ -40,6 +48,8 @@ const FEATURES := {
 		"env_var": "GODOT_MCP_ALLOW_NODE_CALL_METHOD",
 		"ps_key": "mcp_toolkit/feature_gates/allow_node_call_method",
 		"risk": "Method invocation on edited-scene nodes",
+		"warn_on_enable": true,
+		"warn_text": "Allows the AI to call arbitrary methods on nodes in the edited scene, which may have side effects.",
 	},
 	"project_set_setting": {
 		"env_var": "GODOT_MCP_ALLOW_PROJECT_SET_SETTING",

@@ -25,3 +25,7 @@ signal profile_lock_warning(profile: int)
 ## Emitted by the dock after it applies a profile switch, so the PS
 ## manager can acknowledge it and avoid re-triggering from its poll loop.
 signal profile_acknowledged(profile: int)
+
+## Emitted after a gate-toggle toast is shown. Listeners (future status
+## bar, telemetry) can react without coupling to the notifier.
+signal gate_toast_requested(msg: String, severity: int)
