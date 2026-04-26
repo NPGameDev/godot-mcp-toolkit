@@ -14,6 +14,7 @@ const WARNING := 1
 var _server: Node = null
 var _events: RefCounted = null
 var _wizard_active: bool = false
+var _broadcast_pending := false
 
 
 func bind(server: Node, events: RefCounted) -> void:
@@ -24,6 +25,14 @@ func bind(server: Node, events: RefCounted) -> void:
 
 
 func broadcast_config_reloaded() -> void:
+	if _broadcast_pending:
+		return
+	_broadcast_pending = true
+	_deferred_broadcast.call_deferred()
+
+
+func _deferred_broadcast() -> void:
+	_broadcast_pending = false
 	if _server == null:
 		return
 	var profile: int = ProjectSettings.get_setting(
