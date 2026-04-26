@@ -285,7 +285,7 @@ who enable the gate trust the author's whitelist.
 
 To enable the `save.*` tools:
 1. Set `GODOT_MCP_ALLOW_USER_SCOPE=1` in `.mcp.json` env block.
-2. Enable `mcp/unsafe/allow_user_scope` in Project Settings → Advanced.
+2. Enable `mcp_toolkit/feature_gates/allow_user_scope` in Project Settings → Advanced.
 3. Ensure `user_scope_whitelist.json` exists and is valid JSON.
 
 ### Breaking changes vs pre-iter-22
