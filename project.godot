@@ -25,4 +25,7 @@ enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
 
 [mcp_toolkit]
 
-feature_gates/profile=1
+feature_gates/allow_game_eval=true
+feature_gates/allow_os_execute=true
+feature_gates/allow_outbound_http=true
+feature_gates/allow_input_map_write=true

@@ -222,7 +222,7 @@ func _build_ui() -> void:
 	fc.add_child(_feature_lock_warning)
 
 	_mcp_json_hint = Label.new()
-	_mcp_json_hint.text = "No .mcp.json found — toggle any gate to create one."
+	_mcp_json_hint.text = "No .mcp.json found — use Project > Tools > MCP Toolkit: Write .mcp.json"
 	_mcp_json_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_mcp_json_hint.add_theme_color_override("font_color", Color(1.0, 0.6, 0.3))
 	_mcp_json_hint.add_theme_font_size_override("font_size", 11)
@@ -437,7 +437,7 @@ func _refresh_runtime_status() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Feature toggle + .mcp.json sync
+# Feature toggle
 # ---------------------------------------------------------------------------
 
 func _refresh_features() -> void:
@@ -522,7 +522,6 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	ProjectSettings.set_setting(str(entry["ps_key"]), enabled)
 	ProjectSettings.save()
 
-	_ensure_mcp_json_with_state()
 	_refresh_features()
 	if _notifier != null:
 		_notifier.broadcast_config_reloaded()
@@ -601,39 +600,6 @@ func _show_danger_confirmation(feature: String) -> void:
 	)
 	EditorInterface.get_base_control().add_child(_danger_dialog)
 	_danger_dialog.popup_centered()
-
-
-## L2: After .mcp.json is newly created, sync full profile + all gates.
-## Also seeds the sidecar so runtime state is immediately available.
-func _sync_full_state_to_mcp_json() -> void:
-	var profile: int = ProjectSettings.get_setting(
-		"mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
-	var profile_str: String
-	match profile:
-		PROFILE_MINIMAL: profile_str = "minimal"
-		PROFILE_POWER_USER: profile_str = "power_user"
-		_: profile_str = "standard"
-	MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", profile_str)
-	var gates := {}
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-		MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
-		gates[str(entry["env_var"])] = ps_on
-	# Seed sidecar alongside .mcp.json.
-	MCPStateFile.write(profile_str, gates)
-
-
-## Create .mcp.json if missing and populate it with current gate state.
-## No-op when the file already exists. Called from toggle/profile paths
-## to fulfill the dock hint promise ("toggle any gate to create one").
-func _ensure_mcp_json_with_state() -> void:
-	if MCPJsonSync.has_mcp_json():
-		return
-	var err := MCPJsonSync.ensure_mcp_json()
-	if err != OK:
-		return
-	_sync_full_state_to_mcp_json()
 
 
 # ---------------------------------------------------------------------------
@@ -732,7 +698,6 @@ func _apply_profile(new_profile: int) -> void:
 
 	_previous_profile = new_profile
 	ProjectSettings.save()
-	_ensure_mcp_json_with_state()
 	_refresh_features()
 	_refresh_status()
 	if _notifier != null:
@@ -893,8 +858,7 @@ func _do_write_mcp_json(dest: String, content: String) -> void:
 		return
 	file.store_string(content)
 	file.close()
-	_sync_full_state_to_mcp_json()
-	_toast("MCP: .mcp.json created with current gate configuration", _TOAST_INFO,
+	_toast("MCP: .mcp.json created from template", _TOAST_INFO,
 		"Wrote to " + dest)
 
 
