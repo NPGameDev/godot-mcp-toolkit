@@ -76,6 +76,7 @@ func _exit_tree() -> void:
 
 
 func _start_server() -> void:
+	_Hub.LogBuffer.setup()
 	_relisten_countdown = 0
 	_bound_port = -1
 	# Runtime uses the same token file as the editor server so the bridge can
@@ -166,6 +167,7 @@ func _try_listen() -> void:
 
 
 func _process(_delta: float) -> void:
+	_Hub.LogBuffer.poll()
 	# Keep the listener up across transient socket loss. Editor / release
 	# gating from _ready prevents _process from running where it shouldn't
 	# (set_process(false)), so reaching here = debug-build runtime.
@@ -368,18 +370,33 @@ const _DEFAULT_LOG_LIMIT := 200
 
 
 func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
-	# TODO: 41d-quinquies — consider adding a runtime LogBuffer (separate from
-	# the editor's) with Logger capture (4.5+) or file tailing for real-time
-	# runtime console access. Currently reads the shared log file.
-	# MVP strategy: read Godot's default log file (`user://logs/godot.log`).
-	# Godot 4 writes this automatically when `application/run/flush_stdout_on_print`
-	# / logging are enabled (the defaults). Ring-buffer + EngineDebugger
-	# hooks are a future enhancement — the log file covers the
-	# "what did the game print recently" workflow.
 	var limit := _DEFAULT_LOG_LIMIT
 	if typeof(params) == TYPE_DICTIONARY and params.has("limit"):
 		limit = max(1, int(params.get("limit", _DEFAULT_LOG_LIMIT)))
+	var source: String = "buffer"
+	if typeof(params) == TYPE_DICTIONARY and params.has("source"):
+		source = str(params.get("source", "buffer"))
+	if not (source in ["buffer", "file"]):
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS",
+			"source must be 'buffer' or 'file' (got %s)" % source))
+		return
 
+	if source == "buffer":
+		var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, [], -1)
+		var entries: Array = buf_result["entries"]
+		for entry in entries:
+			var scrubbed := MCPScrubber.scrub(str(entry["message"]), "debugger.get_log")
+			entry["message"] = scrubbed["text"]
+		_send_result(peer, id, {
+			"lines": MCPUntrusted.wrap("game_log", "buffer", JSON.stringify(entries)),
+			"count": buf_result["count"],
+			"next_id": buf_result["next_id"],
+			"truncated": buf_result["truncated"],
+			"source": "buffer",
+		})
+		return
+
+	# source == "file" — original log-file reader.
 	var log_path := "user://logs/godot.log"
 	if not FileAccess.file_exists(log_path):
 		_send_result(peer, id, {
@@ -387,6 +404,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 			"count": 0,
 			"total": 0,
 			"path": log_path,
+			"source": "file",
 			"note": "log file not yet written — new game with no prints, or flush_stdout_on_print disabled",
 		})
 		return
@@ -413,6 +431,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		"count": slice.size(),
 		"total": total,
 		"path": log_path,
+		"source": "file",
 	})
 
 
