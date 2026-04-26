@@ -99,6 +99,7 @@ static func snapshot_standard_gates() -> void:
 			break
 	if not any_on and has_standard_cache():
 		return
+	MCPProjectPaths.ensure_dirs()
 	var f := FileAccess.open(_get_cache_path(), FileAccess.WRITE)
 	if f != null:
 		f.store_string(JSON.stringify(cache))

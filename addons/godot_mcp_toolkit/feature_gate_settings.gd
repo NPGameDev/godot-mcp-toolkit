@@ -126,7 +126,7 @@ func _bootstrap_sidecar_from_mcp_json() -> void:
 
 
 ## Seed sidecar from current ProjectSettings bools when neither .mcp.json
-## nor sidecar exists (fresh install, or after .godot/ + .mcp.json deletion).
+## nor sidecar exists (fresh install, or after user:// instance dir + .mcp.json deletion).
 func _bootstrap_sidecar_from_ps() -> void:
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	var profile_str: String
