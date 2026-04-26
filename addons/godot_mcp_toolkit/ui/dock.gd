@@ -746,30 +746,6 @@ func _offer_create_mcp_json(profile: int) -> void:
 	dialog.popup_centered()
 
 
-func _sync_env_vars_for_profile(profile: int) -> void:
-	if not MCPJsonSync.has_mcp_json():
-		return
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		match profile:
-			PROFILE_MINIMAL:
-				MCPJsonSync.set_env_var(str(entry["env_var"]), false)
-				ProjectSettings.set_setting(str(entry["ps_key"]), false)
-			PROFILE_POWER_USER:
-				MCPJsonSync.set_env_var(str(entry["env_var"]), true)
-				ProjectSettings.set_setting(str(entry["ps_key"]), true)
-			_:
-				pass  # Standard: env var state managed by restore_standard_gates
-	match profile:
-		PROFILE_MINIMAL:
-			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "minimal")
-		PROFILE_POWER_USER:
-			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "power_user")
-		_:
-			MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", "standard")
-	ProjectSettings.save()
-
-
 # ---------------------------------------------------------------------------
 # Audit log popup
 # ---------------------------------------------------------------------------
