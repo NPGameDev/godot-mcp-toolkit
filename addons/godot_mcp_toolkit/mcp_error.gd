@@ -24,6 +24,7 @@ const CODES: Array[String] = [
 	"INVALID_PARAMS",
 	"INVALID_PATH",
 	"LOAD_FAILED",
+	"LOG_BUSY",
 	"LOG_UNAVAILABLE",
 	"NO_SCENE",
 	"NOT_A_RESOURCE",
@@ -55,7 +56,8 @@ const DEFAULT_HINTS := {
 	"TIMEOUT": "The editor may be busy. Try editor.wait_for_idle before retrying.",
 	"UNSUPPORTED": "Check COMPATIBILITY.md for version requirements.",
 	"PATH_DENIED": "Paths must use res:// format. Example: res://scenes/main.tscn",
-	"LOG_UNAVAILABLE": "Log file could not be read. Check that file logging is enabled in ProjectSettings (application/config/use_file_logging). If the editor just started, the log may not exist yet.",
+	"LOG_BUSY": "Log file is temporarily locked by the engine's flush. Retry in 1-2 seconds, or use source=\"buffer\" instead.",
+	"LOG_UNAVAILABLE": "Log file could not be read. Enable file logging in ProjectSettings → Debug → File Logging → Enable File Logging (debug/file_logging/enable_file_logging). If the editor just started, the log may not exist yet. Use source=\"buffer\" for real-time output.",
 	"PARENT_NOT_FOUND": "Parent directory does not exist. Use folder.create to create it first.",
 	"GAME_NOT_RUNNING": "No running game detected. Use game.start first. If the MCP Runtime autoload is missing, re-enable the plugin in Project Settings.",
 }

@@ -271,7 +271,7 @@ runtime sees the new bindings (Godot loads `InputMap` from
   instead. Prefer `debugger.get_log` during playtest.
 - **No per-line timestamps** in default Godot log format. `timestamp_unix` is
   `null`; agents that need per-entry timing should use `--verbose`.
-- **`application/config/use_file_logging=false`** → `LOG_UNAVAILABLE` with
+- **`debug/file_logging/enable_file_logging=false`** → `LOG_UNAVAILABLE` with
   the settings key in the message.
 
 ## Binary asset import + scan-idle gating
