@@ -102,35 +102,12 @@ static func gates_from_ps() -> Dictionary:
 
 static func _atomic_write(data: Dictionary) -> Error:
 	var path := get_path()
-	# Ensure per-instance directory exists.
 	MCPProjectPaths.ensure_dirs()
-	var dir_path := path.get_base_dir()
-	var tmp_path := path + ".tmp"
-	var f := FileAccess.open(tmp_path, FileAccess.WRITE)
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		var err := FileAccess.get_open_error()
-		push_warning("[MCPStateFile] cannot write tmp file %s (err %d)" % [tmp_path, err])
+		push_warning("[MCPStateFile] cannot write %s (err %d)" % [path, err])
 		return err
 	f.store_string(JSON.stringify(data, "\t"))
 	f.close()
-	# Atomic rename. On Windows, DirAccess.rename() handles overwrite.
-	var dir := DirAccess.open(dir_path)
-	if dir == null:
-		push_warning("[MCPStateFile] cannot open dir %s for rename" % dir_path)
-		return ERR_FILE_CANT_OPEN
-	var rename_err := dir.rename(tmp_path.get_file(), _FILENAME)
-	if rename_err != OK:
-		# Fallback: delete target then rename.
-		if FileAccess.file_exists(path):
-			DirAccess.remove_absolute(path)
-		rename_err = dir.rename(tmp_path.get_file(), _FILENAME)
-		if rename_err != OK:
-			push_warning("[MCPStateFile] rename failed (err %d) — falling back to direct write" % rename_err)
-			# Last resort: direct write (non-atomic).
-			DirAccess.remove_absolute(tmp_path)
-			f = FileAccess.open(path, FileAccess.WRITE)
-			if f == null:
-				return FileAccess.get_open_error()
-			f.store_string(JSON.stringify(data, "\t"))
-			f.close()
 	return OK
