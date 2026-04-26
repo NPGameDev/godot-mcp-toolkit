@@ -469,8 +469,12 @@ func _poll_feature_states() -> void:
 var _ps_danger_dialog: ConfirmationDialog = null
 
 func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: String) -> void:
-	if _ps_danger_dialog != null and is_instance_valid(_ps_danger_dialog):
-		return
+	# H7: Clean up any lingering dialog (queue_free may not have processed yet).
+	if _ps_danger_dialog != null:
+		if is_instance_valid(_ps_danger_dialog):
+			_ps_danger_dialog.hide()
+			_ps_danger_dialog.queue_free()
+		_ps_danger_dialog = null
 	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
 	_ps_danger_dialog = ConfirmationDialog.new()
@@ -493,13 +497,19 @@ func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: Stri
 		snapshot_feature_states()
 		_emit_features_changed()
 		_emit_config_reloaded()
-		_ps_danger_dialog.queue_free()
+		var d := _ps_danger_dialog
 		_ps_danger_dialog = null
+		if d != null:
+			d.hide()
+			d.queue_free()
 	)
 	_ps_danger_dialog.canceled.connect(func():
 		_emit_features_changed()
-		_ps_danger_dialog.queue_free()
+		var d := _ps_danger_dialog
 		_ps_danger_dialog = null
+		if d != null:
+			d.hide()
+			d.queue_free()
 	)
 	EditorInterface.get_base_control().add_child(_ps_danger_dialog)
 	_ps_danger_dialog.popup_centered()

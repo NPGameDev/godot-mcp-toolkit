@@ -578,8 +578,12 @@ func _warn_profile_locked(profile: int) -> void:
 var _danger_dialog: ConfirmationDialog = null
 
 func _show_danger_confirmation(feature: String) -> void:
-	if _danger_dialog != null and is_instance_valid(_danger_dialog):
-		return
+	# H7: Clean up any lingering dialog (queue_free may not have processed yet).
+	if _danger_dialog != null:
+		if is_instance_valid(_danger_dialog):
+			_danger_dialog.hide()
+			_danger_dialog.queue_free()
+		_danger_dialog = null
 	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
 	_danger_dialog = ConfirmationDialog.new()
@@ -595,12 +599,18 @@ func _show_danger_confirmation(feature: String) -> void:
 		MCPFeatureGate.mark_warned(feature)
 		# Proceed with the toggle as if the user just pressed the checkbox.
 		_on_feature_toggled(true, feature)
-		_danger_dialog.queue_free()
+		var d := _danger_dialog
 		_danger_dialog = null
+		if d != null:
+			d.hide()
+			d.queue_free()
 	)
 	_danger_dialog.canceled.connect(func():
-		_danger_dialog.queue_free()
+		var d := _danger_dialog
 		_danger_dialog = null
+		if d != null:
+			d.hide()
+			d.queue_free()
 	)
 	EditorInterface.get_base_control().add_child(_danger_dialog)
 	_danger_dialog.popup_centered()
