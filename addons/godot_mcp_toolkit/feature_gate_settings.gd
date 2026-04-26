@@ -133,6 +133,28 @@ func _bootstrap_sidecar_from_mcp_json() -> void:
 	print("[MCPStateFile] bootstrapped sidecar from .mcp.json (profile=%s)" % profile_str)
 
 
+## Create .mcp.json if missing and populate env vars from current PS state.
+## No-op when the file already exists. Mirrors dock._ensure_mcp_json_with_state
+## for PS Inspector paths that don't route through the dock.
+func _ensure_mcp_json() -> void:
+	if MCPJsonSync.has_mcp_json():
+		return
+	var err := MCPJsonSync.ensure_mcp_json()
+	if err != OK:
+		return
+	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
+	var profile_str: String
+	match profile:
+		PROFILE_MINIMAL: profile_str = "minimal"
+		PROFILE_POWER_USER: profile_str = "power_user"
+		_: profile_str = "standard"
+	MCPJsonSync.set_env_var_string("GODOT_MCP_PROFILE", profile_str)
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var ps_on: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+		MCPJsonSync.set_env_var(str(entry["env_var"]), ps_on)
+
+
 ## Seed sidecar from current ProjectSettings bools when neither .mcp.json
 ## nor sidecar exists (fresh install, or after .godot/ + .mcp.json deletion).
 func _bootstrap_sidecar_from_ps() -> void:
@@ -287,6 +309,7 @@ func _sync_profile_change(new_profile: int, old_profile: int) -> void:
 
 	_update_status_text()
 	ProjectSettings.save()
+	_ensure_mcp_json()
 	snapshot_feature_states()
 	_emit_features_changed()
 	_emit_status_changed()
@@ -339,6 +362,7 @@ func _confirm_power_user_from_ps(old_profile: int) -> void:
 		_invalidate_mcp_env_cache()
 		_update_status_text()
 		ProjectSettings.save()
+		_ensure_mcp_json()
 		snapshot_feature_states()
 		_emit_features_changed()
 		_emit_status_changed()
@@ -529,6 +553,7 @@ func _poll_feature_states() -> void:
 		_mcp_json_snapshot = mcp_env
 
 	if ps_changed:
+		_ensure_mcp_json()
 		_emit_features_changed()
 		_emit_config_reloaded()
 	elif sidecar_changed:
@@ -565,6 +590,7 @@ func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: Stri
 		_invalidate_mcp_env_cache()
 		_last_feature_states[ps_key] = true
 		ProjectSettings.save()
+		_ensure_mcp_json()
 		snapshot_feature_states()
 		_emit_features_changed()
 		_emit_config_reloaded()
