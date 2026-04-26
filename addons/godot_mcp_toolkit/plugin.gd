@@ -100,6 +100,8 @@ func _enter_tree() -> void:
 	_export_plugin = preload("res://addons/godot_mcp_toolkit/export_strip.gd").new()
 	add_export_plugin(_export_plugin)
 
+	_Hub.LogBuffer.setup()
+
 	add_child(_server)
 	_server.start()
 

@@ -368,6 +368,9 @@ const _DEFAULT_LOG_LIMIT := 200
 
 
 func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
+	# TODO: 41d-quinquies — consider adding a runtime LogBuffer (separate from
+	# the editor's) with Logger capture (4.5+) or file tailing for real-time
+	# runtime console access. Currently reads the shared log file.
 	# MVP strategy: read Godot's default log file (`user://logs/godot.log`).
 	# Godot 4 writes this automatically when `application/run/flush_stdout_on_print`
 	# / logging are enabled (the defaults). Ring-buffer + EngineDebugger

@@ -34,15 +34,33 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 
 static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dictionary:
 	var limit: int = int(parameters.get("limit", 50))
-	var result := _read_console_log(server, limit, ["error"], -1)
-	if result.get("success", false) == false:
-		return result
-	var entries = result.get("entries", [])
+	var source: String = str(parameters.get("source", "buffer"))
+	if not (source in ["buffer", "file"]):
+		return MCPError.make("INVALID_PARAMS",
+			"source must be 'buffer' or 'file' (got %s)" % source)
+
+	if source == "file":
+		var result := _read_console_log(server, limit, ["error"], -1)
+		if result.get("success", false) == false:
+			return result
+		var entries = result.get("entries", [])
+		return {
+			"success": true,
+			"errors": MCPUntrusted.wrap(
+				"editor_errors", "godot", JSON.stringify(entries)),
+			"count": result.get("count", 0),
+		}
+
+	var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, ["error"], -1)
+	var entries: Array = buf_result["entries"]
+	for entry in entries:
+		var scrubbed := MCPScrubber.scrub(str(entry["message"]), "console")
+		entry["message"] = scrubbed["text"]
 	return {
 		"success": true,
 		"errors": MCPUntrusted.wrap(
-			"editor_errors", "godot", JSON.stringify(entries)),
-		"count": result.get("count", 0),
+			"editor_errors", "buffer", JSON.stringify(entries)),
+		"count": buf_result["count"],
 	}
 
 
@@ -215,16 +233,23 @@ static func _cmd_editor_get_console(server: Node, parameters: Dictionary) -> Dic
 	if typeof(level_filter) != TYPE_ARRAY:
 		level_filter = []
 	var since_id: int = int(parameters.get("since_id", -1))
+	var source: String = str(parameters.get("source", "buffer"))
 
 	if limit < 1 or limit > 1000:
 		return MCPError.make("INVALID_PARAMS",
 			"limit must be in [1, 1000] (got %d)" % limit)
+	if not (source in ["buffer", "file"]):
+		return MCPError.make("INVALID_PARAMS",
+			"source must be 'buffer' or 'file' (got %s)" % source)
 	var valid_levels := ["info", "warning", "error"]
 	for level_filter_entry in level_filter:
 		if not str(level_filter_entry) in valid_levels:
 			return MCPError.make("INVALID_PARAMS",
 				"level_filter entries must be one of 'info' | 'warning' | 'error' (got %s)" % str(level_filter_entry))
-	return _read_console_log(server, limit, level_filter, since_id)
+
+	if source == "file":
+		return _read_console_log(server, limit, level_filter, since_id)
+	return _read_buffer_log(limit, level_filter, since_id)
 
 
 static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
@@ -257,6 +282,26 @@ static func _godot_error_name(code: int) -> String:
 		31: return "ERR_FILE_CANT_WRITE"
 		32: return "ERR_FILE_CANT_READ"
 		_: return "Error(%d)" % code
+
+
+# -- Buffer log reader --------------------------------------------------------
+
+
+static func _read_buffer_log(limit: int, level_filter: Array, since_id: int) -> Dictionary:
+	var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, level_filter, since_id)
+	var entries: Array = buf_result["entries"]
+	for entry in entries:
+		var scrubbed := MCPScrubber.scrub(str(entry["message"]), "console")
+		entry["message"] = scrubbed["text"]
+	return {
+		"success": true,
+		"entries": MCPUntrusted.wrap(
+			"console", "buffer", JSON.stringify(entries)),
+		"count": buf_result["count"],
+		"next_id": buf_result["next_id"],
+		"truncated": buf_result["truncated"],
+		"source": "buffer",
+	}
 
 
 # -- Console log reader -------------------------------------------------------

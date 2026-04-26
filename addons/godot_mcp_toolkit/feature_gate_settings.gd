@@ -433,6 +433,7 @@ func _poll_feature_states() -> void:
 	# Standard: bidirectional sync between PS bools and .mcp.json env vars.
 	var mcp_env := _read_mcp_env()  # P1: cached, ~1 read per 2s
 	var ps_changed := false
+	var mcp_changed := false
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var ps_key: String = entry["ps_key"]
@@ -459,7 +460,11 @@ func _poll_feature_states() -> void:
 			if mcp_on != ps_current:
 				ProjectSettings.set_setting(ps_key, mcp_on)
 				_last_feature_states[ps_key] = mcp_on
+				mcp_changed = true
 	if ps_changed:
+		_emit_features_changed()
+		_emit_config_reloaded()
+	elif mcp_changed:
 		_emit_features_changed()
 		_emit_config_reloaded()
 

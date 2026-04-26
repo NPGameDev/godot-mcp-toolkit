@@ -16,6 +16,7 @@ const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd"
 const MCPScrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
 const MCPAudit := preload("res://addons/godot_mcp_toolkit/audit.gd")
 const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
 
 
 # -- Version helpers (Godot 4.x cross-version compat) -----------------------

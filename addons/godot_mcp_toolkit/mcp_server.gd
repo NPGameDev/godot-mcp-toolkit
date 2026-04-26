@@ -214,6 +214,7 @@ func _try_listen() -> void:
 
 
 func _process(_delta: float) -> void:
+	_Hub.LogBuffer.poll()
 	_poll_frame_counter += 1
 	if _poll_frame_counter < _POLL_FRAME_INTERVAL:
 		return
