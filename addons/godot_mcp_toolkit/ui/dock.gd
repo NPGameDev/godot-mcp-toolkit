@@ -470,7 +470,7 @@ func _refresh_features() -> void:
 					+ "switch to Standard to toggle individual gates.")
 				_feature_lock_warning.visible = true
 
-	# Update gate checkboxes — .mcp.json env vars are the source of truth.
+	# Update gate checkboxes — sidecar is the runtime source of truth.
 	for feature in _feature_rows:
 		var row: Dictionary = _feature_rows[feature]
 		var check: CheckBox = row["check"]
@@ -482,11 +482,8 @@ func _refresh_features() -> void:
 				check.disabled = true
 				check.tooltip_text = "Feature gates are disabled in Minimal profile"
 			PROFILE_STANDARD:
-				if has_mcp:
-					check.set_pressed_no_signal(
-						MCPJsonSync.is_gate_enabled(str(entry["env_var"])))
-				else:
-					check.set_pressed_no_signal(false)
+				check.set_pressed_no_signal(
+					MCPStateFile.is_gate_enabled(str(entry["env_var"])))
 				check.disabled = false
 				check.tooltip_text = str(entry["risk"])
 			PROFILE_POWER_USER:
