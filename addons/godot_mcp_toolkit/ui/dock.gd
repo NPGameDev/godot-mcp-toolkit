@@ -554,6 +554,7 @@ func _warn_profile_locked(profile: int) -> void:
 		return
 	var profile_name: String = "Power User" if profile == PROFILE_POWER_USER else "Minimal"
 	_profile_lock_dialog = AcceptDialog.new()
+	_profile_lock_dialog.exclusive = false
 	_profile_lock_dialog.title = "%s Profile Active" % profile_name
 	_profile_lock_dialog.dialog_text = (
 		"Individual feature gates cannot be changed while\n"
@@ -582,6 +583,7 @@ func _show_danger_confirmation(feature: String) -> void:
 	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
 	_danger_dialog = ConfirmationDialog.new()
+	_danger_dialog.exclusive = false
 	_danger_dialog.title = "Enable %s?" % feature
 	_danger_dialog.dialog_text = (
 		"WARNING: This is a potentially dangerous capability.\n\n"
@@ -658,6 +660,7 @@ func _confirm_switch_to_power_user() -> void:
 		lines.append("  - %s: %s" % [feature, entry["risk"]])
 
 	_pu_confirm_dialog = ConfirmationDialog.new()
+	_pu_confirm_dialog.exclusive = false
 	_pu_confirm_dialog.title = "Switch to Power User?"
 	_pu_confirm_dialog.dialog_text = (
 		"This enables ALL gated features:\n\n"
@@ -743,6 +746,7 @@ func _apply_profile(new_profile: int) -> void:
 
 func _offer_create_mcp_json(profile: int) -> void:
 	var dialog := ConfirmationDialog.new()
+	dialog.exclusive = false
 	dialog.title = "No .mcp.json found"
 	dialog.dialog_text = "No .mcp.json found at project root.\nCreate it now?"
 	dialog.confirmed.connect(func():
@@ -860,6 +864,7 @@ func show_audit_dialog() -> void:
 
 func _on_clear_audit_log() -> void:
 	var dialog := ConfirmationDialog.new()
+	dialog.exclusive = false
 	dialog.title = "Clear Audit Log?"
 	dialog.dialog_text = "This will permanently delete all audit log entries."
 	dialog.ok_button_text = "Clear"
@@ -903,6 +908,7 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 
 	if FileAccess.file_exists(dest) and not force_overwrite:
 		var dialog := ConfirmationDialog.new()
+		dialog.exclusive = false
 		dialog.title = ".mcp.json already exists"
 		dialog.dialog_text = (
 			"Overwrite existing .mcp.json at:\n" + dest

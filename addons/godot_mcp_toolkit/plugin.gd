@@ -192,6 +192,7 @@ func _disable_plugin() -> void:
 	var mcp_json_path := ProjectSettings.globalize_path("res://") + ".mcp.json"
 	if FileAccess.file_exists(mcp_json_path):
 		var dialog := ConfirmationDialog.new()
+		dialog.exclusive = false
 		dialog.title = "MCP Plugin Disabled"
 		dialog.dialog_text = (
 			"The .mcp.json configuration file is still at your project root:\n"

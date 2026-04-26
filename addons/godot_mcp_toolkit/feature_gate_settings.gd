@@ -285,6 +285,7 @@ func _confirm_power_user_from_ps(old_profile: int) -> void:
 		lines.append("  - %s: %s" % [feature, entry["risk"]])
 
 	_pu_confirm_dialog = ConfirmationDialog.new()
+	_pu_confirm_dialog.exclusive = false
 	_pu_confirm_dialog.title = "Switch to Power User?"
 	_pu_confirm_dialog.dialog_text = (
 		"This enables ALL gated features:\n\n"
@@ -473,6 +474,7 @@ func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: Stri
 	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
 	_ps_danger_dialog = ConfirmationDialog.new()
+	_ps_danger_dialog.exclusive = false
 	_ps_danger_dialog.title = "Enable %s?" % feature
 	_ps_danger_dialog.dialog_text = (
 		"WARNING: This is a potentially dangerous capability.\n\n"
