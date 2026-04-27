@@ -62,6 +62,9 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	if key.begins_with("mcp_toolkit/"):
 		return MCPError.make("INVALID_PATH",
 			"refusing to write mcp_toolkit/* from project.set_setting (those are the toolkit's own settings — use the FeatureGate system or dock UI); got key=%s" % key)
+	if key.begins_with("mcp/"):
+		return MCPError.make("INVALID_PATH",
+			"refusing to write mcp/* from project.set_setting (use the FeatureGate system); got key=%s" % key)
 	if key.begins_with("editor/"):
 		return MCPError.make("INVALID_PATH",
 			"refusing to write editor/* ProjectSettings from project.set_setting (editor-session state, not project config); got key=%s" % key)
