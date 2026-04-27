@@ -9,7 +9,6 @@ const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPScrubber = _Hub.MCPScrubber
 const MCPHelpers = _Hub.MCPHelpers
-const MCPHelpers = _Hub.MCPHelpers
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
 
