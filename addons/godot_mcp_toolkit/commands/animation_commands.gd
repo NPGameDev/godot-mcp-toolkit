@@ -27,7 +27,7 @@ static func _resolve_scene_node(node_path: String) -> Variant:
 static func _resolve_animation(
 	player_path: String, animation_name: String,
 ) -> Dictionary:
-	var root := EditorInterface.get_edited_scene_root()
+	var root := MCPHelpers.get_edited_root()
 	if root == null:
 		return {"code": "NO_SCENE", "error": "no edited scene"}
 	if player_path.is_empty():

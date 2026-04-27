@@ -9,6 +9,7 @@ const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPScrubber = _Hub.MCPScrubber
 const MCPHelpers = _Hub.MCPHelpers
+const MCPHelpers = _Hub.MCPHelpers
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
 
@@ -66,7 +67,7 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 
 
 static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
-	var root := EditorInterface.get_edited_scene_root()
+	var root := MCPHelpers.get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 	var save_path := str(parameters.get("file_path", ""))
@@ -175,7 +176,7 @@ static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
 			or height < MIN_SCREENSHOT_SIZE or height > MAX_SCREENSHOT_SIZE:
 		return MCPError.make("INVALID_PARAMS",
 			"size.width and size.height must be in [64, 4096] (got %dx%d)" % [width, height])
-	var root := EditorInterface.get_edited_scene_root()
+	var root := MCPHelpers.get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 	var node: Variant = null

@@ -37,7 +37,7 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 
 
 static func _get_edited_root() -> Node:
-	return EditorInterface.get_edited_scene_root()
+	return MCPHelpers.get_edited_root()
 
 
 static func _path_in_scene(scene_root: Node, node: Node) -> String:

@@ -7,6 +7,7 @@ const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPRegistryClient = _Hub.MCPRegistryClient
+const MCPHelpers = _Hub.MCPHelpers
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 const RUNTIME_HOST := "127.0.0.1"
@@ -55,7 +56,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 			"main":
 				EditorInterface.play_main_scene()
 			"current":
-				if EditorInterface.get_edited_scene_root() == null:
+				if MCPHelpers.get_edited_root() == null:
 					return MCPError.make("NO_SCENE",
 						"no currently-edited scene; use target:'main' or target:<res://path>, or scene.open first")
 				EditorInterface.play_current_scene()

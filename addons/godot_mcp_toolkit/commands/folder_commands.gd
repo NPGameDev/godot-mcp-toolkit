@@ -6,6 +6,7 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
+const MCPHelpers = _Hub.MCPHelpers
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
@@ -59,7 +60,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NOT_FOUND", "no folder at %s" % folder_path)
 	var normalized_with_slash := normalized + "/"
 
-	var edited := EditorInterface.get_edited_scene_root()
+	var edited := MCPHelpers.get_edited_root()
 	if edited != null:
 		var scene_path := str(edited.scene_file_path)
 		if not scene_path.is_empty() and (scene_path == normalized or scene_path.begins_with(normalized_with_slash)):
@@ -97,7 +98,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		var result := _folder_delete_recursive(folder_path)
 		files_deleted = int(result.get("files", 0))
 		dirs_deleted = int(result.get("dirs", 0))
-		if not bool(result.get("ok", false)):
+		if not bool(result.get("success", false)):
 			return MCPError.make("DELETE_FAILED", str(result.get("error", "unknown")))
 
 	var parent_path := folder_path.get_base_dir()
@@ -150,7 +151,7 @@ static func _folder_delete_recursive(folder_path: String) -> Dictionary:
 		var sub_result := _folder_delete_recursive(sub_path)
 		files_removed += int(sub_result.get("files", 0))
 		dirs_removed += int(sub_result.get("dirs", 0))
-		if not bool(sub_result.get("ok", false)):
+		if not bool(sub_result.get("success", false)):
 			return {"files": files_removed, "dirs": dirs_removed, "success": false,
 				"error": str(sub_result.get("error", "unknown"))}
 		var remove_sub_error := directory.remove(sub_name)
