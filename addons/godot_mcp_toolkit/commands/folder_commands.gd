@@ -127,7 +127,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 static func _folder_delete_recursive(folder_path: String) -> Dictionary:
 	var directory := DirAccess.open(folder_path)
 	if directory == null:
-		return {"files": 0, "dirs": 0, "ok": false,
+		return {"files": 0, "dirs": 0, "success": false,
 			"error": "DirAccess.open(%s) returned null" % folder_path}
 	var files_removed := 0
 	var dirs_removed := 0
@@ -136,7 +136,7 @@ static func _folder_delete_recursive(folder_path: String) -> Dictionary:
 			continue
 		var remove_error := directory.remove(file_name)
 		if remove_error != OK:
-			return {"files": files_removed, "dirs": dirs_removed, "ok": false,
+			return {"files": files_removed, "dirs": dirs_removed, "success": false,
 				"error": "DirAccess.remove %s/%s returned %d" % [folder_path, file_name, remove_error]}
 		files_removed += 1
 		var uid_companion := file_name + ".uid"
@@ -151,11 +151,11 @@ static func _folder_delete_recursive(folder_path: String) -> Dictionary:
 		files_removed += int(sub_result.get("files", 0))
 		dirs_removed += int(sub_result.get("dirs", 0))
 		if not bool(sub_result.get("ok", false)):
-			return {"files": files_removed, "dirs": dirs_removed, "ok": false,
+			return {"files": files_removed, "dirs": dirs_removed, "success": false,
 				"error": str(sub_result.get("error", "unknown"))}
 		var remove_sub_error := directory.remove(sub_name)
 		if remove_sub_error != OK:
-			return {"files": files_removed, "dirs": dirs_removed, "ok": false,
+			return {"files": files_removed, "dirs": dirs_removed, "success": false,
 				"error": "DirAccess.remove (subdir) %s returned %d" % [sub_path, remove_sub_error]}
 		dirs_removed += 1
-	return {"files": files_removed, "dirs": dirs_removed, "ok": true, "error": ""}
+	return {"files": files_removed, "dirs": dirs_removed, "success": true, "error": ""}

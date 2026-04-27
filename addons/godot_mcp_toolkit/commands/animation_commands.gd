@@ -7,6 +7,7 @@ const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPUntrusted = _Hub.MCPUntrusted
+const MCPHelpers = _Hub.MCPHelpers
 
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
@@ -20,12 +21,7 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 
 
 static func _resolve_scene_node(node_path: String) -> Variant:
-	var root := EditorInterface.get_edited_scene_root()
-	if root == null:
-		return null
-	if node_path.is_empty() or node_path == ".":
-		return root
-	return root.get_node_or_null(node_path)
+	return MCPHelpers.resolve_scene_node(node_path)
 
 
 static func _resolve_animation(

@@ -9,6 +9,7 @@ const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
+const MCPHelpers = _Hub.MCPHelpers
 
 
 static func register(registry: MCPCommandRegistry, server: Node) -> void:
@@ -76,36 +77,11 @@ static func _walk_tree(
 
 
 static func _class_descends_from(type_name: String, base: String) -> bool:
-	if ClassDB.class_exists(type_name):
-		return ClassDB.is_parent_class(type_name, base)
-	for entry in ProjectSettings.get_global_class_list():
-		if str(entry.get("class", "")) == type_name:
-			return _class_descends_from(str(entry.get("base", "")), base)
-	return false
+	return MCPHelpers.class_descends_from(type_name, base)
 
 
 static func _class_base_chain(type_name: String) -> String:
-	var chain := PackedStringArray()
-	var current := type_name
-	var depth := 0
-	while not current.is_empty() and depth < 16:
-		chain.append(current)
-		if ClassDB.class_exists(current):
-			var base := ClassDB.get_parent_class(current)
-			if base.is_empty():
-				break
-			current = base
-		else:
-			var found := false
-			for entry in ProjectSettings.get_global_class_list():
-				if str(entry.get("class", "")) == current:
-					current = str(entry.get("base", ""))
-					found = true
-					break
-			if not found:
-				break
-		depth += 1
-	return " -> ".join(chain)
+	return MCPHelpers.class_base_chain(type_name)
 
 
 # -- Commands -----------------------------------------------------------------
@@ -137,15 +113,10 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	if file_path.get_extension().to_lower() != "tscn":
 		return MCPError.make("INVALID_PATH",
 			"path must end with .tscn (got %s; use script.write for .gd files)" % file_path)
-	var parent_dir := file_path.get_base_dir()
-	var dirs_created := false
-	if not DirAccess.dir_exists_absolute(parent_dir):
-		var mkdir_err := DirAccess.make_dir_recursive_absolute(parent_dir)
-		if mkdir_err != OK:
-			return MCPError.make("PARENT_NOT_FOUND",
-				"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
-		push_warning("[MCPTools] auto-created directory %s for scene.create" % parent_dir)
-		dirs_created = true
+	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "scene.create")
+	if dir_result.has("error"):
+		return dir_result
+	var dirs_created: bool = dir_result["dirs_created"]
 
 	var resolved_kind := ""
 	var global_entry: Dictionary = {}
@@ -240,7 +211,7 @@ static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "scene not found: %s" % file_path, MCPError.HINT_FILE_PATH)
 	EditorInterface.open_scene_from_path(file_path)
-	return {"ok": true, "path": file_path}
+	return {"success": true, "path": file_path}
 
 
 static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
@@ -285,18 +256,7 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 	if edited_root != null and edited_root.scene_file_path == file_path:
 		return MCPError.make("EDITED_SCENE",
 			"cannot delete the currently-edited scene %s; close it via scene.close first, or open a different scene via scene.open" % file_path)
-	var directory := DirAccess.open("res://")
-	if directory == null:
-		return MCPError.make("INTERNAL", "DirAccess.open(res://) returned null")
-	var relative_path := file_path.substr("res://".length())
-	var remove_error := directory.remove(relative_path)
-	if remove_error != OK:
-		return MCPError.make("DELETE_FAILED",
-			"DirAccess.remove returned %d (path=%s)" % [remove_error, file_path])
-	var uid_relative := relative_path + ".uid"
-	if directory.file_exists(uid_relative):
-		directory.remove(uid_relative)
-	return {"success": true, "path": file_path}
+	return MCPHelpers.delete_res_file(file_path)
 
 
 static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
@@ -388,7 +348,7 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 	else:
 		parent.remove_child(node)
 		node.queue_free()
-	return {"ok": true, "path": node_path}
+	return {"success": true, "path": node_path}
 
 
 static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dictionary:

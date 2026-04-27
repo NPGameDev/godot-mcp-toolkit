@@ -8,6 +8,7 @@ const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPScrubber = _Hub.MCPScrubber
+const MCPHelpers = _Hub.MCPHelpers
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
 
@@ -82,7 +83,7 @@ static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 		if not FileAccess.file_exists(save_path):
 			return MCPError.make("SAVE_FAILED",
 				"save_scene_as did not produce %s" % save_path)
-	return {"ok": true, "path": root.scene_file_path}
+	return {"success": true, "path": root.scene_file_path}
 
 
 static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
@@ -157,7 +158,7 @@ static func _cmd_editor_reload_scripts() -> Dictionary:
 			if open_script is Script:
 				open_script.reload(true)
 				reloaded += 1
-	return {"ok": true, "reloaded": reloaded, "scan_waited_ms": scan_waited_ms}
+	return {"success": true, "reloaded": reloaded, "scan_waited_ms": scan_waited_ms}
 
 
 static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
@@ -308,13 +309,7 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int) -> 
 
 
 static func _detect_log_level(line: String) -> String:
-	if line.begins_with("ERROR:") or line.begins_with("USER ERROR:") \
-			or line.begins_with("SCRIPT ERROR:"):
-		return "error"
-	if line.begins_with("WARNING:") or line.begins_with("USER WARNING:") \
-			or line.begins_with("SCRIPT WARNING:"):
-		return "warning"
-	return "info"
+	return MCPHelpers.detect_log_level(line)
 
 
 static func _read_console_log(

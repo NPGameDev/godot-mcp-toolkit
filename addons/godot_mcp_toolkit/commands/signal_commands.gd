@@ -6,6 +6,7 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPHelpers = _Hub.MCPHelpers
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
@@ -21,16 +22,11 @@ static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 
 
 static func _get_edited_root() -> Node:
-	return EditorInterface.get_edited_scene_root()
+	return MCPHelpers.get_edited_root()
 
 
 static func _resolve_scene_node(node_path: String) -> Variant:
-	var root := _get_edited_root()
-	if root == null:
-		return null
-	if node_path.is_empty() or node_path == ".":
-		return root
-	return root.get_node_or_null(node_path)
+	return MCPHelpers.resolve_scene_node(node_path)
 
 
 static func _signal_list_of(node: Object) -> Array:
@@ -185,4 +181,4 @@ static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
 	for argument in raw_args:
 		coerced.append(MCPCoerce.coerce_value(argument))
 	node.callv("emit_signal", coerced)
-	return {"ok": true}
+	return {"success": true}

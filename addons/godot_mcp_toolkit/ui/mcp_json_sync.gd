@@ -23,10 +23,6 @@ static func is_gate_enabled(env_var_name: String) -> bool:
 	return data.get(env_var_name, "") == "1"
 
 
-## Legacy alias — use is_gate_enabled() for new code.
-static func has_env_var(env_var_name: String) -> bool:
-	return is_gate_enabled(env_var_name)
-
 
 static func get_all_env_vars() -> Dictionary:
 	return _read_server_env()

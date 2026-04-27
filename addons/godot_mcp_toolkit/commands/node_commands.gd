@@ -8,6 +8,7 @@ const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPFeatureGate = _Hub.MCPFeatureGate
+const MCPHelpers = _Hub.MCPHelpers
 
 
 const COMMON_PROPERTIES_BY_CLASS := {
@@ -64,16 +65,11 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 
 
 static func _get_edited_root() -> Node:
-	return EditorInterface.get_edited_scene_root()
+	return MCPHelpers.get_edited_root()
 
 
 static func _resolve_scene_node(node_path: String) -> Variant:
-	var root := _get_edited_root()
-	if root == null:
-		return null
-	if node_path.is_empty() or node_path == ".":
-		return root
-	return root.get_node_or_null(node_path)
+	return MCPHelpers.resolve_scene_node(node_path)
 
 
 # -- Commands -----------------------------------------------------------------
@@ -120,7 +116,7 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 
 	var coerced = MCPCoerce.coerce_value(raw_value)
 	node.set(property_name, coerced)
-	return {"ok": true}
+	return {"success": true}
 
 
 static func _resolve_common_property_names(node: Object) -> Array[String]:

@@ -6,6 +6,7 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
+const MCPHelpers = _Hub.MCPHelpers
 
 const IMPORT_ALLOWED_EXTENSIONS := [
 	# Images
@@ -290,13 +291,9 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 			"replace":
 				pass
 
-	var parent_dir := dest_path.get_base_dir()
-	if not DirAccess.dir_exists_absolute(parent_dir):
-		var mkdir_error := DirAccess.make_dir_recursive_absolute(parent_dir)
-		if mkdir_error != OK:
-			return MCPError.make("WRITE_FAILED",
-				"cannot create parent directory for %s (err %d)" % [
-					dest_path, mkdir_error])
+	var dir_result := MCPHelpers.ensure_parent_dir(dest_path, "asset.import")
+	if dir_result.has("error"):
+		return dir_result
 
 	var bytes_to_write: PackedByteArray
 	var source_label: String

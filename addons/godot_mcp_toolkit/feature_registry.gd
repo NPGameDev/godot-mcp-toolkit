@@ -5,11 +5,12 @@ extends RefCounted
 ## Each entry declares the .mcp.json env var name and a human-readable
 ## risk string surfaced in FEATURE_DISABLED error payloads.
 ##
-## Gate state lives solely in .mcp.json env vars. ProjectSettings bools
-## (ps_key) are registered as a mirror UI — the dock and the Inspector
-## both reflect .mcp.json, and changes from either side are synced
-## bidirectionally by the poll loop in feature_gate_settings.gd.
-## Profile mode and admin deny keys remain in PS as overrides.
+## Gate state runtime source of truth is the sidecar state file (instance
+## subdir). ProjectSettings bools (ps_key) are a mirror UI — the dock and
+## the Inspector both reflect the sidecar, and changes from either side
+## are synced bidirectionally by the poll loop in feature_gate_settings.gd.
+## .mcp.json is auto-generated read-only. Profile mode and admin deny
+## keys remain in PS as overrides.
 ##
 ## To add a new gated feature, append an entry here. TS-side catalogue
 ## filtering (feature_gate.ts) reads from this table — no secondary

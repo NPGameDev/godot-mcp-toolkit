@@ -8,6 +8,7 @@ const MCPCoerce = _Hub.MCPCoerce
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
+const MCPHelpers = _Hub.MCPHelpers
 
 const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 	"image", "mesh_arrays", "surface_arrays", "_data",
@@ -27,36 +28,11 @@ static func register(registry: MCPCommandRegistry, _server: Node) -> void:
 
 
 static func _class_descends_from(type_name: String, base: String) -> bool:
-	if ClassDB.class_exists(type_name):
-		return ClassDB.is_parent_class(type_name, base)
-	for entry in ProjectSettings.get_global_class_list():
-		if str(entry.get("class", "")) == type_name:
-			return _class_descends_from(str(entry.get("base", "")), base)
-	return false
+	return MCPHelpers.class_descends_from(type_name, base)
 
 
 static func _class_base_chain(type_name: String) -> String:
-	var chain := PackedStringArray()
-	var current := type_name
-	var depth := 0
-	while not current.is_empty() and depth < 16:
-		chain.append(current)
-		if ClassDB.class_exists(current):
-			var base := ClassDB.get_parent_class(current)
-			if base.is_empty():
-				break
-			current = base
-		else:
-			var found := false
-			for entry in ProjectSettings.get_global_class_list():
-				if str(entry.get("class", "")) == current:
-					current = str(entry.get("base", ""))
-					found = true
-					break
-			if not found:
-				break
-		depth += 1
-	return " -> ".join(chain)
+	return MCPHelpers.class_base_chain(type_name)
 
 
 static func _property_names_of(object: Object) -> Dictionary:
@@ -166,15 +142,10 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	if resource_class.is_empty():
 		return MCPError.make("NOT_FOUND",
 			"resource not found at %s; provide 'type' to create it" % file_path, MCPError.HINT_FILE_PATH)
-	var parent_dir := file_path.get_base_dir()
-	var dirs_created := false
-	if not DirAccess.dir_exists_absolute(parent_dir):
-		var mkdir_err := DirAccess.make_dir_recursive_absolute(parent_dir)
-		if mkdir_err != OK:
-			return MCPError.make("PARENT_NOT_FOUND",
-				"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
-		push_warning("[MCPTools] auto-created directory %s for resource.write" % parent_dir)
-		dirs_created = true
+	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "resource.write")
+	if dir_result.has("error"):
+		return dir_result
+	var dirs_created: bool = dir_result["dirs_created"]
 	var resolved_kind := ""
 	var global_entry: Dictionary = {}
 	if ClassDB.class_exists(resource_class):
@@ -236,15 +207,4 @@ static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
 			"resource.delete only removes .tres or .res files (got %s); use scene.delete for .tscn, script.delete for .gd/.cs/.gdshader/.gdshaderinc, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
-	var directory := DirAccess.open("res://")
-	if directory == null:
-		return MCPError.make("INTERNAL", "DirAccess.open(res://) returned null")
-	var relative_path := file_path.substr("res://".length())
-	var remove_error := directory.remove(relative_path)
-	if remove_error != OK:
-		return MCPError.make("DELETE_FAILED",
-			"DirAccess.remove returned %d (path=%s)" % [remove_error, file_path])
-	var uid_relative := relative_path + ".uid"
-	if directory.file_exists(uid_relative):
-		directory.remove(uid_relative)
-	return {"success": true, "path": file_path}
+	return MCPHelpers.delete_res_file(file_path)

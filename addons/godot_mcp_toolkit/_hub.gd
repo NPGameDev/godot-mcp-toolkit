@@ -20,6 +20,7 @@ const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_clie
 const MCPStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
 const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
+const MCPHelpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
 
 
 # -- Version helpers (Godot 4.x cross-version compat) -----------------------

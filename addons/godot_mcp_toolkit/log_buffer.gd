@@ -17,6 +17,8 @@ extends RefCounted
 ## Thread safety: Logger callbacks can fire from any thread.
 ## All buffer access is Mutex-protected.
 
+const MCPHelpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
+
 const _CAPACITY := 500
 const _POLL_INTERVAL_MS := 200
 
@@ -223,10 +225,4 @@ static func _tail_log_file() -> void:
 
 
 static func _detect_log_level(line: String) -> String:
-	if line.begins_with("ERROR:") or line.begins_with("USER ERROR:") \
-			or line.begins_with("SCRIPT ERROR:"):
-		return "error"
-	if line.begins_with("WARNING:") or line.begins_with("USER WARNING:") \
-			or line.begins_with("SCRIPT WARNING:"):
-		return "warning"
-	return "info"
+	return MCPHelpers.detect_log_level(line)

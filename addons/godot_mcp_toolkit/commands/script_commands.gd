@@ -7,6 +7,7 @@ const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
+const MCPHelpers = _Hub.MCPHelpers
 
 const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"]
 
@@ -113,15 +114,10 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		return MCPError.make("INVALID_PARAMS", "missing content")
 	var content := str(parameters.get("content", ""))
 
-	var parent_dir := file_path.get_base_dir()
-	var dirs_created := false
-	if not DirAccess.dir_exists_absolute(parent_dir):
-		var mkdir_err := DirAccess.make_dir_recursive_absolute(parent_dir)
-		if mkdir_err != OK:
-			return MCPError.make("PARENT_NOT_FOUND",
-				"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
-		push_warning("[MCPTools] auto-created directory %s for script.write" % parent_dir)
-		dirs_created = true
+	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "script.write")
+	if dir_result.has("error"):
+		return dir_result
+	var dirs_created: bool = dir_result["dirs_created"]
 
 	var existed := FileAccess.file_exists(file_path)
 	var prior_content := ""
@@ -148,7 +144,7 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		undo_redo.commit_action(false)
 
 	var bytes_written := content.to_utf8_buffer().size()
-	var result := {"ok": true, "bytes": bytes_written, "undoable": undo_redo != null}
+	var result := {"success": true, "bytes": bytes_written, "undoable": undo_redo != null}
 	if dirs_created:
 		result["dirs_created"] = true
 	return result
@@ -168,18 +164,7 @@ static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
 			"script.delete only removes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.delete for .tscn, resource.delete for .tres/.res, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
-	var directory := DirAccess.open("res://")
-	if directory == null:
-		return MCPError.make("INTERNAL", "DirAccess.open(res://) returned null")
-	var relative_path := file_path.substr("res://".length())
-	var remove_error := directory.remove(relative_path)
-	if remove_error != OK:
-		return MCPError.make("DELETE_FAILED",
-			"DirAccess.remove returned %d (path=%s)" % [remove_error, file_path])
-	var uid_relative := relative_path + ".uid"
-	if directory.file_exists(uid_relative):
-		directory.remove(uid_relative)
-	return {"success": true, "path": file_path}
+	return MCPHelpers.delete_res_file(file_path)
 
 
 # -- File I/O helpers (referenced by UndoRedo via server node) ----------------

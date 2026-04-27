@@ -7,6 +7,7 @@ const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
+const MCPScrubber = _Hub.MCPScrubber
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
@@ -75,8 +76,8 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 			"total_bytes": total_bytes,
 			"bytes_returned": buffer.size(),
 		}
-	# TODO: apply scrubber before envelope.
-	var wrapped := MCPUntrusted.wrap("user-file", path, text)
+	var scrubbed := MCPScrubber.scrub(text, "save.read")
+	var wrapped := MCPUntrusted.wrap("user-file", path, scrubbed["text"])
 	return {
 		"success": true,
 		"path": path,

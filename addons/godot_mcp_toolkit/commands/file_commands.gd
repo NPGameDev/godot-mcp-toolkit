@@ -6,6 +6,7 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
+const MCPHelpers = _Hub.MCPHelpers
 
 
 static func register(registry: MCPCommandRegistry, _server: Node) -> void:
@@ -32,18 +33,4 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 	if edited_root != null and edited_root.scene_file_path == file_path:
 		return MCPError.make("EDITED_SCENE",
 			"cannot delete the currently-edited scene %s; close it via scene.close first, or use scene.delete after closing" % file_path)
-	var directory := DirAccess.open("res://")
-	if directory == null:
-		return MCPError.make("INTERNAL", "DirAccess.open(res://) returned null")
-	var relative_path := file_path.substr("res://".length())
-	var remove_error := directory.remove(relative_path)
-	if remove_error != OK:
-		return MCPError.make("DELETE_FAILED",
-			"DirAccess.remove returned %d (path=%s)" % [remove_error, file_path])
-	var import_relative := relative_path + ".import"
-	if directory.file_exists(import_relative):
-		directory.remove(import_relative)
-	var uid_relative := relative_path + ".uid"
-	if directory.file_exists(uid_relative):
-		directory.remove(uid_relative)
-	return {"success": true, "path": file_path}
+	return MCPHelpers.delete_res_file(file_path, [".uid", ".import"])

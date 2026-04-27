@@ -247,7 +247,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		"echo":
 			_send_result(peer, id, params)
 		"ping":
-			_send_result(peer, id, {"ok": true})
+			_send_result(peer, id, {"success": true})
 		"runtime.screenshot":
 			_cmd_runtime_screenshot(peer, id)
 		"runtime.get_node_state":
@@ -575,7 +575,7 @@ func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, MCPError.make("NOT_FOUND", "no connection to disconnect"))
 		return
 	source.disconnect(signal_name, callable)
-	_send_result(peer, id, {"ok": true})
+	_send_result(peer, id, {"success": true})
 
 
 
@@ -602,7 +602,7 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 	for a in raw_args:
 		coerced.append(MCPCoerce.coerce_value(a))
 	node.callv("emit_signal", coerced)
-	_send_result(peer, id, {"ok": true})
+	_send_result(peer, id, {"success": true})
 
 
 # ---- Playtest commands ------------------------------------------------------
@@ -671,10 +671,10 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			OS.delay_msec(delay_after_ms)
 
 	if summary_mode:
-		_send_result(peer, id, {"ok": true, "events_processed": processed,
+		_send_result(peer, id, {"success": true, "events_processed": processed,
 			"total": total, "last_event": results.back()})
 	else:
-		_send_result(peer, id, {"ok": true, "events_processed": processed,
+		_send_result(peer, id, {"success": true, "events_processed": processed,
 			"total": total, "results": results})
 
 
@@ -791,7 +791,7 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 			_send_result(peer, id, MCPError.make("INVALID_PARAMS", "unknown op: %s (expected play|pause|stop|seek)" % op))
 			return
 	_send_result(peer, id, {
-		"ok": true,
+		"success": true,
 		"current_animation": String(ap.current_animation),
 		"current_animation_position": ap.current_animation_position,
 	})
