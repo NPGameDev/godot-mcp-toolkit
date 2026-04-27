@@ -66,8 +66,3 @@ func _show_toast(msg: String, severity: int = INFO) -> void:
 		push_warning("[MCP] %s" % msg)
 	else:
 		print("[MCP] %s" % msg)
-	var toaster = _Hub.get_toaster()
-	if toaster != null:
-		toaster.push_toast(msg, severity)
-	if _events != null:
-		_events.gate_toast_requested.emit(msg, severity)

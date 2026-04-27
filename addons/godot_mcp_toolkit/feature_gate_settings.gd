@@ -24,7 +24,7 @@ const _LIMITS_NOTE_TEXT := (
 const _STATUS_KEY := "mcp_toolkit/feature_gates/status"
 const _PU_WARNING_TEXT := (
 	"POWER USER MODE ACTIVE — All feature gates enabled. "
-	+ "The AI agent has full control: code execution, OS commands, "
+	+ "The AI agent has full control: arbitrary code execution, "
 	+ "project settings writes, and file access outside res://. "
 	+ "Individual gates cannot be changed — switch to Standard to toggle.")
 const _MINIMAL_WARNING_TEXT := (

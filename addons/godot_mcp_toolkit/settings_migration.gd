@@ -75,6 +75,9 @@ static func migrate_stale_settings() -> void:
 		"mcp/unsafe/allow_project_set_setting",
 		"mcp/unsafe/allow_input_map_write",
 		"application/config/mcp_smoke_15d",
+		# Gates removed in 41d-nonis (no tools used them):
+		"mcp_toolkit/feature_gates/allow_os_execute",
+		"mcp_toolkit/feature_gates/allow_outbound_http",
 	]
 	var removed := 0
 	for key in stale_keys:

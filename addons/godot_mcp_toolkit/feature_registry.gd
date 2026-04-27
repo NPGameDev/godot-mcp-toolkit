@@ -28,22 +28,10 @@ const FEATURES := {
 		"warn_on_enable": true,
 		"warn_text": "Allows the AI to evaluate arbitrary GDScript expressions in the running game via the Expression class.",
 	},
-	"os_execute": {
-		"env_var": "GODOT_MCP_ALLOW_OS_EXECUTE",
-		"ps_key": "mcp_toolkit/feature_gates/allow_os_execute",
-		"risk": "Host-OS shell execution",
-		"warn_on_enable": true,
-		"warn_text": "Allows the AI to run arbitrary operating-system commands, including file operations and process management.",
-	},
 	"read_user_scope": {
 		"env_var": "GODOT_MCP_ALLOW_USER_SCOPE",
 		"ps_key": "mcp_toolkit/feature_gates/allow_user_scope",
 		"risk": "Read/write whitelisted user:// paths",
-	},
-	"outbound_http": {
-		"env_var": "GODOT_MCP_ALLOW_OUTBOUND_HTTP",
-		"ps_key": "mcp_toolkit/feature_gates/allow_outbound_http",
-		"risk": "Outbound HTTP requests",
 	},
 	"node_call_method": {
 		"env_var": "GODOT_MCP_ALLOW_NODE_CALL_METHOD",

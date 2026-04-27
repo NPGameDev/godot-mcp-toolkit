@@ -239,16 +239,16 @@ dual/single gate distinction; all gates follow the same check order:
 | Feature               | Env var                                  | PS mirror key                                      | Risk |
 |-----------------------|------------------------------------------|----------------------------------------------------|------|
 | `game_eval`           | `GODOT_MCP_ALLOW_GAME_EVAL`             | `mcp_toolkit/feature_gates/allow_game_eval`        | Arbitrary GDScript via Expression |
-| `os_execute`          | `GODOT_MCP_ALLOW_OS_EXECUTE`            | `mcp_toolkit/feature_gates/allow_os_execute`       | Host-OS shell execution |
 | `project_set_setting` | `GODOT_MCP_ALLOW_PROJECT_SET_SETTING`   | `mcp_toolkit/feature_gates/allow_project_set_setting` | Write arbitrary ProjectSettings keys |
-| `outbound_http`       | `GODOT_MCP_ALLOW_OUTBOUND_HTTP`         | `mcp_toolkit/feature_gates/allow_outbound_http`    | Outbound HTTP requests |
 | `node_call_method`    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD`      | `mcp_toolkit/feature_gates/allow_node_call_method` | Method invocation on edited-scene nodes |
 | `input_map_write`     | `GODOT_MCP_ALLOW_INPUT_MAP_WRITE`       | `mcp_toolkit/feature_gates/allow_input_map_write`  | Modify persistent InputMap actions |
 | `read_user_scope`     | `GODOT_MCP_ALLOW_USER_SCOPE`            | `mcp_toolkit/feature_gates/allow_user_scope`       | Read/write whitelisted user:// paths |
 
-**Dangerous-gate confirmation:** Three RCE-class features (`os_execute`,
-`game_eval`, `node_call_method`) show a confirmation dialog the first time
-they are enabled in Standard profile. Once per editor session per feature.
+**Dangerous-gate confirmation:** Two RCE-class features (`game_eval`,
+`node_call_method`) show a confirmation dialog the first time they are
+enabled in Standard profile. Once per editor session per feature.
+`game_eval` is the effective security boundary for arbitrary code execution
+(including OS commands and outbound HTTP via GDScript).
 
 ### How to enable
 

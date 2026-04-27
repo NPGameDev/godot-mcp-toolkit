@@ -35,6 +35,42 @@ The TypeScript bridge auto-discovers user commands via `meta.user_commands`
 and registers them as MCP tools. Your MCP client receives a
 `tools/list_changed` notification when new user commands are found.
 
+### Error handling contract
+
+Command handlers must return a `Dictionary`. On success:
+
+```gdscript
+return {"success": true, "data": "result here"}
+```
+
+On failure, return `success: false` with an `error` string and an
+uppercase `code` for programmatic matching:
+
+```gdscript
+return {"success": false, "error": "Node not found", "code": "NOT_FOUND"}
+```
+
+Never throw or let exceptions propagate — the loader catches load-time
+errors but runtime exceptions in handlers will produce a generic MCP
+error. Validate inputs and return a structured error Dictionary instead.
+
+### MCP annotations
+
+The TypeScript bridge registers user commands with these default MCP
+annotations:
+
+- `readOnlyHint: false` — assumed to be mutating
+- `destructiveHint: false`
+- `openWorldHint: false`
+
+The description is auto-generated as `User command: <method>` and the
+input schema is empty (accepts any JSON object).
+
+There is currently no way to override these defaults from GDScript —
+`registry.add()` takes only a method name and handler callable. Custom
+annotations, descriptions, and input schemas are planned for a future
+extension API revision.
+
 ## Third-Party Plugin Integration (not yet supported)
 
 Currently, only scripts inside `addons/godot_mcp_toolkit/user_commands/` can
