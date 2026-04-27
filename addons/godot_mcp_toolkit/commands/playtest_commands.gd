@@ -62,12 +62,14 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 						"no scene file at %s; use scene.create first" % target, MCPError.HINT_FILE_PATH)
 				EditorInterface.play_custom_scene(target)
 
-	# Two-phase wait — poll registry for the runtime_port to appear (the
-	# runtime server writes it after binding), then WS health-check it.
+	# Runtime readiness check.
 	var runtime_port := -1
 	var runtime_ready := false
 	var runtime_failure := ""
-	if wait_for_runtime or runtime_poll:
+	var bridge_discovery := false
+
+	if runtime_poll:
+		# Explicit re-probe: full poll loop (runtime_poll:true path).
 		var deadline := Time.get_ticks_msec() + RUNTIME_POLL_TIMEOUT_MS
 		while Time.get_ticks_msec() < deadline:
 			runtime_port = MCPRegistryClient.get_runtime_port()
@@ -83,6 +85,18 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 				runtime_failure = str(probe.get("failure", "unknown"))
 		else:
 			runtime_failure = "registry_timeout"
+	elif wait_for_runtime:
+		# Non-blocking: single registry check + short WS probe.
+		# Bridge auto-discovers runtime via fs.watch on projects.json.
+		runtime_port = MCPRegistryClient.get_runtime_port()
+		if runtime_port > 0:
+			var probe := _poll_runtime_ready(
+				RUNTIME_HOST, runtime_port, 500)
+			runtime_ready = probe["ready"]
+			if not runtime_ready:
+				runtime_failure = str(probe.get("failure", "unknown"))
+		else:
+			bridge_discovery = true
 
 	var response := {
 		"success": true,
@@ -90,9 +104,11 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 		"runtime_port": runtime_port if runtime_port > 0 else null,
 		"runtime_ready": runtime_ready,
 	}
+	if bridge_discovery:
+		response["runtime_discovery"] = "bridge"
 	if runtime_poll:
 		response["runtime_poll"] = true
-	if (wait_for_runtime or runtime_poll) and not runtime_ready:
+	if (wait_for_runtime or runtime_poll) and not runtime_ready and not bridge_discovery:
 		response["runtime_failure"] = runtime_failure
 		match runtime_failure:
 			"registry_timeout":
