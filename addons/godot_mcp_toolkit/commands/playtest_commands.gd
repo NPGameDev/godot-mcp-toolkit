@@ -32,6 +32,11 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 	var runtime_poll_raw = parameters.get("runtime_poll", false)
 	var runtime_poll := bool(runtime_poll_raw) \
 		if typeof(runtime_poll_raw) == TYPE_BOOL else false
+	var if_running := str(parameters.get("if_running", "fail"))
+
+	if not (if_running in ["return", "fail"]):
+		return MCPError.make("INVALID_PARAMS",
+			"if_running must be 'return' or 'fail' (got %s); default is 'fail'" % if_running)
 
 	if runtime_poll:
 		if not EditorInterface.is_playing_scene():
@@ -39,6 +44,10 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 				"no game is running; call game.start first")
 	else:
 		if EditorInterface.is_playing_scene():
+			if if_running == "return":
+				var runtime_port := MCPRegistryClient.get_runtime_port()
+				return {"success": true, "status": "already_running",
+					"runtime_port": runtime_port if runtime_port > 0 else null}
 			return MCPError.make("ALREADY_PLAYING",
 				"a game is already running; call game.stop first, or use runtime_poll:true to re-probe the runtime connection")
 
