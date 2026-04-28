@@ -54,8 +54,6 @@ static func _cmd_project_get_settings(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
-	if not MCPFeatureGate.is_enabled("project_set_setting"):
-		return MCPFeatureGate.disabled_error("project_set_setting")
 	var key := str(parameters.get("key", ""))
 	if key.is_empty():
 		return MCPError.make("INVALID_PARAMS", "key must be a non-empty string")

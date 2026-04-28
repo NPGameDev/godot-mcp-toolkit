@@ -168,22 +168,34 @@ func _exit_tree() -> void:
 	# Menus + command palette.
 	_unregister_menus()
 
-	# Dock (remove + free).
+	# Dock — remove from panel, then free() immediately (not queue_free())
+	# so its script preload chain is released before ObjectDB's exit-time
+	# leak check runs.
 	if _dock != null:
 		remove_control_from_bottom_panel(_dock)
-		_dock.queue_free()
+		_dock.free()
 		_dock = null
+
+	# RefCounted subsystems — drop our references so they can be collected
+	# once the dock (which also holds them) is freed above.
+	_notifier = null
+	_feature_settings = null
+	_events = null
 
 	# Export plugin (RefCounted — do NOT queue_free, just null).
 	if _export_plugin != null:
 		remove_export_plugin(_export_plugin)
 		_export_plugin = null
 
-	# Server + registry.
+	# Server + registry — clear command registry first to break the
+	# Callable → GDScript reference chains, then free() immediately.
+	# queue_free() alone causes "resources still in use at exit" because
+	# deferred deletion runs after ObjectDB's leak check.
 	if _server != null:
 		_server.stop()
+		_server.clear_registry()
 		MCPRegistryClient.deregister()
-		_server.queue_free()
+		_server.free()
 		_server = null
 
 

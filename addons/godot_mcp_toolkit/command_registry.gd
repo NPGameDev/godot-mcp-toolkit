@@ -38,6 +38,10 @@ func has_command(method: String) -> bool:
 	return _commands.has(method)
 
 
+func clear() -> void:
+	_commands.clear()
+	_user_methods.clear()
+
 
 func call_command(method: String, parameters: Dictionary) -> Dictionary:
 	if not _commands.has(method):

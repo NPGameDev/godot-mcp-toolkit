@@ -67,6 +67,14 @@ func set_registry(registry: MCPCommandRegistry) -> void:
 	_registry = registry
 
 
+## Release the command registry and all its Callable references.
+## Called during plugin teardown to break reference chains before node deletion.
+func clear_registry() -> void:
+	if _registry != null:
+		_registry.clear()
+		_registry = null
+
+
 func is_listening() -> bool:
 	return _tcp_server != null and _tcp_server.is_listening()
 

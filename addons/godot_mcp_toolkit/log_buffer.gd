@@ -146,7 +146,9 @@ static func _setup_logger() -> void:
 	_logger_ref = script.new()
 	# Pass a reference to this script so the logger can call push().
 	_logger_ref.set_meta("_log_buffer", load("res://addons/godot_mcp_toolkit/log_buffer.gd"))
-	OS.add_logger(_logger_ref)
+	# Dynamic call — OS.add_logger() only exists in 4.5+; static reference
+	# causes a parse error on 4.2-4.4 even inside a guarded branch.
+	OS.call("add_logger", _logger_ref)
 
 
 const _LOGGER_SOURCE := '
