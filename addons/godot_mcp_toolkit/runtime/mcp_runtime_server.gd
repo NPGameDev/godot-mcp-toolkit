@@ -19,6 +19,7 @@ const MCPUntrusted = _Hub.MCPUntrusted
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const MCPFeatureGate = _Hub.MCPFeatureGate
 const MCPScrubber = _Hub.MCPScrubber
+const MCPHelpers = _Hub.MCPHelpers
 const MCPRegistryClient = _Hub.MCPRegistryClient
 
 const PORT_BASE := 6525
@@ -433,7 +434,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	var start := max(0, total - limit)
 	var slice: Array = []
 	for i in range(start, total):
-		slice.append(all_lines[i])
+		slice.append(MCPHelpers.strip_ansi(all_lines[i]))
 
 	var json_slice := JSON.stringify(slice)
 	var scrubbed := MCPScrubber.scrub(json_slice, "debugger.get_log")

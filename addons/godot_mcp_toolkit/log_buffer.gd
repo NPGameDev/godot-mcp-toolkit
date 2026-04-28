@@ -66,7 +66,7 @@ static func push(level: String, message: String) -> void:
 		"id": _next_id,
 		"timestamp_unix": int(Time.get_unix_time_from_system()),
 		"level": level,
-		"message": message,
+		"message": MCPHelpers.strip_ansi(message),
 	}
 	_next_id += 1
 	if _entries.size() >= _CAPACITY:

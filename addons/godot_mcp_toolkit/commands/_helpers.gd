@@ -98,6 +98,29 @@ static func ensure_parent_dir(file_path: String, context: String = "") -> Dictio
 	return {"ok": true, "dirs_created": true}
 
 
+# -- ANSI stripping ------------------------------------------------------------
+
+
+## Compiled once at script load — one allocation per editor session.
+## CSI sequences: ESC [ <params> <final>  (e.g. ESC[90m, ESC[0m)
+## Simple escapes: ESC <letter>            (e.g. ESC c)
+static var _ansi_re: RegEx = _compile_ansi_re()
+
+static func _compile_ansi_re() -> RegEx:
+	var re := RegEx.new()
+	re.compile("\\x1b(?:\\[[0-9;]*[A-Za-z]|[A-Za-z])")
+	return re
+
+
+## Strip ANSI/VT100 escape sequences from a string.
+## In headless mode Godot emits ANSI color codes in progress-bar and
+## status messages. These contain raw ESC (0x1B) bytes that Godot's
+## JSON.stringify() does not escape, producing invalid JSON and causing
+## the TypeScript bridge to silently drop responses.
+static func strip_ansi(text: String) -> String:
+	return _ansi_re.sub(text, "", true)
+
+
 # -- Log level detection -------------------------------------------------------
 
 

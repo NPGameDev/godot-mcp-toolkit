@@ -17,23 +17,22 @@ const PATTERNS: Array[String] = [
 ]
 
 
-static var _compiled_patterns: Array[RegEx] = []
+## Compiled once at script load.
+static var _compiled_patterns: Array[RegEx] = _compile_patterns()
 
-
-static func _ensure_compiled() -> void:
-	if not _compiled_patterns.is_empty():
-		return
+static func _compile_patterns() -> Array[RegEx]:
+	var out: Array[RegEx] = []
 	for pattern in PATTERNS:
 		var regex := RegEx.new()
 		regex.compile(pattern)
-		_compiled_patterns.append(regex)
+		out.append(regex)
+	return out
 
 
 ## Scrub secrets from text. Returns {text: String, redaction_count: int}.
 ## When redaction_count > 0 and source is non-empty, emits a push_warning
 ## so developers can correlate [REDACTED] appearances with the scrubber.
 static func scrub(text: String, source: String = "") -> Dictionary:
-	_ensure_compiled()
 	var out := text
 	var redaction_count := 0
 	for regex in _compiled_patterns:

@@ -7,8 +7,13 @@ extends RefCounted
 ## Scrubs existing envelope tags from the body to prevent tag-breakout
 ## injection. Never applied to write paths or binary (screenshot) data.
 
-## Compiled lazily on first use — one allocation per editor session.
-static var _envelope_tag_re: RegEx
+## Compiled once at script load — one allocation per editor session.
+static var _envelope_tag_re: RegEx = _compile_envelope_re()
+
+static func _compile_envelope_re() -> RegEx:
+	var re := RegEx.new()
+	re.compile("(?i)<\\s*/?\\s*untrusted(?:-[0-9a-f]*)?(?:\\s[^>]*)?>")
+	return re
 
 
 static func wrap(kind: String, source: String, body: String) -> String:
@@ -18,7 +23,4 @@ static func wrap(kind: String, source: String, body: String) -> String:
 
 
 static func _scrub_envelope_tags(text: String) -> String:
-	if _envelope_tag_re == null:
-		_envelope_tag_re = RegEx.new()
-		_envelope_tag_re.compile("(?i)<\\s*/?\\s*untrusted(?:-[0-9a-f]*)?(?:\\s[^>]*)?>")
 	return _envelope_tag_re.sub(text, "[scrubbed-envelope-tag]", true)

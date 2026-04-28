@@ -398,7 +398,7 @@ static func _read_console_log(
 	var char_offset: int = 0
 
 	for line_index in range(lines.size()):
-		var line: String = lines[line_index]
+		var line: String = MCPHelpers.strip_ansi(lines[line_index])
 		if line.strip_edges().is_empty():
 			char_offset += line.length() + 1
 			continue
