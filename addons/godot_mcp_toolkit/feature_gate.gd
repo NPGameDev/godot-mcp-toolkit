@@ -127,6 +127,12 @@ static func restore_standard_gates() -> Dictionary:
 	var err := MCPStateFile.write("standard", gates)
 	if err != OK:
 		push_warning("[MCPStateFile] restore_standard_gates: sidecar write failed (err %d)" % err)
+	else:
+		# Delete cache after successful restore so L3 won't block the next
+		# snapshot — even when all gates are false (a valid user preference).
+		var cache_path := _get_cache_path()
+		if FileAccess.file_exists(cache_path):
+			DirAccess.remove_absolute(cache_path)
 	return cache
 
 
