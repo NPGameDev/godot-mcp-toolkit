@@ -46,7 +46,13 @@ static func registry_path() -> String:
 
 
 static func _normalize_path(p: String) -> String:
-	return p.replace("\\", "/").rstrip("/")
+	var result := p.replace("\\", "/").rstrip("/")
+	# Windows and macOS default filesystems are case-insensitive; lowercase
+	# avoids mismatches between Godot's globalize_path and Node.js
+	# process.cwd() when the TS bridge reads the same registry file.
+	if OS.get_name() in ["Windows", "macOS"]:
+		result = result.to_lower()
+	return result
 
 
 static func _project_key() -> String:
@@ -229,7 +235,8 @@ static func set_runtime(runtime_port: int) -> void:
 		_write_atomic(data)
 		print("[MCPRegistry] runtime port %d registered for %s" % [runtime_port, key])
 	else:
-		push_warning("[MCPRegistry] set_runtime: no entry for %s; skipping" % key)
+		var available := ", ".join(by_path.keys()) if by_path.size() > 0 else "(empty)"
+		push_warning("[MCPRegistry] set_runtime: no entry for %s; available keys: %s" % [key, available])
 	_release_lock()
 
 

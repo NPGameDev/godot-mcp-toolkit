@@ -18,6 +18,10 @@ const _PLUGIN_DIR := "user://addons/godot_mcp_toolkit/"
 ## 12-char hex hash of the canonical project root path.
 static func project_hash() -> String:
 	var path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
+	# Windows and macOS default filesystems are case-insensitive; lowercase
+	# so the hash matches between Godot and the Node.js bridge.
+	if OS.get_name() in ["Windows", "macOS"]:
+		path = path.to_lower()
 	return path.sha256_text().substr(0, 12)
 
 

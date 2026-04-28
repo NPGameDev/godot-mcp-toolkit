@@ -14,7 +14,6 @@ config/name="Godot MCP Toolkit"
 run/main_scene="uid://bompismuom3fi"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
-config/mcp_smoke_15d="smoke-15d-marker"
 
 [autoload]
 
