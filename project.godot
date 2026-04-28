@@ -25,5 +25,4 @@ enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
 
 [mcp_toolkit]
 
-feature_gates/allow_game_eval=true
-feature_gates/allow_input_map_write=true
+feature_gates/status="MINIMAL PROFILE ACTIVE — All feature gates disabled. Only core read-only tools are available. Individual gates cannot be changed — switch to Standard to toggle."
