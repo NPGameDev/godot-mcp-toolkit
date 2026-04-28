@@ -83,6 +83,9 @@ func register_all() -> void:
 			# Neither PS nor .mcp.json has state — seed from PS defaults.
 			_bootstrap_sidecar_from_ps()
 	snapshot_feature_states()
+	# Silently align PS bools to match locked profiles (PU/Minimal) so the
+	# first poll() doesn't fire a spurious profile_lock_warning popup.
+	_align_locked_profile_bools()
 
 
 func poll() -> void:
@@ -142,6 +145,26 @@ func _bootstrap_sidecar_from_ps() -> void:
 		print("[MCPStateFile] seeded sidecar from ProjectSettings (profile=%s)" % profile_str)
 	else:
 		push_warning("[MCPStateFile] bootstrap from ProjectSettings failed (err %d) — will retry on next poll" % err)
+
+
+## Silently force PS bools to match a locked profile (PU or Minimal) so
+## the enforcement loop in _poll_feature_states() doesn't find stale
+## mismatches and emit a spurious profile_lock_warning on the first frame.
+## Called once at the end of register_all() — no signals emitted.
+func _align_locked_profile_bools() -> void:
+	if _last_profile == PROFILE_STANDARD:
+		return
+	var expected: bool = (_last_profile == PROFILE_POWER_USER)
+	var changed := false
+	for feature in MCPFeatureRegistry.all_features():
+		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var ps_key: String = entry["ps_key"]
+		if ProjectSettings.get_setting(ps_key, false) != expected:
+			ProjectSettings.set_setting(ps_key, expected)
+			changed = true
+	if changed:
+		ProjectSettings.save()
+		snapshot_feature_states()
 
 
 # -- Registration helpers -----------------------------------------------------
@@ -410,6 +433,23 @@ func _poll_feature_states() -> void:
 			ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", sidecar_profile_int)
 			_last_profile = sidecar_profile_int
 			profile = sidecar_profile_int
+			# Align PS bools to the detected profile so the enforcement
+			# block below doesn't find stale mismatches and fire a
+			# spurious profile_lock_warning.
+			match sidecar_profile_int:
+				PROFILE_POWER_USER:
+					for feature in MCPFeatureRegistry.all_features():
+						var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+						ProjectSettings.set_setting(str(entry["ps_key"]), true)
+				PROFILE_MINIMAL:
+					for feature in MCPFeatureRegistry.all_features():
+						var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+						ProjectSettings.set_setting(str(entry["ps_key"]), false)
+				_:
+					for feature in MCPFeatureRegistry.all_features():
+						var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+						var on: bool = sidecar_gates.get(str(entry["env_var"]), false) == true
+						ProjectSettings.set_setting(str(entry["ps_key"]), on)
 			_update_status_text()
 			ProjectSettings.save()
 			snapshot_feature_states()
