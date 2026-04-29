@@ -12,6 +12,7 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 const RUNTIME_HOST := "127.0.0.1"
 const RUNTIME_POLL_TIMEOUT_MS := 5000
+const _DEFAULT_POLL_TIMEOUT_MS := 3000
 const _REGISTRY_POLL_INTERVAL_MS := 100
 
 
@@ -96,17 +97,24 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 		else:
 			runtime_failure = "registry_timeout"
 	elif wait_for_runtime:
-		# Non-blocking: single registry check + short WS probe.
-		# Bridge auto-discovers runtime via fs.watch on projects.json.
-		runtime_port = MCPRegistryClient.get_runtime_port()
+		# Poll registry for the runtime port. The game process needs
+		# time to launch and register — single-check was unreliable.
+		var deadline := Time.get_ticks_msec() + _DEFAULT_POLL_TIMEOUT_MS
+		while Time.get_ticks_msec() < deadline:
+			runtime_port = MCPRegistryClient.get_runtime_port()
+			if runtime_port > 0:
+				break
+			OS.delay_msec(_REGISTRY_POLL_INTERVAL_MS)
 		if runtime_port > 0:
+			var remaining := maxi(500, deadline - Time.get_ticks_msec())
 			var probe := _poll_runtime_ready(
-				RUNTIME_HOST, runtime_port, 500)
+				RUNTIME_HOST, runtime_port, remaining)
 			runtime_ready = probe["ready"]
 			if not runtime_ready:
 				runtime_failure = str(probe.get("failure", "unknown"))
 		else:
 			bridge_discovery = true
+			runtime_failure = "registry_timeout"
 
 	var response := {
 		"success": true,

@@ -29,6 +29,21 @@ static func coerce_value(value: Variant) -> Variant:
 			if guard["error"] != null:
 				return null
 			return ResourceLoader.load(resource_path)
+		"NewResource":
+			var res_class := str(value.get("class", ""))
+			if res_class.is_empty() or not ClassDB.class_exists(res_class):
+				return null
+			if not ClassDB.is_parent_class(res_class, "Resource"):
+				return null
+			if not ClassDB.can_instantiate(res_class):
+				return null
+			var resource = ClassDB.instantiate(res_class)
+			if resource == null:
+				return null
+			var props: Dictionary = _safe_dict(value.get("properties", {}))
+			for key in props.keys():
+				resource.set(str(key), coerce_value(props[key]))
+			return resource
 		"Vector2":
 			return Vector2(
 				float(value.get("x", 0.0)),
@@ -193,7 +208,8 @@ static func serialize_value(value: Variant) -> Variant:
 ## Empty string means all Resource refs resolve.
 static func check_resource_paths(value: Variant) -> String:
 	if typeof(value) == TYPE_DICTIONARY:
-		if str(value.get("type", "")) == "Resource":
+		var vtype := str(value.get("type", ""))
+		if vtype == "Resource":
 			var resource_path := str(value.get("path", ""))
 			if resource_path.is_empty():
 				return "<empty path>"
@@ -202,6 +218,18 @@ static func check_resource_paths(value: Variant) -> String:
 				return resource_path
 			if ResourceLoader.load(resource_path) == null:
 				return resource_path
+		elif vtype == "NewResource":
+			var res_class := str(value.get("class", ""))
+			if res_class.is_empty() or not ClassDB.class_exists(res_class):
+				return "<invalid class: %s>" % res_class
+			if not ClassDB.is_parent_class(res_class, "Resource"):
+				return "<not a Resource: %s>" % res_class
+			# Recurse into properties to check nested Resource refs
+			var props: Dictionary = value.get("properties", {}) if typeof(value.get("properties", null)) == TYPE_DICTIONARY else {}
+			for key in props.keys():
+				var nested := check_resource_paths(props[key])
+				if nested != "":
+					return nested
 		return ""
 	if typeof(value) == TYPE_ARRAY:
 		for element in value:

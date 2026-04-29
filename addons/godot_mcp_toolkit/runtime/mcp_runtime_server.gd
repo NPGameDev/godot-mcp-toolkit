@@ -735,7 +735,12 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 					err["results"] = results
 				_send_result(peer, id, err)
 				return
-			Input.parse_input_event(ev)
+			# Mouse events use push_input for proper GUI/CanvasLayer routing;
+			# other events use parse_input_event for InputMap action handling.
+			if ev is InputEventMouse and get_viewport() != null:
+				get_viewport().push_input(ev)
+			else:
+				Input.parse_input_event(ev)
 		results.append(event_result)
 		processed += 1
 		if delay_after_ms > 0:
@@ -797,6 +802,7 @@ func _build_input_event(event_type: String, event_data: Dictionary) -> InputEven
 
 
 ## click: press + delay + release at a position (50 ms default internal delay).
+## Uses warp_mouse + push_input for reliable GUI/CanvasLayer routing.
 func _dispatch_click(event_data: Dictionary) -> void:
 	var mb_press := InputEventMouseButton.new()
 	mb_press.button_index = int(event_data.get("button_index", MOUSE_BUTTON_LEFT))
@@ -808,7 +814,14 @@ func _dispatch_click(event_data: Dictionary) -> void:
 	mb_press.ctrl_pressed = bool(event_data.get("ctrl", false))
 	mb_press.alt_pressed = bool(event_data.get("alt", false))
 	mb_press.meta_pressed = bool(event_data.get("meta", false))
-	Input.parse_input_event(mb_press)
+	# Warp mouse to click position for proper viewport focus routing
+	var vp := get_viewport()
+	if vp != null and mb_press.position != Vector2.ZERO:
+		vp.warp_mouse(mb_press.position)
+	if vp != null:
+		vp.push_input(mb_press)
+	else:
+		Input.parse_input_event(mb_press)
 	var click_delay := int(event_data.get("click_delay_ms", 50))
 	OS.delay_msec(click_delay)
 	var mb_release := InputEventMouseButton.new()
@@ -819,7 +832,10 @@ func _dispatch_click(event_data: Dictionary) -> void:
 	mb_release.ctrl_pressed = mb_press.ctrl_pressed
 	mb_release.alt_pressed = mb_press.alt_pressed
 	mb_release.meta_pressed = mb_press.meta_pressed
-	Input.parse_input_event(mb_release)
+	if vp != null:
+		vp.push_input(mb_release)
+	else:
+		Input.parse_input_event(mb_release)
 
 
 # animation_player.control: drive an AnimationPlayer in the live SceneTree.

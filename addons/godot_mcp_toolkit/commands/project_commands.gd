@@ -80,10 +80,17 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("SAVE_FAILED",
 			"ProjectSettings.save returned %d (key=%s); change is in-memory but not persisted" % [
 				save_error, key])
-	return {
+	var response := {
 		"success": true,
 		"key": key,
 		"value": MCPCoerce.serialize_value(coerced),
 		"was_set_before": was_set_before,
 		"previous_value": MCPCoerce.serialize_value(previous_value) if was_set_before else null,
 	}
+	if key.begins_with("autoload/"):
+		# Trigger filesystem scan to nudge the editor toward detecting changes.
+		var filesystem := EditorInterface.get_resource_filesystem()
+		if filesystem != null:
+			filesystem.scan()
+		response["hint"] = "Autoload registered in project.godot. The editor's autoload cache won't refresh until the project is reloaded — reference via get_node('/root/Name') instead of the global identifier. The game process picks up autoloads on next launch."
+	return response

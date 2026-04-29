@@ -115,7 +115,19 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 			"failed to load resource at %s; verify the path or use resource.write to create it first" % missing)
 
 	var coerced = MCPCoerce.coerce_value(raw_value)
-	node.set(property_name, coerced)
+	var old_value = node.get(property_name)
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
+		undo_redo.add_do_property(node, property_name, coerced)
+		undo_redo.add_undo_property(node, property_name, old_value)
+		if coerced is Resource:
+			undo_redo.add_do_reference(coerced)
+		if old_value is Resource:
+			undo_redo.add_undo_reference(old_value)
+		undo_redo.commit_action()
+	else:
+		node.set(property_name, coerced)
 	return {"success": true}
 
 
