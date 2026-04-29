@@ -720,11 +720,14 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			var click_delay := int(ed.get("click_delay_ms", 50))
 			_dispatch_click(ed)
 			event_result["click_delay_ms"] = click_delay
+		elif et == "click_node":
+			var click_result := _dispatch_click_node(ed)
+			event_result.merge(click_result, true)
 		else:
 			var ev := _build_input_event(et, ed)
 			if ev == null:
 				event_result["dispatched"] = false
-				event_result["error"] = "unknown event_type (expected key|mouse_button|mouse_motion|action|click)"
+				event_result["error"] = "unknown event_type (expected key|mouse_button|mouse_motion|action|click|click_node)"
 				results.append(event_result)
 				var err := MCPError.make("INVALID_PARAMS",
 					"unknown event_type at index %d: %s" % [i, et])
@@ -735,10 +738,14 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 					err["results"] = results
 				_send_result(peer, id, err)
 				return
-			# Mouse events use push_input for proper GUI/CanvasLayer routing;
-			# other events use parse_input_event for InputMap action handling.
-			if ev is InputEventMouse and get_viewport() != null:
-				get_viewport().push_input(ev)
+			# Mouse events: auto-focus game window, then use push_input
+			# for proper GUI/CanvasLayer routing.
+			if ev is InputEventMouse:
+				_ensure_game_focus()
+				if get_viewport() != null:
+					get_viewport().push_input(ev)
+				else:
+					Input.parse_input_event(ev)
 			else:
 				Input.parse_input_event(ev)
 		results.append(event_result)
@@ -752,6 +759,27 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 	else:
 		_send_result(peer, id, {"success": true, "events_processed": processed,
 			"total": total, "results": results})
+
+
+## Parses mouse position from event_data. Accepts both flat {x, y} and
+## nested {position: {x, y}} formats for LLM robustness.
+func _parse_mouse_position(event_data: Dictionary) -> Vector2:
+	var pos = event_data.get("position", null)
+	if pos == null and event_data.has("x"):
+		pos = {"x": event_data.get("x", 0.0), "y": event_data.get("y", 0.0)}
+	if typeof(pos) == TYPE_DICTIONARY:
+		return Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+	return Vector2.ZERO
+
+
+## Brings the game window to the foreground and gives it input focus.
+## Without this, the editor retains OS focus after game_start and mouse
+## input silently fails (viewport_has_focus: false).
+func _ensure_game_focus() -> void:
+	DisplayServer.window_move_to_foreground()
+	var win := get_window()
+	if win != null:
+		win.grab_focus()
 
 
 func _build_input_event(event_type: String, event_data: Dictionary) -> InputEvent:
@@ -773,9 +801,9 @@ func _build_input_event(event_type: String, event_data: Dictionary) -> InputEven
 			var mb := InputEventMouseButton.new()
 			mb.button_index = int(event_data.get("button_index", MOUSE_BUTTON_LEFT))
 			mb.pressed = bool(event_data.get("pressed", true))
-			var pos = event_data.get("position", null)
-			if typeof(pos) == TYPE_DICTIONARY:
-				mb.position = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+			var mb_vec := _parse_mouse_position(event_data)
+			mb.position = mb_vec
+			mb.global_position = mb_vec
 			mb.shift_pressed = bool(event_data.get("shift", false))
 			mb.ctrl_pressed = bool(event_data.get("ctrl", false))
 			mb.alt_pressed = bool(event_data.get("alt", false))
@@ -783,9 +811,9 @@ func _build_input_event(event_type: String, event_data: Dictionary) -> InputEven
 			return mb
 		"mouse_motion":
 			var mm := InputEventMouseMotion.new()
-			var mpos = event_data.get("position", null)
-			if typeof(mpos) == TYPE_DICTIONARY:
-				mm.position = Vector2(float(mpos.get("x", 0.0)), float(mpos.get("y", 0.0)))
+			var mm_vec := _parse_mouse_position(event_data)
+			mm.position = mm_vec
+			mm.global_position = mm_vec
 			var rel = event_data.get("relative", null)
 			if typeof(rel) == TYPE_DICTIONARY:
 				mm.relative = Vector2(float(rel.get("x", 0.0)), float(rel.get("y", 0.0)))
@@ -804,20 +832,21 @@ func _build_input_event(event_type: String, event_data: Dictionary) -> InputEven
 ## click: press + delay + release at a position (50 ms default internal delay).
 ## Uses warp_mouse + push_input for reliable GUI/CanvasLayer routing.
 func _dispatch_click(event_data: Dictionary) -> void:
+	_ensure_game_focus()
 	var mb_press := InputEventMouseButton.new()
 	mb_press.button_index = int(event_data.get("button_index", MOUSE_BUTTON_LEFT))
 	mb_press.pressed = true
-	var pos = event_data.get("position", null)
-	if typeof(pos) == TYPE_DICTIONARY:
-		mb_press.position = Vector2(float(pos.get("x", 0.0)), float(pos.get("y", 0.0)))
+	var vec := _parse_mouse_position(event_data)
+	mb_press.position = vec
+	mb_press.global_position = vec
 	mb_press.shift_pressed = bool(event_data.get("shift", false))
 	mb_press.ctrl_pressed = bool(event_data.get("ctrl", false))
 	mb_press.alt_pressed = bool(event_data.get("alt", false))
 	mb_press.meta_pressed = bool(event_data.get("meta", false))
 	# Warp mouse to click position for proper viewport focus routing
 	var vp := get_viewport()
-	if vp != null and mb_press.position != Vector2.ZERO:
-		vp.warp_mouse(mb_press.position)
+	if vp != null and vec != Vector2.ZERO:
+		vp.warp_mouse(vec)
 	if vp != null:
 		vp.push_input(mb_press)
 	else:
@@ -827,7 +856,8 @@ func _dispatch_click(event_data: Dictionary) -> void:
 	var mb_release := InputEventMouseButton.new()
 	mb_release.button_index = mb_press.button_index
 	mb_release.pressed = false
-	mb_release.position = mb_press.position
+	mb_release.position = vec
+	mb_release.global_position = vec
 	mb_release.shift_pressed = mb_press.shift_pressed
 	mb_release.ctrl_pressed = mb_press.ctrl_pressed
 	mb_release.alt_pressed = mb_press.alt_pressed
@@ -836,6 +866,34 @@ func _dispatch_click(event_data: Dictionary) -> void:
 		vp.push_input(mb_release)
 	else:
 		Input.parse_input_event(mb_release)
+
+
+## click_node: programmatic click on a node by path. Calls grab_focus() on
+## Controls and emits pressed signal on BaseButtons. No coordinate guessing.
+func _dispatch_click_node(event_data: Dictionary) -> Dictionary:
+	var node_path_str := str(event_data.get("node_path", ""))
+	if node_path_str.is_empty():
+		return {"dispatched": false, "error": "node_path is required for click_node"}
+	var root := get_tree().current_scene if get_tree() != null else null
+	if root == null:
+		return {"dispatched": false, "error": "no current scene"}
+	var target := root.get_node_or_null(NodePath(node_path_str))
+	if target == null:
+		return {"dispatched": false, "error": "node not found: %s" % node_path_str}
+	var result := {"dispatched": true, "node_path": node_path_str, "node_class": target.get_class()}
+	if target is Control:
+		target.grab_focus()
+		result["focused"] = true
+	if target is BaseButton:
+		if target.toggle_mode:
+			target.button_pressed = not target.button_pressed
+			result["toggled_to"] = target.button_pressed
+		target.emit_signal("pressed")
+		result["pressed_emitted"] = true
+	else:
+		result["pressed_emitted"] = false
+		result["note"] = "node is not a BaseButton; grab_focus applied if Control"
+	return result
 
 
 # animation_player.control: drive an AnimationPlayer in the live SceneTree.
