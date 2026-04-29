@@ -196,6 +196,13 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	if was_replace:
 		response["status"] = "replaced"
 		response["previous_root_type"] = previous_root_type
+		# P-003: If the replaced scene is currently open in the editor, reload
+		# it from disk so the in-memory tree matches the fresh file.
+		var open_scenes := EditorInterface.get_open_scenes()
+		if file_path in open_scenes:
+			EditorInterface.open_scene_from_path(file_path)
+			response["reloaded"] = true
+			response["hint"] = "Scene replaced and reloaded in editor."
 	else:
 		response["status"] = "created"
 	return response

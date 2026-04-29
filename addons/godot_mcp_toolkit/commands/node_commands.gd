@@ -109,6 +109,44 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 
+	# P-002: "groups" is not a regular property — it lives in the .tscn node
+	# header and must be set via add_to_group / remove_from_group.
+	if property_name == "groups":
+		var new_groups: Array = []
+		if typeof(raw_value) == TYPE_ARRAY:
+			for g in raw_value:
+				new_groups.append(str(g))
+		elif typeof(raw_value) == TYPE_STRING:
+			new_groups.append(str(raw_value))
+		else:
+			return MCPError.make("INVALID_PARAMS",
+				"groups value must be a string or array of strings")
+		var old_groups: Array = []
+		for g in node.get_groups():
+			var gs := str(g)
+			if not gs.begins_with("_"):  # skip engine-internal groups
+				old_groups.append(gs)
+		var undo_redo = _Hub.get_undo_redo()
+		if undo_redo != null:
+			undo_redo.create_action("MCP: set %s groups" % node_path)
+			for g in old_groups:
+				if g not in new_groups:
+					undo_redo.add_do_method(node.remove_from_group.bind(g))
+					undo_redo.add_undo_method(node.add_to_group.bind(g, true))
+			for g in new_groups:
+				if g not in old_groups:
+					undo_redo.add_do_method(node.add_to_group.bind(g, true))
+					undo_redo.add_undo_method(node.remove_from_group.bind(g))
+			undo_redo.commit_action()
+		else:
+			for g in old_groups:
+				if g not in new_groups:
+					node.remove_from_group(g)
+			for g in new_groups:
+				if g not in old_groups:
+					node.add_to_group(g, true)
+		return {"success": true, "groups": new_groups}
+
 	var missing := MCPCoerce.check_resource_paths(raw_value)
 	if missing != "":
 		return MCPError.make("LOAD_FAILED",
@@ -116,6 +154,11 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 
 	var coerced = MCPCoerce.coerce_value(raw_value)
 	var old_value = node.get(property_name)
+
+	# P-007: Auto-coerce strings to NodePath when the property expects NodePath.
+	if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
+		coerced = NodePath(str(coerced))
+
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
