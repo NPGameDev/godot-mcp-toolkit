@@ -711,10 +711,10 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 		if delay_before_ms > 0:
 			OS.delay_msec(delay_before_ms)
 		var event_result := {"index": i, "total": total, "type": et, "dispatched": true}
-		# Diagnostic fields for debugging input routing issues.
+		# Diagnostic: gui_has_focus = a GUI Control has focus (not OS window focus).
 		var vp := get_viewport()
 		if vp != null:
-			event_result["viewport_has_focus"] = vp.gui_get_focus_owner() != null
+			event_result["gui_has_focus"] = vp.gui_get_focus_owner() != null
 		event_result["tree_paused"] = get_tree().paused if get_tree() != null else false
 		if et == "click":
 			var click_delay := int(ed.get("click_delay_ms", 50))
@@ -723,6 +723,18 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 		elif et == "click_node":
 			var click_result := _dispatch_click_node(ed)
 			event_result.merge(click_result, true)
+		elif et == "action":
+			# Use Input.action_press/release directly — guaranteed to update
+			# Input.is_action_pressed() state for _physics_process movement.
+			var action_name := StringName(str(ed.get("action", "")))
+			var is_pressed := bool(ed.get("pressed", true))
+			var strength := float(ed.get("strength", 1.0))
+			if is_pressed:
+				Input.action_press(action_name, strength)
+			else:
+				Input.action_release(action_name)
+			event_result["action"] = str(action_name)
+			event_result["pressed"] = is_pressed
 		else:
 			var ev := _build_input_event(et, ed)
 			if ev == null:

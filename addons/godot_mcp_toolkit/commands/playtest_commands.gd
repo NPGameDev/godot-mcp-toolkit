@@ -12,7 +12,7 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 const RUNTIME_HOST := "127.0.0.1"
 const RUNTIME_POLL_TIMEOUT_MS := 5000
-const _DEFAULT_POLL_TIMEOUT_MS := 3000
+const _DEFAULT_POLL_TIMEOUT_MS := 5000
 const _REGISTRY_POLL_INTERVAL_MS := 100
 
 
