@@ -211,29 +211,43 @@ static func _gc(data: Dictionary) -> Dictionary:
 
 
 static func register(port: int, token_path: String) -> void:
-	_acquire_lock()
-	var data := _read_registry()
-	data = _gc(data)
 	var key := _project_key()
-	var by_path: Dictionary = data["by_path"]
-	# Double-open detection: warn if same path already registered with a live PID.
-	if by_path.has(key):
-		var existing: Dictionary = by_path[key]
-		var existing_pid := int(existing.get("pid", 0))
-		if existing_pid > 0 and OS.is_process_running(existing_pid):
-			push_warning("[MCPRegistry] already registered from PID %d; overwriting with PID %d" % [existing_pid, OS.get_process_id()])
-	by_path[key] = {
-		"port": port,
-		"token_path": token_path,
-		"pid": OS.get_process_id(),
-		"started_at": int(Time.get_unix_time_from_system()),
-		"runtime_port": null,
-		"runtime_pid": null,
-	}
-	data["by_path"] = by_path
-	_write_atomic(data)
-	_release_lock()
-	print("[MCPRegistry] registered %s on port %d" % [key, port])
+	var my_pid := OS.get_process_id()
+	for retry in 3:
+		_acquire_lock()
+		var data := _read_registry()
+		data = _gc(data)
+		var by_path: Dictionary = data["by_path"]
+		# Double-open detection: warn if same path already registered with a live PID.
+		if by_path.has(key):
+			var existing: Dictionary = by_path[key]
+			var existing_pid := int(existing.get("pid", 0))
+			if existing_pid > 0 and existing_pid != my_pid and OS.is_process_running(existing_pid):
+				push_warning("[MCPRegistry] already registered from PID %d; overwriting with PID %d" % [existing_pid, my_pid])
+		by_path[key] = {
+			"port": port,
+			"token_path": token_path,
+			"pid": my_pid,
+			"started_at": int(Time.get_unix_time_from_system()),
+			"runtime_port": null,
+			"runtime_pid": null,
+		}
+		data["by_path"] = by_path
+		_write_atomic(data)
+		_release_lock()
+		# Verify own entry survived — guards against concurrent overwrite
+		# when two editors start simultaneously and the lock doesn't provide
+		# true mutual exclusion (Godot FileAccess has no O_CREAT|O_EXCL).
+		OS.delay_msec(50)
+		var verify := _read_registry()
+		var v_entry = verify.get("by_path", {}).get(key, null)
+		if v_entry != null and int(v_entry.get("pid", 0)) == my_pid:
+			print("[MCPRegistry] registered %s on port %d" % [key, port])
+			return
+		push_warning("[MCPRegistry] entry evicted after write (attempt %d/3); retrying with backoff" % [retry + 1])
+		# Random backoff to desynchronise competing editors.
+		OS.delay_msec(randi_range(100, 500))
+	push_error("[MCPRegistry] FAILED to persist registry entry for %s after 3 attempts — runtime tools may not work in parallel sessions" % key)
 
 
 static func deregister() -> void:
@@ -263,8 +277,22 @@ static func set_runtime(runtime_port: int) -> void:
 		_write_atomic(data)
 		print("[MCPRegistry] runtime port %d registered for %s" % [runtime_port, key])
 	else:
-		var available := ", ".join(by_path.keys()) if by_path.size() > 0 else "(empty)"
-		push_warning("[MCPRegistry] set_runtime: no entry for %s; available keys: %s" % [key, available])
+		# Self-heal: entry was lost (concurrent register() overwrote it).
+		# Create a minimal entry so the bridge can discover the runtime.
+		# pid=0 survives _gc() (PID check requires pid > 0). The bridge
+		# already has its editor connection; it only needs runtime_port.
+		data = _gc(data)
+		by_path[key] = {
+			"port": -1,
+			"token_path": "",
+			"pid": 0,
+			"started_at": int(Time.get_unix_time_from_system()),
+			"runtime_port": runtime_port,
+			"runtime_pid": OS.get_process_id(),
+		}
+		data["by_path"] = by_path
+		_write_atomic(data)
+		push_warning("[MCPRegistry] set_runtime: entry missing for %s — created self-heal entry with runtime_port %d" % [key, runtime_port])
 	_release_lock()
 
 
