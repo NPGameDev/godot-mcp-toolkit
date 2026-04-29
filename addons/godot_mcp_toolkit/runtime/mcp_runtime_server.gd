@@ -978,6 +978,17 @@ func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
 			_send_result(peer, id, MCPError.make("NOT_FOUND", "scope node not found: %s" % scope_path))
 			return
 
+	# Expression only supports expressions, not statements. Catch common
+	# statement keywords early with a clear error instead of the cryptic
+	# "Invalid named index 'var'" from Expression.parse().
+	var _trimmed := code.strip_edges()
+	for _kw in ["var", "return", "func", "if", "for", "while", "class", "const", "match"]:
+		if _trimmed == _kw or _trimmed.begins_with(_kw + " ") or _trimmed.begins_with(_kw + "\t") or _trimmed.begins_with(_kw + "\n"):
+			_send_result(peer, id, MCPError.make("PARSE_ERROR",
+				"game_eval only supports expressions, not statements. '%s' is a statement keyword. " % _kw +
+				"Use method calls (node.method()), property access (node.property), or arithmetic instead."))
+			return
+
 	var expr := Expression.new()
 	var parse_err := expr.parse(code, PackedStringArray())
 	if parse_err != OK:
