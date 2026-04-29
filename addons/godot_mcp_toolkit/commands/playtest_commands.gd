@@ -130,7 +130,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 		response["runtime_failure"] = runtime_failure
 		match runtime_failure:
 			"registry_timeout":
-				response["hint"] = "Runtime port never appeared in registry — the MCP Runtime autoload may not be enabled. Re-enable the plugin in Project Settings > Plugins, or check editor_get_console for startup errors."
+				response["hint"] = "Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors."
 			"token_read_failed":
 				response["hint"] = "Could not read auth token — the token file may be missing or empty. Re-enable the plugin in Project Settings > Plugins."
 			"ws_connect_timeout":
