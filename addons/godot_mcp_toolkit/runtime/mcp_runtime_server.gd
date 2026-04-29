@@ -724,8 +724,10 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			var click_result := _dispatch_click_node(ed)
 			event_result.merge(click_result, true)
 		elif et == "action":
-			# Use Input.action_press/release directly — guaranteed to update
-			# Input.is_action_pressed() state for _physics_process movement.
+			# Hybrid dispatch: action_press/release for sustained
+			# Input.is_action_pressed() state (movement), PLUS
+			# parse_input_event(InputEventAction) to set the frame-
+			# transition tracking that is_action_just_pressed() needs (jump).
 			var action_name := StringName(str(ed.get("action", "")))
 			var is_pressed := bool(ed.get("pressed", true))
 			var strength := float(ed.get("strength", 1.0))
@@ -733,6 +735,11 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 				Input.action_press(action_name, strength)
 			else:
 				Input.action_release(action_name)
+			var act := InputEventAction.new()
+			act.action = action_name
+			act.pressed = is_pressed
+			act.strength = strength
+			Input.parse_input_event(act)
 			event_result["action"] = str(action_name)
 			event_result["pressed"] = is_pressed
 		else:

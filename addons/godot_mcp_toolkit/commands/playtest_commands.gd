@@ -12,7 +12,8 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 const RUNTIME_HOST := "127.0.0.1"
 const RUNTIME_POLL_TIMEOUT_MS := 5000
-const _DEFAULT_POLL_TIMEOUT_MS := 5000
+const _DEFAULT_POLL_TIMEOUT_MS := 10000
+const _LAUNCH_SETTLE_MS := 1500  # let the game process spawn before polling
 const _REGISTRY_POLL_INTERVAL_MS := 100
 
 
@@ -98,7 +99,9 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 			runtime_failure = "registry_timeout"
 	elif wait_for_runtime:
 		# Poll registry for the runtime port. The game process needs
-		# time to launch and register — single-check was unreliable.
+		# time to spawn + load project + init autoloads + bind port +
+		# register in registry. Give it a head start before polling.
+		OS.delay_msec(_LAUNCH_SETTLE_MS)
 		var deadline := Time.get_ticks_msec() + _DEFAULT_POLL_TIMEOUT_MS
 		while Time.get_ticks_msec() < deadline:
 			runtime_port = MCPRegistryClient.get_runtime_port()
