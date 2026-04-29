@@ -738,10 +738,10 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 					err["results"] = results
 				_send_result(peer, id, err)
 				return
-			# Mouse events: auto-focus game window, then use push_input
-			# for proper GUI/CanvasLayer routing.
+			# Mouse events use push_input for proper GUI/CanvasLayer routing.
+			# No OS-level focus — position + global_position fields are
+			# sufficient for viewport hit-testing and parallel-safe.
 			if ev is InputEventMouse:
-				_ensure_game_focus()
 				if get_viewport() != null:
 					get_viewport().push_input(ev)
 				else:
@@ -772,9 +772,11 @@ func _parse_mouse_position(event_data: Dictionary) -> Vector2:
 	return Vector2.ZERO
 
 
-## Brings the game window to the foreground and gives it input focus.
-## Without this, the editor retains OS focus after game_start and mouse
-## input silently fails (viewport_has_focus: false).
+## NOTE: Not called automatically — push_input() with correct position +
+## global_position is sufficient for Godot's viewport hit-testing without
+## OS-level focus. Kept available for explicit use if needed.
+## Calling this during parallel multi-instance runs would cause sessions
+## to fight over the OS mouse and window focus.
 func _ensure_game_focus() -> void:
 	DisplayServer.window_move_to_foreground()
 	var win := get_window()
@@ -830,9 +832,9 @@ func _build_input_event(event_type: String, event_data: Dictionary) -> InputEven
 
 
 ## click: press + delay + release at a position (50 ms default internal delay).
-## Uses warp_mouse + push_input for reliable GUI/CanvasLayer routing.
+## Uses push_input with position + global_position for GUI hit-testing.
+## No OS-level warp_mouse or window focus — safe for parallel multi-instance runs.
 func _dispatch_click(event_data: Dictionary) -> void:
-	_ensure_game_focus()
 	var mb_press := InputEventMouseButton.new()
 	mb_press.button_index = int(event_data.get("button_index", MOUSE_BUTTON_LEFT))
 	mb_press.pressed = true
@@ -843,10 +845,7 @@ func _dispatch_click(event_data: Dictionary) -> void:
 	mb_press.ctrl_pressed = bool(event_data.get("ctrl", false))
 	mb_press.alt_pressed = bool(event_data.get("alt", false))
 	mb_press.meta_pressed = bool(event_data.get("meta", false))
-	# Warp mouse to click position for proper viewport focus routing
 	var vp := get_viewport()
-	if vp != null and vec != Vector2.ZERO:
-		vp.warp_mouse(vec)
 	if vp != null:
 		vp.push_input(mb_press)
 	else:
