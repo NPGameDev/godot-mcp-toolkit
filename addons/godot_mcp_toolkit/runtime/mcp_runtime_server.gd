@@ -709,7 +709,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 		var delay_before_ms := int(event.get("delay_before_ms", 0))
 		var delay_after_ms := int(event.get("delay_after_ms", 0))
 		if delay_before_ms > 0:
-			OS.delay_msec(delay_before_ms)
+			await get_tree().create_timer(delay_before_ms / 1000.0).timeout
 		var event_result := {"index": i, "total": total, "type": et, "dispatched": true}
 		# Diagnostic: gui_has_focus = a GUI Control has focus (not OS window focus).
 		var vp := get_viewport()
@@ -718,7 +718,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 		event_result["tree_paused"] = get_tree().paused if get_tree() != null else false
 		if et == "click":
 			var click_delay := int(ed.get("click_delay_ms", 50))
-			_dispatch_click(ed)
+			await _dispatch_click(ed)
 			event_result["click_delay_ms"] = click_delay
 		elif et == "click_node":
 			var click_result := _dispatch_click_node(ed)
@@ -770,7 +770,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 		results.append(event_result)
 		processed += 1
 		if delay_after_ms > 0:
-			OS.delay_msec(delay_after_ms)
+			await get_tree().create_timer(delay_after_ms / 1000.0).timeout
 
 	if summary_mode:
 		_send_result(peer, id, {"success": true, "events_processed": processed,
@@ -870,7 +870,7 @@ func _dispatch_click(event_data: Dictionary) -> void:
 	else:
 		Input.parse_input_event(mb_press)
 	var click_delay := int(event_data.get("click_delay_ms", 50))
-	OS.delay_msec(click_delay)
+	await get_tree().create_timer(click_delay / 1000.0).timeout
 	var mb_release := InputEventMouseButton.new()
 	mb_release.button_index = mb_press.button_index
 	mb_release.pressed = false
