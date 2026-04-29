@@ -179,8 +179,6 @@ static func _persist_input_action(action: String, deadzone: float) -> void:
 
 
 static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
-	if not MCPFeatureGate.is_enabled("input_map_write"):
-		return MCPFeatureGate.disabled_error("input_map_write")
 	var action := str(parameters.get("action", ""))
 	if not (action in ["add", "remove"]):
 		return MCPError.make("INVALID_PARAMS",
@@ -228,8 +226,6 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
-	if not MCPFeatureGate.is_enabled("input_map_write"):
-		return MCPFeatureGate.disabled_error("input_map_write")
 	var action := str(parameters.get("action", ""))
 	if not (action in ["bind", "unbind"]):
 		return MCPError.make("INVALID_PARAMS",

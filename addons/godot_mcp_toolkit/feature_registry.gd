@@ -40,11 +40,6 @@ const FEATURES := {
 		"warn_on_enable": true,
 		"warn_text": "Allows the AI to call arbitrary methods on nodes in the edited scene, which may have side effects.",
 	},
-	"input_map_write": {
-		"env_var": "GODOT_MCP_ALLOW_INPUT_MAP_WRITE",
-		"ps_key": "mcp_toolkit/feature_gates/allow_input_map_write",
-		"risk": "Modify persistent InputMap actions",
-	},
 }
 
 
