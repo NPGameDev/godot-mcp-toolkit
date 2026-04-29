@@ -189,7 +189,8 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 
 	var response := {"success": true, "path": file_path, "root_type": root_type,
-		"root_name": file_path.get_file().get_basename(), "root_path": "."}
+		"root_name": file_path.get_file().get_basename(), "root_path": ".",
+		"hint": "Scene saved. Open it for editing with scene_open."}
 	if dirs_created:
 		response["dirs_created"] = true
 	if was_replace:

@@ -13,7 +13,8 @@ extends RefCounted
 const _REGISTRY_FILENAME := "projects.json"
 const _LOCK_STALE_SEC := 10
 const _MAX_ENTRY_AGE_SEC := 86400  # 24 h
-const _LOCK_RETRY_MS := 50
+const _LOCK_BASE_RETRY_MS := 50
+const _LOCK_MAX_RETRY_MS := 1000
 const _LOCK_RETRIES := 10
 
 
@@ -67,32 +68,45 @@ static func _lock_path() -> String:
 
 
 ## Returns true if the lock was acquired. On stale-lock detection the
-## stale file is overwritten. Busy-waits up to _LOCK_RETRIES * _LOCK_RETRY_MS.
+## stale file is overwritten. Exponential backoff: 50, 100, 200, ... ms
+## capped at 1000 ms per retry. PID-aware stale detection recovers
+## locks from dead processes immediately.
 static func _acquire_lock() -> bool:
 	var lp := _lock_path()
+	var delay_ms := _LOCK_BASE_RETRY_MS
 	for attempt in _LOCK_RETRIES:
 		if FileAccess.file_exists(lp):
 			var f := FileAccess.open(lp, FileAccess.READ)
 			if f != null:
-				var ts := int(f.get_as_text().strip_edges())
+				var content := f.get_as_text().strip_edges()
 				f.close()
-				var age := int(Time.get_unix_time_from_system()) - ts
-				if age < _LOCK_STALE_SEC:
-					OS.delay_msec(_LOCK_RETRY_MS)
-					continue
-				# Stale lock — fall through to overwrite.
+				var parts := content.split(":")
+				var lock_pid := int(parts[0]) if parts.size() >= 2 else 0
+				var lock_ts := int(parts[-1])
+				# PID check: if the locker is dead, treat as stale immediately.
+				var pid_dead := lock_pid > 0 and not OS.is_process_running(lock_pid)
+				if not pid_dead:
+					var age := int(Time.get_unix_time_from_system()) - lock_ts
+					if age < _LOCK_STALE_SEC:
+						if attempt > 0:
+							push_warning("[MCPRegistry] lock contention (attempt %d/%d, held by PID %d)" % [attempt + 1, _LOCK_RETRIES, lock_pid])
+						OS.delay_msec(delay_ms)
+						delay_ms = mini(delay_ms * 2, _LOCK_MAX_RETRY_MS)
+						continue
+				# Stale lock (age or dead PID) — fall through to overwrite.
 		var f := FileAccess.open(lp, FileAccess.WRITE)
 		if f == null:
-			OS.delay_msec(_LOCK_RETRY_MS)
+			OS.delay_msec(delay_ms)
+			delay_ms = mini(delay_ms * 2, _LOCK_MAX_RETRY_MS)
 			continue
-		f.store_string(str(int(Time.get_unix_time_from_system())))
+		f.store_string("%d:%d" % [OS.get_process_id(), int(Time.get_unix_time_from_system())])
 		f.close()
 		return true
 	push_warning("[MCPRegistry] failed to acquire lock after %d retries; proceeding anyway" % _LOCK_RETRIES)
 	# Force-write the lock as a last resort so the caller can proceed.
 	var f := FileAccess.open(lp, FileAccess.WRITE)
 	if f != null:
-		f.store_string(str(int(Time.get_unix_time_from_system())))
+		f.store_string("%d:%d" % [OS.get_process_id(), int(Time.get_unix_time_from_system())])
 		f.close()
 	return true
 
@@ -128,25 +142,39 @@ static func _read_registry() -> Dictionary:
 static func _write_atomic(data: Dictionary) -> void:
 	var path := registry_path()
 	var tmp_path := path + ".tmp"
+	var bak_path := path + ".bak"
 	var f := FileAccess.open(tmp_path, FileAccess.WRITE)
 	if f == null:
 		push_warning("[MCPRegistry] cannot write %s (err %d)" % [tmp_path, FileAccess.get_open_error()])
 		return
 	f.store_string(JSON.stringify(data, "\t"))
 	f.close()
-	# Atomic rename. On Windows DirAccess.rename may fail if the target
-	# exists, so remove first. The lock file protects against races.
+	# Two-phase rename: .tmp → target, with .bak safety net.
+	# On Windows DirAccess.rename fails if the target exists, so we
+	# rename existing → .bak first, then .tmp → target. If the second
+	# rename fails we restore from .bak. This closes the "file doesn't
+	# exist" window that the old remove-then-rename pattern had.
 	if FileAccess.file_exists(path):
-		DirAccess.remove_absolute(path)
+		# Phase 1: existing → .bak
+		if FileAccess.file_exists(bak_path):
+			DirAccess.remove_absolute(bak_path)
+		var bak_err := DirAccess.rename_absolute(path, bak_path)
+		if bak_err != OK:
+			push_warning("[MCPRegistry] rename %s -> %s failed (err %d); aborting write" % [path, bak_path, bak_err])
+			DirAccess.remove_absolute(tmp_path)
+			return
+	# Phase 2: .tmp → target
 	var err := DirAccess.rename_absolute(tmp_path, path)
 	if err != OK:
-		push_warning("[MCPRegistry] rename %s -> %s failed (err %d); falling back to direct write" % [tmp_path, path, err])
-		# Fallback: write directly (non-atomic but functional).
-		var fb := FileAccess.open(path, FileAccess.WRITE)
-		if fb != null:
-			fb.store_string(JSON.stringify(data, "\t"))
-			fb.close()
+		push_warning("[MCPRegistry] rename %s -> %s failed (err %d); restoring from backup" % [tmp_path, path, err])
+		# Restore .bak → target if it exists.
+		if FileAccess.file_exists(bak_path):
+			DirAccess.rename_absolute(bak_path, path)
 		DirAccess.remove_absolute(tmp_path)
+		return
+	# Cleanup .bak on success.
+	if FileAccess.file_exists(bak_path):
+		DirAccess.remove_absolute(bak_path)
 
 
 # -- Garbage collection --------------------------------------------------------

@@ -57,12 +57,15 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 	for entry in entries:
 		var scrubbed := MCPScrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
-	return {
+	var response := {
 		"success": true,
 		"errors": MCPUntrusted.wrap(
 			"editor_errors", "buffer", JSON.stringify(entries)),
 		"count": buf_result["count"],
 	}
+	if buf_result["count"] > 0:
+		response["hint"] = "Use since_id parameter with the highest id from this response to get only new errors on next call."
+	return response
 
 
 static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:

@@ -145,34 +145,54 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 	var mask := str(parameters.get("mask", "common"))
-	if not (mask in ["common", "all", "groups"]):
+	if not (mask in ["common", "all", "groups", "script"]):
 		return MCPError.make("INVALID_PARAMS",
-			"mask must be 'common', 'all', or 'groups' (got '%s')" % mask)
+			"mask must be 'common', 'all', 'groups', or 'script' (got '%s')" % mask)
+	var visibility_filter := str(parameters.get("visibility", "all"))
+	if mask == "script" and not (visibility_filter in ["public", "private", "all"]):
+		return MCPError.make("INVALID_PARAMS",
+			"visibility must be 'public', 'private', or 'all' (got '%s')" % visibility_filter)
 	var common_names: Array[String] = []
 	if mask == "common":
 		common_names = _resolve_common_property_names(node)
 	var properties: Array = []
 	for property in node.get_property_list():
 		var usage: int = int(property.get("usage", 0))
-		if not (usage & PROPERTY_USAGE_EDITOR):
-			continue
 		var property_name := str(property.get("name", ""))
-		if property_name.is_empty() or property_name.begins_with("_"):
+		if property_name.is_empty():
 			continue
-		if mask == "common" and property_name not in common_names:
-			continue
-		if mask == "groups":
-			properties.append({
-				"name": property_name,
-				"usage": usage,
-			})
-		else:
+		if mask == "script":
+			if not (usage & PROPERTY_USAGE_SCRIPT_VARIABLE):
+				continue
+			var vis := "private" if property_name.begins_with("_") else "public"
+			if visibility_filter != "all" and vis != visibility_filter:
+				continue
 			properties.append({
 				"name": property_name,
 				"type": int(property.get("type", 0)),
 				"hint": int(property.get("hint", 0)),
 				"hint_string": str(property.get("hint_string", "")),
+				"visibility": vis,
 			})
+		else:
+			if not (usage & PROPERTY_USAGE_EDITOR):
+				continue
+			if property_name.begins_with("_"):
+				continue
+			if mask == "common" and property_name not in common_names:
+				continue
+			if mask == "groups":
+				properties.append({
+					"name": property_name,
+					"usage": usage,
+				})
+			else:
+				properties.append({
+					"name": property_name,
+					"type": int(property.get("type", 0)),
+					"hint": int(property.get("hint", 0)),
+					"hint_string": str(property.get("hint_string", "")),
+				})
 	return {
 		"path": node_path,
 		"class": node.get_class(),
@@ -184,7 +204,9 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 
 static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	if not MCPFeatureGate.is_enabled("node_call_method"):
-		return MCPFeatureGate.disabled_error("node_call_method")
+		var err := MCPFeatureGate.disabled_error("node_call_method")
+		err["workaround"] = "Use script_write to add the logic in _ready() or a setup function, then editor_reload_scripts to apply."
+		return err
 	var root := _get_edited_root()
 	if root == null:
 		return MCPError.make("NO_SCENE", "no open scene; use scene.open or scene.create first")

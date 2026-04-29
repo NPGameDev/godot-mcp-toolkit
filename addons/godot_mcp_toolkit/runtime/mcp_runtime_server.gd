@@ -267,6 +267,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_input_simulate(peer, id, params)
 		"animation_player.control":
 			_cmd_animation_player_control(peer, id, params)
+		"runtime.get_script_vars":
+			_cmd_runtime_get_script_vars(peer, id, params)
 		"game.eval":
 			_cmd_game_eval(peer, id, params)
 		_:
@@ -364,6 +366,69 @@ func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
 		"class": node.get_class(),
 		"path": path,
 		"properties": props,
+	})
+
+
+func _cmd_runtime_get_script_vars(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
+		return
+	var path := str(params.get("node_path", ""))
+	if path.is_empty():
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "missing node_path"))
+		return
+
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		_send_result(peer, id, MCPError.make("INTERNAL", "scene tree unavailable"))
+		return
+
+	var node := tree.root.get_node_or_null(path)
+	if node == null:
+		_send_result(peer, id, MCPError.make("NOT_FOUND", "node not found: %s" % path))
+		return
+
+	var script = node.get_script()
+	if script == null:
+		_send_result(peer, id, {
+			"name": String(node.name),
+			"class": node.get_class(),
+			"script_path": "",
+			"path": path,
+			"variables": [],
+			"count": 0,
+		})
+		return
+
+	var visibility_filter := str(params.get("visibility", "all"))
+	if not (visibility_filter in ["public", "private", "all"]):
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS",
+			"visibility must be 'public', 'private', or 'all' (got '%s')" % visibility_filter))
+		return
+
+	var variables: Array = []
+	for prop in node.get_property_list():
+		var usage: int = int(prop.get("usage", 0))
+		if not (usage & PROPERTY_USAGE_SCRIPT_VARIABLE):
+			continue
+		var pname := str(prop.get("name", ""))
+		if pname.is_empty():
+			continue
+		var vis := "private" if pname.begins_with("_") else "public"
+		if visibility_filter != "all" and vis != visibility_filter:
+			continue
+		variables.append({
+			"name": pname,
+			"value": MCPCoerce.serialize_value(node.get(pname)),
+			"visibility": vis,
+		})
+	_send_result(peer, id, {
+		"name": String(node.name),
+		"class": node.get_class(),
+		"script_path": script.resource_path,
+		"path": path,
+		"variables": variables,
+		"count": variables.size(),
 	})
 
 
@@ -646,6 +711,11 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 		if delay_before_ms > 0:
 			OS.delay_msec(delay_before_ms)
 		var event_result := {"index": i, "total": total, "type": et, "dispatched": true}
+		# Diagnostic fields for debugging input routing issues.
+		var vp := get_viewport()
+		if vp != null:
+			event_result["viewport_has_focus"] = vp.gui_get_focus_owner() != null
+		event_result["tree_paused"] = get_tree().paused if get_tree() != null else false
 		if et == "click":
 			var click_delay := int(ed.get("click_delay_ms", 50))
 			_dispatch_click(ed)
