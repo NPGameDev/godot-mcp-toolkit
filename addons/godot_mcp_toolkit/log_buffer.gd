@@ -113,6 +113,21 @@ static func clear() -> void:
 	_mutex.unlock()
 
 
+## Remove entries matching a specific level (e.g. "error"). Returns count removed.
+static func clear_level(level: String) -> int:
+	_mutex.lock()
+	var kept: Array = []
+	var removed := 0
+	for entry in _entries:
+		if str(entry["level"]) == level:
+			removed += 1
+		else:
+			kept.append(entry)
+	_entries = kept
+	_mutex.unlock()
+	return removed
+
+
 ## No-op on 4.5+ (Logger handles everything).
 ## On 4.2-4.4, tails the log file for new lines. Self-throttled.
 ## Safe to call every frame — returns immediately if interval not elapsed.

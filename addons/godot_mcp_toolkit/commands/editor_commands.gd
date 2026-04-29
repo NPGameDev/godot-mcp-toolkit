@@ -145,6 +145,10 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_editor_reload_scripts() -> Dictionary:
+	# Flush stale errors before reload — fresh parse errors will be captured
+	# with new IDs so editor_get_errors returns only current-state errors.
+	var errors_cleared := _Hub.LogBuffer.clear_level("error")
+
 	var filesystem := EditorInterface.get_resource_filesystem()
 	var scan_waited_ms := 0
 	if filesystem != null:
@@ -161,7 +165,8 @@ static func _cmd_editor_reload_scripts() -> Dictionary:
 			if open_script is Script:
 				open_script.reload(true)
 				reloaded += 1
-	return {"success": true, "reloaded": reloaded, "scan_waited_ms": scan_waited_ms}
+	return {"success": true, "reloaded": reloaded, "scan_waited_ms": scan_waited_ms,
+		"errors_cleared": errors_cleared}
 
 
 static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
