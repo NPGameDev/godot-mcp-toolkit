@@ -51,17 +51,28 @@ static func _apply_resource_properties(
 	var valid := _property_names_of(resource)
 	for key in properties.keys():
 		var key_string := str(key)
-		if not valid.has(key_string):
-			warnings.append(
-				"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
-			continue
 		var raw_value = properties[key]
 		var missing := MCPCoerce.check_resource_paths(raw_value)
 		if missing != "":
 			warnings.append(
 				"property '%s': resource not found at %s; value left unchanged" % [key_string, missing])
 			continue
-		resource.set(key_string, MCPCoerce.coerce_value(raw_value))
+		var coerced = MCPCoerce.coerce_value(raw_value)
+		# Compound paths (e.g. "sources/0", "tiles/0:0/0") route through
+		# Object._set() which many built-in types (TileSet, AnimationLibrary)
+		# use for sub-resource slots not exposed in get_property_list().
+		if "/" in key_string:
+			var before = resource.get(key_string)
+			resource.set(key_string, coerced)
+			var after = resource.get(key_string)
+			if typeof(after) == typeof(before) and after == before:
+				warnings.append(
+					"property '%s' on %s: set() had no effect (may need a different API)" % [key_string, resource_class])
+		elif not valid.has(key_string):
+			warnings.append(
+				"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
+		else:
+			resource.set(key_string, coerced)
 	return warnings
 
 

@@ -162,8 +162,16 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
-		undo_redo.add_do_property(node, property_name, coerced)
-		undo_redo.add_undo_property(node, property_name, old_value)
+		# Compound paths (e.g. "libraries/ghost") need add_do_method with
+		# "set" so they route through Object._set() — add_do_property uses
+		# set_indexed which navigates into the dict rather than calling the
+		# node's _set() override (AnimationPlayer, TileMapLayer, etc.).
+		if "/" in property_name:
+			undo_redo.add_do_method(node, "set", property_name, coerced)
+			undo_redo.add_undo_method(node, "set", property_name, old_value)
+		else:
+			undo_redo.add_do_property(node, property_name, coerced)
+			undo_redo.add_undo_property(node, property_name, old_value)
 		if coerced is Resource:
 			undo_redo.add_do_reference(coerced)
 		if old_value is Resource:
