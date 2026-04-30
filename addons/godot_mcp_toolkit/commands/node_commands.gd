@@ -281,25 +281,35 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	if mask == "common":
 		common_names = _resolve_common_property_names(node)
 	var properties: Array = []
-	for property in node.get_property_list():
-		var usage: int = int(property.get("usage", 0))
-		var property_name := str(property.get("name", ""))
-		if property_name.is_empty():
-			continue
-		if mask == "script":
-			if not (usage & PROPERTY_USAGE_SCRIPT_VARIABLE):
+	if mask == "script":
+		# Use Script.get_script_property_list() directly — it works for both
+		# @tool and non-@tool scripts, unlike node.get_property_list() which
+		# may omit PROPERTY_USAGE_SCRIPT_VARIABLE for non-@tool scripts.
+		var script: Script = node.get_script() as Script
+		if script != null:
+			for property in script.get_script_property_list():
+				var usage: int = int(property.get("usage", 0))
+				if not (usage & PROPERTY_USAGE_EDITOR):
+					continue
+				var property_name := str(property.get("name", ""))
+				if property_name.is_empty():
+					continue
+				var vis := "private" if property_name.begins_with("_") else "public"
+				if visibility_filter != "all" and vis != visibility_filter:
+					continue
+				properties.append({
+					"name": property_name,
+					"type": int(property.get("type", 0)),
+					"hint": int(property.get("hint", 0)),
+					"hint_string": str(property.get("hint_string", "")),
+					"visibility": vis,
+				})
+	else:
+		for property in node.get_property_list():
+			var usage: int = int(property.get("usage", 0))
+			var property_name := str(property.get("name", ""))
+			if property_name.is_empty():
 				continue
-			var vis := "private" if property_name.begins_with("_") else "public"
-			if visibility_filter != "all" and vis != visibility_filter:
-				continue
-			properties.append({
-				"name": property_name,
-				"type": int(property.get("type", 0)),
-				"hint": int(property.get("hint", 0)),
-				"hint_string": str(property.get("hint_string", "")),
-				"visibility": vis,
-			})
-		else:
 			if not (usage & PROPERTY_USAGE_EDITOR):
 				continue
 			if property_name.begins_with("_"):

@@ -117,8 +117,19 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 
 	var root_directory := filesystem.get_filesystem_path(path_prefix)
 	if root_directory == null:
-		return MCPError.make("NOT_FOUND",
-			"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.reload_scripts or wait for is_scanning to clear)" % path_prefix, MCPError.HINT_FILE_PATH)
+		# Auto-scan if the directory exists on disk but hasn't been indexed yet
+		var abs_path := ProjectSettings.globalize_path(path_prefix)
+		if DirAccess.dir_exists_absolute(abs_path):
+			filesystem.scan()
+			# Wait up to 3s for scan to finish
+			var waited := 0
+			while filesystem.is_scanning() and waited < 3000:
+				OS.delay_msec(100)
+				waited += 100
+			root_directory = filesystem.get_filesystem_path(path_prefix)
+		if root_directory == null:
+			return MCPError.make("NOT_FOUND",
+				"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.reload_scripts or wait for is_scanning to clear)" % path_prefix, MCPError.HINT_FILE_PATH)
 
 	var entries: Array = []
 	var truncated := _walk_filesystem_directory(
@@ -253,8 +264,7 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	# Source-path mode guards
 	if has_source:
 		if source_path.begins_with("res://") or source_path.begins_with("user://"):
-			return MCPError.make("INVALID_PATH",
-				"source_path must be an absolute filesystem path, not a Godot scheme (got %s)" % source_path)
+			source_path = ProjectSettings.globalize_path(source_path)
 		if not FileAccess.file_exists(source_path):
 			return MCPError.make("NOT_FOUND",
 				"source file not found: %s" % source_path, MCPError.HINT_FILE_PATH)
