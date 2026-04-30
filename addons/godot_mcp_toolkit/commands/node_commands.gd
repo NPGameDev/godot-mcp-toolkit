@@ -72,6 +72,32 @@ static func _resolve_scene_node(node_path: String) -> Variant:
 	return MCPHelpers.resolve_scene_node(node_path)
 
 
+## Detect silent compound-path set failure by comparing readback to expected.
+static func _is_compound_set_failure(expected: Variant, actual: Variant) -> bool:
+	if expected == null:
+		return false  # Setting null — nothing to verify
+	if actual == null:
+		return true  # Expected non-null, got null
+	if typeof(actual) == TYPE_DICTIONARY and (actual as Dictionary).is_empty():
+		if expected is Resource:
+			return true  # Expected resource, got empty dict
+		if typeof(expected) == TYPE_DICTIONARY and not (expected as Dictionary).is_empty():
+			return true  # Expected populated dict, got empty dict
+	return false
+
+
+## Short string representation of a value for warning messages.
+static func _brief_value(value: Variant) -> String:
+	if value == null:
+		return "null"
+	if typeof(value) == TYPE_DICTIONARY and (value as Dictionary).is_empty():
+		return "{} (empty)"
+	var s := var_to_str(value)
+	if s.length() > 60:
+		s = s.left(57) + "..."
+	return s
+
+
 # -- Commands -----------------------------------------------------------------
 
 
@@ -90,7 +116,21 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
 
-	return {"value": MCPCoerce.serialize_value(node.get(property_name))}
+	# Handle colon-chained sub-resource paths (e.g. "material:shader_parameter/value").
+	# Object.get() doesn't interpret ":" — split manually and navigate.
+	var target: Object = node
+	var final_prop := property_name
+	if ":" in property_name:
+		var parts := property_name.split(":")
+		final_prop = parts[-1]
+		for i in range(parts.size() - 1):
+			var sub = target.get(parts[i])
+			if sub == null or not (sub is Object):
+				return MCPError.make("NOT_FOUND",
+					"sub-resource '%s' is null on %s" % [parts[i], node_path])
+			target = sub
+
+	return {"value": MCPCoerce.serialize_value(target.get(final_prop))}
 
 
 static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
@@ -159,13 +199,35 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 		coerced = NodePath(str(coerced))
 
-	# Compound paths (e.g. "libraries/ghost", "sources/0") route through
-	# Object._set() which built-in types use for sub-resource slots.
-	# UndoRedo can't reliably serialize these (add_do_property uses
-	# set_indexed, add_do_method drops Resource refs). Call set() directly.
-	if "/" in property_name:
-		node.set(property_name, coerced)
-		return {"success": true}
+	# Compound / colon-chained paths (e.g. "libraries/test",
+	# "material:shader_parameter/value", "theme_override_colors/font_color").
+	# ":" navigates sub-resources; "/" is a compound key inside _set/_get.
+	# UndoRedo can't serialize these reliably. Split on ":", navigate to the
+	# target object, then call set() with the final component intact.
+	if ":" in property_name or "/" in property_name:
+		var target: Object = node
+		var final_prop := property_name
+		if ":" in property_name:
+			var parts := property_name.split(":")
+			final_prop = parts[-1]
+			for i in range(parts.size() - 1):
+				var sub = target.get(parts[i])
+				if sub == null or not (sub is Object):
+					return MCPError.make("NOT_FOUND",
+						"sub-resource '%s' is null on %s" % [parts[i], node_path])
+				target = sub
+		target.set(final_prop, coerced)
+		# Readback verification — compound set() can silently fail
+		# (e.g. AnimationPlayer libraries/ with external Resource refs).
+		var readback = target.get(final_prop)
+		var response := {"success": true}
+		if _is_compound_set_failure(coerced, readback):
+			response["warning"] = (
+				"set() reported no error but readback is %s for '%s'. "
+				+ "Use node_call_method with the type's dedicated API instead "
+				+ "(e.g. add_animation_library for AnimationPlayer)."
+			) % [_brief_value(readback), property_name]
+		return response
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
