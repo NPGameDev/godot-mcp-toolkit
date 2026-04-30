@@ -324,6 +324,16 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 	instance.name = requested_name
 	parent_node.add_child(instance)
 	instance.set_owner(root)
+
+	# layout_mode: match Godot editor behavior for Control children of Containers.
+	# Default (-1) auto-detects: sets layout_mode=1 when parent is a Container.
+	var layout_mode_param: int = int(parameters.get("layout_mode", -1))
+	if instance is Control:
+		if layout_mode_param >= 0:
+			instance.set("layout_mode", layout_mode_param)
+		elif parent_node is Container:
+			instance.set("layout_mode", 1)
+
 	return {"success": true, "status": "created", "path": _path_in_scene(root, instance)}
 
 
