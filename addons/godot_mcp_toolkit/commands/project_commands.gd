@@ -54,9 +54,9 @@ static func _cmd_project_get_settings(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
-	var key := str(parameters.get("key", ""))
+	var key := str(parameters.get("setting", ""))
 	if key.is_empty():
-		return MCPError.make("INVALID_PARAMS", "key must be a non-empty string")
+		return MCPError.make("INVALID_PARAMS", "setting must be a non-empty string")
 	if key.begins_with("mcp_toolkit/"):
 		return MCPError.make("INVALID_PATH",
 			"refusing to write mcp_toolkit/* from project.set_setting (those are the toolkit's own settings — use the FeatureGate system or dock UI); got key=%s" % key)
