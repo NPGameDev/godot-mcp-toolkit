@@ -132,6 +132,8 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 		if save_error != OK:
 			return MCPError.make("SAVE_FAILED",
 				"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
+		# Refresh cache so subsequent ResourceRef loads get the updated version
+		ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 		return {
 			"success": true,
 			"path": file_path,
@@ -181,6 +183,8 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	if save_error != OK:
 		return MCPError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
+	# Refresh cache so subsequent ResourceRef loads get the new resource
+	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 	var create_result := {
 		"success": true,
 		"status": "created",

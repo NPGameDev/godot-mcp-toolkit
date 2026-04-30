@@ -281,8 +281,7 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var node := root.get_node_or_null(node_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND",
-			"no node at path %s. For runtime nodes, use signal_emit(mode='runtime') + runtime_get_node_state instead." % node_path,
-			MCPError.HINT_NODE_PATH)
+			"no node at path %s. This tool is editor-only — for runtime nodes use game_eval or runtime_get_node_state." % node_path)
 	if not node.has_method(method_name):
 		return MCPError.make("INVALID_METHOD",
 			"node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [

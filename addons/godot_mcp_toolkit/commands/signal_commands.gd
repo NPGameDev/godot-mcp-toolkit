@@ -68,8 +68,15 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 		return {"code": "NOT_FOUND",
 			"error": "target node not found: %s" % target_path}
 	if not source.has_signal(signal_name):
+		var instance_hint := ""
+		var check: Node = source
+		while check != null and check != root:
+			if check.scene_file_path != "":
+				instance_hint = ". Node is instanced from %s — open that scene to connect script-defined signals" % check.scene_file_path
+				break
+			check = check.get_parent()
 		return {"code": "INVALID_PARAMS",
-			"error": "signal %s not on %s" % [signal_name, source_path]}
+			"error": "signal %s not on %s%s" % [signal_name, source_path, instance_hint]}
 	if not target.has_method(method_name):
 		return {"code": "INVALID_PARAMS",
 			"error": "method %s not on %s" % [method_name, target_path]}
@@ -126,12 +133,12 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 		if undo_redo != null:
 			undo_redo.create_action("MCP: connect %s.%s -> %s.%s" % [
 				source_path, signal_name, target_path, method_name])
-			undo_redo.add_do_method(source, "connect", signal_name, callable)
+			undo_redo.add_do_method(source, "connect", signal_name, callable, Object.CONNECT_PERSIST)
 			undo_redo.add_undo_method(source, "disconnect", signal_name, callable)
 			undo_redo.commit_action()
 		else:
-			source.connect(signal_name, callable)
-		return {
+			source.connect(signal_name, callable, Object.CONNECT_PERSIST)
+		var response := {
 			"success": true,
 			"status": "created",
 			"source_path": source_path,
@@ -139,6 +146,14 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 			"target_path": target_path,
 			"method": method_name,
 		}
+		var target = resolved["target"]
+		var same_scene: bool = (source.owner == target.owner) \
+			or (source == target.owner) or (target == source.owner)
+		if not same_scene:
+			response["hint"] = "Cross-scene connections (nodes from different .tscn files) cannot persist — use _ready() code instead."
+		else:
+			response["hint"] = "Save the scene to persist this connection."
+		return response
 	else:
 		if not source.is_connected(signal_name, callable):
 			return MCPError.make("NOT_FOUND", "no connection to disconnect")
@@ -147,7 +162,7 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 			undo_redo.create_action("MCP: disconnect %s.%s -> %s.%s" % [
 				source_path, signal_name, target_path, method_name])
 			undo_redo.add_do_method(source, "disconnect", signal_name, callable)
-			undo_redo.add_undo_method(source, "connect", signal_name, callable)
+			undo_redo.add_undo_method(source, "connect", signal_name, callable, Object.CONNECT_PERSIST)
 			undo_redo.commit_action()
 		else:
 			source.disconnect(signal_name, callable)

@@ -28,7 +28,7 @@ static func coerce_value(value: Variant) -> Variant:
 			var guard := _FileGuard.resolve_safe(resource_path)
 			if guard["error"] != null:
 				return null
-			return ResourceLoader.load(resource_path)
+			return ResourceLoader.load(resource_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 		"NewResource":
 			var res_class := str(value.get("class", ""))
 			if res_class.is_empty() or not ClassDB.class_exists(res_class):
@@ -122,7 +122,10 @@ static func coerce_value(value: Variant) -> Variant:
 		"NodePath":
 			return NodePath(str(value.get("path", "")))
 		_:
-			return value
+			var result := {}
+			for k in value.keys():
+				result[k] = coerce_value(value[k])
+			return result
 
 
 static func serialize_value(value: Variant) -> Variant:
@@ -228,6 +231,12 @@ static func check_resource_paths(value: Variant) -> String:
 			var props: Dictionary = value.get("properties", {}) if typeof(value.get("properties", null)) == TYPE_DICTIONARY else {}
 			for key in props.keys():
 				var nested := check_resource_paths(props[key])
+				if nested != "":
+					return nested
+		else:
+			# Recurse into untyped dict values for nested sub-resources
+			for key in value.keys():
+				var nested := check_resource_paths(value[key])
 				if nested != "":
 					return nested
 		return ""

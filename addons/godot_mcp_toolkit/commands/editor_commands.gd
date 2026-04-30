@@ -225,7 +225,8 @@ static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
 				selection.add_node(selected_node)
 	var png_bytes := image.save_png_to_buffer()
 	if png_bytes.is_empty():
-		return MCPError.make("INTERNAL", "save_png_to_buffer returned empty")
+		return MCPError.make("EMPTY_CONTENT",
+			"node '%s' produced no visible image. Node may lack visual content (no texture, no mesh). Use editor_screenshot for a full viewport capture instead." % node_path)
 	return {
 		"image_base64": Marshalls.raw_to_base64(png_bytes),
 		"mime_type": "image/png",
