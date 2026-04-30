@@ -113,7 +113,10 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 
 	var normalized_extension_filter: Array[String] = []
 	for extension in extension_filter:
-		normalized_extension_filter.append(str(extension).to_lower())
+		var ext := str(extension).to_lower()
+		if ext.begins_with("."):
+			ext = ext.substr(1)
+		normalized_extension_filter.append(ext)
 
 	var root_directory := filesystem.get_filesystem_path(path_prefix)
 	if root_directory == null:
