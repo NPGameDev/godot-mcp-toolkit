@@ -176,9 +176,9 @@ func _log_message(message: String, error: bool) -> void:
 	var level: String = "error" if error else "info"
 	buf.push(level, message.strip_edges())
 
-func _log_error(function: String, file: String, line: int,
-		code: String, rationale: String, editor_notify: bool,
-		error_type: int, script_backtraces) -> void:
+func _log_error(_function: String, _file: String, _line: int,
+		code: String, rationale: String, _editor_notify: bool,
+		error_type: int, _script_backtraces) -> void:
 	var buf = get_meta("_log_buffer")
 	if buf == null:
 		return
