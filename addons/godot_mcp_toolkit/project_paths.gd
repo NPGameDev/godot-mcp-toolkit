@@ -33,7 +33,13 @@ static func instance_dir() -> String:
 
 ## Ensure both the plugin dir and per-instance subdir exist.
 ## Safe to call multiple times (idempotent).
+## Uses globalized (absolute OS) path so directory creation works even
+## when user:// root doesn't exist yet (e.g. after a config/name rename
+## shifts user:// to a path Godot hasn't materialized).
 static func ensure_dirs() -> void:
 	var inst := instance_dir()
 	if not DirAccess.dir_exists_absolute(inst):
-		DirAccess.make_dir_recursive_absolute(inst)
+		var abs_path := ProjectSettings.globalize_path(inst).rstrip("/")
+		var err := DirAccess.make_dir_recursive_absolute(abs_path)
+		if err != OK:
+			push_warning("[MCPProjectPaths] ensure_dirs failed for %s (err %d)" % [abs_path, err])

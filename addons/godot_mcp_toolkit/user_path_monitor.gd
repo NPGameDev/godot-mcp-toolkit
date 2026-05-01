@@ -42,6 +42,7 @@ func _on_settings_changed() -> void:
 	if current != _cached_name:
 		var old := _cached_name
 		_cached_name = current
+		push_warning("[MCP] Project renamed '%s' -> '%s' — user:// path shifted. Re-creating addon state." % [old, current])
 		# Ensure addon dirs exist at the new user:// path before notifying
 		# consumers — they can write immediately without calling ensure_dirs().
 		MCPProjectPaths.ensure_dirs()
