@@ -406,7 +406,17 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	var script_path := str(parameters.get("script_path", ""))
 
 	if script_path.is_empty():
-		node.set_script(null)
+		var old_script = node.get_script()
+		var undo_redo_clear = _Hub.get_undo_redo()
+		if undo_redo_clear != null:
+			undo_redo_clear.create_action("MCP: clear script on %s" % node_path)
+			undo_redo_clear.add_do_property(node, "script", null)
+			undo_redo_clear.add_undo_property(node, "script", old_script)
+			if old_script is Resource:
+				undo_redo_clear.add_undo_reference(old_script)
+			undo_redo_clear.commit_action()
+		else:
+			node.set_script(null)
 		return {"success": true, "path": node_path, "script": null, "properties": []}
 
 	var guard := MCPFileGuard.resolve_safe(script_path)
@@ -421,7 +431,18 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_PARAMS",
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
 
-	node.set_script(loaded)
+	var old_script = node.get_script()
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: set script %s on %s" % [script_path, node_path])
+		undo_redo.add_do_property(node, "script", loaded)
+		undo_redo.add_undo_property(node, "script", old_script)
+		undo_redo.add_do_reference(loaded)
+		if old_script is Resource:
+			undo_redo.add_undo_reference(old_script)
+		undo_redo.commit_action()
+	else:
+		node.set_script(loaded)
 
 	var exports: Array = []
 	for property in loaded.get_script_property_list():

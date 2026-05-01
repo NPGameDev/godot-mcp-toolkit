@@ -325,8 +325,17 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("INVALID_CLASS", "instantiate failed: %s" % class_name_param)
 
 	instance.name = requested_name
-	parent_node.add_child(instance)
-	instance.set_owner(root)
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: create %s" % requested_name)
+		undo_redo.add_do_method(parent_node, "add_child", instance)
+		undo_redo.add_do_method(instance, "set_owner", root)
+		undo_redo.add_do_reference(instance)
+		undo_redo.add_undo_method(parent_node, "remove_child", instance)
+		undo_redo.commit_action()
+	else:
+		parent_node.add_child(instance)
+		instance.set_owner(root)
 
 	# layout_mode: match Godot editor behavior for Control children of Containers.
 	# Default (-1) auto-detects: sets layout_mode=1 when parent is a Container.
