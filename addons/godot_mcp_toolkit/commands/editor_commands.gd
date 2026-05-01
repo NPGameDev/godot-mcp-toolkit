@@ -303,7 +303,7 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int) -> 
 	for entry in entries:
 		var scrubbed := MCPScrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
-	return {
+	var response := {
 		"success": true,
 		"entries": MCPUntrusted.wrap(
 			"console", "buffer", JSON.stringify(entries)),
@@ -312,6 +312,11 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int) -> 
 		"truncated": buf_result["truncated"],
 		"source": "buffer",
 	}
+	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off.
+	if entries.is_empty() and not _Hub.LogBuffer.uses_logger_api():
+		if not ProjectSettings.get_setting("debug/file_logging/enable_file_logging", false):
+			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work. Logs from before enabling will not be available."
+	return response
 
 
 # -- Console log reader -------------------------------------------------------
@@ -331,8 +336,12 @@ static func _read_console_log(
 		"debug/file_logging/enable_file_logging", false)
 	if not DirAccess.dir_exists_absolute(logs_dir):
 		if not file_logging_enabled:
-			return MCPError.make("LOG_UNAVAILABLE",
-				"file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor; alternatively use source=\"buffer\" (default) which captures all output in real-time")
+			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor"
+			if _Hub.LogBuffer.uses_logger_api():
+				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
+			else:
+				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
+			return MCPError.make("LOG_UNAVAILABLE", _hint)
 		return MCPError.make("LOG_UNAVAILABLE",
 			"no log directory at user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
 
@@ -343,8 +352,12 @@ static func _read_console_log(
 			log_files.append(String(file_name))
 	if log_files.is_empty():
 		if not file_logging_enabled:
-			return MCPError.make("LOG_UNAVAILABLE",
-				"file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor; alternatively use source=\"buffer\" (default) which captures all output in real-time")
+			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor"
+			if _Hub.LogBuffer.uses_logger_api():
+				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
+			else:
+				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
+			return MCPError.make("LOG_UNAVAILABLE", _hint)
 		return MCPError.make("LOG_UNAVAILABLE",
 			"no .log files under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
 
@@ -354,7 +367,10 @@ static func _read_console_log(
 	var chosen_mtime: int = 0
 	var warnings: Array[String] = []
 	if not file_logging_enabled:
-		warnings.append("file logging is disabled — data may be stale from a previous session; use source=\"buffer\" for real-time output")
+		if _Hub.LogBuffer.uses_logger_api():
+			warnings.append("file logging is disabled — data may be stale from a previous session; use source=\"buffer\" for real-time output")
+		else:
+			warnings.append("file logging is disabled — data may be stale from a previous session. On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources may be stale")
 
 	var godot_log := logs_dir + "/godot.log"
 	var godot_log_mtime: int = 0
@@ -395,8 +411,10 @@ static func _read_console_log(
 	if file_handle == null:
 		var open_err := FileAccess.get_open_error()
 		if FileAccess.file_exists(chosen_file):
-			return MCPError.make("LOG_BUSY",
-				"log file exists but cannot be read right now (%s) — transient lock during file flush, retry in 1-2 seconds; consider using source=\"buffer\" instead" % _godot_error_name(open_err))
+			var _busy_hint := "log file exists but cannot be read right now (%s) — transient lock during file flush, retry in 1-2 seconds" % _godot_error_name(open_err)
+			if _Hub.LogBuffer.uses_logger_api():
+				_busy_hint += "; consider using source=\"buffer\" instead"
+			return MCPError.make("LOG_BUSY", _busy_hint)
 		return MCPError.make("LOG_UNAVAILABLE",
 			"cannot open %s (%s)" % [chosen_file, _godot_error_name(open_err)])
 	var content := file_handle.get_as_text()

@@ -46,6 +46,13 @@ static var _last_poll_ms: int = 0
 # =============================================================================
 
 
+## Returns true when the Logger API (4.5+) is active, false when using file
+## tailing (4.2-4.4). Callers use this to decide whether source="buffer" is
+## independent of file-logging settings.
+static func uses_logger_api() -> bool:
+	return _use_logger
+
+
 ## Call once from plugin.gd _enter_tree().
 static func setup() -> void:
 	if _setup_done:

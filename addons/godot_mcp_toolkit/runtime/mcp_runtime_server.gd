@@ -453,13 +453,18 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		for entry in entries:
 			var scrubbed := MCPScrubber.scrub(str(entry["message"]), "debugger.get_log")
 			entry["message"] = scrubbed["text"]
-		_send_result(peer, id, {
+		var response := {
 			"lines": MCPUntrusted.wrap("game_log", "buffer", JSON.stringify(entries)),
 			"count": buf_result["count"],
 			"next_id": buf_result["next_id"],
 			"truncated": buf_result["truncated"],
 			"source": "buffer",
-		})
+		}
+		# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off.
+		if entries.is_empty() and not _Hub.LogBuffer.uses_logger_api():
+			if not ProjectSettings.get_setting("debug/file_logging/enable_file_logging", false):
+				response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work. Logs from before enabling will not be available."
+		_send_result(peer, id, response)
 		return
 
 	# source == "file" — original log-file reader.
@@ -468,8 +473,12 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		var file_logging_enabled: bool = ProjectSettings.get_setting(
 			"debug/file_logging/enable_file_logging", false)
 		if not file_logging_enabled:
-			_send_result(peer, id, MCPError.make("LOG_UNAVAILABLE",
-				"file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart; alternatively use source=\"buffer\" (default) which captures all output in real-time"))
+			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart"
+			if _Hub.LogBuffer.uses_logger_api():
+				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
+			else:
+				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
+			_send_result(peer, id, MCPError.make("LOG_UNAVAILABLE", _hint))
 		else:
 			_send_result(peer, id, {
 				"lines": [],
@@ -485,11 +494,15 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	if file == null:
 		var open_err := FileAccess.get_open_error()
 		if FileAccess.file_exists(log_path):
-			_send_result(peer, id, MCPError.make("LOG_BUSY",
-				"log file exists but cannot be read right now (err %d) — transient lock during flush, retry in 1-2s; consider source=\"buffer\" instead" % open_err))
+			var _busy_hint := "log file exists but cannot be read right now (err %d) — transient lock during flush, retry in 1-2s" % open_err
+			if _Hub.LogBuffer.uses_logger_api():
+				_busy_hint += "; consider source=\"buffer\" instead"
+			_send_result(peer, id, MCPError.make("LOG_BUSY", _busy_hint))
 		else:
-			_send_result(peer, id, MCPError.make("LOG_UNAVAILABLE",
-				"log file disappeared at %s — possible log rotation; retry or use source=\"buffer\"" % log_path))
+			var _gone_hint := "log file disappeared at %s — possible log rotation; retry" % log_path
+			if _Hub.LogBuffer.uses_logger_api():
+				_gone_hint += " or use source=\"buffer\""
+			_send_result(peer, id, MCPError.make("LOG_UNAVAILABLE", _gone_hint))
 		return
 	var text := file.get_as_text()
 	file.close()
