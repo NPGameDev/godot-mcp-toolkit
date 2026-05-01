@@ -199,10 +199,14 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 
 	var diagnostics: Array = []
 	if err != OK:
+		var msg := "GDScript compile error (code %d). Call editor_get_errors for detailed messages with line numbers." % err
+		var vi := Engine.get_version_info()
+		if int(vi.get("major", 0)) == 4 and int(vi.get("minor", 0)) < 4:
+			msg += " Note: Godot 4.2-4.3 may report false positives for valid scripts (especially those with class_name). Cross-check with editor_get_errors."
 		diagnostics.append({
 			"line": 0,
 			"severity": "error",
-			"message": "GDScript compile error (code %d). Call editor_get_errors for detailed messages with line numbers." % err,
+			"message": msg,
 		})
 
 	return {

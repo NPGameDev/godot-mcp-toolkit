@@ -124,9 +124,9 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 		var abs_path := ProjectSettings.globalize_path(path_prefix)
 		if DirAccess.dir_exists_absolute(abs_path):
 			filesystem.scan()
-			# Wait up to 3s for scan to finish
+			# Wait up to 5s for scan to finish (matches editor_reload_scripts timeout)
 			var waited := 0
-			while filesystem.is_scanning() and waited < 3000:
+			while filesystem.is_scanning() and waited < 5000:
 				OS.delay_msec(100)
 				waited += 100
 			root_directory = filesystem.get_filesystem_path(path_prefix)

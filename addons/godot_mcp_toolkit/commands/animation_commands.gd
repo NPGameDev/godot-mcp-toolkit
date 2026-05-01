@@ -117,6 +117,7 @@ static func _cmd_animation_keyframe(
 		if resolved.has("error"):
 			return MCPError.make(str(resolved["code"]), str(resolved["error"]))
 		var animation: Animation = resolved["anim"]
+		var player: AnimationPlayer = resolved["player"]
 		var missing := MCPCoerce.check_resource_paths(raw_value)
 		if missing != "":
 			return MCPError.make("LOAD_FAILED",
@@ -158,6 +159,13 @@ static func _cmd_animation_keyframe(
 			animation.track_insert_key(track_index, time, coerced)
 		var new_index := animation.track_find_key(
 			track_index, time, Animation.FIND_MODE_EXACT)
+		# Persist external library to disk so runtime can find the animation.
+		var _slash := animation_name.find("/")
+		if _slash != -1:
+			var _lib_name := animation_name.substr(0, _slash)
+			var _lib := player.get_animation_library(_lib_name)
+			if _lib != null and not _lib.resource_path.is_empty():
+				ResourceSaver.save(_lib)
 		return {
 			"success": true,
 			"status": "created",
