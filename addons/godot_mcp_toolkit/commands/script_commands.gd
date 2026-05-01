@@ -190,31 +190,38 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [read_error, file_path])
 
-	# Approach B: in-process GDScript parse via reload().
-	# Fast (<100ms), non-blocking. Detailed error messages go to the editor
-	# output — call editor_get_errors afterwards for line-level diagnostics.
-	var script := GDScript.new()
-	script.source_code = content
-	var err := script.reload(false)
+	# Check if this script has a class_name already registered globally.
+	# GDScript.new().reload() prints a console error ("Class X hides a
+	# global script class") for such scripts even though they're valid.
+	# Use ResourceLoader.load with CACHE_MODE_IGNORE instead — it validates
+	# the script without the false-positive console noise.
+	var is_global_class := false
+	for entry in ProjectSettings.get_global_class_list():
+		if str(entry.get("path", "")) == file_path:
+			is_global_class = true
+			break
 
+	var err: int = OK
 	var diagnostics: Array = []
-	if err != OK:
-		# Detect class_name false positive: GDScript.new().reload() fails when
-		# the script declares class_name and the file is already registered in
-		# the global class list — the name conflicts with the on-disk copy.
-		var is_class_name_conflict := false
-		if err == ERR_PARSE_ERROR:
-			for entry in ProjectSettings.get_global_class_list():
-				if str(entry.get("path", "")) == file_path:
-					is_class_name_conflict = true
-					break
-		if is_class_name_conflict:
+
+	if is_global_class:
+		# P-053 fix: load via ResourceLoader to avoid class_name conflict noise.
+		var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+		if loaded == null:
+			err = ERR_PARSE_ERROR
 			diagnostics.append({
 				"line": 0,
-				"severity": "info",
-				"message": "script_check reports compile error (code %d) but the file is a registered global class — likely a false positive from class_name conflict. Use editor_get_errors for authoritative validation." % err,
+				"severity": "error",
+				"message": "GDScript compile error on global class script. Call editor_get_errors for detailed messages with line numbers.",
 			})
-		else:
+	else:
+		# Standard path: in-process GDScript parse via reload().
+		# Fast (<100ms), non-blocking. Detailed error messages go to the editor
+		# output — call editor_get_errors afterwards for line-level diagnostics.
+		var script := GDScript.new()
+		script.source_code = content
+		err = script.reload(false)
+		if err != OK:
 			diagnostics.append({
 				"line": 0,
 				"severity": "error",
@@ -224,7 +231,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	return {
 		"success": true,
 		"file_path": file_path,
-		"valid": err == OK or diagnostics.any(func(d): return str(d.get("severity", "")) == "info"),
+		"valid": err == OK,
 		"diagnostics": diagnostics,
 	}
 
