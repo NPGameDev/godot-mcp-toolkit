@@ -184,32 +184,24 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 
+	# Validate via GDScript.new().reload() — safe in-process parse.
+	# DO NOT use ResourceLoader.load() with CACHE_MODE_IGNORE here:
+	# it corrupts already-loaded scripts on ALL Godot versions (P-056),
+	# crashing the server when checking its own running files.
+	# Trade-offs of GDScript.new().reload():
+	# - class_name scripts may produce a false-positive console warning
+	# - Error messages reference gdscript:// URIs instead of real paths
+	# Use editor_get_errors as a cross-check for accurate diagnostics.
+	var content := FileAccess.get_file_as_string(file_path)
+	var read_error := FileAccess.get_open_error()
+	if read_error != OK:
+		return MCPError.make("READ_FAILED",
+			"FileAccess error %d reading %s" % [read_error, file_path])
+	var script := GDScript.new()
+	script.source_code = content
+	var is_valid := script.reload(false) == OK
+
 	var diagnostics: Array = []
-	var is_valid := false
-
-	if _Hub.godot_minor() >= 5:
-		# 4.5+: ResourceLoader.load with CACHE_MODE_IGNORE.
-		# - Errors reference the real file path, not an anonymous gdscript:// URI
-		# - No false-positive console noise for scripts with class_name
-		# - CACHE_MODE_IGNORE properly isolates from the resource cache
-		var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
-		is_valid = loaded != null
-	else:
-		# 4.2-4.4: GDScript.new().reload() for safe in-process validation.
-		# ResourceLoader.load + CACHE_MODE_IGNORE can corrupt already-loaded
-		# scripts on these versions (P-056). Trade-offs accepted:
-		# - class_name scripts may produce a false-positive console warning
-		# - Error messages reference gdscript:// URIs instead of real paths
-		# Use editor_get_errors as a cross-check for accurate diagnostics.
-		var content := FileAccess.get_file_as_string(file_path)
-		var read_error := FileAccess.get_open_error()
-		if read_error != OK:
-			return MCPError.make("READ_FAILED",
-				"FileAccess error %d reading %s" % [read_error, file_path])
-		var script := GDScript.new()
-		script.source_code = content
-		is_valid = script.reload(false) == OK
-
 	if not is_valid:
 		diagnostics.append({
 			"line": 0,
