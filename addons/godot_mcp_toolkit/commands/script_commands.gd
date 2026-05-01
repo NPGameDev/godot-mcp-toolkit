@@ -184,15 +184,33 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 
-	# Validate via ResourceLoader.load with CACHE_MODE_IGNORE.
-	# This is preferred over GDScript.new().reload() because:
-	# - Errors reference the real file path, not an anonymous gdscript:// URI
-	# - No false-positive console noise for scripts with class_name
-	# CACHE_MODE_IGNORE (= 0) is available since Godot 4.2.
-	var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
-
 	var diagnostics: Array = []
-	if loaded == null:
+	var is_valid := false
+
+	if _Hub.godot_minor() >= 5:
+		# 4.5+: ResourceLoader.load with CACHE_MODE_IGNORE.
+		# - Errors reference the real file path, not an anonymous gdscript:// URI
+		# - No false-positive console noise for scripts with class_name
+		# - CACHE_MODE_IGNORE properly isolates from the resource cache
+		var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+		is_valid = loaded != null
+	else:
+		# 4.2-4.4: GDScript.new().reload() for safe in-process validation.
+		# ResourceLoader.load + CACHE_MODE_IGNORE can corrupt already-loaded
+		# scripts on these versions (P-056). Trade-offs accepted:
+		# - class_name scripts may produce a false-positive console warning
+		# - Error messages reference gdscript:// URIs instead of real paths
+		# Use editor_get_errors as a cross-check for accurate diagnostics.
+		var content := FileAccess.get_file_as_string(file_path)
+		var read_error := FileAccess.get_open_error()
+		if read_error != OK:
+			return MCPError.make("READ_FAILED",
+				"FileAccess error %d reading %s" % [read_error, file_path])
+		var script := GDScript.new()
+		script.source_code = content
+		is_valid = script.reload(false) == OK
+
+	if not is_valid:
 		diagnostics.append({
 			"line": 0,
 			"severity": "error",
@@ -202,7 +220,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	return {
 		"success": true,
 		"file_path": file_path,
-		"valid": loaded != null,
+		"valid": is_valid,
 		"diagnostics": diagnostics,
 	}
 

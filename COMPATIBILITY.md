@@ -26,7 +26,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message |
-| `script_check` | 4.2 | False positive on scripts with `class_name` (reports invalid, code 43) on 4.2-4.4; fixed on 4.5+ |
+| `script_check` | 4.2 | False positive on `class_name` scripts on 4.2-4.4 (P-053); error messages use `gdscript://` URIs instead of real paths on 4.2-4.4 (P-056). Both fixed on 4.5+ via `ResourceLoader.load`. |
 | All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
 
 ### Degraded behavior by version
@@ -40,10 +40,14 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   `EditorUndoRedoManager` is accessed via `has_method()` dynamic dispatch
   and returns `null` on < 4.4, triggering the direct-call fallback.
 - Toast notifications silently skip (no user-visible impact on tool behavior).
-- `script_check` returns false positives on scripts with `class_name`
-  declarations: reports `valid: false` (code 43) even though the editor
-  shows zero errors. `editor_get_errors` can be used as a cross-check.
-  Fixed on 4.5+ where `GDScript.new().reload()` no longer false-positives.
+- `script_check` uses `GDScript.new().reload()` on 4.2-4.4 because
+  `ResourceLoader.load()` with `CACHE_MODE_IGNORE` can corrupt
+  already-loaded scripts on these versions (P-056). Trade-offs:
+  - `class_name` scripts may produce a false-positive console warning
+    (reports `valid: false` even though the editor shows zero errors)
+  - Error messages reference `gdscript://` URIs instead of real file paths
+  - Use `editor_get_errors` as a cross-check for accurate diagnostics.
+  Both issues are fixed on 4.5+ where `ResourceLoader.load()` is used.
 - On 4.2 specifically, TileMapLayer nodes do not exist (introduced in 4.3).
   The tilemap tool still works with legacy `TileMap` nodes.
 
@@ -51,7 +55,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 - UndoRedo history works for all operations (requires proper
   `EditorUndoRedoManager` wrapping — direct property mutations bypass history).
 - Toast notifications work.
-- `script_check` false positive on `class_name` scripts persists (same as 4.2-4.3).
+- `script_check` uses `GDScript.new().reload()` (same trade-offs as 4.2-4.3).
 - `scene_close` still returns `UNSUPPORTED`.
 
 **Godot 4.5+:**
