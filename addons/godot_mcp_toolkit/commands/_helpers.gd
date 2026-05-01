@@ -151,3 +151,22 @@ static func string_to_profile(s: String) -> int:
 		"standard": return 1
 		"power_user", "full": return 2
 		_: return 1
+
+
+# -- File logging detection ----------------------------------------------------
+
+
+## Check whether file logging is enabled, including platform-specific overrides.
+## ProjectSettings.get_setting() returns the base value; platform overrides
+## (e.g. debug/file_logging/enable_file_logging.windows) are separate keys.
+static func is_file_logging_enabled() -> bool:
+	var key := "debug/file_logging/enable_file_logging"
+	if ProjectSettings.get_setting(key, false):
+		return true
+	for tag in ["pc", "windows", "linuxbsd", "macos", "android", "ios", "web"]:
+		if OS.has_feature(tag):
+			var override_key: String = key + "." + tag
+			if ProjectSettings.has_setting(override_key) \
+					and ProjectSettings.get_setting(override_key, false):
+				return true
+	return false

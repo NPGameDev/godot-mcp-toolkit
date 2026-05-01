@@ -462,7 +462,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		}
 		# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off.
 		if entries.is_empty() and not _Hub.LogBuffer.uses_logger_api():
-			if not ProjectSettings.get_setting("debug/file_logging/enable_file_logging", false):
+			if not MCPHelpers.is_file_logging_enabled():
 				response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work. Logs from before enabling will not be available."
 		_send_result(peer, id, response)
 		return
@@ -470,8 +470,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	# source == "file" — original log-file reader.
 	var log_path := "user://logs/godot.log"
 	if not FileAccess.file_exists(log_path):
-		var file_logging_enabled: bool = ProjectSettings.get_setting(
-			"debug/file_logging/enable_file_logging", false)
+		var file_logging_enabled: bool = MCPHelpers.is_file_logging_enabled()
 		if not file_logging_enabled:
 			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart"
 			if _Hub.LogBuffer.uses_logger_api():

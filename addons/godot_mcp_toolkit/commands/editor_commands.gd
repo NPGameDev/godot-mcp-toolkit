@@ -314,7 +314,7 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int) -> 
 	}
 	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off.
 	if entries.is_empty() and not _Hub.LogBuffer.uses_logger_api():
-		if not ProjectSettings.get_setting("debug/file_logging/enable_file_logging", false):
+		if not MCPHelpers.is_file_logging_enabled():
 			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work. Logs from before enabling will not be available."
 	return response
 
@@ -332,8 +332,7 @@ static func _read_console_log(
 	# user://logs/ read is a narrow read-only exception to the res://-only rule.
 	# Path is internally constructed (not user-supplied), so no FileGuard gate.
 	var logs_dir := "user://logs"
-	var file_logging_enabled: bool = ProjectSettings.get_setting(
-		"debug/file_logging/enable_file_logging", false)
+	var file_logging_enabled: bool = MCPHelpers.is_file_logging_enabled()
 	if not DirAccess.dir_exists_absolute(logs_dir):
 		if not file_logging_enabled:
 			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor"

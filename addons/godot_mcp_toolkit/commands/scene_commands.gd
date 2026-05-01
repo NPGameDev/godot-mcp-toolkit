@@ -302,7 +302,10 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	var parent_node := root.get_node_or_null(parent_path) if not parent_path.is_empty() else root
 	if parent_node == null:
-		return MCPError.make("NOT_FOUND", "parent not found: %s" % parent_path, MCPError.HINT_NODE_PATH)
+		var extra := ""
+		if parent_path == root.name:
+			extra = "; to reference the scene root use parent_path=\".\" (not the root node's name)"
+		return MCPError.make("NOT_FOUND", "parent not found: %s%s" % [parent_path, extra], MCPError.HINT_NODE_PATH)
 
 	var existing := parent_node.get_node_or_null(NodePath(requested_name))
 	if existing != null:

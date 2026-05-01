@@ -44,6 +44,16 @@ static func _resolve_animation(
 	if animation_name.is_empty():
 		return {"code": "INVALID_PARAMS", "error": "missing animation_name"}
 	if not player.has_animation(animation_name):
+		# Auto-create: if "library/anim" format and the library exists, create the Animation.
+		var slash_pos := animation_name.find("/")
+		if slash_pos != -1:
+			var lib_name := animation_name.substr(0, slash_pos)
+			var anim_key := animation_name.substr(slash_pos + 1)
+			if player.has_animation_library(lib_name):
+				var lib := player.get_animation_library(lib_name)
+				var new_anim := Animation.new()
+				lib.add_animation(anim_key, new_anim)
+				return {"player": player, "anim": new_anim, "auto_created": true}
 		var available: Array = []
 		for name_entry in player.get_animation_list():
 			available.append(str(name_entry))

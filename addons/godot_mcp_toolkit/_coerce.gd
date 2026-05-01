@@ -24,6 +24,11 @@ static func coerce_value(value: Variant) -> Variant:
 		"Resource":
 			var resource_path := str(value.get("path", ""))
 			if resource_path.is_empty():
+				# Fall through: {"type":"Resource","resource_type":"X"} → inline NewResource
+				var res_class := str(value.get("resource_type", value.get("class", "")))
+				if not res_class.is_empty():
+					return coerce_value({"type": "NewResource", "class": res_class,
+						"properties": value.get("properties", {})})
 				return null
 			var guard := _FileGuard.resolve_safe(resource_path)
 			if guard["error"] != null:
@@ -215,6 +220,11 @@ static func check_resource_paths(value: Variant) -> String:
 		if vtype == "Resource":
 			var resource_path := str(value.get("path", ""))
 			if resource_path.is_empty():
+				# Fall through: Resource with no path + class/resource_type → NewResource
+				var res_class := str(value.get("resource_type", value.get("class", "")))
+				if not res_class.is_empty():
+					return check_resource_paths({"type": "NewResource", "class": res_class,
+						"properties": value.get("properties", {})})
 				return "<empty path>"
 			var guard := _FileGuard.resolve_safe(resource_path)
 			if guard["error"] != null:
