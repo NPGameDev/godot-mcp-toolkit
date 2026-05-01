@@ -45,6 +45,7 @@ var _last_feature_states: Dictionary = {}  # { ps_key: bool } — snapshot for c
 var _last_mcp_json_present: bool = false  # L1: track .mcp.json presence transitions
 var _sidecar_was_present: bool = false  # P2: detect sidecar loss (manual deletion)
 var _events: RefCounted = null  # GateEvents signal bus
+var _bootstrap_retry_after_msec: int = 0  # P-055: cooldown to avoid per-frame spam on persistent failure
 
 
 func bind_events(events: RefCounted) -> void:
@@ -405,13 +406,21 @@ func _poll_feature_states() -> void:
 	# P2: Sidecar recovery — recreate from PS if missing (covers manual
 	# deletion). Runs before profile enforcement so locked profiles can
 	# also recover.  Use read() — file_exists() can lie on Windows.
+	# P-055: cooldown prevents per-frame spam when ensure_dirs fails
+	# persistently (e.g. 4.6 DirAccess change, or multi-editor lock).
 	if MCPStateFile.read().is_empty():
-		_bootstrap_sidecar_from_ps()
-		if _sidecar_was_present:
-			# Bootstrap just succeeded — notify dock and bridge.
-			snapshot_feature_states()
-			_emit_features_changed()
-			_emit_config_reloaded()
+		var _now_msec := Time.get_ticks_msec()
+		if _now_msec >= _bootstrap_retry_after_msec:
+			_bootstrap_sidecar_from_ps()
+			if _sidecar_was_present:
+				# Bootstrap just succeeded — notify dock and bridge.
+				_bootstrap_retry_after_msec = 0
+				snapshot_feature_states()
+				_emit_features_changed()
+				_emit_config_reloaded()
+			else:
+				# Failed — back off 5 seconds before retrying.
+				_bootstrap_retry_after_msec = _now_msec + 5000
 
 	# Read sidecar once for all sync operations below.
 	var sidecar_data := MCPStateFile.read()
