@@ -312,10 +312,13 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int) -> 
 		"truncated": buf_result["truncated"],
 		"source": "buffer",
 	}
-	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off.
+	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off
+	# or the log file couldn't be read (locked by OS on Windows).
 	if entries.is_empty() and not _Hub.LogBuffer.uses_logger_api():
 		if not MCPHelpers.is_file_logging_enabled():
-			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work. Logs from before enabling will not be available."
+			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work."
+		elif _Hub.LogBuffer._tail_open_failures > 0:
+			response["warning"] = "Log file could not be opened for reading (%d failed attempts) — the OS may be locking it. Use source=\"file\" as a fallback." % _Hub.LogBuffer._tail_open_failures
 	return response
 
 

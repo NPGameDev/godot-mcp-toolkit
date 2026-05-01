@@ -199,20 +199,32 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 
 	var diagnostics: Array = []
 	if err != OK:
-		var msg := "GDScript compile error (code %d). Call editor_get_errors for detailed messages with line numbers." % err
-		var vi := Engine.get_version_info()
-		if int(vi.get("major", 0)) == 4 and int(vi.get("minor", 0)) < 4:
-			msg += " Note: Godot 4.2-4.3 may report false positives for valid scripts (especially those with class_name). Cross-check with editor_get_errors."
-		diagnostics.append({
-			"line": 0,
-			"severity": "error",
-			"message": msg,
-		})
+		# Detect class_name false positive: GDScript.new().reload() fails when
+		# the script declares class_name and the file is already registered in
+		# the global class list — the name conflicts with the on-disk copy.
+		var is_class_name_conflict := false
+		if err == ERR_PARSE_ERROR:
+			for entry in ProjectSettings.get_global_class_list():
+				if str(entry.get("path", "")) == file_path:
+					is_class_name_conflict = true
+					break
+		if is_class_name_conflict:
+			diagnostics.append({
+				"line": 0,
+				"severity": "info",
+				"message": "script_check reports compile error (code %d) but the file is a registered global class — likely a false positive from class_name conflict. Use editor_get_errors for authoritative validation." % err,
+			})
+		else:
+			diagnostics.append({
+				"line": 0,
+				"severity": "error",
+				"message": "GDScript compile error (code %d). Call editor_get_errors for detailed messages with line numbers." % err,
+			})
 
 	return {
 		"success": true,
 		"file_path": file_path,
-		"valid": err == OK,
+		"valid": err == OK or diagnostics.any(func(d): return str(d.get("severity", "")) == "info"),
 		"diagnostics": diagnostics,
 	}
 

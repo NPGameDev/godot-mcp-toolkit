@@ -39,6 +39,7 @@ static var _logger_ref = null  # prevent GC — OS.add_logger() holds a raw C++ 
 static var _tail_offset: int = 0
 static var _tail_path: String = ""
 static var _last_poll_ms: int = 0
+static var _tail_open_failures: int = 0
 
 
 # =============================================================================
@@ -207,12 +208,11 @@ static func _setup_file_tail() -> void:
 	# Respect the user's configured log path.
 	_tail_path = ProjectSettings.get_setting(
 		"debug/file_logging/log_path", "user://logs/godot.log")
-	# Seek to end of existing file so we only capture new output.
-	if FileAccess.file_exists(_tail_path):
-		var f := FileAccess.open(_tail_path, FileAccess.READ)
-		if f != null:
-			_tail_offset = f.get_length()
-			f.close()
+	# Start from beginning so the buffer captures the full current-session log.
+	# On Windows, Godot holds the log file open with buffered writes — new
+	# content written after plugin load may not be visible to our read handle
+	# until flushed. Starting from 0 ensures startup messages are captured.
+	_tail_offset = 0
 
 
 static func _tail_log_file() -> void:
@@ -222,6 +222,7 @@ static func _tail_log_file() -> void:
 		return
 	var f := FileAccess.open(_tail_path, FileAccess.READ)
 	if f == null:
+		_tail_open_failures += 1
 		return
 	var file_len: int = f.get_length()
 	if file_len <= _tail_offset:
