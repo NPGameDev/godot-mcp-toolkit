@@ -12,6 +12,7 @@ signal command_received(method: String)
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPCommandRegistry = _Hub.MCPCommandRegistry
+const MCPRegistryClient = _Hub.MCPRegistryClient
 const _MCPStateFile = _Hub.MCPStateFile
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
@@ -108,6 +109,28 @@ func broadcast_notification(notification_type: String, params: Dictionary = {}) 
 			count += 1
 	print("[MCPServer] broadcasting %s to %d authed peer%s" % [
 		notification_type, count, "" if count == 1 else "s"])
+
+
+func bind_user_path_monitor(monitor: RefCounted) -> void:
+	monitor.project_name_changed.connect(_on_project_name_changed)
+
+
+func _on_project_name_changed(_old_name: String, _new_name: String) -> void:
+	_rewrite_token_after_rename()
+
+
+## Re-write the current in-memory token to the new user:// path after a
+## config/name change. Does NOT generate a new token — existing connections
+## stay authenticated. Also updates the system registry entry.
+func _rewrite_token_after_rename() -> void:
+	var write_err := MCPAuth.write_token(_session_token)
+	if write_err != OK:
+		push_warning("[MCPServer] failed to re-write token after rename (err %d)" % write_err)
+	else:
+		print("[MCPServer] token re-written to %s" % MCPAuth.get_token_path())
+	# Update registry so the bridge finds the new token_path.
+	if _bound_port > 0:
+		MCPRegistryClient.register(_bound_port, MCPAuth.get_token_path())
 
 
 func regenerate_token() -> void:

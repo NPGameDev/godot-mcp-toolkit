@@ -212,6 +212,20 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 # -- Persistence --------------------------------------------------------------
 
 
+## Re-create the onboarding completion flag at the new user:// path after a
+## config/name change. Prevents the wizard from re-showing after a rename.
+## Static so plugin.gd can call it without holding a wizard instance.
+## Re-create the onboarding completion flag at the new user:// path after a
+## config/name change. Prevents the wizard from re-showing after a rename.
+## Called by plugin.gd's project_name_changed handler. Dirs are guaranteed
+## to exist (UserPathMonitor calls ensure_dirs() before emitting the signal).
+static func migrate_flag_after_rename() -> void:
+	var f := FileAccess.open(_ONBOARDING_FLAG, FileAccess.WRITE)
+	if f != null:
+		f.store_string("1")
+		f.close()
+
+
 func _write_flag() -> void:
 	var f := FileAccess.open(_ONBOARDING_FLAG, FileAccess.WRITE)
 	if f != null:

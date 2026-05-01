@@ -60,6 +60,7 @@ var _wizard: OnboardingWizard = null
 var _feature_settings: FeatureGateSettings = null
 var _notifier: GateNotifier = null
 var _events: GateEvents = null
+var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
 # Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
 
@@ -106,7 +107,15 @@ func _enter_tree() -> void:
 
 	_Hub.LogBuffer.setup()
 
+	# P-055: monitor config/name changes that shift user:// paths.
+	# Each consumer connects directly and handles its own recovery.
+	_user_path_monitor = _Hub.UserPathMonitor.new()
+	_user_path_monitor.start()
+	_user_path_monitor.project_name_changed.connect(_on_project_name_changed)
+	_feature_settings.bind_user_path_monitor(_user_path_monitor)
+
 	add_child(_server)
+	_server.bind_user_path_monitor(_user_path_monitor)
 	_server.start()
 
 	# Register in the system-wide project registry so the TS bridge can
@@ -158,6 +167,14 @@ func _detect_playtest_end() -> void:
 	_was_playing = playing
 
 
+func _on_project_name_changed(_old_name: String, _new_name: String) -> void:
+	# Static consumers that can't connect to signals themselves.
+	# Instance consumers (feature_settings, server) connect directly
+	# via bind_user_path_monitor().
+	OnboardingWizard.migrate_flag_after_rename()
+	_Hub.LogBuffer.reset_tail_path()
+
+
 func _exit_tree() -> void:
 	# Teardown symmetry — reverse order of _enter_tree registrations.
 	# Onboarding wizard (if still open).
@@ -181,6 +198,9 @@ func _exit_tree() -> void:
 	_notifier = null
 	_feature_settings = null
 	_events = null
+	if _user_path_monitor != null:
+		_user_path_monitor.stop()
+		_user_path_monitor = null
 
 	# Export plugin (RefCounted — do NOT queue_free, just null).
 	if _export_plugin != null:

@@ -53,6 +53,14 @@ func bind_events(events: RefCounted) -> void:
 	_events.profile_acknowledged.connect(acknowledge_profile)
 
 
+func bind_user_path_monitor(monitor: RefCounted) -> void:
+	monitor.project_name_changed.connect(_on_project_name_changed)
+
+
+func _on_project_name_changed(_old_name: String, _new_name: String) -> void:
+	rebootstrap_after_rename()
+
+
 func register_all() -> void:
 	_register_feature_gates()
 	_register_limits()
@@ -133,6 +141,18 @@ func _bootstrap_sidecar_from_mcp_json() -> void:
 
 ## Seed sidecar from current ProjectSettings bools when neither .mcp.json
 ## nor sidecar exists (fresh install, or after user:// instance dir + .mcp.json deletion).
+## Called by plugin.gd when UserPathMonitor detects a config/name change.
+## Re-creates the sidecar at the new user:// path and resets the retry cooldown.
+func rebootstrap_after_rename() -> void:
+	_bootstrap_sidecar_from_ps()
+	if not MCPStateFile.read().is_empty():
+		_sidecar_was_present = true
+		_bootstrap_retry_after_msec = 0
+		snapshot_feature_states()
+		_emit_features_changed()
+		_emit_config_reloaded()
+
+
 func _bootstrap_sidecar_from_ps() -> void:
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	var profile_str: String
@@ -407,13 +427,15 @@ func _poll_feature_states() -> void:
 	# deletion). Runs before profile enforcement so locked profiles can
 	# also recover.  Use read() — file_exists() can lie on Windows.
 	# P-055: cooldown prevents per-frame spam when ensure_dirs fails
-	# persistently (e.g. 4.6 DirAccess change, or multi-editor lock).
+	# persistently (e.g. user:// path shift after config/name change,
+	# 4.6 DirAccess change, or multi-editor lock).
 	if MCPStateFile.read().is_empty():
 		var _now_msec := Time.get_ticks_msec()
 		if _now_msec >= _bootstrap_retry_after_msec:
 			_bootstrap_sidecar_from_ps()
-			if _sidecar_was_present:
-				# Bootstrap just succeeded — notify dock and bridge.
+			if not MCPStateFile.read().is_empty():
+				# Bootstrap succeeded — sidecar now exists. Notify dock and bridge.
+				_sidecar_was_present = true
 				_bootstrap_retry_after_msec = 0
 				snapshot_feature_states()
 				_emit_features_changed()
