@@ -184,54 +184,25 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 
-	var content := FileAccess.get_file_as_string(file_path)
-	var read_error := FileAccess.get_open_error()
-	if read_error != OK:
-		return MCPError.make("READ_FAILED",
-			"FileAccess error %d reading %s" % [read_error, file_path])
+	# Validate via ResourceLoader.load with CACHE_MODE_IGNORE.
+	# This is preferred over GDScript.new().reload() because:
+	# - Errors reference the real file path, not an anonymous gdscript:// URI
+	# - No false-positive console noise for scripts with class_name
+	# CACHE_MODE_IGNORE (= 0) is available since Godot 4.2.
+	var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 
-	# Check if this script has a class_name already registered globally.
-	# GDScript.new().reload() prints a console error ("Class X hides a
-	# global script class") for such scripts even though they're valid.
-	# Use ResourceLoader.load with CACHE_MODE_IGNORE instead — it validates
-	# the script without the false-positive console noise.
-	var is_global_class := false
-	for entry in ProjectSettings.get_global_class_list():
-		if str(entry.get("path", "")) == file_path:
-			is_global_class = true
-			break
-
-	var err: int = OK
 	var diagnostics: Array = []
-
-	if is_global_class:
-		# P-053 fix: load via ResourceLoader to avoid class_name conflict noise.
-		var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
-		if loaded == null:
-			err = ERR_PARSE_ERROR
-			diagnostics.append({
-				"line": 0,
-				"severity": "error",
-				"message": "GDScript compile error on global class script. Call editor_get_errors for detailed messages with line numbers.",
-			})
-	else:
-		# Standard path: in-process GDScript parse via reload().
-		# Fast (<100ms), non-blocking. Detailed error messages go to the editor
-		# output — call editor_get_errors afterwards for line-level diagnostics.
-		var script := GDScript.new()
-		script.source_code = content
-		err = script.reload(false)
-		if err != OK:
-			diagnostics.append({
-				"line": 0,
-				"severity": "error",
-				"message": "GDScript compile error (code %d). Call editor_get_errors for detailed messages with line numbers." % err,
-			})
+	if loaded == null:
+		diagnostics.append({
+			"line": 0,
+			"severity": "error",
+			"message": "GDScript compile error. Call editor_get_errors for detailed messages with line numbers.",
+		})
 
 	return {
 		"success": true,
 		"file_path": file_path,
-		"valid": err == OK,
+		"valid": loaded != null,
 		"diagnostics": diagnostics,
 	}
 
