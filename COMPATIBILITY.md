@@ -3,7 +3,7 @@
 **Minimum supported:** Godot 4.2  
 **Full functionality:** Godot 4.5+  
 **Recommended:** Godot 4.5+  
-**Tested up to:** Godot 4.6
+**Tested up to:** Godot 4.6.2
 
 Future Godot versions (4.7+) are not blocked. The plugin runs normally on
 untested versions and logs a startup warning.
@@ -26,7 +26,8 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message |
-| All other tools | 4.3 | Fully functional |
+| `script_check` | 4.2 | False positive on scripts with `class_name` (reports invalid, code 43) on 4.2-4.4; fixed on 4.5+ |
+| All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
 
 ### Degraded behavior by version
 
@@ -36,17 +37,27 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   (`node_set_script`), signal management (`signal_manage`), animation
   keyframes (`animation_keyframe`), and tilemap edits (`tilemap_set_cells`).
   Operations still execute correctly but cannot be undone via Edit > Undo.
+  `EditorUndoRedoManager` is accessed via `has_method()` dynamic dispatch
+  and returns `null` on < 4.4, triggering the direct-call fallback.
 - Toast notifications silently skip (no user-visible impact on tool behavior).
+- `script_check` returns false positives on scripts with `class_name`
+  declarations: reports `valid: false` (code 43) even though the editor
+  shows zero errors. `editor_get_errors` can be used as a cross-check.
+  Fixed on 4.5+ where `GDScript.new().reload()` no longer false-positives.
 - On 4.2 specifically, TileMapLayer nodes do not exist (introduced in 4.3).
   The tilemap tool still works with legacy `TileMap` nodes.
 
 **Godot 4.4:**
-- UndoRedo history works for all operations.
+- UndoRedo history works for all operations (requires proper
+  `EditorUndoRedoManager` wrapping — direct property mutations bypass history).
 - Toast notifications work.
+- `script_check` false positive on `class_name` scripts persists (same as 4.2-4.3).
 - `scene_close` still returns `UNSUPPORTED`.
 
 **Godot 4.5+:**
 - Full functionality. All tools, all UI features.
+- Console capture uses the Logger API (zero-latency, in-memory ring buffer)
+  instead of the file-tailing backend used on 4.2-4.4.
 
 ## UI surface compatibility matrix
 
