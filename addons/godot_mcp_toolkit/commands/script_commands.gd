@@ -187,18 +187,26 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	# Validate via GDScript.new().reload() — safe in-process parse.
 	# DO NOT use ResourceLoader.load() with CACHE_MODE_IGNORE here:
 	# it corrupts already-loaded scripts on ALL Godot versions (P-056),
-	# crashing the server when checking its own running files.
-	# Trade-offs of GDScript.new().reload():
-	# - class_name scripts may produce a false-positive console warning
-	# - Error messages reference gdscript:// URIs instead of real paths
-	# Use editor_get_errors as a cross-check for accurate diagnostics.
+	# crashing the editor when checking already-loaded scripts.
+	# Remaining trade-off: error messages reference gdscript:// URIs
+	# instead of real paths. Use editor_get_errors for accurate diagnostics.
 	var content := FileAccess.get_file_as_string(file_path)
 	var read_error := FileAccess.get_open_error()
 	if read_error != OK:
 		return MCPError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [read_error, file_path])
+
+	# Strip class_name declaration to prevent false-positive conflict (P-053).
+	# GDScript.new().reload() registers a second copy of the name, colliding
+	# with the already-registered global class. Blanking the line preserves
+	# line numbers so any real errors still report correct positions.
+	var lines := content.split("\n")
+	for i in lines.size():
+		if lines[i].strip_edges().begins_with("class_name "):
+			lines[i] = ""
+			break
 	var script := GDScript.new()
-	script.source_code = content
+	script.source_code = "\n".join(lines)
 	var is_valid := script.reload(false) == OK
 
 	var diagnostics: Array = []

@@ -26,7 +26,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message |
-| `script_check` | 4.2 | Known limitations on all versions (see below) |
+| `script_check` | 4.2 | `gdscript://` URIs in error messages (see below); `class_name` false positive fixed via stripping |
 | All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
 
 ### Degraded behavior by version
@@ -63,18 +63,17 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 alternative but corrupts already-loaded scripts on all Godot versions,
 crashing the editor (P-056).
 
-Known trade-offs of `GDScript.new().reload()`:
-- **`class_name` false positives (P-053):** Scripts with a `class_name`
-  declaration may report `valid: false` even though the editor shows zero
-  errors. The engine prints a "Class X hides a global script class" warning
-  because the name is already registered globally.
+The `class_name` false-positive (P-053) is mitigated by stripping the
+`class_name` declaration before validation — the name is already
+registered globally so the rest of the script parses correctly.
+
+Remaining trade-off:
 - **`gdscript://` URIs in error messages:** When a script has a genuine
   error, the console message references an internal `gdscript://` path
   instead of the real `res://` file path.
 
 **Workaround:** Use `editor_get_errors` as a cross-check — it reads
-diagnostics from the editor itself, which have accurate file paths and
-do not false-positive on `class_name` scripts.
+diagnostics from the editor itself, which have accurate file paths.
 
 ## UI surface compatibility matrix
 
