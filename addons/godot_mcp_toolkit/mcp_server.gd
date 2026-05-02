@@ -257,7 +257,7 @@ func _process(_delta: float) -> void:
 		return
 
 	_accept_pending_peers()
-	var closed := _poll_connected_peers()
+	var closed := await _poll_connected_peers()
 	_cleanup_closed_peers(closed)
 
 
@@ -295,7 +295,7 @@ func _poll_connected_peers() -> Array[WebSocketPeer]:
 				continue
 		while peer.get_available_packet_count() > 0:
 			var text := peer.get_packet().get_string_from_utf8()
-			_handle_message(peer, text)
+			await _handle_message(peer, text)
 	return closed
 
 
@@ -332,7 +332,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		_handle_auth(peer, message)
 		return
 
-	_dispatch_rpc(peer, message)
+	await _dispatch_rpc(peer, message)
 
 
 func _handle_auth(peer: WebSocketPeer, message: Dictionary) -> void:
@@ -390,7 +390,7 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 	var safe_parameters: Dictionary = parameters \
 		if typeof(parameters) == TYPE_DICTIONARY else {}
 	command_received.emit(method)
-	var result: Dictionary = _registry.call_command(method, safe_parameters)
+	var result: Dictionary = await _registry.call_command(method, safe_parameters)
 	_send_result(peer, id, result)
 
 

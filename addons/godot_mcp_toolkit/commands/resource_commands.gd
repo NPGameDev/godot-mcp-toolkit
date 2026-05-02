@@ -129,7 +129,7 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ["tres", "res"]):
 		return MCPError.make("INVALID_PATH",
-			"resource.write only writes .tres/.res files (got %s); use script.write for .gd" % file_path)
+			"resource.write only writes .tres/.res files (got %s); use script.write for .gd/.cs" % file_path)
 	var properties: Dictionary = parameters.get("properties", {}) \
 		if typeof(parameters.get("properties", {})) == TYPE_DICTIONARY else {}
 	if FileAccess.file_exists(file_path):

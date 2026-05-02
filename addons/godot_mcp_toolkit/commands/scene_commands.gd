@@ -112,7 +112,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tscn":
 		return MCPError.make("INVALID_PATH",
-			"path must end with .tscn (got %s; use script.write for .gd files)" % file_path)
+			"path must end with .tscn (got %s; use script.write for .gd/.cs files)" % file_path)
 	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "scene.create")
 	if dir_result.has("error"):
 		return dir_result
@@ -242,7 +242,9 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("UNSUPPORTED",
 			"scene.close requires Godot 4.5+ (connected: 4.%d)" % _Hub.godot_minor())
 	if current_path != file_path:
-		EditorInterface.open_scene_from_path(file_path)
+		return MCPError.make("EDITED_SCENE",
+			"scene.close only closes the active tab; %s is open but not active. " % file_path +
+			"Switch to it with scene.open first, or use scene.delete directly (works on inactive tabs).")
 	EditorInterface.call("close_scene")
 	return {"success": true, "path": file_path}
 

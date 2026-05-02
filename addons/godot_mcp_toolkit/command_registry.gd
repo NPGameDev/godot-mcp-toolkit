@@ -47,4 +47,4 @@ func call_command(method: String, parameters: Dictionary) -> Dictionary:
 	if not _commands.has(method):
 		return MCPError.make("NOT_FOUND", "unknown method: " + method)
 	MCPAudit.log_call(method, parameters)
-	return _commands[method]["handler"].call(parameters)
+	return await _commands[method]["handler"].call(parameters)

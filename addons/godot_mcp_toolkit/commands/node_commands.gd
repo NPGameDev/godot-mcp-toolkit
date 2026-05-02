@@ -386,7 +386,11 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 		"result": MCPCoerce.serialize_value(result),
 	}
 	if result == null:
-		response["hint"] = "Return value was null. Editor-side callv() cannot capture return values from non-@tool scripts — the method signature is visible but the body does not execute. Use game.start + runtime tools (runtime_get_node_state, signal_emit) to drive and observe runtime state."
+		var script = node.get_script()
+		if script != null and script.resource_path.ends_with(".cs"):
+			response["hint"] = "Return value was null. C# methods cannot execute in editor mode without the [Tool] attribute — Godot registers the method signature but does not instantiate the managed .NET object. Properties and signals work normally. Use game.start + game_eval to call C# methods at runtime, or set state via node.set_property (most C# logic runs in _Ready() at startup)."
+		else:
+			response["hint"] = "Return value was null. Editor-side callv() on non-@tool scripts may return null if the method relies on uninitialized state (_Ready() has not run). Use game.start + runtime tools (runtime_get_node_state, game_eval) to drive and observe runtime state."
 	return response
 
 
