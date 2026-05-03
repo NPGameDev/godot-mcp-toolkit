@@ -209,7 +209,10 @@ void fragment() {
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#478cbf"/></svg>
 ```
 Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
-- **Expect:** success (Godot imports the SVG as a texture resource)
+- **Expect:** success (Godot imports the SVG as a texture resource), `class` field should be non-null (e.g. `CompressedTexture2D`)
+
+**42b.** `asset_get_dependencies` — file_path=`res://mcp_validation/val_icon.svg` (immediate usability check — NO `editor_reload_scripts` between 42 and 42b)
+- **Expect:** success — the imported asset is immediately queryable without a separate `editor_reload_scripts` call. If this fails with NOT_FOUND or returns empty, the asset_import auto-scan did not complete.
 
 **43.** `scene_get_tree` — (verify all nodes present)
 - **Expect:** Tree showing ValSprite, ValLabel, ValAnimPlayer, ValAnimTree, ValTileLayer, ValPlayer/ValCollider, ValSub
@@ -217,19 +220,19 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 ### Signals (5 calls)
 
 **44.** `signal_list` — node_path=`ValPlayer`
-- **Expect:** Includes `hit` signal from val_actor.gd
+- **Expect:** Includes `hit` signal from val_actor.gd. No `connections` key (include_connections defaults to false).
 
 **45.** `signal_manage` — node_path=`ValPlayer`, signal_name=`hit`, operation=`connect`, target_path=`ValLabel`, method=`set_text`
 - **Expect:** success
 
-**46.** `signal_list` — node_path=`ValPlayer` (verify connection)
-- **Expect:** `hit` signal shows connection to ValLabel.set_text
+**46.** `signal_list` — node_path=`ValPlayer`, include_connections=`true` (verify connection)
+- **Expect:** `hit` signal includes `connections` array with entry `{ target_path: "ValLabel", method_name: "set_text", flags: 0 }`
 
 **47.** `signal_manage` — node_path=`ValPlayer`, signal_name=`hit`, operation=`disconnect`, target_path=`ValLabel`, method=`set_text`
 - **Expect:** success
 
-**48.** `signal_list` — node_path=`ValPlayer` (verify disconnection)
-- **Expect:** `hit` signal has no connections
+**48.** `signal_list` — node_path=`ValPlayer`, include_connections=`true` (verify disconnection)
+- **Expect:** `hit` signal's `connections` array is empty
 
 ### Animation & TileMap (6 calls)
 
@@ -272,7 +275,7 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 - **Expect:** success (returns when EditorFileSystem is idle)
 
 **61.** `editor_reload_scripts`
-- **Expect:** success (rescans GDScript files)
+- **Expect:** success (flushes all filesystem changes — scripts, scenes, resources, imports �� to the editor)
 
 **62.** `project_set_setting` — setting=`application/config/name`, value=`"McpValidationSweep"`
 - **Expect:** success (will be restored during cleanup)
@@ -462,8 +465,8 @@ public partial class McpValCsGlobal : Node
 **CS4.2** `signal_manage` — node_path=`ValCsNode`, signal_name=`TestFired`, operation=`connect`, target_path=`ValLabel`, method=`set_text`
 - **Expect:** success — C# [Signal] connections work the same as GDScript signals
 
-**CS4.3** `signal_list` — node_path=`ValCsNode` (verify connection)
-- **Expect:** `TestFired` shows connection to ValLabel.set_text
+**CS4.3** `signal_list` — node_path=`ValCsNode`, include_connections=`true` (verify connection)
+- **Expect:** `TestFired` includes `connections` array with entry `{ target_path: "ValLabel", method_name: "set_text", flags: 0 }`
 
 **CS4.4** `signal_manage` — node_path=`ValCsNode`, signal_name=`TestFired`, operation=`disconnect`, target_path=`ValLabel`, method=`set_text`
 - **Expect:** success
@@ -566,7 +569,7 @@ Tests `[GlobalClass]` registration using `McpValCsGlobal` (created in CS-S1b). R
 ### CS11. editor operations with C# present
 
 **CS11.1** `editor_reload_scripts`
-- **Expect:** success — rescans GDScript files; C# scripts are handled by the .NET build system, not this call
+- **Expect:** success — flushes all filesystem changes to the editor; C# scripts are handled by the .NET build system, not this call
 
 **CS11.2** `editor_get_errors`
 - **Expect:** Note any C# compilation errors. Report count and whether they are from validation artifacts or pre-existing.
@@ -634,8 +637,8 @@ Multi-tool workflows that test tool interoperability. Create fresh artifacts for
 - **Expect:** Colon-delimited property path works for nested resource properties
 
 ### C7. Signal persistence round-trip
-`signal_manage` (connect ValPlayer.hit -> ValLabel.set_text) -> `editor_save_scene` -> `scene_close` **[4.5+]** or `scene_open` a different scene **[<4.5]** -> `scene_open` (val_main) -> `signal_list` (verify connection persisted) -> `signal_manage` (disconnect)
-- **Expect:** Signal connection survives save/reopen. On <4.5, opening a different scene then re-opening val_main forces a reload without scene_close.
+`signal_manage` (connect ValPlayer.hit -> ValLabel.set_text) -> `editor_save_scene` -> `scene_close` **[4.5+]** or `scene_open` a different scene **[<4.5]** -> `scene_open` (val_main) -> `signal_list` (include_connections=true, verify connection persisted) -> `signal_manage` (disconnect)
+- **Expect:** Signal connection survives save/reopen. `signal_list` with `include_connections=true` shows the restored connection. On <4.5, opening a different scene then re-opening val_main forces a reload without scene_close.
 
 ### C8. Full game lifecycle
 `scene_create` (game scene) -> add nodes -> `script_write` -> `node_set_script` -> `editor_save_scene` -> `project_set_setting` (main_scene) -> `game_start` -> `runtime_get_node_state` -> `game_stop` -> cleanup

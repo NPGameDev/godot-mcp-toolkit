@@ -340,6 +340,10 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 		if filesystem.is_scanning():
 			warnings.append(
 				"EditorFileSystem still scanning after %dms — import may not be complete; call editor.wait_for_idle to finish" % wait_for_scan_ms)
+		# After scan completes, wait for the import pipeline to index the file
+		while filesystem.get_file_type(dest_path) == "" and elapsed < wait_for_scan_ms:
+			OS.delay_msec(100)
+			elapsed += 100
 
 	var file_class: Variant = null
 	var filesystem_type := filesystem.get_file_type(dest_path)

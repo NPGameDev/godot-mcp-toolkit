@@ -29,19 +29,44 @@ static func _resolve_scene_node(node_path: String) -> Variant:
 	return MCPHelpers.resolve_scene_node(node_path)
 
 
-static func _signal_list_of(node: Object) -> Array:
+static func _signal_list_of(
+	node: Object, include_connections: bool = false, root: Node = null,
+) -> Array:
 	var result: Array = []
 	for signal_info in node.get_signal_list():
+		var signal_name := str(signal_info.get("name", ""))
 		var arguments: Array = []
 		for argument in signal_info.get("args", []):
 			arguments.append({
 				"name": str(argument.get("name", "")),
 				"type": int(argument.get("type", 0)),
 			})
-		result.append({
-			"name": str(signal_info.get("name", "")),
+		var entry := {
+			"name": signal_name,
 			"args": arguments,
-		})
+		}
+		if include_connections:
+			var connections: Array = []
+			for conn in node.get_signal_connection_list(signal_name):
+				var callable: Callable = conn.get("callable", Callable())
+				var target_obj = callable.get_object()
+				var target_path := ""
+				if target_obj is Node and root != null:
+					if target_obj == root:
+						target_path = "."
+					else:
+						target_path = str(root.get_path_to(target_obj))
+				elif target_obj != null:
+					target_path = str(target_obj.get_class())
+				else:
+					target_path = "<freed>"
+				connections.append({
+					"target_path": target_path,
+					"method_name": callable.get_method(),
+					"flags": int(conn.get("flags", 0)),
+				})
+			entry["connections"] = connections
+		result.append(entry)
 	return result
 
 
@@ -99,10 +124,11 @@ static func _cmd_signal_list(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
+	var include_connections: bool = bool(parameters.get("include_connections", false))
 	var node = _resolve_scene_node(node_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
-	return {"path": node_path, "signals": _signal_list_of(node)}
+	return {"path": node_path, "signals": _signal_list_of(node, include_connections, root)}
 
 
 static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
