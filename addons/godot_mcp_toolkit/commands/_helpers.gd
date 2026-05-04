@@ -102,6 +102,8 @@ static func ensure_parent_dir(file_path: String, context: String = "") -> Dictio
 
 
 ## Targeted index: call update_file() and poll until indexed or timeout.
+## Falls back to scan() if update_file() alone does not index the file
+## (e.g. the parent directory is new and not yet in EditorFileSystem).
 ## Returns {indexed: bool, file_class: String, elapsed_ms: int}.
 static func ensure_file_indexed(file_path: String, timeout_ms: int = 3000) -> Dictionary:
 	var filesystem := EditorInterface.get_resource_filesystem()
@@ -110,6 +112,14 @@ static func ensure_file_indexed(file_path: String, timeout_ms: int = 3000) -> Di
 	filesystem.update_file(file_path)
 	var elapsed := 0
 	while filesystem.get_file_type(file_path) == "" and elapsed < timeout_ms:
+		OS.delay_msec(100)
+		elapsed += 100
+	if filesystem.get_file_type(file_path) != "":
+		var file_class := filesystem.get_file_type(file_path)
+		return {"indexed": true, "file_class": file_class, "elapsed_ms": elapsed}
+	# Fallback: update_file() could not index — parent dir may be unknown. Full scan.
+	filesystem.scan()
+	while filesystem.is_scanning() and elapsed < timeout_ms:
 		OS.delay_msec(100)
 		elapsed += 100
 	var file_class := filesystem.get_file_type(file_path)

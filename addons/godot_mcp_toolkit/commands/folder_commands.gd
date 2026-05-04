@@ -60,13 +60,32 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NOT_FOUND", "no folder at %s" % folder_path)
 	var normalized_with_slash := normalized + "/"
 
-	var edited := MCPHelpers.get_edited_root()
-	if edited != null:
-		var scene_path := str(edited.scene_file_path)
-		if not scene_path.is_empty() and (scene_path == normalized or scene_path.begins_with(normalized_with_slash)):
+	# Auto-close scene tabs inside the target folder before deleting.
+	var open_scenes := EditorInterface.get_open_scenes()
+	var inside_scenes: Array = []
+	var outside_scenes: Array = []
+	for scene_path in open_scenes:
+		var sp := str(scene_path)
+		if sp == normalized or sp.begins_with(normalized_with_slash):
+			inside_scenes.append(sp)
+		else:
+			outside_scenes.append(sp)
+	var scenes_closed := 0
+	if not inside_scenes.is_empty():
+		if outside_scenes.is_empty():
 			return MCPError.make("PATH_IN_USE",
-				"folder %s contains the currently-edited scene %s; open a different scene first via scene.open" % [
-					folder_path, scene_path])
+				"all open scene tabs are inside %s; open a scene outside the folder first via scene.open" % folder_path)
+		# Switch active tab to a scene outside the folder.
+		EditorInterface.open_scene_from_path(outside_scenes[0])
+		# Close each inside-folder tab (4.5+ only; on older versions the tabs
+		# become stale but file deletion still succeeds).
+		if EditorInterface.has_method("close_scene"):
+			for scene_path in inside_scenes:
+				EditorInterface.open_scene_from_path(scene_path)
+				EditorInterface.call("close_scene")
+				scenes_closed += 1
+			# Return to the outside scene after closing all inside tabs.
+			EditorInterface.open_scene_from_path(outside_scenes[0])
 
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor != null:
@@ -117,7 +136,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	# Godot versions, so fall back to scan() for folder removal. Folder deletes
 	# are rare and the scan cost is acceptable.
 	var removal := MCPHelpers.ensure_file_removed(folder_path)
-	return {
+	var result := {
 		"success": true,
 		"path": folder_path,
 		"recursive": recursive,
@@ -125,6 +144,9 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		"directories_deleted": dirs_deleted,
 		"deindexed": removal["removed"],
 	}
+	if scenes_closed > 0:
+		result["scenes_closed"] = scenes_closed
+	return result
 
 
 # -- Recursive delete helper --------------------------------------------------
