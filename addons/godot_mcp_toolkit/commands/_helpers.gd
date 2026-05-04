@@ -123,7 +123,10 @@ static func ensure_file_indexed(file_path: String, timeout_ms: int = 3000) -> Di
 		OS.delay_msec(100)
 		elapsed += 100
 	var file_class := filesystem.get_file_type(file_path)
-	return {"indexed": file_class != "", "file_class": file_class, "elapsed_ms": elapsed}
+	var result := {"indexed": file_class != "", "file_class": file_class, "elapsed_ms": elapsed}
+	if not result["indexed"]:
+		result["hint"] = "indexed is advisory — script_check, resource_load, and scene_open work regardless. Call editor_reload_scripts only if asset_list visibility is needed."
+	return result
 
 
 ## Targeted deindex: call update_file() on a deleted path and poll until

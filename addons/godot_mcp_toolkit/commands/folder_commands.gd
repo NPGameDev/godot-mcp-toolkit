@@ -134,7 +134,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	# Godot versions, so fall back to scan() for folder removal. Folder deletes
 	# are rare and the scan cost is acceptable.
 	var removal := MCPHelpers.ensure_file_removed(folder_path)
-	return {
+	var result := {
 		"success": true,
 		"path": folder_path,
 		"recursive": recursive,
@@ -142,6 +142,10 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		"directories_deleted": dirs_deleted,
 		"deindexed": removal["removed"],
 	}
+	if active_inside:
+		result["switched_to"] = outside_scenes[0]
+		result["hint"] = "Active scene was inside the deleted folder — switched to %s. Stale tabs may remain; call scene_open to set the desired active scene." % outside_scenes[0]
+	return result
 
 
 # -- Recursive delete helper --------------------------------------------------
