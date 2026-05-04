@@ -120,7 +120,9 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 
 	var root_directory := filesystem.get_filesystem_path(path_prefix)
 	if root_directory == null:
-		# Auto-scan if the directory exists on disk but hasn't been indexed yet
+		# Intentional full scan(): update_file() is file-level only and does not
+		# index directories. This path triggers when a directory exists on disk
+		# but hasn't been indexed yet — rare, and scan() is the correct tool.
 		var abs_path := ProjectSettings.globalize_path(path_prefix)
 		if DirAccess.dir_exists_absolute(abs_path):
 			filesystem.scan()
@@ -329,26 +331,15 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	file_handle.store_buffer(bytes_to_write)
 	file_handle.close()
 
-	var filesystem := EditorInterface.get_resource_filesystem()
-	filesystem.scan()
 	var warnings: Array[String] = []
-	if wait_for_scan_ms > 0:
-		var elapsed := 0
-		while filesystem.is_scanning() and elapsed < wait_for_scan_ms:
-			OS.delay_msec(100)
-			elapsed += 100
-		if filesystem.is_scanning():
-			warnings.append(
-				"EditorFileSystem still scanning after %dms — import may not be complete; call editor.wait_for_idle to finish" % wait_for_scan_ms)
-		# After scan completes, wait for the import pipeline to index the file
-		while filesystem.get_file_type(dest_path) == "" and elapsed < wait_for_scan_ms:
-			OS.delay_msec(100)
-			elapsed += 100
+	var index_result := MCPHelpers.ensure_file_indexed(dest_path, wait_for_scan_ms)
+	if not index_result["indexed"]:
+		warnings.append(
+			"EditorFileSystem did not index %s within %dms — import may not be complete; call editor.wait_for_idle to finish" % [dest_path, wait_for_scan_ms])
 
 	var file_class: Variant = null
-	var filesystem_type := filesystem.get_file_type(dest_path)
-	if filesystem_type != "":
-		file_class = filesystem_type
+	if index_result["file_class"] != "":
+		file_class = index_result["file_class"]
 
 	var status := "replaced" if file_existed else "created"
 

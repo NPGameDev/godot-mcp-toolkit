@@ -21,7 +21,7 @@ static func register(registry: MCPCommandRegistry, server: Node) -> void:
 	registry.add("editor.screenshot", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_screenshot(parameters))
 	registry.add("editor.reload_scripts", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_reload_scripts())
+		return _cmd_editor_reload_scripts(parameters))
 	registry.add("editor.screenshot_node", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_editor_screenshot_node(parameters))
 	registry.add("editor.get_console", func(parameters: Dictionary) -> Dictionary:
@@ -144,16 +144,41 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 	return response
 
 
-static func _cmd_editor_reload_scripts() -> Dictionary:
+static func _cmd_editor_reload_scripts(parameters: Dictionary) -> Dictionary:
 	# Flush stale errors before reload — fresh parse errors will be captured
 	# with new IDs so editor_get_errors returns only current-state errors.
 	var errors_cleared := _Hub.LogBuffer.clear_level("error")
 
+	var file_paths_raw = parameters.get("file_paths", null)
+	var targeted := file_paths_raw != null and typeof(file_paths_raw) == TYPE_ARRAY \
+		and (file_paths_raw as Array).size() > 0
+
 	var filesystem := EditorInterface.get_resource_filesystem()
 	var scan_waited_ms := 0
+
+	if targeted:
+		# Targeted mode: update_file() per path — O(1) per file.
+		var paths: Array = file_paths_raw as Array
+		if filesystem != null:
+			for path in paths:
+				filesystem.update_file(str(path))
+		var reloaded := 0
+		var script_editor := EditorInterface.get_script_editor()
+		if script_editor != null:
+			var target_set := {}
+			for path in paths:
+				target_set[str(path)] = true
+			for open_script in script_editor.get_open_scripts():
+				if open_script is Script:
+					if target_set.has(open_script.resource_path):
+						open_script.reload(true)
+						reloaded += 1
+		return {"success": true, "mode": "targeted", "file_count": paths.size(),
+			"reloaded": reloaded, "errors_cleared": errors_cleared}
+
+	# Full mode: scan() + reload all open scripts.
 	if filesystem != null:
 		filesystem.scan()
-		# Block until scan completes — synchronous RPC semantics.
 		var scan_deadline := Time.get_ticks_msec() + 5000
 		while filesystem.is_scanning() and Time.get_ticks_msec() < scan_deadline:
 			OS.delay_msec(100)
@@ -165,8 +190,8 @@ static func _cmd_editor_reload_scripts() -> Dictionary:
 			if open_script is Script:
 				open_script.reload(true)
 				reloaded += 1
-	return {"success": true, "reloaded": reloaded, "scan_waited_ms": scan_waited_ms,
-		"errors_cleared": errors_cleared}
+	return {"success": true, "mode": "full", "reloaded": reloaded,
+		"scan_waited_ms": scan_waited_ms, "errors_cleared": errors_cleared}
 
 
 static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:

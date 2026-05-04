@@ -188,8 +188,10 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 
+	var scene_index := MCPHelpers.ensure_file_indexed(file_path)
 	var response := {"success": true, "path": file_path, "root_type": root_type,
 		"root_name": file_path.get_file().get_basename(), "root_path": ".",
+		"indexed": scene_index["indexed"],
 		"hint": "Scene saved. Open it for editing with scene_open."}
 	if dirs_created:
 		response["dirs_created"] = true
@@ -266,7 +268,11 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 	if edited_root != null and edited_root.scene_file_path == file_path:
 		return MCPError.make("EDITED_SCENE",
 			"cannot delete the currently-edited scene %s; close it via scene.close first, or open a different scene via scene.open" % file_path)
-	return MCPHelpers.delete_res_file(file_path)
+	var delete_result := MCPHelpers.delete_res_file(file_path)
+	if delete_result.get("success", false):
+		var removal := MCPHelpers.ensure_file_removed(file_path)
+		delete_result["deindexed"] = removal["removed"]
+	return delete_result
 
 
 static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:

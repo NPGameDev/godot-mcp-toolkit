@@ -652,6 +652,30 @@ Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (ad
 `resource_write` (TileSet) -> open val_main -> `scene_create_node` (**TileMapLayer** [4.3+] or **TileMap** [4.2]) -> `node_set_property` (tile_set resource) -> `tilemap_set_cells` -> `editor_save_scene` -> cleanup
 - **Expect:** Cells painted on tile layer
 
+### C11. Script write → immediate check (targeted filesystem)
+`script_write` (file_path=`res://mcp_validation/val_fs_script.gd`, valid GDScript) -> verify `indexed: true` in response -> `script_check` (same path, **no** `editor_reload_scripts` between) -> `script_delete`
+- **Expect:** `script_write` returns `indexed: true`; `script_check` passes immediately without needing `editor_reload_scripts`
+
+### C12. Resource create → immediate load (targeted filesystem)
+`resource_write` (file_path=`res://mcp_validation/val_fs_resource.tres`, type=`Environment`) -> verify `indexed: true` in response -> `resource_load` (same path, **no** `editor_reload_scripts` between) -> `resource_delete`
+- **Expect:** `resource_write` returns `indexed: true`; `resource_load` returns the resource immediately
+
+### C13. Scene create → immediate open (targeted filesystem)
+`scene_create` (file_path=`res://mcp_validation/val_fs_scene.tscn`) -> verify `indexed: true` in response -> `scene_open` (same path, **no** `editor_reload_scripts` between) -> cleanup (open main scene, delete scene file)
+- **Expect:** `scene_create` returns `indexed: true`; `scene_open` succeeds immediately
+
+### C14. File delete → immediate deindex (targeted filesystem)
+`script_write` (file_path=`res://mcp_validation/val_fs_del.gd`) -> `file_delete` (same path) -> verify `deindexed: true` in response -> `asset_list` (path_prefix=`res://mcp_validation/`, name_glob=`val_fs_del*`) -> verify file absent from results
+- **Expect:** `file_delete` returns `deindexed: true`; `asset_list` shows no matching entry
+
+### C15. editor_reload_scripts targeted mode
+`script_write` (file_path=`res://mcp_validation/val_fs_targeted.gd`) -> `editor_reload_scripts` (file_paths=[`res://mcp_validation/val_fs_targeted.gd`]) -> verify `mode: "targeted"` in response -> `script_delete`
+- **Expect:** Response contains `"mode": "targeted"` and `"file_count": 1`
+
+### C16. editor_reload_scripts full mode (backward compat)
+`editor_reload_scripts` (no params) -> verify `mode: "full"` in response
+- **Expect:** Response contains `"mode": "full"` and `"scan_waited_ms"` field (backward compatible)
+
 ---
 
 ## Phase 5 — Cleanup

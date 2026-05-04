@@ -33,4 +33,8 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 	if edited_root != null and edited_root.scene_file_path == file_path:
 		return MCPError.make("EDITED_SCENE",
 			"cannot delete the currently-edited scene %s; close it via scene.close first, or use scene.delete after closing" % file_path)
-	return MCPHelpers.delete_res_file(file_path, [".uid", ".import"])
+	var delete_result := MCPHelpers.delete_res_file(file_path, [".uid", ".import"])
+	if delete_result.get("success", false):
+		var removal := MCPHelpers.ensure_file_removed(file_path)
+		delete_result["deindexed"] = removal["removed"]
+	return delete_result

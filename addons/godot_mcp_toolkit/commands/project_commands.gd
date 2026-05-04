@@ -88,9 +88,13 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 		"previous_value": MCPCoerce.serialize_value(previous_value) if was_set_before else null,
 	}
 	if key.begins_with("autoload/"):
-		# Trigger filesystem scan to nudge the editor toward detecting changes.
-		var filesystem := EditorInterface.get_resource_filesystem()
-		if filesystem != null:
-			filesystem.scan()
+		# Targeted update_file() on the autoload script path so the editor
+		# indexes the file immediately — no need for a full scan().
+		var autoload_value := str(coerced)
+		var script_path := autoload_value.lstrip("*")
+		if script_path.begins_with("res://"):
+			var filesystem := EditorInterface.get_resource_filesystem()
+			if filesystem != null:
+				filesystem.update_file(script_path)
 		response["hint"] = "Autoload registered in project.godot. The editor's autoload cache won't refresh until the project is reloaded — reference via get_node('/root/Name') instead of the global identifier. The game process picks up autoloads on next launch."
 	return response

@@ -143,8 +143,11 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 			undo_redo.add_undo_method(server.undo_helpers, "_delete_file_silent", file_path)
 		undo_redo.commit_action(false)
 
+	var index_result := MCPHelpers.ensure_file_indexed(file_path)
+
 	var bytes_written := content.to_utf8_buffer().size()
-	var result := {"success": true, "bytes": bytes_written, "undoable": undo_redo != null}
+	var result := {"success": true, "bytes": bytes_written, "undoable": undo_redo != null,
+		"indexed": index_result["indexed"]}
 	if dirs_created:
 		result["dirs_created"] = true
 	return result
@@ -164,7 +167,11 @@ static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
 			"script.delete only removes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.delete for .tscn, resource.delete for .tres/.res, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
-	return MCPHelpers.delete_res_file(file_path)
+	var delete_result := MCPHelpers.delete_res_file(file_path)
+	if delete_result.get("success", false):
+		var removal := MCPHelpers.ensure_file_removed(file_path)
+		delete_result["deindexed"] = removal["removed"]
+	return delete_result
 
 
 # -- File I/O helpers (referenced by UndoRedo via server node) ----------------

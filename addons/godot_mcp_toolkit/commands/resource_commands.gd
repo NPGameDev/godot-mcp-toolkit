@@ -145,11 +145,13 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 				"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 		# Refresh cache so subsequent ResourceRef loads get the updated version
 		ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
+		var update_index := MCPHelpers.ensure_file_indexed(file_path)
 		return {
 			"success": true,
 			"path": file_path,
 			"resource_class": resource_class,
 			"warnings": warnings,
+			"indexed": update_index["indexed"],
 		}
 	var resource_class := str(parameters.get("type", ""))
 	if resource_class.is_empty():
@@ -196,12 +198,14 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 	# Refresh cache so subsequent ResourceRef loads get the new resource
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
+	var create_index := MCPHelpers.ensure_file_indexed(file_path)
 	var create_result := {
 		"success": true,
 		"status": "created",
 		"path": file_path,
 		"resource_class": resource_class,
 		"warnings": warnings,
+		"indexed": create_index["indexed"],
 	}
 	if dirs_created:
 		create_result["dirs_created"] = true
@@ -222,4 +226,8 @@ static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
 			"resource.delete only removes .tres or .res files (got %s); use scene.delete for .tscn, script.delete for .gd/.cs/.gdshader/.gdshaderinc, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
-	return MCPHelpers.delete_res_file(file_path)
+	var delete_result := MCPHelpers.delete_res_file(file_path)
+	if delete_result.get("success", false):
+		var removal := MCPHelpers.ensure_file_removed(file_path)
+		delete_result["deindexed"] = removal["removed"]
+	return delete_result
