@@ -26,7 +26,8 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message |
-| `script_check` | 4.2 | `gdscript://` URIs in error messages (see below); `class_name` false positive fixed via stripping |
+| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. `gdscript://` URIs in error messages (see below); `class_name` false positive fixed via stripping |
+| `editor_reload_scripts` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
 
 ### Degraded behavior by version
@@ -55,6 +56,44 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 - Full functionality. All tools, all UI features.
 - Console capture uses the Logger API (zero-latency, in-memory ring buffer)
   instead of the file-tailing backend used on 4.2-4.4.
+
+### EditorFileSystem indexing (all versions)
+
+File-mutating commands (`script_write`, `resource_write`, `scene_create`,
+`file_delete`, etc.) call `EditorFileSystem.update_file()` and poll
+`get_file_type()` to confirm indexing before returning. An `indexed` or
+`deindexed` field in the response indicates whether EditorFileSystem
+acknowledged the change.
+
+**The `indexed` field is advisory, not a functional gate.** All downstream
+operations (`script_check`, `resource_load`, `scene_open`) work regardless
+of the `indexed` value. Known cases where `indexed` may be `false`:
+
+- **First file in a new directory:** `update_file()` cannot index a file
+  whose parent directory is unknown to EditorFileSystem. A `scan()` fallback
+  runs, but on .NET editor builds the scan may not complete within the
+  3-second timeout. The second file in the same directory typically returns
+  `indexed: true` because the first file's scan taught EditorFileSystem
+  about the directory.
+- **SVG imports:** `asset_import` may return `class: null` if the import
+  pipeline hasn't finished. Call `editor_wait_for_idle` after importing.
+
+### `folder_delete` and scene tabs (all versions)
+
+`folder_delete` auto-switches the active editor tab away from the target
+folder if the currently-edited scene is inside it. It does **not** close
+individual scene tabs — rapid `open_scene_from_path` + `close_scene` calls
+in a loop crash the editor via a deferred-queue race in
+`EditorNode._set_main_scene_state` (signal 11). Stale tabs for deleted
+scenes are cosmetic and vanish on editor restart.
+
+### C# (.NET) editor requirement
+
+C# projects require the Godot .NET editor build (`Godot_v*_mono_*`).
+Standard builds have no .NET resource loader — `.cs` files cannot be loaded
+as scripts, `[GlobalClass]` types do not register in ClassDB, and C#
+runtime execution is impossible. The toolkit itself handles `.cs` file I/O
+correctly on both builds; the limitation is in the Godot binary.
 
 ### `script_check` limitations (all versions)
 
