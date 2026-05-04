@@ -60,32 +60,30 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NOT_FOUND", "no folder at %s" % folder_path)
 	var normalized_with_slash := normalized + "/"
 
-	# Auto-close scene tabs inside the target folder before deleting.
+	# If the active scene is inside the target folder, switch away.
+	# Do NOT try to close individual tabs in a loop — rapid
+	# open_scene_from_path + close_scene calls queue conflicting deferred
+	# methods in EditorNode, crashing the editor (signal 11).
+	# Stale tabs are harmless: files are deleted from disk, tabs become
+	# cosmetic ghosts that vanish on editor restart.
 	var open_scenes := EditorInterface.get_open_scenes()
-	var inside_scenes: Array = []
 	var outside_scenes: Array = []
+	var active_inside := false
 	for scene_path in open_scenes:
 		var sp := str(scene_path)
 		if sp == normalized or sp.begins_with(normalized_with_slash):
-			inside_scenes.append(sp)
-		else:
-			outside_scenes.append(sp)
-	var scenes_closed := 0
-	if not inside_scenes.is_empty():
+			continue
+		outside_scenes.append(sp)
+	var edited := MCPHelpers.get_edited_root()
+	if edited != null:
+		var active_path := str(edited.scene_file_path)
+		if not active_path.is_empty() and (active_path == normalized or active_path.begins_with(normalized_with_slash)):
+			active_inside = true
+	if active_inside:
 		if outside_scenes.is_empty():
 			return MCPError.make("PATH_IN_USE",
 				"all open scene tabs are inside %s; open a scene outside the folder first via scene.open" % folder_path)
-		# Switch active tab to a scene outside the folder.
 		EditorInterface.open_scene_from_path(outside_scenes[0])
-		# Close each inside-folder tab (4.5+ only; on older versions the tabs
-		# become stale but file deletion still succeeds).
-		if EditorInterface.has_method("close_scene"):
-			for scene_path in inside_scenes:
-				EditorInterface.open_scene_from_path(scene_path)
-				EditorInterface.call("close_scene")
-				scenes_closed += 1
-			# Return to the outside scene after closing all inside tabs.
-			EditorInterface.open_scene_from_path(outside_scenes[0])
 
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor != null:
@@ -136,7 +134,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	# Godot versions, so fall back to scan() for folder removal. Folder deletes
 	# are rare and the scan cost is acceptable.
 	var removal := MCPHelpers.ensure_file_removed(folder_path)
-	var result := {
+	return {
 		"success": true,
 		"path": folder_path,
 		"recursive": recursive,
@@ -144,9 +142,6 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		"directories_deleted": dirs_deleted,
 		"deindexed": removal["removed"],
 	}
-	if scenes_closed > 0:
-		result["scenes_closed"] = scenes_closed
-	return result
 
 
 # -- Recursive delete helper --------------------------------------------------
