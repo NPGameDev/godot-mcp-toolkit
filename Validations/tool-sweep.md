@@ -676,6 +676,15 @@ Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (ad
 `editor_reload_scripts` (no params) -> verify `mode: "full"` in response
 - **Expect:** Response contains `"mode": "full"` and `"scan_waited_ms"` field (backward compatible)
 
+### C17. New-directory indexing (scan fallback)
+`folder_create` (file_path=`res://mcp_validation/val_fs_subdir/`) -> `script_write` (file_path=`res://mcp_validation/val_fs_subdir/val_fs_newdir.gd`, valid GDScript) -> verify `indexed: true` in response -> `script_check` (same path, **no** `editor_reload_scripts` between) -> `folder_delete` (folder_path=`res://mcp_validation/val_fs_subdir/`, recursive=true)
+- **Expect:** `script_write` returns `indexed: true` even though the parent directory was just created and unknown to EditorFileSystem. The `ensure_file_indexed` scan() fallback discovers the new directory. `script_check` passes immediately.
+
+### C18. folder_delete auto-closes scene tabs [4.5+ for full validation, all versions for deletion]
+`scene_create` (file_path=`res://mcp_validation/val_fs_tabA.tscn`) -> `scene_create` (file_path=`res://mcp_validation/val_fs_tabB.tscn`) -> `scene_open` (val_fs_tabA) -> `scene_open` (val_fs_tabB) -> ensure val_main.tscn is also open via `scene_open` -> `folder_delete` (folder_path=`res://mcp_validation/`, recursive=true) — **IMPORTANT:** first re-create `res://mcp_validation/` and move the two scene files inside it, since earlier combo chains may have deleted them. Alternatively, create a fresh subfolder for this test.
+- **Simplified version:** `folder_create` (`res://mcp_validation/val_fs_tabs/`) -> `scene_create` (2 scenes inside it) -> `scene_open` (both) -> ensure a scene **outside** the folder is open -> `folder_delete` (`res://mcp_validation/val_fs_tabs/`, recursive=true)
+- **Expect:** `folder_delete` succeeds without PATH_IN_USE errors. **[4.5+]:** Response includes `scenes_closed: 2`. **[<4.5]:** Deletion succeeds but stale tabs may remain (cosmetic).
+
 ---
 
 ## Phase 5 — Cleanup
