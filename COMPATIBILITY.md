@@ -272,7 +272,7 @@ restrict any functionality.
 ## Future development constraints
 
 - **Typed for loops** (`for x: Type in arr:`) require Godot 4.2+. Used in
-  `user_commands_loader.gd`. Safe at current minimum.
+  `extension_loader.gd`. Safe at current minimum.
 - **Typed dictionaries** (`Dictionary[K, V]`) require Godot 4.4+. Not
   currently used in the codebase. If the minimum supported version remains
   4.2, this syntax must not appear in any `.gd` file.

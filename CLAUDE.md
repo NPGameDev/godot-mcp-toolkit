@@ -384,41 +384,47 @@ If all 5 log lines appear but the MCP client still shows stale tools:
 
 ## Extension points (iter 25)
 
-### User commands (GDScript)
+### Extensions (GDScript + C#)
 
-Drop a `.gd` file into `addons/godot_mcp_toolkit/user_commands/` to register
-custom MCP tools. Each file must provide a `register(registry, server)` function:
+Third-party extensions are distributable addons discovered via reflection.
+Create a class extending `MCPToolkitExtension` (GDScript) or `RefCounted`
+with duck typing (C#) in your own `addons/<ext>/` directory:
 
 ```gdscript
 @tool
-extends RefCounted
+class_name MCPToolkitMyTools
+extends MCPToolkitExtension
 
-static func register(registry, server: Node) -> void:
-	registry.add("mymod.do_thing", func(params: Dictionary) -> Dictionary:
-		return _cmd_do_thing(params), "full")
+func register(registry, server: Node) -> void:
+	registry.add("mymod.do_thing", _cmd_do_thing, {
+		"description": "Do a thing",
+		"annotations": {"readOnlyHint": true},
+	})
 
-static func _cmd_do_thing(params: Dictionary) -> Dictionary:
-	# ... your logic here ...
+func _cmd_do_thing(params: Dictionary) -> Dictionary:
 	return {"success": true, "data": "hello"}
 ```
 
 **Rules:**
+- Class name must start with `MCPToolkit` (e.g., `MCPToolkitPhysicsTools`).
 - Commands must use a `<namespace>.<action>` naming convention.
 - Reserved namespaces (`scene.*`, `script.*`, `editor.*`, `node.*`,
   `runtime.*`, `resource.*`, `folder.*`, `file.*`, `signal.*`,
   `playtest.*`, `project.*`, `input_map.*`, `animation.*`, `tilemap.*`,
-  `asset.*`, `save.*`, `meta.*`, `game.*`, `diff.*`, `server.*`) are
-  rejected at load time.
-- User commands are **profile-exempt** — they always register regardless
+  `asset.*`, `save.*`, `meta.*`, `game.*`, `diff.*`, `server.*`,
+  `extensions.*`) are rejected at load time.
+- Extensions are **profile-exempt** — they always register regardless
   of the active profile (minimal/standard/full/custom).
-- User commands run with the same trust level as the plugin itself
+- Extensions run with the same trust level as the plugin itself
   (they inherit FileGuard, FeatureGate, audit logging).
-- Errors in user command scripts are logged but never crash the plugin.
+- Errors in extension scripts are logged but never crash the plugin.
 - Restart the editor (or disable/re-enable the plugin) to pick up changes.
 
-The TS server discovers user commands via `meta.user_commands` and
-registers them as MCP tools. Claude Code receives a `tools/list_changed`
-notification when new user commands are found.
+The TS server discovers extensions via `extensions.list` and registers
+them as MCP tools with full metadata. Claude Code receives a
+`tools/list_changed` notification when new extensions are found.
+
+See `addons/godot_mcp_toolkit/docs/extending.md` for the full API.
 
 ### MCP Prompts, Resources, Roots (TypeScript)
 

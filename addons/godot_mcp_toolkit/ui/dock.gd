@@ -368,10 +368,21 @@ func _build_ui() -> void:
 			OS.shell_open(MCPJsonSync.get_mcp_json_path()))
 		lc.add_child(edit_mcp_btn)
 
+	var btn_row := HBoxContainer.new()
+	lc.add_child(btn_row)
+
+	var skills_btn := Button.new()
+	skills_btn.text = "Companion Skills"
+	skills_btn.tooltip_text = "Open Companion Skills folder"
+	skills_btn.pressed.connect(_open_companion_skills)
+	skills_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_row.add_child(skills_btn)
+
 	var info_btn := Button.new()
 	info_btn.text = "Info / Help"
 	info_btn.pressed.connect(_show_info_dialog)
-	lc.add_child(info_btn)
+	info_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn_row.add_child(info_btn)
 
 
 
@@ -919,6 +930,16 @@ func _on_audit_max_size_changed(value: float) -> void:
 
 
 # ---------------------------------------------------------------------------
+# Companion Skills
+# ---------------------------------------------------------------------------
+
+func _open_companion_skills() -> void:
+	var skills_dir := "res://addons/godot_mcp_toolkit/CompanionSkills"
+	var global_path := ProjectSettings.globalize_path(skills_dir)
+	OS.shell_open(global_path)
+
+
+# ---------------------------------------------------------------------------
 # Info / Help popup
 # ---------------------------------------------------------------------------
 
@@ -1012,6 +1033,18 @@ func _show_info_dialog() -> void:
 	multi.add_theme_font_size_override("font_size", 11)
 	multi.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(multi)
+
+	# -- Companion Skills --
+	_add_info_header(vbox, "Companion Skills")
+	var skills_note := Label.new()
+	skills_note.text = (
+		"Claude Code skills for common toolkit workflows are bundled\n"
+		+ "with the plugin. Click the 'Companion Skills' button in the\n"
+		+ "dock to browse them, then copy any skill you want into your\n"
+		+ "project's .claude/skills/ directory.")
+	skills_note.add_theme_font_size_override("font_size", 11)
+	skills_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(skills_note)
 
 	# -- Links --
 	_add_info_header(vbox, "Links")

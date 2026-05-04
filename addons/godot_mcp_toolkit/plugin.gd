@@ -13,7 +13,7 @@ const GateEvents := preload("res://addons/godot_mcp_toolkit/gate_events.gd")
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const GateNotifier := preload("res://addons/godot_mcp_toolkit/gate_notifier.gd")
-const UserCommandsLoader := preload("res://addons/godot_mcp_toolkit/user_commands_loader.gd")
+const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extension_loader.gd")
 const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
@@ -97,8 +97,8 @@ func _enter_tree() -> void:
 	ClassdbCommands.register(registry, _server)
 	MetaCommands.register(registry)
 
-	# User command extensions — profile-exempt, always loaded.
-	UserCommandsLoader.load_all(registry, _server)
+	# Third-party extensions — profile-exempt, always loaded.
+	ExtensionLoader.load_all(registry, _server)
 
 	_validate_user_whitelist()
 

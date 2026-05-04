@@ -7,31 +7,49 @@ const MCPError = _Hub.MCPError
 const MCPAudit = _Hub.MCPAudit
 
 var _commands: Dictionary = {}
-var _user_methods: Array[String] = []
+var _extension_methods: Array[String] = []
 
 
-func add(method: String, handler: Callable) -> void:
-	_commands[method] = {"handler": handler}
+func add(method: String, handler: Callable, options: Dictionary = {}) -> void:
+	_commands[method] = {
+		"handler": handler,
+		"description": options.get("description", ""),
+		"input_schema": options.get("input_schema", {}),
+		"annotations": options.get("annotations", {}),
+		"group": options.get("group", {}),
+	}
 
 
 func remove(method: String) -> void:
 	_commands.erase(method)
-	var idx := _user_methods.find(method)
+	var idx := _extension_methods.find(method)
 	if idx >= 0:
-		_user_methods.remove_at(idx)
+		_extension_methods.remove_at(idx)
 
 
 func get_all_methods() -> Array:
 	return _commands.keys()
 
 
-func mark_user(method: String) -> void:
-	if method not in _user_methods:
-		_user_methods.append(method)
+func mark_extension(method: String) -> void:
+	if method not in _extension_methods:
+		_extension_methods.append(method)
 
 
-func get_user_methods() -> Array[String]:
-	return _user_methods.duplicate()
+func get_extension_methods() -> Array[String]:
+	return _extension_methods.duplicate()
+
+
+func get_command_metadata(method: String) -> Dictionary:
+	if not _commands.has(method):
+		return {}
+	var entry: Dictionary = _commands[method]
+	return {
+		"description": entry.get("description", ""),
+		"input_schema": entry.get("input_schema", {}),
+		"annotations": entry.get("annotations", {}),
+		"group": entry.get("group", {}),
+	}
 
 
 func has_command(method: String) -> bool:
@@ -40,7 +58,7 @@ func has_command(method: String) -> bool:
 
 func clear() -> void:
 	_commands.clear()
-	_user_methods.clear()
+	_extension_methods.clear()
 
 
 func call_command(method: String, parameters: Dictionary) -> Dictionary:

@@ -1,39 +1,173 @@
 # Extending the MCP Toolkit
 
-## User Commands (supported)
+## Extensions (supported)
 
-The toolkit supports custom MCP tools via the user commands system. Drop a
-`.gd` file into `addons/godot_mcp_toolkit/user_commands/` and implement a
-`register(registry, server)` function:
+The toolkit supports distributable third-party extensions via the
+`MCPToolkitExtension` base class and reflection-based discovery. Extensions
+live in their own `addons/` directory (or anywhere in the project) and are
+discovered automatically at plugin startup — no configuration required.
 
-```gdscript
-@tool
-extends RefCounted
+### Quick start (GDScript)
 
-static func register(registry, server: Node) -> void:
-	registry.add("mymod.do_thing", func(params: Dictionary) -> Dictionary:
-		return _cmd_do_thing(params))
+Create a script with a `class_name` starting with `MCPToolkit` that extends
+`MCPToolkitExtension`:
 
-static func _cmd_do_thing(params: Dictionary) -> Dictionary:
-	# Your logic here
-	return {"success": true, "data": "hello"}
+```
+addons/my_physics_tools/
+└── physics_extension.gd   ← class_name MCPToolkitPhysicsTools
 ```
 
-### Rules
+```gdscript
+# addons/my_physics_tools/physics_extension.gd
+@tool
+class_name MCPToolkitPhysicsTools
+extends MCPToolkitExtension
 
-- Commands must use `<namespace>.<action>` naming (e.g., `mymod.greet`).
-- Built-in namespaces (`scene.*`, `script.*`, `editor.*`, `node.*`, etc.)
-  are reserved and rejected at load time.
-- User commands are **profile-exempt** -- they register regardless of the
-  active profile (minimal/standard/Power User/custom).
-- User commands inherit the plugin's security context (FileGuard, FeatureGate,
-  audit logging).
-- Errors in user command scripts are logged but never crash the plugin.
-- Restart the editor (or disable/re-enable the plugin) to pick up changes.
+func register(registry, server: Node) -> void:
+    registry.add("physics.list_bodies", _list_bodies, {
+        "description": "List all physics bodies in the current scene",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "body_type": {
+                    "type": "string",
+                    "enum": ["rigid", "static", "character", "all"]
+                }
+            }
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "idempotentHint": true
+        },
+        "group": {
+            "name": "physics_tools",
+            "description": "Physics inspection and manipulation"
+        }
+    })
 
-The TypeScript bridge auto-discovers user commands via `meta.user_commands`
-and registers them as MCP tools. Your MCP client receives a
-`tools/list_changed` notification when new user commands are found.
+func _list_bodies(params: Dictionary) -> Dictionary:
+    var body_type: String = params.get("body_type", "all")
+    # ... scene tree traversal logic ...
+    return {"success": true, "data": bodies}
+```
+
+### Quick start (C#)
+
+C# extensions cannot inherit GDScript classes (hard Godot limitation). Instead,
+extend `RefCounted` directly with `[Tool]` and `[GlobalClass]` attributes.
+The loader discovers them via duck typing (`has_method("Register")`).
+
+```
+addons/my_dialogue_tools/
+└── DialogueExtension.cs   ← [GlobalClass] MCPToolkitDialogueTools
+```
+
+```csharp
+// addons/my_dialogue_tools/DialogueExtension.cs
+using Godot;
+using Godot.Collections;
+
+[Tool, GlobalClass]
+public partial class MCPToolkitDialogueTools : RefCounted
+{
+    public void Register(GodotObject registry, Node server)
+    {
+        registry.Call("add", "dialogue.list_nodes", new Callable(this,
+            MethodName.ListNodes), new Dictionary {
+            { "description", "List all dialogue nodes in the current scene" },
+            { "annotations", new Dictionary {
+                { "readOnlyHint", true },
+                { "idempotentHint", true }
+            }}
+        });
+    }
+
+    public Dictionary ListNodes(Dictionary parameters)
+    {
+        // ... scene tree traversal logic ...
+        return new Dictionary { { "success", true }, { "data", nodes } };
+    }
+}
+```
+
+**C# requirements:**
+- `[Tool]` attribute mandatory (without it, the .NET object is not
+  instantiated in editor — method calls return null)
+- `[GlobalClass]` attribute mandatory (makes the class visible to
+  `ProjectSettings.get_global_class_list()`)
+- `partial class` extending `RefCounted` (not `MCPToolkitExtension`)
+- Public `Register(GodotObject registry, Node server)` method
+- Handler methods accept and return `Godot.Collections.Dictionary`
+- Callables created via `new Callable(this, MethodName.Method)`
+- Project must be built (`dotnet build`) before extensions are
+  discoverable — the loader skips classes that haven't been compiled
+
+### `registry.add()` API
+
+```
+registry.add(method: String, handler: Callable, options: Dictionary)
+```
+
+| Key | Type | Default | Purpose |
+|-----|------|---------|---------|
+| `description` | String | `""` | Tool description in MCP `tools/list` |
+| `input_schema` | Dictionary | `{}` | JSON Schema for tool input validation |
+| `annotations` | Dictionary | `{}` | MCP tool annotations (see below) |
+| `group` | Dictionary | `{}` | Tool group for `enable_tool_group` (see below) |
+
+**Annotations:**
+
+| Key | Type | Default | When to use |
+|-----|------|---------|-------------|
+| `readOnlyHint` | bool | `false` | Tool only reads state, never modifies it |
+| `destructiveHint` | bool | `false` | Tool deletes or irreversibly changes data |
+| `idempotentHint` | bool | `false` | Calling twice with the same input produces the same result |
+| `openWorldHint` | bool | `false` | Tool interacts with external systems outside the editor |
+
+**Groups:**
+
+Commands declaring a `group` key are registered behind `enable_tool_group`
+with lazy-load semantics. Commands without a `group` stay at root level —
+always visible from startup.
+
+```gdscript
+"group": {
+    "name": "physics_tools",          # Group identifier
+    "description": "Physics inspection and manipulation"  # Shown in enable_tool_group
+}
+```
+
+Commands sharing a group name are collected together. The MCP client loads
+the group by calling `enable_tool_group({"groups": ["physics_tools"]})`.
+
+### Discovery rules
+
+Extensions are discovered via `ProjectSettings.get_global_class_list()` at
+plugin startup. The discovery algorithm:
+
+1. Scan all global classes for names starting with `MCPToolkit`
+2. Skip any class whose script is inside `res://addons/godot_mcp_toolkit/`
+   (the toolkit's own internal classes)
+3. For GDScript classes: verify `is MCPToolkitExtension` (inheritance check)
+4. For CSharpScript classes: verify `has_method("Register")` or
+   `has_method("register")` (duck typing)
+5. Call `register(registry, server)` (or `Register` for C#)
+6. Validate newly registered methods against reserved namespaces
+7. Mark valid methods as extension methods
+
+**Discovery order:** built-in commands → extensions (reflection). No
+filesystem scanning. Collision policy: first-loaded wins, subsequent
+registrations of the same method name are rejected with a logged warning.
+
+### Naming rules
+
+- Commands must use `<namespace>.<action>` naming (e.g., `physics.list_bodies`)
+- The following namespaces are reserved and rejected at load time:
+  `scene.*`, `script.*`, `editor.*`, `node.*`, `runtime.*`, `server.*`,
+  `resource.*`, `folder.*`, `file.*`, `signal.*`, `playtest.*`, `project.*`,
+  `input_map.*`, `animation.*`, `tilemap.*`, `asset.*`, `save.*`, `meta.*`,
+  `game.*`, `diff.*`, `extensions.*`
+- All extension `class_name`s must start with `MCPToolkit`
 
 ### Error handling contract
 
@@ -50,48 +184,103 @@ uppercase `code` for programmatic matching:
 return {"success": false, "error": "Node not found", "code": "NOT_FOUND"}
 ```
 
-Never throw or let exceptions propagate — the loader catches load-time
-errors but runtime exceptions in handlers will produce a generic MCP
-error. Validate inputs and return a structured error Dictionary instead.
+The extension loader validates handler return values at runtime. Malformed
+returns (non-Dictionary, missing `success` key) are normalized to the
+standard error envelope with `push_error` logged. Never let exceptions
+propagate — validate inputs and return structured errors instead.
 
-### MCP annotations
+**Standard error codes:** `NOT_FOUND`, `INVALID_PARAM`, `FORBIDDEN`,
+`INTERNAL_ERROR`, `TIMEOUT`. Use `MCPError.make(code, message)` from
+`_hub.gd` if you preload the hub, or return the Dictionary directly.
 
-The TypeScript bridge registers user commands with these default MCP
-annotations:
+### Profile behavior
 
-- `readOnlyHint: false` — assumed to be mutating
-- `destructiveHint: false`
-- `openWorldHint: false`
+Extensions are **profile-exempt** — they register regardless of the active
+profile (Minimal/Standard/Power User/custom). Extensions run with the same
+trust level as the plugin itself (FileGuard, FeatureGate, audit logging
+all apply).
 
-The description is auto-generated as `User command: <method>` and the
-input schema is empty (accepts any JSON object).
+### Distributable extensions
 
-There is currently no way to override these defaults from GDScript —
-`registry.add()` takes only a method name and handler callable. Custom
-annotations, descriptions, and input schemas are planned for a future
-extension API revision.
+Extension addons are submittable to Godot's AssetLib as separate entries.
+Requirements for distribution:
 
-## Third-Party Plugin Integration (not yet supported)
+1. Place your extension script in its own `addons/<your_addon>/` directory
+2. Declare `class_name MCPToolkit<YourName>` with `extends MCPToolkitExtension`
+3. No `plugin.cfg` required (simple extensions are "content addons")
+4. State the `godot-mcp-toolkit` dependency prominently in your AssetLib
+   description and README
+5. If the base toolkit is not installed, `extends MCPToolkitExtension` fails
+   at parse time — a clear error signal, not silent failure
 
-Currently, only scripts inside `addons/godot_mcp_toolkit/user_commands/` can
-register MCP tools. A third-party Godot plugin (in its own `addons/` folder)
-cannot directly access the command registry.
+**AssetLib update safety:** Extensions live outside the toolkit's addon
+directory, so AssetLib updates to `godot-mcp-toolkit` never touch your
+extension files.
 
-### What would need to change
+### Motivating example: C# script_check
 
-To enable cross-addon extensibility, the toolkit would need one of:
+The built-in `script.check` tool only supports `.gd` files — no in-process
+C# parser exists. A community extension could fill this gap:
 
-1. **Autoload-exposed registry.** Register the command registry as an autoload
-   singleton so any script can call `MCPRegistry.add(method, handler)`.
-2. **Signal-based registration.** Emit a global signal with the registry
-   reference at startup; other plugins connect and register their commands.
-3. **Scan external directories.** Extend the user commands loader to scan
-   additional directories (e.g., `addons/*/mcp_commands/`).
+```csharp
+[Tool, GlobalClass]
+public partial class MCPToolkitCSharpCheck : RefCounted
+{
+    public void Register(GodotObject registry, Node server)
+    {
+        registry.Call("add", "csharp.check", new Callable(this,
+            MethodName.CheckScript), new Dictionary {
+            { "description", "Run dotnet build and return C# diagnostics" },
+            { "annotations", new Dictionary {
+                { "readOnlyHint", true },
+                { "idempotentHint", true }
+            }}
+        });
+    }
 
-Option 1 (autoload) is the cleanest path and would require:
-- Moving the registry to a standalone autoload script.
-- Ensuring add/remove symmetry when third-party plugins are disabled.
-- Enforcing namespace reservation to prevent conflicts.
+    public Dictionary CheckScript(Dictionary parameters)
+    {
+        // Shell out to dotnet build, parse MSBuild output,
+        // return structured diagnostics
+        // ...
+    }
+}
+```
 
-This is tracked as a potential post-1.0 enhancement. For now, the recommended
-approach is to place extension files in the `user_commands/` directory.
+This shows how extensions solve limitations of the core toolkit — any gap
+in the built-in tool set can be addressed by community extensions without
+forking.
+
+## Hooks (Internal API)
+
+The TypeScript bridge has a hook pipeline that wraps every tool call with
+pre- and post-execution middleware. The logging hook records all tool
+invocations to the audit log.
+
+**Why internal-only for 1.0:** Exposing user-extensible hooks adds security
+surface (hooks can intercept or cancel any tool call) for zero demonstrated
+user demand. Neither major competing implementation offers user-extensible
+hooks. The internal pipeline already exceeds the ecosystem baseline.
+
+**Post-1.0 roadmap:** If community feedback warrants it, hook extensibility
+could be exposed via a configuration file (e.g., `hooks.json`) that maps
+tool names to pre/post scripts. This would require careful sandboxing to
+prevent hooks from escalating privilege beyond their tool's gate level.
+
+## Prompts & Resources (Internal API)
+
+The server exposes MCP prompts (named workflow templates like `debug-scene`,
+`write-test`) and resources (`godot://scene/{path}`, `godot://script/{path}`,
+`godot://project/info`, `godot://roots`). These are currently hardcoded in
+the TypeScript source.
+
+**Why internal-only for 1.0:** No competing Godot MCP implementation is
+MCP-native (most use custom WebSocket protocols with no prompts or resources
+at all). Our seed set of prompts and resources is already ahead of the
+ecosystem. User-extensible prompt templates (custom JSON files) are a natural
+post-1.0 feature but not a 1.0 requirement.
+
+**Post-1.0 roadmap:** User-extensible prompts via JSON template files in a
+`prompts/` directory. Resource extensibility via the same extension addon
+pattern used for tools — extensions could declare resource providers
+alongside tool handlers.

@@ -139,6 +139,8 @@ func _apply_step(dialog: AcceptDialog) -> void:
 			dialog.dialog_text = (
 				"The 'Info / Help' button at the bottom of the MCP dock\n"
 				+ "shows connection status, tool list, and documentation links.\n\n"
+				+ "Companion Skills for Claude Code are bundled with the toolkit —\n"
+				+ "click the 'Companion Skills' button in the dock to browse them.\n\n"
 				+ "You're all set!")
 			dialog.ok_button_text = "Close"
 			_buttons.append(dialog.add_button("Back", true, "back"))
