@@ -1,4 +1,5 @@
 @tool
+class_name MCPToolkitCommandRegistry
 extends RefCounted
 ## Central dispatch table for MCP commands.
 

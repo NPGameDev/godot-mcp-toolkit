@@ -23,7 +23,7 @@ addons/my_physics_tools/
 class_name MCPToolkitPhysicsTools
 extends MCPToolkitExtension
 
-func register(registry, server: Node) -> void:
+func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
     registry.add("physics.list_bodies", _list_bodies, {
         "description": "List all physics bodies in the current scene",
         "input_schema": {

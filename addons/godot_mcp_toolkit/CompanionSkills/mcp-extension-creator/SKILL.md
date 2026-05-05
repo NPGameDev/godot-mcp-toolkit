@@ -25,7 +25,7 @@ addons/<extension_name>/
 class_name MCPToolkit<Name>
 extends MCPToolkitExtension
 
-func register(registry, server: Node) -> void:
+func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
     registry.add("<namespace>.<action>", _handler, {
         "description": "<What this tool does>",
         "input_schema": {

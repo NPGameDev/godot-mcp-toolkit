@@ -8,7 +8,6 @@ extends RefCounted
 ## MCPToolkitExtension; C# extensions use duck typing (has_method("Register")).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPError = _Hub.MCPError
 
 const _ADDON_PATH := "res://addons/godot_mcp_toolkit/"
@@ -27,7 +26,7 @@ const RESERVED_PREFIXES: Array[String] = [
 var _instances: Array = []
 
 
-static func load_all(registry: MCPCommandRegistry, server: Node) -> int:
+static func load_all(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	var loader := new()
 	var loaded := loader._discover_and_register(registry, server)
 	if loaded > 0:
@@ -40,7 +39,7 @@ static func load_all(registry: MCPCommandRegistry, server: Node) -> int:
 	return loaded
 
 
-func _discover_and_register(registry: MCPCommandRegistry, server: Node) -> int:
+func _discover_and_register(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	var classes: Array = ProjectSettings.get_global_class_list()
 	var loaded := 0
 	for entry in classes:
@@ -56,7 +55,7 @@ func _discover_and_register(registry: MCPCommandRegistry, server: Node) -> int:
 	return loaded
 
 
-func _load_extension(class_name_str: String, script_path: String, registry: MCPCommandRegistry, server: Node) -> bool:
+func _load_extension(class_name_str: String, script_path: String, registry: MCPToolkitCommandRegistry, server: Node) -> bool:
 	var script: Script = ResourceLoader.load(script_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if script == null:
 		push_warning("[MCP] Extension '%s': failed to load script at %s" % [class_name_str, script_path])
@@ -104,6 +103,12 @@ func _load_extension(class_name_str: String, script_path: String, registry: MCPC
 				break
 		if not rejected:
 			registry.mark_extension(method)
+			var meta := registry.get_command_metadata(method)
+			var group_name: String = meta.get("group", {}).get("name", "")
+			if group_name:
+				print("[MCP]   + %s (group: %s)" % [method, group_name])
+			else:
+				print("[MCP]   + %s" % method)
 			new_count += 1
 
 	if new_count == 0:
@@ -116,7 +121,7 @@ func _load_extension(class_name_str: String, script_path: String, registry: MCPC
 	return true
 
 
-static func _register_meta(registry: MCPCommandRegistry) -> void:
+static func _register_meta(registry: MCPToolkitCommandRegistry) -> void:
 	var handler := func(params: Dictionary) -> Dictionary:
 		return _cmd_extensions_list(registry, params)
 	registry.add("extensions.list", handler, {
@@ -125,7 +130,7 @@ static func _register_meta(registry: MCPCommandRegistry) -> void:
 	})
 
 
-static func _cmd_extensions_list(registry: MCPCommandRegistry, _params: Dictionary) -> Dictionary:
+static func _cmd_extensions_list(registry: MCPToolkitCommandRegistry, _params: Dictionary) -> Dictionary:
 	var methods := registry.get_extension_methods()
 	var result: Array[Dictionary] = []
 	for method: String in methods:

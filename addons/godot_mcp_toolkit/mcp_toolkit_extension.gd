@@ -10,6 +10,6 @@ extends RefCounted
 ## See addons/godot_mcp_toolkit/docs/extending.md for full documentation.
 
 
-func register(registry, server: Node) -> void:
+func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	push_warning("MCPToolkitExtension: register() not overridden in %s"
 		% get_script().resource_path)
