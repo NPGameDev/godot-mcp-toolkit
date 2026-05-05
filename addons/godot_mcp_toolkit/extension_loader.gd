@@ -1,16 +1,19 @@
 @tool
 extends RefCounted
-## Discovers and loads third-party MCP toolkit extensions via reflection.
+## Discovers and loads MCP toolkit extensions via reflection.
 ##
-## Extensions are discovered by scanning ProjectSettings.get_global_class_list()
-## for classes whose name starts with "MCPToolkit" and whose script lives outside
-## res://addons/godot_mcp_toolkit/. GDScript extensions must extend
-## MCPToolkitExtension; C# extensions use duck typing (has_method("Register")).
+## Extensions are discovered by scanning ProjectSettings.get_global_class_list():
+## - GDScript: any class whose base is MCPToolkitExtension (no naming restriction)
+## - C#: any [GlobalClass] prefixed "MCPToolkit" with a Register() method (duck typing)
+##
+## Live hot-reload: call start_watcher() after load_all() to connect to
+## EditorFileSystem.filesystem_changed. On each scan (debounced 500ms), diffs
+## the class list against the last known state and broadcasts an
+## "extensions.changed" notification to all connected MCP bridges.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 
-const _ADDON_PATH := "res://addons/godot_mcp_toolkit/"
 const _PREFIX := "MCPToolkit"
 
 # Built-in namespaces that extensions cannot override.
@@ -25,12 +28,21 @@ const RESERVED_PREFIXES: Array[String] = [
 # invalidating registered Callables.
 var _instances: Array = []
 
+# ── Live watcher state ───────────────────────────────────────────────
+# Populated only when start_watcher() creates a persistent instance.
+var _registry: MCPToolkitCommandRegistry = null
+var _server: Node = null
+var _known_extensions: Dictionary = {}      # class_name_str -> script_path
+var _class_methods: Dictionary = {}         # class_name_str -> Array[String] (methods)
+var _failed_classes: Dictionary = {}        # class_name_str -> true (failed validation, retry on scan)
+var _debounce_pending := false
+
 
 static func load_all(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	var loader := new()
 	var loaded := loader._discover_and_register(registry, server)
 	if loaded > 0:
-		print("[MCP] Discovered %d extension(s) via reflection" % loaded)
+		print("[MCPExtensions] Discovered %d extension(s) via reflection" % loaded)
 	# Register the meta command for bridge discovery.
 	_register_meta(registry)
 	# Transfer instance ownership to the registry so they outlive this call.
@@ -39,44 +51,311 @@ static func load_all(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	return loaded
 
 
+## Create a persistent watcher that monitors EditorFileSystem for extension
+## changes and broadcasts "extensions.changed" notifications. The caller
+## MUST retain the returned reference (prevents GC).
+static func start_watcher(registry: MCPToolkitCommandRegistry, server: Node) -> RefCounted:
+	var watcher := new()
+	watcher._registry = registry
+	watcher._server = server
+	# Snapshot current extension classes.
+	watcher._snapshot_current_extensions()
+	# Build class->methods map from already-registered extension methods.
+	watcher._rebuild_class_methods_map()
+	# Connect to EditorFileSystem.
+	var efs := EditorInterface.get_resource_filesystem()
+	efs.filesystem_changed.connect(watcher._on_filesystem_changed)
+	# Register extensions.refresh — allows LLMs / headless mode to force
+	# a filesystem scan + extension re-discovery without editor focus.
+	registry.add("extensions.refresh", watcher._cmd_refresh, {
+		"description": "Force a filesystem scan and re-discover extensions (use when files were created externally)",
+		"annotations": {"readOnlyHint": false, "idempotentHint": true},
+	})
+	print("[MCPExtensions] Hot-reload watcher active")
+	return watcher
+
+
+## Check whether a global-class-list entry is an extension candidate.
+## GDScript: detected by base class (extends MCPToolkitExtension) — no naming restriction.
+## C#: detected by MCPToolkit prefix (cross-language inheritance isn't possible).
+## The base-class check naturally excludes internal toolkit classes (their base
+## is RefCounted/Node, not MCPToolkitExtension).
+static func _is_extension_candidate(entry: Dictionary) -> bool:
+	var base_class: String = entry.get("base", "")
+	if base_class == "MCPToolkitExtension":
+		return true
+	# C# can't extend the GDScript base class — use prefix convention instead.
+	var class_name_str: String = entry.get("class", "")
+	var script_path: String = entry.get("path", "")
+	if class_name_str.begins_with(_PREFIX) and script_path.ends_with(".cs"):
+		return true
+	return false
+
+
 func _discover_and_register(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	var classes: Array = ProjectSettings.get_global_class_list()
 	var loaded := 0
 	for entry in classes:
+		if not _is_extension_candidate(entry):
+			continue
 		var class_name_str: String = entry.get("class", "")
-		if not class_name_str.begins_with(_PREFIX):
-			continue
 		var script_path: String = entry.get("path", "")
-		# Skip classes inside the toolkit addon itself.
-		if script_path.begins_with(_ADDON_PATH):
-			continue
 		if _load_extension(class_name_str, script_path, registry, server):
 			loaded += 1
 	return loaded
 
 
+# ── Watcher internals ────────────────────────────────────────────────
+
+func _snapshot_current_extensions() -> void:
+	_known_extensions.clear()
+	var classes: Array = ProjectSettings.get_global_class_list()
+	for entry in classes:
+		if not _is_extension_candidate(entry):
+			continue
+		_known_extensions[entry.get("class", "")] = entry.get("path", "")
+
+
+func _rebuild_class_methods_map() -> void:
+	## Build class_name -> methods mapping from the registry's extension methods.
+	## Called once at watcher start. During live reload, new methods are tracked
+	## incrementally in _load_extension_tracked().
+	_class_methods.clear()
+	var all_ext_methods := _registry.get_extension_methods()
+	# We can't perfectly attribute methods to classes after the fact, so we
+	# re-scan: for each known class, load its script and call Register on a
+	# temporary registry to capture which methods it adds.
+	for cn: String in _known_extensions:
+		var sp: String = _known_extensions[cn]
+		var methods := _probe_extension_methods(cn, sp)
+		if not methods.is_empty():
+			_class_methods[cn] = methods
+
+
+func _probe_extension_methods(class_name_str: String, script_path: String) -> Array[String]:
+	## Load an extension into a scratch registry to discover which methods it registers.
+	## Does NOT modify the live registry — used only for building the class->methods map.
+	var script: Script = ResourceLoader.load(script_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	if script == null:
+		return []
+	var instance = script.new()
+	if instance == null:
+		return []
+	var scratch := MCPToolkitCommandRegistry.new()
+	if instance.has_method("Register"):
+		instance.Register(scratch, _server)
+	elif instance.has_method("register"):
+		instance.register(scratch, _server)
+	var methods: Array[String] = []
+	for method: String in scratch.get_all_methods():
+		methods.append(method)
+	return methods
+
+
+static func _arrays_equal(a: Array, b: Array) -> bool:
+	if a.size() != b.size():
+		return false
+	for i in a.size():
+		if a[i] != b[i]:
+			return false
+	return true
+
+
+func _cmd_refresh(_params: Dictionary) -> Dictionary:
+	## Force a filesystem scan and immediate extension re-discovery.
+	EditorInterface.get_resource_filesystem().scan_sources()
+	# Run rescan immediately (bypass debounce).
+	_debounce_pending = false
+	_do_rescan()
+	# Return current extension list.
+	var methods := _registry.get_extension_methods()
+	var result: Array[Dictionary] = []
+	for method: String in methods:
+		var meta := _registry.get_command_metadata(method)
+		result.append({"method": method, "description": meta.get("description", "")})
+	return {"success": true, "refreshed": true, "commands": result}
+
+
+func _on_filesystem_changed() -> void:
+	if _debounce_pending:
+		return
+	_debounce_pending = true
+	# Use a SceneTree timer for debounce (500ms). The watcher is a RefCounted
+	# so it can't own timers directly — the server node's tree provides them.
+	_server.get_tree().create_timer(0.5).timeout.connect(_do_rescan)
+
+
+func _do_rescan() -> void:
+	_debounce_pending = false
+	var current: Dictionary = {}
+	var classes: Array = ProjectSettings.get_global_class_list()
+	for entry in classes:
+		if not _is_extension_candidate(entry):
+			continue
+		current[entry.get("class", "")] = entry.get("path", "")
+
+	# Diff against known state.
+	var added_classes: Dictionary = {}     # class_name -> path
+	var removed_classes: Array[String] = []
+	for cn: String in current:
+		if cn not in _known_extensions:
+			added_classes[cn] = current[cn]
+	for cn: String in _known_extensions:
+		if cn not in current:
+			removed_classes.append(cn)
+
+	# Retry previously-failed classes (script was fixed since last scan).
+	var retry_classes: Dictionary = {}
+	for cn: String in _failed_classes:
+		if cn in current and cn not in added_classes:
+			retry_classes[cn] = current[cn]
+
+	# Detect content changes in existing extensions (tools added/removed/modified
+	# within the same class). Re-probe each known class and compare method lists.
+	var modified_classes: Dictionary = {}  # class_name -> path
+	for cn: String in current:
+		if cn in added_classes or cn in retry_classes:
+			continue
+		if not _class_methods.has(cn):
+			continue
+		var sp: String = current[cn]
+		var fresh_methods := _probe_extension_methods(cn, sp)
+		var old_methods: Array = _class_methods.get(cn, [])
+		if not _arrays_equal(fresh_methods, old_methods):
+			modified_classes[cn] = sp
+
+	if added_classes.is_empty() and removed_classes.is_empty() \
+			and retry_classes.is_empty() and modified_classes.is_empty():
+		return
+
+	# Collect removed method names before modifying state.
+	var removed_methods: Array[String] = []
+	for cn: String in removed_classes:
+		if _class_methods.has(cn):
+			removed_methods.append_array(_class_methods[cn])
+			_class_methods.erase(cn)
+		_failed_classes.erase(cn)
+
+	# Handle modified extensions: unregister old methods, then re-load fresh.
+	for cn: String in modified_classes:
+		if _class_methods.has(cn):
+			for method: String in _class_methods[cn]:
+				_registry.remove(method)
+				print("[MCPExtensions]   ~ %s (modified, re-registering)" % method)
+			removed_methods.append_array(_class_methods[cn])
+			_class_methods.erase(cn)
+
+	# Unregister removed methods from the live registry.
+	for method: String in removed_methods:
+		if _registry.has_command(method):
+			_registry.remove(method)
+			print("[MCPExtensions]   - %s (removed)" % method)
+
+	# Register new extensions.
+	for cn: String in added_classes:
+		_load_extension_tracked(cn, added_classes[cn])
+
+	# Retry previously-failed classes.
+	for cn: String in retry_classes:
+		_load_extension_tracked(cn, retry_classes[cn])
+
+	# Re-load modified extensions.
+	for cn: String in modified_classes:
+		_load_extension_tracked(cn, modified_classes[cn])
+
+	# Update known state.
+	_known_extensions = current
+
+	# Broadcast if anything changed.
+	var total_changes := removed_methods.size()
+	for cn: String in added_classes:
+		if _class_methods.has(cn):
+			total_changes += _class_methods[cn].size()
+	for cn: String in retry_classes:
+		if _class_methods.has(cn):
+			total_changes += _class_methods[cn].size()
+	for cn: String in modified_classes:
+		if _class_methods.has(cn):
+			total_changes += _class_methods[cn].size()
+
+	if total_changes > 0:
+		_broadcast_extensions_changed(removed_methods)
+		var parts: Array[String] = []
+		var add_count := 0
+		for cn: String in added_classes:
+			if _class_methods.has(cn):
+				add_count += 1
+		for cn: String in retry_classes:
+			if _class_methods.has(cn):
+				add_count += 1
+		if add_count > 0:
+			parts.append("+%d" % add_count)
+		if not modified_classes.is_empty():
+			parts.append("~%d" % modified_classes.size())
+		if not removed_classes.is_empty():
+			parts.append("-%d" % removed_classes.size())
+		if not parts.is_empty():
+			print("[MCPExtensions] Hot-reload: %s class(es) changed" % " ".join(parts))
+
+
+func _load_extension_tracked(class_name_str: String, script_path: String) -> void:
+	## Load and register a single extension, tracking its methods in _class_methods.
+	var before: Array = _registry.get_all_methods()
+	if _load_extension(class_name_str, script_path, _registry, _server):
+		var after: Array = _registry.get_all_methods()
+		var new_methods: Array[String] = []
+		for method: String in after:
+			if method not in before:
+				new_methods.append(method)
+		_class_methods[class_name_str] = new_methods
+		_failed_classes.erase(class_name_str)
+	else:
+		_failed_classes[class_name_str] = true
+
+
+func _broadcast_extensions_changed(removed_methods: Array[String]) -> void:
+	## Build the extensions.changed notification payload (same shape as
+	## extensions.list response + removed array) and broadcast to all peers.
+	var commands: Array[Dictionary] = []
+	var methods := _registry.get_extension_methods()
+	for method: String in methods:
+		var meta := _registry.get_command_metadata(method)
+		var entry: Dictionary = {"method": method}
+		if meta.get("description", "") != "":
+			entry["description"] = meta["description"]
+		if not meta.get("input_schema", {}).is_empty():
+			entry["input_schema"] = meta["input_schema"]
+		if not meta.get("annotations", {}).is_empty():
+			entry["annotations"] = meta["annotations"]
+		if not meta.get("group", {}).is_empty():
+			entry["group"] = meta["group"]
+		commands.append(entry)
+	var params := {"commands": commands, "removed": removed_methods}
+	_server.broadcast_notification("extensions.changed", params)
+
+
 func _load_extension(class_name_str: String, script_path: String, registry: MCPToolkitCommandRegistry, server: Node) -> bool:
 	var script: Script = ResourceLoader.load(script_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if script == null:
-		push_warning("[MCP] Extension '%s': failed to load script at %s" % [class_name_str, script_path])
+		push_warning("[MCPExtensions] '%s': failed to load script at %s" % [class_name_str, script_path])
 		return false
 
 	var is_csharp := script_path.ends_with(".cs")
 	var instance = script.new()
 	if instance == null:
-		push_warning("[MCP] Extension '%s': script.new() returned null" % class_name_str)
+		push_warning("[MCPExtensions] '%s': script.new() returned null" % class_name_str)
 		return false
 
 	# Validate extension contract.
 	if is_csharp:
 		# C# cannot extend GDScript classes — use duck typing.
 		if not instance.has_method("Register") and not instance.has_method("register"):
-			push_warning("[MCP] Extension '%s': C# class missing Register() method — skipped" % class_name_str)
+			push_warning("[MCPExtensions] '%s': C# class missing Register() method — skipped" % class_name_str)
 			return false
 	else:
 		# GDScript must extend MCPToolkitExtension.
 		if not (instance is MCPToolkitExtension):
-			push_warning("[MCP] Extension '%s': GDScript class does not extend MCPToolkitExtension — skipped" % class_name_str)
+			push_warning("[MCPExtensions] '%s': GDScript class does not extend MCPToolkitExtension — skipped" % class_name_str)
 			return false
 
 	# Record methods before registration to detect new ones.
@@ -98,7 +377,7 @@ func _load_extension(class_name_str: String, script_path: String, registry: MCPT
 		for prefix: String in RESERVED_PREFIXES:
 			if method.begins_with(prefix):
 				registry.remove(method)
-				push_warning("[MCP] Extension '%s': '%s' uses reserved namespace '%s*' — rejected" % [class_name_str, method, prefix])
+				push_warning("[MCPExtensions] '%s': '%s' uses reserved namespace '%s*' — rejected" % [class_name_str, method, prefix])
 				rejected = true
 				break
 		if not rejected:
@@ -106,13 +385,13 @@ func _load_extension(class_name_str: String, script_path: String, registry: MCPT
 			var meta := registry.get_command_metadata(method)
 			var group_name: String = meta.get("group", {}).get("name", "")
 			if group_name:
-				print("[MCP]   + %s (group: %s)" % [method, group_name])
+				print("[MCPExtensions]   + %s (group: %s)" % [method, group_name])
 			else:
-				print("[MCP]   + %s" % method)
+				print("[MCPExtensions]   + %s" % method)
 			new_count += 1
 
 	if new_count == 0:
-		push_warning("[MCP] Extension '%s': registered zero new commands" % class_name_str)
+		push_warning("[MCPExtensions] '%s': registered zero new commands" % class_name_str)
 		return false
 
 	# Retain the instance reference (critical for C# — prevents GC from

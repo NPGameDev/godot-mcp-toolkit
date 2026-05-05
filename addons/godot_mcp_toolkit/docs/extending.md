@@ -9,18 +9,18 @@ discovered automatically at plugin startup — no configuration required.
 
 ### Quick start (GDScript)
 
-Create a script with a `class_name` starting with `MCPToolkit` that extends
-`MCPToolkitExtension`:
+Create a `@tool` script with a `class_name` that extends `MCPToolkitExtension`.
+The class name can be anything — discovery is by base class, not by prefix:
 
 ```
 addons/my_physics_tools/
-└── physics_extension.gd   ← class_name MCPToolkitPhysicsTools
+└── physics_extension.gd   ← class_name PhysicsTools (any name works)
 ```
 
 ```gdscript
 # addons/my_physics_tools/physics_extension.gd
 @tool
-class_name MCPToolkitPhysicsTools
+class_name PhysicsTools
 extends MCPToolkitExtension
 
 func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
@@ -147,12 +147,16 @@ the group by calling `enable_tool_group({"groups": ["physics_tools"]})`.
 ### Discovery rules
 
 Extensions are discovered via `ProjectSettings.get_global_class_list()` at
-plugin startup. The discovery algorithm:
+plugin startup (and live via hot-reload). The discovery algorithm:
 
-1. Scan all global classes for names starting with `MCPToolkit`
-2. Skip any class whose script is inside `res://addons/godot_mcp_toolkit/`
-   (the toolkit's own internal classes)
-3. For GDScript classes: verify `is MCPToolkitExtension` (inheritance check)
+1. Scan all global classes for extension candidates:
+   - **GDScript:** any class whose `base` is `MCPToolkitExtension` (no naming
+     restriction — your class can be called anything)
+   - **C#:** any `[GlobalClass]` whose name starts with `MCPToolkit` (C# cannot
+     extend the GDScript base class, so prefix is the discovery marker)
+   - Internal toolkit classes are naturally excluded (they extend `RefCounted`
+     or `Node`, not `MCPToolkitExtension`)
+2. For GDScript classes: verify `is MCPToolkitExtension` (inheritance check)
 4. For CSharpScript classes: verify `has_method("Register")` or
    `has_method("register")` (duck typing)
 5. Call `register(registry, server)` (or `Register` for C#)
@@ -171,7 +175,8 @@ registrations of the same method name are rejected with a logged warning.
   `resource.*`, `folder.*`, `file.*`, `signal.*`, `playtest.*`, `project.*`,
   `input_map.*`, `animation.*`, `tilemap.*`, `asset.*`, `save.*`, `meta.*`,
   `game.*`, `diff.*`, `extensions.*`
-- All extension `class_name`s must start with `MCPToolkit`
+- GDScript extensions: no `class_name` prefix required (discovery is by base class)
+- C# extensions: `class_name` must start with `MCPToolkit` (discovery marker)
 
 ### Error handling contract
 
@@ -254,6 +259,60 @@ public partial class MCPToolkitCSharpCheck : RefCounted
 This shows how extensions solve limitations of the core toolkit — any gap
 in the built-in tool set can be addressed by community extensions without
 forking.
+
+### Hot-Reload Behavior
+
+Extensions are discovered at plugin startup AND monitored at runtime. When
+you add or remove an extension script while the MCP session is active, the
+changes are detected automatically — no restart or reconnect required.
+
+**GDScript extensions:** Detected immediately when the file is saved. Godot's
+`EditorFileSystem.filesystem_changed` signal fires, the watcher rescans the
+global class list, and new `MCPToolkit`-prefixed classes are loaded within
+~500ms (debounce window). Deletion is also immediate — the tool disappears
+from the MCP tool list on the next scan.
+
+**C# extensions:** Require `dotnet build` (or Godot's Build button) for
+`ProjectSettings.get_global_class_list()` to reflect additions or removals.
+This matches Godot's own C# hot-reload behavior. After a build, the watcher
+detects the change and registers/unregisters tools accordingly.
+
+**Deletion while loaded (GDScript):** If a loaded extension's script file is
+deleted, the GDScript handler becomes unreachable. The next tool call returns
+a bridge error (not a crash). On the next filesystem scan, the tool is
+automatically unregistered from the tool list.
+
+**Deletion while loaded (C#):** The compiled DLL retains the class until the
+next `dotnet build`. The tool remains callable (stale but functional) until
+rebuild, at which point `get_global_class_list()` drops the class and the
+tool is unregistered. This asymmetry with GDScript is inherent to Godot's
+C# architecture.
+
+**Content changes:** Modifying an existing extension script (adding tools,
+changing descriptions, fixing handler logic) is also detected. The watcher
+re-probes each known extension on every scan and compares method lists. If
+they differ, old tools are unregistered and the extension is re-loaded fresh.
+
+**Editor focus required:** Godot's `EditorFileSystem` only scans for external
+file changes when the editor window regains focus. If you create or modify
+extension files from an external tool (terminal, Claude Code, etc.), you must
+alt-tab back to the Godot editor to trigger the hot-reload. Files changed
+from within Godot's script editor are detected immediately.
+
+**Programmatic refresh:** As an alternative to editor focus, call the
+`extensions.refresh` MCP command to force a filesystem scan and immediate
+re-discovery. This is useful in headless/automated workflows where the LLM
+creates extension files and needs them registered without user interaction.
+
+**Debounce:** Godot fires `filesystem_changed` multiple times for a single
+file operation (save triggers scan, scan triggers changed, etc.). The
+extension watcher debounces at 500ms — multiple rapid signals produce at
+most one rescan.
+
+**Client-side limitation:** Some MCP clients (including Claude Code) cache
+deferred tools. Mid-session additions may not appear in the client's tool
+list until `/mcp` reconnect, even though the server has already registered
+them. This is a platform-side limitation, not actionable server-side.
 
 ## Hooks (Internal API)
 

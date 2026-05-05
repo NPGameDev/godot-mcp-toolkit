@@ -60,6 +60,7 @@ var _wizard: OnboardingWizard = null
 var _feature_settings: FeatureGateSettings = null
 var _notifier: GateNotifier = null
 var _events: GateEvents = null
+var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
 # Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
@@ -99,6 +100,8 @@ func _enter_tree() -> void:
 
 	# Third-party extensions — profile-exempt, always loaded.
 	ExtensionLoader.load_all(registry, _server)
+	# Live hot-reload: watch EditorFileSystem for extension additions/removals.
+	_extension_watcher = ExtensionLoader.start_watcher(registry, _server)
 
 	_validate_user_whitelist()
 
@@ -201,6 +204,9 @@ func _exit_tree() -> void:
 	if _user_path_monitor != null:
 		_user_path_monitor.stop()
 		_user_path_monitor = null
+
+	# Extension watcher — drop before server teardown (holds registry ref).
+	_extension_watcher = null
 
 	# Export plugin (RefCounted — do NOT queue_free, just null).
 	if _export_plugin != null:
