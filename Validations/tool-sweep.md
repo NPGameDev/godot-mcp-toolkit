@@ -687,6 +687,42 @@ Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (ad
 
 ---
 
+## Phase 4b — Extension Discovery (conditional)
+
+Skip this phase if no extension addons are present. If the project has addons with `MCPToolkit`-prefixed classes (GDScript extending `MCPToolkitExtension` or C# with `[Tool][GlobalClass]` on `RefCounted`), run these checks.
+
+### E1. extensions.list returns discovered commands
+Call any tool to confirm the bridge is connected, then check if extension groups appear in `enable_tool_group`'s description (standard profile) or if extension tools are directly available (power_user profile).
+- **Standard profile:** Verify `enable_tool_group` description lists the extension group name and its tools.
+- **Power user:** Verify extension tools are directly callable without `enable_tool_group`.
+- **Expect:** Extension commands appear with correct method names, descriptions, and annotations.
+
+### E2. Extension group lazy-load (standard profile only)
+Call `enable_tool_group` with the extension group name (e.g., `["scenestats"]`).
+- **Expect:** Returns `{ success: true, groups: { "<name>": { loaded: true, tools: [...] } } }`. The tools listed are now callable.
+
+### E3. Extension tool call
+Call one of the loaded extension tools with valid input.
+- **Expect:** Returns a valid result from the GDScript/C# handler. No bridge errors.
+
+### E4. Discovery re-entrancy (foundational check)
+This tests that `discoverExtensions` can run again without duplicating tools. Simulate by calling `extensions.list` directly via the bridge (if available) or by triggering a config reload that re-runs discovery.
+- **Expect:** Tool count remains the same. No duplicate tool names in `tools/list`. `enable_tool_group` description doesn't show duplicate entries.
+
+### E5. Extension with JSON Schema input validation
+If the extension declares an `input_schema` with typed properties, call the tool with:
+1. Valid input matching the schema — **Expect:** success.
+2. Missing a required field — **Expect:** SDK validation error (not a bridge crash).
+- **Note:** The server converts JSON Schema from extensions to Zod at registration time. This verifies the conversion works for string, boolean, number, and array types.
+
+### E6. Multiple extensions (if applicable)
+If multiple extension addons are present, verify:
+- Each extension's commands appear in the correct group.
+- Groups from different extensions don't collide.
+- Ungrouped extension tools are callable immediately (no `enable_tool_group` needed).
+
+---
+
 ## Phase 5 — Cleanup
 
 Remove ALL validation artifacts and restore project state. This section can be run standalone if a previous sweep failed.
@@ -778,6 +814,17 @@ Write `RESULTS.md` in the current directory with the following structure:
 | CS10.1-10.11 | Runtime full probe | runtime_*, game_eval, signal_emit | C# methods callable, GD.Print captured | | | CRITICAL — runtime parity |
 | CS11.1-11.3 | Editor ops with C# | editor_reload, errors, console | success, C# output visible | | | |
 | CS12.1-12.9 | Scene instantiation | scene_create, instantiate | .cs-scripted sub-scene works | | | |
+
+### Extension Discovery Results (if applicable)
+
+| # | Check | Expected | Actual | Result | Notes |
+|---|-------|----------|--------|--------|-------|
+| E1 | extensions.list discovery | commands appear | | | |
+| E2 | Group lazy-load | enable_tool_group loads group | | | standard only |
+| E3 | Extension tool call | valid result | | | |
+| E4 | Discovery re-entrancy | no duplicates | | | |
+| E5 | JSON Schema validation | valid passes, missing fails | | | |
+| E6 | Multiple extensions | groups don't collide | | | if applicable |
 
 ### Combo Chain Results
 
