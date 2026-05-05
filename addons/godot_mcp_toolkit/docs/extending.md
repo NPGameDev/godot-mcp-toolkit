@@ -95,6 +95,10 @@ public partial class MCPToolkitDialogueTools : RefCounted
   instantiated in editor — method calls return null)
 - `[GlobalClass]` attribute mandatory (makes the class visible to
   `ProjectSettings.get_global_class_list()`)
+- **File name must match class name** (e.g., `MCPToolkitMyTools.cs` for
+  class `MCPToolkitMyTools`) — Godot's source generators only emit
+  `[ScriptPath]` metadata when these match; mismatched names silently
+  fail to register in the global class list
 - `partial class` extending `RefCounted` (not `MCPToolkitExtension`)
 - Public `Register(GodotObject registry, Node server)` method
 - Handler methods accept and return `Godot.Collections.Dictionary`

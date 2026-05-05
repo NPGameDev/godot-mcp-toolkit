@@ -55,7 +55,9 @@ func _handler(params: Dictionary) -> Dictionary:
 
 ### C# extension template
 
-C# cannot extend GDScript classes. Use `RefCounted` directly with duck typing:
+C# cannot extend GDScript classes. Use `RefCounted` directly with duck typing.
+**Important:** The `.cs` file name must match the class name (e.g.,
+`MCPToolkitMyTools.cs` for class `MCPToolkitMyTools`).
 
 ```csharp
 using Godot;
