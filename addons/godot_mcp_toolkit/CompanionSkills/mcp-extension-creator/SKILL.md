@@ -10,19 +10,18 @@ GDScript examples unless the user explicitly asks for C#.
 ## Extension structure
 
 Extensions are distributable addons discovered via reflection. Each extension
-lives in its own `addons/<extension_name>/` directory with a script whose
-`class_name` starts with `MCPToolkit`.
+lives in its own `addons/<extension_name>/` directory.
 
 ### GDScript extension template
 
 ```
 addons/<extension_name>/
-└── <extension>.gd   # class_name MCPToolkit<Name> extends MCPToolkitExtension
+└── <extension>.gd   # class_name <AnyName> extends MCPToolkitExtension
 ```
 
 ```gdscript
 @tool
-class_name MCPToolkit<Name>
+class_name <YourClassName>
 extends MCPToolkitExtension
 
 func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
@@ -156,7 +155,7 @@ if res == null:
 ## GDScript requirements
 
 - `@tool` annotation mandatory (without it, `script.new()` fails in editor)
-- `class_name MCPToolkit<Name>` — must start with `MCPToolkit`
+- `class_name` can be anything — discovery is by base class, not by prefix
 - `extends MCPToolkitExtension`
 - `register()` signature must exactly match:
   `func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:`
@@ -183,12 +182,12 @@ C# extensions require extra steps compared to GDScript:
 
 1. Run `dotnet build` from the project root (or click Build in editor)
 2. This produces the assembly AND updates `global_script_class_cache.cfg`
-3. Restart the editor — the plugin discovers C# extensions from the cache
-   on startup
+3. Alt-tab to editor (triggers filesystem scan) or call `extensions.refresh`
 
-If the extension doesn't appear after build: verify file name matches class
-name, verify `[Tool]` and `[GlobalClass]` are present, and check that the
-class shows up in `.godot/global_script_class_cache.cfg`.
+No editor restart required — the hot-reload watcher detects the class change
+after rebuild. If the extension still doesn't appear: verify file name matches
+class name, verify `[Tool]` and `[GlobalClass]` are present, and check that
+the class shows up in `.godot/global_script_class_cache.cfg`.
 
 ## Tool groups and profiles
 
@@ -208,7 +207,7 @@ grouped to reduce tool list noise.
 
 ```
 addons/<your_extension>/
-├── <extension_script>.gd   # class_name MCPToolkit<Name>
+├── <extension_script>.gd   # class_name <YourName> extends MCPToolkitExtension
 └── README.md               # State godot-mcp-toolkit dependency
 ```
 
@@ -220,13 +219,15 @@ can optionally add `plugin.cfg`, but tool registration still goes through
 ### AssetLib submission checklist
 
 - State `godot-mcp-toolkit` as a required dependency
-- Use the `MCPToolkit` prefix for all class names
+- GDScript: use `extends MCPToolkitExtension` (any class name works)
+- C#: use `MCPToolkit` prefix for class names (discovery marker)
 - Test with the toolkit installed and without (parse error = expected)
 - Include usage examples in your README
 
 ## Naming rules
 
-- **Class names:** Must start with `MCPToolkit` (e.g., `MCPToolkitPhysicsTools`)
+- **GDScript class names:** Can be anything — discovery is by `extends MCPToolkitExtension` base class
+- **C# class names:** Must start with `MCPToolkit` (e.g., `MCPToolkitPhysicsTools`) — this is the discovery marker since C# cannot extend the GDScript base class
 - **Command names:** Must use `<namespace>.<action>` pattern (e.g., `physics.list_bodies`)
 - **Reserved namespaces** (rejected at load time): `scene.*`, `script.*`,
   `editor.*`, `node.*`, `runtime.*`, `server.*`, `resource.*`, `folder.*`,
@@ -234,13 +235,31 @@ can optionally add `plugin.cfg`, but tool registration still goes through
   `animation.*`, `tilemap.*`, `asset.*`, `save.*`, `meta.*`, `game.*`,
   `diff.*`, `extensions.*`
 
+## Hot-reload behavior
+
+Extensions are monitored at runtime. Changes are detected automatically:
+
+- **GDScript:** Save the file, alt-tab to editor (or call `extensions.refresh`).
+  Detection is immediate via `EditorFileSystem.filesystem_changed`.
+- **C#:** Run `dotnet build` first, then alt-tab or call `extensions.refresh`.
+  The global class list only updates after rebuild.
+- **Content changes:** Modifying an existing extension (adding/removing tools)
+  is detected. The watcher compares method lists and re-registers if changed.
+- **Programmatic scan:** Call the `extensions.refresh` MCP command to force
+  a filesystem scan without needing editor focus. Useful for headless/automated
+  workflows where files are created externally.
+- **Debounce:** Multiple rapid file changes produce at most one rescan (500ms window).
+
 ## Common pitfalls
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| Extension not discovered | Missing `@tool` (GDScript) or `[Tool]` (C#) | Add the annotation and restart editor |
+| Extension not discovered | Missing `@tool` (GDScript) or `[Tool]` (C#) | Add the annotation and save/rebuild |
+| GDScript extension not found | Not extending `MCPToolkitExtension` | Add `extends MCPToolkitExtension` |
 | C# extension not in class list | File name ≠ class name | Rename `.cs` file to match class name |
-| C# class missing after build | CLI `dotnet build` doesn't trigger editor scan | Build from editor OR `dotnet build` + restart editor |
+| C# class missing after build | `dotnet build` done but editor not scanned | Alt-tab to editor or call `extensions.refresh` |
 | "register() not overridden" warning | Wrong method signature | Use exact signature: `registry: MCPToolkitCommandRegistry, server: Node` |
 | Command rejected at load time | Using reserved namespace | Choose a custom namespace (e.g., `mytools.action`) |
 | Grouped tool not visible to LLM | Standard profile requires explicit load | User calls `enable_tool_group` or switch to Power User profile |
+| Hot-reload not detecting changes | Editor not focused after external edit | Alt-tab to editor or call `extensions.refresh` |
+| New tool not in Claude Code list | Client caches deferred tools | Run `/mcp` reconnect in Claude Code |

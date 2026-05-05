@@ -689,7 +689,7 @@ Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (ad
 
 ## Phase 4b — Extension Discovery (conditional)
 
-Skip this phase if no extension addons are present. If the project has addons with `MCPToolkit`-prefixed classes (GDScript extending `MCPToolkitExtension` or C# with `[Tool][GlobalClass]` on `RefCounted`), run these checks.
+Skip this phase if no extension addons are present. If the project has extension classes (GDScript extending `MCPToolkitExtension` — any class name; or C# with `MCPToolkit`-prefixed `[Tool][GlobalClass]` on `RefCounted`), run these checks.
 
 ### E1. extensions.list returns discovered commands
 Call any tool to confirm the bridge is connected, then check if extension groups appear in `enable_tool_group`'s description (standard profile) or if extension tools are directly available (power_user profile).
@@ -710,27 +710,39 @@ This tests that `discoverExtensions` can run again without duplicating tools. Si
 - **Expect:** Tool count remains the same. No duplicate tool names in `tools/list`. `enable_tool_group` description doesn't show duplicate entries.
 
 ### E4b. Live extension hot-reload (requires 41k-bis — skip if not implemented)
-Test that adding/removing extension scripts mid-session updates the tool list without reconnecting.
+Test that adding/removing/modifying extension scripts mid-session updates the tool list without reconnecting.
 
 **Add:**
-1. Create a new GDScript file with a `MCPToolkit`-prefixed `class_name` that extends `MCPToolkitExtension`, implementing `register()` with at least one `registry.add()` call.
-2. Save the file. Wait a few seconds for filesystem scan.
+1. Create a new GDScript file with any `class_name` that `extends MCPToolkitExtension`, implementing `register()` with at least one `registry.add()` call. No `MCPToolkit` prefix required for GDScript — discovery is by base class.
+2. Save the file. Alt-tab to the Godot editor (or call `extensions.refresh`) to trigger filesystem scan.
 3. Verify the new tool appears (power_user: directly callable; standard: in `enable_tool_group` description).
 4. Call the new tool — **Expect:** valid response from the handler.
 
+**Content change (modify existing extension):**
+1. Add a new tool to an already-loaded extension (add another `registry.add()` call).
+2. Save the file. Alt-tab to editor or call `extensions.refresh`.
+3. Verify the new tool appears alongside existing tools from the same extension.
+4. Verify existing tools from the extension still work.
+
 **Remove:**
 1. Delete or rename the extension script file (remove the class).
-2. Wait a few seconds for filesystem scan.
+2. Alt-tab to editor or call `extensions.refresh`.
 3. Verify the tool disappears from `tools/list`.
 4. Attempt to call the removed tool — **Expect:** error response (NOT a crash or hang).
 
 **No-op:**
-1. Save an unrelated file (not an extension).
-2. Verify no `notifications/tools/list_changed` fires (no spurious refresh).
+1. Call `extensions.refresh` when nothing has changed.
+2. Verify tool list is identical — no duplicates, no spurious `notifications/tools/list_changed`.
+
+**Programmatic refresh:**
+1. Create an extension file externally (e.g., from terminal or Claude Code).
+2. Without alt-tabbing to editor, call `extensions.refresh`.
+3. **Expect:** the new tool appears — `extensions.refresh` forces `scan_sources()` internally.
 
 **C# variant (if .NET project):**
-1. Same add/remove flow with a C# extension (`[Tool][GlobalClass]` on `RefCounted`).
-2. Note: C# requires `dotnet build` between add and discovery. The watcher may need to trigger or wait for a build.
+1. Same add/remove/modify flow with a C# extension (`[Tool][GlobalClass]` on `RefCounted`, class name must start with `MCPToolkit`).
+2. Note: C# requires `dotnet build` between file changes and discovery. After build, call `extensions.refresh` or alt-tab to editor.
+3. Verify content-change detection works after rebuild (add a tool, rebuild, refresh — new tool appears).
 
 ### E5. Extension with JSON Schema input validation
 If the extension declares an `input_schema` with typed properties, call the tool with:
@@ -854,9 +866,16 @@ Write `RESULTS.md` in the current directory with the following structure:
 | E1 | extensions.list discovery | commands appear | | | |
 | E2 | Group lazy-load | enable_tool_group loads group | | | standard only |
 | E3 | Extension tool call | valid result | | | |
-| E4 | Discovery re-entrancy | no duplicates | | | |
+| E4a | Discovery re-entrancy | no duplicates | | | |
+| E4b-add | Hot-reload: add extension | tool appears mid-session | | | |
+| E4b-modify | Hot-reload: content change | new tool appears, old works | | | |
+| E4b-remove | Hot-reload: delete extension | tool disappears, error on call | | | |
+| E4b-noop | Hot-reload: no-op refresh | no duplicates, no spurious notify | | | |
+| E4b-refresh | Hot-reload: programmatic refresh | extensions.refresh forces scan | | | |
+| E4b-csharp | Hot-reload: C# add/modify/remove | works after dotnet build+refresh | | | .NET only |
 | E5 | JSON Schema validation | valid passes, missing fails | | | |
 | E6 | Multiple extensions | groups don't collide | | | if applicable |
+| E7 | Deletion while loaded | bridge error, not crash | | | |
 
 ### Combo Chain Results
 
