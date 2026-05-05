@@ -153,6 +153,57 @@ if res == null:
     return {"success": false, "error": "Resource not found", "code": "NOT_FOUND"}
 ```
 
+## GDScript requirements
+
+- `@tool` annotation mandatory (without it, `script.new()` fails in editor)
+- `class_name MCPToolkit<Name>` — must start with `MCPToolkit`
+- `extends MCPToolkitExtension`
+- `register()` signature must exactly match:
+  `func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:`
+- File name does NOT need to match class name (unlike C#)
+
+## C# requirements
+
+- `[Tool]` attribute mandatory (without it, .NET object is not instantiated
+  in editor — method calls return null)
+- `[GlobalClass]` attribute mandatory (makes class visible to
+  `ProjectSettings.get_global_class_list()`)
+- **File name must match class name** — e.g., `MCPToolkitMyTools.cs` for
+  class `MCPToolkitMyTools`. Godot's source generators only emit script
+  metadata when these match; mismatched names silently fail to register
+- `partial class` extending `RefCounted` (not `MCPToolkitExtension`)
+- Public `Register(GodotObject registry, Node server)` method
+- Handler methods accept and return `Godot.Collections.Dictionary`
+- Callables: use `Callable.From<Dictionary, Dictionary>(Method)` or
+  `new Callable(this, MethodName.Method)`
+
+### C# discovery workflow
+
+C# extensions require extra steps compared to GDScript:
+
+1. Run `dotnet build` from the project root (or click Build in editor)
+2. This produces the assembly AND updates `global_script_class_cache.cfg`
+3. Restart the editor — the plugin discovers C# extensions from the cache
+   on startup
+
+If the extension doesn't appear after build: verify file name matches class
+name, verify `[Tool]` and `[GlobalClass]` are present, and check that the
+class shows up in `.godot/global_script_class_cache.cfg`.
+
+## Tool groups and profiles
+
+Commands with a `group` key are lazily loaded — they only become visible
+to the LLM after `enable_tool_group` is called. Commands without `group`
+are always visible from startup.
+
+**Profile behavior:**
+- **Standard profile:** grouped tools require `enable_tool_group` call
+- **Power User profile:** all tools (including grouped) are eagerly loaded
+
+Choose whether to use a group based on how specialized the tool is. General
+purpose tools should be ungrouped (always available). Niche tools should be
+grouped to reduce tool list noise.
+
 ## Distributable addon layout
 
 ```
@@ -182,3 +233,14 @@ can optionally add `plugin.cfg`, but tool registration still goes through
   `file.*`, `signal.*`, `playtest.*`, `project.*`, `input_map.*`,
   `animation.*`, `tilemap.*`, `asset.*`, `save.*`, `meta.*`, `game.*`,
   `diff.*`, `extensions.*`
+
+## Common pitfalls
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Extension not discovered | Missing `@tool` (GDScript) or `[Tool]` (C#) | Add the annotation and restart editor |
+| C# extension not in class list | File name ≠ class name | Rename `.cs` file to match class name |
+| C# class missing after build | CLI `dotnet build` doesn't trigger editor scan | Build from editor OR `dotnet build` + restart editor |
+| "register() not overridden" warning | Wrong method signature | Use exact signature: `registry: MCPToolkitCommandRegistry, server: Node` |
+| Command rejected at load time | Using reserved namespace | Choose a custom namespace (e.g., `mytools.action`) |
+| Grouped tool not visible to LLM | Standard profile requires explicit load | User calls `enable_tool_group` or switch to Power User profile |
