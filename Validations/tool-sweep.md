@@ -705,9 +705,32 @@ Call `enable_tool_group` with the extension group name (e.g., `["scenestats"]`).
 Call one of the loaded extension tools with valid input.
 - **Expect:** Returns a valid result from the GDScript/C# handler. No bridge errors.
 
-### E4. Discovery re-entrancy (foundational check)
+### E4a. Discovery re-entrancy (foundational check)
 This tests that `discoverExtensions` can run again without duplicating tools. Simulate by calling `extensions.list` directly via the bridge (if available) or by triggering a config reload that re-runs discovery.
 - **Expect:** Tool count remains the same. No duplicate tool names in `tools/list`. `enable_tool_group` description doesn't show duplicate entries.
+
+### E4b. Live extension hot-reload (requires 41k-bis — skip if not implemented)
+Test that adding/removing extension scripts mid-session updates the tool list without reconnecting.
+
+**Add:**
+1. Create a new GDScript file with a `MCPToolkit`-prefixed `class_name` that extends `MCPToolkitExtension`, implementing `register()` with at least one `registry.add()` call.
+2. Save the file. Wait a few seconds for filesystem scan.
+3. Verify the new tool appears (power_user: directly callable; standard: in `enable_tool_group` description).
+4. Call the new tool — **Expect:** valid response from the handler.
+
+**Remove:**
+1. Delete or rename the extension script file (remove the class).
+2. Wait a few seconds for filesystem scan.
+3. Verify the tool disappears from `tools/list`.
+4. Attempt to call the removed tool — **Expect:** error response (NOT a crash or hang).
+
+**No-op:**
+1. Save an unrelated file (not an extension).
+2. Verify no `notifications/tools/list_changed` fires (no spurious refresh).
+
+**C# variant (if .NET project):**
+1. Same add/remove flow with a C# extension (`[Tool][GlobalClass]` on `RefCounted`).
+2. Note: C# requires `dotnet build` between add and discovery. The watcher may need to trigger or wait for a build.
 
 ### E5. Extension with JSON Schema input validation
 If the extension declares an `input_schema` with typed properties, call the tool with:
@@ -720,6 +743,15 @@ If multiple extension addons are present, verify:
 - Each extension's commands appear in the correct group.
 - Groups from different extensions don't collide.
 - Ungrouped extension tools are callable immediately (no `enable_tool_group` needed).
+
+### E7. Extension deletion while tool is loaded (requires 41k-bis)
+Tests graceful handling when a loaded extension's script is deleted mid-session.
+1. Load an extension group (or have it eagerly loaded on power_user).
+2. Confirm the tool works (call it once).
+3. Delete the extension script file.
+4. Call the tool again — **Expect:** bridge error (handler no longer exists), NOT a server crash. The error message should indicate the extension is unavailable.
+5. Verify the tool is removed from `tools/list` after the next filesystem scan.
+- **C# note:** Deletion of a .cs file may not immediately remove the class from `get_global_class_list()` until `dotnet build` re-runs. The tool may remain callable (returning stale results from the compiled DLL) until rebuild.
 
 ---
 
