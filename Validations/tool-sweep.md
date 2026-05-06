@@ -124,7 +124,7 @@ void fragment() {
 **15.** `script_read` — file_path=`res://mcp_validation/val_actor.gd`
 - **Expect:** Full script content matching what was written
 
-**16.** `script_read_range` — file_path=`res://mcp_validation/val_actor.gd`, start_line=1, end_line=3
+**16.** `script_read` (range) — file_path=`res://mcp_validation/val_actor.gd`, start_line=1, end_line=3
 - **Expect:** First 3 lines only (`extends CharacterBody2D`, empty line, `class_name McpValActor`)
 
 **17.** `script_check` — file_path=`res://mcp_validation/val_actor.gd`
@@ -262,7 +262,7 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 **56.** `editor_screenshot`
 - **Expect:** Returns inline PNG image
 
-**57.** First assign the imported SVG as a texture: `node_set_property` — node_path=`ValSprite`, property=`texture`, value=`{"type":"Resource","path":"res://mcp_validation/val_icon.svg"}`. Then `editor_screenshot_node` — node_path=`ValSprite`
+**57.** First assign the imported SVG as a texture: `node_set_property` — node_path=`ValSprite`, property=`texture`, value=`{"type":"Resource","path":"res://mcp_validation/val_icon.svg"}`. Then `editor_screenshot` (node) — node_path=`ValSprite`
 - **Expect:** Returns inline PNG image focused on ValSprite (now has visible texture content). Without a texture, Sprite2D returns EMPTY_CONTENT.
 
 **58.** `editor_get_errors`

@@ -14,8 +14,6 @@ const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("script.read", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_script_read(parameters))
-	registry.add("script.read_range", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_read_range(parameters))
 	registry.add("script.write", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_script_write(server, parameters))
 	registry.add("script.delete", func(parameters: Dictionary) -> Dictionary:
@@ -42,59 +40,46 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 	if open_error != OK:
 		return MCPError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [open_error, file_path])
+
+	# Range read: if start_line is present, return a line slice.
+	if parameters.has("start_line"):
+		var start_line := int(parameters.get("start_line", 0))
+		var end_line := int(parameters.get("end_line", start_line))
+		if start_line < 1:
+			return MCPError.make("INVALID_PARAMS",
+				"start_line must be >= 1 (got %d)" % start_line)
+		if end_line < start_line:
+			return MCPError.make("INVALID_PARAMS",
+				"end_line must be >= start_line (got %d < %d)" % [end_line, start_line])
+		var lines := content.split("\n")
+		var total_lines := lines.size()
+		var clamped_start := mini(start_line, total_lines)
+		var clamped_end := mini(end_line, total_lines)
+		var slice := lines.slice(clamped_start - 1, clamped_end)
+		var result_text := "\n".join(slice)
+		var result_bytes := result_text.to_utf8_buffer().size()
+		var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/script_read_cap_kb", 256)
+		if result_bytes > cap_kb * 1024:
+			return MCPError.make("FILE_TOO_LARGE",
+				"slice exceeds %d KB response cap; narrow the line range" % cap_kb)
+		return {
+			"content": MCPUntrusted.wrap("script", file_path, result_text),
+			"start_line": clamped_start,
+			"end_line": clamped_end,
+			"total_lines": total_lines,
+		}
+
+	# Full read with size cap.
 	var content_bytes := content.to_utf8_buffer().size()
 	var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/script_read_cap_kb", 256)
 	if content_bytes > cap_kb * 1024:
 		var size_err := MCPError.make("FILE_TOO_LARGE",
 			"file exceeds %d KB response cap" % cap_kb)
 		size_err["total_bytes"] = content_bytes
-		size_err["hint"] = "use script_read_range(path, start_line, end_line)"
+		size_err["hint"] = "re-call script_read with start_line / end_line"
 		return size_err
 	return {"content": MCPUntrusted.wrap("script", file_path, content)}
 
-
-static func _cmd_script_read_range(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
-	if err != null:
-		return err
-	var file_path := str(parameters.get("file_path", ""))
-	var guard := MCPFileGuard.resolve_safe(file_path)
-	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
-	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path, MCPError.HINT_FILE_PATH)
-	if not parameters.has("start_line") or not parameters.has("end_line"):
-		return MCPError.make("INVALID_PARAMS", "start_line and end_line are required")
-	var start_line := int(parameters.get("start_line", 0))
-	var end_line := int(parameters.get("end_line", 0))
-	if start_line < 1:
-		return MCPError.make("INVALID_PARAMS",
-			"start_line must be >= 1 (got %d)" % start_line)
-	if end_line < start_line:
-		return MCPError.make("INVALID_PARAMS",
-			"end_line must be >= start_line (got %d < %d)" % [end_line, start_line])
-	var content := FileAccess.get_file_as_string(file_path)
-	var read_error := FileAccess.get_open_error()
-	if read_error != OK:
-		return MCPError.make("READ_FAILED",
-			"FileAccess error %d reading %s" % [read_error, file_path])
-	var lines := content.split("\n")
-	var total_lines := lines.size()
-	var clamped_start := mini(start_line, total_lines)
-	var clamped_end := mini(end_line, total_lines)
-	var slice := lines.slice(clamped_start - 1, clamped_end)
-	var result_text := "\n".join(slice)
-	var result_bytes := result_text.to_utf8_buffer().size()
-	var range_cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/script_read_cap_kb", 256)
-	if result_bytes > range_cap_kb * 1024:
-		return MCPError.make("FILE_TOO_LARGE",
-			"slice exceeds %d KB response cap; narrow the line range" % range_cap_kb)
-	return {
-		"content": MCPUntrusted.wrap("script", file_path, result_text),
-		"start_line": clamped_start,
-		"end_line": clamped_end,
-		"total_lines": total_lines,
-	}
 
 
 static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionary:

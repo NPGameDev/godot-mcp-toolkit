@@ -18,11 +18,9 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("editor.save_scene", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_save_scene(parameters))
 	registry.add("editor.screenshot", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_screenshot(parameters))
+		return await _cmd_editor_screenshot(parameters))
 	registry.add("editor.reload_scripts", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_reload_scripts(parameters))
-	registry.add("editor.screenshot_node", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_editor_screenshot_node(parameters))
 	registry.add("editor.get_console", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_get_console(server, parameters))
 	registry.add("editor.wait_for_idle", func(parameters: Dictionary) -> Dictionary:
@@ -92,8 +90,73 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 	if _Hub.is_headless():
 		return MCPError.make("HEADLESS_UNSUPPORTED",
 			"editor.screenshot requires a display server (no viewport in headless mode)")
-	var save_path := str(parameters.get("save_path", ""))
 
+	var node_path := str(parameters.get("node_path", ""))
+
+	# Node-focused screenshot: select + capture a specific node, then restore.
+	if not node_path.is_empty():
+		var size_dict: Dictionary = parameters.get("size", {}) if typeof(parameters.get("size", {})) == TYPE_DICTIONARY else {}
+		var width := int(size_dict.get("width", 1280))
+		var height := int(size_dict.get("height", 720))
+		if width < MIN_SCREENSHOT_SIZE or width > MAX_SCREENSHOT_SIZE \
+				or height < MIN_SCREENSHOT_SIZE or height > MAX_SCREENSHOT_SIZE:
+			return MCPError.make("INVALID_PARAMS",
+				"size.width and size.height must be in [64, 4096] (got %dx%d)" % [width, height])
+		var root := MCPHelpers.get_edited_root()
+		if root == null:
+			return MCPError.make("NO_SCENE", "no edited scene")
+		var node: Variant = null
+		if node_path == ".":
+			node = root
+		else:
+			node = root.get_node_or_null(node_path)
+		if node == null:
+			return MCPError.make("NOT_FOUND", "no node at %s" % node_path, MCPError.HINT_NODE_PATH)
+
+		var selection := EditorInterface.get_selection()
+		var prior_selection: Array = []
+		if selection != null:
+			for selected_node in selection.get_selected_nodes():
+				prior_selection.append(selected_node)
+			selection.clear()
+			selection.add_node(node)
+		EditorInterface.edit_node(node)
+		await RenderingServer.frame_post_draw
+
+		var viewport: SubViewport = null
+		if node is Node3D:
+			viewport = EditorInterface.get_editor_viewport_3d(0)
+		if viewport == null:
+			viewport = EditorInterface.get_editor_viewport_2d()
+		if viewport == null:
+			return MCPError.make("INTERNAL", "no editor viewport available")
+		var image := viewport.get_texture().get_image()
+		if image == null:
+			return MCPError.make("INTERNAL",
+				"viewport texture unavailable (nothing rendered yet?)")
+		if image.get_width() != width or image.get_height() != height:
+			image.resize(width, height, Image.INTERPOLATE_LANCZOS)
+
+		if selection != null:
+			selection.clear()
+			for selected_node in prior_selection:
+				if is_instance_valid(selected_node):
+					selection.add_node(selected_node)
+		var png_bytes := image.save_png_to_buffer()
+		if png_bytes.is_empty():
+			return MCPError.make("EMPTY_CONTENT",
+				"node '%s' produced no visible image. Node may lack visual content (no texture, no mesh). Use editor_screenshot without node_path for a full viewport capture instead." % node_path)
+		return {
+			"image_base64": Marshalls.raw_to_base64(png_bytes),
+			"mime_type": "image/png",
+			"width": image.get_width(),
+			"height": image.get_height(),
+			"bytes": png_bytes.size(),
+			"path": node_path,
+		}
+
+	# Standard viewport screenshot.
+	var save_path := str(parameters.get("save_path", ""))
 	var viewport: SubViewport = EditorInterface.get_editor_viewport_2d()
 	if viewport == null:
 		viewport = EditorInterface.get_editor_viewport_3d(0)
@@ -192,73 +255,6 @@ static func _cmd_editor_reload_scripts(parameters: Dictionary) -> Dictionary:
 	return {"success": true, "mode": "full", "reloaded": reloaded,
 		"scan_waited_ms": scan_waited_ms, "errors_cleared": errors_cleared}
 
-
-static func _cmd_editor_screenshot_node(parameters: Dictionary) -> Dictionary:
-	if _Hub.is_headless():
-		return MCPError.make("HEADLESS_UNSUPPORTED",
-			"editor.screenshot_node requires a display server (no viewport in headless mode)")
-	var node_path := str(parameters.get("node_path", ""))
-	if node_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing node_path")
-	var size_dict: Dictionary = parameters.get("size", {}) if typeof(parameters.get("size", {})) == TYPE_DICTIONARY else {}
-	var width := int(size_dict.get("width", 1280))
-	var height := int(size_dict.get("height", 720))
-	if width < MIN_SCREENSHOT_SIZE or width > MAX_SCREENSHOT_SIZE \
-			or height < MIN_SCREENSHOT_SIZE or height > MAX_SCREENSHOT_SIZE:
-		return MCPError.make("INVALID_PARAMS",
-			"size.width and size.height must be in [64, 4096] (got %dx%d)" % [width, height])
-	var root := MCPHelpers.get_edited_root()
-	if root == null:
-		return MCPError.make("NO_SCENE", "no edited scene")
-	var node: Variant = null
-	if node_path.is_empty() or node_path == ".":
-		node = root
-	else:
-		node = root.get_node_or_null(node_path)
-	if node == null:
-		return MCPError.make("NOT_FOUND", "no node at %s" % node_path, MCPError.HINT_NODE_PATH)
-
-	var selection := EditorInterface.get_selection()
-	var prior_selection: Array = []
-	if selection != null:
-		for selected_node in selection.get_selected_nodes():
-			prior_selection.append(selected_node)
-		selection.clear()
-		selection.add_node(node)
-	EditorInterface.edit_node(node)
-	await RenderingServer.frame_post_draw
-
-	var viewport: SubViewport = null
-	if node is Node3D:
-		viewport = EditorInterface.get_editor_viewport_3d(0)
-	if viewport == null:
-		viewport = EditorInterface.get_editor_viewport_2d()
-	if viewport == null:
-		return MCPError.make("INTERNAL", "no editor viewport available")
-	var image := viewport.get_texture().get_image()
-	if image == null:
-		return MCPError.make("INTERNAL",
-			"viewport texture unavailable (nothing rendered yet?)")
-	if image.get_width() != width or image.get_height() != height:
-		image.resize(width, height, Image.INTERPOLATE_LANCZOS)
-
-	if selection != null:
-		selection.clear()
-		for selected_node in prior_selection:
-			if is_instance_valid(selected_node):
-				selection.add_node(selected_node)
-	var png_bytes := image.save_png_to_buffer()
-	if png_bytes.is_empty():
-		return MCPError.make("EMPTY_CONTENT",
-			"node '%s' produced no visible image. Node may lack visual content (no texture, no mesh). Use editor_screenshot for a full viewport capture instead." % node_path)
-	return {
-		"image_base64": Marshalls.raw_to_base64(png_bytes),
-		"mime_type": "image/png",
-		"width": image.get_width(),
-		"height": image.get_height(),
-		"bytes": png_bytes.size(),
-		"path": node_path,
-	}
 
 
 static func _cmd_editor_get_console(server: Node, parameters: Dictionary) -> Dictionary:

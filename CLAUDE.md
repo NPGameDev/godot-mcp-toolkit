@@ -58,9 +58,9 @@ Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
 
 | Profile      | Visible tools |
 |--------------|--------------|
-| **standard** (default) | 34 core + `enable_tool_group` meta-tool + 3 locked stubs |
-| **minimal** | 13 read-only (code-review mode) |
-| **full** (Power User) | All 59 tools at startup |
+| **standard** (default) | 26 (23 core + 3 gated stubs) + `enable_tool_group` + `extensions_refresh` = 28 in `tools/list`. 8 groups (32 tools) on demand. |
+| **minimal** | 12 read-only (code-review mode) |
+| **full** (Power User) | All 58 tools at startup |
 | **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
 
 `--lite` → `minimal` with deprecation warning. `GODOT_MCP_READ_ONLY=1`
@@ -74,34 +74,23 @@ strips mutating tools from any profile.
 | `scene_create_node`     | Create node under `parent`. Idempotent. |
 | `scene_delete_node`     | Delete node at `path`. UndoRedo-based; refuses the root.  |
 | `scene_create`          | Create `.tscn` file. Idempotent; `if_exists: return\|fail\|replace`. |
-| `scene_instantiate`     | Drop `PackedScene` under a parent. UndoRedo-wrapped. Idempotent. |
 | `scene_open`            | Open a scene in the editor. |
-| `scene_diff`            | Compare current edited scene tree against on-disk version. |
 | `node_get_property`     | Read a property. Engine types dict-wrapped. |
 | `node_set_property`     | Write a property. Engine types as `{ type, ... }`. |
 | `node_get_property_list` | List properties. `mask`: "common" (default, curated), "all", or "groups". |
 | `node_set_script`       | Attach/detach script. Returns `@export` properties. |
-| `script_read`           | Read a GDScript / text file (`res://` only). |
+| `script_read`           | Read a GDScript / text file (`res://` only). Optional `start_line`/`end_line` for partial reads. |
 | `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc`. Overwrites. |
-| `script_read_range`     | Read lines N–M of a script file. |
-| `script_delete`         | Delete `.gd`/`.cs`/`.gdshader`/`.gdshaderinc` (+ `.uid`). |
 | `script_check`          | Validate GDScript file. Returns structured diagnostics (errors/warnings with line numbers). Read-only. |
 | `editor_get_errors`     | Editor-time error tail. Summary-first response. |
 | `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as. |
-| `editor_screenshot`     | Capture the editor viewport; inline image content. |
-| `editor_screenshot_node` | Focus + capture a specific node. Inline base64 PNG. |
-| `editor_reload_scripts` | Force GDScript re-parse. |
+| `editor_screenshot`     | Capture the editor viewport; inline image. Optional `node_path` for node-focused capture. |
 | `editor_get_console`    | Tail editor Output panel. `level_filter`, `since_id`. |
-| `editor_wait_for_idle`  | Poll until `EditorFileSystem` idle or timeout. |
 | `project_get_settings`  | Read ProjectSettings. |
 | `game_start`            | Drive editor play button. `target: "main"\|"current"\|res://*.tscn`. |
 | `game_stop`             | Stop the running scene. Idempotent. |
-| `resource_load`         | Load a `.tres`/`.res` and return its properties. |
-| `resource_write`        | Upsert `.tres`/`.res`. Creates if missing (requires `type`), updates otherwise. |
 | `folder_create`         | Create `res://` directory. Idempotent. |
-| `folder_delete`         | Delete directory. Refuses protected paths. |
 | `asset_list`            | Enumerate `res://` assets with filters. |
-| `tilemap_set_cells`     | Batch-paint TileMap. Single UndoRedo action. |
 | `classdb_get_info`      | Inspect any Godot class: properties, methods, signals, constants, inheritance. Engine + user `class_name`. |
 | `classdb_search`        | Find Godot classes by inheritance and/or name pattern. Returns class list with parent + instantiability. |
 
@@ -109,12 +98,14 @@ strips mutating tools from any profile.
 
 | Group                 | Tools |
 |-----------------------|-------|
-| `runtime`             | `runtime_screenshot`, `runtime_get_node_state`, `debugger_get_log`, `input_simulate`, `animation_player_control` |
+| `runtime`             | `runtime_screenshot`, `runtime_get_node_state`, `runtime_get_script_vars`, `debugger_get_log`, `input_simulate`, `animation_player_control` |
 | `signals`             | `signal_list`, `signal_manage` (connect/disconnect), `signal_emit` |
 | `animation_authoring` | `animation_keyframe` (add/remove), `animation_get_keys` |
 | `input_map` (gated)   | `input_map_action` (add/remove), `input_map_event` (bind/unbind) |
-| `asset_management`    | `asset_get_dependencies`, `asset_import`, `resource_delete`, `file_delete`, `scene_delete`, `scene_close` |
+| `asset_management`    | `asset_get_dependencies`, `asset_import`, `resource_delete`, `file_delete`, `scene_delete`, `scene_close`, `resource_load`, `resource_write`, `script_delete`, `folder_delete` |
 | `user_data` (gated)   | `save_read`, `save_write`, `save_delete`, `save_list` |
+| `scene_advanced`      | `scene_diff`, `scene_instantiate`, `tilemap_set_cells` |
+| `editor_advanced`     | `editor_reload_scripts`, `editor_wait_for_idle` |
 
 ### Gated tools (locked stubs when disabled)
 
@@ -299,7 +290,7 @@ To enable the `save.*` tools:
 
 **Profile system (iter 22):**
 - `--lite` deprecated → `GODOT_MCP_PROFILE=minimal`
-- Default profile changed from "full" to "standard" (31 core tools + groups on demand)
+- Default profile changed from "full" to "standard" (26 tools + groups on demand)
 
 **Gate changes (iter 19):**
 - `node_call_method` — now requires `node_call_method` gate.

@@ -182,9 +182,8 @@ that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
 
 | Tool | Headless | Notes |
 |------|----------|-------|
-| `script_read` | ✅ | |
+| `script_read` | ✅ | Merged: accepts optional `start_line`/`end_line` for partial reads |
 | `script_write` | ✅ | |
-| `script_read_range` | ✅ | |
 | `script_delete` | ✅ | |
 | `script_check` | ✅ | |
 | `folder_create` | ✅ | |
@@ -233,8 +232,7 @@ that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
 | `editor_wait_for_idle` | ✅ | |
 | `game_start` | ✅ | Game process launches; no display |
 | `game_stop` | ✅ | |
-| `editor_screenshot` | ❌ | Returns `HEADLESS_UNSUPPORTED` |
-| `editor_screenshot_node` | ❌ | Returns `HEADLESS_UNSUPPORTED` |
+| `editor_screenshot` | ❌ | Returns `HEADLESS_UNSUPPORTED`. Merged: accepts optional `node_path` for node-focused capture. |
 | `runtime_screenshot` | ❌ | Requires display in game process |
 | `runtime_get_node_state` | ⚠️ | Requires game with runtime server |
 | `debugger_get_log` | ⚠️ | Requires game with runtime server |
