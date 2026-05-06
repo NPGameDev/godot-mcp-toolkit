@@ -127,6 +127,16 @@ Security is a first-class design goal — not an afterthought.
 
 > **Disclaimer:** We take security seriously and design every layer with defense-in-depth, but no software is immune to misuse or unforeseen vulnerabilities. This project is provided under the [MIT License](LICENSE) with no warranty. You are responsible for evaluating whether it meets your security requirements before use.
 
+## Known limitations
+
+### `claude -p` (pipe mode) does not support dynamic tool loading
+
+**Affected:** Standard profile's `enable_tool_group` lazy-loading (Claude Code 2.1.104, confirmed 2026-05-06).
+
+When Claude Code runs in pipe mode (`claude -p "..."`), it does not process `tools/list_changed` MCP notifications. Tools loaded dynamically via `enable_tool_group` are registered server-side but remain invisible to the agent — both direct calls and ToolSearch fail.
+
+**Workaround:** Use the Power User profile (`GODOT_MCP_PROFILE=full`) for `claude -p` workflows. This loads all tools eagerly at startup, bypassing the need for `tools/list_changed`. Interactive `claude` sessions handle dynamic loading correctly.
+
 ## Tools
 
 55+ tools across 13 domains. See the [server README](https://github.com/NPGameDev/godot-mcp-server#tool-reference) for the complete reference.

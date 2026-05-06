@@ -203,6 +203,24 @@ Choose whether to use a group based on how specialized the tool is. General
 purpose tools should be ungrouped (always available). Niche tools should be
 grouped to reduce tool list noise.
 
+**Batch group loading:** When you need tools from multiple groups, load them
+in a single `enable_tool_group` call rather than one call per group:
+
+```
+# Efficient — 1 call, 1 tools/list_changed notification
+enable_tool_group(groups: ["runtime", "input_map", "scene_advanced"])
+
+# Wasteful — 3 calls, up to 3 notifications
+enable_tool_group(groups: ["runtime"])
+enable_tool_group(groups: ["input_map"])
+enable_tool_group(groups: ["scene_advanced"])
+```
+
+Each `tools/list_changed` notification forces the LLM to re-fetch and
+re-process the full tool list. Batching reduces this overhead to a single
+refresh. If you know which groups you'll need up front, load them all at
+once before starting work.
+
 ## Distributable addon layout
 
 ```
@@ -263,3 +281,4 @@ Extensions are monitored at runtime. Changes are detected automatically:
 | Grouped tool not visible to LLM | Standard profile requires explicit load | User calls `enable_tool_group` or switch to Power User profile |
 | Hot-reload not detecting changes | Editor not focused after external edit | Alt-tab to editor or call `extensions.refresh` |
 | New tool not in Claude Code list | Client caches deferred tools | Run `/mcp` reconnect in Claude Code |
+| Grouped tool uncallable after `enable_tool_group` | `claude -p` (pipe mode) does not process `tools/list_changed` | Use interactive `claude` or Power User profile (`GODOT_MCP_PROFILE=full`) |
