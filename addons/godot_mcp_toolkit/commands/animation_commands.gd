@@ -5,12 +5,11 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPHelpers = _Hub.MCPHelpers
 
 
-static func register(registry: MCPCommandRegistry, server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("animation.keyframe", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_animation_keyframe(server, parameters))
 	registry.add("animation.get_keys", func(parameters: Dictionary) -> Dictionary:

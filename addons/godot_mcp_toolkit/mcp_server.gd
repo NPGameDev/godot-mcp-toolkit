@@ -4,14 +4,13 @@ extends Node
 ##
 ## All command logic lives in per-domain modules under commands/.
 ## This file handles: TCP listener, WS peer accept/poll, JSON-RPC parse,
-## and dispatch via MCPCommandRegistry.
+## and dispatch via MCPToolkitCommandRegistry.
 
 signal client_connected(peer_count: int)
 signal client_disconnected(peer_count: int)
 signal command_received(method: String)
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPRegistryClient = _Hub.MCPRegistryClient
 const _MCPStateFile = _Hub.MCPStateFile
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
@@ -48,7 +47,7 @@ var _poll_frame_counter := 0
 # Captured at start() so editor.get_console's log-file selection heuristic
 # can prefer post-boot logs over stale rotated ones.
 var _plugin_boot_time: int = 0
-var _registry: MCPCommandRegistry = null
+var _registry: MCPToolkitCommandRegistry = null
 var _session_token: String = ""
 var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers only)
 var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
@@ -64,7 +63,7 @@ const _ACTIVE_UNFOCUSED_SLEEP_USEC := 16666  # ~= 60 fps while MCP clients conne
 var undo_helpers: Node = null
 
 
-func set_registry(registry: MCPCommandRegistry) -> void:
+func set_registry(registry: MCPToolkitCommandRegistry) -> void:
 	_registry = registry
 
 

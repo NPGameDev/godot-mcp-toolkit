@@ -5,11 +5,10 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPHelpers = _Hub.MCPHelpers
 
 
-static func register(registry: MCPCommandRegistry, _server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("signal.list", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_signal_list(parameters))
 	registry.add("signal.manage", func(parameters: Dictionary) -> Dictionary:

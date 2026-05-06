@@ -4,7 +4,6 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPScrubber = _Hub.MCPScrubber
@@ -13,7 +12,7 @@ const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
 
 
-static func register(registry: MCPCommandRegistry, server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("editor.get_errors", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_get_errors(server, parameters))
 	registry.add("editor.save_scene", func(parameters: Dictionary) -> Dictionary:

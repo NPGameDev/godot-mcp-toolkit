@@ -4,7 +4,6 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPRegistryClient = _Hub.MCPRegistryClient
 const MCPHelpers = _Hub.MCPHelpers
@@ -15,7 +14,7 @@ const RUNTIME_POLL_TIMEOUT_MS := 5000
 const _REGISTRY_POLL_INTERVAL_MS := 100
 
 
-static func register(registry: MCPCommandRegistry, _server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("game.start", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_game_start(parameters))
 	registry.add("game.stop", func(parameters: Dictionary) -> Dictionary:

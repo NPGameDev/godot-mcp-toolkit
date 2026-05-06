@@ -4,7 +4,6 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPHelpers = _Hub.MCPHelpers
 
@@ -26,7 +25,7 @@ const IMPORT_MAX_FILE_BYTES := 50 * 1024 * 1024
 const IMPORT_MAX_BASE64_BYTES := 5 * 1024 * 1024
 
 
-static func register(registry: MCPCommandRegistry, _server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("asset.list", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_asset_list(parameters))
 	registry.add("asset.get_dependencies", func(parameters: Dictionary) -> Dictionary:

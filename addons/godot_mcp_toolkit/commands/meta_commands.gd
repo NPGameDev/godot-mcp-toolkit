@@ -2,11 +2,8 @@
 extends RefCounted
 ## meta.* transport-level commands — server-side limit overrides.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
-
-static func register(registry: MCPCommandRegistry) -> void:
+static func register(registry: MCPToolkitCommandRegistry) -> void:
 	registry.add("meta.set_limits", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_set_limits(parameters))
 

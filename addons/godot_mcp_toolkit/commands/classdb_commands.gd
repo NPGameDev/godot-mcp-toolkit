@@ -4,14 +4,13 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 
 const _VALID_SECTIONS: Array[String] = ["properties", "methods", "signals", "constants"]
 const _MAX_ENTRIES_PER_SECTION := 200
 const _MAX_SEARCH_RESULTS := 200
 
 
-static func register(registry: MCPCommandRegistry, _server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("classdb.get_info", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_classdb_get_info(parameters))
 	registry.add("classdb.search", func(parameters: Dictionary) -> Dictionary:

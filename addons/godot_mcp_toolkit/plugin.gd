@@ -2,7 +2,6 @@
 extends EditorPlugin
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPRegistryClient = _Hub.MCPRegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
@@ -75,7 +74,7 @@ func _enter_tree() -> void:
 	_feature_settings.bind_events(_events)
 	_feature_settings.register_all()
 
-	var registry := MCPCommandRegistry.new()
+	var registry := MCPToolkitCommandRegistry.new()
 	_server = MCPServer.new()
 	_server.name = "MCPServer"
 	_server.set_registry(registry)

@@ -5,14 +5,13 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPFeatureGate = _Hub.MCPFeatureGate
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 
 
-static func register(registry: MCPCommandRegistry, _server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("project.get_settings", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_project_get_settings(parameters))
 	registry.add("project.set_setting", func(parameters: Dictionary) -> Dictionary:

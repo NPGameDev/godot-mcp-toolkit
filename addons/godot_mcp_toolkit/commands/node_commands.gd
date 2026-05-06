@@ -5,7 +5,6 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPFeatureGate = _Hub.MCPFeatureGate
 const MCPHelpers = _Hub.MCPHelpers
@@ -48,7 +47,7 @@ const COMMON_PROPERTIES_BY_CLASS := {
 }
 
 
-static func register(registry: MCPCommandRegistry, server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("node.get_property", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_node_get_property(parameters))
 	registry.add("node.set_property", func(parameters: Dictionary) -> Dictionary:

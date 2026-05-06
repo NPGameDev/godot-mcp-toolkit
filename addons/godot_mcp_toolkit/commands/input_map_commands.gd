@@ -4,7 +4,6 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPFeatureGate = _Hub.MCPFeatureGate
 
 const BUILTIN_UI_ACTIONS: Array[String] = [
@@ -38,7 +37,7 @@ const BUILTIN_UI_ACTIONS: Array[String] = [
 ]
 
 
-static func register(registry: MCPCommandRegistry, _server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("input_map.action", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_input_map_action(parameters))
 	registry.add("input_map.event", func(parameters: Dictionary) -> Dictionary:

@@ -4,11 +4,10 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
-const MCPCommandRegistry = _Hub.MCPCommandRegistry
 const MCPHelpers = _Hub.MCPHelpers
 
 
-static func register(registry: MCPCommandRegistry, server: Node) -> void:
+static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("tilemap.set_cells", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_tilemap_set_cells(server, parameters))
 
