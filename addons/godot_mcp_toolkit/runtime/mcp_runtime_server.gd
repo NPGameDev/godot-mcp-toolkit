@@ -253,6 +253,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_runtime_screenshot(peer, id)
 		"runtime.get_node_state":
 			_cmd_runtime_get_node_state(peer, id, params)
+		"runtime.set_property":
+			_cmd_runtime_set_property(peer, id, params)
 		"debugger.get_log":
 			_cmd_debugger_get_log(peer, id, params)
 		"signal.list":
@@ -429,6 +431,62 @@ func _cmd_runtime_get_script_vars(peer: WebSocketPeer, id, params) -> void:
 		"path": path,
 		"variables": variables,
 		"count": variables.size(),
+	})
+
+
+func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
+	if typeof(params) != TYPE_DICTIONARY:
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
+		return
+	var node_path: String = str(params.get("node_path", ""))
+	var property: String = str(params.get("property", ""))
+	var value = params.get("value")
+
+	if node_path.is_empty() or property.is_empty():
+		_send_result(peer, id, MCPError.make("INVALID_PARAMS",
+			"node_path and property are required"))
+		return
+
+	var tree := get_tree()
+	if tree == null or tree.root == null:
+		_send_result(peer, id, MCPError.make("INTERNAL", "scene tree unavailable"))
+		return
+
+	var node := tree.root.get_node_or_null(node_path)
+	if node == null:
+		_send_result(peer, id, MCPError.make("NOT_FOUND",
+			"node not found: %s" % node_path))
+		return
+
+	# Verify property exists — for compound paths like "position:x", check
+	# the base property name against the node's property list.
+	var current = node.get(property)
+	if current == null:
+		var base_prop := property.split(":")[0] if ":" in property else property
+		var found := false
+		for p in node.get_property_list():
+			if str(p.get("name", "")) == base_prop:
+				found = true
+				break
+		if not found:
+			_send_result(peer, id, MCPError.make("NOT_FOUND",
+				"property '%s' not found on %s" % [property, node_path]))
+			return
+
+	var coerced = MCPCoerce.coerce_value(value)
+	# Auto-coerce string → NodePath when the property expects NodePath.
+	if typeof(current) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
+		coerced = NodePath(str(coerced))
+
+	node.set(property, coerced)
+
+	# Read back to confirm
+	var new_value = node.get(property)
+	_send_result(peer, id, {
+		"node_path": node_path,
+		"property": property,
+		"old_value": MCPCoerce.serialize_value(current),
+		"new_value": MCPCoerce.serialize_value(new_value),
 	})
 
 
@@ -837,6 +895,12 @@ func _build_input_event(event_type: String, event_data: Dictionary) -> InputEven
 			var mb_vec := _parse_mouse_position(event_data)
 			mb.position = mb_vec
 			mb.global_position = mb_vec
+			if event_data.has("world_position"):
+				var wp := _parse_mouse_position(
+					{"position": event_data["world_position"]})
+				var vp_pos: Vector2 = get_viewport().get_canvas_transform() * wp
+				mb.position = vp_pos
+				mb.global_position = vp_pos
 			mb.shift_pressed = bool(event_data.get("shift", false))
 			mb.ctrl_pressed = bool(event_data.get("ctrl", false))
 			mb.alt_pressed = bool(event_data.get("alt", false))
@@ -847,6 +911,12 @@ func _build_input_event(event_type: String, event_data: Dictionary) -> InputEven
 			var mm_vec := _parse_mouse_position(event_data)
 			mm.position = mm_vec
 			mm.global_position = mm_vec
+			if event_data.has("world_position"):
+				var wp := _parse_mouse_position(
+					{"position": event_data["world_position"]})
+				var vp_pos: Vector2 = get_viewport().get_canvas_transform() * wp
+				mm.position = vp_pos
+				mm.global_position = vp_pos
 			var rel = event_data.get("relative", null)
 			if typeof(rel) == TYPE_DICTIONARY:
 				mm.relative = Vector2(float(rel.get("x", 0.0)), float(rel.get("y", 0.0)))
@@ -870,6 +940,10 @@ func _dispatch_click(event_data: Dictionary) -> void:
 	mb_press.button_index = int(event_data.get("button_index", MOUSE_BUTTON_LEFT))
 	mb_press.pressed = true
 	var vec := _parse_mouse_position(event_data)
+	if event_data.has("world_position"):
+		var wp := _parse_mouse_position(
+			{"position": event_data["world_position"]})
+		vec = get_viewport().get_canvas_transform() * wp
 	mb_press.position = vec
 	mb_press.global_position = vec
 	mb_press.shift_pressed = bool(event_data.get("shift", false))
