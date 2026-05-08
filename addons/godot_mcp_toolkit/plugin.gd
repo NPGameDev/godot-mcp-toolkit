@@ -126,6 +126,12 @@ func _enter_tree() -> void:
 	var bound_port: int = _server.get_bound_port()
 	if bound_port > 0:
 		MCPRegistryClient.register(bound_port, MCPAuth.get_token_path())
+		# Deferred re-verify: concurrent editors may clobber our entry after
+		# our initial verify passes. Jittered delay ensures all editors have
+		# finished their initial registration before we re-check.
+		var _jitter := randf_range(5.0, 10.0)
+		get_tree().create_timer(_jitter).timeout.connect(
+			func(): MCPRegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path()))
 
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
