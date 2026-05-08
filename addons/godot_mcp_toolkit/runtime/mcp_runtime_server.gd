@@ -505,8 +505,23 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 			"source must be 'buffer' or 'file' (got %s)" % source))
 		return
 
+	var text_filter: String = ""
+	var text_regex: RegEx = null
+	if typeof(params) == TYPE_DICTIONARY and params.has("text_filter"):
+		text_filter = str(params.get("text_filter", ""))
+	if text_filter != "" and typeof(params) == TYPE_DICTIONARY:
+		var is_regex: bool = bool(params.get("is_regex", false))
+		if is_regex:
+			text_regex = RegEx.new()
+			if text_regex.compile("(?i)" + text_filter) != OK:
+				_send_result(peer, id, MCPError.make("INVALID_PARAMS",
+					"text_filter is not a valid regex (is_regex=true). "
+					+ "To search for literal text, omit is_regex or set it to false. "
+					+ "For regex, check for unbalanced groups () [] or unescaped metacharacters."))
+				return
+
 	if source == "buffer":
-		var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, [], -1)
+		var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, [], -1, text_filter, text_regex)
 		var entries: Array = buf_result["entries"]
 		for entry in entries:
 			var scrubbed := MCPScrubber.scrub(str(entry["message"]), "debugger.get_log")
@@ -570,6 +585,17 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	var slice: Array = []
 	for i in range(start, total):
 		slice.append(MCPHelpers.strip_ansi(all_lines[i]))
+
+	if text_filter != "":
+		var text_filtered: Array = []
+		for line in slice:
+			if text_regex != null:
+				if text_regex.search(line):
+					text_filtered.append(line)
+			else:
+				if line.findn(text_filter) >= 0:
+					text_filtered.append(line)
+		slice = text_filtered
 
 	var json_slice := JSON.stringify(slice)
 	var scrubbed := MCPScrubber.scrub(json_slice, "debugger.get_log")

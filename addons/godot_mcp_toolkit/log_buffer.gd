@@ -84,7 +84,7 @@ static func push(level: String, message: String) -> void:
 
 
 ## Read entries from the buffer. Calls poll() first to ensure freshness.
-static func get_entries(limit: int, level_filter: Array = [], since_id: int = -1) -> Dictionary:
+static func get_entries(limit: int, level_filter: Array = [], since_id: int = -1, text_filter: String = "", text_regex: RegEx = null) -> Dictionary:
 	poll()
 
 	_mutex.lock()
@@ -94,6 +94,14 @@ static func get_entries(limit: int, level_filter: Array = [], since_id: int = -1
 			continue
 		if level_filter.size() > 0 and not (str(entry["level"]) in level_filter):
 			continue
+		if text_filter != "":
+			var msg: String = str(entry["message"])
+			if text_regex != null:
+				if not text_regex.search(msg):
+					continue
+			else:
+				if msg.findn(text_filter) < 0:
+					continue
 		filtered.append(entry.duplicate())
 	_mutex.unlock()
 

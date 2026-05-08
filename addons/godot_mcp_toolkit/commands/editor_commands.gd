@@ -37,8 +37,14 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 		return MCPError.make("INVALID_PARAMS",
 			"source must be 'buffer' or 'file' (got %s)" % source)
 
+	var tf := _compile_text_filter(parameters)
+	if tf[2] != null:
+		return tf[2]
+	var text_filter: String = tf[0]
+	var text_regex: RegEx = tf[1]
+
 	if source == "file":
-		var result := _read_console_log(server, limit, ["error"], -1)
+		var result := _read_console_log(server, limit, ["error"], -1, text_filter, text_regex)
 		if result.get("success", false) == false:
 			return result
 		var entries = result.get("entries", [])
@@ -49,7 +55,7 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 			"count": result.get("count", 0),
 		}
 
-	var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, ["error"], -1)
+	var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, ["error"], -1, text_filter, text_regex)
 	var entries: Array = buf_result["entries"]
 	for entry in entries:
 		var scrubbed := MCPScrubber.scrub(str(entry["message"]), "console")
@@ -277,9 +283,15 @@ static func _cmd_editor_get_console(server: Node, parameters: Dictionary) -> Dic
 			return MCPError.make("INVALID_PARAMS",
 				"level_filter entries must be one of 'info' | 'warning' | 'error' (got %s)" % str(level_filter_entry))
 
+	var tf := _compile_text_filter(parameters)
+	if tf[2] != null:
+		return tf[2]
+	var text_filter: String = tf[0]
+	var text_regex: RegEx = tf[1]
+
 	if source == "file":
-		return _read_console_log(server, limit, level_filter, since_id)
-	return _read_buffer_log(limit, level_filter, since_id)
+		return _read_console_log(server, limit, level_filter, since_id, text_filter, text_regex)
+	return _read_buffer_log(limit, level_filter, since_id, text_filter, text_regex)
 
 
 static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
@@ -303,6 +315,24 @@ static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 # -- Helpers ------------------------------------------------------------------
 
 
+## Compile text_filter params into [text_filter, RegEx-or-null, error-or-null].
+static func _compile_text_filter(parameters: Dictionary) -> Array:
+	var text_filter: String = str(parameters.get("text_filter", ""))
+	var is_regex: bool = bool(parameters.get("is_regex", false))
+	if text_filter == "":
+		return [text_filter, null, null]
+	if not is_regex:
+		return [text_filter, null, null]
+	var regex := RegEx.new()
+	if regex.compile("(?i)" + text_filter) != OK:
+		var err := MCPError.make("INVALID_PARAMS",
+			"text_filter is not a valid regex (is_regex=true). "
+			+ "To search for literal text, omit is_regex or set it to false. "
+			+ "For regex, check for unbalanced groups () [] or unescaped metacharacters.")
+		return ["", null, err]
+	return [text_filter, regex, null]
+
+
 static func _godot_error_name(code: int) -> String:
 	match code:
 		0: return "OK"
@@ -317,8 +347,8 @@ static func _godot_error_name(code: int) -> String:
 # -- Buffer log reader --------------------------------------------------------
 
 
-static func _read_buffer_log(limit: int, level_filter: Array, since_id: int) -> Dictionary:
-	var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, level_filter, since_id)
+static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, text_filter: String = "", text_regex: RegEx = null) -> Dictionary:
+	var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, level_filter, since_id, text_filter, text_regex)
 	var entries: Array = buf_result["entries"]
 	for entry in entries:
 		var scrubbed := MCPScrubber.scrub(str(entry["message"]), "console")
@@ -351,6 +381,7 @@ static func _detect_log_level(line: String) -> String:
 
 static func _read_console_log(
 	server: Node, limit: int, level_filter: Array, since_id: int,
+	text_filter: String = "", text_regex: RegEx = null,
 ) -> Dictionary:
 	# user://logs/ read is a narrow read-only exception to the res://-only rule.
 	# Path is internally constructed (not user-supplied), so no FileGuard gate.
@@ -484,6 +515,18 @@ static func _read_console_log(
 			if entry["id"] > since_id:
 				filtered.append(entry)
 		entries = filtered
+
+	if text_filter != "":
+		var text_filtered: Array = []
+		for entry in entries:
+			var msg: String = str(entry["message"])
+			if text_regex != null:
+				if text_regex.search(msg):
+					text_filtered.append(entry)
+			else:
+				if msg.findn(text_filter) >= 0:
+					text_filtered.append(entry)
+		entries = text_filtered
 
 	var truncated := entries.size() > limit
 	if truncated:
