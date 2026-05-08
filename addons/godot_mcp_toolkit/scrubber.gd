@@ -2,7 +2,7 @@
 extends RefCounted
 ## Secret scrubber — redacts credentials from log/error output before
 ## returning it through the MCP transport. Applied to debugger_get_log
-## and editor_get_errors / editor_get_console; never applied to
+## and editor_get_console; never applied to
 ## script_read (source code should not be mutated).
 
 # Three high-precision patterns that cover real secrets with minimal

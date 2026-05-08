@@ -180,7 +180,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	# it corrupts already-loaded scripts on ALL Godot versions (P-056),
 	# crashing the editor when checking already-loaded scripts.
 	# Remaining trade-off: error messages reference gdscript:// URIs
-	# instead of real paths. Use editor_get_errors for accurate diagnostics.
+	# instead of real paths. Use editor_get_console for accurate diagnostics.
 	var content := FileAccess.get_file_as_string(file_path)
 	var read_error := FileAccess.get_open_error()
 	if read_error != OK:
@@ -205,7 +205,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 		diagnostics.append({
 			"line": 0,
 			"severity": "error",
-			"message": "GDScript compile error. Call editor_get_errors for detailed messages with line numbers.",
+			"message": "GDScript compile error. Call editor_get_console for detailed messages with line numbers.",
 		})
 
 	return {

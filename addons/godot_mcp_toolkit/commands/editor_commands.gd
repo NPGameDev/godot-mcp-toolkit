@@ -208,7 +208,7 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 
 static func _cmd_editor_reload_scripts(parameters: Dictionary) -> Dictionary:
 	# Flush stale errors before reload — fresh parse errors will be captured
-	# with new IDs so editor_get_errors returns only current-state errors.
+	# with new IDs so editor_get_console returns only current-state errors.
 	var errors_cleared := _Hub.LogBuffer.clear_level("error")
 
 	var file_paths_raw = parameters.get("file_paths", null)

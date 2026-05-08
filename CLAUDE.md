@@ -60,7 +60,7 @@ Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
 |--------------|--------------|
 | **standard** (default) | 26 (23 core + 3 gated stubs) + `enable_tool_group` + `extensions_refresh` = 28 in `tools/list`. 8 groups (32 tools) on demand. |
 | **minimal** | 12 read-only (code-review mode) |
-| **full** (Power User) | All 58 tools at startup |
+| **full** (Power User) | All 53 tools at startup |
 | **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
 
 `--lite` → `minimal` with deprecation warning. `GODOT_MCP_READ_ONLY=1`
@@ -82,13 +82,15 @@ strips mutating tools from any profile.
 | `script_read`           | Read a GDScript / text file (`res://` only). Optional `start_line`/`end_line` for partial reads. |
 | `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc`. Overwrites. |
 | `script_check`          | Validate GDScript file. Returns structured diagnostics (errors/warnings with line numbers). Read-only. |
-| `editor_get_errors`     | Editor-time error tail. Summary-first response. |
 | `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as. |
-| `editor_screenshot`     | Capture the editor viewport; inline image. Optional `node_path` for node-focused capture. |
 | `editor_get_console`    | Tail editor Output panel. `level_filter`, `since_id`. |
 | `project_get_settings`  | Read ProjectSettings. |
 | `game_start`            | Drive editor play button. `target: "main"\|"current"\|res://*.tscn`. |
 | `game_stop`             | Stop the running scene. Idempotent. |
+| `runtime_screenshot`    | Capture the running game window. Returns inline PNG. |
+| `input_simulate`        | Inject input into the running game. Batch events array. |
+| `runtime_get_script_vars` | Get script variables for a live game node. |
+| `debugger_get_log`      | Return recent output from the running game. Summary-first. |
 | `folder_create`         | Create `res://` directory. Idempotent. |
 | `asset_list`            | Enumerate `res://` assets with filters. |
 | `classdb_get_info`      | Inspect any Godot class: properties, methods, signals, constants, inheritance. Engine + user `class_name`. |
@@ -98,14 +100,14 @@ strips mutating tools from any profile.
 
 | Group                 | Tools |
 |-----------------------|-------|
-| `runtime`             | `runtime_screenshot`, `runtime_get_node_state`, `runtime_get_script_vars`, `debugger_get_log`, `input_simulate`, `animation_player_control` |
+| `runtime_advanced`    | `runtime_get_node_state`, `animation_player_control` |
 | `signals`             | `signal_list`, `signal_manage` (connect/disconnect), `signal_emit` |
 | `animation_authoring` | `animation_keyframe` (add/remove), `animation_get_keys` |
 | `input_map` (gated)   | `input_map_action` (add/remove), `input_map_event` (bind/unbind) |
 | `asset_management`    | `asset_get_dependencies`, `asset_import`, `resource_delete`, `file_delete`, `scene_delete`, `scene_close`, `resource_load`, `resource_write`, `script_delete`, `folder_delete` |
 | `user_data` (gated)   | `save_read`, `save_write`, `save_delete`, `save_list` |
 | `scene_advanced`      | `scene_diff`, `scene_instantiate`, `tilemap_set_cells` |
-| `editor_advanced`     | `editor_reload_scripts`, `editor_wait_for_idle` |
+| `editor_advanced`     | `editor_screenshot`, `editor_reload_scripts`, `editor_wait_for_idle` |
 
 ### Gated tools (locked stubs when disabled)
 
@@ -348,7 +350,7 @@ If all 5 log lines appear but the MCP client still shows stale tools:
   in memory and are lost on editor close. (File-level `scene_create` /
   `scene_delete` / `script_delete` write directly to disk — no
   `editor_save_scene` needed for those.)
-- **After `script_write`, call `editor_get_errors`.** Lets you catch syntax
+- **After `script_write`, call `editor_get_console`.** Lets you catch syntax
   issues before trusting the file.
 - **The Godot editor with this plugin enabled must be running** — the bridge
   has no way to launch Godot for you. If `/mcp` shows the server as

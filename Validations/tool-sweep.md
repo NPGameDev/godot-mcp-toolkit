@@ -28,9 +28,9 @@ Before running any test, gather project context. Record these in your report hea
   - (A) Skip gated/unavailable tools
   - (B) Wait for user to enable them
   - (C) Switch to power_user profile
-- If tool groups need loading (non-power_user), call `enable_tool_group` for: `runtime`, `signals`, `animation_authoring`, `input_map`, `asset_management`, `user_data`
+- If tool groups need loading (non-power_user), call `enable_tool_group` for: `runtime_advanced`, `signals`, `animation_authoring`, `input_map`, `asset_management`, `user_data`
 
-**0.4** If C# project detected, call `editor_get_errors` — check for C# build errors. If present, warn the user that C# scripts may not work correctly until the solution is built.
+**0.4** If C# project detected, call `editor_get_console` with level_filter `["error"]` — check for C# build errors. If present, warn the user that C# scripts may not work correctly until the solution is built.
 
 **0.5** Detect version-specific capabilities (from features string):
 | Feature | 4.2 | 4.3 | 4.4 | 4.5+ |
@@ -265,10 +265,7 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 **57.** First assign the imported SVG as a texture: `node_set_property` — node_path=`ValSprite`, property=`texture`, value=`{"type":"Resource","path":"res://mcp_validation/val_icon.svg"}`. Then `editor_screenshot` (node) — node_path=`ValSprite`
 - **Expect:** Returns inline PNG image focused on ValSprite (now has visible texture content). Without a texture, Sprite2D returns EMPTY_CONTENT.
 
-**58.** `editor_get_errors`
-- **Expect:** success (may return errors — note count and whether any are validation-related)
-
-**59.** `editor_get_console` — (default params)
+**58.** `editor_get_console` — (default params)
 - **Expect:** success, returns recent console output. **[4.5+]:** buffer source works instantly. **[<4.5]:** may require file logging enabled.
 
 **60.** `editor_wait_for_idle`
@@ -571,7 +568,7 @@ Tests `[GlobalClass]` registration using `McpValCsGlobal` (created in CS-S1b). R
 **CS11.1** `editor_reload_scripts`
 - **Expect:** success — flushes all filesystem changes to the editor; C# scripts are handled by the .NET build system, not this call
 
-**CS11.2** `editor_get_errors`
+**CS11.2** `editor_get_console` — with level_filter `["error"]`
 - **Expect:** Note any C# compilation errors. Report count and whether they are from validation artifacts or pre-existing.
 
 **CS11.3** `editor_get_console`

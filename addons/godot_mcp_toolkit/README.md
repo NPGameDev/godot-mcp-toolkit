@@ -51,7 +51,7 @@ Manually delete `.mcp.json` from your project root if uninstalling.
   the `status` discriminator (`"created"` / `"returned"` / `"replaced"`).
   Accepts optional `if_exists`: `"return"` (default, silent no-op on
   collision), `"fail"` (hard `ALREADY_EXISTS` error), `"replace"` (overwrite
-  with a `push_warning` traceable via `editor_get_errors`). Supports native
+  with a `push_warning` traceable via `editor_get_console`). Supports native
   engine classes AND custom `class_name` / `[GlobalClass]` types.
 - `scene_delete` — remove a `.tscn` (+ its `.uid` companion on 4.4+). Refuses
   non-`.tscn` paths and the currently-edited scene.
@@ -89,7 +89,7 @@ Error payloads still carry `code` (e.g. `ALREADY_EXISTS` via
   create and update paths). Same `warnings[]` shape for unknown keys.
 - `resource_delete` — remove a `.tres` / `.res` and its `.uid` companion.
   No active-use guard (live `RefCounted` refs survive file deletion;
-  detect orphans via `editor_get_errors`).
+  detect orphans via `editor_get_console`).
 - `folder_create` — create a `res://` directory (recursive — intermediates
   auto-created). Idempotent: `status: "created"` on fresh, `"returned"` if
   pre-existing. Pairs with `scene_create` / `resource_create`'s
@@ -257,9 +257,10 @@ runtime sees the new bindings (Godot loads `InputMap` from
   most-recent `.log`. Multi-line error blocks (stack traces starting with
   whitespace or `"   at:"`) are folded into the preceding entry.
   `LOG_UNAVAILABLE` if no readable log file exists.
-- `editor_get_errors` — **stub replaced**. Now delegates to the
-  `editor.get_console` reader with `level_filter=["error"]`. Response shape
-  unchanged: `{ success, errors: [...], count }`. Accepts optional `limit`.
+- `editor_get_errors` — **deprecated, removed from MCP catalogue**. The
+  `editor.get_console` command with `level_filter=["error"]` provides the
+  same functionality with richer output. The GDScript handler remains
+  registered for backwards compatibility with existing bridge-level tests.
 
 ### Console-reader notes
 

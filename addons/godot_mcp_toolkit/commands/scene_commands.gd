@@ -419,7 +419,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	var packed := ResourceLoader.load(packed_path)
 	if packed == null:
 		return MCPError.make("LOAD_FAILED",
-			"ResourceLoader.load returned null for %s (corrupt file or dependency error — check editor_get_errors)" % packed_path)
+			"ResourceLoader.load returned null for %s (corrupt file or dependency error — check editor_get_console)" % packed_path)
 	if not (packed is PackedScene):
 		return MCPError.make("INVALID_CLASS",
 			"file at %s is not a PackedScene (got %s); scene.instantiate only works on .tscn files" % [

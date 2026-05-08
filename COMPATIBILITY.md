@@ -111,8 +111,9 @@ Remaining trade-off:
   error, the console message references an internal `gdscript://` path
   instead of the real `res://` file path.
 
-**Workaround:** Use `editor_get_errors` as a cross-check — it reads
-diagnostics from the editor itself, which have accurate file paths.
+**Workaround:** Use `editor_get_console` with `level_filter: ["error"]` as a
+cross-check — it reads diagnostics from the editor itself, which have
+accurate file paths.
 
 ## UI surface compatibility matrix
 
@@ -228,7 +229,6 @@ that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
 | `editor_save_scene` | ✅ | |
 | `editor_reload_scripts` | ✅ | |
 | `editor_get_console` | ✅ | |
-| `editor_get_errors` | ✅ | |
 | `editor_wait_for_idle` | ✅ | |
 | `game_start` | ✅ | Game process launches; no display |
 | `game_stop` | ✅ | |
