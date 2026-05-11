@@ -29,34 +29,29 @@ static func resolve_scene_node(node_path: String) -> Variant:
 ## Translate runtime-style /root/ paths to editor-relative paths.
 ## Agents often pass "/root/Main/Player" when they mean "./Player".
 ## Editor commands operate on the edited scene tree where the root
-## is always "." — there is no /root node.
+## is always "." — there is no /root node.  The first segment after
+## /root/ is always the runtime scene root name and is stripped
+## unconditionally — no need to match against the current scene root
+## (which may differ in casing, e.g. ValMain vs val_main, or may be
+## from a different active tab).
 static func normalize_editor_path(raw_path: String) -> String:
 	if not raw_path.begins_with("/root/") and raw_path != "/root":
 		return raw_path
-
-	var root := EditorInterface.get_edited_scene_root()
-	if root == null:
-		return raw_path  # let downstream produce NO_SCENE
-
-	var root_name := String(root.name)
 
 	# "/root" alone → "."
 	if raw_path == "/root":
 		return "."
 
-	# Strip "/root/" prefix
+	# Strip "/root/" prefix — remainder is "SceneName" or "SceneName/Child/..."
 	var after_root := raw_path.substr(6)  # len("/root/") == 6
 
-	# "/root/Main" or "/root/main" (case-insensitive root match) → "."
-	# "/root/Main/Player" → "./Player"
-	if after_root.to_lower() == root_name.to_lower():
+	# "/root/SceneName" (no further children) → "." (the root itself)
+	var slash_idx := after_root.find("/")
+	if slash_idx < 0:
 		return "."
-	if after_root.to_lower().begins_with(root_name.to_lower() + "/"):
-		return "." + after_root.substr(root_name.length())
 
-	# "/root/SomethingElse" — not the edited scene root. Return as-is
-	# and let downstream produce NOT_FOUND with the existing hint.
-	return raw_path
+	# "/root/SceneName/Child/..." → "./Child/..."
+	return "." + after_root.substr(slash_idx)
 
 
 # -- Class hierarchy checks ----------------------------------------------------
