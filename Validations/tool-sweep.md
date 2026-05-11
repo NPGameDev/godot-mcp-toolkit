@@ -1,6 +1,6 @@
 # Universal MCP Tool Sweep
 
-A comprehensive, self-contained validation sweep for the Godot MCP Toolkit. Covers all 61 MCP tools with realistic scenarios, expected results, and detailed reporting.
+A comprehensive, self-contained validation sweep for the Godot MCP Toolkit. Covers all 64 MCP tools with realistic scenarios, expected results, and detailed reporting.
 
 ## How to Use
 
@@ -28,7 +28,7 @@ Before running any test, gather project context. Record these in your report hea
   - (A) Skip gated/unavailable tools
   - (B) Wait for user to enable them
   - (C) Switch to power_user profile
-- If tool groups need loading (non-power_user), call `enable_tool_group` for: `runtime_advanced`, `signals`, `animation_authoring`, `input_map`, `asset_management`, `user_data`
+- If tool groups need loading (non-power_user), call `discover_tools` with groups: `["runtime_advanced", "signals", "animation_authoring", "input_map", "asset_management", "user_data", "scene_advanced", "editor_advanced", "tilemap", "node_management"]`
 
 **0.4** If C# project detected, call `editor_get_console` with level_filter `["error"]` — check for C# build errors. If present, warn the user that C# scripts may not work correctly until the solution is built.
 
@@ -216,6 +216,69 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 
 **43.** `scene_get_tree` — (verify all nodes present)
 - **Expect:** Tree showing ValSprite, ValLabel, ValAnimPlayer, ValAnimTree, ValTileLayer, ValPlayer/ValCollider, ValSub
+
+### Node Management (12 calls)
+
+**43a.** `node_manage` (rename) — action=`rename`, node_path=`ValLabel`, new_name=`ValLabelRenamed`
+- **Expect:** success, node renamed
+
+**43b.** `node_get_property` — node_path=`ValLabelRenamed`, property=`text`
+- **Expect:** "Hello Validation" (verify node is reachable under new name)
+
+**43c.** `node_manage` (rename back) — action=`rename`, node_path=`ValLabelRenamed`, new_name=`ValLabel`
+- **Expect:** success (restore original name for later tests)
+
+**43d.** `node_manage` (reparent) — action=`reparent`, node_path=`ValSprite`, new_parent_path=`ValPlayer`
+- **Expect:** success, ValSprite is now a child of ValPlayer
+
+**43e.** `scene_get_tree` — verify ValSprite under ValPlayer
+- **Expect:** Tree shows ValSprite as child of ValPlayer
+
+**43f.** `node_manage` (reparent back) — action=`reparent`, node_path=`ValPlayer/ValSprite`, new_parent_path=`.`
+- **Expect:** success, ValSprite back under root
+
+**43g.** `node_manage` (reorder) — action=`reorder`, node_path=`ValLabel`, new_index=0
+- **Expect:** success, ValLabel is now the first child
+
+**43h.** `node_manage` (duplicate) — action=`duplicate`, node_path=`ValLabel`, new_name=`ValLabelCopy`
+- **Expect:** success, ValLabelCopy created as sibling
+
+**43i.** `node_get_property` — node_path=`ValLabelCopy`, property=`text`
+- **Expect:** "Hello Validation" (duplicate inherits property values)
+
+**43j.** `scene_delete_node` — node_path=`ValLabelCopy`
+- **Expect:** success (cleanup duplicate)
+
+**43k.** `node_groups` (add + list) — action=`add`, node_path=`ValPlayer`, group=`mcp_val_enemies`
+- **Expect:** success. Then `node_groups` action=`list`, node_path=`ValPlayer` — expect `mcp_val_enemies` in results
+
+**43l.** `node_groups` (remove) — action=`remove`, node_path=`ValPlayer`, group=`mcp_val_enemies`
+- **Expect:** success. Then `node_groups` action=`list`, node_path=`ValPlayer` — expect `mcp_val_enemies` absent
+
+### Autoload Management (4 calls)
+
+**43m.** `autoload_manage` (list) — action=`list`
+- **Expect:** success, returns current autoload list (may be empty)
+
+**43n.** `autoload_manage` (register) — action=`register`, name=`McpValAutoload`, script_path=`res://mcp_validation/val_actor.gd`
+- **Expect:** success
+
+**43o.** `autoload_manage` (list verify) — action=`list`
+- **Expect:** includes `McpValAutoload` with enabled=true
+
+**43p.** `autoload_manage` (unregister) — action=`unregister`, name=`McpValAutoload`
+- **Expect:** success
+
+### Batch Instantiate (3 calls)
+
+**43q.** `scene_instantiate` (batch) — scene_path=`res://mcp_validation/val_sub.tscn`, parent_path=`.`, instances=`[{"name":"ValBatchA","position":{"x":50,"y":50}},{"name":"ValBatchB","position":{"x":150,"y":150},"scale":{"x":2,"y":2}}]`
+- **Expect:** success, 2 instances created with correct names and transforms
+
+**43r.** `scene_get_tree` — verify ValBatchA and ValBatchB present
+- **Expect:** Both nodes in tree
+
+**43s.** Delete batch instances: `scene_delete_node` — node_path=`ValBatchA`, then `scene_delete_node` — node_path=`ValBatchB`
+- **Expect:** success (cleanup)
 
 ### Signals (5 calls)
 
@@ -750,6 +813,31 @@ Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (ad
 - **Simplified version:** `folder_create` (`res://mcp_validation/val_fs_tabs/`) -> `scene_create` (2 scenes inside it) -> `scene_open` (both) -> ensure a scene **outside** the folder is open -> `folder_delete` (`res://mcp_validation/val_fs_tabs/`, recursive=true)
 - **Expect:** `folder_delete` succeeds without PATH_IN_USE errors. If the active scene was inside the folder, it auto-switches to an outside scene first. Stale tabs for deleted scenes may remain in the editor (cosmetic — they vanish on restart).
 
+### C19. Node management pipeline
+`scene_create` (file_path=`res://mcp_validation/val_combo_nm.tscn`, root_type=`Node2D`, root_name=`ValNM`) -> `scene_open` -> `scene_create_node` (Sprite2D, name=`NMSprite`) -> `node_manage` (action=`duplicate`, node_path=`NMSprite`, new_name=`NMSpriteCopy`) -> `node_manage` (action=`rename`, node_path=`NMSpriteCopy`, new_name=`NMSpriteRenamed`) -> `node_manage` (action=`reparent`, node_path=`NMSpriteRenamed`, new_parent_path=`NMSprite`) -> `node_groups` (action=`add`, node_path=`NMSprite`, group=`mcp_val_combo_group`) -> `node_groups` (action=`list`, node_path=`NMSprite`) -> verify group present -> `node_groups` (action=`remove`, node_path=`NMSprite`, group=`mcp_val_combo_group`) -> `editor_save_scene` -> cleanup (open main scene, delete scene)
+- **Expect:** Full duplicate→rename→reparent→groups cycle works end-to-end
+
+### C20. Batch instantiate with transforms
+`scene_instantiate` (batch) — scene_path=`res://mcp_validation/val_sub.tscn`, instances=`[{"name":"C20A","position":{"x":0,"y":0}},{"name":"C20B","position":{"x":100,"y":0},"rotation":1.57},{"name":"C20C","position":{"x":200,"y":0},"scale":{"x":0.5,"y":0.5}}]` -> verify all 3 exist via `scene_get_tree` -> `node_get_property` (C20B, rotation) -> verify ≈1.57 -> cleanup (delete all 3 nodes)
+- **Expect:** Batch mode creates 3 instances with distinct transforms; rotation and scale correctly applied
+
+### C21. discover_tools keyword search (standard profile only)
+Test that obvious keyword queries activate the correct groups. Run these `discover_tools` calls:
+
+1. `discover_tools` (request=`"animation"`) — **Expect:** `animation_authoring` activated (or already_loaded)
+2. `discover_tools` (request=`"tilemap"`) — **Expect:** `tilemap` activated
+3. `discover_tools` (request=`"rename node"`) — **Expect:** `node_management` activated
+4. `discover_tools` (request=`"save game"`) — **Expect:** `user_data` in results (may be gated)
+5. `discover_tools` (request=`"signal"`) — **Expect:** `signals` activated
+6. `discover_tools` (request=`"input"`) — **Expect:** `input_map` activated
+7. `discover_tools` (request=`"screenshot"`) — **Expect:** `editor_advanced` activated, plus `runtime_screenshot` in core_matches
+8. `discover_tools` (request=`"autoload"`) — **Expect:** `node_management` activated
+9. `discover_tools` (request=`"duplicate"`) — **Expect:** `node_management` in results
+10. `discover_tools` (reset=true) — **Expect:** all loaded groups deactivated, response includes deactivated list
+11. `discover_tools` (no params) — **Expect:** full catalog returned, all non-gated groups show status `"available"` (not `"already_loaded"`), confirming reset worked
+
+Record any misses or unexpected results. Keyword quality is validated comprehensively in the final sweep (41k-quater-et-vicies Phase 2), but this quick check catches obvious regressions.
+
 ---
 
 ## Phase 4b — Extension Discovery (conditional)
@@ -757,14 +845,14 @@ Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (ad
 Skip this phase if no extension addons are present. If the project has extension classes (GDScript extending `MCPToolkitExtension` — any class name; or C# with `MCPToolkit`-prefixed `[Tool][GlobalClass]` on `RefCounted`), run these checks.
 
 ### E1. extensions.list returns discovered commands
-Call any tool to confirm the bridge is connected, then check if extension groups appear in `enable_tool_group`'s description (standard profile) or if extension tools are directly available (power_user profile).
-- **Standard profile:** Verify `enable_tool_group` description lists the extension group name and its tools.
-- **Power user:** Verify extension tools are directly callable without `enable_tool_group`.
+Call any tool to confirm the bridge is connected, then check if extension groups appear in `discover_tools`'s description (standard profile) or if extension tools are directly available (power_user profile).
+- **Standard profile:** Verify `discover_tools` description lists the extension group name and its tools.
+- **Power user:** Verify extension tools are directly callable without `discover_tools`.
 - **Expect:** Extension commands appear with correct method names, descriptions, and annotations.
 
 ### E2. Extension group lazy-load (standard profile only)
-Call `enable_tool_group` with the extension group name (e.g., `["scenestats"]`).
-- **Expect:** Returns `{ success: true, groups: { "<name>": { loaded: true, tools: [...] } } }`. The tools listed are now callable.
+Call `discover_tools` with groups: `["scenestats"]`.
+- **Expect:** Returns `{ success: true, groups: [{ name: "<name>", status: "activated", tools: [...] }] }`. The tools listed are now callable.
 
 ### E3. Extension tool call
 Call one of the loaded extension tools with valid input.
@@ -772,7 +860,7 @@ Call one of the loaded extension tools with valid input.
 
 ### E4a. Discovery re-entrancy (foundational check)
 This tests that `discoverExtensions` can run again without duplicating tools. Simulate by calling `extensions.list` directly via the bridge (if available) or by triggering a config reload that re-runs discovery.
-- **Expect:** Tool count remains the same. No duplicate tool names in `tools/list`. `enable_tool_group` description doesn't show duplicate entries.
+- **Expect:** Tool count remains the same. No duplicate tool names in `tools/list`. `discover_tools` description doesn't show duplicate entries.
 
 ### E4b. Live extension hot-reload (requires 41k-bis — skip if not implemented)
 Test that adding/removing/modifying extension scripts mid-session updates the tool list without reconnecting.
@@ -780,7 +868,7 @@ Test that adding/removing/modifying extension scripts mid-session updates the to
 **Add:**
 1. Create a new GDScript file with any `class_name` that `extends MCPToolkitExtension`, implementing `register()` with at least one `registry.add()` call. No `MCPToolkit` prefix required for GDScript — discovery is by base class.
 2. Save the file. Alt-tab to the Godot editor (or call `extensions.refresh`) to trigger filesystem scan.
-3. Verify the new tool appears (power_user: directly callable; standard: in `enable_tool_group` description).
+3. Verify the new tool appears (power_user: directly callable; standard: in `discover_tools` description).
 4. Call the new tool — **Expect:** valid response from the handler.
 
 **Content change (modify existing extension):**
@@ -819,9 +907,19 @@ If the extension declares an `input_schema` with typed properties, call the tool
 If multiple extension addons are present, verify:
 - Each extension's commands appear in the correct group.
 - Groups from different extensions don't collide.
-- Ungrouped extension tools are callable immediately (no `enable_tool_group` needed).
+- Ungrouped extension tools are callable immediately (no `discover_tools` needed).
 
-### E7. Extension deletion while tool is loaded (requires 41k-bis)
+### E7. Extension group keywords for discover_tools
+Tests that extension-authored keywords are used by `discover_tools` keyword search.
+
+1. Create an extension with a grouped tool declaring `"keywords": ["physics", "force", "rigidbody"]` in the group dict.
+2. Save and trigger discovery (alt-tab or `extensions.refresh`).
+3. Call `discover_tools({request: "physics"})` — **Expect:** the extension group appears in results with a match score. Verify it scores higher than groups that only match via description tokens.
+4. Call `discover_tools({request: "force"})` — **Expect:** the extension group matched via author keywords.
+5. Call `discover_tools({request: "unrelated query"})` — **Expect:** extension group NOT in results.
+6. Cleanup: delete the extension script.
+
+### E8. Extension deletion while tool is loaded (requires 41k-bis)
 Tests graceful handling when a loaded extension's script is deleted mid-session.
 1. Load an extension group (or have it eagerly loaded on power_user).
 2. Confirm the tool works (call it once).
@@ -929,7 +1027,7 @@ Write `RESULTS.md` in the current directory with the following structure:
 | # | Check | Expected | Actual | Result | Notes |
 |---|-------|----------|--------|--------|-------|
 | E1 | extensions.list discovery | commands appear | | | |
-| E2 | Group lazy-load | enable_tool_group loads group | | | standard only |
+| E2 | Group lazy-load | discover_tools loads group | | | standard only |
 | E3 | Extension tool call | valid result | | | |
 | E4a | Discovery re-entrancy | no duplicates | | | |
 | E4b-add | Hot-reload: add extension | tool appears mid-session | | | |
@@ -940,7 +1038,8 @@ Write `RESULTS.md` in the current directory with the following structure:
 | E4b-csharp | Hot-reload: C# add/modify/remove | works after dotnet build+refresh | | | .NET only |
 | E5 | JSON Schema validation | valid passes, missing fails | | | |
 | E6 | Multiple extensions | groups don't collide | | | if applicable |
-| E7 | Deletion while loaded | bridge error, not crash | | | |
+| E7 | Extension keywords | discover_tools finds by keyword | | | |
+| E8 | Deletion while loaded | bridge error, not crash | | | |
 
 ### Combo Chain Results
 
@@ -949,6 +1048,22 @@ Write `RESULTS.md` in the current directory with the following structure:
 | C1 | Resource round-trip | 4 | PASS | |
 | C2 | Script validation | 3 | PASS | |
 | ... | | | | |
+
+### discover_tools Keyword Results (C21)
+
+| # | Query | Expected Group | Actual | Result |
+|---|-------|---------------|--------|--------|
+| 1 | "animation" | animation_authoring | | |
+| 2 | "tilemap" | tilemap | | |
+| 3 | "rename node" | node_management | | |
+| 4 | "save game" | user_data | | |
+| 5 | "signal" | signals | | |
+| 6 | "input" | input_map | | |
+| 7 | "screenshot" | editor_advanced + core | | |
+| 8 | "autoload" | node_management | | |
+| 9 | "duplicate" | node_management | | |
+| 10 | reset=true | all deactivated | | |
+| 11 | (no params) | all "available" | | |
 
 ### Version-Specific Observations
 
@@ -963,6 +1078,11 @@ Write `RESULTS.md` in the current directory with the following structure:
 - [ ] tileset_edit: add_source creates second atlas from different texture
 - [ ] Path normalization: /root/ paths auto-translated in editor commands
 - [ ] text_filter/is_regex: filtering works on editor_get_console and debugger_get_log
+- [ ] node_manage: rename, reparent, reorder, duplicate all UndoRedo-wrapped
+- [ ] node_groups: add/remove/list working, engine-internal groups filtered
+- [ ] autoload_manage: register/unregister/list roundtrip correct
+- [ ] scene_instantiate batch: multi-instance with transforms working
+- [ ] discover_tools: keyword search activates correct groups, reset deactivates
 - [ ] All tools functional for this Godot version
 
 ### Pitfalls Discovered

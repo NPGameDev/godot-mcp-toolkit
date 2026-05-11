@@ -21,7 +21,7 @@ const RESERVED_PREFIXES: Array[String] = [
 	"scene.", "script.", "editor.", "node.", "runtime.", "server.",
 	"resource.", "folder.", "file.", "signal.", "playtest.", "project.",
 	"input_map.", "animation.", "tilemap.", "asset.", "save.", "meta.",
-	"game.", "diff.", "extensions.",
+	"game.", "diff.", "autoload.", "extensions.",
 ]
 
 # Retain references to C# extension instances to prevent GC from

@@ -58,7 +58,7 @@ Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
 
 | Profile      | Visible tools |
 |--------------|--------------|
-| **standard** (default) | 26 (23 core + 3 gated stubs) + `enable_tool_group` + `extensions_refresh` = 28 in `tools/list`. 9 groups (31 tools) on demand. |
+| **standard** (default) | 26 (23 core + 3 gated stubs) + `discover_tools` + `extensions_refresh` = 28 in `tools/list`. 10 groups (34 tools) on demand. |
 | **minimal** | 12 read-only (code-review mode) |
 | **full** (Power User) | All 54 tools at startup |
 | **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
@@ -96,7 +96,7 @@ strips mutating tools from any profile.
 | `classdb_get_info`      | Inspect any Godot class: properties, methods, signals, constants, inheritance. Engine + user `class_name`. |
 | `classdb_search`        | Find Godot classes by inheritance and/or name pattern. Returns class list with parent + instantiability. |
 
-### Lazy-load group tools (via `enable_tool_group`)
+### Lazy-load group tools (via `discover_tools`)
 
 | Group                 | Tools |
 |-----------------------|-------|
@@ -109,6 +109,7 @@ strips mutating tools from any profile.
 | `scene_advanced`      | `scene_diff`, `scene_instantiate` |
 | `editor_advanced`     | `editor_screenshot`, `editor_reload_scripts`, `editor_wait_for_idle` |
 | `tilemap`             | `tilemap_set_cells`, `tileset_create`, `tileset_edit` |
+| `node_management`     | `node_manage`, `node_groups`, `autoload_manage` |
 
 ### Gated tools (locked stubs when disabled)
 

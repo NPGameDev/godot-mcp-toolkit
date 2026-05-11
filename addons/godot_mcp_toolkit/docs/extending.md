@@ -117,7 +117,7 @@ registry.add(method: String, handler: Callable, options: Dictionary)
 | `description` | String | `""` | Tool description in MCP `tools/list` |
 | `input_schema` | Dictionary | `{}` | JSON Schema for tool input validation |
 | `annotations` | Dictionary | `{}` | MCP tool annotations (see below) |
-| `group` | Dictionary | `{}` | Tool group for `enable_tool_group` (see below) |
+| `group` | Dictionary | `{}` | Tool group for `discover_tools` (see below) |
 
 **Annotations:**
 
@@ -130,19 +130,26 @@ registry.add(method: String, handler: Callable, options: Dictionary)
 
 **Groups:**
 
-Commands declaring a `group` key are registered behind `enable_tool_group`
+Commands declaring a `group` key are registered behind `discover_tools`
 with lazy-load semantics. Commands without a `group` stay at root level —
 always visible from startup.
 
 ```gdscript
 "group": {
 	"name": "physics_tools",          # Group identifier
-	"description": "Physics inspection and manipulation"  # Shown in enable_tool_group
+	"description": "Physics inspection and manipulation",  # Shown in discover_tools
+	"keywords": ["physics", "force", "collision", "rigidbody", "gravity"],  # For keyword search
 }
 ```
 
 Commands sharing a group name are collected together. The MCP client loads
-the group by calling `enable_tool_group({"groups": ["physics_tools"]})`.
+the group by calling `discover_tools({"groups": ["physics_tools"]})` or
+by keyword search: `discover_tools({"request": "physics"})`.
+
+**Keywords** help `discover_tools` find your group when the LLM searches
+by domain or task. Without keywords, matching falls back to description
+tokens and tool names — explicit keywords give much better results.
+Include Godot-specific terms, task descriptions, and abbreviations.
 
 ### Discovery rules
 

@@ -16,6 +16,8 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 		return _cmd_project_get_settings(parameters))
 	registry.add("project.set_setting", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_project_set_setting(parameters))
+	registry.add("autoload.manage", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_autoload_manage(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -97,3 +99,69 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 				filesystem.update_file(script_path)
 		response["hint"] = "Autoload registered in project.godot. The editor's autoload cache won't refresh until the project is reloaded — reference via get_node('/root/Name') instead of the global identifier. The game process picks up autoloads on next launch."
 	return response
+
+
+static func _cmd_autoload_manage(parameters: Dictionary) -> Dictionary:
+	var action := str(parameters.get("action", ""))
+	if action.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing action (register|unregister|list)")
+
+	match action:
+		"register":
+			var aname := str(parameters.get("name", ""))
+			var script_path := str(parameters.get("script_path", ""))
+			if aname.is_empty() or script_path.is_empty():
+				return MCPError.make("INVALID_PARAMS",
+					"register requires name and script_path")
+			if not script_path.begins_with("res://"):
+				return MCPError.make("INVALID_PATH",
+					"script_path must start with res:// (got %s)" % script_path)
+			if not FileAccess.file_exists(script_path):
+				return MCPError.make("NOT_FOUND",
+					"script not found: %s; create it with script_write first" % script_path)
+			var enabled := bool(parameters.get("enabled", true))
+			var value := ("*" if enabled else "") + script_path
+			ProjectSettings.set_setting("autoload/" + aname, value)
+			var save_error := ProjectSettings.save()
+			if save_error != OK:
+				return MCPError.make("SAVE_FAILED",
+					"ProjectSettings.save returned %d" % save_error)
+			var filesystem := EditorInterface.get_resource_filesystem()
+			if filesystem != null:
+				filesystem.update_file(script_path)
+			return {"success": true, "action": "register", "name": aname,
+				"script_path": script_path, "enabled": enabled,
+				"hint": "Autoload registered. The game process picks up autoloads on next launch. Reference via get_node('/root/%s')." % aname}
+
+		"unregister":
+			var aname := str(parameters.get("name", ""))
+			if aname.is_empty():
+				return MCPError.make("INVALID_PARAMS", "unregister requires name")
+			var key := "autoload/" + aname
+			if not ProjectSettings.has_setting(key):
+				return MCPError.make("NOT_FOUND",
+					"no autoload named '%s' in project settings" % aname)
+			ProjectSettings.clear(key)
+			var save_error := ProjectSettings.save()
+			if save_error != OK:
+				return MCPError.make("SAVE_FAILED",
+					"ProjectSettings.save returned %d" % save_error)
+			return {"success": true, "action": "unregister", "name": aname}
+
+		"list":
+			var autoloads: Array = []
+			for property in ProjectSettings.get_property_list():
+				var property_name := str(property.get("name", ""))
+				if not property_name.begins_with("autoload/"):
+					continue
+				var aname := property_name.substr("autoload/".length())
+				var raw_value := str(ProjectSettings.get_setting(property_name))
+				var enabled := raw_value.begins_with("*")
+				var path := raw_value.lstrip("*")
+				autoloads.append({"name": aname, "script_path": path, "enabled": enabled})
+			return {"success": true, "action": "list", "autoloads": autoloads,
+				"count": autoloads.size()}
+
+		_:
+			return MCPError.make("INVALID_PARAMS",
+				"unknown action '%s'; must be register|unregister|list" % action)

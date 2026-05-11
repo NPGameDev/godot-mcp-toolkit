@@ -39,8 +39,8 @@ func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
             "idempotentHint": true,  # true if idempotent
             "openWorldHint": false,  # true if external system access
         },
-        # Optional: group for lazy loading via enable_tool_group
-        # "group": {"name": "group_name", "description": "Group description"},
+        # Optional: group for lazy loading via discover_tools
+        # "group": {"name": "group_name", "description": "Group description", "keywords": ["keyword1", "keyword2"]},
     })
 
 func _handler(params: Dictionary) -> Dictionary:
@@ -93,7 +93,7 @@ public partial class MCPToolkit<Name> : RefCounted
 | `description` | String | `""` | Tool description shown to the LLM in `tools/list` |
 | `input_schema` | Dictionary | `{}` | JSON Schema defining expected parameters |
 | `annotations` | Dictionary | `{}` | MCP hints: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` |
-| `group` | Dictionary | `{}` | `{"name": "...", "description": "..."}` for `enable_tool_group` lazy loading |
+| `group` | Dictionary | `{}` | `{"name": "...", "description": "...", "keywords": [...]}` for `discover_tools` lazy loading |
 
 ## Parameter validation sequence
 
@@ -192,11 +192,11 @@ the class shows up in `.godot/global_script_class_cache.cfg`.
 ## Tool groups and profiles
 
 Commands with a `group` key are lazily loaded — they only become visible
-to the LLM after `enable_tool_group` is called. Commands without `group`
+to the LLM after `discover_tools` is called. Commands without `group`
 are always visible from startup.
 
 **Profile behavior:**
-- **Standard profile:** grouped tools require `enable_tool_group` call
+- **Standard profile:** grouped tools require `discover_tools` call
 - **Power User profile:** all tools (including grouped) are eagerly loaded
 
 Choose whether to use a group based on how specialized the tool is. General
@@ -204,16 +204,16 @@ purpose tools should be ungrouped (always available). Niche tools should be
 grouped to reduce tool list noise.
 
 **Batch group loading:** When you need tools from multiple groups, load them
-in a single `enable_tool_group` call rather than one call per group:
+in a single `discover_tools` call rather than one call per group:
 
 ```
 # Efficient — 1 call, 1 tools/list_changed notification
-enable_tool_group(groups: ["runtime", "input_map", "scene_advanced"])
+discover_tools(groups: ["runtime", "input_map", "scene_advanced"])
 
 # Wasteful — 3 calls, up to 3 notifications
-enable_tool_group(groups: ["runtime"])
-enable_tool_group(groups: ["input_map"])
-enable_tool_group(groups: ["scene_advanced"])
+discover_tools(groups: ["runtime"])
+discover_tools(groups: ["input_map"])
+discover_tools(groups: ["scene_advanced"])
 ```
 
 Each `tools/list_changed` notification forces the LLM to re-fetch and
@@ -278,7 +278,7 @@ Extensions are monitored at runtime. Changes are detected automatically:
 | C# class missing after build | `dotnet build` done but editor not scanned | Alt-tab to editor or call `extensions.refresh` |
 | "register() not overridden" warning | Wrong method signature | Use exact signature: `registry: MCPToolkitCommandRegistry, server: Node` |
 | Command rejected at load time | Using reserved namespace | Choose a custom namespace (e.g., `mytools.action`) |
-| Grouped tool not visible to LLM | Standard profile requires explicit load | User calls `enable_tool_group` or switch to Power User profile |
+| Grouped tool not visible to LLM | Standard profile requires explicit load | User calls `discover_tools` or switch to Power User profile |
 | Hot-reload not detecting changes | Editor not focused after external edit | Alt-tab to editor or call `extensions.refresh` |
 | New tool not in Claude Code list | Client caches deferred tools | Run `/mcp` reconnect in Claude Code |
-| Grouped tool uncallable after `enable_tool_group` | `claude -p` (pipe mode) does not process `tools/list_changed` | Use interactive `claude` or Power User profile (`GODOT_MCP_PROFILE=full`) |
+| Grouped tool uncallable after `discover_tools` | `claude -p` (pipe mode) does not process `tools/list_changed` | Use interactive `claude` or Power User profile (`GODOT_MCP_PROFILE=full`) |

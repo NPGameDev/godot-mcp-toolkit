@@ -58,6 +58,10 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_node_call_method(parameters))
 	registry.add("node.set_script", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_node_set_script(parameters))
+	registry.add("node.manage", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_node_manage(parameters))
+	registry.add("node.groups", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_node_groups(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -468,3 +472,245 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 		})
 
 	return {"success": true, "path": node_path, "script": script_path, "properties": exports}
+
+
+static func _cmd_node_manage(parameters: Dictionary) -> Dictionary:
+	var action := str(parameters.get("action", ""))
+	if action.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing action (rename|reparent|reorder|duplicate)")
+
+	var root := _get_edited_root()
+	if root == null:
+		return MCPError.make("NO_SCENE", "no edited scene")
+
+	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
+	if node_path.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing node_path")
+
+	var node := root.get_node_or_null(node_path)
+	if node == null:
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
+
+	match action:
+		"rename":
+			return _manage_rename(root, node, node_path, parameters)
+		"reparent":
+			return _manage_reparent(root, node, node_path, parameters)
+		"reorder":
+			return _manage_reorder(root, node, node_path, parameters)
+		"duplicate":
+			return _manage_duplicate(root, node, node_path, parameters)
+		_:
+			return MCPError.make("INVALID_PARAMS",
+				"unknown action '%s'; must be rename|reparent|reorder|duplicate" % action)
+
+
+static func _manage_rename(
+	root: Node, node: Node, node_path: String, parameters: Dictionary,
+) -> Dictionary:
+	var new_name := str(parameters.get("new_name", ""))
+	if new_name.is_empty():
+		return MCPError.make("INVALID_PARAMS", "rename requires new_name")
+	if node == root:
+		return MCPError.make("INVALID_PATH", "cannot rename the scene root")
+
+	var old_name := String(node.name)
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: rename %s → %s" % [old_name, new_name])
+		undo_redo.add_do_property(node, "name", new_name)
+		undo_redo.add_undo_property(node, "name", old_name)
+		undo_redo.commit_action()
+	else:
+		node.name = new_name
+
+	var parent := node.get_parent()
+	var new_path := str(root.get_path_to(node))
+	return {"success": true, "action": "rename", "old_name": old_name,
+		"new_name": String(node.name), "new_path": new_path}
+
+
+static func _manage_reparent(
+	root: Node, node: Node, node_path: String, parameters: Dictionary,
+) -> Dictionary:
+	var new_parent_path := str(parameters.get("new_parent_path", ""))
+	new_parent_path = MCPHelpers.normalize_editor_path(new_parent_path)
+	if new_parent_path.is_empty():
+		return MCPError.make("INVALID_PARAMS", "reparent requires new_parent_path")
+	if node == root:
+		return MCPError.make("INVALID_PATH", "cannot reparent the scene root")
+
+	var new_parent := root.get_node_or_null(new_parent_path)
+	if new_parent == null:
+		return MCPError.make("NOT_FOUND",
+			"new parent not found: %s" % new_parent_path, MCPError.HINT_NODE_PATH)
+	# Prevent reparenting a node under itself (would create a cycle).
+	if new_parent == node or node.is_ancestor_of(new_parent):
+		return MCPError.make("INVALID_PARAMS",
+			"cannot reparent a node under itself or a descendant")
+
+	var keep_global := bool(parameters.get("keep_global_transform", true))
+	var old_parent := node.get_parent()
+	var old_index := node.get_index()
+
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: reparent %s → %s" % [node_path, new_parent_path])
+		undo_redo.add_do_method(node, "reparent", new_parent, keep_global)
+		undo_redo.add_do_method(node, "set_owner", root)
+		undo_redo.add_undo_method(node, "reparent", old_parent, keep_global)
+		undo_redo.add_undo_method(old_parent, "move_child", node, old_index)
+		undo_redo.add_undo_method(node, "set_owner", root)
+		undo_redo.commit_action()
+	else:
+		node.reparent(new_parent, keep_global)
+		node.set_owner(root)
+
+	var new_path := str(root.get_path_to(node))
+	return {"success": true, "action": "reparent", "new_path": new_path}
+
+
+static func _manage_reorder(
+	root: Node, node: Node, node_path: String, parameters: Dictionary,
+) -> Dictionary:
+	if not parameters.has("new_index"):
+		return MCPError.make("INVALID_PARAMS", "reorder requires new_index")
+	var new_index := int(parameters.get("new_index", 0))
+	if node == root:
+		return MCPError.make("INVALID_PATH", "cannot reorder the scene root")
+
+	var parent := node.get_parent()
+	if parent == null:
+		return MCPError.make("INTERNAL", "node has no parent")
+	var old_index := node.get_index()
+	var child_count := parent.get_child_count()
+	if new_index < 0 or new_index >= child_count:
+		return MCPError.make("INVALID_PARAMS",
+			"new_index %d out of range [0, %d)" % [new_index, child_count])
+
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: reorder %s to index %d" % [node_path, new_index])
+		undo_redo.add_do_method(parent, "move_child", node, new_index)
+		undo_redo.add_undo_method(parent, "move_child", node, old_index)
+		undo_redo.commit_action()
+	else:
+		parent.move_child(node, new_index)
+
+	return {"success": true, "action": "reorder", "path": node_path,
+		"old_index": old_index, "new_index": node.get_index()}
+
+
+static func _manage_duplicate(
+	root: Node, node: Node, node_path: String, parameters: Dictionary,
+) -> Dictionary:
+	if node == root:
+		return MCPError.make("INVALID_PATH", "cannot duplicate the scene root")
+
+	var dup := node.duplicate()
+	if dup == null:
+		return MCPError.make("INTERNAL", "Node.duplicate() returned null for %s" % node_path)
+
+	var new_name := str(parameters.get("new_name", ""))
+	if not new_name.is_empty():
+		dup.name = new_name
+
+	var parent_path := str(parameters.get("parent_path", ""))
+	parent_path = MCPHelpers.normalize_editor_path(parent_path)
+	var target_parent: Node
+	if parent_path.is_empty():
+		target_parent = node.get_parent()
+	else:
+		target_parent = root.get_node_or_null(parent_path)
+		if target_parent == null:
+			dup.queue_free()
+			return MCPError.make("NOT_FOUND",
+				"parent not found: %s" % parent_path, MCPError.HINT_NODE_PATH)
+
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: duplicate %s" % node_path)
+		undo_redo.add_do_method(target_parent, "add_child", dup)
+		undo_redo.add_do_method(dup, "set_owner", root)
+		undo_redo.add_do_reference(dup)
+		undo_redo.add_undo_method(target_parent, "remove_child", dup)
+		undo_redo.commit_action()
+	else:
+		target_parent.add_child(dup)
+		dup.set_owner(root)
+
+	# Apply optional property overrides (position, scale, etc.).
+	var props_raw = parameters.get("properties", null)
+	if typeof(props_raw) == TYPE_DICTIONARY:
+		for key in (props_raw as Dictionary):
+			dup.set(str(key), MCPCoerce.coerce_value(props_raw[key]))
+
+	var dup_path := str(root.get_path_to(dup))
+	return {"success": true, "action": "duplicate", "path": dup_path,
+		"class": dup.get_class()}
+
+
+static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
+	var action := str(parameters.get("action", ""))
+	if action.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing action (add|remove|list)")
+
+	var root := _get_edited_root()
+	if root == null:
+		return MCPError.make("NO_SCENE", "no edited scene")
+
+	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
+	if node_path.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing node_path")
+
+	var node := root.get_node_or_null(node_path)
+	if node == null:
+		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
+
+	match action:
+		"add":
+			var group := str(parameters.get("group", ""))
+			if group.is_empty():
+				return MCPError.make("INVALID_PARAMS", "add requires group name")
+			var persistent := bool(parameters.get("persistent", true))
+			var undo_redo = _Hub.get_undo_redo()
+			if undo_redo != null:
+				undo_redo.create_action("MCP: add %s to group %s" % [node_path, group])
+				undo_redo.add_do_method(node.add_to_group.bind(group, persistent))
+				undo_redo.add_undo_method(node.remove_from_group.bind(group))
+				undo_redo.commit_action()
+			else:
+				node.add_to_group(group, persistent)
+			return {"success": true, "action": "add", "node": node_path, "group": group}
+
+		"remove":
+			var group := str(parameters.get("group", ""))
+			if group.is_empty():
+				return MCPError.make("INVALID_PARAMS", "remove requires group name")
+			if not node.is_in_group(group):
+				return MCPError.make("NOT_FOUND",
+					"node %s is not in group '%s'" % [node_path, group])
+			var undo_redo = _Hub.get_undo_redo()
+			if undo_redo != null:
+				undo_redo.create_action("MCP: remove %s from group %s" % [node_path, group])
+				undo_redo.add_do_method(node.remove_from_group.bind(group))
+				undo_redo.add_undo_method(node.add_to_group.bind(group, true))
+				undo_redo.commit_action()
+			else:
+				node.remove_from_group(group)
+			return {"success": true, "action": "remove", "node": node_path, "group": group}
+
+		"list":
+			var groups: Array[String] = []
+			for g in node.get_groups():
+				var gs := str(g)
+				if not gs.begins_with("_"):
+					groups.append(gs)
+			return {"success": true, "action": "list", "node": node_path,
+				"groups": groups, "count": groups.size()}
+
+		_:
+			return MCPError.make("INVALID_PARAMS",
+				"unknown action '%s'; must be add|remove|list" % action)

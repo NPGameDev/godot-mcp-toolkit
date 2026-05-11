@@ -398,9 +398,6 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	var parent_path := str(parameters.get("parent_path", ""))
 	parent_path = MCPHelpers.normalize_editor_path(parent_path)
 	var packed_path := str(parameters.get("packed_path", ""))
-	var as_name := str(parameters.get("as_name", ""))
-	var transform_raw = parameters.get("transform", {})
-	var transform: Dictionary = transform_raw if typeof(transform_raw) == TYPE_DICTIONARY else {}
 
 	if parent_path.is_empty() or packed_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing parent_path or packed_path")
@@ -427,6 +424,17 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		return MCPError.make("INVALID_CLASS",
 			"file at %s is not a PackedScene (got %s); scene.instantiate only works on .tscn files" % [
 				packed_path, packed.get_class()])
+
+	# Batch mode: instances array present → instantiate N copies in one UndoRedo action.
+	var instances_raw = parameters.get("instances", null)
+	if typeof(instances_raw) == TYPE_ARRAY and (instances_raw as Array).size() > 0:
+		return _batch_instantiate(server, root, parent_node, packed as PackedScene,
+			packed_path, parent_path, instances_raw as Array)
+
+	# Single mode (original behavior).
+	var as_name := str(parameters.get("as_name", ""))
+	var transform_raw = parameters.get("transform", {})
+	var transform: Dictionary = transform_raw if typeof(transform_raw) == TYPE_DICTIONARY else {}
 
 	var target_name := as_name if as_name != "" else (packed as PackedScene).get_state().get_node_name(0)
 	if parent_node.has_node(NodePath(target_name)):
@@ -468,6 +476,52 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		"path": _path_in_scene(root, instance),
 		"class_name": instance.get_class(),
 	}
+
+
+static func _batch_instantiate(
+	server: Node, root: Node, parent_node: Node, packed: PackedScene,
+	packed_path: String, parent_path: String, instances: Array,
+) -> Dictionary:
+	var created: Array = []
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: batch instantiate %d × %s" % [instances.size(), packed_path])
+
+	for entry in instances:
+		var inst_dict: Dictionary = entry if typeof(entry) == TYPE_DICTIONARY else {}
+		var instance: Node = packed.instantiate()
+		if instance == null:
+			continue
+
+		var inst_name := str(inst_dict.get("name", ""))
+		if not inst_name.is_empty():
+			instance.name = inst_name
+
+		# Apply transform properties (position, rotation, scale).
+		for key in ["position", "rotation", "scale"]:
+			if inst_dict.has(key):
+				instance.set(key, MCPCoerce.coerce_value(inst_dict[key]))
+
+		if undo_redo != null:
+			undo_redo.add_do_method(parent_node, "add_child", instance)
+			undo_redo.add_do_method(server.undo_helpers, "_set_owner_recursive", instance, root)
+			undo_redo.add_do_reference(instance)
+			undo_redo.add_undo_method(parent_node, "remove_child", instance)
+		else:
+			parent_node.add_child(instance)
+			server.undo_helpers._set_owner_recursive(instance, root)
+
+		created.append({
+			"path": _path_in_scene(root, instance),
+			"class": instance.get_class(),
+			"name": String(instance.name),
+		})
+
+	if undo_redo != null:
+		undo_redo.commit_action()
+
+	return {"success": true, "status": "created", "count": created.size(),
+		"instances": created}
 
 
 static func _cmd_scene_diff(server: Node, parameters: Dictionary) -> Dictionary:
