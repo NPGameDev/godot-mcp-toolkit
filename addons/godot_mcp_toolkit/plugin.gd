@@ -32,6 +32,7 @@ const ClassdbCommands := preload("res://addons/godot_mcp_toolkit/commands/classd
 const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
 const PathCommands := preload("res://addons/godot_mcp_toolkit/commands/path_commands.gd")
 const ThreeDCommands := preload("res://addons/godot_mcp_toolkit/commands/3d_commands.gd")
+const ProceduralCommands := preload("res://addons/godot_mcp_toolkit/commands/procedural_commands.gd")
 const MetaCommands := preload("res://addons/godot_mcp_toolkit/commands/meta_commands.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
@@ -101,6 +102,7 @@ func _enter_tree() -> void:
 	ThemeCommands.register(registry, _server)
 	PathCommands.register(registry, _server)
 	ThreeDCommands.register(registry, _server)
+	ProceduralCommands.register(registry, _server)
 	MetaCommands.register(registry)
 
 	# Third-party extensions — profile-exempt, always loaded.
