@@ -280,7 +280,7 @@ static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
 			"euclidean": FastNoiseLite.DISTANCE_EUCLIDEAN,
 			"euclidean_squared": FastNoiseLite.DISTANCE_EUCLIDEAN_SQUARED,
 			"manhattan": FastNoiseLite.DISTANCE_MANHATTAN,
-			"chebyshev": FastNoiseLite.DISTANCE_CHEBYSHEV,
+			"hybrid": FastNoiseLite.DISTANCE_HYBRID,
 		}
 		if not cdf_map.has(cdf_str):
 			return MCPError.make("INVALID_PARAMS",
