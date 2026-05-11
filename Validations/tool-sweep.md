@@ -934,6 +934,12 @@ Tests graceful handling when a loaded extension's script is deleted mid-session.
 
 Remove ALL validation artifacts and restore project state. This section can be run standalone if a previous sweep failed.
 
+**Important:** If `discover_tools(reset=true)` was run in Phase 4a, on-demand tools are no longer available. Re-activate the groups needed for cleanup before proceeding:
+
+`discover_tools` — groups=`["asset_management", "input_map"]`
+
+This restores `folder_delete`, `scene_delete`, `resource_delete`, `script_delete`, `file_delete`, and `input_map_action`.
+
 ### 5a. Identify validation artifacts
 
 Call `asset_list` with folder_path=`res://mcp_validation/` to see what exists. Also check for any combo-chain leftovers.
