@@ -35,6 +35,7 @@ const ThreeDCommands := preload("res://addons/godot_mcp_toolkit/commands/3d_comm
 const AudioCommands := preload("res://addons/godot_mcp_toolkit/commands/audio_commands.gd")
 const ProceduralCommands := preload("res://addons/godot_mcp_toolkit/commands/procedural_commands.gd")
 const SpriteframesCommands := preload("res://addons/godot_mcp_toolkit/commands/spriteframes_commands.gd")
+const ParticleCommands := preload("res://addons/godot_mcp_toolkit/commands/particle_commands.gd")
 const MetaCommands := preload("res://addons/godot_mcp_toolkit/commands/meta_commands.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
@@ -107,6 +108,7 @@ func _enter_tree() -> void:
 	AudioCommands.register(registry, _server)
 	ProceduralCommands.register(registry, _server)
 	SpriteframesCommands.register(registry, _server)
+	ParticleCommands.register(registry, _server)
 	MetaCommands.register(registry)
 
 	# Third-party extensions — profile-exempt, always loaded.

@@ -1332,6 +1332,49 @@ Write `RESULTS.md` in the current directory with the following structure:
 
 **83j.** Cleanup — remove temp group assignments from 83b.
 
+### GPU particle VFX (41k-septies-et-vicies)
+
+**84a.** `particles_create` — parent_path=`.`, type=`"2d"`, preset=`"fire"`
+- **Expect:** success, preset_applied=`"fire"`, GPUParticles2D node created.
+
+**84b.** `node_get_property` — verify fire particle amount, lifetime, process_material exists.
+- **Expect:** amount=24, lifetime=1.2.
+
+**84c.** `particles_create` — type=`"2d"`, preset=`"rain"`, amount=100 (override)
+- **Expect:** success, overrides_applied includes "amount".
+
+**84d.** `particles_create` — type=`"2d"`, no preset, custom params: direction, spread, velocity, inline color_ramp (4 points), inline scale_curve (3 points)
+- **Expect:** success, properties_set > 0.
+
+**84e.** `node_get_property` — readback process_material:color_ramp on custom particle
+- **Expect:** non-null GradientTexture1D.
+
+**84f.** `particles_create` — type=`"3d"`, preset=`"sparks"`, mesh=`"quad"`
+- **Expect:** success, draw_pass_1 is QuadMesh.
+
+**84g.** All 8 presets: create each with `type="2d"`, verify success + emitting + material
+- **Expect:** 8 successes. Lightweight check only.
+
+**84h.** `particles_create` — .tres path reference for color_ramp (create gradient via procedural_edit_gradient first)
+- **Expect:** success, color_ramp loaded from file.
+
+**84i.** `particles_create` guard — invalid type=`"4d"`
+- **Expect:** INVALID_PARAMS.
+
+**84j.** `particles_create` guard — invalid preset=`"lava"`
+- **Expect:** INVALID_PARAMS.
+
+**84k.** `particles_create` guard — invalid emission_shape=`"triangle"`
+- **Expect:** INVALID_PARAMS.
+
+**84l.** `particles_create` guard — parent_path=`"NonExistent"`
+- **Expect:** NOT_FOUND.
+
+**84m.** `particles_create` guard — non-existent color_ramp .tres path
+- **Expect:** NOT_FOUND.
+
+**84n.** Cleanup — delete all test particle nodes and temp .tres files.
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:
