@@ -1203,6 +1203,19 @@ Write `RESULTS.md` in the current directory with the following structure:
 
 **77h.** Cleanup — delete test 3D nodes
 
+### scene_inheritance (80a-80d)
+
+**80a.** `scene_create_inherited` — file_path=`res://mcp_validation/inherited_enemy.tscn`, base_scene=`res://mcp_validation/base_enemy.tscn`
+- **Expect:** success=true, root_name matches base scene root
+
+**80b.** `scene_create_inherited` — root_name=`SlimeEnemy` (custom root name override)
+- **Expect:** success=true, root_name=SlimeEnemy
+
+**80c.** `scene_create_inherited` guard — base_scene=`res://does_not_exist.tscn`
+- **Expect:** NOT_FOUND error
+
+**80d.** Cleanup — delete inherited and base scene files
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:

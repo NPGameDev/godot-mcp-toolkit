@@ -30,6 +30,8 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_scene_instantiate(server, parameters))
 	registry.add("scene.diff", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_scene_diff(server, parameters))
+	registry.add("scene.create_inherited", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_create_inherited(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -528,6 +530,55 @@ static func _batch_instantiate(
 
 	return {"success": true, "status": "created", "count": created.size(),
 		"instances": created}
+
+
+static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path", "base_scene"])
+	if err != null:
+		return err
+
+	var file_path := str(parameters.get("file_path", ""))
+	var base_scene := str(parameters.get("base_scene", ""))
+	var root_name := str(parameters.get("root_name", ""))
+
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+	if not file_path.ends_with(".tscn"):
+		return MCPError.make("INVALID_PARAMS", "file_path must end with .tscn")
+
+	var base_guard := MCPFileGuard.resolve_safe(base_scene)
+	if base_guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(base_guard["reason"]))
+	if not ResourceLoader.exists(base_scene):
+		return MCPError.make("NOT_FOUND", "base scene not found: %s" % base_scene)
+
+	if root_name.is_empty():
+		var base := ResourceLoader.load(base_scene) as PackedScene
+		if base == null:
+			return MCPError.make("INTERNAL", "failed to load base scene: %s" % base_scene)
+		var instance := base.instantiate()
+		root_name = instance.name
+		instance.free()
+
+	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "scene.create_inherited")
+	if dir_result.has("error"):
+		return dir_result
+
+	var tscn_text := '[gd_scene load_steps=2 format=3]\n\n'
+	tscn_text += '[ext_resource type="PackedScene" path="%s" id="1"]\n\n' % base_scene
+	tscn_text += '[node name="%s" instance=ExtResource("1")]\n' % root_name
+
+	var file := FileAccess.open(file_path, FileAccess.WRITE)
+	if file == null:
+		return MCPError.make("INTERNAL",
+			"cannot write to %s: error %d" % [file_path, FileAccess.get_open_error()])
+	file.store_string(tscn_text)
+	file.close()
+
+	MCPHelpers.ensure_file_indexed(file_path)
+
+	return {"success": true, "file_path": file_path, "base_scene": base_scene, "root_name": root_name}
 
 
 static func _cmd_scene_diff(server: Node, parameters: Dictionary) -> Dictionary:
