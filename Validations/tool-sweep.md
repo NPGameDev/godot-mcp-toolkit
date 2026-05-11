@@ -1216,6 +1216,38 @@ Write `RESULTS.md` in the current directory with the following structure:
 
 **78d.** Cleanup — delete test sprite and collision nodes
 
+### procedural resources (79a-79f)
+
+**79a.** `procedural_edit_gradient` — file_path=`res://mcp_validation/smoke_gradient.tres`, action=`set`, 3 color stops
+- **Expect:** success=true, point_count=3
+
+**79b.** `procedural_edit_gradient` — action=`add_point`, add 1 stop at offset 0.75
+- **Expect:** success=true, point_count=4
+
+**79c.** `procedural_edit_curve` — file_path=`res://mcp_validation/smoke_curve.tres`, action=`set`, 3 control points
+- **Expect:** success=true, point_count=3
+
+**79d.** `procedural_edit_noise` — file_path=`res://mcp_validation/smoke_noise.tres`, noise_type=`simplex`, frequency=`0.05`
+- **Expect:** success=true
+
+**79e.** `procedural_edit_noise` guard — noise_type=`invalid_noise`
+- **Expect:** INVALID_PARAMS error
+
+**79f.** Cleanup — delete test .tres files
+
+### scene_inheritance (80a-80d)
+
+**80a.** `scene_create_inherited` — file_path=`res://mcp_validation/inherited_enemy.tscn`, base_scene=`res://mcp_validation/base_enemy.tscn`
+- **Expect:** success=true, root_name matches base scene root
+
+**80b.** `scene_create_inherited` — root_name=`SlimeEnemy` (custom root name override)
+- **Expect:** success=true, root_name=SlimeEnemy
+
+**80c.** `scene_create_inherited` guard — base_scene=`res://does_not_exist.tscn`
+- **Expect:** NOT_FOUND error
+
+**80d.** Cleanup — delete inherited and base scene files
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:
