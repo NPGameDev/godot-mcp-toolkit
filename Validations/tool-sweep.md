@@ -1248,6 +1248,28 @@ Write `RESULTS.md` in the current directory with the following structure:
 
 **80d.** Cleanup — delete inherited and base scene files
 
+### AudioBus layout (41k-sedecies)
+
+**81a.** `audiobus_edit` — action=`add_bus`, bus_name=`"Music"`, send_to=`"Master"`
+- **Expect:** success, bus_count >= 2.
+
+**81b.** `audiobus_edit` — action=`set_bus`, bus_name=`"Music"`, volume_db=`-6.0`
+- **Expect:** success, volume set.
+
+**81c.** `audiobus_edit` — action=`add_effect`, bus_name=`"Music"`, effect=`{"type":"Reverb"}`
+- **Expect:** success, effect added.
+
+**81d.** `audiobus_edit` — action=`list`
+- **Expect:** success, buses array includes Master and Music, Music has Reverb effect.
+
+**81e.** `audiobus_edit` — action=`add_bus`, bus_name=`"SFX"`, send_to=`"Master"`
+- **Expect:** success.
+
+**81f.** `audiobus_edit` guard — action=`remove_bus`, bus_name=`"Master"`
+- **Expect:** INVALID_PARAMS, "Master".
+
+**81g.** Cleanup — `audiobus_edit` action=`remove_bus` bus_name=`"Music"`, then `remove_bus` bus_name=`"SFX"`.
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:
