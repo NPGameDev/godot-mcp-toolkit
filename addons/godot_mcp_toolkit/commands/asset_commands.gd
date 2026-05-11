@@ -60,11 +60,16 @@ static func _walk_filesystem_directory(
 			if file_type != class_filter \
 					and not ClassDB.is_parent_class(file_type, class_filter):
 				continue
+		var mtime := FileAccess.get_modified_time(file_path)
+		# Ghost filter: EditorFileSystem may retain stale entries after
+		# deletion (mtime 0 = file gone from disk but index not flushed).
+		if mtime == 0 and not FileAccess.file_exists(file_path):
+			continue
 		entries.append({
 			"path": file_path,
 			"class": file_type,
 			"size_bytes": null,
-			"modified_unix": FileAccess.get_modified_time(file_path),
+			"modified_unix": mtime,
 		})
 	for subdir_index in range(directory.get_subdir_count()):
 		if entries.size() >= max_count:

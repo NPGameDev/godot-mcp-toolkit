@@ -56,7 +56,10 @@ static func _build_input_event(event: Variant) -> Variant:
 			var raw_keycode = event.get("keycode", "")
 			var resolved_keycode := 0
 			if typeof(raw_keycode) == TYPE_STRING:
-				resolved_keycode = OS.find_keycode_from_string(raw_keycode)
+				var keycode_str: String = raw_keycode
+				if keycode_str.begins_with("KEY_"):
+					keycode_str = keycode_str.substr(4)
+				resolved_keycode = OS.find_keycode_from_string(keycode_str)
 				if resolved_keycode == 0:
 					return {"code": "INVALID_PARAMS",
 						"error": "unknown keycode '%s'; use symbolic names like 'SPACE' / 'A' / 'F1' or raw ints" % raw_keycode}
@@ -95,9 +98,11 @@ static func _build_input_event(event: Variant) -> Variant:
 
 static func _serialise_input_event(event: InputEvent) -> Dictionary:
 	if event is InputEventKey:
+		var kc: int = int((event as InputEventKey).physical_keycode)
 		return {
 			"type": "key",
-			"keycode": int((event as InputEventKey).physical_keycode),
+			"keycode": kc,
+			"keycode_name": OS.get_keycode_string(kc),
 			"shift": (event as InputEventKey).shift_pressed,
 			"ctrl": (event as InputEventKey).ctrl_pressed,
 			"alt": (event as InputEventKey).alt_pressed,
