@@ -480,6 +480,11 @@ static func _build_full_tile_polygon(tile_size: Vector2i) -> PackedVector2Array:
 		Vector2(hw, hh), Vector2(-hw, hh)])
 
 
+static func _ensure_collision_polygon(td: TileData, physics_layer: int) -> void:
+	if td.get_collision_polygons_count(physics_layer) == 0:
+		td.add_collision_polygon(physics_layer)
+
+
 static func _apply_physics_polygon(
 	td: TileData, tile: Dictionary, tile_size: Vector2i
 ) -> String:
@@ -488,18 +493,21 @@ static func _apply_physics_polygon(
 	if typeof(val) == TYPE_STRING:
 		match val:
 			"full":
+				_ensure_collision_polygon(td, physics_layer)
 				td.set_collision_polygon_points(physics_layer, 0,
 					_build_full_tile_polygon(tile_size))
 			"none":
-				td.set_collision_polygon_points(physics_layer, 0,
-					PackedVector2Array())
+				while td.get_collision_polygons_count(physics_layer) > 0:
+					td.remove_collision_polygon(physics_layer, 0)
 			"one_way":
+				_ensure_collision_polygon(td, physics_layer)
 				td.set_collision_polygon_points(physics_layer, 0,
 					_build_full_tile_polygon(tile_size))
 				td.set_collision_polygon_one_way(physics_layer, 0, true)
 			_:
 				return "unknown physics_polygon shorthand: %s" % val
 	elif typeof(val) == TYPE_ARRAY:
+		_ensure_collision_polygon(td, physics_layer)
 		var points := PackedVector2Array()
 		for pt in val:
 			if typeof(pt) == TYPE_DICTIONARY:
@@ -508,6 +516,7 @@ static func _apply_physics_polygon(
 	else:
 		return "physics_polygon must be string or Array[{x,y}]"
 	if tile.has("one_way_collision"):
+		_ensure_collision_polygon(td, physics_layer)
 		td.set_collision_polygon_one_way(physics_layer, 0, bool(tile["one_way_collision"]))
 	return ""
 
@@ -535,6 +544,16 @@ static func _apply_terrain_peering(td: TileData, peering: Dictionary) -> String:
 	return ""
 
 
+static func _build_nav_polygon(verts: PackedVector2Array) -> NavigationPolygon:
+	var np := NavigationPolygon.new()
+	np.set_vertices(verts)
+	var indices := PackedInt32Array()
+	for i in range(verts.size()):
+		indices.append(i)
+	np.add_polygon(indices)
+	return np
+
+
 static func _apply_navigation_polygon(
 	td: TileData, tile: Dictionary, tile_size: Vector2i
 ) -> String:
@@ -543,28 +562,22 @@ static func _apply_navigation_polygon(
 	if typeof(val) == TYPE_STRING:
 		match val:
 			"full":
-				var np := NavigationPolygon.new()
 				var hw := tile_size.x / 2.0
 				var hh := tile_size.y / 2.0
 				var verts := PackedVector2Array([
 					Vector2(-hw, -hh), Vector2(hw, -hh),
 					Vector2(hw, hh), Vector2(-hw, hh)])
-				np.add_outline(verts)
-				np.make_polygons_from_outlines()
-				td.set_navigation_polygon(nav_layer, np)
+				td.set_navigation_polygon(nav_layer, _build_nav_polygon(verts))
 			"none":
 				td.set_navigation_polygon(nav_layer, null)
 			_:
 				return "unknown navigation_polygon shorthand: %s" % val
 	elif typeof(val) == TYPE_ARRAY:
-		var np := NavigationPolygon.new()
 		var verts := PackedVector2Array()
 		for pt in val:
 			if typeof(pt) == TYPE_DICTIONARY:
 				verts.append(Vector2(float(pt.get("x", 0)), float(pt.get("y", 0))))
-		np.add_outline(verts)
-		np.make_polygons_from_outlines()
-		td.set_navigation_polygon(nav_layer, np)
+		td.set_navigation_polygon(nav_layer, _build_nav_polygon(verts))
 	else:
 		return "navigation_polygon must be string or Array[{x,y}]"
 	return ""
@@ -610,6 +623,15 @@ static func _apply_animation(
 		return "animation needs frame_count >= 2"
 	var columns := int(anim.get("columns", frame_count))
 	var duration := float(anim.get("frame_duration", 1.0))
+	# Remove tiles that the animation area would cover (except the base tile)
+	var rows_needed := ceili(float(frame_count) / float(columns))
+	for fy in range(rows_needed):
+		for fx in range(columns):
+			if fx == 0 and fy == 0:
+				continue
+			var covered := coord + Vector2i(fx, fy)
+			if atlas.has_tile(covered):
+				atlas.remove_tile(covered)
 	atlas.set_tile_animation_columns(coord, columns)
 	atlas.set_tile_animation_frames_count(coord, frame_count)
 	for f in range(frame_count):
