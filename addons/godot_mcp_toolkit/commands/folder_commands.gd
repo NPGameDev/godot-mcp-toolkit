@@ -160,6 +160,8 @@ static func _folder_delete_recursive(folder_path: String) -> Dictionary:
 	for file_name in directory.get_files():
 		if file_name.ends_with(".uid"):
 			continue
+		var full_res_path := folder_path + "/" + file_name
+		var uid: int = ResourceLoader.get_resource_uid(full_res_path)
 		var remove_error := directory.remove(file_name)
 		if remove_error != OK:
 			return {"files": files_removed, "dirs": dirs_removed, "success": false,
@@ -168,6 +170,8 @@ static func _folder_delete_recursive(folder_path: String) -> Dictionary:
 		var uid_companion := file_name + ".uid"
 		if directory.file_exists(uid_companion):
 			directory.remove(uid_companion)
+		if uid != -1 and ResourceUID.has_id(uid):
+			ResourceUID.remove_id(uid)
 	for file_name in directory.get_files():
 		if file_name.ends_with(".uid"):
 			directory.remove(file_name)
