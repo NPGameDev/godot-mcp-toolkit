@@ -174,10 +174,18 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 	var cols := int(tex_size.x) / tile_w
 	var rows := int(tex_size.y) / tile_h
 	var tiles_created := 0
+	var half_w := tile_w / 2.0
+	var half_h := tile_h / 2.0
+	var full_tile_polygon := PackedVector2Array([
+		Vector2(-half_w, -half_h), Vector2(half_w, -half_h),
+		Vector2(half_w, half_h), Vector2(-half_w, half_h)])
 	for row in range(rows):
 		for col in range(cols):
 			var atlas_coord := Vector2i(col, row)
 			source.create_tile(atlas_coord)
+			if physics:
+				var td: TileData = source.get_tile_data(atlas_coord, 0)
+				td.set_collision_polygon_points(0, 0, full_tile_polygon)
 			tiles_created += 1
 
 	# Save

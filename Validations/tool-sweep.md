@@ -255,8 +255,11 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 - **Expect:** success (may warn about missing TileSet source — that's acceptable)
 
 **54a.** `tileset_create` — file_path=`res://mcp_validation/val_atlas_tileset.tres`, texture_path=`res://icon.svg`, tile_size=`{"x":32,"y":32}`, physics=`true`
-- **Expect:** success, source_id=0, tiles_created > 0. Physics layer present. Cleanup: `resource_delete` val_atlas_tileset.tres
+- **Expect:** success, source_id=0, tiles_created > 0. Physics layer present.
 - **Note:** This is the preferred tool for creating atlas-based TileSets. `resource_write` (entry #6) still works for bare TileSet shells but cannot set up atlas sources or physics layers.
+
+**54a-verify.** `resource_load` — file_path=`res://mcp_validation/val_atlas_tileset.tres`
+- **Expect:** TileSet resource loads. Verify: physics layer exists, and tiles have collision polygons (full-tile boxes). When `physics: true`, every tile should get a collision polygon automatically — not just the layer definition. Cleanup: `resource_delete` val_atlas_tileset.tres
 
 **54b.** `tileset_create` — file_path=`res://mcp_validation/val_ts_guard.tres`, texture_path=`res://no_such_texture.png`
 - **Expect:** NOT_FOUND error mentioning "texture" — guard for missing texture path
