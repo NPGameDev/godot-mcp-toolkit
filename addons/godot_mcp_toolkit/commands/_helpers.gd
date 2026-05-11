@@ -99,8 +99,12 @@ static func class_base_chain(type_name: String) -> String:
 
 
 ## Delete a res:// file and its companion files (.uid, .import).
+## Clears the in-memory ResourceUID cache to prevent stale-UID errors.
 ## Returns {success: true, path: String} or an MCPError dict.
 static func delete_res_file(file_path: String, companions: Array = [".uid"]) -> Dictionary:
+	# Capture the UID before deleting so we can evict it from the cache.
+	var uid: int = ResourceLoader.get_resource_uid(file_path)
+
 	var directory := DirAccess.open("res://")
 	if directory == null:
 		return MCPError.make("INTERNAL", "DirAccess.open(res://) returned null")
@@ -113,6 +117,13 @@ static func delete_res_file(file_path: String, companions: Array = [".uid"]) -> 
 		var companion_relative: String = relative_path + str(suffix)
 		if directory.file_exists(companion_relative):
 			directory.remove(companion_relative)
+
+	# Evict the UID from the in-memory singleton so the engine doesn't
+	# reference a now-deleted path. On clean shutdown the cache file
+	# (uid_cache.bin) is rewritten without the removed entry.
+	if uid != -1 and ResourceUID.has_id(uid):
+		ResourceUID.remove_id(uid)
+
 	return {"success": true, "path": file_path}
 
 
