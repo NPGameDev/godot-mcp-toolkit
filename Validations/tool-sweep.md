@@ -64,10 +64,10 @@ class_name McpValActor
 signal hit
 
 func get_info() -> String:
-    return "McpValActor v1"
+	return "McpValActor v1"
 
 func _ready() -> void:
-    pass
+	pass
 ```
 - **Expect:** success
 
@@ -77,7 +77,7 @@ shader_type canvas_item;
 uniform float brightness : hint_range(0,1) = 0.5;
 uniform vec4 tint : source_color = vec4(1,1,1,1);
 void fragment() {
-    COLOR = texture(TEXTURE, UV) * tint * brightness;
+	COLOR = texture(TEXTURE, UV) * tint * brightness;
 }
 ```
 - **Expect:** success
@@ -508,17 +508,17 @@ using Godot;
 
 public partial class McpValCsNode : Node
 {
-    [Export] public int TestValue { get; set; } = 42;
-    [Export] public string TestLabel { get; set; } = "validation";
+	[Export] public int TestValue { get; set; } = 42;
+	[Export] public string TestLabel { get; set; } = "validation";
 
-    [Signal] public delegate void TestFiredEventHandler();
+	[Signal] public delegate void TestFiredEventHandler();
 
-    public int GetTestValue() => TestValue;
+	public int GetTestValue() => TestValue;
 
-    public override void _Ready()
-    {
-        GD.Print("McpValCsNode _Ready: TestValue=" + TestValue);
-    }
+	public override void _Ready()
+	{
+		GD.Print("McpValCsNode _Ready: TestValue=" + TestValue);
+	}
 }
 ```
 - **Expect:** success
@@ -530,7 +530,7 @@ using Godot;
 [GlobalClass]
 public partial class McpValCsGlobal : Node
 {
-    [Export] public int GlobalVal { get; set; } = 7;
+	[Export] public int GlobalVal { get; set; } = 7;
 }
 ```
 - **Expect:** success
@@ -1078,6 +1078,11 @@ Write `RESULTS.md` in the current directory with the following structure:
 - [ ] tileset_edit: add_source creates second atlas from different texture
 - [ ] Path normalization: /root/ paths auto-translated in editor commands
 - [ ] text_filter/is_regex: filtering works on editor_get_console and debugger_get_log
+- [ ] text_filter: invalid regex returns INVALID_PARAMS with actionable hint
+- [ ] text_filter: metacharacters in plain mode treated literally (no error)
+- [ ] text_filter: composition with level_filter ANDs correctly
+- [ ] text_filter: file source mode filters same as buffer mode
+- [ ] is_regex coercion: string "true"/"false" handled correctly (dynamically-registered tools)
 - [ ] node_manage: rename, reparent, reorder, duplicate all UndoRedo-wrapped
 - [ ] node_groups: add/remove/list working, engine-internal groups filtered
 - [ ] autoload_manage: register/unregister/list roundtrip correct
