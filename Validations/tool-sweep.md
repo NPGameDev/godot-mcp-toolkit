@@ -1248,6 +1248,37 @@ Write `RESULTS.md` in the current directory with the following structure:
 
 **80d.** Cleanup — delete inherited and base scene files
 
+### SpriteFrames creation (41k-bis-et-vicies)
+
+**82a.** `spriteframes_create` — file_path=`res://mcp_validation/val_spriteframes.tres`, animations: idle (2 frames using icon.svg) + run (4 frames)
+- **Expect:** success, status=`"created"`, 2 animations with correct frame counts.
+
+**82b.** `resource_load` — file_path=`res://mcp_validation/val_spriteframes.tres`
+- **Expect:** success, SpriteFrames resource with 2 animations.
+
+**82c.** `spriteframes_edit` — action=`add_animation`, animation_name=`"jump"`, fps=6
+- **Expect:** success.
+
+**82d.** `spriteframes_edit` — action=`add_frame`, animation_name=`"jump"`, frames=[{texture:"res://icon.svg"}]
+- **Expect:** success.
+
+**82e.** `spriteframes_edit` — action=`remove_animation`, animation_name=`"idle"`
+- **Expect:** success.
+
+**82f.** `spriteframes_edit` — action=`list`, file_path=`res://mcp_validation/val_spriteframes.tres`
+- **Expect:** success, 2 animations: run + jump.
+
+**82g.** `spriteframes_from_spritesheet` — icon.svg with 32x32 frame grid, 1 animation "walk" row=0 frame_count=3
+- **Expect:** success, atlas frames created.
+
+**82h.** `spriteframes_create` guard — animations=`[]`
+- **Expect:** INVALID_PARAMS.
+
+**82i.** `spriteframes_create` guard — non-existent texture
+- **Expect:** NOT_FOUND.
+
+**82j.** Cleanup — delete test .tres files.
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:
