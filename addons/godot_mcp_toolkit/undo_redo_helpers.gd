@@ -40,6 +40,13 @@ func _animation_insert_key_silent(animation: Animation, track_index: int, time: 
 	animation.track_insert_key(track_index, time, value)
 
 
+func _sm_remove_transition_by_endpoints(sm: AnimationNodeStateMachine, from: String, to: String) -> void:
+	for i in range(sm.get_transition_count()):
+		if str(sm.get_transition_from(i)) == from and str(sm.get_transition_to(i)) == to:
+			sm.remove_transition_by_index(i)
+			return
+
+
 func _tilemap_apply_batch(node: Node, layer: int, cells: Array) -> void:
 	var is_layer := node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	for cell in cells:

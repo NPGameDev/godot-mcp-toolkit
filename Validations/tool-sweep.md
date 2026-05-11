@@ -360,6 +360,36 @@ tileset_edit: file_path=val_atlas_tileset.tres, source_id=0, tiles=[{atlas_x:99,
 - **Expect:** success overall, but errors[] contains entry for tile (99,99).
 - **Cleanup:** resource_delete val_atlas_tileset.tres
 
+### AnimationTree Configuration (7 calls)
+
+**54k.** `animationtree_edit` — set state machine root
+animationtree_edit: node_path=`ValAnimTree`, action=`set_root`, root_type=`AnimationNodeStateMachine`
+- **Expect:** success, root_type=`AnimationNodeStateMachine`
+
+**54l.** `animationtree_edit` — add "idle" animation node
+animationtree_edit: node_path=`ValAnimTree`, action=`add_node`, node_name=`idle`, node_type=`AnimationNodeAnimation`, animation_name=`idle`, position=`{x:0, y:0}`
+- **Expect:** success, status=`created`, nodes_count >= 1
+
+**54m.** `animationtree_edit` — add "run" animation node
+animationtree_edit: node_path=`ValAnimTree`, action=`add_node`, node_name=`run`, node_type=`AnimationNodeAnimation`, animation_name=`run`, position=`{x:200, y:0}`
+- **Expect:** success, status=`created`, nodes_count >= 2
+
+**54n.** `animationtree_edit` — add transition idle→run with advance_condition
+animationtree_edit: node_path=`ValAnimTree`, action=`add_transition`, from=`idle`, to=`run`, switch_mode=`at_end`, advance_condition=`is_running`
+- **Expect:** success, status=`created`, transitions_count >= 1
+
+**54o.** `animationtree_edit` — add transition run→idle with advance_mode auto
+animationtree_edit: node_path=`ValAnimTree`, action=`add_transition`, from=`run`, to=`idle`, advance_mode=`auto`
+- **Expect:** success, status=`created`, transitions_count >= 2
+
+**54p.** `animationtree_edit` — list state machine structure
+animationtree_edit: node_path=`ValAnimTree`, action=`list`
+- **Expect:** success, root_type=`AnimationNodeStateMachine`, nodes array contains `idle` and `run` entries with animation names, transitions array contains both transitions with correct advance_condition and advance_mode values
+
+**54q.** `animationtree_edit` guard — non-AnimationTree node → INVALID_CLASS
+animationtree_edit: node_path=`ValSprite`, action=`list`
+- **Expect:** INVALID_CLASS error mentioning "AnimationTree"
+
 ### Editor Operations (12 calls)
 
 **55.** `editor_save_scene`
