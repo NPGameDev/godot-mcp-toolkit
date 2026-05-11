@@ -424,6 +424,24 @@ animationtree_edit: node_path=`ValSprite`, action=`list`
 **58b.** `editor_get_console` — text_filter=`val_.*\\.gd`, is_regex=`true`
 - **Expect:** success, returns only lines matching the regex. Tests regex filter mode.
 
+**58c.** `editor_get_console` — text_filter=`ZZZZZ_NO_MATCH_REGEX`, is_regex=`false`
+- **Expect:** success, `count: 0`. Confirms no-match returns empty, not error.
+
+**58d.** `editor_get_console` — text_filter=`(unclosed`, is_regex=`true`
+- **Expect:** `INVALID_PARAMS` error with hint mentioning "regex" and "is_regex". Confirms bad patterns are caught before execution.
+
+**58e.** `editor_get_console` — text_filter=`Validation()Test`, is_regex=`false`
+- **Expect:** success (may return 0 lines). Metacharacters `()` treated as literal characters, not regex groups. Must not error.
+
+**58f.** `editor_get_console` — text_filter=`validation`, level_filter=`["error"]`, is_regex=`false`
+- **Expect:** success. Every returned entry must satisfy BOTH filters: message contains "validation" AND level is "error". May return 0 — that's fine.
+
+**58g.** `editor_get_console` — text_filter=`validation`, source=`file`, is_regex=`false`
+- **Expect:** success. File-mode filtering works the same as buffer mode. **[<4.5]:** may need file logging enabled.
+
+**58h.** `editor_get_console` — text_filter=`[Vv]al`, is_regex=`true`
+- **Expect:** success, returns lines matching character-class regex. Confirms PCRE2 regex features work (not just simple alternation).
+
 **60.** `editor_wait_for_idle`
 - **Expect:** success (returns when EditorFileSystem is idle)
 
@@ -529,6 +547,15 @@ Tests the `/root/` auto-normalization added in 41k-octies. Agents often send run
 
 **75b.** `debugger_get_log` — text_filter=`Val.*Player`, is_regex=`true`
 - **Expect:** success, filters to lines matching regex pattern
+
+**75c.** `debugger_get_log` — text_filter=`ZZZZZ_NO_MATCH_RUNTIME`, is_regex=`false`
+- **Expect:** success, `count: 0`.
+
+**75d.** `debugger_get_log` — text_filter=`(unclosed`, is_regex=`true`
+- **Expect:** `INVALID_PARAMS` error with actionable hint.
+
+**75e.** `debugger_get_log` — text_filter=`Val.*Player`, source=`file`, is_regex=`true`
+- **Expect:** success. File-mode regex filtering works.
 
 **76.** `input_simulate` — events=`[{"event_type":"action","event_data":{"action":"mcp_val_jump","pressed":true}}]`
 - **Expect:** success, event injected
