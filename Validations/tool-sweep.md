@@ -1248,6 +1248,37 @@ Write `RESULTS.md` in the current directory with the following structure:
 
 **80d.** Cleanup — delete inherited and base scene files
 
+### Scene query (41k-ter-et-vicies)
+
+**83a.** `scene_query` — class_filter=`"StaticBody2D"`
+- **Expect:** success, count >= 0, all returned nodes are StaticBody2D or subclass.
+
+**83b.** Create temp nodes: add 2 nodes to group "mcp_test_coins" via `node_groups`. Then `scene_query` group_filter=`"mcp_test_coins"`
+- **Expect:** success, count=2.
+
+**83c.** `scene_query` — name_pattern=`"Val*"`
+- **Expect:** success, all returned node names start with "Val".
+
+**83d.** `scene_query` — property_filters=[{property:"visible", value:false, operator:"eq"}]
+- **Expect:** success (may be count=0 if all nodes visible — no error).
+
+**83e.** `scene_query` — class_filter=`"Node2D"`, property_filters=[{property:"visible", value:true}], include_properties=["position","scale"]
+- **Expect:** success, each node in results has `position` and `scale` fields.
+
+**83f.** `scene_query` — root_path=`"ValPlayer"`, class_filter=`"Node"`
+- **Expect:** success, only nodes under ValPlayer returned.
+
+**83g.** `scene_query` — class_filter=`"Node"`, max_depth=0
+- **Expect:** success, only the root node returned (depth 0 = root only).
+
+**83h.** `scene_query` guard — no filters
+- **Expect:** INVALID_PARAMS, "filter".
+
+**83i.** `scene_query` guard — root_path=`"NonExistentNode"`
+- **Expect:** NOT_FOUND.
+
+**83j.** Cleanup — remove temp group assignments from 83b.
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:
