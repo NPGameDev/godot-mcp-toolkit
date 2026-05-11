@@ -8,6 +8,13 @@ const MCPHelpers = _Hub.MCPHelpers
 
 const _VALID_PRESETS := ["fire", "smoke", "sparks", "rain", "snow", "explosion", "magic", "dust"]
 
+
+static func _class_has_prop(cls: String, prop: String) -> bool:
+	for p in ClassDB.class_get_property_list(cls):
+		if p.get("name", "") == prop:
+			return true
+	return false
+
 const _EMISSION_SHAPES := {
 	"point": ParticleProcessMaterial.EMISSION_SHAPE_POINT,
 	"sphere": ParticleProcessMaterial.EMISSION_SHAPE_SPHERE,
@@ -550,19 +557,19 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 	# --- Version-gated properties ---
 	var node_class := "GPUParticles3D" if is_3d else "GPUParticles2D"
 	if parameters.has("use_fixed_seed"):
-		if ClassDB.class_has_property(node_class, "use_fixed_seed"):
+		if _class_has_prop(node_class, "use_fixed_seed"):
 			node.set("use_fixed_seed", bool(parameters["use_fixed_seed"]))
 			properties_set += 1
 		else:
 			version_notes.append("use_fixed_seed unavailable in this Godot version")
 	if parameters.has("seed"):
-		if ClassDB.class_has_property(node_class, "seed"):
+		if _class_has_prop(node_class, "seed"):
 			node.set("seed", int(parameters["seed"]))
 			properties_set += 1
 		else:
 			version_notes.append("seed unavailable in this Godot version")
 	if parameters.has("emission_ring_cone_angle"):
-		if ClassDB.class_has_property("ParticleProcessMaterial", "emission_ring_cone_angle"):
+		if _class_has_prop("ParticleProcessMaterial", "emission_ring_cone_angle"):
 			material.set("emission_ring_cone_angle", float(parameters["emission_ring_cone_angle"]))
 			properties_set += 1
 		else:
