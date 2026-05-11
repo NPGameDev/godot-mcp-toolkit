@@ -22,3 +22,9 @@ MCPRuntimeServer="*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 [editor_plugins]
 
 enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
+
+[mcp_toolkit]
+
+feature_gates/allow_game_eval=true
+feature_gates/allow_user_scope=true
+feature_gates/allow_node_call_method=true

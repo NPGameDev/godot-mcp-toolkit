@@ -1178,6 +1178,31 @@ Write `RESULTS.md` in the current directory with the following structure:
 - [ ] layer_names_set/get: set and read-back layer names for 2d_physics roundtrip correct
 - [ ] All tools functional for this Godot version
 
+### 3D primitives and environment (41k-vicies)
+
+**77a.** `3d_create_primitive` — parent_path=`.`, primitive=`box`, size=`{"x":2,"y":2,"z":2}`, material=`{"type":"StandardMaterial3D","albedo_color":{"r":0.8,"g":0.2,"b":0.2}}`
+- **Expect:** success=true, path contains MeshInstance3D
+
+**77b.** `3d_create_primitive` — primitive=`sphere`, name=`MySphere`
+- **Expect:** success=true
+
+**77c.** `3d_create_primitive` — primitive=`cylinder`
+- **Expect:** success=true
+
+**77d.** `3d_setup_environment` — sky type=`ProceduralSkyMaterial`, ambient_light=`{"energy":0.5}`, tonemap=`filmic`
+- **Expect:** success=true, path contains WorldEnvironment
+
+**77e.** `3d_create_light` — light_type=`directional`, shadow=`true`, rotation=`{"x":-45,"y":30,"z":0}`
+- **Expect:** success=true
+
+**77f.** `3d_create_camera` — projection=`perspective`, fov=`75`, position=`{"x":0,"y":5,"z":10}`, current=`true`
+- **Expect:** success=true
+
+**77g.** `3d_create_primitive` guard — primitive=`invalid_shape`
+- **Expect:** INVALID_PARAMS error
+
+**77h.** Cleanup — delete test 3D nodes
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:
