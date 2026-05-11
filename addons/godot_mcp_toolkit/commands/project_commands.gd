@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## project.* command handlers — get_settings, set_setting.
+## project.* command handlers — get_settings, set_setting, layer names.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
@@ -9,6 +9,7 @@ const MCPUntrusted = _Hub.MCPUntrusted
 const MCPFeatureGate = _Hub.MCPFeatureGate
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
+const _VALID_LAYER_CATEGORIES := ["2d_physics", "2d_render", "3d_physics", "3d_render"]
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -18,6 +19,10 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 		return _cmd_project_set_setting(parameters))
 	registry.add("autoload.manage", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_autoload_manage(parameters))
+	registry.add("project.get_layer_names", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_get_layer_names(parameters))
+	registry.add("project.set_layer_names", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_set_layer_names(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -165,3 +170,58 @@ static func _cmd_autoload_manage(parameters: Dictionary) -> Dictionary:
 		_:
 			return MCPError.make("INVALID_PARAMS",
 				"unknown action '%s'; must be register|unregister|list" % action)
+
+
+static func _cmd_get_layer_names(parameters: Dictionary) -> Dictionary:
+	var category := str(parameters.get("category", ""))
+	if category.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing category")
+	if not category in _VALID_LAYER_CATEGORIES:
+		return MCPError.make("INVALID_PARAMS",
+			"invalid category '%s'; must be one of: %s" % [
+				category, ", ".join(_VALID_LAYER_CATEGORIES)])
+
+	var layers := {}
+	for n in range(1, 33):
+		var key := "layer_names/%s/layer_%d" % [category, n]
+		if ProjectSettings.has_setting(key):
+			var name: String = str(ProjectSettings.get_setting(key))
+			if not name.is_empty():
+				layers[n] = name
+	return {"success": true, "category": category, "layers": layers}
+
+
+static func _cmd_set_layer_names(parameters: Dictionary) -> Dictionary:
+	var category := str(parameters.get("category", ""))
+	if category.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing category")
+	if not category in _VALID_LAYER_CATEGORIES:
+		return MCPError.make("INVALID_PARAMS",
+			"invalid category '%s'; must be one of: %s" % [
+				category, ", ".join(_VALID_LAYER_CATEGORIES)])
+
+	var raw_layers = parameters.get("layers", null)
+	if raw_layers == null or typeof(raw_layers) != TYPE_DICTIONARY:
+		return MCPError.make("INVALID_PARAMS",
+			"layers must be a dictionary mapping layer numbers (1-32) to names")
+
+	var layers_dict: Dictionary = raw_layers
+	for raw_key in layers_dict:
+		var n: int = int(raw_key)
+		if n < 1 or n > 32:
+			return MCPError.make("INVALID_PARAMS",
+				"layer number %s out of range; must be 1-32" % str(raw_key))
+
+	var count := 0
+	for raw_key in layers_dict:
+		var n: int = int(raw_key)
+		var layer_name: String = str(layers_dict[raw_key])
+		var key := "layer_names/%s/layer_%d" % [category, n]
+		ProjectSettings.set_setting(key, layer_name)
+		count += 1
+
+	var save_error := ProjectSettings.save()
+	if save_error != OK:
+		return MCPError.make("SAVE_FAILED",
+			"ProjectSettings.save returned %d; changes are in-memory but not persisted" % save_error)
+	return {"success": true, "layers_set": count}
