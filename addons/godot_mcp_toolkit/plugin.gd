@@ -29,6 +29,7 @@ const TilemapCommands := preload("res://addons/godot_mcp_toolkit/commands/tilema
 const AssetCommands := preload("res://addons/godot_mcp_toolkit/commands/asset_commands.gd")
 const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_commands.gd")
 const ClassdbCommands := preload("res://addons/godot_mcp_toolkit/commands/classdb_commands.gd")
+const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
 const MetaCommands := preload("res://addons/godot_mcp_toolkit/commands/meta_commands.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
@@ -95,6 +96,7 @@ func _enter_tree() -> void:
 	AssetCommands.register(registry, _server)
 	SaveCommands.register(registry, _server)
 	ClassdbCommands.register(registry, _server)
+	ThemeCommands.register(registry, _server)
 	MetaCommands.register(registry)
 
 	# Third-party extensions — profile-exempt, always loaded.

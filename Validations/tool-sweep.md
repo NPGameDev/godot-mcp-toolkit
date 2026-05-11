@@ -28,7 +28,7 @@ Before running any test, gather project context. Record these in your report hea
   - (A) Skip gated/unavailable tools
   - (B) Wait for user to enable them
   - (C) Switch to power_user profile
-- If tool groups need loading (non-power_user), call `discover_tools` with groups: `["runtime_advanced", "signals", "animation_authoring", "input_map", "asset_management", "user_data", "scene_advanced", "editor_advanced", "tilemap", "node_management"]`
+- If tool groups need loading (non-power_user), call `discover_tools` with groups: `["runtime_advanced", "signals", "animation_authoring", "input_map", "asset_management", "user_data", "scene_advanced", "editor_advanced", "tilemap", "theme", "node_management"]`
 
 **0.4** If C# project detected, call `editor_get_console` with level_filter `["error"]` — check for C# build errors. If present, warn the user that C# scripts may not work correctly until the solution is built.
 
@@ -359,6 +359,20 @@ tileset_edit: file_path=val_atlas_tileset.tres, add_source={texture_path:"res://
 tileset_edit: file_path=val_atlas_tileset.tres, source_id=0, tiles=[{atlas_x:99, atlas_y:99, probability:0.5}]
 - **Expect:** success overall, but errors[] contains entry for tile (99,99).
 - **Cleanup:** resource_delete val_atlas_tileset.tres
+
+### Theme (4 calls)
+
+**54k.** `theme_edit` — create Theme with mixed edits
+theme_edit: file_path=`res://mcp_validation/val_theme.tres`, edits=[{type_name:"Button", property_type:"color", property_name:"font_color", value:{r:1,g:0,b:0,a:1}}, {type_name:"Label", property_type:"font_size", property_name:"font_size", value:24}, {type_name:"Panel", property_type:"stylebox", property_name:"panel", value:{type:"StyleBoxFlat", bg_color:{r:0.2,g:0.2,b:0.2,a:1}, corner_radius:4}}]
+- **Expect:** success, edits_applied=3, path=`res://mcp_validation/val_theme.tres`
+
+**54k-verify.** `resource_load` — file_path=`res://mcp_validation/val_theme.tres`
+- **Expect:** Theme resource loads. Verify: Button font_color set, Label font_size set, Panel stylebox is StyleBoxFlat with bg_color and corner_radius.
+
+**54l.** `theme_edit` guard — invalid property_type
+theme_edit: file_path=`res://mcp_validation/val_theme.tres`, edits=[{type_name:"Button", property_type:"invalid_type", property_name:"x", value:1}]
+- **Expect:** INVALID_PARAMS error mentioning "invalid_type" and "property_type"
+- **Cleanup:** resource_delete val_theme.tres
 
 ### Editor Operations (12 calls)
 
@@ -1068,8 +1082,9 @@ Write `RESULTS.md` in the current directory with the following structure:
 | 7 | "screenshot" | editor_advanced + core | | |
 | 8 | "autoload" | node_management | | |
 | 9 | "duplicate" | node_management | | |
-| 10 | reset=true | all deactivated | | |
-| 11 | (no params) | all "available" | | |
+| 10 | "theme" | theme | | |
+| 11 | reset=true | all deactivated | | |
+| 12 | (no params) | all "available" | | |
 
 ### Version-Specific Observations
 
@@ -1082,6 +1097,8 @@ Write `RESULTS.md` in the current directory with the following structure:
 - [ ] tileset_edit: animation frames set, probability adjusted
 - [ ] tileset_edit: alternative tiles created with transforms
 - [ ] tileset_edit: add_source creates second atlas from different texture
+- [ ] theme_edit: color, font_size, and stylebox edits applied to Theme .tres
+- [ ] theme_edit: invalid property_type returns INVALID_PARAMS
 - [ ] Path normalization: /root/ paths auto-translated in editor commands
 - [ ] text_filter/is_regex: filtering works on editor_get_console and debugger_get_log
 - [ ] text_filter: invalid regex returns INVALID_PARAMS with actionable hint
