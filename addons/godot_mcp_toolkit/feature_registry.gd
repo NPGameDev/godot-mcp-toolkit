@@ -21,12 +21,12 @@ const PROFILE_STANDARD := 1
 const PROFILE_POWER_USER := 2
 
 const FEATURES := {
-	"game_eval": {
-		"env_var": "GODOT_MCP_ALLOW_GAME_EVAL",
-		"ps_key": "mcp_toolkit/feature_gates/allow_game_eval",
+	"execute_code": {
+		"env_var": "GODOT_MCP_ALLOW_EXECUTE_CODE",
+		"ps_key": "mcp_toolkit/feature_gates/allow_execute_code",
 		"risk": "Arbitrary GDScript via Expression",
 		"warn_on_enable": true,
-		"warn_text": "Allows the AI to evaluate arbitrary GDScript expressions in the running game via the Expression class.",
+		"warn_text": "Allows the AI to evaluate arbitrary GDScript expressions in the running game or editor via the Expression class.",
 	},
 	"read_user_scope": {
 		"env_var": "GODOT_MCP_ALLOW_USER_SCOPE",

@@ -8,6 +8,8 @@ const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPScrubber = _Hub.MCPScrubber
 const MCPHelpers = _Hub.MCPHelpers
+const MCPFeatureGate = _Hub.MCPFeatureGate
+const MCPCoerce = _Hub.MCPCoerce
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
 
@@ -25,6 +27,8 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_editor_get_console(server, parameters))
 	registry.add("editor.wait_for_idle", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_wait_for_idle(parameters))
+	registry.add("execute.code", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_execute_code(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -311,6 +315,51 @@ static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("TIMEOUT",
 			"EditorFileSystem still scanning after %dms; consider increasing timeout_ms or checking editor.get_console for import errors" % timeout_ms)
 	return {"success": true, "was_scanning": true, "waited_ms": elapsed}
+
+
+static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
+	if not MCPFeatureGate.is_enabled("execute_code"):
+		return MCPFeatureGate.disabled_error("execute_code")
+
+	var code := str(parameters.get("code", ""))
+	if code.is_empty():
+		return MCPError.make("INVALID_PARAMS", "missing code")
+
+	# Statement keyword guard (same as runtime handler).
+	var trimmed := code.strip_edges()
+	for kw in ["var", "return", "func", "if", "for", "while", "class", "const", "match"]:
+		if trimmed == kw or trimmed.begins_with(kw + " ") or trimmed.begins_with(kw + "\t") or trimmed.begins_with(kw + "\n"):
+			return MCPError.make("PARSE_ERROR",
+				"execute_code only supports expressions, not statements. '%s' is a statement keyword. " % kw +
+				"Use method calls, property access, or arithmetic instead.")
+
+	# Resolve scope node.
+	var scope_node: Node = null
+	var scope_path := str(parameters.get("scope_path", ""))
+	if scope_path.is_empty():
+		var edited := EditorInterface.get_edited_scene_root()
+		if edited != null:
+			scope_node = edited
+		else:
+			# Fallback to engine singleton for expressions like Engine.get_version_info()
+			scope_node = Engine.get_main_loop()
+	else:
+		var edited := EditorInterface.get_edited_scene_root()
+		if edited == null:
+			return MCPError.make("NO_SCENE", "No scene open — cannot resolve scope_path")
+		scope_path = MCPHelpers.normalize_editor_path(scope_path)
+		scope_node = edited.get_node_or_null(NodePath(scope_path))
+		if scope_node == null:
+			return MCPError.make("NOT_FOUND", "scope node not found: " + scope_path)
+
+	var expr := Expression.new()
+	var parse_err := expr.parse(code, PackedStringArray())
+	if parse_err != OK:
+		return MCPError.make("PARSE_ERROR", expr.get_error_text())
+	var result = expr.execute([], scope_node, false)
+	if expr.has_execute_failed():
+		return MCPError.make("EXECUTE_FAILED", expr.get_error_text())
+	return {"result": MCPCoerce.serialize_value(result)}
 
 
 # -- Helpers ------------------------------------------------------------------

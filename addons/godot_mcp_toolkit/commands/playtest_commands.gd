@@ -139,7 +139,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 	elif not runtime_ready and not wait_for_runtime and not runtime_poll:
 		response["hint"] = (
 			"runtime_ready is false — runtime tools (runtime_screenshot, input_simulate, "
-			+ "game_eval, etc.) will NOT work until the runtime connects. "
+			+ "execute_code, etc.) will NOT work until the runtime connects. "
 			+ "Call game_start with wait_for_runtime:true to wait for connection, "
 			+ "or use runtime_poll:true to re-probe. "
 			+ "Check debugger_get_log or editor_get_console for startup errors."

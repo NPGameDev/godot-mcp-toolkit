@@ -95,6 +95,15 @@ static func migrate_stale_settings() -> void:
 				ProjectSettings.set_setting(new_key, true)
 			ProjectSettings.set_setting(old_key, null)
 			removed += 1
+	# Migrate renamed gate: game_eval → execute_code.
+	var _old_ge := "mcp_toolkit/feature_gates/allow_game_eval"
+	if ProjectSettings.has_setting(_old_ge):
+		var val = ProjectSettings.get_setting(_old_ge, false)
+		var _new_ge := "mcp_toolkit/feature_gates/allow_execute_code"
+		if val and not ProjectSettings.has_setting(_new_ge):
+			ProjectSettings.set_setting(_new_ge, true)
+		ProjectSettings.set_setting(_old_ge, null)
+		removed += 1
 	# Migrate old power_user_mode paths -> mcp_toolkit/profile enum.
 	for old_key in ["mcp_toolkit/unsafe/allow_all", "mcp_toolkit/unsafe/power_user_mode", "mcp_toolkit/power_user_mode"]:
 		if ProjectSettings.has_setting(old_key):

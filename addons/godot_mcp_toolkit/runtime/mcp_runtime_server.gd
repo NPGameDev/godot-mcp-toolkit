@@ -271,8 +271,8 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			_cmd_animation_player_control(peer, id, params)
 		"runtime.get_script_vars":
 			_cmd_runtime_get_script_vars(peer, id, params)
-		"game.eval":
-			_cmd_game_eval(peer, id, params)
+		"execute.code":
+			_cmd_execute_code(peer, id, params)
 		_:
 			_send_error(peer, id, -32601, "Method not found: %s" % method)
 
@@ -1072,15 +1072,15 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 	})
 
 
-# game.eval: DANGER — evaluates GDScript via Expression in the running game's
+# execute.code: DANGER — evaluates GDScript via Expression in the running game's
 # context. Dual-gated: requires BOTH env var AND ProjectSettings flag.
 # Defence-in-depth: even if the TS catalogue exposes the tool (env var set),
 # this handler blocks unless PS is also on.
-const _GAME_EVAL_LOG_CAP := 256
+const _EXECUTE_CODE_LOG_CAP := 256
 
-func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
-	if not MCPFeatureGate.is_enabled("game_eval"):
-		_send_result(peer, id, MCPFeatureGate.disabled_error("game_eval"))
+func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
+	if not MCPFeatureGate.is_enabled("execute_code"):
+		_send_result(peer, id, MCPFeatureGate.disabled_error("execute_code"))
 		return
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
@@ -1090,10 +1090,10 @@ func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "missing code"))
 		return
 
-	var truncated := code.substr(0, _GAME_EVAL_LOG_CAP)
-	if code.length() > _GAME_EVAL_LOG_CAP:
-		truncated += "...[+%d chars]" % (code.length() - _GAME_EVAL_LOG_CAP)
-	print("[MCPTools] game.eval: %s" % truncated)
+	var truncated := code.substr(0, _EXECUTE_CODE_LOG_CAP)
+	if code.length() > _EXECUTE_CODE_LOG_CAP:
+		truncated += "...[+%d chars]" % (code.length() - _EXECUTE_CODE_LOG_CAP)
+	print("[MCPTools] execute.code: %s" % truncated)
 
 	var scope_node: Node = null
 	var scope_path := str(params.get("scope_path", ""))
@@ -1116,7 +1116,7 @@ func _cmd_game_eval(peer: WebSocketPeer, id, params) -> void:
 	for _kw in ["var", "return", "func", "if", "for", "while", "class", "const", "match"]:
 		if _trimmed == _kw or _trimmed.begins_with(_kw + " ") or _trimmed.begins_with(_kw + "\t") or _trimmed.begins_with(_kw + "\n"):
 			_send_result(peer, id, MCPError.make("PARSE_ERROR",
-				"game_eval only supports expressions, not statements. '%s' is a statement keyword. " % _kw +
+				"execute_code only supports expressions, not statements. '%s' is a statement keyword. " % _kw +
 				"Use method calls (node.method()), property access (node.property), or arithmetic instead."))
 			return
 

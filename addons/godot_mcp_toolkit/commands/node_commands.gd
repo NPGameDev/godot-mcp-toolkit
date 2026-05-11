@@ -370,7 +370,7 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var node := root.get_node_or_null(node_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND",
-			"no node at path %s. This tool is editor-only — for runtime nodes use game_eval or runtime_get_node_state." % node_path)
+			"no node at path %s. This tool is editor-only — for runtime nodes use execute_code or runtime_get_node_state." % node_path)
 	if not node.has_method(method_name):
 		return MCPError.make("INVALID_METHOD",
 			"node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [
@@ -397,9 +397,9 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	if result == null:
 		var script = node.get_script()
 		if script != null and script.resource_path.ends_with(".cs"):
-			response["hint"] = "Return value was null. C# methods cannot execute in editor mode without the [Tool] attribute — Godot registers the method signature but does not instantiate the managed .NET object. Properties and signals work normally. Use game.start + game_eval to call C# methods at runtime, or set state via node.set_property (most C# logic runs in _Ready() at startup)."
+			response["hint"] = "Return value was null. C# methods cannot execute in editor mode without the [Tool] attribute — Godot registers the method signature but does not instantiate the managed .NET object. Properties and signals work normally. Use game.start + execute_code to call C# methods at runtime, or set state via node.set_property (most C# logic runs in _Ready() at startup)."
 		else:
-			response["hint"] = "Return value was null. Editor-side callv() on non-@tool scripts may return null if the method relies on uninitialized state (_Ready() has not run). Use game.start + runtime tools (runtime_get_node_state, game_eval) to drive and observe runtime state."
+			response["hint"] = "Return value was null. Editor-side callv() on non-@tool scripts may return null if the method relies on uninitialized state (_Ready() has not run). Use game.start + runtime tools (runtime_get_node_state, execute_code) to drive and observe runtime state."
 	return response
 
 
