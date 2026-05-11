@@ -217,13 +217,13 @@ static func _cmd_setup_environment(parameters: Dictionary) -> Dictionary:
 	if not tonemap_str.is_empty():
 		match tonemap_str:
 			"linear":
-				env.tonemap_mode = Environment.TONE_MAP_LINEAR
+				env.tonemap_mode = Environment.TONE_MAPPER_LINEAR
 			"reinhardt":
-				env.tonemap_mode = Environment.TONE_MAP_REINHARDT
+				env.tonemap_mode = Environment.TONE_MAPPER_REINHARDT
 			"filmic":
-				env.tonemap_mode = Environment.TONE_MAP_FILMIC
+				env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 			"aces":
-				env.tonemap_mode = Environment.TONE_MAP_ACES
+				env.tonemap_mode = Environment.TONE_MAPPER_ACES
 
 	# Fog.
 	var fog_data = parameters.get("fog", null)
