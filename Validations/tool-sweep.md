@@ -418,11 +418,15 @@ animationtree_edit: node_path=`ValSprite`, action=`list`
 **58.** `editor_get_console` — (default params)
 - **Expect:** success, returns recent console output. **[4.5+]:** buffer source works instantly. **[<4.5]:** may require file logging enabled.
 
-**58a.** `editor_get_console` — text_filter=`validation`, is_regex=`false`
-- **Expect:** success, returns only lines containing "validation" (case-insensitive substring match). May return 0 lines if no match — that's acceptable.
+**58a_seed.** Seed editor console with a known log line — `script_write` file_path=`res://mcp_validation/mcp_regex_seed.gd`, content=`@tool\nextends Node\nfunc _init():\n\tpush_warning("MCP_REGEX_SEED_Alpha42 test_line(parens)")\n`
+Then `editor_reload_scripts` to force the @tool script to execute `_init()`.
+- **Expect:** the string `MCP_REGEX_SEED_Alpha42 test_line(parens)` appears in the editor Output panel (level=warning). This seeds all subsequent filter steps.
 
-**58b.** `editor_get_console` — text_filter=`val_.*\\.gd`, is_regex=`true`
-- **Expect:** success, returns only lines matching the regex. Tests regex filter mode.
+**58a.** `editor_get_console` — text_filter=`MCP_REGEX_SEED`, is_regex=`false`
+- **Expect:** success, count >= 1. Returns the seeded warning line. Confirms plain substring match works.
+
+**58b.** `editor_get_console` — text_filter=`MCP_REGEX_SEED_Alpha\\d+`, is_regex=`true`
+- **Expect:** success, count >= 1. Returns the seeded line via regex digit match.
 
 **58c.** `editor_get_console` — text_filter=`ZZZZZ_NO_MATCH_REGEX`, is_regex=`false`
 - **Expect:** success, `count: 0`. Confirms no-match returns empty, not error.
@@ -430,17 +434,20 @@ animationtree_edit: node_path=`ValSprite`, action=`list`
 **58d.** `editor_get_console` — text_filter=`(unclosed`, is_regex=`true`
 - **Expect:** `INVALID_PARAMS` error with hint mentioning "regex" and "is_regex". Confirms bad patterns are caught before execution.
 
-**58e.** `editor_get_console` — text_filter=`Validation()Test`, is_regex=`false`
-- **Expect:** success (may return 0 lines). Metacharacters `()` treated as literal characters, not regex groups. Must not error.
+**58e.** `editor_get_console` — text_filter=`test_line(parens)`, is_regex=`false`
+- **Expect:** success, count >= 1. Metacharacters `()` treated as literal characters, not regex groups. Must not error. Returns the seeded line.
 
-**58f.** `editor_get_console` — text_filter=`validation`, level_filter=`["error"]`, is_regex=`false`
-- **Expect:** success. Every returned entry must satisfy BOTH filters: message contains "validation" AND level is "error". May return 0 — that's fine.
+**58f.** `editor_get_console` — text_filter=`MCP_REGEX_SEED`, level_filter=`["warning"]`, is_regex=`false`
+- **Expect:** success, count >= 1. Every returned entry must satisfy BOTH filters: message contains "MCP_REGEX_SEED" AND level is "warning".
 
-**58g.** `editor_get_console` — text_filter=`validation`, source=`file`, is_regex=`false`
-- **Expect:** success. File-mode filtering works the same as buffer mode. **[<4.5]:** may need file logging enabled.
+**58g.** `editor_get_console` — text_filter=`MCP_REGEX_SEED`, source=`file`, is_regex=`false`
+- **Expect:** success. File-mode filtering finds the same seed line. **[<4.5]:** may need file logging enabled — count may be 0 if file logging is off.
 
-**58h.** `editor_get_console` — text_filter=`[Vv]al`, is_regex=`true`
-- **Expect:** success, returns lines matching character-class regex. Confirms PCRE2 regex features work (not just simple alternation).
+**58h.** `editor_get_console` — text_filter=`[Aa]lpha\\d{2}`, is_regex=`true`
+- **Expect:** success, count >= 1. Confirms PCRE2 regex features work (character class + quantifier).
+
+**58i_cleanup.** `script_delete` file_path=`res://mcp_validation/mcp_regex_seed.gd`
+- **Expect:** success. Removes the temporary seed script.
 
 **60.** `editor_wait_for_idle`
 - **Expect:** success (returns when EditorFileSystem is idle)
@@ -542,11 +549,14 @@ Tests the `/root/` auto-normalization added in 41k-octies. Agents often send run
 **75.** `debugger_get_log`
 - **Expect:** Recent game output (may be empty if no print statements)
 
-**75a.** `debugger_get_log` — text_filter=`ValMain`, is_regex=`false`
-- **Expect:** success, filters to lines containing "ValMain" (case-insensitive). May return 0 lines — that's acceptable.
+**75a_seed.** Seed runtime log — `game_eval` code=`print("MCP_RUNTIME_SEED_Beta99 runtime_check(braces)")` **[gated: skip if game_eval unavailable]**
+- **Expect:** success. The string `MCP_RUNTIME_SEED_Beta99 runtime_check(braces)` appears in game output.
 
-**75b.** `debugger_get_log` — text_filter=`Val.*Player`, is_regex=`true`
-- **Expect:** success, filters to lines matching regex pattern
+**75a.** `debugger_get_log` — text_filter=`MCP_RUNTIME_SEED`, is_regex=`false`
+- **Expect:** success, count >= 1. Returns the seeded runtime line.
+
+**75b.** `debugger_get_log` — text_filter=`MCP_RUNTIME_SEED_Beta\\d+`, is_regex=`true`
+- **Expect:** success, count >= 1. Regex digit match on seeded line.
 
 **75c.** `debugger_get_log` — text_filter=`ZZZZZ_NO_MATCH_RUNTIME`, is_regex=`false`
 - **Expect:** success, `count: 0`.
@@ -554,8 +564,11 @@ Tests the `/root/` auto-normalization added in 41k-octies. Agents often send run
 **75d.** `debugger_get_log` — text_filter=`(unclosed`, is_regex=`true`
 - **Expect:** `INVALID_PARAMS` error with actionable hint.
 
-**75e.** `debugger_get_log` — text_filter=`Val.*Player`, source=`file`, is_regex=`true`
-- **Expect:** success. File-mode regex filtering works.
+**75e.** `debugger_get_log` — text_filter=`runtime_check(braces)`, is_regex=`false`
+- **Expect:** success, count >= 1. Parentheses treated as literal in plain mode. Returns the seeded line.
+
+**75f.** `debugger_get_log` — text_filter=`MCP_RUNTIME_SEED`, source=`file`, is_regex=`false`
+- **Expect:** success. File-mode filtering finds the seeded runtime line.
 
 **76.** `input_simulate` — events=`[{"event_type":"action","event_data":{"action":"mcp_val_jump","pressed":true}}]`
 - **Expect:** success, event injected
