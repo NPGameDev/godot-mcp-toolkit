@@ -1128,6 +1128,28 @@ Write `RESULTS.md` in the current directory with the following structure:
 | 11 | reset=true | all deactivated | | |
 | 12 | (no params) | all "available" | | |
 
+### Path2D / Curve2D editing (41k-quaterdecies)
+
+**76a.** `path2d_edit_curve` — action=`set`, node_path=`Path2D`, points=4 bezier points forming a loop
+- **Expect:** success=true, point_count=4, baked_length > 0
+
+**76a-verify.** `node_get_property` — node_path=`Path2D`, property=`curve`
+- **Expect:** non-null Curve2D resource
+
+**76b.** `path2d_edit_curve` — action=`add`, node_path=`Path2D`, index=2, points=[{position:{x:200,y:200}}]
+- **Expect:** success=true, point_count=5
+
+**76c.** `path2d_edit_curve` — action=`remove`, node_path=`Path2D`, index=0
+- **Expect:** success=true, point_count=4
+
+**76d.** `path2d_edit_curve` guard — node_path=`ValSprite` (not a Path2D)
+- **Expect:** INVALID_CLASS error mentioning "Path2D"
+
+**76e.** `path2d_edit_curve` — action=`clear`, node_path=`Path2D`
+- **Expect:** success=true, point_count=0
+
+**76f.** Cleanup — delete Path2D test node
+
 ### Version-Specific Observations
 
 - [ ] Plugin loaded successfully
