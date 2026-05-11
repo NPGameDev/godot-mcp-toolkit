@@ -261,7 +261,7 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 			return MCPError.make("INVALID_CLASS",
 				"Source %d is not a TileSetAtlasSource" % source_id)
 		var atlas: TileSetAtlasSource = source
-		var tile_size := ts.tile_size
+		var tile_size: Vector2i = ts.tile_size
 
 		for i in range(tiles_raw.size()):
 			var tile = tiles_raw[i]
