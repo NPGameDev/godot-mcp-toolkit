@@ -482,7 +482,7 @@ static func _batch_instantiate(
 	server: Node, root: Node, parent_node: Node, packed: PackedScene,
 	packed_path: String, parent_path: String, instances: Array,
 ) -> Dictionary:
-	var created: Array = []
+	var node_refs: Array = []
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action("MCP: batch instantiate %d × %s" % [instances.size(), packed_path])
@@ -511,14 +511,20 @@ static func _batch_instantiate(
 			parent_node.add_child(instance)
 			server.undo_helpers._set_owner_recursive(instance, root)
 
-		created.append({
-			"path": _path_in_scene(root, instance),
-			"class": instance.get_class(),
-			"name": String(instance.name),
-		})
+		node_refs.append(instance)
 
 	if undo_redo != null:
 		undo_redo.commit_action()
+
+	# Collect paths AFTER commit_action — instances are now in the tree,
+	# so get_path_to() can find the common parent.
+	var created: Array = []
+	for inst in node_refs:
+		created.append({
+			"path": _path_in_scene(root, inst),
+			"class": inst.get_class(),
+			"name": String(inst.name),
+		})
 
 	return {"success": true, "status": "created", "count": created.size(),
 		"instances": created}
