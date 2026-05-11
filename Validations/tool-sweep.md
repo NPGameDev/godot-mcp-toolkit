@@ -22,8 +22,8 @@ Before running any test, gather project context. Record these in your report hea
 
 **0.2** Call `asset_list` with folder_path=`res://` — scan for `.csproj` or `.cs` files. If found alongside the dotnet setting, confirm **C# project**. Otherwise, **GDScript project**.
 
-**0.3** Check available tools — attempt to list tools or check if `game_eval` is available:
-- If `game_eval` and `node_call_method` are available: **power_user** profile
+**0.3** Check available tools — attempt to list tools or check if `execute_code` is available:
+- If `execute_code` and `node_call_method` are available: **power_user** profile
 - If tools are missing: note the profile. Suggest the user switch to `power_user` for a complete sweep. Ask how to proceed:
   - (A) Skip gated/unavailable tools
   - (B) Wait for user to enable them
@@ -418,9 +418,8 @@ animationtree_edit: node_path=`ValSprite`, action=`list`
 **58.** `editor_get_console` — (default params)
 - **Expect:** success, returns recent console output. **[4.5+]:** buffer source works instantly. **[<4.5]:** may require file logging enabled.
 
-**58a_seed.** Seed editor console with a known log line — `script_write` file_path=`res://mcp_validation/mcp_regex_seed.gd`, content=`@tool\nextends Node\nfunc _init():\n\tpush_warning("MCP_REGEX_SEED_Alpha42 test_line(parens)")\n`
-Then `editor_reload_scripts` to force the @tool script to execute `_init()`.
-- **Expect:** the string `MCP_REGEX_SEED_Alpha42 test_line(parens)` appears in the editor Output panel (level=warning). This seeds all subsequent filter steps.
+**58a_seed.** Seed editor console with a known log line — `execute_code` context=`editor`, code=`push_warning("MCP_REGEX_SEED_Alpha42 test_line(parens)")`
+- **Expect:** success. The string `MCP_REGEX_SEED_Alpha42 test_line(parens)` appears in the editor Output panel (level=warning). This seeds all subsequent filter steps. **[gated: skip if execute_code unavailable]**
 
 **58a.** `editor_get_console` — text_filter=`MCP_REGEX_SEED`, is_regex=`false`
 - **Expect:** success, count >= 1. Returns the seeded warning line. Confirms plain substring match works.
@@ -446,8 +445,7 @@ Then `editor_reload_scripts` to force the @tool script to execute `_init()`.
 **58h.** `editor_get_console` — text_filter=`[Aa]lpha\\d{2}`, is_regex=`true`
 - **Expect:** success, count >= 1. Confirms PCRE2 regex features work (character class + quantifier).
 
-**58i_cleanup.** `script_delete` file_path=`res://mcp_validation/mcp_regex_seed.gd`
-- **Expect:** success. Removes the temporary seed script.
+**58i_cleanup.** _(no longer needed — execute_code seed leaves no temp file)_
 
 **60.** `editor_wait_for_idle`
 - **Expect:** success (returns when EditorFileSystem is idle)
@@ -549,7 +547,7 @@ Tests the `/root/` auto-normalization added in 41k-octies. Agents often send run
 **75.** `debugger_get_log`
 - **Expect:** Recent game output (may be empty if no print statements)
 
-**75a_seed.** Seed runtime log — `game_eval` code=`print("MCP_RUNTIME_SEED_Beta99 runtime_check(braces)")` **[gated: skip if game_eval unavailable]**
+**75a_seed.** Seed runtime log — `execute_code` code=`print("MCP_RUNTIME_SEED_Beta99 runtime_check(braces)")` **[gated: skip if execute_code unavailable]**
 - **Expect:** success. The string `MCP_RUNTIME_SEED_Beta99 runtime_check(braces)` appears in game output.
 
 **75a.** `debugger_get_log` — text_filter=`MCP_RUNTIME_SEED`, is_regex=`false`
@@ -573,7 +571,7 @@ Tests the `/root/` auto-normalization added in 41k-octies. Agents often send run
 **76.** `input_simulate` — events=`[{"event_type":"action","event_data":{"action":"mcp_val_jump","pressed":true}}]`
 - **Expect:** success, event injected
 
-**77.** `game_eval` — code=`get_tree().current_scene.name` — **[gated: skip if unavailable]**
+**77.** `execute_code` — code=`get_tree().current_scene.name` — **[gated: skip if unavailable]**
 - **Expect:** Returns `"ValMain"`
 
 **78.** `animation_player_control` — node_path=`/root/ValMain/ValAnimPlayer`, operation=`play`, animation_name=`val_lib/idle`
@@ -678,7 +676,7 @@ public partial class McpValCsGlobal : Node
 - **Expect:** Returns null. Response MUST include a hint containing:
   - "C# methods cannot execute in editor mode"
   - Mention of `[Tool]` attribute
-  - Suggestion to use `game_eval` at runtime
+  - Suggestion to use `execute_code` at runtime
 - **CRITICAL:** This is a key C# UX validation. The hint must be specific to C#, not the generic GDScript hint.
 
 ### CS4. C# signals — list, connect, disconnect
@@ -755,7 +753,7 @@ Tests `[GlobalClass]` registration using `McpValCsGlobal` (created in CS-S1b). R
 
 ### CS10. C# runtime — full runtime probe on C# node
 
-**[gated: skip if game_eval unavailable]**
+**[gated: skip if execute_code unavailable]**
 
 **CS10.1** `project_set_setting` — setting=`application/run/main_scene`, value=`"res://mcp_validation/val_main.tscn"`
 
@@ -770,7 +768,7 @@ Tests `[GlobalClass]` registration using `McpValCsGlobal` (created in CS-S1b). R
 **CS10.5** `runtime_get_script_vars` — node_path=`/root/ValMain/ValCsNode`
 - **Expect:** Script variables: TestValue=42, TestLabel="validation" — both classified as public (C# privates are hidden by absence, not by flag)
 
-**CS10.6** `game_eval` — code=`GetTestValue()`, scope_path=`/root/ValMain/ValCsNode`
+**CS10.6** `execute_code` — code=`GetTestValue()`, scope_path=`/root/ValMain/ValCsNode`
 - **Expect:** Returns 42
 - **CRITICAL:** Validates that C# managed methods ARE callable at runtime, unlike editor mode.
 
@@ -1120,7 +1118,7 @@ Write `RESULTS.md` in the current directory with the following structure:
 | CS7.1-7.2 | Scene tree with C# | scene_get_tree | .cs script path visible | | | |
 | CS8.1-8.2 | Asset introspection | asset_list, asset_get_deps | .cs files listed, deps correct | | | |
 | CS9.1-9.4 | [GlobalClass] ClassDB | classdb_search/get_info/create_node | McpValCsGlobal found, usable as node type | | | |
-| CS10.1-10.11 | Runtime full probe | runtime_*, game_eval, signal_emit | C# methods callable, GD.Print captured | | | CRITICAL — runtime parity |
+| CS10.1-10.11 | Runtime full probe | runtime_*, execute_code, signal_emit | C# methods callable, GD.Print captured | | | CRITICAL — runtime parity |
 | CS11.1-11.3 | Editor ops with C# | editor_reload, errors, console | success, C# output visible | | | |
 | CS12.1-12.9 | Scene instantiation | scene_create, instantiate | .cs-scripted sub-scene works | | | |
 
