@@ -62,6 +62,8 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_node_manage(parameters))
 	registry.add("node.groups", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_node_groups(parameters))
+	registry.add("node.collision_from_sprite", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_collision_from_sprite(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -714,3 +716,90 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 		_:
 			return MCPError.make("INVALID_PARAMS",
 				"unknown action '%s'; must be add|remove|list" % action)
+
+
+static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
+	var err := MCPError.check_required(parameters, ["sprite_path"])
+	if not err.is_empty():
+		return err
+
+	var root := MCPHelpers.get_edited_root()
+	if root == null:
+		return MCPError.make("NO_SCENE", "no edited scene")
+
+	var sprite_path := str(parameters.get("sprite_path", ""))
+	sprite_path = MCPHelpers.normalize_editor_path(sprite_path)
+	var node = MCPHelpers.resolve_scene_node(sprite_path)
+	if node == null:
+		return MCPError.make("NOT_FOUND", "node not found: %s" % sprite_path, MCPError.HINT_NODE_PATH)
+
+	if not (node is Sprite2D or node is TextureRect):
+		return MCPError.make("INVALID_CLASS",
+			"node at %s is %s — expected Sprite2D or TextureRect" % [sprite_path, node.get_class()])
+
+	var tex = node.get("texture") as Texture2D
+	if tex == null:
+		return MCPError.make("INVALID_PARAMS", "sprite has no texture")
+
+	var img := tex.get_image()
+	if img == null:
+		return MCPError.make("INVALID_PARAMS", "cannot read image data")
+
+	var simplification := float(parameters.get("simplification", 2.0))
+
+	var bitmap := BitMap.new()
+	bitmap.create_from_image_alpha(img, 0.1)
+	var polygons := bitmap.opaque_to_polygons(
+		Rect2(Vector2.ZERO, Vector2(img.get_width(), img.get_height())),
+		simplification)
+
+	if polygons.is_empty():
+		return MCPError.make("INVALID_PARAMS", "no opaque regions found in texture")
+
+	# Resolve target parent
+	var target_parent: Node
+	var target_parent_path := str(parameters.get("target_parent", ""))
+	if target_parent_path.is_empty():
+		target_parent = node.get_parent()
+	else:
+		target_parent_path = MCPHelpers.normalize_editor_path(target_parent_path)
+		target_parent = root.get_node_or_null(target_parent_path)
+		if target_parent == null:
+			return MCPError.make("NOT_FOUND",
+				"target parent not found: %s" % target_parent_path, MCPError.HINT_NODE_PATH)
+
+	var sprite_name := String(node.name)
+	var base_name := str(parameters.get("target_name", "%s_collision" % sprite_name))
+	var total_points := 0
+	var first_path := ""
+
+	for i in range(polygons.size()):
+		var coll := CollisionPolygon2D.new()
+		if polygons.size() == 1:
+			coll.name = base_name
+		else:
+			coll.name = "%s_%d" % [base_name, i]
+		coll.polygon = polygons[i]
+		total_points += (polygons[i] as PackedVector2Array).size()
+
+		var undo_redo = _Hub.get_undo_redo()
+		if undo_redo != null:
+			undo_redo.create_action("MCP: collision from sprite")
+			undo_redo.add_do_method(target_parent, "add_child", coll)
+			undo_redo.add_do_method(coll, "set_owner", root)
+			undo_redo.add_do_reference(coll)
+			undo_redo.add_undo_method(target_parent, "remove_child", coll)
+			undo_redo.commit_action()
+		else:
+			target_parent.add_child(coll)
+			coll.set_owner(root)
+
+		if i == 0:
+			first_path = str(root.get_path_to(coll))
+
+	return {
+		"success": true,
+		"path": first_path,
+		"polygon_count": polygons.size(),
+		"total_points": total_points,
+	}

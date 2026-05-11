@@ -1203,6 +1203,19 @@ Write `RESULTS.md` in the current directory with the following structure:
 
 **77h.** Cleanup — delete test 3D nodes
 
+### collision_from_texture (78a-78d)
+
+**78a.** `collision_from_texture` — sprite_path=`MCPSmokeCollSprite` (Sprite2D with icon.svg texture), simplification=`2.0`
+- **Expect:** success=true, polygon_count > 0, total_points > 0
+
+**78b.** `collision_from_texture` — custom target_name=`CustomCollision`, target_parent=`.`
+- **Expect:** success=true, collision polygon named CustomCollision
+
+**78c.** `collision_from_texture` guard — sprite_path=`.` (non-Sprite2D node)
+- **Expect:** INVALID_CLASS error mentioning Sprite2D
+
+**78d.** Cleanup — delete test sprite and collision nodes
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:
