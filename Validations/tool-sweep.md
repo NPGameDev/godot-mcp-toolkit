@@ -1375,6 +1375,25 @@ Write `RESULTS.md` in the current directory with the following structure:
 
 **84n.** Cleanup — delete all test particle nodes and temp .tres files.
 
+### Navigation mesh editing (41k-duodevicies)
+
+**85a.** Setup — add a `NavigationRegion2D` node. Then `navigation.edit_polygon` action=`"set"`, outlines=`[[{x:0,y:0},{x:800,y:0},{x:800,y:600},{x:0,y:600}]]`
+- **Expect:** success, outline_count=1, vertex_count=4.
+
+**85b.** `navigation.edit_polygon` — action=`"add_outline"`, outline=`[{x:200,y:200},{x:400,y:200},{x:400,y:400},{x:200,y:400}]` (hole/obstacle)
+- **Expect:** success, outline_count=2.
+
+**85c.** `navigation.edit_polygon` — action=`"bake"`
+- **Expect:** success, polygon_count > 0, vertex_count > 0.
+
+**85d.** `navigation.edit_polygon` — action=`"remove_outline"`, index=1
+- **Expect:** success, outline_count=1.
+
+**85e.** `navigation.edit_polygon` guard — node_path=`"."` (scene root, not NavigationRegion2D)
+- **Expect:** INVALID_CLASS.
+
+**85f.** Cleanup — delete the test NavigationRegion2D node.
+
 ### Pitfalls Discovered
 
 List any unexpected behaviors, confusing error messages, or tool interactions that didn't work as expected. For each:
