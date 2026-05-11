@@ -719,8 +719,8 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
-	var err := MCPError.check_required(parameters, ["sprite_path"])
-	if not err.is_empty():
+	var err = MCPError.check_required(parameters, ["sprite_path"])
+	if err != null:
 		return err
 
 	var root := MCPHelpers.get_edited_root()
@@ -773,6 +773,10 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 	var total_points := 0
 	var first_path := ""
 
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: collision from sprite")
+
 	for i in range(polygons.size()):
 		var coll := CollisionPolygon2D.new()
 		if polygons.size() == 1:
@@ -782,20 +786,20 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 		coll.polygon = polygons[i]
 		total_points += (polygons[i] as PackedVector2Array).size()
 
-		var undo_redo = _Hub.get_undo_redo()
 		if undo_redo != null:
-			undo_redo.create_action("MCP: collision from sprite")
 			undo_redo.add_do_method(target_parent, "add_child", coll)
 			undo_redo.add_do_method(coll, "set_owner", root)
 			undo_redo.add_do_reference(coll)
 			undo_redo.add_undo_method(target_parent, "remove_child", coll)
-			undo_redo.commit_action()
 		else:
 			target_parent.add_child(coll)
 			coll.set_owner(root)
 
 		if i == 0:
 			first_path = str(root.get_path_to(coll))
+
+	if undo_redo != null:
+		undo_redo.commit_action()
 
 	return {
 		"success": true,

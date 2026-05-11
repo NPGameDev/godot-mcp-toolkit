@@ -561,6 +561,12 @@ static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
 		root_name = instance.name
 		instance.free()
 
+	# Idempotency: check if target already exists.
+	if FileAccess.file_exists(file_path):
+		return {"success": true, "status": "returned", "file_path": file_path,
+			"base_scene": base_scene, "root_name": root_name,
+			"message": "file already exists — no changes made"}
+
 	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "scene.create_inherited")
 	if dir_result.has("error"):
 		return dir_result
