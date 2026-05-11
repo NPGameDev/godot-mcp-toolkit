@@ -51,16 +51,16 @@ parse errors on older Godot. Do not use while minimum remains 4.2.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix.
 
-## Tool catalogue (59 tools — iter 22 profiles + iter 26-28 classdb/diagnostics)
+## Tool catalogue (60 tools — iter 22 profiles + iter 26-28 classdb/diagnostics)
 
 Iter 22 replaces the coarse lite/full flag with profiles + lazy-load groups.
 Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
 
 | Profile      | Visible tools |
 |--------------|--------------|
-| **standard** (default) | 26 (23 core + 3 gated stubs) + `enable_tool_group` + `extensions_refresh` = 28 in `tools/list`. 8 groups (32 tools) on demand. |
+| **standard** (default) | 26 (23 core + 3 gated stubs) + `enable_tool_group` + `extensions_refresh` = 28 in `tools/list`. 9 groups (31 tools) on demand. |
 | **minimal** | 12 read-only (code-review mode) |
-| **full** (Power User) | All 53 tools at startup |
+| **full** (Power User) | All 54 tools at startup |
 | **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
 
 `--lite` → `minimal` with deprecation warning. `GODOT_MCP_READ_ONLY=1`
@@ -106,8 +106,9 @@ strips mutating tools from any profile.
 | `input_map` (gated)   | `input_map_action` (add/remove), `input_map_event` (bind/unbind) |
 | `asset_management`    | `asset_get_dependencies`, `asset_import`, `resource_delete`, `file_delete`, `scene_delete`, `scene_close`, `resource_load`, `resource_write`, `script_delete`, `folder_delete` |
 | `user_data` (gated)   | `save_read`, `save_write`, `save_delete`, `save_list` |
-| `scene_advanced`      | `scene_diff`, `scene_instantiate`, `tilemap_set_cells` |
+| `scene_advanced`      | `scene_diff`, `scene_instantiate` |
 | `editor_advanced`     | `editor_screenshot`, `editor_reload_scripts`, `editor_wait_for_idle` |
+| `tilemap`             | `tilemap_set_cells`, `tileset_create`, `tileset_edit` |
 
 ### Gated tools (locked stubs when disabled)
 

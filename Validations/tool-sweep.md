@@ -264,6 +264,39 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 **54b.** `tileset_create` — file_path=`res://mcp_validation/val_ts_guard.tres`, texture_path=`res://no_such_texture.png`
 - **Expect:** NOT_FOUND error mentioning "texture" — guard for missing texture path
 
+**54c.** `tileset_edit` — collision polygons
+Create TileSet via tileset_create (physics=true), then tileset_edit: file_path=val_atlas_tileset.tres, source_id=0, tiles=[{atlas_x:0, atlas_y:0, physics_polygon:"none"}, {atlas_x:1, atlas_y:0, physics_polygon:[{x:-10,y:-16},{x:10,y:-16},{x:16,y:16},{x:-16,y:16}]}, {atlas_x:0, atlas_y:1, physics_polygon:"one_way"}]
+- **Expect:** success, tiles_modified=3. Tile (0,0) has no collision, (1,0) has custom shape, (0,1) has one-way full-tile collision.
+
+**54d.** `tileset_edit` — terrain peering bits
+tileset_edit: file_path=val_atlas_tileset.tres, layers={terrain_sets:[{name:"ground", mode:"match_corners_and_sides", terrains:["grass","dirt"]}]}, tiles=[{atlas_x:0, atlas_y:0, terrain_set:0, terrain:0, terrain_peering:{top:0, bottom:0, left:0, right:0, top_left:0, top_right:0, bottom_left:0, bottom_right:0, center:0}}, {atlas_x:1, atlas_y:0, terrain_set:0, terrain:1, terrain_peering:{center:1}}]
+- **Expect:** success, tiles_modified=2. Terrain set created with 2 terrains. Peering bits set.
+
+**54e.** `tileset_edit` — navigation + occlusion polygons
+tileset_edit: file_path=val_atlas_tileset.tres, layers={navigation_layers:1, occlusion_layers:1}, tiles=[{atlas_x:0, atlas_y:0, navigation_polygon:"full", occlusion_polygon:"full"}]
+- **Expect:** success, tiles_modified=1. Navigation and occlusion layers created, full-tile polygons assigned.
+
+**54f.** `tileset_edit` — custom data layers
+tileset_edit: file_path=val_atlas_tileset.tres, layers={custom_data:[{name:"damage", type:"int"}, {name:"is_water", type:"bool"}]}, tiles=[{atlas_x:0, atlas_y:0, custom_data:{"damage":10, "is_water":false}}, {atlas_x:1, atlas_y:0, custom_data:{"damage":0, "is_water":true}}]
+- **Expect:** success, tiles_modified=2. Custom data layers created, values set.
+
+**54g.** `tileset_edit` — tile animation
+tileset_edit: file_path=val_atlas_tileset.tres, source_id=0, tiles=[{atlas_x:0, atlas_y:0, animation:{frame_count:2, columns:2, frame_duration:0.5}}]
+- **Expect:** success, tiles_modified=1. Tile (0,0) has 2-frame animation.
+
+**54h.** `tileset_edit` — probability + alternative tiles
+tileset_edit: file_path=val_atlas_tileset.tres, source_id=0, tiles=[{atlas_x:0, atlas_y:0, probability:0.3}, {atlas_x:1, atlas_y:0, alternative:{flip_h:true, modulate:{r:1,g:0.5,b:0.5,a:1}}}]
+- **Expect:** success, tiles_modified=2. Tile (0,0) has probability=0.3. Tile (1,0) has alternative with flip_h and red-tinted modulate.
+
+**54i.** `tileset_edit` — add atlas source
+tileset_edit: file_path=val_atlas_tileset.tres, add_source={texture_path:"res://icon.svg", tile_size:{x:64,y:64}}
+- **Expect:** success, new_source_id returned (>0). Second atlas source added.
+
+**54j.** `tileset_edit` guard — invalid tile coords
+tileset_edit: file_path=val_atlas_tileset.tres, source_id=0, tiles=[{atlas_x:99, atlas_y:99, probability:0.5}]
+- **Expect:** success overall, but errors[] contains entry for tile (99,99).
+- **Cleanup:** resource_delete val_atlas_tileset.tres
+
 ### Editor Operations (12 calls)
 
 **55.** `editor_save_scene`
@@ -680,9 +713,9 @@ Multi-tool workflows that test tool interoperability. Create fresh artifacts for
 Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (add_animation_library) -> `animation_keyframe` (x2, different times) -> `animation_get_keys` (verify both keys) -> `editor_save_scene` -> cleanup node
 - **Expect:** Animation created with 2 keyframes, keys retrievable
 
-### C10. TileMap painting
-`tileset_create` (file_path, texture_path=`res://icon.svg`, tile_size, physics=true) -> open val_main -> `scene_create_node` (**TileMapLayer** [4.3+] or **TileMap** [4.2]) -> `node_set_property` (tile_set resource ref to the created .tres) -> `tilemap_set_cells` (use source_id from tileset_create response) -> `editor_save_scene` -> cleanup (delete tileset .tres, delete node)
-- **Expect:** Atlas TileSet created with physics, cells painted on tile layer using correct source_id
+### C10. TileMap painting (create → configure → paint)
+`tileset_create` (file_path, texture_path=`res://icon.svg`, tile_size, physics=true) -> `tileset_edit` (layers={terrain_sets:[{name:"ground", mode:"match_corners_and_sides", terrains:["grass","dirt"]}]}, tiles=[{atlas_x:0, atlas_y:0, terrain_set:0, terrain:0, terrain_peering:{center:0, top:0, bottom:0, left:0, right:0}}]) -> open val_main -> `scene_create_node` (**TileMapLayer** [4.3+] or **TileMap** [4.2]) -> `node_set_property` (tile_set resource ref to the created .tres) -> `tilemap_set_cells` (use source_id from tileset_create response) -> `editor_save_scene` -> cleanup (delete tileset .tres, delete node)
+- **Expect:** Full create→configure→paint pipeline. Atlas TileSet created with physics, terrain peering configured, cells painted on tile layer using correct source_id
 
 ### C11. Script write → immediate check (targeted filesystem)
 `script_write` (file_path=`res://mcp_validation/val_fs_script.gd`, valid GDScript) -> verify `indexed: true` in response -> `script_check` (same path, **no** `editor_reload_scripts` between) -> `script_delete`
@@ -924,6 +957,10 @@ Write `RESULTS.md` in the current directory with the following structure:
 - [ ] scene_close: supported (active tab only) / skipped (version)
 - [ ] Logger API: buffer source works / file-dependent
 - [ ] tileset_create: atlas + physics layer created, tiles_created > 0
+- [ ] tileset_edit: collision/terrain/navigation/occlusion/custom_data all applied
+- [ ] tileset_edit: animation frames set, probability adjusted
+- [ ] tileset_edit: alternative tiles created with transforms
+- [ ] tileset_edit: add_source creates second atlas from different texture
 - [ ] Path normalization: /root/ paths auto-translated in editor commands
 - [ ] text_filter/is_regex: filtering works on editor_get_console and debugger_get_log
 - [ ] All tools functional for this Godot version
