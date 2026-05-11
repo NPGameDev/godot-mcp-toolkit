@@ -176,12 +176,12 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 			undo_redo.create_action("MCP: set %s groups" % node_path)
 			for g in old_groups:
 				if g not in new_groups:
-					undo_redo.add_do_method(node.remove_from_group.bind(g))
-					undo_redo.add_undo_method(node.add_to_group.bind(g, true))
+					undo_redo.add_do_method(node, "remove_from_group", g)
+					undo_redo.add_undo_method(node, "add_to_group", g, true)
 			for g in new_groups:
 				if g not in old_groups:
-					undo_redo.add_do_method(node.add_to_group.bind(g, true))
-					undo_redo.add_undo_method(node.remove_from_group.bind(g))
+					undo_redo.add_do_method(node, "add_to_group", g, true)
+					undo_redo.add_undo_method(node, "remove_from_group", g)
 			undo_redo.commit_action()
 		else:
 			for g in old_groups:
@@ -678,8 +678,8 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 			var undo_redo = _Hub.get_undo_redo()
 			if undo_redo != null:
 				undo_redo.create_action("MCP: add %s to group %s" % [node_path, group])
-				undo_redo.add_do_method(node.add_to_group.bind(group, persistent))
-				undo_redo.add_undo_method(node.remove_from_group.bind(group))
+				undo_redo.add_do_method(node, "add_to_group", group, persistent)
+				undo_redo.add_undo_method(node, "remove_from_group", group)
 				undo_redo.commit_action()
 			else:
 				node.add_to_group(group, persistent)
@@ -695,8 +695,8 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 			var undo_redo = _Hub.get_undo_redo()
 			if undo_redo != null:
 				undo_redo.create_action("MCP: remove %s from group %s" % [node_path, group])
-				undo_redo.add_do_method(node.remove_from_group.bind(group))
-				undo_redo.add_undo_method(node.add_to_group.bind(group, true))
+				undo_redo.add_do_method(node, "remove_from_group", group)
+				undo_redo.add_undo_method(node, "add_to_group", group, true)
 				undo_redo.commit_action()
 			else:
 				node.remove_from_group(group)
