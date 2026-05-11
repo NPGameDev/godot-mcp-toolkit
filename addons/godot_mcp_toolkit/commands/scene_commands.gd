@@ -32,6 +32,8 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_scene_diff(server, parameters))
 	registry.add("scene.create_inherited", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_create_inherited(parameters))
+	registry.add("scene.query", func(p: Dictionary) -> Dictionary:
+		return _cmd_scene_query(p))
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -626,3 +628,115 @@ static func _cmd_scene_diff(server: Node, parameters: Dictionary) -> Dictionary:
 		"added": added,
 		"removed": removed,
 	}
+
+
+static func _cmd_scene_query(parameters: Dictionary) -> Dictionary:
+	var class_filter = parameters.get("class_filter", null)
+	var group_filter = parameters.get("group_filter", null)
+	var name_pattern = parameters.get("name_pattern", null)
+	var property_filters = parameters.get("property_filters", null)
+	var root_path = parameters.get("root_path", null)
+	var max_depth: int = int(parameters.get("max_depth", -1))
+	var include_properties = parameters.get("include_properties", null)
+	var limit: int = int(parameters.get("limit", 50))
+
+	# At least one filter must be provided
+	if class_filter == null and group_filter == null and name_pattern == null \
+			and (property_filters == null \
+			or (typeof(property_filters) == TYPE_ARRAY and property_filters.size() == 0)):
+		return MCPError.make("INVALID_PARAMS",
+			"At least one filter is required: class_filter, group_filter, name_pattern, or property_filters")
+
+	var edited_scene := EditorInterface.get_edited_scene_root()
+	if edited_scene == null:
+		return MCPError.make("NO_SCENE", "No scene is currently open in the editor")
+
+	# Determine root node
+	var root: Node = edited_scene
+	if root_path != null and str(root_path) != "":
+		var rp := str(root_path)
+		rp = MCPHelpers.normalize_editor_path(rp)
+		root = edited_scene.get_node_or_null(NodePath(rp))
+		if root == null:
+			return MCPError.make("NOT_FOUND", "Root node not found: " + rp)
+
+	var results: Array[Dictionary] = []
+	_query_recursive(root, edited_scene, class_filter, group_filter, name_pattern,
+		property_filters, include_properties, max_depth, 0, limit, results)
+
+	return {"success": true, "count": results.size(), "nodes": results}
+
+
+static func _query_recursive(node: Node, scene_root: Node, class_filter, group_filter,
+		name_pattern, property_filters, include_properties, max_depth: int,
+		current_depth: int, limit: int, results: Array[Dictionary]) -> void:
+	if results.size() >= limit:
+		return
+
+	var matches := true
+
+	# Class filter (inheritance-aware)
+	if matches and class_filter != null:
+		var cf := str(class_filter)
+		if not node.is_class(cf):
+			matches = false
+
+	# Group filter
+	if matches and group_filter != null:
+		if not node.is_in_group(str(group_filter)):
+			matches = false
+
+	# Name pattern (glob)
+	if matches and name_pattern != null:
+		if not node.name.match(str(name_pattern)):
+			matches = false
+
+	# Property filters
+	if matches and property_filters != null and typeof(property_filters) == TYPE_ARRAY:
+		for pf in property_filters:
+			if typeof(pf) != TYPE_DICTIONARY:
+				continue
+			var prop_name = pf.get("property", "")
+			var expected_value = pf.get("value", null)
+			var op := str(pf.get("operator", "eq"))
+			var actual_value = node.get(StringName(str(prop_name)))
+			if not _compare_values(actual_value, expected_value, op):
+				matches = false
+				break
+
+	if matches:
+		var entry: Dictionary = {
+			"path": str(scene_root.get_path_to(node)),
+			"class": node.get_class(),
+			"name": str(node.name),
+		}
+		if include_properties != null and typeof(include_properties) == TYPE_ARRAY:
+			for prop_name in include_properties:
+				entry[str(prop_name)] = MCPCoerce.serialize_value(
+					node.get(StringName(str(prop_name))))
+		results.append(entry)
+
+	# Recurse children
+	if max_depth < 0 or current_depth < max_depth:
+		for child in node.get_children():
+			if results.size() >= limit:
+				return
+			_query_recursive(child, scene_root, class_filter, group_filter, name_pattern,
+				property_filters, include_properties, max_depth, current_depth + 1, limit, results)
+
+
+static func _compare_values(actual, expected, op: String) -> bool:
+	match op:
+		"eq":
+			return str(actual) == str(expected)  # String comparison for cross-type safety
+		"ne":
+			return str(actual) != str(expected)
+		"gt":
+			if actual is float or actual is int:
+				return float(actual) > float(expected)
+			return false
+		"lt":
+			if actual is float or actual is int:
+				return float(actual) < float(expected)
+			return false
+	return false
