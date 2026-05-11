@@ -433,6 +433,18 @@ animationtree_edit: node_path=`ValSprite`, action=`list`
 **62.** `project_set_setting` — setting=`application/config/name`, value=`"McpValidationSweep"`
 - **Expect:** success (will be restored during cleanup)
 
+**62a.** `layer_names_set` — category=`2d_physics`, layers=`{"1":"Ground","2":"Player","5":"Enemies"}`
+- **Expect:** success, layers_set=3
+
+**62b.** `layer_names_get` — category=`2d_physics`
+- **Expect:** success, layers contains `{1:"Ground", 2:"Player", 5:"Enemies"}`
+
+**62c.** `layer_names_set` — category=`invalid`
+- **Expect:** error `INVALID_PARAMS` mentioning "invalid category"
+
+**62d.** `layer_names_set` — category=`2d_physics`, layers=`{"1":"","2":"","5":""}` (cleanup)
+- **Expect:** success, layers_set=3 (clears names set in 62a)
+
 **63.** `scene_diff`
 - **Expect:** success (diff of current scene state, may show unsaved changes from call 62)
 
@@ -1141,6 +1153,7 @@ Write `RESULTS.md` in the current directory with the following structure:
 - [ ] autoload_manage: register/unregister/list roundtrip correct
 - [ ] scene_instantiate batch: multi-instance with transforms working
 - [ ] discover_tools: keyword search activates correct groups, reset deactivates
+- [ ] layer_names_set/get: set and read-back layer names for 2d_physics roundtrip correct
 - [ ] All tools functional for this Godot version
 
 ### Pitfalls Discovered
