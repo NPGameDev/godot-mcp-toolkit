@@ -341,8 +341,8 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 		if edited != null:
 			scope_node = edited
 		else:
-			# Fallback to engine singleton for expressions like Engine.get_version_info()
-			scope_node = Engine.get_main_loop()
+			# Fallback to editor base control so expressions still have a Node scope
+			scope_node = EditorInterface.get_base_control()
 	else:
 		var edited := EditorInterface.get_edited_scene_root()
 		if edited == null:
