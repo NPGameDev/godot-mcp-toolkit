@@ -221,9 +221,12 @@ static func _write_atomic(data: Dictionary) -> void:
 
 
 ## Scans entries/*.json and writes the aggregated projects.json.
-## No GC during rebuild — OS.is_process_running() can return false
-## positives on Windows, causing live entries to be deleted.
-## Dead entries are cleaned up by deregister() on normal exit or
+## OS.is_process_running() is unreliable on Windows (returns false for
+## live sibling editors), so PID-based GC is not used.  Instead, port-
+## conflict pruning removes stale entries: when two entries claim the
+## same port, the one with the older started_at is pruned (its entry
+## file is deleted so it doesn't reappear on next rebuild).
+## Fresh dead entries are cleaned up by deregister() on normal exit or
 ## overwritten when the same project reopens (same hash).
 ## Concurrent rebuilds are idempotent (same files → same output).
 ## Caller must hold the lock (or accept benign last-writer-wins).
@@ -233,7 +236,10 @@ static func _rebuild_projects_json() -> void:
 	if dir == null:
 		_write_atomic({"by_path": {}})
 		return
-	var by_path := {}
+
+	# Pass 1: scan all entry files.
+	# Each item: { key, entry_dict, fpath, port, started_at }
+	var all_entries: Array[Dictionary] = []
 	dir.list_dir_begin()
 	var fname := dir.get_next()
 	while fname != "":
@@ -251,13 +257,51 @@ static func _rebuild_projects_json() -> void:
 		if parsed == null or not parsed is Dictionary or not parsed.has("_key"):
 			fname = dir.get_next()
 			continue
-		var key: String = parsed["_key"]
-		# Strip _key metadata and add to aggregated map.
-		var entry: Dictionary = parsed.duplicate()
-		entry.erase("_key")
-		by_path[key] = entry
+		all_entries.append({
+			"key": parsed["_key"],
+			"data": parsed,
+			"fpath": fpath,
+			"port": int(parsed.get("port", 0)),
+			"started_at": int(parsed.get("started_at", 0)),
+		})
 		fname = dir.get_next()
 	dir.list_dir_end()
+
+	# Pass 2: for each port, keep only the newest entry (highest started_at).
+	# port → index of the best (newest) entry in all_entries.
+	var best_by_port: Dictionary = {}  # int → int
+	var stale_files: Array[String] = []
+	for i in all_entries.size():
+		var port: int = all_entries[i]["port"]
+		if port <= 0:
+			continue  # No port — keep unconditionally.
+		if not best_by_port.has(port):
+			best_by_port[port] = i
+		else:
+			var prev_idx: int = best_by_port[port]
+			if all_entries[i]["started_at"] > all_entries[prev_idx]["started_at"]:
+				# New entry is newer — prune the old one.
+				stale_files.append(all_entries[prev_idx]["fpath"])
+				all_entries[prev_idx]["_pruned"] = true
+				best_by_port[port] = i
+			else:
+				# Old entry is newer — prune this one.
+				stale_files.append(all_entries[i]["fpath"])
+				all_entries[i]["_pruned"] = true
+
+	# Pass 3: build by_path from surviving entries.
+	var by_path := {}
+	for item in all_entries:
+		if item.get("_pruned", false):
+			continue
+		var key: String = item["key"]
+		var entry: Dictionary = (item["data"] as Dictionary).duplicate()
+		entry.erase("_key")
+		by_path[key] = entry
+
+	# Delete stale entry files so they don't reappear on next rebuild.
+	for stale_path in stale_files:
+		DirAccess.remove_absolute(stale_path)
 	_write_atomic({"by_path": by_path})
 
 

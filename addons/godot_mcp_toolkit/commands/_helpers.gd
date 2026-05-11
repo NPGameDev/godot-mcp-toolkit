@@ -30,10 +30,13 @@ static func resolve_scene_node(node_path: String) -> Variant:
 ## Agents often pass "/root/Main/Player" when they mean "./Player".
 ## Editor commands operate on the edited scene tree where the root
 ## is always "." — there is no /root node.  The first segment after
-## /root/ is always the runtime scene root name and is stripped
-## unconditionally — no need to match against the current scene root
-## (which may differ in casing, e.g. ValMain vs val_main, or may be
-## from a different active tab).
+## /root/ is the runtime scene root name and is stripped.
+## When the path has children ("/root/X/Child"), the scene-name segment
+## is stripped unconditionally (casing may differ between runtime and
+## editor).  When the path is "/root/X" alone (no children), we validate
+## X against the current edited scene root name (case-insensitive) so
+## that clearly non-existent paths like "/root/NoSuch" propagate as-is
+## and produce NOT_FOUND from the caller's get_node_or_null.
 static func normalize_editor_path(raw_path: String) -> String:
 	if not raw_path.begins_with("/root/") and raw_path != "/root":
 		return raw_path
@@ -45,9 +48,15 @@ static func normalize_editor_path(raw_path: String) -> String:
 	# Strip "/root/" prefix — remainder is "SceneName" or "SceneName/Child/..."
 	var after_root := raw_path.substr(6)  # len("/root/") == 6
 
-	# "/root/SceneName" (no further children) → "." (the root itself)
 	var slash_idx := after_root.find("/")
 	if slash_idx < 0:
+		# "/root/SceneName" (no further children) — validate against the
+		# current edited scene root.  If the name doesn't match, the path
+		# refers to a non-existent node; return raw_path so the caller's
+		# get_node_or_null produces NOT_FOUND.
+		var edited_root := EditorInterface.get_edited_scene_root()
+		if edited_root != null and after_root.to_lower() != edited_root.name.to_lower():
+			return raw_path
 		return "."
 
 	# "/root/SceneName/Child/..." → "./Child/..."
