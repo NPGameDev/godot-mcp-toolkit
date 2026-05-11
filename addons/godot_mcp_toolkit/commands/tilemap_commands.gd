@@ -187,6 +187,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 			source.create_tile(atlas_coord)
 			if physics:
 				var td: TileData = source.get_tile_data(atlas_coord, 0)
+				td.add_collision_polygon(0)
 				td.set_collision_polygon_points(0, 0, full_tile_polygon)
 			tiles_created += 1
 
