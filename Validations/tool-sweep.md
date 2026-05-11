@@ -243,6 +243,9 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 **43h.** `node_manage` (duplicate) — action=`duplicate`, node_path=`ValLabel`, new_name=`ValLabelCopy`
 - **Expect:** success, ValLabelCopy created as sibling
 
+**43h2.** `node_manage` (duplicate with properties) — action=`duplicate`, node_path=`ValSprite`, new_name=`ValSpriteCopy`, properties=`{"position":{"x":200,"y":300}}`
+- **Expect:** success, ValSpriteCopy created. Then `node_get_property` node_path=`ValSpriteCopy`, property=`position` — expect Vector2(200, 300), NOT the original sprite position. Then `scene_delete_node` node_path=`ValSpriteCopy` (cleanup).
+
 **43i.** `node_get_property` — node_path=`ValLabelCopy`, property=`text`
 - **Expect:** "Hello Validation" (duplicate inherits property values)
 
@@ -929,6 +932,8 @@ Test that obvious keyword queries activate the correct groups. Run these `discov
 9. `discover_tools` (request=`"duplicate"`) — **Expect:** `node_management` in results
 10. `discover_tools` (reset=true) — **Expect:** all loaded groups deactivated, response includes deactivated list
 11. `discover_tools` (no params) — **Expect:** full catalog returned, all non-gated groups show status `"available"` (not `"already_loaded"`), confirming reset worked
+12. Re-activate 2 groups: `discover_tools` (groups=`["tilemap","audio"]`). Then `discover_tools` (reset=`["tilemap"]`) — **Expect:** only `tilemap` deactivated, `audio` remains loaded. Verify with `discover_tools` (no params) — `tilemap` should be `"available"`, `audio` should be `"already_loaded"`.
+13. `discover_tools` (reset=true) — cleanup (deactivate all remaining groups)
 
 Record any misses or unexpected results. Keyword quality is validated comprehensively in the final sweep (41k-quater-et-vicies Phase 2), but this quick check catches obvious regressions.
 
