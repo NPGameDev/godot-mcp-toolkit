@@ -281,6 +281,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	var class_name_param := str(parameters.get("class_name", ""))
 	var parent_path := str(parameters.get("parent_path", ""))
+	parent_path = MCPHelpers.normalize_editor_path(parent_path)
 	var requested_name := str(parameters.get("node_name", class_name_param))
 
 	if class_name_param.is_empty():
@@ -362,6 +363,7 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing node_path")
 
@@ -394,6 +396,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		return MCPError.make("NO_SCENE", "no open scene; use scene.open or scene.create first")
 
 	var parent_path := str(parameters.get("parent_path", ""))
+	parent_path = MCPHelpers.normalize_editor_path(parent_path)
 	var packed_path := str(parameters.get("packed_path", ""))
 	var as_name := str(parameters.get("as_name", ""))
 	var transform_raw = parameters.get("transform", {})

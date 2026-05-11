@@ -73,8 +73,10 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 	if typeof(parameters) != TYPE_DICTIONARY:
 		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
 	var source_path := str(parameters.get("source_path", ""))
+	source_path = MCPHelpers.normalize_editor_path(source_path)
 	var signal_name := str(parameters.get("signal_name", ""))
 	var target_path := str(parameters.get("target_path", ""))
+	target_path = MCPHelpers.normalize_editor_path(target_path)
 	var method_name := str(parameters.get("method_name", ""))
 	if source_path.is_empty() or signal_name.is_empty() \
 			or target_path.is_empty() or method_name.is_empty():
@@ -123,6 +125,7 @@ static func _cmd_signal_list(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 	var include_connections: bool = bool(parameters.get("include_connections", false))
 	var node = _resolve_scene_node(node_path)
 	if node == null:
@@ -205,6 +208,7 @@ static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 	var signal_name := str(parameters.get("signal_name", ""))
 	if signal_name.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing signal")

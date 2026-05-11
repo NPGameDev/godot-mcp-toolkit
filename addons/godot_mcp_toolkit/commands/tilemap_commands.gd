@@ -4,12 +4,15 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
+const MCPFileGuard = _Hub.MCPFileGuard
 const MCPHelpers = _Hub.MCPHelpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("tilemap.set_cells", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_tilemap_set_cells(server, parameters))
+	registry.add("tileset.create", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_tileset_create(parameters))
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -26,6 +29,7 @@ static func _cmd_tilemap_set_cells(
 	server: Node, parameters: Dictionary,
 ) -> Dictionary:
 	var tilemap_path := str(parameters.get("tilemap_path", ""))
+	tilemap_path = MCPHelpers.normalize_editor_path(tilemap_path)
 	var layer := int(parameters.get("layer", 0))
 	var cells_raw = parameters.get("cells", null)
 	if tilemap_path.is_empty():
@@ -120,4 +124,79 @@ static func _cmd_tilemap_set_cells(
 		"cells_written": cells_written,
 		"cells_unchanged": cells_unchanged,
 		"total": cells.size(),
+	}
+
+
+static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
+	var err = MCPError.check_required(parameters, ["file_path", "texture_path"])
+	if err != null:
+		return err
+	var file_path := str(parameters.get("file_path", ""))
+	var texture_path := str(parameters.get("texture_path", ""))
+	var tile_size_raw = parameters.get("tile_size", {"x": 16, "y": 16})
+	var tile_w := int(tile_size_raw.get("x", 16)) if typeof(tile_size_raw) == TYPE_DICTIONARY else 16
+	var tile_h := int(tile_size_raw.get("y", 16)) if typeof(tile_size_raw) == TYPE_DICTIONARY else 16
+
+	var guard := MCPFileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+	if not file_path.get_extension().to_lower() in ["tres", "res"]:
+		return MCPError.make("INVALID_PATH",
+			"tileset_create writes .tres/.res files (got %s)" % file_path)
+
+	# Load texture
+	var texture: Texture2D = load(texture_path) as Texture2D
+	if texture == null:
+		return MCPError.make("NOT_FOUND",
+			"texture not found or not a Texture2D: %s" % texture_path)
+
+	# Create TileSet
+	var ts := TileSet.new()
+	ts.tile_size = Vector2i(tile_w, tile_h)
+
+	# Physics layer (optional, on by default)
+	var physics: bool = parameters.get("physics", true)
+	if physics:
+		ts.add_physics_layer()
+		var collision_layer := int(parameters.get("collision_layer", 1))
+		var collision_mask := int(parameters.get("collision_mask", 1))
+		ts.set_physics_layer_collision_layer(0, collision_layer)
+		ts.set_physics_layer_collision_mask(0, collision_mask)
+
+	# Atlas source from texture
+	var source := TileSetAtlasSource.new()
+	source.texture = texture
+	source.texture_region_size = Vector2i(tile_w, tile_h)
+	var source_id := ts.add_source(source)
+
+	# Auto-create tiles for every grid cell in the texture
+	var tex_size := texture.get_size()
+	var cols := int(tex_size.x) / tile_w
+	var rows := int(tex_size.y) / tile_h
+	var tiles_created := 0
+	for row in range(rows):
+		for col in range(cols):
+			var atlas_coord := Vector2i(col, row)
+			source.create_tile(atlas_coord)
+			tiles_created += 1
+
+	# Save
+	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "tileset.create")
+	if dir_result.has("error"):
+		return dir_result
+	var save_err := ResourceSaver.save(ts, file_path)
+	if save_err != OK:
+		return MCPError.make("SAVE_FAILED",
+			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
+	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
+	MCPHelpers.ensure_file_indexed(file_path)
+
+	return {
+		"success": true,
+		"path": file_path,
+		"tile_size": {"x": tile_w, "y": tile_h},
+		"source_id": source_id,
+		"atlas_grid": {"columns": cols, "rows": rows},
+		"tiles_created": tiles_created,
+		"physics": physics,
 	}

@@ -90,6 +90,7 @@ static func _cmd_animation_keyframe(
 		return MCPError.make("INVALID_PARAMS",
 			"action must be 'add' or 'remove' (got '%s')" % action)
 	var player_path := str(parameters.get("player_path", ""))
+	player_path = MCPHelpers.normalize_editor_path(player_path)
 	var animation_name := str(parameters.get("animation_name", ""))
 	var track_path := str(parameters.get("track_path", ""))
 	var time_raw = parameters.get("time", -1.0)
@@ -220,6 +221,7 @@ static func _cmd_animation_keyframe(
 
 static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
 	var player_path := str(parameters.get("player_path", ""))
+	player_path = MCPHelpers.normalize_editor_path(player_path)
 	var animation_name := str(parameters.get("animation_name", ""))
 	var track_path := str(parameters.get("track_path", ""))
 	if track_path.is_empty():

@@ -98,6 +98,7 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 			"editor.screenshot requires a display server (no viewport in headless mode)")
 
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 
 	# Node-focused screenshot: select + capture a specific node, then restore.
 	if not node_path.is_empty():

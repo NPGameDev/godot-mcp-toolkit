@@ -106,6 +106,7 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 	var property_name := str(parameters.get("property", ""))
 
 	if node_path.is_empty() or property_name.is_empty():
@@ -138,6 +139,7 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 	var property_name := str(parameters.get("property", ""))
 	var raw_value = parameters.get("value", null)
 
@@ -265,6 +267,7 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 	var node = _resolve_scene_node(node_path)
 	if node == null:
 		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
@@ -346,6 +349,7 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NO_SCENE", "no open scene; use scene.open or scene.create first")
 
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 	var method_name := str(parameters.get("method_name", ""))
 	var args_raw = parameters.get("args", [])
 	# Resource refs in args are validated via MCPCoerce.check_resource_paths,
@@ -399,6 +403,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
+	node_path = MCPHelpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing node_path")
 
