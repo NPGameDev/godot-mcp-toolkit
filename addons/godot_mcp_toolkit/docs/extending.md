@@ -24,31 +24,31 @@ class_name PhysicsTools
 extends MCPToolkitExtension
 
 func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
-    registry.add("physics.list_bodies", _list_bodies, {
-        "description": "List all physics bodies in the current scene",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "body_type": {
-                    "type": "string",
-                    "enum": ["rigid", "static", "character", "all"]
-                }
-            }
-        },
-        "annotations": {
-            "readOnlyHint": true,
-            "idempotentHint": true
-        },
-        "group": {
-            "name": "physics_tools",
-            "description": "Physics inspection and manipulation"
-        }
-    })
+	registry.add("physics.list_bodies", _list_bodies, {
+		"description": "List all physics bodies in the current scene",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"body_type": {
+					"type": "string",
+					"enum": ["rigid", "static", "character", "all"]
+				}
+			}
+		},
+		"annotations": {
+			"readOnlyHint": true,
+			"idempotentHint": true
+		},
+		"group": {
+			"name": "physics_tools",
+			"description": "Physics inspection and manipulation"
+		}
+	})
 
 func _list_bodies(params: Dictionary) -> Dictionary:
-    var body_type: String = params.get("body_type", "all")
-    # ... scene tree traversal logic ...
-    return {"success": true, "data": bodies}
+	var body_type: String = params.get("body_type", "all")
+	# ... scene tree traversal logic ...
+	return {"success": true, "data": bodies}
 ```
 
 ### Quick start (C#)
@@ -70,23 +70,23 @@ using Godot.Collections;
 [Tool, GlobalClass]
 public partial class MCPToolkitDialogueTools : RefCounted
 {
-    public void Register(GodotObject registry, Node server)
-    {
-        registry.Call("add", "dialogue.list_nodes", new Callable(this,
-            MethodName.ListNodes), new Dictionary {
-            { "description", "List all dialogue nodes in the current scene" },
-            { "annotations", new Dictionary {
-                { "readOnlyHint", true },
-                { "idempotentHint", true }
-            }}
-        });
-    }
+	public void Register(GodotObject registry, Node server)
+	{
+		registry.Call("add", "dialogue.list_nodes", new Callable(this,
+			MethodName.ListNodes), new Dictionary {
+			{ "description", "List all dialogue nodes in the current scene" },
+			{ "annotations", new Dictionary {
+				{ "readOnlyHint", true },
+				{ "idempotentHint", true }
+			}}
+		});
+	}
 
-    public Dictionary ListNodes(Dictionary parameters)
-    {
-        // ... scene tree traversal logic ...
-        return new Dictionary { { "success", true }, { "data", nodes } };
-    }
+	public Dictionary ListNodes(Dictionary parameters)
+	{
+		// ... scene tree traversal logic ...
+		return new Dictionary { { "success", true }, { "data", nodes } };
+	}
 }
 ```
 
@@ -136,8 +136,8 @@ always visible from startup.
 
 ```gdscript
 "group": {
-    "name": "physics_tools",          # Group identifier
-    "description": "Physics inspection and manipulation"  # Shown in enable_tool_group
+	"name": "physics_tools",          # Group identifier
+	"description": "Physics inspection and manipulation"  # Shown in enable_tool_group
 }
 ```
 
@@ -151,11 +151,11 @@ plugin startup (and live via hot-reload). The discovery algorithm:
 
 1. Scan all global classes for extension candidates:
    - **GDScript:** any class whose `base` is `MCPToolkitExtension` (no naming
-     restriction — your class can be called anything)
+	 restriction — your class can be called anything)
    - **C#:** any `[GlobalClass]` whose name starts with `MCPToolkit` (C# cannot
-     extend the GDScript base class, so prefix is the discovery marker)
+	 extend the GDScript base class, so prefix is the discovery marker)
    - Internal toolkit classes are naturally excluded (they extend `RefCounted`
-     or `Node`, not `MCPToolkitExtension`)
+	 or `Node`, not `MCPToolkitExtension`)
 2. For GDScript classes: verify `is MCPToolkitExtension` (inheritance check)
 4. For CSharpScript classes: verify `has_method("Register")` or
    `has_method("register")` (duck typing)
@@ -235,24 +235,24 @@ C# parser exists. A community extension could fill this gap:
 [Tool, GlobalClass]
 public partial class MCPToolkitCSharpCheck : RefCounted
 {
-    public void Register(GodotObject registry, Node server)
-    {
-        registry.Call("add", "csharp.check", new Callable(this,
-            MethodName.CheckScript), new Dictionary {
-            { "description", "Run dotnet build and return C# diagnostics" },
-            { "annotations", new Dictionary {
-                { "readOnlyHint", true },
-                { "idempotentHint", true }
-            }}
-        });
-    }
+	public void Register(GodotObject registry, Node server)
+	{
+		registry.Call("add", "csharp.check", new Callable(this,
+			MethodName.CheckScript), new Dictionary {
+			{ "description", "Run dotnet build and return C# diagnostics" },
+			{ "annotations", new Dictionary {
+				{ "readOnlyHint", true },
+				{ "idempotentHint", true }
+			}}
+		});
+	}
 
-    public Dictionary CheckScript(Dictionary parameters)
-    {
-        // Shell out to dotnet build, parse MSBuild output,
-        // return structured diagnostics
-        // ...
-    }
+	public Dictionary CheckScript(Dictionary parameters)
+	{
+		// Shell out to dotnet build, parse MSBuild output,
+		// return structured diagnostics
+		// ...
+	}
 }
 ```
 

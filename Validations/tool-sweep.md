@@ -1,6 +1,6 @@
 # Universal MCP Tool Sweep
 
-A comprehensive, self-contained validation sweep for the Godot MCP Toolkit. Covers all 57 MCP tools with realistic scenarios, expected results, and detailed reporting.
+A comprehensive, self-contained validation sweep for the Godot MCP Toolkit. Covers all 61 MCP tools with realistic scenarios, expected results, and detailed reporting.
 
 ## How to Use
 
@@ -254,6 +254,13 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 **54.** `tilemap_set_cells` — node_path=`ValTileLayer`, cells=`[{"x":0,"y":0,"source_id":0,"atlas_x":0,"atlas_y":0},{"x":1,"y":0,"source_id":0,"atlas_x":0,"atlas_y":0}]`
 - **Expect:** success (may warn about missing TileSet source — that's acceptable)
 
+**54a.** `tileset_create` — file_path=`res://mcp_validation/val_atlas_tileset.tres`, texture_path=`res://icon.svg`, tile_size=`{"x":32,"y":32}`, physics=`true`
+- **Expect:** success, source_id=0, tiles_created > 0. Physics layer present. Cleanup: `resource_delete` val_atlas_tileset.tres
+- **Note:** This is the preferred tool for creating atlas-based TileSets. `resource_write` (entry #6) still works for bare TileSet shells but cannot set up atlas sources or physics layers.
+
+**54b.** `tileset_create` — file_path=`res://mcp_validation/val_ts_guard.tres`, texture_path=`res://no_such_texture.png`
+- **Expect:** NOT_FOUND error mentioning "texture" — guard for missing texture path
+
 ### Editor Operations (12 calls)
 
 **55.** `editor_save_scene`
@@ -267,6 +274,12 @@ Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 
 **58.** `editor_get_console` — (default params)
 - **Expect:** success, returns recent console output. **[4.5+]:** buffer source works instantly. **[<4.5]:** may require file logging enabled.
+
+**58a.** `editor_get_console` — text_filter=`validation`, is_regex=`false`
+- **Expect:** success, returns only lines containing "validation" (case-insensitive substring match). May return 0 lines if no match — that's acceptable.
+
+**58b.** `editor_get_console` — text_filter=`val_.*\\.gd`, is_regex=`true`
+- **Expect:** success, returns only lines matching the regex. Tests regex filter mode.
 
 **60.** `editor_wait_for_idle`
 - **Expect:** success (returns when EditorFileSystem is idle)
@@ -303,6 +316,19 @@ Validates active-tab enforcement for both `scene_close` and `scene_delete`.
 
 **64f.** **[4.5+]** `scene_open` — file_path=`res://mcp_validation/val_sub.tscn` (makes it active). Then `scene_close` — file_path=`res://mcp_validation/val_sub.tscn` (active tab)
 - **Expect:** success — val_sub tab closed, val_main becomes the active tab again
+
+### Path Normalization (3 calls)
+
+Tests the `/root/` auto-normalization added in 41k-octies. Agents often send runtime-style `/root/SceneName/Node` paths in editor commands — the toolkit now auto-translates these to editor-relative paths (`.`, `./Node`).
+
+**64g.** `node_get_property` — node_path=`/root/ValMain/ValSprite`, property=`position`
+- **Expect:** success, returns Vector2(100, 100) — toolkit normalizes `/root/ValMain/ValSprite` → `ValSprite` transparently
+
+**64h.** `scene_create_node` — node_type=`Node2D`, node_name=`ValNormTest`, parent_path=`/root/ValMain`
+- **Expect:** success, node created under scene root — toolkit normalizes `/root/ValMain` → `.`
+
+**64i.** `scene_delete_node` — node_path=`/root/ValMain/ValNormTest`
+- **Expect:** success, node deleted — toolkit normalizes the `/root/` path before lookup
 
 **65.** `input_map_action` — action_name=`mcp_val_jump`, operation=`add`
 - **Expect:** success
@@ -342,6 +368,12 @@ Validates active-tab enforcement for both `scene_close` and `scene_delete`.
 
 **75.** `debugger_get_log`
 - **Expect:** Recent game output (may be empty if no print statements)
+
+**75a.** `debugger_get_log` — text_filter=`ValMain`, is_regex=`false`
+- **Expect:** success, filters to lines containing "ValMain" (case-insensitive). May return 0 lines — that's acceptable.
+
+**75b.** `debugger_get_log` — text_filter=`Val.*Player`, is_regex=`true`
+- **Expect:** success, filters to lines matching regex pattern
 
 **76.** `input_simulate` — events=`[{"event_type":"action","event_data":{"action":"mcp_val_jump","pressed":true}}]`
 - **Expect:** success, event injected
@@ -646,8 +678,8 @@ Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (ad
 - **Expect:** Animation created with 2 keyframes, keys retrievable
 
 ### C10. TileMap painting
-`resource_write` (TileSet) -> open val_main -> `scene_create_node` (**TileMapLayer** [4.3+] or **TileMap** [4.2]) -> `node_set_property` (tile_set resource) -> `tilemap_set_cells` -> `editor_save_scene` -> cleanup
-- **Expect:** Cells painted on tile layer
+`tileset_create` (file_path, texture_path=`res://icon.svg`, tile_size, physics=true) -> open val_main -> `scene_create_node` (**TileMapLayer** [4.3+] or **TileMap** [4.2]) -> `node_set_property` (tile_set resource ref to the created .tres) -> `tilemap_set_cells` (use source_id from tileset_create response) -> `editor_save_scene` -> cleanup (delete tileset .tres, delete node)
+- **Expect:** Atlas TileSet created with physics, cells painted on tile layer using correct source_id
 
 ### C11. Script write → immediate check (targeted filesystem)
 `script_write` (file_path=`res://mcp_validation/val_fs_script.gd`, valid GDScript) -> verify `indexed: true` in response -> `script_check` (same path, **no** `editor_reload_scripts` between) -> `script_delete`
@@ -888,6 +920,9 @@ Write `RESULTS.md` in the current directory with the following structure:
 - [ ] TileMapLayer/TileMap: used correct type for version
 - [ ] scene_close: supported (active tab only) / skipped (version)
 - [ ] Logger API: buffer source works / file-dependent
+- [ ] tileset_create: atlas + physics layer created, tiles_created > 0
+- [ ] Path normalization: /root/ paths auto-translated in editor commands
+- [ ] text_filter/is_regex: filtering works on editor_get_console and debugger_get_log
 - [ ] All tools functional for this Godot version
 
 ### Pitfalls Discovered
