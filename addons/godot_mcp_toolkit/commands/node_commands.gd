@@ -643,10 +643,14 @@ static func _manage_duplicate(
 		dup.set_owner(root)
 
 	# Apply optional property overrides (position, scale, etc.).
+	# Use coerce_value_hint so untagged dicts like {x:200,y:300}
+	# are inferred as Vector2/Vector3/Color from the property type.
 	var props_raw = parameters.get("properties", null)
 	if typeof(props_raw) == TYPE_DICTIONARY:
 		for key in (props_raw as Dictionary):
-			dup.set(str(key), MCPCoerce.coerce_value(props_raw[key]))
+			var prop_name := str(key)
+			var existing = dup.get(prop_name)
+			dup.set(prop_name, MCPCoerce.coerce_value_hint(props_raw[key], existing))
 
 	var dup_path := str(root.get_path_to(dup))
 	return {"success": true, "action": "duplicate", "path": dup_path,

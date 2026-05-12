@@ -21,7 +21,7 @@ static func coerce_value(value: Variant) -> Variant:
 	if typeof(value) != TYPE_DICTIONARY:
 		return value
 	match str(value.get("type", "")):
-		"Resource":
+		"Resource", "ResourceRef":
 			var resource_path := str(value.get("path", ""))
 			if resource_path.is_empty():
 				# Fall through: {"type":"Resource","resource_type":"X"} → inline NewResource
@@ -217,7 +217,7 @@ static func serialize_value(value: Variant) -> Variant:
 static func check_resource_paths(value: Variant) -> String:
 	if typeof(value) == TYPE_DICTIONARY:
 		var vtype := str(value.get("type", ""))
-		if vtype == "Resource":
+		if vtype == "Resource" or vtype == "ResourceRef":
 			var resource_path := str(value.get("path", ""))
 			if resource_path.is_empty():
 				# Fall through: Resource with no path + class/resource_type → NewResource
@@ -256,6 +256,30 @@ static func check_resource_paths(value: Variant) -> String:
 			if missing != "":
 				return missing
 	return ""
+
+
+## Coerce a JSON value using the existing property value as a type hint.
+## When the JSON dict lacks a "type" key, injects the correct type tag
+## inferred from the current Variant type so coerce_value() handles it.
+## Falls back to plain coerce_value() when no inference is possible.
+static func coerce_value_hint(raw: Variant, existing: Variant) -> Variant:
+	if typeof(raw) != TYPE_DICTIONARY or (raw as Dictionary).has("type"):
+		return coerce_value(raw)
+	var tag := ""
+	match typeof(existing):
+		TYPE_VECTOR2:   tag = "Vector2"
+		TYPE_VECTOR3:   tag = "Vector3"
+		TYPE_VECTOR4:   tag = "Vector4"
+		TYPE_VECTOR2I:  tag = "Vector2i"
+		TYPE_VECTOR3I:  tag = "Vector3i"
+		TYPE_COLOR:     tag = "Color"
+		TYPE_RECT2:     tag = "Rect2"
+		TYPE_RECT2I:    tag = "Rect2i"
+	if tag.is_empty():
+		return coerce_value(raw)
+	var tagged := (raw as Dictionary).duplicate()
+	tagged["type"] = tag
+	return coerce_value(tagged)
 
 
 static func _safe_dict(value: Variant) -> Dictionary:
