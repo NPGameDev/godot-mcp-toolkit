@@ -12,6 +12,7 @@ const MCPFeatureGate = _Hub.MCPFeatureGate
 const MCPJsonSync = _Hub.MCPJsonSync
 const MCPStateFile = _Hub.MCPStateFile
 const MCPRegistryClient = _Hub.MCPRegistryClient
+const MCPNodejsCheck = _Hub.MCPNodejsCheck
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -43,6 +44,9 @@ var _previous_profile: int = PROFILE_STANDARD
 var _power_user_warning: Label = null
 var _feature_lock_warning: Label = null
 var _mcp_json_hint: Label = null
+# Node.js warnings (shared detection via MCPNodejsCheck, two display locations).
+var _nodejs_status_warning: Label = null
+var _nodejs_gate_warning: Label = null
 
 
 # Settings widgets.
@@ -199,6 +203,23 @@ func _build_ui() -> void:
 	_power_user_warning.visible = false
 	sc.add_child(_power_user_warning)
 
+	# Node.js availability — shared detection, dual display (Status + Gates).
+	var node_check := MCPNodejsCheck.check()
+	var nodejs_msg := ""
+	if not node_check["found"]:
+		nodejs_msg = ("Node.js not found — the MCP server bridge requires "
+			+ "Node.js 20+. Download it from https://nodejs.org")
+	elif not node_check["meets_minimum"]:
+		nodejs_msg = ("Node.js %s found but 20+ is required. "
+			+ "Update from https://nodejs.org") % str(node_check["version"])
+	_nodejs_status_warning = Label.new()
+	_nodejs_status_warning.text = nodejs_msg
+	_nodejs_status_warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_nodejs_status_warning.add_theme_color_override("font_color", Color(1.0, 0.6, 0.3))
+	_nodejs_status_warning.add_theme_font_size_override("font_size", 11)
+	_nodejs_status_warning.visible = nodejs_msg != ""
+	sc.add_child(_nodejs_status_warning)
+
 	# == Main resizable area (Feature Gates / Audit / bottom) =================
 	var main_split := VSplitContainer.new()
 	main_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -228,6 +249,14 @@ func _build_ui() -> void:
 	_mcp_json_hint.add_theme_font_size_override("font_size", 11)
 	_mcp_json_hint.visible = false
 	fc.add_child(_mcp_json_hint)
+
+	_nodejs_gate_warning = Label.new()
+	_nodejs_gate_warning.text = nodejs_msg
+	_nodejs_gate_warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_nodejs_gate_warning.add_theme_color_override("font_color", Color(1.0, 0.6, 0.3))
+	_nodejs_gate_warning.add_theme_font_size_override("font_size", 11)
+	_nodejs_gate_warning.visible = nodejs_msg != ""
+	fc.add_child(_nodejs_gate_warning)
 
 	var feat_scroll := ScrollContainer.new()
 	feat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL

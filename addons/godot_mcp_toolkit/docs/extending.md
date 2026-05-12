@@ -233,6 +233,43 @@ Requirements for distribution:
 directory, so AssetLib updates to `godot-mcp-toolkit` never touch your
 extension files.
 
+### Graceful dependency handling
+
+Extensions depend on the MCP Toolkit addon. Users may install your extension
+before installing the toolkit — handle this gracefully:
+
+**GDScript extensions:** `extends MCPToolkitExtension` causes a parse error
+when the toolkit is not installed. Godot logs the error and disables the
+script. This is automatic dependency detection — no extra code needed.
+
+**C# extensions:** Since C# extensions extend `RefCounted` (not the GDScript
+base class), they compile and load without the toolkit present. The extension
+simply does nothing — the toolkit's extension loader is not running, so
+`Register()` is never called. If you ship your extension as an
+`EditorPlugin` (with `plugin.cfg`), add an active check in `_enter_tree()`:
+
+```gdscript
+# Optional: plugin.cfg wrapper for active dependency detection
+@tool
+extends EditorPlugin
+
+func _enter_tree() -> void:
+    if not EditorInterface.is_plugin_enabled("godot_mcp_toolkit"):
+        push_warning("MyExtension requires the Godot MCP Toolkit plugin. "
+            + "Install it from the Godot AssetLib (search 'Godot MCP Toolkit') "
+            + "or from GitHub: https://github.com/NPGameDev/godot-mcp-toolkit/releases")
+```
+
+**Required for all distributable extensions:**
+
+1. State the dependency prominently in your `README.md`:
+   *"Requires the [Godot MCP Toolkit](https://github.com/NPGameDev/godot-mcp-toolkit)
+   plugin. Install it from the Godot AssetLib (search 'Godot MCP Toolkit')
+   or from [GitHub Releases](https://github.com/NPGameDev/godot-mcp-toolkit/releases)."*
+2. Include the same dependency note in your AssetLib description
+3. Test your extension both with and without the toolkit installed to
+   confirm the failure mode is clear, not silent
+
 ### Motivating example: C# script_check
 
 The built-in `script.check` tool only supports `.gd` files — no in-process

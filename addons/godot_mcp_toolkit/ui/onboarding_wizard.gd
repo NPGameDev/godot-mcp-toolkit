@@ -103,6 +103,8 @@ func _apply_step(dialog: AcceptDialog) -> void:
 				dialog.dialog_text = (
 					"Your MCP client reads .mcp.json from the project root\n"
 					+ "to locate and configure the server.\n\n"
+					+ "The MCP server bridge requires Node.js 20+ to run.\n"
+					+ "Download it from https://nodejs.org if not installed.\n\n"
 					+ "An .mcp.json already exists in your project.")
 				dialog.ok_button_text = "Continue (keep existing .mcp.json)"
 				_buttons.append(
@@ -111,6 +113,8 @@ func _apply_step(dialog: AcceptDialog) -> void:
 				dialog.dialog_text = (
 					"Your MCP client reads .mcp.json from the project root\n"
 					+ "to locate and configure the server.\n\n"
+					+ "The MCP server bridge requires Node.js 20+ to run.\n"
+					+ "Download it from https://nodejs.org if not installed.\n\n"
 					+ "No .mcp.json was found — this file is required for your\n"
 					+ "MCP client to connect to the toolkit.")
 				dialog.ok_button_text = "Create .mcp.json"

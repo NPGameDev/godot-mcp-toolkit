@@ -21,6 +21,7 @@ const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.g
 const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/user_path_monitor.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
 const MCPHelpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
+const MCPNodejsCheck := preload("res://addons/godot_mcp_toolkit/nodejs_check.gd")
 
 
 # -- Version helpers (Godot 4.x cross-version compat) -----------------------
@@ -65,3 +66,5 @@ static func get_editor_theme() -> Theme:
 	if base != null:
 		return base.get_theme()
 	return null
+
+

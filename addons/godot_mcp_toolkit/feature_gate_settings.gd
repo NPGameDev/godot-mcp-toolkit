@@ -14,6 +14,7 @@ const MCPFeatureGate = _Hub.MCPFeatureGate
 const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
 const MCPJsonSync = _Hub.MCPJsonSync
 const MCPStateFile = _Hub.MCPStateFile
+const MCPNodejsCheck = _Hub.MCPNodejsCheck
 
 const _LIMITS_NOTE_KEY := "mcp_toolkit/limits/env_override_note"
 const _LIMITS_NOTE_TEXT := (
@@ -34,6 +35,12 @@ const _MINIMAL_WARNING_TEXT := (
 const _MCP_JSON_MISSING_TEXT := (
 	"No .mcp.json found — use Project > Tools > MCP Toolkit > "
 	+ "Write .mcp.json to create one.")
+const _NODEJS_NOT_FOUND_TEXT := (
+	"NODE.JS NOT FOUND — The MCP server bridge requires Node.js 20+. "
+	+ "Download it from https://nodejs.org")
+const _NODEJS_OLD_VERSION_TEXT := (
+	"NODE.JS %s FOUND BUT 20+ REQUIRED — "
+	+ "Update from https://nodejs.org")
 
 # Profile enum values — canonical definition in MCPFeatureRegistry.
 const PROFILE_MINIMAL := MCPFeatureRegistry.PROFILE_MINIMAL
@@ -44,6 +51,8 @@ var _last_profile: int = PROFILE_STANDARD
 var _last_feature_states: Dictionary = {}  # { ps_key: bool } — snapshot for change detection
 var _last_mcp_json_present: bool = false  # L1: track .mcp.json presence transitions
 var _sidecar_was_present: bool = false  # P2: detect sidecar loss (manual deletion)
+var _nodejs_ok: bool = true  # Cached Node.js availability (set once in register_all).
+var _nodejs_warning_text: String = ""  # Human-readable warning (empty when OK).
 var _events: RefCounted = null  # GateEvents signal bus
 var _bootstrap_retry_after_msec: int = 0  # P-055: cooldown to avoid per-frame spam on persistent failure
 
@@ -62,6 +71,14 @@ func _on_project_name_changed(_old_name: String, _new_name: String) -> void:
 
 
 func register_all() -> void:
+	# Cache Node.js availability once at plugin startup.
+	var node_check := MCPNodejsCheck.check()
+	_nodejs_ok = node_check["meets_minimum"]
+	if not node_check["found"]:
+		_nodejs_warning_text = _NODEJS_NOT_FOUND_TEXT
+	elif not node_check["meets_minimum"]:
+		_nodejs_warning_text = _NODEJS_OLD_VERSION_TEXT % str(node_check["version"])
+
 	_register_feature_gates()
 	_register_limits()
 	_register_audit()
@@ -281,19 +298,23 @@ func _register_status_field() -> void:
 	_update_status_text()
 
 
-func _update_status_text() -> void:
-	# .mcp.json missing takes priority — gates cannot function without it.
+func _compute_status_text() -> String:
+	var parts := PackedStringArray()
 	if not MCPJsonSync.has_mcp_json():
-		ProjectSettings.set_setting(_STATUS_KEY, _MCP_JSON_MISSING_TEXT)
-		return
+		parts.append(_MCP_JSON_MISSING_TEXT)
+	if not _nodejs_ok:
+		parts.append(_nodejs_warning_text)
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
 	match profile:
 		PROFILE_POWER_USER:
-			ProjectSettings.set_setting(_STATUS_KEY, _PU_WARNING_TEXT)
+			parts.append(_PU_WARNING_TEXT)
 		PROFILE_MINIMAL:
-			ProjectSettings.set_setting(_STATUS_KEY, _MINIMAL_WARNING_TEXT)
-		_:
-			ProjectSettings.set_setting(_STATUS_KEY, "")
+			parts.append(_MINIMAL_WARNING_TEXT)
+	return "\n\n".join(parts)
+
+
+func _update_status_text() -> void:
+	ProjectSettings.set_setting(_STATUS_KEY, _compute_status_text())
 
 
 # -- Profile sync --------------------------------------------------------------
@@ -407,17 +428,7 @@ func _poll_feature_states() -> void:
 
 	# Enforce read-only text fields — revert any user edits immediately.
 	var profile: int = ProjectSettings.get_setting("mcp_toolkit/feature_gates/profile", PROFILE_STANDARD)
-	var expected_status: String
-	if not MCPJsonSync.has_mcp_json():
-		expected_status = _MCP_JSON_MISSING_TEXT
-	else:
-		match profile:
-			PROFILE_POWER_USER:
-				expected_status = _PU_WARNING_TEXT
-			PROFILE_MINIMAL:
-				expected_status = _MINIMAL_WARNING_TEXT
-			_:
-				expected_status = ""
+	var expected_status := _compute_status_text()
 	if ProjectSettings.get_setting(_STATUS_KEY, "") != expected_status:
 		ProjectSettings.set_setting(_STATUS_KEY, expected_status)
 	if ProjectSettings.get_setting(_LIMITS_NOTE_KEY, "") != _LIMITS_NOTE_TEXT:

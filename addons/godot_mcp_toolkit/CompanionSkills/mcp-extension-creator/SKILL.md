@@ -236,11 +236,30 @@ can optionally add `plugin.cfg`, but tool registration still goes through
 
 ### AssetLib submission checklist
 
-- State `godot-mcp-toolkit` as a required dependency
+- State `godot-mcp-toolkit` as a required dependency — in both your README
+  and AssetLib description, include: *"Install from the Godot AssetLib
+  (search 'Godot MCP Toolkit') or from GitHub Releases"*
 - GDScript: use `extends MCPToolkitExtension` (any class name works)
 - C#: use `MCPToolkit` prefix for class names (discovery marker)
-- Test with the toolkit installed and without (parse error = expected)
+- Test with the toolkit installed and without — GDScript shows a parse error
+  (expected and clear); C# extensions silently do nothing (document this)
 - Include usage examples in your README
+- Handle the missing-toolkit case gracefully (see below)
+
+### Graceful dependency handling
+
+Extensions must anticipate users installing them before the MCP Toolkit.
+Guide users clearly toward finding and installing it (the toolkit is
+available on the Godot AssetLib — search "Godot MCP Toolkit"):
+
+- **GDScript:** `extends MCPToolkitExtension` fails at parse time — automatic
+  detection, no extra code needed. The Output panel shows the missing class.
+- **C#:** Extensions extend `RefCounted`, so they compile fine without the
+  toolkit. `Register()` is never called (silent no-op). For `EditorPlugin`
+  wrappers, check `EditorInterface.is_plugin_enabled("godot_mcp_toolkit")`
+  in `_enter_tree()` and `push_warning()` with AssetLib install instructions.
+- **All extensions:** State the dependency prominently in README and AssetLib
+  description with install instructions pointing to AssetLib and GitHub Releases.
 
 ## Naming rules
 
