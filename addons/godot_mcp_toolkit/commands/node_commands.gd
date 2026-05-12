@@ -258,6 +258,14 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 		undo_redo.commit_action()
 	else:
 		node.set(property_name, coerced)
+	# FIX-F: Detect bare res:// strings silently failing on Resource-typed properties.
+	if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
+			and not (coerced is Resource):
+		var readback = node.get(property_name)
+		if not (readback is String):
+			return MCPError.make("INVALID_VALUE",
+				"property '%s' expects a Resource, not a bare string path. " % property_name +
+				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw_value))
 	return {"success": true}
 
 

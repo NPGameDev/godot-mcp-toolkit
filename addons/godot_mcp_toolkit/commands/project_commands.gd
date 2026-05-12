@@ -18,7 +18,7 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 	registry.add("project.set_setting", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_project_set_setting(parameters))
 	registry.add("autoload.manage", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_autoload_manage(parameters))
+		return _cmd_autoload_manage(parameters, _server))
 	registry.add("project.get_layer_names", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_get_layer_names(parameters))
 	registry.add("project.set_layer_names", func(parameters: Dictionary) -> Dictionary:
@@ -106,7 +106,7 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	return response
 
 
-static func _cmd_autoload_manage(parameters: Dictionary) -> Dictionary:
+static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing action (register|unregister|list)")
@@ -126,17 +126,22 @@ static func _cmd_autoload_manage(parameters: Dictionary) -> Dictionary:
 					"script not found: %s; create it with script_write first" % script_path)
 			var enabled := bool(parameters.get("enabled", true))
 			var value := ("*" if enabled else "") + script_path
-			ProjectSettings.set_setting("autoload/" + aname, value)
-			var save_error := ProjectSettings.save()
-			if save_error != OK:
-				return MCPError.make("SAVE_FAILED",
-					"ProjectSettings.save returned %d" % save_error)
+			# FIX-D: Use EditorPlugin API for immediate editor cache refresh.
+			var plugin: EditorPlugin = server.get("editor_plugin") if server != null else null
+			if plugin != null and enabled:
+				plugin.add_autoload_singleton(aname, script_path)
+			else:
+				ProjectSettings.set_setting("autoload/" + aname, value)
+				var save_error := ProjectSettings.save()
+				if save_error != OK:
+					return MCPError.make("SAVE_FAILED",
+						"ProjectSettings.save returned %d" % save_error)
 			var filesystem := EditorInterface.get_resource_filesystem()
 			if filesystem != null:
 				filesystem.update_file(script_path)
 			return {"success": true, "action": "register", "name": aname,
 				"script_path": script_path, "enabled": enabled,
-				"hint": "Autoload registered. The game process picks up autoloads on next launch. Reference via get_node('/root/%s')." % aname}
+				"hint": "Autoload registered and editor cache updated. Reference via get_node('/root/%s')." % aname}
 
 		"unregister":
 			var aname := str(parameters.get("name", ""))
@@ -146,11 +151,16 @@ static func _cmd_autoload_manage(parameters: Dictionary) -> Dictionary:
 			if not ProjectSettings.has_setting(key):
 				return MCPError.make("NOT_FOUND",
 					"no autoload named '%s' in project settings" % aname)
-			ProjectSettings.clear(key)
-			var save_error := ProjectSettings.save()
-			if save_error != OK:
-				return MCPError.make("SAVE_FAILED",
-					"ProjectSettings.save returned %d" % save_error)
+			# FIX-D: Use EditorPlugin API for immediate editor cache refresh.
+			var plugin: EditorPlugin = server.get("editor_plugin") if server != null else null
+			if plugin != null:
+				plugin.remove_autoload_singleton(aname)
+			else:
+				ProjectSettings.clear(key)
+				var save_error := ProjectSettings.save()
+				if save_error != OK:
+					return MCPError.make("SAVE_FAILED",
+						"ProjectSettings.save returned %d" % save_error)
 			return {"success": true, "action": "unregister", "name": aname}
 
 		"list":

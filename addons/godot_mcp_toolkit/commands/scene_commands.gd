@@ -401,10 +401,10 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 
 	var parent_path := str(parameters.get("parent_path", ""))
 	parent_path = MCPHelpers.normalize_editor_path(parent_path)
-	var packed_path := str(parameters.get("packed_path", ""))
+	var packed_path := str(parameters.get("scene_path", parameters.get("packed_path", "")))
 
 	if parent_path.is_empty() or packed_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing parent_path or packed_path")
+		return MCPError.make("INVALID_PARAMS", "missing parent_path or scene_path")
 
 	var parent_node := root.get_node_or_null(parent_path)
 	if parent_node == null:
@@ -442,21 +442,28 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 
 	var target_name := as_name if as_name != "" else (packed as PackedScene).get_state().get_node_name(0)
 	if parent_node.has_node(NodePath(target_name)):
-		var existing_node := parent_node.get_node(NodePath(target_name))
-		return {
-			"success": true,
-			"status": "returned",
-			"path": _path_in_scene(root, existing_node),
-			"class_name": existing_node.get_class(),
-		}
+		if as_name != "":
+			# Explicit name — idempotent return.
+			var existing_node := parent_node.get_node(NodePath(target_name))
+			return {
+				"success": true,
+				"status": "returned",
+				"path": _path_in_scene(root, existing_node),
+				"class_name": existing_node.get_class(),
+			}
+		# FIX-K: Auto-rename on collision (Player, Player2, Player3...) —
+		# matches Godot editor's own drag-drop naming convention.
+		var suffix := 2
+		while parent_node.has_node(NodePath(target_name + str(suffix))):
+			suffix += 1
+		target_name = target_name + str(suffix)
 
 	var instance: Node = (packed as PackedScene).instantiate()
 	if instance == null:
 		return MCPError.make("LOAD_FAILED",
 			"PackedScene.instantiate returned null for %s" % packed_path)
 
-	if as_name != "":
-		instance.name = as_name
+	instance.name = target_name
 
 	if not transform.is_empty():
 		for key in transform.keys():

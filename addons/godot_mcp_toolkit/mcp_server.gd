@@ -55,6 +55,9 @@ var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at ac
 var _bound_port: int = -1
 # -1 = not yet saved (no active connections have triggered the override).
 var _original_unfocused_sleep_usec: int = -1
+## Set by plugin.gd so domain commands can call EditorPlugin API
+## (e.g. add_autoload_singleton for immediate editor cache refresh).
+var editor_plugin: EditorPlugin = null
 const _ACTIVE_UNFOCUSED_SLEEP_USEC := 16666  # ~= 60 fps while MCP clients connected
 
 ## Node holding UndoRedo helper methods that domain commands reference by

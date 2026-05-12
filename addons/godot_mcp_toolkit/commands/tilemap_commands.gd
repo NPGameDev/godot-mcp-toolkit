@@ -27,6 +27,32 @@ static func _resolve_scene_node(node_path: String) -> Variant:
 # -- Commands -----------------------------------------------------------------
 
 
+## Expand region descriptors into flat cell array (FIX-A).
+static func _expand_regions_to_cells(regions: Array) -> Array:
+	var expanded := []
+	for region in regions:
+		if typeof(region) != TYPE_DICTIONARY:
+			continue
+		var rx := int(region.get("x", 0))
+		var ry := int(region.get("y", 0))
+		var rw := int(region.get("width", 1))
+		var rh := int(region.get("height", 1))
+		if rw <= 0 or rh <= 0:
+			continue
+		var sid := int(region.get("source_id", -1))
+		var ax := int(region.get("atlas_x", 0))
+		var ay := int(region.get("atlas_y", 0))
+		var alt := int(region.get("alternative_tile", 0))
+		for cy in range(rh):
+			for cx in range(rw):
+				expanded.append({
+					"x": rx + cx, "y": ry + cy,
+					"source_id": sid, "atlas_x": ax, "atlas_y": ay,
+					"alternative_tile": alt,
+				})
+	return expanded
+
+
 static func _cmd_tilemap_set_cells(
 	server: Node, parameters: Dictionary,
 ) -> Dictionary:
@@ -34,11 +60,22 @@ static func _cmd_tilemap_set_cells(
 	tilemap_path = MCPHelpers.normalize_editor_path(tilemap_path)
 	var layer := int(parameters.get("layer", 0))
 	var cells_raw = parameters.get("cells", null)
+	var regions_raw = parameters.get("regions", null)
 	if tilemap_path.is_empty():
 		return MCPError.make("INVALID_PARAMS", "missing tilemap_path")
+
+	# FIX-A: expand regions into cells.
+	if regions_raw != null and typeof(regions_raw) == TYPE_ARRAY:
+		var expanded := _expand_regions_to_cells(regions_raw)
+		if cells_raw != null and typeof(cells_raw) == TYPE_ARRAY:
+			cells_raw = (cells_raw as Array) + expanded
+		else:
+			cells_raw = expanded
+
 	if typeof(cells_raw) != TYPE_ARRAY:
 		return MCPError.make("INVALID_PARAMS",
-			"cells must be an Array of { x, y, source_id, atlas_x, atlas_y, alternative_tile? } descriptors")
+			"cells or regions must be provided. cells: Array of {x,y,source_id,atlas_x,atlas_y,alternative_tile?}. " +
+			"regions: Array of {x,y,width,height,source_id,atlas_x,atlas_y,alternative_tile?} for bulk rectangular fills.")
 	var cells: Array = cells_raw
 	var node = _resolve_scene_node(tilemap_path)
 	if node == null:
@@ -49,6 +86,18 @@ static func _cmd_tilemap_set_cells(
 		return MCPError.make("INVALID_CLASS",
 			"node at %s is not a TileMap or TileMapLayer (got %s); tilemap.set_cells only accepts tilemap-family nodes" % [
 				tilemap_path, node.get_class()])
+
+	# FIX-J: Validate that a tileset is assigned — placing cells without one
+	# silently produces invisible tiles.
+	var has_tileset: bool
+	if is_layer:
+		has_tileset = node.get("tile_set") != null
+	else:
+		has_tileset = (node as TileMap).tile_set != null
+	if not has_tileset:
+		return MCPError.make("INVALID_STATE",
+			"no tileset assigned to %s — cells would be invisible. " % tilemap_path +
+			"Use node_set_property with {\"type\": \"Resource\", \"path\": \"res://path/to/tileset.tres\"} to set tile_set first.")
 
 	var required_keys := ["x", "y", "source_id", "atlas_x", "atlas_y"]
 	for cell_index in range(cells.size()):
@@ -199,7 +248,11 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 	if save_err != OK:
 		return MCPError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
-	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
+	# FIX-I: Reload with explicit type hint and verify the saved file is a valid TileSet.
+	var loaded := ResourceLoader.load(file_path, "TileSet", ResourceLoader.CACHE_MODE_REPLACE)
+	if loaded == null or not (loaded is TileSet):
+		return MCPError.make("SAVE_FAILED",
+			"tileset saved but reload failed — file may be corrupt: %s" % file_path)
 	MCPHelpers.ensure_file_indexed(file_path)
 
 	return {

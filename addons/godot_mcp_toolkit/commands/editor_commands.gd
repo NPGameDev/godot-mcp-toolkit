@@ -387,6 +387,9 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 		# Detect chained property access failure on returned objects.
 		if "Invalid named index" in err_text and "base type Object" in err_text:
 			err_text += "\n\nHint: Expression.execute() cannot chain property access on returned objects. Use runtime_get_node_state or node_call_method for multi-step property access."
+		# FIX-H: Detect load() call failures — Expression cannot call load().
+		if "call to 'load'" in err_text.to_lower():
+			err_text += "\n\nHint: Expression.execute() cannot call load(). Assign resources via node_set_property with {\"type\": \"Resource\", \"path\": \"res://...\"}, or write a script that loads them in _ready()."
 		return MCPError.make("EXECUTE_FAILED", err_text)
 	return {"result": MCPCoerce.serialize_value(result)}
 

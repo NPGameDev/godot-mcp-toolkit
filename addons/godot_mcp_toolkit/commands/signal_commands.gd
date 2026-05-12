@@ -72,7 +72,7 @@ static func _signal_list_of(
 static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 	if typeof(parameters) != TYPE_DICTIONARY:
 		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
-	var source_path := str(parameters.get("source_path", ""))
+	var source_path := str(parameters.get("node_path", parameters.get("source_path", "")))
 	source_path = MCPHelpers.normalize_editor_path(source_path)
 	var signal_name := str(parameters.get("signal_name", ""))
 	var target_path := str(parameters.get("target_path", ""))
@@ -81,7 +81,7 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 	if source_path.is_empty() or signal_name.is_empty() \
 			or target_path.is_empty() or method_name.is_empty():
 		return {"code": "INVALID_PARAMS",
-			"error": "source_path, signal_name, target_path, method_name are all required"}
+			"error": "node_path, signal_name, target_path, method_name are all required"}
 	var root := _get_edited_root()
 	if root == null:
 		return {"code": "NO_SCENE", "error": "no edited scene"}

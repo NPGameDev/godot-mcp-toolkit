@@ -716,12 +716,12 @@ func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
 func _resolve_runtime_signal_pair(params) -> Dictionary:
 	if typeof(params) != TYPE_DICTIONARY:
 		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
-	var source_path := str(params.get("source_path", ""))
+	var source_path := str(params.get("node_path", params.get("source_path", "")))
 	var signal_name := str(params.get("signal_name", ""))
 	var target_path := str(params.get("target_path", ""))
 	var method_name := str(params.get("method_name", ""))
 	if source_path.is_empty() or signal_name.is_empty() or target_path.is_empty() or method_name.is_empty():
-		return {"code": "INVALID_PARAMS", "error": "source_path, signal_name, target_path, method_name are all required"}
+		return {"code": "INVALID_PARAMS", "error": "node_path, signal_name, target_path, method_name are all required"}
 	var source = _resolve_runtime_node(source_path)
 	if source == null:
 		return {"code": "NOT_FOUND", "error": "source node not found: %s" % source_path}

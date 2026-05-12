@@ -86,6 +86,7 @@ func _enter_tree() -> void:
 	_server = MCPServer.new()
 	_server.name = "MCPServer"
 	_server.set_registry(registry)
+	_server.editor_plugin = self
 
 	SceneCommands.register(registry, _server)
 	NodeCommands.register(registry, _server)
