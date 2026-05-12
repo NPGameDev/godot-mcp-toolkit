@@ -46,18 +46,22 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 		return tf[2]
 	var text_filter: String = tf[0]
 	var text_regex: RegEx = tf[1]
+	var regex_warning: String = tf[3]
 
 	if source == "file":
 		var result := _read_console_log(server, limit, ["error"], -1, text_filter, text_regex)
 		if result.get("success", false) == false:
 			return result
 		var entries = result.get("entries", [])
-		return {
+		var response := {
 			"success": true,
 			"errors": MCPUntrusted.wrap(
 				"editor_errors", "godot", JSON.stringify(entries)),
 			"count": result.get("count", 0),
 		}
+		if not regex_warning.is_empty():
+			response["warning"] = regex_warning
+		return response
 
 	var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, ["error"], -1, text_filter, text_regex)
 	var entries: Array = buf_result["entries"]
@@ -72,6 +76,8 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 	}
 	if buf_result["count"] > 0:
 		response["hint"] = "Use since_id parameter with the highest id from this response to get only new errors on next call."
+	if not regex_warning.is_empty():
+		response["warning"] = regex_warning
 	return response
 
 
@@ -293,10 +299,16 @@ static func _cmd_editor_get_console(server: Node, parameters: Dictionary) -> Dic
 		return tf[2]
 	var text_filter: String = tf[0]
 	var text_regex: RegEx = tf[1]
+	var regex_warning: String = tf[3]
 
+	var result: Dictionary
 	if source == "file":
-		return _read_console_log(server, limit, level_filter, since_id, text_filter, text_regex)
-	return _read_buffer_log(limit, level_filter, since_id, text_filter, text_regex)
+		result = _read_console_log(server, limit, level_filter, since_id, text_filter, text_regex)
+	else:
+		result = _read_buffer_log(limit, level_filter, since_id, text_filter, text_regex)
+	if not regex_warning.is_empty() and result.get("success", false):
+		result["warning"] = regex_warning
+	return result
 
 
 static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
@@ -370,17 +382,34 @@ static func _compile_text_filter(parameters: Dictionary) -> Array:
 	var text_filter: String = str(parameters.get("text_filter", ""))
 	var is_regex: bool = bool(parameters.get("is_regex", false))
 	if text_filter == "":
-		return [text_filter, null, null]
+		return [text_filter, null, null, ""]
 	if not is_regex:
-		return [text_filter, null, null]
+		return [text_filter, null, null, ""]
 	var regex := RegEx.new()
 	if regex.compile("(?i)" + text_filter) != OK:
 		var err := MCPError.make("INVALID_PARAMS",
 			"text_filter is not a valid regex (is_regex=true). "
 			+ "To search for literal text, omit is_regex or set it to false. "
 			+ "For regex, check for unbalanced groups () [] or unescaped metacharacters.")
-		return ["", null, err]
-	return [text_filter, regex, null]
+		return ["", null, err, ""]
+	var warning := _detect_double_escaped_regex(text_filter)
+	return [text_filter, regex, null, warning]
+
+
+## Detect likely double-escaped regex metacharacters.
+## After JSON parsing, the string should contain single backslash sequences
+## like \d. If it contains \\d (two backslashes + letter), the caller
+## likely double-escaped and the regex won't match as intended.
+static func _detect_double_escaped_regex(pattern: String) -> String:
+	for letter in ["d", "D", "w", "W", "s", "S", "b", "B"]:
+		if pattern.find("\\\\" + letter) >= 0:
+			return (
+				"Pattern contains '\\\\%s' (literal backslash + '%s'). "
+				+ "If you meant the regex metacharacter \\%s, your backslash "
+				+ "is likely double-escaped. In JSON, use \"\\\\%s\" (one escaped "
+				+ "backslash), not \"\\\\\\\\%s\" (two)."
+			) % [letter, letter, letter, letter, letter]
+	return ""
 
 
 static func _godot_error_name(code: int) -> String:

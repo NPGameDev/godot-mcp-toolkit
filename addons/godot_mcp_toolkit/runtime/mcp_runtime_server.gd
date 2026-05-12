@@ -520,6 +520,8 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 					+ "For regex, check for unbalanced groups () [] or unescaped metacharacters."))
 				return
 
+	var regex_warning := _detect_double_escaped_regex(text_filter) if text_regex != null else ""
+
 	if source == "buffer":
 		var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, [], -1, text_filter, text_regex)
 		var entries: Array = buf_result["entries"]
@@ -537,6 +539,8 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		if entries.is_empty() and not _Hub.LogBuffer.uses_logger_api():
 			if not MCPHelpers.is_file_logging_enabled():
 				response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work. Logs from before enabling will not be available."
+		if not regex_warning.is_empty():
+			response["warning"] = regex_warning
 		_send_result(peer, id, response)
 		return
 
@@ -599,13 +603,29 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 
 	var json_slice := JSON.stringify(slice)
 	var scrubbed := MCPScrubber.scrub(json_slice, "debugger.get_log")
-	_send_result(peer, id, {
+	var file_response := {
 		"lines": MCPUntrusted.wrap("game_log", "godot", scrubbed["text"]),
 		"count": slice.size(),
 		"total": total,
 		"path": log_path,
 		"source": "file",
-	})
+	}
+	if not regex_warning.is_empty():
+		file_response["warning"] = regex_warning
+	_send_result(peer, id, file_response)
+
+
+## Detect likely double-escaped regex metacharacters (same as editor_commands.gd).
+func _detect_double_escaped_regex(pattern: String) -> String:
+	for letter in ["d", "D", "w", "W", "s", "S", "b", "B"]:
+		if pattern.find("\\\\" + letter) >= 0:
+			return (
+				"Pattern contains '\\\\%s' (literal backslash + '%s'). "
+				+ "If you meant the regex metacharacter \\%s, your backslash "
+				+ "is likely double-escaped. In JSON, use \"\\\\%s\" (one escaped "
+				+ "backslash), not \"\\\\\\\\%s\" (two)."
+			) % [letter, letter, letter, letter, letter]
+	return ""
 
 
 # ---- Signal commands (Mode B mirror of editor handlers) ---------------------
