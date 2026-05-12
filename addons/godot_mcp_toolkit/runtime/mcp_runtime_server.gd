@@ -509,12 +509,23 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 
 	# Read back to confirm
 	var new_value = node.get(property)
-	_send_result(peer, id, {
+	var result := {
 		"node_path": node_path,
 		"property": property,
 		"old_value": MCPCoerce.serialize_value(current),
 		"new_value": MCPCoerce.serialize_value(new_value),
-	})
+	}
+
+	# Autoload hint: direct children of /root are autoloads — they persist
+	# across scene transitions. Warn that changes carry forward unless the
+	# game's own reset logic explicitly restores the property.
+	if node.get_parent() == tree.root:
+		result["warning"] = (
+			"'%s' is an autoload — it persists across scene transitions. " % node.name +
+			"This change will carry forward through restarts/level changes " +
+			"unless the game explicitly resets '%s'." % property)
+
+	_send_result(peer, id, result)
 
 
 const _DEFAULT_LOG_LIMIT := 200
