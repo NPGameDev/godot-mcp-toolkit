@@ -932,8 +932,10 @@ Test that obvious keyword queries activate the correct groups. Run these `discov
 9. `discover_tools` (request=`"duplicate"`) — **Expect:** `node_management` in results
 10. `discover_tools` (reset=true) — **Expect:** all loaded groups deactivated, response includes deactivated list
 11. `discover_tools` (no params) — **Expect:** full catalog returned, all non-gated groups show status `"available"` (not `"already_loaded"`), confirming reset worked
-12. Re-activate 2 groups: `discover_tools` (groups=`["tilemap","audio"]`). Then `discover_tools` (reset=`["tilemap"]`) — **Expect:** only `tilemap` deactivated, `audio` remains loaded. Verify with `discover_tools` (no params) — `tilemap` should be `"available"`, `audio` should be `"already_loaded"`.
-13. `discover_tools` (reset=true) — cleanup (deactivate all remaining groups)
+12. `discover_tools` (groups=`["tilemap","audio"]`) — re-activate two groups for selective reset test
+13. **SELECTIVE RESET (array form, NOT boolean):** `discover_tools` (reset=`["tilemap"]`) — pass an **array** with one group name, NOT `reset=true`. **Expect:** only `tilemap` deactivated, `audio` remains loaded.
+14. `discover_tools` (no params) — verify selective reset worked: `tilemap` should be `"available"`, `audio` should be `"already_loaded"`
+15. `discover_tools` (reset=true) — cleanup (deactivate all remaining groups)
 
 Record any misses or unexpected results. Keyword quality is validated comprehensively in the final sweep (41k-quater-et-vicies Phase 2), but this quick check catches obvious regressions.
 
