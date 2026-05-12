@@ -275,6 +275,11 @@ static func _cmd_editor_reload_scripts(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_editor_get_console(server: Node, parameters: Dictionary) -> Dictionary:
+	# FIX-8: clear_buffer flushes stale log entries before reading.
+	var clear_buffer: bool = parameters.get("clear_buffer", false) == true
+	if clear_buffer:
+		_Hub.LogBuffer.clear()
+
 	var limit: int = int(parameters.get("limit", 200))
 	var level_filter: Array = parameters.get("level_filter", [])
 	if typeof(level_filter) != TYPE_ARRAY:
@@ -370,7 +375,19 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("PARSE_ERROR", expr.get_error_text())
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
-		return MCPError.make("EXECUTE_FAILED", expr.get_error_text())
+		var err_text := expr.get_error_text()
+		# FIX-4: Detect known singletons in error and append recovery hints.
+		var singletons := ["EditorInterface", "Engine", "OS", "Input",
+			"DisplayServer", "ProjectSettings", "ResourceLoader", "ResourceSaver",
+			"RenderingServer", "PhysicsServer2D", "PhysicsServer3D"]
+		for singleton in singletons:
+			if singleton in err_text:
+				err_text += "\n\nHint: '%s' is a global singleton not accessible in Expression.execute(). Use dedicated MCP tools instead (e.g., editor_reload_scripts, project_get_settings, node_call_method)." % singleton
+				break
+		# Detect chained property access failure on returned objects.
+		if "Invalid named index" in err_text and "base type Object" in err_text:
+			err_text += "\n\nHint: Expression.execute() cannot chain property access on returned objects. Use runtime_get_node_state or node_call_method for multi-step property access."
+		return MCPError.make("EXECUTE_FAILED", err_text)
 	return {"result": MCPCoerce.serialize_value(result)}
 
 

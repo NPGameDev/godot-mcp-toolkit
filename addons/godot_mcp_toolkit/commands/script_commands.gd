@@ -134,6 +134,13 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		"indexed": index_result["indexed"]}
 	if dirs_created:
 		result["dirs_created"] = true
+
+	# Inline GDScript diagnostics — same validation as script_check (FIX-1).
+	if write_extension == "gd":
+		var validation := _validate_gdscript(content)
+		result["valid"] = validation["valid"]
+		result["diagnostics"] = validation["diagnostics"]
+
 	return result
 
 
@@ -175,23 +182,31 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
 
-	# Validate via GDScript.new().reload() — safe in-process parse.
-	# DO NOT use ResourceLoader.load() with CACHE_MODE_IGNORE here:
-	# it corrupts already-loaded scripts on ALL Godot versions (P-056),
-	# crashing the editor when checking already-loaded scripts.
-	# Remaining trade-off: error messages reference gdscript:// URIs
-	# instead of real paths. Use editor_get_console for accurate diagnostics.
 	var content := FileAccess.get_file_as_string(file_path)
 	var read_error := FileAccess.get_open_error()
 	if read_error != OK:
 		return MCPError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [read_error, file_path])
 
-	# Strip class_name declaration to prevent false-positive conflict (P-053).
+	var validation := _validate_gdscript(content)
+	return {
+		"success": true,
+		"file_path": file_path,
+		"valid": validation["valid"],
+		"diagnostics": validation["diagnostics"],
+	}
+
+
+## Validate GDScript source via GDScript.new().reload() — safe in-process parse.
+## DO NOT use ResourceLoader.load() with CACHE_MODE_IGNORE here:
+## it corrupts already-loaded scripts on ALL Godot versions (P-056).
+## Shared by script_write (inline diagnostics) and script_check.
+static func _validate_gdscript(source: String) -> Dictionary:
+	# Strip class_name to prevent false-positive conflict (P-053).
 	# GDScript.new().reload() registers a second copy of the name, colliding
 	# with the already-registered global class. Blanking the line preserves
 	# line numbers so any real errors still report correct positions.
-	var lines := content.split("\n")
+	var lines := source.split("\n")
 	for i in lines.size():
 		if lines[i].strip_edges().begins_with("class_name "):
 			lines[i] = ""
@@ -207,13 +222,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 			"severity": "error",
 			"message": "GDScript compile error. Call editor_get_console for detailed messages with line numbers.",
 		})
-
-	return {
-		"success": true,
-		"file_path": file_path,
-		"valid": is_valid,
-		"diagnostics": diagnostics,
-	}
+	return {"valid": is_valid, "diagnostics": diagnostics}
 
 
 static func _write_file_raw(file_path: String, content: String) -> int:

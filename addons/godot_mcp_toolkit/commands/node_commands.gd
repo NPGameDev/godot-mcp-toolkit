@@ -144,6 +144,11 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
+	# FIX-7: Batch mode — set multiple properties in a single UndoRedo action.
+	var batch_raw = parameters.get("batch", null)
+	if batch_raw != null and typeof(batch_raw) == TYPE_ARRAY and (batch_raw as Array).size() > 0:
+		return _batch_set_properties(root, batch_raw as Array)
+
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = MCPHelpers.normalize_editor_path(node_path)
 	var property_name := str(parameters.get("property", ""))
@@ -200,6 +205,11 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 			"failed to load resource at %s; verify the path or use resource.write to create it first" % missing)
 
 	var coerced = MCPCoerce.coerce_value(raw_value)
+
+	# FIX-5: Check for coercion errors (unknown type tags, malformed packed arrays).
+	if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+		return MCPError.make("INVALID_VALUE", str(coerced["_coerce_error"]))
+
 	var old_value = node.get(property_name)
 
 	# P-007: Auto-coerce strings to NodePath when the property expects NodePath.
@@ -249,6 +259,66 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	else:
 		node.set(property_name, coerced)
 	return {"success": true}
+
+
+## FIX-7: Batch set multiple properties in one UndoRedo action.
+static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: batch set %d properties" % entries.size())
+
+	var results: Array = []
+	for entry in entries:
+		if typeof(entry) != TYPE_DICTIONARY:
+			results.append({"success": false, "error": "entry must be an object"})
+			continue
+		var np := str(entry.get("node_path", ""))
+		np = MCPHelpers.normalize_editor_path(np)
+		var prop := str(entry.get("property", ""))
+		var raw_val = entry.get("value", null)
+
+		if np.is_empty() or prop.is_empty():
+			results.append({"node_path": np, "property": prop,
+				"success": false, "error": "missing node_path or property"})
+			continue
+
+		var node := root.get_node_or_null(np)
+		if node == null:
+			results.append({"node_path": np, "property": prop,
+				"success": false, "error": "node not found"})
+			continue
+
+		var missing := MCPCoerce.check_resource_paths(raw_val)
+		if missing != "":
+			results.append({"node_path": np, "property": prop,
+				"success": false, "error": "resource not found: %s" % missing})
+			continue
+
+		var coerced = MCPCoerce.coerce_value(raw_val)
+		if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+			results.append({"node_path": np, "property": prop,
+				"success": false, "error": str(coerced["_coerce_error"])})
+			continue
+
+		var old_value = node.get(prop)
+		if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
+			coerced = NodePath(str(coerced))
+
+		if undo_redo != null:
+			undo_redo.add_do_property(node, prop, coerced)
+			undo_redo.add_undo_property(node, prop, old_value)
+			if coerced is Resource:
+				undo_redo.add_do_reference(coerced)
+			if old_value is Resource:
+				undo_redo.add_undo_reference(old_value)
+		else:
+			node.set(prop, coerced)
+		results.append({"node_path": np, "property": prop, "success": true})
+
+	if undo_redo != null:
+		undo_redo.commit_action()
+
+	return {"success": true, "results": results}
 
 
 static func _resolve_common_property_names(node: Object) -> Array[String]:

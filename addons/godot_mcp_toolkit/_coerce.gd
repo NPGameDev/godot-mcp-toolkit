@@ -126,7 +126,56 @@ static func coerce_value(value: Variant) -> Variant:
 			)
 		"NodePath":
 			return NodePath(str(value.get("path", "")))
+		"PackedVector2Array":
+			var arr := PackedVector2Array()
+			var elements = value.get("values", [])
+			if typeof(elements) == TYPE_ARRAY:
+				for el in elements:
+					var v = coerce_value(el)
+					if v is Vector2:
+						arr.append(v)
+					elif typeof(v) == TYPE_DICTIONARY and not (v as Dictionary).has("_coerce_error"):
+						arr.append(Vector2(float(v.get("x", 0.0)), float(v.get("y", 0.0))))
+					else:
+						return {"_coerce_error":
+							"PackedVector2Array elements must be Vector2. Use: {type:'PackedVector2Array', values: [{type:'Vector2', x:0, y:0}, ...]}"}
+			return arr
+		"PackedVector3Array":
+			var arr := PackedVector3Array()
+			var elements = value.get("values", [])
+			if typeof(elements) == TYPE_ARRAY:
+				for el in elements:
+					var v = coerce_value(el)
+					if v is Vector3:
+						arr.append(v)
+					elif typeof(v) == TYPE_DICTIONARY and not (v as Dictionary).has("_coerce_error"):
+						arr.append(Vector3(float(v.get("x", 0.0)), float(v.get("y", 0.0)), float(v.get("z", 0.0))))
+					else:
+						return {"_coerce_error":
+							"PackedVector3Array elements must be Vector3. Use: {type:'PackedVector3Array', values: [{type:'Vector3', x:0, y:0, z:0}, ...]}"}
+			return arr
+		"PackedColorArray":
+			var arr := PackedColorArray()
+			var elements = value.get("values", [])
+			if typeof(elements) == TYPE_ARRAY:
+				for el in elements:
+					var v = coerce_value(el)
+					if v is Color:
+						arr.append(v)
+					elif typeof(v) == TYPE_DICTIONARY and not (v as Dictionary).has("_coerce_error"):
+						arr.append(Color(float(v.get("r", 0.0)), float(v.get("g", 0.0)),
+							float(v.get("b", 0.0)), float(v.get("a", 1.0))))
+					else:
+						return {"_coerce_error":
+							"PackedColorArray elements must be Color. Use: {type:'PackedColorArray', values: [{type:'Color', r:1, g:0, b:0, a:1}, ...]}"}
+			return arr
 		_:
+			# FIX-5: Reject unknown type tags instead of silently passing through.
+			var type_tag := str(value.get("type", ""))
+			if not type_tag.is_empty():
+				return {"_coerce_error":
+					"Unknown type tag '%s'. Supported: Vector2, Vector3, Vector4, Vector2i, Vector3i, Color, Rect2, Rect2i, Transform2D, Transform3D, NodePath, Resource, NewResource, PackedVector2Array, PackedVector3Array, PackedColorArray." % type_tag}
+			# No type key — generic dict with recursive coercion.
 			var result := {}
 			for k in value.keys():
 				result[k] = coerce_value(value[k])

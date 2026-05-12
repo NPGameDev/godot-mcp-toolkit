@@ -439,21 +439,21 @@ static func _apply_layers(ts: TileSet, layers: Dictionary) -> Dictionary:
 			var type_str := str(cd_def.get("type", "int")).to_lower()
 			ts.set_custom_data_layer_type(li, _variant_type_from_string(type_str))
 
-	# Navigation layers
+	# Navigation layers (FIX-2: safe coercion via str() for non-int input)
 	if layers.has("navigation_layers"):
-		var want := int(layers["navigation_layers"])
+		var want := int(str(layers["navigation_layers"]))
 		while ts.get_navigation_layers_count() < want:
 			ts.add_navigation_layer()
 
 	# Occlusion layers
 	if layers.has("occlusion_layers"):
-		var want := int(layers["occlusion_layers"])
+		var want := int(str(layers["occlusion_layers"]))
 		while ts.get_occlusion_layers_count() < want:
 			ts.add_occlusion_layer()
 
 	# Physics layers
 	if layers.has("physics_layers"):
-		var want := int(layers["physics_layers"])
+		var want := int(str(layers["physics_layers"]))
 		while ts.get_physics_layers_count() < want:
 			ts.add_physics_layer()
 

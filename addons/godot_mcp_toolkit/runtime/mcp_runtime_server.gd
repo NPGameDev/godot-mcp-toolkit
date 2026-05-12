@@ -348,7 +348,8 @@ func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
 
 	var node := tree.root.get_node_or_null(path)
 	if node == null:
-		_send_result(peer, id, MCPError.make("NOT_FOUND", "node not found: %s" % path))
+		var hint := _build_not_found_hint(tree.root, path)
+		_send_result(peer, id, MCPError.make("NOT_FOUND", "node not found: %s%s" % [path, hint]))
 		return
 
 	var props := {}
@@ -387,7 +388,8 @@ func _cmd_runtime_get_script_vars(peer: WebSocketPeer, id, params) -> void:
 
 	var node := tree.root.get_node_or_null(path)
 	if node == null:
-		_send_result(peer, id, MCPError.make("NOT_FOUND", "node not found: %s" % path))
+		var hint := _build_not_found_hint(tree.root, path)
+		_send_result(peer, id, MCPError.make("NOT_FOUND", "node not found: %s%s" % [path, hint]))
 		return
 
 	var script = node.get_script()
@@ -434,6 +436,29 @@ func _cmd_runtime_get_script_vars(peer: WebSocketPeer, id, params) -> void:
 	})
 
 
+## FIX-6: Walk path segments and report where resolution failed + list siblings.
+func _build_not_found_hint(root: Node, path: String) -> String:
+	var segments := path.split("/")
+	var current := root
+	# Skip leading empty segment from absolute paths (e.g. "/root/World" → ["", "root", "World"])
+	var start := 1 if segments.size() > 0 and segments[0] == "" else 0
+	# For absolute paths, the first real segment is "root" — skip it since we start at tree.root
+	if start < segments.size() and segments[start] == "root":
+		start += 1
+	for i in range(start, segments.size()):
+		var seg: String = segments[i]
+		var child := current.get_node_or_null(seg)
+		if child == null:
+			var siblings: Array = []
+			for c in current.get_children():
+				siblings.append(str(c.name))
+			if siblings.is_empty():
+				return ". '%s' has no children." % str(current.get_path())
+			return ". '%s' has children: %s" % [str(current.get_path()), str(siblings)]
+		current = child
+	return ""
+
+
 func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPError.make("INVALID_PARAMS", "params must be an object"))
@@ -454,8 +479,10 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 
 	var node := tree.root.get_node_or_null(node_path)
 	if node == null:
+		# FIX-6: Walk path segments and list siblings at the failing level.
+		var hint := _build_not_found_hint(tree.root, node_path)
 		_send_result(peer, id, MCPError.make("NOT_FOUND",
-			"node not found: %s" % node_path))
+			"node not found: %s%s" % [node_path, hint]))
 		return
 
 	# Verify property exists — for compound paths like "position:x", check

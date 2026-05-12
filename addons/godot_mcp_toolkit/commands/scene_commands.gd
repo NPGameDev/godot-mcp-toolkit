@@ -462,17 +462,20 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		for key in transform.keys():
 			instance.set(str(key), MCPCoerce.coerce_value(transform[key]))
 
+	# FIX-9: Only set owner on instance root — child nodes keep their internal
+	# ownership from PackedScene. _set_owner_recursive caused full property
+	# expansion, breaking Godot's scene inheritance model.
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action("MCP: instantiate %s under %s" % [packed_path, parent_path])
 		undo_redo.add_do_method(parent_node, "add_child", instance)
-		undo_redo.add_do_method(server.undo_helpers, "_set_owner_recursive", instance, root)
+		undo_redo.add_do_method(instance, "set_owner", root)
 		undo_redo.add_do_reference(instance)
 		undo_redo.add_undo_method(parent_node, "remove_child", instance)
 		undo_redo.commit_action()
 	else:
 		parent_node.add_child(instance)
-		server.undo_helpers._set_owner_recursive(instance, root)
+		instance.set_owner(root)
 
 	return {
 		"success": true,
@@ -506,14 +509,15 @@ static func _batch_instantiate(
 			if inst_dict.has(key):
 				instance.set(key, MCPCoerce.coerce_value(inst_dict[key]))
 
+		# FIX-9: Only set owner on instance root (same as single-instance path).
 		if undo_redo != null:
 			undo_redo.add_do_method(parent_node, "add_child", instance)
-			undo_redo.add_do_method(server.undo_helpers, "_set_owner_recursive", instance, root)
+			undo_redo.add_do_method(instance, "set_owner", root)
 			undo_redo.add_do_reference(instance)
 			undo_redo.add_undo_method(parent_node, "remove_child", instance)
 		else:
 			parent_node.add_child(instance)
-			server.undo_helpers._set_owner_recursive(instance, root)
+			instance.set_owner(root)
 
 		node_refs.append(instance)
 
