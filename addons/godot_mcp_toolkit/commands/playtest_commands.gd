@@ -40,8 +40,14 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 
 	if runtime_poll:
 		if not EditorInterface.is_playing_scene():
-			return MCPError.make("GAME_NOT_RUNNING",
-				"no game is running; call game.start first")
+			var comp := _scan_compilation_errors()
+			if comp["found"]:
+				return MCPError.make("COMPILATION_FAILED",
+					"Game failed to start — likely a compilation error. Recent errors:\n" + "\n".join(comp["errors"]))
+			return MCPError.make("COMPILATION_FAILED",
+				"Game is not running — it likely failed to compile or crashed on startup. "
+				+ ("No errors captured in log buffer (file-tail mode on Godot 4.2-4.4 may miss errors). " if not _Hub.LogBuffer.uses_logger_api() else "No errors in log buffer. ")
+				+ "Call editor_reload_scripts to retrigger compilation errors, then editor_get_console for details.")
 	else:
 		if EditorInterface.is_playing_scene():
 			if if_running == "return":
@@ -122,7 +128,19 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 		response["runtime_failure"] = runtime_failure
 		match runtime_failure:
 			"registry_timeout":
-				response["hint"] = "Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors."
+				if not EditorInterface.is_playing_scene():
+					var comp := _scan_compilation_errors()
+					if comp["found"]:
+						response["compilation_failed"] = true
+						response["compilation_errors"] = comp["errors"]
+						response["hint"] = "Game failed to start (compilation error). Errors:\n" + "\n".join(comp["errors"])
+					else:
+						response["compilation_failed"] = true
+						response["hint"] = "Game never started — likely a compilation error. " \
+							+ ("No errors in log buffer (file-tail mode may miss errors). " if not _Hub.LogBuffer.uses_logger_api() else "") \
+							+ "Call editor_reload_scripts to retrigger compilation errors, then editor_get_console for details."
+				else:
+					response["hint"] = "Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors."
 			"token_read_failed":
 				response["hint"] = "Could not read auth token — the token file may be missing or empty. Re-enable the plugin in Project Settings > Plugins."
 			"ws_connect_timeout":
@@ -228,3 +246,17 @@ static func _poll_runtime_ready(
 		ws.close()
 		OS.delay_msec(100)
 	return {"ready": false, "failure": furthest}
+
+
+## Scan LogBuffer for recent errors — used to detect compilation failures
+## when the game fails to start.
+static func _scan_compilation_errors() -> Dictionary:
+	var buf := _Hub.LogBuffer.get_entries(10, ["error"])
+	var errors: Array = []
+	for entry in buf.get("entries", []):
+		errors.append(str(entry.get("message", "")))
+	return {
+		"found": errors.size() > 0,
+		"errors": errors,
+		"source": "logger" if _Hub.LogBuffer.uses_logger_api() else "file_tail",
+	}

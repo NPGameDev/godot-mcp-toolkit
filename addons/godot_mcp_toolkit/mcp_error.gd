@@ -5,6 +5,7 @@ extends RefCounted
 const CODES: Array[String] = [
 	"ALREADY_EXISTS",
 	"ALREADY_PLAYING",
+	"COMPILATION_FAILED",
 	"CONNECT_FAILED",
 	"CREATE_DIR_FAILED",
 	"DELETE_FAILED",
@@ -59,6 +60,7 @@ const DEFAULT_HINTS := {
 	"LOG_BUSY": "Log file is temporarily locked by the engine's flush. Retry in 1-2 seconds, or use source=\"buffer\" instead.",
 	"LOG_UNAVAILABLE": "Log file could not be read. Enable file logging in ProjectSettings → Debug → File Logging → Enable File Logging (debug/file_logging/enable_file_logging). If the editor just started, the log may not exist yet. Use source=\"buffer\" for real-time output.",
 	"PARENT_NOT_FOUND": "Parent directory does not exist. Use folder.create to create it first.",
+	"COMPILATION_FAILED": "The game failed to start due to script errors. Fix the errors shown above, then call game_start again. If no errors are shown, call editor_reload_scripts to retrigger them, then editor_get_console for the full log.",
 	"GAME_NOT_RUNNING": "No running game detected. Use game.start first. If the MCP Runtime autoload is missing, re-enable the plugin in Project Settings.",
 }
 
