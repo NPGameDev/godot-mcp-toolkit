@@ -187,9 +187,9 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 	if not (action in ["add", "remove"]):
 		return MCPError.make("INVALID_PARAMS",
 			"action must be 'add' or 'remove' (got '%s')" % action)
-	var action_name := str(parameters.get("action_name", ""))
+	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
-		return MCPError.make("INVALID_PARAMS", "action_name must be a non-empty string")
+		return MCPError.make("INVALID_PARAMS", "name must be a non-empty string")
 	if action == "add":
 		var deadzone_raw = parameters.get("deadzone", 0.5)
 		var deadzone := float(deadzone_raw) \
@@ -201,7 +201,7 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 			return {
 				"success": true,
 				"status": "returned",
-				"action_name": action_name,
+				"name": action_name,
 				"deadzone": InputMap.action_get_deadzone(action_name),
 			}
 		InputMap.add_action(action_name, deadzone)
@@ -209,7 +209,7 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 		return {
 			"success": true,
 			"status": "created",
-			"action_name": action_name,
+			"name": action_name,
 			"deadzone": deadzone,
 		}
 	else:
@@ -226,7 +226,7 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 				push_warning(
 					"[MCPServer] ProjectSettings.save after input_map.action remove failed (err %d, action=%s)" % [
 						error, action_name])
-		return {"success": true, "action_name": action_name}
+		return {"success": true, "name": action_name}
 
 
 static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
@@ -234,9 +234,9 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 	if not (action in ["bind", "unbind"]):
 		return MCPError.make("INVALID_PARAMS",
 			"action must be 'bind' or 'unbind' (got '%s')" % action)
-	var action_name := str(parameters.get("action_name", ""))
+	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
-		return MCPError.make("INVALID_PARAMS", "action_name must be a non-empty string")
+		return MCPError.make("INVALID_PARAMS", "name must be a non-empty string")
 	if not InputMap.has_action(action_name):
 		return MCPError.make("NOT_FOUND",
 			"no action '%s'; call input_map.action with action='add' first" % action_name)
@@ -250,7 +250,7 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 				return {
 					"success": true,
 					"status": "returned",
-					"action_name": action_name,
+					"name": action_name,
 					"event": _serialise_input_event(existing),
 				}
 		InputMap.action_add_event(action_name, event)
@@ -258,7 +258,7 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 		return {
 			"success": true,
 			"status": "created",
-			"action_name": action_name,
+			"name": action_name,
 			"event": _serialise_input_event(event),
 		}
 	else:
@@ -276,6 +276,6 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 		_persist_input_action(action_name, InputMap.action_get_deadzone(action_name))
 		return {
 			"success": true,
-			"action_name": action_name,
+			"name": action_name,
 			"event": _serialise_input_event(matched),
 		}
