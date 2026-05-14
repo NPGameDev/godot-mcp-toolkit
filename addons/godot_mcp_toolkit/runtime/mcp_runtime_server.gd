@@ -1185,6 +1185,30 @@ func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
 		return
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
-		_send_result(peer, id, MCPError.make("EXECUTE_FAILED", expr.get_error_text()))
+		var err_text := expr.get_error_text()
+		# Hint enrichment — mirror editor-side patterns.
+		if "call to 'load'" in err_text.to_lower():
+			err_text += _make_load_hint(code)
+		_send_result(peer, id, MCPError.make("EXECUTE_FAILED", err_text))
 		return
 	_send_result(peer, id, {"result": MCPCoerce.serialize_value(result)})
+
+
+static func _make_load_hint(code: String) -> String:
+	var re := RegEx.new()
+	re.compile("load\\s*\\(\\s*[\"']([^\"']+)[\"']\\s*\\)")
+	var m := re.search(code)
+	if m != null and m.get_string(1).ends_with(".gd"):
+		return (
+			"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
+			+ "To run GDScript logic in the editor: "
+			+ "(1) write a @tool script with script_write, "
+			+ "(2) create a temporary node with scene_create_node, "
+			+ "(3) attach the script with node_set_script, "
+			+ "(4) call the method with node_call_method, "
+			+ "(5) delete the temp node with node_manage(action:'delete')."
+		)
+	return (
+		"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
+		+ "Assign resources via node_set_property with {\"type\": \"Resource\", \"path\": \"res://...\"}."
+	)

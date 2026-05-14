@@ -389,9 +389,32 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 			err_text += "\n\nHint: Expression.execute() cannot chain property access on returned objects. Use runtime_get_node_state or node_call_method for multi-step property access."
 		# FIX-H: Detect load() call failures — Expression cannot call load().
 		if "call to 'load'" in err_text.to_lower():
-			err_text += "\n\nHint: Expression.execute() cannot call load(). Assign resources via node_set_property with {\"type\": \"Resource\", \"path\": \"res://...\"}, or write a script that loads them in _ready()."
+			err_text += _make_load_hint(code)
 		return MCPError.make("EXECUTE_FAILED", err_text)
 	return {"result": MCPCoerce.serialize_value(result)}
+
+
+## Build a context-aware hint when Expression.execute() fails on load().
+## If the load() target is a .gd script, suggest the editor-side tool workflow;
+## otherwise, suggest node_set_property with Resource type tags.
+static func _make_load_hint(code: String) -> String:
+	var re := RegEx.new()
+	re.compile("load\\s*\\(\\s*[\"']([^\"']+)[\"']\\s*\\)")
+	var m := re.search(code)
+	if m != null and m.get_string(1).ends_with(".gd"):
+		return (
+			"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
+			+ "To run GDScript logic in the editor: "
+			+ "(1) write a @tool script with script_write, "
+			+ "(2) create a temporary node with scene_create_node, "
+			+ "(3) attach the script with node_set_script, "
+			+ "(4) call the method with node_call_method, "
+			+ "(5) delete the temp node with node_manage(action:'delete')."
+		)
+	return (
+		"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
+		+ "Assign resources via node_set_property with {\"type\": \"Resource\", \"path\": \"res://...\"}."
+	)
 
 
 # -- Helpers ------------------------------------------------------------------
