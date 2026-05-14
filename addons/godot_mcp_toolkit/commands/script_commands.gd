@@ -226,6 +226,7 @@ static func _validate_gdscript(source: String) -> Dictionary:
 		})
 		# Scan reload errors for unresolved identifiers that match autoloads.
 		var hints := _check_autoload_hints(pre_id)
+		hints.append_array(_check_preload_hints(pre_id))
 		for hint in hints:
 			diagnostics.append({
 				"line": 0,
@@ -261,6 +262,29 @@ static func _check_autoload_hints(pre_id: int) -> Array:
 			if ident.length() >= 2 and ident[0] == ident[0].to_upper() and ident[0] != ident[0].to_lower():
 				hints.append(
 					"Identifier '%s' not declared — if this is an autoload singleton, register it first with autoload_manage (action='register', name='%s', script_path='res://...')." % [ident, ident])
+	return hints
+
+
+## Scan LogBuffer errors for preload() failures referencing missing files.
+static func _check_preload_hints(pre_id: int) -> Array:
+	var buf := _Hub.LogBuffer.get_entries(50, ["error"], pre_id)
+	var entries: Array = buf.get("entries", [])
+	var re := RegEx.new()
+	re.compile('[Pp]reload file "([^"]+)" does not exist')
+	var seen := {}
+	var hints: Array = []
+	for entry in entries:
+		var msg: String = str(entry.get("message", ""))
+		var m := re.search(msg)
+		if m == null:
+			continue
+		var path: String = m.get_string(1)
+		if seen.has(path):
+			continue
+		seen[path] = true
+		if not FileAccess.file_exists(path):
+			hints.append(
+				"preload('%s') failed because the file doesn't exist yet. Use load() instead — it evaluates at runtime when the file will exist. Or create the file first, then use preload()." % path)
 	return hints
 
 

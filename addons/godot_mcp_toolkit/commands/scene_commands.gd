@@ -358,7 +358,17 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		elif parent_node is Container:
 			instance.set("layout_mode", 1)
 
-	return {"success": true, "status": "created", "path": _path_in_scene(root, instance)}
+	# unique_name: mark node for scene-unique access (%Name in scripts).
+	var unique_param = parameters.get("unique_name", null)
+	var response := {"success": true, "status": "created", "path": _path_in_scene(root, instance)}
+	if unique_param != null and (unique_param == true or str(unique_param).to_lower() == "true"):
+		var existing_unique := root.get_node_or_null("%" + str(instance.name))
+		if existing_unique != null and existing_unique != instance:
+			response["warning"] = "Node '%s' was previously the unique '%s' — it has lost its unique status. %%Name references to it in scripts will now resolve to this new node instead." % [
+				_path_in_scene(root, existing_unique), str(instance.name)]
+		instance.unique_name_in_owner = true
+		response["unique_name"] = true
+	return response
 
 
 static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
