@@ -468,7 +468,31 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, tex
 			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work."
 		elif _Hub.LogBuffer._tail_open_failures > 0:
 			response["warning"] = "Log file could not be opened for reading (%d failed attempts) — the OS may be locking it. Use source=\"file\" as a fallback." % _Hub.LogBuffer._tail_open_failures
+	# Autoload hint — scan error entries for unresolved identifiers matching autoloads.
+	if level_filter.is_empty() or ("error" in level_filter):
+		var al_hint := _scan_autoload_hints(entries)
+		if not al_hint.is_empty():
+			response["autoload_hint"] = al_hint
 	return response
+
+
+## Scan console entries for "Identifier X not declared" errors that match
+## registered autoloads, returning a combined hint string (empty if none).
+static func _scan_autoload_hints(entries: Array) -> String:
+	var re := RegEx.new()
+	re.compile('Identifier "(\\w+)" not declared')
+	var found: Array = []
+	for entry in entries:
+		var msg: String = str(entry.get("message", ""))
+		var m := re.search(msg)
+		if m == null:
+			continue
+		var ident: String = m.get_string(1)
+		if ProjectSettings.has_setting("autoload/" + ident) and not (ident in found):
+			found.append(ident)
+	if found.is_empty():
+		return ""
+	return "Some errors reference registered autoloads (%s). The editor cache may be stale — call autoload_manage to re-register them." % ", ".join(found)
 
 
 # -- Console log reader -------------------------------------------------------

@@ -72,6 +72,20 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	if key.begins_with("editor/"):
 		return MCPError.make("INVALID_PATH",
 			"refusing to write editor/* ProjectSettings from project.set_setting (editor-session state, not project config); got key=%s" % key)
+	# Autoload guard — registration/unregistration must go through autoload_manage
+	# so the editor's singleton cache refreshes immediately (FIX-D).
+	if key.begins_with("autoload/"):
+		var _al_raw = parameters.get("value", null)
+		var _al_str := str(_al_raw) if _al_raw != null else ""
+		var _al_name := key.substr("autoload/".length())
+		# Registration attempt: value looks like a script path.
+		if _al_str.begins_with("*res://") or _al_str.begins_with("res://"):
+			return MCPError.make("INVALID_PARAMS",
+				"Use autoload_manage (action='register', name='%s', script_path='%s') instead of project.set_setting for autoload registration. project.set_setting bypasses the editor's autoload cache, causing unresolved identifier errors until the project is reloaded." % [_al_name, _al_str.lstrip("*")])
+		# Unregistration attempt: null, empty, or missing value.
+		if _al_raw == null or _al_str.is_empty():
+			return MCPError.make("INVALID_PARAMS",
+				"Use autoload_manage (action='unregister', name='%s') instead of project.set_setting for autoload removal. project.set_setting bypasses the editor's autoload cache." % _al_name)
 	if not parameters.has("value"):
 		return MCPError.make("INVALID_PARAMS", "missing value")
 	var raw_value = parameters.get("value", null)
@@ -94,15 +108,7 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 		"previous_value": MCPCoerce.serialize_value(previous_value) if was_set_before else null,
 	}
 	if key.begins_with("autoload/"):
-		# Targeted update_file() on the autoload script path so the editor
-		# indexes the file immediately — no need for a full scan().
-		var autoload_value := str(coerced)
-		var script_path := autoload_value.lstrip("*")
-		if script_path.begins_with("res://"):
-			var filesystem := EditorInterface.get_resource_filesystem()
-			if filesystem != null:
-				filesystem.update_file(script_path)
-		response["hint"] = "Autoload registered in project.godot. The editor's autoload cache won't refresh until the project is reloaded — reference via get_node('/root/Name') instead of the global identifier. The game process picks up autoloads on next launch."
+		response["warning"] = "Modifying autoload/* via project.set_setting — the editor cache won't refresh. Consider using autoload_manage instead."
 	return response
 
 

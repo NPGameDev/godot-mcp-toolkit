@@ -211,6 +211,8 @@ static func _validate_gdscript(source: String) -> Dictionary:
 		if lines[i].strip_edges().begins_with("class_name "):
 			lines[i] = ""
 			break
+	# Snapshot LogBuffer position so we can scan errors produced by reload().
+	var pre_id: int = _Hub.LogBuffer._next_id
 	var script := GDScript.new()
 	script.source_code = "\n".join(lines)
 	var is_valid := script.reload(false) == OK
@@ -222,7 +224,44 @@ static func _validate_gdscript(source: String) -> Dictionary:
 			"severity": "error",
 			"message": "GDScript compile error. Call editor_get_console for detailed messages with line numbers.",
 		})
+		# Scan reload errors for unresolved identifiers that match autoloads.
+		var hints := _check_autoload_hints(pre_id)
+		for hint in hints:
+			diagnostics.append({
+				"line": 0,
+				"severity": "hint",
+				"message": hint,
+			})
 	return {"valid": is_valid, "diagnostics": diagnostics}
+
+
+## Scan LogBuffer errors emitted during reload() for unresolved identifiers
+## that match registered autoloads, returning actionable hint strings.
+static func _check_autoload_hints(pre_id: int) -> Array:
+	var buf := _Hub.LogBuffer.get_entries(50, ["error"], pre_id)
+	var entries: Array = buf.get("entries", [])
+	var re := RegEx.new()
+	re.compile('Identifier "(\\w+)" not declared')
+	var seen := {}
+	var hints: Array = []
+	for entry in entries:
+		var msg: String = str(entry.get("message", ""))
+		var m := re.search(msg)
+		if m == null:
+			continue
+		var ident: String = m.get_string(1)
+		if seen.has(ident):
+			continue
+		seen[ident] = true
+		if ProjectSettings.has_setting("autoload/" + ident):
+			hints.append(
+				"Identifier '%s' is a registered autoload. The editor cache may be stale — call autoload_manage with action='register' to refresh it, or reference via get_node('/root/%s')." % [ident, ident])
+		else:
+			# Soft hint for PascalCase names that look like singletons.
+			if ident.length() >= 2 and ident[0] == ident[0].to_upper() and ident[0] != ident[0].to_lower():
+				hints.append(
+					"Identifier '%s' not declared — if this is an autoload singleton, register it first with autoload_manage (action='register', name='%s', script_path='res://...')." % [ident, ident])
+	return hints
 
 
 static func _write_file_raw(file_path: String, content: String) -> int:
