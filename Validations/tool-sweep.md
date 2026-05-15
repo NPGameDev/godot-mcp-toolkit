@@ -939,6 +939,14 @@ Test that obvious keyword queries activate the correct groups. Run these `discov
 
 Record any misses or unexpected results. Keyword quality is validated comprehensively in the final sweep (41k-quater-et-vicies Phase 2), but this quick check catches obvious regressions.
 
+### C22. scene_create_node class mismatch guard
+`scene_create_node` (class_name=`Label`, node_name=`ValClashNode`, parent_path=`.`) -> verify status `created` -> `scene_create_node` (class_name=`Button`, node_name=`ValClashNode`, parent_path=`.`) -> verify `CLASS_MISMATCH` error mentioning Label vs Button -> `scene_create_node` (class_name=`Label`, node_name=`ValClashNode`, parent_path=`.`) -> verify status `returned` (idempotent) -> cleanup (`scene_delete_node` node_path=`ValClashNode`)
+- **Expect:** Different class + same name = CLASS_MISMATCH error; same class + same name = idempotent return; cleanup succeeds
+
+### C23. script_write preload hint (off-by-one regression)
+`script_write` (file_path=`res://mcp_validation/val_preload_hint.gd`, content=`extends Node\n\nvar x = preload("res://mcp_val_nonexistent_file_12345.gd")\n`) -> verify `valid: false` AND diagnostics contain a hint mentioning `preload('res://mcp_val_nonexistent_file_12345.gd')` failed, suggesting `load()` instead -> `script_delete` (path=`res://mcp_validation/val_preload_hint.gd`)
+- **Expect:** Preload hint appears in diagnostics (not just the generic compile-error message). If only the generic diagnostic appears with no preload hint, the LogBuffer `pre_id` off-by-one has regressed.
+
 ---
 
 ## Phase 4b — Extension Discovery (conditional)
@@ -1155,6 +1163,8 @@ Write `RESULTS.md` in the current directory with the following structure:
 | C1 | Resource round-trip | 4 | PASS | |
 | C2 | Script validation | 3 | PASS | |
 | ... | | | | |
+| C22 | Class mismatch guard | 4 | | |
+| C23 | Preload hint (off-by-one) | 2 | | |
 
 ### discover_tools Keyword Results (C21)
 

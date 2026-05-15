@@ -10,6 +10,19 @@ const MCPHelpers = _Hub.MCPHelpers
 
 const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"]
 
+static var _autoload_hint_re: RegEx = _compile_autoload_hint_re()
+static var _preload_hint_re: RegEx = _compile_preload_hint_re()
+
+static func _compile_autoload_hint_re() -> RegEx:
+	var re := RegEx.new()
+	re.compile('Identifier "(\\w+)" not declared')
+	return re
+
+static func _compile_preload_hint_re() -> RegEx:
+	var re := RegEx.new()
+	re.compile('(?:[Cc]ould not p|[Pp])reload (?:resource )?(?:file|script|scene) "([^"]+)"')
+	return re
+
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("script.read", func(parameters: Dictionary) -> Dictionary:
@@ -212,7 +225,9 @@ static func _validate_gdscript(source: String) -> Dictionary:
 			lines[i] = ""
 			break
 	# Snapshot LogBuffer position so we can scan errors produced by reload().
-	var pre_id: int = _Hub.LogBuffer._next_id
+	# _next_id is the ID the next pushed entry will receive; since_id uses
+	# "entries with id > since_id", so subtract 1 to include that first entry.
+	var pre_id: int = _Hub.LogBuffer._next_id - 1
 	var script := GDScript.new()
 	script.source_code = "\n".join(lines)
 	var is_valid := script.reload(false) == OK
@@ -241,13 +256,11 @@ static func _validate_gdscript(source: String) -> Dictionary:
 static func _check_autoload_hints(pre_id: int) -> Array:
 	var buf := _Hub.LogBuffer.get_entries(50, ["error"], pre_id)
 	var entries: Array = buf.get("entries", [])
-	var re := RegEx.new()
-	re.compile('Identifier "(\\w+)" not declared')
 	var seen := {}
 	var hints: Array = []
 	for entry in entries:
 		var msg: String = str(entry.get("message", ""))
-		var m := re.search(msg)
+		var m := _autoload_hint_re.search(msg)
 		if m == null:
 			continue
 		var ident: String = m.get_string(1)
@@ -269,13 +282,11 @@ static func _check_autoload_hints(pre_id: int) -> Array:
 static func _check_preload_hints(pre_id: int) -> Array:
 	var buf := _Hub.LogBuffer.get_entries(50, ["error"], pre_id)
 	var entries: Array = buf.get("entries", [])
-	var re := RegEx.new()
-	re.compile('[Pp]reload file "([^"]+)" does not exist')
 	var seen := {}
 	var hints: Array = []
 	for entry in entries:
 		var msg: String = str(entry.get("message", ""))
-		var m := re.search(msg)
+		var m := _preload_hint_re.search(msg)
 		if m == null:
 			continue
 		var path: String = m.get_string(1)
