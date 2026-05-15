@@ -462,6 +462,10 @@ the response, and the context it occupies. Minimise waste:
 - **Use `classdb_get_info` with `sections`.** Requesting all sections on
   a complex class returns thousands of lines. Ask for `["properties"]` or
   `["signals"]` only.
+- **Use specific keys for project settings.** `project_get_settings(prefix:
+  "display")` returns hundreds of settings. Use `key:
+  "display/window/size/viewport_width"` for a single value. If the spec
+  already states the value, skip the read and set it directly.
 
 ---
 
@@ -484,3 +488,4 @@ These are the most common sources of wasted tool calls and retries:
 | `node_groups` | Only way to manage groups — `node_set_property` cannot set them |
 | `classdb_get_info` | Use `sections` param to limit output — full dump includes hundreds of inherited properties |
 | `editor_save_scene` | Not automatic — call after mutation batches before playtest or scene switch |
+| `project_get_settings` | Broad `prefix` returns hundreds of lines — use specific `key` or skip the read if spec states the value |
