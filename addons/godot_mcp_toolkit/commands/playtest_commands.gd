@@ -116,12 +116,17 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 	}
 	if bridge_discovery:
 		response["runtime_discovery"] = "bridge"
-		response["hint"] = (
-			"Game launched but runtime not yet connected (Godot defers the "
-			+ "game process — it cannot start during a blocking call). "
-			+ "Follow up with game_start(if_running:'return', runtime_poll:true) "
-			+ "to wait for runtime readiness."
-		)
+		# Hint text suppressed when wait_for_runtime=true — the MCP server
+		# absorbs the async gap and returns a single combined response.
+		# Non-server clients can key off runtime_discovery:"bridge" to follow
+		# up with game_start(if_running:'return', runtime_poll:true).
+		if not wait_for_runtime:
+			response["hint"] = (
+				"Game launched but runtime not yet connected (Godot defers the "
+				+ "game process — it cannot start during a blocking call). "
+				+ "Follow up with game_start(if_running:'return', runtime_poll:true) "
+				+ "to wait for runtime readiness."
+			)
 	if runtime_poll:
 		response["runtime_poll"] = true
 	if (wait_for_runtime or runtime_poll) and not runtime_ready and not bridge_discovery:
