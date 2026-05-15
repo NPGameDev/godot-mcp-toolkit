@@ -289,7 +289,7 @@ runtime sees the new bindings (Godot loads `InputMap` from
   filesystem, 5 MB decoded base64.
 - `editor_wait_for_idle` — poll `EditorFileSystem.is_scanning()` until idle
   or `timeout_ms` (default 10000, cap 30000). Returns immediately if not
-  scanning. Use after `asset.import`, `editor.reload_scripts`, or any
+  scanning. Use after `asset.import`, `editor.refresh`, or any
   operation that triggers a filesystem rescan. Replaces the agent-side blind
   `setTimeout` retry pattern — one deterministic wait instead of N guesses.
 

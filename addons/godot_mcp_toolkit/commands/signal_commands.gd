@@ -7,6 +7,13 @@ const MCPError = _Hub.MCPError
 const MCPCoerce = _Hub.MCPCoerce
 const MCPHelpers = _Hub.MCPHelpers
 
+static var _extends_path_re: RegEx = _compile_extends_path_re()
+
+static func _compile_extends_path_re() -> RegEx:
+	var re := RegEx.new()
+	re.compile('extends\\s+"(res://[^"]+)"')
+	return re
+
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("signal.list", func(parameters: Dictionary) -> Dictionary:
@@ -26,6 +33,25 @@ static func _get_edited_root() -> Node:
 
 static func _resolve_scene_node(node_path: String) -> Variant:
 	return MCPHelpers.resolve_scene_node(node_path)
+
+
+## Walk extends "res://..." directives via raw file reads when get_base_script()
+## returns null (broken compilation chain).  Returns true if any ancestor source
+## contains the method definition.
+static func _source_walk_has_method(source: String, method_name: String) -> bool:
+	var depth := 0
+	while depth < 50:
+		var m := _extends_path_re.search(source)
+		if m == null:
+			return false
+		var parent_path := m.get_string(1)
+		if not FileAccess.file_exists(parent_path):
+			return false
+		source = FileAccess.get_file_as_string(parent_path)
+		if source.find("func %s" % method_name) >= 0:
+			return true
+		depth += 1
+	return false
 
 
 static func _signal_list_of(
@@ -104,8 +130,30 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 		return {"code": "INVALID_PARAMS",
 			"error": "signal %s not on %s%s" % [signal_name, source_path, instance_hint]}
 	if not target.has_method(method_name):
+		var method_hint := ""
+		var scr := target.get_script() as Script
+		if scr == null:
+			method_hint = "; no script is attached — use node_set_script first, or connect via _ready() code"
+		elif scr is GDScript:
+			var found_in_source := false
+			var walk: GDScript = scr
+			while walk != null:
+				if walk.source_code.find("func %s" % method_name) >= 0:
+					found_in_source = true
+					break
+				var next := walk.get_base_script() as GDScript
+				if next == null:
+					# Compiled chain broke — walk remaining ancestors via source text
+					found_in_source = _source_walk_has_method(
+						walk.source_code, method_name)
+					break
+				walk = next
+			if found_in_source:
+				method_hint = "; method found in script source but not visible — the script (or a parent script) likely has compilation errors (check editor_get_console)"
+			else:
+				method_hint = "; script %s is attached but does not define this method — check spelling and inheritance chain" % scr.resource_path
 		return {"code": "INVALID_PARAMS",
-			"error": "method %s not on %s" % [method_name, target_path]}
+			"error": "method %s not on %s%s" % [method_name, target_path, method_hint]}
 	return {
 		"source": source,
 		"target": target,

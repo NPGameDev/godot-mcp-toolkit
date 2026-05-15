@@ -173,7 +173,7 @@ static func ensure_file_indexed(file_path: String, timeout_ms: int = 3000) -> Di
 	var file_class := filesystem.get_file_type(file_path)
 	var result := {"indexed": file_class != "", "file_class": file_class, "elapsed_ms": elapsed}
 	if not result["indexed"]:
-		result["hint"] = "indexed is advisory — script_check, resource_load, and scene_open work regardless. Call editor_reload_scripts only if asset_list visibility is needed."
+		result["hint"] = "indexed is advisory — script_check, resource_load, and scene_open work regardless. Call editor_refresh only if asset_list visibility is needed."
 	return result
 
 

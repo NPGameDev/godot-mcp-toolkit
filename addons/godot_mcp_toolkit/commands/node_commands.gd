@@ -426,7 +426,7 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	if not MCPFeatureGate.is_enabled("node_call_method"):
 		var err := MCPFeatureGate.disabled_error("node_call_method")
-		err["workaround"] = "Use script_write to add the logic in _ready() or a setup function, then editor_reload_scripts to apply."
+		err["workaround"] = "Use script_write to add the logic in _ready() or a setup function, then editor_refresh to apply."
 		return err
 	var root := _get_edited_root()
 	if root == null:

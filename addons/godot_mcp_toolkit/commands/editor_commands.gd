@@ -21,8 +21,8 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_editor_save_scene(parameters))
 	registry.add("editor.screenshot", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_editor_screenshot(parameters))
-	registry.add("editor.reload_scripts", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_reload_scripts(parameters))
+	registry.add("editor.refresh", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_editor_refresh(parameters))
 	registry.add("editor.get_console", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_get_console(server, parameters))
 	registry.add("editor.wait_for_idle", func(parameters: Dictionary) -> Dictionary:
@@ -223,7 +223,7 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 	return response
 
 
-static func _cmd_editor_reload_scripts(parameters: Dictionary) -> Dictionary:
+static func _cmd_editor_refresh(parameters: Dictionary) -> Dictionary:
 	# Flush stale errors before reload — fresh parse errors will be captured
 	# with new IDs so editor_get_console returns only current-state errors.
 	var errors_cleared := _Hub.LogBuffer.clear_level("error")
@@ -382,7 +382,7 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 			"RenderingServer", "PhysicsServer2D", "PhysicsServer3D"]
 		for singleton in singletons:
 			if singleton in err_text:
-				err_text += "\n\nHint: '%s' is a global singleton not accessible in Expression.execute(). Use dedicated MCP tools instead (e.g., editor_reload_scripts, project_get_settings, node_call_method)." % singleton
+				err_text += "\n\nHint: '%s' is a global singleton not accessible in Expression.execute(). Use dedicated MCP tools instead (e.g., editor_refresh, project_get_settings, node_call_method)." % singleton
 				break
 		# Detect chained property access failure on returned objects.
 		if "Invalid named index" in err_text and "base type Object" in err_text:

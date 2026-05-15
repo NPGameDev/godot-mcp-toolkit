@@ -211,8 +211,8 @@ void fragment() {
 Then call `asset_import` with file_path=`res://mcp_validation/val_icon.svg`
 - **Expect:** success (Godot imports the SVG as a texture resource), `class` field should be non-null (e.g. `CompressedTexture2D`)
 
-**42b.** `asset_get_dependencies` — file_path=`res://mcp_validation/val_icon.svg` (immediate usability check — NO `editor_reload_scripts` between 42 and 42b)
-- **Expect:** success — the imported asset is immediately queryable without a separate `editor_reload_scripts` call. If this fails with NOT_FOUND or returns empty, the asset_import auto-scan did not complete.
+**42b.** `asset_get_dependencies` — file_path=`res://mcp_validation/val_icon.svg` (immediate usability check — NO `editor_refresh` between 42 and 42b)
+- **Expect:** success — the imported asset is immediately queryable without a separate `editor_refresh` call. If this fails with NOT_FOUND or returns empty, the asset_import auto-scan did not complete.
 
 **43.** `scene_get_tree` — (verify all nodes present)
 - **Expect:** Tree showing ValSprite, ValLabel, ValAnimPlayer, ValAnimTree, ValTileLayer, ValPlayer/ValCollider, ValSub
@@ -453,7 +453,7 @@ animationtree_edit: node_path=`ValSprite`, action=`list`
 **60.** `editor_wait_for_idle`
 - **Expect:** success (returns when EditorFileSystem is idle)
 
-**61.** `editor_reload_scripts`
+**61.** `editor_refresh`
 - **Expect:** success (flushes all filesystem changes — scripts, scenes, resources, imports �� to the editor)
 
 **62.** `project_set_setting` — setting=`application/config/name`, value=`"McpValidationSweep"`
@@ -636,7 +636,7 @@ public partial class McpValCsGlobal : Node
 **CS-S1c.** Build the .NET solution — run `dotnet build` in the project root directory (use the Bash tool). This is required before C# `[Export]` properties and `[GlobalClass]` registration take effect.
 - **Expect:** `Build succeeded` in output. If the build fails, check for .NET SDK version mismatches (4.2 uses net6.0, 4.3+ uses net8.0).
 
-**CS-S2.** `editor_reload_scripts` — trigger the editor to pick up the rebuilt assembly
+**CS-S2.** `editor_refresh` — trigger the editor to pick up the rebuilt assembly
 - **Expect:** success
 
 **CS-S3.** Open `res://mcp_validation/val_main.tscn`, then `scene_create_node` — node_type=`Node`, node_name=`ValCsNode`, parent_path=`.`
@@ -740,7 +740,7 @@ public partial class McpValCsTemp : Node2D
 
 ### CS9. C# [GlobalClass] in ClassDB
 
-Tests `[GlobalClass]` registration using `McpValCsGlobal` (created in CS-S1b). Requires `dotnet build` + `editor_reload_scripts` to have completed (CS-S1c/CS-S2).
+Tests `[GlobalClass]` registration using `McpValCsGlobal` (created in CS-S1b). Requires `dotnet build` + `editor_refresh` to have completed (CS-S1c/CS-S2).
 
 **CS9.1** `classdb_search` — pattern=`McpValCsGlobal`
 - **Expect:** `McpValCsGlobal` found in results. Also verify `McpValCsNode` is NOT found (it lacks `[GlobalClass]`).
@@ -793,7 +793,7 @@ Tests `[GlobalClass]` registration using `McpValCsGlobal` (created in CS-S1b). R
 
 ### CS11. editor operations with C# present
 
-**CS11.1** `editor_reload_scripts`
+**CS11.1** `editor_refresh`
 - **Expect:** success — flushes all filesystem changes to the editor; C# scripts are handled by the .NET build system, not this call
 
 **CS11.2** `editor_get_console` — with level_filter `["error"]`
@@ -878,32 +878,32 @@ Open val_main -> `scene_create_node` (AnimationPlayer) -> `node_call_method` (ad
 - **Expect:** Full create→configure→paint pipeline. Atlas TileSet created with physics, terrain peering configured, cells painted on tile layer using correct source_id
 
 ### C11. Script write → immediate check (targeted filesystem)
-`script_write` (file_path=`res://mcp_validation/val_fs_script.gd`, valid GDScript) -> verify `indexed: true` in response -> `script_check` (same path, **no** `editor_reload_scripts` between) -> `script_delete`
-- **Expect:** `script_write` returns `indexed: true`; `script_check` passes immediately without needing `editor_reload_scripts`
+`script_write` (file_path=`res://mcp_validation/val_fs_script.gd`, valid GDScript) -> verify `indexed: true` in response -> `script_check` (same path, **no** `editor_refresh` between) -> `script_delete`
+- **Expect:** `script_write` returns `indexed: true`; `script_check` passes immediately without needing `editor_refresh`
 
 ### C12. Resource create → immediate load (targeted filesystem)
-`resource_write` (file_path=`res://mcp_validation/val_fs_resource.tres`, type=`Environment`) -> verify `indexed: true` in response -> `resource_load` (same path, **no** `editor_reload_scripts` between) -> `resource_delete`
+`resource_write` (file_path=`res://mcp_validation/val_fs_resource.tres`, type=`Environment`) -> verify `indexed: true` in response -> `resource_load` (same path, **no** `editor_refresh` between) -> `resource_delete`
 - **Expect:** `resource_write` returns `indexed: true`; `resource_load` returns the resource immediately
 
 ### C13. Scene create → immediate open (targeted filesystem)
-`scene_create` (file_path=`res://mcp_validation/val_fs_scene.tscn`) -> verify `indexed: true` in response -> `scene_open` (same path, **no** `editor_reload_scripts` between) -> cleanup (open main scene, delete scene file)
+`scene_create` (file_path=`res://mcp_validation/val_fs_scene.tscn`) -> verify `indexed: true` in response -> `scene_open` (same path, **no** `editor_refresh` between) -> cleanup (open main scene, delete scene file)
 - **Expect:** `scene_create` returns `indexed: true`; `scene_open` succeeds immediately
 
 ### C14. File delete → immediate deindex (targeted filesystem)
 `script_write` (file_path=`res://mcp_validation/val_fs_del.gd`) -> `file_delete` (same path) -> verify `deindexed: true` in response -> `asset_list` (path_prefix=`res://mcp_validation/`, name_glob=`val_fs_del*`) -> verify file absent from results
 - **Expect:** `file_delete` returns `deindexed: true`; `asset_list` shows no matching entry
 
-### C15. editor_reload_scripts targeted mode
-`script_write` (file_path=`res://mcp_validation/val_fs_targeted.gd`) -> `editor_reload_scripts` (file_paths=[`res://mcp_validation/val_fs_targeted.gd`]) -> verify `mode: "targeted"` in response -> `script_delete`
+### C15. editor_refresh targeted mode
+`script_write` (file_path=`res://mcp_validation/val_fs_targeted.gd`) -> `editor_refresh` (file_paths=[`res://mcp_validation/val_fs_targeted.gd`]) -> verify `mode: "targeted"` in response -> `script_delete`
 - **Expect:** Response contains `"mode": "targeted"` and `"file_count": 1`
 
-### C16. editor_reload_scripts full mode (backward compat)
-`editor_reload_scripts` (no params) -> verify `mode: "full"` in response
+### C16. editor_refresh full mode (backward compat)
+`editor_refresh` (no params) -> verify `mode: "full"` in response
 - **Expect:** Response contains `"mode": "full"` and `"scan_waited_ms"` field (backward compatible)
 
 ### C17. New-directory indexing (scan fallback)
-`folder_create` (file_path=`res://mcp_validation/val_fs_subdir/`) -> `script_write` (file_path=`res://mcp_validation/val_fs_subdir/val_fs_newdir.gd`, valid GDScript) -> check `indexed` field in response -> `script_check` (same path, **no** `editor_reload_scripts` between) -> `folder_delete` (folder_path=`res://mcp_validation/val_fs_subdir/`, recursive=true)
-- **Expect:** `script_check` passes immediately without `editor_reload_scripts`. The `indexed` field may be `true` or `false` depending on Godot version and editor build — on .NET builds, `scan()` may not complete within the timeout for the first file in a new directory. This is acceptable: `indexed` is advisory, not a functional gate. All downstream operations (`script_check`, `resource_load`, `scene_open`) work regardless of the `indexed` value. Mark PASS if `script_check` succeeds.
+`folder_create` (file_path=`res://mcp_validation/val_fs_subdir/`) -> `script_write` (file_path=`res://mcp_validation/val_fs_subdir/val_fs_newdir.gd`, valid GDScript) -> check `indexed` field in response -> `script_check` (same path, **no** `editor_refresh` between) -> `folder_delete` (folder_path=`res://mcp_validation/val_fs_subdir/`, recursive=true)
+- **Expect:** `script_check` passes immediately without `editor_refresh`. The `indexed` field may be `true` or `false` depending on Godot version and editor build — on .NET builds, `scan()` may not complete within the timeout for the first file in a new directory. This is acceptable: `indexed` is advisory, not a functional gate. All downstream operations (`script_check`, `resource_load`, `scene_open`) work regardless of the `indexed` value. Mark PASS if `script_check` succeeds.
 
 ### C18. folder_delete auto-closes scene tabs [4.5+ for full validation, all versions for deletion]
 `scene_create` (file_path=`res://mcp_validation/val_fs_tabA.tscn`) -> `scene_create` (file_path=`res://mcp_validation/val_fs_tabB.tscn`) -> `scene_open` (val_fs_tabA) -> `scene_open` (val_fs_tabB) -> ensure val_main.tscn is also open via `scene_open` -> `folder_delete` (folder_path=`res://mcp_validation/`, recursive=true) — **IMPORTANT:** first re-create `res://mcp_validation/` and move the two scene files inside it, since earlier combo chains may have deleted them. Alternatively, create a fresh subfolder for this test.

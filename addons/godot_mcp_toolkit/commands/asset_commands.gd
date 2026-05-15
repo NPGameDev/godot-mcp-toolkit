@@ -130,7 +130,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 		var abs_path := ProjectSettings.globalize_path(path_prefix)
 		if DirAccess.dir_exists_absolute(abs_path):
 			filesystem.scan()
-			# Wait up to 5s for scan to finish (matches editor_reload_scripts timeout)
+			# Wait up to 5s for scan to finish (matches editor_refresh timeout)
 			var waited := 0
 			while filesystem.is_scanning() and waited < 5000:
 				OS.delay_msec(100)
@@ -138,7 +138,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 			root_directory = filesystem.get_filesystem_path(path_prefix)
 		if root_directory == null:
 			return MCPError.make("NOT_FOUND",
-				"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.reload_scripts or wait for is_scanning to clear)" % path_prefix, MCPError.HINT_FILE_PATH)
+				"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.refresh or wait for is_scanning to clear)" % path_prefix, MCPError.HINT_FILE_PATH)
 
 	var entries: Array = []
 	var truncated := _walk_filesystem_directory(

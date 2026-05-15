@@ -27,7 +27,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message |
 | `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. `gdscript://` URIs in error messages (see below); `class_name` false positive fixed via stripping |
-| `editor_reload_scripts` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
+| `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
 
 ### Degraded behavior by version
@@ -227,7 +227,7 @@ that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
 | `animation_get_keys` | ✅ | |
 | `tilemap_set_cells` | ✅ | |
 | `editor_save_scene` | ✅ | |
-| `editor_reload_scripts` | ✅ | |
+| `editor_refresh` | ✅ | |
 | `editor_get_console` | ✅ | |
 | `editor_wait_for_idle` | ✅ | |
 | `game_start` | ✅ | Game process launches; no display |

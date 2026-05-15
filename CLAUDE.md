@@ -107,7 +107,7 @@ strips mutating tools from any profile.
 | `asset_management`    | `asset_get_dependencies`, `asset_import`, `resource_delete`, `file_delete`, `scene_delete`, `scene_close`, `resource_load`, `resource_write`, `script_delete`, `folder_delete` |
 | `user_data` (gated)   | `save_read`, `save_write`, `save_delete`, `save_list` |
 | `scene_advanced`      | `scene_diff`, `scene_instantiate` |
-| `editor_advanced`     | `editor_screenshot`, `editor_reload_scripts`, `editor_wait_for_idle` |
+| `editor_advanced`     | `editor_screenshot`, `editor_refresh`, `editor_wait_for_idle` |
 | `tilemap`             | `tilemap_set_cells`, `tileset_create`, `tileset_edit` |
 | `node_management`     | `node_manage`, `node_groups`, `autoload_manage` |
 

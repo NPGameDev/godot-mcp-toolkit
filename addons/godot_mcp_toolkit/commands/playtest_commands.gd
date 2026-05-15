@@ -47,7 +47,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 			return MCPError.make("COMPILATION_FAILED",
 				"Game is not running — it likely failed to compile or crashed on startup. "
 				+ ("No errors captured in log buffer (file-tail mode on Godot 4.2-4.4 may miss errors). " if not _Hub.LogBuffer.uses_logger_api() else "No errors in log buffer. ")
-				+ "Call editor_reload_scripts to retrigger compilation errors, then editor_get_console for details.")
+				+ "Call editor_refresh to retrigger compilation errors, then editor_get_console for details.")
 	else:
 		if EditorInterface.is_playing_scene():
 			if if_running == "return":
@@ -138,7 +138,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 						response["compilation_failed"] = true
 						response["hint"] = "Game never started — likely a compilation error. " \
 							+ ("No errors in log buffer (file-tail mode may miss errors). " if not _Hub.LogBuffer.uses_logger_api() else "") \
-							+ "Call editor_reload_scripts to retrigger compilation errors, then editor_get_console for details."
+							+ "Call editor_refresh to retrigger compilation errors, then editor_get_console for details."
 				else:
 					response["hint"] = "Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors."
 			"token_read_failed":

@@ -96,7 +96,7 @@
 | 46 | resource_load | AssetMgmt | val_material.tres | ShaderMaterial | ShaderMaterial loaded | PASS | |
 | 47 | asset_get_dependencies | AssetMgmt | val_material.tres | deps listed | shader dep found | PASS | |
 | 48 | scene_diff | SceneAdv | val_main vs val_sub | diff result | differences returned | PASS | |
-| 49 | editor_reload_scripts | EditorAdv | full reload | success | success | PASS | |
+| 49 | editor_refresh | EditorAdv | full reload | success | success | PASS | |
 | 50 | tileset_create | Tilemap | texture=icon.svg | success | success, atlas created | PASS | |
 | 51 | tileset_edit | Tilemap | terrain + collision | success | terrain configured | PASS | |
 | 52 | tilemap_set_cells | Tilemap | paint cells | success | cells painted | PASS | |
@@ -154,7 +154,7 @@
 | # | Tool | Stage | Key Params | Expected | Actual | Result | Notes |
 |---|------|-------|------------|----------|--------|--------|-------|
 | 62a | layer_names_set | Layers | 2d_physics layer 1 | success | success | PASS | |
-| 62b | layer_names_get | Layers | 2d_physics | layer names | Tool not found | **SKIP** | Tool disappeared after editor_reload_scripts |
+| 62b | layer_names_get | Layers | 2d_physics | layer names | Tool not found | **SKIP** | Tool disappeared after editor_refresh |
 | 62c-d | layer_names_set/get | Layers | roundtrip verify | matching names | Tool not found | **SKIP** | Same tool disappearance issue |
 
 ### Path Normalization
@@ -323,8 +323,8 @@
 | C12 | Resource create -> immediate load | 3 | PASS | indexed:true |
 | C13 | Scene create -> immediate open | 3 | PASS | indexed:true |
 | C14 | File delete -> immediate deindex | 3 | PASS | deindexed:true |
-| C15 | editor_reload_scripts targeted mode | 3 | PASS | mode:"targeted", file_count:1 |
-| C16 | editor_reload_scripts full mode | 1 | PASS | mode:"full", scan_waited_ms:100 |
+| C15 | editor_refresh targeted mode | 3 | PASS | mode:"targeted", file_count:1 |
+| C16 | editor_refresh full mode | 1 | PASS | mode:"full", scan_waited_ms:100 |
 | C17 | New-directory indexing (scan fallback) | 4 | PASS | indexed:false but script_check still works |
 | C18 | folder_delete auto-closes scene tabs | 5 | PASS | No PATH_IN_USE errors |
 | C19 | Node management pipeline | 8 | PASS | dup->rename->reparent->groups cycle |
@@ -390,7 +390,7 @@
 - [x] scene_instantiate batch: multi-instance with transforms working
 - [x] discover_tools: keyword search activates correct groups, reset deactivates
 - [x] layer_names_set: set layer names works on first call
-- [ ] layer_names_get: tool disappears after editor_reload_scripts (intermittent)
+- [ ] layer_names_get: tool disappears after editor_refresh (intermittent)
 - [x] Path2D/Curve2D: set/add/remove/clear all work, guard catches non-Path2D
 - [x] 3D primitives: box/sphere/cylinder + environment + light + camera all create correctly
 - [x] collision_from_texture: generates polygons from sprite texture
@@ -424,11 +424,11 @@
 - **Actual:** Duplicated node has position (0,0)
 - **Workaround:** Call `node_set_property` after `node_manage(duplicate)` to set properties
 
-### 3. layer_names tools disappear after editor_reload_scripts (62b-d)
+### 3. layer_names tools disappear after editor_refresh (62b-d)
 
 - **Tools:** `layer_names_get`, `layer_names_set`
 - **Severity:** Minor (intermittent)
-- **Description:** After `editor_reload_scripts` triggers a `tools/list_changed` notification, the layer_names tools become unavailable and cannot be re-fetched via ToolSearch. The `discover_tools(groups=["layer_naming"])` call can re-activate them but the tool schemas remain stale in the MCP client.
+- **Description:** After `editor_refresh` triggers a `tools/list_changed` notification, the layer_names tools become unavailable and cannot be re-fetched via ToolSearch. The `discover_tools(groups=["layer_naming"])` call can re-activate them but the tool schemas remain stale in the MCP client.
 - **Expected:** Tools remain callable after reload
 - **Actual:** Tool not found errors
 - **Workaround:** Reconnect MCP (`/mcp`) or call `discover_tools` to re-activate
@@ -451,6 +451,6 @@
 The toolkit is in excellent shape. All core tools, gated tools, on-demand group tools, combo chains, and extended tool sections (Path2D, 3D, collision, procedural, inheritance, audio, spriteframes, scene_query, particles, navigation) work correctly. The 4 failures are isolated issues:
 - 2 relate to regex backslash escaping in log filtering (systematic)
 - 1 relates to `node_manage` duplicate not applying property overrides
-- 1 relates to intermittent tool disappearance after `editor_reload_scripts` (client-side caching)
+- 1 relates to intermittent tool disappearance after `editor_refresh` (client-side caching)
 
 All cleanup completed successfully with project state fully restored.
