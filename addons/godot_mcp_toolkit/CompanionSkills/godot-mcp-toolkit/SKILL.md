@@ -488,9 +488,11 @@ the response, and the context it occupies. Minimise waste:
   a complex class returns thousands of lines. Ask for `["properties"]` or
   `["signals"]` only.
 - **Use specific keys for project settings.** `project_get_settings(prefix:
-  "display")` returns hundreds of settings. Use `key:
-  "display/window/size/viewport_width"` for a single value. If the spec
-  already states the value, skip the read and set it directly.
+  "display")` returns hundreds of settings (including all defaults). Use
+  `key: "display/window/size/viewport_width"` for a single value. If you
+  need a broad survey, `Read(project.godot)` is far cheaper — it only
+  contains settings that differ from defaults. If the spec already states
+  the value, skip the read entirely and set it directly.
 
 ---
 
