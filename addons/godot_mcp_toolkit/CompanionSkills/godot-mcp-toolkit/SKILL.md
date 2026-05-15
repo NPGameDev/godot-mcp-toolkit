@@ -372,12 +372,16 @@ to `.mcp.json` automatically.
 ### Never screenshot for debugging logic
 
 `runtime_screenshot` costs more tokens than 5-10 text tool calls
-combined. **Never** use it to check game state, verify logic, or
-diagnose errors — use `debugger_get_log`, `runtime_get_node_state`,
+combined, and the image takes significantly longer to process than
+structured text — slowing down your reaction time on every call.
+**Never** use it to check game state, verify logic, or diagnose
+errors — use `debugger_get_log`, `runtime_get_node_state`,
 `runtime_get_script_vars`, or `execute_code` instead (see the
-verification cost ladder in §3). Screenshots **are** the right tool
-for UI layout, visual alignment, and rendering issues where text
-tools genuinely can't answer the question.
+verification cost ladder in §3). Text tools return exact values
+(`"gold": 150`) instantly; screenshots require visual interpretation.
+Screenshots **are** the right tool for UI layout, visual alignment,
+and rendering issues where text tools genuinely can't answer the
+question.
 
 ### GDScript pattern: prefer load() over preload()
 
