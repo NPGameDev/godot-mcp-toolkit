@@ -150,6 +150,26 @@ After `game_start`, verify the game is in the expected state before testing:
 **Warning:** `delay_after_ms` > 500ms is dangerous. The game world is live
 during delays — enemies move, timers tick, damage accumulates.
 
+**Verifying game state (cheapest to most expensive):**
+
+1. `debugger_get_log` — read `print()` output. Add strategic prints in
+   scripts for key state changes (score, health, wave number, game state).
+   Cheapest runtime verification — tiny response, no gate required.
+2. `runtime_get_node_state` — check `@export` vars and node existence.
+   Design scripts with `@export` on key state vars to make them visible.
+3. `runtime_get_script_vars` — all script variables, not just exports.
+   Activate `runtime_advanced` group via `discover_tools`. No gate required.
+4. `execute_code` — arbitrary queries on any node (requires
+   `GODOT_MCP_ALLOW_EXECUTE_CODE=1` gate). Most flexible but larger
+   responses than options 1-3.
+5. `runtime_screenshot` — visual check. **Last resort.** Costs 5-10x more
+   tokens than any text tool above. Reserve for UI layout and alignment
+   verification where visual inspection is genuinely needed.
+
+Prefer options 1-3 for state verification. Use 4 when you need computed
+values or deep inspection. Use 5 only when text tools genuinely can't
+answer the question (visual layout, alignment, rendering issues).
+
 ### Scene instantiation
 
 `scene_instantiate` auto-renames on name collision (Node, Node2, Node3...),
