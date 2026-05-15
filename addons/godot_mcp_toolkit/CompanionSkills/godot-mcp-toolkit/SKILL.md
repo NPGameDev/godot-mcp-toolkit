@@ -369,15 +369,15 @@ Do not manually edit gate state. Use the dock UI (Feature Gates checkboxes)
 to toggle gates. The plugin writes gate state to a sidecar file and syncs
 to `.mcp.json` automatically.
 
-### DO NOT use screenshots for debugging
+### Never screenshot for debugging logic
 
 `runtime_screenshot` costs more tokens than 5-10 text tool calls
 combined. **Never** use it to check game state, verify logic, or
 diagnose errors — use `debugger_get_log`, `runtime_get_node_state`,
 `runtime_get_script_vars`, or `execute_code` instead (see the
-verification cost ladder in §3). Screenshots are **only** justified
-for UI layout and visual alignment where no text tool can answer the
-question (e.g., "are these buttons overlapping?").
+verification cost ladder in §3). Screenshots **are** the right tool
+for UI layout, visual alignment, and rendering issues where text
+tools genuinely can't answer the question.
 
 ### GDScript pattern: prefer load() over preload()
 
@@ -477,10 +477,11 @@ the response, and the context it occupies. Minimise waste:
 - **Use `scene_get_tree` sparingly.** `include_properties: true` on even
   a small scene returns hundreds of lines. Use `node_get_property` for
   targeted reads.
-- **Never screenshot for debugging.** `debugger_get_log` +
+- **Never screenshot for debugging logic.** `debugger_get_log` +
   `runtime_get_node_state` cost a fraction of a screenshot. Only use
-  `runtime_screenshot` for UI layout/alignment — never for state checks,
-  error diagnosis, or verifying game logic.
+  `runtime_screenshot` for UI layout, visual alignment, or rendering
+  issues — never for state checks, error diagnosis, or verifying game
+  logic.
 - **Partial script reads.** If you wrote the script, read only the function
   you need (`start_line`/`end_line`).
 - **Reset unused tool groups.** Accumulated on-demand groups degrade tool
