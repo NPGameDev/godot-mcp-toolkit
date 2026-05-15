@@ -744,6 +744,14 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPError.make("NO_SCENE", "no edited scene")
 
+	# Batch mode: entries array present → process N node+group pairs in one UndoRedo action.
+	var entries_raw = parameters.get("entries", null)
+	if typeof(entries_raw) == TYPE_ARRAY and (entries_raw as Array).size() > 0:
+		if action == "list":
+			return MCPError.make("INVALID_PARAMS",
+				"batch entries not supported with action 'list'; use single mode per node")
+		return _batch_node_groups(root, action, entries_raw as Array)
+
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = MCPHelpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
@@ -798,6 +806,49 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 		_:
 			return MCPError.make("INVALID_PARAMS",
 				"unknown action '%s'; must be add|remove|list" % action)
+
+
+static func _batch_node_groups(root: Node, action: String, entries: Array) -> Dictionary:
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: batch %s groups (%d entries)" % [action, entries.size()])
+
+	var results: Array = []
+	for entry in entries:
+		var e: Dictionary = entry if typeof(entry) == TYPE_DICTIONARY else {}
+		var np := str(e.get("node_path", ""))
+		np = MCPHelpers.normalize_editor_path(np)
+		var group := str(e.get("group", ""))
+		if np.is_empty() or group.is_empty():
+			results.append({"node_path": np, "group": group, "error": "missing node_path or group"})
+			continue
+		var node := root.get_node_or_null(np)
+		if node == null:
+			results.append({"node_path": np, "group": group, "error": "node not found"})
+			continue
+		match action:
+			"add":
+				if undo_redo != null:
+					undo_redo.add_do_method(node, "add_to_group", group, true)
+					undo_redo.add_undo_method(node, "remove_from_group", group)
+				else:
+					node.add_to_group(group, true)
+				results.append({"node_path": np, "group": group, "status": "added"})
+			"remove":
+				if not node.is_in_group(group):
+					results.append({"node_path": np, "group": group, "error": "not in group"})
+					continue
+				if undo_redo != null:
+					undo_redo.add_do_method(node, "remove_from_group", group)
+					undo_redo.add_undo_method(node, "add_to_group", group, true)
+				else:
+					node.remove_from_group(group)
+				results.append({"node_path": np, "group": group, "status": "removed"})
+
+	if undo_redo != null:
+		undo_redo.commit_action()
+
+	return {"success": true, "action": action, "results": results, "count": results.size()}
 
 
 static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:

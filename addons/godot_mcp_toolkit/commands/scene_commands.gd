@@ -537,6 +537,12 @@ static func _batch_instantiate(
 			if inst_dict.has(key):
 				instance.set(key, MCPCoerce.coerce_value(inst_dict[key]))
 
+		# Apply arbitrary property overrides (e.g. exports like key_type).
+		var props = inst_dict.get("properties", null)
+		if typeof(props) == TYPE_DICTIONARY:
+			for key in (props as Dictionary).keys():
+				instance.set(str(key), MCPCoerce.coerce_value(props[key]))
+
 		# FIX-9: Only set owner on instance root (same as single-instance path).
 		if undo_redo != null:
 			undo_redo.add_do_method(parent_node, "add_child", instance)

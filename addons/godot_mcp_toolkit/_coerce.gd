@@ -169,17 +169,53 @@ static func coerce_value(value: Variant) -> Variant:
 						return {"_coerce_error":
 							"PackedColorArray elements must be Color. Use: {type:'PackedColorArray', values: [{type:'Color', r:1, g:0, b:0, a:1}, ...]}"}
 			return arr
+		"LayerMask":
+			var lm_category := str(value.get("category", "2d_physics"))
+			return layers_to_mask(value.get("layers", []), lm_category)
 		_:
 			# FIX-5: Reject unknown type tags instead of silently passing through.
 			var type_tag := str(value.get("type", ""))
 			if not type_tag.is_empty():
 				return {"_coerce_error":
-					"Unknown type tag '%s'. Supported: Vector2, Vector3, Vector4, Vector2i, Vector3i, Color, Rect2, Rect2i, Transform2D, Transform3D, NodePath, Resource, NewResource, PackedVector2Array, PackedVector3Array, PackedColorArray." % type_tag}
+					"Unknown type tag '%s'. Supported: Vector2, Vector3, Vector4, Vector2i, Vector3i, Color, Rect2, Rect2i, Transform2D, Transform3D, NodePath, Resource, NewResource, PackedVector2Array, PackedVector3Array, PackedColorArray, LayerMask." % type_tag}
 			# No type key — generic dict with recursive coercion.
 			var result := {}
 			for k in value.keys():
 				result[k] = coerce_value(value[k])
 			return result
+
+
+## Convert a layer-number value to a bitmask integer.
+## Accepts: int (returned as-is), or Array of layer numbers (int) or
+## named layers (String) → bitmask.  Named layers are resolved via
+## ProjectSettings (layer_names/{category}/layer_N).
+## Used by the LayerMask type tag and tileset_create collision params.
+static func layers_to_mask(value: Variant, category: String = "2d_physics") -> int:
+	if typeof(value) == TYPE_ARRAY:
+		var mask := 0
+		for layer in value:
+			if typeof(layer) == TYPE_STRING:
+				var n := _resolve_layer_name(str(layer), category)
+				if n >= 1:
+					mask |= (1 << (n - 1))
+			else:
+				var n := int(layer)
+				if n >= 1 and n <= 32:
+					mask |= (1 << (n - 1))
+		return mask
+	return int(value)
+
+
+## Resolve a named layer to its 1-based number by scanning ProjectSettings.
+## Returns -1 if the name is not found.
+static func _resolve_layer_name(layer_name: String, category: String) -> int:
+	for n in range(1, 33):
+		var key := "layer_names/%s/layer_%d" % [category, n]
+		if ProjectSettings.has_setting(key):
+			var stored: String = str(ProjectSettings.get_setting(key))
+			if stored.to_lower() == layer_name.to_lower():
+				return n
+	return -1
 
 
 static func serialize_value(value: Variant) -> Variant:

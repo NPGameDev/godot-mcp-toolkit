@@ -4,6 +4,7 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
+const MCPCoerce = _Hub.MCPCoerce
 const MCPFileGuard = _Hub.MCPFileGuard
 const MCPHelpers = _Hub.MCPHelpers
 
@@ -209,8 +210,8 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 	var physics: bool = parameters.get("physics", true)
 	if physics:
 		ts.add_physics_layer()
-		var collision_layer := int(parameters.get("collision_layer", 1))
-		var collision_mask := int(parameters.get("collision_mask", 1))
+		var collision_layer := MCPCoerce.layers_to_mask(parameters.get("collision_layer", 1))
+		var collision_mask := MCPCoerce.layers_to_mask(parameters.get("collision_mask", 1))
 		ts.set_physics_layer_collision_layer(0, collision_layer)
 		ts.set_physics_layer_collision_mask(0, collision_mask)
 
