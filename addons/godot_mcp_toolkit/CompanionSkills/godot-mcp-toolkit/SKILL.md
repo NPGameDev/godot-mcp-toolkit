@@ -170,6 +170,17 @@ Prefer options 1-3 for state verification. Use 4 when you need computed
 values or deep inspection. Use 5 only when text tools genuinely can't
 answer the question (visual layout, alignment, rendering issues).
 
+**Fast-forward testing with `runtime_set_property`:** Instead of
+playing through the entire game to test late-game scenarios, set state
+directly at runtime. Example — testing victory after wave 5:
+```
+runtime_set_property(node_path: "/root/GameManager", property: "current_wave", value: 5)
+runtime_set_property(node_path: "/root/GameManager", property: "enemies_remaining", value: 0)
+```
+Then verify the victory screen triggers. This skips minutes of manual
+play-through and dozens of `input_simulate` calls. Use it to test
+win/lose conditions, edge cases, and late-game states cheaply.
+
 ### Scene instantiation
 
 `scene_instantiate` auto-renames on name collision (Node, Node2, Node3...),
