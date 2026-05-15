@@ -134,6 +134,11 @@ Use `autoload_manage` to register autoloads — not `project_set_setting`
 (which rejects `autoload/*` keys and redirects). Register autoloads as early
 as possible so other scripts can reference them by `class_name`.
 
+After registering, call `editor_refresh` to flush the editor cache. Console
+errors that reference autoload singletons (e.g., "identifier not found") are
+usually stale cache — don't re-register or rewrite scripts until you've
+refreshed and re-checked.
+
 ### Playtest verification loop
 
 After `game_start`, verify the game is in the expected state before testing:
@@ -481,6 +486,7 @@ These are the most common sources of wasted tool calls and retries:
 | `signal_manage` vs `signal_emit` | `manage` = editor-side connect/disconnect; `emit` = runtime-side |
 | `scene_create` vs `scene_create_node` | `scene_create` = new .tscn file; `scene_create_node` = add node to open scene |
 | `autoload_manage` vs `project_set_setting` | Always use `autoload_manage` for autoloads; `project_set_setting` rejects them |
+| `autoload_manage` + console errors | After registering, `editor_refresh` before trusting console errors — stale cache shows false "identifier not found" |
 | `execute_code` | Requires `GODOT_MCP_ALLOW_EXECUTE_CODE=1`; responses are larger than property reads |
 | `editor_refresh` | Needed after external writes; especially in headless mode |
 | `game_start` | `scene_path` accepts `"main"`, `"current"`, or `res://` path |
