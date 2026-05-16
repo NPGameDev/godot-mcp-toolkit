@@ -89,4 +89,4 @@
 ## Cleanup
 
 - `project_set_setting` — restore `application/run/main_scene` to original value from Section 0
-- If `runtime_advanced` group was activated for this section: call `discover_tools` with reset=["runtime_advanced"] to deactivate it
+- Call `discover_tools` with reset=true to deactivate all on-demand groups activated during this section

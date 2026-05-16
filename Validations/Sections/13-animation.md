@@ -46,5 +46,5 @@
 
 ## Cleanup
 
-- If `animation_authoring` group was activated for this section: call `discover_tools` with reset=["animation_authoring"] to deactivate it
+- Call `discover_tools` with reset=true to deactivate all on-demand groups activated during this section
 - Animation state persists for runtime tests in Section 20.

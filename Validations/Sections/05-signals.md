@@ -41,4 +41,4 @@
 
 ## Cleanup
 
-- If `signals` group was activated for this section: call `discover_tools` with reset=["signals"] to deactivate it
+- Call `discover_tools` with reset=true to deactivate all on-demand groups activated during this section

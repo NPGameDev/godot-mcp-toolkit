@@ -50,4 +50,4 @@
 - `resource_delete` file_path=`res://sv2_validation/theme.tres`
 - `resource_delete` file_path=`res://sv2_validation/spriteframes.tres`
 - `resource_delete` file_path=`res://sv2_validation/spritesheet_frames.tres`
-- If `theme` or `audio` groups were activated: call `discover_tools` with reset=["theme", "audio"] to deactivate them
+- Call `discover_tools` with reset=true to deactivate all on-demand groups activated during this section

@@ -107,4 +107,4 @@
 - Delete all 3D nodes: any MeshInstance3D, WorldEnvironment, DirectionalLight3D, Camera3D created in 16.1-16.5
 - Delete particle nodes: all GPUParticles2D/3D nodes created in 16.17-16.20
 - Delete procedural resources: `resource_delete` gradient.tres, curve.tres, noise.tres
-- If `scene_advanced` or `editor_advanced` groups were activated: call `discover_tools` with reset=["scene_advanced", "editor_advanced"] to deactivate them
+- Call `discover_tools` with reset=true to deactivate all on-demand groups activated during this section
