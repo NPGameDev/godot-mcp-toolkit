@@ -1,0 +1,100 @@
+# Section 3 — Node Properties & Methods
+
+**Dependencies:** Section 2 (nodes exist in main.tscn)
+**Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method
+**Tests:** 22
+
+---
+
+**3.1** `node_set_property` — node_path=`Sv2Sprite`, property=`position`, value=`{"type":"Vector2","x":100,"y":100}`
+- **Expect:** success
+
+**3.2** `node_get_property` — node_path=`Sv2Sprite`, property=`position`
+- **Expect:** Vector2(100, 100)
+
+**3.3** `node_set_property` — node_path=`Sv2Label`, property=`text`, value=`"Hello Sweep v2"`
+- **Expect:** success
+
+**3.4** `node_set_property` (compound path) — node_path=`Sv2Label`, property=`theme_override_colors/font_color`, value=`{"type":"Color","r":1,"g":0,"b":0,"a":1}`
+- **Expect:** success
+
+**3.5** `node_get_property` (compound path) — node_path=`Sv2Label`, property=`theme_override_colors/font_color`
+- **Expect:** Color(1, 0, 0, 1)
+
+**3.6** `node_set_property` (Resource ref) — node_path=`Sv2Sprite`, property=`material`, value=`{"type":"Resource","path":"res://sv2_validation/material.tres"}`
+- **Expect:** success
+
+> **REGRESSION WATCH (FIX-E, 7e63aee):** Resource type tag `{"type":"Resource","path":"..."}` must work.
+> If the tool requires a different format or fails silently, Resource type handling has regressed.
+
+**3.7** `node_set_property` (ResourceRef alias) — create temp Sprite2D, set texture:
+- First: `scene_create_node` node_type=`Sprite2D`, node_name=`Sv2RefTest`, parent_path=`.`
+- Then: `node_set_property` node_path=`Sv2RefTest`, property=`texture`, value=`{"type":"ResourceRef","path":"res://icon.svg"}`
+- **Expect:** success — "ResourceRef" alias accepted
+
+> **REGRESSION WATCH (c61d994, Pitfall 4):** If "ResourceRef" is rejected and only
+> "Resource" works, the alias support has regressed. Flag as **Major**.
+
+**3.8** `node_set_property` (colon-chain) — node_path=`Sv2Sprite`, property=`material:shader_parameter/brightness`, value=0.3
+- **Expect:** success
+
+**3.9** `node_get_property` (colon-chain readback) — node_path=`Sv2Sprite`, property=`material:shader_parameter/brightness`
+- **Expect:** 0.3
+
+**3.10** `node_set_property` (bare res:// guard) — node_path=`Sv2RefTest`, property=`texture`, value=`"res://icon.svg"`
+- **Expect:** success OR hint warning about bare string without type wrapper
+
+> **REGRESSION WATCH (FIX-F, 7e63aee):** If a bare `res://` string is silently
+> accepted without any hint/warning, the bare-res detection has regressed. The tool
+> should either reject with a hint or accept with a diagnostic note.
+
+**3.11** `node_set_property` (LayerMask coercion) — node_path=`Sv2Player`, property=`collision_layer`, value=`{"type":"LayerMask","value":5}`
+- **Expect:** success, collision_layer set to 5
+
+> **REGRESSION WATCH (462506b):** If `LayerMask` type tag is rejected, coercion
+> has regressed. Flag as **Major**.
+
+**3.12** `node_set_property` (batch mode) — batch=`[{"node_path":"Sv2Label","property":"text","value":"Batch1"},{"node_path":"Sv2Sprite","property":"visible","value":false}]`
+- **Expect:** success, results array with 2 entries both showing success
+
+> **REGRESSION WATCH (FIX-7, T:98c02f3):** If `batch` parameter is rejected or
+> returns a single result instead of per-item results, batch mode has regressed.
+> Flag as **Critical**.
+
+**3.13** Verify batch — `node_get_property` Sv2Label text = "Batch1", `node_get_property` Sv2Sprite visible = false
+- **Expect:** Both match
+
+**3.14** Restore — `node_set_property` Sv2Sprite visible=true, Sv2Label text="Hello Sweep v2"
+
+**3.15** `node_set_script` — node_path=`Sv2Player`, script_path=`res://sv2_validation/actor.gd`
+- **Expect:** success
+
+**3.16** `node_get_property_list` — node_path=`Sv2Player`, mask=`script`
+- **Expect:** Only script-defined properties: speed, label
+
+**3.17** `node_get_property_list` — node_path=`Sv2Player`, mask=`common`
+- **Expect:** Curated commonly-used properties
+
+**3.18** `node_get_property_list` — node_path=`Sv2Player`, mask=`all`
+- **Expect:** Full property list including engine + script properties
+
+**3.19** `node_call_method` — node_path=`Sv2Player`, method=`get_info`, args=`[]`
+- **Expect:** Returns "Sv2Actor v1"
+
+**3.20** `node_set_property` (PackedVector2Array) — node_path=`Sv2Path`, property=`curve:_data:points`, value=`{"type":"PackedVector2Array","value":[{"x":0,"y":0},{"x":100,"y":50},{"x":200,"y":0}]}`
+- **Expect:** success OR acceptable error (Curve2D has specific internal format)
+
+> **REGRESSION WATCH (FIX-5, T:98c02f3):** If `PackedVector2Array` type tag is
+> rejected with "unknown type", packed array coercion has regressed. Flag as **Major**.
+
+**3.21** `node_set_property` (integer font size) — node_path=`Sv2Label`, property=`theme_override_font_sizes/font_size`, value=24
+- **Expect:** success
+
+**3.22** `node_get_property` — node_path=`Sv2Label`, property=`theme_override_font_sizes/font_size`
+- **Expect:** 24
+
+---
+
+## Cleanup
+
+Delete temp node: `scene_delete_node` node_path=`Sv2RefTest`
