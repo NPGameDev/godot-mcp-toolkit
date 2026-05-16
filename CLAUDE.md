@@ -450,7 +450,7 @@ The server-side exposes:
 
 ## Dogfood setup (this repo)
 
-This repo root IS a Godot 4.4 project (`project.godot` at root,
+This repo root IS a Godot 4.5 project (`project.godot` at root,
 `addons/godot_mcp_toolkit/` at root). The `.mcp.json` at repo root points at a
 locally-built server bridge.
 
@@ -477,7 +477,7 @@ cd <server-repo>
 npm install && npm run build
 
 # every session
-# 1) open THIS repo root in Godot 4.4+
+# 1) open THIS repo root in Godot 4.5+
 # 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
 # 3) from THIS repo root (where .mcp.json lives):
 claude

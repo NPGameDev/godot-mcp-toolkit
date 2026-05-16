@@ -121,6 +121,15 @@ static func get_entries(limit: int, level_filter: Array = [], since_id: int = -1
 	}
 
 
+## Returns the ID that will be assigned to the next pushed entry.
+## Snapshot this before game_start to filter entries by game session.
+static func get_cursor() -> int:
+	_mutex.lock()
+	var cursor := _next_id
+	_mutex.unlock()
+	return cursor
+
+
 ## Reset the buffer.
 static func clear() -> void:
 	_mutex.lock()

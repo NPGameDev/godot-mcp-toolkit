@@ -189,6 +189,10 @@ func _detect_playtest_end() -> void:
 	var playing := EditorInterface.is_playing_scene()
 	if _was_playing and not playing:
 		MCPRegistryClient.clear_runtime()
+		# Proactive notification: tell the MCP server bridge the game stopped
+		# so it can tear down the runtime channel immediately — no need to wait
+		# for the next callRuntime() to discover the dead connection.
+		_server.broadcast_notification("game_stopped")
 	_was_playing = playing
 
 

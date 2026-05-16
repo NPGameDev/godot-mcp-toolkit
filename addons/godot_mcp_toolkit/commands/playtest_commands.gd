@@ -13,12 +13,20 @@ const RUNTIME_HOST := "127.0.0.1"
 const RUNTIME_POLL_TIMEOUT_MS := 5000
 const _REGISTRY_POLL_INTERVAL_MS := 100
 
+# Log-file offset snapshot at game_start — bytes after this offset belong to
+# the current/most-recent game session. The log file (user://logs/godot.log)
+# is shared by editor + game processes, so reading from this offset gives us
+# game output even though the Logger API is process-local (4.5+).
+static var _game_session_file_offset: int = -1
+
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("game.start", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_game_start(parameters))
 	registry.add("game.stop", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_game_stop(parameters))
+	registry.add("debugger.get_log", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_debugger_get_log_cached(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -56,6 +64,11 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 					"runtime_port": runtime_port if runtime_port > 0 else null}
 			return MCPError.make("ALREADY_PLAYING",
 				"a game is already running; call game.stop first, or use runtime_poll:true to re-probe the runtime connection")
+
+		# Snapshot the log file size so the editor-side debugger.get_log
+		# cache only returns output from THIS game session. The log file
+		# is shared by editor + game, so bytes after this offset = game output.
+		_game_session_file_offset = _get_log_file_size()
 
 		match target:
 			"main":
@@ -174,6 +187,116 @@ static func _cmd_game_stop(_parameters: Dictionary) -> Dictionary:
 	var was_running := EditorInterface.is_playing_scene()
 	EditorInterface.stop_playing_scene()
 	return {"success": true, "was_running": was_running}
+
+
+## Editor-side debugger.get_log — returns cached log entries from the most
+## recent game session. Reads from the LOG FILE (shared by editor + game
+## processes) rather than the in-memory LogBuffer (which is process-local
+## and only captures editor output on 4.5+).
+static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
+	var limit: int = max(1, int(parameters.get("limit", 200)))
+	var text_filter: String = str(parameters.get("text_filter", ""))
+	var text_regex: RegEx = null
+	if text_filter != "" and parameters.get("is_regex", false):
+		text_regex = RegEx.new()
+		if text_regex.compile("(?i)" + text_filter) != OK:
+			return MCPError.make("INVALID_PARAMS",
+				"text_filter is not a valid regex (is_regex=true).")
+
+	if _game_session_file_offset < 0:
+		return {
+			"success": true,
+			"lines": [],
+			"count": 0,
+			"source": "cache",
+			"note": "No game session recorded yet (game_start was never called this editor session)",
+		}
+
+	# Read the log file from the offset where the game session started.
+	var log_path: String = _resolve_log_path()
+	if not FileAccess.file_exists(log_path):
+		return {
+			"success": true,
+			"lines": [],
+			"count": 0,
+			"source": "cache",
+			"note": "Log file not found. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart.",
+		}
+
+	var file := FileAccess.open(log_path, FileAccess.READ)
+	if file == null:
+		return MCPError.make("LOG_BUSY",
+			"Log file exists but cannot be read (err %d) — retry in 1-2s" % FileAccess.get_open_error())
+
+	var file_len: int = file.get_length()
+	if file_len <= _game_session_file_offset:
+		file.close()
+		return {
+			"success": true,
+			"lines": [],
+			"count": 0,
+			"source": "cache",
+			"note": "No new output since game_start (log file unchanged).",
+		}
+
+	# Read only the bytes written since game_start.
+	file.seek(_game_session_file_offset)
+	var new_bytes := file.get_buffer(file_len - _game_session_file_offset)
+	file.close()
+
+	var new_text := new_bytes.get_string_from_utf8()
+	var all_lines := new_text.split("\n", false)
+
+	# Apply text filter.
+	var filtered: Array = []
+	for line in all_lines:
+		var stripped := MCPHelpers.strip_ansi(line.strip_edges())
+		if stripped.is_empty():
+			continue
+		if text_filter != "":
+			if text_regex != null:
+				if not text_regex.search(stripped):
+					continue
+			else:
+				if stripped.findn(text_filter) < 0:
+					continue
+		filtered.append(stripped)
+
+	# Apply limit (take last N lines).
+	var truncated := filtered.size() > limit
+	if truncated:
+		filtered = filtered.slice(filtered.size() - limit)
+
+	return {
+		"success": true,
+		"lines": filtered,
+		"count": filtered.size(),
+		"truncated": truncated,
+		"source": "cache",
+		"note": "Game not running — showing cached output from last session (log file)",
+	}
+
+
+## Resolve the log file path (same logic as LogBuffer).
+static func _resolve_log_path() -> String:
+	var configured := ProjectSettings.get_setting(
+		"debug/file_logging/log_path", "user://logs/godot.log") as String
+	if configured.begins_with("user://") or configured.begins_with("res://"):
+		return ProjectSettings.globalize_path(configured)
+	return configured
+
+
+## Get the current log file size (for offset snapshot at game_start).
+static func _get_log_file_size() -> int:
+	var log_path := _resolve_log_path()
+	if not FileAccess.file_exists(log_path):
+		return 0
+	var file := FileAccess.open(log_path, FileAccess.READ)
+	if file == null:
+		return 0
+	var size: int = file.get_length()
+	file.close()
+	return size
 
 
 # -- Runtime probe ------------------------------------------------------------
