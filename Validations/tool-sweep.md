@@ -65,7 +65,7 @@ In Claude Code, `ToolSearch` may not return newly-activated tools due to the def
 | 16 | [16-domain-tools.md](Sections/16-domain-tools.md) | 3D, Path2D, Navigation, Particles, Procedural | 28 | 3d_*, path2d_edit_curve, navigation_edit_polygon, particles_create, procedural_edit_* | S2 |
 | 17 | [17-scene-query-inherit.md](Sections/17-scene-query-inherit.md) | Scene Inheritance & Query | 10 | scene_create_inherited, scene_query | S1 |
 | 18 | [18-file-operations.md](Sections/18-file-operations.md) | Scene Close/Delete Guards & Files | 10 | scene_close, scene_delete, file_delete, asset_import | S1 |
-| 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_sprite & meta | 5 | collision_from_sprite, meta_set_limits | S2 |
+| 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_sprite | 3 | collision_from_sprite | S2 |
 | 20 | [20-runtime.md](Sections/20-runtime.md) | Game Start, Runtime & Debugging | 22 | game_start/stop, runtime_*, debugger_get_log, input_simulate, execute_code, animation_player_control, signal_emit | S2 |
 | 21 | [21-game-guards.md](Sections/21-game-guards.md) | game_start Guards & Crash Recovery | 6 | game_start, debugger_get_log | S1 |
 | 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 12 chains | Multi-tool workflows | S1 |

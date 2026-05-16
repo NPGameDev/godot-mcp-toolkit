@@ -15,8 +15,8 @@
 **8.3** `project_get_settings` — prefix=`application/config/`
 - **Expect:** includes name="Sv2Validation"
 
-**8.4** `project_set_setting` (autoload key guard) — setting=`autoloads/SomeAutoload`, value=`"*res://fake.gd"`
-- **Expect:** error or warning — direct autoload manipulation should be guarded with hint to use autoload_manage instead
+**8.4** `project_set_setting` (autoload key guard) — setting=`autoload/SomeAutoload`, value=`"*res://fake.gd"`
+- **Expect:** INVALID_PARAMS error with hint to use autoload_manage instead (bypasses editor autoload cache)
 
 > **REGRESSION WATCH (23d69f9):** If setting autoload keys via project_set_setting
 > succeeds silently without guard/hint, the autoload bypass protection has regressed.

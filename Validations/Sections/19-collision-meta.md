@@ -1,8 +1,11 @@
-# Section 19 — collision_from_sprite & meta.set_limits
+# Section 19 — collision_from_sprite
 
 **Dependencies:** Section 2 (main.tscn open)
-**Tools tested:** collision_from_sprite, meta_set_limits
-**Tests:** 5
+**Tools tested:** collision_from_sprite
+**Tests:** 3
+
+> **Note:** `meta.set_limits` is an internal bridge tool (server → plugin) and is NOT
+> exposed to agents. It is not tested here.
 
 ---
 
@@ -16,12 +19,6 @@
 
 **19.3** `collision_from_sprite` guard — sprite_path=`.` (scene root, not Sprite2D)
 - **Expect:** INVALID_CLASS mentioning Sprite2D
-
-**19.4** `meta_set_limits` — script_read_cap_kb=128
-- **Expect:** success (or acknowledgment of new limit)
-
-**19.5** `meta_set_limits` — script_read_cap_kb=64 (reset to default)
-- **Expect:** success
 
 ---
 

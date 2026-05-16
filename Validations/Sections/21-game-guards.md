@@ -24,11 +24,14 @@ func _ready():
 - **Expect:** all succeed
 
 **21.3** `game_start` — with broken main scene script
-- **Expect:** COMPILATION_FAILED error with hints about the script error
+- **Expect:** success=true (game launches — Godot does NOT block launch for individual broken node scripts)
+- **Known limitation:** The COMPILATION_FAILED check (4be3454) only fires when the game process completely fails to start (e.g., missing main scene). Individual script errors manifest at runtime, not pre-launch. The agent discovers them via `debugger_get_log` after launch.
 
-> **REGRESSION WATCH (4be3454):** If game_start succeeds (launches broken game)
-> instead of catching the compilation failure pre-launch, the compilation check
-> has regressed. Flag as **Critical**.
+**21.3b** `debugger_get_log` — immediately after 21.3's game_start
+- **Expect:** contains GDScript parse error for sv2_broken_main.gd (the error surfaces in runtime logs)
+
+**21.3c** `game_stop`
+- **Expect:** success
 
 **21.4** Restore and run valid game:
 - `project_set_setting` application/run/main_scene = `"res://sv2_validation/main.tscn"`

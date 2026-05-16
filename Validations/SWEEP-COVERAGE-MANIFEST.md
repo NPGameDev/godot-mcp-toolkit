@@ -212,9 +212,9 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| meta.set_limits | — | — | — | — | — | **GAP:** no test |
-| discover_tools | C21 (15 steps) | ✓ (reset, selective reset) | — | — | FIX-3, FIX-C | |
-| extensions.refresh | E4b | — | — | — | — | Extension phase |
+| meta.set_limits | — | — | — | — | — | Internal (server→plugin); not agent-facing |
+| discover_tools | C10 (12 steps) | ✓ (reset, selective reset) | — | — | FIX-3, FIX-C | |
+| extensions.refresh | E5 | — | — | — | — | Extension phase |
 
 ---
 
