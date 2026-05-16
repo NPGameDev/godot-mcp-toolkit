@@ -25,4 +25,4 @@
 
 ## Cleanup
 
-None (action removed in 10.4).
+- If `input_map` group was activated for this section: call `discover_tools` with reset=["input_map"] to deactivate it

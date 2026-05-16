@@ -46,3 +46,4 @@
 ## Cleanup
 
 - `file_delete` file_path=`res://sv2_validation/icon_test.svg`
+- If `asset_management` group was activated for this section: call `discover_tools` with reset=["asset_management"] to deactivate it

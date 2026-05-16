@@ -22,4 +22,4 @@
 
 ## Cleanup
 
-None (save deleted in 11.4).
+- If `user_data` group was activated for this section: call `discover_tools` with reset=["user_data"] to deactivate it

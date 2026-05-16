@@ -70,3 +70,4 @@
 
 - `scene_delete_node` node_path=`Sv2TileNoTS`
 - `resource_delete` file_path=`res://sv2_validation/atlas_tileset.tres`
+- If `tilemap` group was activated for this section: call `discover_tools` with reset=["tilemap"] to deactivate it

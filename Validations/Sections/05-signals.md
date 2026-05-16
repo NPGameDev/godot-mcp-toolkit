@@ -41,4 +41,4 @@
 
 ## Cleanup
 
-None — no persistent artifacts created.
+- If `signals` group was activated for this section: call `discover_tools` with reset=["signals"] to deactivate it
