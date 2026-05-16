@@ -190,9 +190,73 @@ These tests exercise core tools specifically against C# nodes in the scene, catc
 
 ---
 
+## CS14. C# Extension Discovery
+
+Tests the C# extension pattern: `[Tool][GlobalClass]` on a `RefCounted` subclass with class name prefixed `MCPToolkit`.
+
+**CS14.1** `script_write` — file_path=`res://sv2_validation/MCPToolkitSv2CsExt.cs`, content:
+```csharp
+using Godot;
+using Godot.Collections;
+
+[Tool]
+[GlobalClass]
+public partial class MCPToolkitSv2CsExt : RefCounted
+{
+	public void Register(Node registry)
+	{
+		registry.Call("add", "sv2_cs_ext.greet", Callable.From((Dictionary parameters) =>
+		{
+			var name = parameters.GetValueOrDefault("name", (Variant)"world").AsString();
+			return new Dictionary
+			{
+				{ "success", true },
+				{ "message", $"Hello from C#, {name}!" }
+			};
+		}), new Dictionary
+		{
+			{ "group", "sv2_cs_test_group" },
+			{ "description", "C# test extension — greeting tool" },
+			{ "input_schema", new Dictionary
+				{
+					{ "type", "object" },
+					{ "properties", new Dictionary
+						{
+							{ "name", new Dictionary { { "type", "string" } } }
+						}
+					}
+				}
+			}
+		});
+	}
+}
+```
+- **Expect:** success
+
+**CS14.2** Build .NET solution — `dotnet build` in project root
+- **Expect:** Build succeeded (the new class compiles)
+
+**CS14.3** `extensions.refresh` — trigger discovery
+- **Expect:** success, sv2_cs_test_group detected
+
+**CS14.4** Call `sv2_cs_ext.greet` with name=`"CSharp"`
+- **Expect:** `{"success": true, "message": "Hello from C#, CSharp!"}`
+
+**CS14.5** `script_delete` — res://sv2_validation/MCPToolkitSv2CsExt.cs
+- **Expect:** success
+
+**CS14.6** `dotnet build` — rebuild without the extension
+- **Expect:** Build succeeded
+
+**CS14.7** `extensions.refresh`
+- **Expect:** sv2_cs_ext.greet no longer available
+
+---
+
 ## Cleanup
 
 - `scene_delete_node` Sv2CsNode
 - `script_delete` Sv2CsNode.cs
 - `script_delete` Sv2CsGlobal.cs
+- `script_delete` MCPToolkitSv2CsExt.cs (if still exists)
 - `project_set_setting` restore main_scene
