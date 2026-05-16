@@ -1,74 +1,116 @@
 # Section 24 — Extension Discovery
 
-**Dependencies:** Extensions present in the project
+**Dependencies:** Section 1 (sv2_validation/ exists)
 **Tools tested:** discover_tools, extensions.refresh
 **Tests:** 7+
-**Gate:** Skip if no extension addons are present
+**Note:** This section creates its own test extension — no pre-existing extensions required.
+
+---
+
+## EXT-Setup: Create test extension
+
+**EXT-S1.** `script_write` — file_path=`res://sv2_validation/sv2_test_extension.gd`, content:
+```gdscript
+@tool
+extends MCPToolkitExtension
+
+func register(registry) -> void:
+	registry.add("sv2_ext.hello", func(params: Dictionary) -> Dictionary:
+		var name := str(params.get("name", "world"))
+		return {"success": true, "message": "Hello, %s!" % name}
+	, {
+		"group": "sv2_test_group",
+		"description": "Test extension tool — returns a greeting",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"name": {"type": "string", "description": "Name to greet"}
+			}
+		}
+	})
+
+	registry.add("sv2_ext.add", func(params: Dictionary) -> Dictionary:
+		var a := int(params.get("a", 0))
+		var b := int(params.get("b", 0))
+		return {"success": true, "result": a + b}
+	, {
+		"group": "sv2_test_group",
+		"description": "Test extension tool — adds two numbers",
+		"input_schema": {
+			"type": "object",
+			"properties": {
+				"a": {"type": "integer"},
+				"b": {"type": "integer"}
+			},
+			"required": ["a", "b"]
+		}
+	})
+```
+- **Expect:** success
+
+**EXT-S2.** `extensions.refresh` — trigger discovery of the new extension
+- **Expect:** success, sv2_test_group appears
+
+**EXT-S3.** Wait a moment for filesystem scan, then verify extension is detected.
 
 ---
 
 ## E1. extensions.list returns discovered commands
 
-Call any tool to confirm bridge is connected, then check extension visibility:
-- **Standard profile:** Verify `discover_tools` description lists the extension group name and tools
-- **Power user:** Verify extension tools are directly callable
+Check extension visibility:
+- **Standard profile:** `discover_tools` (no params) — verify description lists `sv2_test_group` with 2 tools
+- **Power user:** Verify `sv2_ext.hello` and `sv2_ext.add` are directly callable
 - **Expect:** Extension commands appear with correct method names and descriptions
 
 ## E2. Extension group lazy-load (standard only)
 
-`discover_tools` with groups: `["<extension_group_name>"]`
-- **Expect:** activated, tools listed and callable
+`discover_tools` with groups=`["sv2_test_group"]`
+- **Expect:** activated, tools `sv2_ext.hello` and `sv2_ext.add` listed
 
 ## E3. Extension tool call
 
-Call one loaded extension tool with valid input.
-- **Expect:** valid result from GDScript/C# handler, no bridge errors
+Call `sv2_ext.hello` with name=`"Sweep"`
+- **Expect:** `{"success": true, "message": "Hello, Sweep!"}`
+
+Call `sv2_ext.add` with a=3, b=7
+- **Expect:** `{"success": true, "result": 10}`
 
 ## E4. Discovery re-entrancy
 
-Trigger re-discovery (call `extensions.refresh` or config reload).
-- **Expect:** tool count unchanged, no duplicates in tools/list
+Call `extensions.refresh` again (no changes made).
+- **Expect:** tool count unchanged, no duplicates, no spurious notifications
 
 ## E5. Hot-reload (add/modify/remove)
 
-**Add:**
-1. Create new GDScript extending `MCPToolkitExtension` with `register()` containing `registry.add()`
-2. `extensions.refresh`
-3. Verify new tool appears, call it → valid response
-
 **Modify:**
-1. Add another `registry.add()` call to existing extension
+1. `script_write` — rewrite `res://sv2_validation/sv2_test_extension.gd` adding a third tool (`sv2_ext.multiply`)
 2. `extensions.refresh`
-3. Verify new tool appears alongside existing ones
+3. Verify `sv2_ext.multiply` appears alongside `sv2_ext.hello` and `sv2_ext.add`
+4. Call `sv2_ext.multiply` — **Expect:** valid result
 
 **Remove:**
-1. Delete extension script
+1. `script_delete` — `res://sv2_validation/sv2_test_extension.gd`
 2. `extensions.refresh`
-3. Verify tool gone from tools/list
-4. Call removed tool → **Expect:** error, NOT crash
-
-**No-op:**
-1. `extensions.refresh` with no changes
-2. Verify identical tool list, no duplicates
+3. Verify all `sv2_ext.*` tools are gone from tools/list
+4. Call `sv2_ext.hello` — **Expect:** error (handler gone), NOT a crash
 
 ## E6. Extension keywords for discover_tools
 
-1. Create extension with grouped tool declaring `"keywords": ["physics", "force"]`
+1. `script_write` — recreate extension with `"keywords": ["math", "arithmetic"]` in the group dict
 2. `extensions.refresh`
-3. `discover_tools` request="physics" → extension group in results
-4. `discover_tools` request="unrelated" → extension group NOT in results
-5. Cleanup: delete extension script
+3. `discover_tools` request=`"math"` — **Expect:** sv2_test_group in results
+4. `discover_tools` request=`"unrelated_xyz"` — **Expect:** sv2_test_group NOT in results
 
 ## E7. Extension deletion while loaded
 
-1. Load extension (or have it eagerly loaded on power_user)
-2. Call tool once → confirm works
-3. Delete extension script
-4. Call tool again → **Expect:** error (handler gone), NOT crash
-5. Verify tool removed from tools/list after next filesystem scan
+1. Confirm extension is loaded (call `sv2_ext.hello` → works)
+2. `script_delete` — `res://sv2_validation/sv2_test_extension.gd`
+3. Call `sv2_ext.hello` again — **Expect:** error (not crash), tool unavailable
+4. `extensions.refresh` — verify clean removal
 
 ---
 
 ## Cleanup
 
-Delete any test extension scripts created during this section.
+- `script_delete` res://sv2_validation/sv2_test_extension.gd (if still exists)
+- Call `discover_tools` with reset=true to deactivate all on-demand groups
