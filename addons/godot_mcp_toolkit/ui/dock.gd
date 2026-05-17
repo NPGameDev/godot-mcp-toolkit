@@ -160,6 +160,39 @@ func _make_section(title: String) -> PanelContainer:
 	return panel
 
 
+## Build a styled collapsible section card with a toggle button and content VBox.
+## Access the content VBox via  section.get_meta("content").
+func _make_collapsible_section(title: String, expanded: bool) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _make_section_style())
+
+	var outer := VBoxContainer.new()
+	panel.add_child(outer)
+
+	var toggle := Button.new()
+	toggle.flat = true
+	toggle.toggle_mode = true
+	toggle.button_pressed = expanded
+	toggle.text = "%s %s" % ["\u25bc" if expanded else "\u25b6", title]
+	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	outer.add_child(toggle)
+
+	outer.add_child(HSeparator.new())
+
+	var content := VBoxContainer.new()
+	content.visible = expanded
+	outer.add_child(content)
+
+	var t := title  # capture for lambda
+	toggle.toggled.connect(func(pressed: bool):
+		content.visible = pressed
+		toggle.text = "%s %s" % ["\u25bc" if pressed else "\u25b6", t]
+	)
+
+	panel.set_meta("content", content)
+	return panel
+
+
 func _build_ui() -> void:
 	var scale := EditorInterface.get_editor_scale()
 	add_theme_constant_override("separation", int(4 * scale))
@@ -220,16 +253,20 @@ func _build_ui() -> void:
 	_nodejs_status_warning.visible = nodejs_msg != ""
 	sc.add_child(_nodejs_status_warning)
 
-	# == Main resizable area (Feature Gates / Audit / bottom) =================
-	var main_split := VSplitContainer.new()
-	main_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	main_split.split_offset = int(200 * scale)
-	add_child(main_split)
+	# == Scrollable middle (collapsible sections) =============================
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.follow_focus = true
+	add_child(scroll)
 
-	# -- Feature Gates section (top pane) -------------------------------------
-	var feat_section := _make_section("Feature Gates")
-	feat_section.custom_minimum_size.y = int(80 * scale)
-	main_split.add_child(feat_section)
+	var scroll_vbox := VBoxContainer.new()
+	scroll_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll_vbox.add_theme_constant_override("separation", int(4 * scale))
+	scroll.add_child(scroll_vbox)
+
+	# -- Feature Gates section (expanded by default) --------------------------
+	var feat_section := _make_collapsible_section("Feature Gates", true)
+	scroll_vbox.add_child(feat_section)
 	var fc: VBoxContainer = feat_section.get_meta("content")
 
 	_feature_lock_warning = Label.new()
@@ -258,19 +295,10 @@ func _build_ui() -> void:
 	_nodejs_gate_warning.visible = nodejs_msg != ""
 	fc.add_child(_nodejs_gate_warning)
 
-	var feat_scroll := ScrollContainer.new()
-	feat_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	feat_scroll.custom_minimum_size.y = int(30 * scale)
-	fc.add_child(feat_scroll)
-
-	var feat_vbox := VBoxContainer.new()
-	feat_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	feat_scroll.add_child(feat_vbox)
-
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
 		var row := HBoxContainer.new()
-		feat_vbox.add_child(row)
+		fc.add_child(row)
 
 		var check := CheckBox.new()
 		check.text = feature
@@ -291,16 +319,9 @@ func _build_ui() -> void:
 	_profile_dropdown.item_selected.connect(_on_profile_selected)
 	fc.add_child(_profile_dropdown)
 
-	# -- Lower split (Audit / bottom stack) -----------------------------------
-	var lower_split := VSplitContainer.new()
-	lower_split.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	lower_split.split_offset = int(150 * scale)
-	main_split.add_child(lower_split)
-
-	# -- Audit Log section (top of lower split) -------------------------------
-	var audit_section := _make_section("Audit Log")
-	audit_section.size_flags_vertical = 0  # fixed height
-	lower_split.add_child(audit_section)
+	# -- Audit Log section (collapsed by default) -----------------------------
+	var audit_section := _make_collapsible_section("Audit Log", false)
+	scroll_vbox.add_child(audit_section)
 	var ac: VBoxContainer = audit_section.get_meta("content")
 
 	var audit_settings_row := HBoxContainer.new()
@@ -343,11 +364,10 @@ func _build_ui() -> void:
 	clear_log_btn.pressed.connect(_on_clear_audit_log)
 	audit_btns.add_child(clear_log_btn)
 
-	# -- Bottom stack (Security & Limits + Info button) -----------------------
-	var bottom_section := _make_section("Security & Response Limits")
-	bottom_section.size_flags_vertical = 0  # fixed height
-	lower_split.add_child(bottom_section)
-	var lc: VBoxContainer = bottom_section.get_meta("content")
+	# -- Security & Response Limits section (collapsed by default) ------------
+	var security_section := _make_collapsible_section("Security & Response Limits", false)
+	scroll_vbox.add_child(security_section)
+	var lc: VBoxContainer = security_section.get_meta("content")
 
 	var regen_btn := Button.new()
 	regen_btn.text = "Regenerate Token"
@@ -390,28 +410,26 @@ func _build_ui() -> void:
 	limits_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lc.add_child(limits_note)
 
-	if MCPJsonSync.has_mcp_json():
-		var edit_mcp_btn := Button.new()
-		edit_mcp_btn.text = "Edit .mcp.json"
-		edit_mcp_btn.pressed.connect(func():
-			OS.shell_open(MCPJsonSync.get_mcp_json_path()))
-		lc.add_child(edit_mcp_btn)
-
-	var btn_row := HBoxContainer.new()
-	lc.add_child(btn_row)
-
 	var skills_btn := Button.new()
 	skills_btn.text = "Companion Skills"
 	skills_btn.tooltip_text = "Open Companion Skills folder"
 	skills_btn.pressed.connect(_open_companion_skills)
-	skills_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn_row.add_child(skills_btn)
+	lc.add_child(skills_btn)
+
+	# == Footer (pinned at bottom) ============================================
+	var footer := PanelContainer.new()
+	footer.add_theme_stylebox_override("panel", _make_section_style())
+	footer.size_flags_vertical = Control.SIZE_SHRINK_END
+	add_child(footer)
+
+	var footer_row := HBoxContainer.new()
+	footer.add_child(footer_row)
 
 	var info_btn := Button.new()
 	info_btn.text = "Info / Help"
 	info_btn.pressed.connect(_show_info_dialog)
 	info_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	btn_row.add_child(info_btn)
+	footer_row.add_child(info_btn)
 
 
 
