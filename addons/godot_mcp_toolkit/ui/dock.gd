@@ -160,14 +160,13 @@ func _make_section(title: String) -> PanelContainer:
 	return panel
 
 
-## Build a styled collapsible section card with a toggle button and content VBox.
-## Access the content VBox via  section.get_meta("content").
-func _make_collapsible_section(title: String, expanded: bool) -> PanelContainer:
-	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _make_section_style())
-
-	var outer := VBoxContainer.new()
-	panel.add_child(outer)
+## Build a collapsible section with a styled header bar and per-section
+## ScrollContainer. The header is added to `parent` so it never scrolls away;
+## only the section content scrolls. Returns the content VBoxContainer.
+func _make_collapsible_section(parent: VBoxContainer, title: String, expanded: bool, min_height: float = 75.0) -> VBoxContainer:
+	var header := PanelContainer.new()
+	header.add_theme_stylebox_override("panel", _make_section_style())
+	parent.add_child(header)
 
 	var toggle := Button.new()
 	toggle.flat = true
@@ -175,22 +174,25 @@ func _make_collapsible_section(title: String, expanded: bool) -> PanelContainer:
 	toggle.button_pressed = expanded
 	toggle.text = "%s %s" % ["\u25bc" if expanded else "\u25b6", title]
 	toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	outer.add_child(toggle)
+	header.add_child(toggle)
 
-	outer.add_child(HSeparator.new())
+	var content_scroll := ScrollContainer.new()
+	content_scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	content_scroll.custom_minimum_size.y = int(min_height * EditorInterface.get_editor_scale())
+	content_scroll.visible = expanded
+	parent.add_child(content_scroll)
 
 	var content := VBoxContainer.new()
-	content.visible = expanded
-	outer.add_child(content)
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content_scroll.add_child(content)
 
 	var t := title  # capture for lambda
 	toggle.toggled.connect(func(pressed: bool):
-		content.visible = pressed
+		content_scroll.visible = pressed
 		toggle.text = "%s %s" % ["\u25bc" if pressed else "\u25b6", t]
 	)
 
-	panel.set_meta("content", content)
-	return panel
+	return content
 
 
 func _build_ui() -> void:
@@ -253,21 +255,14 @@ func _build_ui() -> void:
 	_nodejs_status_warning.visible = nodejs_msg != ""
 	sc.add_child(_nodejs_status_warning)
 
-	# == Scrollable middle (collapsible sections) =============================
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.follow_focus = true
-	add_child(scroll)
-
-	var scroll_vbox := VBoxContainer.new()
-	scroll_vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll_vbox.add_theme_constant_override("separation", int(4 * scale))
-	scroll.add_child(scroll_vbox)
+	# == Collapsible sections (titles always visible) =========================
+	var sections_vbox := VBoxContainer.new()
+	sections_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	sections_vbox.add_theme_constant_override("separation", int(2 * scale))
+	add_child(sections_vbox)
 
 	# -- Feature Gates section (expanded by default) --------------------------
-	var feat_section := _make_collapsible_section("Feature Gates", true)
-	scroll_vbox.add_child(feat_section)
-	var fc: VBoxContainer = feat_section.get_meta("content")
+	var fc := _make_collapsible_section(sections_vbox, "Feature Gates", true)
 
 	_feature_lock_warning = Label.new()
 	_feature_lock_warning.text = (
@@ -295,17 +290,21 @@ func _build_ui() -> void:
 	_nodejs_gate_warning.visible = nodejs_msg != ""
 	fc.add_child(_nodejs_gate_warning)
 
+	var feat_grid := GridContainer.new()
+	feat_grid.columns = 3
+	feat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	fc.add_child(feat_grid)
+
 	for feature in MCPFeatureRegistry.all_features():
 		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		var row := HBoxContainer.new()
-		fc.add_child(row)
 
 		var check := CheckBox.new()
 		check.text = feature
 		check.tooltip_text = str(entry["risk"])
-		check.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		check.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_SHRINK_CENTER
+		check.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		check.toggled.connect(_on_feature_toggled.bind(feature))
-		row.add_child(check)
+		feat_grid.add_child(check)
 
 		_feature_rows[feature] = {"check": check}
 
@@ -320,9 +319,7 @@ func _build_ui() -> void:
 	fc.add_child(_profile_dropdown)
 
 	# -- Audit Log section (collapsed by default) -----------------------------
-	var audit_section := _make_collapsible_section("Audit Log", false)
-	scroll_vbox.add_child(audit_section)
-	var ac: VBoxContainer = audit_section.get_meta("content")
+	var ac := _make_collapsible_section(sections_vbox, "Audit Log", false)
 
 	var audit_settings_row := HBoxContainer.new()
 	ac.add_child(audit_settings_row)
@@ -365,9 +362,7 @@ func _build_ui() -> void:
 	audit_btns.add_child(clear_log_btn)
 
 	# -- Security & Response Limits section (collapsed by default) ------------
-	var security_section := _make_collapsible_section("Security & Response Limits", false)
-	scroll_vbox.add_child(security_section)
-	var lc: VBoxContainer = security_section.get_meta("content")
+	var lc := _make_collapsible_section(sections_vbox, "Security & Response Limits", false)
 
 	var regen_btn := Button.new()
 	regen_btn.text = "Regenerate Token"
@@ -410,12 +405,6 @@ func _build_ui() -> void:
 	limits_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	lc.add_child(limits_note)
 
-	var skills_btn := Button.new()
-	skills_btn.text = "Companion Skills"
-	skills_btn.tooltip_text = "Open Companion Skills folder"
-	skills_btn.pressed.connect(_open_companion_skills)
-	lc.add_child(skills_btn)
-
 	# == Footer (pinned at bottom) ============================================
 	var footer := PanelContainer.new()
 	footer.add_theme_stylebox_override("panel", _make_section_style())
@@ -424,6 +413,13 @@ func _build_ui() -> void:
 
 	var footer_row := HBoxContainer.new()
 	footer.add_child(footer_row)
+
+	var skills_btn := Button.new()
+	skills_btn.text = "Companion Skills"
+	skills_btn.tooltip_text = "Open Companion Skills folder"
+	skills_btn.pressed.connect(_open_companion_skills)
+	skills_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer_row.add_child(skills_btn)
 
 	var info_btn := Button.new()
 	info_btn.text = "Info / Help"
