@@ -201,6 +201,10 @@ func on_filesystem_changed() -> void:
 
 
 func on_settings_changed() -> void:
+	# Don't rescan if the toolkit itself is being disabled — avoids race
+	# conditions during teardown.
+	if not EditorInterface.is_plugin_enabled("godot_mcp_toolkit"):
+		return
 	_schedule_rescan()
 
 
