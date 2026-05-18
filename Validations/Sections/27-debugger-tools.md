@@ -116,27 +116,29 @@ func _process(delta: float) -> void:
 
 ## Combo Chains
 
-### C26. Set breakpoint → start game → verify debug state → clear breakpoint
+### C26. Set breakpoint → start scene → hit breakpoint → continue → stop
 
-1. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=true
+1. `scene_create` — scene_path=`res://sv2_validation/sv2_debug_scene.tscn`, root_type=`Node2D`
    - **Expect:** success=true
-2. `game_start` — scene_path=`res://sv2_validation/sv2_debug_target.gd`
-   - **Note:** This uses the script as a scene reference — it may fail if the script
-     isn't attached to a scene. If so, use Main.tscn or skip.
-   - **Alternative:** `game_start` — scene_path=`main` (starts Main.tscn)
-3. `debug_state` — (no params)
-   - **Expect:** success=true, active=true (debug session started with the game)
-   - **If game hit the breakpoint:** breaked=true, can_debug=true
-   - **If game didn't hit line 6:** breaked=false (breakpoint may be on unreachable line)
-4. If breaked=true: `debug_continue` — **Expect:** success=true (game resumes)
-5. `game_stop`
-6. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=false
-   - **Expect:** success=true (clean up breakpoint)
-7. `debug_state` — **Expect:** active=false (game stopped)
-
-> **Note:** Chain C26 exercises the full debugger lifecycle. If game_start fails
-> (no playable scene at sv2_debug_target.gd path), adapt by using a known scene
-> or mark as SKIP with documentation of the limitation.
+2. `node_set_script` — node_path=`.`, file_path=`res://sv2_validation/sv2_debug_target.gd`
+   - **Expect:** success=true (attaches the script with `_ready` breakpoint target)
+3. `editor_save_scene`
+   - **Expect:** success=true
+4. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=true
+   - **Expect:** success=true (breakpoint on `counter = 1` inside `_ready`)
+5. `game_start` — scene_path=`res://sv2_validation/sv2_debug_scene.tscn`
+   - **Expect:** success=true. Game launches and pauses at the breakpoint because
+     `_ready()` executes immediately and line 6 is inside it.
+6. `debug_state`
+   - **Expect:** success=true, active=true, breaked=true, can_debug=true
+7. `debug_continue`
+   - **Expect:** success=true (game resumes past the breakpoint)
+8. `debug_state`
+   - **Expect:** active=true, breaked=false (game running, no longer paused)
+9. `game_stop`
+10. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=false
+    - **Expect:** success=true (clean up breakpoint)
+11. `debug_state` — **Expect:** active=false (game stopped)
 
 ---
 
@@ -144,5 +146,6 @@ func _process(delta: float) -> void:
 
 - `debug_set_breakpoint` res://sv2_validation/sv2_debug_target.gd, line=6, enabled=false (if set)
 - `debug_set_breakpoint` res://sv2_validation/sv2_debug_target.gd, line=9, enabled=false (if set)
+- `scene_delete` res://sv2_validation/sv2_debug_scene.tscn (if created in C26)
 - `script_delete` res://sv2_validation/sv2_debug_target.gd
 - `discover_tools` with reset=`["debugger"]`
