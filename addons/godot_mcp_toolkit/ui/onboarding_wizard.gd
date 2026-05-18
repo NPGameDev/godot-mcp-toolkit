@@ -124,11 +124,12 @@ func _apply_step(dialog: AcceptDialog) -> void:
 			# MCP dock — show it in the bottom panel.
 			dialog.dialog_text = (
 				"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
-				+ "It gives you:\n\n"
-				+ "  \u2022 Server status — connection state, peer count, runtime port\n"
-				+ "  \u2022 Feature gates — toggle gated capabilities on/off\n"
-				+ "  \u2022 Audit log — review what the AI agent did\n"
-				+ "  \u2022 Security settings — token rotation, response limits")
+				+ "From here you can:\n\n"
+				+ "  \u2022 Monitor server status — connection state, peer count, runtime port\n"
+				+ "  \u2022 Toggle feature gates — enable or disable gated capabilities\n"
+				+ "  \u2022 Review the audit log — see what the AI agent did\n"
+				+ "  \u2022 Adjust security settings — token rotation, response limits\n\n"
+				+ "The footer has quick access to Companion Skills and Info / Help.")
 			dialog.ok_button_text = "Next"
 			if _dock != null:
 				_plugin.make_bottom_panel_item_visible(_dock)
