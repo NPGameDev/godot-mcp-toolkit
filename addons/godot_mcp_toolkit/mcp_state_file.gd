@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Sidecar state file — persists runtime gate/profile state per-project.
+## Sidecar state file — persists runtime gate state per-project.
 ##
 ## Lives at user://addons/godot_mcp_toolkit/project_instance_<hash>/
 ## mcp_toolkit_state.json (per-instance, survives .godot/ deletion).
@@ -34,36 +34,22 @@ static func read() -> Dictionary:
 	return parsed
 
 
-static func write(profile: String, gates: Dictionary) -> Error:
-	var data := {"profile": profile, "gates": gates}
+static func write_gates(gates: Dictionary) -> Error:
+	var data := {"gates": gates}
 	return _atomic_write(data)
 
 
 static func set_gate(env_var_name: String, enabled: bool) -> Error:
 	var data := read()
 	var gates: Dictionary = data.get("gates", {})
-	# Seed missing gates/profile from PS to prevent partial sidecar writes.
+	# Seed missing gates from PS to prevent partial sidecar writes.
 	if gates.size() < MCPFeatureRegistry.all_features().size():
 		var ps_gates := gates_from_ps()
 		for key in ps_gates:
 			if not gates.has(key):
 				gates[key] = ps_gates[key]
-	if str(data.get("profile", "")).is_empty():
-		var p: int = ProjectSettings.get_setting(
-			"mcp_toolkit/feature_gates/profile",
-			MCPFeatureRegistry.PROFILE_STANDARD)
-		match p:
-			MCPFeatureRegistry.PROFILE_MINIMAL: data["profile"] = "minimal"
-			MCPFeatureRegistry.PROFILE_POWER_USER: data["profile"] = "power_user"
-			_: data["profile"] = "standard"
 	gates[env_var_name] = enabled
 	data["gates"] = gates
-	return _atomic_write(data)
-
-
-static func set_profile(profile: String) -> Error:
-	var data := read()
-	data["profile"] = profile
 	return _atomic_write(data)
 
 
@@ -71,10 +57,6 @@ static func get_current_gates() -> Dictionary:
 	var data := read()
 	return data.get("gates", {})
 
-
-static func get_profile() -> String:
-	var data := read()
-	return data.get("profile", "")
 
 
 static func is_gate_enabled(env_var_name: String) -> bool:

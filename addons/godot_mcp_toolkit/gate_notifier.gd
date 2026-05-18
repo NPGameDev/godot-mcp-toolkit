@@ -35,20 +35,12 @@ func _deferred_broadcast() -> void:
 	_broadcast_pending = false
 	if _server == null:
 		return
-	var profile: int = ProjectSettings.get_setting(
-		"mcp_toolkit/feature_gates/profile", MCPFeatureRegistry.PROFILE_STANDARD)
-	var profile_str: String
-	match profile:
-		MCPFeatureRegistry.PROFILE_MINIMAL: profile_str = "minimal"
-		MCPFeatureRegistry.PROFILE_POWER_USER: profile_str = "power_user"
-		_: profile_str = "standard"
 	var sidecar := MCPStateFile.read()
 	var gates: Dictionary = sidecar.get("gates", {})
 	if gates.is_empty():
 		# Fallback: build from PS bools if sidecar not yet populated.
 		gates = MCPStateFile.gates_from_ps()
 	_server.broadcast_notification("config_reloaded", {
-		"profile": profile_str,
 		"gates": gates,
 	})
 	if _wizard_active:

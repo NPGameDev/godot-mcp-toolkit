@@ -9,16 +9,12 @@ extends RefCounted
 ## subdir). ProjectSettings bools (ps_key) are a mirror UI — the dock and
 ## the Inspector both reflect the sidecar, and changes from either side
 ## are synced bidirectionally by the poll loop in feature_gate_settings.gd.
-## .mcp.json is auto-generated read-only. Profile mode and admin deny
-## keys remain in PS as overrides.
+## .mcp.json is auto-generated read-only. Admin deny keys remain in PS
+## as overrides.
 ##
 ## To add a new gated feature, append an entry here. TS-side catalogue
 ## filtering (feature_gate.ts) reads from this table — no secondary
 ## manifest.
-
-const PROFILE_MINIMAL := 0
-const PROFILE_STANDARD := 1
-const PROFILE_POWER_USER := 2
 
 const FEATURES := {
 	"execute_code": {

@@ -87,13 +87,13 @@ func _apply_step(dialog: AcceptDialog) -> void:
 		0:
 			dialog.dialog_text = (
 				"Welcome to the Godot MCP Toolkit!\n\n"
-				+ "Your AI coding assistant sees tools based on the active profile.\n"
-				+ "Choose your starting configuration:\n\n"
-				+ "  Standard (default) — core tools, unsafe ops disabled\n"
-				+ "  Power User — all tools, including code execution & OS commands\n\n"
-				+ "You can change this anytime in the MCP dock.")
-			dialog.ok_button_text = "Standard (Recommended)"
-			_buttons.append(dialog.add_button("Power User Mode", true, "power_user"))
+				+ "By default, only core tools are enabled. Advanced features\n"
+				+ "(code execution, project settings writes, file access outside\n"
+				+ "res://) require enabling their feature gates.\n\n"
+				+ "You can enable all gates now, or toggle them individually\n"
+				+ "later in the MCP dock.")
+			dialog.ok_button_text = "Keep Defaults (Recommended)"
+			_buttons.append(dialog.add_button("Enable All Gates", true, "enable_all"))
 
 		1:
 			# .mcp.json — two variants based on whether the file already exists.
@@ -145,6 +145,8 @@ func _apply_step(dialog: AcceptDialog) -> void:
 				+ "shows connection status, tool list, and documentation links.\n\n"
 				+ "Companion Skills for Claude Code are bundled with the toolkit —\n"
 				+ "click the 'Companion Skills' button in the dock to browse them.\n\n"
+				+ "For supervised environments (classrooms, CI, demos), set\n"
+				+ "GODOT_MCP_READ_ONLY=1 in .mcp.json to restrict to read-only tools.\n\n"
 				+ "You're all set!")
 			dialog.ok_button_text = "Close"
 			_buttons.append(dialog.add_button("Back", true, "back"))
@@ -188,12 +190,10 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 			if _step > 0:
 				_step -= 1
 				_apply_step(dialog)
-		"power_user":
-			# Trigger Power User flow — the dock shows its own confirmation dialog.
+		"enable_all":
+			# Enable all feature gates (with implicit RCE consent).
 			if _dock != null:
-				_dock.toggle_power_user_mode()
-			# Advance to step 1 after choosing. Save progress in case the
-			# user restarts the editor (Power User toggle suggests a restart).
+				_dock.enable_all_gates()
 			_step = 1
 			_save_progress()
 			_apply_step(dialog)
