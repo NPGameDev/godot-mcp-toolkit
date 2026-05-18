@@ -91,6 +91,10 @@ func _enter_tree() -> void:
 	_server.set_registry(registry)
 	_server.editor_plugin = self
 
+	# Debugger bridge — create early so command registrars can reference it.
+	_debug_bridge = DebugBridge.new()
+	add_debugger_plugin(_debug_bridge)
+
 	SceneCommands.register(registry, _server)
 	NodeCommands.register(registry, _server)
 	ScriptCommands.register(registry, _server)
@@ -99,7 +103,7 @@ func _enter_tree() -> void:
 	FolderCommands.register(registry, _server)
 	FileCommands.register(registry, _server)
 	SignalCommands.register(registry, _server)
-	PlaytestCommands.register(registry, _server)
+	PlaytestCommands.register(registry, _server, _debug_bridge)
 	ProjectCommands.register(registry, _server)
 	InputMapCommands.register(registry, _server)
 	AnimationCommands.register(registry, _server)
@@ -116,10 +120,6 @@ func _enter_tree() -> void:
 	ParticleCommands.register(registry, _server)
 	NavigationCommands.register(registry, _server)
 	MetaCommands.register(registry)
-
-	# Debugger bridge — EditorDebuggerPlugin for breakpoint + state tools.
-	_debug_bridge = DebugBridge.new()
-	add_debugger_plugin(_debug_bridge)
 	DebugCommands.register(registry, _debug_bridge)
 
 	# Third-party extensions — profile-exempt, always loaded.
@@ -243,6 +243,7 @@ func _exit_tree() -> void:
 	_extension_watcher = null
 
 	# Debugger bridge — unregister before server teardown (I12 symmetry).
+	PlaytestCommands.clear_debug_bridge()
 	if _debug_bridge != null:
 		_debug_bridge.cleanup()
 		remove_debugger_plugin(_debug_bridge)

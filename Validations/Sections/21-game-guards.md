@@ -1,8 +1,8 @@
 # Section 21 — game_start Guards & Crash Recovery
 
 **Dependencies:** Section 1 (sv2_validation/ exists)
-**Tools tested:** game_start (guards), debugger_get_log (crash recovery cache)
-**Tests:** 6
+**Tools tested:** game_start (guards), debugger_get_log (crash recovery cache, debug_state, error_buffer)
+**Tests:** 12
 
 ---
 
@@ -47,14 +47,67 @@ func _ready():
 > immediately after game_stop, the editor-side log cache has regressed. The cache
 > should persist until the next game_start clears it. Flag as **Major**.
 
+**21.5b** `debugger_get_log` — verify `debug_state` field on 21.5's response
+- **Expect:** response includes `debug_state` with `active: false` (game just stopped). If `debug_state` is missing, the debug bridge integration has regressed.
+
+> **REGRESSION WATCH (41l-quater-bis):** `debug_state` must be present in every
+> editor-side debugger_get_log response when the debug bridge is active. Its
+> absence indicates the bridge was not injected into PlaytestCommands. Flag as **Major**.
+
 **21.6** `debugger_get_log` — text_filter=`SV2_BROKEN`, is_regex=`false`
 - **Expect:** count=0 (the broken scene never printed anything — validates filter on cached log)
+
+---
+
+### Error capture via debugger bridge (41l-quater-bis)
+
+Tests both paths: old (log file lines) and new (error_buffer + debug_state).
+
+**21.7** Write error-triggering script: `script_write` file_path=`res://sv2_validation/sv2_error_main.gd`, content:
+```gdscript
+extends Node2D
+
+func _ready():
+	# Triggers null-ref at runtime — not a parse error but an execution error.
+	var n: Node = null
+	n.queue_free()
+```
+- **Expect:** success
+
+**21.8** Create scene + launch with error script:
+- `scene_create` file_path=`res://sv2_validation/sv2_error.tscn`, root_type=`Node2D`
+- `scene_open` file_path=`res://sv2_validation/sv2_error.tscn`
+- `node_set_script` node_path=`.`, script_path=`res://sv2_validation/sv2_error_main.gd`
+- `editor_save_scene`
+- `project_set_setting` application/run/main_scene = `"res://sv2_validation/sv2_error.tscn"`
+- `game_start`
+- **Expect:** all succeed, game launches (runtime error is non-fatal in Godot)
+
+**21.9** Wait 2-3s, then `game_stop`
+- **Expect:** success
+
+**21.10** `debugger_get_log` — error capture + old-path check
+- **Expect (old path — always works):** `lines` array includes null-ref error text from log file
+- **Expect (new path):** `debug_state` present with `active: false`. `error_buffer` array present with at least one entry containing the null-ref error (type `"error"` from `_capture`, or type `"break"` from breaked fallback if `_capture` didn't fire).
+- If `error_buffer` is empty: acceptable — the built-in debugger may intercept error messages before plugins on this Godot version. Log file lines are the fallback.
+
+> **NOTE:** Whether `error_buffer` contains a detailed error entry (type `"error"`)
+> or a generic breaked entry (type `"break"`) depends on whether the EditorDebuggerPlugin
+> `_capture("error")` mechanism fires before the built-in debugger. Both paths are correct.
+
+**21.11** `debugger_get_log` — text_filter=`queue_free`, is_regex=`false` (filter on error output)
+- **Expect:** count >= 1 (the null-ref error mentions queue_free)
+
+**21.12** `debugger_get_log` — verify `debug_state` field on error-capture response
+- **Expect:** `debug_state.active` = false, `debug_state.breaked` = false (game stopped, not paused)
 
 ---
 
 ## Cleanup
 
 - `scene_open` file_path=`res://sv2_validation/main.tscn`
+- `scene_delete` file_path=`res://sv2_validation/sv2_error.tscn`
+- `script_delete` file_path=`res://sv2_validation/sv2_error_main.gd`
 - `scene_delete` file_path=`res://sv2_validation/sv2_broken.tscn`
 - `script_delete` file_path=`res://sv2_validation/sv2_broken_main.gd`
 - `project_set_setting` — restore application/run/main_scene to original

@@ -1,9 +1,9 @@
 # Sweep Coverage Manifest
 
 **Last updated:** 2026-05-18
-**Toolkit commit:** T:dec5b24
+**Toolkit commit:** T:dec5b24 (+ 41l-quater-bis pending)
 **Total tools:** 115 (93 editor-side + 6 LSP + 4 debugger + 12 runtime)
-**Sweep test count:** ~224 numbered test cases + 26 combo chains + C# phase + extension phase
+**Sweep test count:** ~230 numbered test cases + 26 combo chains + C# phase + extension phase
 
 ---
 
@@ -135,7 +135,7 @@
 |---|---|---|---|---|---|---|
 | game.start | 71 | — | C8 | — | 4be3454, a28d17b | **GAP:** compilation failure guard, wait_for_runtime hint |
 | game.stop | 81 | — | C8 | — | — | |
-| debugger.get_log | 75, 75a–75f, 80 | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** cached log after crash, double-escape warning |
+| debugger.get_log | 75, 75a–75f, 80, 80a–80f | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis) |
 
 ### Animation (3 tools)
 
@@ -246,7 +246,7 @@
 | runtime.get_node_state | 73 | — | C8 | — | — | |
 | runtime.get_script_vars | 74 | — | — | — | — | |
 | runtime.set_property | — | — | — | — | c6d5f40 | **GAP:** no test + autoload warning |
-| debugger.get_log | 75, 75a–75f | ✓ (75d) | — | — | dec5b24 | Shared with editor |
+| debugger.get_log | 75, 75a–75f, 80a–80f | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state |
 | signal.list | (via editor 44–48) | — | — | — | — | Runtime uses same handler |
 | signal.connect | (via editor 45) | — | — | — | — | Runtime uses same handler |
 | signal.disconnect | (via editor 47) | — | — | — | — | Runtime uses same handler |
@@ -274,7 +274,7 @@
 - `execute.code` — singleton hints (FIX-4), load() hint (FIX-H, 279efed)
 - `project.set_setting` — autoload key guard (23d69f9)
 - `game.start` — compilation failure detection (4be3454), wait_for_runtime hint (a28d17b)
-- `debugger.get_log` — cached log after crash (dec5b24), double-escape warning (a828cb1)
+- `debugger.get_log` — double-escape warning (a828cb1). Cached-log-after-crash gap closed by 21.5b/21.10 (41l-quater-bis)
 - `tilemap.set_cells` — regions param (FIX-A), no-tileset rejection (FIX-J)
 - `signal.manage` — 3-case method hint validation (5f96b62)
 

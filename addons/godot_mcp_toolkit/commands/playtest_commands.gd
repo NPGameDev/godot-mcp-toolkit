@@ -19,14 +19,24 @@ const _REGISTRY_POLL_INTERVAL_MS := 100
 # game output even though the Logger API is process-local (4.5+).
 static var _game_session_file_offset: int = -1
 
+# Debug bridge reference — injected at register() time.
+# Used by debugger.get_log to include error_buffer + debug_state.
+static var _debug_bridge: RefCounted = null
 
-static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
+
+static func register(registry: MCPToolkitCommandRegistry, _server: Node,
+		debug_bridge: RefCounted = null) -> void:
+	_debug_bridge = debug_bridge
 	registry.add("game.start", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_game_start(parameters))
 	registry.add("game.stop", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_game_stop(parameters))
 	registry.add("debugger.get_log", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_debugger_get_log_cached(parameters))
+
+
+static func clear_debug_bridge() -> void:
+	_debug_bridge = null
 
 
 # -- Commands -----------------------------------------------------------------
@@ -193,6 +203,8 @@ static func _cmd_game_stop(_parameters: Dictionary) -> Dictionary:
 ## recent game session. Reads from the LOG FILE (shared by editor + game
 ## processes) rather than the in-memory LogBuffer (which is process-local
 ## and only captures editor output on 4.5+).
+## When a debug bridge is available, merges the error buffer and debug state
+## into the response — gives the server a single call for full crash context.
 static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	var limit: int = max(1, int(parameters.get("limit", 200)))
 	var text_filter: String = str(parameters.get("text_filter", ""))
@@ -203,25 +215,36 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 			return MCPError.make("INVALID_PARAMS",
 				"text_filter is not a valid regex (is_regex=true).")
 
+	# Auto-stop: if debug bridge says session is dead but editor still thinks
+	# game is running, stop it to clean up state and flush the log file.
+	if _debug_bridge != null:
+		var ds: Dictionary = _debug_bridge.get_debug_state()
+		if not ds.get("active", false) and EditorInterface.is_playing_scene():
+			EditorInterface.stop_playing_scene()
+
 	if _game_session_file_offset < 0:
-		return {
+		var response := {
 			"success": true,
 			"lines": [],
 			"count": 0,
 			"source": "cache",
 			"note": "No game session recorded yet (game_start was never called this editor session)",
 		}
+		_merge_debug_bridge_data(response)
+		return response
 
 	# Read the log file from the offset where the game session started.
 	var log_path: String = _resolve_log_path()
 	if not FileAccess.file_exists(log_path):
-		return {
+		var response := {
 			"success": true,
 			"lines": [],
 			"count": 0,
 			"source": "cache",
 			"note": "Log file not found. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart.",
 		}
+		_merge_debug_bridge_data(response)
+		return response
 
 	var file := FileAccess.open(log_path, FileAccess.READ)
 	if file == null:
@@ -231,13 +254,15 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	var file_len: int = file.get_length()
 	if file_len <= _game_session_file_offset:
 		file.close()
-		return {
+		var response := {
 			"success": true,
 			"lines": [],
 			"count": 0,
 			"source": "cache",
 			"note": "No new output since game_start (log file unchanged).",
 		}
+		_merge_debug_bridge_data(response)
+		return response
 
 	# Read only the bytes written since game_start.
 	file.seek(_game_session_file_offset)
@@ -267,14 +292,25 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	if truncated:
 		filtered = filtered.slice(filtered.size() - limit)
 
-	return {
+	var response := {
 		"success": true,
 		"lines": filtered,
 		"count": filtered.size(),
 		"truncated": truncated,
 		"source": "cache",
-		"note": "Game not running — showing cached output from last session (log file)",
 	}
+	_merge_debug_bridge_data(response)
+	return response
+
+
+## Merge debug bridge error buffer + state into a debugger.get_log response.
+static func _merge_debug_bridge_data(response: Dictionary) -> void:
+	if _debug_bridge == null:
+		return
+	response["debug_state"] = _debug_bridge.get_debug_state()
+	var buf: Array = _debug_bridge.get_error_buffer()
+	if not buf.is_empty():
+		response["error_buffer"] = buf
 
 
 ## Resolve the log file path (same logic as LogBuffer).
