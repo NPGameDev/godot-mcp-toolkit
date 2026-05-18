@@ -102,9 +102,9 @@ func _apply_step(dialog: AcceptDialog) -> void:
 				ProjectSettings.globalize_path("res://") + ".mcp.json")
 			if _mcp_exists:
 				dialog.dialog_text = (
-					"Your MCP client reads .mcp.json from the project root\n"
+					"Your MCP client reads .mcp.json from the project root "
 					+ "to locate and configure the server.\n\n"
-					+ "The MCP server bridge requires Node.js 20+ to run.\n"
+					+ "The MCP server bridge requires Node.js 20+ to run. "
 					+ "Download it from https://nodejs.org if not installed.\n\n"
 					+ "An .mcp.json already exists in your project.")
 				dialog.ok_button_text = "Continue (keep existing .mcp.json)"
@@ -112,11 +112,11 @@ func _apply_step(dialog: AcceptDialog) -> void:
 					dialog.add_button("Overwrite with clean .mcp.json", true, "overwrite_mcp"))
 			else:
 				dialog.dialog_text = (
-					"Your MCP client reads .mcp.json from the project root\n"
+					"Your MCP client reads .mcp.json from the project root "
 					+ "to locate and configure the server.\n\n"
-					+ "The MCP server bridge requires Node.js 20+ to run.\n"
+					+ "The MCP server bridge requires Node.js 20+ to run. "
 					+ "Download it from https://nodejs.org if not installed.\n\n"
-					+ "No .mcp.json was found — this file is required for your\n"
+					+ "No .mcp.json was found — this file is required for your "
 					+ "MCP client to connect to the toolkit.")
 				dialog.ok_button_text = "Create .mcp.json"
 
@@ -137,8 +137,9 @@ func _apply_step(dialog: AcceptDialog) -> void:
 			# Feature gates — open Project Settings.
 			dialog.dialog_text = (
 				"Feature gates are also available in Project Settings under "
-				+ "MCP Toolkit > Feature Gates. Changes here sync to the dock "
-				+ "and the MCP server automatically — no restart needed.\n\n"
+				+ "MCP Toolkit > Feature Gates.\n"
+				+ "Changes here sync to the dock and the MCP server "
+				+ "automatically — no restart needed.\n\n"
 				+ "  \u2022 allow_execute_code — GDScript evaluation via Expression\n"
 				+ "  \u2022 allow_node_call_method — call methods on scene nodes\n"
 				+ "  \u2022 allow_user_scope — read/write whitelisted user:// paths")
