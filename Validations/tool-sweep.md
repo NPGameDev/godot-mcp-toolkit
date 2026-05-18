@@ -1,6 +1,6 @@
 # Universal MCP Tool Sweep v2
 
-A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all 105 MCP tools (93 editor-side + 12 runtime).
+A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all 111 MCP tools (93 editor-side + 6 LSP + 12 runtime).
 
 ## How to Use
 
@@ -72,6 +72,7 @@ In Claude Code, `ToolSearch` may not return newly-activated tools due to the def
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 7+ | discover_tools, extensions.refresh | Extensions present |
 | 25 | [25-cleanup.md](Sections/25-cleanup.md) | Global Cleanup | — | folder_delete, resource_delete, scene_delete, script_delete | Any |
+| 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 23+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references | S1, LSP on port 6005 |
 
 ## Dependency Legend
 

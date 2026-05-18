@@ -1,9 +1,9 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-05-16
+**Last updated:** 2026-05-18
 **Toolkit commit:** T:dec5b24
-**Total tools:** 105 (93 editor-side + 12 runtime)
-**Sweep test count:** ~185 numbered test cases + 23 combo chains + C# phase + extension phase
+**Total tools:** 111 (93 editor-side + 6 LSP + 12 runtime)
+**Sweep test count:** ~208 numbered test cases + 25 combo chains + C# phase + extension phase
 
 ---
 
@@ -215,6 +215,17 @@
 | meta.set_limits | — | — | — | — | — | Internal (server→plugin); not agent-facing |
 | discover_tools | C10 (12 steps) | ✓ (reset, selective reset) | — | — | FIX-3, FIX-C | |
 | extensions.refresh | E5 | — | — | — | — | Extension phase |
+
+### LSP Tools (6 tools)
+
+| Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
+|---|---|---|---|---|---|---|
+| lsp_diagnostics | 26.1–26.3 | 26.4–26.6 | C24 | — | — | Freshness: 26.22–26.23 |
+| lsp_symbols | 26.8–26.10 | (shared 26.4–26.7) | C25 | — | — | |
+| lsp_hover | 26.11–26.14 | 26.7 | — | — | — | I5 envelope check (26.11) |
+| lsp_completion | 26.15–26.16 | (shared) | — | — | — | |
+| lsp_definition | 26.17–26.19 | (shared) | C25 | — | — | |
+| lsp_references | 26.20–26.21 | (shared) | — | — | — | |
 
 ---
 
