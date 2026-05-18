@@ -395,7 +395,7 @@ func _build_ui() -> void:
 	footer_row.add_child(skills_btn)
 
 	var mcp_json_btn := Button.new()
-	mcp_json_btn.text = ".mcp.json"
+	mcp_json_btn.text = "Open .mcp.json"
 	mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor"
 	mcp_json_btn.pressed.connect(_open_mcp_json)
 	mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
