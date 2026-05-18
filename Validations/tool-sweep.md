@@ -73,6 +73,7 @@ In Claude Code, `ToolSearch` may not return newly-activated tools due to the def
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 7+ | discover_tools, extensions.refresh | Extensions present |
 | 25 | [25-cleanup.md](Sections/25-cleanup.md) | Global Cleanup | — | folder_delete, resource_delete, scene_delete, script_delete | Any |
 | 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 23+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references | S1, LSP on port 6005 |
+| 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 16+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
 
 ## Dependency Legend
 

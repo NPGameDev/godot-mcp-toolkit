@@ -2,8 +2,8 @@
 
 **Last updated:** 2026-05-18
 **Toolkit commit:** T:dec5b24
-**Total tools:** 111 (93 editor-side + 6 LSP + 12 runtime)
-**Sweep test count:** ~208 numbered test cases + 25 combo chains + C# phase + extension phase
+**Total tools:** 115 (93 editor-side + 6 LSP + 4 debugger + 12 runtime)
+**Sweep test count:** ~224 numbered test cases + 26 combo chains + C# phase + extension phase
 
 ---
 
@@ -226,6 +226,15 @@
 | lsp_completion | 26.15–26.16 | (shared) | — | — | — | |
 | lsp_definition | 26.17–26.19 | (shared) | C25 | — | — | |
 | lsp_references | 26.20–26.21 | (shared) | — | — | — | |
+
+### Debugger Tools (4 tools)
+
+| Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
+|---|---|---|---|---|---|---|
+| debug.state | 27.1 | — | C26 | — | — | |
+| debug.list_breakpoints | 27.4, 27.6, 27.8 | — | — | — | — | GDScript only |
+| debug.set_breakpoint | 27.2, 27.3, 27.5, 27.7 | 27.9–27.14 | C26 | — | — | GDScript only |
+| debug.continue | 27.15 | 27.16 | C26 | — | — | |
 
 ---
 

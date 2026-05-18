@@ -110,6 +110,7 @@ strips mutating tools from any profile.
 | `editor_advanced`     | `editor_screenshot`, `editor_refresh`, `editor_wait_for_idle` |
 | `tilemap`             | `tilemap_set_cells`, `tileset_create`, `tileset_edit` |
 | `node_management`     | `node_manage`, `node_groups`, `autoload_manage` |
+| `debugger`            | `debug_state`, `debug_list_breakpoints`, `debug_set_breakpoint`, `debug_continue` |
 
 ### Gated tools (locked stubs when disabled)
 

@@ -38,6 +38,8 @@ const SpriteframesCommands := preload("res://addons/godot_mcp_toolkit/commands/s
 const ParticleCommands := preload("res://addons/godot_mcp_toolkit/commands/particle_commands.gd")
 const NavigationCommands := preload("res://addons/godot_mcp_toolkit/commands/navigation_commands.gd")
 const MetaCommands := preload("res://addons/godot_mcp_toolkit/commands/meta_commands.gd")
+const DebugBridge := preload("res://addons/godot_mcp_toolkit/debug_bridge.gd")
+const DebugCommands := preload("res://addons/godot_mcp_toolkit/commands/debug_commands.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:6525. Registered/unregistered via add_autoload_singleton /
@@ -68,6 +70,7 @@ var _feature_settings: FeatureGateSettings = null
 var _notifier: GateNotifier = null
 var _events: GateEvents = null
 var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
+var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
 var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
 # Playtest-end detection for runtime port cleanup.
 var _was_playing: bool = false
@@ -113,6 +116,11 @@ func _enter_tree() -> void:
 	ParticleCommands.register(registry, _server)
 	NavigationCommands.register(registry, _server)
 	MetaCommands.register(registry)
+
+	# Debugger bridge — EditorDebuggerPlugin for breakpoint + state tools.
+	_debug_bridge = DebugBridge.new()
+	add_debugger_plugin(_debug_bridge)
+	DebugCommands.register(registry, _debug_bridge)
 
 	# Third-party extensions — profile-exempt, always loaded.
 	ExtensionLoader.load_all(registry, _server)
@@ -233,6 +241,12 @@ func _exit_tree() -> void:
 
 	# Extension watcher — drop before server teardown (holds registry ref).
 	_extension_watcher = null
+
+	# Debugger bridge — unregister before server teardown (I12 symmetry).
+	if _debug_bridge != null:
+		_debug_bridge.cleanup()
+		remove_debugger_plugin(_debug_bridge)
+		_debug_bridge = null
 
 	# Export plugin (RefCounted — do NOT queue_free, just null).
 	if _export_plugin != null:
