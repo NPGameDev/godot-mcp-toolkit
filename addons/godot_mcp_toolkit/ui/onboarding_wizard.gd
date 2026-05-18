@@ -136,9 +136,12 @@ func _apply_step(dialog: AcceptDialog) -> void:
 		3:
 			# Feature gates — open Project Settings.
 			dialog.dialog_text = (
-				"Toggle individual capabilities here. Changes sync to\n"
-				+ "your MCP configuration automatically.\n\n"
-				+ "Navigate to: MCP Toolkit > Feature Gates")
+				"Feature gates are also available in Project Settings under "
+				+ "MCP Toolkit > Feature Gates. Changes here sync to the dock "
+				+ "and the MCP server automatically — no restart needed.\n\n"
+				+ "  \u2022 allow_execute_code — GDScript evaluation via Expression\n"
+				+ "  \u2022 allow_node_call_method — call methods on scene nodes\n"
+				+ "  \u2022 allow_user_scope — read/write whitelisted user:// paths")
 			dialog.ok_button_text = "Next"
 			_buttons.append(dialog.add_button("Back", true, "back"))
 			SettingsNavigator.open_mcp_settings()
