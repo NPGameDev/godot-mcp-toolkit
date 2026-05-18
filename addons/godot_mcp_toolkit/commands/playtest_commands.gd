@@ -309,8 +309,62 @@ static func _merge_debug_bridge_data(response: Dictionary) -> void:
 		return
 	response["debug_state"] = _debug_bridge.get_debug_state()
 	var buf: Array = _debug_bridge.get_error_buffer()
+	# Fallback: if _capture didn't fire (Godot's built-in debugger handles
+	# "error" messages before plugins see them), scan log lines for errors.
+	if buf.is_empty():
+		buf = _scan_lines_for_errors(response.get("lines", []))
 	if not buf.is_empty():
 		response["error_buffer"] = buf
+
+
+## Scan log lines for error patterns and build synthetic error_buffer entries.
+## Godot error lines follow the pattern:
+##   "USER SCRIPT ERROR: <message>"    (script errors)
+##   "SCRIPT ERROR: <message>"         (engine script errors)
+##   "   at: <function> (<file>:<line>)"  (source location, follows the error)
+## This fallback populates error_buffer when _capture doesn't fire.
+static func _scan_lines_for_errors(lines: Array) -> Array:
+	var errors: Array = []
+	var i := 0
+	while i < lines.size():
+		var line: String = str(lines[i])
+		var msg := ""
+		if line.begins_with("USER SCRIPT ERROR:"):
+			msg = line.substr(len("USER SCRIPT ERROR:")).strip_edges()
+		elif line.begins_with("SCRIPT ERROR:"):
+			msg = line.substr(len("SCRIPT ERROR:")).strip_edges()
+		elif line.begins_with("ERROR:"):
+			msg = line.substr(len("ERROR:")).strip_edges()
+		if not msg.is_empty():
+			var source := ""
+			var func_name := ""
+			var source_line := 0
+			# Check the next line for "   at: func (file:line)" pattern.
+			if i + 1 < lines.size():
+				var next: String = str(lines[i + 1]).strip_edges()
+				if next.begins_with("at:"):
+					var at_info := next.substr(len("at:")).strip_edges()
+					var paren_open := at_info.rfind("(")
+					var paren_close := at_info.rfind(")")
+					if paren_open >= 0 and paren_close > paren_open:
+						func_name = at_info.left(paren_open).strip_edges()
+						var loc := at_info.substr(paren_open + 1,
+							paren_close - paren_open - 1)
+						var colon := loc.rfind(":")
+						if colon >= 0:
+							source = loc.left(colon)
+							source_line = int(loc.substr(colon + 1))
+					i += 1  # Skip the "at:" line
+			errors.append({
+				"timestamp_ms": 0,
+				"message": msg,
+				"source": source,
+				"function": func_name,
+				"line": source_line,
+				"type": "log_scan",
+			})
+		i += 1
+	return errors
 
 
 ## Resolve the log file path (same logic as LogBuffer).
