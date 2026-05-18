@@ -37,8 +37,8 @@ var _mcp_json_hint: Label = null
 # Node.js warnings (shared detection via MCPNodejsCheck, two display locations).
 var _nodejs_status_warning: Label = null
 var _nodejs_gate_warning: Label = null
-# Gates collapsible section header + scroll — for read-only visibility toggle.
-var _gates_header: PanelContainer = null
+# Gates collapsible section — toggle + scroll for read-only lock.
+var _gates_toggle: Button = null
 var _gates_scroll: ScrollContainer = null
 
 # Settings widgets.
@@ -91,12 +91,13 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for dialog in [_audit_dialog, _info_dialog, _danger_dialog]:
+	for dialog in [_audit_dialog, _info_dialog, _danger_dialog, _ro_gate_dialog]:
 		if dialog != null and is_instance_valid(dialog):
 			dialog.queue_free()
 	_audit_dialog = null
 	_info_dialog = null
 	_danger_dialog = null
+	_ro_gate_dialog = null
 
 
 # ---------------------------------------------------------------------------
@@ -218,10 +219,9 @@ func _build_ui() -> void:
 	sc.add_child(_runtime_label)
 
 	_read_only_badge = Label.new()
-	_read_only_badge.text = "\u26a0 Read-only mode"
-	_read_only_badge.tooltip_text = (
-		"Only read-only tools are available. To exit: remove "
-		+ "GODOT_MCP_READ_ONLY from .mcp.json and reconnect the MCP client.")
+	_read_only_badge.text = (
+		"\u26a0 Read-only mode active (GODOT_MCP_READ_ONLY=1 in .mcp.json). "
+		+ "To exit: remove the env var, restart the editor, and reconnect the MCP client.")
 	_read_only_badge.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_read_only_badge.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 	_read_only_badge.add_theme_font_size_override("font_size", 11)
@@ -251,11 +251,14 @@ func _build_ui() -> void:
 	sections_vbox.add_theme_constant_override("separation", int(2 * scale))
 	add_child(sections_vbox)
 
-	# -- Feature Gates section (expanded by default) --------------------------
-	# Keep references to header + scroll so we can hide them when read-only.
-	var fc := _make_collapsible_section(sections_vbox, "Feature Gates", true, 36.0)
-	_gates_header = sections_vbox.get_child(sections_vbox.get_child_count() - 2) as PanelContainer
+	# -- Feature Gates section (expanded by default, collapsed when read-only) --
+	var gates_expanded := not _is_read_only()
+	var fc := _make_collapsible_section(sections_vbox, "Feature Gates", gates_expanded, 36.0)
+	var gates_header: PanelContainer = sections_vbox.get_child(sections_vbox.get_child_count() - 2)
+	_gates_toggle = gates_header.get_child(0) as Button
 	_gates_scroll = sections_vbox.get_child(sections_vbox.get_child_count() - 1) as ScrollContainer
+	# Intercept toggle when read-only — collapse back and show warning.
+	_gates_toggle.toggled.connect(_on_gates_toggle_read_only_check)
 
 	_mcp_json_hint = Label.new()
 	_mcp_json_hint.text = "No .mcp.json found — use Project > Tools > MCP Toolkit > Write .mcp.json"
@@ -478,11 +481,13 @@ func _refresh_features() -> void:
 
 	var read_only := _is_read_only()
 
-	# Hide gates section entirely when read-only (mutating tools excluded server-side).
-	if _gates_header != null:
-		_gates_header.visible = not read_only
-	if _gates_scroll != null:
-		_gates_scroll.visible = not read_only
+	# Read-only: collapse the gates section and block reopening.
+	if _gates_toggle != null:
+		if read_only:
+			_gates_toggle.button_pressed = false
+			if _gates_scroll != null:
+				_gates_scroll.visible = false
+			_gates_toggle.text = "\u25b6 Feature Gates (read-only)"
 
 	# Show hint when .mcp.json is missing.
 	var has_mcp := MCPJsonSync.has_mcp_json()
@@ -503,7 +508,7 @@ func _refresh_features() -> void:
 		else:
 			enabled = ProjectSettings.get_setting(str(entry["ps_key"]), false)
 		check.set_pressed_no_signal(enabled)
-		check.disabled = false
+		check.disabled = read_only
 		check.tooltip_text = str(entry["risk"])
 
 
@@ -532,6 +537,45 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 	_refresh_features()
 	if _notifier != null:
 		_notifier.broadcast_config_reloaded()
+
+
+## Read-only gate toggle intercept — block expand and show warning.
+var _ro_gate_dialog: AcceptDialog = null
+
+func _on_gates_toggle_read_only_check(pressed: bool) -> void:
+	if not _is_read_only():
+		return
+	# Collapse back immediately.
+	_gates_toggle.set_pressed_no_signal(false)
+	if _gates_scroll != null:
+		_gates_scroll.visible = false
+	_gates_toggle.text = "\u25b6 Feature Gates (read-only)"
+	if not pressed:
+		return  # collapsing — no warning needed
+	# Show popup.
+	if _ro_gate_dialog != null and is_instance_valid(_ro_gate_dialog):
+		return
+	_ro_gate_dialog = AcceptDialog.new()
+	_ro_gate_dialog.exclusive = false
+	_ro_gate_dialog.title = "Read-Only Mode Active"
+	_ro_gate_dialog.dialog_text = (
+		"Feature gates cannot be changed while read-only mode is active "
+		+ "(GODOT_MCP_READ_ONLY=1 in .mcp.json).\n\n"
+		+ "To restore full access:\n"
+		+ "  1. Remove GODOT_MCP_READ_ONLY from .mcp.json\n"
+		+ "  2. Restart the editor\n"
+		+ "  3. Reconnect the MCP client")
+	_ro_gate_dialog.ok_button_text = "OK"
+	_ro_gate_dialog.confirmed.connect(func():
+		_ro_gate_dialog.queue_free()
+		_ro_gate_dialog = null
+	)
+	_ro_gate_dialog.canceled.connect(func():
+		_ro_gate_dialog.queue_free()
+		_ro_gate_dialog = null
+	)
+	EditorInterface.get_base_control().add_child(_ro_gate_dialog)
+	_ro_gate_dialog.popup_centered()
 
 
 ## H7: Dangerous-gate confirmation for RCE-class features.

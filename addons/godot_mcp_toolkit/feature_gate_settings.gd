@@ -320,9 +320,7 @@ func _poll_feature_states() -> void:
 		_emit_features_changed()
 		_emit_config_reloaded()
 		if _is_read_only():
-			push_warning("[MCP] Gate changed while read-only mode is active (GODOT_MCP_READ_ONLY=1). "
-				+ "The change is saved but won't take effect until you remove GODOT_MCP_READ_ONLY "
-				+ "from .mcp.json and reconnect the MCP client.")
+			_show_read_only_gate_warning()
 	elif sidecar_changed:
 		_emit_features_changed()
 		_emit_config_reloaded()
@@ -375,6 +373,36 @@ func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: Stri
 	)
 	EditorInterface.get_base_control().add_child(_ps_danger_dialog)
 	_ps_danger_dialog.popup_centered()
+
+
+# -- Read-only gate warning ----------------------------------------------------
+
+var _ro_warning_dialog: AcceptDialog = null
+
+func _show_read_only_gate_warning() -> void:
+	if _ro_warning_dialog != null and is_instance_valid(_ro_warning_dialog):
+		return
+	_ro_warning_dialog = AcceptDialog.new()
+	_ro_warning_dialog.exclusive = false
+	_ro_warning_dialog.title = "Read-Only Mode Active"
+	_ro_warning_dialog.dialog_text = (
+		"Your gate change has been saved, but read-only mode is active "
+		+ "(GODOT_MCP_READ_ONLY=1 in .mcp.json).\n\n"
+		+ "The MCP server will continue to hide mutating tools until you:\n"
+		+ "  1. Remove GODOT_MCP_READ_ONLY from .mcp.json\n"
+		+ "  2. Restart the editor\n"
+		+ "  3. Reconnect the MCP client")
+	_ro_warning_dialog.ok_button_text = "OK"
+	_ro_warning_dialog.confirmed.connect(func():
+		_ro_warning_dialog.queue_free()
+		_ro_warning_dialog = null
+	)
+	_ro_warning_dialog.canceled.connect(func():
+		_ro_warning_dialog.queue_free()
+		_ro_warning_dialog = null
+	)
+	EditorInterface.get_base_control().add_child(_ro_warning_dialog)
+	_ro_warning_dialog.popup_centered()
 
 
 # -- Signal bus helpers --------------------------------------------------------
