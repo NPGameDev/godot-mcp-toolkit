@@ -67,7 +67,7 @@ In Claude Code, `ToolSearch` may not return newly-activated tools due to the def
 | 18 | [18-file-operations.md](Sections/18-file-operations.md) | Scene Close/Delete Guards & Files | 10 | scene_close, scene_delete, file_delete, asset_import | S1 |
 | 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_sprite | 3 | collision_from_sprite | S2 |
 | 20 | [20-runtime.md](Sections/20-runtime.md) | Game Start, Runtime & Debugging | 22 | game_start/stop, runtime_*, debugger_get_log, input_simulate, execute_code, animation_player_control, signal_emit | S2 |
-| 21 | [21-game-guards.md](Sections/21-game-guards.md) | game_start Guards & Crash Recovery | 12 | game_start, debugger_get_log (+ debug_state, error_buffer) | S1 |
+| 21 | [21-game-guards.md](Sections/21-game-guards.md) | game_start Guards & Crash Recovery | 13 | game_start, debugger_get_log (debug_state, error_buffer, log_scan) | S1 |
 | 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 12 chains | Multi-tool workflows | S1 |
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 7+ | discover_tools, extensions.refresh | Extensions present |

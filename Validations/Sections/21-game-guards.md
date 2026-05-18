@@ -1,10 +1,12 @@
 # Section 21 — game_start Guards & Crash Recovery
 
 **Dependencies:** Section 1 (sv2_validation/ exists)
-**Tools tested:** game_start (guards), debugger_get_log (crash recovery cache, debug_state, error_buffer)
-**Tests:** 12
+**Tools tested:** game_start (guards), debugger_get_log (crash recovery cache, debug_state, error_buffer, log_scan)
+**Tests:** 13
 
 ---
+
+### Parse-error game launch (existing)
 
 **21.1** Write broken script: `script_write` file_path=`res://sv2_validation/sv2_broken_main.gd`, content:
 ```gdscript
@@ -33,6 +35,10 @@ func _ready():
 **21.3c** `game_stop`
 - **Expect:** success
 
+---
+
+### Editor-side fallback + debug_state (41l-quater-bis)
+
 **21.4** Restore and run valid game:
 - `project_set_setting` application/run/main_scene = `"res://sv2_validation/main.tscn"`
 - `scene_open` file_path=`res://sv2_validation/main.tscn`
@@ -40,28 +46,27 @@ func _ready():
 - **Expect:** success (valid scene launches)
 - Wait 2s, then `game_stop`
 
-**21.5** `debugger_get_log` — (after game_stop, check cached log)
-- **Expect:** success, log content available from the just-ended session
+**21.5** `debugger_get_log` — cached log + debug_state after clean stop
+- **Expect:** success=true (not GAME_NOT_RUNNING), `lines` has log content from the just-ended session, `debug_state` present with `active: false`.
 
 > **REGRESSION WATCH (dec5b24):** If debugger_get_log returns empty or NOT_FOUND
 > immediately after game_stop, the editor-side log cache has regressed. The cache
 > should persist until the next game_start clears it. Flag as **Major**.
 
-**21.5b** `debugger_get_log` — verify `debug_state` field on 21.5's response
-- **Expect:** response includes `debug_state` with `active: false` (game just stopped). If `debug_state` is missing, the debug bridge integration has regressed.
-
-> **REGRESSION WATCH (41l-quater-bis):** `debug_state` must be present in every
-> editor-side debugger_get_log response when the debug bridge is active. Its
-> absence indicates the bridge was not injected into PlaytestCommands. Flag as **Major**.
+> **REGRESSION WATCH (41l-quater-bis, e2c7041):** If debugger_get_log returns
+> GAME_NOT_RUNNING after game_stop, the server-side fallback is broken — it
+> should route to the editor-side handler, not reject the call. Flag as **Critical**.
 
 **21.6** `debugger_get_log` — text_filter=`SV2_BROKEN`, is_regex=`false`
 - **Expect:** count=0 (the broken scene never printed anything — validates filter on cached log)
 
 ---
 
-### Error capture via debugger bridge (41l-quater-bis)
+### Runtime error capture via log_scan (41l-quater-bis)
 
-Tests both paths: old (log file lines) and new (error_buffer + debug_state).
+Tests both paths: old (log file `lines`) and new (`error_buffer` + `debug_state`).
+The `error_buffer` is populated by scanning unfiltered log lines for error patterns,
+so it always has full source location context regardless of `text_filter`.
 
 **21.7** Write error-triggering script: `script_write` file_path=`res://sv2_validation/sv2_error_main.gd`, content:
 ```gdscript
@@ -86,24 +91,38 @@ func _ready():
 **21.9** Wait 2-3s, then `game_stop`
 - **Expect:** success
 
-**21.10** `debugger_get_log` — error capture + old-path check
-- **Expect (old path — always works):** `lines` array includes null-ref error text from log file
-- **Expect (new path):** `debug_state` present with `active: false`. `error_buffer` array present with at least one entry containing the null-ref error. Entry type depends on which capture path fired:
-  - `"error"` — `_capture` intercepted the debugger protocol message (ideal, version-dependent)
-  - `"break"` — `_on_breaked` fallback fired (requires "Break on Errors" enabled)
-  - `"log_scan"` — log-line scanning parsed error patterns from the log file (reliable fallback)
-- `error_buffer` entries should include `message`, `source` (file path), `function`, and `line` fields.
+**21.10** `debugger_get_log` — unfiltered error capture (both paths)
+- **Expect (old path):** `lines` array includes null-ref error text (SCRIPT ERROR with queue_free)
+- **Expect (new path):**
+  - `debug_state` present: `{active: false, breaked: false, can_debug: false}`
+  - `error_buffer` array present with >= 1 entry
+  - Entry `type`: `"log_scan"` (expected on Godot 4.0–4.5; `"error"` or `"break"` also valid)
+  - Entry `message`: contains the null-ref error text
+  - Entry `source`: file path (e.g. `res://sv2_validation/sv2_error_main.gd`)
+  - Entry `function`: function name (e.g. `_ready`)
+  - Entry `line`: line number > 0 (e.g. `4`)
 
-> **NOTE:** On Godot 4.0-4.5, `_capture("error")` does NOT fire for built-in error
-> messages (ScriptEditorDebugger handles them first). The `log_scan` fallback parses
-> SCRIPT ERROR / USER SCRIPT ERROR / ERROR lines from the log file with "at:" location.
-> This is the expected path on current Godot versions.
+> **NOTE:** On Godot 4.0–4.5, `EditorDebuggerPlugin._capture("error")` does NOT fire
+> for built-in error messages (ScriptEditorDebugger handles them first). The `log_scan`
+> fallback parses SCRIPT ERROR / USER SCRIPT ERROR / ERROR lines with their adjacent
+> "at:" lines from the unfiltered log. This is the expected path on current Godot versions.
 
-**21.11** `debugger_get_log` — text_filter=`queue_free`, is_regex=`false` (filter on error output)
+**21.11** `debugger_get_log` — text_filter=`queue_free`, is_regex=`false`
 - **Expect:** count >= 1 (the null-ref error mentions queue_free)
+- **Expect:** `error_buffer` present with same source/function/line as 21.10 — the error scan runs on unfiltered log lines, so `text_filter` does NOT strip context from `error_buffer` entries.
 
-**21.12** `debugger_get_log` — verify `debug_state` field on error-capture response
-- **Expect:** `debug_state.active` = false, `debug_state.breaked` = false (game stopped, not paused)
+> **REGRESSION WATCH (8a6cbf0):** If `error_buffer` entries have empty `source`/`line`
+> when `text_filter` is active, the unfiltered-scan fix has regressed — `_merge_debug_bridge_data`
+> is scanning filtered lines instead of the full log. Flag as **Major**.
+
+**21.12** `debugger_get_log` — text_filter=`NONEXISTENT_STRING_12345`, is_regex=`false`
+- **Expect:** count=0 (no lines match), but `error_buffer` still present with the error entry (scanned from unfiltered log, unaffected by filter).
+
+> This verifies the error_buffer and lines are independent: the filter empties `lines`
+> but `error_buffer` is built from the full unfiltered log and always reflects all errors.
+
+**21.13** `debugger_get_log` — no parameters (verify all fields present in default call)
+- **Expect:** success=true, `lines` (all game output), `debug_state` present, `error_buffer` present with full context. This is the "agent calls debugger_get_log with no args after a crash" golden path.
 
 ---
 
