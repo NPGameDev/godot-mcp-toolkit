@@ -121,11 +121,14 @@ func _apply_step(dialog: AcceptDialog) -> void:
 				dialog.ok_button_text = "Create .mcp.json"
 
 		2:
-			# MCP control center — show the dock.
+			# MCP dock — show it in the bottom panel.
 			dialog.dialog_text = (
-				"This is your MCP control center — server status,\n"
-				+ "feature gates, and audit log.\n\n"
-				+ "The dock is now visible in the bottom panel.")
+				"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
+				+ "It gives you:\n\n"
+				+ "  \u2022 Server status — connection state, peer count, runtime port\n"
+				+ "  \u2022 Feature gates — toggle gated capabilities on/off\n"
+				+ "  \u2022 Audit log — review what the AI agent did\n"
+				+ "  \u2022 Security settings — token rotation, response limits")
 			dialog.ok_button_text = "Next"
 			if _dock != null:
 				_plugin.make_bottom_panel_item_visible(_dock)
