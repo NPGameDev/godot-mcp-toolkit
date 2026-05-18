@@ -69,7 +69,8 @@ static func start_watcher(registry: MCPToolkitCommandRegistry, server: Node) -> 
 	ProjectSettings.settings_changed.connect(watcher.on_settings_changed)
 	# Register extensions.refresh — allows LLMs / headless mode to force
 	# a filesystem scan + extension re-discovery without editor focus.
-	registry.add("extensions.refresh", watcher._cmd_refresh, {
+	registry.add("extensions.refresh", func(params: Dictionary) -> Dictionary:
+		return await watcher._cmd_refresh(params), {
 		"description": "Force a filesystem scan and re-discover extensions (use when files were created externally)",
 		"annotations": {"readOnlyHint": false, "idempotentHint": true},
 	})
@@ -183,8 +184,14 @@ static func _arrays_equal(a: Array, b: Array) -> bool:
 
 func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	## Force a filesystem scan and immediate extension re-discovery.
-	EditorInterface.get_resource_filesystem().scan_sources()
-	# Run rescan immediately (bypass debounce).
+	var efs := EditorInterface.get_resource_filesystem()
+	efs.scan_sources()
+	# Wait for the scan to complete (filesystem_changed signal), with a
+	# timeout to prevent indefinite hangs if no files actually changed.
+	var timeout_sec := 2.0
+	var timer := _server.get_tree().create_timer(timeout_sec)
+	await _race_signal_or_timeout(efs.filesystem_changed, timer.timeout)
+	# Run rescan on the now-fresh class list (bypass debounce).
 	_debounce_pending = false
 	_do_rescan()
 	# Return current extension list.
@@ -194,6 +201,23 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 		var meta := _registry.get_command_metadata(method)
 		result.append({"method": method, "description": meta.get("description", "")})
 	return {"success": true, "refreshed": true, "commands": result}
+
+
+func _race_signal_or_timeout(primary: Signal, fallback: Signal) -> void:
+	## Await whichever signal fires first. Used to implement "await with timeout".
+	## Both signals are one-shot (timer.timeout and filesystem_changed per scan).
+	var done := false
+	var finish := func():
+		done = true
+	primary.connect(finish, CONNECT_ONE_SHOT)
+	fallback.connect(finish, CONNECT_ONE_SHOT)
+	while not done:
+		await _server.get_tree().process_frame
+	# Disconnect whichever didn't fire (if still connected).
+	if primary.is_connected(finish):
+		primary.disconnect(finish)
+	if fallback.is_connected(finish):
+		fallback.disconnect(finish)
 
 
 func on_filesystem_changed() -> void:

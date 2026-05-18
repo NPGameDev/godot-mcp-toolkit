@@ -239,7 +239,15 @@ func _exit_tree() -> void:
 		_user_path_monitor.stop()
 		_user_path_monitor = null
 
-	# Extension watcher — drop before server teardown (holds registry ref).
+	# Extension watcher — disconnect global signals, then drop before server
+	# teardown (holds registry ref). Without explicit disconnect, the
+	# filesystem_changed / settings_changed handlers become zombie callbacks.
+	if _extension_watcher != null:
+		var efs := EditorInterface.get_resource_filesystem()
+		if efs.filesystem_changed.is_connected(_extension_watcher.on_filesystem_changed):
+			efs.filesystem_changed.disconnect(_extension_watcher.on_filesystem_changed)
+		if ProjectSettings.settings_changed.is_connected(_extension_watcher.on_settings_changed):
+			ProjectSettings.settings_changed.disconnect(_extension_watcher.on_settings_changed)
 	_extension_watcher = null
 
 	# Debugger bridge — unregister before server teardown (I12 symmetry).
