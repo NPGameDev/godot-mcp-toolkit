@@ -88,12 +88,16 @@ func _ready():
 
 **21.10** `debugger_get_log` — error capture + old-path check
 - **Expect (old path — always works):** `lines` array includes null-ref error text from log file
-- **Expect (new path):** `debug_state` present with `active: false`. `error_buffer` array present with at least one entry containing the null-ref error (type `"error"` from `_capture`, or type `"break"` from breaked fallback if `_capture` didn't fire).
-- If `error_buffer` is empty: acceptable — the built-in debugger may intercept error messages before plugins on this Godot version. Log file lines are the fallback.
+- **Expect (new path):** `debug_state` present with `active: false`. `error_buffer` array present with at least one entry containing the null-ref error. Entry type depends on which capture path fired:
+  - `"error"` — `_capture` intercepted the debugger protocol message (ideal, version-dependent)
+  - `"break"` — `_on_breaked` fallback fired (requires "Break on Errors" enabled)
+  - `"log_scan"` — log-line scanning parsed error patterns from the log file (reliable fallback)
+- `error_buffer` entries should include `message`, `source` (file path), `function`, and `line` fields.
 
-> **NOTE:** Whether `error_buffer` contains a detailed error entry (type `"error"`)
-> or a generic breaked entry (type `"break"`) depends on whether the EditorDebuggerPlugin
-> `_capture("error")` mechanism fires before the built-in debugger. Both paths are correct.
+> **NOTE:** On Godot 4.0-4.5, `_capture("error")` does NOT fire for built-in error
+> messages (ScriptEditorDebugger handles them first). The `log_scan` fallback parses
+> SCRIPT ERROR / USER SCRIPT ERROR / ERROR lines from the log file with "at:" location.
+> This is the expected path on current Godot versions.
 
 **21.11** `debugger_get_log` — text_filter=`queue_free`, is_regex=`false` (filter on error output)
 - **Expect:** count >= 1 (the null-ref error mentions queue_free)
