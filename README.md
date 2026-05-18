@@ -111,7 +111,7 @@ Available under **Project &rarr; Tools** and in the Command Palette (Ctrl+Shift+
 - **Show Audit Log** — view last 100 audit entries
 - **Open Project Settings** — jump to MCP Toolkit settings
 - **Write .mcp.json** — generate the MCP client config file
-- **Power User Mode** — enable all feature gates (with risk confirmation)
+- **Open .mcp.json** — open the MCP client config file
 
 ## Security
 
@@ -119,7 +119,7 @@ Security is a first-class design goal — not an afterthought.
 
 - **Session auth** — A random 64-character hex token is generated on every plugin start. The MCP server reads it from disk automatically; unauthorized WebSocket connections are rejected.
 - **Filesystem sandbox** — All file operations are restricted to `res://` by default. Path traversal (`..`), absolute OS paths, and symlink escapes are blocked by `FileGuard`.
-- **Feature gates** — Dangerous capabilities (shell execution, arbitrary eval, user-data access) require explicit opt-in. Seven individually gated features, most requiring dual opt-in (environment variable AND project setting). A master "Power User" toggle enables all at once with a risk confirmation dialog.
+- **Feature gates** — Dangerous capabilities (code execution, method invocation, user-data access) require explicit opt-in via the dock or Project Settings. Three individually gated features with confirmation dialogs for RCE-class capabilities.
 - **Audit log** — Every tool call is logged with an ISO-8601 timestamp and parameter hash. Append-only, per-write flush for crash safety, configurable max size.
 - **Response caps** — Script reads and WebSocket buffers are size-limited to prevent accidental exfiltration of large files.
 - **Untrusted envelopes** — Content returned from the editor is wrapped in per-call nonce-tagged envelopes, mitigating prompt injection from file contents.
@@ -131,11 +131,11 @@ Security is a first-class design goal — not an afterthought.
 
 ### `claude -p` (pipe mode) does not support dynamic tool loading
 
-**Affected:** Standard profile's `discover_tools` lazy-loading (Claude Code 2.1.104, confirmed 2026-05-06).
+**Affected:** `discover_tools` lazy-loading (Claude Code 2.1.104, confirmed 2026-05-06).
 
 When Claude Code runs in pipe mode (`claude -p "..."`), it does not process `tools/list_changed` MCP notifications. Tools loaded dynamically via `discover_tools` are registered server-side but remain invisible to the agent — both direct calls and ToolSearch fail.
 
-**Workaround:** Use the Power User profile (`GODOT_MCP_PROFILE=full`) for `claude -p` workflows. This loads all tools eagerly at startup, bypassing the need for `tools/list_changed`. Interactive `claude` sessions handle dynamic loading correctly.
+**Workaround:** No current workaround for pipe mode. Interactive `claude` sessions handle dynamic loading correctly.
 
 ## Tools
 
@@ -187,18 +187,9 @@ When Godot runs with `--headless`, the plugin loads and the WebSocket server sta
 
 > **Tested:** Godot 4.2.0, 4.2.2, 4.3.0, 4.4.1, 4.5.0, 4.5.2, 4.6.2 on Windows. Screenshot tools detect headless mode and return a clear `HEADLESS_UNSUPPORTED` error code. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full per-tool matrix.
 
-## Profiles
+## Read-only mode
 
-The companion server supports built-in profiles that control which tools your AI assistant sees:
-
-| Profile | Tools | Context cost | Use case |
-|---------|-------|-------------|----------|
-| **minimal** | 13 | ~1,300 tokens | Read-only exploration and code review |
-| **standard** (default) | 38 | ~3,600 tokens | Day-to-day development with on-demand group access |
-| **Power User** | 59 | ~5,700 tokens | Full access including feature-gated tools |
-| **custom** | user-defined | varies | Cherry-pick tools by name |
-
-Token costs represent the one-time MCP catalogue registration overhead (with schema minification). Set via `GODOT_MCP_PROFILE` environment variable in `.mcp.json`. See the [server README](https://github.com/NPGameDev/godot-mcp-server#profiles) for details and the [token efficiency report](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/token-efficiency.md) for per-tool breakdowns.
+For supervised environments (classrooms, CI, demos), set `GODOT_MCP_READ_ONLY=1` in your `.mcp.json` env to restrict the toolkit to read-only tools only. All mutating tools (create, delete, write, execute) are hidden from the AI agent. Remove the env var and restart to restore full access.
 
 ## Godot version support
 

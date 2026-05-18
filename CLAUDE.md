@@ -51,22 +51,13 @@ parse errors on older Godot. Do not use while minimum remains 4.2.
 
 See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix.
 
-## Tool catalogue (60 tools — iter 22 profiles + iter 26-28 classdb/diagnostics)
+## Tool catalogue
 
-Iter 22 replaces the coarse lite/full flag with profiles + lazy-load groups.
-Set `GODOT_MCP_PROFILE` in `.mcp.json` env block:
+Standard tools are always visible. Group tools are loaded on demand via
+`discover_tools`. `GODOT_MCP_READ_ONLY=1` in `.mcp.json` env hides all
+mutating tools.
 
-| Profile      | Visible tools |
-|--------------|--------------|
-| **standard** (default) | 26 (23 core + 3 gated stubs) + `discover_tools` + `extensions_refresh` = 28 in `tools/list`. 10 groups (34 tools) on demand. |
-| **minimal** | 12 read-only (code-review mode) |
-| **full** (Power User) | All 54 tools at startup |
-| **custom**   | `GODOT_MCP_CUSTOM_TOOLS` comma-list |
-
-`--lite` → `minimal` with deprecation warning. `GODOT_MCP_READ_ONLY=1`
-strips mutating tools from any profile.
-
-### Core tools (always-on in standard profile)
+### Core tools (always-on)
 
 | Tool                    | One-liner                                                                        |
 |-------------------------|----------------------------------------------------------------------------------|
@@ -189,22 +180,19 @@ bypasses registry discovery entirely (backwards compat).
   log tail (visibility-gated, 500ms Timer). Action buttons: Regenerate Token,
   Open Full Log, Clear View. Response limit settings (script read cap, WS
   buffer size) stored in ProjectSettings `mcp/limits/`. Collapsible Info/Help
-  panel with connection status, profile info, tool list grouped by domain,
-  version info, multi-instance guidance, and quick-link buttons.
-- **Menu items** — five entries under Project → Tools: Regenerate Token, Show
-  Audit Log, Open Project Settings, Write .mcp.json, Power User Mode. All also
-  registered in the Command Palette (Ctrl+Shift+P → "MCP").
-- **Power User warning** — when the active profile is "full" (Power User),
-  the dock displays a persistent yellow warning about unsafe tool access.
-  The server also emits a one-time startup warning to stderr.
-- **Profile-aware display** — the dock status line shows "Power User" instead
-  of the raw internal name "full". Other profiles show their capitalized name.
+  panel with connection status, tool list grouped by domain, version info,
+  multi-instance guidance, read-only mode info, and quick-link buttons.
+- **Menu items** — four entries under Project → Tools: Regenerate Token, Show
+  Audit Log, Open Project Settings, Write .mcp.json. All also registered in
+  the Command Palette (Ctrl+Shift+P → "MCP").
+- **Read-only badge** — when `GODOT_MCP_READ_ONLY=1` is set in `.mcp.json`,
+  the dock displays a yellow badge and the Feature Gates section is collapsed
+  and locked.
 - **Response limits** — configurable in the dock's "Response Limits" section.
   Script read cap (default 256 KB, min 64 KB) and WebSocket buffer (default
   1024 KB, min 256 KB). Stored in ProjectSettings `mcp/limits/`.
-- **Power User Mode** — enables all feature gates via `.mcp.json` env vars
-  (source of truth) and syncs PS mirror bools. Explicit `deny_<feature>`
-  still overrides. Accessible from the dock, the Tools menu, the Command
+- **Enable All Gates** — available from the onboarding wizard. Enables all
+  feature gates via the sidecar. Explicit `deny_<feature>` still overrides.
   Palette, or the first-run onboarding dialog.
 - **.mcp.json sync** — toggling any gate in the dock or PS Inspector
   immediately writes the corresponding env var to `.mcp.json`. The dock
@@ -229,8 +217,7 @@ or PS Inspector sync bidirectionally with `.mcp.json`. There is no
 dual/single gate distinction; all gates follow the same check order:
 
 1. **Deny** (PS) — `mcp_toolkit/feature_gates/deny_<feature>` always wins
-2. **Profile** (PS) — Minimal disables all; Power User enables all
-3. **Env var** (.mcp.json) — `GODOT_MCP_ALLOW_*=1` enables in Standard
+2. **Sidecar gate** — runtime source of truth, synced from dock/PS bools
 
 | Feature               | Env var                                  | PS mirror key                                      | Risk |
 |-----------------------|------------------------------------------|----------------------------------------------------|------|
@@ -242,7 +229,7 @@ dual/single gate distinction; all gates follow the same check order:
 
 **Dangerous-gate confirmation:** Two RCE-class features (`game_eval`,
 `node_call_method`) show a confirmation dialog the first time they are
-enabled in Standard profile. Once per editor session per feature.
+enabled. Once per editor session per feature.
 `game_eval` is the effective security boundary for arbitrary code execution
 (including OS commands and outbound HTTP via GDScript).
 
@@ -293,9 +280,9 @@ To enable the `save.*` tools:
 - `input_map_action_add_event` + `input_map_action_remove_event` → `input_map_event` (action: "bind"|"unbind", `action_name` instead of `action`)
 - `animation_add_key` + `animation_remove_key` → `animation_keyframe` (action: "add"|"remove")
 
-**Profile system (iter 22):**
-- `--lite` deprecated → `GODOT_MCP_PROFILE=minimal`
-- Default profile changed from "full" to "standard" (26 tools + groups on demand)
+**Profile system (iter 41l-ter):**
+- Profiles removed entirely. Standard is the only mode. `GODOT_MCP_PROFILE` deprecated (warning if set).
+- Read-only mode (`GODOT_MCP_READ_ONLY=1`) replaces Minimal.
 
 **Gate changes (iter 19):**
 - `node_call_method` — now requires `node_call_method` gate.
@@ -317,7 +304,7 @@ When a gated tool is called while disabled, the plugin returns:
 
 ## Hot-reload troubleshooting
 
-When gate or profile changes are made in the dock or PS Inspector, the
+When gate changes are made in the dock or PS Inspector, the
 plugin writes `.mcp.json`, broadcasts `config_reloaded` to the TS bridge,
 and the bridge calls `server.sendToolListChanged()`. The full diagnostic
 chain logs:
@@ -409,8 +396,7 @@ func _cmd_do_thing(params: Dictionary) -> Dictionary:
   `playtest.*`, `project.*`, `input_map.*`, `animation.*`, `tilemap.*`,
   `asset.*`, `save.*`, `meta.*`, `game.*`, `diff.*`, `server.*`,
   `extensions.*`) are rejected at load time.
-- Extensions are **profile-exempt** — they always register regardless
-  of the active profile (minimal/standard/full/custom).
+- Extensions always register regardless of read-only mode.
 - Extensions run with the same trust level as the plugin itself
   (they inherit FileGuard, FeatureGate, audit logging).
 - Errors in extension scripts are logged but never crash the plugin.
