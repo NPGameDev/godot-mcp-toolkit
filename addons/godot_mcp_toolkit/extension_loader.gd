@@ -186,11 +186,9 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	## Force a filesystem scan and immediate extension re-discovery.
 	var efs := EditorInterface.get_resource_filesystem()
 	efs.scan_sources()
-	# Wait for the scan to complete (filesystem_changed signal), with a
-	# timeout to prevent indefinite hangs if no files actually changed.
-	var timeout_sec := 2.0
-	var timer := _server.get_tree().create_timer(timeout_sec)
-	await _race_signal_or_timeout(efs.filesystem_changed, timer.timeout)
+	# Wait for the scan to propagate (simple timer — filesystem_changed may
+	# not fire if no files actually changed, so a fixed wait is safest).
+	await _server.get_tree().create_timer(1.0).timeout
 	# Run rescan on the now-fresh class list (bypass debounce).
 	_debounce_pending = false
 	_do_rescan()
@@ -201,23 +199,6 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 		var meta := _registry.get_command_metadata(method)
 		result.append({"method": method, "description": meta.get("description", "")})
 	return {"success": true, "refreshed": true, "commands": result}
-
-
-func _race_signal_or_timeout(primary: Signal, fallback: Signal) -> void:
-	## Await whichever signal fires first. Used to implement "await with timeout".
-	## Both signals are one-shot (timer.timeout and filesystem_changed per scan).
-	var done := false
-	var finish := func():
-		done = true
-	primary.connect(finish, CONNECT_ONE_SHOT)
-	fallback.connect(finish, CONNECT_ONE_SHOT)
-	while not done:
-		await _server.get_tree().process_frame
-	# Disconnect whichever didn't fire (if still connected).
-	if primary.is_connected(finish):
-		primary.disconnect(finish)
-	if fallback.is_connected(finish):
-		fallback.disconnect(finish)
 
 
 func on_filesystem_changed() -> void:
