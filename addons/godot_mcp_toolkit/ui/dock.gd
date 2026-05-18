@@ -394,6 +394,13 @@ func _build_ui() -> void:
 	skills_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(skills_btn)
 
+	var mcp_json_btn := Button.new()
+	mcp_json_btn.text = ".mcp.json"
+	mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor"
+	mcp_json_btn.pressed.connect(_open_mcp_json)
+	mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer_row.add_child(mcp_json_btn)
+
 	var info_btn := Button.new()
 	info_btn.text = "Info / Help"
 	info_btn.pressed.connect(_show_info_dialog)
@@ -770,6 +777,18 @@ func _on_audit_enabled_toggled(enabled: bool) -> void:
 func _on_audit_max_size_changed(value: float) -> void:
 	ProjectSettings.set_setting("mcp_toolkit/audit/max_size_kb", int(value))
 	ProjectSettings.save()
+
+
+# ---------------------------------------------------------------------------
+# .mcp.json
+# ---------------------------------------------------------------------------
+
+func _open_mcp_json() -> void:
+	var path := MCPJsonSync.get_mcp_json_path()
+	if FileAccess.file_exists(path):
+		OS.shell_open(path)
+	else:
+		_toast("No .mcp.json found — use Write .mcp.json from the Tools menu", _TOAST_WARNING)
 
 
 # ---------------------------------------------------------------------------
