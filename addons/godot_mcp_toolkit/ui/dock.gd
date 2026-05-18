@@ -253,7 +253,7 @@ func _build_ui() -> void:
 
 	# -- Feature Gates section (expanded by default) --------------------------
 	# Keep references to header + scroll so we can hide them when read-only.
-	var fc := _make_collapsible_section(sections_vbox, "Feature Gates", true, 40.0)
+	var fc := _make_collapsible_section(sections_vbox, "Feature Gates", true, 36.0)
 	_gates_header = sections_vbox.get_child(sections_vbox.get_child_count() - 2) as PanelContainer
 	_gates_scroll = sections_vbox.get_child(sections_vbox.get_child_count() - 1) as ScrollContainer
 
