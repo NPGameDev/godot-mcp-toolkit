@@ -848,7 +848,15 @@ func _show_info_dialog() -> void:
 			groups[domain].append(str(method))
 		var domain_keys: Array = groups.keys()
 		domain_keys.sort()
-		_add_info_row(vbox, "Total", "%d tools" % methods.size())
+		_add_info_row(vbox, "Total", "%d+ tools (plugin-side)" % methods.size())
+		var extra_note := Label.new()
+		extra_note.text = (
+			"Additional tools (LSP, discover_tools, extensions) live in "
+			+ "the MCP server and are not listed here.")
+		extra_note.add_theme_font_size_override("font_size", 11)
+		extra_note.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
+		extra_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		vbox.add_child(extra_note)
 		for domain in domain_keys:
 			var tools: Array = groups[domain]
 			var lbl := Label.new()
