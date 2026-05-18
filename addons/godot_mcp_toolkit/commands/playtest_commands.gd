@@ -272,12 +272,16 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	var new_text := new_bytes.get_string_from_utf8()
 	var all_lines := new_text.split("\n", false)
 
-	# Apply text filter.
-	var filtered: Array = []
+	# Strip ANSI from all lines once (used for both filtering and error scan).
+	var stripped_lines: Array = []
 	for line in all_lines:
 		var stripped := MCPHelpers.strip_ansi(line.strip_edges())
-		if stripped.is_empty():
-			continue
+		if not stripped.is_empty():
+			stripped_lines.append(stripped)
+
+	# Apply text filter.
+	var filtered: Array = []
+	for stripped in stripped_lines:
 		if text_filter != "":
 			if text_regex != null:
 				if not text_regex.search(stripped):
@@ -299,20 +303,24 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 		"truncated": truncated,
 		"source": "cache",
 	}
-	_merge_debug_bridge_data(response)
+	# Pass unfiltered lines so error scan always has full context.
+	_merge_debug_bridge_data(response, stripped_lines)
 	return response
 
 
 ## Merge debug bridge error buffer + state into a debugger.get_log response.
-static func _merge_debug_bridge_data(response: Dictionary) -> void:
+## all_lines: unfiltered log lines — error scan needs adjacent "at:" lines
+## that text_filter might exclude.
+static func _merge_debug_bridge_data(response: Dictionary,
+		all_lines: Array = []) -> void:
 	if _debug_bridge == null:
 		return
 	response["debug_state"] = _debug_bridge.get_debug_state()
 	var buf: Array = _debug_bridge.get_error_buffer()
 	# Fallback: if _capture didn't fire (Godot's built-in debugger handles
 	# "error" messages before plugins see them), scan log lines for errors.
-	if buf.is_empty():
-		buf = _scan_lines_for_errors(response.get("lines", []))
+	if buf.is_empty() and not all_lines.is_empty():
+		buf = _scan_lines_for_errors(all_lines)
 	if not buf.is_empty():
 		response["error_buffer"] = buf
 
