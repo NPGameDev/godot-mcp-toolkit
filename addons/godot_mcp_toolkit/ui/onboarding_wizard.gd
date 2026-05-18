@@ -87,9 +87,10 @@ func _apply_step(dialog: AcceptDialog) -> void:
 		0:
 			dialog.dialog_text = (
 				"Welcome to the Godot MCP Toolkit!\n\n"
-				+ "By default, only core tools are enabled. Advanced features\n"
-				+ "(code execution, project settings writes, file access outside\n"
-				+ "res://) require enabling their feature gates.\n\n"
+				+ "Three powerful features are gated by default:\n\n"
+				+ "  \u2022 execute_code — arbitrary GDScript via Expression\n"
+				+ "  \u2022 node_call_method — call methods on scene nodes\n"
+				+ "  \u2022 read_user_scope — read/write whitelisted user:// paths\n\n"
 				+ "You can enable all gates now, or toggle them individually\n"
 				+ "later in the MCP dock.")
 			dialog.ok_button_text = "Keep Defaults (Recommended)"
