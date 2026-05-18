@@ -64,7 +64,9 @@ static func start_watcher(registry: MCPToolkitCommandRegistry, server: Node) -> 
 	watcher._rebuild_class_methods_map()
 	# Connect to EditorFileSystem.
 	var efs := EditorInterface.get_resource_filesystem()
-	efs.filesystem_changed.connect(watcher._on_filesystem_changed)
+	efs.filesystem_changed.connect(watcher.on_filesystem_changed)
+	# Also rescan when project settings change (catches addon enable/disable toggles).
+	ProjectSettings.settings_changed.connect(watcher.on_settings_changed)
 	# Register extensions.refresh — allows LLMs / headless mode to force
 	# a filesystem scan + extension re-discovery without editor focus.
 	registry.add("extensions.refresh", watcher._cmd_refresh, {
@@ -92,14 +94,30 @@ static func _is_extension_candidate(entry: Dictionary) -> bool:
 	return false
 
 
+## Returns false only when the script lives inside a formal Godot addon
+## (has plugin.cfg) AND that addon is disabled.  Everything else → true.
+static func _is_addon_enabled(script_path: String) -> bool:
+	if not script_path.begins_with("res://addons/"):
+		return true
+	var addon_name := script_path.trim_prefix("res://addons/").get_slice("/", 0)
+	if addon_name.is_empty():
+		return true
+	# No plugin.cfg → not a formal addon, no toggle mechanism exists.
+	if not FileAccess.file_exists("res://addons/%s/plugin.cfg" % addon_name):
+		return true
+	return EditorInterface.is_plugin_enabled(addon_name)
+
+
 func _discover_and_register(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	var classes: Array = ProjectSettings.get_global_class_list()
 	var loaded := 0
 	for entry in classes:
 		if not _is_extension_candidate(entry):
 			continue
-		var class_name_str: String = entry.get("class", "")
 		var script_path: String = entry.get("path", "")
+		if not _is_addon_enabled(script_path):
+			continue
+		var class_name_str: String = entry.get("class", "")
 		if _load_extension(class_name_str, script_path, registry, server):
 			loaded += 1
 	return loaded
@@ -112,6 +130,8 @@ func _snapshot_current_extensions() -> void:
 	var classes: Array = ProjectSettings.get_global_class_list()
 	for entry in classes:
 		if not _is_extension_candidate(entry):
+			continue
+		if not _is_addon_enabled(entry.get("path", "")):
 			continue
 		_known_extensions[entry.get("class", "")] = entry.get("path", "")
 
@@ -176,7 +196,15 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	return {"success": true, "refreshed": true, "commands": result}
 
 
-func _on_filesystem_changed() -> void:
+func on_filesystem_changed() -> void:
+	_schedule_rescan()
+
+
+func on_settings_changed() -> void:
+	_schedule_rescan()
+
+
+func _schedule_rescan() -> void:
 	if _debounce_pending:
 		return
 	_debounce_pending = true
@@ -191,6 +219,8 @@ func _do_rescan() -> void:
 	var classes: Array = ProjectSettings.get_global_class_list()
 	for entry in classes:
 		if not _is_extension_candidate(entry):
+			continue
+		if not _is_addon_enabled(entry.get("path", "")):
 			continue
 		current[entry.get("class", "")] = entry.get("path", "")
 
