@@ -362,6 +362,8 @@ func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: Stri
 		if d != null:
 			d.hide()
 			d.queue_free()
+		if _is_read_only():
+			_show_read_only_gate_warning()
 	)
 	_ps_danger_dialog.canceled.connect(func():
 		_emit_features_changed()
