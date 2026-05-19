@@ -7,17 +7,46 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const MCPError = _Hub.MCPError
 const MCPAudit = _Hub.MCPAudit
 
+const _DEFAULT_TIMEOUT_MS := 30000
+const _MIN_TIMEOUT_MS := 1000
+const _MAX_TIMEOUT_MS := 300000
+
 var _commands: Dictionary = {}
 var _extension_methods: Array[String] = []
 
 
 func add(method: String, handler: Callable, options: Dictionary = {}) -> void:
+	var is_read_only: bool = options.get("is_read_only", false)
+	var is_destructive: bool = options.get("is_destructive", false)
+	var is_idempotent: bool = options.get("is_idempotent", false)
+
+	# Exclusivity validation: read-only + destructive is a contradiction.
+	if is_read_only and is_destructive:
+		push_warning("[MCPExtensions] '%s': is_read_only and is_destructive are mutually exclusive — forcing is_destructive to false" % method)
+		is_destructive = false
+
+	# Map friendly names to MCP annotations.
+	var annotations := {
+		"readOnlyHint": is_read_only,
+		"destructiveHint": is_destructive,
+		"idempotentHint": is_idempotent,
+	}
+
+	# Clamp timeout: 0/negative → default, then floor/cap.
+	var raw_timeout: int = options.get("timeout_ms", 0)
+	var timeout_ms: int = _DEFAULT_TIMEOUT_MS
+	if raw_timeout > 0:
+		if raw_timeout > _MAX_TIMEOUT_MS:
+			push_warning("[MCPExtensions] '%s': timeout_ms %d exceeds maximum %d — clamped. Consider restructuring the tool to use a start-work-and-poll pattern." % [method, raw_timeout, _MAX_TIMEOUT_MS])
+		timeout_ms = clampi(raw_timeout, _MIN_TIMEOUT_MS, _MAX_TIMEOUT_MS)
+
 	_commands[method] = {
 		"handler": handler,
 		"description": options.get("description", ""),
 		"input_schema": options.get("input_schema", {}),
-		"annotations": options.get("annotations", {}),
+		"annotations": annotations,
 		"group": options.get("group", {}),
+		"timeout_ms": timeout_ms,
 	}
 
 
@@ -45,12 +74,16 @@ func get_command_metadata(method: String) -> Dictionary:
 	if not _commands.has(method):
 		return {}
 	var entry: Dictionary = _commands[method]
-	return {
+	var meta := {
 		"description": entry.get("description", ""),
 		"input_schema": entry.get("input_schema", {}),
 		"annotations": entry.get("annotations", {}),
 		"group": entry.get("group", {}),
 	}
+	var timeout_ms: int = entry.get("timeout_ms", _DEFAULT_TIMEOUT_MS)
+	if timeout_ms != _DEFAULT_TIMEOUT_MS:
+		meta["timeout_ms"] = timeout_ms
+	return meta
 
 
 func has_command(method: String) -> bool:

@@ -35,10 +35,8 @@ func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 				}
 			}
 		},
-		"annotations": {
-			"readOnlyHint": true,
-			"idempotentHint": true
-		},
+		"is_read_only": true,
+		"is_idempotent": true,
 		"group": {
 			"name": "physics_tools",
 			"description": "Physics inspection and manipulation"
@@ -75,10 +73,8 @@ public partial class MCPToolkitDialogueTools : RefCounted
 		registry.Call("add", "dialogue.list_nodes", new Callable(this,
 			MethodName.ListNodes), new Dictionary {
 			{ "description", "List all dialogue nodes in the current scene" },
-			{ "annotations", new Dictionary {
-				{ "readOnlyHint", true },
-				{ "idempotentHint", true }
-			}}
+			{ "is_read_only", true },
+			{ "is_idempotent", true }
 		});
 	}
 
@@ -116,17 +112,35 @@ registry.add(method: String, handler: Callable, options: Dictionary)
 |-----|------|---------|---------|
 | `description` | String | `""` | Tool description in MCP `tools/list` |
 | `input_schema` | Dictionary | `{}` | JSON Schema for tool input validation |
-| `annotations` | Dictionary | `{}` | MCP tool annotations (see below) |
+| `is_read_only` | bool | `false` | Tool only reads state, never modifies it |
+| `is_destructive` | bool | `false` | Tool deletes or irreversibly changes data |
+| `is_idempotent` | bool | `false` | Calling twice with the same input produces the same result |
+| `timeout_ms` | int | `30000` | Per-tool bridge timeout in milliseconds (floor: 1000, cap: 300000) |
 | `group` | Dictionary | `{}` | Tool group for `discover_tools` (see below) |
 
-**Annotations:**
+**Annotations** are mapped to MCP hints internally (`is_read_only` →
+`readOnlyHint`, `is_destructive` → `destructiveHint`, `is_idempotent` →
+`idempotentHint`). Extension authors use the snake_case names only.
 
-| Key | Type | Default | When to use |
-|-----|------|---------|-------------|
-| `readOnlyHint` | bool | `false` | Tool only reads state, never modifies it |
-| `destructiveHint` | bool | `false` | Tool deletes or irreversibly changes data |
-| `idempotentHint` | bool | `false` | Calling twice with the same input produces the same result |
-| `openWorldHint` | bool | `false` | Tool interacts with external systems outside the editor |
+All annotation defaults are **safe**: omitting them means the tool is
+treated as mutating, non-destructive, and non-idempotent. Set
+`is_read_only: true` if your tool only reads data — otherwise it is
+**blocked in read-only mode** (`GODOT_MCP_READ_ONLY=1`).
+
+**Exclusivity:** `is_read_only: true` and `is_destructive: true` is a
+logical contradiction — a read-only tool cannot be destructive. If both
+are set, a warning is logged and `is_destructive` is forced to `false`.
+
+**Timeout:** Defaults to 30 seconds. If your tool calls external services
+(HTTP APIs, databases, LLM inference), increase `timeout_ms`. Values
+below 1000ms are floored to 1s; values above 300000ms (5 min) are capped
+and a warning is logged. Zero or negative values use the default. Tools
+needing longer than 5 minutes should restructure to a start-and-poll
+pattern rather than blocking the bridge.
+
+**Async handlers:** Command handlers can use `await` internally (GDScript
+coroutines). The dispatch path already awaits handler results, so both
+synchronous and asynchronous handlers work without additional configuration.
 
 **Groups:**
 
@@ -256,7 +270,7 @@ extends EditorPlugin
 func _enter_tree() -> void:
     if not EditorInterface.is_plugin_enabled("godot_mcp_toolkit"):
         push_warning("MyExtension requires the Godot MCP Toolkit plugin. "
-            + "Install it from the Godot AssetLib (search 'Godot MCP Toolkit') "
+			+ "Install it from the Godot AssetLib (search 'Godot MCP Toolkit') "
             + "or from GitHub: https://github.com/NPGameDev/godot-mcp-toolkit/releases")
 ```
 
@@ -284,10 +298,8 @@ public partial class MCPToolkitCSharpCheck : RefCounted
 		registry.Call("add", "csharp.check", new Callable(this,
 			MethodName.CheckScript), new Dictionary {
 			{ "description", "Run dotnet build and return C# diagnostics" },
-			{ "annotations", new Dictionary {
-				{ "readOnlyHint", true },
-				{ "idempotentHint", true }
-			}}
+			{ "is_read_only", true },
+			{ "is_idempotent", true }
 		});
 	}
 
@@ -333,9 +345,11 @@ tool is unregistered. This asymmetry with GDScript is inherent to Godot's
 C# architecture.
 
 **Content changes:** Modifying an existing extension script (adding tools,
-changing descriptions, fixing handler logic) is also detected. The watcher
-re-probes each known extension on every scan and compares method lists. If
-they differ, old tools are unregistered and the extension is re-loaded fresh.
+changing descriptions, updating annotations, fixing handler logic) is
+detected automatically. The watcher re-probes each known extension on
+every scan and compares both method lists and metadata (description,
+annotations, schema, timeout). If anything differs, old tools are
+unregistered and the extension is re-loaded fresh.
 
 **Editor focus required:** Godot's `EditorFileSystem` only scans for external
 file changes when the editor window regains focus. If you create or modify

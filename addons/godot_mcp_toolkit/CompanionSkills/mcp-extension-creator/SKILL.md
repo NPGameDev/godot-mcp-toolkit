@@ -33,12 +33,10 @@ func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
                 # Define parameters here
             },
         },
-        "annotations": {
-            "readOnlyHint": true,    # true if read-only
-            "destructiveHint": false, # true if destructive
-            "idempotentHint": true,  # true if idempotent
-            "openWorldHint": false,  # true if external system access
-        },
+        "is_read_only": true,     # true if read-only (blocked in read-only mode if false)
+        "is_destructive": false,  # true if destructive (mutually exclusive with is_read_only)
+        "is_idempotent": true,    # true if idempotent
+        # "timeout_ms": 60000,    # Optional: custom timeout (default 30s, max 300s)
         # Optional: group for lazy loading via discover_tools
         # "group": {"name": "group_name", "description": "Group description", "keywords": ["keyword1", "keyword2"]},
     })
@@ -70,10 +68,8 @@ public partial class MCPToolkit<Name> : RefCounted
         registry.Call("add", "<namespace>.<action>", new Callable(this,
             MethodName.<Handler>), new Dictionary {
             { "description", "<What this tool does>" },
-            { "annotations", new Dictionary {
-                { "readOnlyHint", true },
-                { "idempotentHint", true }
-            }}
+            { "is_read_only", true },
+            { "is_idempotent", true }
         });
     }
 

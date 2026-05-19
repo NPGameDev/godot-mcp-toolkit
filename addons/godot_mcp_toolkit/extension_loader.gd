@@ -34,6 +34,7 @@ var _registry: MCPToolkitCommandRegistry = null
 var _server: Node = null
 var _known_extensions: Dictionary = {}      # class_name_str -> script_path
 var _class_methods: Dictionary = {}         # class_name_str -> Array[String] (methods)
+var _class_metadata: Dictionary = {}        # class_name_str -> Dictionary (method -> str(meta))
 var _failed_classes: Dictionary = {}        # class_name_str -> true (failed validation, retry on scan)
 var _debounce_pending := false
 
@@ -72,7 +73,8 @@ static func start_watcher(registry: MCPToolkitCommandRegistry, server: Node) -> 
 	registry.add("extensions.refresh", func(params: Dictionary) -> Dictionary:
 		return await watcher._cmd_refresh(params), {
 		"description": "Force a filesystem scan and re-discover extensions (use when files were created externally)",
-		"annotations": {"readOnlyHint": false, "idempotentHint": true},
+		"is_read_only": false,
+		"is_idempotent": true,
 	})
 	print("[MCPExtensions] Hot-reload watcher active")
 	return watcher
@@ -138,39 +140,46 @@ func _snapshot_current_extensions() -> void:
 
 
 func _rebuild_class_methods_map() -> void:
-	## Build class_name -> methods mapping from the registry's extension methods.
+	## Build class_name -> methods + metadata mapping from the registry's extension methods.
 	## Called once at watcher start. During live reload, new methods are tracked
 	## incrementally in _load_extension_tracked().
 	_class_methods.clear()
+	_class_metadata.clear()
 	var all_ext_methods := _registry.get_extension_methods()
 	# We can't perfectly attribute methods to classes after the fact, so we
 	# re-scan: for each known class, load its script and call Register on a
 	# temporary registry to capture which methods it adds.
 	for cn: String in _known_extensions:
 		var sp: String = _known_extensions[cn]
-		var methods := _probe_extension_methods(cn, sp)
+		var probe := _probe_extension(cn, sp)
+		var methods: Array = probe["methods"]
 		if not methods.is_empty():
 			_class_methods[cn] = methods
+			_class_metadata[cn] = probe["metadata"]
 
 
-func _probe_extension_methods(class_name_str: String, script_path: String) -> Array[String]:
-	## Load an extension into a scratch registry to discover which methods it registers.
-	## Does NOT modify the live registry — used only for building the class->methods map.
+func _probe_extension(class_name_str: String, script_path: String) -> Dictionary:
+	## Load an extension into a scratch registry to discover which methods it
+	## registers and their metadata. Does NOT modify the live registry.
+	## Returns {"methods": Array[String], "metadata": Dictionary}.
+	var empty := {"methods": [] as Array[String], "metadata": {}}
 	var script: Script = ResourceLoader.load(script_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if script == null:
-		return []
+		return empty
 	var instance = script.new()
 	if instance == null:
-		return []
+		return empty
 	var scratch := MCPToolkitCommandRegistry.new()
 	if instance.has_method("Register"):
 		instance.Register(scratch, _server)
 	elif instance.has_method("register"):
 		instance.register(scratch, _server)
 	var methods: Array[String] = []
+	var metadata: Dictionary = {}
 	for method: String in scratch.get_all_methods():
 		methods.append(method)
-	return methods
+		metadata[method] = str(scratch.get_command_metadata(method))
+	return {"methods": methods, "metadata": metadata}
 
 
 static func _arrays_equal(a: Array, b: Array) -> bool:
@@ -250,7 +259,8 @@ func _do_rescan() -> void:
 			retry_classes[cn] = current[cn]
 
 	# Detect content changes in existing extensions (tools added/removed/modified
-	# within the same class). Re-probe each known class and compare method lists.
+	# within the same class). Re-probe each known class and compare method lists
+	# AND metadata (annotations, description, schema, timeout).
 	var modified_classes: Dictionary = {}  # class_name -> path
 	for cn: String in current:
 		if cn in added_classes or cn in retry_classes:
@@ -258,9 +268,12 @@ func _do_rescan() -> void:
 		if not _class_methods.has(cn):
 			continue
 		var sp: String = current[cn]
-		var fresh_methods := _probe_extension_methods(cn, sp)
+		var probe := _probe_extension(cn, sp)
+		var fresh_methods: Array = probe["methods"]
 		var old_methods: Array = _class_methods.get(cn, [])
-		if not _arrays_equal(fresh_methods, old_methods):
+		var fresh_meta: Dictionary = probe["metadata"]
+		var old_meta: Dictionary = _class_metadata.get(cn, {})
+		if not _arrays_equal(fresh_methods, old_methods) or fresh_meta != old_meta:
 			modified_classes[cn] = sp
 
 	if added_classes.is_empty() and removed_classes.is_empty() \
@@ -273,6 +286,7 @@ func _do_rescan() -> void:
 		if _class_methods.has(cn):
 			removed_methods.append_array(_class_methods[cn])
 			_class_methods.erase(cn)
+		_class_metadata.erase(cn)
 		_failed_classes.erase(cn)
 
 	# Handle modified extensions: unregister old methods, then re-load fresh.
@@ -283,6 +297,7 @@ func _do_rescan() -> void:
 				print("[MCPExtensions]   ~ %s (modified, re-registering)" % method)
 			removed_methods.append_array(_class_methods[cn])
 			_class_methods.erase(cn)
+		_class_metadata.erase(cn)
 
 	# Unregister removed methods from the live registry.
 	for method: String in removed_methods:
@@ -338,15 +353,18 @@ func _do_rescan() -> void:
 
 
 func _load_extension_tracked(class_name_str: String, script_path: String) -> void:
-	## Load and register a single extension, tracking its methods in _class_methods.
+	## Load and register a single extension, tracking its methods + metadata.
 	var before: Array = _registry.get_all_methods()
 	if _load_extension(class_name_str, script_path, _registry, _server):
 		var after: Array = _registry.get_all_methods()
 		var new_methods: Array[String] = []
+		var new_metadata: Dictionary = {}
 		for method: String in after:
 			if method not in before:
 				new_methods.append(method)
+				new_metadata[method] = str(_registry.get_command_metadata(method))
 		_class_methods[class_name_str] = new_methods
+		_class_metadata[class_name_str] = new_metadata
 		_failed_classes.erase(class_name_str)
 	else:
 		_failed_classes[class_name_str] = true
@@ -368,6 +386,8 @@ func _broadcast_extensions_changed(removed_methods: Array[String]) -> void:
 			entry["annotations"] = meta["annotations"]
 		if not meta.get("group", {}).is_empty():
 			entry["group"] = meta["group"]
+		if meta.has("timeout_ms"):
+			entry["timeout_ms"] = meta["timeout_ms"]
 		commands.append(entry)
 	var params := {"commands": commands, "removed": removed_methods}
 	_server.broadcast_notification("extensions.changed", params)
@@ -444,7 +464,8 @@ static func _register_meta(registry: MCPToolkitCommandRegistry) -> void:
 		return _cmd_extensions_list(registry, params)
 	registry.add("extensions.list", handler, {
 		"description": "List all discovered third-party extensions and their commands",
-		"annotations": {"readOnlyHint": true, "idempotentHint": true},
+		"is_read_only": true,
+		"is_idempotent": true,
 	})
 
 
@@ -462,5 +483,7 @@ static func _cmd_extensions_list(registry: MCPToolkitCommandRegistry, _params: D
 			entry["annotations"] = meta["annotations"]
 		if not meta.get("group", {}).is_empty():
 			entry["group"] = meta["group"]
+		if meta.has("timeout_ms"):
+			entry["timeout_ms"] = meta["timeout_ms"]
 		result.append(entry)
 	return {"success": true, "commands": result}
