@@ -48,6 +48,10 @@ var _poll_frame_counter := 0
 # can prefer post-boot logs over stale rotated ones.
 var _plugin_boot_time: int = 0
 var _registry: MCPToolkitCommandRegistry = null
+## Tracks MCPToolContext per in-flight cancellable request, keyed by
+## JSON-RPC id (string). Populated in _dispatch_rpc; erased after handler
+## returns. Looked up by _cancel notifications to trigger cooperative cancel.
+var _active_contexts: Dictionary = {}
 var _session_token: String = ""
 var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers only)
 var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
@@ -371,6 +375,16 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 		_send_error(peer, id, -32600, "Invalid Request: missing method")
 		return
 
+	# _cancel is a fire-and-forget notification from the bridge — no response.
+	# Triggers cooperative cancellation on the MCPToolContext for the target request.
+	if method == "_cancel":
+		var safe_params: Dictionary = parameters \
+			if typeof(parameters) == TYPE_DICTIONARY else {}
+		var target_id := str(safe_params.get("request_id", ""))
+		if _active_contexts.has(target_id):
+			_active_contexts[target_id].cancel()
+		return
+
 	# echo is a transport-level diagnostic, not a domain command.
 	if method == "echo":
 		_send_result(peer, id, parameters)
@@ -382,8 +396,20 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 
 	var safe_parameters: Dictionary = parameters \
 		if typeof(parameters) == TYPE_DICTIONARY else {}
+
+	# Create cancellation context for extension tools that opted in.
+	var ctx: MCPToolContext = null
+	if _registry.is_cancellable(method):
+		ctx = MCPToolContext.new()
+		_active_contexts[str(id)] = ctx
+
 	command_received.emit(method)
-	var result: Dictionary = await _registry.call_command(method, safe_parameters)
+	var result: Dictionary = await _registry.call_command(
+		method, safe_parameters, ctx)
+
+	# Cleanup — RefCounted lifecycle handles signal disconnection.
+	_active_contexts.erase(str(id))
+
 	_send_result(peer, id, result)
 
 

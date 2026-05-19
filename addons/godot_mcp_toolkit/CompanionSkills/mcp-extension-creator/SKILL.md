@@ -88,7 +88,11 @@ public partial class MCPToolkit<Name> : RefCounted
 |-----|------|---------|---------|
 | `description` | String | `""` | Tool description shown to the LLM in `tools/list` |
 | `input_schema` | Dictionary | `{}` | JSON Schema defining expected parameters |
-| `annotations` | Dictionary | `{}` | MCP hints: `readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint` |
+| `is_read_only` | bool | `false` | Tool only reads state (blocked in read-only mode if false) |
+| `is_destructive` | bool | `false` | Tool deletes or irreversibly changes data (mutually exclusive with is_read_only) |
+| `is_idempotent` | bool | `false` | Calling twice with same input = same result |
+| `is_cancellable` | bool | `false` | Handler supports cooperative cancellation (receives MCPToolContext as 2nd arg) |
+| `timeout_ms` | int | `30000` | Per-tool bridge timeout in ms (floor: 1000, cap: 300000) |
 | `group` | Dictionary | `{}` | `{"name": "...", "description": "...", "keywords": [...]}` for `discover_tools` lazy loading |
 
 ## Parameter validation sequence
@@ -282,6 +286,46 @@ Extensions are monitored at runtime. Changes are detected automatically:
   a filesystem scan without needing editor focus. Useful for headless/automated
   workflows where files are created externally.
 - **Debounce:** Multiple rapid file changes produce at most one rescan (500ms window).
+
+## Cooperative cancellation (advanced)
+
+For long-running tools (external API calls, heavy processing), opt into
+cooperative cancellation so the handler exits early when the user cancels:
+
+```gdscript
+registry.add("my_tool.fetch", _handle_fetch, {
+    "description": "Fetch data from external API",
+    "timeout_ms": 60000,
+    "is_cancellable": true,
+})
+
+# 2-arg handler — receives MCPToolContext as second parameter
+func _handle_fetch(params: Dictionary, ctx: MCPToolContext) -> Dictionary:
+    # Reactive: abort the HTTP request if cancelled during await
+    ctx.cancelled.connect(_http_request.cancel_request)
+
+    var result = await _do_fetch(params.query)
+
+    # Polling: check between steps
+    if ctx.is_cancelled():
+        return {}
+
+    return {"success": true, "data": result}
+```
+
+C# equivalent:
+
+```csharp
+public Dictionary HandleFetch(Dictionary parameters, GodotObject ctx)
+{
+    ctx.Connect("cancelled", Callable.From(OnCancelled));
+    // ... work ...
+    if ((bool)ctx.Call("is_cancelled")) return new Dictionary();
+    return new Dictionary { { "success", true }, { "data", result } };
+}
+```
+
+**Do not store the context** — it is scoped to a single invocation.
 
 ## Common pitfalls
 

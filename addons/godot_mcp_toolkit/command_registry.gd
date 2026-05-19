@@ -47,6 +47,7 @@ func add(method: String, handler: Callable, options: Dictionary = {}) -> void:
 		"annotations": annotations,
 		"group": options.get("group", {}),
 		"timeout_ms": timeout_ms,
+		"is_cancellable": bool(options.get("is_cancellable", false)),
 	}
 
 
@@ -90,13 +91,23 @@ func has_command(method: String) -> bool:
 	return _commands.has(method)
 
 
+func is_cancellable(method: String) -> bool:
+	if not _commands.has(method):
+		return false
+	return _commands[method].get("is_cancellable", false)
+
+
 func clear() -> void:
 	_commands.clear()
 	_extension_methods.clear()
 
 
-func call_command(method: String, parameters: Dictionary) -> Dictionary:
+func call_command(method: String, parameters: Dictionary,
+		ctx: MCPToolContext = null) -> Dictionary:
 	if not _commands.has(method):
 		return MCPError.make("NOT_FOUND", "unknown method: " + method)
 	MCPAudit.log_call(method, parameters)
-	return await _commands[method]["handler"].call(parameters)
+	if ctx != null:
+		return await _commands[method]["handler"].call(parameters, ctx)
+	else:
+		return await _commands[method]["handler"].call(parameters)

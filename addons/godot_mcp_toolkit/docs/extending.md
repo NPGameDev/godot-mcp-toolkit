@@ -115,6 +115,7 @@ registry.add(method: String, handler: Callable, options: Dictionary)
 | `is_read_only` | bool | `false` | Tool only reads state, never modifies it |
 | `is_destructive` | bool | `false` | Tool deletes or irreversibly changes data |
 | `is_idempotent` | bool | `false` | Calling twice with the same input produces the same result |
+| `is_cancellable` | bool | `false` | Handler supports cooperative cancellation (see below) |
 | `timeout_ms` | int | `30000` | Per-tool bridge timeout in milliseconds (floor: 1000, cap: 300000) |
 | `group` | Dictionary | `{}` | Tool group for `discover_tools` (see below) |
 
@@ -164,6 +165,109 @@ by keyword search: `discover_tools({"request": "physics"})`.
 by domain or task. Without keywords, matching falls back to description
 tokens and tool names — explicit keywords give much better results.
 Include Godot-specific terms, task descriptions, and abbreviations.
+
+### Cooperative cancellation
+
+When an MCP client cancels a request mid-flight (e.g., user presses Ctrl+C),
+the server automatically stops waiting for the result and suppresses the
+response. This works for **all** tools with no code changes needed.
+
+For extension tools that do long-running work (external API calls, heavy
+computation, multi-step processing), you can opt into **cooperative
+cancellation** so the handler itself bails out early, freeing resources
+sooner.
+
+**Opt in** by setting `is_cancellable: true` in `registry.add()` options.
+Your handler then receives an `MCPToolContext` as the second argument:
+
+```gdscript
+registry.add("weather.fetch", _handle_weather, {
+	"description": "Fetch weather data from external API",
+	"timeout_ms": 60000,
+	"is_cancellable": true,
+})
+
+func _handle_weather(params: Dictionary, ctx: MCPToolContext) -> Dictionary:
+	# Reactive: connect a cleanup action to the cancelled signal.
+	# If cancelled during the await, the HTTP request is aborted.
+	ctx.cancelled.connect(_http_request.cancel_request)
+
+	var result = await _fetch_api(params.query)
+
+	# Polling: check between discrete steps.
+	if ctx.is_cancelled():
+		return {}
+
+	var processed = await _process_result(result)
+	if ctx.is_cancelled():
+		return {}
+
+	return {"success": true, "data": processed}
+```
+
+**`MCPToolContext` API:**
+
+| Member | Type | Description |
+|--------|------|-------------|
+| `cancelled` | signal | Emitted when the request is cancelled. Connect cleanup actions to this. |
+| `is_cancelled()` | bool | Returns `true` after cancellation. Poll this between steps. |
+
+**Two cancellation patterns:**
+
+1. **Reactive (signal):** Connect `ctx.cancelled` to a method that aborts
+   the in-progress operation (e.g., `HTTPRequest.cancel_request()`). This
+   can interrupt a blocked `await`.
+
+2. **Polling:** Call `ctx.is_cancelled()` between discrete steps in a
+   multi-step handler. Return an empty dictionary to exit early.
+
+**C# usage:**
+
+```csharp
+public void Register(GodotObject registry, Node server)
+{
+	registry.Call("add", "weather.fetch", new Callable(this,
+		MethodName.HandleWeather), new Dictionary {
+		{ "description", "Fetch weather data from external API" },
+		{ "timeout_ms", 60000 },
+		{ "is_cancellable", true },
+	});
+}
+
+public Dictionary HandleWeather(Dictionary parameters, GodotObject ctx)
+{
+	// Reactive: connect the cancelled signal
+	ctx.Connect("cancelled", Callable.From(OnCancelled));
+
+	// ... do work ...
+
+	// Polling: check is_cancelled()
+	bool cancelled = (bool)ctx.Call("is_cancelled");
+	if (cancelled) return new Dictionary();
+
+	return new Dictionary { { "success", true }, { "data", result } };
+}
+```
+
+**Important notes:**
+
+- **Do not store the context.** `MCPToolContext` is scoped to a single tool
+  invocation. It is invalidated when your handler returns. Signal connections
+  are cleaned up automatically via reference counting.
+
+- **No preemptive cancellation.** GDScript cannot kill a running coroutine.
+  If your handler never checks `is_cancelled()` and doesn't connect to the
+  `cancelled` signal, it runs to completion. The server still discards the
+  result — cooperative cancellation just makes it faster.
+
+- **Mutation tools.** If your cancellable tool performs mutations, you are
+  responsible for cleanup in your signal handler or polling checks. The
+  toolkit does not validate your cancel path. Consider whether `is_cancellable`
+  is appropriate for mutation tools — simple operations are safer without it.
+
+- **Non-cancellable tools.** Handlers without `is_cancellable: true` keep
+  their 1-arg signature and work exactly as before. No context is created,
+  no overhead is added.
 
 ### Discovery rules
 
@@ -268,10 +372,10 @@ simply does nothing — the toolkit's extension loader is not running, so
 extends EditorPlugin
 
 func _enter_tree() -> void:
-    if not EditorInterface.is_plugin_enabled("godot_mcp_toolkit"):
-        push_warning("MyExtension requires the Godot MCP Toolkit plugin. "
+	if not EditorInterface.is_plugin_enabled("godot_mcp_toolkit"):
+		push_warning("MyExtension requires the Godot MCP Toolkit plugin. "
 			+ "Install it from the Godot AssetLib (search 'Godot MCP Toolkit') "
-            + "or from GitHub: https://github.com/NPGameDev/godot-mcp-toolkit/releases")
+			+ "or from GitHub: https://github.com/NPGameDev/godot-mcp-toolkit/releases")
 ```
 
 **Required for all distributable extensions:**
