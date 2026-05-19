@@ -99,6 +99,50 @@ static func class_base_chain(type_name: String) -> String:
 	return " -> ".join(chain)
 
 
+# -- Scene tab management ------------------------------------------------------
+
+
+## Attempt to close the editor tab for `file_path`.
+## Returns {closed: true} or {closed: false, reason: String}.
+##
+## Reason codes:
+##   "not_open" — file has no open editor tab
+##   "no_api"   — Godot 4.2–4.4 (no close_scene method)
+##
+## On 4.5+ the engine auto-creates an empty scene if the last tab is closed,
+## so there is no "last_tab" guard — the caller never needs to worry about it.
+##
+## SAFETY: performs at most ONE open_scene_from_path + close_scene cycle.
+## Never loops. Never crashes (the deferred-queue crash requires multiple
+## rapid cycles within one frame).
+##
+## NOTE: does NOT restore the previously-active tab. After closing a
+## non-active tab, Godot auto-switches to an adjacent tab. Restoring
+## via a third open_scene_from_path triggers a benign but noisy
+## _set_main_scene_state deferred-queue error in the engine — not
+## worth the console spam.
+static func close_scene_tab_safe(file_path: String) -> Dictionary:
+	var open_scenes := EditorInterface.get_open_scenes()
+	if not open_scenes.has(file_path):
+		return {"closed": false, "reason": "not_open"}
+
+	# Version gate: close_scene() requires 4.5+.
+	if not EditorInterface.has_method("close_scene"):
+		return {"closed": false, "reason": "no_api"}
+
+	# If the target is not the active tab, activate it first.
+	var current_root := get_edited_root()
+	var current_path := current_root.scene_file_path if current_root else ""
+	var switched := (current_path != file_path)
+	if switched:
+		EditorInterface.open_scene_from_path(file_path)
+
+	# Close the now-active tab. Dynamic dispatch for parse safety on 4.2–4.4.
+	EditorInterface.call("close_scene")
+
+	return {"closed": true, "switched": switched}
+
+
 # -- File operations -----------------------------------------------------------
 
 

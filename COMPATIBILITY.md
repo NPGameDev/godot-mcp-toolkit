@@ -25,7 +25,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
-| `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message |
+| `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message. On 4.5+ closes active or inactive tabs; last-tab close auto-creates an empty scene |
 | `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. `gdscript://` URIs in error messages (see below); `class_name` false positive fixed via stripping |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
@@ -50,7 +50,9 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   `EditorUndoRedoManager` wrapping — direct property mutations bypass history).
 - Toast notifications work.
 - `script_check` limitations apply (see section below).
-- `scene_close` still returns `UNSUPPORTED`.
+- `scene_close` returns `UNSUPPORTED`.
+- `scene_delete`/`file_delete`: non-active open scene tabs become phantoms
+  with a warning; active scene deletion is blocked (`EDITED_SCENE`).
 
 **Godot 4.5+:**
 - Full functionality. All tools, all UI features.
@@ -78,14 +80,30 @@ of the `indexed` value. Known cases where `indexed` may be `false`:
 - **SVG imports:** `asset_import` may return `class: null` if the import
   pipeline hasn't finished. Call `editor_wait_for_idle` after importing.
 
-### `folder_delete` and scene tabs (all versions)
+### Phantom tab cleanup (scene/file/folder delete)
 
-`folder_delete` auto-switches the active editor tab away from the target
-folder if the currently-edited scene is inside it. It does **not** close
-individual scene tabs — rapid `open_scene_from_path` + `close_scene` calls
-in a loop crash the editor via a deferred-queue race in
-`EditorNode._set_main_scene_state` (signal 11). Stale tabs for deleted
-scenes are cosmetic and vanish on editor restart.
+`scene_delete`, `file_delete` (for `.tscn`/`.scn`), and `folder_delete` all
+attempt to close editor tabs for scenes being deleted, preventing phantom
+tabs that silently recreate files on save (godot#44123).
+
+**Godot 4.5+:** tabs are closed automatically via `close_scene_tab_safe()`.
+The response includes `tab_closed: true`. For `folder_delete` with exactly
+one scene inside, that tab is closed cleanly. Multiple scene tabs cannot be
+closed in a loop (deferred-queue crash, signal 11) — the response returns a
+`stale_tabs` array; call `scene_close` on each afterward (MCP round-trip
+provides safe sequencing).
+
+**Active tab after close:** closing a non-active tab switches to that tab
+first, then closes it. Godot auto-switches to an adjacent tab afterward —
+the previously-active tab is **not** restored (restoring triggers a benign
+but noisy `_set_main_scene_state` deferred-queue error in the engine).
+
+**Godot 4.2–4.4:** no `close_scene()` API exists. Deleting a non-active
+open scene proceeds with a phantom warning (`tab_closed: false`, `warnings`
+array). Deleting the **active** scene returns `EDITED_SCENE` error (the
+phantom would be the focused tab, and Ctrl+S would recreate the file).
+`folder_delete` uses the switch-away strategy and returns `stale_tabs` +
+`warnings`.
 
 ### C# (.NET) editor requirement
 

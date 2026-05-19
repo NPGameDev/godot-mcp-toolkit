@@ -10,6 +10,8 @@ const MCPFileGuard = _Hub.MCPFileGuard
 const MCPUntrusted = _Hub.MCPUntrusted
 const MCPHelpers = _Hub.MCPHelpers
 
+const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _set_main_scene_state error in the editor console. This is benign Godot engine noise — safe to ignore."
+
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("scene.get_tree", func(parameters: Dictionary) -> Dictionary:
@@ -234,24 +236,20 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 	var guard := MCPFileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
 		return MCPError.make("PATH_DENIED", str(guard["reason"]))
-	var open_scenes := EditorInterface.get_open_scenes()
-	if not open_scenes.has(file_path):
+	var result := MCPHelpers.close_scene_tab_safe(file_path)
+	if result.get("closed", false):
+		var response := {"success": true, "path": file_path}
+		if result.get("switched", false):
+			response["hint"] = _TAB_CLOSE_NOISE_HINT
+		return response
+	var reason := str(result.get("reason", ""))
+	if reason == "not_open":
 		return MCPError.make("NOT_FOUND",
 			"scene is not open in any editor tab: %s" % file_path, MCPError.HINT_FILE_PATH)
-	if open_scenes.size() <= 1:
-		return MCPError.make("EDITED_SCENE",
-			"cannot close the last open scene tab; open another scene via scene.open first")
-	var current_root := _get_edited_root()
-	var current_path := current_root.scene_file_path if current_root else ""
-	if not EditorInterface.has_method("close_scene"):
+	if reason == "no_api":
 		return MCPError.make("UNSUPPORTED",
 			"scene.close requires Godot 4.5+ (connected: 4.%d)" % _Hub.godot_minor())
-	if current_path != file_path:
-		return MCPError.make("EDITED_SCENE",
-			"scene.close only closes the active tab; %s is open but not active. " % file_path +
-			"Switch to it with scene.open first, or use scene.delete directly (works on inactive tabs).")
-	EditorInterface.call("close_scene")
-	return {"success": true, "path": file_path}
+	return MCPError.make("INTERNAL", "unexpected close_scene_tab_safe reason: %s" % reason)
 
 
 static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
@@ -267,14 +265,34 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 			"scene.delete only removes .tscn files (got %s); use a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
 		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
-	var edited_root := _get_edited_root()
-	if edited_root != null and edited_root.scene_file_path == file_path:
-		return MCPError.make("EDITED_SCENE",
-			"cannot delete the currently-edited scene %s; close it via scene.close first, or open a different scene via scene.open" % file_path)
+
+	# Attempt to close the editor tab before deleting the file.
+	var tab_result := MCPHelpers.close_scene_tab_safe(file_path)
+	var tab_closed := tab_result.get("closed", false)
+	var warnings: Array[String] = []
+
+	if not tab_closed:
+		var reason := str(tab_result.get("reason", ""))
+		if reason == "no_api":
+			# 4.2–4.4: no close API. Block active-scene deletion (Ctrl+S
+			# would silently recreate the file). Non-active tabs proceed
+			# with a phantom warning.
+			var edited_root := _get_edited_root()
+			if edited_root != null and edited_root.scene_file_path == file_path:
+				return MCPError.make("EDITED_SCENE",
+					"cannot delete the currently-edited scene %s on Godot 4.2-4.4 (no tab-close API); open a different scene via scene.open first" % file_path)
+			warnings.append(
+				"phantom tab: scene tab for %s remains open; Godot 4.2-4.4 has no API to close tabs — it will vanish on editor restart or manual close" % file_path)
+
 	var delete_result := MCPHelpers.delete_res_file(file_path)
 	if delete_result.get("success", false):
 		var removal := MCPHelpers.ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
+	delete_result["tab_closed"] = tab_closed
+	if tab_closed and tab_result.get("switched", false):
+		delete_result["hint"] = _TAB_CLOSE_NOISE_HINT
+	if not warnings.is_empty():
+		delete_result["warnings"] = warnings
 	return delete_result
 
 

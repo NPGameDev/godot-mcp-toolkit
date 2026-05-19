@@ -15,8 +15,8 @@
 |---|---|---|---|---|---|---|
 | scene.create | 7, 8 | — | C3, C5, C8, C13, C18, C19 | — | — | |
 | scene.open | 18, 64a, 64d, 64f | — | C3, C7, C8 | — | — | |
-| scene.close | 64b, 64f | ✓ (inactive tab) | C3, C7 | ✓ (active-tab hint) | — | 4.5+ only |
-| scene.delete | 64c, 64e | ✓ (active tab) | C3, C18 | — | — | |
+| scene.close | 18.3, 18.14, 64b, 64f | ✓ (non-active, last tab) | C3, C7 | ✓ (_set_main_scene_state hint) | — | 4.5+ only |
+| scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3, C18 | ✓ (tab_closed, phantom warning) | — | |
 | scene.create_node | 20–26, 64h | ✓ (C22: CLASS_MISMATCH) | C5, C8, C10, C19 | ✓ (preload, unique_name) | FIX-G (P6), cb4e162 | **GAP:** unique_name param untested |
 | scene.delete_node | 43j, 43s, 64i | — | C19 | — | — | |
 | scene.instantiate | 41, 43q–43s | — | C20 | — | FIX-B, FIX-9, FIX-K | **GAP:** properties param, auto-rename |
@@ -89,14 +89,14 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| file.delete | — | — | C14 | — | — | Only in combos |
+| file.delete | 18.7, 18.11 | — | C14 | ✓ (tab_closed for .tscn) | — | 18.11: .tscn tab close |
 
 ### Folder Management (2 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | folder.create | 1 | — | C17, C18 | — | — | |
-| folder.delete | — | — | C17, C18 | — | — | Only in combos |
+| folder.delete | 18.12, 18.13 | — | C17, C18 | ✓ (tab_closed, stale_tabs) | — | 18.12: 1 scene, 18.13: 2 scenes + follow-up |
 
 ### ClassDB Introspection (2 tools)
 

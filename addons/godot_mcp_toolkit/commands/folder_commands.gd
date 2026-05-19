@@ -59,30 +59,52 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		return MCPError.make("NOT_FOUND", "no folder at %s" % folder_path)
 	var normalized_with_slash := normalized + "/"
 
-	# If the active scene is inside the target folder, switch away.
-	# Do NOT try to close individual tabs in a loop — rapid
-	# open_scene_from_path + close_scene calls queue conflicting deferred
-	# methods in EditorNode, crashing the editor (signal 11).
-	# Stale tabs are harmless: files are deleted from disk, tabs become
-	# cosmetic ghosts that vanish on editor restart.
+	# Collect open scene tabs inside vs outside the target folder.
 	var open_scenes := EditorInterface.get_open_scenes()
-	var outside_scenes: Array = []
-	var active_inside := false
+	var inside_scenes: Array[String] = []
+	var outside_scenes: Array[String] = []
 	for scene_path in open_scenes:
 		var sp := str(scene_path)
 		if sp == normalized or sp.begins_with(normalized_with_slash):
-			continue
-		outside_scenes.append(sp)
+			inside_scenes.append(sp)
+		else:
+			outside_scenes.append(sp)
+
 	var edited := MCPHelpers.get_edited_root()
+	var active_path := ""
 	if edited != null:
-		var active_path := str(edited.scene_file_path)
-		if not active_path.is_empty() and (active_path == normalized or active_path.begins_with(normalized_with_slash)):
-			active_inside = true
-	if active_inside:
-		if outside_scenes.is_empty():
-			return MCPError.make("PATH_IN_USE",
-				"all open scene tabs are inside %s; open a scene outside the folder first via scene.open" % folder_path)
-		EditorInterface.open_scene_from_path(outside_scenes[0])
+		active_path = str(edited.scene_file_path)
+	var active_inside := not active_path.is_empty() and (active_path == normalized or active_path.begins_with(normalized_with_slash))
+
+	# Scene tab handling strategy:
+	# - Exactly 1 scene inside + on 4.5+: close it via helper (single
+	#   open+close cycle is safe; avoids phantom tab entirely).
+	# - Multiple scenes inside: cannot close in a loop (deferred-queue
+	#   crash). Switch active away, return stale_tabs for agent follow-up
+	#   via scene.close (MCP round-trip provides sequencing).
+	# - On 4.2–4.4: no close API — always switch-away + stale_tabs.
+	var stale_tabs: Array[String] = []
+	var warnings: Array[String] = []
+	var single_closed := false
+
+	if inside_scenes.size() == 1 and EditorInterface.has_method("close_scene"):
+		# Single scene — safe to close via helper (handles active or not).
+		var tab_result := MCPHelpers.close_scene_tab_safe(inside_scenes[0])
+		single_closed = tab_result.get("closed", false)
+		if not single_closed:
+			# no_api shouldn't happen (we checked has_method), but be safe.
+			stale_tabs = inside_scenes
+	elif inside_scenes.size() > 0:
+		# Multiple scenes (or 4.2–4.4): switch active away, list phantoms.
+		if active_inside:
+			if outside_scenes.is_empty():
+				return MCPError.make("PATH_IN_USE",
+					"all open scene tabs are inside %s; open a scene outside the folder first via scene.open" % folder_path)
+			EditorInterface.open_scene_from_path(outside_scenes[0])
+		stale_tabs = inside_scenes
+		if not EditorInterface.has_method("close_scene"):
+			warnings.append(
+				"phantom tabs: Godot 4.2-4.4 has no API to close scene tabs — %d tab(s) inside %s will remain as phantoms until editor restart" % [inside_scenes.size(), folder_path])
 
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor != null:
@@ -141,9 +163,15 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		"directories_deleted": dirs_deleted,
 		"deindexed": removal["removed"],
 	}
-	if active_inside:
+	if single_closed:
+		result["tab_closed"] = inside_scenes[0]
+	if not stale_tabs.is_empty():
+		result["stale_tabs"] = stale_tabs
+		result["hint"] = "Phantom scene tabs remain for %d file(s) inside the deleted folder. Close them one at a time via scene_close. Note: each scene_close may produce a _set_main_scene_state error in the editor console — this is benign Godot engine noise, safe to ignore." % stale_tabs.size()
+	if active_inside and not single_closed:
 		result["switched_to"] = outside_scenes[0]
-		result["hint"] = "Active scene was inside the deleted folder — switched to %s. Stale tabs may remain; call scene_open to set the desired active scene." % outside_scenes[0]
+	if not warnings.is_empty():
+		result["warnings"] = warnings
 	return result
 
 

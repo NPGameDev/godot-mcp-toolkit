@@ -340,6 +340,11 @@ If all 5 log lines appear but the MCP client still shows stale tools:
   in memory and are lost on editor close. (File-level `scene_create` /
   `scene_delete` / `script_delete` write directly to disk — no
   `editor_save_scene` needed for those.)
+- **Phantom tab cleanup:** `scene_delete`, `file_delete` (for `.tscn`/`.scn`),
+  and `folder_delete` auto-close editor tabs on 4.5+ before deleting files.
+  Check `tab_closed` in the response. For `folder_delete` with multiple open
+  scenes, check `stale_tabs` and call `scene_close` on each afterward.
+  `scene_close` handles both active and inactive tabs.
 - **After `script_write`, call `editor_get_console`.** Lets you catch syntax
   issues before trusting the file.
 - **The Godot editor with this plugin enabled must be running** — the bridge

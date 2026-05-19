@@ -531,6 +531,7 @@ These are the most common sources of wasted tool calls and retries:
 | `autoload_manage` + console errors | After registering, `editor_refresh` before trusting console errors — stale cache shows false "identifier not found" |
 | `execute_code` | Requires `GODOT_MCP_ALLOW_EXECUTE_CODE=1`; responses are larger than property reads |
 | `editor_refresh` | Needed after external writes; especially in headless mode |
+| `scene_delete` / `scene_close` | Console shows `_set_main_scene_state: Cannot convert argument 2 from Object to Object` when closing non-active tabs — this is **benign Godot engine noise** from the deferred queue, not a bug. Tabs close correctly. Do not attempt to fix or investigate this error. |
 | `game_start` | `scene_path` accepts `"main"`, `"current"`, or `res://` path |
 | `node_set_property` | Typed values need `{type: "Vector2", x: ...}` wrappers — plain `{x: 1, y: 2}` won't coerce |
 | `node_groups` | Only way to manage groups — `node_set_property` cannot set them |
