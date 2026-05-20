@@ -7,12 +7,12 @@ extends VBoxContainer
 ## during playtests so it updates without requiring server events.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
-const MCPFeatureGate = _Hub.MCPFeatureGate
-const MCPJsonSync = _Hub.MCPJsonSync
-const MCPStateFile = _Hub.MCPStateFile
-const MCPRegistryClient = _Hub.MCPRegistryClient
-const MCPNodejsCheck = _Hub.MCPNodejsCheck
+const FeatureRegistry = _Hub.FeatureRegistry
+const FeatureGate = _Hub.FeatureGate
+const McpJsonSync = _Hub.McpJsonSync
+const McpStateFile = _Hub.McpStateFile
+const RegistryClient = _Hub.RegistryClient
+const NodejsCheck = _Hub.NodejsCheck
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -30,11 +30,12 @@ var _peer_label: Label = null
 var _activity_label: Label = null
 var _runtime_label: Label = null
 var _read_only_badge: Label = null
+var _mcp_json_btn: Button = null
 
 # Feature rows: { feature_name: { check: CheckBox } }
 var _feature_rows: Dictionary = {}
 var _mcp_json_hint: Label = null
-# Node.js warnings (shared detection via MCPNodejsCheck, two display locations).
+# Node.js warnings (shared detection via NodejsCheck, two display locations).
 var _nodejs_status_warning: Label = null
 var _nodejs_gate_warning: Label = null
 # Gates collapsible section — toggle + scroll for read-only lock.
@@ -220,8 +221,8 @@ func _build_ui() -> void:
 
 	_read_only_badge = Label.new()
 	_read_only_badge.text = (
-		"\u26a0 Read-only mode active (GODOT_MCP_READ_ONLY=1 in .mcp.json). "
-		+ "To exit: remove the env var, restart the editor, and reconnect the MCP client.")
+		"\u26a0 Read-only mode active. Use 'Open .mcp.json' below to edit, "
+		+ "then restart the editor.")
 	_read_only_badge.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_read_only_badge.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 	_read_only_badge.add_theme_font_size_override("font_size", 11)
@@ -229,7 +230,7 @@ func _build_ui() -> void:
 	sc.add_child(_read_only_badge)
 
 	# Node.js availability — shared detection, dual display (Status + Gates).
-	var node_check := MCPNodejsCheck.check()
+	var node_check := NodejsCheck.check()
 	var nodejs_msg := ""
 	if not node_check["found"]:
 		nodejs_msg = ("Node.js not found — the MCP server bridge requires "
@@ -281,8 +282,8 @@ func _build_ui() -> void:
 	feat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	fc.add_child(feat_grid)
 
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 
 		var check := CheckBox.new()
 		check.text = feature
@@ -397,12 +398,12 @@ func _build_ui() -> void:
 	skills_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(skills_btn)
 
-	var mcp_json_btn := Button.new()
-	mcp_json_btn.text = "Open .mcp.json"
-	mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor"
-	mcp_json_btn.pressed.connect(_open_mcp_json)
-	mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer_row.add_child(mcp_json_btn)
+	_mcp_json_btn = Button.new()
+	_mcp_json_btn.text = "Open .mcp.json"
+	_mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor"
+	_mcp_json_btn.pressed.connect(_open_mcp_json)
+	_mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer_row.add_child(_mcp_json_btn)
 
 	var info_btn := Button.new()
 	info_btn.text = "Info / Help"
@@ -443,7 +444,7 @@ func _refresh_status() -> void:
 	if _server == null or _status_label == null:
 		return
 	var port: int = _server.get_bound_port()
-	var port_str := str(port) if port > 0 else "6505"
+	var port_str := str(port) if port > 0 else "6550"
 	if _server.is_listening():
 		_status_label.text = "Listening on 127.0.0.1:%s" % port_str
 	else:
@@ -452,6 +453,13 @@ func _refresh_status() -> void:
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
 	if _read_only_badge != null:
 		_read_only_badge.visible = _is_read_only()
+	if _mcp_json_btn != null:
+		if _is_read_only():
+			_mcp_json_btn.text = "Open .mcp.json \u26a0"
+			_mcp_json_btn.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+		else:
+			_mcp_json_btn.text = "Open .mcp.json"
+			_mcp_json_btn.remove_theme_color_override("font_color")
 	_refresh_runtime_status()
 
 
@@ -459,7 +467,7 @@ func _refresh_runtime_status() -> void:
 	if _runtime_label == null:
 		return
 	if EditorInterface.is_playing_scene():
-		var rt_port := MCPRegistryClient.get_runtime_port()
+		var rt_port := RegistryClient.get_runtime_port()
 		if rt_port > 0:
 			_runtime_label.text = "Runtime: listening on 127.0.0.1:%d" % rt_port
 			_runtime_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
@@ -490,18 +498,18 @@ func _refresh_features() -> void:
 			_gates_toggle.text = "\u25b6 Feature Gates (read-only)"
 
 	# Show hint when .mcp.json is missing.
-	var has_mcp := MCPJsonSync.has_mcp_json()
+	var has_mcp := McpJsonSync.has_mcp_json()
 	if _mcp_json_hint != null:
 		_mcp_json_hint.visible = not has_mcp
 
 	# Update gate checkboxes — sidecar is the runtime source of truth,
 	# with PS fallback when sidecar is missing (e.g. after .godot/ deletion).
-	var sidecar_gates := MCPStateFile.get_current_gates()
+	var sidecar_gates := McpStateFile.get_current_gates()
 	var sidecar_has_gates := not sidecar_gates.is_empty()
 	for feature in _feature_rows:
 		var row: Dictionary = _feature_rows[feature]
 		var check: CheckBox = row["check"]
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 		var enabled: bool
 		if sidecar_has_gates:
 			enabled = sidecar_gates.get(str(entry["env_var"]), false) == true
@@ -513,18 +521,18 @@ func _refresh_features() -> void:
 
 
 func _on_feature_toggled(enabled: bool, feature: String) -> void:
-	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	var entry: Dictionary = FeatureRegistry.get_entry(feature)
 	if entry == null:
 		return
 
 	# H7: Dangerous-gate confirmation for RCE-class features.
-	if enabled and MCPFeatureGate.needs_danger_warning(feature):
+	if enabled and FeatureGate.needs_danger_warning(feature):
 		_feature_rows[feature]["check"].set_pressed_no_signal(false)
 		_show_danger_confirmation(feature)
 		return
 
 	# Write to sidecar (runtime source of truth).
-	var err := MCPStateFile.set_gate(str(entry["env_var"]), enabled)
+	var err := McpStateFile.set_gate(str(entry["env_var"]), enabled)
 	if err != OK:
 		_toast("Could not update gate state (err %d)" % err, _TOAST_WARNING)
 		_feature_rows[feature]["check"].set_pressed_no_signal(not enabled)
@@ -588,7 +596,7 @@ func _show_danger_confirmation(feature: String) -> void:
 			_danger_dialog.hide()
 			_danger_dialog.queue_free()
 		_danger_dialog = null
-	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	var entry: Dictionary = FeatureRegistry.get_entry(feature)
 	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
 	_danger_dialog = ConfirmationDialog.new()
 	_danger_dialog.exclusive = false
@@ -600,7 +608,7 @@ func _show_danger_confirmation(feature: String) -> void:
 		+ "Only enable if you trust the current AI context.")
 	_danger_dialog.ok_button_text = "I Understand — Enable"
 	_danger_dialog.confirmed.connect(func():
-		MCPFeatureGate.mark_warned(feature)
+		FeatureGate.mark_warned(feature)
 		# Proceed with the toggle as if the user just pressed the checkbox.
 		_on_feature_toggled(true, feature)
 		var d := _danger_dialog
@@ -622,9 +630,9 @@ func _show_danger_confirmation(feature: String) -> void:
 
 ## Enable all feature gates (called from onboarding wizard "Enable All" button).
 func enable_all_gates() -> void:
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
-		MCPStateFile.set_gate(str(entry["env_var"]), true)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
+		McpStateFile.set_gate(str(entry["env_var"]), true)
 		ProjectSettings.set_setting(str(entry["ps_key"]), true)
 	ProjectSettings.save()
 	_refresh_features()
@@ -641,7 +649,7 @@ func show_audit_dialog() -> void:
 	# Read the log file.
 	var path := _audit_path
 	if path.is_empty():
-		path = _Hub.MCPAudit.get_log_path()
+		path = _Hub.Audit.get_log_path()
 	var log_text := ""
 	if FileAccess.file_exists(path):
 		var file := FileAccess.open(path, FileAccess.READ)
@@ -721,7 +729,7 @@ func _on_clear_audit_log() -> void:
 	dialog.confirmed.connect(func():
 		var path := _audit_path
 		if path.is_empty():
-			path = _Hub.MCPAudit.get_log_path()
+			path = _Hub.Audit.get_log_path()
 		var file := FileAccess.open(path, FileAccess.WRITE)
 		if file != null:
 			file.store_string("")
@@ -754,7 +762,7 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 		_toast("Template not found: " + template_path, _TOAST_ERROR)
 		return
 	var content := FileAccess.get_file_as_string(template_path)
-	var dest := MCPJsonSync.get_mcp_json_path()
+	var dest := McpJsonSync.get_mcp_json_path()
 
 	if FileAccess.file_exists(dest) and not force_overwrite:
 		var dialog := ConfirmationDialog.new()
@@ -793,7 +801,7 @@ func _do_write_mcp_json(dest: String, content: String) -> void:
 # ---------------------------------------------------------------------------
 
 func _is_read_only() -> bool:
-	var env := MCPJsonSync.get_all_env_vars()
+	var env := McpJsonSync.get_all_env_vars()
 	return env.get("GODOT_MCP_READ_ONLY", "") == "1"
 
 
@@ -828,7 +836,7 @@ func _on_audit_max_size_changed(value: float) -> void:
 # ---------------------------------------------------------------------------
 
 func _open_mcp_json() -> void:
-	var path := MCPJsonSync.get_mcp_json_path()
+	var path := McpJsonSync.get_mcp_json_path()
 	if FileAccess.file_exists(path):
 		OS.shell_open(path)
 	else:

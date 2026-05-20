@@ -3,7 +3,7 @@ extends RefCounted
 ## classdb.* command handlers — ClassDB and global class introspection.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
+const McpError = _Hub.McpError
 
 const _VALID_SECTIONS: Array[String] = ["properties", "methods", "signals", "constants"]
 const _MAX_ENTRIES_PER_SECTION := 200
@@ -23,7 +23,7 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 	var cls: String = str(parameters.get("class_name", ""))
 	if cls == "":
-		return MCPError.make("INVALID_PARAMS", "class_name is required")
+		return McpError.make("INVALID_PARAMS", "class_name is required")
 
 	var include_inherited: bool = bool(parameters.get("include_inherited", false))
 	var sections: Array = parameters.get("sections", [])
@@ -31,7 +31,7 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 		sections = []
 	for s in sections:
 		if str(s) not in _VALID_SECTIONS:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"invalid section '%s'; valid: %s" % [s, ", ".join(_VALID_SECTIONS)])
 
 	var want_all := sections.is_empty()
@@ -56,8 +56,8 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 				break
 
 	if not is_native and not is_global:
-		return MCPError.make("UNKNOWN_CLASS",
-			"class not found in ClassDB or global class list: %s" % cls, MCPError.HINT_CLASS_NAME)
+		return McpError.make("UNKNOWN_CLASS",
+			"class not found in ClassDB or global class list: %s" % cls, McpError.HINT_CLASS_NAME)
 
 	var result: Dictionary = {"success": true, "class_name": cls}
 	var truncated := false
@@ -82,7 +82,7 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 		result["inheritance_chain"] = _build_chain_global(cls, global_entry)
 		var script := ResourceLoader.load(script_path) as Script
 		if script == null:
-			return MCPError.make("LOAD_FAILED",
+			return McpError.make("LOAD_FAILED",
 				"could not load script at %s for class %s" % [script_path, cls])
 		if want_properties:
 			truncated = _add_properties_script(result, script) or truncated
@@ -113,8 +113,8 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 					base_exists = true
 					break
 		if not base_exists:
-			return MCPError.make("UNKNOWN_CLASS",
-				"base_class not found in ClassDB or global class list: %s" % base_class, MCPError.HINT_CLASS_NAME)
+			return McpError.make("UNKNOWN_CLASS",
+				"base_class not found in ClassDB or global class list: %s" % base_class, McpError.HINT_CLASS_NAME)
 
 	var pattern_lower := pattern.to_lower()
 	var matches: Array = []

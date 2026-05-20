@@ -3,11 +3,11 @@ extends RefCounted
 ## resource.* command handlers — load, write (create/update upsert), delete for .tres/.res files.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPCoerce = _Hub.MCPCoerce
-const MCPFileGuard = _Hub.MCPFileGuard
-const MCPUntrusted = _Hub.MCPUntrusted
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const Coerce = _Hub.Coerce
+const FileGuard = _Hub.FileGuard
+const Untrusted = _Hub.Untrusted
+const Helpers = _Hub.Helpers
 
 const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 	"image", "mesh_arrays", "surface_arrays", "_data",
@@ -27,11 +27,11 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _class_descends_from(type_name: String, base: String) -> bool:
-	return MCPHelpers.class_descends_from(type_name, base)
+	return Helpers.class_descends_from(type_name, base)
 
 
 static func _class_base_chain(type_name: String) -> String:
-	return MCPHelpers.class_base_chain(type_name)
+	return Helpers.class_base_chain(type_name)
 
 
 static func _property_names_of(object: Object) -> Dictionary:
@@ -51,12 +51,12 @@ static func _apply_resource_properties(
 	for key in properties.keys():
 		var key_string := str(key)
 		var raw_value = properties[key]
-		var missing := MCPCoerce.check_resource_paths(raw_value)
+		var missing := Coerce.check_resource_paths(raw_value)
 		if missing != "":
 			warnings.append(
 				"property '%s': resource not found at %s; value left unchanged" % [key_string, missing])
 			continue
-		var coerced = MCPCoerce.coerce_value(raw_value)
+		var coerced = Coerce.coerce_value(raw_value)
 		# Compound paths (e.g. "sources/0", "tiles/0:0/0") route through
 		# Object._set() which many built-in types (TileSet, AnimationLibrary)
 		# use for sub-resource slots not exposed in get_property_list().
@@ -79,18 +79,18 @@ static func _apply_resource_properties(
 
 
 static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if not ResourceLoader.exists(file_path):
-		return MCPError.make("NOT_FOUND", "resource not found: %s" % file_path, MCPError.HINT_FILE_PATH)
+		return McpError.make("NOT_FOUND", "resource not found: %s" % file_path, McpError.HINT_FILE_PATH)
 	var resource := ResourceLoader.load(file_path)
 	if resource == null:
-		return MCPError.make("LOAD_FAILED",
+		return McpError.make("LOAD_FAILED",
 			"ResourceLoader returned null for %s" % file_path)
 	var resource_class := resource.get_class()
 	var properties := {}
@@ -103,7 +103,7 @@ static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 			continue
 		if property_name in RESOURCE_SKIP_PROPERTIES:
 			continue
-		properties[property_name] = MCPCoerce.serialize_value(resource.get(property_name))
+		properties[property_name] = Coerce.serialize_value(resource.get(property_name))
 	var metadata := {}
 	if resource is Texture2D:
 		metadata["width"] = resource.get_width()
@@ -111,40 +111,40 @@ static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 	return {
 		"class": resource_class,
 		"path": file_path,
-		"properties": MCPUntrusted.wrap(
+		"properties": Untrusted.wrap(
 			"resource", file_path, JSON.stringify(properties)),
 		"metadata": metadata,
 	}
 
 
 static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ["tres", "res"]):
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"resource.write only writes .tres/.res files (got %s); use script.write for .gd/.cs" % file_path)
 	var properties: Dictionary = parameters.get("properties", {}) \
 		if typeof(parameters.get("properties", {})) == TYPE_DICTIONARY else {}
 	if FileAccess.file_exists(file_path):
 		var resource := ResourceLoader.load(file_path)
 		if resource == null:
-			return MCPError.make("NOT_A_RESOURCE",
+			return McpError.make("NOT_A_RESOURCE",
 				"file at %s is not a readable Resource" % file_path)
 		var resource_class := resource.get_class()
 		var warnings := _apply_resource_properties(resource, properties, resource_class)
 		var save_error := ResourceSaver.save(resource, file_path)
 		if save_error != OK:
-			return MCPError.make("SAVE_FAILED",
+			return McpError.make("SAVE_FAILED",
 				"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 		# Refresh cache so subsequent ResourceRef loads get the updated version
 		ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-		var update_index := MCPHelpers.ensure_file_indexed(file_path)
+		var update_index := Helpers.ensure_file_indexed(file_path)
 		return {
 			"success": true,
 			"path": file_path,
@@ -154,9 +154,9 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 		}
 	var resource_class := str(parameters.get("type", ""))
 	if resource_class.is_empty():
-		return MCPError.make("NOT_FOUND",
-			"resource not found at %s; provide 'type' to create it" % file_path, MCPError.HINT_FILE_PATH)
-	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "resource.write")
+		return McpError.make("NOT_FOUND",
+			"resource not found at %s; provide 'type' to create it" % file_path, McpError.HINT_FILE_PATH)
+	var dir_result := Helpers.ensure_parent_dir(file_path, "resource.write")
 	if dir_result.has("error"):
 		return dir_result
 	var dirs_created: bool = dir_result["dirs_created"]
@@ -171,10 +171,10 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 				global_entry = entry
 				break
 	if resolved_kind.is_empty():
-		return MCPError.make("INVALID_CLASS",
-			"unknown class %s; check ClassDB or ProjectSettings global class list" % resource_class, MCPError.HINT_CLASS_NAME)
+		return McpError.make("INVALID_CLASS",
+			"unknown class %s; check ClassDB or ProjectSettings global class list" % resource_class, McpError.HINT_CLASS_NAME)
 	if not _class_descends_from(resource_class, "Resource"):
-		return MCPError.make("NOT_A_RESOURCE",
+		return McpError.make("NOT_A_RESOURCE",
 			"%s is not a Resource subclass (base chain: %s)" % [
 				resource_class, _class_base_chain(resource_class)])
 	var resource: Resource = null
@@ -184,20 +184,20 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 		var script_path := str(global_entry.get("path", ""))
 		var script = load(script_path)
 		if script == null:
-			return MCPError.make("INVALID_CLASS",
+			return McpError.make("INVALID_CLASS",
 				"could not load script for %s at %s" % [resource_class, script_path])
 		resource = script.new()
 	if resource == null:
-		return MCPError.make("INVALID_CLASS",
+		return McpError.make("INVALID_CLASS",
 			"instantiation returned null for %s" % resource_class)
 	var warnings := _apply_resource_properties(resource, properties, resource_class)
 	var save_error := ResourceSaver.save(resource, file_path)
 	if save_error != OK:
-		return MCPError.make("SAVE_FAILED",
+		return McpError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 	# Refresh cache so subsequent ResourceRef loads get the new resource
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	var create_index := MCPHelpers.ensure_file_indexed(file_path)
+	var create_index := Helpers.ensure_file_indexed(file_path)
 	var create_result := {
 		"success": true,
 		"status": "created",
@@ -212,21 +212,21 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ["tres", "res"]):
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"resource.delete only removes .tres or .res files (got %s); use scene.delete for .tscn, script.delete for .gd/.cs/.gdshader/.gdshaderinc, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
-	var delete_result := MCPHelpers.delete_res_file(file_path)
+		return McpError.make("NOT_FOUND", "no file at %s" % file_path, McpError.HINT_FILE_PATH)
+	var delete_result := Helpers.delete_res_file(file_path)
 	if delete_result.get("success", false):
-		var removal := MCPHelpers.ensure_file_removed(file_path)
+		var removal := Helpers.ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
 	return delete_result

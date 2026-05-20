@@ -5,8 +5,8 @@ extends RefCounted
 ## dock panel is hidden or the user is toggling from PS Inspector.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
-const MCPStateFile = _Hub.MCPStateFile
+const FeatureRegistry = _Hub.FeatureRegistry
+const McpStateFile = _Hub.McpStateFile
 
 const INFO := 0
 const WARNING := 1
@@ -35,11 +35,11 @@ func _deferred_broadcast() -> void:
 	_broadcast_pending = false
 	if _server == null:
 		return
-	var sidecar := MCPStateFile.read()
+	var sidecar := McpStateFile.read()
 	var gates: Dictionary = sidecar.get("gates", {})
 	if gates.is_empty():
 		# Fallback: build from PS bools if sidecar not yet populated.
-		gates = MCPStateFile.gates_from_ps()
+		gates = McpStateFile.gates_from_ps()
 	_server.broadcast_notification("config_reloaded", {
 		"gates": gates,
 	})

@@ -3,10 +3,10 @@ extends RefCounted
 ## animation.* command handlers — keyframe (add/remove) and get_keys on AnimationPlayer tracks.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPCoerce = _Hub.MCPCoerce
-const MCPUntrusted = _Hub.MCPUntrusted
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const Coerce = _Hub.Coerce
+const Untrusted = _Hub.Untrusted
+const Helpers = _Hub.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
@@ -22,13 +22,13 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 
 
 static func _resolve_scene_node(node_path: String) -> Variant:
-	return MCPHelpers.resolve_scene_node(node_path)
+	return Helpers.resolve_scene_node(node_path)
 
 
 static func _resolve_animation(
 	player_path: String, animation_name: String,
 ) -> Dictionary:
-	var root := MCPHelpers.get_edited_root()
+	var root := Helpers.get_edited_root()
 	if root == null:
 		return {"code": "NO_SCENE", "error": "no edited scene"}
 	if player_path.is_empty():
@@ -89,42 +89,42 @@ static func _cmd_animation_keyframe(
 ) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if not (action in ["add", "remove"]):
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"action must be 'add' or 'remove' (got '%s')" % action)
 	var player_path := str(parameters.get("player_path", ""))
-	player_path = MCPHelpers.normalize_editor_path(player_path)
+	player_path = Helpers.normalize_editor_path(player_path)
 	var animation_name := str(parameters.get("animation_name", ""))
 	var track_path := str(parameters.get("track_path", ""))
 	var time_raw = parameters.get("time", -1.0)
 	var time := float(time_raw) \
 		if (typeof(time_raw) == TYPE_FLOAT or typeof(time_raw) == TYPE_INT) else -1.0
 	if time < 0.0:
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"time must be >= 0 (got %f)" % time)
 	if track_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing track_path")
+		return McpError.make("INVALID_PARAMS", "missing track_path")
 	if action == "add":
 		if not track_path.contains(":"):
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"track_path must include a property (e.g. 'Sprite2D:position')")
 		var track_type_param := str(parameters.get("track_type", ""))
 		if not track_type_param.is_empty() and track_type_param != "value":
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"track_type='%s' not supported (only 'value' / default)" % track_type_param)
 		if not parameters.has("value"):
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"missing value (required for action='add')")
 		var raw_value = parameters.get("value", null)
 		var resolved := _resolve_animation(player_path, animation_name)
 		if resolved.has("error"):
-			return MCPError.make(str(resolved["code"]), str(resolved["error"]))
+			return McpError.make(str(resolved["code"]), str(resolved["error"]))
 		var animation: Animation = resolved["anim"]
 		var player: AnimationPlayer = resolved["player"]
-		var missing := MCPCoerce.check_resource_paths(raw_value)
+		var missing := Coerce.check_resource_paths(raw_value)
 		if missing != "":
-			return MCPError.make("LOAD_FAILED",
+			return McpError.make("LOAD_FAILED",
 				"failed to load resource at %s" % missing)
-		var coerced = MCPCoerce.coerce_value(raw_value)
+		var coerced = Coerce.coerce_value(raw_value)
 		var track_index := -1
 		var track_path_node_path := NodePath(track_path)
 		for index in range(animation.get_track_count()):
@@ -146,7 +146,7 @@ static func _cmd_animation_keyframe(
 				"track_idx": track_index,
 				"time": time,
 				"key_idx": existing_index,
-				"value": MCPCoerce.serialize_value(
+				"value": Coerce.serialize_value(
 					animation.track_get_key_value(track_index, existing_index)),
 			}
 		var undo_redo = _Hub.get_undo_redo()
@@ -177,12 +177,12 @@ static func _cmd_animation_keyframe(
 			"track_idx": track_index,
 			"time": time,
 			"key_idx": new_index,
-			"value": MCPCoerce.serialize_value(coerced),
+			"value": Coerce.serialize_value(coerced),
 		}
 	else:
 		var resolved := _resolve_animation(player_path, animation_name)
 		if resolved.has("error"):
-			return MCPError.make(str(resolved["code"]), str(resolved["error"]))
+			return McpError.make(str(resolved["code"]), str(resolved["error"]))
 		var animation: Animation = resolved["anim"]
 		var track_index := -1
 		var track_path_node_path := NodePath(track_path)
@@ -191,15 +191,15 @@ static func _cmd_animation_keyframe(
 				track_index = index
 				break
 		if track_index == -1:
-			return MCPError.make("NOT_FOUND",
+			return McpError.make("NOT_FOUND",
 				"no track '%s' on animation '%s'" % [track_path, animation_name])
 		var key_index := animation.track_find_key(
 			track_index, time, Animation.FIND_MODE_EXACT)
 		if key_index == -1:
-			return MCPError.make("NOT_FOUND",
+			return McpError.make("NOT_FOUND",
 				"no key at time=%f on track '%s'" % [time, track_path])
 		var captured_value = animation.track_get_key_value(track_index, key_index)
-		var serialised_value = MCPCoerce.serialize_value(captured_value)
+		var serialised_value = Coerce.serialize_value(captured_value)
 		var undo_redo = _Hub.get_undo_redo()
 		if undo_redo != null:
 			undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time])
@@ -223,14 +223,14 @@ static func _cmd_animation_keyframe(
 
 static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
 	var player_path := str(parameters.get("player_path", ""))
-	player_path = MCPHelpers.normalize_editor_path(player_path)
+	player_path = Helpers.normalize_editor_path(player_path)
 	var animation_name := str(parameters.get("animation_name", ""))
 	var track_path := str(parameters.get("track_path", ""))
 	if track_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing track_path")
+		return McpError.make("INVALID_PARAMS", "missing track_path")
 	var resolved := _resolve_animation(player_path, animation_name)
 	if resolved.has("error"):
-		return MCPError.make(str(resolved["code"]), str(resolved["error"]))
+		return McpError.make(str(resolved["code"]), str(resolved["error"]))
 	var animation: Animation = resolved["anim"]
 	var track_index := -1
 	var track_path_node_path := NodePath(track_path)
@@ -239,13 +239,13 @@ static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
 			track_index = index
 			break
 	if track_index == -1:
-		return MCPError.make("NOT_FOUND",
+		return McpError.make("NOT_FOUND",
 			"no track '%s' on animation '%s'" % [track_path, animation_name])
 	var keys: Array = []
 	for key_index in range(animation.track_get_key_count(track_index)):
 		keys.append({
 			"time": animation.track_get_key_time(track_index, key_index),
-			"value": MCPCoerce.serialize_value(
+			"value": Coerce.serialize_value(
 				animation.track_get_key_value(track_index, key_index)),
 			"transition": animation.track_get_key_transition(track_index, key_index),
 		})
@@ -257,7 +257,7 @@ static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
 		"track_idx": track_index,
 		"track_type": _track_type_name(animation.track_get_type(track_index)),
 		"length": animation.length,
-		"keys": MCPUntrusted.wrap(
+		"keys": Untrusted.wrap(
 			"animation", "%s/%s" % [player_path, animation_name],
 			JSON.stringify(keys)),
 	}
@@ -267,16 +267,16 @@ static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
 
 
 static func _resolve_tree(node_path: String) -> Variant:
-	var root := MCPHelpers.get_edited_root()
+	var root := Helpers.get_edited_root()
 	if root == null:
-		return MCPError.make("NO_SCENE", "no edited scene")
+		return McpError.make("NO_SCENE", "no edited scene")
 	if node_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing node_path")
+		return McpError.make("INVALID_PARAMS", "missing node_path")
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "no node at %s" % node_path)
+		return McpError.make("NOT_FOUND", "no node at %s" % node_path)
 	if not (node is AnimationTree):
-		return MCPError.make("INVALID_CLASS",
+		return McpError.make("INVALID_CLASS",
 			"node at %s is not an AnimationTree (got %s)" % [node_path, node.get_class()])
 	return node
 
@@ -284,9 +284,9 @@ static func _resolve_tree(node_path: String) -> Variant:
 static func _resolve_state_machine(tree: AnimationTree) -> Variant:
 	var tree_root = tree.tree_root
 	if tree_root == null:
-		return MCPError.make("INVALID_STATE", "AnimationTree has no tree_root set")
+		return McpError.make("INVALID_STATE", "AnimationTree has no tree_root set")
 	if not (tree_root is AnimationNodeStateMachine):
-		return MCPError.make("INVALID_STATE",
+		return McpError.make("INVALID_STATE",
 			"tree_root is %s, not AnimationNodeStateMachine" % tree_root.get_class())
 	return tree_root
 
@@ -337,10 +337,10 @@ static func _cmd_animationtree_edit(
 	server: Node, parameters: Dictionary,
 ) -> Dictionary:
 	var node_path := str(parameters.get("node_path", ""))
-	node_path = MCPHelpers.normalize_editor_path(node_path)
+	node_path = Helpers.normalize_editor_path(node_path)
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing action")
+		return McpError.make("INVALID_PARAMS", "missing action")
 
 	var resolved = _resolve_tree(node_path)
 	if resolved is Dictionary:
@@ -363,7 +363,7 @@ static func _cmd_animationtree_edit(
 		"list":
 			return _at_list(tree)
 		_:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"unknown action '%s'; expected set_root|add_node|remove_node|add_transition|remove_transition|set_property|list" % action)
 
 
@@ -379,7 +379,7 @@ static func _at_set_root(
 		"AnimationNodeBlendTree":
 			new_root = AnimationNodeBlendTree.new()
 		_:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"root_type must be 'AnimationNodeStateMachine' or 'AnimationNodeBlendTree' (got '%s')" % root_type)
 
 	var undo_redo = _Hub.get_undo_redo()
@@ -409,7 +409,7 @@ static func _at_add_node(
 
 	var node_name := str(params.get("node_name", ""))
 	if node_name.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing node_name")
+		return McpError.make("INVALID_PARAMS", "missing node_name")
 	var node_type := str(params.get("node_type", "AnimationNodeAnimation"))
 
 	# Idempotent: if the node already exists, return it.
@@ -424,14 +424,14 @@ static func _at_add_node(
 
 	# Instantiate the AnimationNode by class name.
 	if not ClassDB.class_exists(node_type):
-		return MCPError.make("INVALID_CLASS",
+		return McpError.make("INVALID_CLASS",
 			"class '%s' does not exist" % node_type)
 	if not ClassDB.is_parent_class(node_type, "AnimationNode"):
-		return MCPError.make("INVALID_CLASS",
+		return McpError.make("INVALID_CLASS",
 			"'%s' is not an AnimationNode subclass" % node_type)
 	var new_node: AnimationNode = ClassDB.instantiate(node_type) as AnimationNode
 	if new_node == null:
-		return MCPError.make("INVALID_CLASS",
+		return McpError.make("INVALID_CLASS",
 			"could not instantiate '%s'" % node_type)
 
 	# For AnimationNodeAnimation, set the animation property.
@@ -473,9 +473,9 @@ static func _at_remove_node(
 
 	var node_name := str(params.get("node_name", ""))
 	if node_name.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing node_name")
+		return McpError.make("INVALID_PARAMS", "missing node_name")
 	if not sm.has_node(StringName(node_name)):
-		return MCPError.make("NOT_FOUND",
+		return McpError.make("NOT_FOUND",
 			"no node '%s' in state machine" % node_name)
 
 	var undo_redo = _Hub.get_undo_redo()
@@ -508,11 +508,11 @@ static func _at_add_transition(
 	var from := str(params.get("from", ""))
 	var to := str(params.get("to", ""))
 	if from.is_empty() or to.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing from or to")
+		return McpError.make("INVALID_PARAMS", "missing from or to")
 	if not sm.has_node(StringName(from)):
-		return MCPError.make("NOT_FOUND", "no node '%s' in state machine" % from)
+		return McpError.make("NOT_FOUND", "no node '%s' in state machine" % from)
 	if not sm.has_node(StringName(to)):
-		return MCPError.make("NOT_FOUND", "no node '%s' in state machine" % to)
+		return McpError.make("NOT_FOUND", "no node '%s' in state machine" % to)
 
 	# Check for existing identical transition (idempotent).
 	for i in range(sm.get_transition_count()):
@@ -570,7 +570,7 @@ static func _at_remove_transition(
 	var from := str(params.get("from", ""))
 	var to := str(params.get("to", ""))
 	if from.is_empty() or to.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing from or to")
+		return McpError.make("INVALID_PARAMS", "missing from or to")
 
 	var found_idx := -1
 	for i in range(sm.get_transition_count()):
@@ -578,7 +578,7 @@ static func _at_remove_transition(
 			found_idx = i
 			break
 	if found_idx == -1:
-		return MCPError.make("NOT_FOUND",
+		return McpError.make("NOT_FOUND",
 			"no transition from '%s' to '%s'" % [from, to])
 
 	var undo_redo = _Hub.get_undo_redo()
@@ -610,21 +610,21 @@ static func _at_set_property(
 
 	var target_node := str(params.get("target_node", ""))
 	if target_node.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing target_node")
+		return McpError.make("INVALID_PARAMS", "missing target_node")
 	var property := str(params.get("property", ""))
 	if property.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing property")
+		return McpError.make("INVALID_PARAMS", "missing property")
 	if not params.has("value"):
-		return MCPError.make("INVALID_PARAMS", "missing value")
+		return McpError.make("INVALID_PARAMS", "missing value")
 	var value = params.get("value")
 
 	if not sm.has_node(StringName(target_node)):
-		return MCPError.make("NOT_FOUND",
+		return McpError.make("NOT_FOUND",
 			"no node '%s' in state machine" % target_node)
 	var anim_node: AnimationNode = sm.get_node(StringName(target_node))
 
 	var old_value = anim_node.get(property)
-	var coerced = MCPCoerce.coerce_value(value)
+	var coerced = Coerce.coerce_value(value)
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
@@ -680,10 +680,10 @@ static func _at_list(tree: AnimationTree) -> Dictionary:
 	return {
 		"success": true,
 		"root_type": root_type,
-		"nodes": MCPUntrusted.wrap(
+		"nodes": Untrusted.wrap(
 			"animationtree", "nodes",
 			JSON.stringify(nodes)),
-		"transitions": MCPUntrusted.wrap(
+		"transitions": Untrusted.wrap(
 			"animationtree", "transitions",
 			JSON.stringify(transitions)),
 	}

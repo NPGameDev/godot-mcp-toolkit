@@ -2,26 +2,26 @@
 extends RefCounted
 ## Centralized preloads for plugin-internal scripts.
 ##
-## Every file that needs MCPError or MCPCoerce preloads
+## Every file that needs McpError or Coerce preloads
 ## this hub and re-aliases the constants it needs. Script paths live here only
 ## — if a file moves, update this file and nothing else.
 
-const MCPError := preload("res://addons/godot_mcp_toolkit/mcp_error.gd")
-const MCPCoerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
-const MCPFileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
-const MCPUntrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
-const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
-const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
-const MCPScrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
-const MCPAudit := preload("res://addons/godot_mcp_toolkit/audit.gd")
-const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
-const MCPRegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
-const MCPStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
-const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
+const McpError := preload("res://addons/godot_mcp_toolkit/mcp_error.gd")
+const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
+const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
+const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
+const FeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
+const FeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
+const Scrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
+const Audit := preload("res://addons/godot_mcp_toolkit/audit.gd")
+const McpJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
+const McpStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
+const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/user_path_monitor.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
-const MCPHelpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
-const MCPNodejsCheck := preload("res://addons/godot_mcp_toolkit/nodejs_check.gd")
+const Helpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
+const NodejsCheck := preload("res://addons/godot_mcp_toolkit/nodejs_check.gd")
 
 
 # -- Version helpers (Godot 4.x cross-version compat) -----------------------

@@ -8,14 +8,14 @@ extends RefCounted
 ## trigger an MCP server restart. The auth response and config_reloaded
 ## notification deliver this state to the bridge directly.
 
-const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
-const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
+const FeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
+const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 
 const _FILENAME := "mcp_toolkit_state.json"
 
 
 static func get_path() -> String:
-	return MCPProjectPaths.instance_dir() + _FILENAME
+	return ProjectPaths.instance_dir() + _FILENAME
 
 
 static func read() -> Dictionary:
@@ -29,7 +29,7 @@ static func read() -> Dictionary:
 	f.close()
 	var parsed = JSON.parse_string(text)
 	if parsed == null or not parsed is Dictionary:
-		push_warning("[MCPStateFile] corrupt sidecar at %s — ignoring" % path)
+		push_warning("[McpStateFile] corrupt sidecar at %s — ignoring" % path)
 		return {}
 	return parsed
 
@@ -43,7 +43,7 @@ static func set_gate(env_var_name: String, enabled: bool) -> Error:
 	var data := read()
 	var gates: Dictionary = data.get("gates", {})
 	# Seed missing gates from PS to prevent partial sidecar writes.
-	if gates.size() < MCPFeatureRegistry.all_features().size():
+	if gates.size() < FeatureRegistry.all_features().size():
 		var ps_gates := gates_from_ps()
 		for key in ps_gates:
 			if not gates.has(key):
@@ -67,8 +67,8 @@ static func is_gate_enabled(env_var_name: String) -> bool:
 ## Build a full gates dict with every known env var set to the given value.
 static func build_gates_dict(value: bool) -> Dictionary:
 	var gates := {}
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 		gates[str(entry["env_var"])] = value
 	return gates
 
@@ -76,19 +76,19 @@ static func build_gates_dict(value: bool) -> Dictionary:
 ## Build gates dict from current ProjectSettings bools.
 static func gates_from_ps() -> Dictionary:
 	var gates := {}
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 		gates[str(entry["env_var"])] = bool(ProjectSettings.get_setting(str(entry["ps_key"]), false))
 	return gates
 
 
 static func _atomic_write(data: Dictionary) -> Error:
 	var path := get_path()
-	MCPProjectPaths.ensure_dirs()
+	ProjectPaths.ensure_dirs()
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		var err := FileAccess.get_open_error()
-		push_warning("[MCPStateFile] cannot write %s (err %d)" % [path, err])
+		push_warning("[McpStateFile] cannot write %s (err %d)" % [path, err])
 		return err
 	f.store_string(JSON.stringify(data, "\t"))
 	f.close()

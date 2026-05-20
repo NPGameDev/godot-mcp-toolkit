@@ -7,7 +7,7 @@ extends RefCounted
 ## (or GODOT_MCP_TOKEN_PATH), and required as the first WebSocket message
 ## from every connecting client.
 
-const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
+const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 
 
 ## Generate a fresh 64-char hex token (32 random bytes).
@@ -23,12 +23,12 @@ static func get_token_path() -> String:
 	var env_path := OS.get_environment("GODOT_MCP_TOKEN_PATH")
 	if not env_path.is_empty():
 		return env_path
-	return MCPProjectPaths.instance_dir() + "mcp_token"
+	return ProjectPaths.instance_dir() + "mcp_token"
 
 
 ## Write token to disk. Returns OK or an error code.
 static func write_token(token: String) -> int:
-	MCPProjectPaths.ensure_dirs()
+	ProjectPaths.ensure_dirs()
 	var path := get_token_path()
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:

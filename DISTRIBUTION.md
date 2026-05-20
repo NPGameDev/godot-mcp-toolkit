@@ -63,7 +63,7 @@ swap rationale and iter 20's verification for the swap-back.
 2. Extract into `<your-godot-project>/addons/`. The zip's top-level entry is
    `addons/godot_mcp_toolkit/`, so the extract creates the right layout.
 3. In Godot: Project Settings → Plugins → "Godot MCP Toolkit" → Active.
-4. Confirm the editor log shows `WS server on 127.0.0.1:6505`.
+4. Confirm the editor log shows `WS server on 127.0.0.1:6550`.
 
 ## End-user plugin install (Asset Library, once submitted)
 

@@ -3,9 +3,9 @@ extends RefCounted
 ## spriteframes.* command handlers — SpriteFrames resource creation and editing.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPFileGuard = _Hub.MCPFileGuard
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const FileGuard = _Hub.FileGuard
+const Helpers = _Hub.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -21,22 +21,22 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _cmd_create(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path", "animations"])
+	var err = McpError.check_required(parameters, ["file_path", "animations"])
 	if err != null:
 		return err
 
 	var file_path := str(parameters.get("file_path", ""))
-	file_path = MCPHelpers.normalize_editor_path(file_path)
+	file_path = Helpers.normalize_editor_path(file_path)
 	var animations_raw = parameters.get("animations", null)
 
 	if typeof(animations_raw) != TYPE_ARRAY or animations_raw.is_empty():
-		return MCPError.make("INVALID_PARAMS", "animations must be a non-empty Array")
+		return McpError.make("INVALID_PARAMS", "animations must be a non-empty Array")
 
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tres":
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"spriteframes.create writes .tres files (got %s)" % file_path)
 
 	# Idempotency: if file already exists, return early.
@@ -48,11 +48,11 @@ static func _cmd_create(parameters: Dictionary) -> Dictionary:
 
 	for anim_raw in animations_raw:
 		if typeof(anim_raw) != TYPE_DICTIONARY:
-			return MCPError.make("INVALID_PARAMS", "each animation must be a Dictionary")
+			return McpError.make("INVALID_PARAMS", "each animation must be a Dictionary")
 
 		var anim_name := str(anim_raw.get("name", ""))
 		if anim_name.is_empty():
-			return MCPError.make("INVALID_PARAMS", "animation name is required")
+			return McpError.make("INVALID_PARAMS", "animation name is required")
 
 		var fps: float = float(anim_raw.get("fps", 5.0))
 		var loop: bool = bool(anim_raw.get("loop", true))
@@ -86,31 +86,31 @@ static func _cmd_create(parameters: Dictionary) -> Dictionary:
 
 	var save_err := ResourceSaver.save(sf, file_path)
 	if save_err != OK:
-		return MCPError.make("SAVE_FAILED",
+		return McpError.make("SAVE_FAILED",
 			"ResourceSaver.save() returned error %d for %s" % [save_err, file_path])
 
 	return {"success": true, "path": file_path, "status": "created", "animations": anim_info}
 
 
 static func _cmd_edit(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path", "action"])
+	var err = McpError.check_required(parameters, ["file_path", "action"])
 	if err != null:
 		return err
 
 	var file_path := str(parameters.get("file_path", ""))
-	file_path = MCPHelpers.normalize_editor_path(file_path)
+	file_path = Helpers.normalize_editor_path(file_path)
 	var action := str(parameters.get("action", ""))
 
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "SpriteFrames resource not found: %s" % file_path)
+		return McpError.make("NOT_FOUND", "SpriteFrames resource not found: %s" % file_path)
 
 	var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if loaded == null or not (loaded is SpriteFrames):
-		return MCPError.make("INVALID_CLASS",
+		return McpError.make("INVALID_CLASS",
 			"Resource at %s is not a SpriteFrames" % file_path)
 	var sf: SpriteFrames = loaded as SpriteFrames
 
@@ -122,7 +122,7 @@ static func _cmd_edit(parameters: Dictionary) -> Dictionary:
 
 		"add_animation":
 			if anim_name.is_empty():
-				return MCPError.make("INVALID_PARAMS", "animation_name is required")
+				return McpError.make("INVALID_PARAMS", "animation_name is required")
 			if sf.has_animation(anim_name):
 				return {"success": true, "action": action, "animation_name": anim_name, "status": "returned"}
 			sf.add_animation(anim_name)
@@ -135,19 +135,19 @@ static func _cmd_edit(parameters: Dictionary) -> Dictionary:
 
 		"remove_animation":
 			if anim_name.is_empty():
-				return MCPError.make("INVALID_PARAMS", "animation_name is required")
+				return McpError.make("INVALID_PARAMS", "animation_name is required")
 			if not sf.has_animation(anim_name):
-				return MCPError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
+				return McpError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
 			sf.remove_animation(anim_name)
 
 		"add_frame":
 			if anim_name.is_empty():
-				return MCPError.make("INVALID_PARAMS", "animation_name is required")
+				return McpError.make("INVALID_PARAMS", "animation_name is required")
 			if not sf.has_animation(anim_name):
-				return MCPError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
+				return McpError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
 			var frames_raw = parameters.get("frames", null)
 			if frames_raw == null or typeof(frames_raw) != TYPE_ARRAY or frames_raw.is_empty():
-				return MCPError.make("INVALID_PARAMS", "frames array is required for add_frame")
+				return McpError.make("INVALID_PARAMS", "frames array is required for add_frame")
 			for frame_raw in frames_raw:
 				var result = _load_frame(frame_raw)
 				if result.has("error"):
@@ -156,52 +156,52 @@ static func _cmd_edit(parameters: Dictionary) -> Dictionary:
 
 		"remove_frame":
 			if anim_name.is_empty():
-				return MCPError.make("INVALID_PARAMS", "animation_name is required")
+				return McpError.make("INVALID_PARAMS", "animation_name is required")
 			if not sf.has_animation(anim_name):
-				return MCPError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
+				return McpError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
 			var frame_index_raw = parameters.get("frame_index", null)
 			if frame_index_raw == null:
-				return MCPError.make("INVALID_PARAMS", "frame_index is required for remove_frame")
+				return McpError.make("INVALID_PARAMS", "frame_index is required for remove_frame")
 			var idx := int(frame_index_raw)
 			if idx < 0 or idx >= sf.get_frame_count(anim_name):
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"frame_index %d out of range (0..%d)" % [idx, sf.get_frame_count(anim_name) - 1])
 			sf.remove_frame(anim_name, idx)
 
 		"set_fps":
 			if anim_name.is_empty():
-				return MCPError.make("INVALID_PARAMS", "animation_name is required")
+				return McpError.make("INVALID_PARAMS", "animation_name is required")
 			if not sf.has_animation(anim_name):
-				return MCPError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
+				return McpError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
 			var fps_val = parameters.get("fps", null)
 			if fps_val == null:
-				return MCPError.make("INVALID_PARAMS", "fps is required for set_fps")
+				return McpError.make("INVALID_PARAMS", "fps is required for set_fps")
 			sf.set_animation_speed(anim_name, float(fps_val))
 
 		"set_loop":
 			if anim_name.is_empty():
-				return MCPError.make("INVALID_PARAMS", "animation_name is required")
+				return McpError.make("INVALID_PARAMS", "animation_name is required")
 			if not sf.has_animation(anim_name):
-				return MCPError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
+				return McpError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
 			var loop_val = parameters.get("loop", null)
 			if loop_val == null:
-				return MCPError.make("INVALID_PARAMS", "loop is required for set_loop")
+				return McpError.make("INVALID_PARAMS", "loop is required for set_loop")
 			sf.set_animation_loop(anim_name, bool(loop_val))
 
 		"reorder_frames":
 			if anim_name.is_empty():
-				return MCPError.make("INVALID_PARAMS", "animation_name is required")
+				return McpError.make("INVALID_PARAMS", "animation_name is required")
 			if not sf.has_animation(anim_name):
-				return MCPError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
+				return McpError.make("NOT_FOUND", "Animation '%s' not found" % anim_name)
 			var from_idx_raw = parameters.get("frame_index", null)
 			var to_idx_raw = parameters.get("new_index", null)
 			if from_idx_raw == null or to_idx_raw == null:
-				return MCPError.make("INVALID_PARAMS", "frame_index and new_index are required for reorder_frames")
+				return McpError.make("INVALID_PARAMS", "frame_index and new_index are required for reorder_frames")
 			var from_idx := int(from_idx_raw)
 			var to_idx := int(to_idx_raw)
 			var count := sf.get_frame_count(anim_name)
 			if from_idx < 0 or from_idx >= count or to_idx < 0 or to_idx >= count:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"frame_index/new_index out of range (0..%d)" % [count - 1])
 			var tex = sf.get_frame_texture(anim_name, from_idx)
 			var dur := sf.get_frame_duration(anim_name, from_idx)
@@ -209,44 +209,44 @@ static func _cmd_edit(parameters: Dictionary) -> Dictionary:
 			sf.add_frame(anim_name, tex, dur, to_idx)
 
 		_:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"Unknown action '%s'. Expected: add_animation, remove_animation, add_frame, remove_frame, set_fps, set_loop, reorder_frames, list" % action)
 
 	var save_err := ResourceSaver.save(sf, file_path)
 	if save_err != OK:
-		return MCPError.make("SAVE_FAILED",
+		return McpError.make("SAVE_FAILED",
 			"ResourceSaver.save() returned error %d for %s" % [save_err, file_path])
 
 	return {"success": true, "action": action, "animation_name": anim_name}
 
 
 static func _cmd_from_spritesheet(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path", "texture_path", "frame_size", "animations"])
+	var err = McpError.check_required(parameters, ["file_path", "texture_path", "frame_size", "animations"])
 	if err != null:
 		return err
 
 	var file_path := str(parameters.get("file_path", ""))
-	file_path = MCPHelpers.normalize_editor_path(file_path)
+	file_path = Helpers.normalize_editor_path(file_path)
 	var texture_path := str(parameters.get("texture_path", ""))
-	texture_path = MCPHelpers.normalize_editor_path(texture_path)
+	texture_path = Helpers.normalize_editor_path(texture_path)
 	var frame_size_raw = parameters.get("frame_size", null)
 	var animations_raw = parameters.get("animations", null)
 
 	if typeof(frame_size_raw) != TYPE_DICTIONARY:
-		return MCPError.make("INVALID_PARAMS", "frame_size must be {x, y}")
+		return McpError.make("INVALID_PARAMS", "frame_size must be {x, y}")
 	var frame_w := int(frame_size_raw.get("x", 0))
 	var frame_h := int(frame_size_raw.get("y", 0))
 	if frame_w <= 0 or frame_h <= 0:
-		return MCPError.make("INVALID_PARAMS", "frame_size x and y must be positive integers")
+		return McpError.make("INVALID_PARAMS", "frame_size x and y must be positive integers")
 
 	if typeof(animations_raw) != TYPE_ARRAY or animations_raw.is_empty():
-		return MCPError.make("INVALID_PARAMS", "animations must be a non-empty Array")
+		return McpError.make("INVALID_PARAMS", "animations must be a non-empty Array")
 
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tres":
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"spriteframes.from_spritesheet writes .tres files (got %s)" % file_path)
 
 	# Idempotency.
@@ -254,10 +254,10 @@ static func _cmd_from_spritesheet(parameters: Dictionary) -> Dictionary:
 		return {"success": true, "status": "returned", "path": file_path}
 
 	if not ResourceLoader.exists(texture_path):
-		return MCPError.make("NOT_FOUND", "Spritesheet texture not found: %s" % texture_path)
+		return McpError.make("NOT_FOUND", "Spritesheet texture not found: %s" % texture_path)
 	var sheet_tex = ResourceLoader.load(texture_path)
 	if sheet_tex == null or not (sheet_tex is Texture2D):
-		return MCPError.make("NOT_FOUND", "Failed to load spritesheet texture: %s" % texture_path)
+		return McpError.make("NOT_FOUND", "Failed to load spritesheet texture: %s" % texture_path)
 
 	var tex_size: Vector2 = sheet_tex.get_size()
 	var cols := int(tex_size.x) / frame_w
@@ -268,24 +268,24 @@ static func _cmd_from_spritesheet(parameters: Dictionary) -> Dictionary:
 
 	for anim_raw in animations_raw:
 		if typeof(anim_raw) != TYPE_DICTIONARY:
-			return MCPError.make("INVALID_PARAMS", "each animation must be a Dictionary")
+			return McpError.make("INVALID_PARAMS", "each animation must be a Dictionary")
 
 		var anim_name := str(anim_raw.get("name", ""))
 		if anim_name.is_empty():
-			return MCPError.make("INVALID_PARAMS", "animation name is required")
+			return McpError.make("INVALID_PARAMS", "animation name is required")
 
 		var row := int(anim_raw.get("row", 0))
 		var start_col := int(anim_raw.get("start_col", 0))
 		var frame_count := int(anim_raw.get("frame_count", 0))
 		if frame_count <= 0:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"frame_count must be positive for animation '%s'" % anim_name)
 
 		if row < 0 or row >= rows:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"row %d out of bounds (texture has %d rows of %dpx)" % [row, rows, frame_h])
 		if start_col < 0 or (start_col + frame_count) > cols:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"columns %d..%d out of bounds (texture has %d cols of %dpx)" % [
 					start_col, start_col + frame_count - 1, cols, frame_w])
 
@@ -318,7 +318,7 @@ static func _cmd_from_spritesheet(parameters: Dictionary) -> Dictionary:
 
 	var save_err := ResourceSaver.save(sf, file_path)
 	if save_err != OK:
-		return MCPError.make("SAVE_FAILED",
+		return McpError.make("SAVE_FAILED",
 			"ResourceSaver.save() returned error %d for %s" % [save_err, file_path])
 
 	return {"success": true, "path": file_path, "status": "created", "animations": anim_info}
@@ -329,18 +329,18 @@ static func _cmd_from_spritesheet(parameters: Dictionary) -> Dictionary:
 
 static func _load_frame(frame_raw) -> Dictionary:
 	if typeof(frame_raw) != TYPE_DICTIONARY:
-		return MCPError.make("INVALID_PARAMS", "each frame must be a Dictionary")
+		return McpError.make("INVALID_PARAMS", "each frame must be a Dictionary")
 
 	var texture_path := str(frame_raw.get("texture", ""))
 	if texture_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "frame texture path is required")
+		return McpError.make("INVALID_PARAMS", "frame texture path is required")
 
 	if not ResourceLoader.exists(texture_path):
-		return MCPError.make("NOT_FOUND", "Texture not found: %s" % texture_path)
+		return McpError.make("NOT_FOUND", "Texture not found: %s" % texture_path)
 
 	var tex = ResourceLoader.load(texture_path)
 	if tex == null or not (tex is Texture2D):
-		return MCPError.make("NOT_FOUND", "Failed to load texture: %s" % texture_path)
+		return McpError.make("NOT_FOUND", "Failed to load texture: %s" % texture_path)
 
 	var atlas_raw = frame_raw.get("atlas", null)
 	if atlas_raw != null and typeof(atlas_raw) == TYPE_DICTIONARY:

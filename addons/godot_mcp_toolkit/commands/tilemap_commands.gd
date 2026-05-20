@@ -3,10 +3,10 @@ extends RefCounted
 ## tilemap.* command handlers — batch cell painting with UndoRedo.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPCoerce = _Hub.MCPCoerce
-const MCPFileGuard = _Hub.MCPFileGuard
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const Coerce = _Hub.Coerce
+const FileGuard = _Hub.FileGuard
+const Helpers = _Hub.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
@@ -22,7 +22,7 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 
 
 static func _resolve_scene_node(node_path: String) -> Variant:
-	return MCPHelpers.resolve_scene_node(node_path)
+	return Helpers.resolve_scene_node(node_path)
 
 
 # -- Commands -----------------------------------------------------------------
@@ -58,12 +58,12 @@ static func _cmd_tilemap_set_cells(
 	server: Node, parameters: Dictionary,
 ) -> Dictionary:
 	var tilemap_path := str(parameters.get("tilemap_path", ""))
-	tilemap_path = MCPHelpers.normalize_editor_path(tilemap_path)
+	tilemap_path = Helpers.normalize_editor_path(tilemap_path)
 	var layer := int(parameters.get("layer", 0))
 	var cells_raw = parameters.get("cells", null)
 	var regions_raw = parameters.get("regions", null)
 	if tilemap_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing tilemap_path")
+		return McpError.make("INVALID_PARAMS", "missing tilemap_path")
 
 	# FIX-A: expand regions into cells.
 	if regions_raw != null and typeof(regions_raw) == TYPE_ARRAY:
@@ -74,17 +74,17 @@ static func _cmd_tilemap_set_cells(
 			cells_raw = expanded
 
 	if typeof(cells_raw) != TYPE_ARRAY:
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"cells or regions must be provided. cells: Array of {x,y,source_id,atlas_x,atlas_y,alternative_tile?}. " +
 			"regions: Array of {x,y,width,height,source_id,atlas_x,atlas_y,alternative_tile?} for bulk rectangular fills.")
 	var cells: Array = cells_raw
 	var node = _resolve_scene_node(tilemap_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "no node at %s" % tilemap_path, MCPError.HINT_NODE_PATH)
+		return McpError.make("NOT_FOUND", "no node at %s" % tilemap_path, McpError.HINT_NODE_PATH)
 	var is_layer: bool = node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	var is_map := node is TileMap
 	if not (is_layer or is_map):
-		return MCPError.make("INVALID_CLASS",
+		return McpError.make("INVALID_CLASS",
 			"node at %s is not a TileMap or TileMapLayer (got %s); tilemap.set_cells only accepts tilemap-family nodes" % [
 				tilemap_path, node.get_class()])
 
@@ -96,7 +96,7 @@ static func _cmd_tilemap_set_cells(
 	else:
 		has_tileset = (node as TileMap).tile_set != null
 	if not has_tileset:
-		return MCPError.make("INVALID_STATE",
+		return McpError.make("INVALID_STATE",
 			"no tileset assigned to %s — cells would be invisible. " % tilemap_path +
 			"Use node_set_property with {\"type\": \"Resource\", \"path\": \"res://path/to/tileset.tres\"} to set tile_set first.")
 
@@ -104,18 +104,18 @@ static func _cmd_tilemap_set_cells(
 	for cell_index in range(cells.size()):
 		var cell = cells[cell_index]
 		if typeof(cell) != TYPE_DICTIONARY:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"cells[%d] must be an object" % cell_index)
 		for key in required_keys:
 			if not cell.has(key):
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"cells[%d] missing required key '%s'" % [cell_index, key])
 
 	if is_map:
 		var tile_map := node as TileMap
 		var layer_count := tile_map.get_layers_count()
 		if layer < 0 or layer >= layer_count:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"layer %d out of range [0, %d) for TileMap %s" % [
 					layer, layer_count, tilemap_path])
 
@@ -180,7 +180,7 @@ static func _cmd_tilemap_set_cells(
 
 
 static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path", "texture_path"])
+	var err = McpError.check_required(parameters, ["file_path", "texture_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -189,17 +189,17 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 	var tile_w := int(tile_size_raw.get("x", 16)) if typeof(tile_size_raw) == TYPE_DICTIONARY else 16
 	var tile_h := int(tile_size_raw.get("y", 16)) if typeof(tile_size_raw) == TYPE_DICTIONARY else 16
 
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if not file_path.get_extension().to_lower() in ["tres", "res"]:
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"tileset_create writes .tres/.res files (got %s)" % file_path)
 
 	# Load texture
 	var texture: Texture2D = load(texture_path) as Texture2D
 	if texture == null:
-		return MCPError.make("NOT_FOUND",
+		return McpError.make("NOT_FOUND",
 			"texture not found or not a Texture2D: %s" % texture_path)
 
 	# Create TileSet
@@ -210,8 +210,8 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 	var physics: bool = parameters.get("physics", true)
 	if physics:
 		ts.add_physics_layer()
-		var collision_layer := MCPCoerce.layers_to_mask(parameters.get("collision_layer", 1))
-		var collision_mask := MCPCoerce.layers_to_mask(parameters.get("collision_mask", 1))
+		var collision_layer := Coerce.layers_to_mask(parameters.get("collision_layer", 1))
+		var collision_mask := Coerce.layers_to_mask(parameters.get("collision_mask", 1))
 		ts.set_physics_layer_collision_layer(0, collision_layer)
 		ts.set_physics_layer_collision_mask(0, collision_mask)
 
@@ -242,19 +242,19 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 			tiles_created += 1
 
 	# Save
-	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "tileset.create")
+	var dir_result := Helpers.ensure_parent_dir(file_path, "tileset.create")
 	if dir_result.has("error"):
 		return dir_result
 	var save_err := ResourceSaver.save(ts, file_path)
 	if save_err != OK:
-		return MCPError.make("SAVE_FAILED",
+		return McpError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	# FIX-I: Reload with explicit type hint and verify the saved file is a valid TileSet.
 	var loaded := ResourceLoader.load(file_path, "TileSet", ResourceLoader.CACHE_MODE_REPLACE)
 	if loaded == null or not (loaded is TileSet):
-		return MCPError.make("SAVE_FAILED",
+		return McpError.make("SAVE_FAILED",
 			"tileset saved but reload failed — file may be corrupt: %s" % file_path)
-	MCPHelpers.ensure_file_indexed(file_path)
+	Helpers.ensure_file_indexed(file_path)
 
 	return {
 		"success": true,
@@ -268,7 +268,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 
@@ -278,15 +278,15 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 	var add_source_raw = parameters.get("add_source", null)
 	var layers_raw = parameters.get("layers", null)
 
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "TileSet not found: %s" % file_path)
+		return McpError.make("NOT_FOUND", "TileSet not found: %s" % file_path)
 
 	var ts = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if ts == null or not (ts is TileSet):
-		return MCPError.make("INVALID_CLASS",
+		return McpError.make("INVALID_CLASS",
 			"Resource at %s is not a TileSet" % file_path)
 
 	var tile_errors: Array = []
@@ -309,11 +309,11 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 	# -- per-tile edits --
 	if tiles_raw != null and typeof(tiles_raw) == TYPE_ARRAY:
 		if not ts.has_source(source_id):
-			return MCPError.make("NOT_FOUND",
+			return McpError.make("NOT_FOUND",
 				"No source with id %d in TileSet" % source_id)
 		var source = ts.get_source(source_id)
 		if not (source is TileSetAtlasSource):
-			return MCPError.make("INVALID_CLASS",
+			return McpError.make("INVALID_CLASS",
 				"Source %d is not a TileSetAtlasSource" % source_id)
 		var atlas: TileSetAtlasSource = source
 		var tile_size: Vector2i = ts.tile_size
@@ -407,10 +407,10 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 	# -- Save --
 	var save_err := ResourceSaver.save(ts, file_path)
 	if save_err != OK:
-		return MCPError.make("SAVE_FAILED",
+		return McpError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	MCPHelpers.ensure_file_indexed(file_path)
+	Helpers.ensure_file_indexed(file_path)
 
 	var result := {
 		"success": true,
@@ -429,10 +429,10 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 static func _apply_add_source(ts: TileSet, cfg: Dictionary) -> Dictionary:
 	var tex_path := str(cfg.get("texture_path", ""))
 	if tex_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "add_source.texture_path required")
+		return McpError.make("INVALID_PARAMS", "add_source.texture_path required")
 	var texture: Texture2D = load(tex_path) as Texture2D
 	if texture == null:
-		return MCPError.make("NOT_FOUND",
+		return McpError.make("NOT_FOUND",
 			"add_source texture not found: %s" % tex_path)
 	var source := TileSetAtlasSource.new()
 	source.texture = texture

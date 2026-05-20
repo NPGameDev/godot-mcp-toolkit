@@ -3,10 +3,10 @@ extends RefCounted
 ## script.* command handlers — read, write, delete for .gd/.cs/.gdshader/.gdshaderinc.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPFileGuard = _Hub.MCPFileGuard
-const MCPUntrusted = _Hub.MCPUntrusted
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const FileGuard = _Hub.FileGuard
+const Untrusted = _Hub.Untrusted
+const Helpers = _Hub.Helpers
 
 const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"]
 
@@ -39,19 +39,19 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 
 
 static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "file not found: %s" % file_path, MCPError.HINT_FILE_PATH)
+		return McpError.make("NOT_FOUND", "file not found: %s" % file_path, McpError.HINT_FILE_PATH)
 	var content := FileAccess.get_file_as_string(file_path)
 	var open_error := FileAccess.get_open_error()
 	if open_error != OK:
-		return MCPError.make("READ_FAILED",
+		return McpError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [open_error, file_path])
 
 	# Range read: if start_line is present, return a line slice.
@@ -59,10 +59,10 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		var start_line := int(parameters.get("start_line", 0))
 		var end_line := int(parameters.get("end_line", start_line))
 		if start_line < 1:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"start_line must be >= 1 (got %d)" % start_line)
 		if end_line < start_line:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"end_line must be >= start_line (got %d < %d)" % [end_line, start_line])
 		var lines := content.split("\n")
 		var total_lines := lines.size()
@@ -73,10 +73,10 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		var result_bytes := result_text.to_utf8_buffer().size()
 		var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/script_read_cap_kb", 256)
 		if result_bytes > cap_kb * 1024:
-			return MCPError.make("FILE_TOO_LARGE",
+			return McpError.make("FILE_TOO_LARGE",
 				"slice exceeds %d KB response cap; narrow the line range" % cap_kb)
 		return {
-			"content": MCPUntrusted.wrap("script", file_path, result_text),
+			"content": Untrusted.wrap("script", file_path, result_text),
 			"start_line": clamped_start,
 			"end_line": clamped_end,
 			"total_lines": total_lines,
@@ -86,32 +86,32 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 	var content_bytes := content.to_utf8_buffer().size()
 	var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/script_read_cap_kb", 256)
 	if content_bytes > cap_kb * 1024:
-		var size_err := MCPError.make("FILE_TOO_LARGE",
+		var size_err := McpError.make("FILE_TOO_LARGE",
 			"file exceeds %d KB response cap" % cap_kb)
 		size_err["total_bytes"] = content_bytes
 		size_err["hint"] = "re-call script_read with start_line / end_line"
 		return size_err
-	return {"content": MCPUntrusted.wrap("script", file_path, content)}
+	return {"content": Untrusted.wrap("script", file_path, content)}
 
 
 
 static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	var write_extension := file_path.get_extension().to_lower()
 	if not (write_extension in ALLOWED_EXTENSIONS):
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"script.write only writes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.create for .tscn, resource.write for .tres/.res, or a different tool for other file types" % file_path)
 	if not parameters.has("content"):
-		return MCPError.make("INVALID_PARAMS", "missing content")
+		return McpError.make("INVALID_PARAMS", "missing content")
 	var content := str(parameters.get("content", ""))
 
-	var dir_result := MCPHelpers.ensure_parent_dir(file_path, "script.write")
+	var dir_result := Helpers.ensure_parent_dir(file_path, "script.write")
 	if dir_result.has("error"):
 		return dir_result
 	var dirs_created: bool = dir_result["dirs_created"]
@@ -122,12 +122,12 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		prior_content = FileAccess.get_file_as_string(file_path)
 		var read_error := FileAccess.get_open_error()
 		if read_error != OK:
-			return MCPError.make("READ_FAILED",
+			return McpError.make("READ_FAILED",
 				"could not read prior content of %s (err %d)" % [file_path, read_error])
 
 	var write_error := _write_file_raw(file_path, content)
 	if write_error != OK:
-		return MCPError.make("WRITE_FAILED",
+		return McpError.make("WRITE_FAILED",
 			"could not open %s for write (err %d)" % [file_path, write_error])
 
 	var undo_redo = _Hub.get_undo_redo()
@@ -140,7 +140,7 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 			undo_redo.add_undo_method(server.undo_helpers, "_delete_file_silent", file_path)
 		undo_redo.commit_action(false)
 
-	var index_result := MCPHelpers.ensure_file_indexed(file_path)
+	var index_result := Helpers.ensure_file_indexed(file_path)
 
 	var bytes_written := content.to_utf8_buffer().size()
 	var result := {"success": true, "bytes": bytes_written, "undoable": undo_redo != null,
@@ -158,22 +158,22 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 
 
 static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if not (extension in ALLOWED_EXTENSIONS):
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"script.delete only removes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.delete for .tscn, resource.delete for .tres/.res, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
-	var delete_result := MCPHelpers.delete_res_file(file_path)
+		return McpError.make("NOT_FOUND", "no file at %s" % file_path, McpError.HINT_FILE_PATH)
+	var delete_result := Helpers.delete_res_file(file_path)
 	if delete_result.get("success", false):
-		var removal := MCPHelpers.ensure_file_removed(file_path)
+		var removal := Helpers.ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
 	return delete_result
 
@@ -184,21 +184,21 @@ static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
 static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	if file_path == "":
-		return MCPError.make("INVALID_PARAMS", "file_path is required")
-	var guard := MCPFileGuard.resolve_safe(file_path)
+		return McpError.make("INVALID_PARAMS", "file_path is required")
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
 	if extension != "gd":
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"script.check only supports .gd files (got .%s)" % extension)
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND", "no file at %s" % file_path, MCPError.HINT_FILE_PATH)
+		return McpError.make("NOT_FOUND", "no file at %s" % file_path, McpError.HINT_FILE_PATH)
 
 	var content := FileAccess.get_file_as_string(file_path)
 	var read_error := FileAccess.get_open_error()
 	if read_error != OK:
-		return MCPError.make("READ_FAILED",
+		return McpError.make("READ_FAILED",
 			"FileAccess error %d reading %s" % [read_error, file_path])
 
 	var validation := _validate_gdscript(content)

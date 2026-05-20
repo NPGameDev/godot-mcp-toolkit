@@ -11,13 +11,13 @@ extends RefCounted
 
 # Direct preloads (not via _Hub) to avoid circular dependency —
 # _hub.gd preloads this file.
-const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
-const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
-const MCPStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
+const FeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
+const McpJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const McpStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
 
 
 static func is_enabled(feature: String) -> bool:
-	var entry = MCPFeatureRegistry.get_entry(feature)
+	var entry = FeatureRegistry.get_entry(feature)
 	if entry == null:
 		return false
 	# Explicit deny (PS-only safety override) always wins.
@@ -25,10 +25,10 @@ static func is_enabled(feature: String) -> bool:
 		return false
 	# Sidecar is the runtime source of truth, .mcp.json as fallback.
 	var env_var: String = str(entry["env_var"])
-	var sidecar_gates := MCPStateFile.get_current_gates()
+	var sidecar_gates := McpStateFile.get_current_gates()
 	if sidecar_gates.has(env_var):
 		return sidecar_gates[env_var] == true
-	return MCPJsonSync.is_gate_enabled(env_var)
+	return McpJsonSync.is_gate_enabled(env_var)
 
 
 # -- Dangerous-gate session tracking (H7) ------------------------------------
@@ -37,7 +37,7 @@ static var _session_warned: Dictionary = {}
 
 
 static func needs_danger_warning(feature: String) -> bool:
-	var entry = MCPFeatureRegistry.get_entry(feature)
+	var entry = FeatureRegistry.get_entry(feature)
 	if entry == null:
 		return false
 	if not entry.get("warn_on_enable", false):
@@ -50,7 +50,7 @@ static func mark_warned(feature: String) -> void:
 
 
 static func disabled_error(feature: String) -> Dictionary:
-	var entry = MCPFeatureRegistry.get_entry(feature)
+	var entry = FeatureRegistry.get_entry(feature)
 	if entry == null:
 		return {
 			"success": false,

@@ -324,7 +324,7 @@ standard error envelope with `push_error` logged. Never let exceptions
 propagate — validate inputs and return structured errors instead.
 
 **Standard error codes:** `NOT_FOUND`, `INVALID_PARAM`, `FORBIDDEN`,
-`INTERNAL_ERROR`, `TIMEOUT`. Use `MCPError.make(code, message)` from
+`INTERNAL_ERROR`, `TIMEOUT`. Use `McpError.make(code, message)` from
 `_hub.gd` if you preload the hub, or return the Dictionary directly.
 
 ### Profile behavior

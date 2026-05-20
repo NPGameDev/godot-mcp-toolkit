@@ -42,4 +42,4 @@ static func ensure_dirs() -> void:
 		var abs_path := ProjectSettings.globalize_path(inst).rstrip("/")
 		var err := DirAccess.make_dir_recursive_absolute(abs_path)
 		if err != OK:
-			push_warning("[MCPProjectPaths] ensure_dirs failed for %s (err %d)" % [abs_path, err])
+			push_warning("[ProjectPaths] ensure_dirs failed for %s (err %d)" % [abs_path, err])

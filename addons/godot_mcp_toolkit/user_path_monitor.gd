@@ -17,7 +17,7 @@ extends RefCounted
 ##   monitor.start()
 ##   monitor.project_name_changed.connect(_on_project_name_changed)
 
-const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
+const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 
 signal project_name_changed(old_name: String, new_name: String)
 
@@ -45,5 +45,5 @@ func _on_settings_changed() -> void:
 		push_warning("[MCP] Project renamed '%s' -> '%s' — user:// path shifted. Re-creating addon state." % [old, current])
 		# Ensure addon dirs exist at the new user:// path before notifying
 		# consumers — they can write immediately without calling ensure_dirs().
-		MCPProjectPaths.ensure_dirs()
+		ProjectPaths.ensure_dirs()
 		project_name_changed.emit(old, current)

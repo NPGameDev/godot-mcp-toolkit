@@ -3,9 +3,9 @@ extends RefCounted
 ## signal.* command handlers — list, manage (connect/disconnect), emit on edited-scene nodes.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPCoerce = _Hub.MCPCoerce
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const Coerce = _Hub.Coerce
+const Helpers = _Hub.Helpers
 
 static var _extends_path_re: RegEx = _compile_extends_path_re()
 
@@ -28,11 +28,11 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _get_edited_root() -> Node:
-	return MCPHelpers.get_edited_root()
+	return Helpers.get_edited_root()
 
 
 static func _resolve_scene_node(node_path: String) -> Variant:
-	return MCPHelpers.resolve_scene_node(node_path)
+	return Helpers.resolve_scene_node(node_path)
 
 
 ## Walk extends "res://..." directives via raw file reads when get_base_script()
@@ -99,10 +99,10 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 	if typeof(parameters) != TYPE_DICTIONARY:
 		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
 	var source_path := str(parameters.get("node_path", parameters.get("source_path", "")))
-	source_path = MCPHelpers.normalize_editor_path(source_path)
+	source_path = Helpers.normalize_editor_path(source_path)
 	var signal_name := str(parameters.get("signal_name", ""))
 	var target_path := str(parameters.get("target_path", ""))
-	target_path = MCPHelpers.normalize_editor_path(target_path)
+	target_path = Helpers.normalize_editor_path(target_path)
 	var method_name := str(parameters.get("method_name", ""))
 	if source_path.is_empty() or signal_name.is_empty() \
 			or target_path.is_empty() or method_name.is_empty():
@@ -171,24 +171,24 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 static func _cmd_signal_list(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return MCPError.make("NO_SCENE", "no edited scene")
+		return McpError.make("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
-	node_path = MCPHelpers.normalize_editor_path(node_path)
+	node_path = Helpers.normalize_editor_path(node_path)
 	var include_connections: bool = bool(parameters.get("include_connections", false))
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
+		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
 	return {"path": node_path, "signals": _signal_list_of(node, include_connections, root)}
 
 
 static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if not (action in ["connect", "disconnect"]):
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"action must be 'connect' or 'disconnect' (got '%s')" % action)
 	var resolved := _resolve_signal_pair(parameters)
 	if resolved.has("error"):
-		return MCPError.make(str(resolved["code"]), str(resolved["error"]))
+		return McpError.make(str(resolved["code"]), str(resolved["error"]))
 	var source = resolved["source"]
 	var callable: Callable = resolved["callable"]
 	var signal_name: String = str(resolved["signal_name"])
@@ -232,7 +232,7 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 		return response
 	else:
 		if not source.is_connected(signal_name, callable):
-			return MCPError.make("NOT_FOUND", "no connection to disconnect")
+			return McpError.make("NOT_FOUND", "no connection to disconnect")
 		var undo_redo = _Hub.get_undo_redo()
 		if undo_redo != null:
 			undo_redo.create_action("MCP: disconnect %s.%s -> %s.%s" % [
@@ -254,23 +254,23 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return MCPError.make("NO_SCENE", "no edited scene")
+		return McpError.make("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
-	node_path = MCPHelpers.normalize_editor_path(node_path)
+	node_path = Helpers.normalize_editor_path(node_path)
 	var signal_name := str(parameters.get("signal_name", ""))
 	if signal_name.is_empty():
-		return MCPError.make("INVALID_PARAMS", "missing signal")
+		return McpError.make("INVALID_PARAMS", "missing signal")
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return MCPError.make("NOT_FOUND", "node not found: %s" % node_path, MCPError.HINT_NODE_PATH)
+		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
 	if not node.has_signal(signal_name):
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"signal %s not on %s" % [signal_name, node_path])
 	var raw_args = parameters.get("args", [])
 	if typeof(raw_args) != TYPE_ARRAY:
 		raw_args = []
 	var coerced: Array = [signal_name]
 	for argument in raw_args:
-		coerced.append(MCPCoerce.coerce_value(argument))
+		coerced.append(Coerce.coerce_value(argument))
 	node.callv("emit_signal", coerced)
 	return {"success": true}

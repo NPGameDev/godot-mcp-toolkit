@@ -20,7 +20,7 @@ git worktree add ../MyGame-client client-branch
 ```
 
 **How it works:**
-- Each editor scans ports 6505-6515 and binds the first free one.
+- Each editor scans ports 6550-6560 and binds the first free one.
 - The system-wide `projects.json` registry maps each absolute path to its port.
 - The TypeScript bridge resolves the correct port by matching `process.cwd()`
   (or `GODOT_MCP_PROJECT_PATH`) against the registry.
@@ -51,7 +51,7 @@ Instances).
 
 - **Editor MCP (Mode A):** unaffected -- single editor, single Mode A port.
 - **Runtime MCP (Mode B):** dynamic port allocation works -- each game process
-  binds a distinct port from the 6525-6540 range. However, the registry's
+  binds a distinct port from the 6570-6585 range. However, the registry's
   single `runtime_port` field per entry means only the last-started game
   process is bridge-discoverable.
 

@@ -4,9 +4,9 @@ extends RefCounted
 ## FastNoiseLite resources as standalone .tres files.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPFileGuard = _Hub.MCPFileGuard
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const FileGuard = _Hub.FileGuard
+const Helpers = _Hub.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -22,26 +22,26 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _cmd_edit_gradient(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 
 	var file_path := str(parameters.get("file_path", ""))
-	file_path = MCPHelpers.normalize_editor_path(file_path)
+	file_path = Helpers.normalize_editor_path(file_path)
 	var action := str(parameters.get("action", "set"))
 	var points_raw = parameters.get("points", null)
 	var index_raw = parameters.get("index", null)
 	var interp_raw = parameters.get("interpolation_mode", null)
 
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tres":
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"procedural.edit_gradient writes .tres files (got %s)" % file_path)
 
 	if action not in ["set", "add_point", "remove_point"]:
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"action must be one of: set, add_point, remove_point (got '%s')" % action)
 
 	# Load or create Gradient.
@@ -49,7 +49,7 @@ static func _cmd_edit_gradient(parameters: Dictionary) -> Dictionary:
 	if FileAccess.file_exists(file_path):
 		var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 		if loaded == null or not (loaded is Gradient):
-			return MCPError.make("INVALID_CLASS",
+			return McpError.make("INVALID_CLASS",
 				"Resource at %s is not a Gradient" % file_path)
 		gradient = loaded as Gradient
 	else:
@@ -58,7 +58,7 @@ static func _cmd_edit_gradient(parameters: Dictionary) -> Dictionary:
 	match action:
 		"set":
 			if points_raw == null or typeof(points_raw) != TYPE_ARRAY:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"action 'set' requires a 'points' array")
 			var points := points_raw as Array
 			# Clear existing points (Gradient always keeps at least 1).
@@ -74,22 +74,22 @@ static func _cmd_edit_gradient(parameters: Dictionary) -> Dictionary:
 						_color(points[i].get("color", {})))
 		"add_point":
 			if points_raw == null or typeof(points_raw) != TYPE_ARRAY:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"action 'add_point' requires a 'points' array with at least one entry")
 			var points := points_raw as Array
 			if points.size() < 1:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"action 'add_point' requires at least one point")
 			gradient.add_point(
 				float(points[0].get("offset", 0.0)),
 				_color(points[0].get("color", {})))
 		"remove_point":
 			if index_raw == null:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"action 'remove_point' requires an 'index'")
 			var index := int(index_raw)
 			if index < 0 or index >= gradient.get_point_count():
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"index %d out of range (point_count=%d)" % [index, gradient.get_point_count()])
 			gradient.remove_point(index)
 
@@ -98,7 +98,7 @@ static func _cmd_edit_gradient(parameters: Dictionary) -> Dictionary:
 		var interp_str := str(interp_raw)
 		var interp_map := {"linear": 0, "constant": 1, "cubic": 2}
 		if not interp_map.has(interp_str):
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"interpolation_mode must be one of: linear, constant, cubic (got '%s')" % interp_str)
 		gradient.interpolation_mode = interp_map[interp_str]
 
@@ -107,27 +107,27 @@ static func _cmd_edit_gradient(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 
 	var file_path := str(parameters.get("file_path", ""))
-	file_path = MCPHelpers.normalize_editor_path(file_path)
+	file_path = Helpers.normalize_editor_path(file_path)
 	var action := str(parameters.get("action", "set"))
 	var points_raw = parameters.get("points", null)
 	var index_raw = parameters.get("index", null)
 	var min_val = parameters.get("min_value", null)
 	var max_val = parameters.get("max_value", null)
 
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tres":
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"procedural.edit_curve writes .tres files (got %s)" % file_path)
 
 	if action not in ["set", "add_point", "remove_point", "clear"]:
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"action must be one of: set, add_point, remove_point, clear (got '%s')" % action)
 
 	# Load or create Curve.
@@ -135,7 +135,7 @@ static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 	if FileAccess.file_exists(file_path):
 		var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 		if loaded == null or not (loaded is Curve):
-			return MCPError.make("INVALID_CLASS",
+			return McpError.make("INVALID_CLASS",
 				"Resource at %s is not a Curve" % file_path)
 		curve = loaded as Curve
 	else:
@@ -150,13 +150,13 @@ static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 	match action:
 		"set":
 			if points_raw == null or typeof(points_raw) != TYPE_ARRAY:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"action 'set' requires a 'points' array")
 			curve.clear_points()
 			for i in range((points_raw as Array).size()):
 				var pt = (points_raw as Array)[i]
 				if typeof(pt) != TYPE_DICTIONARY or not pt.has("position"):
-					return MCPError.make("INVALID_PARAMS",
+					return McpError.make("INVALID_PARAMS",
 						"points[%d] must have a 'position' key with {x, y}" % i)
 				var pos_d = pt["position"]
 				var pos := Vector2(float(pos_d.get("x", 0.0)), float(pos_d.get("y", 0.0)))
@@ -167,15 +167,15 @@ static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 				curve.add_point(pos, lt, rt, lm, rm)
 		"add_point":
 			if points_raw == null or typeof(points_raw) != TYPE_ARRAY:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"action 'add_point' requires a 'points' array with at least one entry")
 			var points := points_raw as Array
 			if points.size() < 1:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"action 'add_point' requires at least one point")
 			var pt = points[0]
 			if typeof(pt) != TYPE_DICTIONARY or not pt.has("position"):
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"points[0] must have a 'position' key with {x, y}")
 			var pos_d = pt["position"]
 			var pos := Vector2(float(pos_d.get("x", 0.0)), float(pos_d.get("y", 0.0)))
@@ -186,11 +186,11 @@ static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 			curve.add_point(pos, lt, rt, lm, rm)
 		"remove_point":
 			if index_raw == null:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"action 'remove_point' requires an 'index'")
 			var index := int(index_raw)
 			if index < 0 or index >= curve.point_count:
-				return MCPError.make("INVALID_PARAMS",
+				return McpError.make("INVALID_PARAMS",
 					"index %d out of range (point_count=%d)" % [index, curve.point_count])
 			curve.remove_point(index)
 		"clear":
@@ -201,18 +201,18 @@ static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["file_path"])
+	var err = McpError.check_required(parameters, ["file_path"])
 	if err != null:
 		return err
 
 	var file_path := str(parameters.get("file_path", ""))
-	file_path = MCPHelpers.normalize_editor_path(file_path)
+	file_path = Helpers.normalize_editor_path(file_path)
 
-	var guard := MCPFileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tres":
-		return MCPError.make("INVALID_PATH",
+		return McpError.make("INVALID_PATH",
 			"procedural.edit_noise writes .tres files (got %s)" % file_path)
 
 	# Load or create FastNoiseLite.
@@ -220,7 +220,7 @@ static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
 	if FileAccess.file_exists(file_path):
 		var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 		if loaded == null or not (loaded is FastNoiseLite):
-			return MCPError.make("INVALID_CLASS",
+			return McpError.make("INVALID_CLASS",
 				"Resource at %s is not a FastNoiseLite" % file_path)
 		noise = loaded as FastNoiseLite
 	else:
@@ -239,7 +239,7 @@ static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
 			"value_cubic": FastNoiseLite.TYPE_VALUE_CUBIC,
 		}
 		if not nt_map.has(nt_str):
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"noise_type must be one of: %s (got '%s')" % [
 					", ".join(nt_map.keys()), nt_str])
 		noise.noise_type = nt_map[nt_str]
@@ -267,7 +267,7 @@ static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
 			"ping_pong": FastNoiseLite.FRACTAL_PING_PONG,
 		}
 		if not ft_map.has(ft_str):
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"fractal_type must be one of: %s (got '%s')" % [
 					", ".join(ft_map.keys()), ft_str])
 		noise.fractal_type = ft_map[ft_str]
@@ -283,7 +283,7 @@ static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
 			"hybrid": FastNoiseLite.DISTANCE_HYBRID,
 		}
 		if not cdf_map.has(cdf_str):
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"cellular_distance_function must be one of: %s (got '%s')" % [
 					", ".join(cdf_map.keys()), cdf_str])
 		noise.cellular_distance_function = cdf_map[cdf_str]
@@ -302,7 +302,7 @@ static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
 			"distance2_div": FastNoiseLite.RETURN_DISTANCE2_DIV,
 		}
 		if not crt_map.has(crt_str):
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"cellular_return_type must be one of: %s (got '%s')" % [
 					", ".join(crt_map.keys()), crt_str])
 		noise.cellular_return_type = crt_map[crt_str]
@@ -338,15 +338,15 @@ static func _tangent_mode(val) -> int:
 
 static func _save_resource(resource: Resource, file_path: String,
 		cmd_name: String, extra: Dictionary) -> Dictionary:
-	var dir_result := MCPHelpers.ensure_parent_dir(file_path, cmd_name)
+	var dir_result := Helpers.ensure_parent_dir(file_path, cmd_name)
 	if dir_result.has("error"):
 		return dir_result
 	var save_err := ResourceSaver.save(resource, file_path)
 	if save_err != OK:
-		return MCPError.make("SAVE_FAILED",
+		return McpError.make("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	MCPHelpers.ensure_file_indexed(file_path)
+	Helpers.ensure_file_indexed(file_path)
 	var result := {"success": true, "file_path": file_path}
 	result.merge(extra)
 	return result

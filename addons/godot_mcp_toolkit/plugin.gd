@@ -2,8 +2,8 @@
 extends EditorPlugin
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPFileGuard = _Hub.MCPFileGuard
-const MCPRegistryClient = _Hub.MCPRegistryClient
+const FileGuard = _Hub.FileGuard
+const RegistryClient = _Hub.RegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const SettingsMigration := preload("res://addons/godot_mcp_toolkit/settings_migration.gd")
@@ -42,7 +42,7 @@ const DebugBridge := preload("res://addons/godot_mcp_toolkit/debug_bridge.gd")
 const DebugCommands := preload("res://addons/godot_mcp_toolkit/commands/debug_commands.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
-# 127.0.0.1:6525. Registered/unregistered via add_autoload_singleton /
+# 127.0.0.1:6570. Registered/unregistered via add_autoload_singleton /
 # remove_autoload_singleton so end-user installs pick it up when they
 # tick the plugin. Idempotent: if project.godot already carries the entry
 # (e.g., dogfood), Godot keeps the existing value rather than duplicating.
@@ -149,20 +149,20 @@ func _enter_tree() -> void:
 	# until _scan_and_listen() runs.
 	var bound_port: int = _server.get_bound_port()
 	if bound_port > 0:
-		MCPRegistryClient.register(bound_port, MCPAuth.get_token_path())
+		RegistryClient.register(bound_port, MCPAuth.get_token_path())
 		# Deferred re-verify: concurrent editors may clobber our entry after
 		# our initial verify passes. Jittered delay ensures all editors have
 		# finished their initial registration before we re-check.
 		var _jitter := randf_range(5.0, 10.0)
 		get_tree().create_timer(_jitter).timeout.connect(
-			func(): MCPRegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path()))
+			func(): RegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path()))
 
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
 	_notifier = GateNotifier.new()
 	_notifier.bind(_server, _events)
 
-	_dock.bind(_server, _Hub.MCPAudit.get_log_path())
+	_dock.bind(_server, _Hub.Audit.get_log_path())
 	_dock.bind_events(_events)
 	_dock.bind_notifier(_notifier)
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
@@ -195,7 +195,7 @@ func _process(_delta: float) -> void:
 func _detect_playtest_end() -> void:
 	var playing := EditorInterface.is_playing_scene()
 	if _was_playing and not playing:
-		MCPRegistryClient.clear_runtime()
+		RegistryClient.clear_runtime()
 		# Proactive notification: tell the MCP server bridge the game stopped
 		# so it can tear down the runtime channel immediately — no need to wait
 		# for the next callRuntime() to discover the dead connection.
@@ -268,7 +268,7 @@ func _exit_tree() -> void:
 	if _server != null:
 		_server.stop()
 		_server.clear_registry()
-		MCPRegistryClient.deregister()
+		RegistryClient.deregister()
 		_server.free()
 		_server = null
 
@@ -365,7 +365,7 @@ func _on_show_audit() -> void:
 	if _dock != null:
 		_dock.show_audit_dialog()
 	else:
-		var global_path := ProjectSettings.globalize_path(_Hub.MCPAudit.get_log_path())
+		var global_path := ProjectSettings.globalize_path(_Hub.Audit.get_log_path())
 		OS.shell_open(global_path)
 
 
@@ -383,7 +383,7 @@ func _on_write_mcp_json() -> void:
 
 
 func _validate_user_whitelist() -> void:
-	MCPFileGuard.reload_user_whitelist()
+	FileGuard.reload_user_whitelist()
 	var wl_path := "res://addons/godot_mcp_toolkit/user_scope_whitelist.json"
 	if not FileAccess.file_exists(wl_path):
 		push_warning("[MCPTools] user_scope_whitelist.json not found at %s; save.* tools will return USER_SCOPE_DISABLED until the file is created" % wl_path)

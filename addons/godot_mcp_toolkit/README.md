@@ -1,6 +1,6 @@
 # Godot MCP Toolkit
 
-Godot 4.4+ editor plugin that runs a localhost (`127.0.0.1:6505`) WebSocket
+Godot 4.4+ editor plugin that runs a localhost (`127.0.0.1:6550`) WebSocket
 server so Claude Code (or any MCP-compatible client) can drive scene, node,
 script, and editor operations inside the Godot editor.
 
@@ -143,7 +143,7 @@ file if you need these.
   `EditorInterface.play_*_scene()`. `target` accepts `"main"` (uses
   ProjectSettings `application/run/main_scene`), `"current"` (default —
   currently-edited scene), or any `res://path.tscn`. `wait_for_runtime: true`
-  (default) polls `127.0.0.1:6525` for up to 5s so the agent can chain
+  (default) polls `127.0.0.1:6570` for up to 5s so the agent can chain
   Mode-B runtime RPCs without a separate probe. `ALREADY_PLAYING` if a
   game is already running (stop-then-start is explicit so the agent sees
   the transition).
@@ -303,7 +303,7 @@ the extension allowlist + size cap provide defence in depth.
 
 ## Port
 
-`127.0.0.1:6505` — localhost-only bind. Override by setting `GODOT_MCP_PORT`
+`127.0.0.1:6550` — localhost-only bind. Override by setting `GODOT_MCP_PORT`
 on the server-side env.
 
 ## Minimum Godot version

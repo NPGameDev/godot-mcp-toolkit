@@ -11,7 +11,7 @@ extends RefCounted
 ## subpaths behind the read_user_scope FeatureGate + a plugin-author-
 ## configured whitelist at addons/godot_mcp_toolkit/user_scope_whitelist.json.
 
-const MCPFeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
+const FeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
 
 const _WHITELIST_PATH := "res://addons/godot_mcp_toolkit/user_scope_whitelist.json"
 
@@ -59,7 +59,7 @@ static func _load_user_whitelist() -> Variant:
 ## { ok: false, error_code, error_message } on failure.
 static func resolve_safe_user(path: String, mode: String) -> Dictionary:
 	# Gate check.
-	if not MCPFeatureGate.is_enabled("read_user_scope"):
+	if not FeatureGate.is_enabled("read_user_scope"):
 		return {
 			"ok": false,
 			"error_code": "USER_SCOPE_DISABLED",

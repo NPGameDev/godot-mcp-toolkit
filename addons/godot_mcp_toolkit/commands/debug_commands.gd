@@ -3,8 +3,8 @@ extends RefCounted
 ## debug.* command handlers — breakpoint management + debug state.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPFileGuard = _Hub.MCPFileGuard
+const McpError = _Hub.McpError
+const FileGuard = _Hub.FileGuard
 
 
 static func register(registry: MCPToolkitCommandRegistry, debug_bridge: RefCounted) -> void:
@@ -78,34 +78,34 @@ static func _cmd_debug_set_breakpoint(params: Dictionary) -> Dictionary:
 		enabled = bool(params.get("enabled"))
 
 	if file_path.is_empty():
-		return MCPError.make("INVALID_PARAMS", "file_path is required")
+		return McpError.make("INVALID_PARAMS", "file_path is required")
 	if line < 1:
-		return MCPError.make("INVALID_PARAMS", "line must be >= 1")
+		return McpError.make("INVALID_PARAMS", "line must be >= 1")
 
 	# Reject non-GDScript files.
 	if file_path.ends_with(".cs"):
-		return MCPError.make("UNSUPPORTED_FILE_TYPE",
+		return McpError.make("UNSUPPORTED_FILE_TYPE",
 			"Breakpoint management supports GDScript (.gd) files only. "
 			+ "C# breakpoints should be set in your IDE (VS Code, Rider).")
 	if not file_path.ends_with(".gd"):
-		return MCPError.make("UNSUPPORTED_FILE_TYPE",
+		return McpError.make("UNSUPPORTED_FILE_TYPE",
 			"Breakpoint management supports GDScript (.gd) files only.")
 
 	# I4: FileGuard path validation.
 	if not file_path.begins_with("res://"):
-		return MCPError.make("INVALID_PATH", "file_path must start with res://")
-	var guard := MCPFileGuard.resolve_safe(file_path)
+		return McpError.make("INVALID_PATH", "file_path must start with res://")
+	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return MCPError.make("PATH_DENIED", str(guard["reason"]))
+		return McpError.make("PATH_DENIED", str(guard["reason"]))
 
 	if not FileAccess.file_exists(file_path):
-		return MCPError.make("NOT_FOUND",
-			"no file at %s" % file_path, MCPError.HINT_FILE_PATH)
+		return McpError.make("NOT_FOUND",
+			"no file at %s" % file_path, McpError.HINT_FILE_PATH)
 
 	# Load and open the script in the editor.
 	var script: Script = ResourceLoader.load(file_path) as Script
 	if script == null:
-		return MCPError.make("LOAD_FAILED",
+		return McpError.make("LOAD_FAILED",
 			"could not load %s as Script" % file_path)
 
 	EditorInterface.edit_script(script, line)
@@ -113,19 +113,19 @@ static func _cmd_debug_set_breakpoint(params: Dictionary) -> Dictionary:
 	# Get the CodeEdit from the now-current editor.
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor == null:
-		return MCPError.make("INTERNAL", "ScriptEditor not available")
+		return McpError.make("INTERNAL", "ScriptEditor not available")
 	var editor := script_editor.get_current_editor()
 	if editor == null:
-		return MCPError.make("INTERNAL",
+		return McpError.make("INTERNAL",
 			"no current script editor after edit_script")
 	var code_edit := editor.get_base_editor() as CodeEdit
 	if code_edit == null:
-		return MCPError.make("INTERNAL", "CodeEdit not available")
+		return McpError.make("INTERNAL", "CodeEdit not available")
 
 	# Validate line number against file length.
 	var line_count := code_edit.get_line_count()
 	if line > line_count:
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"line %d exceeds file length (%d lines)" % [line, line_count])
 
 	# Set or clear the breakpoint (0-based internally).
@@ -140,11 +140,11 @@ static func _cmd_debug_continue(debug_bridge: RefCounted) -> Dictionary:
 		var code: String = result["error"]
 		match code:
 			"GAME_NOT_RUNNING":
-				return MCPError.make("GAME_NOT_RUNNING",
+				return McpError.make("GAME_NOT_RUNNING",
 					"no active debug session — start a game with game.start first")
 			"NOT_BREAKED":
-				return MCPError.make("NOT_BREAKED",
+				return McpError.make("NOT_BREAKED",
 					"debug session is active but not paused at a breakpoint")
 			_:
-				return MCPError.make("INTERNAL", str(result))
+				return McpError.make("INTERNAL", str(result))
 	return result

@@ -4,15 +4,15 @@ extends RefCounted
 ## Called once at plugin startup; safe to delete once legacy users have migrated.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
-const MCPProjectPaths = _Hub.MCPProjectPaths
+const FeatureRegistry = _Hub.FeatureRegistry
+const ProjectPaths = _Hub.ProjectPaths
 
 
 static func migrate_user_data_paths() -> void:
 	# Ensure both the plugin dir and per-instance subdir exist.
-	MCPProjectPaths.ensure_dirs()
+	ProjectPaths.ensure_dirs()
 
-	var inst := MCPProjectPaths.instance_dir()
+	var inst := ProjectPaths.instance_dir()
 	var project_path := ProjectSettings.globalize_path("res://").replace("\\", "/").rstrip("/")
 	var suffix := project_path.sha256_text().substr(0, 12)
 
@@ -85,8 +85,8 @@ static func migrate_stale_settings() -> void:
 			ProjectSettings.set_setting(key, null)
 			removed += 1
 	# Migrate unsafe/ -> feature_gates/ per-feature keys.
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 		var new_key: String = entry["ps_key"]  # already feature_gates/
 		var old_key := new_key.replace("feature_gates/", "unsafe/")
 		if ProjectSettings.has_setting(old_key):

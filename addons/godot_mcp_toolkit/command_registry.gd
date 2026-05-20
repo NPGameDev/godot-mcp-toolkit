@@ -4,8 +4,8 @@ extends RefCounted
 ## Central dispatch table for MCP commands.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPAudit = _Hub.MCPAudit
+const McpError = _Hub.McpError
+const Audit = _Hub.Audit
 
 const _DEFAULT_TIMEOUT_MS := 30000
 const _MIN_TIMEOUT_MS := 1000
@@ -105,8 +105,8 @@ func clear() -> void:
 func call_command(method: String, parameters: Dictionary,
 		ctx: MCPToolContext = null) -> Dictionary:
 	if not _commands.has(method):
-		return MCPError.make("NOT_FOUND", "unknown method: " + method)
-	MCPAudit.log_call(method, parameters)
+		return McpError.make("NOT_FOUND", "unknown method: " + method)
+	Audit.log_call(method, parameters)
 	if ctx != null:
 		return await _commands[method]["handler"].call(parameters, ctx)
 	else:

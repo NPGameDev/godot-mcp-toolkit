@@ -10,11 +10,11 @@ extends RefCounted
 ## one-time sidecar bootstrap (migration from pre-sidecar plugin versions).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPFeatureGate = _Hub.MCPFeatureGate
-const MCPFeatureRegistry = _Hub.MCPFeatureRegistry
-const MCPJsonSync = _Hub.MCPJsonSync
-const MCPStateFile = _Hub.MCPStateFile
-const MCPNodejsCheck = _Hub.MCPNodejsCheck
+const FeatureGate = _Hub.FeatureGate
+const FeatureRegistry = _Hub.FeatureRegistry
+const McpJsonSync = _Hub.McpJsonSync
+const McpStateFile = _Hub.McpStateFile
+const NodejsCheck = _Hub.NodejsCheck
 
 const _LIMITS_NOTE_KEY := "mcp_toolkit/limits/env_override_note"
 const _LIMITS_NOTE_TEXT := (
@@ -61,7 +61,7 @@ func _on_project_name_changed(_old_name: String, _new_name: String) -> void:
 
 func register_all() -> void:
 	# Cache Node.js availability once at plugin startup.
-	var node_check := MCPNodejsCheck.check()
+	var node_check := NodejsCheck.check()
 	_nodejs_ok = node_check["meets_minimum"]
 	if not node_check["found"]:
 		_nodejs_warning_text = _NODEJS_NOT_FOUND_TEXT
@@ -71,17 +71,17 @@ func register_all() -> void:
 	_register_feature_gates()
 	_register_limits()
 	_register_audit()
-	_last_mcp_json_present = MCPJsonSync.has_mcp_json()
+	_last_mcp_json_present = McpJsonSync.has_mcp_json()
 	# Bootstrap sidecar if missing. Discriminate P2 (sidecar lost, PS bools
 	# are correct) from P3 (first-time migration from pre-sidecar plugin):
 	# non-default PS bools prove a prior session → P2; all default → P3.
 	# Use read() instead of file_exists() — the latter can return stale true
 	# on Windows after a failed rename-based write from a prior session.
-	_sidecar_was_present = not MCPStateFile.read().is_empty()
+	_sidecar_was_present = not McpStateFile.read().is_empty()
 	if not _sidecar_was_present:
 		var has_nondefault_ps := false
-		for feature in MCPFeatureRegistry.all_features():
-			var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+		for feature in FeatureRegistry.all_features():
+			var entry: Dictionary = FeatureRegistry.get_entry(feature)
 			if ProjectSettings.get_setting(str(entry["ps_key"]), false):
 				has_nondefault_ps = true
 				break
@@ -103,25 +103,25 @@ func poll() -> void:
 
 func snapshot_feature_states() -> void:
 	_last_feature_states.clear()
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 		_last_feature_states[str(entry["ps_key"])] = ProjectSettings.get_setting(
 			str(entry["ps_key"]), false)
 
 
 ## P3: Bootstrap sidecar from .mcp.json env vars (one-time migration).
 func _bootstrap_sidecar_from_mcp_json() -> void:
-	var mcp_env := MCPJsonSync.get_all_env_vars()
+	var mcp_env := McpJsonSync.get_all_env_vars()
 	var gates := {}
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 		gates[str(entry["env_var"])] = mcp_env.get(str(entry["env_var"]), "") == "1"
-	var err := MCPStateFile.write_gates(gates)
+	var err := McpStateFile.write_gates(gates)
 	if err == OK:
 		_sidecar_was_present = true
-		print("[MCPStateFile] bootstrapped sidecar from .mcp.json")
+		print("[McpStateFile] bootstrapped sidecar from .mcp.json")
 	else:
-		push_warning("[MCPStateFile] bootstrap from .mcp.json failed (err %d) — will retry on next poll" % err)
+		push_warning("[McpStateFile] bootstrap from .mcp.json failed (err %d) — will retry on next poll" % err)
 
 
 ## Seed sidecar from current ProjectSettings bools when neither .mcp.json
@@ -130,7 +130,7 @@ func _bootstrap_sidecar_from_mcp_json() -> void:
 ## Re-creates the sidecar at the new user:// path and resets the retry cooldown.
 func rebootstrap_after_rename() -> void:
 	_bootstrap_sidecar_from_ps()
-	if not MCPStateFile.read().is_empty():
+	if not McpStateFile.read().is_empty():
 		_sidecar_was_present = true
 		_bootstrap_retry_after_msec = 0
 		snapshot_feature_states()
@@ -139,12 +139,12 @@ func rebootstrap_after_rename() -> void:
 
 
 func _bootstrap_sidecar_from_ps() -> void:
-	var err := MCPStateFile.write_gates(MCPStateFile.gates_from_ps())
+	var err := McpStateFile.write_gates(McpStateFile.gates_from_ps())
 	if err == OK:
 		_sidecar_was_present = true
-		print("[MCPStateFile] seeded sidecar from ProjectSettings")
+		print("[McpStateFile] seeded sidecar from ProjectSettings")
 	else:
-		push_warning("[MCPStateFile] bootstrap from ProjectSettings failed (err %d) — will retry on next poll" % err)
+		push_warning("[McpStateFile] bootstrap from ProjectSettings failed (err %d) — will retry on next poll" % err)
 
 
 # -- Registration helpers -----------------------------------------------------
@@ -153,8 +153,8 @@ func _bootstrap_sidecar_from_ps() -> void:
 func _register_feature_gates() -> void:
 	# Per-feature PS bools — mirror UI for .mcp.json env vars.
 	var order_idx := 1
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 		var ps_key: String = entry["ps_key"]
 		_register_basic_bool(ps_key, false,
 			"DANGER: %s. Mirrors .mcp.json env var. Default off." % entry["risk"])
@@ -231,7 +231,7 @@ func _compute_status_text() -> String:
 	var parts := PackedStringArray()
 	if _is_read_only():
 		parts.append(_READ_ONLY_WARNING_TEXT)
-	if not MCPJsonSync.has_mcp_json():
+	if not McpJsonSync.has_mcp_json():
 		parts.append(_MCP_JSON_MISSING_TEXT)
 	if not _nodejs_ok:
 		parts.append(_nodejs_warning_text)
@@ -240,7 +240,7 @@ func _compute_status_text() -> String:
 
 ## Check if read-only mode is active (GODOT_MCP_READ_ONLY=1 in .mcp.json).
 func _is_read_only() -> bool:
-	var env := MCPJsonSync.get_all_env_vars()
+	var env := McpJsonSync.get_all_env_vars()
 	return env.get("GODOT_MCP_READ_ONLY", "") == "1"
 
 
@@ -253,7 +253,7 @@ func _update_status_text() -> void:
 
 func _poll_feature_states() -> void:
 	# L1: Detect .mcp.json presence transitions (updates dock/PS hints).
-	var mcp_present := MCPJsonSync.has_mcp_json()
+	var mcp_present := McpJsonSync.has_mcp_json()
 	if mcp_present != _last_mcp_json_present:
 		_last_mcp_json_present = mcp_present
 		_emit_features_changed()
@@ -269,11 +269,11 @@ func _poll_feature_states() -> void:
 	# P2: Sidecar recovery — recreate from PS if missing (covers manual
 	# deletion). Use read() — file_exists() can lie on Windows.
 	# P-055: cooldown prevents per-frame spam when ensure_dirs fails.
-	if MCPStateFile.read().is_empty():
+	if McpStateFile.read().is_empty():
 		var _now_msec := Time.get_ticks_msec()
 		if _now_msec >= _bootstrap_retry_after_msec:
 			_bootstrap_sidecar_from_ps()
-			if not MCPStateFile.read().is_empty():
+			if not McpStateFile.read().is_empty():
 				_sidecar_was_present = true
 				_bootstrap_retry_after_msec = 0
 				snapshot_feature_states()
@@ -283,15 +283,15 @@ func _poll_feature_states() -> void:
 				_bootstrap_retry_after_msec = _now_msec + 5000
 
 	# Read sidecar once for all sync operations below.
-	var sidecar_data := MCPStateFile.read()
+	var sidecar_data := McpStateFile.read()
 	var sidecar_gates: Dictionary = sidecar_data.get("gates", {})
 	var sidecar_valid := not sidecar_gates.is_empty()
 
 	# Bidirectional sync between PS bools and sidecar.
 	var ps_changed := false
 	var sidecar_changed := false
-	for feature in MCPFeatureRegistry.all_features():
-		var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
 		var ps_key: String = entry["ps_key"]
 		var env_var: String = entry["env_var"]
 		var ps_current: bool = ProjectSettings.get_setting(ps_key, false)
@@ -299,13 +299,13 @@ func _poll_feature_states() -> void:
 		if ps_current != ps_last:
 			# H7: Dangerous-gate check when enabling from PS Inspector.
 			if ps_current and not ps_last:
-				if MCPFeatureGate.needs_danger_warning(feature):
+				if FeatureGate.needs_danger_warning(feature):
 					ProjectSettings.set_setting(ps_key, false)
 					_last_feature_states[ps_key] = false
 					_show_ps_danger_confirmation(feature, ps_key, env_var)
 					continue
 			# PS changed by user (Inspector toggle) → write to sidecar.
-			MCPStateFile.set_gate(env_var, ps_current)
+			McpStateFile.set_gate(env_var, ps_current)
 			_last_feature_states[ps_key] = ps_current
 			ps_changed = true
 		elif sidecar_valid:
@@ -337,7 +337,7 @@ func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: Stri
 			_ps_danger_dialog.hide()
 			_ps_danger_dialog.queue_free()
 		_ps_danger_dialog = null
-	var entry: Dictionary = MCPFeatureRegistry.get_entry(feature)
+	var entry: Dictionary = FeatureRegistry.get_entry(feature)
 	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
 	_ps_danger_dialog = ConfirmationDialog.new()
 	_ps_danger_dialog.exclusive = false
@@ -349,9 +349,9 @@ func _show_ps_danger_confirmation(feature: String, ps_key: String, env_var: Stri
 		+ "Only enable if you trust the current AI context.")
 	_ps_danger_dialog.ok_button_text = "I Understand — Enable"
 	_ps_danger_dialog.confirmed.connect(func():
-		MCPFeatureGate.mark_warned(feature)
+		FeatureGate.mark_warned(feature)
 		ProjectSettings.set_setting(ps_key, true)
-		MCPStateFile.set_gate(env_var, true)
+		McpStateFile.set_gate(env_var, true)
 		_last_feature_states[ps_key] = true
 		ProjectSettings.save()
 		snapshot_feature_states()

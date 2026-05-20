@@ -52,7 +52,7 @@ cd godot-mcp-server
 npm run smoke
 ```
 
-The smoke test port-checks `127.0.0.1:6505`. If nothing is listening, it prints
+The smoke test port-checks `127.0.0.1:6550`. If nothing is listening, it prints
 instructions and exits. Make sure the Godot editor is running with the plugin
 enabled.
 

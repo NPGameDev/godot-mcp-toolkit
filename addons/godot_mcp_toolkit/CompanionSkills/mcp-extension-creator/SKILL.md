@@ -120,14 +120,14 @@ return {"success": false, "error": "Human-readable message", "code": "ERROR_CODE
 **Canonical error codes:** `NOT_FOUND`, `INVALID_PARAM`, `FORBIDDEN`,
 `INTERNAL_ERROR`, `TIMEOUT`, `UNSUPPORTED`.
 
-You can also use the toolkit's `MCPError` helper if you preload the hub:
+You can also use the toolkit's `McpError` helper if you preload the hub:
 
 ```gdscript
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
+const McpError = _Hub.McpError
 
 # Then in handlers:
-return MCPError.make("NOT_FOUND", "Node not found at path: " + path)
+return McpError.make("NOT_FOUND", "Node not found at path: " + path)
 ```
 
 ## Type coercion for complex parameters

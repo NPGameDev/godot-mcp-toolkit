@@ -11,7 +11,7 @@ extends RefCounted
 ## files → same output).
 ##
 ## All methods are static — no instance state. Callers preload via
-## _hub.gd (MCPRegistryClient) or directly.
+## _hub.gd (RegistryClient) or directly.
 
 const _REGISTRY_FILENAME := "projects.json"
 const _ENTRIES_DIR := "entries"

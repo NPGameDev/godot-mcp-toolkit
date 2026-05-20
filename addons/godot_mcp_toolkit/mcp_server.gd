@@ -11,13 +11,13 @@ signal client_disconnected(peer_count: int)
 signal command_received(method: String)
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPRegistryClient = _Hub.MCPRegistryClient
-const _MCPStateFile = _Hub.MCPStateFile
+const RegistryClient = _Hub.RegistryClient
+const _McpStateFile = _Hub.McpStateFile
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
 
-const PORT_BASE := 6505
-const PORT_RANGE := 11  # 6505..6515 inclusive
+const PORT_BASE := 6550
+const PORT_RANGE := 11  # 6550..6560 inclusive
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # Throttle re-listen retries to avoid log spam when the port is
@@ -82,6 +82,10 @@ func clear_registry() -> void:
 		_registry = null
 
 
+func get_plugin_boot_time() -> int:
+	return _plugin_boot_time
+
+
 func is_listening() -> bool:
 	return _tcp_server != null and _tcp_server.is_listening()
 
@@ -136,7 +140,7 @@ func _rewrite_token_after_rename() -> void:
 		print("[MCPServer] token re-written to %s" % MCPAuth.get_token_path())
 	# Update registry so the bridge finds the new token_path.
 	if _bound_port > 0:
-		MCPRegistryClient.register(_bound_port, MCPAuth.get_token_path())
+		RegistryClient.register(_bound_port, MCPAuth.get_token_path())
 
 
 func regenerate_token() -> void:
@@ -345,11 +349,11 @@ func _handle_auth(peer: WebSocketPeer, message: Dictionary) -> void:
 	if MCPAuth.validate(message, _session_token):
 		_peer_authed[peer] = true
 		var vi := Engine.get_version_info()
-		var state := _MCPStateFile.read()
+		var state := _McpStateFile.read()
 		var gates: Dictionary = state.get("gates", {})
 		# Fallback: if sidecar is empty, derive from PS bools.
 		if gates.is_empty():
-			gates = _MCPStateFile.gates_from_ps()
+			gates = _McpStateFile.gates_from_ps()
 		peer.send_text(JSON.stringify({
 			"authed": true,
 			"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],

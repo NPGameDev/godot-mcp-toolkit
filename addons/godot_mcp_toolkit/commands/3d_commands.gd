@@ -4,8 +4,8 @@ extends RefCounted
 ## and environment setups in the edited scene.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const Helpers = _Hub.Helpers
 
 const _VALID_PRIMITIVES := ["box", "sphere", "cylinder", "capsule", "plane", "prism"]
 const _VALID_LIGHT_TYPES := ["directional", "omni", "spot"]
@@ -46,15 +46,15 @@ static func _path_in_scene(root: Node, node: Node) -> String:
 
 
 static func _resolve_parent(parameters: Dictionary) -> Variant:
-	var root := MCPHelpers.get_edited_root()
+	var root := Helpers.get_edited_root()
 	if root == null:
-		return MCPError.make("NO_SCENE", "no edited scene")
+		return McpError.make("NO_SCENE", "no edited scene")
 	var parent_path := str(parameters.get("parent_path", "."))
-	parent_path = MCPHelpers.normalize_editor_path(parent_path)
-	var parent := MCPHelpers.resolve_scene_node(parent_path)
+	parent_path = Helpers.normalize_editor_path(parent_path)
+	var parent := Helpers.resolve_scene_node(parent_path)
 	if parent == null:
-		return MCPError.make("NOT_FOUND",
-			"parent not found: %s" % parent_path, MCPError.HINT_NODE_PATH)
+		return McpError.make("NOT_FOUND",
+			"parent not found: %s" % parent_path, McpError.HINT_NODE_PATH)
 	return parent
 
 
@@ -76,20 +76,20 @@ static func _add_node_undoable(parent: Node, node: Node, root: Node) -> void:
 
 
 static func _cmd_create_primitive(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["parent_path", "primitive"])
+	var err = McpError.check_required(parameters, ["parent_path", "primitive"])
 	if err != null:
 		return err
 
 	var primitive := str(parameters.get("primitive", ""))
 	if primitive not in _VALID_PRIMITIVES:
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"invalid primitive '%s'; must be one of: %s" % [primitive, ", ".join(_VALID_PRIMITIVES)])
 
 	var parent_result = _resolve_parent(parameters)
 	if parent_result is Dictionary:
 		return parent_result
 	var parent: Node = parent_result
-	var root := MCPHelpers.get_edited_root()
+	var root := Helpers.get_edited_root()
 
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = str(parameters.get("name", "MeshInstance3D"))
@@ -172,7 +172,7 @@ static func _cmd_create_primitive(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_setup_environment(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["parent_path"])
+	var err = McpError.check_required(parameters, ["parent_path"])
 	if err != null:
 		return err
 
@@ -180,7 +180,7 @@ static func _cmd_setup_environment(parameters: Dictionary) -> Dictionary:
 	if parent_result is Dictionary:
 		return parent_result
 	var parent: Node = parent_result
-	var root := MCPHelpers.get_edited_root()
+	var root := Helpers.get_edited_root()
 
 	var env := Environment.new()
 
@@ -243,20 +243,20 @@ static func _cmd_setup_environment(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_create_light(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["parent_path", "light_type"])
+	var err = McpError.check_required(parameters, ["parent_path", "light_type"])
 	if err != null:
 		return err
 
 	var light_type := str(parameters.get("light_type", ""))
 	if light_type not in _VALID_LIGHT_TYPES:
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"invalid light_type '%s'; must be one of: %s" % [light_type, ", ".join(_VALID_LIGHT_TYPES)])
 
 	var parent_result = _resolve_parent(parameters)
 	if parent_result is Dictionary:
 		return parent_result
 	var parent: Node = parent_result
-	var root := MCPHelpers.get_edited_root()
+	var root := Helpers.get_edited_root()
 
 	var light: Light3D
 	match light_type:
@@ -288,7 +288,7 @@ static func _cmd_create_light(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_create_camera(parameters: Dictionary) -> Dictionary:
-	var err = MCPError.check_required(parameters, ["parent_path"])
+	var err = McpError.check_required(parameters, ["parent_path"])
 	if err != null:
 		return err
 
@@ -296,7 +296,7 @@ static func _cmd_create_camera(parameters: Dictionary) -> Dictionary:
 	if parent_result is Dictionary:
 		return parent_result
 	var parent: Node = parent_result
-	var root := MCPHelpers.get_edited_root()
+	var root := Helpers.get_edited_root()
 
 	var camera := Camera3D.new()
 	camera.name = str(parameters.get("name", "Camera3D"))

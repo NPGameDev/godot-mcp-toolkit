@@ -26,7 +26,7 @@ Project Settings &rarr; Plugins &rarr; **Godot MCP Toolkit** &rarr; check **Acti
 The dock panel appears at the bottom of the editor. The output log should show:
 
 ```
-[MCP] WebSocket server listening on 127.0.0.1:6505
+[MCP] WebSocket server listening on 127.0.0.1:6550
 ```
 
 ### 3. Install and configure the MCP server
@@ -73,18 +73,18 @@ Launch your MCP client from the project root. It discovers the plugin and authen
 ## Architecture
 
 ```
-MCP client ── stdio ──> @npgamedev/godot-mcp-server ── ws://127.0.0.1:6505 ──> godot-mcp-toolkit
+MCP client ── stdio ──> @npgamedev/godot-mcp-server ── ws://127.0.0.1:6550 ──> godot-mcp-toolkit
 (AI agent)               (Node.js, npm)                                         (this plugin)
 ```
 
 The plugin runs a localhost-only WebSocket server inside the Godot editor. The companion [`godot-mcp-server`](https://github.com/NPGameDev/godot-mcp-server) npm package bridges your AI assistant (stdio/MCP) to the plugin (WebSocket). Two channels:
 
-- **Editor channel** (port 6505) — operates on the edited scene via `EditorInterface`.
-- **Runtime channel** (port 6525) — operates on the live `SceneTree` during playtests.
+- **Editor channel** (port 6550) — operates on the edited scene via `EditorInterface`.
+- **Runtime channel** (port 6570) — operates on the live `SceneTree` during playtests.
 
 ### Runtime channel (Mode B)
 
-During playtests, the plugin injects an autoload node that opens a second WebSocket server on port 6525 (range 6525–6540). This enables runtime tools: inspecting live nodes, capturing game screenshots, simulating input, reading game logs, and evaluating GDScript expressions.
+During playtests, the plugin injects an autoload node that opens a second WebSocket server on port 6570 (range 6570–6585). This enables runtime tools: inspecting live nodes, capturing game screenshots, simulating input, reading game logs, and evaluating GDScript expressions.
 
 The runtime channel activates automatically when your AI assistant uses `game_start` with `wait_for_runtime: true` (the default). It shuts down when the playtest ends. Override the port with `GODOT_MCP_RUNTIME_PORT` in your `.mcp.json` env block.
 

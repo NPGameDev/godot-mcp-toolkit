@@ -7,7 +7,7 @@ extends RefCounted
 ## The plugin never writes to .mcp.json — it is a user-managed
 ## config file. Runtime gate state lives in the sidecar.
 
-const MCPFeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
+const FeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
 
 
 static func get_mcp_json_path() -> String:

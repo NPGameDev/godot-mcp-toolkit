@@ -3,10 +3,10 @@ extends RefCounted
 ## game.* command handlers — start/stop editor playtest (Mode A).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPError = _Hub.MCPError
-const MCPFileGuard = _Hub.MCPFileGuard
-const MCPRegistryClient = _Hub.MCPRegistryClient
-const MCPHelpers = _Hub.MCPHelpers
+const McpError = _Hub.McpError
+const FileGuard = _Hub.FileGuard
+const RegistryClient = _Hub.RegistryClient
+const Helpers = _Hub.Helpers
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 const RUNTIME_HOST := "127.0.0.1"
@@ -53,26 +53,26 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 	var if_running := str(parameters.get("if_running", "fail"))
 
 	if not (if_running in ["return", "fail"]):
-		return MCPError.make("INVALID_PARAMS",
+		return McpError.make("INVALID_PARAMS",
 			"if_running must be 'return' or 'fail' (got %s); default is 'fail'" % if_running)
 
 	if runtime_poll:
 		if not EditorInterface.is_playing_scene():
 			var comp := _scan_compilation_errors()
 			if comp["found"]:
-				return MCPError.make("COMPILATION_FAILED",
+				return McpError.make("COMPILATION_FAILED",
 					"Game failed to start — likely a compilation error. Recent errors:\n" + "\n".join(comp["errors"]))
-			return MCPError.make("COMPILATION_FAILED",
+			return McpError.make("COMPILATION_FAILED",
 				"Game is not running — it likely failed to compile or crashed on startup. "
 				+ ("No errors captured in log buffer (file-tail mode on Godot 4.2-4.4 may miss errors). " if not _Hub.LogBuffer.uses_logger_api() else "No errors in log buffer. ")
 				+ "Call editor_refresh to retrigger compilation errors, then editor_get_console for details.")
 	else:
 		if EditorInterface.is_playing_scene():
 			if if_running == "return":
-				var runtime_port := MCPRegistryClient.get_runtime_port()
+				var runtime_port := RegistryClient.get_runtime_port()
 				return {"success": true, "status": "already_running",
 					"runtime_port": runtime_port if runtime_port > 0 else null}
-			return MCPError.make("ALREADY_PLAYING",
+			return McpError.make("ALREADY_PLAYING",
 				"a game is already running; call game.stop first, or use runtime_poll:true to re-probe the runtime connection")
 
 		# Snapshot the log file size so the editor-side debugger.get_log
@@ -84,20 +84,20 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 			"main":
 				EditorInterface.play_main_scene()
 			"current":
-				if MCPHelpers.get_edited_root() == null:
-					return MCPError.make("NO_SCENE",
+				if Helpers.get_edited_root() == null:
+					return McpError.make("NO_SCENE",
 						"no currently-edited scene; use target:'main' or target:<res://path>, or scene.open first")
 				EditorInterface.play_current_scene()
 			_:
-				var guard := MCPFileGuard.resolve_safe(target)
+				var guard := FileGuard.resolve_safe(target)
 				if guard["error"] != null:
-					return MCPError.make("PATH_DENIED", str(guard["reason"]))
+					return McpError.make("PATH_DENIED", str(guard["reason"]))
 				if target.get_extension().to_lower() != "tscn":
-					return MCPError.make("INVALID_PATH",
+					return McpError.make("INVALID_PATH",
 						"game.start only plays .tscn files (got %s)" % target)
 				if not FileAccess.file_exists(target):
-					return MCPError.make("NOT_FOUND",
-						"no scene file at %s; use scene.create first" % target, MCPError.HINT_FILE_PATH)
+					return McpError.make("NOT_FOUND",
+						"no scene file at %s; use scene.create first" % target, McpError.HINT_FILE_PATH)
 				EditorInterface.play_custom_scene(target)
 
 	# Runtime readiness check.
@@ -110,7 +110,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 		# Explicit re-probe: full poll loop (runtime_poll:true path).
 		var deadline := Time.get_ticks_msec() + RUNTIME_POLL_TIMEOUT_MS
 		while Time.get_ticks_msec() < deadline:
-			runtime_port = MCPRegistryClient.get_runtime_port()
+			runtime_port = RegistryClient.get_runtime_port()
 			if runtime_port > 0:
 				break
 			OS.delay_msec(_REGISTRY_POLL_INTERVAL_MS)
@@ -178,7 +178,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 			"ping_timeout":
 				response["hint"] = "Authenticated but ping/pong timed out — the runtime server may be overloaded. Use runtime_poll:true to retry without restarting the game."
 			_:
-				response["hint"] = "Runtime not ready (%s). Checklist: (1) Is the MCP Runtime autoload enabled? (2) Is port 6525 available? (3) Check editor_get_console for errors. (4) For Standard profile: call discover_tools({request: 'runtime'}) to load runtime tools." % runtime_failure
+				response["hint"] = "Runtime not ready (%s). Checklist: (1) Is the MCP Runtime autoload enabled? (2) Is port 6570 available? (3) Check editor_get_console for errors. (4) For Standard profile: call discover_tools({request: 'runtime'}) to load runtime tools." % runtime_failure
 	# P-006: When no poll was requested and runtime isn't ready, warn that
 	# runtime tools will block/fail. Prevents agents from calling
 	# runtime_screenshot / input_simulate on a game that didn't connect.
@@ -212,7 +212,7 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	if text_filter != "" and parameters.get("is_regex", false):
 		text_regex = RegEx.new()
 		if text_regex.compile("(?i)" + text_filter) != OK:
-			return MCPError.make("INVALID_PARAMS",
+			return McpError.make("INVALID_PARAMS",
 				"text_filter is not a valid regex (is_regex=true).")
 
 	# Auto-stop: if debug bridge says session is dead but editor still thinks
@@ -248,7 +248,7 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 
 	var file := FileAccess.open(log_path, FileAccess.READ)
 	if file == null:
-		return MCPError.make("LOG_BUSY",
+		return McpError.make("LOG_BUSY",
 			"Log file exists but cannot be read (err %d) — retry in 1-2s" % FileAccess.get_open_error())
 
 	var file_len: int = file.get_length()
@@ -275,7 +275,7 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	# Strip ANSI from all lines once (used for both filtering and error scan).
 	var stripped_lines: Array = []
 	for line in all_lines:
-		var stripped := MCPHelpers.strip_ansi(line.strip_edges())
+		var stripped := Helpers.strip_ansi(line.strip_edges())
 		if not stripped.is_empty():
 			stripped_lines.append(stripped)
 

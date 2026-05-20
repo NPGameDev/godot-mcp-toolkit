@@ -9,11 +9,11 @@ extends RefCounted
 ## Opened and flushed per write for crash safety. Invoked by
 ## CommandRegistry.call_command before handler dispatch.
 
-const MCPProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
+const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 
 
 static func get_log_path() -> String:
-	return MCPProjectPaths.instance_dir() + "mcp_audit.log"
+	return ProjectPaths.instance_dir() + "mcp_audit.log"
 
 
 static func log_call(method: String, parameters: Dictionary) -> void:
@@ -29,10 +29,10 @@ static func log_call(method: String, parameters: Dictionary) -> void:
 		if file != null:
 			file.seek_end()
 	else:
-		MCPProjectPaths.ensure_dirs()
+		ProjectPaths.ensure_dirs()
 		file = FileAccess.open(log_path, FileAccess.WRITE)
 	if file == null:
-		push_warning("[MCPAudit] could not open %s (err %d)" % [
+		push_warning("[Audit] could not open %s (err %d)" % [
 			log_path, FileAccess.get_open_error()])
 		return
 	file.store_string(line)
