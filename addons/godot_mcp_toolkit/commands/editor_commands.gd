@@ -18,7 +18,7 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("editor.get_errors", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_get_errors(server, parameters))
 	registry.add("editor.save_scene", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_save_scene(parameters))
+		return await _cmd_editor_save_scene(parameters))
 	registry.add("editor.screenshot", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_editor_screenshot(parameters))
 	registry.add("editor.refresh", func(parameters: Dictionary) -> Dictionary:
@@ -85,6 +85,12 @@ static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 	var root := Helpers.get_edited_root()
 	if root == null:
 		return McpError.make("NO_SCENE", "no edited scene")
+	# Yield one frame to escape the deferred-call context before calling
+	# save_scene/save_scene_as. These APIs use Godot's progress dialog,
+	# which is forbidden during MessageQueue flush (progress_dialog.cpp:191).
+	# The poll body runs via call_deferred, so without this yield the
+	# progress dialog guard fires and logs errors.
+	await (Engine.get_main_loop() as SceneTree).process_frame
 	var save_path := str(parameters.get("file_path", ""))
 	if save_path.is_empty():
 		var save_error := EditorInterface.save_scene()

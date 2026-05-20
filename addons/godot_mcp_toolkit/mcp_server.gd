@@ -35,6 +35,10 @@ const _RELISTEN_FRAME_INTERVAL := 60
 #   2. Deferred dispatch: _process schedules the poll body via
 #      call_deferred instead of running it inline, moving our I/O out
 #      of the _process call stack where reentrancy is most dangerous.
+# Side-effect: commands run inside the deferred-call context, so Godot
+# APIs that use the progress dialog (e.g. save_scene) log benign
+# progress_dialog.cpp errors. This is acceptable — the alternative
+# (inline _process poll) causes reproducible editor crashes.
 # No upstream structural fix exists as of Godot 4.5/4.6-dev.
 const _POLL_FRAME_INTERVAL := 4
 # Auth timeout. Peers that don't send a valid auth message within this
