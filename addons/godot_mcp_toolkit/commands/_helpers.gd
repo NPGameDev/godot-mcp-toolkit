@@ -102,6 +102,14 @@ static func class_base_chain(type_name: String) -> String:
 # -- Scene tab management ------------------------------------------------------
 
 
+## Open a scene in the editor using call_deferred to avoid deferred-queue
+## collisions (godotengine/godot#75669). Yields one frame so the editor
+## fully settles before the next MCP command executes.
+static func open_scene_deferred(file_path: String) -> void:
+	EditorInterface.open_scene_from_path.call_deferred(file_path)
+	await (Engine.get_main_loop() as SceneTree).process_frame
+
+
 ## Attempt to close the editor tab for `file_path`.
 ## Returns {closed: true} or {closed: false, reason: String}.
 ##
@@ -141,8 +149,7 @@ static func close_scene_tab_safe(file_path: String) -> Dictionary:
 	var current_path := current_root.scene_file_path if current_root else ""
 	var switched := (current_path != file_path)
 	if switched:
-		EditorInterface.open_scene_from_path.call_deferred(file_path)
-		await tree.process_frame
+		await open_scene_deferred(file_path)
 
 	# Close the now-active tab via call_deferred for the same reason.
 	EditorInterface.call_deferred("close_scene")

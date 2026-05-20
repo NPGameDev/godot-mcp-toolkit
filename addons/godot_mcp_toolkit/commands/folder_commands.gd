@@ -100,9 +100,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 			if outside_scenes.is_empty():
 				return McpError.make("PATH_IN_USE",
 					"all open scene tabs are inside %s; open a scene outside the folder first via scene.open" % folder_path)
-			# call_deferred to avoid deferred-queue collision (godotengine/godot#75669).
-			EditorInterface.open_scene_from_path.call_deferred(outside_scenes[0])
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await Helpers.open_scene_deferred(outside_scenes[0])
 		stale_tabs = inside_scenes
 		if not EditorInterface.has_method("close_scene"):
 			warnings.append(

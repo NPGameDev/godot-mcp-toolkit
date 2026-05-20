@@ -26,11 +26,16 @@ const JSONRPC_VERSION := "2.0"
 # on the same order so we don't pile retries on top of the bridge's.
 const _RELISTEN_FRAME_INTERVAL := 60
 # Poll TCPServer/WebSocket peers every Nth frame instead of every frame.
-# Godot 4.4.1 has a race between our per-frame poll and the main-loop
-# work triggered by FileSystem-dock interactions; shrinking our collision
-# window ~4x (15Hz vs 60Hz) drops the reproducibility threshold enough that
-# incidental clicks stop crashing the editor in smoke + dogfood usage.
-# Tune lower if latency regresses noticeably; 4 frames ~= 67ms at 60fps.
+# Godot has a race between plugin _process work and the main-loop work
+# triggered by FileSystem-dock interactions (reentrancy through
+# Main::iteration — see godotengine/godot#46893, #54864, #110891).
+# Two mitigations stack:
+#   1. Frame-skip: poll at ~15Hz (4 frames) instead of 60Hz, shrinking
+#      the collision window ~4x. Original F3 fix from iter 13c.
+#   2. Deferred dispatch: _process schedules the poll body via
+#      call_deferred instead of running it inline, moving our I/O out
+#      of the _process call stack where reentrancy is most dangerous.
+# No upstream structural fix exists as of Godot 4.5/4.6-dev.
 const _POLL_FRAME_INTERVAL := 4
 # Auth timeout. Peers that don't send a valid auth message within this
 # window are closed with WS close code 1008 (Policy Violation).
@@ -261,7 +266,13 @@ func _process(_delta: float) -> void:
 	if _poll_frame_counter < _POLL_FRAME_INTERVAL:
 		return
 	_poll_frame_counter = 0
+	# Dispatch via call_deferred to move network I/O out of the _process
+	# call stack, reducing the reentrancy collision surface with Godot's
+	# EditorFileSystem scan/import work (see comment on _POLL_FRAME_INTERVAL).
+	call_deferred("_poll_connections")
 
+
+func _poll_connections() -> void:
 	if _tcp_server == null or not _tcp_server.is_listening():
 		_try_listen()
 		return

@@ -207,9 +207,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		# it from disk so the in-memory tree matches the fresh file.
 		var open_scenes := EditorInterface.get_open_scenes()
 		if file_path in open_scenes:
-			# call_deferred to avoid deferred-queue collision (godotengine/godot#75669).
-			EditorInterface.open_scene_from_path.call_deferred(file_path)
-			await (Engine.get_main_loop() as SceneTree).process_frame
+			await Helpers.open_scene_deferred(file_path)
 			response["reloaded"] = true
 			response["hint"] = "Scene replaced and reloaded in editor."
 	else:
@@ -227,9 +225,7 @@ static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
 		return McpError.make("NOT_FOUND", "scene not found: %s" % file_path, McpError.HINT_FILE_PATH)
-	# call_deferred to avoid deferred-queue collision (godotengine/godot#75669).
-	EditorInterface.open_scene_from_path.call_deferred(file_path)
-	await (Engine.get_main_loop() as SceneTree).process_frame
+	await Helpers.open_scene_deferred(file_path)
 	return {"success": true, "path": file_path}
 
 
