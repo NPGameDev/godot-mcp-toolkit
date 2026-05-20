@@ -113,8 +113,10 @@ static func class_base_chain(type_name: String) -> String:
 ## so there is no "last_tab" guard — the caller never needs to worry about it.
 ##
 ## SAFETY: performs at most ONE open_scene_from_path + close_scene cycle.
-## Never loops. Never crashes (the deferred-queue crash requires multiple
-## rapid cycles within one frame).
+## Never loops. Uses call_deferred for both open and close to avoid
+## deferred-queue collisions (godotengine/godot#75669). Yields a frame
+## after each deferred call so the editor fully settles before the
+## next MCP command can execute.
 ##
 ## NOTE: does NOT restore the previously-active tab. After closing a
 ## non-active tab, Godot auto-switches to an adjacent tab. Restoring
@@ -130,15 +132,21 @@ static func close_scene_tab_safe(file_path: String) -> Dictionary:
 	if not EditorInterface.has_method("close_scene"):
 		return {"closed": false, "reason": "no_api"}
 
+	var tree := Engine.get_main_loop() as SceneTree
+
 	# If the target is not the active tab, activate it first.
+	# Use call_deferred to avoid deferred-queue collisions
+	# (godotengine/godot#75669 — direct calls from plugin code can crash).
 	var current_root := get_edited_root()
 	var current_path := current_root.scene_file_path if current_root else ""
 	var switched := (current_path != file_path)
 	if switched:
-		EditorInterface.open_scene_from_path(file_path)
+		EditorInterface.open_scene_from_path.call_deferred(file_path)
+		await tree.process_frame
 
-	# Close the now-active tab. Dynamic dispatch for parse safety on 4.2–4.4.
-	EditorInterface.call("close_scene")
+	# Close the now-active tab via call_deferred for the same reason.
+	EditorInterface.call_deferred("close_scene")
+	await tree.process_frame
 
 	return {"closed": true, "switched": switched}
 

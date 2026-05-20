@@ -12,7 +12,7 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 	registry.add("folder.create", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_folder_create(parameters))
 	registry.add("folder.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_folder_delete(parameters))
+		return await _cmd_folder_delete(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -89,7 +89,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 
 	if inside_scenes.size() == 1 and EditorInterface.has_method("close_scene"):
 		# Single scene — safe to close via helper (handles active or not).
-		var tab_result := Helpers.close_scene_tab_safe(inside_scenes[0])
+		var tab_result := await Helpers.close_scene_tab_safe(inside_scenes[0])
 		single_closed = tab_result.get("closed", false)
 		if not single_closed:
 			# no_api shouldn't happen (we checked has_method), but be safe.
@@ -100,7 +100,9 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 			if outside_scenes.is_empty():
 				return McpError.make("PATH_IN_USE",
 					"all open scene tabs are inside %s; open a scene outside the folder first via scene.open" % folder_path)
-			EditorInterface.open_scene_from_path(outside_scenes[0])
+			# call_deferred to avoid deferred-queue collision (godotengine/godot#75669).
+			EditorInterface.open_scene_from_path.call_deferred(outside_scenes[0])
+			await (Engine.get_main_loop() as SceneTree).process_frame
 		stale_tabs = inside_scenes
 		if not EditorInterface.has_method("close_scene"):
 			warnings.append(

@@ -17,13 +17,13 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("scene.get_tree", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_scene_get_tree(parameters))
 	registry.add("scene.create", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_create(parameters))
+		return await _cmd_scene_create(parameters))
 	registry.add("scene.open", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_open(parameters))
+		return await _cmd_scene_open(parameters))
 	registry.add("scene.close", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_close(parameters))
+		return await _cmd_scene_close(parameters))
 	registry.add("scene.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_delete(parameters))
+		return await _cmd_scene_delete(parameters))
 	registry.add("scene.create_node", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_scene_create_node(parameters))
 	registry.add("scene.delete_node", func(parameters: Dictionary) -> Dictionary:
@@ -207,7 +207,9 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		# it from disk so the in-memory tree matches the fresh file.
 		var open_scenes := EditorInterface.get_open_scenes()
 		if file_path in open_scenes:
-			EditorInterface.open_scene_from_path(file_path)
+			# call_deferred to avoid deferred-queue collision (godotengine/godot#75669).
+			EditorInterface.open_scene_from_path.call_deferred(file_path)
+			await (Engine.get_main_loop() as SceneTree).process_frame
 			response["reloaded"] = true
 			response["hint"] = "Scene replaced and reloaded in editor."
 	else:
@@ -225,7 +227,9 @@ static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 		return McpError.make("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
 		return McpError.make("NOT_FOUND", "scene not found: %s" % file_path, McpError.HINT_FILE_PATH)
-	EditorInterface.open_scene_from_path(file_path)
+	# call_deferred to avoid deferred-queue collision (godotengine/godot#75669).
+	EditorInterface.open_scene_from_path.call_deferred(file_path)
+	await (Engine.get_main_loop() as SceneTree).process_frame
 	return {"success": true, "path": file_path}
 
 
@@ -236,7 +240,7 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
 		return McpError.make("PATH_DENIED", str(guard["reason"]))
-	var result := Helpers.close_scene_tab_safe(file_path)
+	var result := await Helpers.close_scene_tab_safe(file_path)
 	if result.get("closed", false):
 		var response := {"success": true, "path": file_path}
 		if result.get("switched", false):
@@ -267,7 +271,7 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 		return McpError.make("NOT_FOUND", "no file at %s" % file_path, McpError.HINT_FILE_PATH)
 
 	# Attempt to close the editor tab before deleting the file.
-	var tab_result := Helpers.close_scene_tab_safe(file_path)
+	var tab_result := await Helpers.close_scene_tab_safe(file_path)
 	var tab_closed := tab_result.get("closed", false)
 	var warnings: Array[String] = []
 

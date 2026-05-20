@@ -12,7 +12,7 @@ const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _se
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("file.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_file_delete(parameters))
+		return await _cmd_file_delete(parameters))
 
 
 # -- Commands -----------------------------------------------------------------
@@ -39,7 +39,7 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 	var is_scene := (ext == "tscn" or ext == "scn")
 
 	if is_scene:
-		tab_result = Helpers.close_scene_tab_safe(file_path)
+		tab_result = await Helpers.close_scene_tab_safe(file_path)
 		tab_closed = tab_result.get("closed", false)
 		if not tab_closed:
 			var reason := str(tab_result.get("reason", ""))
