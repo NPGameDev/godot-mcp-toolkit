@@ -10,7 +10,6 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const FeatureRegistry = _Hub.FeatureRegistry
 const FeatureGate = _Hub.FeatureGate
 const McpJsonSync = _Hub.McpJsonSync
-const McpStateFile = _Hub.McpStateFile
 const RegistryClient = _Hub.RegistryClient
 const NodejsCheck = _Hub.NodejsCheck
 
@@ -502,19 +501,12 @@ func _refresh_features() -> void:
 	if _mcp_json_hint != null:
 		_mcp_json_hint.visible = not has_mcp
 
-	# Update gate checkboxes — sidecar is the runtime source of truth,
-	# with PS fallback when sidecar is missing (e.g. after .godot/ deletion).
-	var sidecar_gates := McpStateFile.get_current_gates()
-	var sidecar_has_gates := not sidecar_gates.is_empty()
+	# Update gate checkboxes from ProjectSettings (single source of truth).
 	for feature in _feature_rows:
 		var row: Dictionary = _feature_rows[feature]
 		var check: CheckBox = row["check"]
 		var entry: Dictionary = FeatureRegistry.get_entry(feature)
-		var enabled: bool
-		if sidecar_has_gates:
-			enabled = sidecar_gates.get(str(entry["env_var"]), false) == true
-		else:
-			enabled = ProjectSettings.get_setting(str(entry["ps_key"]), false)
+		var enabled: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
 		check.set_pressed_no_signal(enabled)
 		check.disabled = read_only
 		check.tooltip_text = str(entry["risk"])
@@ -531,20 +523,11 @@ func _on_feature_toggled(enabled: bool, feature: String) -> void:
 		_show_danger_confirmation(feature)
 		return
 
-	# Write to sidecar (runtime source of truth).
-	var err := McpStateFile.set_gate(str(entry["env_var"]), enabled)
-	if err != OK:
-		_toast("Could not update gate state (err %d)" % err, _TOAST_WARNING)
-		_feature_rows[feature]["check"].set_pressed_no_signal(not enabled)
-		return
-
-	# Sync PS mirror for immediate Inspector update.
+	# Write to ProjectSettings (single source of truth).
+	# Poll loop detects the change and emits signals centrally.
 	ProjectSettings.set_setting(str(entry["ps_key"]), enabled)
 	ProjectSettings.save()
-
 	_refresh_features()
-	if _notifier != null:
-		_notifier.broadcast_config_reloaded()
 
 
 ## Read-only gate toggle intercept — block expand and show warning.
@@ -632,13 +615,10 @@ func _show_danger_confirmation(feature: String) -> void:
 func enable_all_gates() -> void:
 	for feature in FeatureRegistry.all_features():
 		var entry: Dictionary = FeatureRegistry.get_entry(feature)
-		McpStateFile.set_gate(str(entry["env_var"]), true)
 		ProjectSettings.set_setting(str(entry["ps_key"]), true)
 	ProjectSettings.save()
 	_refresh_features()
 	_refresh_status()
-	if _notifier != null:
-		_notifier.broadcast_config_reloaded()
 
 
 # ---------------------------------------------------------------------------

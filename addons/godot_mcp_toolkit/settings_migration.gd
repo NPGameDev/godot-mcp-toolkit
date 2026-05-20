@@ -35,17 +35,6 @@ static func migrate_user_data_paths() -> void:
 		["user://addons/godot_mcp_toolkit/mcp_token_%s" % suffix, inst + "mcp_token"],
 	]
 
-	# Phase 3: Move sidecar from .godot/ to instance dir.
-	var old_sidecar := ProjectSettings.globalize_path("res://") + ".godot/mcp_toolkit_state.json"
-	if FileAccess.file_exists(old_sidecar) and not FileAccess.file_exists(inst + "mcp_toolkit_state.json"):
-		var content := FileAccess.get_file_as_bytes(old_sidecar)
-		var out := FileAccess.open(inst + "mcp_toolkit_state.json", FileAccess.WRITE)
-		if out != null:
-			out.store_buffer(content)
-			out.close()
-			DirAccess.remove_absolute(old_sidecar)
-			print("[MCP] Migrated sidecar from .godot/ to instance dir")
-
 	var moved := 0
 	for phases in [phase1, phase2]:
 		for pair in phases:

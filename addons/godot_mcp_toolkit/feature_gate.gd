@@ -2,18 +2,14 @@
 extends RefCounted
 ## FeatureGate — gate check for unsafe features.
 ##
-## Runtime gate state lives in the sidecar
-## (user://…/project_instance_<hash>/mcp_toolkit_state.json)
-## with .mcp.json env vars as a migration fallback.
-## Admin deny keys (deny_<feature>) remain in ProjectSettings as overrides.
+## ProjectSettings is the single source of truth for gate state.
+## Admin deny keys (deny_<feature>) remain as PS overrides.
 ##
-## Check order: deny (PS) → sidecar gate.
+## Check order: deny (PS) → PS gate bool.
 
-# Direct preloads (not via _Hub) to avoid circular dependency —
+# Direct preload (not via _Hub) to avoid circular dependency —
 # _hub.gd preloads this file.
 const FeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
-const McpJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
-const McpStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
 
 
 static func is_enabled(feature: String) -> bool:
@@ -23,12 +19,18 @@ static func is_enabled(feature: String) -> bool:
 	# Explicit deny (PS-only safety override) always wins.
 	if ProjectSettings.get_setting("mcp_toolkit/feature_gates/deny_" + feature, false):
 		return false
-	# Sidecar is the runtime source of truth, .mcp.json as fallback.
-	var env_var: String = str(entry["env_var"])
-	var sidecar_gates := McpStateFile.get_current_gates()
-	if sidecar_gates.has(env_var):
-		return sidecar_gates[env_var] == true
-	return McpJsonSync.is_gate_enabled(env_var)
+	return ProjectSettings.get_setting(str(entry["ps_key"]), false)
+
+
+## Returns {env_var_name: bool} for all registered features by reading PS.
+## Used by gate_notifier.gd and mcp_server.gd for WebSocket payloads.
+static func snapshot_gates() -> Dictionary:
+	var gates := {}
+	for feature in FeatureRegistry.all_features():
+		var entry: Dictionary = FeatureRegistry.get_entry(feature)
+		gates[str(entry["env_var"])] = bool(
+				ProjectSettings.get_setting(str(entry["ps_key"]), false))
+	return gates
 
 
 # -- Dangerous-gate session tracking (H7) ------------------------------------

@@ -138,7 +138,6 @@ func _enter_tree() -> void:
 	_user_path_monitor = _Hub.UserPathMonitor.new()
 	_user_path_monitor.start()
 	_user_path_monitor.project_name_changed.connect(_on_project_name_changed)
-	_feature_settings.bind_user_path_monitor(_user_path_monitor)
 
 	add_child(_server)
 	_server.bind_user_path_monitor(_user_path_monitor)

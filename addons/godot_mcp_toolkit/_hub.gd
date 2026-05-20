@@ -16,7 +16,6 @@ const Scrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
 const Audit := preload("res://addons/godot_mcp_toolkit/audit.gd")
 const McpJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
-const McpStateFile := preload("res://addons/godot_mcp_toolkit/mcp_state_file.gd")
 const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/user_path_monitor.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
@@ -66,5 +65,3 @@ static func get_editor_theme() -> Theme:
 	if base != null:
 		return base.get_theme()
 	return null
-
-

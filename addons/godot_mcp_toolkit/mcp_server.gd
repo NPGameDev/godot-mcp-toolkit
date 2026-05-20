@@ -12,7 +12,7 @@ signal command_received(method: String)
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const RegistryClient = _Hub.RegistryClient
-const _McpStateFile = _Hub.McpStateFile
+const FeatureGate = _Hub.FeatureGate
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
 
@@ -364,11 +364,7 @@ func _handle_auth(peer: WebSocketPeer, message: Dictionary) -> void:
 	if MCPAuth.validate(message, _session_token):
 		_peer_authed[peer] = true
 		var vi := Engine.get_version_info()
-		var state := _McpStateFile.read()
-		var gates: Dictionary = state.get("gates", {})
-		# Fallback: if sidecar is empty, derive from PS bools.
-		if gates.is_empty():
-			gates = _McpStateFile.gates_from_ps()
+		var gates: Dictionary = FeatureGate.snapshot_gates()
 		var plugin_ver := _get_plugin_version()
 		peer.send_text(JSON.stringify({
 			"authed": true,
