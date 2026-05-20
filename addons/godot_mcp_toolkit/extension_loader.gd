@@ -201,12 +201,24 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	# Run rescan on the now-fresh class list (bypass debounce).
 	_debounce_pending = false
 	_do_rescan()
-	# Return current extension list.
+	# Return current extension list with full metadata (same shape as
+	# extensions.list and extensions.changed — input_schema, annotations, etc.).
 	var methods := _registry.get_extension_methods()
 	var result: Array[Dictionary] = []
 	for method: String in methods:
 		var meta := _registry.get_command_metadata(method)
-		result.append({"method": method, "description": meta.get("description", "")})
+		var entry: Dictionary = {"method": method}
+		if meta.get("description", "") != "":
+			entry["description"] = meta["description"]
+		if not meta.get("input_schema", {}).is_empty():
+			entry["input_schema"] = meta["input_schema"]
+		if not meta.get("annotations", {}).is_empty():
+			entry["annotations"] = meta["annotations"]
+		if not meta.get("group", {}).is_empty():
+			entry["group"] = meta["group"]
+		if meta.has("timeout_ms"):
+			entry["timeout_ms"] = meta["timeout_ms"]
+		result.append(entry)
 	return {"success": true, "refreshed": true, "commands": result}
 
 

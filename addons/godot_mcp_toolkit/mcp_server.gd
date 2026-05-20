@@ -354,16 +354,46 @@ func _handle_auth(peer: WebSocketPeer, message: Dictionary) -> void:
 		# Fallback: if sidecar is empty, derive from PS bools.
 		if gates.is_empty():
 			gates = _McpStateFile.gates_from_ps()
+		var plugin_ver := _get_plugin_version()
 		peer.send_text(JSON.stringify({
 			"authed": true,
 			"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
 			"gates": gates,
+			"version": plugin_ver,
 		}))
+		# Version mismatch check — human-only (editor console), nothing on MCP wire.
+		var server_ver: String = str(message.get("version", ""))
+		if server_ver.is_empty():
+			# Pre-handshake server — no version sent.
+			pass
+		else:
+			_check_version_mismatch(plugin_ver, server_ver)
 		if _peer_authed.size() == 1:
 			_lower_unfocused_sleep()
 		client_connected.emit(_peer_authed.size())
 	else:
 		peer.close(1008, "invalid token")
+
+
+func _get_plugin_version() -> String:
+	var cfg := ConfigFile.new()
+	var err := cfg.load("res://addons/godot_mcp_toolkit/plugin.cfg")
+	if err != OK:
+		return "unknown"
+	return cfg.get_value("plugin", "version", "unknown")
+
+
+func _check_version_mismatch(local: String, remote: String) -> void:
+	var local_parts := local.split(".")
+	var remote_parts := remote.split(".")
+	if local_parts.size() != 3 or remote_parts.size() != 3:
+		return  # Non-semver — skip comparison.
+	if not local_parts[0].is_valid_int() or not remote_parts[0].is_valid_int():
+		return
+	if int(local_parts[0]) != int(remote_parts[0]):
+		push_error("[MCPServer] Major version mismatch — plugin %s, server %s. Update both to the same major version." % [local, remote])
+	elif local != remote:
+		push_warning("[MCPServer] Version mismatch — plugin %s, server %s. Consider updating." % [local, remote])
 
 
 func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:

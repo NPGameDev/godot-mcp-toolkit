@@ -19,13 +19,20 @@ static func has_mcp_json() -> bool:
 
 
 static func is_gate_enabled(env_var_name: String) -> bool:
-	var data := _read_server_env()
+	var data := get_all_env_vars()
 	return data.get(env_var_name, "") == "1"
 
 
 
 static func get_all_env_vars() -> Dictionary:
-	return _read_server_env()
+	var raw := _read_server_env()
+	# Env vars are strings by definition. JSON may store them as integers
+	# (e.g. "GODOT_MCP_READ_ONLY": 1 instead of "1"). Coerce all values
+	# to String so consumers can safely compare with == "1" etc.
+	var coerced: Dictionary = {}
+	for key in raw:
+		coerced[key] = str(raw[key])
+	return coerced
 
 
 static func _read_server_env() -> Dictionary:
