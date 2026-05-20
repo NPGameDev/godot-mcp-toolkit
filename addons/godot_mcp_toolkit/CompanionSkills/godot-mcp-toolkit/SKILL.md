@@ -30,6 +30,9 @@ minimise wasted tool calls.
 - By name: `discover_tools({groups: ["runtime"]})` — exact group activation
 - Browse only: add `activate: false` to list tools without loading
 - Deactivate: `discover_tools({reset: true})` (all) or `reset: ["tilemap"]` (selective)
+- **Schema enrichment:** if activated tools are not directly callable and
+  require a separate tool lookup to obtain their schemas, pass
+  `include_schemas: true` to receive full parameter schemas in the response
 
 **Feature gates** — gated tools require env vars in `.mcp.json` env block:
 

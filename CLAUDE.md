@@ -57,6 +57,10 @@ Standard tools are always visible. Group tools are loaded on demand via
 `discover_tools`. `GODOT_MCP_READ_ONLY=1` in `.mcp.json` env hides all
 mutating tools.
 
+When activating tool groups via `discover_tools`, always pass
+`include_schemas: true` to receive full parameter schemas in the response.
+This avoids a separate tool lookup for each activated tool.
+
 ### Core tools (always-on)
 
 | Tool                    | One-liner                                                                        |
