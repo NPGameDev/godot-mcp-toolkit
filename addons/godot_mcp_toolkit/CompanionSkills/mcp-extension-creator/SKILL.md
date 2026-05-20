@@ -88,8 +88,8 @@ public partial class MCPToolkit<Name> : RefCounted
 |-----|------|---------|---------|
 | `description` | String | `""` | Tool description shown to the LLM in `tools/list` |
 | `input_schema` | Dictionary | `{}` | JSON Schema defining expected parameters |
-| `is_read_only` | bool | `false` | Tool only reads state (blocked in read-only mode if false) |
-| `is_destructive` | bool | `false` | Tool deletes or irreversibly changes data (mutually exclusive with is_read_only) |
+| `is_read_only` | bool | `false` | Tool only reads state. **Single source of truth** for read-only mode: tools with `is_read_only: true` remain visible under `GODOT_MCP_READ_ONLY=1`; all others excluded |
+| `is_destructive` | bool | `false` | Tool deletes or irreversibly changes data (contradicts is_read_only — if both set, tool treated as mutating) |
 | `is_idempotent` | bool | `false` | Calling twice with same input = same result |
 | `is_cancellable` | bool | `false` | Handler supports cooperative cancellation (receives MCPToolContext as 2nd arg) |
 | `timeout_ms` | int | `30000` | Per-tool bridge timeout in ms (floor: 1000, cap: 300000) |

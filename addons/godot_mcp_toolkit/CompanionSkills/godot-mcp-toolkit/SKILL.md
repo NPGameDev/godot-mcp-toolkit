@@ -18,13 +18,12 @@ minimise wasted tool calls.
 
 ## 1. Quick reference
 
-**Profiles** (set via `GODOT_MCP_PROFILE` env var in `.mcp.json`):
+**Modes:**
 
-| Profile | Behaviour |
-|---------|-----------|
+| Mode | Behaviour |
+|------|-----------|
 | **Standard** (default) | Base tools always loaded. On-demand groups via `discover_tools`. |
-| **Power User** | All tools loaded at startup. No `discover_tools` needed. |
-| **Minimal** | Small read-only subset for exploration. |
+| **Read-only** (`GODOT_MCP_READ_ONLY=1`) | Only tools with `readOnlyHint: true` annotations. Safe for exploration/auditing. |
 
 **On-demand groups** — activate with `discover_tools`:
 - By keyword: `discover_tools({request: "runtime"})` — fuzzy-matches groups
@@ -317,10 +316,12 @@ All tools loaded at startup. Useful when you know exactly what you need.
 **Caution:** The large tool count (~99) can degrade tool-selection accuracy
 in LLM contexts. Standard + `discover_tools` is generally more reliable.
 
-### Minimal
+### Read-only mode
 
-Small read-only subset (~13 tools) for exploration and auditing.
-No mutation tools available.
+Set `GODOT_MCP_READ_ONLY=1` in `.mcp.json` env vars. Only tools with
+`readOnlyHint: true` annotations are visible — safe for exploration and
+auditing. Both built-in and extension tools use the same annotation-driven
+filter. No mutation tools available. Reconnect to exit read-only mode.
 
 ### Context management
 

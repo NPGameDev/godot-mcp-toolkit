@@ -124,13 +124,21 @@ registry.add(method: String, handler: Callable, options: Dictionary)
 `idempotentHint`). Extension authors use the snake_case names only.
 
 All annotation defaults are **safe**: omitting them means the tool is
-treated as mutating, non-destructive, and non-idempotent. Set
-`is_read_only: true` if your tool only reads data — otherwise it is
-**blocked in read-only mode** (`GODOT_MCP_READ_ONLY=1`).
+treated as mutating, non-destructive, and non-idempotent.
+
+**Read-only mode:** The `is_read_only` annotation is the **single source
+of truth** for read-only filtering. When the server runs with
+`GODOT_MCP_READ_ONLY=1`, only tools with `is_read_only: true` appear in
+`tools/list` — both built-in and extension tools use the same
+annotation-driven filter. If your extension tool only inspects state
+(reads nodes, queries data, lists files), set `is_read_only: true` so it
+remains available in read-only environments. Tools without this annotation
+are excluded by default (strict inclusion — safe posture).
 
 **Exclusivity:** `is_read_only: true` and `is_destructive: true` is a
 logical contradiction — a read-only tool cannot be destructive. If both
-are set, a warning is logged and `is_destructive` is forced to `false`.
+are set, a warning is logged and the tool is treated as mutating
+(excluded from read-only mode).
 
 **Timeout:** Defaults to 30 seconds. If your tool calls external services
 (HTTP APIs, databases, LLM inference), increase `timeout_ms`. Values
