@@ -107,9 +107,8 @@ mutating tools.
 
 | Tool                  | Gate env var |
 |-----------------------|-------------|
-| `game_eval`           | `GODOT_MCP_ALLOW_GAME_EVAL` |
+| `execute_code`        | `GODOT_MCP_ALLOW_EXECUTE_CODE` |
 | `node_call_method`    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD` |
-| `project_set_setting` | `GODOT_MCP_ALLOW_PROJECT_SET_SETTING` |
 
 ## Multi-project support (iter 23)
 
@@ -192,7 +191,7 @@ bypasses registry discovery entirely (backwards compat).
   Script read cap (default 256 KB, min 64 KB) and WebSocket buffer (default
   1024 KB, min 256 KB). Stored in ProjectSettings `mcp/limits/`.
 - **Enable All Gates** — available from the onboarding wizard. Enables all
-  feature gates via the sidecar. Explicit `deny_<feature>` still overrides.
+  feature gates via ProjectSettings. Explicit `deny_<feature>` still overrides.
   Palette, or the first-run onboarding dialog.
 - **.mcp.json sync** — toggling any gate in the dock or PS Inspector
   immediately writes the corresponding env var to `.mcp.json`. The dock
@@ -217,20 +216,18 @@ or PS Inspector sync bidirectionally with `.mcp.json`. There is no
 dual/single gate distinction; all gates follow the same check order:
 
 1. **Deny** (PS) — `mcp_toolkit/feature_gates/deny_<feature>` always wins
-2. **Sidecar gate** — runtime source of truth, synced from dock/PS bools
+2. **PS gate bool** — ProjectSettings is the single source of truth
 
-| Feature               | Env var                                  | PS mirror key                                      | Risk |
+| Feature               | Env var                                  | PS key                                             | Risk |
 |-----------------------|------------------------------------------|----------------------------------------------------|------|
-| `game_eval`           | `GODOT_MCP_ALLOW_GAME_EVAL`             | `mcp_toolkit/feature_gates/allow_game_eval`        | Arbitrary GDScript via Expression |
-| `project_set_setting` | `GODOT_MCP_ALLOW_PROJECT_SET_SETTING`   | `mcp_toolkit/feature_gates/allow_project_set_setting` | Write arbitrary ProjectSettings keys |
+| `execute_code`        | `GODOT_MCP_ALLOW_EXECUTE_CODE`          | `mcp_toolkit/feature_gates/allow_execute_code`     | Arbitrary GDScript via Expression |
 | `node_call_method`    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD`      | `mcp_toolkit/feature_gates/allow_node_call_method` | Method invocation on edited-scene nodes |
-| `input_map_write`     | `GODOT_MCP_ALLOW_INPUT_MAP_WRITE`       | `mcp_toolkit/feature_gates/allow_input_map_write`  | Modify persistent InputMap actions |
 | `read_user_scope`     | `GODOT_MCP_ALLOW_USER_SCOPE`            | `mcp_toolkit/feature_gates/allow_user_scope`       | Read/write whitelisted user:// paths |
 
-**Dangerous-gate confirmation:** Two RCE-class features (`game_eval`,
+**Dangerous-gate confirmation:** Two RCE-class features (`execute_code`,
 `node_call_method`) show a confirmation dialog the first time they are
 enabled. Once per editor session per feature.
-`game_eval` is the effective security boundary for arbitrary code execution
+`execute_code` is the effective security boundary for arbitrary code execution
 (including OS commands and outbound HTTP via GDScript).
 
 ### How to enable
@@ -284,10 +281,11 @@ To enable the `save.*` tools:
 - Profiles removed entirely. Standard is the only mode. `GODOT_MCP_PROFILE` deprecated (warning if set).
 - Read-only mode (`GODOT_MCP_READ_ONLY=1`) replaces Minimal.
 
-**Gate changes (iter 19):**
-- `node_call_method` — now requires `node_call_method` gate.
-- `project_set_setting` — now requires `project_set_setting` gate (dual).
-- `input_map_action`, `input_map_event` — now require `input_map_write` gate.
+**Gate changes (iters 19, 41d-nonis, 41l-octies):**
+- `node_call_method` — requires `node_call_method` gate.
+- `execute_code` — renamed from `game_eval`; requires `execute_code` gate.
+- `project_set_setting`, `input_map_write` gates removed (tools ungated).
+- Gate storage moved from sidecar to ProjectSettings (41l-octies).
 
 ### Error shape
 
