@@ -331,6 +331,7 @@ public Dictionary HandleFetch(Dictionary parameters, GodotObject ctx)
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
+| `progress_dialog.cpp` errors on save | Handler calls `EditorInterface.save_scene()` directly | Yield one frame first: `await (Engine.get_main_loop() as SceneTree).process_frame` before the call |
 | Extension not discovered | Missing `@tool` (GDScript) or `[Tool]` (C#) | Add the annotation and save/rebuild |
 | GDScript extension not found | Not extending `MCPToolkitExtension` | Add `extends MCPToolkitExtension` |
 | C# extension not in class list | File name ≠ class name | Rename `.cs` file to match class name |

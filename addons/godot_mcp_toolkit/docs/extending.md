@@ -143,6 +143,24 @@ pattern rather than blocking the bridge.
 coroutines). The dispatch path already awaits handler results, so both
 synchronous and asynchronous handlers work without additional configuration.
 
+**Deferred-call context:** Command handlers run inside a `call_deferred`
+dispatch (used to reduce editor crash risk from main-thread reentrancy).
+This means Godot APIs that use the **progress dialog** (e.g.
+`EditorInterface.save_scene()`, `EditorInterface.save_scene_as()`) will
+log `progress_dialog.cpp` errors if called directly. To work around this,
+yield one frame before calling such APIs:
+
+```gdscript
+func _my_handler(params: Dictionary) -> Dictionary:
+	# Escape the deferred-call context before calling progress-dialog APIs.
+	await (Engine.get_main_loop() as SceneTree).process_frame
+	EditorInterface.save_scene()
+	return {"success": true}
+```
+
+This adds ~16ms of latency (one frame) and is only needed for the small
+set of Godot APIs that internally show a progress dialog.
+
 **Groups:**
 
 Commands declaring a `group` key are registered behind `discover_tools`
