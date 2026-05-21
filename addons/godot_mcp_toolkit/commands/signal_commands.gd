@@ -17,7 +17,8 @@ static func _compile_extends_path_re() -> RegEx:
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("signal.list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_signal_list(parameters))
+		return _cmd_signal_list(parameters)
+	, {"is_read_only": true})
 	registry.add("signal.manage", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_signal_manage(parameters))
 	registry.add("signal.emit", func(parameters: Dictionary) -> Dictionary:

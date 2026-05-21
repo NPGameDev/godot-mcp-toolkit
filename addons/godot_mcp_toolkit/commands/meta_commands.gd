@@ -5,7 +5,8 @@ extends RefCounted
 
 static func register(registry: MCPToolkitCommandRegistry) -> void:
 	registry.add("meta.set_limits", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_set_limits(parameters))
+		return _cmd_set_limits(parameters)
+	, {"is_active_scene_required": false})
 
 
 static func _cmd_set_limits(parameters: Dictionary) -> Dictionary:

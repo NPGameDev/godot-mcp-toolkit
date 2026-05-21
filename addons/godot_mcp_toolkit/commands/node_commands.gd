@@ -49,11 +49,13 @@ const COMMON_PROPERTIES_BY_CLASS := {
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("node.get_property", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_node_get_property(parameters))
+		return _cmd_node_get_property(parameters)
+	, {"is_read_only": true})
 	registry.add("node.set_property", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_node_set_property(parameters))
 	registry.add("node.get_property_list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_node_get_property_list(parameters))
+		return _cmd_node_get_property_list(parameters)
+	, {"is_read_only": true})
 	registry.add("node.call_method", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_node_call_method(parameters))
 	registry.add("node.set_script", func(parameters: Dictionary) -> Dictionary:

@@ -15,15 +15,20 @@ const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _se
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("scene.get_tree", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_get_tree(parameters))
+		return _cmd_scene_get_tree(parameters)
+	, {"is_read_only": true})
 	registry.add("scene.create", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_scene_create(parameters))
+		return await _cmd_scene_create(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("scene.open", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_scene_open(parameters))
+		return await _cmd_scene_open(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("scene.close", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_scene_close(parameters))
+		return await _cmd_scene_close(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("scene.delete", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_scene_delete(parameters))
+		return await _cmd_scene_delete(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("scene.create_node", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_scene_create_node(parameters))
 	registry.add("scene.delete_node", func(parameters: Dictionary) -> Dictionary:
@@ -31,11 +36,14 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("scene.instantiate", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_scene_instantiate(server, parameters))
 	registry.add("scene.diff", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_diff(server, parameters))
+		return _cmd_scene_diff(server, parameters)
+	, {"is_read_only": true})
 	registry.add("scene.create_inherited", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_create_inherited(parameters))
+		return _cmd_create_inherited(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("scene.query", func(p: Dictionary) -> Dictionary:
-		return _cmd_scene_query(p))
+		return _cmd_scene_query(p)
+	, {"is_read_only": true})
 
 
 # -- Helpers ------------------------------------------------------------------

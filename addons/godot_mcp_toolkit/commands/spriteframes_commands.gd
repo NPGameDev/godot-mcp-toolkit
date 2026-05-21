@@ -10,11 +10,14 @@ const Helpers = _Hub.Helpers
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("spriteframes.create", func(p: Dictionary) -> Dictionary:
-		return _cmd_create(p))
+		return _cmd_create(p)
+	, {"is_active_scene_required": false})
 	registry.add("spriteframes.edit", func(p: Dictionary) -> Dictionary:
-		return _cmd_edit(p))
+		return _cmd_edit(p)
+	, {"is_active_scene_required": false})
 	registry.add("spriteframes.from_spritesheet", func(p: Dictionary) -> Dictionary:
-		return _cmd_from_spritesheet(p))
+		return _cmd_from_spritesheet(p)
+	, {"is_active_scene_required": false})
 
 
 # -- Commands -----------------------------------------------------------------

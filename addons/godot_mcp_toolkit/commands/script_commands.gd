@@ -26,13 +26,17 @@ static func _compile_preload_hint_re() -> RegEx:
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("script.read", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_read(parameters))
+		return _cmd_script_read(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 	registry.add("script.write", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_write(server, parameters))
+		return _cmd_script_write(server, parameters)
+	, {"is_active_scene_required": false})
 	registry.add("script.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_delete(parameters))
+		return _cmd_script_delete(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("script.check", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_check(parameters))
+		return _cmd_script_check(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 
 
 # -- Commands -----------------------------------------------------------------

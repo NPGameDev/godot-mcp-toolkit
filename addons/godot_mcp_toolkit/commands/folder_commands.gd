@@ -10,9 +10,11 @@ const Helpers = _Hub.Helpers
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("folder.create", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_folder_create(parameters))
+		return _cmd_folder_create(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("folder.delete", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_folder_delete(parameters))
+		return await _cmd_folder_delete(parameters)
+	, {"is_active_scene_required": false})
 
 
 # -- Commands -----------------------------------------------------------------

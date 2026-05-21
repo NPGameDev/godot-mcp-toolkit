@@ -27,11 +27,14 @@ const IMPORT_MAX_BASE64_BYTES := 5 * 1024 * 1024
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("asset.list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_asset_list(parameters))
+		return _cmd_asset_list(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 	registry.add("asset.get_dependencies", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_asset_get_dependencies(parameters))
+		return _cmd_asset_get_dependencies(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 	registry.add("asset.import", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_asset_import(parameters))
+		return _cmd_asset_import(parameters)
+	, {"is_active_scene_required": false})
 
 
 # -- Helpers ------------------------------------------------------------------

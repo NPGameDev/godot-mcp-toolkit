@@ -16,11 +16,14 @@ const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("resource.load", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_load(parameters))
+		return _cmd_resource_load(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 	registry.add("resource.write", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_write(parameters))
+		return _cmd_resource_write(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("resource.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_delete(parameters))
+		return _cmd_resource_delete(parameters)
+	, {"is_active_scene_required": false})
 
 
 # -- Helpers ------------------------------------------------------------------

@@ -12,7 +12,8 @@ const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _se
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("file.delete", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_file_delete(parameters))
+		return await _cmd_file_delete(parameters)
+	, {"is_active_scene_required": false})
 
 
 # -- Commands -----------------------------------------------------------------

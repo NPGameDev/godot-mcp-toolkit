@@ -13,7 +13,8 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("animation.keyframe", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_animation_keyframe(server, parameters))
 	registry.add("animation.get_keys", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_animation_get_keys(parameters))
+		return _cmd_animation_get_keys(parameters)
+	, {"is_read_only": true})
 	registry.add("animationtree.edit", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_animationtree_edit(server, parameters))
 

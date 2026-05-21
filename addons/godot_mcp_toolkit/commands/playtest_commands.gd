@@ -28,11 +28,14 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node,
 		debug_bridge: RefCounted = null) -> void:
 	_debug_bridge = debug_bridge
 	registry.add("game.start", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_game_start(parameters))
+		return _cmd_game_start(parameters)
+	, {"is_read_only": true, "_force_serialize": true})
 	registry.add("game.stop", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_game_stop(parameters))
+		return _cmd_game_stop(parameters)
+	, {"is_read_only": true, "_force_serialize": true, "is_active_scene_required": false})
 	registry.add("debugger.get_log", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_debugger_get_log_cached(parameters))
+		return _cmd_debugger_get_log_cached(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 
 
 static func clear_debug_bridge() -> void:

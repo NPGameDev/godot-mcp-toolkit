@@ -12,9 +12,11 @@ const _MAX_SEARCH_RESULTS := 200
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("classdb.get_info", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_classdb_get_info(parameters))
+		return _cmd_classdb_get_info(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 	registry.add("classdb.search", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_classdb_search(parameters))
+		return _cmd_classdb_search(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 
 
 # -- Command -----------------------------------------------------------------

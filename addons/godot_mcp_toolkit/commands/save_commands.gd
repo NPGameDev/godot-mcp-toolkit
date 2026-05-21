@@ -11,13 +11,17 @@ const Scrubber = _Hub.Scrubber
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("save.read", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_save_read(parameters))
+		return _cmd_save_read(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 	registry.add("save.write", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_save_write(parameters))
+		return _cmd_save_write(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("save.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_save_delete(parameters))
+		return _cmd_save_delete(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("save.list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_save_list(parameters))
+		return _cmd_save_list(parameters)
+	, {"is_read_only": true, "is_active_scene_required": false})
 
 
 # -- Commands -----------------------------------------------------------------

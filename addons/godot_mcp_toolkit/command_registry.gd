@@ -48,6 +48,9 @@ func add(method: String, handler: Callable, options: Dictionary = {}) -> void:
 		"group": options.get("group", {}),
 		"timeout_ms": timeout_ms,
 		"is_cancellable": bool(options.get("is_cancellable", false)),
+		"read_only": is_read_only,
+		"active_scene_required": bool(options.get("is_active_scene_required", true)),
+		"_force_serialize": bool(options.get("_force_serialize", false)),
 	}
 
 
@@ -95,6 +98,29 @@ func is_cancellable(method: String) -> bool:
 	if not _commands.has(method):
 		return false
 	return _commands[method].get("is_cancellable", false)
+
+
+func is_read_only(method: String) -> bool:
+	var cmd = _commands.get(method)
+	return cmd != null and cmd.get("read_only", false)
+
+
+func is_active_scene_required(method: String) -> bool:
+	var cmd = _commands.get(method)
+	return cmd != null and cmd.get("active_scene_required", true)
+
+
+func is_force_serialized(method: String) -> bool:
+	var cmd = _commands.get(method)
+	return cmd != null and cmd.get("_force_serialize", false)
+
+
+func needs_serialization(method: String) -> bool:
+	if not _commands.has(method):
+		return true  # Safe default for unknown commands.
+	if is_force_serialized(method):
+		return true
+	return not is_read_only(method)
 
 
 func clear() -> void:

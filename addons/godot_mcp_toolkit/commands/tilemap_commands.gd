@@ -13,9 +13,11 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("tilemap.set_cells", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_tilemap_set_cells(server, parameters))
 	registry.add("tileset.create", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_create(parameters))
+		return _cmd_tileset_create(parameters)
+	, {"is_active_scene_required": false})
 	registry.add("tileset.edit", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_edit(parameters))
+		return _cmd_tileset_edit(parameters)
+	, {"is_active_scene_required": false})
 
 
 # -- Helpers ------------------------------------------------------------------

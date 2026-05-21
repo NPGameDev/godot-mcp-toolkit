@@ -78,6 +78,22 @@ const _ACTIVE_UNFOCUSED_SLEEP_USEC := 16666  # ~= 60 fps while MCP clients conne
 ## server.undo_helpers.
 var undo_helpers: Node = null
 
+# -- Mutation serialisation ---------------------------------------------------
+# When multiple WebSocket peers are connected, mutation commands must not
+# interleave at await boundaries. A single-flight flag + FIFO queue ensures
+# that at most one mutation executes at any time. Read-only commands bypass
+# the lock entirely. See iter 41l-decies for the full design.
+
+class _MutationQueueEntry:
+	var peer: WebSocketPeer
+	var id  # int or null (JSON-RPC id)
+	var method: String
+	var params: Dictionary
+	var cancelled: bool = false
+
+var _mutation_in_flight := false
+var _mutation_queue: Array = []  # of _MutationQueueEntry
+
 
 func set_registry(registry: MCPToolkitCommandRegistry) -> void:
 	_registry = registry
@@ -421,13 +437,22 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 		return
 
 	# _cancel is a fire-and-forget notification from the bridge — no response.
-	# Triggers cooperative cancellation on the MCPToolContext for the target request.
+	# Triggers cooperative cancellation on the MCPToolContext for the target
+	# request. Also scans the mutation queue for queued (not-yet-executing)
+	# commands and flags them for skip-on-drain.
 	if method == "_cancel":
 		var safe_params: Dictionary = parameters \
 			if typeof(parameters) == TYPE_DICTIONARY else {}
 		var target_id := str(safe_params.get("request_id", ""))
+		# In-flight: cancel via context.
 		if _active_contexts.has(target_id):
 			_active_contexts[target_id].cancel()
+			return
+		# Queued: flag for skip on drain.
+		for entry in _mutation_queue:
+			if str(entry.id) == target_id:
+				entry.cancelled = true
+				break
 		return
 
 	# echo is a transport-level diagnostic, not a domain command.
@@ -442,20 +467,79 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 	var safe_parameters: Dictionary = parameters \
 		if typeof(parameters) == TYPE_DICTIONARY else {}
 
-	# Create cancellation context for extension tools that opted in.
+	# Route through mutation lock: commands that need serialisation acquire
+	# the lock; read-only commands bypass it and execute immediately.
+	if _registry.needs_serialization(method):
+		if _mutation_in_flight:
+			var entry := _MutationQueueEntry.new()
+			entry.peer = peer
+			entry.id = id
+			entry.method = method
+			entry.params = safe_parameters
+			_mutation_queue.append(entry)
+			_send_notification(peer, "_queued", {"request_id": id})
+		else:
+			await _execute_mutation(peer, id, method, safe_parameters)
+	else:
+		# Read-only: execute immediately, no lock needed.
+		var ctx: MCPToolContext = null
+		if _registry.is_cancellable(method):
+			ctx = MCPToolContext.new()
+			_active_contexts[str(id)] = ctx
+		command_received.emit(method)
+		var result: Dictionary = await _registry.call_command(
+			method, safe_parameters, ctx)
+		_active_contexts.erase(str(id))
+		_send_result(peer, id, result)
+
+
+func _execute_mutation(peer: WebSocketPeer, id, method: String,
+		params: Dictionary) -> void:
+	_mutation_in_flight = true
+	_send_notification(peer, "_executing", {"request_id": id})
 	var ctx: MCPToolContext = null
 	if _registry.is_cancellable(method):
 		ctx = MCPToolContext.new()
 		_active_contexts[str(id)] = ctx
-
 	command_received.emit(method)
-	var result: Dictionary = await _registry.call_command(
-		method, safe_parameters, ctx)
-
-	# Cleanup — RefCounted lifecycle handles signal disconnection.
+	var result: Dictionary = await _registry.call_command(method, params, ctx)
 	_active_contexts.erase(str(id))
-
 	_send_result(peer, id, result)
+	_mutation_in_flight = false
+	_drain_mutation_queue()
+
+
+func _drain_mutation_queue() -> void:
+	while not _mutation_queue.is_empty():
+		var entry: _MutationQueueEntry = _mutation_queue.pop_front()
+		# Skip cancelled entries.
+		if entry.cancelled:
+			continue
+		# Skip disconnected peers.
+		if entry.peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
+			continue
+		# Skip unregistered commands (gate toggle race).
+		if not _registry.has_command(entry.method):
+			_send_error(entry.peer, entry.id, -32601,
+				"Method unregistered while queued: %s" % entry.method)
+			continue
+		# Found a valid entry — execute it.
+		# _execute_mutation sets _mutation_in_flight = true synchronously
+		# before its first await, so there is no race window.
+		_execute_mutation(entry.peer, entry.id, entry.method, entry.params)
+		return  # _execute_mutation will call _drain_mutation_queue on completion.
+	# Queue fully drained — nothing left to execute.
+
+
+func _send_notification(peer: WebSocketPeer, method: String,
+		params: Dictionary) -> void:
+	if peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	peer.send_text(JSON.stringify({
+		"jsonrpc": JSONRPC_VERSION,
+		"method": method,
+		"params": params,
+	}))
 
 
 func _send_result(peer: WebSocketPeer, id, result) -> void:
