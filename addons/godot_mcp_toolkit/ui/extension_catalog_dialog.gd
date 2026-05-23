@@ -126,6 +126,7 @@ func _fetch_catalog() -> void:
 	_http.cancel_request()
 	_status_label.text = "Fetching catalog..."
 	_update_msg.visible = false
+
 	var err := _http.request(ExtensionCatalog.CATALOG_URL)
 	if err != OK:
 		push_warning("[MCPCatalog] HTTP request failed to start (err %d)" % err)
@@ -159,8 +160,8 @@ func _on_request_completed(result: int, response_code: int, _headers: PackedStri
 		ExtensionCatalog.write_cache(raw)
 	_entries = parsed["extensions"]
 	_populate_list(_entries)
-	_status_label.text = "Catalog loaded \u2014 %d extension%s" % [
-		_entries.size(), "" if _entries.size() == 1 else "s"]
+	_set_status("Catalog loaded \u2014 %d extension%s" % [
+		_entries.size(), "" if _entries.size() == 1 else "s"], false)
 
 
 func _load_from_cache(warning: String) -> void:
@@ -168,20 +169,28 @@ func _load_from_cache(warning: String) -> void:
 	if cached.is_empty():
 		_clear_list()
 		_show_message("Catalog unavailable \u2014 check your internet connection and try again.")
-		_status_label.text = warning if not warning.is_empty() else "No catalog available"
+		_set_status(warning if not warning.is_empty() else "No catalog available", true)
 		return
 
 	var parsed := ExtensionCatalog.parse_catalog(JSON.stringify(cached))
 	if not parsed["ok"]:
 		_clear_list()
 		_show_message("Catalog unavailable \u2014 cached data is invalid.")
-		_status_label.text = "Cache error"
+		_set_status("Cache error", true)
 		return
 
 	_entries = parsed["extensions"]
 	_populate_list(_entries)
 	var cached_at: String = str(cached.get("_cached_at", "unknown"))
-	_status_label.text = "%s (cached %s)" % [warning, cached_at]
+	_set_status("%s (cached %s)" % [warning, cached_at], true)
+
+
+func _set_status(text: String, is_warning: bool) -> void:
+	_status_label.text = text
+	if is_warning:
+		_status_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	else:
+		_status_label.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
 
 
 # -- List rendering -----------------------------------------------------------
