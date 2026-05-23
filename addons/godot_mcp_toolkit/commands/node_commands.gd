@@ -72,6 +72,9 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("node.collision_from_sprite", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_collision_from_sprite(parameters)
 	, MCPToolkitCommandOptions.new())
+	registry.add("control.set_layout", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_control_set_layout(parameters)
+	, MCPToolkitCommandOptions.new())
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -207,22 +210,14 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 					node.add_to_group(g, true)
 		return {"success": true, "groups": new_groups}
 
-	var missing := Coerce.check_resource_paths(raw_value)
-	if missing != "":
-		return McpError.make("LOAD_FAILED",
-			"failed to load resource at %s; verify the path or use resource.write to create it first" % missing)
-
-	var coerced = Coerce.coerce_value(raw_value)
-
-	# FIX-5: Check for coercion errors (unknown type tags, malformed packed arrays).
-	if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
-		return McpError.make("INVALID_VALUE", str(coerced["_coerce_error"]))
+	var coerce_result := Helpers.coerce_for_property(node, property_name, raw_value)
+	if not coerce_result.get("ok", false):
+		return McpError.make(
+			coerce_result.get("code", "INVALID_VALUE"),
+			str(coerce_result.get("error", "")))
+	var coerced = coerce_result["value"]
 
 	var old_value = node.get(property_name)
-
-	# P-007: Auto-coerce strings to NodePath when the property expects NodePath.
-	if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
-		coerced = NodePath(str(coerced))
 
 	# Compound / colon-chained paths (e.g. "libraries/test",
 	# "material:shader_parameter/value", "theme_override_colors/font_color").
@@ -857,6 +852,133 @@ static func _batch_node_groups(root: Node, action: String, entries: Array) -> Di
 		undo_redo.commit_action()
 
 	return {"success": true, "action": action, "results": results, "count": results.size()}
+
+
+const _LAYOUT_PRESETS := {
+	"PRESET_TOP_LEFT": Control.PRESET_TOP_LEFT,
+	"PRESET_TOP_RIGHT": Control.PRESET_TOP_RIGHT,
+	"PRESET_BOTTOM_LEFT": Control.PRESET_BOTTOM_LEFT,
+	"PRESET_BOTTOM_RIGHT": Control.PRESET_BOTTOM_RIGHT,
+	"PRESET_CENTER_LEFT": Control.PRESET_CENTER_LEFT,
+	"PRESET_CENTER_TOP": Control.PRESET_CENTER_TOP,
+	"PRESET_CENTER_RIGHT": Control.PRESET_CENTER_RIGHT,
+	"PRESET_CENTER_BOTTOM": Control.PRESET_CENTER_BOTTOM,
+	"PRESET_CENTER": Control.PRESET_CENTER,
+	"PRESET_LEFT_WIDE": Control.PRESET_LEFT_WIDE,
+	"PRESET_TOP_WIDE": Control.PRESET_TOP_WIDE,
+	"PRESET_RIGHT_WIDE": Control.PRESET_RIGHT_WIDE,
+	"PRESET_BOTTOM_WIDE": Control.PRESET_BOTTOM_WIDE,
+	"PRESET_VCENTER_WIDE": Control.PRESET_VCENTER_WIDE,
+	"PRESET_HCENTER_WIDE": Control.PRESET_HCENTER_WIDE,
+	"PRESET_FULL_RECT": Control.PRESET_FULL_RECT,
+}
+
+
+static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
+	var root := _get_edited_root()
+	if root == null:
+		return McpError.make("NO_SCENE", "no edited scene")
+
+	var node_path := str(parameters.get("node_path", ""))
+	node_path = Helpers.normalize_editor_path(node_path)
+	var preset_name := str(parameters.get("preset", ""))
+	var resize_mode_str := str(parameters.get("resize_mode", "keep_size"))
+	var margins_raw = parameters.get("margins", null)
+
+	if node_path.is_empty():
+		return McpError.make("INVALID_PARAMS", "missing node_path")
+	if preset_name.is_empty():
+		return McpError.make("INVALID_PARAMS", "missing preset")
+
+	var node := root.get_node_or_null(node_path)
+	if node == null:
+		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+	if not (node is Control):
+		return McpError.make("INVALID_CLASS",
+			"node at %s is %s — control.set_layout requires a Control node" % [
+				node_path, node.get_class()])
+
+	var ctrl: Control = node as Control
+
+	if not _LAYOUT_PRESETS.has(preset_name):
+		var available := ", ".join(PackedStringArray(_LAYOUT_PRESETS.keys()))
+		return McpError.make("INVALID_PARAMS",
+			"unknown preset '%s'. Available: %s" % [preset_name, available])
+
+	var preset_enum: int = _LAYOUT_PRESETS[preset_name]
+	var mode: int = Control.PRESET_MODE_KEEP_SIZE \
+		if resize_mode_str == "keep_size" \
+		else Control.PRESET_MODE_MINSIZE
+
+	# Capture state for UndoRedo
+	var old_anchor_left := ctrl.anchor_left
+	var old_anchor_top := ctrl.anchor_top
+	var old_anchor_right := ctrl.anchor_right
+	var old_anchor_bottom := ctrl.anchor_bottom
+	var old_offset_left := ctrl.offset_left
+	var old_offset_top := ctrl.offset_top
+	var old_offset_right := ctrl.offset_right
+	var old_offset_bottom := ctrl.offset_bottom
+
+	var undo_redo = _Hub.get_undo_redo()
+	if undo_redo != null:
+		undo_redo.create_action("MCP: control.set_layout %s %s" % [node_path, preset_name])
+		undo_redo.add_do_method(ctrl, "set_anchors_and_offsets_preset", preset_enum, mode)
+		# Apply margins after preset
+		if margins_raw != null and typeof(margins_raw) == TYPE_DICTIONARY:
+			if margins_raw.has("left"):
+				undo_redo.add_do_method(ctrl, "set", "offset_left",
+					ctrl.offset_left + float(margins_raw["left"]))
+			if margins_raw.has("right"):
+				undo_redo.add_do_method(ctrl, "set", "offset_right",
+					ctrl.offset_right + float(margins_raw["right"]))
+			if margins_raw.has("top"):
+				undo_redo.add_do_method(ctrl, "set", "offset_top",
+					ctrl.offset_top + float(margins_raw["top"]))
+			if margins_raw.has("bottom"):
+				undo_redo.add_do_method(ctrl, "set", "offset_bottom",
+					ctrl.offset_bottom + float(margins_raw["bottom"]))
+		# Undo: restore all anchor/offset values
+		undo_redo.add_undo_property(ctrl, "anchor_left", old_anchor_left)
+		undo_redo.add_undo_property(ctrl, "anchor_top", old_anchor_top)
+		undo_redo.add_undo_property(ctrl, "anchor_right", old_anchor_right)
+		undo_redo.add_undo_property(ctrl, "anchor_bottom", old_anchor_bottom)
+		undo_redo.add_undo_property(ctrl, "offset_left", old_offset_left)
+		undo_redo.add_undo_property(ctrl, "offset_top", old_offset_top)
+		undo_redo.add_undo_property(ctrl, "offset_right", old_offset_right)
+		undo_redo.add_undo_property(ctrl, "offset_bottom", old_offset_bottom)
+		undo_redo.commit_action()
+	else:
+		ctrl.set_anchors_and_offsets_preset(preset_enum, mode)
+		if margins_raw != null and typeof(margins_raw) == TYPE_DICTIONARY:
+			if margins_raw.has("left"):
+				ctrl.offset_left += float(margins_raw["left"])
+			if margins_raw.has("right"):
+				ctrl.offset_right += float(margins_raw["right"])
+			if margins_raw.has("top"):
+				ctrl.offset_top += float(margins_raw["top"])
+			if margins_raw.has("bottom"):
+				ctrl.offset_bottom += float(margins_raw["bottom"])
+
+	var response := {
+		"success": true,
+		"path": node_path,
+		"preset": preset_name,
+		"final_rect": {
+			"position": {"x": ctrl.position.x, "y": ctrl.position.y},
+			"size": {"x": ctrl.size.x, "y": ctrl.size.y},
+		},
+	}
+
+	# Warn if the Control is inside a Container
+	var parent := ctrl.get_parent()
+	if parent != null and parent is Container:
+		response["warning"] = (
+			"This Control is inside a %s container. " % parent.get_class() +
+			"The container will override layout on the next layout pass. " +
+			"Consider using size_flags or moving the node outside the container.")
+
+	return response
 
 
 static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
