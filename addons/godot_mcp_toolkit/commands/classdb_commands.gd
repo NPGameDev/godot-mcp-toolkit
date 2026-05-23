@@ -28,6 +28,7 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 		return McpError.make("INVALID_PARAMS", "class_name is required")
 
 	var include_inherited: bool = bool(parameters.get("include_inherited", false))
+	var offset: int = maxi(int(parameters.get("offset", 0)), 0)
 	var sections: Array = parameters.get("sections", [])
 	if typeof(sections) != TYPE_ARRAY:
 		sections = []
@@ -70,13 +71,13 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 		result["inheritance_chain"] = _build_chain(cls)
 		var no_inheritance := not include_inherited
 		if want_properties:
-			truncated = _add_properties_native(result, cls, no_inheritance) or truncated
+			truncated = _add_properties_native(result, cls, no_inheritance, offset) or truncated
 		if want_methods:
-			truncated = _add_methods_native(result, cls, no_inheritance) or truncated
+			truncated = _add_methods_native(result, cls, no_inheritance, offset) or truncated
 		if want_signals:
-			truncated = _add_signals_native(result, cls, no_inheritance) or truncated
+			truncated = _add_signals_native(result, cls, no_inheritance, offset) or truncated
 		if want_constants:
-			_add_constants_native(result, cls, no_inheritance)
+			truncated = _add_constants_native(result, cls, no_inheritance, offset) or truncated
 	else:
 		result["source"] = "global"
 		result["script_path"] = script_path
@@ -87,17 +88,22 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 			return McpError.make("LOAD_FAILED",
 				"could not load script at %s for class %s" % [script_path, cls])
 		if want_properties:
-			truncated = _add_properties_script(result, script) or truncated
+			truncated = _add_properties_script(result, script, offset) or truncated
 		if want_methods:
-			truncated = _add_methods_script(result, script) or truncated
+			truncated = _add_methods_script(result, script, offset) or truncated
 		if want_signals:
-			truncated = _add_signals_script(result, script) or truncated
+			truncated = _add_signals_script(result, script, offset) or truncated
 		if want_constants:
 			result["constants"] = {}
+			result["constants_total"] = 0
 			result["enums"] = {}
+			result["enums_total"] = 0
 
 	if truncated:
 		result["truncated"] = true
+		var hint := _build_truncation_hint(result, offset)
+		if hint != "":
+			result["hint"] = hint
 	return result
 
 
@@ -106,6 +112,7 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 	var pattern: String = str(parameters.get("pattern", ""))
 	var instantiable_only: bool = bool(parameters.get("instantiable_only", true))
 	var include_global: bool = bool(parameters.get("include_global", true))
+	var offset: int = maxi(int(parameters.get("offset", 0)), 0)
 
 	if base_class != "":
 		var base_exists := ClassDB.class_exists(base_class)
@@ -132,7 +139,7 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 		if instantiable_only and not ClassDB.can_instantiate(cls):
 			continue
 		total += 1
-		if matches.size() < _MAX_SEARCH_RESULTS:
+		if total > offset and matches.size() < _MAX_SEARCH_RESULTS:
 			matches.append({
 				"name": cls,
 				"parent": ClassDB.get_parent_class(cls),
@@ -171,7 +178,7 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 			if pattern_lower != "" and cls.to_lower().find(pattern_lower) == -1:
 				continue
 			total += 1
-			if matches.size() < _MAX_SEARCH_RESULTS:
+			if total > offset and matches.size() < _MAX_SEARCH_RESULTS:
 				matches.append({
 					"name": cls,
 					"parent": base,
@@ -199,11 +206,11 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 	var result: Dictionary = {
 		"success": true,
 		"count": matches.size(),
+		"total": total,
 		"classes": matches,
 	}
 	if matches.size() < total:
 		result["truncated"] = true
-		result["total"] = total
 	return result
 
 
@@ -242,14 +249,18 @@ static func _build_chain_global(cls: String, entry: Dictionary) -> Array[String]
 
 
 static func _add_properties_native(
-	result: Dictionary, cls: String, no_inheritance: bool,
+	result: Dictionary, cls: String, no_inheritance: bool, offset: int,
 ) -> bool:
 	var raw := ClassDB.class_get_property_list(cls, no_inheritance)
+	var total := raw.size()
+	result["properties_total"] = total
 	var out: Array = []
-	var capped := false
+	var skipped := 0
 	for p in raw:
+		if skipped < offset:
+			skipped += 1
+			continue
 		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			capped = true
 			break
 		out.append({
 			"name": p.get("name", ""),
@@ -258,18 +269,22 @@ static func _add_properties_native(
 			"hint_string": p.get("hint_string", ""),
 		})
 	result["properties"] = out
-	return capped
+	return out.size() < total
 
 
 static func _add_methods_native(
-	result: Dictionary, cls: String, no_inheritance: bool,
+	result: Dictionary, cls: String, no_inheritance: bool, offset: int,
 ) -> bool:
 	var raw := ClassDB.class_get_method_list(cls, no_inheritance)
+	var total := raw.size()
+	result["methods_total"] = total
 	var out: Array = []
-	var capped := false
+	var skipped := 0
 	for m in raw:
+		if skipped < offset:
+			skipped += 1
+			continue
 		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			capped = true
 			break
 		out.append({
 			"name": m.get("name", ""),
@@ -278,54 +293,81 @@ static func _add_methods_native(
 			"flags": m.get("flags", 0),
 		})
 	result["methods"] = out
-	return capped
+	return out.size() < total
 
 
 static func _add_signals_native(
-	result: Dictionary, cls: String, no_inheritance: bool,
+	result: Dictionary, cls: String, no_inheritance: bool, offset: int,
 ) -> bool:
 	var raw := ClassDB.class_get_signal_list(cls, no_inheritance)
+	var total := raw.size()
+	result["signals_total"] = total
 	var out: Array = []
-	var capped := false
+	var skipped := 0
 	for s in raw:
+		if skipped < offset:
+			skipped += 1
+			continue
 		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			capped = true
 			break
 		out.append({
 			"name": s.get("name", ""),
 			"args": _format_args(s.get("args", [])),
 		})
 	result["signals"] = out
-	return capped
+	return out.size() < total
 
 
 static func _add_constants_native(
-	result: Dictionary, cls: String, no_inheritance: bool,
-) -> void:
+	result: Dictionary, cls: String, no_inheritance: bool, offset: int,
+) -> bool:
+	var const_list := ClassDB.class_get_integer_constant_list(cls, no_inheritance)
+	var const_total := const_list.size()
+	result["constants_total"] = const_total
 	var constants: Dictionary = {}
-	for c_name in ClassDB.class_get_integer_constant_list(cls, no_inheritance):
+	var skipped := 0
+	for c_name in const_list:
+		if skipped < offset:
+			skipped += 1
+			continue
+		if constants.size() >= _MAX_ENTRIES_PER_SECTION:
+			break
 		constants[c_name] = ClassDB.class_get_integer_constant(cls, c_name)
 	result["constants"] = constants
 
+	var enum_list := ClassDB.class_get_enum_list(cls, no_inheritance)
+	var enum_total := enum_list.size()
+	result["enums_total"] = enum_total
 	var enums: Dictionary = {}
-	for enum_name in ClassDB.class_get_enum_list(cls, no_inheritance):
+	var enum_skipped := 0
+	for enum_name in enum_list:
+		if enum_skipped < offset:
+			enum_skipped += 1
+			continue
+		if enums.size() >= _MAX_ENTRIES_PER_SECTION:
+			break
 		var members: Array[String] = []
 		for ec in ClassDB.class_get_enum_constants(cls, enum_name, no_inheritance):
 			members.append(ec)
 		enums[enum_name] = members
 	result["enums"] = enums
+	return constants.size() < const_total or enums.size() < enum_total
 
 
 # -- Script (global class) sections ------------------------------------------
 
 
-static func _add_properties_script(result: Dictionary, script: Script) -> bool:
+static func _add_properties_script(result: Dictionary, script: Script, offset: int) -> bool:
 	var raw := script.get_script_property_list()
+	var total := raw.size()
+	result["properties_total"] = total
 	var out: Array = []
-	var capped := false
+	var skipped := 0
 	for p in raw:
+		if skipped < offset:
+			skipped += 1
+			continue
 		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			capped = true
 			break
 		out.append({
 			"name": p.get("name", ""),
@@ -334,16 +376,20 @@ static func _add_properties_script(result: Dictionary, script: Script) -> bool:
 			"hint_string": p.get("hint_string", ""),
 		})
 	result["properties"] = out
-	return capped
+	return out.size() < total
 
 
-static func _add_methods_script(result: Dictionary, script: Script) -> bool:
+static func _add_methods_script(result: Dictionary, script: Script, offset: int) -> bool:
 	var raw := script.get_script_method_list()
+	var total := raw.size()
+	result["methods_total"] = total
 	var out: Array = []
-	var capped := false
+	var skipped := 0
 	for m in raw:
+		if skipped < offset:
+			skipped += 1
+			continue
 		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			capped = true
 			break
 		out.append({
 			"name": m.get("name", ""),
@@ -352,23 +398,59 @@ static func _add_methods_script(result: Dictionary, script: Script) -> bool:
 			"flags": m.get("flags", 0),
 		})
 	result["methods"] = out
-	return capped
+	return out.size() < total
 
 
-static func _add_signals_script(result: Dictionary, script: Script) -> bool:
+static func _add_signals_script(result: Dictionary, script: Script, offset: int) -> bool:
 	var raw := script.get_script_signal_list()
+	var total := raw.size()
+	result["signals_total"] = total
 	var out: Array = []
-	var capped := false
+	var skipped := 0
 	for s in raw:
+		if skipped < offset:
+			skipped += 1
+			continue
 		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			capped = true
 			break
 		out.append({
 			"name": s.get("name", ""),
 			"args": _format_args(s.get("args", [])),
 		})
 	result["signals"] = out
-	return capped
+	return out.size() < total
+
+
+# -- Truncation hint builder --------------------------------------------------
+
+
+static func _build_truncation_hint(result: Dictionary, offset: int) -> String:
+	var parts: Array[String] = []
+	var single_section := ""
+	var single_next_offset := 0
+	for section in ["properties", "methods", "signals", "constants", "enums"]:
+		var total_key := section + "_total"
+		if not result.has(total_key):
+			continue
+		var total: int = result[total_key]
+		var returned := 0
+		if result.has(section):
+			var val = result[section]
+			if val is Array:
+				returned = val.size()
+			elif val is Dictionary:
+				returned = val.size()
+		var remaining := total - offset - returned
+		if remaining > 0:
+			parts.append("%d %s" % [remaining, section])
+			single_section = section
+			single_next_offset = offset + returned
+	if parts.is_empty():
+		return ""
+	if parts.size() == 1:
+		return "%s truncated. Use sections: ['%s'], offset: %d to fetch the rest." % [
+			parts[0], single_section, single_next_offset]
+	return "%s truncated. Page each with sections + offset." % " + ".join(parts)
 
 
 # -- Shared formatting helpers -----------------------------------------------
