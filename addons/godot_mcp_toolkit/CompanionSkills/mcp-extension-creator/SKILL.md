@@ -327,6 +327,21 @@ public Dictionary HandleFetch(Dictionary parameters, GodotObject ctx)
 
 **Do not store the context** — it is scoped to a single invocation.
 
+## Concurrency
+
+When multiple agents connect to the same editor, two mechanisms prevent races:
+
+- **Mutation lock** — serialises all non-read-only commands. Your tool
+  participates automatically unless `is_read_only: true`.
+- **Scene lease** — ensures tab-dependent commands execute on the correct
+  scene. Your tool participates if `is_active_scene_required: true` (default).
+
+**Set `is_active_scene_required: false`** if your tool only uses file paths or
+engine singletons (not `EditorInterface.get_edited_scene_root()`). This avoids
+unnecessary queueing when the scene tab is contended by another session.
+
+In single-session usage (the common case), both mechanisms are no-ops.
+
 ## Common pitfalls
 
 | Symptom | Cause | Fix |

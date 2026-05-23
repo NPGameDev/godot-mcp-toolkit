@@ -295,6 +295,43 @@ public Dictionary HandleWeather(Dictionary parameters, GodotObject ctx)
   their 1-arg signature and work exactly as before. No context is created,
   no overhead is added.
 
+### Concurrency: scene lease and mutation lock
+
+When multiple WebSocket peers (e.g. parallel Claude Code sessions) connect to
+the same Godot editor, two concurrency mechanisms protect against races:
+
+1. **Mutation serialisation** — at most one mutation command executes at a time.
+   All mutations (including yours) are queued in FIFO order. Read-only commands
+   bypass the lock entirely.
+
+2. **Scene lease** — one peer at a time "owns" the active editor tab. Tab-
+   dependent commands from other peers queue until the lease is available (up
+   to an 8-second TTL before a steal occurs).
+
+**How your extension participates:**
+
+Your `registry.add()` options control which mechanisms apply:
+
+| Option | Default | Effect |
+|--------|---------|--------|
+| `is_read_only` | `false` | If `true`, bypasses the mutation lock (executes concurrently) |
+| `is_active_scene_required` | `true` | If `true`, participates in the scene lease (queued when targeting a non-active scene) |
+
+**Guidelines:**
+
+- If your tool reads scene tree state via `EditorInterface.get_edited_scene_root()`,
+  keep `is_active_scene_required: true` (default). The lease ensures your tool
+  reads the correct scene.
+- If your tool only uses explicit file paths or engine singletons, set
+  `is_active_scene_required: false`. This lets it execute immediately even
+  when the scene tab is contended.
+- If your tool is read-only AND `is_active_scene_required: true`, it queues
+  for the lease when another peer holds it. Consider whether a file-path-based
+  approach could avoid the dependency.
+
+**Single-session behaviour:** When only one peer is connected, both mechanisms
+are no-ops. Zero overhead, identical behaviour to pre-concurrency versions.
+
 ### Discovery rules
 
 Extensions are discovered via `ProjectSettings.get_global_class_list()` at

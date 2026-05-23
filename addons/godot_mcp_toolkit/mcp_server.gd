@@ -90,9 +90,34 @@ class _MutationQueueEntry:
 	var method: String
 	var params: Dictionary
 	var cancelled: bool = false
+	var scene_queued_ms: int = 0  # Non-zero when first queued in the scene queue.
 
 var _mutation_in_flight := false
 var _mutation_queue: Array = []  # of _MutationQueueEntry
+
+# -- Scene lease ---------------------------------------------------------------
+# When multiple peers target different scenes, a time-bounded lease prevents
+# cross-scene contamination. Tab-dependent commands queue until the peer's
+# affinity scene matches the active tab. See iter 41l-decies-bis for design.
+
+class _SceneQueueEntry:
+	var peer: WebSocketPeer
+	var id  # int or null (JSON-RPC id)
+	var method: String
+	var params: Dictionary
+	var queued_ms: int = 0
+	var cancelled: bool = false
+
+# Scene affinity per peer: peer → scene path (or "" if no affinity).
+var _peer_scene_affinity: Dictionary = {}  # WebSocketPeer → String
+
+# Scene lease state.
+var _lease_holder: WebSocketPeer = null
+var _lease_scene: String = ""
+var _lease_renewed_ms: int = 0
+
+# Pending tab-dependent commands waiting for lease.
+var _scene_queue: Array = []  # of _SceneQueueEntry
 
 
 func set_registry(registry: MCPToolkitCommandRegistry) -> void:
@@ -286,6 +311,7 @@ func _process(_delta: float) -> void:
 	if _poll_frame_counter < _POLL_FRAME_INTERVAL:
 		return
 	_poll_frame_counter = 0
+	_check_lease_expiry()
 	# Dispatch via call_deferred to move network I/O out of the _process
 	# call stack, reducing the reentrancy collision surface with Godot's
 	# EditorFileSystem scan/import work (see comment on _POLL_FRAME_INTERVAL).
@@ -348,6 +374,13 @@ func _cleanup_closed_peers(closed: Array[WebSocketPeer]) -> void:
 		_peers.erase(peer)
 		_peer_authed.erase(peer)
 		_peer_connect_ms.erase(peer)
+		# Scene lease cleanup.
+		_peer_scene_affinity.erase(peer)
+		if _lease_holder == peer:
+			_release_lease()  # Immediate release → drain queue.
+		# Remove queued scene commands for this peer.
+		_scene_queue = _scene_queue.filter(func(entry: _SceneQueueEntry):
+			return entry.peer != peer)
 	if had_authed_disconnect:
 		if _peer_authed.size() == 0:
 			_restore_unfocused_sleep()
@@ -438,8 +471,8 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 
 	# _cancel is a fire-and-forget notification from the bridge — no response.
 	# Triggers cooperative cancellation on the MCPToolContext for the target
-	# request. Also scans the mutation queue for queued (not-yet-executing)
-	# commands and flags them for skip-on-drain.
+	# request. Scans both mutation and scene queues for queued (not-yet-
+	# executing) commands and flags them for skip-on-drain.
 	if method == "_cancel":
 		var safe_params: Dictionary = parameters \
 			if typeof(parameters) == TYPE_DICTIONARY else {}
@@ -448,8 +481,13 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 		if _active_contexts.has(target_id):
 			_active_contexts[target_id].cancel()
 			return
-		# Queued: flag for skip on drain.
+		# Queued in mutation queue:
 		for entry in _mutation_queue:
+			if str(entry.id) == target_id:
+				entry.cancelled = true
+				return
+		# Queued in scene queue:
+		for entry in _scene_queue:
 			if str(entry.id) == target_id:
 				entry.cancelled = true
 				break
@@ -467,8 +505,38 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 	var safe_parameters: Dictionary = parameters \
 		if typeof(parameters) == TYPE_DICTIONARY else {}
 
-	# Route through mutation lock: commands that need serialisation acquire
-	# the lock; read-only commands bypass it and execute immediately.
+	# -- Scene lease routing ---------------------------------------------------
+
+	# scene.open: intercepted at dispatch level because under contention
+	# we must NOT call open_scene_from_path — the tab switch would interfere
+	# with the lease holder. Validation mirrors _cmd_scene_open.
+	if method == "scene.open":
+		await _handle_scene_open(peer, id, safe_parameters)
+		return
+
+	# Tab-dependent commands: route through scene lease when targeting a
+	# different scene than the active tab.
+	if _registry.is_active_scene_required(method):
+		var peer_scene := str(_peer_scene_affinity.get(peer, ""))
+		var active_scene := _get_active_scene_path()
+		if not peer_scene.is_empty() and peer_scene != active_scene:
+			# Target doesn't match active tab — queue for lease.
+			var entry := _SceneQueueEntry.new()
+			entry.peer = peer
+			entry.id = id
+			entry.method = method
+			entry.params = safe_parameters
+			entry.queued_ms = Time.get_ticks_msec()
+			_scene_queue.append(entry)
+			_send_notification(peer, "_queued", {"request_id": id})
+			return
+		# Target matches active tab (or no affinity) — execute normally.
+		# Renew lease if this peer holds it.
+		if _lease_holder == peer:
+			_lease_renewed_ms = Time.get_ticks_msec()
+
+	# -- Mutation lock routing (unchanged from 41l-decies) ---------------------
+
 	if _registry.needs_serialization(method):
 		if _mutation_in_flight:
 			var entry := _MutationQueueEntry.new()
@@ -494,7 +562,7 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 
 
 func _execute_mutation(peer: WebSocketPeer, id, method: String,
-		params: Dictionary) -> void:
+		params: Dictionary, scene_queued_ms: int = 0) -> void:
 	_mutation_in_flight = true
 	_send_notification(peer, "_executing", {"request_id": id})
 	var ctx: MCPToolContext = null
@@ -504,7 +572,10 @@ func _execute_mutation(peer: WebSocketPeer, id, method: String,
 	command_received.emit(method)
 	var result: Dictionary = await _registry.call_command(method, params, ctx)
 	_active_contexts.erase(str(id))
+	if scene_queued_ms > 0:
+		_inject_concurrency_metadata(result, scene_queued_ms)
 	_send_result(peer, id, result)
+	_post_mutation_scene_cleanup(peer, method, params, result)
 	_mutation_in_flight = false
 	_drain_mutation_queue()
 
@@ -526,9 +597,220 @@ func _drain_mutation_queue() -> void:
 		# Found a valid entry — execute it.
 		# _execute_mutation sets _mutation_in_flight = true synchronously
 		# before its first await, so there is no race window.
-		_execute_mutation(entry.peer, entry.id, entry.method, entry.params)
+		_execute_mutation(entry.peer, entry.id, entry.method, entry.params,
+			entry.scene_queued_ms)
 		return  # _execute_mutation will call _drain_mutation_queue on completion.
-	# Queue fully drained — nothing left to execute.
+	# Mutation queue fully drained — check scene queue for same-lease entries.
+	_drain_scene_queue()
+
+
+# -- Scene lease ---------------------------------------------------------------
+
+
+func _get_active_scene_path() -> String:
+	var root := EditorInterface.get_edited_scene_root()
+	if root == null:
+		return ""
+	return root.scene_file_path
+
+
+func _handle_scene_open(peer: WebSocketPeer, id, params: Dictionary) -> void:
+	# Validate file_path — mirrors _cmd_scene_open checks. Intercepted here
+	# because under contention we must NOT call open_scene_from_path (the tab
+	# switch would interfere with the lease holder).
+	var err = _Hub.McpError.check_required(params, ["file_path"])
+	if err != null:
+		_send_result(peer, id, err)
+		return
+	var file_path := str(params.get("file_path", ""))
+	var guard := _Hub.FileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		_send_result(peer, id, _Hub.McpError.make("PATH_DENIED", str(guard["reason"])))
+		return
+	if not FileAccess.file_exists(file_path):
+		_send_result(peer, id, _Hub.McpError.make("NOT_FOUND",
+			"scene not found: %s" % file_path, _Hub.McpError.HINT_FILE_PATH))
+		return
+
+	# Set affinity.
+	_peer_scene_affinity[peer] = file_path
+
+	# Attempt lease.
+	var acquired := _try_acquire_lease(peer, file_path)
+	command_received.emit("scene.open")
+	if acquired:
+		# Lease acquired — call the actual handler (opens the scene).
+		var result: Dictionary = await _registry.call_command("scene.open", params)
+		_send_result(peer, id, result)
+	else:
+		# Contended — don't open the scene, return success + contention hint.
+		var hint := _build_contention_hint()
+		var result := {"success": true, "path": file_path}
+		if not hint.is_empty():
+			result["hint"] = hint
+		_send_result(peer, id, result)
+
+
+func _build_contention_hint() -> String:
+	if _lease_holder == null or _lease_scene.is_empty():
+		return ""
+	return (
+		"Note: another session is currently editing %s. "
+		+ "Work that doesn't target this scene executes immediately "
+		+ "without waiting — for example, reading or writing scripts "
+		+ "for your own scenes, managing your files, or querying project "
+		+ "info. Work that modifies nodes or reads scene trees will queue "
+		+ "until the editor tab becomes available — wait times are variable."
+	) % _lease_scene
+
+
+func _try_acquire_lease(peer: WebSocketPeer, scene: String) -> bool:
+	if _lease_holder == null:
+		# No current holder — acquire.
+		if not scene.is_empty() and not FileAccess.file_exists(scene):
+			_peer_scene_affinity.erase(peer)
+			return false  # Scene was deleted.
+		_lease_holder = peer
+		_lease_scene = scene
+		_lease_renewed_ms = Time.get_ticks_msec()
+		if _get_active_scene_path() != scene and not scene.is_empty():
+			EditorInterface.open_scene_from_path(scene)
+		return true
+	if _lease_holder == peer:
+		# Same peer — renew.
+		_lease_renewed_ms = Time.get_ticks_msec()
+		return true
+	return false  # Lease held by another peer.
+
+
+func _release_lease() -> void:
+	_lease_holder = null
+	_lease_scene = ""
+	_lease_renewed_ms = 0
+	_drain_scene_queue()
+
+
+func _check_lease_expiry() -> void:
+	if _lease_holder == null:
+		return
+	if _scene_queue.is_empty():
+		return  # No waiters — don't expire the lease.
+	var ttl_ms: int = ProjectSettings.get_setting(
+		"mcp_toolkit/concurrency/scene_lease_ttl_ms", 8000)
+	var elapsed := Time.get_ticks_msec() - _lease_renewed_ms
+	if elapsed >= ttl_ms:
+		# Steal: a peer has been waiting and the lease exceeded TTL.
+		_release_lease()  # Triggers _drain_scene_queue → next waiter gets lease.
+
+
+func _drain_scene_queue() -> void:
+	while not _scene_queue.is_empty():
+		var entry: _SceneQueueEntry = _scene_queue.pop_front()
+		# Skip cancelled entries.
+		if entry.cancelled:
+			continue
+		# Skip disconnected peers.
+		if entry.peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
+			continue
+		# Skip unregistered commands (gate toggle race).
+		if not _registry.has_command(entry.method):
+			_send_error(entry.peer, entry.id, -32601,
+				"Method unregistered while queued: %s" % entry.method)
+			continue
+
+		# Acquire lease for this peer's affinity scene.
+		var peer_scene := str(_peer_scene_affinity.get(entry.peer, ""))
+		if peer_scene.is_empty():
+			# Peer cleared affinity while queued — skip.
+			continue
+		if not _try_acquire_lease(entry.peer, peer_scene):
+			# Lease held by another peer — put entry back and stop.
+			_scene_queue.push_front(entry)
+			return
+
+		# Calculate how long this entry was queued.
+		var queued_ms := Time.get_ticks_msec() - entry.queued_ms
+
+		# Type-aware dispatch: mutations → _execute_mutation (respects mutation
+		# lock); reads → execute directly (no lock needed).
+		if _registry.needs_serialization(entry.method):
+			_execute_scene_queued_mutation(entry, queued_ms)
+		else:
+			_execute_scene_queued_read(entry, queued_ms)
+		return  # One at a time; next drain triggered on completion.
+	# Scene queue fully drained — nothing left.
+
+
+func _execute_scene_queued_mutation(entry: _SceneQueueEntry,
+		queued_ms: int) -> void:
+	# Route through mutation lock — the scene lease is already acquired.
+	if _mutation_in_flight:
+		# Re-queue into mutation queue (lease held; executes when lock frees).
+		var m_entry := _MutationQueueEntry.new()
+		m_entry.peer = entry.peer
+		m_entry.id = entry.id
+		m_entry.method = entry.method
+		m_entry.params = entry.params
+		m_entry.scene_queued_ms = queued_ms
+		_mutation_queue.append(m_entry)
+		_send_notification(entry.peer, "_queued", {"request_id": entry.id})
+	else:
+		_execute_mutation(entry.peer, entry.id, entry.method, entry.params,
+			queued_ms)
+
+
+func _execute_scene_queued_read(entry: _SceneQueueEntry,
+		queued_ms: int) -> void:
+	var ctx: MCPToolContext = null
+	if _registry.is_cancellable(entry.method):
+		ctx = MCPToolContext.new()
+		_active_contexts[str(entry.id)] = ctx
+	command_received.emit(entry.method)
+	var result: Dictionary = await _registry.call_command(
+		entry.method, entry.params, ctx)
+	_active_contexts.erase(str(entry.id))
+	if queued_ms > 0:
+		_inject_concurrency_metadata(result, queued_ms)
+	_send_result(entry.peer, entry.id, result)
+	# Check for more entries from the same peer/scene.
+	_drain_scene_queue()
+
+
+func _post_mutation_scene_cleanup(peer: WebSocketPeer, method: String,
+		params: Dictionary, result: Dictionary) -> void:
+	if method != "scene.close":
+		return
+	if not result.get("success", false):
+		return
+	var file_path := str(params.get("file_path", ""))
+	if _peer_scene_affinity.get(peer, "") == file_path:
+		_peer_scene_affinity.erase(peer)
+	if _lease_holder == peer and _lease_scene == file_path:
+		_release_lease()
+
+
+func _inject_concurrency_metadata(result: Dictionary, queued_ms: int) -> void:
+	if queued_ms <= 0:
+		return
+	# Tier 1: _meta (zero LLM tokens — bridge can extract to MCP _meta).
+	result["_meta"] = {
+		"concurrency": {
+			"queued_ms": queued_ms,
+			"reason": "scene_lease_wait",
+			"lease_holder_scene": _lease_scene,
+		}
+	}
+	# Tier 3: threshold-gated content sentence (>3s only).
+	if queued_ms > 3000:
+		var note := (
+			"(Scene access waited %.1fs — another session holds the "
+			+ "active tab. Scene-independent tools execute without waiting.)"
+		) % (queued_ms / 1000.0)
+		var existing_hint := str(result.get("hint", ""))
+		if not existing_hint.is_empty():
+			result["hint"] = existing_hint + " " + note
+		else:
+			result["hint"] = note
 
 
 func _send_notification(peer: WebSocketPeer, method: String,
