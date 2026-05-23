@@ -18,9 +18,14 @@ const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 ## Returns {"ok": true, "value": <coerced>} on success.
 ## Returns {"ok": false, "code": String, "error": String} on failure.
 ## Auto-coerces String → NodePath when the existing property value is NodePath.
+## Rejects unknown property names (not in the instance's property list).
 static func coerce_for_property(
 	node: Object, property_name: String, raw_value: Variant,
 ) -> Dictionary:
+	if not _has_property(node, property_name):
+		return {"ok": false, "code": "PROPERTY_NOT_FOUND",
+			"error": "property '%s' not found on %s" % [property_name, node.get_class()]}
+
 	var missing := Coerce.check_resource_paths(raw_value)
 	if missing != "":
 		return {"ok": false, "code": "LOAD_FAILED",
@@ -38,6 +43,15 @@ static func coerce_for_property(
 		coerced = NodePath(str(coerced))
 
 	return {"ok": true, "value": coerced}
+
+
+## Check whether a property name exists on an object instance.
+## Uses get_property_list() which covers built-in, @export, and metadata.
+static func _has_property(obj: Object, property_name: String) -> bool:
+	for p in obj.get_property_list():
+		if p["name"] == property_name:
+			return true
+	return false
 
 
 # -- Scene node resolution -----------------------------------------------------

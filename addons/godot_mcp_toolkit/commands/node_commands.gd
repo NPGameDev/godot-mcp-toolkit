@@ -920,25 +920,32 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 	var old_offset_right := ctrl.offset_right
 	var old_offset_bottom := ctrl.offset_bottom
 
+	# Apply preset + margins directly so margin offsets are relative to the
+	# NEW anchor positions, not the old ones (UndoRedo queues do-methods, so
+	# margin values would be computed against stale offsets if queued).
+	ctrl.set_anchors_and_offsets_preset(preset_enum, mode)
+	if margins_raw != null and typeof(margins_raw) == TYPE_DICTIONARY:
+		if margins_raw.has("left"):
+			ctrl.offset_left += float(margins_raw["left"])
+		if margins_raw.has("right"):
+			ctrl.offset_right += float(margins_raw["right"])
+		if margins_raw.has("top"):
+			ctrl.offset_top += float(margins_raw["top"])
+		if margins_raw.has("bottom"):
+			ctrl.offset_bottom += float(margins_raw["bottom"])
+
+	# Record for undo using the final property values (already applied).
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action("MCP: control.set_layout %s %s" % [node_path, preset_name])
-		undo_redo.add_do_method(ctrl, "set_anchors_and_offsets_preset", preset_enum, mode)
-		# Apply margins after preset
-		if margins_raw != null and typeof(margins_raw) == TYPE_DICTIONARY:
-			if margins_raw.has("left"):
-				undo_redo.add_do_method(ctrl, "set", "offset_left",
-					ctrl.offset_left + float(margins_raw["left"]))
-			if margins_raw.has("right"):
-				undo_redo.add_do_method(ctrl, "set", "offset_right",
-					ctrl.offset_right + float(margins_raw["right"]))
-			if margins_raw.has("top"):
-				undo_redo.add_do_method(ctrl, "set", "offset_top",
-					ctrl.offset_top + float(margins_raw["top"]))
-			if margins_raw.has("bottom"):
-				undo_redo.add_do_method(ctrl, "set", "offset_bottom",
-					ctrl.offset_bottom + float(margins_raw["bottom"]))
-		# Undo: restore all anchor/offset values
+		undo_redo.add_do_property(ctrl, "anchor_left", ctrl.anchor_left)
+		undo_redo.add_do_property(ctrl, "anchor_top", ctrl.anchor_top)
+		undo_redo.add_do_property(ctrl, "anchor_right", ctrl.anchor_right)
+		undo_redo.add_do_property(ctrl, "anchor_bottom", ctrl.anchor_bottom)
+		undo_redo.add_do_property(ctrl, "offset_left", ctrl.offset_left)
+		undo_redo.add_do_property(ctrl, "offset_top", ctrl.offset_top)
+		undo_redo.add_do_property(ctrl, "offset_right", ctrl.offset_right)
+		undo_redo.add_do_property(ctrl, "offset_bottom", ctrl.offset_bottom)
 		undo_redo.add_undo_property(ctrl, "anchor_left", old_anchor_left)
 		undo_redo.add_undo_property(ctrl, "anchor_top", old_anchor_top)
 		undo_redo.add_undo_property(ctrl, "anchor_right", old_anchor_right)
@@ -947,18 +954,7 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 		undo_redo.add_undo_property(ctrl, "offset_top", old_offset_top)
 		undo_redo.add_undo_property(ctrl, "offset_right", old_offset_right)
 		undo_redo.add_undo_property(ctrl, "offset_bottom", old_offset_bottom)
-		undo_redo.commit_action()
-	else:
-		ctrl.set_anchors_and_offsets_preset(preset_enum, mode)
-		if margins_raw != null and typeof(margins_raw) == TYPE_DICTIONARY:
-			if margins_raw.has("left"):
-				ctrl.offset_left += float(margins_raw["left"])
-			if margins_raw.has("right"):
-				ctrl.offset_right += float(margins_raw["right"])
-			if margins_raw.has("top"):
-				ctrl.offset_top += float(margins_raw["top"])
-			if margins_raw.has("bottom"):
-				ctrl.offset_bottom += float(margins_raw["bottom"])
+		undo_redo.commit_action(false)  # Already applied — record only
 
 	var response := {
 		"success": true,
