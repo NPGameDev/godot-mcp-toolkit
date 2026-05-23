@@ -25,7 +25,7 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("scene.close", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_scene_close(parameters)
-	, MCPToolkitCommandOptions.new().mark_scene_independent())
+	, MCPToolkitCommandOptions.new().mark_scene_independent().with_min_godot_version("4.5"))
 	registry.add("scene.delete", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_scene_delete(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())

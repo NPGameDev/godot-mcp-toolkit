@@ -130,6 +130,8 @@ var opts = MCPToolkitExtensionOptions.new("Describe what your tool does")
 | `with_description(text)` | Set or override the tool description |
 | `with_input_schema(dict)` | JSON Schema for tool input validation |
 | `with_timeout_ms(ms)` | Per-tool bridge timeout in milliseconds (floor: 1000, cap: 300000) |
+| `with_min_godot_version(ver)` | Hide tool on Godot versions below `ver` (e.g. `"4.5"`) |
+| `with_max_godot_version(ver)` | Hide tool on Godot versions above `ver` (e.g. `"4.6"`) |
 | `with_group(name, description)` | Tool group for `discover_tools` (see below) |
 | `to_dict()` | Returns the options as a Dictionary (for debugging) |
 

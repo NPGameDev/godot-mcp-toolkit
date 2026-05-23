@@ -40,6 +40,8 @@ func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
         # .mark_scene_independent()    # skips scene lease queueing
         # .mark_exclusive_execution()  # serialises even read-only calls
         # .with_timeout_ms(60000)      # custom timeout (floor 1000, cap 300000)
+        # .with_min_godot_version("4.5") # hide on Godot < 4.5
+        # .with_max_godot_version("4.6") # hide on Godot > 4.6
         # .with_group("group_name", "Group description", ["keyword1", "keyword2"])
     registry.add("<namespace>.<action>", _handler, opts)
 
