@@ -314,7 +314,7 @@ func _build_entry_card(ext: Dictionary) -> PanelContainer:
 
 	# Install instructions — expandable if present, fallback text if absent
 	var raw_install = ext.get("install_instructions", null)
-	var has_install := raw_install != null and raw_install is String and not raw_install.strip_edges().is_empty()
+	var has_install: bool = raw_install != null and raw_install is String and not raw_install.strip_edges().is_empty()
 	if has_install:
 		var install_toggle := Button.new()
 		install_toggle.flat = true

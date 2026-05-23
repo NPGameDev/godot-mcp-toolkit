@@ -429,7 +429,7 @@ static func _build_truncation_hint(result: Dictionary, offset: int) -> String:
 	var single_section := ""
 	var single_next_offset := 0
 	for section in ["properties", "methods", "signals", "constants", "enums"]:
-		var total_key := section + "_total"
+		var total_key: String = section + "_total"
 		if not result.has(total_key):
 			continue
 		var total: int = result[total_key]
