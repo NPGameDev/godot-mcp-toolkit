@@ -13,11 +13,22 @@ const _MAX_TIMEOUT_MS := 300000
 
 var _commands: Dictionary = {}
 var _extension_methods: Array[String] = []
+var _version_blocked: Dictionary = {}  # method -> {min, max, engine}
 
 
 func add(method: String, handler: Callable,
 		options: MCPToolkitCommandOptions) -> void:
 	var opts: Dictionary = options.to_dict()
+
+	# Version gate: block commands incompatible with the running engine.
+	var min_ver: String = opts.get("min_godot_version", "")
+	var max_ver: String = opts.get("max_godot_version", "")
+	if min_ver != "" or max_ver != "":
+		var engine_ver := _Hub.VersionUtils.get_engine_version_pair()
+		if not _Hub.VersionUtils.is_version_in_range(engine_ver, min_ver, max_ver):
+			_version_blocked[method] = {"min": min_ver, "max": max_ver, "engine": engine_ver}
+			return
+
 	var is_read_only: bool = opts.get("is_read_only", false)
 	var is_destructive: bool = opts.get("is_destructive", false)
 	var is_idempotent: bool = opts.get("is_idempotent", false)
@@ -42,7 +53,7 @@ func add(method: String, handler: Callable,
 			push_warning("[MCPExtensions] '%s': timeout_ms %d exceeds maximum %d — clamped. Consider restructuring the tool to use a start-work-and-poll pattern." % [method, raw_timeout, _MAX_TIMEOUT_MS])
 		timeout_ms = clampi(raw_timeout, _MIN_TIMEOUT_MS, _MAX_TIMEOUT_MS)
 
-	_commands[method] = {
+	var cmd_entry := {
 		"handler": handler,
 		"description": opts.get("description", ""),
 		"input_schema": opts.get("input_schema", {}),
@@ -54,6 +65,11 @@ func add(method: String, handler: Callable,
 		"active_scene_required": bool(opts.get("is_active_scene_required", true)),
 		"_force_serialize": bool(opts.get("_force_serialize", false)),
 	}
+	if min_ver != "":
+		cmd_entry["min_godot_version"] = min_ver
+	if max_ver != "":
+		cmd_entry["max_godot_version"] = max_ver
+	_commands[method] = cmd_entry
 
 
 func remove(method: String) -> void:
@@ -89,6 +105,10 @@ func get_command_metadata(method: String) -> Dictionary:
 	var timeout_ms: int = entry.get("timeout_ms", _DEFAULT_TIMEOUT_MS)
 	if timeout_ms != _DEFAULT_TIMEOUT_MS:
 		meta["timeout_ms"] = timeout_ms
+	if entry.has("min_godot_version"):
+		meta["min_godot_version"] = entry["min_godot_version"]
+	if entry.has("max_godot_version"):
+		meta["max_godot_version"] = entry["max_godot_version"]
 	return meta
 
 
@@ -136,11 +156,21 @@ func create_extension_options(description: String) -> MCPToolkitExtensionOptions
 func clear() -> void:
 	_commands.clear()
 	_extension_methods.clear()
+	_version_blocked.clear()
 
 
 func call_command(method: String, parameters: Dictionary,
 		ctx: MCPToolkitToolContext = null) -> Dictionary:
 	if not _commands.has(method):
+		if _version_blocked.has(method):
+			var info: Dictionary = _version_blocked[method]
+			var detail := "requires"
+			if info["min"] != "":
+				detail += " >= %s" % info["min"]
+			if info["max"] != "":
+				detail += " <= %s" % info["max"]
+			return McpError.make("UNSUPPORTED",
+				"%s %s (running: %s)" % [method, detail, info["engine"]])
 		return McpError.make("NOT_FOUND", "unknown method: " + method)
 	Audit.log_call(method, parameters)
 	if ctx != null:

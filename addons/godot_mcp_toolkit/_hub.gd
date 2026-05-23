@@ -21,6 +21,7 @@ const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/user_path_monit
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
 const NodejsCheck := preload("res://addons/godot_mcp_toolkit/nodejs_check.gd")
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/mcp_version_utils.gd")
 
 
 # -- Version helpers (Godot 4.x cross-version compat) -----------------------

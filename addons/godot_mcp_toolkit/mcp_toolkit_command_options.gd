@@ -25,6 +25,8 @@ var _group_description: String = ""
 var _group_keywords: Array = []
 var _is_scene_independent: bool = false  # inverted: true means NOT required
 var _force_serialize: bool = false
+var _min_godot_version: String = ""
+var _max_godot_version: String = ""
 
 
 func with_description(description: String) -> MCPToolkitCommandOptions:
@@ -80,6 +82,27 @@ func mark_exclusive_execution() -> MCPToolkitCommandOptions:
 	return self
 
 
+func with_min_godot_version(version: String) -> MCPToolkitCommandOptions:
+	if not _is_valid_version(version):
+		push_warning("[MCPToolkit] Invalid min_godot_version format: '%s' (expected 'major.minor', e.g. '4.5')" % version)
+	_min_godot_version = version
+	return self
+
+
+func with_max_godot_version(version: String) -> MCPToolkitCommandOptions:
+	if not _is_valid_version(version):
+		push_warning("[MCPToolkit] Invalid max_godot_version format: '%s' (expected 'major.minor', e.g. '4.6')" % version)
+	_max_godot_version = version
+	return self
+
+
+static func _is_valid_version(v: String) -> bool:
+	var parts := v.split(".")
+	if parts.size() < 2:
+		return false
+	return parts[0].is_valid_int() and parts[1].is_valid_int()
+
+
 func to_dict() -> Dictionary:
 	var d := {
 		"description": _description,
@@ -102,4 +125,8 @@ func to_dict() -> Dictionary:
 		if not _group_keywords.is_empty():
 			group["keywords"] = _group_keywords
 		d["group"] = group
+	if _min_godot_version != "":
+		d["min_godot_version"] = _min_godot_version
+	if _max_godot_version != "":
+		d["max_godot_version"] = _max_godot_version
 	return d

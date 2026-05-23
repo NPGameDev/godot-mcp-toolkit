@@ -13,6 +13,8 @@ extends RefCounted
 ## All methods are static — no instance state. Callers preload via
 ## _hub.gd (RegistryClient) or directly.
 
+const _VersionUtils := preload("res://addons/godot_mcp_toolkit/mcp_version_utils.gd")
+
 const _REGISTRY_FILENAME := "projects.json"
 const _ENTRIES_DIR := "entries"
 const _LOCK_STALE_SEC := 10
@@ -317,6 +319,7 @@ static func register(port: int, token_path: String) -> void:
 		"token_path": token_path,
 		"pid": my_pid,
 		"started_at": int(Time.get_unix_time_from_system()),
+		"godot_version": _VersionUtils.get_engine_version_pair(),
 		"runtime_port": null,
 		"runtime_pid": null,
 	}
@@ -411,6 +414,7 @@ static func ensure_registered(port: int, token_path: String) -> void:
 		"token_path": token_path,
 		"pid": my_pid,
 		"started_at": int(Time.get_unix_time_from_system()),
+		"godot_version": _VersionUtils.get_engine_version_pair(),
 		"runtime_port": runtime_port,
 		"runtime_pid": runtime_pid,
 	}
