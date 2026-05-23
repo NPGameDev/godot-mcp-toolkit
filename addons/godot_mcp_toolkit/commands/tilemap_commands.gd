@@ -13,6 +13,9 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("tilemap.set_cells", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_tilemap_set_cells(server, parameters)
 	, MCPToolkitCommandOptions.new())
+	registry.add("tilemap.read_cells", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_tilemap_read_cells(parameters)
+	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("tileset.create", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_tileset_create(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
@@ -28,7 +31,147 @@ static func _resolve_scene_node(node_path: String) -> Variant:
 	return Helpers.resolve_scene_node(node_path)
 
 
+const _MAX_CELLS := 500
+
+
+## Version-aware hint for tilemap tools.
+static func _tilemap_version_hint(is_deprecated_tilemap: bool) -> String:
+	if is_deprecated_tilemap:
+		if _Hub.godot_minor() >= 3:
+			return "Using deprecated TileMap node. Godot 4.3+ provides TileMapLayer — consider upgrading."
+		return ""
+	return ""
+
+
 # -- Commands -----------------------------------------------------------------
+
+
+static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
+	var node_path := str(parameters.get("node_path", ""))
+	node_path = Helpers.normalize_editor_path(node_path)
+	if node_path.is_empty():
+		return McpError.make("INVALID_PARAMS", "missing node_path")
+
+	var node = _resolve_scene_node(node_path)
+	if node == null:
+		return McpError.make("NOT_FOUND", "no node at %s" % node_path, McpError.HINT_NODE_PATH)
+
+	var is_layer: bool = node.is_class("TileMapLayer")
+	var is_map := node is TileMap
+	if not (is_layer or is_map):
+		return McpError.make("INVALID_CLASS",
+			"node at %s is not a TileMap or TileMapLayer (got %s)" % [
+				node_path, node.get_class()])
+
+	var layer := int(parameters.get("layer", 0))
+	var region_raw = parameters.get("region", null)
+	var source_filter := -1
+	if parameters.has("source_id"):
+		source_filter = int(parameters["source_id"])
+
+	# Validate layer for deprecated TileMap
+	if is_map:
+		var tile_map := node as TileMap
+		var layer_count := tile_map.get_layers_count()
+		if layer < 0 or layer >= layer_count:
+			return McpError.make("INVALID_PARAMS",
+				"layer %d out of range [0, %d) for TileMap %s" % [
+					layer, layer_count, node_path])
+
+	# Gather used cells
+	var used_cells: Array
+	if is_layer:
+		used_cells = node.get_used_cells()
+	else:
+		used_cells = (node as TileMap).get_used_cells(layer)
+
+	# Compute bounding rect from all used cells
+	var bounds_min := Vector2i(0, 0)
+	var bounds_max := Vector2i(0, 0)
+	if not used_cells.is_empty():
+		bounds_min = used_cells[0]
+		bounds_max = used_cells[0]
+		for cell_coord in used_cells:
+			var c: Vector2i = cell_coord
+			bounds_min.x = mini(bounds_min.x, c.x)
+			bounds_min.y = mini(bounds_min.y, c.y)
+			bounds_max.x = maxi(bounds_max.x, c.x)
+			bounds_max.y = maxi(bounds_max.y, c.y)
+	var bounds := {
+		"x": bounds_min.x, "y": bounds_min.y,
+		"width": bounds_max.x - bounds_min.x + 1,
+		"height": bounds_max.y - bounds_min.y + 1,
+	}
+
+	# Filter by region
+	var region_rect: Rect2i
+	var has_region := false
+	if region_raw != null and typeof(region_raw) == TYPE_DICTIONARY:
+		has_region = true
+		region_rect = Rect2i(
+			int(region_raw.get("x", 0)), int(region_raw.get("y", 0)),
+			int(region_raw.get("width", 1)), int(region_raw.get("height", 1)))
+
+	# Build cell data
+	var cells: Array = []
+	var cells_total := 0
+	var truncated := false
+	for cell_coord in used_cells:
+		var c: Vector2i = cell_coord
+		# Region filter
+		if has_region and not region_rect.has_point(c):
+			continue
+		# Read cell data
+		var sid: int
+		var atlas: Vector2i
+		var alt: int
+		if is_layer:
+			sid = node.get_cell_source_id(c)
+			atlas = node.get_cell_atlas_coords(c)
+			alt = node.get_cell_alternative_tile(c)
+		else:
+			var tile_map := node as TileMap
+			sid = tile_map.get_cell_source_id(layer, c)
+			atlas = tile_map.get_cell_atlas_coords(layer, c)
+			alt = tile_map.get_cell_alternative_tile(layer, c)
+		# Source filter
+		if source_filter >= 0 and sid != source_filter:
+			continue
+		cells_total += 1
+		if cells.size() < _MAX_CELLS:
+			cells.append({
+				"coords": {"x": c.x, "y": c.y},
+				"source_id": sid,
+				"atlas_coords": {"x": atlas.x, "y": atlas.y},
+				"alternative_tile": alt,
+			})
+		else:
+			truncated = true
+
+	var result := {
+		"success": true,
+		"cells": cells,
+		"cell_count": cells.size(),
+		"cells_total": cells_total,
+		"truncated": truncated,
+		"bounds": bounds,
+		"node_class": node.get_class(),
+	}
+
+	if truncated:
+		result["hint"] = (
+			"Result truncated to %d of %d cells. " % [_MAX_CELLS, cells_total] +
+			"Use the 'region' parameter to query spatial subsets: " +
+			"{x, y, width, height}.")
+
+	var version_hint := _tilemap_version_hint(is_map)
+	if not version_hint.is_empty():
+		if result.has("hint"):
+			result["hint"] = str(result["hint"]) + " " + version_hint
+		else:
+			result["hint"] = version_hint
+
+	return result
 
 
 ## Expand region descriptors into flat cell array (FIX-A).
@@ -172,7 +315,7 @@ static func _cmd_tilemap_set_cells(
 		undo_redo.commit_action()
 	else:
 		server.undo_helpers._tilemap_apply_batch(node, layer, cells)
-	return {
+	var set_result := {
 		"success": true,
 		"tilemap_path": tilemap_path,
 		"layer": layer,
@@ -180,6 +323,10 @@ static func _cmd_tilemap_set_cells(
 		"cells_unchanged": cells_unchanged,
 		"total": cells.size(),
 	}
+	var version_hint := _tilemap_version_hint(is_map)
+	if not version_hint.is_empty():
+		set_result["hint"] = version_hint
+	return set_result
 
 
 static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
@@ -259,7 +406,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 			"tileset saved but reload failed — file may be corrupt: %s" % file_path)
 	Helpers.ensure_file_indexed(file_path)
 
-	return {
+	var create_result := {
 		"success": true,
 		"path": file_path,
 		"tile_size": {"x": tile_w, "y": tile_h},
@@ -268,6 +415,11 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 		"tiles_created": tiles_created,
 		"physics": physics,
 	}
+	if _Hub.godot_minor() >= 3:
+		create_result["hint"] = "Assign this TileSet to a TileMapLayer node (4.3+). The deprecated TileMap node still works but TileMapLayer is preferred."
+	else:
+		create_result["hint"] = "Assign this TileSet to a TileMap node."
+	return create_result
 
 
 static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
@@ -415,15 +567,15 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 	Helpers.ensure_file_indexed(file_path)
 
-	var result := {
+	var edit_result := {
 		"success": true,
 		"path": file_path,
 		"tiles_modified": tiles_modified,
 		"errors": tile_errors,
 	}
 	if new_source_id != null:
-		result["new_source_id"] = new_source_id
-	return result
+		edit_result["new_source_id"] = new_source_id
+	return edit_result
 
 
 # -- tileset.edit sub-helpers ------------------------------------------------

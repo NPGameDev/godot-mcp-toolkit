@@ -377,17 +377,44 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		return McpError.make("INVALID_CLASS", "instantiate failed: %s" % class_name_param)
 
 	instance.name = requested_name
+
+	# Pre-coerce inline properties before UndoRedo (validation only).
+	var properties_raw = parameters.get("properties", null)
+	var prop_coerced: Array = []  # [{name, value, old_value}]
+	var prop_failed: Array = []
+	if properties_raw != null and typeof(properties_raw) == TYPE_DICTIONARY:
+		for key in (properties_raw as Dictionary).keys():
+			var prop_name := str(key)
+			var result := Helpers.coerce_for_property(
+				instance, prop_name, properties_raw[key])
+			if result.get("ok", false):
+				prop_coerced.append({
+					"name": prop_name,
+					"value": result["value"],
+					"old_value": instance.get(prop_name),
+				})
+			else:
+				prop_failed.append({
+					"name": prop_name,
+					"error": str(result.get("error", "")),
+				})
+
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action("MCP: create %s" % requested_name)
 		undo_redo.add_do_method(parent_node, "add_child", instance)
 		undo_redo.add_do_method(instance, "set_owner", root)
 		undo_redo.add_do_reference(instance)
+		for prop in prop_coerced:
+			undo_redo.add_do_property(instance, prop["name"], prop["value"])
+			undo_redo.add_undo_property(instance, prop["name"], prop["old_value"])
 		undo_redo.add_undo_method(parent_node, "remove_child", instance)
 		undo_redo.commit_action()
 	else:
 		parent_node.add_child(instance)
 		instance.set_owner(root)
+		for prop in prop_coerced:
+			instance.set(prop["name"], prop["value"])
 
 	# layout_mode: match Godot editor behavior for Control children of Containers.
 	# Default (-1) auto-detects: sets layout_mode=1 when parent is a Container.
@@ -401,6 +428,16 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 	# unique_name: mark node for scene-unique access (%Name in scripts).
 	var unique_param = parameters.get("unique_name", null)
 	var response := {"success": true, "status": "created", "path": _path_in_scene(root, instance)}
+
+	# Report inline property results
+	if not prop_coerced.is_empty() or not prop_failed.is_empty():
+		response["properties_set"] = prop_coerced.size()
+		if not prop_failed.is_empty():
+			response["properties_failed"] = prop_failed
+			response["hint"] = "%d propert%s failed. Use node_set_property to retry." % [
+				prop_failed.size(),
+				"y" if prop_failed.size() == 1 else "ies"]
+
 	if unique_param != null and (unique_param == true or str(unique_param).to_lower() == "true"):
 		var existing_unique := root.get_node_or_null("%" + str(instance.name))
 		if existing_unique != null and existing_unique != instance:

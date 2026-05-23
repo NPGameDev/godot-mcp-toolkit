@@ -8,6 +8,36 @@ extends RefCounted
 ## NOTE: This file is preloaded by _hub.gd, so it CANNOT import _hub.gd
 ## (circular dependency). Use direct preloads for dependencies instead.
 const McpError := preload("res://addons/godot_mcp_toolkit/mcp_error.gd")
+const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
+
+
+# -- Property coercion ---------------------------------------------------------
+
+
+## Validate and coerce a raw JSON value for setting on a node property.
+## Returns {"ok": true, "value": <coerced>} on success.
+## Returns {"ok": false, "code": String, "error": String} on failure.
+## Auto-coerces String → NodePath when the existing property value is NodePath.
+static func coerce_for_property(
+	node: Object, property_name: String, raw_value: Variant,
+) -> Dictionary:
+	var missing := Coerce.check_resource_paths(raw_value)
+	if missing != "":
+		return {"ok": false, "code": "LOAD_FAILED",
+			"error": "resource not found: %s" % missing}
+
+	var coerced = Coerce.coerce_value(raw_value)
+
+	if typeof(coerced) == TYPE_DICTIONARY \
+			and (coerced as Dictionary).has("_coerce_error"):
+		return {"ok": false, "code": "INVALID_VALUE",
+			"error": str(coerced["_coerce_error"])}
+
+	var old_value = node.get(property_name)
+	if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
+		coerced = NodePath(str(coerced))
+
+	return {"ok": true, "value": coerced}
 
 
 # -- Scene node resolution -----------------------------------------------------
