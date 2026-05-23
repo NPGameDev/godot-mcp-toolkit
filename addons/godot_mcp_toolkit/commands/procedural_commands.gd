@@ -12,13 +12,13 @@ const Helpers = _Hub.Helpers
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("procedural.edit_gradient", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_edit_gradient(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("procedural.edit_curve", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_edit_curve(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("procedural.edit_noise", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_edit_noise(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
 # -- Commands -----------------------------------------------------------------

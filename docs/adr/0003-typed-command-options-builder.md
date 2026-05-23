@@ -16,8 +16,10 @@ Option C was chosen because it gives full autocomplete and type safety in GDScri
 
 - **Breaking change** to `registry.add()` — third parameter changes from `Dictionary` to `MCPToolkitCommandOptions`. Acceptable pre-1.0 (no third-party extensions in the wild).
 - All ~55 built-in commands must migrate to explicit `MCPToolkitCommandOptions.new()` — no null default. Built-in code becomes the reference implementation for extension authors.
-- `_force_serialize` (internal-only, used by `game.start`/`game.stop`) stays off the public class — the registry handles it via a separate internal path.
-- `MCPToolContext` renamed to `MCPToolkitToolContext` for prefix consistency (separate commit).
+- `_force_serialize` is exposed publicly as `mark_exclusive_execution()` on the builder. The internal-only `_set_force_serialize()` path was removed — all callers (including `game.start`/`game.stop`) use the builder method.
+- `MCPToolContext` renamed to `MCPToolkitToolContext` for prefix consistency (bundled in the same commit as the builder migration).
+- `MCPToolkitExtensionOptions` subclass added with mandatory `description` in its constructor. Built-in tools use `MCPToolkitCommandOptions` (description optional via `with_description()`); extension tools use `MCPToolkitExtensionOptions` (description required at construction). This enforces the boundary between built-in and extension tools at the type level.
+- `push_warning` for empty description was removed — enforcement moved to `MCPToolkitExtensionOptions` constructor, making it a hard error for extensions and a non-issue for built-ins.
 
 ## API surface
 
@@ -34,13 +36,21 @@ mark_destructive() -> MCPToolkitCommandOptions
 mark_idempotent() -> MCPToolkitCommandOptions
 mark_cancellable() -> MCPToolkitCommandOptions
 mark_scene_independent() -> MCPToolkitCommandOptions
+mark_exclusive_execution() -> MCPToolkitCommandOptions  # force serialization for read-only tools with side effects
 
 # Conversion (public — used by registry, useful for debugging)
 to_dict() -> Dictionary
 ```
 
+`MCPToolkitExtensionOptions` (extends `MCPToolkitCommandOptions`):
+```gdscript
+# Constructor — description is mandatory for extension tools
+_init(description: String)
+```
+
 Registry additions:
 - `create_options() -> MCPToolkitCommandOptions` — factory for C# discoverability
+- `create_extension_options(description: String) -> MCPToolkitExtensionOptions` — factory for extension tools (enforces mandatory description)
 - `add()` signature: `add(method: String, handler: Callable, options: MCPToolkitCommandOptions)`
 
-Validation (read_only + destructive contradiction, timeout clamping, empty description warning) stays in `registry.add()`, not in the class. The class stores intent; the registry validates the final state.
+Validation (read_only + destructive contradiction, timeout clamping) stays in `registry.add()`, not in the class. The class stores intent; the registry validates the final state. Empty description warning removed — `MCPToolkitExtensionOptions` enforces at construction time.

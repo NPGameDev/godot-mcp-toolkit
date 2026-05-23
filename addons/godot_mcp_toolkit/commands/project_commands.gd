@@ -15,19 +15,19 @@ const _VALID_LAYER_CATEGORIES := ["2d_physics", "2d_render", "3d_physics", "3d_r
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("project.get_settings", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_project_get_settings(parameters)
-	, {"is_read_only": true, "is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("project.set_setting", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_project_set_setting(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("autoload.manage", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_autoload_manage(parameters, _server)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("project.get_layer_names", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_get_layer_names(parameters)
-	, {"is_read_only": true, "is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("project.set_layer_names", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_set_layer_names(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
 # -- Commands -----------------------------------------------------------------

@@ -15,13 +15,17 @@ const _VALID_TONEMAPS := ["linear", "reinhardt", "filmic", "aces"]
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("3d.create_primitive", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_create_primitive(parameters))
+		return _cmd_create_primitive(parameters)
+	, MCPToolkitCommandOptions.new())
 	registry.add("3d.setup_environment", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_setup_environment(parameters))
+		return _cmd_setup_environment(parameters)
+	, MCPToolkitCommandOptions.new())
 	registry.add("3d.create_light", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_create_light(parameters))
+		return _cmd_create_light(parameters)
+	, MCPToolkitCommandOptions.new())
 	registry.add("3d.create_camera", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_create_camera(parameters))
+		return _cmd_create_camera(parameters)
+	, MCPToolkitCommandOptions.new())
 
 
 # -- Helpers ------------------------------------------------------------------

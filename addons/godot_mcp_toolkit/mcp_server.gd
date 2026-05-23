@@ -57,7 +57,7 @@ var _poll_frame_counter := 0
 # can prefer post-boot logs over stale rotated ones.
 var _plugin_boot_time: int = 0
 var _registry: MCPToolkitCommandRegistry = null
-## Tracks MCPToolContext per in-flight cancellable request, keyed by
+## Tracks MCPToolkitToolContext per in-flight cancellable request, keyed by
 ## JSON-RPC id (string). Populated in _dispatch_rpc; erased after handler
 ## returns. Looked up by _cancel notifications to trigger cooperative cancel.
 var _active_contexts: Dictionary = {}
@@ -470,7 +470,7 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 		return
 
 	# _cancel is a fire-and-forget notification from the bridge — no response.
-	# Triggers cooperative cancellation on the MCPToolContext for the target
+	# Triggers cooperative cancellation on the MCPToolkitToolContext for the target
 	# request. Scans both mutation and scene queues for queued (not-yet-
 	# executing) commands and flags them for skip-on-drain.
 	if method == "_cancel":
@@ -550,9 +550,9 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 			await _execute_mutation(peer, id, method, safe_parameters)
 	else:
 		# Read-only: execute immediately, no lock needed.
-		var ctx: MCPToolContext = null
+		var ctx: MCPToolkitToolContext = null
 		if _registry.is_cancellable(method):
-			ctx = MCPToolContext.new()
+			ctx = MCPToolkitToolContext.new()
 			_active_contexts[str(id)] = ctx
 		command_received.emit(method)
 		var result: Dictionary = await _registry.call_command(
@@ -565,9 +565,9 @@ func _execute_mutation(peer: WebSocketPeer, id, method: String,
 		params: Dictionary, scene_queued_ms: int = 0) -> void:
 	_mutation_in_flight = true
 	_send_notification(peer, "_executing", {"request_id": id})
-	var ctx: MCPToolContext = null
+	var ctx: MCPToolkitToolContext = null
 	if _registry.is_cancellable(method):
-		ctx = MCPToolContext.new()
+		ctx = MCPToolkitToolContext.new()
 		_active_contexts[str(id)] = ctx
 	command_received.emit(method)
 	var result: Dictionary = await _registry.call_command(method, params, ctx)
@@ -761,9 +761,9 @@ func _execute_scene_queued_mutation(entry: _SceneQueueEntry,
 
 func _execute_scene_queued_read(entry: _SceneQueueEntry,
 		queued_ms: int) -> void:
-	var ctx: MCPToolContext = null
+	var ctx: MCPToolkitToolContext = null
 	if _registry.is_cancellable(entry.method):
-		ctx = MCPToolContext.new()
+		ctx = MCPToolkitToolContext.new()
 		_active_contexts[str(entry.id)] = ctx
 	command_received.emit(entry.method)
 	var result: Dictionary = await _registry.call_command(

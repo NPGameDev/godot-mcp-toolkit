@@ -15,10 +15,12 @@ var _commands: Dictionary = {}
 var _extension_methods: Array[String] = []
 
 
-func add(method: String, handler: Callable, options: Dictionary = {}) -> void:
-	var is_read_only: bool = options.get("is_read_only", false)
-	var is_destructive: bool = options.get("is_destructive", false)
-	var is_idempotent: bool = options.get("is_idempotent", false)
+func add(method: String, handler: Callable,
+		options: MCPToolkitCommandOptions) -> void:
+	var opts: Dictionary = options.to_dict()
+	var is_read_only: bool = opts.get("is_read_only", false)
+	var is_destructive: bool = opts.get("is_destructive", false)
+	var is_idempotent: bool = opts.get("is_idempotent", false)
 
 	# Exclusivity validation: read-only + destructive is a contradiction.
 	if is_read_only and is_destructive:
@@ -33,7 +35,7 @@ func add(method: String, handler: Callable, options: Dictionary = {}) -> void:
 	}
 
 	# Clamp timeout: 0/negative → default, then floor/cap.
-	var raw_timeout: int = options.get("timeout_ms", 0)
+	var raw_timeout: int = opts.get("timeout_ms", 0)
 	var timeout_ms: int = _DEFAULT_TIMEOUT_MS
 	if raw_timeout > 0:
 		if raw_timeout > _MAX_TIMEOUT_MS:
@@ -42,15 +44,15 @@ func add(method: String, handler: Callable, options: Dictionary = {}) -> void:
 
 	_commands[method] = {
 		"handler": handler,
-		"description": options.get("description", ""),
-		"input_schema": options.get("input_schema", {}),
+		"description": opts.get("description", ""),
+		"input_schema": opts.get("input_schema", {}),
 		"annotations": annotations,
-		"group": options.get("group", {}),
+		"group": opts.get("group", {}),
 		"timeout_ms": timeout_ms,
-		"is_cancellable": bool(options.get("is_cancellable", false)),
+		"is_cancellable": bool(opts.get("is_cancellable", false)),
 		"read_only": is_read_only,
-		"active_scene_required": bool(options.get("is_active_scene_required", true)),
-		"_force_serialize": bool(options.get("_force_serialize", false)),
+		"active_scene_required": bool(opts.get("is_active_scene_required", true)),
+		"_force_serialize": bool(opts.get("_force_serialize", false)),
 	}
 
 
@@ -123,13 +125,21 @@ func needs_serialization(method: String) -> bool:
 	return not is_read_only(method)
 
 
+func create_options() -> MCPToolkitCommandOptions:
+	return MCPToolkitCommandOptions.new()
+
+
+func create_extension_options(description: String) -> MCPToolkitExtensionOptions:
+	return MCPToolkitExtensionOptions.new(description)
+
+
 func clear() -> void:
 	_commands.clear()
 	_extension_methods.clear()
 
 
 func call_command(method: String, parameters: Dictionary,
-		ctx: MCPToolContext = null) -> Dictionary:
+		ctx: MCPToolkitToolContext = null) -> Dictionary:
 	if not _commands.has(method):
 		return McpError.make("NOT_FOUND", "unknown method: " + method)
 	Audit.log_call(method, parameters)

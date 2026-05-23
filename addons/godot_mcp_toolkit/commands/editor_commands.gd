@@ -17,23 +17,25 @@ const MAX_SCREENSHOT_SIZE := 4096
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("editor.get_errors", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_get_errors(server, parameters)
-	, {"is_read_only": true, "is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("editor.save_scene", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_editor_save_scene(parameters))
+		return await _cmd_editor_save_scene(parameters)
+	, MCPToolkitCommandOptions.new())
 	registry.add("editor.screenshot", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_editor_screenshot(parameters)
-	, {"is_read_only": true})
+	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("editor.refresh", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_refresh(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("editor.get_console", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_get_console(server, parameters)
-	, {"is_read_only": true, "is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("editor.wait_for_idle", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_wait_for_idle(parameters)
-	, {"is_read_only": true, "is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("execute.code", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_execute_code(parameters))
+		return _cmd_execute_code(parameters)
+	, MCPToolkitCommandOptions.new())
 
 
 # -- Commands -----------------------------------------------------------------

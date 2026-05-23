@@ -11,12 +11,14 @@ const Helpers = _Hub.Helpers
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("animation.keyframe", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_animation_keyframe(server, parameters))
+		return _cmd_animation_keyframe(server, parameters)
+	, MCPToolkitCommandOptions.new())
 	registry.add("animation.get_keys", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_animation_get_keys(parameters)
-	, {"is_read_only": true})
+	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("animationtree.edit", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_animationtree_edit(server, parameters))
+		return _cmd_animationtree_edit(server, parameters)
+	, MCPToolkitCommandOptions.new())
 
 
 # -- Helpers ------------------------------------------------------------------

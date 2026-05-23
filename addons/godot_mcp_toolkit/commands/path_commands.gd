@@ -9,7 +9,8 @@ const Helpers = _Hub.Helpers
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("path2d.edit_curve", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_edit_curve(parameters))
+		return _cmd_edit_curve(parameters)
+	, MCPToolkitCommandOptions.new())
 
 
 # -- Commands -----------------------------------------------------------------

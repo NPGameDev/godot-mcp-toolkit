@@ -24,24 +24,20 @@ class_name PhysicsTools
 extends MCPToolkitExtension
 
 func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
-	registry.add("physics.list_bodies", _list_bodies, {
-		"description": "List all physics bodies in the current scene",
-		"input_schema": {
-			"type": "object",
-			"properties": {
-				"body_type": {
-					"type": "string",
-					"enum": ["rigid", "static", "character", "all"]
+	registry.add("physics.list_bodies", _list_bodies,
+		MCPToolkitExtensionOptions.new("List all physics bodies in the current scene")
+			.with_input_schema({
+				"type": "object",
+				"properties": {
+					"body_type": {
+						"type": "string",
+						"enum": ["rigid", "static", "character", "all"]
+					}
 				}
-			}
-		},
-		"is_read_only": true,
-		"is_idempotent": true,
-		"group": {
-			"name": "physics_tools",
-			"description": "Physics inspection and manipulation"
-		}
-	})
+			})
+			.mark_read_only()
+			.mark_idempotent()
+			.with_group("physics_tools", "Physics inspection and manipulation"))
 
 func _list_bodies(params: Dictionary) -> Dictionary:
 	var body_type: String = params.get("body_type", "all")
@@ -70,12 +66,12 @@ public partial class MCPToolkitDialogueTools : RefCounted
 {
 	public void Register(GodotObject registry, Node server)
 	{
+		var opts = registry.Call("create_extension_options",
+			"List all dialogue nodes in the current scene").AsGodotObject();
+		opts.Call("mark_read_only");
+		opts.Call("mark_idempotent");
 		registry.Call("add", "dialogue.list_nodes", new Callable(this,
-			MethodName.ListNodes), new Dictionary {
-			{ "description", "List all dialogue nodes in the current scene" },
-			{ "is_read_only", true },
-			{ "is_idempotent", true }
-		});
+			MethodName.ListNodes), opts);
 	}
 
 	public Dictionary ListNodes(Dictionary parameters)
@@ -105,38 +101,63 @@ public partial class MCPToolkitDialogueTools : RefCounted
 ### `registry.add()` API
 
 ```
-registry.add(method: String, handler: Callable, options: Dictionary)
+registry.add(method: String, handler: Callable, options: MCPToolkitCommandOptions)
 ```
 
-| Key | Type | Default | Purpose |
-|-----|------|---------|---------|
-| `description` | String | `""` | Tool description in MCP `tools/list` |
-| `input_schema` | Dictionary | `{}` | JSON Schema for tool input validation |
-| `is_read_only` | bool | `false` | Tool only reads state, never modifies it |
-| `is_destructive` | bool | `false` | Tool deletes or irreversibly changes data |
-| `is_idempotent` | bool | `false` | Calling twice with the same input produces the same result |
-| `is_cancellable` | bool | `false` | Handler supports cooperative cancellation (see below) |
-| `timeout_ms` | int | `30000` | Per-tool bridge timeout in milliseconds (floor: 1000, cap: 300000) |
-| `group` | Dictionary | `{}` | Tool group for `discover_tools` (see below) |
+Options are built using a fluent builder API. Two classes are available:
 
-**Annotations** are mapped to MCP hints internally (`is_read_only` →
-`readOnlyHint`, `is_destructive` → `destructiveHint`, `is_idempotent` →
-`idempotentHint`). Extension authors use the snake_case names only.
+- **`MCPToolkitCommandOptions`** -- base class used by built-in tools.
+  Description is optional (set via `with_description()`).
+- **`MCPToolkitExtensionOptions`** -- subclass for extension tools.
+  Requires a description string in the constructor.
+
+Extension tools should always use `MCPToolkitExtensionOptions`:
+
+```gdscript
+var opts = MCPToolkitExtensionOptions.new("Describe what your tool does")
+```
+
+**Builder methods** (all return `self` for chaining):
+
+| Method | Purpose |
+|--------|---------|
+| `mark_read_only()` | Tool only reads state, never modifies it |
+| `mark_destructive()` | Tool deletes or irreversibly changes data |
+| `mark_idempotent()` | Calling twice with the same input produces the same result |
+| `mark_cancellable()` | Handler supports cooperative cancellation (see below) |
+| `mark_scene_independent()` | Tool does not depend on the active editor tab |
+| `mark_exclusive_execution()` | Tool acquires the mutation lock despite being read-only (see below) |
+| `with_description(text)` | Set or override the tool description |
+| `with_input_schema(dict)` | JSON Schema for tool input validation |
+| `with_timeout_ms(ms)` | Per-tool bridge timeout in milliseconds (floor: 1000, cap: 300000) |
+| `with_group(name, description)` | Tool group for `discover_tools` (see below) |
+| `to_dict()` | Returns the options as a Dictionary (for debugging) |
+
+**Registry factory methods** (alternative to direct construction):
+
+| Method | Returns | Use case |
+|--------|---------|----------|
+| `registry.create_options()` | `MCPToolkitCommandOptions` | Built-in tools |
+| `registry.create_extension_options(description)` | `MCPToolkitExtensionOptions` | Extension tools (especially C#) |
+
+**Annotations** are mapped to MCP hints internally (`mark_read_only()` →
+`readOnlyHint`, `mark_destructive()` → `destructiveHint`, `mark_idempotent()` →
+`idempotentHint`). Extension authors use the builder methods only.
 
 All annotation defaults are **safe**: omitting them means the tool is
 treated as mutating, non-destructive, and non-idempotent.
 
-**Read-only mode:** The `is_read_only` annotation is the **single source
+**Read-only mode:** The `mark_read_only()` annotation is the **single source
 of truth** for read-only filtering. When the server runs with
-`GODOT_MCP_READ_ONLY=1`, only tools with `is_read_only: true` appear in
-`tools/list` — both built-in and extension tools use the same
+`GODOT_MCP_READ_ONLY=1`, only tools marked read-only appear in
+`tools/list` -- both built-in and extension tools use the same
 annotation-driven filter. If your extension tool only inspects state
-(reads nodes, queries data, lists files), set `is_read_only: true` so it
+(reads nodes, queries data, lists files), call `mark_read_only()` so it
 remains available in read-only environments. Tools without this annotation
-are excluded by default (strict inclusion — safe posture).
+are excluded by default (strict inclusion -- safe posture).
 
-**Exclusivity:** `is_read_only: true` and `is_destructive: true` is a
-logical contradiction — a read-only tool cannot be destructive. If both
+**Exclusivity:** `mark_read_only()` and `mark_destructive()` is a
+logical contradiction -- a read-only tool cannot be destructive. If both
 are set, a warning is logged and the tool is treated as mutating
 (excluded from read-only mode).
 
@@ -171,16 +192,13 @@ set of Godot APIs that internally show a progress dialog.
 
 **Groups:**
 
-Commands declaring a `group` key are registered behind `discover_tools`
-with lazy-load semantics. Commands without a `group` stay at root level —
+Commands with a group are registered behind `discover_tools` with
+lazy-load semantics. Commands without a group stay at root level --
 always visible from startup.
 
 ```gdscript
-"group": {
-	"name": "physics_tools",          # Group identifier
-	"description": "Physics inspection and manipulation",  # Shown in discover_tools
-	"keywords": ["physics", "force", "collision", "rigidbody", "gravity"],  # For keyword search
-}
+MCPToolkitExtensionOptions.new("List all physics bodies in the current scene")
+	.with_group("physics_tools", "Physics inspection and manipulation")
 ```
 
 Commands sharing a group name are collected together. The MCP client loads
@@ -203,17 +221,16 @@ computation, multi-step processing), you can opt into **cooperative
 cancellation** so the handler itself bails out early, freeing resources
 sooner.
 
-**Opt in** by setting `is_cancellable: true` in `registry.add()` options.
-Your handler then receives an `MCPToolContext` as the second argument:
+**Opt in** by calling `mark_cancellable()` on the options builder.
+Your handler then receives an `MCPToolkitToolContext` as the second argument:
 
 ```gdscript
-registry.add("weather.fetch", _handle_weather, {
-	"description": "Fetch weather data from external API",
-	"timeout_ms": 60000,
-	"is_cancellable": true,
-})
+registry.add("weather.fetch", _handle_weather,
+	MCPToolkitExtensionOptions.new("Fetch weather data from external API")
+		.with_timeout_ms(60000)
+		.mark_cancellable())
 
-func _handle_weather(params: Dictionary, ctx: MCPToolContext) -> Dictionary:
+func _handle_weather(params: Dictionary, ctx: MCPToolkitToolContext) -> Dictionary:
 	# Reactive: connect a cleanup action to the cancelled signal.
 	# If cancelled during the await, the HTTP request is aborted.
 	ctx.cancelled.connect(_http_request.cancel_request)
@@ -231,7 +248,7 @@ func _handle_weather(params: Dictionary, ctx: MCPToolContext) -> Dictionary:
 	return {"success": true, "data": processed}
 ```
 
-**`MCPToolContext` API:**
+**`MCPToolkitToolContext` API:**
 
 | Member | Type | Description |
 |--------|------|-------------|
@@ -252,12 +269,12 @@ func _handle_weather(params: Dictionary, ctx: MCPToolContext) -> Dictionary:
 ```csharp
 public void Register(GodotObject registry, Node server)
 {
+	var opts = registry.Call("create_extension_options",
+		"Fetch weather data from external API").AsGodotObject();
+	opts.Call("with_timeout_ms", 60000);
+	opts.Call("mark_cancellable");
 	registry.Call("add", "weather.fetch", new Callable(this,
-		MethodName.HandleWeather), new Dictionary {
-		{ "description", "Fetch weather data from external API" },
-		{ "timeout_ms", 60000 },
-		{ "is_cancellable", true },
-	});
+		MethodName.HandleWeather), opts);
 }
 
 public Dictionary HandleWeather(Dictionary parameters, GodotObject ctx)
@@ -277,7 +294,7 @@ public Dictionary HandleWeather(Dictionary parameters, GodotObject ctx)
 
 **Important notes:**
 
-- **Do not store the context.** `MCPToolContext` is scoped to a single tool
+- **Do not store the context.** `MCPToolkitToolContext` is scoped to a single tool
   invocation. It is invalidated when your handler returns. Signal connections
   are cleaned up automatically via reference counting.
 
@@ -291,7 +308,7 @@ public Dictionary HandleWeather(Dictionary parameters, GodotObject ctx)
   toolkit does not validate your cancel path. Consider whether `is_cancellable`
   is appropriate for mutation tools — simple operations are safer without it.
 
-- **Non-cancellable tools.** Handlers without `is_cancellable: true` keep
+- **Non-cancellable tools.** Handlers without `mark_cancellable()` keep
   their 1-arg signature and work exactly as before. No context is created,
   no overhead is added.
 
@@ -310,27 +327,52 @@ the same Godot editor, two concurrency mechanisms protect against races:
 
 **How your extension participates:**
 
-Your `registry.add()` options control which mechanisms apply:
+Your builder method calls control which mechanisms apply:
 
-| Option | Default | Effect |
-|--------|---------|--------|
-| `is_read_only` | `false` | If `true`, bypasses the mutation lock (executes concurrently) |
-| `is_active_scene_required` | `true` | If `true`, participates in the scene lease (queued when targeting a non-active scene) |
+| Method | Default (if not called) | Effect |
+|--------|-------------------------|--------|
+| `mark_read_only()` | not read-only | Bypasses the mutation lock (executes concurrently) |
+| `mark_scene_independent()` | scene-dependent | Bypasses the scene lease (no tab ownership needed) |
 
 **Guidelines:**
 
 - If your tool reads scene tree state via `EditorInterface.get_edited_scene_root()`,
-  keep `is_active_scene_required: true` (default). The lease ensures your tool
-  reads the correct scene.
-- If your tool only uses explicit file paths or engine singletons, set
-  `is_active_scene_required: false`. This lets it execute immediately even
-  when the scene tab is contended.
-- If your tool is read-only AND `is_active_scene_required: true`, it queues
-  for the lease when another peer holds it. Consider whether a file-path-based
-  approach could avoid the dependency.
+  do not call `mark_scene_independent()` (keep the default). The lease ensures
+  your tool reads the correct scene.
+- If your tool only uses explicit file paths or engine singletons, call
+  `mark_scene_independent()`. This lets it execute immediately even when
+  the scene tab is contended.
+- If your tool is read-only but scene-dependent (no `mark_scene_independent()`),
+  it queues for the lease when another peer holds it. Consider whether a
+  file-path-based approach could avoid the dependency.
 
 **Single-session behaviour:** When only one peer is connected, both mechanisms
 are no-ops. Zero overhead, identical behaviour to pre-concurrency versions.
+
+### Exclusive execution
+
+Some tools are read-only (they don't modify the scene tree) but still have
+side effects that shouldn't overlap with mutations. Use
+`mark_exclusive_execution()` for these cases.
+
+Example: `game.start` and `game.stop` are read-only (they don't modify the
+scene tree) but they start and stop the game process. Running a mutation
+tool while the game is starting could produce unpredictable results.
+`mark_exclusive_execution()` causes the tool to acquire the mutation lock
+despite being marked read-only, ensuring it doesn't overlap with mutations
+or other exclusive tools.
+
+```gdscript
+registry.add("physics.recalculate", _recalculate,
+	MCPToolkitExtensionOptions.new("Recalculate all physics caches")
+		.mark_read_only()
+		.mark_exclusive_execution())
+```
+
+Use this when your tool:
+- Is genuinely read-only (doesn't modify the scene tree)
+- Has side effects that conflict with concurrent mutations
+- Needs serialised access even though it only reads state
 
 ### Discovery rules
 
@@ -462,12 +504,12 @@ public partial class MCPToolkitCSharpCheck : RefCounted
 {
 	public void Register(GodotObject registry, Node server)
 	{
+		var opts = registry.Call("create_extension_options",
+			"Run dotnet build and return C# diagnostics").AsGodotObject();
+		opts.Call("mark_read_only");
+		opts.Call("mark_idempotent");
 		registry.Call("add", "csharp.check", new Callable(this,
-			MethodName.CheckScript), new Dictionary {
-			{ "description", "Run dotnet build and return C# diagnostics" },
-			{ "is_read_only", true },
-			{ "is_idempotent", true }
-		});
+			MethodName.CheckScript), opts);
 	}
 
 	public Dictionary CheckScript(Dictionary parameters)

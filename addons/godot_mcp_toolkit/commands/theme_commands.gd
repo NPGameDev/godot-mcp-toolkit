@@ -13,7 +13,7 @@ const _VALID_PROPERTY_TYPES := ["color", "constant", "font", "font_size", "icon"
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("theme.edit", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_theme_edit(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
 # -- Commands -----------------------------------------------------------------

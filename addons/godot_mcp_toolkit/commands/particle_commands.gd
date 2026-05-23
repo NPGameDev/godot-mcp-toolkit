@@ -262,7 +262,8 @@ const _PRESETS := {
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("particles.create", func(p: Dictionary) -> Dictionary:
-		return _cmd_particles_create(p))
+		return _cmd_particles_create(p)
+	, MCPToolkitCommandOptions.new())
 
 
 # -- Helpers ------------------------------------------------------------------

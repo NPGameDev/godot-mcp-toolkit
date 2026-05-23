@@ -11,13 +11,14 @@ const Helpers = _Hub.Helpers
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("tilemap.set_cells", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tilemap_set_cells(server, parameters))
+		return _cmd_tilemap_set_cells(server, parameters)
+	, MCPToolkitCommandOptions.new())
 	registry.add("tileset.create", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_tileset_create(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_tileset_edit(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
 # -- Helpers ------------------------------------------------------------------

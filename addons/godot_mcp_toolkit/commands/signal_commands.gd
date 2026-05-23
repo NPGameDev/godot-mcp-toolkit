@@ -18,11 +18,13 @@ static func _compile_extends_path_re() -> RegEx:
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("signal.list", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_signal_list(parameters)
-	, {"is_read_only": true})
+	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("signal.manage", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_signal_manage(parameters))
+		return _cmd_signal_manage(parameters)
+	, MCPToolkitCommandOptions.new())
 	registry.add("signal.emit", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_signal_emit(parameters))
+		return _cmd_signal_emit(parameters)
+	, MCPToolkitCommandOptions.new())
 
 
 # -- Helpers ------------------------------------------------------------------

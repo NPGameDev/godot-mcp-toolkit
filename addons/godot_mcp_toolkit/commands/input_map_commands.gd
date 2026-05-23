@@ -40,10 +40,10 @@ const BUILTIN_UI_ACTIONS: Array[String] = [
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("input_map.action", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_input_map_action(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("input_map.event", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_input_map_event(parameters)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
 # -- Input event helpers ------------------------------------------------------

@@ -9,7 +9,8 @@ const Helpers = _Hub.Helpers
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("navigation.edit_polygon", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_edit_polygon(parameters))
+		return _cmd_edit_polygon(parameters)
+	, MCPToolkitCommandOptions.new())
 
 
 static func _cmd_edit_polygon(parameters: Dictionary) -> Dictionary:

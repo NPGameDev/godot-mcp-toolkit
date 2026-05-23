@@ -1,5 +1,5 @@
 @tool
-class_name MCPToolContext
+class_name MCPToolkitToolContext
 extends RefCounted
 ## Per-invocation context for cancellable extension tool handlers.
 ##

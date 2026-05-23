@@ -10,16 +10,16 @@ const FileGuard = _Hub.FileGuard
 static func register(registry: MCPToolkitCommandRegistry, debug_bridge: RefCounted) -> void:
 	registry.add("debug.state", func(_params: Dictionary) -> Dictionary:
 		return _cmd_debug_state(debug_bridge)
-	, {"is_read_only": true, "is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("debug.list_breakpoints", func(_params: Dictionary) -> Dictionary:
 		return _cmd_debug_list_breakpoints()
-	, {"is_read_only": true, "is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("debug.set_breakpoint", func(params: Dictionary) -> Dictionary:
 		return _cmd_debug_set_breakpoint(params)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("debug.continue", func(_params: Dictionary) -> Dictionary:
 		return _cmd_debug_continue(debug_bridge)
-	, {"is_active_scene_required": false})
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
 # -- Commands -----------------------------------------------------------------

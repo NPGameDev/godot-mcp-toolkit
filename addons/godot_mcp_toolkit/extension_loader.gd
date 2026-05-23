@@ -71,11 +71,11 @@ static func start_watcher(registry: MCPToolkitCommandRegistry, server: Node) -> 
 	# Register extensions.refresh — allows LLMs / headless mode to force
 	# a filesystem scan + extension re-discovery without editor focus.
 	registry.add("extensions.refresh", func(params: Dictionary) -> Dictionary:
-		return await watcher._cmd_refresh(params), {
-		"description": "Force a filesystem scan and re-discover extensions (use when files were created externally)",
-		"is_read_only": false,
-		"is_idempotent": true,
-	})
+		return await watcher._cmd_refresh(params)
+	, MCPToolkitCommandOptions.new()
+		.with_description("Force a filesystem scan and re-discover extensions (use when files were created externally)")
+		.mark_idempotent()
+		.mark_scene_independent())
 	print("[MCPExtensions] Hot-reload watcher active")
 	return watcher
 
@@ -474,11 +474,11 @@ func _load_extension(class_name_str: String, script_path: String, registry: MCPT
 static func _register_meta(registry: MCPToolkitCommandRegistry) -> void:
 	var handler := func(params: Dictionary) -> Dictionary:
 		return _cmd_extensions_list(registry, params)
-	registry.add("extensions.list", handler, {
-		"description": "List all discovered third-party extensions and their commands",
-		"is_read_only": true,
-		"is_idempotent": true,
-	})
+	registry.add("extensions.list", handler, MCPToolkitCommandOptions.new()
+		.with_description("List all discovered third-party extensions and their commands")
+		.mark_read_only()
+		.mark_idempotent()
+		.mark_scene_independent())
 
 
 static func _cmd_extensions_list(registry: MCPToolkitCommandRegistry, _params: Dictionary) -> Dictionary:
