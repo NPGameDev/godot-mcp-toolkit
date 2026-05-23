@@ -254,10 +254,22 @@ func _build_entry_card(ext: Dictionary) -> PanelContainer:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	title_row.add_child(spacer)
 
+	# Compat badge — next to name for immediate scan
+	var compat := ExtensionCatalog.is_compatible(ext, _toolkit_version, _godot_version)
+	var compat_label := Label.new()
+	if compat:
+		compat_label.text = "\u2713 Compatible"
+		compat_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.3))
+	else:
+		compat_label.text = "\u26a0 Check version"
+		compat_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	compat_label.add_theme_font_size_override("font_size", 11)
+	title_row.add_child(compat_label)
+
 	# Status badge (green=official, blue=community, orange=experimental)
 	var status: String = str(ext.get("status", "community"))
 	var status_label := Label.new()
-	status_label.text = status.capitalize()
+	status_label.text = "  %s" % status.capitalize()
 	status_label.add_theme_font_size_override("font_size", 11)
 	match status:
 		"official":
@@ -277,14 +289,20 @@ func _build_entry_card(ext: Dictionary) -> PanelContainer:
 	desc_label.add_theme_font_size_override("font_size", 12)
 	vbox.add_child(desc_label)
 
-	# Tools list (if present)
+	# Tools list (if present) — collapsible, collapsed by default
 	var tools = ext.get("tools", [])
 	if tools is Array and not tools.is_empty():
-		var tools_header := Label.new()
-		tools_header.text = "Tools:"
-		tools_header.add_theme_font_size_override("font_size", 11)
-		tools_header.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
-		vbox.add_child(tools_header)
+		var tools_toggle := Button.new()
+		tools_toggle.flat = true
+		tools_toggle.text = "\u25b6 Tools (%d)" % tools.size()
+		tools_toggle.add_theme_font_size_override("font_size", 11)
+		tools_toggle.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		vbox.add_child(tools_toggle)
+
+		var tools_container := VBoxContainer.new()
+		tools_container.visible = false
+		vbox.add_child(tools_container)
+
 		for tool_entry in tools:
 			if not tool_entry is Dictionary:
 				continue
@@ -298,19 +316,13 @@ func _build_entry_card(ext: Dictionary) -> PanelContainer:
 			tool_line.add_theme_font_size_override("font_size", 11)
 			tool_line.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 			tool_line.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			vbox.add_child(tool_line)
+			tools_container.add_child(tool_line)
 
-	# Compat badge
-	var compat := ExtensionCatalog.is_compatible(ext, _toolkit_version, _godot_version)
-	var compat_label := Label.new()
-	if compat:
-		compat_label.text = "\u2713 Compatible"
-		compat_label.add_theme_color_override("font_color", Color(0.3, 0.9, 0.3))
-	else:
-		compat_label.text = "\u26a0 Check version"
-		compat_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-	compat_label.add_theme_font_size_override("font_size", 11)
-	vbox.add_child(compat_label)
+		tools_toggle.pressed.connect(func():
+			tools_container.visible = not tools_container.visible
+			tools_toggle.text = "%s Tools (%d)" % [
+				"\u25bc" if tools_container.visible else "\u25b6", tools.size()]
+		)
 
 	# Install instructions — expandable if present, fallback text if absent
 	var raw_install = ext.get("install_instructions", null)
