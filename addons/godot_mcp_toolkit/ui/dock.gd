@@ -12,6 +12,7 @@ const FeatureGate = _Hub.FeatureGate
 const McpJsonSync = _Hub.McpJsonSync
 const RegistryClient = _Hub.RegistryClient
 const NodejsCheck = _Hub.NodejsCheck
+const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog_dialog.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -47,6 +48,9 @@ var _ws_buffer_spinbox: SpinBox = null
 
 # Info/Help dialog (populated on demand).
 var _info_dialog: AcceptDialog = null
+
+# Extension catalog dialog (populated on demand).
+var _catalog_dialog: Window = null
 
 # Audit log dialog (populated on demand).
 var _audit_dialog: AcceptDialog = null
@@ -91,13 +95,14 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for dialog in [_audit_dialog, _info_dialog, _danger_dialog, _ro_gate_dialog]:
+	for dialog in [_audit_dialog, _info_dialog, _danger_dialog, _ro_gate_dialog, _catalog_dialog]:
 		if dialog != null and is_instance_valid(dialog):
 			dialog.queue_free()
 	_audit_dialog = null
 	_info_dialog = null
 	_danger_dialog = null
 	_ro_gate_dialog = null
+	_catalog_dialog = null
 
 
 # ---------------------------------------------------------------------------
@@ -396,6 +401,13 @@ func _build_ui() -> void:
 	skills_btn.pressed.connect(_open_companion_skills)
 	skills_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(skills_btn)
+
+	var extensions_btn := Button.new()
+	extensions_btn.text = "Extensions"
+	extensions_btn.tooltip_text = "Browse MCP Toolkit extensions"
+	extensions_btn.pressed.connect(show_extension_catalog)
+	extensions_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	footer_row.add_child(extensions_btn)
 
 	_mcp_json_btn = Button.new()
 	_mcp_json_btn.text = "Open .mcp.json"
@@ -831,6 +843,18 @@ func _open_companion_skills() -> void:
 	var skills_dir := "res://addons/godot_mcp_toolkit/CompanionSkills"
 	var global_path := ProjectSettings.globalize_path(skills_dir)
 	OS.shell_open(global_path)
+
+
+# ---------------------------------------------------------------------------
+# Extension Catalog
+# ---------------------------------------------------------------------------
+
+
+func show_extension_catalog() -> void:
+	if _catalog_dialog == null or not is_instance_valid(_catalog_dialog):
+		_catalog_dialog = ExtensionCatalogDialog.new()
+		EditorInterface.get_base_control().add_child(_catalog_dialog)
+	_catalog_dialog.show_catalog()
 
 
 # ---------------------------------------------------------------------------

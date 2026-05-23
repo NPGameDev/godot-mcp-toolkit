@@ -57,6 +57,7 @@ const _ACTIONS := [
 	{"label": "MCP Toolkit: Show Audit Log", "menu_label": "Show Audit Log", "key": "mcp/show_audit_log", "method": "_on_show_audit"},
 	{"label": "MCP Toolkit: Open Project Settings", "menu_label": "Open Project Settings", "key": "mcp/open_settings", "method": "_on_open_settings"},
 	{"label": "MCP Toolkit: Write .mcp.json", "menu_label": "Write .mcp.json", "key": "mcp/write_mcp_json", "method": "_on_write_mcp_json"},
+	{"label": "MCP Toolkit: Extension Catalog", "menu_label": "Extension Catalog...", "key": "mcp/extension_catalog", "method": "_on_extension_catalog"},
 ]
 
 var _tool_submenu: PopupMenu = null
@@ -376,6 +377,10 @@ func _on_write_mcp_json() -> void:
 	if _dock != null:
 		_dock.write_mcp_json()
 
+
+func _on_extension_catalog() -> void:
+	if _dock != null:
+		_dock.show_extension_catalog()
 
 
 # -- Whitelist validation ------------------------------------------------------
