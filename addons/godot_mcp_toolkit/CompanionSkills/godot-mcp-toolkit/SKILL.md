@@ -520,6 +520,67 @@ the response, and the context it occupies. Minimise waste:
 
 ---
 
+## 10. Parallel sessions (multi-agent concurrency)
+
+When multiple agents connect to the same Godot editor simultaneously,
+two systems prevent races automatically. You don't need to do anything
+special — but understanding the behaviour helps you work faster.
+
+### What happens behind the scenes
+
+- **Mutation lock** — only one mutation executes at a time. If yours is
+  queued, you'll see slightly longer response times (not errors).
+- **Scene lease** — one agent at a time "owns" the active editor tab. If
+  you're working on a different scene than the current tab holder, your
+  scene commands queue until the tab becomes available (up to ~8 seconds
+  before a steal occurs).
+
+### How to tell if you're contended
+
+When you call `scene_open` and another session holds the active tab,
+the response includes a hint like:
+
+> "Note: another session is currently editing res://forest.tscn..."
+
+This is your signal to **reorganise work order** — do tab-independent
+work first.
+
+### Tab-independent work (no waiting)
+
+These execute immediately regardless of scene contention:
+- Reading and writing scripts (`script_read`, `script_write`)
+- Managing files and folders
+- Querying and setting project settings
+- Managing autoloads
+- Reading console output
+
+### Tab-dependent work (may queue)
+
+These need the active tab and may wait under contention:
+- Creating, deleting, or modifying nodes in a scene
+- Reading scene trees or node properties
+- Saving scenes
+
+### Best practices for parallel work
+
+1. **Check before creating.** Read existing files/scenes before creating
+   new ones. Another agent may have already created what you need.
+   Use `scene_get_tree` and `script_read` to survey the project state.
+2. **Use canonical paths.** Put scripts in `scripts/`, scenes in
+   `scenes/`. Don't create files at the project root when a subdirectory
+   exists — parallel agents that don't coordinate will create duplicates.
+3. **Front-load tab-independent work.** Write scripts, set up autoloads,
+   and configure project settings before creating scene nodes. This
+   minimises your contention window.
+4. **Batch properties.** Use `node_set_property` batch mode to set
+   multiple properties in one call. Each tool call is one contention
+   point, so fewer calls = less waiting.
+5. **Don't fight the lease.** If your commands are taking 8-25 seconds,
+   that's the lease system working. Switch to tab-independent tasks and
+   come back to scene work later.
+
+---
+
 ## Gotcha quick-reference
 
 These are the most common sources of wasted tool calls and retries:
