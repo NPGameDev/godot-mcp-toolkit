@@ -28,3 +28,4 @@ enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
 feature_gates/allow_execute_code=true
 feature_gates/allow_user_scope=true
 feature_gates/allow_node_call_method=true
+internal/bootstrap_complete=true
