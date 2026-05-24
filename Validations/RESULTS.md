@@ -471,3 +471,143 @@
 - **Workaround:** Delete folder via filesystem directly + editor_refresh.
 
 All cleanup completed. Project state fully restored.
+
+---
+
+# Targeted Re-run (2026-05-24) — Post-fix Verification
+
+- **Context:** Validates 3 fixes: gate desync (server), JSON string coercion (server), compound path SET (toolkit)
+- **MCP server restarted:** Yes (user confirmed)
+- **Total:** 75 passed, 2 failed, 9 skipped (86 test slots)
+
+## FAIL Re-verification (fixes landed)
+
+| Test | Status | Notes |
+|------|--------|-------|
+| 3.8 | FAIL | Compound path SET: reports success but value unchanged (GET returns 0.75, not 0.3). Fix not effective. |
+| 12.6 | PASS | offset=20 accepted as number — JSON coercion fix works |
+| 12.7 | PASS | offset=5 accepted, total=3, empty results (past end) — correct |
+| 14.4 | PASS | terrain layers param accepted — coercion fix works |
+| 14.5 | PASS | navigation_layers=1, occlusion_layers=1 accepted |
+| 14.6 | PASS | custom_data layer accepted, damage=10 set |
+| 15.5 | PASS | volume_db=-6.0 accepted |
+| 15.6 | PASS | effect={"type":"Reverb"} accepted, AudioEffectReverb added |
+| 15.9 | PASS | animations array accepted, 2 animations correct frame counts |
+| 16.8 | PASS | index=2 accepted, point_count=5 |
+| 16.12 | PASS | outlines array accepted, outline_count=1 |
+| 16.26 | PASS | points array accepted, point_count=3 |
+
+## Gate-blocked Re-runs (gate desync fixed)
+
+| Test | Status | Notes |
+|------|--------|-------|
+| 3.19 | PASS | node_call_method gate open (returned null — non-@tool, expected) |
+| 7.5 | PASS | push_warning via execute_code succeeded |
+| 7.8 | PASS | text_filter "test_line(parens)" literal match, count=1 |
+| 9.1 | PASS | 2+2=4 |
+| 9.2 | PASS | EditorInterface singleton hint (expected) |
+| 9.3 | PASS | OS singleton hint mentioning Expression limitations |
+| 9.4 | PASS | load() context-aware hint mentioning node_set_property |
+| 9.5 | PASS | get_tree().get_nodes_in_group returns [] |
+| 9.6 | PASS | Engine singleton hint |
+| 9.7 | PASS | Error on invalid syntax |
+| 9.8 | PASS | ProjectSettings singleton hint |
+| 11.1 | PASS | save_write 25 bytes |
+| 11.2 | PASS | save_read content score=42, level=3 |
+| 11.3 | PASS | save_list includes sv2_save.json |
+| 11.4 | PASS | save_delete success |
+| 13.1 | PASS | add_animation_library via node_call_method, returned 0 |
+| 13.2 | PASS | keyframe t=0 Vector2(100,100) |
+| 13.3 | PASS | keyframe t=1 Vector2(200,200) |
+| 13.4 | PASS | 2 keyframes on position track |
+| 20.6 | PASS | runtime_get_node_state: class=CharacterBody2D, speed=100 |
+| 20.10 | PASS | Autoload warning: "persists across scene transitions" |
+| 20.12 | PASS | runtime print("SV2_RUNTIME_SEED...") succeeded |
+| 20.13 | PASS | plain filter count=2 |
+| 20.14 | FAIL | regex \d+ double-escape transport issue (count=0). [0-9]+ works. PLATFORM limitation. |
+| 20.15 | PASS | literal parens match, count=2 |
+| 20.16 | PASS | INVALID_PARAMS for bad regex "(unclosed" |
+| 20.18 | PASS | get_tree().current_scene.name = "main" |
+| 20.19 | PASS | animation_player_control play sv2_lib/idle |
+| 20.20 | PASS | signal_emit runtime succeeded |
+| 20.21 | PASS | debugger_get_log returns entries |
+| 21.6 | PASS | count=0 for SV2_BROKEN, success=true, debug_state present |
+| 21.10 | PASS | error_buffer: type=log_scan, source=sv2_error_main.gd, function=_ready, line=6 |
+| 21.11 | PASS | text_filter=queue_free: count=1, error_buffer has full context |
+| 21.12 | PASS | NONEXISTENT filter: count=0 but error_buffer still present |
+| 21.13 | PASS | No-params golden path: lines + debug_state + error_buffer all present |
+
+## Agent-skipped Re-runs
+
+| Test | Status | Notes |
+|------|--------|-------|
+| 17.7 | PASS | include_properties=["position","visible"] — fields present on all results |
+| 18.8-9 | PASS | shader exists, material.tres loads with valid shader ref |
+| 18.10 | PASS | asset_import from res:// source, status=created |
+| 18.13 | PASS | folder_delete stale_tabs=2, scene_close both succeeded |
+| 18.14 | PASS | Last tab closed, engine auto-creates empty scene |
+| C1 | PASS | resource_write → resource_load(class=Environment) → resource_delete |
+| C2 | PASS | script_write(valid) → script_check(valid) → script_delete |
+| C3 | PASS | scene create → open → create_node → set_property → verify → save → delete |
+| C4 | PASS | signal connect → save → reopen → verify persist → disconnect |
+| C5 | PASS | build scene → run → debugger_get_log "C5_LIFECYCLE_OK" → stop → cleanup |
+| C6 | PASS | tileset_create → tileset_edit terrain → TileMapLayer → tilemap_set_cells (9 cells) |
+| C7 | PASS | script_write(indexed=true) → script_check passes immediately (no refresh) |
+| C8 | PASS | duplicate → rename → reparent → groups add/list/remove |
+| C9 | PASS | batch instantiate 3 copies, rotation=1.57 confirmed |
+| C10 | PASS | keyword search activates groups, reset=true/[] works |
+| C11 | PASS | editor_refresh targeted mode, file_count=1 |
+| C12 | PASS | folder_delete with open tabs, stale_tabs handled |
+| C27 | PASS | Godot 4.5: scene_close visible and functional |
+| C28 | PASS | FULL_RECT anchor_right=1.0, CENTER anchor_left=0.5 |
+| S24 | SKIP | extensions_refresh doesn't trigger runtime discovery; requires plugin restart |
+| 26.3 | PASS | shader diagnostics returned (LSP parses it) |
+| 26.5 | PASS | UNSUPPORTED_FILE_TYPE for .cpp |
+| 26.6 | PASS | INVALID_PATH for absolute path |
+| 26.7 | PASS | UNSUPPORTED_FILE_TYPE for .cs (mentions C#/.NET) |
+| 26.9 | PASS | symbols: 1 entry (implicit class) for minimal script |
+| 26.10 | PASS | shader symbols returned (empty — expected) |
+| 26.12 | PASS | hover on speed: shows "float" |
+| 26.13 | PASS | hover on take_damage: function signature |
+| 26.14 | PASS | empty line: contents empty, no crash |
+| 26.15 | PASS | completions non-empty, count=10 (default limit) |
+| 26.16 | PASS | limit=3 respected |
+| 26.18 | PASS | damage_taken emit → definition at signal decl (line 6) |
+| 26.19 | PASS | Node2D engine class → definition=[] |
+| 26.20 | PASS | damage_taken references: 2 entries |
+| 26.21 | PASS | health references: 3 entries |
+| 26.22 | PASS | LSP works immediately without editor_refresh |
+| 26.23 | PASS | Fresh file after write: diagnostics=[] |
+| C24 | PASS | broken → diagnose(7 errors) → fix → diagnose(clean) |
+| C25 | PASS | symbols show take_damage start_line=11, definition confirms |
+| 27.3 | PASS | Second breakpoint line 9 set |
+| 27.6 | PASS | After clearing line 6, only line 9 remains |
+| 27.7 | PASS | Line 9 cleared |
+| 27.8 | PASS | No breakpoints remain |
+| 27.10 | PASS | UNSUPPORTED_FILE_TYPE for .txt |
+| 27.11 | PASS | INVALID_PATH for absolute path |
+| 27.13 | PASS | INVALID_PARAMS "line must be >= 1" |
+| 27.14 | PASS | INVALID_PARAMS "exceeds file length" |
+| 27.16 | PASS | NOT_BREAKED when game running but not paused |
+| C26 | PASS | set BP → start → breaked=true → continue → breaked=false → stop → active=false |
+
+## Summary
+
+| Category | Passed | Failed | Skipped |
+|----------|--------|--------|---------|
+| FAIL re-verification | 11 | 1 | 0 |
+| Gate-blocked re-runs | 34 | 1 | 0 |
+| Agent-skipped re-runs | 30 | 0 | 9 (S24 extensions) |
+| **Total** | **75** | **2** | **9** |
+
+### Remaining Failures
+
+1. **S3.8 — Compound path SET** (colon-chain `material:shader_parameter/brightness`): SET reports success but value doesn't change. The fix (9c3295c) is not effective for this case. GET returns the original resource value (0.75). Root cause: SET may be writing to a transient copy rather than the persisted sub-resource.
+
+2. **S20.14 — Regex `\d+` double-escape** (PLATFORM limitation): MCP JSON transport double-escapes backslashes. `\d` arrives as literal `\d` instead of regex metacharacter. `[0-9]+` works as equivalent. Tool provides helpful warning. Not a toolkit bug.
+
+### Fixes Verified Working
+
+- **Gate desync** ✅ — All 3 gates (execute_code, node_call_method, user_scope) functional
+- **JSON string coercion** ✅ — All 11 previously-failing tests now pass (offset, layers, volume_db, effect, animations, index, outlines, points)
+- **Compound path SET** ❌ — Still failing (reports success, value unchanged)

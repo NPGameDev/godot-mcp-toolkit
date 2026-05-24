@@ -240,7 +240,13 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 		if typeof(coerced) == TYPE_DICTIONARY \
 				and (coerced as Dictionary).has("_coerce_error"):
 			return McpError.make("INVALID_VALUE", str(coerced["_coerce_error"]))
-		target.set(final_prop, coerced)
+		# ShaderMaterial shader_parameter/ prefix needs set_shader_parameter()
+		# — the generic set() path doesn't persist the value.
+		if final_prop.begins_with("shader_parameter/") and target is ShaderMaterial:
+			var param_name := final_prop.trim_prefix("shader_parameter/")
+			(target as ShaderMaterial).set_shader_parameter(param_name, coerced)
+		else:
+			target.set(final_prop, coerced)
 		# Readback verification — compound set() can silently fail
 		# (e.g. AnimationPlayer libraries/ with external Resource refs).
 		var readback = target.get(final_prop)
