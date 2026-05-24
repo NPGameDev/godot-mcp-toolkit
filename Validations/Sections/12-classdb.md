@@ -2,7 +2,7 @@
 
 **Dependencies:** None
 **Tools tested:** classdb_search, classdb_get_info
-**Tests:** 4
+**Tests:** 7
 
 ---
 
@@ -17,6 +17,17 @@
 
 **12.4** `classdb_get_info` — class_name=`NonExistentClass12345`
 - **Expect:** NOT_FOUND or empty response
+
+## Offset Pagination (41l — W1 Lane 2)
+
+**12.5** `classdb_get_info` — class_name=`Node2D`, offset=0
+- **Expect:** success, response includes `properties_total`, `methods_total`, `signals_total`, `constants_total` fields (integer counts). Properties/methods arrays are the first page (limited by internal cap).
+
+**12.6** `classdb_get_info` — class_name=`Node2D`, offset=20
+- **Expect:** success, properties array starts from item 21 (0-indexed offset=20). Totals unchanged from 12.5. If truncated, hint suggests next offset value.
+
+**12.7** `classdb_search` — pattern=`Control`, offset=5
+- **Expect:** success, `total` field shows full match count, results array starts from 6th match. If total > results.size() + offset, hint suggests next offset.
 
 ---
 

@@ -1,9 +1,9 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-05-18
-**Toolkit commit:** T:dec5b24 (+ 41l-quater-bis pending)
-**Total tools:** 115 (93 editor-side + 6 LSP + 4 debugger + 12 runtime)
-**Sweep test count:** ~230 numbered test cases + 26 combo chains + C# phase + extension phase
+**Last updated:** 2026-05-24
+**Toolkit commit:** T:ffe7a13 (41l-duodecies sweep catchup)
+**Total tools:** 117 (93 editor-side + 2 new + 6 LSP + 4 debugger + 12 runtime)
+**Sweep test count:** ~268 numbered test cases + 28 combo chains + C# phase + extension phase
 
 ---
 
@@ -15,7 +15,7 @@
 |---|---|---|---|---|---|---|
 | scene.create | 7, 8 | — | C3, C5, C8, C13, C18, C19 | — | — | |
 | scene.open | 18, 64a, 64d, 64f | — | C3, C7, C8 | — | — | |
-| scene.close | 18.3, 18.14, 64b, 64f | ✓ (non-active, last tab) | C3, C7 | ✓ (_set_main_scene_state hint) | — | 4.5+ only |
+| scene.close | 18.3, 18.14, 64b, 64f | ✓ (non-active, last tab) | C3, C7, C27 | ✓ (_set_main_scene_state hint) | — | 4.5+ only (version-gated via min_godot_version) |
 | scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3, C18 | ✓ (tab_closed, phantom warning) | — | |
 | scene.create_node | 20–26, 64h | ✓ (C22: CLASS_MISMATCH) | C5, C8, C10, C19 | ✓ (preload, unique_name) | FIX-G (P6), cb4e162 | **GAP:** unique_name param untested |
 | scene.delete_node | 43j, 43s, 64i | — | C19 | — | — | |
@@ -25,7 +25,7 @@
 | scene.query | 83a–83j | ✓ (no filters, NOT_FOUND) | — | — | — | |
 | scene.get_tree | 19, 43, 43e, 43r | — | C8, C19, C20 | — | — | |
 
-### Node Property & Method (8 tools)
+### Node Property & Method (9 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
@@ -37,6 +37,7 @@
 | node.manage | 43a–43j | ✓ (43h2: properties) | C19 | — | FIX-K | |
 | node.groups | 43k–43l | — | C19 | — | 462506b | **GAP:** batch mode untested |
 | node.collision_from_sprite | 78a–78d | ✓ (INVALID_CLASS) | — | — | — | |
+| control.set_layout | 3.24–3.26 | ✓ (3.27: invalid preset, 3.28: wrong class) | C28 | — | 4d7e432 | W1 Lane 2 |
 
 ### Script Management (4 tools)
 
@@ -102,8 +103,8 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| classdb.get_info | 10 | — | — | — | — | |
-| classdb.search | 9 | — | — | — | — | |
+| classdb.get_info | 10, 12.5, 12.6 | — | — | ✓ (truncation hint) | 45975fc | Offset pagination (W1) |
+| classdb.search | 9, 12.7 | — | — | ✓ (pagination hint) | 45975fc | Offset pagination (W1) |
 
 ### Signal Management (3 tools)
 
@@ -145,11 +146,12 @@
 | animation.get_keys | 53 | — | C9 | — | — | |
 | animationtree.edit | 54m–54s | ✓ (54s: INVALID_CLASS) | — | — | — | |
 
-### TileMap (3 tools)
+### TileMap (4 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | tilemap.set_cells | 54 | — | C10 | — | FIX-A, FIX-J | **GAP:** regions param, no-tileset rejection |
+| tilemap.read_cells | 14.15–14.16 | ✓ (14.17: NOT_FOUND, 14.18: wrong class, 14.19: missing param) | — | — | c7f56c8 | W1 Lane 2, read-only |
 | tileset.create | 54a, 54b | ✓ (54b: NOT_FOUND) | C10 | — | FIX-I | **GAP:** type validation |
 | tileset.edit | 54c–54j | ✓ (54j: invalid coords) | — | — | FIX-2 | **GAP:** layer validation guard |
 

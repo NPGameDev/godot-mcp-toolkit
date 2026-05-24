@@ -1,8 +1,8 @@
 # Section 3 — Node Properties & Methods
 
 **Dependencies:** Section 2 (nodes exist in main.tscn)
-**Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method
-**Tests:** 22
+**Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout
+**Tests:** 28
 
 ---
 
@@ -93,8 +93,29 @@
 **3.22** `node_get_property` — node_path=`Sv2Label`, property=`theme_override_font_sizes/font_size`
 - **Expect:** 24
 
+## control.set_layout (41l — W1 Lane 2)
+
+**3.23** Setup — `scene_create_node` node_type=`Control`, node_name=`Sv2LayoutTest`, parent_path=`.`
+- **Expect:** success
+
+**3.24** `control_set_layout` — node_path=`Sv2LayoutTest`, preset=`PRESET_FULL_RECT`
+- **Expect:** success, anchors set to full rect (0,0,1,1)
+
+**3.25** `control_set_layout` — node_path=`Sv2LayoutTest`, preset=`PRESET_CENTER`, resize_mode=`keep_size`
+- **Expect:** success
+
+**3.26** `control_set_layout` (with margins) — node_path=`Sv2LayoutTest`, preset=`PRESET_TOP_WIDE`, margins=`{"left":10,"right":10,"top":5,"bottom":0}`
+- **Expect:** success, margins applied
+
+**3.27** `control_set_layout` guard (invalid preset) — node_path=`Sv2LayoutTest`, preset=`INVALID_PRESET_NAME`
+- **Expect:** INVALID_PARAMS, error mentions valid preset names
+
+**3.28** `control_set_layout` guard (wrong node type) — node_path=`Sv2Sprite`, preset=`PRESET_FULL_RECT`
+- **Expect:** error (INVALID_CLASS or similar — Sprite2D is not a Control)
+
 ---
 
 ## Cleanup
 
-Delete temp node: `scene_delete_node` node_path=`Sv2RefTest`
+- `scene_delete_node` node_path=`Sv2RefTest`
+- `scene_delete_node` node_path=`Sv2LayoutTest`

@@ -15,6 +15,10 @@ jobs:
         include:
           - godot-version: "4.2.0"
             check-method: "check-only"
+          - godot-version: "4.3.0"
+            check-method: "check-only"
+          - godot-version: "4.4.0"
+            check-method: "check-only"
           - godot-version: "4.5.0"
             check-method: "editor"
           - godot-version: "4.6.2"
@@ -56,3 +60,6 @@ jobs:
             exit 1
           fi
           echo "GDScript validation passed (Godot ${{ matrix.godot-version }})"
+
+      - name: Run unit tests
+        run: timeout 30 godot --headless --script test/run_unit_tests.gd

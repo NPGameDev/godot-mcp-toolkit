@@ -2,8 +2,8 @@
 
 **Dependencies:** Section 1 (sv2_validation/ exists)
 **Tools tested:** discover_tools, extensions.refresh
-**Tests:** 7+
-**Note:** This section creates its own test extension — no pre-existing extensions required.
+**Tests:** 9+
+**Note:** This section creates its own test extensions — no pre-existing extensions required.
 
 ---
 
@@ -58,8 +58,8 @@ func register(registry) -> void:
 ## E1. extensions.list returns discovered commands
 
 Check extension visibility:
-- **Standard profile:** `discover_tools` (no params) — verify description lists `sv2_test_group` with 2 tools
-- **Power user:** Verify `sv2_ext.hello` and `sv2_ext.add` are directly callable
+- **Standard mode:** `discover_tools` (no params) — verify description lists `sv2_test_group` with 2 tools
+- **After activation:** Verify `sv2_ext.hello` and `sv2_ext.add` are directly callable
 - **Expect:** Extension commands appear with correct method names and descriptions
 
 ## E2. Extension group lazy-load (standard only)
@@ -108,9 +108,91 @@ Call `extensions.refresh` again (no changes made).
 3. Call `sv2_ext.hello` again — **Expect:** error (not crash), tool unavailable
 4. `extensions.refresh` — verify clean removal
 
+## E8. Extension annotation options (41l-nonis: timeout + read-only)
+
+1. `script_write` — file_path=`res://sv2_validation/sv2_ext_annotated.gd`, content:
+```gdscript
+@tool
+extends MCPToolkitExtension
+
+func register(registry) -> void:
+	registry.add("sv2_ext.slow", func(params: Dictionary) -> Dictionary:
+		OS.delay_msec(100)
+		return {"success": true, "result": "done"}
+	, {
+		"group": "sv2_annotated_group",
+		"description": "Slow tool with custom timeout",
+		"is_read_only": true,
+		"timeout_ms": 5000,
+		"input_schema": {"type": "object", "properties": {}}
+	})
+	registry.add("sv2_ext.writer", func(params: Dictionary) -> Dictionary:
+		return {"success": true, "wrote": true}
+	, {
+		"group": "sv2_annotated_group",
+		"description": "Mutation tool",
+		"is_read_only": false,
+		"input_schema": {"type": "object", "properties": {}}
+	})
+```
+2. `extensions.refresh`
+3. `discover_tools` groups=`["sv2_annotated_group"]`
+   - **Expect:** 2 tools activated
+4. Call `sv2_ext.slow` — **Expect:** success (completes within 5s timeout)
+5. Verify `sv2_ext.slow` is callable in read-only mode (it's marked `is_read_only: true`)
+6. Verify `sv2_ext.writer` is blocked in read-only mode (if read-only is active) or succeeds in standard mode
+7. Cleanup: `script_delete` res://sv2_validation/sv2_ext_annotated.gd, `extensions.refresh`
+
+## E9. Extension version bounds (41l-undecies)
+
+1. `script_write` — file_path=`res://sv2_validation/sv2_ext_versioned.gd`, content:
+```gdscript
+@tool
+extends MCPToolkitExtension
+
+func register(registry) -> void:
+	registry.add("sv2_ext.new_only", func(params: Dictionary) -> Dictionary:
+		return {"success": true}
+	, {
+		"group": "sv2_versioned_group",
+		"description": "Only on Godot 4.5+",
+		"min_godot_version": "4.5",
+		"input_schema": {"type": "object", "properties": {}}
+	})
+	registry.add("sv2_ext.old_only", func(params: Dictionary) -> Dictionary:
+		return {"success": true}
+	, {
+		"group": "sv2_versioned_group",
+		"description": "Only on Godot <=4.4",
+		"max_godot_version": "4.4",
+		"input_schema": {"type": "object", "properties": {}}
+	})
+```
+2. `extensions.refresh`
+3. `discover_tools` groups=`["sv2_versioned_group"]`
+4. Check tool visibility against current Godot version:
+   - If Godot ≥ 4.5: `sv2_ext.new_only` available, `sv2_ext.old_only` hidden
+   - If Godot < 4.5: `sv2_ext.new_only` hidden, `sv2_ext.old_only` available
+5. Call the visible tool — **Expect:** success
+6. Call the hidden tool — **Expect:** error (method not found / not registered)
+7. Cleanup: `script_delete` res://sv2_validation/sv2_ext_versioned.gd, `extensions.refresh`
+
+---
+
+## Multi-Session Behavior Note (41l-decies)
+
+> **Concurrency documentation (not a test — verified by integration tests):**
+> When multiple MCP connections are active simultaneously, mutation commands
+> serialize across peers (queued FIFO). Read-only tools (including read-only
+> extension tools) bypass the lock. Queued entries for dead peers are skipped.
+> Agents see `_queued` / `_executing` notifications. This behavior is validated
+> by the post-merge integration test suite (41l-undecies-septies), not the sweep.
+
 ---
 
 ## Cleanup
 
 - `script_delete` res://sv2_validation/sv2_test_extension.gd (if still exists)
+- `script_delete` res://sv2_validation/sv2_ext_annotated.gd (if still exists)
+- `script_delete` res://sv2_validation/sv2_ext_versioned.gd (if still exists)
 - Call `discover_tools` with reset=true to deactivate all on-demand groups

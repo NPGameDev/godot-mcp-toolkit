@@ -1,8 +1,8 @@
 # Section 14 — TileSet & TileMap
 
 **Dependencies:** Section 2 (Sv2TileLayer exists in main.tscn)
-**Tools tested:** tileset_create, tileset_edit, tilemap_set_cells
-**Tests:** 14
+**Tools tested:** tileset_create, tileset_edit, tilemap_set_cells, tilemap_read_cells
+**Tests:** 19
 
 ---
 
@@ -63,6 +63,23 @@
 
 **14.14** `tileset_create` guard — file_path=`res://sv2_validation/bad_ts.tres`, texture_path=`res://nonexistent_texture.png`
 - **Expect:** NOT_FOUND
+
+## tilemap.read_cells (41l — W1 Lane 2, read-only tool)
+
+**14.15** `tilemap_read_cells` — node_path=`Sv2TileLayer`
+- **Expect:** success, returns array of cell data from the TileMapLayer. Each cell has at least `x`, `y`, `source_id`, `atlas_x`, `atlas_y` fields. Array may be empty if no cells painted, or non-empty if 14.11/14.12 ran first.
+
+**14.16** `tilemap_read_cells` — node_path=`Sv2TileLayer` (after 14.11/14.12 painted cells)
+- **Expect:** success, cells array includes at least one entry with source_id=0, atlas_x=0, atlas_y=0. Confirms round-trip: set_cells → read_cells.
+
+**14.17** `tilemap_read_cells` guard (invalid node) — node_path=`NonExistentNode999`
+- **Expect:** NOT_FOUND
+
+**14.18** `tilemap_read_cells` guard (wrong class) — node_path=`Sv2Sprite` (a Sprite2D, not TileMapLayer)
+- **Expect:** error (INVALID_CLASS or similar — node is not a TileMapLayer/TileMap)
+
+**14.19** `tilemap_read_cells` guard (missing param) — (no node_path)
+- **Expect:** INVALID_PARAMS, "missing node_path"
 
 ---
 
