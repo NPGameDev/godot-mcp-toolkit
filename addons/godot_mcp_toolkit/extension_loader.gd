@@ -210,6 +210,7 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	# extensions.list and extensions.changed — input_schema, annotations, etc.).
 	var methods := _registry.get_extension_methods()
 	var result: Array[Dictionary] = []
+	var grouped_keywords: PackedStringArray = []
 	for method: String in methods:
 		var meta := _registry.get_command_metadata(method)
 		var entry: Dictionary = {"method": method}
@@ -219,12 +220,23 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 			entry["input_schema"] = meta["input_schema"]
 		if not meta.get("annotations", {}).is_empty():
 			entry["annotations"] = meta["annotations"]
-		if not meta.get("group", {}).is_empty():
-			entry["group"] = meta["group"]
+		var group: Dictionary = meta.get("group", {})
+		if not group.is_empty():
+			entry["group"] = group
+			# Collect keywords for the activation hint.
+			for kw in group.get("keywords", []):
+				if str(kw) not in grouped_keywords:
+					grouped_keywords.append(str(kw))
 		if meta.has("timeout_ms"):
 			entry["timeout_ms"] = meta["timeout_ms"]
 		result.append(entry)
-	return {"success": true, "refreshed": true, "commands": result}
+	var response := {"success": true, "refreshed": true, "commands": result}
+	if not grouped_keywords.is_empty():
+		response["hint"] = (
+			"Some extension tools are in on-demand groups and need activation "
+			+ "before use. Call discover_tools(request: '%s') to load them."
+		) % ", ".join(grouped_keywords)
+	return response
 
 
 func on_filesystem_changed() -> void:
