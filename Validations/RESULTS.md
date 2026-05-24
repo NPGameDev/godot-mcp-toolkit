@@ -681,3 +681,64 @@ Skipped — delegated to separate agent.
 - **Compound path centralization (a694822):** Partially working. `theme_override_*` compound paths work correctly via `scene_create_node` and `scene_instantiate`. The `shader_parameter/` colon-chain path (`material:shader_parameter/brightness`) still fails — SET reports success but doesn't persist.
 - **set_shader_parameter fix (48397e4):** Not effective for the colon-chain SET case. The fix may only apply to direct `shader_parameter/` paths, not when chained through `:` sub-resource resolution.
 - **extensions_refresh scan() fix (8d2a265):** Fully working. New extension scripts are discovered without editor restart.
+
+---
+
+# W2 Merge Final Validation (2026-05-24)
+
+- **Context:** Re-validates compound path SET fixes and compound path routing through scene_create_node / scene_instantiate after editor restart with latest toolkit code
+- **Editor restarted:** Yes (user confirmed)
+- **S24/S25 skipped:** Per user instruction
+
+## S3.8 — Compound path shader_parameter SET (re-test)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| Setup | PASS | Sprite2D + ShaderMaterial + shader (brightness=0.75) scaffolded |
+| GET initial | PASS | `material:shader_parameter/brightness` = 0.75 |
+| SET 0.3 | PASS | Reports success=true |
+| GET verify | **FAIL** | Returns 0.75, not 0.3. SET did not persist. |
+
+**Result: FAIL** — Same behavior as all prior runs. SET reports success but value unchanged.
+
+## S1b — Compound path SET via scene_create_node inline properties
+
+| Step | Status | Notes |
+|------|--------|-------|
+| Create Label with inline `theme_override_colors/font_color` | PASS | status=created |
+| GET `theme_override_colors/font_color` | PASS | Color(1, 0, 0, 1) — correct |
+
+**Result: PASS** — Centralized `set_property_compound` works for `scene_create_node` inline properties.
+
+## S1c — Compound path SET via scene_instantiate properties
+
+| Step | Status | Notes |
+|------|--------|-------|
+| Create label_scene.tscn (Label root) | PASS | status=created |
+| Instantiate with `theme_override_font_sizes/font_size: 32` | PASS | status=created |
+| GET `theme_override_font_sizes/font_size` | PASS | Returns 32 — correct |
+
+**Result: PASS** — Centralized `set_property_compound` works for `scene_instantiate` properties.
+
+## S24 — Extension Discovery
+
+SKIP — Per user instruction.
+
+## S25 — Cleanup
+
+SKIP — Per user instruction.
+
+## Summary
+
+| Item | Result |
+|------|--------|
+| S3.8 — shader_parameter compound SET | **FAIL** |
+| S1b — scene_create_node inline compound | PASS |
+| S1c — scene_instantiate compound | PASS |
+| S24 — Extension discovery | SKIP |
+| S25 — Cleanup | SKIP |
+
+### Verdict
+
+- **Compound path centralization:** Working for `theme_override_*` paths via both `scene_create_node` and `scene_instantiate`. The colon-chain `material:shader_parameter/brightness` SET remains broken — reports success but writes to a transient copy, not the persisted sub-resource.
+- **Remaining issue:** `set_shader_parameter()` fix does not activate for colon-chain paths. The `:` sub-resource resolution resolves the material, then attempts a generic `set()` on it with the `shader_parameter/brightness` suffix, bypassing the `set_shader_parameter()` codepath.
