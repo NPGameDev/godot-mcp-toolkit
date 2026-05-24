@@ -19,6 +19,10 @@ dist-plugin/
 # and test/eval/). Broad pattern catches crash-leftover files at repo root.
 /smoke*
 /eval_*
+/mcp_smoke_*
+
+# Engine-generated audio bus layout (recreated from ProjectSettings on load)
+/default_bus_layout.tres
 
 # OS / shell crash artifacts
 *.stackdump
