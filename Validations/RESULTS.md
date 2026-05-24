@@ -611,3 +611,73 @@ All cleanup completed. Project state fully restored.
 - **Gate desync** ✅ — All 3 gates (execute_code, node_call_method, user_scope) functional
 - **JSON string coercion** ✅ — All 11 previously-failing tests now pass (offset, layers, volume_db, effect, animations, index, outlines, points)
 - **Compound path SET** ❌ — Still failing (reports success, value unchanged)
+
+---
+
+# Final Validation (2026-05-24) — W2 Merge Pre-merge
+
+- **Context:** Validates fixes from commits a694822 (centralize compound path SET) and 48397e4 (set_shader_parameter for shader_parameter/ paths), plus extensions_refresh scan() fix (8d2a265)
+- **Editor restarted:** Yes (user confirmed)
+
+## S3.8 — Compound path shader_parameter SET (re-test)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| Setup | PASS | Sprite2D + ShaderMaterial + shader (brightness=0.75) scaffolded |
+| GET initial | PASS | `material:shader_parameter/brightness` = 0.75 |
+| SET 0.3 | PASS | Reports success=true |
+| GET verify | **FAIL** | Returns 0.75, not 0.3. SET did not persist. |
+
+**Result: FAIL** — Same behavior as prior run. SET reports success but value unchanged.
+
+## S1b — Compound path SET via scene_create_node inline properties
+
+| Step | Status | Notes |
+|------|--------|-------|
+| Create Label with inline `theme_override_colors/font_color` | PASS | status=created |
+| GET `theme_override_colors/font_color` | PASS | Color(1, 0, 0, 1) — correct |
+
+**Result: PASS** — Centralized `set_property_compound` works for `scene_create_node` inline properties.
+
+## S1c — Compound path SET via scene_instantiate properties
+
+| Step | Status | Notes |
+|------|--------|-------|
+| Create label_scene.tscn (Label root) | PASS | status=created |
+| Instantiate with `theme_override_font_sizes/font_size: 32` | PASS | status=created |
+| GET `theme_override_font_sizes/font_size` | PASS | Returns 32 — correct |
+
+**Result: PASS** — Centralized `set_property_compound` works for `scene_instantiate` properties.
+
+## S24 — Extension Discovery (full lifecycle)
+
+| Step | Status | Notes |
+|------|--------|-------|
+| EXT-S1: Write MCPToolkitSv2Test extension | PASS | valid=true, 0 diagnostics |
+| EXT-S2: extensions_refresh | PASS | 1 command discovered (sv2_ext.hello) |
+| EXT-S3: Call sv2_ext.hello | PASS | Returns `{"success":true,"message":"Hello, world!"}` |
+| EXT-S4: discover_tools sv2 | PASS | sv2_test_group activated with 1 tool |
+| EXT-S5: Delete script + extensions_refresh | PASS | commands=0, extension removed |
+| EXT-S6: Verify tool removed | PASS | Tool no longer callable (No such tool) |
+
+**Result: PASS** — Full extension lifecycle works. `scan()` fix (8d2a265) enables discovery of new files.
+
+## S25 — Cleanup
+
+Skipped — delegated to separate agent.
+
+## Summary
+
+| Item | Result |
+|------|--------|
+| S3.8 — shader_parameter compound SET | **FAIL** |
+| S1b — scene_create_node inline compound | PASS |
+| S1c — scene_instantiate compound | PASS |
+| S24 — Extension discovery lifecycle | PASS (all 6 steps) |
+| S25 — Cleanup | SKIPPED (delegated) |
+
+### Verdicts
+
+- **Compound path centralization (a694822):** Partially working. `theme_override_*` compound paths work correctly via `scene_create_node` and `scene_instantiate`. The `shader_parameter/` colon-chain path (`material:shader_parameter/brightness`) still fails — SET reports success but doesn't persist.
+- **set_shader_parameter fix (48397e4):** Not effective for the colon-chain SET case. The fix may only apply to direct `shader_parameter/` paths, not when chained through `:` sub-resource resolution.
+- **extensions_refresh scan() fix (8d2a265):** Fully working. New extension scripts are discovered without editor restart.
