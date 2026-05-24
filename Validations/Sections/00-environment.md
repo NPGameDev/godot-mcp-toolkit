@@ -15,13 +15,13 @@ Before running any test, gather project context. Record these in your report hea
 
 **0.2** Call `asset_list` with folder_path=`res://` — scan for `.csproj` or `.cs` files. If found alongside the dotnet setting, confirm **C# project**. Otherwise, **GDScript project**.
 
-**0.3** Check available tools — attempt to list tools or check if `execute_code` is available:
-- If `execute_code` and `node_call_method` are available: **power_user** profile
-- If tools are missing: note the profile. Suggest the user switch to `power_user` for a complete sweep. Ask how to proceed:
-  - (A) Skip gated/unavailable tools
-  - (B) Wait for user to enable them
-  - (C) Switch to power_user profile
-- If tool groups need loading (non-power_user), call `discover_tools` with groups: `["runtime_advanced", "signals", "animation_authoring", "input_map", "asset_management", "user_data", "scene_advanced", "editor_advanced", "tilemap", "theme", "node_management"]`
+**0.3** Check operating mode and available tools:
+- Call `discover_tools` (no params) — check if gate state is **standard** (full access) or **read-only** (mutations blocked).
+- If read-only: note that mutation tests will fail. Ask how to proceed:
+  - (A) Skip mutation sections, run read-only tests only
+  - (B) Wait for user to switch to standard mode
+- If standard mode, activate all on-demand groups: `discover_tools` with groups: `["runtime_advanced", "signals", "animation_authoring", "input_map", "asset_management", "user_data", "scene_advanced", "editor_advanced", "tilemap", "theme", "node_management"]`
+- Verify `execute_code` and `node_call_method` are available (confirms standard mode)
 
 **0.4** If C# project detected, call `editor_get_console` with level_filter `["error"]` — check for C# build errors. If present, warn the user that C# scripts may not work correctly until the solution is built.
 
@@ -32,7 +32,19 @@ Before running any test, gather project context. Record these in your report hea
 | scene_close | No | No | No | Yes (active tab only) |
 | Logger API (buffer source) | File-dependent | File-dependent | File-dependent | Yes |
 
-Record: `Godot X.Y | GDScript or C# | Profile | Main scene`
+Record: `Godot X.Y | GDScript or C# | Mode (standard/read-only) | Main scene`
+
+**0.6** Detect version-gated tools:
+- From the `discover_tools` response or tool list, check for `scene.close` visibility:
+  - **Godot 4.5+:** `scene.close` should be available (registered with `min_godot_version: "4.5"`)
+  - **Godot 4.2–4.4:** `scene.close` should NOT appear in the tool list
+- If version info is available in `project_get_settings` features, cross-reference: the tool visibility must match the detected version.
+
+**0.7** Detect extension version bounds:
+- If any extensions are loaded with `min_godot_version` or `max_godot_version` annotations, verify:
+  - Tools outside the current Godot version range are hidden from the tool list
+  - Tools within range are visible
+- **Note:** This test is informational — if no version-bounded extensions exist, record "N/A" and move on. The version-gate mechanism is verified by `scene.close` behavior above.
 
 ---
 

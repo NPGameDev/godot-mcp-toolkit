@@ -3,7 +3,7 @@
 **Dependencies:** Section 2 (main.tscn open with nodes)
 **Tools tested:** execute_code (editor context)
 **Tests:** 8
-**Gate:** Skip entire section if execute_code is unavailable (not power_user)
+**Gate:** Skip entire section if execute_code is unavailable (read-only mode)
 
 ---
 

@@ -4,8 +4,8 @@
 
 The sweep currently covers all behavior up to and including:
 
-**Toolkit repo:** `dec5b24` (feat(plugin): editor-side runtime log cache for post-crash debugger_get_log)
-**Date:** 2026-05-16
+**Toolkit repo:** `ffe7a13` (test(toolkit): add headless unit test infrastructure)
+**Date:** 2026-05-24
 
 When updating the sweep, run `git log --oneline <this SHA>..HEAD` to find commits that need new test coverage. After updating, bump this SHA to the latest commit included.
 

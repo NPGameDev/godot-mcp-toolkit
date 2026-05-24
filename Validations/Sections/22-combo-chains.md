@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (sv2_validation/ exists, main.tscn with nodes)
 **Tools tested:** Multi-tool workflows testing interoperability
-**Tests:** 12 chains (each self-contained with own setup and cleanup)
+**Tests:** 14 chains (each self-contained with own setup and cleanup)
 
 ---
 
@@ -51,7 +51,7 @@
 `scene_instantiate` batch — scene_path=res://sv2_validation/sub.tscn, instances=[{name:"C9A",position:{x:0,y:0}},{name:"C9B",position:{x:100,y:0},rotation:1.57},{name:"C9C",position:{x:200,y:0},scale:{x:0.5,y:0.5}}] → `scene_get_tree` (verify all 3) → `node_get_property` C9B rotation (verify ≈1.57) → cleanup (`scene_delete_node` C9A, C9B, C9C)
 - **Expect:** batch with distinct transforms applied correctly
 
-## C10. discover_tools & keyword search (standard profile only)
+## C10. discover_tools & keyword search (standard mode)
 
 Run discover_tools queries:
 1. request="animation" → animation_authoring activated
@@ -89,6 +89,22 @@ Run discover_tools queries:
 
 `folder_create` (res://sv2_validation/c12_tabs/) → `scene_create` (res://sv2_validation/c12_tabs/tabA.tscn) → `scene_create` (res://sv2_validation/c12_tabs/tabB.tscn) → `scene_open` tabA → `scene_open` tabB → `scene_open` main.tscn (ensure outside scene active) → `folder_delete` (res://sv2_validation/c12_tabs/, recursive=true)
 - **Expect:** no PATH_IN_USE errors, folder deleted successfully
+
+## C27. Version-gate tool visibility (41l-undecies)
+
+1. `project_get_settings` — extract Godot version from `application/config/features`
+2. `discover_tools` (no params) — get full tool catalog
+3. Check `scene.close` visibility:
+   - If Godot ≥ 4.5: `scene.close` MUST appear in catalog
+   - If Godot < 4.5: `scene.close` MUST NOT appear
+4. If Godot ≥ 4.5: call `scene_close` on a non-active tab → **Expect:** success
+5. If Godot < 4.5: call `scene_close` → **Expect:** UNSUPPORTED error mentioning "4.5+"
+- **Expect:** Tool visibility matches Godot version, no phantom tools
+
+## C28. control.set_layout round-trip (41l — W1 Lane 2)
+
+`scene_create` (res://sv2_validation/c28_layout.tscn, Control, "C28Root") → `scene_open` → `scene_create_node` (Button, "C28Btn", parent=".") → `control_set_layout` (node_path="C28Btn", preset="PRESET_FULL_RECT") → `node_get_property` (C28Btn, "anchor_right") → verify anchor_right=1.0 → `control_set_layout` (node_path="C28Btn", preset="PRESET_CENTER", resize_mode="keep_size") → `node_get_property` (C28Btn, "anchor_left") → verify anchor_left=0.5 → `scene_open` main.tscn → `scene_delete` c28_layout.tscn
+- **Expect:** Layout presets correctly set anchors and readback confirms
 
 ---
 
