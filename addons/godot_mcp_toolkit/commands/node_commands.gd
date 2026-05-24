@@ -229,14 +229,17 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 					return McpError.make("NOT_FOUND",
 						"sub-resource '%s' is null on %s" % [parts[i], node_path])
 				target = sub
-		# Coerce against the resolved target and final property, not the
-		# full compound path on the root node (fixes GET/SET asymmetry).
-		var coerce_result := Helpers.coerce_for_property(target, final_prop, raw_value)
-		if not coerce_result.get("ok", false):
-			return McpError.make(
-				coerce_result.get("code", "INVALID_VALUE"),
-				str(coerce_result.get("error", "")))
-		var coerced = coerce_result["value"]
+		# Coerce the value directly — skip _has_property check because
+		# compound sub-paths (e.g. shader_parameter/brightness) may not
+		# appear in get_property_list() but are valid via _set()/_get().
+		# Resource path validation still runs; readback catches silent failures.
+		var missing := Coerce.check_resource_paths(raw_value)
+		if missing != "":
+			return McpError.make("LOAD_FAILED", "resource not found: %s" % missing)
+		var coerced = Coerce.coerce_value(raw_value)
+		if typeof(coerced) == TYPE_DICTIONARY \
+				and (coerced as Dictionary).has("_coerce_error"):
+			return McpError.make("INVALID_VALUE", str(coerced["_coerce_error"]))
 		target.set(final_prop, coerced)
 		# Readback verification — compound set() can silently fail
 		# (e.g. AnimationPlayer libraries/ with external Resource refs).
