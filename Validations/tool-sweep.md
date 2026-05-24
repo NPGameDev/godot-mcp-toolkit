@@ -5,9 +5,22 @@ A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all
 ## How to Use
 
 - **Full sweep:** Tell the agent: "Run the full tool sweep from `Validations/tool-sweep.md`." Read this index, then execute each section file sequentially.
-- **Section-only:** Tell the agent: "Run sections 3, 7, 14 from the tool sweep." The agent reads only the relevant `Sections/XX-*.md` files. Each section is self-contained with setup/cleanup.
+- **Section-only (targeted):** Tell the agent: "Run sections 3, 7, 14 from the tool sweep." The agent reads only the relevant `Sections/XX-*.md` files. Each section is self-contained with setup/cleanup.
 - **Cleanup only:** Tell the agent: "Run section 25 (Global Cleanup) from the tool sweep."
 - **Artifacts:** All test files use prefix `sv2_` and live under `res://sv2_validation/`. Nothing touches existing project files except temporary `project_set_setting` changes restored in cleanup.
+
+### Completeness Rule
+
+**During a full sweep, ALL sections and ALL test cases within each section
+are mandatory.** Do not skip sections or individual tests based on
+assumptions about speed, redundancy with individual-tool tests, or time
+pressure. Combo chains test tool *interactions* that isolated tests cannot
+catch. Extension tests validate the lazy-loading lifecycle. Guard tests
+verify error contracts. Every test exists for a reason.
+
+**Exception:** Targeted runs (section-only mode) may run a subset of
+sections — this is explicitly directed by the user/prompt, not an agent
+decision. Within each requested section, all tests are still mandatory.
 
 ## Prerequisites
 

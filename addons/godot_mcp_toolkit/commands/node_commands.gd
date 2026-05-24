@@ -210,20 +210,13 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 					node.add_to_group(g, true)
 		return {"success": true, "groups": new_groups}
 
-	var coerce_result := Helpers.coerce_for_property(node, property_name, raw_value)
-	if not coerce_result.get("ok", false):
-		return McpError.make(
-			coerce_result.get("code", "INVALID_VALUE"),
-			str(coerce_result.get("error", "")))
-	var coerced = coerce_result["value"]
-
-	var old_value = node.get(property_name)
-
 	# Compound / colon-chained paths (e.g. "libraries/test",
 	# "material:shader_parameter/value", "theme_override_colors/font_color").
 	# ":" navigates sub-resources; "/" is a compound key inside _set/_get.
 	# UndoRedo can't serialize these reliably. Split on ":", navigate to the
 	# target object, then call set() with the final component intact.
+	# Detect compound paths BEFORE coercion — coerce_for_property checks
+	# _has_property on the node, but compound props live on sub-resources.
 	if ":" in property_name or "/" in property_name:
 		var target: Object = node
 		var final_prop := property_name
@@ -236,6 +229,14 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 					return McpError.make("NOT_FOUND",
 						"sub-resource '%s' is null on %s" % [parts[i], node_path])
 				target = sub
+		# Coerce against the resolved target and final property, not the
+		# full compound path on the root node (fixes GET/SET asymmetry).
+		var coerce_result := Helpers.coerce_for_property(target, final_prop, raw_value)
+		if not coerce_result.get("ok", false):
+			return McpError.make(
+				coerce_result.get("code", "INVALID_VALUE"),
+				str(coerce_result.get("error", "")))
+		var coerced = coerce_result["value"]
 		target.set(final_prop, coerced)
 		# Readback verification — compound set() can silently fail
 		# (e.g. AnimationPlayer libraries/ with external Resource refs).
@@ -248,6 +249,15 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 				+ "(e.g. add_animation_library for AnimationPlayer)."
 			) % [_brief_value(readback), property_name]
 		return response
+
+	var coerce_result := Helpers.coerce_for_property(node, property_name, raw_value)
+	if not coerce_result.get("ok", false):
+		return McpError.make(
+			coerce_result.get("code", "INVALID_VALUE"),
+			str(coerce_result.get("error", "")))
+	var coerced = coerce_result["value"]
+
+	var old_value = node.get(property_name)
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
