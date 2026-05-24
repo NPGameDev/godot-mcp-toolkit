@@ -193,11 +193,16 @@ static func _arrays_equal(a: Array, b: Array) -> bool:
 
 func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	## Force a filesystem scan and immediate extension re-discovery.
+	## Uses scan() (not scan_sources()) so NEW files are discovered —
+	## scan_sources() only re-checks already-known resources.
 	var efs := EditorInterface.get_resource_filesystem()
-	efs.scan_sources()
-	# Wait for the scan to propagate (simple timer — filesystem_changed may
-	# not fire if no files actually changed, so a fixed wait is safest).
-	await _server.get_tree().create_timer(1.0).timeout
+	efs.scan()
+	# Wait for the full scan to complete (check is_scanning with a timeout
+	# rather than a fixed timer — scan() may take longer than 1s for large
+	# projects but finishes in <100ms for small ones).
+	var deadline := Time.get_ticks_msec() + 5000
+	while efs.is_scanning() and Time.get_ticks_msec() < deadline:
+		await _server.get_tree().create_timer(0.1).timeout
 	# Run rescan on the now-fresh class list (bypass debounce).
 	_debounce_pending = false
 	_do_rescan()
