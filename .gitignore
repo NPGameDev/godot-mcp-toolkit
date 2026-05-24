@@ -21,6 +21,9 @@ dist-plugin/
 /eval_*
 /mcp_smoke_*
 
+# Tool sweep validation artifacts (Validations/tool-sweep.md S1-S25)
+/sv2_validation/
+
 # Engine-generated audio bus layout (recreated from ProjectSettings on load)
 /default_bus_layout.tres
 
