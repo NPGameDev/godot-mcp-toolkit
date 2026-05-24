@@ -380,24 +380,30 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	# Pre-coerce inline properties before UndoRedo (validation only).
 	var properties_raw = parameters.get("properties", null)
-	var prop_coerced: Array = []  # [{name, value, old_value}]
+	var prop_coerced: Array = []  # [{name, value, old_value}] — simple props (UndoRedo-able)
+	var prop_compound: Array = []  # [{name, raw_value}] — compound paths (direct set)
 	var prop_failed: Array = []
 	if properties_raw != null and typeof(properties_raw) == TYPE_DICTIONARY:
 		for key in (properties_raw as Dictionary).keys():
 			var prop_name := str(key)
-			var result := Helpers.coerce_for_property(
-				instance, prop_name, properties_raw[key])
-			if result.get("ok", false):
-				prop_coerced.append({
-					"name": prop_name,
-					"value": result["value"],
-					"old_value": instance.get(prop_name),
-				})
+			# Compound paths (: or /) bypass coerce_for_property and use
+			# centralized set_property_compound (handles shader_parameter/ etc.)
+			if ":" in prop_name or "/" in prop_name:
+				prop_compound.append({"name": prop_name, "raw_value": properties_raw[key]})
 			else:
-				prop_failed.append({
-					"name": prop_name,
-					"error": str(result.get("error", "")),
-				})
+				var result := Helpers.coerce_for_property(
+					instance, prop_name, properties_raw[key])
+				if result.get("ok", false):
+					prop_coerced.append({
+						"name": prop_name,
+						"value": result["value"],
+						"old_value": instance.get(prop_name),
+					})
+				else:
+					prop_failed.append({
+						"name": prop_name,
+						"error": str(result.get("error", "")),
+					})
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
@@ -415,6 +421,12 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		instance.set_owner(root)
 		for prop in prop_coerced:
 			instance.set(prop["name"], prop["value"])
+
+	# Apply compound properties after node is in tree (can't go through UndoRedo).
+	for prop in prop_compound:
+		var result := Helpers.set_property_compound(instance, prop["name"], prop["raw_value"])
+		if not result.get("ok", false):
+			prop_failed.append({"name": prop["name"], "error": str(result.get("error", ""))})
 
 	# layout_mode: match Godot editor behavior for Control children of Containers.
 	# Default (-1) auto-detects: sets layout_mode=1 when parent is a Container.
@@ -604,10 +616,15 @@ static func _batch_instantiate(
 				instance.set(key, Coerce.coerce_value(inst_dict[key]))
 
 		# Apply arbitrary property overrides (e.g. exports like key_type).
+		# Compound paths (: or /) use the centralized handler.
 		var props = inst_dict.get("properties", null)
 		if typeof(props) == TYPE_DICTIONARY:
 			for key in (props as Dictionary).keys():
-				instance.set(str(key), Coerce.coerce_value(props[key]))
+				var prop_name := str(key)
+				if ":" in prop_name or "/" in prop_name:
+					Helpers.set_property_compound(instance, prop_name, props[key])
+				else:
+					instance.set(prop_name, Coerce.coerce_value(props[key]))
 
 		# FIX-9: Only set owner on instance root (same as single-instance path).
 		if undo_redo != null:

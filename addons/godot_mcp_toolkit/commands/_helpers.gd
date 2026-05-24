@@ -83,6 +83,58 @@ static func _detect_double_escaped_regex(pattern: String) -> String:
 	return ""
 
 
+## Coerce and set a property on a node, handling compound paths (: and /)
+## and dedicated setter APIs (shader_parameter/ on ShaderMaterial).
+## Returns {"ok": true} on success, {"ok": false, "code": ..., "error": ...} on failure.
+## Caller is responsible for UndoRedo wrapping if needed — this method does
+## a direct set() for compound paths (UndoRedo can't serialize them).
+static func set_property_compound(node: Object, property_name: String, raw_value: Variant) -> Dictionary:
+	var target: Object = node
+	var final_prop := property_name
+
+	# Navigate colon-separated sub-resources (e.g. material:shader_parameter/brightness)
+	if ":" in property_name:
+		var parts := property_name.split(":")
+		final_prop = parts[-1]
+		for i in range(parts.size() - 1):
+			var sub = target.get(parts[i])
+			if sub == null or not (sub is Object):
+				return {"ok": false, "code": "NOT_FOUND",
+					"error": "sub-resource '%s' is null on %s" % [parts[i], node.get_class()]}
+			target = sub
+
+	# Coerce value (skip _has_property — compound sub-paths like
+	# shader_parameter/brightness may not appear in get_property_list()
+	# but are valid via _set()/_get()).
+	var missing := Coerce.check_resource_paths(raw_value)
+	if missing != "":
+		return {"ok": false, "code": "LOAD_FAILED",
+			"error": "resource not found: %s" % missing}
+	var coerced = Coerce.coerce_value(raw_value)
+	if typeof(coerced) == TYPE_DICTIONARY \
+			and (coerced as Dictionary).has("_coerce_error"):
+		return {"ok": false, "code": "INVALID_VALUE",
+			"error": str(coerced["_coerce_error"])}
+
+	# Dedicated setter: ShaderMaterial.set_shader_parameter()
+	if final_prop.begins_with("shader_parameter/") and target is ShaderMaterial:
+		var param_name := final_prop.trim_prefix("shader_parameter/")
+		(target as ShaderMaterial).set_shader_parameter(param_name, coerced)
+	else:
+		target.set(final_prop, coerced)
+
+	# Readback verification — compound set() can silently fail
+	var readback = target.get(final_prop)
+	if readback == null and coerced != null:
+		return {"ok": false, "code": "SET_FAILED",
+			"error": "set() on '%s' reported no error but readback is null. "
+			% property_name
+			+ "The property may require a dedicated API (e.g. set_shader_parameter, "
+			+ "add_animation_library)."}
+
+	return {"ok": true, "value": coerced}
+
+
 ## Check whether a property name exists on an object instance.
 ## Uses get_property_list() which covers built-in, @export, and metadata.
 static func _has_property(obj: Object, property_name: String) -> bool:

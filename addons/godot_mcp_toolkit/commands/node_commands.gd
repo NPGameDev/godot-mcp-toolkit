@@ -215,49 +215,16 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	# ":" navigates sub-resources; "/" is a compound key inside _set/_get.
 	# UndoRedo can't serialize these reliably. Split on ":", navigate to the
 	# target object, then call set() with the final component intact.
-	# Detect compound paths BEFORE coercion — coerce_for_property checks
-	# _has_property on the node, but compound props live on sub-resources.
+	# Compound paths (: or /) use the centralized handler in _helpers.gd
+	# which handles sub-resource navigation, shader_parameter/ dedicated
+	# setter, value coercion, and readback verification.
 	if ":" in property_name or "/" in property_name:
-		var target: Object = node
-		var final_prop := property_name
-		if ":" in property_name:
-			var parts := property_name.split(":")
-			final_prop = parts[-1]
-			for i in range(parts.size() - 1):
-				var sub = target.get(parts[i])
-				if sub == null or not (sub is Object):
-					return McpError.make("NOT_FOUND",
-						"sub-resource '%s' is null on %s" % [parts[i], node_path])
-				target = sub
-		# Coerce the value directly — skip _has_property check because
-		# compound sub-paths (e.g. shader_parameter/brightness) may not
-		# appear in get_property_list() but are valid via _set()/_get().
-		# Resource path validation still runs; readback catches silent failures.
-		var missing := Coerce.check_resource_paths(raw_value)
-		if missing != "":
-			return McpError.make("LOAD_FAILED", "resource not found: %s" % missing)
-		var coerced = Coerce.coerce_value(raw_value)
-		if typeof(coerced) == TYPE_DICTIONARY \
-				and (coerced as Dictionary).has("_coerce_error"):
-			return McpError.make("INVALID_VALUE", str(coerced["_coerce_error"]))
-		# ShaderMaterial shader_parameter/ prefix needs set_shader_parameter()
-		# — the generic set() path doesn't persist the value.
-		if final_prop.begins_with("shader_parameter/") and target is ShaderMaterial:
-			var param_name := final_prop.trim_prefix("shader_parameter/")
-			(target as ShaderMaterial).set_shader_parameter(param_name, coerced)
-		else:
-			target.set(final_prop, coerced)
-		# Readback verification — compound set() can silently fail
-		# (e.g. AnimationPlayer libraries/ with external Resource refs).
-		var readback = target.get(final_prop)
-		var response := {"success": true}
-		if _is_compound_set_failure(coerced, readback):
-			response["warning"] = (
-				"set() reported no error but readback is %s for '%s'. "
-				+ "Use node_call_method with the type's dedicated API instead "
-				+ "(e.g. add_animation_library for AnimationPlayer)."
-			) % [_brief_value(readback), property_name]
-		return response
+		var result := Helpers.set_property_compound(node, property_name, raw_value)
+		if not result.get("ok", false):
+			return McpError.make(
+				result.get("code", "INVALID_VALUE"),
+				str(result.get("error", "")))
+		return {"success": true}
 
 	var coerce_result := Helpers.coerce_for_property(node, property_name, raw_value)
 	if not coerce_result.get("ok", false):
