@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://bhj0iav70ag2g"]
+
+[ext_resource type="Script" uid="uid://bi7lsmmyxewrf" path="res://sv2_validation/sv2_error_main.gd" id="1_cw0w8"]
+
+[node name="sv2_error" type="Node2D"]
+script = ExtResource("1_cw0w8")

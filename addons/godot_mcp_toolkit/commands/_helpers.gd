@@ -45,6 +45,44 @@ static func coerce_for_property(
 	return {"ok": true, "value": coerced}
 
 
+## Compile a regex text_filter. Returns [RegEx-or-null, error-or-null, warning].
+## Handles double-escaped metacharacters from MCP transport.
+static func compile_text_filter(parameters: Dictionary) -> Array:
+	var text_filter: String = str(parameters.get("text_filter", ""))
+	var is_regex: bool = bool(parameters.get("is_regex", false))
+	if text_filter == "" or not is_regex:
+		return [null, null, ""]
+	var regex := RegEx.new()
+	if regex.compile("(?i)" + text_filter) != OK:
+		var err := McpError.make("INVALID_PARAMS",
+			"text_filter is not a valid regex (is_regex=true). "
+			+ "To search for literal text, omit is_regex or set it to false. "
+			+ "For regex, check for unbalanced groups () [] or unescaped metacharacters.")
+		return [null, err, ""]
+	var warning := _detect_double_escaped_regex(text_filter)
+	return [regex, null, warning]
+
+
+## Detect likely double-escaped regex metacharacters.
+## Checks both single (\\d) and double (\\\\d) levels of over-escaping.
+static func _detect_double_escaped_regex(pattern: String) -> String:
+	for letter in ["d", "D", "w", "W", "s", "S", "b", "B"]:
+		if pattern.find("\\\\\\\\" + letter) >= 0:
+			return (
+				"Pattern contains '\\\\\\\\%s' (multiple layers of backslash escaping). "
+				+ "The regex metacharacter \\%s is over-escaped — use a POSIX "
+				+ "character class instead (e.g. [0-9] for \\d, [a-zA-Z0-9_] for \\w)."
+			) % [letter, letter, letter]
+		if pattern.find("\\\\" + letter) >= 0:
+			return (
+				"Pattern contains '\\\\%s' (literal backslash + '%s'). "
+				+ "If you meant the regex metacharacter \\%s, your backslash "
+				+ "is likely double-escaped. Use a POSIX character class instead "
+				+ "(e.g. [0-9] for \\d, [a-zA-Z0-9_] for \\w)."
+			) % [letter, letter, letter]
+	return ""
+
+
 ## Check whether a property name exists on an object instance.
 ## Uses get_property_list() which covers built-in, @export, and metadata.
 static func _has_property(obj: Object, property_name: String) -> bool:

@@ -11,13 +11,14 @@ config_version=5
 [application]
 
 config/name="Godot MCP Toolkit"
-run/main_scene="res://Main.tscn"
+run/main_scene="res://sv2_validation/main.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 config/icon="res://icon.svg"
 
 [autoload]
 
 MCPRuntimeServer="*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
+Sv2Global="*res://sv2_validation/sv2_autoload.gd"
 
 [editor_plugins]
 

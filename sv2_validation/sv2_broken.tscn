@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://blkjle056ncc2"]
+
+[ext_resource type="Script" uid="uid://dpwrvity3gha6" path="res://sv2_validation/sv2_broken_main.gd" id="1_hcjak"]
+
+[node name="sv2_broken" type="Node2D"]
+script = ExtResource("1_hcjak")

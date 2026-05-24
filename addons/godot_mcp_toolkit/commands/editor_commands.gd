@@ -433,39 +433,18 @@ static func _make_load_hint(code: String) -> String:
 # -- Helpers ------------------------------------------------------------------
 
 
-## Compile text_filter params into [text_filter, RegEx-or-null, error-or-null].
+## Compile text_filter params into [text_filter, RegEx-or-null, error-or-null, warning].
+## Delegates to Helpers.compile_text_filter for regex compilation + double-escape detection.
 static func _compile_text_filter(parameters: Dictionary) -> Array:
 	var text_filter: String = str(parameters.get("text_filter", ""))
 	var is_regex: bool = bool(parameters.get("is_regex", false))
-	if text_filter == "":
+	if text_filter == "" or not is_regex:
 		return [text_filter, null, null, ""]
-	if not is_regex:
-		return [text_filter, null, null, ""]
-	var regex := RegEx.new()
-	if regex.compile("(?i)" + text_filter) != OK:
-		var err := McpError.make("INVALID_PARAMS",
-			"text_filter is not a valid regex (is_regex=true). "
-			+ "To search for literal text, omit is_regex or set it to false. "
-			+ "For regex, check for unbalanced groups () [] or unescaped metacharacters.")
-		return ["", null, err, ""]
-	var warning := _detect_double_escaped_regex(text_filter)
-	return [text_filter, regex, null, warning]
-
-
-## Detect likely double-escaped regex metacharacters.
-## After JSON parsing, the string should contain single backslash sequences
-## like \d. If it contains \\d (two backslashes + letter), the caller
-## likely double-escaped and the regex won't match as intended.
-static func _detect_double_escaped_regex(pattern: String) -> String:
-	for letter in ["d", "D", "w", "W", "s", "S", "b", "B"]:
-		if pattern.find("\\\\" + letter) >= 0:
-			return (
-				"Pattern contains '\\\\%s' (literal backslash + '%s'). "
-				+ "If you meant the regex metacharacter \\%s, your backslash "
-				+ "is likely double-escaped. In JSON, use \"\\\\%s\" (one escaped "
-				+ "backslash), not \"\\\\\\\\%s\" (two)."
-			) % [letter, letter, letter, letter, letter]
-	return ""
+	var tf := Helpers.compile_text_filter(parameters)
+	# tf = [RegEx-or-null, error-or-null, warning]
+	if tf[1] != null:
+		return ["", null, tf[1], ""]
+	return [text_filter, tf[0], null, tf[2]]
 
 
 static func _godot_error_name(code: int) -> String:

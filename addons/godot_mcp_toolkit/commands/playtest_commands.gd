@@ -211,12 +211,11 @@ static func _cmd_game_stop(_parameters: Dictionary) -> Dictionary:
 static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	var limit: int = max(1, int(parameters.get("limit", 200)))
 	var text_filter: String = str(parameters.get("text_filter", ""))
-	var text_regex: RegEx = null
-	if text_filter != "" and parameters.get("is_regex", false):
-		text_regex = RegEx.new()
-		if text_regex.compile("(?i)" + text_filter) != OK:
-			return McpError.make("INVALID_PARAMS",
-				"text_filter is not a valid regex (is_regex=true).")
+	var tf := Helpers.compile_text_filter(parameters)
+	var text_regex: RegEx = tf[0]
+	if tf[1] != null:
+		return tf[1]
+	var regex_warning: String = tf[2]
 
 	# Auto-stop: if debug bridge says session is dead but editor still thinks
 	# game is running, stop it to clean up state and flush the log file.
@@ -308,6 +307,8 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	}
 	# Pass unfiltered lines so error scan always has full context.
 	_merge_debug_bridge_data(response, stripped_lines)
+	if not regex_warning.is_empty():
+		response["warning"] = regex_warning
 	return response
 
 

@@ -1,0 +1,8 @@
+[gd_resource type="ShaderMaterial" load_steps=2 format=3 uid="uid://dn2b1hxfpcrkj"]
+
+[ext_resource type="Shader" uid="uid://cjl8004tktprn" path="res://sv2_validation/shader.gdshader" id="1_13s6h"]
+
+[resource]
+shader = ExtResource("1_13s6h")
+shader_parameter/brightness = 0.75
+shader_parameter/tint = Color(1, 1, 1, 1)
