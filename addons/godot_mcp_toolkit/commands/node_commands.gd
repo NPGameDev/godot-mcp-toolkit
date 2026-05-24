@@ -133,21 +133,18 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 	if node == null:
 		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
 
-	# Handle colon-chained sub-resource paths (e.g. "material:shader_parameter/value").
-	# Object.get() doesn't interpret ":" — split manually and navigate.
-	var target: Object = node
-	var final_prop := property_name
+	# Compound paths (colon-chained sub-resource paths like
+	# "material:shader_parameter/value") use the centralized handler which
+	# tries node-level override first, then falls back to sub-resource read.
 	if ":" in property_name:
-		var parts := property_name.split(":")
-		final_prop = parts[-1]
-		for i in range(parts.size() - 1):
-			var sub = target.get(parts[i])
-			if sub == null or not (sub is Object):
-				return McpError.make("NOT_FOUND",
-					"sub-resource '%s' is null on %s" % [parts[i], node_path])
-			target = sub
+		var result := Helpers.get_property_compound(node, property_name)
+		if not result.get("ok", false):
+			return McpError.make(
+				result.get("code", "NOT_FOUND"),
+				str(result.get("error", "")))
+		return {"value": result["value"]}
 
-	return {"value": Coerce.serialize_value(target.get(final_prop))}
+	return {"value": Coerce.serialize_value(node.get(property_name))}
 
 
 static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
@@ -219,12 +216,19 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	# which handles sub-resource navigation, shader_parameter/ dedicated
 	# setter, value coercion, and readback verification.
 	if ":" in property_name or "/" in property_name:
-		var result := Helpers.set_property_compound(node, property_name, raw_value)
+		var do_unique := bool(parameters.get("make_unique", false))
+		var result := Helpers.set_property_compound(
+			node, property_name, raw_value, do_unique)
 		if not result.get("ok", false):
 			return McpError.make(
 				result.get("code", "INVALID_VALUE"),
 				str(result.get("error", "")))
-		return {"success": true}
+		var response := {"success": true}
+		if result.has("made_unique"):
+			response["made_unique"] = result["made_unique"]
+		if result.has("warning"):
+			response["warning"] = result["warning"]
+		return response
 
 	var coerce_result := Helpers.coerce_for_property(node, property_name, raw_value)
 	if not coerce_result.get("ok", false):
@@ -259,6 +263,8 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 
 
 ## FIX-7: Batch set multiple properties in one UndoRedo action.
+## Compound paths (: or /) bypass UndoRedo and use set_property_compound()
+## directly — UndoRedo can't serialize compound paths reliably.
 static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
@@ -283,6 +289,25 @@ static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
 		if node == null:
 			results.append({"node_path": np, "property": prop,
 				"success": false, "error": "node not found"})
+			continue
+
+		# Compound paths bypass UndoRedo — route through set_property_compound()
+		# which handles colon→slash conversion, sub-resource navigation, and
+		# readback verification (same pattern as scene_commands.gd:381-429).
+		if ":" in prop or "/" in prop:
+			var do_unique := bool(entry.get("make_unique", false))
+			var result := Helpers.set_property_compound(
+				node, prop, raw_val, do_unique)
+			if result.get("ok", false):
+				var res_entry := {"node_path": np, "property": prop, "success": true}
+				if result.has("made_unique"):
+					res_entry["made_unique"] = result["made_unique"]
+				if result.has("warning"):
+					res_entry["warning"] = result["warning"]
+				results.append(res_entry)
+			else:
+				results.append({"node_path": np, "property": prop,
+					"success": false, "error": str(result.get("error", ""))})
 			continue
 
 		var missing := Coerce.check_resource_paths(raw_val)
@@ -315,7 +340,19 @@ static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
 	if undo_redo != null:
 		undo_redo.commit_action()
 
-	return {"success": true, "results": results}
+	# Aggregate warnings for non-persisting external sub-resource mutations.
+	var non_persisting: PackedStringArray = []
+	for r in results:
+		if r.has("warning"):
+			non_persisting.append(str(r.get("property", "")))
+	var response := {"success": true, "results": results}
+	if non_persisting.size() > 0:
+		response["warning"] = (
+			"These compound paths were set on shared external sub-resources "
+			+ "and may not persist after save/reload: %s. " % ", ".join(non_persisting)
+			+ "Retry those entries with make_unique: true to auto-duplicate "
+			+ "them as inline copies that persist.")
+	return response
 
 
 static func _resolve_common_property_names(node: Object) -> Array[String]:

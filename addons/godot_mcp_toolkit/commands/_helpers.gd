@@ -85,27 +85,25 @@ static func _detect_double_escaped_regex(pattern: String) -> String:
 
 ## Coerce and set a property on a node, handling compound paths (: and /)
 ## and dedicated setter APIs (shader_parameter/ on ShaderMaterial).
-## Returns {"ok": true} on success, {"ok": false, "code": ..., "error": ...} on failure.
+## Returns {"ok": true, "value": <coerced>} on success,
+## {"ok": false, "code": ..., "error": ...} on failure.
 ## Caller is responsible for UndoRedo wrapping if needed — this method does
 ## a direct set() for compound paths (UndoRedo can't serialize them).
-static func set_property_compound(node: Object, property_name: String, raw_value: Variant) -> Dictionary:
-	var target: Object = node
-	var final_prop := property_name
-
-	# Navigate colon-separated sub-resources (e.g. material:shader_parameter/brightness)
-	if ":" in property_name:
-		var parts := property_name.split(":")
-		final_prop = parts[-1]
-		for i in range(parts.size() - 1):
-			var sub = target.get(parts[i])
-			if sub == null or not (sub is Object):
-				return {"ok": false, "code": "NOT_FOUND",
-					"error": "sub-resource '%s' is null on %s" % [parts[i], node.get_class()]}
-			target = sub
-
-	# Coerce value (skip _has_property — compound sub-paths like
-	# shader_parameter/brightness may not appear in get_property_list()
-	# but are valid via _set()/_get()).
+##
+## When make_unique is true and the target sub-resource is external (.tres),
+## it is automatically duplicated as an inline copy before setting.
+## This replicates the Inspector's "Make Unique" behavior.
+##
+## Path types:
+##   No colon  — set directly on node (slash paths handled by Godot's _set).
+##   Single :  — convert to / for node-level override (persists in .tscn).
+##   Multi :   — manual sub-resource navigation; inline OK, external rejected
+##              unless make_unique is set.
+static func set_property_compound(
+	node: Object, property_name: String, raw_value: Variant,
+	make_unique: bool = false,
+) -> Dictionary:
+	# --- Coerce (shared by all paths) ---
 	var missing := Coerce.check_resource_paths(raw_value)
 	if missing != "":
 		return {"ok": false, "code": "LOAD_FAILED",
@@ -116,37 +114,171 @@ static func set_property_compound(node: Object, property_name: String, raw_value
 		return {"ok": false, "code": "INVALID_VALUE",
 			"error": str(coerced["_coerce_error"])}
 
-	# Dedicated setter: ShaderMaterial.set_shader_parameter()
-	var is_shader_param := final_prop.begins_with("shader_parameter/") and target is ShaderMaterial
-	if is_shader_param:
-		var param_name := final_prop.trim_prefix("shader_parameter/")
-		(target as ShaderMaterial).set_shader_parameter(param_name, coerced)
-	else:
-		target.set(final_prop, coerced)
+	# --- No colon: set directly on node ---
+	if ":" not in property_name:
+		node.set(property_name, coerced)
+		return _check_set_readback(node, property_name, coerced, property_name)
 
-	# Readback verification — use the same API path as the setter.
-	var readback
-	if is_shader_param:
-		readback = (target as ShaderMaterial).get_shader_parameter(
-			final_prop.trim_prefix("shader_parameter/"))
-	else:
-		readback = target.get(final_prop)
+	var parts := property_name.split(":")
 
+	# --- Navigate sub-resource chain (all colon paths) ---
+	# For both single-colon and multi-colon, navigate to the target
+	# sub-resource. When make_unique is set, duplicate EACH external
+	# resource in the chain from the node down — this prevents
+	# accidentally modifying shared .tres resources at any level.
+	var target: Object = node
+	var made_unique: Array = []  # Track which resources were duplicated.
+	for i in range(parts.size() - 1):
+		var sub = target.get(parts[i])
+		if sub == null or not (sub is Object):
+			return {"ok": false, "code": "NOT_FOUND",
+				"error": "sub-resource '%s' is null on %s" % [parts[i], node.get_class()]}
+		if make_unique and sub is Resource \
+				and _is_external_resource(sub as Resource):
+			var old_path: String = (sub as Resource).resource_path
+			sub = (sub as Resource).duplicate()
+			target.set(parts[i], sub)
+			made_unique.append({
+				"property": parts[i],
+				"was": old_path,
+				"now": "inline",
+			})
+		target = sub
+
+	var final_prop := parts[-1]
+
+	# --- Single colon: try slash-path override first ---
+	if parts.size() == 2:
+		var slash_path := parts[0] + "/" + parts[1]
+
+		# Try 1: node-level override via slash path.
+		# Some node types (MeshInstance3D) handle slash-path _set() and
+		# persist the value as a node property in .tscn.
+		node.set(slash_path, coerced)
+		var readback = node.get(slash_path)
+		if readback != null:
+			var result := _check_set_readback_value(readback, coerced, property_name)
+			if not made_unique.is_empty():
+				result["made_unique"] = made_unique
+			return result
+
+	# --- Direct sub-resource mutation ---
+	# For single-colon when slash-path didn't work, and all multi-colon.
+	# Persists only for inline sub-resources (.tscn [sub_resource] section).
+	# External resources: in-memory only → warn.
+	_write_sub_property(target, final_prop, coerced)
+	var readback = _read_sub_property(target, final_prop)
+	var result := _check_set_readback_value(readback, coerced, property_name)
+	if not made_unique.is_empty():
+		result["made_unique"] = made_unique
+	if result.get("ok", false) \
+			and target is Resource \
+			and _is_external_resource(target as Resource):
+		result["warning"] = (
+			"Value was set on a shared external sub-resource in memory. "
+			+ "This change may not persist after save/reload. "
+			+ "Retry with make_unique: true to auto-duplicate all external "
+			+ "resources in the chain as inline copies.")
+	return result
+
+
+## Read a compound-path property from a node, handling colon-chain paths.
+## Returns {"ok": true, "value": <serialized>} on success,
+## {"ok": false, "code": ..., "error": ...} on failure.
+##
+## For single-colon paths, tries node-level override first (slash conversion),
+## falls back to sub-resource read (returns resource defaults when no override).
+## This matches Inspector behavior: show the effective value.
+static func get_property_compound(node: Object, property_name: String) -> Dictionary:
+	# No colon — read directly from node (handles slash-only compound paths).
+	if ":" not in property_name:
+		return {"ok": true, "value": Coerce.serialize_value(node.get(property_name))}
+
+	var parts := property_name.split(":")
+
+	# Single colon: try node-level override first, then sub-resource default.
+	if parts.size() == 2:
+		var slash_path := parts[0] + "/" + parts[1]
+		var value = node.get(slash_path)
+		if value != null:
+			return {"ok": true, "value": Coerce.serialize_value(value)}
+		# Null fallback: navigate to sub-resource and read from it.
+		var sub = node.get(parts[0])
+		if sub == null or not (sub is Object):
+			return {"ok": false, "code": "NOT_FOUND",
+				"error": "sub-resource '%s' is null on %s" % [parts[0], node.get_class()]}
+		var fallback_value = _read_sub_property(sub, parts[1])
+		return {"ok": true, "value": Coerce.serialize_value(fallback_value)}
+
+	# Multi colon: manual sub-resource navigation.
+	var target: Object = node
+	var final_prop := parts[-1]
+	for i in range(parts.size() - 1):
+		var sub = target.get(parts[i])
+		if sub == null or not (sub is Object):
+			return {"ok": false, "code": "NOT_FOUND",
+				"error": "sub-resource '%s' is null on %s" % [parts[i], node.get_class()]}
+		target = sub
+	var value = _read_sub_property(target, final_prop)
+	return {"ok": true, "value": Coerce.serialize_value(value)}
+
+
+# -- Compound path helpers (private) ------------------------------------------
+
+
+## Read a property from a sub-resource, using dedicated getters where needed.
+static func _read_sub_property(target: Object, prop: String) -> Variant:
+	if prop.begins_with("shader_parameter/") and target is ShaderMaterial:
+		return (target as ShaderMaterial).get_shader_parameter(
+			prop.trim_prefix("shader_parameter/"))
+	return target.get(prop)
+
+
+## Write a property on a sub-resource, using dedicated setters where needed.
+static func _write_sub_property(target: Object, prop: String, value: Variant) -> void:
+	if prop.begins_with("shader_parameter/") and target is ShaderMaterial:
+		(target as ShaderMaterial).set_shader_parameter(
+			prop.trim_prefix("shader_parameter/"), value)
+	else:
+		target.set(prop, value)
+
+
+## Check whether a Resource is stored externally (standalone .tres/.res file)
+## vs inline (built-in sub-resource in a scene or parent resource).
+static func _is_external_resource(res: Resource) -> bool:
+	var path := res.resource_path
+	if path.is_empty():
+		return false
+	# Inline sub-resources have paths like "res://scene.tscn::unique_id".
+	if "::" in path:
+		return false
+	return true
+
+
+## Verify a SET succeeded by reading back from the target and comparing.
+## target_obj + readback_prop define WHERE to read; original_path is for errors.
+static func _check_set_readback(
+	target: Object, readback_prop: String, coerced: Variant, original_path: String,
+) -> Dictionary:
+	var readback = _read_sub_property(target, readback_prop)
+	return _check_set_readback_value(readback, coerced, original_path)
+
+
+## Compare a readback value against the expected coerced value.
+static func _check_set_readback_value(
+	readback: Variant, coerced: Variant, original_path: String,
+) -> Dictionary:
 	if readback == null and coerced != null:
 		return {"ok": false, "code": "SET_FAILED",
 			"error": "set() on '%s' reported no error but readback is null. "
-			% property_name
+			% original_path
 			+ "The property may require a dedicated API (e.g. set_shader_parameter, "
 			+ "add_animation_library)."}
-
-	# Value comparison — detect silent no-ops (set appears to work but
-	# doesn't actually change the value).
 	if typeof(readback) == typeof(coerced) and readback != coerced:
 		return {"ok": false, "code": "SET_FAILED",
 			"error": "set '%s' to %s but readback is %s — value did not persist. "
-			% [property_name, str(coerced), str(readback)]
+			% [original_path, str(coerced), str(readback)]
 			+ "The property may need a dedicated API or the resource may be read-only."}
-
 	return {"ok": true, "value": coerced}
 
 
