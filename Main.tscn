@@ -1,3 +1,8 @@
-[gd_scene format=3 uid="uid://djn48di11arly"]
+[gd_scene load_steps=2 format=3 uid="uid://djn48di11arly"]
+
+[ext_resource type="Material" uid="uid://dn2b1hxfpcrkj" path="res://sv2_validation/material.tres" id="1_glv2v"]
 
 [node name="Main" type="Node2D"]
+
+[node name="Sv2Sprite" type="Sprite2D" parent="."]
+material = ExtResource("1_glv2v")

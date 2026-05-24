@@ -117,20 +117,35 @@ static func set_property_compound(node: Object, property_name: String, raw_value
 			"error": str(coerced["_coerce_error"])}
 
 	# Dedicated setter: ShaderMaterial.set_shader_parameter()
-	if final_prop.begins_with("shader_parameter/") and target is ShaderMaterial:
+	var is_shader_param := final_prop.begins_with("shader_parameter/") and target is ShaderMaterial
+	if is_shader_param:
 		var param_name := final_prop.trim_prefix("shader_parameter/")
 		(target as ShaderMaterial).set_shader_parameter(param_name, coerced)
 	else:
 		target.set(final_prop, coerced)
 
-	# Readback verification — compound set() can silently fail
-	var readback = target.get(final_prop)
+	# Readback verification — use the same API path as the setter.
+	var readback
+	if is_shader_param:
+		readback = (target as ShaderMaterial).get_shader_parameter(
+			final_prop.trim_prefix("shader_parameter/"))
+	else:
+		readback = target.get(final_prop)
+
 	if readback == null and coerced != null:
 		return {"ok": false, "code": "SET_FAILED",
 			"error": "set() on '%s' reported no error but readback is null. "
 			% property_name
 			+ "The property may require a dedicated API (e.g. set_shader_parameter, "
 			+ "add_animation_library)."}
+
+	# Value comparison — detect silent no-ops (set appears to work but
+	# doesn't actually change the value).
+	if typeof(readback) == typeof(coerced) and readback != coerced:
+		return {"ok": false, "code": "SET_FAILED",
+			"error": "set '%s' to %s but readback is %s — value did not persist. "
+			% [property_name, str(coerced), str(readback)]
+			+ "The property may need a dedicated API or the resource may be read-only."}
 
 	return {"ok": true, "value": coerced}
 
