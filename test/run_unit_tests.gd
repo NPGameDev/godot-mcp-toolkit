@@ -27,6 +27,8 @@ func _init() -> void:
 	_test_annotation_mapping()
 	_test_timeout_clamping()
 	_test_tool_context()
+	_test_compile_text_filter()
+	_test_set_property_compound()
 
 	_report()
 	quit(0 if _failed == 0 else 1)
@@ -323,6 +325,84 @@ func _test_tool_context() -> void:
 	ctx2.cancelled.connect(func(): fired[0] = true)
 	ctx2.cancel()
 	_ok(fired[0], "cancel → cancelled signal fires")
+
+	print("")
+
+
+# --- Helpers: compile_text_filter (~6 assertions) -------------------------
+
+const Helpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
+
+func _test_compile_text_filter() -> void:
+	_begin("compile_text_filter")
+
+	# 1. Empty filter → null regex, no error
+	var r1 := Helpers.compile_text_filter({"text_filter": "", "is_regex": true})
+	_ok(r1[0] == null, "empty filter → null regex")
+	_ok(r1[1] == null, "empty filter → no error")
+
+	# 2. Non-regex → null regex
+	var r2 := Helpers.compile_text_filter({"text_filter": "hello", "is_regex": false})
+	_ok(r2[0] == null, "is_regex=false → null regex")
+
+	# 3. Valid regex compiles
+	var r3 := Helpers.compile_text_filter({"text_filter": "[0-9]+", "is_regex": true})
+	_ok(r3[0] != null, "valid regex → RegEx instance")
+	_ok(r3[1] == null, "valid regex → no error")
+
+	# 4. Invalid regex → error returned
+	var r4 := Helpers.compile_text_filter({"text_filter": "(unclosed", "is_regex": true})
+	_ok(r4[0] == null, "invalid regex → null regex")
+	_ok(r4[1] != null, "invalid regex → error dict")
+
+	# 5. Double-escaped \\d → warning
+	var r5 := Helpers.compile_text_filter({"text_filter": "test\\\\d+", "is_regex": true})
+	_ok(r5[2] != "", "double-escaped \\d → warning not empty")
+
+	# 6. Clean regex → empty warning
+	var r6 := Helpers.compile_text_filter({"text_filter": "[0-9]+", "is_regex": true})
+	_ok(r6[2] == "", "clean regex → empty warning")
+
+	print("")
+
+
+# --- Helpers: set_property_compound (~6 assertions) -----------------------
+
+func _test_set_property_compound() -> void:
+	_begin("set_property_compound")
+
+	# 1. Simple slash path on a Control (theme_override)
+	var ctrl := Control.new()
+	var r1 := Helpers.set_property_compound(
+		ctrl, "theme_override_font_sizes/font_size", 24)
+	_ok(r1.get("ok", false), "theme_override slash path → ok")
+	_eq(ctrl.get("theme_override_font_sizes/font_size"), 24,
+		"theme_override readback = 24")
+	ctrl.free()
+
+	# 2. Colon path to sub-resource (ShaderMaterial shader_parameter)
+	var shader := Shader.new()
+	shader.code = "shader_type canvas_item;\nuniform float brightness : hint_range(0, 1) = 0.75;"
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	# The node needs the material as a property for colon-chain navigation.
+	# Use a Sprite2D which has a "material" property.
+	var sprite := Sprite2D.new()
+	sprite.material = mat
+	var r2 := Helpers.set_property_compound(
+		sprite, "material:shader_parameter/brightness", 0.3)
+	_ok(r2.get("ok", false), "shader_parameter colon path → ok")
+	var readback = sprite.get("material").get_shader_parameter("brightness")
+	_eq(readback, 0.3, "shader_parameter readback = 0.3")
+	sprite.free()
+
+	# 3. Non-existent sub-resource → NOT_FOUND
+	var node := Node2D.new()
+	var r3 := Helpers.set_property_compound(
+		node, "material:shader_parameter/x", 1.0)
+	_ok(not r3.get("ok", false), "null sub-resource → error")
+	_eq(r3.get("code", ""), "NOT_FOUND", "error code = NOT_FOUND")
+	node.free()
 
 	print("")
 
