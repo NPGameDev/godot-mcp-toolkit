@@ -29,6 +29,8 @@ func _init() -> void:
 	_test_tool_context()
 	_test_compile_text_filter()
 	_test_set_property_compound()
+	_test_compound_set_helper()
+	_test_undo_info()
 
 	_report()
 	quit(0 if _failed == 0 else 1)
@@ -403,6 +405,105 @@ func _test_set_property_compound() -> void:
 	_ok(not r3.get("ok", false), "null sub-resource → error")
 	_eq(r3.get("code", ""), "NOT_FOUND", "error code = NOT_FOUND")
 	node.free()
+
+	print("")
+
+
+# --- compound_set helper (~8 assertions) ------------------------------------
+
+const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
+
+func _test_compound_set_helper() -> void:
+	_begin("compound_set helper")
+	var helpers := UndoRedoHelpers.new()
+
+	# 1. Slash-only path (theme override on Control)
+	var ctrl := Control.new()
+	ctrl.add_theme_font_size_override("font_size", 16)
+	helpers.compound_set(ctrl, "theme_override_font_sizes/font_size", 32)
+	_eq(ctrl.get("theme_override_font_sizes/font_size"), 32,
+		"slash-only: theme_override set to 32")
+	ctrl.free()
+
+	# 2. Single-colon sub-resource (shader_parameter on ShaderMaterial)
+	var shader := Shader.new()
+	shader.code = "shader_type canvas_item;\nuniform float brightness : hint_range(0, 1) = 0.75;"
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	var sprite := Sprite2D.new()
+	sprite.material = mat
+	helpers.compound_set(sprite, "material:shader_parameter/brightness", 0.4)
+	_eq(mat.get_shader_parameter("brightness"), 0.4,
+		"single-colon: shader_parameter set to 0.4")
+	# Undo by setting back
+	helpers.compound_set(sprite, "material:shader_parameter/brightness", 0.75)
+	_eq(mat.get_shader_parameter("brightness"), 0.75,
+		"single-colon: shader_parameter restored to 0.75")
+	sprite.free()
+
+	# 3. Multi-colon sub-resource navigation
+	var shader2 := Shader.new()
+	shader2.code = "shader_type canvas_item;\nuniform float glow : hint_range(0, 1) = 0.0;"
+	var pass2 := ShaderMaterial.new()
+	pass2.shader = shader2
+	var mat2 := ShaderMaterial.new()
+	mat2.shader = shader
+	mat2.next_pass = pass2
+	var sprite2 := Sprite2D.new()
+	sprite2.material = mat2
+	helpers.compound_set(sprite2, "material:next_pass:shader_parameter/glow", 0.5)
+	_eq(pass2.get_shader_parameter("glow"), 0.5,
+		"multi-colon: next_pass shader_parameter set to 0.5")
+	sprite2.free()
+
+	# 4. Simple property (no colon, no slash)
+	var node := Node2D.new()
+	node.visible = true
+	helpers.compound_set(node, "visible", false)
+	_eq(node.visible, false, "simple: visible set to false")
+	node.free()
+
+	# 5. Null sub-resource → no crash (silent return)
+	var empty := Sprite2D.new()
+	helpers.compound_set(empty, "material:shader_parameter/x", 1.0)
+	_ok(true, "null sub-resource: no crash")
+	empty.free()
+
+	helpers.free()
+	print("")
+
+
+# --- _undo info from set_property_compound (~6 assertions) ------------------
+
+func _test_undo_info() -> void:
+	_begin("_undo info")
+
+	# 1. Slash-only path returns property type
+	var ctrl := Control.new()
+	var r1 := Helpers.set_property_compound(
+		ctrl, "theme_override_font_sizes/font_size", 24)
+	_ok(r1.get("ok", false), "slash-only: set ok")
+	var u1: Dictionary = r1.get("_undo", {})
+	_eq(u1.get("type"), "property", "slash-only: _undo type = property")
+	_eq(u1.get("path"), "theme_override_font_sizes/font_size",
+		"slash-only: _undo path preserved")
+	ctrl.free()
+
+	# 2. Single-colon path returns sub_resource type (readback null for in-memory)
+	var shader := Shader.new()
+	shader.code = "shader_type canvas_item;\nuniform float brightness : hint_range(0, 1) = 0.75;"
+	var mat := ShaderMaterial.new()
+	mat.shader = shader
+	var sprite := Sprite2D.new()
+	sprite.material = mat
+	var r2 := Helpers.set_property_compound(
+		sprite, "material:shader_parameter/brightness", 0.3)
+	_ok(r2.get("ok", false), "colon: set ok")
+	var u2: Dictionary = r2.get("_undo", {})
+	_ok(u2.get("type") == "property" or u2.get("type") == "sub_resource",
+		"colon: _undo type is property or sub_resource")
+	_eq(u2.get("old"), null, "colon: _undo old = null (no prior override)")
+	sprite.free()
 
 	print("")
 
