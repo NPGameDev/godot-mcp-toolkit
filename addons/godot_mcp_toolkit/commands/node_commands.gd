@@ -224,10 +224,10 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 		# Register UndoRedo for property-type compound paths (slash-only
 		# and single-colon→slash). Sub-resource direct mutations (multi-colon)
 		# skip UndoRedo — they can't be reliably serialized.
-		# Use add_do_method(node.set.bind(...)) rather than add_do_property
-		# because EditorUndoRedoManager doesn't reliably handle sub-resource
-		# slash paths (e.g. "material/shader_parameter/brightness") via the
-		# property API — node.set() routes through _set() which does.
+		# Use add_do_method(node, "set", ...) rather than add_do_property
+		# because EditorUndoRedoManager's property API doesn't reliably
+		# handle sub-resource slash paths (e.g. "material/shader_parameter/
+		# brightness") — method dispatch through node.set() routes via _set().
 		var ui: Dictionary = result.get("_undo", {})
 		if ui.get("type") == "property":
 			var undo_redo = _Hub.get_undo_redo()
@@ -235,14 +235,14 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 				undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
 				var undo_path: String = ui["path"]
 				var new_val = node.get(undo_path)
-				undo_redo.add_do_method(node.set.bind(undo_path, new_val))
-				undo_redo.add_undo_method(node.set.bind(undo_path, ui["old"]))
+				undo_redo.add_do_method(node, "set", undo_path, new_val)
+				undo_redo.add_undo_method(node, "set", undo_path, ui["old"])
 				# make_unique: undo restores original external resource.
 				if ui.has("old_resource_prop"):
 					var res_prop: String = ui["old_resource_prop"]
 					var new_res = node.get(res_prop)
-					undo_redo.add_do_method(node.set.bind(res_prop, new_res))
-					undo_redo.add_undo_method(node.set.bind(res_prop, ui["old_resource"]))
+					undo_redo.add_do_method(node, "set", res_prop, new_res)
+					undo_redo.add_undo_method(node, "set", res_prop, ui["old_resource"])
 					if new_res is Resource:
 						undo_redo.add_do_reference(new_res)
 					if ui["old_resource"] is Resource:
@@ -326,18 +326,18 @@ static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
 				node, prop, raw_val, do_unique)
 			if result.get("ok", false):
 				# Add to batch UndoRedo if property-type (slash-only or single-colon).
-				# Use add_do_method(node.set.bind(...)) — see single SET comment.
+				# Use add_do_method(node, "set", ...) — see single SET comment.
 				var ui: Dictionary = result.get("_undo", {})
 				if ui.get("type") == "property" and undo_redo != null:
 					var undo_path: String = ui["path"]
 					var new_val = node.get(undo_path)
-					undo_redo.add_do_method(node.set.bind(undo_path, new_val))
-					undo_redo.add_undo_method(node.set.bind(undo_path, ui["old"]))
+					undo_redo.add_do_method(node, "set", undo_path, new_val)
+					undo_redo.add_undo_method(node, "set", undo_path, ui["old"])
 					if ui.has("old_resource_prop"):
 						var res_prop: String = ui["old_resource_prop"]
 						var new_res = node.get(res_prop)
-						undo_redo.add_do_method(node.set.bind(res_prop, new_res))
-						undo_redo.add_undo_method(node.set.bind(res_prop, ui["old_resource"]))
+						undo_redo.add_do_method(node, "set", res_prop, new_res)
+						undo_redo.add_undo_method(node, "set", res_prop, ui["old_resource"])
 						if new_res is Resource:
 							undo_redo.add_do_reference(new_res)
 						if ui["old_resource"] is Resource:
