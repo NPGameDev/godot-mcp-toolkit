@@ -89,7 +89,7 @@ static func _resolve_scene_node(node_path: String) -> Variant:
 
 
 ## Detect silent compound-path set failure by comparing readback to expected.
-static func _is_compound_set_failure(expected: Variant, actual: Variant) -> bool:
+static func _iscompound_set_failure(expected: Variant, actual: Variant) -> bool:
 	if expected == null:
 		return false  # Setting null — nothing to verify
 	if actual == null:
@@ -243,10 +243,10 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 				else:
 					# Sub-resource paths: use helper to navigate + set.
 					undo_redo.add_do_method(
-						server.undo_helpers, "_compound_set",
+						server.undo_helpers, "compound_set",
 						node, property_name, ui["new"])
 					undo_redo.add_undo_method(
-						server.undo_helpers, "_compound_set",
+						server.undo_helpers, "compound_set",
 						node, property_name, ui["old"])
 				# make_unique: undo restores original external resource.
 				if ui.has("old_resource_prop"):
@@ -330,34 +330,33 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 
 		# Compound paths: route through set_property_compound() which handles
 		# colon→slash conversion, sub-resource navigation, and readback.
-		# Property-type undo info is added to the batch UndoRedo action.
+		# All compound undo uses server.undo_helpers.compound_set to keep
+		# the entire batch in a consistent EditorUndoRedoManager context.
 		if ":" in prop or "/" in prop:
 			var do_unique := bool(entry.get("make_unique", false))
 			var result := Helpers.set_property_compound(
 				node, prop, raw_val, do_unique)
 			if result.get("ok", false):
-				# Add to batch UndoRedo — same logic as single SET.
 				var ui: Dictionary = result.get("_undo", {})
 				var undo_type: String = str(ui.get("type", ""))
-				if (undo_type == "property" or undo_type == "sub_resource") \
-						and undo_redo != null:
-					if undo_type == "property":
-						var undo_path: String = ui["path"]
-						var new_val = node.get(undo_path)
-						undo_redo.add_do_method(node, "set", undo_path, new_val)
-						undo_redo.add_undo_method(node, "set", undo_path, ui["old"])
-					else:
-						undo_redo.add_do_method(
-							server.undo_helpers, "_compound_set",
-							node, prop, ui["new"])
-						undo_redo.add_undo_method(
-							server.undo_helpers, "_compound_set",
-							node, prop, ui["old"])
+				if undo_type != "" and undo_redo != null:
+					var undo_path: String = ui["path"]
+					var new_val = ui.get("new", node.get(undo_path))
+					undo_redo.add_do_method(
+						server.undo_helpers, "compound_set",
+						node, undo_path, new_val)
+					undo_redo.add_undo_method(
+						server.undo_helpers, "compound_set",
+						node, undo_path, ui["old"])
 					if ui.has("old_resource_prop"):
 						var res_prop: String = ui["old_resource_prop"]
 						var new_res = node.get(res_prop)
-						undo_redo.add_do_method(node, "set", res_prop, new_res)
-						undo_redo.add_undo_method(node, "set", res_prop, ui["old_resource"])
+						undo_redo.add_do_method(
+							server.undo_helpers, "compound_set",
+							node, res_prop, new_res)
+						undo_redo.add_undo_method(
+							server.undo_helpers, "compound_set",
+							node, res_prop, ui["old_resource"])
 						if new_res is Resource:
 							undo_redo.add_do_reference(new_res)
 						if ui["old_resource"] is Resource:
@@ -389,9 +388,14 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 			coerced = NodePath(str(coerced))
 
+		# Route simple properties through compound_set too so the entire
+		# batch uses a consistent EditorUndoRedoManager context (avoids
+		# history mismatch errors when mixing compound and simple entries).
 		if undo_redo != null:
-			undo_redo.add_do_property(node, prop, coerced)
-			undo_redo.add_undo_property(node, prop, old_value)
+			undo_redo.add_do_method(
+				server.undo_helpers, "compound_set", node, prop, coerced)
+			undo_redo.add_undo_method(
+				server.undo_helpers, "compound_set", node, prop, old_value)
 			if coerced is Resource:
 				undo_redo.add_do_reference(coerced)
 			if old_value is Resource:

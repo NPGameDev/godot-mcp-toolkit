@@ -63,7 +63,7 @@ func _tilemap_apply_batch(node: Node, layer: int, cells: Array) -> void:
 ## Set a compound-path property (colon-chain or slash) on a node.
 ## Used by UndoRedo for compound path undo/redo — navigates sub-resources
 ## the same way set_property_compound does, but without coercion or readback.
-func _compound_set(node: Object, property_name: String, value: Variant) -> void:
+func compound_set(node: Object, property_name: String, value: Variant) -> void:
 	if ":" not in property_name:
 		node.set(property_name, value)
 		return
