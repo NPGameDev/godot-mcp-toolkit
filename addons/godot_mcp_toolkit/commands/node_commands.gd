@@ -221,39 +221,33 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 				result.get("code", "INVALID_VALUE"),
 				str(result.get("error", "")))
 
-		# Register UndoRedo for property-type compound paths (slash-only
-		# and single-colon→slash). Sub-resource direct mutations (multi-colon)
-		# skip UndoRedo — they can't be reliably serialized.
-		# Use add_do_method(node, "set", ...) rather than add_do_property
-		# because EditorUndoRedoManager's property API doesn't reliably
-		# handle sub-resource slash paths (e.g. "material/shader_parameter/
-		# brightness") — method dispatch through node.set() routes via _set().
+		# Register UndoRedo for compound paths. All do/undo methods route
+		# through server.undo_helpers.compound_set for consistent
+		# EditorUndoRedoManager context (avoids history mismatch errors).
 		var ui: Dictionary = result.get("_undo", {})
 		var undo_type: String = str(ui.get("type", ""))
-		if undo_type == "property" or undo_type == "sub_resource":
+		if undo_type != "":
 			var undo_redo = _Hub.get_undo_redo()
 			if undo_redo != null:
 				undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
-				if undo_type == "property":
-					# Slash-only paths: node.set() works directly.
-					var undo_path: String = ui["path"]
-					var new_val = node.get(undo_path)
-					undo_redo.add_do_method(node, "set", undo_path, new_val)
-					undo_redo.add_undo_method(node, "set", undo_path, ui["old"])
-				else:
-					# Sub-resource paths: use helper to navigate + set.
-					undo_redo.add_do_method(
-						server.undo_helpers, "compound_set",
-						node, property_name, ui["new"])
-					undo_redo.add_undo_method(
-						server.undo_helpers, "compound_set",
-						node, property_name, ui["old"])
+				var undo_path: String = ui["path"]
+				var new_val = ui.get("new", node.get(undo_path))
+				undo_redo.add_do_method(
+					server.undo_helpers, "compound_set",
+					node, undo_path, new_val)
+				undo_redo.add_undo_method(
+					server.undo_helpers, "compound_set",
+					node, undo_path, ui["old"])
 				# make_unique: undo restores original external resource.
 				if ui.has("old_resource_prop"):
 					var res_prop: String = ui["old_resource_prop"]
 					var new_res = node.get(res_prop)
-					undo_redo.add_do_method(node, "set", res_prop, new_res)
-					undo_redo.add_undo_method(node, "set", res_prop, ui["old_resource"])
+					undo_redo.add_do_method(
+						server.undo_helpers, "compound_set",
+						node, res_prop, new_res)
+					undo_redo.add_undo_method(
+						server.undo_helpers, "compound_set",
+						node, res_prop, ui["old_resource"])
 					if new_res is Resource:
 						undo_redo.add_do_reference(new_res)
 					if ui["old_resource"] is Resource:
