@@ -53,66 +53,26 @@ See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix.
 
 ## Tool catalogue
 
-Standard tools are always visible. Group tools are loaded on demand via
-`discover_tools`. `GODOT_MCP_READ_ONLY=1` in `.mcp.json` env hides all
-mutating tools.
+Core tools (scene tree, node properties, scripting, editor operations,
+playtesting, runtime inspection, asset listing) are always available.
+25+ additional tool groups covering signals, animation, tilemaps, 3D,
+audio, navigation, LSP, debugger, and more are loaded on demand — call
+`discover_tools()` with no parameters to browse the full catalog.
+`GODOT_MCP_READ_ONLY=1` in `.mcp.json` env hides all mutating tools.
 
 When activating tool groups via `discover_tools`, always pass
 `include_schemas: true` to receive full parameter schemas in the response.
 This avoids a separate tool lookup for each activated tool.
 
-### Core tools (always-on)
+### Gated tools
 
-| Tool                    | One-liner                                                                        |
-|-------------------------|----------------------------------------------------------------------------------|
-| `scene_get_tree`        | Return the edited scene as nested JSON. `depth` (default 2), `include_properties` (default false). |
-| `scene_create_node`     | Create node under `parent`. Idempotent. |
-| `scene_delete_node`     | Delete node at `path`. UndoRedo-based; refuses the root.  |
-| `scene_create`          | Create `.tscn` file. Idempotent; `if_exists: return\|fail\|replace`. |
-| `scene_open`            | Open a scene in the editor. |
-| `node_get_property`     | Read a property. Engine types dict-wrapped. |
-| `node_set_property`     | Write a property. Engine types as `{ type, ... }`. |
-| `node_get_property_list` | List properties. `mask`: "common" (default, curated), "all", or "groups". |
-| `node_set_script`       | Attach/detach script. Returns `@export` properties. |
-| `script_read`           | Read a GDScript / text file (`res://` only). Optional `start_line`/`end_line` for partial reads. |
-| `script_write`          | Write `.gd`/`.cs`/`.gdshader`/`.gdshaderinc`. Overwrites. |
-| `script_check`          | Validate GDScript file. Returns structured diagnostics (errors/warnings with line numbers). Read-only. |
-| `editor_save_scene`     | Save the current edited scene. Optional `path` → save-as. |
-| `editor_get_console`    | Tail editor Output panel. `level_filter`, `since_id`. |
-| `project_get_settings`  | Read ProjectSettings. |
-| `game_start`            | Drive editor play button. `target: "main"\|"current"\|res://*.tscn`. |
-| `game_stop`             | Stop the running scene. Idempotent. |
-| `runtime_screenshot`    | Capture the running game window. Returns inline PNG. |
-| `input_simulate`        | Inject input into the running game. Batch events array. |
-| `runtime_get_script_vars` | Get script variables for a live game node. |
-| `debugger_get_log`      | Return recent output from the running game. Summary-first. |
-| `folder_create`         | Create `res://` directory. Idempotent. |
-| `asset_list`            | Enumerate `res://` assets with filters. |
-| `classdb_get_info`      | Inspect any Godot class: properties, methods, signals, constants, inheritance. Engine + user `class_name`. |
-| `classdb_search`        | Find Godot classes by inheritance and/or name pattern. Returns class list with parent + instantiability. |
+Some tools require explicit opt-in via environment variables in `.mcp.json`:
 
-### Lazy-load group tools (via `discover_tools`)
-
-| Group                 | Tools |
-|-----------------------|-------|
-| `runtime_advanced`    | `runtime_get_node_state`, `animation_player_control` |
-| `signals`             | `signal_list`, `signal_manage` (connect/disconnect), `signal_emit` |
-| `animation_authoring` | `animation_keyframe` (add/remove), `animation_get_keys` |
-| `input_map` (gated)   | `input_map_action` (add/remove), `input_map_event` (bind/unbind) |
-| `asset_management`    | `asset_get_dependencies`, `asset_import`, `resource_delete`, `file_delete`, `scene_delete`, `scene_close`, `resource_load`, `resource_write`, `script_delete`, `folder_delete` |
-| `user_data` (gated)   | `save_read`, `save_write`, `save_delete`, `save_list` |
-| `scene_advanced`      | `scene_diff`, `scene_instantiate` |
-| `editor_advanced`     | `editor_screenshot`, `editor_refresh`, `editor_wait_for_idle` |
-| `tilemap`             | `tilemap_set_cells`, `tileset_create`, `tileset_edit` |
-| `node_management`     | `node_manage`, `node_groups`, `autoload_manage` |
-| `debugger`            | `debug_state`, `debug_list_breakpoints`, `debug_set_breakpoint`, `debug_continue` |
-
-### Gated tools (locked stubs when disabled)
-
-| Tool                  | Gate env var |
-|-----------------------|-------------|
-| `execute_code`        | `GODOT_MCP_ALLOW_EXECUTE_CODE` |
-| `node_call_method`    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD` |
+| Scope | Gate env var | Effect when enabled |
+|-------|-------------|---------------------|
+| `execute_code` tool | `GODOT_MCP_ALLOW_EXECUTE_CODE` | Unlocks arbitrary GDScript execution |
+| `node_call_method` tool | `GODOT_MCP_ALLOW_NODE_CALL_METHOD` | Unlocks calling arbitrary methods on nodes |
+| `user_data` group | `GODOT_MCP_ALLOW_USER_SCOPE` | Unlocks `save_read`, `save_write`, `save_delete`, `save_list` |
 
 ## Multi-project support (iter 23)
 
