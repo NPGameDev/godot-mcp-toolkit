@@ -26,8 +26,7 @@ minimise wasted tool calls.
 | **Read-only** (`GODOT_MCP_READ_ONLY=1`) | Only tools with `readOnlyHint: true` annotations. Safe for exploration/auditing. |
 
 **On-demand groups** — activate with `discover_tools`:
-- By keyword: `discover_tools({request: "runtime"})` — fuzzy-matches groups
-- By name: `discover_tools({groups: ["runtime"]})` — exact group activation
+- `discover_tools({request: ["runtime_advanced", "tilemap"]})` — pass group names or keywords
 - Browse only: add `activate: false` to list tools without loading
 - Deactivate: `discover_tools({reset: true})` (all) or `reset: ["tilemap"]` (selective)
 - **Schema enrichment:** if activated tools are not directly callable and

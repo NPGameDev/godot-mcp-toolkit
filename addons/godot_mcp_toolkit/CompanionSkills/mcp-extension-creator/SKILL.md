@@ -234,12 +234,12 @@ in a single `discover_tools` call rather than one call per group:
 
 ```
 # Efficient — 1 call, 1 tools/list_changed notification
-discover_tools(groups: ["runtime", "input_map", "scene_advanced"])
+discover_tools(request: ["runtime_advanced", "input_map", "scene_advanced"])
 
 # Wasteful — 3 calls, up to 3 notifications
-discover_tools(groups: ["runtime"])
-discover_tools(groups: ["input_map"])
-discover_tools(groups: ["scene_advanced"])
+discover_tools(request: ["runtime_advanced"])
+discover_tools(request: ["input_map"])
+discover_tools(request: ["scene_advanced"])
 ```
 
 Each `tools/list_changed` notification forces the LLM to re-fetch and
