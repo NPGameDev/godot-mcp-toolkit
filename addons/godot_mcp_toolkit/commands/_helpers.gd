@@ -189,8 +189,12 @@ static func set_property_compound(
 		result["made_unique"] = made_unique
 	if result.get("ok", false):
 		# Sub-resource direct mutation — undo navigates the chain via helper.
-		result["_undo"] = {"type": "sub_resource", "path": property_name,
+		var undo := {"type": "sub_resource", "path": property_name,
 			"old": _undo_old_sub, "new": coerced}
+		if _undo_old_resource != null and not made_unique.is_empty():
+			undo["old_resource_prop"] = parts[0]
+			undo["old_resource"] = _undo_old_resource
+		result["_undo"] = undo
 	if result.get("ok", false) \
 			and target is Resource \
 			and _is_external_resource(target as Resource):
