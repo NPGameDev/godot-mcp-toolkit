@@ -109,6 +109,11 @@ All `mark_*` and `with_*` methods return `self`, so calls can be chained.
 | `with_group(name: String, description: String, keywords: Array)` | Registers the tool under a `discover_tools` lazy-loading group |
 | `to_dict()` | Returns the built options as a Dictionary (public, useful for debugging) |
 
+> **Keywords note:** Fuzzy search uses substring matching with a minimum length
+> of 3 characters. Short domain terms like `"2d"`, `"3d"`, `"ui"`, `"ai"` must
+> be added as explicit keywords in the `with_group()` call — they won't match
+> via substring. For example: `with_group("my_2d_tools", "...", ["2d", "sprite", "tilemap"])`.
+
 ### C# usage
 
 C# cannot instantiate GDScript classes directly. Use the registry factory:
