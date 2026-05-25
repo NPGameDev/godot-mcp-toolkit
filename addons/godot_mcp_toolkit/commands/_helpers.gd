@@ -188,10 +188,9 @@ static func set_property_compound(
 	if not made_unique.is_empty():
 		result["made_unique"] = made_unique
 	if result.get("ok", false):
-		# Sub-resource direct mutation — UndoRedo not supported (multi-colon
-		# requires navigating a sub-resource chain that UndoRedo can't serialize).
+		# Sub-resource direct mutation — undo navigates the chain via helper.
 		result["_undo"] = {"type": "sub_resource", "path": property_name,
-			"old": _undo_old_sub}
+			"old": _undo_old_sub, "new": coerced}
 	if result.get("ok", false) \
 			and target is Resource \
 			and _is_external_resource(target as Resource):

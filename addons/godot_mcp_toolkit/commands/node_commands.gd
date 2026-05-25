@@ -52,7 +52,7 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_node_get_property(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("node.set_property", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_node_set_property(parameters)
+		return _cmd_node_set_property(server, parameters)
 	, MCPToolkitCommandOptions.new())
 	registry.add("node.get_property_list", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_node_get_property_list(parameters)
@@ -147,7 +147,7 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 	return {"value": Coerce.serialize_value(node.get(property_name))}
 
 
-static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
+static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
 		return McpError.make("NO_SCENE", "no edited scene")
@@ -155,7 +155,7 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 	# FIX-7: Batch mode — set multiple properties in a single UndoRedo action.
 	var batch_raw = parameters.get("batch", null)
 	if batch_raw != null and typeof(batch_raw) == TYPE_ARRAY and (batch_raw as Array).size() > 0:
-		return _batch_set_properties(root, batch_raw as Array)
+		return _batch_set_properties(server, root, batch_raw as Array)
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
@@ -229,14 +229,25 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 		# handle sub-resource slash paths (e.g. "material/shader_parameter/
 		# brightness") — method dispatch through node.set() routes via _set().
 		var ui: Dictionary = result.get("_undo", {})
-		if ui.get("type") == "property":
+		var undo_type: String = str(ui.get("type", ""))
+		if undo_type == "property" or undo_type == "sub_resource":
 			var undo_redo = _Hub.get_undo_redo()
 			if undo_redo != null:
 				undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
-				var undo_path: String = ui["path"]
-				var new_val = node.get(undo_path)
-				undo_redo.add_do_method(node, "set", undo_path, new_val)
-				undo_redo.add_undo_method(node, "set", undo_path, ui["old"])
+				if undo_type == "property":
+					# Slash-only paths: node.set() works directly.
+					var undo_path: String = ui["path"]
+					var new_val = node.get(undo_path)
+					undo_redo.add_do_method(node, "set", undo_path, new_val)
+					undo_redo.add_undo_method(node, "set", undo_path, ui["old"])
+				else:
+					# Sub-resource paths: use helper to navigate + set.
+					undo_redo.add_do_method(
+						server.undo_helpers, "_compound_set",
+						node, property_name, ui["new"])
+					undo_redo.add_undo_method(
+						server.undo_helpers, "_compound_set",
+						node, property_name, ui["old"])
 				# make_unique: undo restores original external resource.
 				if ui.has("old_resource_prop"):
 					var res_prop: String = ui["old_resource_prop"]
@@ -291,7 +302,7 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 ## FIX-7: Batch set multiple properties in one UndoRedo action.
 ## Compound paths (: or /) use set_property_compound() and add their undo
 ## info to the same batch action when possible (property-type paths only).
-static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
+static func _batch_set_properties(server: Node, root: Node, entries: Array) -> Dictionary:
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action("MCP: batch set %d properties" % entries.size())
@@ -325,14 +336,23 @@ static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
 			var result := Helpers.set_property_compound(
 				node, prop, raw_val, do_unique)
 			if result.get("ok", false):
-				# Add to batch UndoRedo if property-type (slash-only or single-colon).
-				# Use add_do_method(node, "set", ...) — see single SET comment.
+				# Add to batch UndoRedo — same logic as single SET.
 				var ui: Dictionary = result.get("_undo", {})
-				if ui.get("type") == "property" and undo_redo != null:
-					var undo_path: String = ui["path"]
-					var new_val = node.get(undo_path)
-					undo_redo.add_do_method(node, "set", undo_path, new_val)
-					undo_redo.add_undo_method(node, "set", undo_path, ui["old"])
+				var undo_type: String = str(ui.get("type", ""))
+				if (undo_type == "property" or undo_type == "sub_resource") \
+						and undo_redo != null:
+					if undo_type == "property":
+						var undo_path: String = ui["path"]
+						var new_val = node.get(undo_path)
+						undo_redo.add_do_method(node, "set", undo_path, new_val)
+						undo_redo.add_undo_method(node, "set", undo_path, ui["old"])
+					else:
+						undo_redo.add_do_method(
+							server.undo_helpers, "_compound_set",
+							node, prop, ui["new"])
+						undo_redo.add_undo_method(
+							server.undo_helpers, "_compound_set",
+							node, prop, ui["old"])
 					if ui.has("old_resource_prop"):
 						var res_prop: String = ui["old_resource_prop"]
 						var new_res = node.get(res_prop)

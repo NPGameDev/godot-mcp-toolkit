@@ -60,6 +60,35 @@ func _tilemap_apply_batch(node: Node, layer: int, cells: Array) -> void:
 			(node as TileMap).set_cell(layer, coord, source_id, atlas, alternative)
 
 
+## Set a compound-path property (colon-chain or slash) on a node.
+## Used by UndoRedo for compound path undo/redo — navigates sub-resources
+## the same way set_property_compound does, but without coercion or readback.
+func _compound_set(node: Object, property_name: String, value: Variant) -> void:
+	if ":" not in property_name:
+		node.set(property_name, value)
+		return
+	var parts := property_name.split(":")
+	# Single-colon: try slash-path first.
+	if parts.size() == 2:
+		var slash_path := parts[0] + "/" + parts[1]
+		node.set(slash_path, value)
+		if node.get(slash_path) != null:
+			return
+	# Navigate to sub-resource and set directly.
+	var target: Object = node
+	for i in range(parts.size() - 1):
+		var sub = target.get(parts[i])
+		if sub == null or not (sub is Object):
+			return
+		target = sub
+	var final_prop := parts[-1]
+	if final_prop.begins_with("shader_parameter/") and target is ShaderMaterial:
+		(target as ShaderMaterial).set_shader_parameter(
+			final_prop.trim_prefix("shader_parameter/"), value)
+	else:
+		target.set(final_prop, value)
+
+
 func _tilemap_restore_batch(node: Node, layer: int, before_state: Array) -> void:
 	var is_layer := node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	for state in before_state:
