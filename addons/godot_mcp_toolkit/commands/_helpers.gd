@@ -85,10 +85,9 @@ static func _detect_double_escaped_regex(pattern: String) -> String:
 
 ## Coerce and set a property on a node, handling compound paths (: and /)
 ## and dedicated setter APIs (shader_parameter/ on ShaderMaterial).
-## Returns {"ok": true, "value": <coerced>} on success,
-## {"ok": false, "code": ..., "error": ...} on failure.
-## Caller is responsible for UndoRedo wrapping if needed — this method does
-## a direct set() for compound paths (UndoRedo can't serialize them).
+## Returns {"ok": true} on success, {"ok": false, "code": ..., "error": ...}
+## on failure. Success results include an "_undo" key with info for the caller
+## to register UndoRedo (type, effective path, old value, old resource refs).
 ##
 ## When make_unique is true and the target sub-resource is external (.tres),
 ## it is automatically duplicated as an inline copy before setting.
@@ -116,8 +115,12 @@ static func set_property_compound(
 
 	# --- No colon: set directly on node ---
 	if ":" not in property_name:
+		var _undo_old = node.get(property_name)
 		node.set(property_name, coerced)
-		return _check_set_readback(node, property_name, coerced, property_name)
+		var result := _check_set_readback(node, property_name, coerced, property_name)
+		if result.get("ok", false):
+			result["_undo"] = {"type": "property", "path": property_name, "old": _undo_old}
+		return result
 
 	var parts := property_name.split(":")
 
@@ -126,6 +129,11 @@ static func set_property_compound(
 	# sub-resource. When make_unique is set, duplicate EACH external
 	# resource in the chain from the node down — this prevents
 	# accidentally modifying shared .tres resources at any level.
+	# Capture the original resource BEFORE make_unique for undo.
+	var _undo_old_resource: Variant = null
+	if make_unique and parts.size() >= 2:
+		_undo_old_resource = node.get(parts[0])
+
 	var target: Object = node
 	var made_unique: Array = []  # Track which resources were duplicated.
 	for i in range(parts.size() - 1):
@@ -150,6 +158,7 @@ static func set_property_compound(
 	# --- Single colon: try slash-path override first ---
 	if parts.size() == 2:
 		var slash_path := parts[0] + "/" + parts[1]
+		var _undo_old_slash = node.get(slash_path)
 
 		# Try 1: node-level override via slash path.
 		# Some node types (MeshInstance3D) handle slash-path _set() and
@@ -160,17 +169,29 @@ static func set_property_compound(
 			var result := _check_set_readback_value(readback, coerced, property_name)
 			if not made_unique.is_empty():
 				result["made_unique"] = made_unique
+			if result.get("ok", false):
+				var undo := {"type": "property", "path": slash_path, "old": _undo_old_slash}
+				if _undo_old_resource != null and not made_unique.is_empty():
+					undo["old_resource_prop"] = parts[0]
+					undo["old_resource"] = _undo_old_resource
+				result["_undo"] = undo
 			return result
 
 	# --- Direct sub-resource mutation ---
 	# For single-colon when slash-path didn't work, and all multi-colon.
 	# Persists only for inline sub-resources (.tscn [sub_resource] section).
 	# External resources: in-memory only → warn.
+	var _undo_old_sub = _read_sub_property(target, final_prop)
 	_write_sub_property(target, final_prop, coerced)
 	var readback = _read_sub_property(target, final_prop)
 	var result := _check_set_readback_value(readback, coerced, property_name)
 	if not made_unique.is_empty():
 		result["made_unique"] = made_unique
+	if result.get("ok", false):
+		# Sub-resource direct mutation — UndoRedo not supported (multi-colon
+		# requires navigating a sub-resource chain that UndoRedo can't serialize).
+		result["_undo"] = {"type": "sub_resource", "path": property_name,
+			"old": _undo_old_sub}
 	if result.get("ok", false) \
 			and target is Resource \
 			and _is_external_resource(target as Resource):

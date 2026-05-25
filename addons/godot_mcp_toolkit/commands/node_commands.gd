@@ -209,12 +209,9 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 
 	# Compound / colon-chained paths (e.g. "libraries/test",
 	# "material:shader_parameter/value", "theme_override_colors/font_color").
-	# ":" navigates sub-resources; "/" is a compound key inside _set/_get.
-	# UndoRedo can't serialize these reliably. Split on ":", navigate to the
-	# target object, then call set() with the final component intact.
-	# Compound paths (: or /) use the centralized handler in _helpers.gd
-	# which handles sub-resource navigation, shader_parameter/ dedicated
-	# setter, value coercion, and readback verification.
+	# Centralized handler in _helpers.gd handles sub-resource navigation,
+	# shader_parameter/ dedicated setter, value coercion, and readback.
+	# Returns _undo info for UndoRedo registration (commit_action(false)).
 	if ":" in property_name or "/" in property_name:
 		var do_unique := bool(parameters.get("make_unique", false))
 		var result := Helpers.set_property_compound(
@@ -223,6 +220,31 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 			return McpError.make(
 				result.get("code", "INVALID_VALUE"),
 				str(result.get("error", "")))
+
+		# Register UndoRedo for property-type compound paths (slash-only
+		# and single-colon→slash). Sub-resource direct mutations (multi-colon)
+		# skip UndoRedo — they can't be reliably serialized.
+		var ui: Dictionary = result.get("_undo", {})
+		if ui.get("type") == "property":
+			var undo_redo = _Hub.get_undo_redo()
+			if undo_redo != null:
+				undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
+				var undo_path: String = ui["path"]
+				var new_val = node.get(undo_path)
+				undo_redo.add_do_property(node, undo_path, new_val)
+				undo_redo.add_undo_property(node, undo_path, ui["old"])
+				# make_unique: undo restores original external resource.
+				if ui.has("old_resource_prop"):
+					var res_prop: String = ui["old_resource_prop"]
+					var new_res = node.get(res_prop)
+					undo_redo.add_do_property(node, res_prop, new_res)
+					undo_redo.add_undo_property(node, res_prop, ui["old_resource"])
+					if new_res is Resource:
+						undo_redo.add_do_reference(new_res)
+					if ui["old_resource"] is Resource:
+						undo_redo.add_undo_reference(ui["old_resource"])
+				undo_redo.commit_action(false)  # Already applied — record only
+
 		var response := {"success": true}
 		if result.has("made_unique"):
 			response["made_unique"] = result["made_unique"]
@@ -263,8 +285,8 @@ static func _cmd_node_set_property(parameters: Dictionary) -> Dictionary:
 
 
 ## FIX-7: Batch set multiple properties in one UndoRedo action.
-## Compound paths (: or /) bypass UndoRedo and use set_property_compound()
-## directly — UndoRedo can't serialize compound paths reliably.
+## Compound paths (: or /) use set_property_compound() and add their undo
+## info to the same batch action when possible (property-type paths only).
 static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
@@ -291,14 +313,30 @@ static func _batch_set_properties(root: Node, entries: Array) -> Dictionary:
 				"success": false, "error": "node not found"})
 			continue
 
-		# Compound paths bypass UndoRedo — route through set_property_compound()
-		# which handles colon→slash conversion, sub-resource navigation, and
-		# readback verification (same pattern as scene_commands.gd:381-429).
+		# Compound paths: route through set_property_compound() which handles
+		# colon→slash conversion, sub-resource navigation, and readback.
+		# Property-type undo info is added to the batch UndoRedo action.
 		if ":" in prop or "/" in prop:
 			var do_unique := bool(entry.get("make_unique", false))
 			var result := Helpers.set_property_compound(
 				node, prop, raw_val, do_unique)
 			if result.get("ok", false):
+				# Add to batch UndoRedo if property-type (slash-only or single-colon).
+				var ui: Dictionary = result.get("_undo", {})
+				if ui.get("type") == "property" and undo_redo != null:
+					var undo_path: String = ui["path"]
+					var new_val = node.get(undo_path)
+					undo_redo.add_do_property(node, undo_path, new_val)
+					undo_redo.add_undo_property(node, undo_path, ui["old"])
+					if ui.has("old_resource_prop"):
+						var res_prop: String = ui["old_resource_prop"]
+						var new_res = node.get(res_prop)
+						undo_redo.add_do_property(node, res_prop, new_res)
+						undo_redo.add_undo_property(node, res_prop, ui["old_resource"])
+						if new_res is Resource:
+							undo_redo.add_do_reference(new_res)
+						if ui["old_resource"] is Resource:
+							undo_redo.add_undo_reference(ui["old_resource"])
 				var res_entry := {"node_path": np, "property": prop, "success": true}
 				if result.has("made_unique"):
 					res_entry["made_unique"] = result["made_unique"]
