@@ -229,7 +229,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 		if undo_type != "":
 			var undo_redo = _Hub.get_undo_redo()
 			if undo_redo != null:
-				undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
+				undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name], 0, node)
 				var undo_path: String = ui["path"]
 				var new_val = ui.get("new", node.get(undo_path))
 				undo_redo.add_do_method(
@@ -299,7 +299,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 static func _batch_set_properties(server: Node, root: Node, entries: Array) -> Dictionary:
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: batch set %d properties" % entries.size())
+		undo_redo.create_action("MCP: batch set %d properties" % entries.size(), 0, root)
 
 	var results: Array = []
 	for entry in entries:
