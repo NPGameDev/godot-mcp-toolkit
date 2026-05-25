@@ -32,9 +32,9 @@ minimise wasted tool calls.
 - **Schema enrichment:** if activated tools are not directly callable and
   require a separate tool lookup to obtain their schemas, pass
   `include_schemas: true` to receive full parameter schemas in the response
-- **Short keywords:** fuzzy search requires 3+ characters for substring
-  matching. Use exact group names or longer keywords for short terms
-  (e.g. `request: ["3d_tools"]` not `request: ["3d"]`)
+- **Short keywords:** fuzzy search matches short terms (e.g. `"3d"`, `"2d"`)
+  only against explicit keywords, not via substring. If a short keyword
+  returns no results, use the exact group name instead
 
 **Feature gates** — gated tools require env vars in `.mcp.json` env block:
 
