@@ -7,6 +7,15 @@ extends SceneTree
 ## The final banner is always printed for environments where exit codes
 ## are unreliable (Windows Godot).
 
+# --script mode skips the project-wide parse that registers class_names.
+# Explicit preloads force the scripts to load at parse time so the
+# identifiers resolve in both --script (CI) and editor (local) contexts.
+# Order matters: Options before ExtensionOptions (inheritance), Registry last.
+const MCPToolkitCommandOptions = preload("res://addons/godot_mcp_toolkit/mcp_toolkit_command_options.gd")
+const MCPToolkitToolContext = preload("res://addons/godot_mcp_toolkit/mcp_tool_context.gd")
+const MCPToolkitExtensionOptions = preload("res://addons/godot_mcp_toolkit/mcp_toolkit_extension_options.gd")
+const MCPToolkitCommandRegistry = preload("res://addons/godot_mcp_toolkit/command_registry.gd")
+
 var _passed := 0
 var _failed := 0
 var _errors: Array[String] = []
