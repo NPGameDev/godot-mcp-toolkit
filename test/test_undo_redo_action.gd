@@ -29,7 +29,7 @@ func diagnose_undo_redo() -> Dictionary:
 
 	# 1. Hub plugin reference
 	diag["hub_plugin_null"] = _Hub._plugin == null
-	diag["hub_plugin_class"] = str(type_of(_Hub._plugin)) if _Hub._plugin != null else "null"
+	diag["hub_plugin_class"] = _Hub._plugin.get_class() if _Hub._plugin != null else "null"
 
 	# 2. EditorUndoRedoManager
 	var ur = _Hub.get_undo_redo()
