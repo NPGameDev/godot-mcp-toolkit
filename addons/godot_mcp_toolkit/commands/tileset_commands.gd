@@ -75,6 +75,13 @@ static func _save_tileset(ts: TileSet, file_path: String) -> Dictionary:
 	return {}
 
 
+static func _layer_node_hint(prefix: String, suffix: String) -> String:
+	var major: int = Engine.get_version_info().get("major", 4)
+	var has_tilemaplayer: bool = major > 4 or _Hub.godot_minor() >= 3
+	var node_name := "TileMapLayer" if has_tilemaplayer else "TileMap"
+	return prefix + node_name + suffix
+
+
 # -- Commands -----------------------------------------------------------------
 
 
@@ -157,10 +164,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 		"tiles_created": tiles_created,
 		"physics": physics,
 	}
-	if _Hub.godot_minor() >= 3:
-		create_result["hint"] = "Assign this TileSet to a TileMapLayer node (4.3+). The deprecated TileMap node still works but TileMapLayer is preferred."
-	else:
-		create_result["hint"] = "Assign this TileSet to a TileMap node."
+	create_result["hint"] = _layer_node_hint("Assign this TileSet to a ", " node.")
 	return create_result
 
 
@@ -179,10 +183,14 @@ static func _cmd_tileset_add_source(parameters: Dictionary) -> Dictionary:
 	var save_result := _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
+	var source_id: int = result["source_id"]
 	return {
 		"success": true,
 		"path": file_path,
-		"new_source_id": result["source_id"],
+		"new_source_id": source_id,
+		"hint": _layer_node_hint(
+			"Configure tiles on source %d with tileset.edit_* tools, or paint onto a " % source_id,
+			" with tilemap.set_cells."),
 	}
 
 
@@ -207,6 +215,8 @@ static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
 		"success": true,
 		"path": file_path,
 		"removed_source_id": source_id,
+		"hint": _layer_node_hint(
+			"", " cells referencing source %d may become invalid. Check with tilemap.read_cells." % source_id),
 	}
 
 
@@ -233,8 +243,9 @@ static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
 		return McpError.make("NOT_FOUND",
 			"tile (%d,%d) not found in source %d" % [coord.x, coord.y, source_id])
 	var r = _apply_alternative(atlas, coord, parameters)
-	if not r.is_empty():
-		return McpError.make("FAILED", r)
+	if r.has("error"):
+		return McpError.make("FAILED", r["error"])
+	var alt_id: int = r["alt_id"]
 	var save_result := _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
@@ -242,6 +253,8 @@ static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
 		"success": true,
 		"path": file_path,
 		"tile": {"atlas_x": coord.x, "atlas_y": coord.y},
+		"new_alternative_id": alt_id,
+		"hint": "Alternative %d inherits base tile properties. Customize with tileset.edit_* tools." % alt_id,
 	}
 
 
@@ -282,6 +295,8 @@ static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionar
 		"path": file_path,
 		"removed_alternative_id": alt_id,
 		"tile": {"atlas_x": atlas_x, "atlas_y": atlas_y},
+		"hint": _layer_node_hint(
+			"", " cells using alternative %d revert to the base tile (alternative 0). Check with tilemap.read_cells." % alt_id),
 	}
 
 
@@ -303,6 +318,9 @@ static func _cmd_tileset_setup_layers(parameters: Dictionary) -> Dictionary:
 	return {
 		"success": true,
 		"path": file_path,
+		"hint": _layer_node_hint(
+			"Layers configured. Assign per-tile data with tileset.edit_physics, tileset.edit_terrain, etc., then paint onto a ",
+			" with tilemap.set_cells."),
 	}
 
 
@@ -429,10 +447,10 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 			# Feature 8: alternative tile
 			if tile.has("alternative") and typeof(tile["alternative"]) == TYPE_DICTIONARY:
 				var r = _apply_alternative(atlas, coord, tile["alternative"])
-				if r.is_empty():
-					modified = true
+				if r.has("error"):
+					tile_errors.append("tiles[%d]: %s" % [i, r["error"]])
 				else:
-					tile_errors.append("tiles[%d]: %s" % [i, r])
+					modified = true
 
 			if modified:
 				tiles_modified += 1
@@ -447,6 +465,9 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 		"path": file_path,
 		"tiles_modified": tiles_modified,
 		"errors": tile_errors,
+		"hint": _layer_node_hint(
+			"Edit more tile properties with tileset.edit_*, or paint tiles onto a ",
+			" with tilemap.set_cells."),
 	}
 	if new_source_id != null:
 		edit_result["new_source_id"] = new_source_id
@@ -731,7 +752,7 @@ static func _apply_animation(
 
 static func _apply_alternative(
 	atlas: TileSetAtlasSource, coord: Vector2i, alt: Dictionary
-) -> String:
+) -> Dictionary:
 	var alt_id := atlas.create_alternative_tile(coord)
 	var alt_td: TileData = atlas.get_tile_data(coord, alt_id)
 	if alt.has("flip_h"):
@@ -746,4 +767,4 @@ static func _apply_alternative(
 			alt_td.modulate = Color(
 				float(m.get("r", 1.0)), float(m.get("g", 1.0)),
 				float(m.get("b", 1.0)), float(m.get("a", 1.0)))
-	return ""
+	return {"alt_id": alt_id}
