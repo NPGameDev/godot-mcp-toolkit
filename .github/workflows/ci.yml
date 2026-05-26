@@ -28,8 +28,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Setup Godot
-        # pinned to v2.4.1 — update SHA manually after reviewing changelogs
-        uses: chickensoft-games/setup-godot@f166999204a4f2722c6fe042fbaa3b3ea0d9c789
+        uses: chickensoft-games/setup-godot@v2
         with:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
