@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in `res://sv2_validation/main.tscn`)
 **Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, particles.create, node.collision_from_sprite, node.set_script
-**Tests:** 47
+**Tests:** 48
 **Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene. Sections UR4–UR12 are regression guards for tools that previously had missing `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls, which caused `UndoRedo history mismatch` errors.
 
 ---
@@ -305,6 +305,10 @@
 - Scan output for `UndoRedo history mismatch`
 - **FAIL** if any `UndoRedo history mismatch` line appears.
 - **Note:** This is the critical regression gate. All 12 tools above previously had missing or orphaned `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls. Console errors indicate a regression — report the full error context and which tool section triggered it.
+
+**UR-CON.2** Clear console buffer:
+- `editor_get_console` — clear_buffer=`true`
+- **Expect:** success (prevents stale mismatch errors from bleeding into subsequent sections)
 
 ---
 
