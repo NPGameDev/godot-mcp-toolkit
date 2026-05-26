@@ -101,7 +101,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		if active_inside:
 			if outside_scenes.is_empty():
 				return McpError.make("PATH_IN_USE",
-					"all open scene tabs are inside %s; open a scene outside the folder first via scene.open" % folder_path)
+					"all open scene tabs are inside %s; open a scene outside the folder first via scene_open, then retry folder_delete" % folder_path)
 			await Helpers.open_scene_deferred(outside_scenes[0])
 		stale_tabs = inside_scenes
 		if not EditorInterface.has_method("close_scene"):
@@ -118,7 +118,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 				continue
 			if resource_path == normalized or resource_path.begins_with(normalized_with_slash):
 				return McpError.make("PATH_IN_USE",
-					"folder %s contains open script %s; close the script editor tab first" % [
+					"folder %s contains open script %s; close the script editor tab manually (no programmatic close API for script tabs), then retry folder_delete" % [
 						folder_path, resource_path])
 
 	var directory := DirAccess.open(folder_path)

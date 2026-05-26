@@ -51,7 +51,7 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 				var edited_root := Helpers.get_edited_root()
 				if edited_root != null and edited_root.scene_file_path == file_path:
 					return McpError.make("EDITED_SCENE",
-						"cannot delete the currently-edited scene %s on Godot 4.2-4.4 (no tab-close API); close it via scene.close first, or use scene.delete after closing" % file_path)
+						"cannot delete the currently-edited scene %s on Godot 4.2-4.4 (no programmatic tab-close API); close the scene tab manually, then retry file_delete" % file_path)
 				warnings.append(
 					"phantom tab: scene tab for %s remains open; Godot 4.2-4.4 has no API to close tabs — it will vanish on editor restart or manual close" % file_path)
 

@@ -147,6 +147,10 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 				if save_error != OK:
 					return McpError.make("SAVE_FAILED",
 						"ProjectSettings.save returned %d" % save_error)
+				# Emit settings_changed so GDScriptParser refreshes its compile
+				# cache (add_autoload_singleton does this internally; the direct
+				# ProjectSettings path does not).
+				ProjectSettings.emit_signal("settings_changed")
 			var filesystem := EditorInterface.get_resource_filesystem()
 			if filesystem != null:
 				filesystem.update_file(script_path)
@@ -172,6 +176,7 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 				if save_error != OK:
 					return McpError.make("SAVE_FAILED",
 						"ProjectSettings.save returned %d" % save_error)
+				ProjectSettings.emit_signal("settings_changed")
 			return {"success": true, "action": "unregister", "name": aname}
 
 		"list":

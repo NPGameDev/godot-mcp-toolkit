@@ -137,7 +137,7 @@ static func _action_add_effect(parameters: Dictionary) -> Dictionary:
 	var effect := _create_effect(type_name)
 	if effect == null:
 		return McpError.make("INVALID_PARAMS",
-			"Unknown effect type '%s'; use class suffix e.g. Reverb, Delay, Compressor" % type_name)
+			"Unknown effect type '%s'; use full class name (AudioEffectReverb) or suffix (Reverb). Valid: Reverb, Delay, Chorus, Compressor, Distortion, EQ6/10/21, LowPassFilter, HighPassFilter, BandPassFilter, Limiter, Panner, Phaser, PitchShift, Amplify" % type_name)
 
 	# Apply effect-specific properties if provided.
 	var properties = effect_dict.get("properties", null)
@@ -240,8 +240,13 @@ static func _resolve_bus_index(parameters: Dictionary) -> int:
 
 
 static func _create_effect(type_name: String) -> AudioEffect:
-	var class_name_str := "AudioEffect" + type_name
+	# Accept both full class names ("AudioEffectReverb") and suffixes ("Reverb").
+	var class_name_str := type_name
 	if not ClassDB.class_exists(class_name_str):
+		class_name_str = "AudioEffect" + type_name
+	if not ClassDB.class_exists(class_name_str):
+		return null
+	if not ClassDB.is_parent_class(class_name_str, "AudioEffect"):
 		return null
 	return ClassDB.instantiate(class_name_str) as AudioEffect
 
