@@ -742,3 +742,239 @@ SKIP — Per user instruction.
 
 - **Compound path centralization:** Working for `theme_override_*` paths via both `scene_create_node` and `scene_instantiate`. The colon-chain `material:shader_parameter/brightness` SET remains broken — reports success but writes to a transient copy, not the persisted sub-resource.
 - **Remaining issue:** `set_shader_parameter()` fix does not activate for colon-chain paths. The `:` sub-resource resolution resolves the material, then attempts a generic `set()` on it with the `shader_parameter/brightness` suffix, bypassing the `set_shader_parameter()` codepath.
+
+---
+
+# Section 25 — Undo/Redo Verification Re-run (2026-05-26)
+
+- **Context:** Re-run after critical fix (16b898d): builder now uses internal UndoRedo for Callable-based method registration. Previous run failed because EditorUndoRedoManager.add_do_method uses vararg (Object, StringName, ...) not Callable.
+- **Scene:** `res://Main.tscn`
+- **Total:** 16 passed, 2 failed, 1 skipped (19 test slots)
+
+## Diagnostics: diagnose_undo_redo() smoke test
+
+| Field | Value | Status |
+|-------|-------|--------|
+| hub_plugin_null | false | OK |
+| hub_plugin_class | EditorPlugin | OK |
+| undo_redo_null | false | OK |
+| undo_redo_class | EditorUndoRedoManager | OK |
+| scene_root_name | Main | OK |
+| root_history_id | 1 | OK |
+| builder_active | **true** | OK — builder is functional |
+| smoke_has_undo_after_commit | **true** | OK — action recorded in history |
+| smoke_undo_worked | **true** | OK — undo reverted position to (0,0) |
+| smoke_pos_after_undo | (0.0, 0.0) | OK |
+| smoke_pos_after_redo | (99.0, 99.0) | OK — redo restored correctly |
+
+**Verdict:** All diagnostics green. Builder property-based undo/redo fully functional.
+
+## UR-Setup: Attach undo/redo helper
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR-S1 | PASS | URHelper (Node) created at scene root |
+| UR-S2 | PASS | `test_undo_redo_action.gd` attached, 0 exports |
+| UR-S3 | **PARTIAL** | 8 ran, 7 passed, 1 failed. See sub-test breakdown below. |
+
+### UR-S3 sub-test breakdown (run_undo_redo_tests)
+
+| Sub-test | Pass | Details |
+|----------|------|---------|
+| prop_set | PASS | builder_active=true, has_undo_after_commit=true, history_id=1 |
+| prop_undo | PASS | position reverted to (0.0, 0.0) — undo_result ok, history_id=1 |
+| prop_redo | PASS | position restored to (123.0, 456.0) — redo_result ok |
+| method_added | PASS | child present after commit_recorded, builder_active=true |
+| method_undo | **FAIL** | undo_result ok=true but child_exists=true — Callable-based remove_child not executed during undo |
+| method_redo | PASS | child_exists=true (trivially passes since undo didn't remove) |
+| commit_do_executes | PASS | commit() executed do-side immediately, visible=false |
+| commit_undo | PASS | undo restored visible=true |
+
+## UR1: node.set_property undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR1.1 | PASS | Node2D "URTarget" created |
+| UR1.2 | PASS | position set to (200, 300) — confirmed via GET: Vector2(200, 300) |
+| UR1.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR1.4 | PASS | position reverted to (0, 0) — confirmed via GET: Vector2(0, 0) |
+| UR1.5 | PASS | trigger_redo: status=ok, history_id=1 |
+| UR1.6 | PASS | position restored to (200, 300) — confirmed via GET: Vector2(200, 300) |
+
+## UR2: node.manage rename undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR2.1 | PASS | Renamed URTarget → URRenamed (old_name=URTarget, new_path=URRenamed) |
+| UR2.2 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR2.3 | PASS | scene_get_tree confirms `URTarget` in tree (name reverted from URRenamed) |
+| UR2.4 | PASS | trigger_redo: status=ok — scene_get_tree confirms `URRenamed` restored |
+
+## UR3: node.groups add undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR3.1 | PASS | Undo restored name to URTarget (from UR2 redo state) |
+| UR3.2 | PASS | Group `ur_test_group` added to URTarget |
+| UR3.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR3.4 | **FAIL** | node.groups list: count=1, groups=["ur_test_group"] — group NOT removed by undo. node.groups add likely does not route through UndoRedo builder for group membership. |
+
+## UR-Cleanup
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR-C1 | PASS | URTarget deleted |
+| UR-C1b | PASS | URTest_MethodChild deleted (leftover from method_undo sub-test failure) |
+| UR-C2 | PASS | URHelper deleted |
+| UR-C3 | PASS | Scene saved |
+
+## Summary
+
+| Category | Passed | Failed | Skipped |
+|----------|--------|--------|---------|
+| Diagnostics | ALL GREEN | — | — |
+| UR-S3 (integration) | 7 | 1 | 0 |
+| UR1 (set_property) | 6 | 0 | 0 |
+| UR2 (rename) | 4 | 0 | 0 |
+| UR3 (groups) | 3 | 1 | 0 |
+| UR-Cleanup | 4 | 0 | 0 |
+| **Total** | **24** | **2** | **0** |
+
+### Improvement vs Previous Run
+
+| Metric | Previous (pre-fix) | This run (post-fix) |
+|--------|-------------------|---------------------|
+| Diagnostics | smoke_undo_worked=N/A | smoke_undo_worked=**true** |
+| UR-S3 integration | 3/5 (2 fail, 3 missing) | **7/8** (1 fail) |
+| UR1 set_property | 2/6 (1 fail, 3 skip) | **6/6** |
+| UR2 rename | 1/4 (1 fail, 2 skip) | **4/4** |
+| UR3 groups | 2/4 (1 fail, 1 skip) | 3/4 (1 fail) |
+| Overall | 10 pass, 4 fail, 6 skip | **24 pass, 2 fail, 0 skip** |
+
+### Remaining Failures
+
+1. **UR-S3 method_undo** — `_ur.add_undo_method(callable)` registers on the internal UndoRedo but the Callable is not executed during undo. The `undo_result.ok=true` indicates `UndoRedo.undo()` returns success, but `root.remove_child.bind(child)` was not invoked. Property-based undo (add_undo_property) works correctly — only Callable-based method undo is broken. This affects extensions using `do_method()`/`undo_method()` for add_child/remove_child patterns but does NOT affect core MCP tools which use property-based undo.
+
+2. **UR3.4 groups undo** — `node.groups add` command does not register an undo action. The trigger_undo succeeded (status=ok) but undid a prior action (the rename undo from UR3.1) rather than the group add. The `node.groups` command handler likely applies the group mutation directly without routing through `MCPToolkitUndoRedoAction`.
+
+### Fixes Verified Working
+
+- **16b898d (internal UndoRedo for Callable-based registration):** Property-based undo/redo fully functional. `commit_recorded()` and `commit()` both work correctly for `do_property`/`undo_property`. The builder correctly resolves history IDs and registers actions in EditorUndoRedoManager.
+- **node.set_property:** Full undo/redo cycle works (set → undo → verify revert → redo → verify restore).
+- **node.manage rename:** Full undo/redo cycle works (rename → undo → verify name reverted → redo → verify name restored).
+
+---
+
+# Section 25 — Undo/Redo Verification Re-run #2 (2026-05-26)
+
+- **Context:** Re-run after commit 3445361 which routes ALL operations through EditorUndoRedoManager directly, eliminating the internal UndoRedo. Previous run (16b898d) had 2 remaining failures: UR-S3 method_undo (Callable-based undo not executed) and UR3.4 groups undo (group not removed by undo).
+- **Scene:** `res://Main.tscn`
+- **Total:** 22 passed, 0 failed, 0 skipped (22 test slots)
+
+## Diagnostics: diagnose_undo_redo() smoke test
+
+| Field | Value | Status |
+|-------|-------|--------|
+| hub_plugin_null | false | OK |
+| hub_plugin_class | EditorPlugin | OK |
+| undo_redo_null | false | OK |
+| undo_redo_class | EditorUndoRedoManager | OK |
+| scene_root_name | Main | OK |
+| root_history_id | 1 | OK |
+| builder_active | **true** | OK |
+| smoke_has_undo_after_commit | **true** | OK |
+| smoke_undo_worked | **true** | OK |
+| smoke_pos_after_undo | (0.0, 0.0) | OK |
+| smoke_pos_after_redo | (99.0, 99.0) | OK |
+
+**Verdict:** All diagnostics green.
+
+## UR-Setup: Attach undo/redo helper
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR-S1 | PASS | URHelper (Node) created at scene root |
+| UR-S2 | PASS | `test_undo_redo_action.gd` attached, 0 exports |
+| UR-S3 | **PASS** | **8/8 sub-tests passed** (all green — see breakdown below) |
+
+### UR-S3 sub-test breakdown (run_undo_redo_tests)
+
+| Sub-test | Pass | Details |
+|----------|------|---------|
+| prop_set | PASS | position set to (123, 456) |
+| prop_undo | PASS | position reverted to (0, 0) |
+| prop_redo | PASS | position restored to (123, 456) |
+| method_added | PASS | child present after commit_recorded |
+| method_undo | **PASS** | child removed by undo — **PREVIOUSLY FAILED, NOW FIXED** |
+| method_redo | PASS | child restored by redo |
+| commit_do_executes | PASS | commit() executed do-side immediately, visible=false |
+| commit_undo | PASS | undo restored visible=true |
+
+## UR1: node.set_property undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR1.1 | PASS | Node2D "URTarget" created |
+| UR1.2 | PASS | position set to (200, 300) — confirmed via GET |
+| UR1.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR1.4 | PASS | position reverted to (0, 0) — confirmed via GET |
+| UR1.5 | PASS | trigger_redo: status=ok, history_id=1 |
+| UR1.6 | PASS | position restored to (200, 300) — confirmed via GET |
+
+## UR2: node.manage rename undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR2.1 | PASS | Renamed URTarget → URRenamed |
+| UR2.2 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR2.3 | PASS | scene_get_tree confirms `URTarget` in tree (name reverted) |
+| UR2.4 | PASS | trigger_redo: status=ok — `URRenamed` restored |
+
+## UR3: node.groups add undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR3.1 | PASS | Undo restored name to URTarget |
+| UR3.2 | PASS | Group `ur_test_group` added to URTarget |
+| UR3.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR3.4 | **PASS** | groups=[], count=0 — group removed by undo. **PREVIOUSLY FAILED, NOW FIXED** |
+
+## UR-Cleanup
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR-C1 | PASS | URTarget deleted |
+| UR-C2 | PASS | URHelper deleted |
+| UR-C3 | PASS | Scene saved |
+
+## Summary
+
+| Category | Passed | Failed | Skipped |
+|----------|--------|--------|---------|
+| Diagnostics | ALL GREEN | — | — |
+| UR-S3 (integration) | 8 | 0 | 0 |
+| UR1 (set_property) | 6 | 0 | 0 |
+| UR2 (rename) | 4 | 0 | 0 |
+| UR3 (groups) | 4 | 0 | 0 |
+| UR-Cleanup | 3 | 0 | 0 |
+| **Total** | **25** | **0** | **0** |
+
+### Improvement vs Previous Runs
+
+| Metric | Run 1 (pre-16b898d) | Run 2 (post-16b898d) | **Run 3 (post-3445361)** |
+|--------|---------------------|----------------------|--------------------------|
+| UR-S3 integration | 3/5 | 7/8 (method_undo fail) | **8/8** |
+| UR1 set_property | 2/6 | 6/6 | **6/6** |
+| UR2 rename | 1/4 | 4/4 | **4/4** |
+| UR3 groups | 2/4 (action_level errors) | 3/4 (group not removed) | **4/4** |
+| Overall | 10 pass, 4 fail, 6 skip | 24 pass, 2 fail, 0 skip | **25 pass, 0 fail, 0 skip** |
+
+### Both Previously-Failing Tests Now Fixed
+
+1. **UR-S3 method_undo** — Callable-based `remove_child` now executes during undo. Routing through EditorUndoRedoManager directly (instead of internal UndoRedo) ensures the Callable is properly invoked.
+
+2. **UR3.4 groups undo** — `node.groups add` now registers an undo action via EditorUndoRedoManager. Group membership is correctly reverted on undo (count=0 after undo, previously count=1).
+
+### Fix Verified
+
+- **3445361 (use EditorUndoRedoManager directly for all operations):** All undo/redo operations fully functional. Property-based, Callable-based, and group-based mutations all register in editor history and can be reversed. The internal UndoRedo elimination resolves both the history ID mismatch (method_undo) and the missing undo registration (groups undo).

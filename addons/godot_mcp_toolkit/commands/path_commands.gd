@@ -129,7 +129,7 @@ static func _action_clear(node: Path2D, curve: Curve2D) -> Dictionary:
 
 
 static func _wrap_undo_redo(node: Path2D, curve: Curve2D, old_curve: Curve2D, action_name: String) -> void:
-	MCPToolkitUndoRedoAction.begin(action_name.trim_prefix("MCP: ")) \
+	MCPToolkitUndoRedoAction.begin(action_name.trim_prefix("MCP: "), node) \
 		.do_property(node, &"curve", curve) \
 		.undo_property(node, &"curve", old_curve) \
 		.do_reference(curve) \

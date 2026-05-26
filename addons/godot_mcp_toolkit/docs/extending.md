@@ -395,6 +395,46 @@ skip expensive state capture that's only needed for undo registration.
 the same builder instance fires a warning and is a no-op. This prevents
 accidental undo history corruption.
 
+**Context object is required for scene operations:** The second argument to
+`begin()` (`context_object`) tells `EditorUndoRedoManager` which undo history
+to use. When omitted (or `null`), the action lands in the **global history**
+(ID 0). If the do/undo callbacks then reference nodes that belong to a
+**scene history** (ID 1+), Godot logs `UndoRedo history mismatch` errors and
+undo/redo may silently fail.
+
+Always pass an in-tree node as `context_object` when your tool operates on
+scene nodes:
+
+```gdscript
+# WRONG — missing context, routes to global history:
+MCPToolkitUndoRedoAction.begin("add to group") \
+    .do_method(node.add_to_group.bind("enemies")) \
+    ...
+
+# CORRECT — node is in the scene tree, routes to scene history:
+MCPToolkitUndoRedoAction.begin("add to group", node) \
+    .do_method(node.add_to_group.bind("enemies")) \
+    ...
+```
+
+The only time `null` context is correct is for **global operations** that don't
+touch scene nodes (e.g., writing a script file to disk).
+
+**Gotcha — orphaned context:** If you remove a node from the tree *before*
+calling `begin()`, the node is orphaned and resolves to global history even
+though you passed it explicitly. Record the undo action using a node that is
+still in the tree (typically the parent):
+
+```gdscript
+# WRONG — node already removed, resolves to global history:
+parent.remove_child(node)
+MCPToolkitUndoRedoAction.begin("delete node", node) ...
+
+# CORRECT — parent is still in the tree:
+parent.remove_child(node)
+MCPToolkitUndoRedoAction.begin("delete node", parent) ...
+```
+
 **C# usage:**
 
 C# extensions cannot call GDScript static methods directly. Instead, use the

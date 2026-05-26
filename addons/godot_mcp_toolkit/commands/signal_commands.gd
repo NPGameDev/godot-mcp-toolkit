@@ -210,7 +210,7 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 			}
 		source.connect(signal_name, callable, Object.CONNECT_PERSIST)
 		MCPToolkitUndoRedoAction.begin("connect %s.%s -> %s.%s" % [
-				source_path, signal_name, target_path, method_name]) \
+				source_path, signal_name, target_path, method_name], source) \
 			.do_method(source.connect.bind(signal_name, callable, Object.CONNECT_PERSIST)) \
 			.undo_method(source.disconnect.bind(signal_name, callable)) \
 			.commit_recorded()
@@ -235,7 +235,7 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 			return McpError.make("NOT_FOUND", "no connection to disconnect")
 		source.disconnect(signal_name, callable)
 		MCPToolkitUndoRedoAction.begin("disconnect %s.%s -> %s.%s" % [
-				source_path, signal_name, target_path, method_name]) \
+				source_path, signal_name, target_path, method_name], source) \
 			.do_method(source.disconnect.bind(signal_name, callable)) \
 			.undo_method(source.connect.bind(signal_name, callable, Object.CONNECT_PERSIST)) \
 			.commit_recorded()

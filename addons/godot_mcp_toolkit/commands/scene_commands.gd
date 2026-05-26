@@ -477,7 +477,7 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 	if parent == null:
 		return McpError.make("INTERNAL", "node has no parent: %s" % node_path)
 	parent.remove_child(node)
-	MCPToolkitUndoRedoAction.begin("delete %s" % node_path, node) \
+	MCPToolkitUndoRedoAction.begin("delete %s" % node_path, parent) \
 		.do_method(parent.remove_child.bind(node)) \
 		.undo_method(parent.add_child.bind(node)) \
 		.undo_method(node.set_owner.bind(root)) \

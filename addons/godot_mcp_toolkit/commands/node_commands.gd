@@ -720,7 +720,7 @@ static func _manage_reorder(
 			"new_index %d out of range [0, %d)" % [new_index, child_count])
 
 	parent.move_child(node, new_index)
-	MCPToolkitUndoRedoAction.begin("reorder %s to index %d" % [node_path, new_index]) \
+	MCPToolkitUndoRedoAction.begin("reorder %s to index %d" % [node_path, new_index], node) \
 		.do_method(parent.move_child.bind(node, new_index)) \
 		.undo_method(parent.move_child.bind(node, old_index)) \
 		.commit_recorded()
@@ -757,7 +757,7 @@ static func _manage_duplicate(
 
 	target_parent.add_child(dup)
 	dup.set_owner(root)
-	MCPToolkitUndoRedoAction.begin("duplicate %s" % node_path) \
+	MCPToolkitUndoRedoAction.begin("duplicate %s" % node_path, target_parent) \
 		.do_method(target_parent.add_child.bind(dup)) \
 		.do_method(dup.set_owner.bind(root)) \
 		.do_reference(dup) \
@@ -812,7 +812,7 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 				return McpError.make("INVALID_PARAMS", "add requires group name")
 			var persistent := bool(parameters.get("persistent", true))
 			node.add_to_group(group, persistent)
-			MCPToolkitUndoRedoAction.begin("add %s to group %s" % [node_path, group]) \
+			MCPToolkitUndoRedoAction.begin("add %s to group %s" % [node_path, group], node) \
 				.do_method(node.add_to_group.bind(group, persistent)) \
 				.undo_method(node.remove_from_group.bind(group)) \
 				.commit_recorded()
@@ -826,7 +826,7 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 				return McpError.make("NOT_FOUND",
 					"node %s is not in group '%s'" % [node_path, group])
 			node.remove_from_group(group)
-			MCPToolkitUndoRedoAction.begin("remove %s from group %s" % [node_path, group]) \
+			MCPToolkitUndoRedoAction.begin("remove %s from group %s" % [node_path, group], node) \
 				.do_method(node.remove_from_group.bind(group)) \
 				.undo_method(node.add_to_group.bind(group, true)) \
 				.commit_recorded()
@@ -848,7 +848,7 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 
 static func _batch_node_groups(root: Node, batch_action: String, entries: Array) -> Dictionary:
 	var undo_action = MCPToolkitUndoRedoAction.begin(
-		"batch %s groups (%d entries)" % [batch_action, entries.size()])
+		"batch %s groups (%d entries)" % [batch_action, entries.size()], root)
 
 	var results: Array = []
 	for entry in entries:
@@ -964,7 +964,7 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 			ctrl.offset_bottom += float(margins_raw["bottom"])
 
 	# Record for undo using the final property values (already applied).
-	MCPToolkitUndoRedoAction.begin("control.set_layout %s %s" % [node_path, preset_name]) \
+	MCPToolkitUndoRedoAction.begin("control.set_layout %s %s" % [node_path, preset_name], ctrl) \
 		.do_property(ctrl, &"anchor_left", ctrl.anchor_left) \
 		.do_property(ctrl, &"anchor_top", ctrl.anchor_top) \
 		.do_property(ctrl, &"anchor_right", ctrl.anchor_right) \
@@ -1059,7 +1059,7 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 	var total_points := 0
 	var first_path := ""
 
-	var coll_action = MCPToolkitUndoRedoAction.begin("collision from sprite")
+	var coll_action = MCPToolkitUndoRedoAction.begin("collision from sprite", target_parent)
 
 	for i in range(polygons.size()):
 		var coll := CollisionPolygon2D.new()

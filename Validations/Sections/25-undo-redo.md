@@ -1,9 +1,9 @@
 # Section 25 — Undo/Redo Verification
 
 **Dependencies:** Section 2 (nodes exist in `res://sv2_validation/main.tscn`)
-**Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method
-**Tests:** 14
-**Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene.
+**Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, particles.create, node.collision_from_sprite, node.set_script
+**Tests:** 47
+**Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene. Sections UR4–UR12 are regression guards for tools that previously had missing `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls, which caused `UndoRedo history mismatch` errors.
 
 ---
 
@@ -92,16 +92,249 @@
 
 ---
 
+## UR4. node.manage reorder undo/redo
+
+**UR4.1** Create a sibling node:
+- `scene.create_node` — type=`Node2D`, name=`URSibling`, parent=scene root
+- **Expect:** success
+
+**UR4.2** Record original index:
+- `scene.get_tree` — note the child index of `URSibling`
+- **Expect:** `URSibling` exists in tree
+
+**UR4.3** Reorder:
+- `node.manage` — node_path=`URSibling`, action=`reorder`, new_index=`0`
+- **Expect:** success
+
+**UR4.4** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URSibling"]`
+- **Expect:** status=`ok`
+
+**UR4.5** Verify order restored:
+- `scene.get_tree` — check `URSibling` is back at its original index (not index 0)
+- **Expect:** original index restored
+
+---
+
+## UR5. node.manage duplicate undo/redo
+
+**UR5.1** Duplicate:
+- `node.manage` — node_path=`URTarget`, action=`duplicate`, new_name=`URDuplicate`
+- **Expect:** success
+
+**UR5.2** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`[""]`
+- **Expect:** status=`ok`
+
+**UR5.3** Verify duplicate removed:
+- `scene.get_tree` — confirm `URDuplicate` does NOT exist
+- **Expect:** no node named `URDuplicate`
+
+---
+
+## UR6. node.groups remove + batch undo/redo
+
+**UR6.1** Add URTarget to group for remove test:
+- `node.groups` — node_path=`URTarget`, action=`add`, group=`ur_remove_test`
+- **Expect:** success
+
+**UR6.2** Remove from group:
+- `node.groups` — node_path=`URTarget`, action=`remove`, group=`ur_remove_test`
+- **Expect:** success
+
+**UR6.3** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URTarget"]`
+- **Expect:** status=`ok`
+
+**UR6.4** Verify group restored:
+- `node.groups` — node_path=`URTarget`, action=`list`
+- **Expect:** `ur_remove_test` in groups
+
+**UR6.5** Batch add groups:
+- `node.groups` — action=`add`, entries=`[{"node_path": "URTarget", "group": "ur_batch_a"}, {"node_path": "URSibling", "group": "ur_batch_a"}]`
+- **Expect:** success, 2 entries added
+
+**UR6.6** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`[""]`
+- **Expect:** status=`ok`
+
+**UR6.7** Verify batch undone:
+- `node.groups` — node_path=`URTarget`, action=`list`
+- **Expect:** `ur_batch_a` NOT in groups
+- `node.groups` — node_path=`URSibling`, action=`list`
+- **Expect:** `ur_batch_a` NOT in groups
+
+---
+
+## UR7. scene.delete_node undo/redo
+
+**UR7.1** Delete node:
+- `scene.delete_node` — node_path=`URSibling`
+- **Expect:** success
+
+**UR7.2** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`[""]`
+- **Expect:** status=`ok`
+
+**UR7.3** Verify node restored:
+- `scene.get_tree` — confirm `URSibling` exists
+- **Expect:** `URSibling` back in tree
+
+---
+
+## UR8. control.set_layout undo/redo
+
+**UR8.1** Create a Control node:
+- `scene.create_node` — type=`Control`, name=`URControl`, parent=scene root
+- **Expect:** success
+
+**UR8.2** Set layout:
+- `control.set_layout` — node_path=`URControl`, preset=`PRESET_CENTER`
+- **Expect:** success
+
+**UR8.3** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URControl"]`
+- **Expect:** status=`ok`
+
+**UR8.4** Verify layout reverted:
+- `node.get_property` — node_path=`URControl`, property=`anchor_left`
+- **Expect:** value=`0` (default, not the center preset value of 0.5)
+
+---
+
+## UR9. signal.manage connect/disconnect undo/redo
+
+**UR9.1** Connect a signal:
+- `signal.manage` — action=`connect`, source_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
+- **Expect:** success (status=`created`)
+
+**UR9.2** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URTarget"]`
+- **Expect:** status=`ok`
+
+**UR9.3** Verify disconnected:
+- `signal.list` — node_path=`URTarget`
+- **Expect:** `visibility_changed` NOT connected to `URSibling.show`
+
+**UR9.4** Reconnect (for disconnect test):
+- `signal.manage` — action=`connect`, source_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
+- **Expect:** success
+
+**UR9.5** Disconnect:
+- `signal.manage` — action=`disconnect`, source_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
+- **Expect:** success
+
+**UR9.6** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URTarget"]`
+- **Expect:** status=`ok`
+
+**UR9.7** Verify reconnected:
+- `signal.list` — node_path=`URTarget`
+- **Expect:** `visibility_changed` connected to `URSibling.show`
+
+---
+
+## UR10. path2d.edit_curve undo/redo
+
+**UR10.1** Create a Path2D:
+- `scene.create_node` — type=`Path2D`, name=`URPath`, parent=scene root
+- **Expect:** success
+
+**UR10.2** Add a point:
+- `path2d.edit_curve` — node_path=`URPath`, action=`add_point`, position=`{"x": 100, "y": 200}`
+- **Expect:** success, point_count=1
+
+**UR10.3** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URPath"]`
+- **Expect:** status=`ok`
+
+**UR10.4** Verify point removed:
+- `node.get_property` — node_path=`URPath`, property=`curve:point_count`
+- If that doesn't work, use `path2d.edit_curve` action=`get_points`
+- **Expect:** 0 points (empty curve or no curve)
+
+---
+
+## UR11. particles.create undo/redo
+
+**UR11.1** Create a particle effect:
+- `particles.create` — parent_path=scene root, type=`2d`
+- **Expect:** success, returns the created node path
+
+**UR11.2** Verify node exists:
+- `scene.get_tree` — confirm the particle node exists (name from UR11.1 response)
+- **Expect:** GPUParticles2D node in tree
+
+**UR11.3** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`[""]`
+- **Expect:** status=`ok`
+
+**UR11.4** Verify particle removed:
+- `scene.get_tree` — confirm the particle node is gone
+- **Expect:** no GPUParticles2D node (the one created in UR11.1)
+
+---
+
+## UR12. node.collision_from_sprite undo/redo
+
+**UR12.1** Create a Sprite2D:
+- `scene.create_node` — type=`Sprite2D`, name=`URSprite`, parent=scene root
+- **Expect:** success
+
+**UR12.2** Assign texture:
+- `node.set_property` — node_path=`URSprite`, property=`texture`, value=`res://icon.svg`
+- **Expect:** success
+
+**UR12.3** Generate collision:
+- `node.collision_from_sprite` — node_path=`URSprite`
+- **Expect:** success, collision polygon(s) created
+
+**UR12.4** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`[""]`
+- **Expect:** status=`ok`
+
+**UR12.5** Verify collision removed:
+- `scene.get_tree` — confirm no CollisionPolygon2D children under the scene root (or wherever collision was placed)
+- **Expect:** collision node(s) created in UR12.3 are gone
+
+---
+
+## UR-Console: History mismatch error check
+
+**UR-CON.1** Read editor console:
+- `editor_get_console`
+- Scan output for `UndoRedo history mismatch`
+- **FAIL** if any `UndoRedo history mismatch` line appears.
+- **Note:** This is the critical regression gate. All 12 tools above previously had missing or orphaned `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls. Console errors indicate a regression — report the full error context and which tool section triggered it.
+
+---
+
 ## UR-Cleanup: Remove test nodes
 
-**UR-C1.** Delete `URTarget` (or `URRenamed`, whichever name it currently has):
+**UR-C1.** Delete `URSprite`:
+- `scene.delete_node` — node_path=`URSprite`
+- **Expect:** success
+
+**UR-C2.** Delete `URPath`:
+- `scene.delete_node` — node_path=`URPath`
+- **Expect:** success
+
+**UR-C3.** Delete `URControl`:
+- `scene.delete_node` — node_path=`URControl`
+- **Expect:** success
+
+**UR-C4.** Delete `URSibling`:
+- `scene.delete_node` — node_path=`URSibling`
+- **Expect:** success (or already removed — skip if not found)
+
+**UR-C5.** Delete `URTarget` (or `URRenamed`, whichever name it currently has):
 - `scene.delete_node` — node_path matching current name
 - **Expect:** success (or already removed by undo)
 
-**UR-C2.** Delete `URHelper`:
+**UR-C6.** Delete `URHelper`:
 - `scene.delete_node` — node_path=`URHelper`
 - **Expect:** success
 
-**UR-C3.** Save scene:
+**UR-C7.** Save scene:
 - `editor_save_scene`
 - **Expect:** success

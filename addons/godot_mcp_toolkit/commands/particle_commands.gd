@@ -579,7 +579,7 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 	# --- Add to scene via UndoRedo ---
 	parent.add_child(node)
 	node.set_owner(root)
-	var _undo := MCPToolkitUndoRedoAction.begin("create %s" % node.name) \
+	var _undo := MCPToolkitUndoRedoAction.begin("create %s" % node.name, parent) \
 		.do_method(parent.add_child.bind(node)) \
 		.do_method(node.set_owner.bind(root)) \
 		.do_reference(node)
