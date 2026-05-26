@@ -154,7 +154,7 @@ static func _cmd_animation_keyframe(
 			}
 		var undo_redo = _Hub.get_undo_redo()
 		if undo_redo != null:
-			undo_redo.create_action("MCP: animation.keyframe add %s @ %s" % [track_path, time], 0, node)
+			undo_redo.create_action("MCP: animation.keyframe add %s @ %s" % [track_path, time], 0, player)
 			undo_redo.add_do_method(animation, "track_insert_key", track_index, time, coerced)
 			undo_redo.add_undo_method(
 				server.undo_helpers, "_animation_remove_key_at", animation, track_index, time)
@@ -205,7 +205,7 @@ static func _cmd_animation_keyframe(
 		var serialised_value = Coerce.serialize_value(captured_value)
 		var undo_redo = _Hub.get_undo_redo()
 		if undo_redo != null:
-			undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time], 0, node)
+			undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time], 0, resolved["player"])
 			undo_redo.add_do_method(
 				server.undo_helpers, "_animation_remove_key_at", animation, track_index, time)
 			undo_redo.add_undo_method(
