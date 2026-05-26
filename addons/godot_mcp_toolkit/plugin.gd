@@ -177,7 +177,7 @@ func _enter_tree() -> void:
 
 	# Warn about untested future Godot versions (but don't block).
 	var _engine_ver := _Hub.VersionUtils.get_engine_version_pair()
-	if not _Hub.VersionUtils.is_version_in_range(_engine_ver, "", _Hub.GODOT_TESTED_MAX_VERSION):
+	if not _Hub.VersionUtils.is_at_most(_engine_ver, _Hub.GODOT_TESTED_MAX_VERSION):
 		push_warning(("[MCP] Godot %s detected — latest tested version is %s. "
 			+ "The plugin will run normally but some features may behave unexpectedly. "
 			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues")

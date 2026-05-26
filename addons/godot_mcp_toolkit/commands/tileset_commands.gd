@@ -77,7 +77,7 @@ static func _save_tileset(ts: TileSet, file_path: String) -> Dictionary:
 
 static func _layer_node_hint(prefix: String, suffix: String) -> String:
 	var ver := _Hub.VersionUtils.get_engine_version_pair()
-	var has_tilemaplayer := _Hub.VersionUtils.is_version_in_range(ver, "4.3", "")
+	var has_tilemaplayer := _Hub.VersionUtils.is_at_least(ver, "4.3")
 	var node_name := "TileMapLayer" if has_tilemaplayer else "TileMap"
 	return prefix + node_name + suffix
 

@@ -10,6 +10,14 @@ static func get_engine_version_pair() -> String:
 	return "%d.%d" % [info["major"], info["minor"]]
 
 
+static func is_at_least(engine_ver: String, min_ver: String) -> bool:
+	return _compare(_parse(engine_ver), _parse(min_ver)) >= 0
+
+
+static func is_at_most(engine_ver: String, max_ver: String) -> bool:
+	return _compare(_parse(engine_ver), _parse(max_ver)) <= 0
+
+
 static func is_version_in_range(engine_ver: String, min_ver: String, max_ver: String) -> bool:
 	var engine := _parse(engine_ver)
 	if min_ver != "" and _compare(engine, _parse(min_ver)) < 0:
