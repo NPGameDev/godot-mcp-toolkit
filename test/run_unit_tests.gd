@@ -32,6 +32,8 @@ func _init() -> void:
 	_test_compound_set_helper()
 	_test_undo_info()
 	_test_undo_redo_action()
+	_test_error_api()
+	await _test_response_validation()
 
 	_report()
 	quit(0 if _failed == 0 else 1)
@@ -570,6 +572,116 @@ func _test_undo_redo_action() -> void:
 	var factory_action := reg.create_undo_action("factory test")
 	_ok(factory_action != null, "create_undo_action() returns non-null")
 	_ok(not factory_action.is_active(), "factory action inactive in headless")
+
+	print("")
+
+
+# --- MCPToolkitError API (~5 assertions) ------------------------------------
+
+func _test_error_api() -> void:
+	_begin("MCPToolkitError API")
+
+	# 1. fail() returns correct shape
+	var e1 := MCPToolkitError.fail("NOT_FOUND", "Node missing")
+	_ok(e1["success"] == false, "fail() → success false")
+	_eq(e1["error"], "Node missing", "fail() → error message")
+	_eq(e1["code"], "NOT_FOUND", "fail() → code")
+
+	# 2. fail() with DEFAULT_HINTS code → auto-hint attached
+	var e2 := MCPToolkitError.fail("TIMEOUT", "Editor busy")
+	_ok(e2.has("hint"), "fail(TIMEOUT) → auto-hint attached")
+	_eq(e2["hint"], MCPToolkitError.DEFAULT_HINTS["TIMEOUT"],
+			"fail(TIMEOUT) → hint matches DEFAULT_HINTS")
+
+	# 3. fail() with explicit hint → overrides auto-hint
+	var e3 := MCPToolkitError.fail("TIMEOUT", "Custom", "My hint")
+	_eq(e3["hint"], "My hint", "fail() explicit hint → overrides auto-hint")
+
+	# 4. fail() with non-DEFAULT_HINTS code and no hint → no hint key
+	var e4 := MCPToolkitError.fail("NOT_FOUND", "Missing")
+	_ok(not e4.has("hint"), "fail(NOT_FOUND, no hint) → no hint key")
+
+	# 5. require() with all params present → returns null
+	var ok_params := {"node_path": "/root/Player", "file_path": "res://s.gd"}
+	_eq(MCPToolkitError.require(ok_params, ["node_path", "file_path"]), null,
+			"require() all present → null")
+
+	# 6. require() with missing param → returns error with hint
+	var bad_params := {"node_path": ""}
+	var e5 = MCPToolkitError.require(bad_params, ["node_path"])
+	_ok(e5 is Dictionary, "require() missing → returns Dictionary")
+	_eq(e5["code"], "INVALID_PARAMS", "require() missing → INVALID_PARAMS")
+	_eq(e5["hint"], MCPToolkitError.HINT_NODE_PATH,
+			"require(node_path) → HINT_NODE_PATH")
+
+	# 7. require() with missing file_path → HINT_FILE_PATH
+	var bad_params2 := {"file_path": ""}
+	var e6 = MCPToolkitError.require(bad_params2, ["file_path"])
+	_eq(e6["hint"], MCPToolkitError.HINT_FILE_PATH,
+			"require(file_path) → HINT_FILE_PATH")
+
+	print("")
+
+
+# --- Response validation (~6 assertions) ------------------------------------
+
+func _bad_handler_non_dict(_p: Dictionary) -> String:
+	return "not a dictionary"
+
+func _bad_handler_no_success(_p: Dictionary) -> Dictionary:
+	return {"data": "missing success"}
+
+func _good_handler(_p: Dictionary) -> Dictionary:
+	return {"success": true, "data": "ok"}
+
+func _handler_with_hint(_p: Dictionary) -> Dictionary:
+	return {"success": true, "hint": "handler hint"}
+
+func _handler_fail(_p: Dictionary) -> Dictionary:
+	return {"success": false, "error": "nope", "code": "TEST"}
+
+func _test_response_validation() -> void:
+	_begin("Response validation")
+	var reg := MCPToolkitCommandRegistry.new()
+
+	# 1. Handler returns non-Dictionary → INTERNAL error
+	reg.add("rv.bad_type", _bad_handler_non_dict,
+			MCPToolkitCommandOptions.new())
+	var r1: Dictionary = await reg.call_command("rv.bad_type", {})
+	_eq(r1["success"], false, "non-Dict handler → success false")
+	_eq(r1["code"], "INTERNAL", "non-Dict handler → INTERNAL code")
+
+	# 2. Handler returns Dict without success → INTERNAL error
+	reg.add("rv.no_success", _bad_handler_no_success,
+			MCPToolkitCommandOptions.new())
+	var r2: Dictionary = await reg.call_command("rv.no_success", {})
+	_eq(r2["success"], false, "no-success handler → success false")
+	_eq(r2["code"], "INTERNAL", "no-success handler → INTERNAL code")
+
+	# 3. Good handler → passes through
+	reg.add("rv.good", _good_handler, MCPToolkitCommandOptions.new())
+	var r3: Dictionary = await reg.call_command("rv.good", {})
+	_eq(r3["success"], true, "good handler → success true")
+	_eq(r3["data"], "ok", "good handler → data preserved")
+
+	# 4. with_success_hint() auto-injection on success
+	reg.add("rv.hinted", _good_handler,
+			MCPToolkitCommandOptions.new().with_success_hint("Next step"))
+	var r4: Dictionary = await reg.call_command("rv.hinted", {})
+	_eq(r4["hint"], "Next step", "with_success_hint → auto-injected")
+
+	# 5. Handler hint overrides registered hint
+	reg.add("rv.override", _handler_with_hint,
+			MCPToolkitCommandOptions.new().with_success_hint("Registered"))
+	var r5: Dictionary = await reg.call_command("rv.override", {})
+	_eq(r5["hint"], "handler hint", "handler hint → overrides registered")
+
+	# 6. No injection on success: false
+	reg.add("rv.fail", _handler_fail,
+			MCPToolkitCommandOptions.new().with_success_hint("Should not appear"))
+	var r6: Dictionary = await reg.call_command("rv.fail", {})
+	_ok(not r6.has("hint") or r6.get("hint", "") != "Should not appear",
+			"success:false → no success_hint injection")
 
 	print("")
 

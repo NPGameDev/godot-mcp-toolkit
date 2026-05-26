@@ -3,7 +3,6 @@ extends RefCounted
 ## game.* command handlers — start/stop editor playtest (Mode A).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const FileGuard = _Hub.FileGuard
 const RegistryClient = _Hub.RegistryClient
 const Helpers = _Hub.Helpers
@@ -56,16 +55,16 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 	var if_running := str(parameters.get("if_running", "fail"))
 
 	if not (if_running in ["return", "fail"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"if_running must be 'return' or 'fail' (got %s); default is 'fail'" % if_running)
 
 	if runtime_poll:
 		if not EditorInterface.is_playing_scene():
 			var comp := _scan_compilation_errors()
 			if comp["found"]:
-				return McpError.make("COMPILATION_FAILED",
+				return MCPToolkitError.fail("COMPILATION_FAILED",
 					"Game failed to start — likely a compilation error. Recent errors:\n" + "\n".join(comp["errors"]))
-			return McpError.make("COMPILATION_FAILED",
+			return MCPToolkitError.fail("COMPILATION_FAILED",
 				"Game is not running — it likely failed to compile or crashed on startup. "
 				+ ("No errors captured in log buffer (file-tail mode on Godot 4.2-4.4 may miss errors). " if not _Hub.LogBuffer.uses_logger_api() else "No errors in log buffer. ")
 				+ "Call editor_refresh to retrigger compilation errors, then editor_get_console for details.")
@@ -75,7 +74,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 				var runtime_port := RegistryClient.get_runtime_port()
 				return {"success": true, "status": "already_running",
 					"runtime_port": runtime_port if runtime_port > 0 else null}
-			return McpError.make("ALREADY_PLAYING",
+			return MCPToolkitError.fail("ALREADY_PLAYING",
 				"a game is already running; call game.stop first, or use runtime_poll:true to re-probe the runtime connection")
 
 		# Snapshot the log file size so the editor-side debugger.get_log
@@ -88,19 +87,19 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 				EditorInterface.play_main_scene()
 			"current":
 				if Helpers.get_edited_root() == null:
-					return McpError.make("NO_SCENE",
+					return MCPToolkitError.fail("NO_SCENE",
 						"no currently-edited scene; use target:'main' or target:<res://path>, or scene.open first")
 				EditorInterface.play_current_scene()
 			_:
 				var guard := FileGuard.resolve_safe(target)
 				if guard["error"] != null:
-					return McpError.make("PATH_DENIED", str(guard["reason"]))
+					return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 				if target.get_extension().to_lower() != "tscn":
-					return McpError.make("INVALID_PATH",
+					return MCPToolkitError.fail("INVALID_PATH",
 						"game.start only plays .tscn files (got %s)" % target)
 				if not FileAccess.file_exists(target):
-					return McpError.make("NOT_FOUND",
-						"no scene file at %s; use scene.create first" % target, McpError.HINT_FILE_PATH)
+					return MCPToolkitError.fail("NOT_FOUND",
+						"no scene file at %s; use scene.create first" % target, MCPToolkitError.HINT_FILE_PATH)
 				EditorInterface.play_custom_scene(target)
 
 	# Runtime readiness check.
@@ -250,7 +249,7 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 
 	var file := FileAccess.open(log_path, FileAccess.READ)
 	if file == null:
-		return McpError.make("LOG_BUSY",
+		return MCPToolkitError.fail("LOG_BUSY",
 			"Log file exists but cannot be read (err %d) — retry in 1-2s" % FileAccess.get_open_error())
 
 	var file_len: int = file.get_length()

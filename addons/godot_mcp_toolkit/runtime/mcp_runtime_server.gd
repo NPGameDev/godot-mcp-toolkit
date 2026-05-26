@@ -13,7 +13,6 @@ extends Node
 ##      to end users' shipped games. This is security-critical.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Coerce = _Hub.Coerce
 const Untrusted = _Hub.Untrusted
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
@@ -305,7 +304,7 @@ func _send_error(peer: WebSocketPeer, id, code: int, message: String) -> void:
 func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
 	var viewport := get_viewport()
 	if viewport == null:
-		_send_result(peer, id, McpError.make("INTERNAL", "no viewport available"))
+		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "no viewport available"))
 		return
 
 	# Wait for any queued draw calls to complete. Without this, get_image
@@ -315,12 +314,12 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
 
 	var image := viewport.get_texture().get_image()
 	if image == null:
-		_send_result(peer, id, McpError.make("INTERNAL", "viewport texture unavailable"))
+		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "viewport texture unavailable"))
 		return
 
 	var png_bytes := image.save_png_to_buffer()
 	if png_bytes.is_empty():
-		_send_result(peer, id, McpError.make("INTERNAL", "save_png_to_buffer returned empty"))
+		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "save_png_to_buffer returned empty"))
 		return
 
 	_send_result(peer, id, {
@@ -334,22 +333,22 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
 
 func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("node_path", ""))
 	if path.is_empty():
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "missing node_path"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "missing node_path"))
 		return
 
 	var tree := get_tree()
 	if tree == null or tree.root == null:
-		_send_result(peer, id, McpError.make("INTERNAL", "scene tree unavailable"))
+		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "scene tree unavailable"))
 		return
 
 	var node := tree.root.get_node_or_null(path)
 	if node == null:
 		var hint := _build_not_found_hint(tree.root, path)
-		_send_result(peer, id, McpError.make("NOT_FOUND", "node not found: %s%s" % [path, hint]))
+		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "node not found: %s%s" % [path, hint]))
 		return
 
 	var props := {}
@@ -374,22 +373,22 @@ func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
 
 func _cmd_runtime_get_script_vars(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("node_path", ""))
 	if path.is_empty():
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "missing node_path"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "missing node_path"))
 		return
 
 	var tree := get_tree()
 	if tree == null or tree.root == null:
-		_send_result(peer, id, McpError.make("INTERNAL", "scene tree unavailable"))
+		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "scene tree unavailable"))
 		return
 
 	var node := tree.root.get_node_or_null(path)
 	if node == null:
 		var hint := _build_not_found_hint(tree.root, path)
-		_send_result(peer, id, McpError.make("NOT_FOUND", "node not found: %s%s" % [path, hint]))
+		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "node not found: %s%s" % [path, hint]))
 		return
 
 	var script = node.get_script()
@@ -406,7 +405,7 @@ func _cmd_runtime_get_script_vars(peer: WebSocketPeer, id, params) -> void:
 
 	var visibility_filter := str(params.get("visibility", "all"))
 	if not (visibility_filter in ["public", "private", "all"]):
-		_send_result(peer, id, McpError.make("INVALID_PARAMS",
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS",
 			"visibility must be 'public', 'private', or 'all' (got '%s')" % visibility_filter))
 		return
 
@@ -461,27 +460,27 @@ func _build_not_found_hint(root: Node, path: String) -> String:
 
 func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return
 	var node_path: String = str(params.get("node_path", ""))
 	var property: String = str(params.get("property", ""))
 	var value = params.get("value")
 
 	if node_path.is_empty() or property.is_empty():
-		_send_result(peer, id, McpError.make("INVALID_PARAMS",
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS",
 			"node_path and property are required"))
 		return
 
 	var tree := get_tree()
 	if tree == null or tree.root == null:
-		_send_result(peer, id, McpError.make("INTERNAL", "scene tree unavailable"))
+		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "scene tree unavailable"))
 		return
 
 	var node := tree.root.get_node_or_null(node_path)
 	if node == null:
 		# FIX-6: Walk path segments and list siblings at the failing level.
 		var hint := _build_not_found_hint(tree.root, node_path)
-		_send_result(peer, id, McpError.make("NOT_FOUND",
+		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND",
 			"node not found: %s%s" % [node_path, hint]))
 		return
 
@@ -496,7 +495,7 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 				found = true
 				break
 		if not found:
-			_send_result(peer, id, McpError.make("NOT_FOUND",
+			_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND",
 				"property '%s' not found on %s" % [property, node_path]))
 			return
 
@@ -539,7 +538,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) == TYPE_DICTIONARY and params.has("source"):
 		source = str(params.get("source", "buffer"))
 	if not (source in ["buffer", "file"]):
-		_send_result(peer, id, McpError.make("INVALID_PARAMS",
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS",
 			"source must be 'buffer' or 'file' (got %s)" % source))
 		return
 
@@ -552,7 +551,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		if is_regex:
 			text_regex = RegEx.new()
 			if text_regex.compile("(?i)" + text_filter) != OK:
-				_send_result(peer, id, McpError.make("INVALID_PARAMS",
+				_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS",
 					"text_filter is not a valid regex (is_regex=true). "
 					+ "To search for literal text, omit is_regex or set it to false. "
 					+ "For regex, check for unbalanced groups () [] or unescaped metacharacters."))
@@ -592,7 +591,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
 			else:
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
-			_send_result(peer, id, McpError.make("LOG_UNAVAILABLE", _hint))
+			_send_result(peer, id, MCPToolkitError.fail("LOG_UNAVAILABLE", _hint))
 		else:
 			_send_result(peer, id, {
 				"lines": [],
@@ -611,12 +610,12 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 			var _busy_hint := "log file exists but cannot be read right now (err %d) — transient lock during flush, retry in 1-2s" % open_err
 			if _Hub.LogBuffer.uses_logger_api():
 				_busy_hint += "; consider source=\"buffer\" instead"
-			_send_result(peer, id, McpError.make("LOG_BUSY", _busy_hint))
+			_send_result(peer, id, MCPToolkitError.fail("LOG_BUSY", _busy_hint))
 		else:
 			var _gone_hint := "log file disappeared at %s — possible log rotation; retry" % log_path
 			if _Hub.LogBuffer.uses_logger_api():
 				_gone_hint += " or use source=\"buffer\""
-			_send_result(peer, id, McpError.make("LOG_UNAVAILABLE", _gone_hint))
+			_send_result(peer, id, MCPToolkitError.fail("LOG_UNAVAILABLE", _gone_hint))
 		return
 	var text := file.get_as_text()
 	file.close()
@@ -700,12 +699,12 @@ func _signal_list_of(node: Object) -> Array:
 
 func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("node_path", ""))
 	var node = _resolve_runtime_node(path)
 	if node == null:
-		_send_result(peer, id, McpError.make("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % path))
 		return
 	_send_result(peer, id, {"path": path, "signals": _signal_list_of(node)})
 
@@ -746,7 +745,7 @@ func _resolve_runtime_signal_pair(params) -> Dictionary:
 func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	var r := _resolve_runtime_signal_pair(params)
 	if r.has("error"):
-		_send_result(peer, id, McpError.make(str(r["code"]), str(r["error"])))
+		_send_result(peer, id, MCPToolkitError.fail(str(r["code"]), str(r["error"])))
 		return
 	var source = r["source"]
 	var callable: Callable = r["callable"]
@@ -771,7 +770,7 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 	# inference can't reach through to Object.connect's Error return.
 	var err: int = source.connect(signal_name, callable)
 	if err != OK:
-		_send_result(peer, id, McpError.make("CONNECT_FAILED", "connect returned %d" % err))
+		_send_result(peer, id, MCPToolkitError.fail("CONNECT_FAILED", "connect returned %d" % err))
 		return
 	_send_result(peer, id, {
 		"success": true,
@@ -786,13 +785,13 @@ func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:
 func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
 	var r := _resolve_runtime_signal_pair(params)
 	if r.has("error"):
-		_send_result(peer, id, McpError.make(str(r["code"]), str(r["error"])))
+		_send_result(peer, id, MCPToolkitError.fail(str(r["code"]), str(r["error"])))
 		return
 	var source = r["source"]
 	var callable: Callable = r["callable"]
 	var signal_name: String = str(r["signal_name"])
 	if not source.is_connected(signal_name, callable):
-		_send_result(peer, id, McpError.make("NOT_FOUND", "no connection to disconnect"))
+		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "no connection to disconnect"))
 		return
 	source.disconnect(signal_name, callable)
 	_send_result(peer, id, {"success": true})
@@ -801,19 +800,19 @@ func _cmd_signal_disconnect(peer: WebSocketPeer, id, params) -> void:
 
 func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("node_path", ""))
 	var signal_name := str(params.get("signal_name", ""))
 	if signal_name.is_empty():
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "missing signal_name"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "missing signal_name"))
 		return
 	var node = _resolve_runtime_node(path)
 	if node == null:
-		_send_result(peer, id, McpError.make("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % path))
 		return
 	if not node.has_signal(signal_name):
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "signal %s not on %s" % [signal_name, path]))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "signal %s not on %s" % [signal_name, path]))
 		return
 	var raw_args = params.get("args", [])
 	if typeof(raw_args) != TYPE_ARRAY:
@@ -832,12 +831,12 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 # feed them through Input.parse_input_event sequentially with optional delays.
 func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return
 
 	var events = params.get("events", null)
 	if typeof(events) != TYPE_ARRAY or events.is_empty():
-		_send_result(peer, id, McpError.make("INVALID_PARAMS",
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS",
 			"events array is required and must not be empty"))
 		return
 
@@ -849,7 +848,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 	for i in total:
 		var event = events[i]
 		if typeof(event) != TYPE_DICTIONARY:
-			var err := McpError.make("INVALID_PARAMS", "event at index %d must be an object" % i)
+			var err := MCPToolkitError.fail("INVALID_PARAMS", "event at index %d must be an object" % i)
 			err["events_processed"] = processed
 			if not summary_mode:
 				err["results"] = results
@@ -902,7 +901,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 				event_result["dispatched"] = false
 				event_result["error"] = "unknown event_type (expected key|mouse_button|mouse_motion|action|click|click_node)"
 				results.append(event_result)
-				var err := McpError.make("INVALID_PARAMS",
+				var err := MCPToolkitError.fail("INVALID_PARAMS",
 					"unknown event_type at index %d: %s" % [i, et])
 				err["events_processed"] = processed
 				if summary_mode:
@@ -1089,18 +1088,18 @@ func _dispatch_click_node(event_data: Dictionary) -> Dictionary:
 # without an extra round-trip.
 func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return
 	var path := str(params.get("node_path", ""))
 	if path.is_empty():
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "missing node_path"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "missing node_path"))
 		return
 	var node = _resolve_runtime_node(path)
 	if node == null:
-		_send_result(peer, id, McpError.make("NOT_FOUND", "node not found: %s" % path))
+		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % path))
 		return
 	if not (node is AnimationPlayer):
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "node is not AnimationPlayer: %s (got %s)" % [path, node.get_class()]))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "node is not AnimationPlayer: %s (got %s)" % [path, node.get_class()]))
 		return
 	var ap: AnimationPlayer = node
 	var op := str(params.get("operation", ""))
@@ -1111,7 +1110,7 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 				ap.play()
 			else:
 				if not ap.has_animation(anim):
-					_send_result(peer, id, McpError.make("NOT_FOUND", "animation not found: %s" % anim))
+					_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "animation not found: %s" % anim))
 					return
 				ap.play(anim)
 		"pause":
@@ -1121,7 +1120,7 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 		"seek":
 			ap.seek(float(params.get("time", 0.0)), true)
 		_:
-			_send_result(peer, id, McpError.make("INVALID_PARAMS", "unknown op: %s (expected play|pause|stop|seek)" % op))
+			_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "unknown op: %s (expected play|pause|stop|seek)" % op))
 			return
 	_send_result(peer, id, {
 		"success": true,
@@ -1141,11 +1140,11 @@ func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, FeatureGate.disabled_error("execute_code"))
 		return
 	if typeof(params) != TYPE_DICTIONARY:
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "params must be an object"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return
 	var code := str(params.get("code", ""))
 	if code.is_empty():
-		_send_result(peer, id, McpError.make("INVALID_PARAMS", "missing code"))
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "missing code"))
 		return
 
 	var truncated := code.substr(0, _EXECUTE_CODE_LOG_CAP)
@@ -1158,13 +1157,13 @@ func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
 	if scope_path.is_empty():
 		var tree := get_tree()
 		if tree == null or tree.root == null:
-			_send_result(peer, id, McpError.make("INTERNAL", "scene tree unavailable"))
+			_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "scene tree unavailable"))
 			return
 		scope_node = tree.root
 	else:
 		scope_node = _resolve_runtime_node(scope_path)
 		if scope_node == null:
-			_send_result(peer, id, McpError.make("NOT_FOUND", "scope node not found: %s" % scope_path))
+			_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "scope node not found: %s" % scope_path))
 			return
 
 	# Expression only supports expressions, not statements. Catch common
@@ -1173,7 +1172,7 @@ func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
 	var _trimmed := code.strip_edges()
 	for _kw in ["var", "return", "func", "if", "for", "while", "class", "const", "match"]:
 		if _trimmed == _kw or _trimmed.begins_with(_kw + " ") or _trimmed.begins_with(_kw + "\t") or _trimmed.begins_with(_kw + "\n"):
-			_send_result(peer, id, McpError.make("PARSE_ERROR",
+			_send_result(peer, id, MCPToolkitError.fail("PARSE_ERROR",
 				"execute_code only supports expressions, not statements. '%s' is a statement keyword. " % _kw +
 				"Use method calls (node.method()), property access (node.property), or arithmetic instead."))
 			return
@@ -1181,7 +1180,7 @@ func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
 	var expr := Expression.new()
 	var parse_err := expr.parse(code, PackedStringArray())
 	if parse_err != OK:
-		_send_result(peer, id, McpError.make("PARSE_ERROR", expr.get_error_text()))
+		_send_result(peer, id, MCPToolkitError.fail("PARSE_ERROR", expr.get_error_text()))
 		return
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
@@ -1189,7 +1188,7 @@ func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
 		# Hint enrichment — mirror editor-side patterns.
 		if "call to 'load'" in err_text.to_lower():
 			err_text += _make_load_hint(code)
-		_send_result(peer, id, McpError.make("EXECUTE_FAILED", err_text))
+		_send_result(peer, id, MCPToolkitError.fail("EXECUTE_FAILED", err_text))
 		return
 	_send_result(peer, id, {"result": Coerce.serialize_value(result)})
 

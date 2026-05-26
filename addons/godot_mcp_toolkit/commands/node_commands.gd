@@ -3,7 +3,6 @@ extends RefCounted
 ## node.* command handlers — property get/set/list, method calls, script attachment.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Coerce = _Hub.Coerce
 const FileGuard = _Hub.FileGuard
 const FeatureGate = _Hub.FeatureGate
@@ -120,18 +119,18 @@ static func _brief_value(value: Variant) -> String:
 static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	var property_name := str(parameters.get("property", ""))
 
 	if node_path.is_empty() or property_name.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path or property")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path or property")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
 	# Compound paths (colon-chained sub-resource paths like
 	# "material:shader_parameter/value") use the centralized handler which
@@ -139,7 +138,7 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 	if ":" in property_name:
 		var result := Helpers.get_property_compound(node, property_name)
 		if not result.get("ok", false):
-			return McpError.make(
+			return MCPToolkitError.fail(
 				result.get("code", "NOT_FOUND"),
 				str(result.get("error", "")))
 		return {"value": result["value"]}
@@ -150,7 +149,7 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	# FIX-7: Batch mode — set multiple properties in a single UndoRedo action.
 	var batch_raw = parameters.get("batch", null)
@@ -163,11 +162,11 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 	var raw_value = parameters.get("value", null)
 
 	if node_path.is_empty() or property_name.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path or property")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path or property")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
 	# P-002: "groups" is not a regular property — it lives in the .tscn node
 	# header and must be set via add_to_group / remove_from_group.
@@ -179,7 +178,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 		elif typeof(raw_value) == TYPE_STRING:
 			new_groups.append(str(raw_value))
 		else:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"groups value must be a string or array of strings")
 		var old_groups: Array = []
 		for g in node.get_groups():
@@ -214,7 +213,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 		var result := Helpers.set_property_compound(
 			node, property_name, raw_value, do_unique)
 		if not result.get("ok", false):
-			return McpError.make(
+			return MCPToolkitError.fail(
 				result.get("code", "INVALID_VALUE"),
 				str(result.get("error", "")))
 
@@ -254,7 +253,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 
 	var coerce_result := Helpers.coerce_for_property(node, property_name, raw_value)
 	if not coerce_result.get("ok", false):
-		return McpError.make(
+		return MCPToolkitError.fail(
 			coerce_result.get("code", "INVALID_VALUE"),
 			str(coerce_result.get("error", "")))
 	var coerced = coerce_result["value"]
@@ -275,7 +274,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 			and not (coerced is Resource):
 		var readback = node.get(property_name)
 		if not (readback is String):
-			return McpError.make("INVALID_VALUE",
+			return MCPToolkitError.fail("INVALID_VALUE",
 				"property '%s' expects a Resource, not a bare string path. " % property_name +
 				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw_value))
 	return {"success": true}
@@ -411,19 +410,19 @@ static func _resolve_common_property_names(node: Object) -> Array[String]:
 static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 	var mask := str(parameters.get("mask", "common"))
 	if not (mask in ["common", "all", "groups", "script"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"mask must be 'common', 'all', 'groups', or 'script' (got '%s')" % mask)
 	var visibility_filter := str(parameters.get("visibility", "all"))
 	if mask == "script" and not (visibility_filter in ["public", "private", "all"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"visibility must be 'public', 'private', or 'all' (got '%s')" % visibility_filter)
 	var common_names: Array[String] = []
 	if mask == "common":
@@ -492,7 +491,7 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 		return err
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no open scene; use scene.open or scene.create first")
+		return MCPToolkitError.fail("NO_SCENE", "no open scene; use scene.open or scene.create first")
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
@@ -502,23 +501,23 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	# which gates through FileGuard. node_path is a scene-tree path, not filesystem.
 
 	if node_path.is_empty() or method_name.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path or method_name")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path or method_name")
 	if typeof(args_raw) != TYPE_ARRAY:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"args must be an Array (got %s)" % typeof(args_raw))
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"no node at path %s. This tool is editor-only — for runtime nodes use execute_code or runtime_get_node_state." % node_path)
 	if not node.has_method(method_name):
-		return McpError.make("INVALID_METHOD",
+		return MCPToolkitError.fail("INVALID_METHOD",
 			"node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [
 				node_path, method_name])
 
 	var missing := Coerce.check_resource_paths(args_raw)
 	if missing != "":
-		return McpError.make("LOAD_FAILED",
+		return MCPToolkitError.fail("LOAD_FAILED",
 			"failed to load resource at %s; verify the path or use resource.write to create it first" % missing)
 
 	var coerced_args = Coerce.coerce_value(args_raw)
@@ -546,16 +545,16 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
 	var script_path := str(parameters.get("script_path", ""))
 
@@ -572,14 +571,14 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 
 	var guard := FileGuard.resolve_safe(script_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 
 	var loaded = ResourceLoader.load(script_path)
 	if loaded == null:
-		return McpError.make("LOAD_FAILED",
+		return MCPToolkitError.fail("LOAD_FAILED",
 			"cannot load script at %s; verify the path or use script.write to create it first" % script_path)
 	if not (loaded is Script):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
 
 	var old_script = node.get_script()
@@ -613,20 +612,20 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 static func _cmd_node_manage(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing action (rename|reparent|reorder|duplicate)")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing action (rename|reparent|reorder|duplicate)")
 
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
 	match action:
 		"rename":
@@ -638,7 +637,7 @@ static func _cmd_node_manage(parameters: Dictionary) -> Dictionary:
 		"duplicate":
 			return _manage_duplicate(root, node, node_path, parameters)
 		_:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"unknown action '%s'; must be rename|reparent|reorder|duplicate" % action)
 
 
@@ -647,9 +646,9 @@ static func _manage_rename(
 ) -> Dictionary:
 	var new_name := str(parameters.get("new_name", ""))
 	if new_name.is_empty():
-		return McpError.make("INVALID_PARAMS", "rename requires new_name")
+		return MCPToolkitError.fail("INVALID_PARAMS", "rename requires new_name")
 	if node == root:
-		return McpError.make("INVALID_PATH", "cannot rename the scene root")
+		return MCPToolkitError.fail("INVALID_PATH", "cannot rename the scene root")
 
 	var old_name := String(node.name)
 	node.name = new_name
@@ -670,17 +669,17 @@ static func _manage_reparent(
 	var new_parent_path := str(parameters.get("new_parent_path", ""))
 	new_parent_path = Helpers.normalize_editor_path(new_parent_path)
 	if new_parent_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "reparent requires new_parent_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "reparent requires new_parent_path")
 	if node == root:
-		return McpError.make("INVALID_PATH", "cannot reparent the scene root")
+		return MCPToolkitError.fail("INVALID_PATH", "cannot reparent the scene root")
 
 	var new_parent := root.get_node_or_null(new_parent_path)
 	if new_parent == null:
-		return McpError.make("NOT_FOUND",
-			"new parent not found: %s" % new_parent_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND",
+			"new parent not found: %s" % new_parent_path, MCPToolkitError.HINT_NODE_PATH)
 	# Prevent reparenting a node under itself (would create a cycle).
 	if new_parent == node or node.is_ancestor_of(new_parent):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"cannot reparent a node under itself or a descendant")
 
 	var keep_global := bool(parameters.get("keep_global_transform", true))
@@ -705,18 +704,18 @@ static func _manage_reorder(
 	root: Node, node: Node, node_path: String, parameters: Dictionary,
 ) -> Dictionary:
 	if not parameters.has("new_index"):
-		return McpError.make("INVALID_PARAMS", "reorder requires new_index")
+		return MCPToolkitError.fail("INVALID_PARAMS", "reorder requires new_index")
 	var new_index := int(parameters.get("new_index", 0))
 	if node == root:
-		return McpError.make("INVALID_PATH", "cannot reorder the scene root")
+		return MCPToolkitError.fail("INVALID_PATH", "cannot reorder the scene root")
 
 	var parent := node.get_parent()
 	if parent == null:
-		return McpError.make("INTERNAL", "node has no parent")
+		return MCPToolkitError.fail("INTERNAL", "node has no parent")
 	var old_index := node.get_index()
 	var child_count := parent.get_child_count()
 	if new_index < 0 or new_index >= child_count:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"new_index %d out of range [0, %d)" % [new_index, child_count])
 
 	parent.move_child(node, new_index)
@@ -733,11 +732,11 @@ static func _manage_duplicate(
 	root: Node, node: Node, node_path: String, parameters: Dictionary,
 ) -> Dictionary:
 	if node == root:
-		return McpError.make("INVALID_PATH", "cannot duplicate the scene root")
+		return MCPToolkitError.fail("INVALID_PATH", "cannot duplicate the scene root")
 
 	var dup := node.duplicate()
 	if dup == null:
-		return McpError.make("INTERNAL", "Node.duplicate() returned null for %s" % node_path)
+		return MCPToolkitError.fail("INTERNAL", "Node.duplicate() returned null for %s" % node_path)
 
 	var new_name := str(parameters.get("new_name", ""))
 	if not new_name.is_empty():
@@ -752,8 +751,8 @@ static func _manage_duplicate(
 		target_parent = root.get_node_or_null(parent_path)
 		if target_parent == null:
 			dup.queue_free()
-			return McpError.make("NOT_FOUND",
-				"parent not found: %s" % parent_path, McpError.HINT_NODE_PATH)
+			return MCPToolkitError.fail("NOT_FOUND",
+				"parent not found: %s" % parent_path, MCPToolkitError.HINT_NODE_PATH)
 
 	target_parent.add_child(dup)
 	dup.set_owner(root)
@@ -782,34 +781,34 @@ static func _manage_duplicate(
 static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing action (add|remove|list)")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing action (add|remove|list)")
 
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	# Batch mode: entries array present → process N node+group pairs in one UndoRedo action.
 	var entries_raw = parameters.get("entries", null)
 	if typeof(entries_raw) == TYPE_ARRAY and (entries_raw as Array).size() > 0:
 		if action == "list":
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"batch entries not supported with action 'list'; use single mode per node")
 		return _batch_node_groups(root, action, entries_raw as Array)
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
 	match action:
 		"add":
 			var group := str(parameters.get("group", ""))
 			if group.is_empty():
-				return McpError.make("INVALID_PARAMS", "add requires group name")
+				return MCPToolkitError.fail("INVALID_PARAMS", "add requires group name")
 			var persistent := bool(parameters.get("persistent", true))
 			node.add_to_group(group, persistent)
 			MCPToolkitUndoRedoAction.begin("add %s to group %s" % [node_path, group], node) \
@@ -821,9 +820,9 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 		"remove":
 			var group := str(parameters.get("group", ""))
 			if group.is_empty():
-				return McpError.make("INVALID_PARAMS", "remove requires group name")
+				return MCPToolkitError.fail("INVALID_PARAMS", "remove requires group name")
 			if not node.is_in_group(group):
-				return McpError.make("NOT_FOUND",
+				return MCPToolkitError.fail("NOT_FOUND",
 					"node %s is not in group '%s'" % [node_path, group])
 			node.remove_from_group(group)
 			MCPToolkitUndoRedoAction.begin("remove %s from group %s" % [node_path, group], node) \
@@ -842,7 +841,7 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 				"groups": groups, "count": groups.size()}
 
 		_:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"unknown action '%s'; must be add|remove|list" % action)
 
 
@@ -906,7 +905,7 @@ const _LAYOUT_PRESETS := {
 static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
@@ -915,15 +914,15 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 	var margins_raw = parameters.get("margins", null)
 
 	if node_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path")
 	if preset_name.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing preset")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing preset")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 	if not (node is Control):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"node at %s is %s — control.set_layout requires a Control node" % [
 				node_path, node.get_class()])
 
@@ -931,7 +930,7 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 
 	if not _LAYOUT_PRESETS.has(preset_name):
 		var available := ", ".join(PackedStringArray(_LAYOUT_PRESETS.keys()))
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"unknown preset '%s'. Available: %s" % [preset_name, available])
 
 	var preset_enum: int = _LAYOUT_PRESETS[preset_name]
@@ -1005,31 +1004,31 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["sprite_path"])
+	var err = MCPToolkitError.require(parameters, ["sprite_path"])
 	if err != null:
 		return err
 
 	var root := Helpers.get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	var sprite_path := str(parameters.get("sprite_path", ""))
 	sprite_path = Helpers.normalize_editor_path(sprite_path)
 	var node = Helpers.resolve_scene_node(sprite_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % sprite_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % sprite_path, MCPToolkitError.HINT_NODE_PATH)
 
 	if not (node is Sprite2D or node is TextureRect):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"node at %s is %s — expected Sprite2D or TextureRect" % [sprite_path, node.get_class()])
 
 	var tex = node.get("texture") as Texture2D
 	if tex == null:
-		return McpError.make("INVALID_PARAMS", "sprite has no texture")
+		return MCPToolkitError.fail("INVALID_PARAMS", "sprite has no texture")
 
 	var img := tex.get_image()
 	if img == null:
-		return McpError.make("INVALID_PARAMS", "cannot read image data")
+		return MCPToolkitError.fail("INVALID_PARAMS", "cannot read image data")
 
 	var simplification := float(parameters.get("simplification", 2.0))
 
@@ -1040,7 +1039,7 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 		simplification)
 
 	if polygons.is_empty():
-		return McpError.make("INVALID_PARAMS", "no opaque regions found in texture")
+		return MCPToolkitError.fail("INVALID_PARAMS", "no opaque regions found in texture")
 
 	# Resolve target parent
 	var target_parent: Node
@@ -1051,8 +1050,8 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 		target_parent_path = Helpers.normalize_editor_path(target_parent_path)
 		target_parent = root.get_node_or_null(target_parent_path)
 		if target_parent == null:
-			return McpError.make("NOT_FOUND",
-				"target parent not found: %s" % target_parent_path, McpError.HINT_NODE_PATH)
+			return MCPToolkitError.fail("NOT_FOUND",
+				"target parent not found: %s" % target_parent_path, MCPToolkitError.HINT_NODE_PATH)
 
 	var sprite_name := String(node.name)
 	var base_name := str(parameters.get("target_name", "%s_collision" % sprite_name))

@@ -3,7 +3,6 @@ extends RefCounted
 ## project.* command handlers — get_settings, set_setting, layer names.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Coerce = _Hub.Coerce
 const Untrusted = _Hub.Untrusted
 const FeatureGate = _Hub.FeatureGate
@@ -39,7 +38,7 @@ static func _cmd_project_get_settings(parameters: Dictionary) -> Dictionary:
 	var regex := RegEx.new()
 	var compile_error := regex.compile(SECRET_KEY_REGEX)
 	if compile_error != OK:
-		return McpError.make("INTERNAL",
+		return MCPToolkitError.fail("INTERNAL",
 			"secret regex failed to compile (err %d)" % compile_error)
 
 	var settings := {}
@@ -67,15 +66,15 @@ static func _cmd_project_get_settings(parameters: Dictionary) -> Dictionary:
 static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	var key := str(parameters.get("setting", ""))
 	if key.is_empty():
-		return McpError.make("INVALID_PARAMS", "setting must be a non-empty string")
+		return MCPToolkitError.fail("INVALID_PARAMS", "setting must be a non-empty string")
 	if key.begins_with("mcp_toolkit/"):
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"refusing to write mcp_toolkit/* from project.set_setting (those are the toolkit's own settings — use the FeatureGate system or dock UI); got key=%s" % key)
 	if key.begins_with("mcp/"):
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"refusing to write mcp/* from project.set_setting (use the FeatureGate system); got key=%s" % key)
 	if key.begins_with("editor/"):
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"refusing to write editor/* ProjectSettings from project.set_setting (editor-session state, not project config); got key=%s" % key)
 	# Autoload guard — registration/unregistration must go through autoload_manage
 	# so the editor's singleton cache refreshes immediately (FIX-D).
@@ -85,14 +84,14 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 		var _al_name := key.substr("autoload/".length())
 		# Registration attempt: value looks like a script path.
 		if _al_str.begins_with("*res://") or _al_str.begins_with("res://"):
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"Use autoload_manage (action='register', name='%s', script_path='%s') instead of project.set_setting for autoload registration. project.set_setting bypasses the editor's autoload cache, causing unresolved identifier errors until the project is reloaded." % [_al_name, _al_str.lstrip("*")])
 		# Unregistration attempt: null, empty, or missing value.
 		if _al_raw == null or _al_str.is_empty():
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"Use autoload_manage (action='unregister', name='%s') instead of project.set_setting for autoload removal. project.set_setting bypasses the editor's autoload cache." % _al_name)
 	if not parameters.has("value"):
-		return McpError.make("INVALID_PARAMS", "missing value")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing value")
 	var raw_value = parameters.get("value", null)
 	# Resource-typed values in raw_value are gated through FileGuard
 	# via Coerce.coerce_value's Resource branch.
@@ -102,7 +101,7 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	ProjectSettings.set_setting(key, coerced)
 	var save_error := ProjectSettings.save()
 	if save_error != OK:
-		return McpError.make("SAVE_FAILED",
+		return MCPToolkitError.fail("SAVE_FAILED",
 			"ProjectSettings.save returned %d (key=%s); change is in-memory but not persisted" % [
 				save_error, key])
 	var response := {
@@ -120,20 +119,20 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if action.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing action (register|unregister|list)")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing action (register|unregister|list)")
 
 	match action:
 		"register":
 			var aname := str(parameters.get("name", ""))
 			var script_path := str(parameters.get("script_path", ""))
 			if aname.is_empty() or script_path.is_empty():
-				return McpError.make("INVALID_PARAMS",
+				return MCPToolkitError.fail("INVALID_PARAMS",
 					"register requires name and script_path")
 			if not script_path.begins_with("res://"):
-				return McpError.make("INVALID_PATH",
+				return MCPToolkitError.fail("INVALID_PATH",
 					"script_path must start with res:// (got %s)" % script_path)
 			if not FileAccess.file_exists(script_path):
-				return McpError.make("NOT_FOUND",
+				return MCPToolkitError.fail("NOT_FOUND",
 					"script not found: %s; create it with script_write first" % script_path)
 			var enabled := bool(parameters.get("enabled", true))
 			var value := ("*" if enabled else "") + script_path
@@ -145,7 +144,7 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 				ProjectSettings.set_setting("autoload/" + aname, value)
 				var save_error := ProjectSettings.save()
 				if save_error != OK:
-					return McpError.make("SAVE_FAILED",
+					return MCPToolkitError.fail("SAVE_FAILED",
 						"ProjectSettings.save returned %d" % save_error)
 				# Emit settings_changed so GDScriptParser refreshes its compile
 				# cache (add_autoload_singleton does this internally; the direct
@@ -161,10 +160,10 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 		"unregister":
 			var aname := str(parameters.get("name", ""))
 			if aname.is_empty():
-				return McpError.make("INVALID_PARAMS", "unregister requires name")
+				return MCPToolkitError.fail("INVALID_PARAMS", "unregister requires name")
 			var key := "autoload/" + aname
 			if not ProjectSettings.has_setting(key):
-				return McpError.make("NOT_FOUND",
+				return MCPToolkitError.fail("NOT_FOUND",
 					"no autoload named '%s' in project settings" % aname)
 			# FIX-D: Use EditorPlugin API for immediate editor cache refresh.
 			var plugin: EditorPlugin = server.get("editor_plugin") if server != null else null
@@ -174,7 +173,7 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 				ProjectSettings.clear(key)
 				var save_error := ProjectSettings.save()
 				if save_error != OK:
-					return McpError.make("SAVE_FAILED",
+					return MCPToolkitError.fail("SAVE_FAILED",
 						"ProjectSettings.save returned %d" % save_error)
 				ProjectSettings.emit_signal("settings_changed")
 			return {"success": true, "action": "unregister", "name": aname}
@@ -194,16 +193,16 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 				"count": autoloads.size()}
 
 		_:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"unknown action '%s'; must be register|unregister|list" % action)
 
 
 static func _cmd_get_layer_names(parameters: Dictionary) -> Dictionary:
 	var category := str(parameters.get("category", ""))
 	if category.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing category")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing category")
 	if not category in _VALID_LAYER_CATEGORIES:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"invalid category '%s'; must be one of: %s" % [
 				category, ", ".join(_VALID_LAYER_CATEGORIES)])
 
@@ -220,22 +219,22 @@ static func _cmd_get_layer_names(parameters: Dictionary) -> Dictionary:
 static func _cmd_set_layer_names(parameters: Dictionary) -> Dictionary:
 	var category := str(parameters.get("category", ""))
 	if category.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing category")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing category")
 	if not category in _VALID_LAYER_CATEGORIES:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"invalid category '%s'; must be one of: %s" % [
 				category, ", ".join(_VALID_LAYER_CATEGORIES)])
 
 	var raw_layers = parameters.get("layers", null)
 	if raw_layers == null or typeof(raw_layers) != TYPE_DICTIONARY:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"layers must be a dictionary mapping layer numbers (1-32) to names")
 
 	var layers_dict: Dictionary = raw_layers
 	for raw_key in layers_dict:
 		var n: int = int(raw_key)
 		if n < 1 or n > 32:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"layer number %s out of range; must be 1-32" % str(raw_key))
 
 	var count := 0
@@ -248,6 +247,6 @@ static func _cmd_set_layer_names(parameters: Dictionary) -> Dictionary:
 
 	var save_error := ProjectSettings.save()
 	if save_error != OK:
-		return McpError.make("SAVE_FAILED",
+		return MCPToolkitError.fail("SAVE_FAILED",
 			"ProjectSettings.save returned %d; changes are in-memory but not persisted" % save_error)
 	return {"success": true, "layers_set": count}

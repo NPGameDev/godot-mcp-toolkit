@@ -3,7 +3,6 @@ extends RefCounted
 ## path2d.* command handlers — edit Path2D Curve2D points.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Helpers = _Hub.Helpers
 
 
@@ -17,7 +16,7 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["node_path", "action"])
+	var err = MCPToolkitError.require(parameters, ["node_path", "action"])
 	if err != null:
 		return err
 
@@ -27,15 +26,15 @@ static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 	var index_raw = parameters.get("index", null)
 
 	if action not in ["set", "add", "remove", "clear"]:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"action must be one of: set, add, remove, clear (got '%s')" % action)
 
 	var node = Helpers.resolve_scene_node(node_path)
 	if node == null:
-		return McpError.make("NODE_NOT_FOUND",
+		return MCPToolkitError.fail("NODE_NOT_FOUND",
 			"no node at path '%s' in edited scene" % node_path)
 	if not (node is Path2D):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"node at '%s' is not a Path2D (got %s)" % [node_path, node.get_class()])
 
 	var curve: Curve2D = node.curve
@@ -46,24 +45,24 @@ static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 	match action:
 		"set":
 			if points_raw == null or typeof(points_raw) != TYPE_ARRAY:
-				return McpError.make("INVALID_PARAMS",
+				return MCPToolkitError.fail("INVALID_PARAMS",
 					"action 'set' requires a 'points' array")
 			return _action_set(node, curve, points_raw as Array)
 		"add":
 			if points_raw == null or typeof(points_raw) != TYPE_ARRAY:
-				return McpError.make("INVALID_PARAMS",
+				return MCPToolkitError.fail("INVALID_PARAMS",
 					"action 'add' requires a 'points' array")
 			var index: int = int(index_raw) if index_raw != null else -1
 			return _action_add(node, curve, points_raw as Array, index)
 		"remove":
 			if index_raw == null:
-				return McpError.make("INVALID_PARAMS",
+				return MCPToolkitError.fail("INVALID_PARAMS",
 					"action 'remove' requires an 'index'")
 			return _action_remove(node, curve, int(index_raw))
 		"clear":
 			return _action_clear(node, curve)
 
-	return McpError.make("INVALID_PARAMS", "unknown action '%s'" % action)
+	return MCPToolkitError.fail("INVALID_PARAMS", "unknown action '%s'" % action)
 
 
 # -- Action helpers -----------------------------------------------------------
@@ -76,7 +75,7 @@ static func _action_set(node: Path2D, curve: Curve2D, points: Array) -> Dictiona
 	for i in range(points.size()):
 		var pt = points[i]
 		if typeof(pt) != TYPE_DICTIONARY or not pt.has("position"):
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"points[%d] must have a 'position' key with {x, y}" % i)
 		var pos := _to_vec2(pt["position"])
 		var in_h := _to_vec2(pt.get("in_handle")) if pt.has("in_handle") else Vector2.ZERO
@@ -92,7 +91,7 @@ static func _action_add(node: Path2D, curve: Curve2D, points: Array, index: int)
 	for i in range(points.size()):
 		var pt = points[i]
 		if typeof(pt) != TYPE_DICTIONARY or not pt.has("position"):
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"points[%d] must have a 'position' key with {x, y}" % i)
 		var pos := _to_vec2(pt["position"])
 		var in_h := _to_vec2(pt.get("in_handle")) if pt.has("in_handle") else Vector2.ZERO
@@ -108,7 +107,7 @@ static func _action_add(node: Path2D, curve: Curve2D, points: Array, index: int)
 
 static func _action_remove(node: Path2D, curve: Curve2D, index: int) -> Dictionary:
 	if index < 0 or index >= curve.point_count:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"index %d out of range (point_count=%d)" % [index, curve.point_count])
 	var old_curve := curve.duplicate() as Curve2D
 	curve.remove_point(index)

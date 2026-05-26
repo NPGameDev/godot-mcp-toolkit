@@ -1,4 +1,5 @@
 @tool
+class_name MCPToolkitError
 extends RefCounted
 ## Shared MCP error contract — canonical error codes and failure envelope.
 
@@ -67,7 +68,7 @@ const DEFAULT_HINTS := {
 
 ## Validate that all keys in `required` are present and non-empty strings
 ## in `parameters`. Returns null on success or an INVALID_PARAMS error dict.
-static func check_required(parameters: Dictionary, required: Array) -> Variant:
+static func require(parameters: Dictionary, required: Array) -> Variant:
 	for key in required:
 		var val = parameters.get(key, "")
 		if typeof(val) == TYPE_STRING and val.is_empty():
@@ -81,11 +82,11 @@ static func check_required(parameters: Dictionary, required: Array) -> Variant:
 					hint = "Provide a res:// folder path. Example: res://scenes/"
 				"class_name":
 					hint = HINT_CLASS_NAME
-			return make("INVALID_PARAMS", "%s is required" % key, hint)
+			return fail("INVALID_PARAMS", "%s is required" % key, hint)
 	return null
 
 
-static func make(code: String, message: String, hint: String = "") -> Dictionary:
+static func fail(code: String, message: String, hint: String = "") -> Dictionary:
 	var result := {"success": false, "error": message, "code": code}
 	if hint != "":
 		result["hint"] = hint

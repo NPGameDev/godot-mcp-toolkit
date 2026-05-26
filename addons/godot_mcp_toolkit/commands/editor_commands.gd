@@ -3,7 +3,6 @@ extends RefCounted
 ## editor.* command handlers — errors, save, screenshot, reload, console, wait-for-idle.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const FileGuard = _Hub.FileGuard
 const Untrusted = _Hub.Untrusted
 const Scrubber = _Hub.Scrubber
@@ -45,7 +44,7 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 	var limit: int = int(parameters.get("limit", 50))
 	var source: String = str(parameters.get("source", "buffer"))
 	if not (source in ["buffer", "file"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"source must be 'buffer' or 'file' (got %s)" % source)
 
 	var tf := _compile_text_filter(parameters)
@@ -91,7 +90,7 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 	var root := Helpers.get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 	# Yield one frame to escape the deferred-call context before calling
 	# save_scene/save_scene_as. These APIs use Godot's progress dialog,
 	# which is forbidden during MessageQueue flush (progress_dialog.cpp:191).
@@ -102,22 +101,22 @@ static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 	if save_path.is_empty():
 		var save_error := EditorInterface.save_scene()
 		if save_error != OK:
-			return McpError.make("SAVE_FAILED",
+			return MCPToolkitError.fail("SAVE_FAILED",
 				"EditorInterface.save_scene returned %d" % save_error)
 	else:
 		var guard := FileGuard.resolve_safe(save_path)
 		if guard["error"] != null:
-			return McpError.make("PATH_DENIED", str(guard["reason"]))
+			return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 		EditorInterface.save_scene_as(save_path)
 		if not FileAccess.file_exists(save_path):
-			return McpError.make("SAVE_FAILED",
+			return MCPToolkitError.fail("SAVE_FAILED",
 				"save_scene_as did not produce %s" % save_path)
 	return {"success": true, "path": root.scene_file_path}
 
 
 static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 	if _Hub.is_headless():
-		return McpError.make("HEADLESS_UNSUPPORTED",
+		return MCPToolkitError.fail("HEADLESS_UNSUPPORTED",
 			"editor.screenshot requires a display server (no viewport in headless mode)")
 
 	var node_path := str(parameters.get("node_path", ""))
@@ -130,18 +129,18 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 		var height := int(size_dict.get("height", 720))
 		if width < MIN_SCREENSHOT_SIZE or width > MAX_SCREENSHOT_SIZE \
 				or height < MIN_SCREENSHOT_SIZE or height > MAX_SCREENSHOT_SIZE:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"size.width and size.height must be in [64, 4096] (got %dx%d)" % [width, height])
 		var root := Helpers.get_edited_root()
 		if root == null:
-			return McpError.make("NO_SCENE", "no edited scene")
+			return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 		var node: Variant = null
 		if node_path == ".":
 			node = root
 		else:
 			node = root.get_node_or_null(node_path)
 		if node == null:
-			return McpError.make("NOT_FOUND", "no node at %s" % node_path, McpError.HINT_NODE_PATH)
+			return MCPToolkitError.fail("NOT_FOUND", "no node at %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
 		var selection := EditorInterface.get_selection()
 		var prior_selection: Array = []
@@ -159,10 +158,10 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 		if viewport == null:
 			viewport = EditorInterface.get_editor_viewport_2d()
 		if viewport == null:
-			return McpError.make("INTERNAL", "no editor viewport available")
+			return MCPToolkitError.fail("INTERNAL", "no editor viewport available")
 		var image := viewport.get_texture().get_image()
 		if image == null:
-			return McpError.make("INTERNAL",
+			return MCPToolkitError.fail("INTERNAL",
 				"viewport texture unavailable (nothing rendered yet?)")
 		if image.get_width() != width or image.get_height() != height:
 			image.resize(width, height, Image.INTERPOLATE_LANCZOS)
@@ -174,7 +173,7 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 					selection.add_node(selected_node)
 		var png_bytes := image.save_png_to_buffer()
 		if png_bytes.is_empty():
-			return McpError.make("EMPTY_CONTENT",
+			return MCPToolkitError.fail("EMPTY_CONTENT",
 				"node '%s' produced no visible image. Node may lack visual content (no texture, no mesh). Use editor_screenshot without node_path for a full viewport capture instead." % node_path)
 		return {
 			"image_base64": Marshalls.raw_to_base64(png_bytes),
@@ -191,34 +190,34 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 	if viewport == null:
 		viewport = EditorInterface.get_editor_viewport_3d(0)
 	if viewport == null:
-		return McpError.make("INTERNAL", "no editor viewport available")
+		return MCPToolkitError.fail("INTERNAL", "no editor viewport available")
 	var image := viewport.get_texture().get_image()
 	if image == null:
-		return McpError.make("INTERNAL",
+		return MCPToolkitError.fail("INTERNAL",
 			"viewport texture unavailable (nothing rendered yet?)")
 
 	var png_bytes := image.save_png_to_buffer()
 	if png_bytes.is_empty():
-		return McpError.make("INTERNAL", "save_png_to_buffer returned empty")
+		return MCPToolkitError.fail("INTERNAL", "save_png_to_buffer returned empty")
 
 	var persisted_path := ""
 	if not save_path.is_empty():
 		var guard := FileGuard.resolve_safe(
 			save_path, ["res://", "user://screenshots/"])
 		if guard["error"] != null:
-			return McpError.make("PATH_DENIED", str(guard["reason"]))
+			return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 		if not save_path.ends_with(".png"):
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"save_path must end with .png: %s" % save_path)
 		var directory_path := save_path.get_base_dir()
 		if not directory_path.is_empty():
 			var mkdir_error := DirAccess.make_dir_recursive_absolute(directory_path)
 			if mkdir_error != OK and mkdir_error != ERR_ALREADY_EXISTS:
-				return McpError.make("INTERNAL",
+				return MCPToolkitError.fail("INTERNAL",
 					"could not create %s (err %d)" % [directory_path, mkdir_error])
 		var save_error := image.save_png(save_path)
 		if save_error != OK:
-			return McpError.make("INTERNAL",
+			return MCPToolkitError.fail("INTERNAL",
 				"save_png failed (err %d) for %s" % [save_error, save_path])
 		persisted_path = save_path
 
@@ -301,15 +300,15 @@ static func _cmd_editor_get_console(server: Node, parameters: Dictionary) -> Dic
 	var source: String = str(parameters.get("source", "buffer"))
 
 	if limit < 1 or limit > 1000:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"limit must be in [1, 1000] (got %d)" % limit)
 	if not (source in ["buffer", "file"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"source must be 'buffer' or 'file' (got %s)" % source)
 	var valid_levels := ["info", "warning", "error"]
 	for level_filter_entry in level_filter:
 		if not str(level_filter_entry) in valid_levels:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"level_filter entries must be one of 'info' | 'warning' | 'error' (got %s)" % str(level_filter_entry))
 
 	var tf := _compile_text_filter(parameters)
@@ -332,7 +331,7 @@ static func _cmd_editor_get_console(server: Node, parameters: Dictionary) -> Dic
 static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 	var timeout_ms: int = int(parameters.get("timeout_ms", 10000))
 	if timeout_ms < 0 or timeout_ms > 30000:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"timeout_ms must be in [0, 30000] (got %d)" % timeout_ms)
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if not filesystem.is_scanning():
@@ -342,7 +341,7 @@ static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 		OS.delay_msec(100)
 		elapsed += 100
 	if filesystem.is_scanning():
-		return McpError.make("TIMEOUT",
+		return MCPToolkitError.fail("TIMEOUT",
 			"EditorFileSystem still scanning after %dms; consider increasing timeout_ms or checking editor.get_console for import errors" % timeout_ms)
 	return {"success": true, "was_scanning": true, "waited_ms": elapsed}
 
@@ -353,13 +352,13 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 
 	var code := str(parameters.get("code", ""))
 	if code.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing code")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing code")
 
 	# Statement keyword guard (same as runtime handler).
 	var trimmed := code.strip_edges()
 	for kw in ["var", "return", "func", "if", "for", "while", "class", "const", "match"]:
 		if trimmed == kw or trimmed.begins_with(kw + " ") or trimmed.begins_with(kw + "\t") or trimmed.begins_with(kw + "\n"):
-			return McpError.make("PARSE_ERROR",
+			return MCPToolkitError.fail("PARSE_ERROR",
 				"execute_code only supports expressions, not statements. '%s' is a statement keyword. " % kw +
 				"Use method calls, property access, or arithmetic instead.")
 
@@ -376,16 +375,16 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 	else:
 		var edited := EditorInterface.get_edited_scene_root()
 		if edited == null:
-			return McpError.make("NO_SCENE", "No scene open — cannot resolve scope_path")
+			return MCPToolkitError.fail("NO_SCENE", "No scene open — cannot resolve scope_path")
 		scope_path = Helpers.normalize_editor_path(scope_path)
 		scope_node = edited.get_node_or_null(NodePath(scope_path))
 		if scope_node == null:
-			return McpError.make("NOT_FOUND", "scope node not found: " + scope_path)
+			return MCPToolkitError.fail("NOT_FOUND", "scope node not found: " + scope_path)
 
 	var expr := Expression.new()
 	var parse_err := expr.parse(code, PackedStringArray())
 	if parse_err != OK:
-		return McpError.make("PARSE_ERROR", expr.get_error_text())
+		return MCPToolkitError.fail("PARSE_ERROR", expr.get_error_text())
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
 		var err_text := expr.get_error_text()
@@ -403,8 +402,8 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 		# FIX-H: Detect load() call failures — Expression cannot call load().
 		if "call to 'load'" in err_text.to_lower():
 			err_text += _make_load_hint(code)
-		return McpError.make("EXECUTE_FAILED", err_text)
-	return {"result": Coerce.serialize_value(result)}
+		return MCPToolkitError.fail("EXECUTE_FAILED", err_text)
+	return {"success": true, "result": Coerce.serialize_value(result)}
 
 
 ## Build a context-aware hint when Expression.execute() fails on load().
@@ -532,8 +531,8 @@ static func _read_console_log(
 				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
 			else:
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
-			return McpError.make("LOG_UNAVAILABLE", _hint)
-		return McpError.make("LOG_UNAVAILABLE",
+			return MCPToolkitError.fail("LOG_UNAVAILABLE", _hint)
+		return MCPToolkitError.fail("LOG_UNAVAILABLE",
 			"no log directory at user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
 
 	var all_files := DirAccess.get_files_at(logs_dir)
@@ -548,8 +547,8 @@ static func _read_console_log(
 				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
 			else:
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
-			return McpError.make("LOG_UNAVAILABLE", _hint)
-		return McpError.make("LOG_UNAVAILABLE",
+			return MCPToolkitError.fail("LOG_UNAVAILABLE", _hint)
+		return MCPToolkitError.fail("LOG_UNAVAILABLE",
 			"no .log files under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
 
 	var plugin_boot_time: int = server.get_plugin_boot_time()
@@ -595,7 +594,7 @@ static func _read_console_log(
 				warnings.append("fallback to stale log — no post-boot log found")
 
 	if chosen_file == "":
-		return McpError.make("LOG_UNAVAILABLE",
+		return MCPToolkitError.fail("LOG_UNAVAILABLE",
 			"no readable log file under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging; playtest may have rotated the editor's log mid-session")
 
 	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
@@ -605,8 +604,8 @@ static func _read_console_log(
 			var _busy_hint := "log file exists but cannot be read right now (%s) — transient lock during file flush, retry in 1-2 seconds" % _godot_error_name(open_err)
 			if _Hub.LogBuffer.uses_logger_api():
 				_busy_hint += "; consider using source=\"buffer\" instead"
-			return McpError.make("LOG_BUSY", _busy_hint)
-		return McpError.make("LOG_UNAVAILABLE",
+			return MCPToolkitError.fail("LOG_BUSY", _busy_hint)
+		return MCPToolkitError.fail("LOG_UNAVAILABLE",
 			"cannot open %s (%s)" % [chosen_file, _godot_error_name(open_err)])
 	var content := file_handle.get_as_text()
 	file_handle.close()

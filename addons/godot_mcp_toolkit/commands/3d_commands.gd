@@ -4,7 +4,6 @@ extends RefCounted
 ## and environment setups in the edited scene.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Helpers = _Hub.Helpers
 
 const _VALID_PRIMITIVES := ["box", "sphere", "cylinder", "capsule", "plane", "prism"]
@@ -52,13 +51,13 @@ static func _path_in_scene(root: Node, node: Node) -> String:
 static func _resolve_parent(parameters: Dictionary) -> Variant:
 	var root := Helpers.get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 	var parent_path := str(parameters.get("parent_path", "."))
 	parent_path = Helpers.normalize_editor_path(parent_path)
 	var parent := Helpers.resolve_scene_node(parent_path)
 	if parent == null:
-		return McpError.make("NOT_FOUND",
-			"parent not found: %s" % parent_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND",
+			"parent not found: %s" % parent_path, MCPToolkitError.HINT_NODE_PATH)
 	return parent
 
 
@@ -77,13 +76,13 @@ static func _add_node_undoable(parent: Node, node: Node, root: Node) -> void:
 
 
 static func _cmd_create_primitive(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["parent_path", "primitive"])
+	var err = MCPToolkitError.require(parameters, ["parent_path", "primitive"])
 	if err != null:
 		return err
 
 	var primitive := str(parameters.get("primitive", ""))
 	if primitive not in _VALID_PRIMITIVES:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"invalid primitive '%s'; must be one of: %s" % [primitive, ", ".join(_VALID_PRIMITIVES)])
 
 	var parent_result = _resolve_parent(parameters)
@@ -173,7 +172,7 @@ static func _cmd_create_primitive(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_setup_environment(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["parent_path"])
+	var err = MCPToolkitError.require(parameters, ["parent_path"])
 	if err != null:
 		return err
 
@@ -244,13 +243,13 @@ static func _cmd_setup_environment(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_create_light(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["parent_path", "light_type"])
+	var err = MCPToolkitError.require(parameters, ["parent_path", "light_type"])
 	if err != null:
 		return err
 
 	var light_type := str(parameters.get("light_type", ""))
 	if light_type not in _VALID_LIGHT_TYPES:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"invalid light_type '%s'; must be one of: %s" % [light_type, ", ".join(_VALID_LIGHT_TYPES)])
 
 	var parent_result = _resolve_parent(parameters)
@@ -289,7 +288,7 @@ static func _cmd_create_light(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_create_camera(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["parent_path"])
+	var err = MCPToolkitError.require(parameters, ["parent_path"])
 	if err != null:
 		return err
 

@@ -3,7 +3,6 @@ extends RefCounted
 ## particles.* command handlers — GPU particle system creation with presets.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Helpers = _Hub.Helpers
 
 const _VALID_PRESETS := ["fire", "smoke", "sparks", "rain", "snow", "explosion", "magic", "dust"]
@@ -341,13 +340,13 @@ static func _build_curve_texture(points: Array) -> Array:
 
 static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 	# --- Validate required ---
-	var err = McpError.check_required(parameters, ["parent_path", "type"])
+	var err = MCPToolkitError.require(parameters, ["parent_path", "type"])
 	if err != null:
 		return err
 
 	var type_str := str(parameters.get("type", ""))
 	if type_str != "2d" and type_str != "3d":
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"type must be '2d' or '3d', got '%s'" % type_str)
 	var is_3d := type_str == "3d"
 
@@ -357,7 +356,7 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 	if preset_name != null:
 		var pn := str(preset_name)
 		if pn not in _VALID_PRESETS:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"invalid preset '%s'; valid presets: %s" % [pn, ", ".join(_VALID_PRESETS)])
 		preset = _PRESETS[pn].duplicate(true)
 		if is_3d:
@@ -366,20 +365,20 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 	# --- Validate emission_shape ---
 	var emission_shape_str = parameters.get("emission_shape")
 	if emission_shape_str != null and str(emission_shape_str) not in _EMISSION_SHAPES:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"invalid emission_shape '%s'; valid shapes: %s" % [
 				str(emission_shape_str), ", ".join(_EMISSION_SHAPES.keys())])
 
 	# --- Resolve parent ---
 	var root := Helpers.get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 	var parent_path := str(parameters.get("parent_path", "."))
 	parent_path = Helpers.normalize_editor_path(parent_path)
 	var parent := Helpers.resolve_scene_node(parent_path)
 	if parent == null:
-		return McpError.make("NOT_FOUND",
-			"parent not found: %s" % parent_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND",
+			"parent not found: %s" % parent_path, MCPToolkitError.HINT_NODE_PATH)
 
 	# --- Create node + material ---
 	var node: Node
@@ -622,7 +621,7 @@ static func _apply_sub_resource(
 		var path := str(source)
 		if not ResourceLoader.exists(path):
 			node.free()
-			return McpError.make("NOT_FOUND",
+			return MCPToolkitError.fail("NOT_FOUND",
 				"%s resource not found: %s" % [prop_name, path])
 		material.set(prop_name, ResourceLoader.load(path))
 	elif source is Array:

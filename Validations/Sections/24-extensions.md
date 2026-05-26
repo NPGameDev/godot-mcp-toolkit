@@ -14,37 +14,33 @@
 @tool
 extends MCPToolkitExtension
 
-func register(registry) -> void:
+func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("sv2_ext.hello", func(params: Dictionary) -> Dictionary:
 		var name := str(params.get("name", "world"))
 		return {"success": true, "message": "Hello, %s!" % name}
-	, {
-		"group": "sv2_test_group",
-		"description": "Test extension tool — returns a greeting",
-		"input_schema": {
+	, MCPToolkitExtensionOptions.new("Test extension tool — returns a greeting")
+		.with_input_schema({
 			"type": "object",
 			"properties": {
 				"name": {"type": "string", "description": "Name to greet"}
 			}
-		}
-	})
+		})
+		.with_group("sv2_test_group", "Test extension group"))
 
 	registry.add("sv2_ext.add", func(params: Dictionary) -> Dictionary:
 		var a := int(params.get("a", 0))
 		var b := int(params.get("b", 0))
 		return {"success": true, "result": a + b}
-	, {
-		"group": "sv2_test_group",
-		"description": "Test extension tool — adds two numbers",
-		"input_schema": {
+	, MCPToolkitExtensionOptions.new("Test extension tool — adds two numbers")
+		.with_input_schema({
 			"type": "object",
 			"properties": {
 				"a": {"type": "integer"},
 				"b": {"type": "integer"}
 			},
 			"required": ["a", "b"]
-		}
-	})
+		})
+		.with_group("sv2_test_group", "Test extension group"))
 ```
 - **Expect:** success
 
@@ -115,25 +111,20 @@ Call `extensions.refresh` again (no changes made).
 @tool
 extends MCPToolkitExtension
 
-func register(registry) -> void:
+func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("sv2_ext.slow", func(params: Dictionary) -> Dictionary:
 		OS.delay_msec(100)
 		return {"success": true, "result": "done"}
-	, {
-		"group": "sv2_annotated_group",
-		"description": "Slow tool with custom timeout",
-		"is_read_only": true,
-		"timeout_ms": 5000,
-		"input_schema": {"type": "object", "properties": {}}
-	})
+	, MCPToolkitExtensionOptions.new("Slow tool with custom timeout")
+		.mark_read_only()
+		.with_timeout_ms(5000)
+		.with_input_schema({"type": "object", "properties": {}})
+		.with_group("sv2_annotated_group", "Annotated extension group"))
 	registry.add("sv2_ext.writer", func(params: Dictionary) -> Dictionary:
 		return {"success": true, "wrote": true}
-	, {
-		"group": "sv2_annotated_group",
-		"description": "Mutation tool",
-		"is_read_only": false,
-		"input_schema": {"type": "object", "properties": {}}
-	})
+	, MCPToolkitExtensionOptions.new("Mutation tool")
+		.with_input_schema({"type": "object", "properties": {}})
+		.with_group("sv2_annotated_group", "Annotated extension group"))
 ```
 2. `extensions.refresh`
 3. `discover_tools` groups=`["sv2_annotated_group"]`
@@ -150,23 +141,19 @@ func register(registry) -> void:
 @tool
 extends MCPToolkitExtension
 
-func register(registry) -> void:
+func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("sv2_ext.new_only", func(params: Dictionary) -> Dictionary:
 		return {"success": true}
-	, {
-		"group": "sv2_versioned_group",
-		"description": "Only on Godot 4.5+",
-		"min_godot_version": "4.5",
-		"input_schema": {"type": "object", "properties": {}}
-	})
+	, MCPToolkitExtensionOptions.new("Only on Godot 4.5+")
+		.with_min_godot_version("4.5")
+		.with_input_schema({"type": "object", "properties": {}})
+		.with_group("sv2_versioned_group", "Version-gated extension group"))
 	registry.add("sv2_ext.old_only", func(params: Dictionary) -> Dictionary:
 		return {"success": true}
-	, {
-		"group": "sv2_versioned_group",
-		"description": "Only on Godot <=4.4",
-		"max_godot_version": "4.4",
-		"input_schema": {"type": "object", "properties": {}}
-	})
+	, MCPToolkitExtensionOptions.new("Only on Godot <=4.4")
+		.with_max_godot_version("4.4")
+		.with_input_schema({"type": "object", "properties": {}})
+		.with_group("sv2_versioned_group", "Version-gated extension group"))
 ```
 2. `extensions.refresh`
 3. `discover_tools` groups=`["sv2_versioned_group"]`
@@ -176,6 +163,61 @@ func register(registry) -> void:
 5. Call the visible tool — **Expect:** success
 6. Call the hidden tool — **Expect:** error (method not found / not registered)
 7. Cleanup: `script_delete` res://sv2_validation/sv2_ext_versioned.gd, `extensions.refresh`
+
+---
+
+## E10. Extension success hints and error API (41l-vicies-ter)
+
+1. `script_write` — file_path=`res://sv2_validation/sv2_ext_hints.gd`, content:
+```gdscript
+@tool
+extends MCPToolkitExtension
+
+func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
+	# Tool with registered success hint
+	registry.add("sv2_ext.hinted", func(params: Dictionary) -> Dictionary:
+		return {"success": true, "data": "result"}
+	, MCPToolkitExtensionOptions.new("Tool with a success hint")
+		.with_success_hint("Call sv2_ext.check_status to see details.")
+		.with_group("sv2_hint_group", "Hint testing"))
+
+	# Tool where handler overrides the registered hint
+	registry.add("sv2_ext.hint_override", func(params: Dictionary) -> Dictionary:
+		return {"success": true, "hint": "Dynamic hint from handler"}
+	, MCPToolkitExtensionOptions.new("Tool that overrides its hint")
+		.with_success_hint("This should be overridden")
+		.with_group("sv2_hint_group", "Hint testing"))
+
+	# Tool using MCPToolkitError.fail() for structured errors
+	registry.add("sv2_ext.guarded", func(params: Dictionary) -> Dictionary:
+		var err = MCPToolkitError.require(params, ["node_path"])
+		if err != null:
+			return err
+		return {"success": true, "path": params["node_path"]}
+	, MCPToolkitExtensionOptions.new("Tool that validates params with MCPToolkitError")
+		.with_group("sv2_hint_group", "Hint testing"))
+```
+2. `extensions.refresh`
+3. `discover_tools` groups=`["sv2_hint_group"]`
+   - **Expect:** 3 tools activated
+
+**E10a. Success hint auto-injection:**
+- Call `sv2_ext.hinted` (no params needed)
+- **Expect:** `{"success": true, "data": "result", "hint": "Call sv2_ext.check_status to see details."}`
+
+**E10b. Handler hint overrides registered hint:**
+- Call `sv2_ext.hint_override`
+- **Expect:** `{"success": true, "hint": "Dynamic hint from handler"}` (NOT "This should be overridden")
+
+**E10c. MCPToolkitError.fail() structured error:**
+- Call `sv2_ext.guarded` with `node_path=""`
+- **Expect:** `{"success": false, "code": "INVALID_PARAMS", "hint": "Use scene.get_tree to list valid node paths..."}` (auto-hint from HINT_NODE_PATH)
+
+**E10d. MCPToolkitError.require() happy path:**
+- Call `sv2_ext.guarded` with `node_path="/root/Player"`
+- **Expect:** `{"success": true, "path": "/root/Player"}`
+
+**E10e.** Cleanup: `script_delete` res://sv2_validation/sv2_ext_hints.gd, `extensions.refresh`
 
 ---
 
@@ -199,4 +241,5 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 - `script_delete` res://sv2_validation/sv2_test_extension.gd (if still exists)
 - `script_delete` res://sv2_validation/sv2_ext_annotated.gd (if still exists)
 - `script_delete` res://sv2_validation/sv2_ext_versioned.gd (if still exists)
+- `script_delete` res://sv2_validation/sv2_ext_hints.gd (if still exists)
 - Call `discover_tools` with reset=true to deactivate all on-demand groups

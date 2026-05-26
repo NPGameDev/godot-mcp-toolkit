@@ -7,7 +7,6 @@ extends RefCounted
 
 ## NOTE: This file is preloaded by _hub.gd, so it CANNOT import _hub.gd
 ## (circular dependency). Use direct preloads for dependencies instead.
-const McpError := preload("res://addons/godot_mcp_toolkit/mcp_error.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 
 
@@ -54,7 +53,7 @@ static func compile_text_filter(parameters: Dictionary) -> Array:
 		return [null, null, ""]
 	var regex := RegEx.new()
 	if regex.compile("(?i)" + text_filter) != OK:
-		var err := McpError.make("INVALID_PARAMS",
+		var err := MCPToolkitError.fail("INVALID_PARAMS",
 			"text_filter is not a valid regex (is_regex=true). "
 			+ "To search for literal text, omit is_regex or set it to false. "
 			+ "For regex, check for unbalanced groups () [] or unescaped metacharacters.")
@@ -468,18 +467,18 @@ static func close_scene_tab_safe(file_path: String) -> Dictionary:
 
 ## Delete a res:// file and its companion files (.uid, .import).
 ## Clears the in-memory ResourceUID cache to prevent stale-UID errors.
-## Returns {success: true, path: String} or an McpError dict.
+## Returns {success: true, path: String} or an MCPToolkitError dict.
 static func delete_res_file(file_path: String, companions: Array = [".uid"]) -> Dictionary:
 	# Capture the UID before deleting so we can evict it from the cache.
 	var uid: int = ResourceLoader.get_resource_uid(file_path)
 
 	var directory := DirAccess.open("res://")
 	if directory == null:
-		return McpError.make("INTERNAL", "DirAccess.open(res://) returned null")
+		return MCPToolkitError.fail("INTERNAL", "DirAccess.open(res://) returned null")
 	var relative_path := file_path.substr("res://".length())
 	var remove_error := directory.remove(relative_path)
 	if remove_error != OK:
-		return McpError.make("DELETE_FAILED",
+		return MCPToolkitError.fail("DELETE_FAILED",
 			"DirAccess.remove returned %d (path=%s)" % [remove_error, file_path])
 	for suffix in companions:
 		var companion_relative: String = relative_path + str(suffix)
@@ -496,14 +495,14 @@ static func delete_res_file(file_path: String, companions: Array = [".uid"]) -> 
 
 
 ## Ensure parent directory exists, auto-creating if needed.
-## Returns {ok: true, dirs_created: bool} or an McpError dict on failure.
+## Returns {ok: true, dirs_created: bool} or an MCPToolkitError dict on failure.
 static func ensure_parent_dir(file_path: String, context: String = "") -> Dictionary:
 	var parent_dir := file_path.get_base_dir()
 	if DirAccess.dir_exists_absolute(parent_dir):
 		return {"ok": true, "dirs_created": false}
 	var mkdir_err := DirAccess.make_dir_recursive_absolute(parent_dir)
 	if mkdir_err != OK:
-		return McpError.make("PARENT_NOT_FOUND",
+		return MCPToolkitError.fail("PARENT_NOT_FOUND",
 			"parent directory %s does not exist and auto-create failed (err %d); call folder.create manually" % [parent_dir, mkdir_err])
 	if not context.is_empty():
 		push_warning("[MCPTools] auto-created directory %s for %s" % [parent_dir, context])

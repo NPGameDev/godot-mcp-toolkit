@@ -3,7 +3,6 @@ extends RefCounted
 ## theme.* command handlers — create/modify Theme resources.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const FileGuard = _Hub.FileGuard
 const Helpers = _Hub.Helpers
 
@@ -20,7 +19,7 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path", "edits"])
+	var err = MCPToolkitError.require(parameters, ["file_path", "edits"])
 	if err != null:
 		return err
 
@@ -29,13 +28,13 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 	var edits_raw = parameters.get("edits", null)
 
 	if typeof(edits_raw) != TYPE_ARRAY:
-		return McpError.make("INVALID_PARAMS", "edits must be an Array of edit descriptors")
+		return MCPToolkitError.fail("INVALID_PARAMS", "edits must be an Array of edit descriptors")
 
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if not file_path.get_extension().to_lower() in ["tres", "res"]:
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"theme.edit writes .tres/.res files (got %s)" % file_path)
 
 	# Load existing or create new Theme.
@@ -43,7 +42,7 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 	if FileAccess.file_exists(file_path):
 		var loaded = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 		if loaded == null or not (loaded is Theme):
-			return McpError.make("INVALID_CLASS",
+			return MCPToolkitError.fail("INVALID_CLASS",
 				"Resource at %s is not a Theme" % file_path)
 		theme = loaded as Theme
 	else:
@@ -55,13 +54,13 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 	for i in range(edits.size()):
 		var edit = edits[i]
 		if typeof(edit) != TYPE_DICTIONARY:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"edits[%d] must be a dictionary" % i)
 
 		# Validate required keys per edit.
 		for key in ["type_name", "property_type", "property_name", "value"]:
 			if not edit.has(key):
-				return McpError.make("INVALID_PARAMS",
+				return MCPToolkitError.fail("INVALID_PARAMS",
 					"edits[%d] missing required key '%s'" % [i, key])
 
 		var type_name := str(edit["type_name"])
@@ -70,13 +69,13 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 		var value = edit["value"]
 
 		if property_type not in _VALID_PROPERTY_TYPES:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"edits[%d] invalid property_type '%s'; must be one of: %s" % [
 					i, property_type, ", ".join(_VALID_PROPERTY_TYPES)])
 
 		var apply_err := _apply_edit(theme, type_name, property_type, property_name, value, i)
 		if not apply_err.is_empty():
-			return McpError.make("INVALID_PARAMS", apply_err)
+			return MCPToolkitError.fail("INVALID_PARAMS", apply_err)
 		edits_applied += 1
 
 	# Save.
@@ -85,7 +84,7 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 		return dir_result
 	var save_err := ResourceSaver.save(theme, file_path)
 	if save_err != OK:
-		return McpError.make("SAVE_FAILED",
+		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 	Helpers.ensure_file_indexed(file_path)

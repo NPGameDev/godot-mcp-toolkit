@@ -4,7 +4,6 @@ extends RefCounted
 ## node creation, instantiation.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Coerce = _Hub.Coerce
 const FileGuard = _Hub.FileGuard
 const Untrusted = _Hub.Untrusted
@@ -106,7 +105,7 @@ static func _class_base_chain(type_name: String) -> String:
 static func _cmd_scene_get_tree(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 	var depth_raw = parameters.get("depth", 2)
 	var depth: int = int(depth_raw) \
 		if (typeof(depth_raw) == TYPE_INT or typeof(depth_raw) == TYPE_FLOAT) else 2
@@ -117,7 +116,7 @@ static func _cmd_scene_get_tree(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path"])
+	var err = MCPToolkitError.require(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -125,9 +124,9 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	var if_exists := str(parameters.get("if_exists", "return"))
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tscn":
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"path must end with .tscn (got %s; use script.write for .gd/.cs files)" % file_path)
 	var dir_result := Helpers.ensure_parent_dir(file_path, "scene.create")
 	if dir_result.has("error"):
@@ -145,13 +144,13 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 				global_entry = entry
 				break
 	if resolved_kind.is_empty():
-		return McpError.make("INVALID_CLASS",
-			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % root_type, McpError.HINT_CLASS_NAME)
+		return MCPToolkitError.fail("INVALID_CLASS",
+			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % root_type, MCPToolkitError.HINT_CLASS_NAME)
 	if not _class_descends_from(root_type, "Node"):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [root_type, _class_base_chain(root_type)])
 	if not (if_exists in ["return", "fail", "replace"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"if_exists must be one of 'return'|'fail'|'replace' (got %s); default is 'return'" % if_exists)
 
 	var was_replace := false
@@ -162,7 +161,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 				return {"success": true, "status": "returned", "path": file_path,
 					"root_name": file_path.get_file().get_basename(), "root_path": "."}
 			"fail":
-				return McpError.make("ALREADY_EXISTS",
+				return MCPToolkitError.fail("ALREADY_EXISTS",
 					"file exists at %s; set if_exists:'replace' to overwrite" % file_path)
 			"replace":
 				was_replace = true
@@ -185,23 +184,23 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		var script_path := str(global_entry.get("path", ""))
 		var script = load(script_path)
 		if script == null:
-			return McpError.make("INVALID_CLASS",
+			return MCPToolkitError.fail("INVALID_CLASS",
 				"could not load script for %s at %s" % [root_type, script_path])
 		root = script.new()
 	if root == null:
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"instantiation returned null for %s" % root_type)
 	root.name = file_path.get_file().get_basename()
 	var packed := PackedScene.new()
 	var pack_error := packed.pack(root)
 	if pack_error != OK:
 		root.queue_free()
-		return McpError.make("PACK_FAILED",
+		return MCPToolkitError.fail("PACK_FAILED",
 			"PackedScene.pack returned %d (class=%s, path=%s)" % [pack_error, root_type, file_path])
 	var save_error := ResourceSaver.save(packed, file_path)
 	root.queue_free()
 	if save_error != OK:
-		return McpError.make("SAVE_FAILED",
+		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 
 	var scene_index := Helpers.ensure_file_indexed(file_path)
@@ -227,15 +226,15 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path"])
+	var err = MCPToolkitError.require(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return McpError.make("NOT_FOUND", "scene not found: %s" % file_path, McpError.HINT_FILE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "scene not found: %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 	await Helpers.open_scene_deferred(file_path)
 	return {"success": true, "path": file_path}
 
@@ -243,10 +242,10 @@ static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	if file_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "path is required")
+		return MCPToolkitError.fail("INVALID_PARAMS", "path is required")
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	var result := await Helpers.close_scene_tab_safe(file_path)
 	if result.get("closed", false):
 		var response := {"success": true, "path": file_path}
@@ -255,27 +254,27 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 		return response
 	var reason := str(result.get("reason", ""))
 	if reason == "not_open":
-		return McpError.make("NOT_FOUND",
-			"scene is not open in any editor tab: %s" % file_path, McpError.HINT_FILE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND",
+			"scene is not open in any editor tab: %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 	if reason == "no_api":
-		return McpError.make("UNSUPPORTED",
+		return MCPToolkitError.fail("UNSUPPORTED",
 			"scene.close requires Godot 4.5+ (connected: %s)" % _Hub.VersionUtils.get_engine_version_pair())
-	return McpError.make("INTERNAL", "unexpected close_scene_tab_safe reason: %s" % reason)
+	return MCPToolkitError.fail("INTERNAL", "unexpected close_scene_tab_safe reason: %s" % reason)
 
 
 static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path"])
+	var err = MCPToolkitError.require(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if file_path.get_extension().to_lower() != "tscn":
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"scene.delete only removes .tscn files (got %s); use a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
-		return McpError.make("NOT_FOUND", "no file at %s" % file_path, McpError.HINT_FILE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "no file at %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 
 	# Attempt to close the editor tab before deleting the file.
 	var tab_result := await Helpers.close_scene_tab_safe(file_path)
@@ -290,7 +289,7 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 			# with a phantom warning.
 			var edited_root := _get_edited_root()
 			if edited_root != null and edited_root.scene_file_path == file_path:
-				return McpError.make("EDITED_SCENE",
+				return MCPToolkitError.fail("EDITED_SCENE",
 					"cannot delete the currently-edited scene %s on Godot 4.2-4.4 (no tab-close API); open a different scene via scene.open first" % file_path)
 			warnings.append(
 				"phantom tab: scene tab for %s remains open; Godot 4.2-4.4 has no API to close tabs — it will vanish on editor restart or manual close" % file_path)
@@ -310,7 +309,7 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	var class_name_param := str(parameters.get("class_name", ""))
 	var parent_path := str(parameters.get("parent_path", ""))
@@ -318,14 +317,14 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 	var requested_name := str(parameters.get("node_name", class_name_param))
 
 	if class_name_param.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing class_name")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing class_name")
 
 	var resolved_kind := ""
 	var global_entry: Dictionary = {}
 	if ClassDB.class_exists(class_name_param):
 		resolved_kind = "native"
 		if not ClassDB.can_instantiate(class_name_param):
-			return McpError.make("INVALID_CLASS",
+			return MCPToolkitError.fail("INVALID_CLASS",
 				"class is not instantiable (abstract, virtual, or editor-only): %s" % class_name_param)
 	else:
 		for entry in ProjectSettings.get_global_class_list():
@@ -334,10 +333,10 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 				global_entry = entry
 				break
 	if resolved_kind.is_empty():
-		return McpError.make("INVALID_CLASS",
-			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % class_name_param, McpError.HINT_CLASS_NAME)
+		return MCPToolkitError.fail("INVALID_CLASS",
+			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % class_name_param, MCPToolkitError.HINT_CLASS_NAME)
 	if not _class_descends_from(class_name_param, "Node"):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [
 				class_name_param, _class_base_chain(class_name_param)])
 
@@ -346,7 +345,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		var extra := ""
 		if parent_path == root.name:
 			extra = "; to reference the scene root use parent_path=\".\" (not the root node's name)"
-		return McpError.make("NOT_FOUND", "parent not found: %s%s" % [parent_path, extra], McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "parent not found: %s%s" % [parent_path, extra], MCPToolkitError.HINT_NODE_PATH)
 
 	var existing := parent_node.get_node_or_null(NodePath(requested_name))
 	if existing != null:
@@ -359,7 +358,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		if class_match:
 			return {"success": true, "status": "returned", "path": _path_in_scene(root, existing)}
 		var actual := existing_script.get_global_name() if existing_script != null and existing_script.get_global_name() != "" else existing.get_class()
-		return McpError.make("CLASS_MISMATCH",
+		return MCPToolkitError.fail("CLASS_MISMATCH",
 			"node '%s' already exists under '%s' as %s, not %s; rename or remove it first" % [
 				requested_name, _path_in_scene(root, parent_node), actual, class_name_param])
 
@@ -370,11 +369,11 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		var script_path := str(global_entry.get("path", ""))
 		var script = load(script_path)
 		if script == null:
-			return McpError.make("INVALID_CLASS",
+			return MCPToolkitError.fail("INVALID_CLASS",
 				"could not load script for %s at %s" % [class_name_param, script_path])
 		instance = script.new()
 	if instance == null or not (instance is Node):
-		return McpError.make("INVALID_CLASS", "instantiate failed: %s" % class_name_param)
+		return MCPToolkitError.fail("INVALID_CLASS", "instantiate failed: %s" % class_name_param)
 
 	instance.name = requested_name
 
@@ -460,22 +459,22 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path")
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 	if node == root:
-		return McpError.make("INVALID_PATH", "cannot delete edited scene root")
+		return MCPToolkitError.fail("INVALID_PATH", "cannot delete edited scene root")
 
 	var parent := node.get_parent()
 	if parent == null:
-		return McpError.make("INTERNAL", "node has no parent: %s" % node_path)
+		return MCPToolkitError.fail("INTERNAL", "node has no parent: %s" % node_path)
 	parent.remove_child(node)
 	MCPToolkitUndoRedoAction.begin("delete %s" % node_path, parent) \
 		.do_method(parent.remove_child.bind(node)) \
@@ -489,35 +488,35 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no open scene; use scene.open or scene.create first")
+		return MCPToolkitError.fail("NO_SCENE", "no open scene; use scene.open or scene.create first")
 
 	var parent_path := str(parameters.get("parent_path", ""))
 	parent_path = Helpers.normalize_editor_path(parent_path)
 	var packed_path := str(parameters.get("scene_path", parameters.get("packed_path", "")))
 
 	if parent_path.is_empty() or packed_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing parent_path or scene_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing parent_path or scene_path")
 
 	var parent_node := root.get_node_or_null(parent_path)
 	if parent_node == null:
-		return McpError.make("NOT_FOUND",
-			"no node at parent_path %s (must be under the currently-edited scene root)" % parent_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND",
+			"no node at parent_path %s (must be under the currently-edited scene root)" % parent_path, MCPToolkitError.HINT_NODE_PATH)
 
 	var guard := FileGuard.resolve_safe(packed_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if packed_path.get_extension().to_lower() != "tscn":
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"scene.instantiate only instantiates .tscn files (got %s); use resource.write for .tres, script.write for .gd/.cs" % packed_path)
 	if not FileAccess.file_exists(packed_path):
-		return McpError.make("NOT_FOUND",
-			"no scene file at %s; use scene.create first" % packed_path, McpError.HINT_FILE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND",
+			"no scene file at %s; use scene.create first" % packed_path, MCPToolkitError.HINT_FILE_PATH)
 	var packed := ResourceLoader.load(packed_path)
 	if packed == null:
-		return McpError.make("LOAD_FAILED",
+		return MCPToolkitError.fail("LOAD_FAILED",
 			"ResourceLoader.load returned null for %s (corrupt file or dependency error — check editor_get_console)" % packed_path)
 	if not (packed is PackedScene):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"file at %s is not a PackedScene (got %s); scene.instantiate only works on .tscn files" % [
 				packed_path, packed.get_class()])
 
@@ -552,7 +551,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 
 	var instance: Node = (packed as PackedScene).instantiate()
 	if instance == null:
-		return McpError.make("LOAD_FAILED",
+		return MCPToolkitError.fail("LOAD_FAILED",
 			"PackedScene.instantiate returned null for %s" % packed_path)
 
 	instance.name = target_name
@@ -642,7 +641,7 @@ static func _batch_instantiate(
 
 
 static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path", "base_scene"])
+	var err = MCPToolkitError.require(parameters, ["file_path", "base_scene"])
 	if err != null:
 		return err
 
@@ -652,20 +651,20 @@ static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
 
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if not file_path.ends_with(".tscn"):
-		return McpError.make("INVALID_PARAMS", "file_path must end with .tscn")
+		return MCPToolkitError.fail("INVALID_PARAMS", "file_path must end with .tscn")
 
 	var base_guard := FileGuard.resolve_safe(base_scene)
 	if base_guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(base_guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(base_guard["reason"]))
 	if not ResourceLoader.exists(base_scene):
-		return McpError.make("NOT_FOUND", "base scene not found: %s" % base_scene)
+		return MCPToolkitError.fail("NOT_FOUND", "base scene not found: %s" % base_scene)
 
 	if root_name.is_empty():
 		var base := ResourceLoader.load(base_scene) as PackedScene
 		if base == null:
-			return McpError.make("INTERNAL", "failed to load base scene: %s" % base_scene)
+			return MCPToolkitError.fail("INTERNAL", "failed to load base scene: %s" % base_scene)
 		var instance := base.instantiate()
 		root_name = instance.name
 		instance.free()
@@ -686,7 +685,7 @@ static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
 
 	var file := FileAccess.open(file_path, FileAccess.WRITE)
 	if file == null:
-		return McpError.make("INTERNAL",
+		return MCPToolkitError.fail("INTERNAL",
 			"cannot write to %s: error %d" % [file_path, FileAccess.get_open_error()])
 	file.store_string(tscn_text)
 	file.close()
@@ -698,13 +697,13 @@ static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
 
 static func _cmd_scene_diff(server: Node, parameters: Dictionary) -> Dictionary:
 	if not parameters.has("before"):
-		return McpError.make("INVALID_PARAMS", "missing before")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing before")
 	var before = parameters.get("before")
 	var after = parameters.get("after", null)
 	if after == null:
 		var root := _get_edited_root()
 		if root == null:
-			return McpError.make("NO_SCENE", "no edited scene")
+			return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 		after = _walk_tree(root, root, -1, false)
 	var before_string := JSON.stringify(before, "  ", true)
 	var after_string := JSON.stringify(after, "  ", true)
@@ -751,12 +750,12 @@ static func _cmd_scene_query(parameters: Dictionary) -> Dictionary:
 	if class_filter == null and group_filter == null and name_pattern == null \
 			and (property_filters == null \
 			or (typeof(property_filters) == TYPE_ARRAY and property_filters.size() == 0)):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"At least one filter is required: class_filter, group_filter, name_pattern, or property_filters")
 
 	var edited_scene := EditorInterface.get_edited_scene_root()
 	if edited_scene == null:
-		return McpError.make("NO_SCENE", "No scene is currently open in the editor")
+		return MCPToolkitError.fail("NO_SCENE", "No scene is currently open in the editor")
 
 	# Determine root node
 	var root: Node = edited_scene
@@ -765,7 +764,7 @@ static func _cmd_scene_query(parameters: Dictionary) -> Dictionary:
 		rp = Helpers.normalize_editor_path(rp)
 		root = edited_scene.get_node_or_null(NodePath(rp))
 		if root == null:
-			return McpError.make("NOT_FOUND", "Root node not found: " + rp)
+			return MCPToolkitError.fail("NOT_FOUND", "Root node not found: " + rp)
 
 	var results: Array[Dictionary] = []
 	_query_recursive(root, edited_scene, class_filter, group_filter, name_pattern,

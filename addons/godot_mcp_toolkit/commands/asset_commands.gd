@@ -3,7 +3,6 @@ extends RefCounted
 ## asset.* command handlers — list, get_dependencies, import binary assets.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const FileGuard = _Hub.FileGuard
 const Helpers = _Hub.Helpers
 
@@ -98,13 +97,13 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 
 	var guard := FileGuard.resolve_safe(path_prefix)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if max_results < 1 or max_results > 2000:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"max_results must be in [1, 2000] (got %d)" % max_results)
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if filesystem.is_scanning():
-		return McpError.make("FILESYSTEM_NOT_READY",
+		return MCPToolkitError.fail("FILESYSTEM_NOT_READY",
 			"Godot's EditorFileSystem is mid-scan; call editor.wait_for_idle to poll until ready, or retry in 500-2000ms")
 	if class_filter != "":
 		var found_in_classdb := ClassDB.class_exists(class_filter)
@@ -115,7 +114,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 					found_in_global = true
 					break
 		if not found_in_classdb and not found_in_global:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"unknown class_filter '%s'; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name / C# [GlobalClass])" % class_filter)
 
 	var normalized_extension_filter: Array[String] = []
@@ -140,8 +139,8 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 				waited += 100
 			root_directory = filesystem.get_filesystem_path(path_prefix)
 		if root_directory == null:
-			return McpError.make("NOT_FOUND",
-				"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.refresh or wait for is_scanning to clear)" % path_prefix, McpError.HINT_FILE_PATH)
+			return MCPToolkitError.fail("NOT_FOUND",
+				"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.refresh or wait for is_scanning to clear)" % path_prefix, MCPToolkitError.HINT_FILE_PATH)
 
 	var entries: Array = []
 	var truncated := _walk_filesystem_directory(
@@ -163,7 +162,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path"])
+	var err = MCPToolkitError.require(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path: String = str(parameters.get("file_path", ""))
@@ -172,12 +171,12 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return McpError.make("NOT_FOUND", "no file at %s" % file_path, McpError.HINT_FILE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "no file at %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if filesystem.is_scanning():
-		return McpError.make("FILESYSTEM_NOT_READY",
+		return MCPToolkitError.fail("FILESYSTEM_NOT_READY",
 			"Godot's EditorFileSystem is mid-scan; call editor.wait_for_idle to poll until ready, or retry in 500-2000ms")
 
 	var dependencies: Array = []
@@ -252,25 +251,25 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 
 	var guard := FileGuard.resolve_safe(dest_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	var extension := dest_path.get_extension().to_lower()
 	if extension not in IMPORT_ALLOWED_EXTENSIONS:
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"extension '%s' not in import allowlist: %s; use script.write for .gd/.cs, resource.write for .tres/.res, scene.create for .tscn" % [
 				extension, ", ".join(PackedStringArray(IMPORT_ALLOWED_EXTENSIONS))])
 	var has_source := source_path != ""
 	var has_base64 := base64_data != ""
 	if has_source and has_base64:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"provide exactly one of source_path or base64_data, not both")
 	if not has_source and not has_base64:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"provide source_path (absolute filesystem path) or base64_data (base64-encoded file content)")
 	if if_exists not in ["return", "fail", "replace"]:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"if_exists must be one of 'return', 'fail', 'replace' (got '%s')" % if_exists)
 	if wait_for_scan_ms < 0 or wait_for_scan_ms > 30000:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"wait_for_scan_ms must be in [0, 30000] (got %d); 0 disables wait" % wait_for_scan_ms)
 
 	# Source-path mode guards
@@ -278,27 +277,27 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 		if source_path.begins_with("res://") or source_path.begins_with("user://"):
 			source_path = ProjectSettings.globalize_path(source_path)
 		if not FileAccess.file_exists(source_path):
-			return McpError.make("NOT_FOUND",
-				"source file not found: %s" % source_path, McpError.HINT_FILE_PATH)
+			return MCPToolkitError.fail("NOT_FOUND",
+				"source file not found: %s" % source_path, MCPToolkitError.HINT_FILE_PATH)
 		var source_file := FileAccess.open(source_path, FileAccess.READ)
 		if source_file == null:
-			return McpError.make("READ_FAILED",
+			return MCPToolkitError.fail("READ_FAILED",
 				"cannot read source file %s (err %d)" % [
 					source_path, FileAccess.get_open_error()])
 		var source_size := source_file.get_length()
 		source_file.close()
 		if source_size > IMPORT_MAX_FILE_BYTES:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"source file %d bytes exceeds 50 MB limit" % source_size)
 
 	var decoded_bytes := PackedByteArray()
 	if has_base64:
 		decoded_bytes = Marshalls.base64_to_raw(base64_data)
 		if decoded_bytes.is_empty() and base64_data.length() > 0:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"base64_data is not valid base64")
 		if decoded_bytes.size() > IMPORT_MAX_BASE64_BYTES:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"decoded base64 data %d bytes exceeds 5 MB limit" % decoded_bytes.size())
 
 	var file_existed := FileAccess.file_exists(dest_path)
@@ -308,7 +307,7 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 				return {"success": true, "status": "returned",
 					"path": dest_path, "source": null}
 			"fail":
-				return McpError.make("ALREADY_EXISTS",
+				return MCPToolkitError.fail("ALREADY_EXISTS",
 					"file already exists at %s; use if_exists:'replace' to overwrite or if_exists:'return' for idempotent no-op" % dest_path)
 			"replace":
 				pass
@@ -322,7 +321,7 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	if has_source:
 		bytes_to_write = FileAccess.get_file_as_bytes(source_path)
 		if FileAccess.get_open_error() != OK:
-			return McpError.make("READ_FAILED",
+			return MCPToolkitError.fail("READ_FAILED",
 				"cannot read source file %s (err %d)" % [
 					source_path, FileAccess.get_open_error()])
 		source_label = "filesystem"
@@ -332,7 +331,7 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 
 	var file_handle := FileAccess.open(dest_path, FileAccess.WRITE)
 	if file_handle == null:
-		return McpError.make("WRITE_FAILED",
+		return MCPToolkitError.fail("WRITE_FAILED",
 			"cannot open %s for writing (err %d)" % [
 				dest_path, FileAccess.get_open_error()])
 	file_handle.store_buffer(bytes_to_write)

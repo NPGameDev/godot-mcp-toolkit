@@ -3,7 +3,6 @@ extends RefCounted
 ## input_map.* command handlers — action (add/remove) and event (bind/unbind).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const FeatureGate = _Hub.FeatureGate
 
 const BUILTIN_UI_ACTIONS: Array[String] = [
@@ -187,17 +186,17 @@ static func _persist_input_action(action: String, deadzone: float) -> void:
 static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if not (action in ["add", "remove"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"action must be 'add' or 'remove' (got '%s')" % action)
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
-		return McpError.make("INVALID_PARAMS", "name must be a non-empty string")
+		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
 	if action == "add":
 		var deadzone_raw = parameters.get("deadzone", 0.5)
 		var deadzone := float(deadzone_raw) \
 			if (typeof(deadzone_raw) == TYPE_FLOAT or typeof(deadzone_raw) == TYPE_INT) else 0.5
 		if deadzone < 0.0 or deadzone > 1.0:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"deadzone must be in [0.0, 1.0] (got %f)" % deadzone)
 		if InputMap.has_action(action_name):
 			return {
@@ -216,9 +215,9 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 		}
 	else:
 		if not InputMap.has_action(action_name):
-			return McpError.make("NOT_FOUND", "no action '%s'" % action_name)
+			return MCPToolkitError.fail("NOT_FOUND", "no action '%s'" % action_name)
 		if action_name in BUILTIN_UI_ACTIONS:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"refusing to remove built-in UI action '%s'; use input_map.event to unbind its events instead" % action_name)
 		InputMap.erase_action(action_name)
 		if ProjectSettings.has_setting("input/" + action_name):
@@ -234,17 +233,17 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if not (action in ["bind", "unbind"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"action must be 'bind' or 'unbind' (got '%s')" % action)
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
-		return McpError.make("INVALID_PARAMS", "name must be a non-empty string")
+		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
 	if not InputMap.has_action(action_name):
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"no action '%s'; call input_map.action with action='add' first" % action_name)
 	var built: Variant = _build_input_event(parameters.get("event", null))
 	if typeof(built) == TYPE_DICTIONARY and built.has("error"):
-		return McpError.make(str(built["code"]), str(built["error"]))
+		return MCPToolkitError.fail(str(built["code"]), str(built["error"]))
 	var event: InputEvent = built
 	if action == "bind":
 		for existing in InputMap.action_get_events(action_name):
@@ -271,7 +270,7 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 				matched = existing
 				break
 		if matched == null:
-			return McpError.make("NOT_FOUND",
+			return MCPToolkitError.fail("NOT_FOUND",
 				"no matching event on action '%s' (found %d events)" % [
 					action_name, existing_events.size()])
 		InputMap.action_erase_event(action_name, matched)

@@ -236,6 +236,7 @@
 | meta.set_limits | — | — | — | — | — | Internal (server→plugin); not agent-facing |
 | discover_tools | C10 (12 steps) | ✓ (reset, selective reset) | — | — | FIX-3, FIX-C | |
 | extensions.refresh | E5 | — | — | — | — | Extension phase |
+| *(extension API)* | E10a–E10d | E10c (guard) | — | E10a, E10b (hints) | — | success_hint + MCPToolkitError (41l-vicies-ter) |
 
 ### LSP Tools (6 tools)
 

@@ -128,10 +128,11 @@ var opts = MCPToolkitExtensionOptions.new("Describe what your tool does")
 | `mark_scene_independent()` | Tool does not depend on the active editor tab |
 | `mark_exclusive_execution()` | Tool acquires the mutation lock despite being read-only (see below) |
 | `with_description(text)` | Set or override the tool description |
-| `with_input_schema(dict)` | JSON Schema for tool input validation |
+| `with_input_schema(dict)` | JSON Schema declaring expected parameters (sent to MCP client; not validated at runtime — handlers must check their own inputs) |
 | `with_timeout_ms(ms)` | Per-tool bridge timeout in milliseconds (floor: 1000, cap: 300000) |
 | `with_min_godot_version(ver)` | Hide tool on Godot versions below `ver` (e.g. `"4.5"`) |
 | `with_max_godot_version(ver)` | Hide tool on Godot versions above `ver` (e.g. `"4.6"`) |
+| `with_success_hint(text)` | Default hint injected into successful responses (LLM guidance for next steps) |
 | `with_group(name, description)` | Tool group for `discover_tools` (see below) |
 | `to_dict()` | Returns the options as a Dictionary (for debugging) |
 
@@ -141,6 +142,8 @@ var opts = MCPToolkitExtensionOptions.new("Describe what your tool does")
 |--------|---------|----------|
 | `registry.create_options()` | `MCPToolkitCommandOptions` | Built-in tools |
 | `registry.create_extension_options(description)` | `MCPToolkitExtensionOptions` | Extension tools (especially C#) |
+| `registry.fail(code, message, hint)` | `Dictionary` | Structured error (C# parity for `MCPToolkitError.fail()`) |
+| `registry.require(parameters, required)` | `Variant` | Param validation (C# parity for `MCPToolkitError.require()`) |
 
 **Annotations** are mapped to MCP hints internally (`mark_read_only()` →
 `readOnlyHint`, `mark_destructive()` → `destructiveHint`, `mark_idempotent()` →
@@ -568,27 +571,154 @@ registrations of the same method name are rejected with a logged warning.
 
 ### Error handling contract
 
-Command handlers must return a `Dictionary`. On success:
+Command handlers must return a `Dictionary` with a `"success"` key. The
+framework enforces this contract at dispatch — malformed returns are caught
+and converted to structured errors.
+
+**Success response:**
 
 ```gdscript
-return {"success": true, "data": "result here"}
+return {"success": true, "data": result_data}
 ```
 
-On failure, return `success: false` with an `error` string and an
-uppercase `code` for programmatic matching:
+**Error response** (prefer `MCPToolkitError.fail()`):
+
+```gdscript
+return MCPToolkitError.fail("NOT_FOUND", "Node not found",
+    "Use scene.get_tree to list valid node paths.")
+# Returns: {"success": false, "error": "Node not found", "code": "NOT_FOUND", "hint": "..."}
+```
+
+Or construct the dictionary directly:
 
 ```gdscript
 return {"success": false, "error": "Node not found", "code": "NOT_FOUND"}
 ```
 
-The extension loader validates handler return values at runtime. Malformed
-returns (non-Dictionary, missing `success` key) are normalized to the
-standard error envelope with `push_error` logged. Never let exceptions
-propagate — validate inputs and return structured errors instead.
+**Response validation enforcement:**
 
-**Standard error codes:** `NOT_FOUND`, `INVALID_PARAM`, `FORBIDDEN`,
-`INTERNAL_ERROR`, `TIMEOUT`. Use `McpError.make(code, message)` from
-`_hub.gd` if you preload the hub, or return the Dictionary directly.
+The framework validates all handler returns in `call_command()` before
+sending them to the MCP client:
+
+- **Non-Dictionary return** → `push_error` logged, INTERNAL error returned
+  to client
+- **Dictionary without `success` key** → `push_error` logged, INTERNAL
+  error returned to client
+
+Always return a Dictionary with `"success": true` or `"success": false`.
+Use `MCPToolkitError.fail()` for error responses — it guarantees the
+correct shape.
+
+**Partial results:** For tools that process multiple items where some
+succeed and others fail, use `"success": true` with descriptive payload
+fields:
+
+```gdscript
+return {
+    "success": true,
+    "files_removed": 8,
+    "files_failed": 2,
+    "errors": ["res://locked.cfg: permission denied", "res://other.cfg: in use"]
+}
+```
+
+Optionally add `"status": "partial"` for machine-readable disambiguation,
+but `success: true` remains required.
+
+### MCPToolkitError — structured error API
+
+`MCPToolkitError` is a globally available class (via `class_name`) that
+provides the canonical error contract. Use it for all error responses:
+
+```gdscript
+# Structured error with explicit hint:
+return MCPToolkitError.fail("NOT_FOUND", "Node not found",
+    "Use scene.get_tree to list valid node paths.")
+
+# Auto-hint — TIMEOUT gets its default hint automatically:
+return MCPToolkitError.fail("TIMEOUT", "Editor busy")
+# → includes hint: "The editor may be busy. Try editor.wait_for_idle before retrying."
+
+# Parameter validation with auto-contextual hints:
+var err = MCPToolkitError.require(params, ["node_path", "file_path"])
+if err != null:
+    return err  # hint auto-attached based on parameter name
+```
+
+**C# usage** (via registry factories — C# cannot call GDScript statics):
+
+```csharp
+// Structured error:
+var err = _registry.Call("fail", "NOT_FOUND", "Node missing",
+    "Use scene.get_tree to find valid paths").AsGodotDictionary();
+
+// Parameter validation:
+var reqErr = _registry.Call("require", parameters,
+    new Godot.Collections.Array { "node_path" });
+if (reqErr.Obj != null) return reqErr.AsGodotDictionary();
+```
+
+**Available constants:**
+
+| Constant | Description |
+|----------|-------------|
+| `MCPToolkitError.CODES` | All 40 canonical error codes |
+| `MCPToolkitError.DEFAULT_HINTS` | 8 error codes with auto-attached recovery hints |
+| `MCPToolkitError.HINT_NODE_PATH` | Standard hint for node_path parameters |
+| `MCPToolkitError.HINT_FILE_PATH` | Standard hint for file_path parameters |
+| `MCPToolkitError.HINT_CLASS_NAME` | Standard hint for class_name parameters |
+
+### Response hints
+
+Hints are short guidance strings that help the LLM decide what to do next
+after a tool call. They appear in the MCP response alongside the result
+data.
+
+**Static hints (recommended):** Set at registration time. The framework
+injects the hint automatically into successful responses:
+
+```gdscript
+registry.add("physics.simulate", _simulate,
+    MCPToolkitExtensionOptions.new("Run physics simulation step")
+        .with_success_hint("Call physics.get_results to see the simulation output."))
+```
+
+When `_simulate` returns `{"success": true, ...}`, the framework adds
+`"hint": "Call physics.get_results to see the simulation output."` to the
+response — no handler code needed.
+
+**Dynamic hints:** When the hint depends on the result, set it in the
+handler. Handler-set hints take precedence over the registered default:
+
+```gdscript
+func _simulate(params: Dictionary) -> Dictionary:
+    var result = _run_simulation(params)
+    if result.collisions > 0:
+        return {"success": true, "data": result,
+            "hint": "%d collisions detected. Call physics.get_collisions for details." % result.collisions}
+    return {"success": true, "data": result}
+    # ↑ Falls back to the registered with_success_hint() text
+```
+
+**C# — static hint:**
+
+```csharp
+var opts = registry.Call("create_extension_options",
+    "Run physics simulation step").AsGodotObject();
+opts.Call("with_success_hint",
+    "Call physics.get_results to see the simulation output.");
+```
+
+**When to use hints:**
+- Guide the LLM to a logical next tool call
+- Suggest how to interpret the result
+- Point to related tools or workflows
+
+**When NOT to use hints:**
+- Don't repeat information already in the result data
+- Don't use hints for error recovery — `MCPToolkitError.fail()` has its own
+  hint parameter for that
+- Don't add hints to every tool — only where the next step isn't obvious
 
 ### Profile behavior
 
@@ -738,6 +868,27 @@ most one rescan.
 deferred tools. Mid-session additions may not appear in the client's tool
 list until `/mcp` reconnect, even though the server has already registered
 them. This is a platform-side limitation, not actionable server-side.
+
+## Known limitations
+
+The extension API covers the full tool lifecycle for the vast majority of
+use cases — registration, discovery, execution, error handling, hints,
+cancellation, undo/redo, hot-reload. The following gaps exist but are
+non-blocking; each has a practical workaround:
+
+| Limitation | Impact | Workaround |
+|------------|--------|------------|
+| No lifecycle hooks (scene changed, file saved) | Extensions can't auto-trigger on editor events | Set up own signal connections to `EditorInterface` in your `register()` method |
+| No persistent configuration API | Extensions store settings ad-hoc | Use `ProjectSettings.set_setting()` for project-level or `ConfigFile` for user-level config |
+| No progress/streaming for long operations | Long-running operations can't report intermediate status | Use a polling pattern: register a companion `_status` tool the LLM calls to check progress |
+| No inter-extension communication | Extension A can't directly call Extension B's tools | Call `registry.call_command("other_ext.tool", params)` directly (works, but undocumented contract) |
+
+Each gap is tracked as a post-1.0 improvement candidate. None prevent an
+extension from being built and shipped — they affect convenience, not
+capability. The signal-connection and ProjectSettings workarounds are
+already used internally by the toolkit itself (hot-reload watcher, plugin
+configuration). The polling and cross-tool workarounds are straightforward
+patterns that require no special framework support.
 
 ## Hooks (Internal API)
 

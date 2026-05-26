@@ -3,7 +3,6 @@ extends RefCounted
 ## tileset.* command handlers — TileSet resource creation, editing, and management.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Coerce = _Hub.Coerce
 const FileGuard = _Hub.FileGuard
 const Helpers = _Hub.Helpers
@@ -54,12 +53,12 @@ static func register(registry: MCPToolkitCommandRegistry) -> void:
 static func _load_tileset(file_path: String) -> Variant:
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
-		return McpError.make("NOT_FOUND", "TileSet not found: %s" % file_path)
+		return MCPToolkitError.fail("NOT_FOUND", "TileSet not found: %s" % file_path)
 	var ts = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
 	if ts == null or not (ts is TileSet):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"Resource at %s is not a TileSet" % file_path)
 	return ts
 
@@ -68,7 +67,7 @@ static func _load_tileset(file_path: String) -> Variant:
 static func _save_tileset(ts: TileSet, file_path: String) -> Dictionary:
 	var save_err := ResourceSaver.save(ts, file_path)
 	if save_err != OK:
-		return McpError.make("SAVE_FAILED",
+		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 	Helpers.ensure_file_indexed(file_path)
@@ -86,7 +85,7 @@ static func _layer_node_hint(prefix: String, suffix: String) -> String:
 
 
 static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path", "texture_path"])
+	var err = MCPToolkitError.require(parameters, ["file_path", "texture_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -97,14 +96,14 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if not file_path.get_extension().to_lower() in ["tres", "res"]:
-		return McpError.make("INVALID_PATH",
+		return MCPToolkitError.fail("INVALID_PATH",
 			"tileset_create writes .tres/.res files (got %s)" % file_path)
 
 	var texture: Texture2D = load(texture_path) as Texture2D
 	if texture == null:
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"texture not found or not a Texture2D: %s" % texture_path)
 
 	var ts := TileSet.new()
@@ -147,11 +146,11 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 		return dir_result
 	var save_err := ResourceSaver.save(ts, file_path)
 	if save_err != OK:
-		return McpError.make("SAVE_FAILED",
+		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	var loaded := ResourceLoader.load(file_path, "TileSet", ResourceLoader.CACHE_MODE_REPLACE)
 	if loaded == null or not (loaded is TileSet):
-		return McpError.make("SAVE_FAILED",
+		return MCPToolkitError.fail("SAVE_FAILED",
 			"tileset saved but reload failed — file may be corrupt: %s" % file_path)
 	Helpers.ensure_file_indexed(file_path)
 
@@ -169,7 +168,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_tileset_add_source(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path", "texture_path"])
+	var err = MCPToolkitError.require(parameters, ["file_path", "texture_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -195,7 +194,7 @@ static func _cmd_tileset_add_source(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path", "source_id"])
+	var err = MCPToolkitError.require(parameters, ["file_path", "source_id"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -205,7 +204,7 @@ static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
 		return ts_or_err
 	var ts: TileSet = ts_or_err
 	if not ts.has_source(source_id):
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"No source with id %d in TileSet" % source_id)
 	ts.remove_source(source_id)
 	var save_result := _save_tileset(ts, file_path)
@@ -221,7 +220,7 @@ static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path", "atlas_x", "atlas_y"])
+	var err = MCPToolkitError.require(parameters, ["file_path", "atlas_x", "atlas_y"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -231,20 +230,20 @@ static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
 		return ts_or_err
 	var ts: TileSet = ts_or_err
 	if not ts.has_source(source_id):
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"No source with id %d in TileSet" % source_id)
 	var source = ts.get_source(source_id)
 	if not (source is TileSetAtlasSource):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"Source %d is not a TileSetAtlasSource" % source_id)
 	var atlas: TileSetAtlasSource = source
 	var coord := Vector2i(int(parameters["atlas_x"]), int(parameters["atlas_y"]))
 	if not atlas.has_tile(coord):
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"tile (%d,%d) not found in source %d" % [coord.x, coord.y, source_id])
 	var r = _apply_alternative(atlas, coord, parameters)
 	if r.has("error"):
-		return McpError.make("FAILED", r["error"])
+		return MCPToolkitError.fail("FAILED", r["error"])
 	var alt_id: int = r["alt_id"]
 	var save_result := _save_tileset(ts, file_path)
 	if save_result.has("error"):
@@ -259,7 +258,7 @@ static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path", "atlas_x", "atlas_y", "alternative_id"])
+	var err = MCPToolkitError.require(parameters, ["file_path", "atlas_x", "atlas_y", "alternative_id"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -272,19 +271,19 @@ static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionar
 		return ts_or_err
 	var ts: TileSet = ts_or_err
 	if not ts.has_source(source_id):
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"No source with id %d in TileSet" % source_id)
 	var source = ts.get_source(source_id)
 	if not (source is TileSetAtlasSource):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"Source %d is not a TileSetAtlasSource" % source_id)
 	var atlas: TileSetAtlasSource = source
 	var coord := Vector2i(atlas_x, atlas_y)
 	if not atlas.has_tile(coord):
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"tile (%d,%d) not found in source %d" % [atlas_x, atlas_y, source_id])
 	if not atlas.has_alternative_tile(coord, alt_id):
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"alternative %d not found for tile (%d,%d)" % [alt_id, atlas_x, atlas_y])
 	atlas.remove_alternative_tile(coord, alt_id)
 	var save_result := _save_tileset(ts, file_path)
@@ -301,7 +300,7 @@ static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionar
 
 
 static func _cmd_tileset_setup_layers(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path"])
+	var err = MCPToolkitError.require(parameters, ["file_path"])
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -325,7 +324,7 @@ static func _cmd_tileset_setup_layers(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["file_path"])
+	var err = MCPToolkitError.require(parameters, ["file_path"])
 	if err != null:
 		return err
 
@@ -360,11 +359,11 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 	# -- per-tile edits --
 	if tiles_raw != null and typeof(tiles_raw) == TYPE_ARRAY:
 		if not ts.has_source(source_id):
-			return McpError.make("NOT_FOUND",
+			return MCPToolkitError.fail("NOT_FOUND",
 				"No source with id %d in TileSet" % source_id)
 		var source = ts.get_source(source_id)
 		if not (source is TileSetAtlasSource):
-			return McpError.make("INVALID_CLASS",
+			return MCPToolkitError.fail("INVALID_CLASS",
 				"Source %d is not a TileSetAtlasSource" % source_id)
 		var atlas: TileSetAtlasSource = source
 		var tile_size: Vector2i = ts.tile_size
@@ -480,10 +479,10 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 static func _apply_add_source(ts: TileSet, cfg: Dictionary) -> Dictionary:
 	var tex_path := str(cfg.get("texture_path", ""))
 	if tex_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "add_source.texture_path required")
+		return MCPToolkitError.fail("INVALID_PARAMS", "add_source.texture_path required")
 	var texture: Texture2D = load(tex_path) as Texture2D
 	if texture == null:
-		return McpError.make("NOT_FOUND",
+		return MCPToolkitError.fail("NOT_FOUND",
 			"add_source texture not found: %s" % tex_path)
 	var source := TileSetAtlasSource.new()
 	source.texture = texture

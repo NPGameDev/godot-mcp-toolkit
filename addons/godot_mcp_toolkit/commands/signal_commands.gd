@@ -3,7 +3,6 @@ extends RefCounted
 ## signal.* command handlers — list, manage (connect/disconnect), emit on edited-scene nodes.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Coerce = _Hub.Coerce
 const Helpers = _Hub.Helpers
 
@@ -174,24 +173,24 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 static func _cmd_signal_list(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	var include_connections: bool = bool(parameters.get("include_connections", false))
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
-	return {"path": node_path, "signals": _signal_list_of(node, include_connections, root)}
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
+	return {"success": true, "path": node_path, "signals": _signal_list_of(node, include_connections, root)}
 
 
 static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if not (action in ["connect", "disconnect"]):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"action must be 'connect' or 'disconnect' (got '%s')" % action)
 	var resolved := _resolve_signal_pair(parameters)
 	if resolved.has("error"):
-		return McpError.make(str(resolved["code"]), str(resolved["error"]))
+		return MCPToolkitError.fail(str(resolved["code"]), str(resolved["error"]))
 	var source = resolved["source"]
 	var callable: Callable = resolved["callable"]
 	var signal_name: String = str(resolved["signal_name"])
@@ -232,7 +231,7 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 		return response
 	else:
 		if not source.is_connected(signal_name, callable):
-			return McpError.make("NOT_FOUND", "no connection to disconnect")
+			return MCPToolkitError.fail("NOT_FOUND", "no connection to disconnect")
 		source.disconnect(signal_name, callable)
 		MCPToolkitUndoRedoAction.begin("disconnect %s.%s -> %s.%s" % [
 				source_path, signal_name, target_path, method_name], source) \
@@ -251,17 +250,17 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
-		return McpError.make("NO_SCENE", "no edited scene")
+		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	var signal_name := str(parameters.get("signal_name", ""))
 	if signal_name.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing signal")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing signal")
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "node not found: %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 	if not node.has_signal(signal_name):
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"signal %s not on %s" % [signal_name, node_path])
 	var raw_args = parameters.get("args", [])
 	if typeof(raw_args) != TYPE_ARRAY:

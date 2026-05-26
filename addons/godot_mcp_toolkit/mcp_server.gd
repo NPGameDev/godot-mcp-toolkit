@@ -618,18 +618,18 @@ func _handle_scene_open(peer: WebSocketPeer, id, params: Dictionary) -> void:
 	# Validate file_path — mirrors _cmd_scene_open checks. Intercepted here
 	# because under contention we must NOT call open_scene_from_path (the tab
 	# switch would interfere with the lease holder).
-	var err = _Hub.McpError.check_required(params, ["file_path"])
+	var err = MCPToolkitError.require(params, ["file_path"])
 	if err != null:
 		_send_result(peer, id, err)
 		return
 	var file_path := str(params.get("file_path", ""))
 	var guard := _Hub.FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		_send_result(peer, id, _Hub.McpError.make("PATH_DENIED", str(guard["reason"])))
+		_send_result(peer, id, MCPToolkitError.fail("PATH_DENIED", str(guard["reason"])))
 		return
 	if not FileAccess.file_exists(file_path):
-		_send_result(peer, id, _Hub.McpError.make("NOT_FOUND",
-			"scene not found: %s" % file_path, _Hub.McpError.HINT_FILE_PATH))
+		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND",
+			"scene not found: %s" % file_path, MCPToolkitError.HINT_FILE_PATH))
 		return
 
 	# Set affinity.

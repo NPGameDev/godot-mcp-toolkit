@@ -2,11 +2,10 @@
 extends RefCounted
 ## Centralized preloads for plugin-internal scripts.
 ##
-## Every file that needs McpError or Coerce preloads
-## this hub and re-aliases the constants it needs. Script paths live here only
-## — if a file moves, update this file and nothing else.
+## Centralized preloads for plugin-internal scripts.
+## Script paths live here only — if a file moves, update this file and nothing else.
+## MCPToolkitError has class_name and needs no preload.
 
-const McpError := preload("res://addons/godot_mcp_toolkit/mcp_error.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")

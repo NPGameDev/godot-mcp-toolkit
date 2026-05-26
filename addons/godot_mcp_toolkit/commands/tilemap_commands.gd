@@ -3,7 +3,6 @@ extends RefCounted
 ## tilemap.* command handlers — batch cell painting with UndoRedo.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Coerce = _Hub.Coerce
 const FileGuard = _Hub.FileGuard
 const Helpers = _Hub.Helpers
@@ -45,16 +44,16 @@ static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing node_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path")
 
 	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "no node at %s" % node_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "no node at %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
 	var is_layer: bool = node.is_class("TileMapLayer")
 	var is_map := node is TileMap
 	if not (is_layer or is_map):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"node at %s is not a TileMap or TileMapLayer (got %s)" % [
 				node_path, node.get_class()])
 
@@ -69,7 +68,7 @@ static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
 		var tile_map := node as TileMap
 		var layer_count := tile_map.get_layers_count()
 		if layer < 0 or layer >= layer_count:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"layer %d out of range [0, %d) for TileMap %s" % [
 					layer, layer_count, node_path])
 
@@ -204,7 +203,7 @@ static func _cmd_tilemap_set_cells(
 	var cells_raw = parameters.get("cells", null)
 	var regions_raw = parameters.get("regions", null)
 	if tilemap_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing tilemap_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing tilemap_path")
 
 	# FIX-A: expand regions into cells.
 	if regions_raw != null and typeof(regions_raw) == TYPE_ARRAY:
@@ -215,17 +214,17 @@ static func _cmd_tilemap_set_cells(
 			cells_raw = expanded
 
 	if typeof(cells_raw) != TYPE_ARRAY:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"cells or regions must be provided. cells: Array of {x,y,source_id,atlas_x,atlas_y,alternative_tile?}. " +
 			"regions: Array of {x,y,width,height,source_id,atlas_x,atlas_y,alternative_tile?} for bulk rectangular fills.")
 	var cells: Array = cells_raw
 	var node = _resolve_scene_node(tilemap_path)
 	if node == null:
-		return McpError.make("NOT_FOUND", "no node at %s" % tilemap_path, McpError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "no node at %s" % tilemap_path, MCPToolkitError.HINT_NODE_PATH)
 	var is_layer: bool = node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	var is_map := node is TileMap
 	if not (is_layer or is_map):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"node at %s is not a TileMap or TileMapLayer (got %s); tilemap.set_cells only accepts tilemap-family nodes" % [
 				tilemap_path, node.get_class()])
 
@@ -237,7 +236,7 @@ static func _cmd_tilemap_set_cells(
 	else:
 		has_tileset = (node as TileMap).tile_set != null
 	if not has_tileset:
-		return McpError.make("INVALID_STATE",
+		return MCPToolkitError.fail("INVALID_STATE",
 			"no tileset assigned to %s — cells would be invisible. " % tilemap_path +
 			"Use node_set_property with {\"type\": \"Resource\", \"path\": \"res://path/to/tileset.tres\"} to set tile_set first.")
 
@@ -245,18 +244,18 @@ static func _cmd_tilemap_set_cells(
 	for cell_index in range(cells.size()):
 		var cell = cells[cell_index]
 		if typeof(cell) != TYPE_DICTIONARY:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"cells[%d] must be an object" % cell_index)
 		for key in required_keys:
 			if not cell.has(key):
-				return McpError.make("INVALID_PARAMS",
+				return MCPToolkitError.fail("INVALID_PARAMS",
 					"cells[%d] missing required key '%s'" % [cell_index, key])
 
 	if is_map:
 		var tile_map := node as TileMap
 		var layer_count := tile_map.get_layers_count()
 		if layer < 0 or layer >= layer_count:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"layer %d out of range [0, %d) for TileMap %s" % [
 					layer, layer_count, tilemap_path])
 

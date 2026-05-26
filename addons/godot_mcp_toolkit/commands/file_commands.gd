@@ -3,7 +3,6 @@ extends RefCounted
 ## file.* command handlers — generic file deletion for any res:// path.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const FileGuard = _Hub.FileGuard
 const Helpers = _Hub.Helpers
 
@@ -22,15 +21,15 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	if file_path.is_empty():
-		return McpError.make("INVALID_PARAMS", "missing file_path")
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing file_path")
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
-		return McpError.make("PATH_DENIED", str(guard["reason"]))
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if file_path.begins_with("res://addons/godot_mcp_toolkit/"):
-		return McpError.make("PATH_DENIED",
+		return MCPToolkitError.fail("PATH_DENIED",
 			"cannot delete files inside the MCP toolkit plugin directory")
 	if not FileAccess.file_exists(file_path):
-		return McpError.make("NOT_FOUND", "file not found: %s" % file_path, McpError.HINT_FILE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "file not found: %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 
 	# For scene files (.tscn/.scn), attempt to close the editor tab first.
 	var tab_closed := false
@@ -50,7 +49,7 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 				# with a phantom warning.
 				var edited_root := Helpers.get_edited_root()
 				if edited_root != null and edited_root.scene_file_path == file_path:
-					return McpError.make("EDITED_SCENE",
+					return MCPToolkitError.fail("EDITED_SCENE",
 						"cannot delete the currently-edited scene %s on Godot 4.2-4.4 (no programmatic tab-close API); close the scene tab manually, then retry file_delete" % file_path)
 				warnings.append(
 					"phantom tab: scene tab for %s remains open; Godot 4.2-4.4 has no API to close tabs — it will vanish on editor restart or manual close" % file_path)

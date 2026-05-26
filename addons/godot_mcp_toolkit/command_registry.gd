@@ -4,7 +4,6 @@ extends RefCounted
 ## Central dispatch table for MCP commands.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Audit = _Hub.Audit
 
 const _DEFAULT_TIMEOUT_MS := 30000
@@ -64,6 +63,7 @@ func add(method: String, handler: Callable,
 		"read_only": is_read_only,
 		"active_scene_required": bool(opts.get("is_active_scene_required", true)),
 		"_force_serialize": bool(opts.get("_force_serialize", false)),
+		"success_hint": opts.get("success_hint", ""),
 	}
 	if min_ver != "":
 		cmd_entry["min_godot_version"] = min_ver
@@ -163,6 +163,14 @@ func clear() -> void:
 	_version_blocked.clear()
 
 
+func fail(code: String, message: String, hint: String = "") -> Dictionary:
+	return MCPToolkitError.fail(code, message, hint)
+
+
+func require(parameters: Dictionary, required: Array) -> Variant:
+	return MCPToolkitError.require(parameters, required)
+
+
 func call_command(method: String, parameters: Dictionary,
 		ctx: MCPToolkitToolContext = null) -> Dictionary:
 	if not _commands.has(method):
@@ -173,11 +181,31 @@ func call_command(method: String, parameters: Dictionary,
 				detail += " >= %s" % info["min"]
 			if info["max"] != "":
 				detail += " <= %s" % info["max"]
-			return McpError.make("UNSUPPORTED",
+			return MCPToolkitError.fail("UNSUPPORTED",
 				"%s %s (running: %s)" % [method, detail, info["engine"]])
-		return McpError.make("NOT_FOUND", "unknown method: " + method)
+		return MCPToolkitError.fail("NOT_FOUND", "unknown method: " + method)
 	Audit.log_call(method, parameters)
+	var result
 	if ctx != null:
-		return await _commands[method]["handler"].call(parameters, ctx)
+		result = await _commands[method]["handler"].call(parameters, ctx)
 	else:
-		return await _commands[method]["handler"].call(parameters)
+		result = await _commands[method]["handler"].call(parameters)
+
+	# ── Response contract enforcement ──
+	if not result is Dictionary:
+		push_error("[MCPToolkit] Handler for '%s' returned non-Dictionary (%s)" % [method, type_string(typeof(result))])
+		return MCPToolkitError.fail("INTERNAL", "Handler for %s returned non-Dictionary" % method)
+
+	if not result.has("success"):
+		push_error("[MCPToolkit] Handler for '%s' returned Dictionary without 'success' key" % method)
+		return MCPToolkitError.fail("INTERNAL", "Handler for %s returned Dictionary without 'success' key" % method)
+
+	# ── Auto-inject registered success hint if handler didn't set one ──
+	# NOTE: Hint injection lives here (toolkit-side) for extension tools.
+	# Built-in tools get hints injected server-side in callAndWrap().
+	# Both use result["hint"] as the contract surface — no double injection.
+	var sh: String = _commands[method].get("success_hint", "")
+	if sh != "" and result.get("success", false) and not result.has("hint"):
+		result["hint"] = sh
+
+	return result

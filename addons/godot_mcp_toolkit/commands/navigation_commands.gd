@@ -3,7 +3,6 @@ extends RefCounted
 ## navigation.* command handlers — NavigationRegion2D polygon editing + baking.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 const Helpers = _Hub.Helpers
 
 
@@ -14,7 +13,7 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _cmd_edit_polygon(parameters: Dictionary) -> Dictionary:
-	var err = McpError.check_required(parameters, ["node_path", "action"])
+	var err = MCPToolkitError.require(parameters, ["node_path", "action"])
 	if err != null:
 		return err
 
@@ -23,15 +22,15 @@ static func _cmd_edit_polygon(parameters: Dictionary) -> Dictionary:
 
 	var edited_scene := EditorInterface.get_edited_scene_root()
 	if edited_scene == null:
-		return McpError.make("NO_SCENE", "No scene is currently open in the editor")
+		return MCPToolkitError.fail("NO_SCENE", "No scene is currently open in the editor")
 
 	node_path = Helpers.normalize_editor_path(node_path)
 	var node := edited_scene.get_node_or_null(NodePath(node_path))
 	if node == null:
-		return McpError.make("NOT_FOUND", "Node not found: " + node_path)
+		return MCPToolkitError.fail("NOT_FOUND", "Node not found: " + node_path)
 
 	if not (node is NavigationRegion2D):
-		return McpError.make("INVALID_CLASS",
+		return MCPToolkitError.fail("INVALID_CLASS",
 			"Expected NavigationRegion2D, got " + node.get_class())
 
 	var region := node as NavigationRegion2D
@@ -54,14 +53,14 @@ static func _cmd_edit_polygon(parameters: Dictionary) -> Dictionary:
 		"bake":
 			return _action_bake(region, nav_poly)
 		_:
-			return McpError.make("INVALID_PARAMS",
+			return MCPToolkitError.fail("INVALID_PARAMS",
 				"Unknown action '%s'; valid actions: set, add_outline, remove_outline, clear, bake" % action)
 
 
 static func _action_set(parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
 	var outlines = parameters.get("outlines", null)
 	if outlines == null or typeof(outlines) != TYPE_ARRAY or outlines.size() == 0:
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"'outlines' must be a non-empty Array of outline arrays")
 
 	nav_poly.clear_outlines()
@@ -81,7 +80,7 @@ static func _action_set(parameters: Dictionary, nav_poly: NavigationPolygon) -> 
 static func _action_add_outline(parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
 	var outline_data = parameters.get("outline", null)
 	if outline_data == null or typeof(outline_data) != TYPE_ARRAY:
-		return McpError.make("INVALID_PARAMS", "'outline' must be an Array of {x, y} points")
+		return MCPToolkitError.fail("INVALID_PARAMS", "'outline' must be an Array of {x, y} points")
 
 	var packed := PackedVector2Array()
 	for pt in outline_data:
@@ -89,7 +88,7 @@ static func _action_add_outline(parameters: Dictionary, nav_poly: NavigationPoly
 			packed.append(Vector2(float(pt.get("x", 0)), float(pt.get("y", 0))))
 
 	if packed.size() < 3:
-		return McpError.make("INVALID_PARAMS", "Outline must have at least 3 points")
+		return MCPToolkitError.fail("INVALID_PARAMS", "Outline must have at least 3 points")
 
 	nav_poly.add_outline(packed)
 	return _make_result(nav_poly)
@@ -98,11 +97,11 @@ static func _action_add_outline(parameters: Dictionary, nav_poly: NavigationPoly
 static func _action_remove_outline(parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
 	var index = parameters.get("index", null)
 	if index == null:
-		return McpError.make("INVALID_PARAMS", "'index' is required for remove_outline")
+		return MCPToolkitError.fail("INVALID_PARAMS", "'index' is required for remove_outline")
 
 	var idx := int(index)
 	if idx < 0 or idx >= nav_poly.get_outline_count():
-		return McpError.make("INVALID_PARAMS",
+		return MCPToolkitError.fail("INVALID_PARAMS",
 			"Outline index %d out of range (0..%d)" % [idx, nav_poly.get_outline_count() - 1])
 
 	nav_poly.remove_outline(idx)
@@ -117,7 +116,7 @@ static func _action_clear(nav_poly: NavigationPolygon) -> Dictionary:
 
 static func _action_bake(region: NavigationRegion2D, nav_poly: NavigationPolygon) -> Dictionary:
 	if nav_poly.get_outline_count() == 0:
-		return McpError.make("INVALID_PARAMS", "Cannot bake: no outlines defined")
+		return MCPToolkitError.fail("INVALID_PARAMS", "Cannot bake: no outlines defined")
 
 	# Use NavigationServer2D baking (4.3+) if available, else deprecated fallback
 	if NavigationServer2D.has_method("bake_from_source_geometry_data"):

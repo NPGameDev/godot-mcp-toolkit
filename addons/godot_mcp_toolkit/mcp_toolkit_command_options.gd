@@ -27,6 +27,7 @@ var _is_scene_independent: bool = false  # inverted: true means NOT required
 var _force_serialize: bool = false
 var _min_godot_version: String = ""
 var _max_godot_version: String = ""
+var _success_hint: String = ""
 
 
 func with_description(description: String) -> MCPToolkitCommandOptions:
@@ -89,6 +90,11 @@ func with_min_godot_version(version: String) -> MCPToolkitCommandOptions:
 	return self
 
 
+func with_success_hint(hint: String) -> MCPToolkitCommandOptions:
+	_success_hint = hint
+	return self
+
+
 func with_max_godot_version(version: String) -> MCPToolkitCommandOptions:
 	if not _is_valid_version(version):
 		push_warning("[MCPToolkit] Invalid max_godot_version format: '%s' (expected 'major.minor', e.g. '4.6')" % version)
@@ -129,4 +135,6 @@ func to_dict() -> Dictionary:
 		d["min_godot_version"] = _min_godot_version
 	if _max_godot_version != "":
 		d["max_godot_version"] = _max_godot_version
+	if _success_hint != "":
+		d["success_hint"] = _success_hint
 	return d

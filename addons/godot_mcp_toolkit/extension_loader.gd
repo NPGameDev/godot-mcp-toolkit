@@ -12,7 +12,6 @@ extends RefCounted
 ## "extensions.changed" notification to all connected MCP bridges.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
 
 const _PREFIX := "MCPToolkit"
 
