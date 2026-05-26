@@ -7,6 +7,13 @@ extends SceneTree
 ## The final banner is always printed for environments where exit codes
 ## are unreliable (Windows Godot).
 
+# Preload addon classes explicitly so --script mode resolves them on Godot 4.2,
+# where global_script_class_cache.cfg may not be populated.
+const MCPToolkitCommandRegistry = preload("res://addons/godot_mcp_toolkit/command_registry.gd")
+const MCPToolkitCommandOptions = preload("res://addons/godot_mcp_toolkit/mcp_toolkit_command_options.gd")
+const MCPToolkitExtensionOptions = preload("res://addons/godot_mcp_toolkit/mcp_toolkit_extension_options.gd")
+const MCPToolkitToolContext = preload("res://addons/godot_mcp_toolkit/mcp_tool_context.gd")
+
 var _passed := 0
 var _failed := 0
 var _errors: Array[String] = []
@@ -39,9 +46,8 @@ func _init() -> void:
 # --- Guards ----------------------------------------------------------------
 
 func _guard_addon_classes() -> bool:
-	# If any class_name is unavailable (addon not enabled), Godot throws a
-	# parse error before _init() runs. This runtime check is defence-in-depth
-	# for unexpected constructor failures.
+	# Preloads above handle parse-time resolution (especially on Godot 4.2).
+	# This runtime check is defence-in-depth for unexpected constructor failures.
 	var r := MCPToolkitCommandRegistry.new()
 	var o := MCPToolkitCommandOptions.new()
 	var e := MCPToolkitExtensionOptions.new("guard")
