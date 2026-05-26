@@ -36,7 +36,7 @@ func trigger_undo(context_node_path: String = "") -> Dictionary:
 	if not undo_redo.has_undo():
 		return {"status": "error", "message": "No undo actions in history %d" % history_id}
 
-	var ok := undo_redo.undo()
+	var ok = undo_redo.undo()
 	return {"status": "ok" if ok else "error", "history_id": history_id}
 
 
@@ -54,7 +54,7 @@ func trigger_redo(context_node_path: String = "") -> Dictionary:
 	if not undo_redo.has_redo():
 		return {"status": "error", "message": "No redo actions in history %d" % history_id}
 
-	var ok := undo_redo.redo()
+	var ok = undo_redo.redo()
 	return {"status": "ok" if ok else "error", "history_id": history_id}
 
 
