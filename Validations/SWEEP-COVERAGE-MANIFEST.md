@@ -146,14 +146,33 @@
 | animation.get_keys | 53 | — | C9 | — | — | |
 | animationtree.edit | 54m–54s | ✓ (54s: INVALID_CLASS) | — | — | — | |
 
-### TileMap (4 tools)
+### TileMap (2 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| tilemap.set_cells | 54 | — | C10 | — | FIX-A, FIX-J | **GAP:** regions param, no-tileset rejection |
-| tilemap.read_cells | 14.15–14.16 | ✓ (14.17: NOT_FOUND, 14.18: wrong class, 14.19: missing param) | — | — | c7f56c8 | W1 Lane 2, read-only |
-| tileset.create | 54a, 54b | ✓ (54b: NOT_FOUND) | C10 | — | FIX-I | **GAP:** type validation |
-| tileset.edit | 54c–54j | ✓ (54j: invalid coords) | — | — | FIX-2 | **GAP:** layer validation guard |
+| tilemap.set_cells | 14.18–14.19 | ✓ (14.20: no-tileset) | C10 | — | FIX-A, FIX-J | |
+| tilemap.read_cells | 14.21–14.22 | ✓ (14.23: NOT_FOUND, 14.24: wrong class, 14.25: missing param) | — | — | c7f56c8 | read-only |
+
+### TileSet — structural (6 tools)
+
+| Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
+|---|---|---|---|---|---|---|
+| tileset.create | 14.1–14.2 | ✓ (14.8: NOT_FOUND) | — | — | FIX-I | |
+| tileset.setup_layers | 14.3 | — | — | — | — | |
+| tileset.add_source | 14.4 | — | — | — | — | |
+| tileset.remove_source | 14.5 | ✓ (14.9: NOT_FOUND) | — | — | — | destructiveHint |
+| tileset.add_alternative | 14.6 | — | — | — | — | |
+| tileset.remove_alternative | 14.7 | ✓ (14.10: NOT_FOUND) | — | — | — | destructiveHint |
+
+### TileSet — per-tile editing (5 tools)
+
+| Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
+|---|---|---|---|---|---|---|
+| tileset.edit_physics | 14.11 | ✓ (14.16: invalid coords, 14.17: missing file) | — | — | — | |
+| tileset.edit_terrain | 14.12 | — | — | — | — | |
+| tileset.edit_navigation | 14.13 | — | — | — | — | |
+| tileset.edit_visuals | 14.14 | — | — | — | FIX-2 | |
+| tileset.edit_custom_data | 14.15 | — | — | — | — | |
 
 ### Theme (1 tool)
 
