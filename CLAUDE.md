@@ -28,10 +28,11 @@ dispatch) — never direct static calls behind an `if` version check.
 GDScript resolves methods at parse time; a direct call to a non-existent
 method causes a parse error even inside a dead branch.
 
-Centralized helpers in `_hub.gd`: `godot_minor()`, `get_undo_redo()`,
-`get_toaster()`, `get_editor_theme()`. Command files import `_Hub` and
-use these instead of calling version-dependent EditorInterface methods
-directly.
+Centralized helpers in `_hub.gd`: `get_undo_redo()`,
+`get_toaster()`, `get_editor_theme()`. Version checks use
+`_Hub.VersionUtils.is_at_least()` / `is_at_most()` / `is_version_in_range()`.
+Command files import `_Hub` and use these instead of calling
+version-dependent EditorInterface methods directly.
 
 **Degradation on 4.2–4.3:** UndoRedo unavailable (operations work, no undo
 history); toast notifications silently skipped; TileMapLayer unavailable on
@@ -42,7 +43,7 @@ history); toast notifications silently skipped; TileMapLayer unavailable on
 `UNSUPPORTED` on < 4.5). The server-side version-check hook enforces
 this before the call reaches the plugin.
 
-**Future versions (4.7+):** not blocked. `GODOT_TESTED_MAX_MINOR = 6`
+**Future versions (4.7+, 5.x):** not blocked. `GODOT_TESTED_MAX_VERSION = "4.6"`
 controls the startup warning threshold only — no functionality restricted.
 
 **Constraint for contributors:** `Dictionary[K, V]` (typed dictionaries),

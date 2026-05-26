@@ -166,7 +166,8 @@ if Engine.get_version_info().minor >= 5:
 ```
 
 Centralized version helpers in `_hub.gd`:
-- `_Hub.godot_minor()` — returns the running Godot minor version number
+- `_Hub.VersionUtils.is_at_least(ver, min)` / `is_at_most(ver, max)` — single-bound version checks
+- `_Hub.VersionUtils.is_version_in_range(ver, min, max)` — range version check (used by command registry)
 - `_Hub.get_undo_redo()` — returns `EditorUndoRedoManager` or `null` on < 4.4
 - `_Hub.get_toaster()` — returns `EditorToaster` or `null` on < 4.4
 - `_Hub.get_editor_theme()` — returns theme with fallback to `get_base_control().get_theme()`
@@ -281,7 +282,7 @@ The `has_method()` + `call()` pattern is inherently forward-compatible.
 When Godot 4.7 (or later) adds new methods, `has_method()` returns `true`
 and the call succeeds — no plugin update needed for the guarded code paths.
 
-A `GODOT_TESTED_MAX_MINOR` constant (currently `6`) controls the startup
+A `GODOT_TESTED_MAX_VERSION` constant (currently `"4.6"`) controls the startup
 warning threshold. Versions above this emit a `push_warning()` but do not
 restrict any functionality.
 
