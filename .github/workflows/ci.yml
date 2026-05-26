@@ -15,6 +15,7 @@ jobs:
         include:
           - godot-version: "4.2.0"
             check-method: "check-only"
+            skip-unit-tests: true  # 4.2 editor scan aborts on class_name cross-refs, can't generate cache
           - godot-version: "4.3.0"
             check-method: "check-only"
           - godot-version: "4.4.0"
@@ -63,11 +64,14 @@ jobs:
 
       # --script mode needs .godot/global_script_class_cache.cfg to resolve
       # class_names. The editor step (4.5+) generates it as a side effect;
-      # 4.2–4.4 use --check-only which skips the editor, so we briefly
+      # 4.3–4.4 use --check-only which skips the editor, so we briefly
       # launch the editor here to populate the cache.
+      # Skipped on 4.2: editor scan aborts on class_name cross-references
+      # before writing the cache (chicken-and-egg; fixed in 4.3).
       - name: Generate script class cache
-        if: matrix.check-method == 'check-only'
+        if: ${{ matrix.check-method == 'check-only' && !matrix.skip-unit-tests }}
         run: timeout 30 godot --headless --editor --quit-after 5 2>&1 || true
 
       - name: Run unit tests
+        if: ${{ !matrix.skip-unit-tests }}
         run: timeout 30 godot --headless --script test/run_unit_tests.gd
