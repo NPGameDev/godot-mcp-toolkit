@@ -48,10 +48,10 @@ func _init() -> void:
 func _guard_addon_classes() -> bool:
 	# Preloads above handle parse-time resolution (especially on Godot 4.2).
 	# This runtime check is defence-in-depth for unexpected constructor failures.
-	var r := MCPToolkitCommandRegistry.new()
-	var o := MCPToolkitCommandOptions.new()
-	var e := MCPToolkitExtensionOptions.new("guard")
-	var c := MCPToolkitToolContext.new()
+	var r = MCPToolkitCommandRegistry.new()
+	var o = MCPToolkitCommandOptions.new()
+	var e = MCPToolkitExtensionOptions.new("guard")
+	var c = MCPToolkitToolContext.new()
 	if r == null or o == null or e == null or c == null:
 		print("FAIL: addon classes not accessible — is the addon enabled in project.godot?")
 		return false
@@ -96,7 +96,7 @@ func _noop(_p: Dictionary) -> Dictionary:
 
 func _test_registry() -> void:
 	_begin("Registry")
-	var reg := MCPToolkitCommandRegistry.new()
+	var reg = MCPToolkitCommandRegistry.new()
 
 	# 1. mark_read_only → is_read_only true
 	reg.add("t.ro", _noop, MCPToolkitCommandOptions.new().mark_read_only())
@@ -136,7 +136,7 @@ func _test_registry() -> void:
 	_ok(not reg.has_command("t.rm"), "remove → has_command false")
 
 	# 10. clear → get_all_methods empty
-	var reg2 := MCPToolkitCommandRegistry.new()
+	var reg2 = MCPToolkitCommandRegistry.new()
 	reg2.add("t.a", _noop, MCPToolkitCommandOptions.new())
 	reg2.add("t.b", _noop, MCPToolkitCommandOptions.new())
 	reg2.clear()
@@ -193,7 +193,7 @@ func _test_options_builder() -> void:
 			5000, "with_timeout_ms(5000) → 5000")
 
 	# 7. chained builder returns same reference
-	var opts := MCPToolkitCommandOptions.new()
+	var opts = MCPToolkitCommandOptions.new()
 	_ok(opts.mark_read_only().mark_idempotent() == opts,
 			"chained builder returns same reference")
 
@@ -237,7 +237,7 @@ func _test_extension_options() -> void:
 	_eq(d["description"], "My tool", "constructor sets description")
 
 	# 2. inherits builder methods (chaining returns same ref)
-	var ext := MCPToolkitExtensionOptions.new("Ext")
+	var ext = MCPToolkitExtensionOptions.new("Ext")
 	_ok(ext.mark_read_only().mark_idempotent() == ext,
 			"inherits builder methods (chaining works)")
 
@@ -253,7 +253,7 @@ func _test_extension_options() -> void:
 
 func _test_annotation_mapping() -> void:
 	_begin("Annotation mapping")
-	var reg := MCPToolkitCommandRegistry.new()
+	var reg = MCPToolkitCommandRegistry.new()
 
 	# 1. mark_read_only → readOnlyHint true
 	reg.add("a.ro", _noop, MCPToolkitCommandOptions.new().mark_read_only())
@@ -284,7 +284,7 @@ func _test_annotation_mapping() -> void:
 
 func _test_timeout_clamping() -> void:
 	_begin("Timeout clamping")
-	var reg := MCPToolkitCommandRegistry.new()
+	var reg = MCPToolkitCommandRegistry.new()
 
 	# 1. no timeout → default 30000 (metadata omits key)
 	reg.add("to.def", _noop, MCPToolkitCommandOptions.new())
@@ -320,7 +320,7 @@ func _test_tool_context() -> void:
 	_begin("ToolContext cancellation")
 
 	# 1. fresh → is_cancelled false
-	var ctx := MCPToolkitToolContext.new()
+	var ctx = MCPToolkitToolContext.new()
 	_ok(not ctx.is_cancelled(), "fresh context → is_cancelled false")
 
 	# 2. cancel → is_cancelled true
@@ -328,7 +328,7 @@ func _test_tool_context() -> void:
 	_ok(ctx.is_cancelled(), "after cancel → is_cancelled true")
 
 	# 3. cancelled signal fires synchronously
-	var ctx2 := MCPToolkitToolContext.new()
+	var ctx2 = MCPToolkitToolContext.new()
 	var fired := [false]
 	ctx2.cancelled.connect(func(): fired[0] = true)
 	ctx2.cancel()
