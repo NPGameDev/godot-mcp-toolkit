@@ -7,14 +7,6 @@ extends SceneTree
 ## The final banner is always printed for environments where exit codes
 ## are unreliable (Windows Godot).
 
-# Preload addon classes explicitly so --script mode resolves them on Godot 4.2,
-# where global_script_class_cache.cfg may not be populated.
-const MCPToolkitCommandRegistry = preload("res://addons/godot_mcp_toolkit/command_registry.gd")
-const MCPToolkitCommandOptions = preload("res://addons/godot_mcp_toolkit/mcp_toolkit_command_options.gd")
-const MCPToolkitExtensionOptions = preload("res://addons/godot_mcp_toolkit/mcp_toolkit_extension_options.gd")
-const MCPToolkitToolContext = preload("res://addons/godot_mcp_toolkit/mcp_tool_context.gd")
-const MCPToolkitUndoRedoAction = preload("res://addons/godot_mcp_toolkit/mcp_toolkit_undo_redo_action.gd")
-
 var _passed := 0
 var _failed := 0
 var _errors: Array[String] = []
@@ -48,12 +40,13 @@ func _init() -> void:
 # --- Guards ----------------------------------------------------------------
 
 func _guard_addon_classes() -> bool:
-	# Preloads above handle parse-time resolution (especially on Godot 4.2).
-	# This runtime check is defence-in-depth for unexpected constructor failures.
-	var r = MCPToolkitCommandRegistry.new()
-	var o = MCPToolkitCommandOptions.new()
-	var e = MCPToolkitExtensionOptions.new("guard")
-	var c = MCPToolkitToolContext.new()
+	# If any class_name is unavailable (addon not enabled), Godot throws a
+	# parse error before _init() runs. This runtime check is defence-in-depth
+	# for unexpected constructor failures.
+	var r := MCPToolkitCommandRegistry.new()
+	var o := MCPToolkitCommandOptions.new()
+	var e := MCPToolkitExtensionOptions.new("guard")
+	var c := MCPToolkitToolContext.new()
 	if r == null or o == null or e == null or c == null:
 		print("FAIL: addon classes not accessible — is the addon enabled in project.godot?")
 		return false
@@ -98,7 +91,7 @@ func _noop(_p: Dictionary) -> Dictionary:
 
 func _test_registry() -> void:
 	_begin("Registry")
-	var reg = MCPToolkitCommandRegistry.new()
+	var reg := MCPToolkitCommandRegistry.new()
 
 	# 1. mark_read_only → is_read_only true
 	reg.add("t.ro", _noop, MCPToolkitCommandOptions.new().mark_read_only())
@@ -138,7 +131,7 @@ func _test_registry() -> void:
 	_ok(not reg.has_command("t.rm"), "remove → has_command false")
 
 	# 10. clear → get_all_methods empty
-	var reg2 = MCPToolkitCommandRegistry.new()
+	var reg2 := MCPToolkitCommandRegistry.new()
 	reg2.add("t.a", _noop, MCPToolkitCommandOptions.new())
 	reg2.add("t.b", _noop, MCPToolkitCommandOptions.new())
 	reg2.clear()
@@ -195,7 +188,7 @@ func _test_options_builder() -> void:
 			5000, "with_timeout_ms(5000) → 5000")
 
 	# 7. chained builder returns same reference
-	var opts = MCPToolkitCommandOptions.new()
+	var opts := MCPToolkitCommandOptions.new()
 	_ok(opts.mark_read_only().mark_idempotent() == opts,
 			"chained builder returns same reference")
 
@@ -239,7 +232,7 @@ func _test_extension_options() -> void:
 	_eq(d["description"], "My tool", "constructor sets description")
 
 	# 2. inherits builder methods (chaining returns same ref)
-	var ext = MCPToolkitExtensionOptions.new("Ext")
+	var ext := MCPToolkitExtensionOptions.new("Ext")
 	_ok(ext.mark_read_only().mark_idempotent() == ext,
 			"inherits builder methods (chaining works)")
 
@@ -255,7 +248,7 @@ func _test_extension_options() -> void:
 
 func _test_annotation_mapping() -> void:
 	_begin("Annotation mapping")
-	var reg = MCPToolkitCommandRegistry.new()
+	var reg := MCPToolkitCommandRegistry.new()
 
 	# 1. mark_read_only → readOnlyHint true
 	reg.add("a.ro", _noop, MCPToolkitCommandOptions.new().mark_read_only())
@@ -286,7 +279,7 @@ func _test_annotation_mapping() -> void:
 
 func _test_timeout_clamping() -> void:
 	_begin("Timeout clamping")
-	var reg = MCPToolkitCommandRegistry.new()
+	var reg := MCPToolkitCommandRegistry.new()
 
 	# 1. no timeout → default 30000 (metadata omits key)
 	reg.add("to.def", _noop, MCPToolkitCommandOptions.new())
@@ -322,7 +315,7 @@ func _test_tool_context() -> void:
 	_begin("ToolContext cancellation")
 
 	# 1. fresh → is_cancelled false
-	var ctx = MCPToolkitToolContext.new()
+	var ctx := MCPToolkitToolContext.new()
 	_ok(not ctx.is_cancelled(), "fresh context → is_cancelled false")
 
 	# 2. cancel → is_cancelled true
@@ -330,7 +323,7 @@ func _test_tool_context() -> void:
 	_ok(ctx.is_cancelled(), "after cancel → is_cancelled true")
 
 	# 3. cancelled signal fires synchronously
-	var ctx2 = MCPToolkitToolContext.new()
+	var ctx2 := MCPToolkitToolContext.new()
 	var fired := [false]
 	ctx2.cancelled.connect(func(): fired[0] = true)
 	ctx2.cancel()
@@ -522,14 +515,14 @@ func _test_undo_redo_action() -> void:
 	_begin("MCPToolkitUndoRedoAction")
 
 	# 1. begin() returns non-null instance
-	var action = MCPToolkitUndoRedoAction.begin("test action")
+	var action := MCPToolkitUndoRedoAction.begin("test action")
 	_ok(action != null, "begin() returns non-null instance")
 
 	# 2. is_active() returns false in headless (no plugin loaded)
 	_ok(not action.is_active(), "is_active() false in headless")
 
 	# 3. Fluent chaining — every method returns self
-	var a2 = MCPToolkitUndoRedoAction.begin("chain test")
+	var a2 := MCPToolkitUndoRedoAction.begin("chain test")
 	var node := Node2D.new()
 	var r1 = a2.do_property(node, &"position", Vector2(1, 2))
 	_ok(r1 == a2, "do_property returns self")
@@ -546,7 +539,7 @@ func _test_undo_redo_action() -> void:
 	node.free()
 
 	# 4. All methods no-op without crash when inactive
-	var inactive = MCPToolkitUndoRedoAction.begin("noop test")
+	var inactive := MCPToolkitUndoRedoAction.begin("noop test")
 	inactive.do_property(Node.new(), &"name", "test")  # won't crash
 	inactive.undo_property(Node.new(), &"name", "old")
 	inactive.do_method(Callable())
@@ -555,26 +548,26 @@ func _test_undo_redo_action() -> void:
 	_ok(true, "all methods no-op without crash when inactive")
 
 	# 5. Double-commit guard — second call is no-op (warning logged)
-	var a3 = MCPToolkitUndoRedoAction.begin("double commit")
+	var a3 := MCPToolkitUndoRedoAction.begin("double commit")
 	a3.commit_recorded()
 	a3.commit_recorded()  # should push_warning, not crash
 	_ok(true, "double commit_recorded() does not crash")
 
 	# 6. commit() also guarded
-	var a4 = MCPToolkitUndoRedoAction.begin("commit guard")
+	var a4 := MCPToolkitUndoRedoAction.begin("commit guard")
 	a4.commit()
 	a4.commit()  # should push_warning, not crash
 	_ok(true, "double commit() does not crash")
 
 	# 7. Cross-commit guard (commit after commit_recorded)
-	var a5 = MCPToolkitUndoRedoAction.begin("cross commit")
+	var a5 := MCPToolkitUndoRedoAction.begin("cross commit")
 	a5.commit_recorded()
 	a5.commit()  # should push_warning, not crash
 	_ok(true, "commit() after commit_recorded() does not crash")
 
 	# 8. Registry factory returns valid instance
-	var reg = MCPToolkitCommandRegistry.new()
-	var factory_action = reg.create_undo_action("factory test")
+	var reg := MCPToolkitCommandRegistry.new()
+	var factory_action := reg.create_undo_action("factory test")
 	_ok(factory_action != null, "create_undo_action() returns non-null")
 	_ok(not factory_action.is_active(), "factory action inactive in headless")
 

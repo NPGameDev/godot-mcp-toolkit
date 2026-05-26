@@ -1,6 +1,6 @@
 @tool
 class_name MCPToolkitExtensionOptions
-extends "res://addons/godot_mcp_toolkit/mcp_toolkit_command_options.gd"
+extends MCPToolkitCommandOptions
 ## Builder for MCP extension command registration options.
 ##
 ## Extends MCPToolkitCommandOptions with a mandatory description parameter.

@@ -67,7 +67,7 @@ jobs:
       # launch the editor here to populate the cache.
       - name: Generate script class cache
         if: matrix.check-method == 'check-only'
-        run: timeout 30 godot --headless --editor --quit 2>&1 || true
+        run: timeout 30 godot --headless --editor --quit-after 5 2>&1 || true
 
       - name: Run unit tests
         run: timeout 30 godot --headless --script test/run_unit_tests.gd
