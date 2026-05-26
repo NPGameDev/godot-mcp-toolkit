@@ -17,7 +17,13 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 
-var _undo_redo = null  # EditorUndoRedoManager or null — untyped for compat
+## EditorUndoRedoManager — used for create_action / commit_action.
+var _mgr = null  # untyped for headless compat
+## Internal UndoRedo for the target history — used for add_do/undo_*
+## operations.  EditorUndoRedoManager.add_do_method uses the old
+## (Object, StringName, …) vararg API; the internal UndoRedo accepts
+## a single Callable, which the builder exposes.
+var _ur = null  # UndoRedo or null
 var _active: bool = false
 var _committed: bool = false
 
@@ -29,11 +35,20 @@ var _committed: bool = false
 ##   the undo action belongs to — important for multi-tab editing).
 static func begin(description: String, context_object: Object = null) -> MCPToolkitUndoRedoAction:
 	var action := MCPToolkitUndoRedoAction.new()
-	var ur = _Hub.get_undo_redo()
-	if ur != null:
-		ur.create_action("MCP: " + description, 0, context_object)
-		action._undo_redo = ur
-		action._active = true
+	var mgr = _Hub.get_undo_redo()
+	if mgr != null:
+		mgr.create_action("MCP: " + description, 0, context_object)
+		action._mgr = mgr
+		# Resolve internal UndoRedo for Callable-based method registration.
+		# EditorUndoRedoManager.add_do_method uses vararg (Object, StringName, …)
+		# but UndoRedo.add_do_method takes a single Callable — we need the latter.
+		var hist_id := 0  # GLOBAL_HISTORY
+		if context_object != null:
+			var obj_hist = mgr.get_object_history_id(context_object)
+			if obj_hist != -99:  # != INVALID_HISTORY
+				hist_id = obj_hist
+		action._ur = mgr.get_history_undo_redo(hist_id)
+		action._active = action._ur != null
 	return action
 
 
@@ -48,13 +63,13 @@ func is_active() -> bool:
 
 func do_property(obj: Object, property: StringName, value: Variant) -> MCPToolkitUndoRedoAction:
 	if _active:
-		_undo_redo.add_do_property(obj, property, value)
+		_ur.add_do_property(obj, property, value)
 	return self
 
 
 func undo_property(obj: Object, property: StringName, value: Variant) -> MCPToolkitUndoRedoAction:
 	if _active:
-		_undo_redo.add_undo_property(obj, property, value)
+		_ur.add_undo_property(obj, property, value)
 	return self
 
 
@@ -64,7 +79,7 @@ func undo_property(obj: Object, property: StringName, value: Variant) -> MCPTool
 ##   action.do_method(node.add_child.bind(child))
 func do_method(callable: Callable) -> MCPToolkitUndoRedoAction:
 	if _active:
-		_undo_redo.add_do_method(callable)
+		_ur.add_do_method(callable)
 	return self
 
 
@@ -72,7 +87,7 @@ func do_method(callable: Callable) -> MCPToolkitUndoRedoAction:
 ##   action.undo_method(parent.remove_child.bind(child))
 func undo_method(callable: Callable) -> MCPToolkitUndoRedoAction:
 	if _active:
-		_undo_redo.add_undo_method(callable)
+		_ur.add_undo_method(callable)
 	return self
 
 
@@ -82,7 +97,7 @@ func undo_method(callable: Callable) -> MCPToolkitUndoRedoAction:
 ## otherwise be freed when undone (e.g., a new node removed by undo).
 func do_reference(ref: Object) -> MCPToolkitUndoRedoAction:
 	if _active:
-		_undo_redo.add_do_reference(ref)
+		_ur.add_do_reference(ref)
 	return self
 
 
@@ -90,7 +105,7 @@ func do_reference(ref: Object) -> MCPToolkitUndoRedoAction:
 ## would otherwise be freed (e.g., a resource overwritten by the do-side).
 func undo_reference(ref: Object) -> MCPToolkitUndoRedoAction:
 	if _active:
-		_undo_redo.add_undo_reference(ref)
+		_ur.add_undo_reference(ref)
 	return self
 
 
@@ -104,7 +119,7 @@ func commit() -> void:
 		return
 	_committed = true
 	if _active:
-		_undo_redo.commit_action()
+		_mgr.commit_action()
 		_active = false
 
 
@@ -117,5 +132,5 @@ func commit_recorded() -> void:
 		return
 	_committed = true
 	if _active:
-		_undo_redo.commit_action(false)
+		_mgr.commit_action(false)
 		_active = false
