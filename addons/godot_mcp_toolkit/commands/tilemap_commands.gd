@@ -300,7 +300,7 @@ static func _cmd_tilemap_set_cells(
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		undo_redo.create_action(
-			"MCP: tilemap.set_cells %s (%d cells)" % [tilemap_path, cells.size()])
+			"MCP: tilemap.set_cells %s (%d cells)" % [tilemap_path, cells.size()], 0, node)
 		undo_redo.add_do_method(
 			server.undo_helpers, "_tilemap_apply_batch", node, layer, cells)
 		undo_redo.add_undo_method(

@@ -188,7 +188,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 				old_groups.append(gs)
 		var undo_redo = _Hub.get_undo_redo()
 		if undo_redo != null:
-			undo_redo.create_action("MCP: set %s groups" % node_path)
+			undo_redo.create_action("MCP: set %s groups" % node_path, 0, node)
 			for g in old_groups:
 				if g not in new_groups:
 					undo_redo.add_do_method(node, "remove_from_group", g)
@@ -272,7 +272,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name])
+		undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name], 0, node)
 		undo_redo.add_do_property(node, property_name, coerced)
 		undo_redo.add_undo_property(node, property_name, old_value)
 		if coerced is Resource:
@@ -588,7 +588,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 		var old_script = node.get_script()
 		var undo_redo_clear = _Hub.get_undo_redo()
 		if undo_redo_clear != null:
-			undo_redo_clear.create_action("MCP: clear script on %s" % node_path)
+			undo_redo_clear.create_action("MCP: clear script on %s" % node_path, 0, node)
 			undo_redo_clear.add_do_property(node, "script", null)
 			undo_redo_clear.add_undo_property(node, "script", old_script)
 			if old_script is Resource:
@@ -613,7 +613,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	var old_script = node.get_script()
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: set script %s on %s" % [script_path, node_path])
+		undo_redo.create_action("MCP: set script %s on %s" % [script_path, node_path], 0, node)
 		undo_redo.add_do_property(node, "script", loaded)
 		undo_redo.add_undo_property(node, "script", old_script)
 		undo_redo.add_do_reference(loaded)
@@ -685,7 +685,7 @@ static func _manage_rename(
 	var old_name := String(node.name)
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: rename %s → %s" % [old_name, new_name])
+		undo_redo.create_action("MCP: rename %s → %s" % [old_name, new_name], 0, node)
 		undo_redo.add_do_property(node, "name", new_name)
 		undo_redo.add_undo_property(node, "name", old_name)
 		undo_redo.commit_action()
@@ -723,7 +723,7 @@ static func _manage_reparent(
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: reparent %s → %s" % [node_path, new_parent_path])
+		undo_redo.create_action("MCP: reparent %s → %s" % [node_path, new_parent_path], 0, node)
 		undo_redo.add_do_method(node, "reparent", new_parent, keep_global)
 		undo_redo.add_do_method(node, "set_owner", root)
 		undo_redo.add_undo_method(node, "reparent", old_parent, keep_global)

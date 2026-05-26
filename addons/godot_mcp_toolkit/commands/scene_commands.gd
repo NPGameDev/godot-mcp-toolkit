@@ -407,7 +407,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: create %s" % requested_name)
+		undo_redo.create_action("MCP: create %s" % requested_name, 0, parent_node)
 		undo_redo.add_do_method(parent_node, "add_child", instance)
 		undo_redo.add_do_method(instance, "set_owner", root)
 		undo_redo.add_do_reference(instance)
@@ -481,7 +481,7 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 		return McpError.make("INTERNAL", "node has no parent: %s" % node_path)
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: delete %s" % node_path)
+		undo_redo.create_action("MCP: delete %s" % node_path, 0, node)
 		undo_redo.add_do_method(parent, "remove_child", node)
 		undo_redo.add_undo_method(parent, "add_child", node)
 		undo_redo.add_undo_method(node, "set_owner", root)
@@ -573,7 +573,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	# expansion, breaking Godot's scene inheritance model.
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: instantiate %s under %s" % [packed_path, parent_path])
+		undo_redo.create_action("MCP: instantiate %s under %s" % [packed_path, parent_path], 0, parent_node)
 		undo_redo.add_do_method(parent_node, "add_child", instance)
 		undo_redo.add_do_method(instance, "set_owner", root)
 		undo_redo.add_do_reference(instance)
@@ -598,7 +598,7 @@ static func _batch_instantiate(
 	var node_refs: Array = []
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: batch instantiate %d × %s" % [instances.size(), packed_path])
+		undo_redo.create_action("MCP: batch instantiate %d × %s" % [instances.size(), packed_path], 0, parent_node)
 
 	for entry in instances:
 		var inst_dict: Dictionary = entry if typeof(entry) == TYPE_DICTIONARY else {}

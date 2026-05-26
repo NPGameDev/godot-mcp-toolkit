@@ -154,7 +154,7 @@ static func _cmd_animation_keyframe(
 			}
 		var undo_redo = _Hub.get_undo_redo()
 		if undo_redo != null:
-			undo_redo.create_action("MCP: animation.keyframe add %s @ %s" % [track_path, time])
+			undo_redo.create_action("MCP: animation.keyframe add %s @ %s" % [track_path, time], 0, node)
 			undo_redo.add_do_method(animation, "track_insert_key", track_index, time, coerced)
 			undo_redo.add_undo_method(
 				server.undo_helpers, "_animation_remove_key_at", animation, track_index, time)
@@ -205,7 +205,7 @@ static func _cmd_animation_keyframe(
 		var serialised_value = Coerce.serialize_value(captured_value)
 		var undo_redo = _Hub.get_undo_redo()
 		if undo_redo != null:
-			undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time])
+			undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time], 0, node)
 			undo_redo.add_do_method(
 				server.undo_helpers, "_animation_remove_key_at", animation, track_index, time)
 			undo_redo.add_undo_method(
@@ -388,7 +388,7 @@ static func _at_set_root(
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		var old_root = tree.tree_root
-		undo_redo.create_action("MCP: animationtree.edit set_root %s" % node_path)
+		undo_redo.create_action("MCP: animationtree.edit set_root %s" % node_path, 0, tree)
 		undo_redo.add_do_property(tree, "tree_root", new_root)
 		undo_redo.add_undo_property(tree, "tree_root", old_root)
 		undo_redo.add_do_reference(new_root)
@@ -449,7 +449,7 @@ static func _at_add_node(
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: animationtree.edit add_node %s/%s" % [node_path, node_name])
+		undo_redo.create_action("MCP: animationtree.edit add_node %s/%s" % [node_path, node_name], 0, tree)
 		undo_redo.add_do_method(sm, "add_node", StringName(node_name), new_node, pos)
 		undo_redo.add_undo_method(sm, "remove_node", StringName(node_name))
 		undo_redo.add_do_reference(new_node)
@@ -485,7 +485,7 @@ static func _at_remove_node(
 	if undo_redo != null:
 		var old_node: AnimationNode = sm.get_node(StringName(node_name))
 		var old_pos: Vector2 = sm.get_node_position(StringName(node_name))
-		undo_redo.create_action("MCP: animationtree.edit remove_node %s/%s" % [node_path, node_name])
+		undo_redo.create_action("MCP: animationtree.edit remove_node %s/%s" % [node_path, node_name], 0, tree)
 		undo_redo.add_do_method(sm, "remove_node", StringName(node_name))
 		undo_redo.add_undo_method(sm, "add_node", StringName(node_name), old_node, old_pos)
 		undo_redo.add_undo_reference(old_node)
@@ -543,7 +543,7 @@ static func _at_add_transition(
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: animationtree.edit add_transition %s %s->%s" % [node_path, from, to])
+		undo_redo.create_action("MCP: animationtree.edit add_transition %s %s->%s" % [node_path, from, to], 0, tree)
 		undo_redo.add_do_method(sm, "add_transition", StringName(from), StringName(to), transition)
 		# For undo, find and remove the transition we just added.
 		undo_redo.add_undo_method(
@@ -587,7 +587,7 @@ static func _at_remove_transition(
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
 		var old_transition: AnimationNodeStateMachineTransition = sm.get_transition(found_idx)
-		undo_redo.create_action("MCP: animationtree.edit remove_transition %s %s->%s" % [node_path, from, to])
+		undo_redo.create_action("MCP: animationtree.edit remove_transition %s %s->%s" % [node_path, from, to], 0, tree)
 		undo_redo.add_do_method(sm, "remove_transition_by_index", found_idx)
 		undo_redo.add_undo_method(sm, "add_transition", StringName(from), StringName(to), old_transition)
 		undo_redo.add_undo_reference(old_transition)
@@ -631,7 +631,7 @@ static func _at_set_property(
 
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: animationtree.edit set_property %s/%s.%s" % [node_path, target_node, property])
+		undo_redo.create_action("MCP: animationtree.edit set_property %s/%s.%s" % [node_path, target_node, property], 0, tree)
 		undo_redo.add_do_property(anim_node, property, coerced)
 		undo_redo.add_undo_property(anim_node, property, old_value)
 		undo_redo.commit_action()

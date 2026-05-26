@@ -65,7 +65,7 @@ static func _resolve_parent(parameters: Dictionary) -> Variant:
 static func _add_node_undoable(parent: Node, node: Node, root: Node) -> void:
 	var undo_redo = _Hub.get_undo_redo()
 	if undo_redo != null:
-		undo_redo.create_action("MCP: create %s" % node.name)
+		undo_redo.create_action("MCP: create %s" % node.name, 0, parent)
 		undo_redo.add_do_method(parent, "add_child", node)
 		undo_redo.add_do_method(node, "set_owner", root)
 		undo_redo.add_do_reference(node)
