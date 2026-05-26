@@ -31,7 +31,8 @@ const _MAX_CELLS := 500
 ## Version-aware hint for tilemap tools.
 static func _tilemap_version_hint(is_deprecated_tilemap: bool) -> String:
 	if is_deprecated_tilemap:
-		if _Hub.godot_minor() >= 3:
+		var ver := _Hub.VersionUtils.get_engine_version_pair()
+		if _Hub.VersionUtils.is_version_in_range(ver, "4.3", ""):
 			return "Using deprecated TileMap node. Godot 4.3+ provides TileMapLayer — consider upgrading."
 		return ""
 	return ""

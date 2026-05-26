@@ -76,8 +76,8 @@ static func _save_tileset(ts: TileSet, file_path: String) -> Dictionary:
 
 
 static func _layer_node_hint(prefix: String, suffix: String) -> String:
-	var major: int = Engine.get_version_info().get("major", 4)
-	var has_tilemaplayer: bool = major > 4 or _Hub.godot_minor() >= 3
+	var ver := _Hub.VersionUtils.get_engine_version_pair()
+	var has_tilemaplayer := _Hub.VersionUtils.is_version_in_range(ver, "4.3", "")
 	var node_name := "TileMapLayer" if has_tilemaplayer else "TileMap"
 	return prefix + node_name + suffix
 

@@ -34,11 +34,8 @@ static var _plugin: EditorPlugin
 
 # -- Version helpers (Godot 4.x cross-version compat) -----------------------
 
-## Latest minor version tested. Versions above this still run but log a notice.
-const GODOT_TESTED_MAX_MINOR := 6
-
-static func godot_minor() -> int:
-	return Engine.get_version_info().get("minor", 0)
+## Latest version tested. Versions above this still run but log a notice.
+const GODOT_TESTED_MAX_VERSION := "4.6"
 
 
 ## True when running under `godot --headless` (no display server).

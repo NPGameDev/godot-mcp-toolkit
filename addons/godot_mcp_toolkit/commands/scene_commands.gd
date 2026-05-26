@@ -259,7 +259,7 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 			"scene is not open in any editor tab: %s" % file_path, McpError.HINT_FILE_PATH)
 	if reason == "no_api":
 		return McpError.make("UNSUPPORTED",
-			"scene.close requires Godot 4.5+ (connected: 4.%d)" % _Hub.godot_minor())
+			"scene.close requires Godot 4.5+ (connected: %s)" % _Hub.VersionUtils.get_engine_version_pair())
 	return McpError.make("INTERNAL", "unexpected close_scene_tab_safe reason: %s" % reason)
 
 

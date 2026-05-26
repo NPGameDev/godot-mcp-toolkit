@@ -176,11 +176,12 @@ func _enter_tree() -> void:
 	_register_editor_settings()
 
 	# Warn about untested future Godot versions (but don't block).
-	var _minor := _Hub.godot_minor()
-	if _minor > _Hub.GODOT_TESTED_MAX_MINOR:
-		push_warning("[MCP] Godot 4.%d detected — latest tested version is 4.%d. "
+	var _engine_ver := _Hub.VersionUtils.get_engine_version_pair()
+	if not _Hub.VersionUtils.is_version_in_range(_engine_ver, "", _Hub.GODOT_TESTED_MAX_VERSION):
+		push_warning(("[MCP] Godot %s detected — latest tested version is %s. "
 			+ "The plugin will run normally but some features may behave unexpectedly. "
-			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues" % [_minor, _Hub.GODOT_TESTED_MAX_MINOR])
+			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues")
+			% [_engine_ver, _Hub.GODOT_TESTED_MAX_VERSION])
 
 	_wizard = OnboardingWizard.new(self, _dock, _notifier)
 	call_deferred("_check_onboarding")
