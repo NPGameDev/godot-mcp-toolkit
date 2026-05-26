@@ -153,6 +153,10 @@ func create_extension_options(description: String) -> MCPToolkitExtensionOptions
 	return MCPToolkitExtensionOptions.new(description)
 
 
+func create_undo_action(description: String, context_object: Object = null) -> MCPToolkitUndoRedoAction:
+	return MCPToolkitUndoRedoAction.begin(description, context_object)
+
+
 func clear() -> void:
 	_commands.clear()
 	_extension_methods.clear()

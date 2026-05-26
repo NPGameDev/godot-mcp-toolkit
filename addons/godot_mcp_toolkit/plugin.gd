@@ -78,6 +78,7 @@ var _was_playing: bool = false
 
 
 func _enter_tree() -> void:
+	_Hub._plugin = self
 	SettingsMigration.migrate_user_data_paths()
 	SettingsMigration.migrate_stale_settings()
 
@@ -273,6 +274,9 @@ func _exit_tree() -> void:
 		RegistryClient.deregister()
 		_server.free()
 		_server = null
+
+	# Plugin reference — null last (teardown symmetry with _enter_tree).
+	_Hub._plugin = null
 
 
 func _enable_plugin() -> void:

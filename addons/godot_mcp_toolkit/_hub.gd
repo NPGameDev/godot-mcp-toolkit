@@ -24,6 +24,14 @@ const NodejsCheck := preload("res://addons/godot_mcp_toolkit/nodejs_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/mcp_version_utils.gd")
 
 
+# -- Plugin reference (set by plugin.gd _enter_tree / _exit_tree) -----------
+
+## Stores the EditorPlugin instance so that EditorUndoRedoManager is accessible
+## on ALL Godot 4.x versions via plugin.get_undo_redo() — not just 4.4+ where
+## EditorInterface.get_editor_undo_redo() was added.
+static var _plugin: EditorPlugin
+
+
 # -- Version helpers (Godot 4.x cross-version compat) -----------------------
 
 ## Latest minor version tested. Versions above this still run but log a notice.
@@ -39,12 +47,12 @@ static func is_headless() -> bool:
 	return DisplayServer.get_name() == "headless"
 
 
-## Safely get EditorUndoRedoManager via dynamic dispatch.
-## Returns null on Godot < 4.4 (where the method doesn't exist).
-## Callers must handle null by skipping undo registration.
+## Get EditorUndoRedoManager via the stored plugin reference.
+## Returns the singleton on ALL Godot 4.x versions in editor context.
+## Returns null only in headless mode (no plugin loaded).
 static func get_undo_redo():
-	if EditorInterface.has_method("get_editor_undo_redo"):
-		return EditorInterface.call("get_editor_undo_redo")
+	if _plugin != null:
+		return _plugin.get_undo_redo()
 	return null
 
 

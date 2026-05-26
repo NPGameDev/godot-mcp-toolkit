@@ -152,16 +152,12 @@ static func _cmd_animation_keyframe(
 				"value": Coerce.serialize_value(
 					animation.track_get_key_value(track_index, existing_index)),
 			}
-		var undo_redo = _Hub.get_undo_redo()
-		if undo_redo != null:
-			undo_redo.create_action("MCP: animation.keyframe add %s @ %s" % [track_path, time], 0, player)
-			undo_redo.add_do_method(animation, "track_insert_key", track_index, time, coerced)
-			undo_redo.add_undo_method(
-				server.undo_helpers, "_animation_remove_key_at", animation, track_index, time)
-			undo_redo.add_undo_reference(animation)
-			undo_redo.commit_action()
-		else:
-			animation.track_insert_key(track_index, time, coerced)
+		animation.track_insert_key(track_index, time, coerced)
+		MCPToolkitUndoRedoAction.begin("animation.keyframe add %s @ %s" % [track_path, time], player) \
+			.do_method(animation.track_insert_key.bind(track_index, time, coerced)) \
+			.undo_method(server.undo_helpers._animation_remove_key_at.bind(animation, track_index, time)) \
+			.undo_reference(animation) \
+			.commit_recorded()
 		var new_index := animation.track_find_key(
 			track_index, time, Animation.FIND_MODE_EXACT)
 		# Persist external library to disk so runtime can find the animation.
@@ -203,17 +199,12 @@ static func _cmd_animation_keyframe(
 				"no key at time=%f on track '%s'" % [time, track_path])
 		var captured_value = animation.track_get_key_value(track_index, key_index)
 		var serialised_value = Coerce.serialize_value(captured_value)
-		var undo_redo = _Hub.get_undo_redo()
-		if undo_redo != null:
-			undo_redo.create_action("MCP: animation.keyframe remove %s @ %s" % [track_path, time], 0, resolved["player"])
-			undo_redo.add_do_method(
-				server.undo_helpers, "_animation_remove_key_at", animation, track_index, time)
-			undo_redo.add_undo_method(
-				server.undo_helpers, "_animation_insert_key_silent", animation, track_index, time, captured_value)
-			undo_redo.add_undo_reference(animation)
-			undo_redo.commit_action()
-		else:
-			server.undo_helpers._animation_remove_key_at(animation, track_index, time)
+		server.undo_helpers._animation_remove_key_at(animation, track_index, time)
+		MCPToolkitUndoRedoAction.begin("animation.keyframe remove %s @ %s" % [track_path, time], resolved["player"]) \
+			.do_method(server.undo_helpers._animation_remove_key_at.bind(animation, track_index, time)) \
+			.undo_method(server.undo_helpers._animation_insert_key_silent.bind(animation, track_index, time, captured_value)) \
+			.undo_reference(animation) \
+			.commit_recorded()
 		return {
 			"success": true,
 			"player_path": player_path,
@@ -385,18 +376,15 @@ static func _at_set_root(
 			return McpError.make("INVALID_PARAMS",
 				"root_type must be 'AnimationNodeStateMachine' or 'AnimationNodeBlendTree' (got '%s')" % root_type)
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		var old_root = tree.tree_root
-		undo_redo.create_action("MCP: animationtree.edit set_root %s" % node_path, 0, tree)
-		undo_redo.add_do_property(tree, "tree_root", new_root)
-		undo_redo.add_undo_property(tree, "tree_root", old_root)
-		undo_redo.add_do_reference(new_root)
-		if old_root != null:
-			undo_redo.add_undo_reference(old_root)
-		undo_redo.commit_action()
-	else:
-		tree.tree_root = new_root
+	var old_root = tree.tree_root
+	tree.tree_root = new_root
+	var action := MCPToolkitUndoRedoAction.begin("animationtree.edit set_root %s" % node_path, tree) \
+		.do_property(tree, &"tree_root", new_root) \
+		.undo_property(tree, &"tree_root", old_root) \
+		.do_reference(new_root)
+	if old_root != null:
+		action.undo_reference(old_root)
+	action.commit_recorded()
 
 	return {"success": true, "root_type": root_type}
 
@@ -447,15 +435,12 @@ static func _at_add_node(
 	if typeof(pos_dict) == TYPE_DICTIONARY:
 		pos = Vector2(float(pos_dict.get("x", 0)), float(pos_dict.get("y", 0)))
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: animationtree.edit add_node %s/%s" % [node_path, node_name], 0, tree)
-		undo_redo.add_do_method(sm, "add_node", StringName(node_name), new_node, pos)
-		undo_redo.add_undo_method(sm, "remove_node", StringName(node_name))
-		undo_redo.add_do_reference(new_node)
-		undo_redo.commit_action()
-	else:
-		sm.add_node(StringName(node_name), new_node, pos)
+	sm.add_node(StringName(node_name), new_node, pos)
+	MCPToolkitUndoRedoAction.begin("animationtree.edit add_node %s/%s" % [node_path, node_name], tree) \
+		.do_method(sm.add_node.bind(StringName(node_name), new_node, pos)) \
+		.undo_method(sm.remove_node.bind(StringName(node_name))) \
+		.do_reference(new_node) \
+		.commit_recorded()
 
 	var summary := _sm_summary(sm)
 	summary["success"] = true
@@ -481,17 +466,14 @@ static func _at_remove_node(
 		return McpError.make("NOT_FOUND",
 			"no node '%s' in state machine" % node_name)
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		var old_node: AnimationNode = sm.get_node(StringName(node_name))
-		var old_pos: Vector2 = sm.get_node_position(StringName(node_name))
-		undo_redo.create_action("MCP: animationtree.edit remove_node %s/%s" % [node_path, node_name], 0, tree)
-		undo_redo.add_do_method(sm, "remove_node", StringName(node_name))
-		undo_redo.add_undo_method(sm, "add_node", StringName(node_name), old_node, old_pos)
-		undo_redo.add_undo_reference(old_node)
-		undo_redo.commit_action()
-	else:
-		sm.remove_node(StringName(node_name))
+	var old_node: AnimationNode = sm.get_node(StringName(node_name))
+	var old_pos: Vector2 = sm.get_node_position(StringName(node_name))
+	sm.remove_node(StringName(node_name))
+	MCPToolkitUndoRedoAction.begin("animationtree.edit remove_node %s/%s" % [node_path, node_name], tree) \
+		.do_method(sm.remove_node.bind(StringName(node_name))) \
+		.undo_method(sm.add_node.bind(StringName(node_name), old_node, old_pos)) \
+		.undo_reference(old_node) \
+		.commit_recorded()
 
 	var summary := _sm_summary(sm)
 	summary["success"] = true
@@ -541,17 +523,12 @@ static func _at_add_transition(
 	if not advance_mode_str.is_empty():
 		transition.advance_mode = _advance_mode_from_string(advance_mode_str)
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: animationtree.edit add_transition %s %s->%s" % [node_path, from, to], 0, tree)
-		undo_redo.add_do_method(sm, "add_transition", StringName(from), StringName(to), transition)
-		# For undo, find and remove the transition we just added.
-		undo_redo.add_undo_method(
-			server.undo_helpers, "_sm_remove_transition_by_endpoints", sm, from, to)
-		undo_redo.add_do_reference(transition)
-		undo_redo.commit_action()
-	else:
-		sm.add_transition(StringName(from), StringName(to), transition)
+	sm.add_transition(StringName(from), StringName(to), transition)
+	MCPToolkitUndoRedoAction.begin("animationtree.edit add_transition %s %s->%s" % [node_path, from, to], tree) \
+		.do_method(sm.add_transition.bind(StringName(from), StringName(to), transition)) \
+		.undo_method(server.undo_helpers._sm_remove_transition_by_endpoints.bind(sm, from, to)) \
+		.do_reference(transition) \
+		.commit_recorded()
 
 	var summary := _sm_summary(sm)
 	summary["success"] = true
@@ -584,16 +561,13 @@ static func _at_remove_transition(
 		return McpError.make("NOT_FOUND",
 			"no transition from '%s' to '%s'" % [from, to])
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		var old_transition: AnimationNodeStateMachineTransition = sm.get_transition(found_idx)
-		undo_redo.create_action("MCP: animationtree.edit remove_transition %s %s->%s" % [node_path, from, to], 0, tree)
-		undo_redo.add_do_method(sm, "remove_transition_by_index", found_idx)
-		undo_redo.add_undo_method(sm, "add_transition", StringName(from), StringName(to), old_transition)
-		undo_redo.add_undo_reference(old_transition)
-		undo_redo.commit_action()
-	else:
-		sm.remove_transition_by_index(found_idx)
+	var old_transition: AnimationNodeStateMachineTransition = sm.get_transition(found_idx)
+	sm.remove_transition_by_index(found_idx)
+	MCPToolkitUndoRedoAction.begin("animationtree.edit remove_transition %s %s->%s" % [node_path, from, to], tree) \
+		.do_method(sm.remove_transition_by_index.bind(found_idx)) \
+		.undo_method(sm.add_transition.bind(StringName(from), StringName(to), old_transition)) \
+		.undo_reference(old_transition) \
+		.commit_recorded()
 
 	var summary := _sm_summary(sm)
 	summary["success"] = true
@@ -629,14 +603,11 @@ static func _at_set_property(
 	var old_value = anim_node.get(property)
 	var coerced = Coerce.coerce_value(value)
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: animationtree.edit set_property %s/%s.%s" % [node_path, target_node, property], 0, tree)
-		undo_redo.add_do_property(anim_node, property, coerced)
-		undo_redo.add_undo_property(anim_node, property, old_value)
-		undo_redo.commit_action()
-	else:
-		anim_node.set(property, coerced)
+	anim_node.set(property, coerced)
+	MCPToolkitUndoRedoAction.begin("animationtree.edit set_property %s/%s.%s" % [node_path, target_node, property], tree) \
+		.do_property(anim_node, StringName(property), coerced) \
+		.undo_property(anim_node, StringName(property), old_value) \
+		.commit_recorded()
 
 	var summary := _sm_summary(sm)
 	summary["success"] = true

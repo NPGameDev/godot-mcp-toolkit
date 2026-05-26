@@ -297,18 +297,13 @@ static func _cmd_tilemap_set_cells(
 		else:
 			cells_written += 1
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action(
-			"MCP: tilemap.set_cells %s (%d cells)" % [tilemap_path, cells.size()], 0, node)
-		undo_redo.add_do_method(
-			server.undo_helpers, "_tilemap_apply_batch", node, layer, cells)
-		undo_redo.add_undo_method(
-			server.undo_helpers, "_tilemap_restore_batch", node, layer, before_state)
-		undo_redo.add_do_reference(node)
-		undo_redo.commit_action()
-	else:
-		server.undo_helpers._tilemap_apply_batch(node, layer, cells)
+	server.undo_helpers._tilemap_apply_batch(node, layer, cells)
+	MCPToolkitUndoRedoAction.begin(
+			"tilemap.set_cells %s (%d cells)" % [tilemap_path, cells.size()], node) \
+		.do_method(server.undo_helpers._tilemap_apply_batch.bind(node, layer, cells)) \
+		.undo_method(server.undo_helpers._tilemap_restore_batch.bind(node, layer, before_state)) \
+		.do_reference(node) \
+		.commit_recorded()
 	var set_result := {
 		"success": true,
 		"tilemap_path": tilemap_path,

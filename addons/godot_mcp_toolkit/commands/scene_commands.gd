@@ -405,22 +405,19 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 						"error": str(result.get("error", "")),
 					})
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: create %s" % requested_name, 0, parent_node)
-		undo_redo.add_do_method(parent_node, "add_child", instance)
-		undo_redo.add_do_method(instance, "set_owner", root)
-		undo_redo.add_do_reference(instance)
-		for prop in prop_coerced:
-			undo_redo.add_do_property(instance, prop["name"], prop["value"])
-			undo_redo.add_undo_property(instance, prop["name"], prop["old_value"])
-		undo_redo.add_undo_method(parent_node, "remove_child", instance)
-		undo_redo.commit_action()
-	else:
-		parent_node.add_child(instance)
-		instance.set_owner(root)
-		for prop in prop_coerced:
-			instance.set(prop["name"], prop["value"])
+	parent_node.add_child(instance)
+	instance.set_owner(root)
+	for prop in prop_coerced:
+		instance.set(prop["name"], prop["value"])
+	var _undo := MCPToolkitUndoRedoAction.begin("create %s" % requested_name, parent_node) \
+		.do_method(parent_node.add_child.bind(instance)) \
+		.do_method(instance.set_owner.bind(root)) \
+		.do_reference(instance)
+	for prop in prop_coerced:
+		_undo.do_property(instance, prop["name"], prop["value"])
+		_undo.undo_property(instance, prop["name"], prop["old_value"])
+	_undo.undo_method(parent_node.remove_child.bind(instance)) \
+		.commit_recorded()
 
 	# Apply compound properties after node is in tree (can't go through UndoRedo).
 	for prop in prop_compound:
@@ -479,17 +476,13 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 	var parent := node.get_parent()
 	if parent == null:
 		return McpError.make("INTERNAL", "node has no parent: %s" % node_path)
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: delete %s" % node_path, 0, node)
-		undo_redo.add_do_method(parent, "remove_child", node)
-		undo_redo.add_undo_method(parent, "add_child", node)
-		undo_redo.add_undo_method(node, "set_owner", root)
-		undo_redo.add_undo_reference(node)
-		undo_redo.commit_action()
-	else:
-		parent.remove_child(node)
-		node.queue_free()
+	parent.remove_child(node)
+	MCPToolkitUndoRedoAction.begin("delete %s" % node_path, node) \
+		.do_method(parent.remove_child.bind(node)) \
+		.undo_method(parent.add_child.bind(node)) \
+		.undo_method(node.set_owner.bind(root)) \
+		.undo_reference(node) \
+		.commit_recorded()
 	return {"success": true, "path": node_path}
 
 
@@ -571,17 +564,14 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	# FIX-9: Only set owner on instance root — child nodes keep their internal
 	# ownership from PackedScene. _set_owner_recursive caused full property
 	# expansion, breaking Godot's scene inheritance model.
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: instantiate %s under %s" % [packed_path, parent_path], 0, parent_node)
-		undo_redo.add_do_method(parent_node, "add_child", instance)
-		undo_redo.add_do_method(instance, "set_owner", root)
-		undo_redo.add_do_reference(instance)
-		undo_redo.add_undo_method(parent_node, "remove_child", instance)
-		undo_redo.commit_action()
-	else:
-		parent_node.add_child(instance)
-		instance.set_owner(root)
+	parent_node.add_child(instance)
+	instance.set_owner(root)
+	MCPToolkitUndoRedoAction.begin("instantiate %s under %s" % [packed_path, parent_path], parent_node) \
+		.do_method(parent_node.add_child.bind(instance)) \
+		.do_method(instance.set_owner.bind(root)) \
+		.do_reference(instance) \
+		.undo_method(parent_node.remove_child.bind(instance)) \
+		.commit_recorded()
 
 	return {
 		"success": true,
@@ -596,9 +586,8 @@ static func _batch_instantiate(
 	packed_path: String, parent_path: String, instances: Array,
 ) -> Dictionary:
 	var node_refs: Array = []
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: batch instantiate %d × %s" % [instances.size(), packed_path], 0, parent_node)
+	var _undo := MCPToolkitUndoRedoAction.begin(
+		"batch instantiate %d × %s" % [instances.size(), packed_path], parent_node)
 
 	for entry in instances:
 		var inst_dict: Dictionary = entry if typeof(entry) == TYPE_DICTIONARY else {}
@@ -627,19 +616,16 @@ static func _batch_instantiate(
 					instance.set(prop_name, Coerce.coerce_value(props[key]))
 
 		# FIX-9: Only set owner on instance root (same as single-instance path).
-		if undo_redo != null:
-			undo_redo.add_do_method(parent_node, "add_child", instance)
-			undo_redo.add_do_method(instance, "set_owner", root)
-			undo_redo.add_do_reference(instance)
-			undo_redo.add_undo_method(parent_node, "remove_child", instance)
-		else:
-			parent_node.add_child(instance)
-			instance.set_owner(root)
+		parent_node.add_child(instance)
+		instance.set_owner(root)
+		_undo.do_method(parent_node.add_child.bind(instance)) \
+			.do_method(instance.set_owner.bind(root)) \
+			.do_reference(instance) \
+			.undo_method(parent_node.remove_child.bind(instance))
 
 		node_refs.append(instance)
 
-	if undo_redo != null:
-		undo_redo.commit_action()
+	_undo.commit_recorded()
 
 	# Collect paths AFTER commit_action — instances are now in the tree,
 	# so get_path_to() can find the common parent.

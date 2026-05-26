@@ -63,17 +63,14 @@ static func _resolve_parent(parameters: Dictionary) -> Variant:
 
 
 static func _add_node_undoable(parent: Node, node: Node, root: Node) -> void:
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: create %s" % node.name, 0, parent)
-		undo_redo.add_do_method(parent, "add_child", node)
-		undo_redo.add_do_method(node, "set_owner", root)
-		undo_redo.add_do_reference(node)
-		undo_redo.add_undo_method(parent, "remove_child", node)
-		undo_redo.commit_action()
-	else:
-		parent.add_child(node)
-		node.set_owner(root)
+	parent.add_child(node)
+	node.set_owner(root)
+	MCPToolkitUndoRedoAction.begin("create %s" % node.name, parent) \
+		.do_method(parent.add_child.bind(node)) \
+		.do_method(node.set_owner.bind(root)) \
+		.do_reference(node) \
+		.undo_method(parent.remove_child.bind(node)) \
+		.commit_recorded()
 
 
 # -- Commands -----------------------------------------------------------------

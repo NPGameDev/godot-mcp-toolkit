@@ -186,32 +186,29 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 			var gs := str(g)
 			if not gs.begins_with("_"):  # skip engine-internal groups
 				old_groups.append(gs)
-		var undo_redo = _Hub.get_undo_redo()
-		if undo_redo != null:
-			undo_redo.create_action("MCP: set %s groups" % node_path, 0, node)
-			for g in old_groups:
-				if g not in new_groups:
-					undo_redo.add_do_method(node, "remove_from_group", g)
-					undo_redo.add_undo_method(node, "add_to_group", g, true)
-			for g in new_groups:
-				if g not in old_groups:
-					undo_redo.add_do_method(node, "add_to_group", g, true)
-					undo_redo.add_undo_method(node, "remove_from_group", g)
-			undo_redo.commit_action()
-		else:
-			for g in old_groups:
-				if g not in new_groups:
-					node.remove_from_group(g)
-			for g in new_groups:
-				if g not in old_groups:
-					node.add_to_group(g, true)
+		for g in old_groups:
+			if g not in new_groups:
+				node.remove_from_group(g)
+		for g in new_groups:
+			if g not in old_groups:
+				node.add_to_group(g, true)
+		var action = MCPToolkitUndoRedoAction.begin("set %s groups" % node_path, node)
+		for g in old_groups:
+			if g not in new_groups:
+				action.do_method(node.remove_from_group.bind(g))
+				action.undo_method(node.add_to_group.bind(g, true))
+		for g in new_groups:
+			if g not in old_groups:
+				action.do_method(node.add_to_group.bind(g, true))
+				action.undo_method(node.remove_from_group.bind(g))
+		action.commit_recorded()
 		return {"success": true, "groups": new_groups}
 
 	# Compound / colon-chained paths (e.g. "libraries/test",
 	# "material:shader_parameter/value", "theme_override_colors/font_color").
 	# Centralized handler in _helpers.gd handles sub-resource navigation,
 	# shader_parameter/ dedicated setter, value coercion, and readback.
-	# Returns _undo info for UndoRedo registration (commit_action(false)).
+	# Returns _undo info for UndoRedo registration (commit_recorded()).
 	if ":" in property_name or "/" in property_name:
 		var do_unique := bool(parameters.get("make_unique", false))
 		var result := Helpers.set_property_compound(
@@ -227,32 +224,26 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 		var ui: Dictionary = result.get("_undo", {})
 		var undo_type: String = str(ui.get("type", ""))
 		if undo_type != "":
-			var undo_redo = _Hub.get_undo_redo()
-			if undo_redo != null:
-				undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name], 0, node)
-				var undo_path: String = ui["path"]
-				var new_val = ui.get("new", node.get(undo_path))
-				undo_redo.add_do_method(
-					server.undo_helpers, "compound_set",
-					node, undo_path, new_val)
-				undo_redo.add_undo_method(
-					server.undo_helpers, "compound_set",
-					node, undo_path, ui["old"])
-				# make_unique: undo restores original external resource.
-				if ui.has("old_resource_prop"):
-					var res_prop: String = ui["old_resource_prop"]
-					var new_res = node.get(res_prop)
-					undo_redo.add_do_method(
-						server.undo_helpers, "compound_set",
-						node, res_prop, new_res)
-					undo_redo.add_undo_method(
-						server.undo_helpers, "compound_set",
-						node, res_prop, ui["old_resource"])
-					if new_res is Resource:
-						undo_redo.add_do_reference(new_res)
-					if ui["old_resource"] is Resource:
-						undo_redo.add_undo_reference(ui["old_resource"])
-				undo_redo.commit_action(false)  # Already applied — record only
+			var undo_path: String = ui["path"]
+			var new_val = ui.get("new", node.get(undo_path))
+			var action = MCPToolkitUndoRedoAction.begin("set %s.%s" % [node_path, property_name], node)
+			action.do_method(server.undo_helpers.compound_set.bind(
+				node, undo_path, new_val))
+			action.undo_method(server.undo_helpers.compound_set.bind(
+				node, undo_path, ui["old"]))
+			# make_unique: undo restores original external resource.
+			if ui.has("old_resource_prop"):
+				var res_prop: String = ui["old_resource_prop"]
+				var new_res = node.get(res_prop)
+				action.do_method(server.undo_helpers.compound_set.bind(
+					node, res_prop, new_res))
+				action.undo_method(server.undo_helpers.compound_set.bind(
+					node, res_prop, ui["old_resource"]))
+				if new_res is Resource:
+					action.do_reference(new_res)
+				if ui["old_resource"] is Resource:
+					action.undo_reference(ui["old_resource"])
+			action.commit_recorded()
 
 		var response := {"success": true}
 		if result.has("made_unique"):
@@ -270,18 +261,15 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 
 	var old_value = node.get(property_name)
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: set %s.%s" % [node_path, property_name], 0, node)
-		undo_redo.add_do_property(node, property_name, coerced)
-		undo_redo.add_undo_property(node, property_name, old_value)
-		if coerced is Resource:
-			undo_redo.add_do_reference(coerced)
-		if old_value is Resource:
-			undo_redo.add_undo_reference(old_value)
-		undo_redo.commit_action()
-	else:
-		node.set(property_name, coerced)
+	node.set(property_name, coerced)
+	var action = MCPToolkitUndoRedoAction.begin("set %s.%s" % [node_path, property_name], node)
+	action.do_property(node, property_name, coerced)
+	action.undo_property(node, property_name, old_value)
+	if coerced is Resource:
+		action.do_reference(coerced)
+	if old_value is Resource:
+		action.undo_reference(old_value)
+	action.commit_recorded()
 	# FIX-F: Detect bare res:// strings silently failing on Resource-typed properties.
 	if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
 			and not (coerced is Resource):
@@ -297,9 +285,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 ## Compound paths (: or /) use set_property_compound() and add their undo
 ## info to the same batch action when possible (property-type paths only).
 static func _batch_set_properties(server: Node, root: Node, entries: Array) -> Dictionary:
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: batch set %d properties" % entries.size(), 0, root)
+	var action = MCPToolkitUndoRedoAction.begin("batch set %d properties" % entries.size(), root)
 
 	var results: Array = []
 	for entry in entries:
@@ -333,28 +319,24 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 			if result.get("ok", false):
 				var ui: Dictionary = result.get("_undo", {})
 				var undo_type: String = str(ui.get("type", ""))
-				if undo_type != "" and undo_redo != null:
+				if undo_type != "":
 					var undo_path: String = ui["path"]
 					var new_val = ui.get("new", node.get(undo_path))
-					undo_redo.add_do_method(
-						server.undo_helpers, "compound_set",
-						node, undo_path, new_val)
-					undo_redo.add_undo_method(
-						server.undo_helpers, "compound_set",
-						node, undo_path, ui["old"])
+					action.do_method(server.undo_helpers.compound_set.bind(
+						node, undo_path, new_val))
+					action.undo_method(server.undo_helpers.compound_set.bind(
+						node, undo_path, ui["old"]))
 					if ui.has("old_resource_prop"):
 						var res_prop: String = ui["old_resource_prop"]
 						var new_res = node.get(res_prop)
-						undo_redo.add_do_method(
-							server.undo_helpers, "compound_set",
-							node, res_prop, new_res)
-						undo_redo.add_undo_method(
-							server.undo_helpers, "compound_set",
-							node, res_prop, ui["old_resource"])
+						action.do_method(server.undo_helpers.compound_set.bind(
+							node, res_prop, new_res))
+						action.undo_method(server.undo_helpers.compound_set.bind(
+							node, res_prop, ui["old_resource"]))
 						if new_res is Resource:
-							undo_redo.add_do_reference(new_res)
+							action.do_reference(new_res)
 						if ui["old_resource"] is Resource:
-							undo_redo.add_undo_reference(ui["old_resource"])
+							action.undo_reference(ui["old_resource"])
 				var res_entry := {"node_path": np, "property": prop, "success": true}
 				if result.has("made_unique"):
 					res_entry["made_unique"] = result["made_unique"]
@@ -382,24 +364,17 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 			coerced = NodePath(str(coerced))
 
-		# Route simple properties through compound_set too so the entire
-		# batch uses a consistent EditorUndoRedoManager context (avoids
-		# history mismatch errors when mixing compound and simple entries).
-		if undo_redo != null:
-			undo_redo.add_do_method(
-				server.undo_helpers, "compound_set", node, prop, coerced)
-			undo_redo.add_undo_method(
-				server.undo_helpers, "compound_set", node, prop, old_value)
-			if coerced is Resource:
-				undo_redo.add_do_reference(coerced)
-			if old_value is Resource:
-				undo_redo.add_undo_reference(old_value)
-		else:
-			node.set(prop, coerced)
+		# Apply mutation unconditionally, then record for undo.
+		node.set(prop, coerced)
+		action.do_method(server.undo_helpers.compound_set.bind(node, prop, coerced))
+		action.undo_method(server.undo_helpers.compound_set.bind(node, prop, old_value))
+		if coerced is Resource:
+			action.do_reference(coerced)
+		if old_value is Resource:
+			action.undo_reference(old_value)
 		results.append({"node_path": np, "property": prop, "success": true})
 
-	if undo_redo != null:
-		undo_redo.commit_action()
+	action.commit_recorded()
 
 	# Aggregate warnings for non-persisting external sub-resource mutations.
 	var non_persisting: PackedStringArray = []
@@ -586,16 +561,13 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 
 	if script_path.is_empty():
 		var old_script = node.get_script()
-		var undo_redo_clear = _Hub.get_undo_redo()
-		if undo_redo_clear != null:
-			undo_redo_clear.create_action("MCP: clear script on %s" % node_path, 0, node)
-			undo_redo_clear.add_do_property(node, "script", null)
-			undo_redo_clear.add_undo_property(node, "script", old_script)
-			if old_script is Resource:
-				undo_redo_clear.add_undo_reference(old_script)
-			undo_redo_clear.commit_action()
-		else:
-			node.set_script(null)
+		node.set_script(null)
+		var clear_action = MCPToolkitUndoRedoAction.begin("clear script on %s" % node_path, node)
+		clear_action.do_property(node, &"script", null)
+		clear_action.undo_property(node, &"script", old_script)
+		if old_script is Resource:
+			clear_action.undo_reference(old_script)
+		clear_action.commit_recorded()
 		return {"success": true, "path": node_path, "script": null, "properties": []}
 
 	var guard := FileGuard.resolve_safe(script_path)
@@ -611,17 +583,14 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
 
 	var old_script = node.get_script()
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: set script %s on %s" % [script_path, node_path], 0, node)
-		undo_redo.add_do_property(node, "script", loaded)
-		undo_redo.add_undo_property(node, "script", old_script)
-		undo_redo.add_do_reference(loaded)
-		if old_script is Resource:
-			undo_redo.add_undo_reference(old_script)
-		undo_redo.commit_action()
-	else:
-		node.set_script(loaded)
+	node.set_script(loaded)
+	var set_action = MCPToolkitUndoRedoAction.begin("set script %s on %s" % [script_path, node_path], node)
+	set_action.do_property(node, &"script", loaded)
+	set_action.undo_property(node, &"script", old_script)
+	set_action.do_reference(loaded)
+	if old_script is Resource:
+		set_action.undo_reference(old_script)
+	set_action.commit_recorded()
 
 	var exports: Array = []
 	for property in loaded.get_script_property_list():
@@ -683,14 +652,11 @@ static func _manage_rename(
 		return McpError.make("INVALID_PATH", "cannot rename the scene root")
 
 	var old_name := String(node.name)
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: rename %s → %s" % [old_name, new_name], 0, node)
-		undo_redo.add_do_property(node, "name", new_name)
-		undo_redo.add_undo_property(node, "name", old_name)
-		undo_redo.commit_action()
-	else:
-		node.name = new_name
+	node.name = new_name
+	MCPToolkitUndoRedoAction.begin("rename %s -> %s" % [old_name, new_name], node) \
+		.do_property(node, &"name", new_name) \
+		.undo_property(node, &"name", old_name) \
+		.commit_recorded()
 
 	var parent := node.get_parent()
 	var new_path := str(root.get_path_to(node))
@@ -721,18 +687,15 @@ static func _manage_reparent(
 	var old_parent := node.get_parent()
 	var old_index := node.get_index()
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: reparent %s → %s" % [node_path, new_parent_path], 0, node)
-		undo_redo.add_do_method(node, "reparent", new_parent, keep_global)
-		undo_redo.add_do_method(node, "set_owner", root)
-		undo_redo.add_undo_method(node, "reparent", old_parent, keep_global)
-		undo_redo.add_undo_method(old_parent, "move_child", node, old_index)
-		undo_redo.add_undo_method(node, "set_owner", root)
-		undo_redo.commit_action()
-	else:
-		node.reparent(new_parent, keep_global)
-		node.set_owner(root)
+	node.reparent(new_parent, keep_global)
+	node.set_owner(root)
+	MCPToolkitUndoRedoAction.begin("reparent %s -> %s" % [node_path, new_parent_path], node) \
+		.do_method(node.reparent.bind(new_parent, keep_global)) \
+		.do_method(node.set_owner.bind(root)) \
+		.undo_method(node.reparent.bind(old_parent, keep_global)) \
+		.undo_method(old_parent.move_child.bind(node, old_index)) \
+		.undo_method(node.set_owner.bind(root)) \
+		.commit_recorded()
 
 	var new_path := str(root.get_path_to(node))
 	return {"success": true, "action": "reparent", "new_path": new_path}
@@ -756,14 +719,11 @@ static func _manage_reorder(
 		return McpError.make("INVALID_PARAMS",
 			"new_index %d out of range [0, %d)" % [new_index, child_count])
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: reorder %s to index %d" % [node_path, new_index])
-		undo_redo.add_do_method(parent, "move_child", node, new_index)
-		undo_redo.add_undo_method(parent, "move_child", node, old_index)
-		undo_redo.commit_action()
-	else:
-		parent.move_child(node, new_index)
+	parent.move_child(node, new_index)
+	MCPToolkitUndoRedoAction.begin("reorder %s to index %d" % [node_path, new_index]) \
+		.do_method(parent.move_child.bind(node, new_index)) \
+		.undo_method(parent.move_child.bind(node, old_index)) \
+		.commit_recorded()
 
 	return {"success": true, "action": "reorder", "path": node_path,
 		"old_index": old_index, "new_index": node.get_index()}
@@ -795,17 +755,14 @@ static func _manage_duplicate(
 			return McpError.make("NOT_FOUND",
 				"parent not found: %s" % parent_path, McpError.HINT_NODE_PATH)
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: duplicate %s" % node_path)
-		undo_redo.add_do_method(target_parent, "add_child", dup)
-		undo_redo.add_do_method(dup, "set_owner", root)
-		undo_redo.add_do_reference(dup)
-		undo_redo.add_undo_method(target_parent, "remove_child", dup)
-		undo_redo.commit_action()
-	else:
-		target_parent.add_child(dup)
-		dup.set_owner(root)
+	target_parent.add_child(dup)
+	dup.set_owner(root)
+	MCPToolkitUndoRedoAction.begin("duplicate %s" % node_path) \
+		.do_method(target_parent.add_child.bind(dup)) \
+		.do_method(dup.set_owner.bind(root)) \
+		.do_reference(dup) \
+		.undo_method(target_parent.remove_child.bind(dup)) \
+		.commit_recorded()
 
 	# Apply optional property overrides (position, scale, etc.).
 	# Use coerce_value_hint so untagged dicts like {x:200,y:300}
@@ -854,14 +811,11 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 			if group.is_empty():
 				return McpError.make("INVALID_PARAMS", "add requires group name")
 			var persistent := bool(parameters.get("persistent", true))
-			var undo_redo = _Hub.get_undo_redo()
-			if undo_redo != null:
-				undo_redo.create_action("MCP: add %s to group %s" % [node_path, group])
-				undo_redo.add_do_method(node, "add_to_group", group, persistent)
-				undo_redo.add_undo_method(node, "remove_from_group", group)
-				undo_redo.commit_action()
-			else:
-				node.add_to_group(group, persistent)
+			node.add_to_group(group, persistent)
+			MCPToolkitUndoRedoAction.begin("add %s to group %s" % [node_path, group]) \
+				.do_method(node.add_to_group.bind(group, persistent)) \
+				.undo_method(node.remove_from_group.bind(group)) \
+				.commit_recorded()
 			return {"success": true, "action": "add", "node": node_path, "group": group}
 
 		"remove":
@@ -871,14 +825,11 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 			if not node.is_in_group(group):
 				return McpError.make("NOT_FOUND",
 					"node %s is not in group '%s'" % [node_path, group])
-			var undo_redo = _Hub.get_undo_redo()
-			if undo_redo != null:
-				undo_redo.create_action("MCP: remove %s from group %s" % [node_path, group])
-				undo_redo.add_do_method(node, "remove_from_group", group)
-				undo_redo.add_undo_method(node, "add_to_group", group, true)
-				undo_redo.commit_action()
-			else:
-				node.remove_from_group(group)
+			node.remove_from_group(group)
+			MCPToolkitUndoRedoAction.begin("remove %s from group %s" % [node_path, group]) \
+				.do_method(node.remove_from_group.bind(group)) \
+				.undo_method(node.add_to_group.bind(group, true)) \
+				.commit_recorded()
 			return {"success": true, "action": "remove", "node": node_path, "group": group}
 
 		"list":
@@ -895,10 +846,9 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 				"unknown action '%s'; must be add|remove|list" % action)
 
 
-static func _batch_node_groups(root: Node, action: String, entries: Array) -> Dictionary:
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: batch %s groups (%d entries)" % [action, entries.size()])
+static func _batch_node_groups(root: Node, batch_action: String, entries: Array) -> Dictionary:
+	var undo_action = MCPToolkitUndoRedoAction.begin(
+		"batch %s groups (%d entries)" % [batch_action, entries.size()])
 
 	var results: Array = []
 	for entry in entries:
@@ -913,29 +863,24 @@ static func _batch_node_groups(root: Node, action: String, entries: Array) -> Di
 		if node == null:
 			results.append({"node_path": np, "group": group, "error": "node not found"})
 			continue
-		match action:
+		match batch_action:
 			"add":
-				if undo_redo != null:
-					undo_redo.add_do_method(node, "add_to_group", group, true)
-					undo_redo.add_undo_method(node, "remove_from_group", group)
-				else:
-					node.add_to_group(group, true)
+				node.add_to_group(group, true)
+				undo_action.do_method(node.add_to_group.bind(group, true))
+				undo_action.undo_method(node.remove_from_group.bind(group))
 				results.append({"node_path": np, "group": group, "status": "added"})
 			"remove":
 				if not node.is_in_group(group):
 					results.append({"node_path": np, "group": group, "error": "not in group"})
 					continue
-				if undo_redo != null:
-					undo_redo.add_do_method(node, "remove_from_group", group)
-					undo_redo.add_undo_method(node, "add_to_group", group, true)
-				else:
-					node.remove_from_group(group)
+				node.remove_from_group(group)
+				undo_action.do_method(node.remove_from_group.bind(group))
+				undo_action.undo_method(node.add_to_group.bind(group, true))
 				results.append({"node_path": np, "group": group, "status": "removed"})
 
-	if undo_redo != null:
-		undo_redo.commit_action()
+	undo_action.commit_recorded()
 
-	return {"success": true, "action": action, "results": results, "count": results.size()}
+	return {"success": true, "action": batch_action, "results": results, "count": results.size()}
 
 
 const _LAYOUT_PRESETS := {
@@ -1019,26 +964,24 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 			ctrl.offset_bottom += float(margins_raw["bottom"])
 
 	# Record for undo using the final property values (already applied).
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: control.set_layout %s %s" % [node_path, preset_name])
-		undo_redo.add_do_property(ctrl, "anchor_left", ctrl.anchor_left)
-		undo_redo.add_do_property(ctrl, "anchor_top", ctrl.anchor_top)
-		undo_redo.add_do_property(ctrl, "anchor_right", ctrl.anchor_right)
-		undo_redo.add_do_property(ctrl, "anchor_bottom", ctrl.anchor_bottom)
-		undo_redo.add_do_property(ctrl, "offset_left", ctrl.offset_left)
-		undo_redo.add_do_property(ctrl, "offset_top", ctrl.offset_top)
-		undo_redo.add_do_property(ctrl, "offset_right", ctrl.offset_right)
-		undo_redo.add_do_property(ctrl, "offset_bottom", ctrl.offset_bottom)
-		undo_redo.add_undo_property(ctrl, "anchor_left", old_anchor_left)
-		undo_redo.add_undo_property(ctrl, "anchor_top", old_anchor_top)
-		undo_redo.add_undo_property(ctrl, "anchor_right", old_anchor_right)
-		undo_redo.add_undo_property(ctrl, "anchor_bottom", old_anchor_bottom)
-		undo_redo.add_undo_property(ctrl, "offset_left", old_offset_left)
-		undo_redo.add_undo_property(ctrl, "offset_top", old_offset_top)
-		undo_redo.add_undo_property(ctrl, "offset_right", old_offset_right)
-		undo_redo.add_undo_property(ctrl, "offset_bottom", old_offset_bottom)
-		undo_redo.commit_action(false)  # Already applied — record only
+	MCPToolkitUndoRedoAction.begin("control.set_layout %s %s" % [node_path, preset_name]) \
+		.do_property(ctrl, &"anchor_left", ctrl.anchor_left) \
+		.do_property(ctrl, &"anchor_top", ctrl.anchor_top) \
+		.do_property(ctrl, &"anchor_right", ctrl.anchor_right) \
+		.do_property(ctrl, &"anchor_bottom", ctrl.anchor_bottom) \
+		.do_property(ctrl, &"offset_left", ctrl.offset_left) \
+		.do_property(ctrl, &"offset_top", ctrl.offset_top) \
+		.do_property(ctrl, &"offset_right", ctrl.offset_right) \
+		.do_property(ctrl, &"offset_bottom", ctrl.offset_bottom) \
+		.undo_property(ctrl, &"anchor_left", old_anchor_left) \
+		.undo_property(ctrl, &"anchor_top", old_anchor_top) \
+		.undo_property(ctrl, &"anchor_right", old_anchor_right) \
+		.undo_property(ctrl, &"anchor_bottom", old_anchor_bottom) \
+		.undo_property(ctrl, &"offset_left", old_offset_left) \
+		.undo_property(ctrl, &"offset_top", old_offset_top) \
+		.undo_property(ctrl, &"offset_right", old_offset_right) \
+		.undo_property(ctrl, &"offset_bottom", old_offset_bottom) \
+		.commit_recorded()
 
 	var response := {
 		"success": true,
@@ -1116,9 +1059,7 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 	var total_points := 0
 	var first_path := ""
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: collision from sprite")
+	var coll_action = MCPToolkitUndoRedoAction.begin("collision from sprite")
 
 	for i in range(polygons.size()):
 		var coll := CollisionPolygon2D.new()
@@ -1129,20 +1070,17 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 		coll.polygon = polygons[i]
 		total_points += (polygons[i] as PackedVector2Array).size()
 
-		if undo_redo != null:
-			undo_redo.add_do_method(target_parent, "add_child", coll)
-			undo_redo.add_do_method(coll, "set_owner", root)
-			undo_redo.add_do_reference(coll)
-			undo_redo.add_undo_method(target_parent, "remove_child", coll)
-		else:
-			target_parent.add_child(coll)
-			coll.set_owner(root)
+		target_parent.add_child(coll)
+		coll.set_owner(root)
+		coll_action.do_method(target_parent.add_child.bind(coll))
+		coll_action.do_method(coll.set_owner.bind(root))
+		coll_action.do_reference(coll)
+		coll_action.undo_method(target_parent.remove_child.bind(coll))
 
 		if i == 0:
 			first_path = str(root.get_path_to(coll))
 
-	if undo_redo != null:
-		undo_redo.commit_action()
+	coll_action.commit_recorded()
 
 	return {
 		"success": true,

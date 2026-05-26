@@ -577,19 +577,16 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 			version_notes.append("emission_ring_cone_angle unavailable in this Godot version")
 
 	# --- Add to scene via UndoRedo ---
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP: create %s" % node.name)
-		undo_redo.add_do_method(parent, "add_child", node)
-		undo_redo.add_do_method(node, "set_owner", root)
-		undo_redo.add_do_reference(node)
-		for res in sub_resources:
-			undo_redo.add_undo_reference(res)
-		undo_redo.add_undo_method(parent, "remove_child", node)
-		undo_redo.commit_action()
-	else:
-		parent.add_child(node)
-		node.set_owner(root)
+	parent.add_child(node)
+	node.set_owner(root)
+	var _undo := MCPToolkitUndoRedoAction.begin("create %s" % node.name) \
+		.do_method(parent.add_child.bind(node)) \
+		.do_method(node.set_owner.bind(root)) \
+		.do_reference(node)
+	for res in sub_resources:
+		_undo.undo_reference(res)
+	_undo.undo_method(parent.remove_child.bind(node)) \
+		.commit_recorded()
 
 	# --- Result ---
 	var result := {

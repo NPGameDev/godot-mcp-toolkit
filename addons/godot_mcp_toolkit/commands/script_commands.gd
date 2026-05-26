@@ -134,20 +134,19 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		return McpError.make("WRITE_FAILED",
 			"could not open %s for write (err %d)" % [file_path, write_error])
 
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo != null:
-		undo_redo.create_action("MCP script_write: %s" % file_path)
-		undo_redo.add_do_method(server.undo_helpers, "_write_file_silent", file_path, content)
-		if existed:
-			undo_redo.add_undo_method(server.undo_helpers, "_write_file_silent", file_path, prior_content)
-		else:
-			undo_redo.add_undo_method(server.undo_helpers, "_delete_file_silent", file_path)
-		undo_redo.commit_action(false)
+	var _undo := MCPToolkitUndoRedoAction.begin("script_write: %s" % file_path) \
+		.do_method(server.undo_helpers._write_file_silent.bind(file_path, content))
+	var undoable := _undo.is_active()
+	if existed:
+		_undo.undo_method(server.undo_helpers._write_file_silent.bind(file_path, prior_content))
+	else:
+		_undo.undo_method(server.undo_helpers._delete_file_silent.bind(file_path))
+	_undo.commit_recorded()
 
 	var index_result := Helpers.ensure_file_indexed(file_path)
 
 	var bytes_written := content.to_utf8_buffer().size()
-	var result := {"success": true, "bytes": bytes_written, "undoable": undo_redo != null,
+	var result := {"success": true, "bytes": bytes_written, "undoable": undoable,
 		"indexed": index_result["indexed"]}
 	if dirs_created:
 		result["dirs_created"] = true

@@ -129,15 +129,12 @@ static func _action_clear(node: Path2D, curve: Curve2D) -> Dictionary:
 
 
 static func _wrap_undo_redo(node: Path2D, curve: Curve2D, old_curve: Curve2D, action_name: String) -> void:
-	var undo_redo = _Hub.get_undo_redo()
-	if undo_redo == null:
-		return
-	undo_redo.create_action(action_name)
-	undo_redo.add_do_property(node, "curve", curve)
-	undo_redo.add_undo_property(node, "curve", old_curve)
-	undo_redo.add_do_reference(curve)
-	undo_redo.add_undo_reference(old_curve)
-	undo_redo.commit_action(false)
+	MCPToolkitUndoRedoAction.begin(action_name.trim_prefix("MCP: ")) \
+		.do_property(node, &"curve", curve) \
+		.undo_property(node, &"curve", old_curve) \
+		.do_reference(curve) \
+		.undo_reference(old_curve) \
+		.commit_recorded()
 
 
 # -- Helpers ------------------------------------------------------------------
