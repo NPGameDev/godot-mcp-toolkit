@@ -72,9 +72,7 @@ void fragment() {
 
 ## Console error check
 
-Call `editor_get_console` and scan output since section start for `UndoRedo history mismatch`. Guard tests produce intentional error logs (e.g., `Failed loading resource`) — ignore those.
-- **FAIL** if any `UndoRedo history mismatch` line appears.
-- **PASS** otherwise.
+Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 ## Cleanup
 

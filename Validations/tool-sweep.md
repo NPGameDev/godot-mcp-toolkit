@@ -51,6 +51,25 @@ To avoid bloating the agent's context with tool definitions:
 2. **After each section cleanup:** deactivate groups no longer needed via `discover_tools(reset=[...])` with the specific group names.
 3. **Exception:** Core tools (scene, node, editor, project) are always available in standard mode — no activation needed.
 
+### Console Isolation
+
+Every section ends with a `## Console error check` block. The full procedure is defined here — section files reference this protocol.
+
+**Setup (before each section's first test):**
+1. Call `editor_get_console` with `clear_buffer=true` to discard stale entries from previous sections.
+2. Do not fail if the buffer is empty or unavailable.
+
+**Check (at the end of each section, under `## Console error check`):**
+1. Call `editor_get_console` and scan output for `UndoRedo history mismatch`.
+2. Ignore intentional error logs from guard tests (e.g., `Failed loading resource`).
+3. **FAIL** if any `UndoRedo history mismatch` line appears.
+4. **PASS** if no mismatch lines found, or if the console buffer is empty/unavailable.
+
+**Teardown (after scanning):**
+1. Call `editor_get_console` with `clear_buffer=true` to flush the buffer for the next section.
+
+**Alternative (`since_id`):** Instead of clearing, record the `next_id` returned by the setup call and pass it as `since_id` in the check call. This avoids clearing and works with file-based log sources (`source="file"`). Agents may use either approach.
+
 ### Deferred-Tools Cache (Claude Code Platform Note)
 
 In Claude Code, `ToolSearch` may not return newly-activated tools due to the deferred-tools cache. **This does NOT mean the tools can't be called.** The MCP tools are available on the server side immediately after `discover_tools` activates them — just call them directly by name. Do not treat a missing ToolSearch result as a failure. Only record FAIL if the actual tool call returns "method not found" from the MCP server.

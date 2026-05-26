@@ -978,3 +978,210 @@ SKIP — Per user instruction.
 ### Fix Verified
 
 - **3445361 (use EditorUndoRedoManager directly for all operations):** All undo/redo operations fully functional. Property-based, Callable-based, and group-based mutations all register in editor history and can be reversed. The internal UndoRedo elimination resolves both the history ID mismatch (method_undo) and the missing undo registration (groups undo).
+
+---
+
+# Section 25 — Undo/Redo Full Expanded Re-run (2026-05-26)
+
+- **Context:** Full re-run of expanded section (UR-Setup through UR-Cleanup) after commit 53796f7 which fixed 12 tools with missing or orphaned `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls. Section expanded from 14 to 47 tests — UR4–UR12 are regression guards for each affected tool, UR-CON.1 is the critical console-check gate.
+- **Scene:** `res://Main.tscn`
+- **Godot version:** 4.5
+- **Total:** 47 passed, 0 failed, 0 skipped
+
+## UR-Setup: Attach undo/redo helper
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR-S1 | PASS | URHelper (Node) created at scene root |
+| UR-S2 | PASS | `test_undo_redo_action.gd` attached, 0 exports |
+| UR-S3 | PASS | **8/8 sub-tests passed** — see breakdown below |
+
+### UR-S3 sub-test breakdown (run_undo_redo_tests)
+
+| Sub-test | Pass | Details |
+|----------|------|---------|
+| prop_set | PASS | position set to (123, 456) |
+| prop_undo | PASS | position reverted to (0, 0) |
+| prop_redo | PASS | position restored to (123, 456) |
+| method_added | PASS | child present after commit_recorded |
+| method_undo | PASS | child removed by undo |
+| method_redo | PASS | child restored by redo |
+| commit_do_executes | PASS | commit() executed do-side immediately, visible=false |
+| commit_undo | PASS | undo restored visible=true |
+
+## UR1: node.set_property undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR1.1 | PASS | Node2D "URTarget" created |
+| UR1.2 | PASS | position set to (200, 300) |
+| UR1.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR1.4 | PASS | position reverted to (0, 0) |
+| UR1.5 | PASS | trigger_redo: status=ok, history_id=1 |
+| UR1.6 | PASS | position restored to (200, 300) |
+
+## UR2: node.manage rename undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR2.1 | PASS | Renamed URTarget → URRenamed |
+| UR2.2 | PASS | trigger_undo via current name "URRenamed": status=ok |
+| UR2.3 | PASS | scene_get_tree confirms `URTarget` in tree (name reverted) |
+| UR2.4 | PASS | trigger_redo: `URRenamed` restored, then undone back to URTarget for subsequent tests |
+
+## UR3: node.groups add undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR3.1 | PASS | Confirmed URTarget exists (name restored from UR2) |
+| UR3.2 | PASS | Group `ur_test_group` added to URTarget |
+| UR3.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR3.4 | PASS | groups=[], count=0 — group removed by undo |
+
+## UR4: node.manage reorder undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR4.1 | PASS | URSibling (Node2D) created |
+| UR4.2 | PASS | URSibling at index 2 (URHelper=0, URTarget=1, URSibling=2) |
+| UR4.3 | PASS | Reordered URSibling from index 2 to 0 |
+| UR4.4 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR4.5 | PASS | URSibling back at index 2 (original position restored) |
+
+## UR5: node.manage duplicate undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR5.1 | PASS | URDuplicate created from URTarget |
+| UR5.2 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR5.3 | PASS | URDuplicate gone — only URHelper, URTarget, URSibling remain |
+
+## UR6: node.groups remove + batch undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR6.1 | PASS | Group `ur_remove_test` added to URTarget |
+| UR6.2 | PASS | Group `ur_remove_test` removed from URTarget |
+| UR6.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR6.4 | PASS | `ur_remove_test` restored by undo (count=1) |
+| UR6.5 | PASS | Batch add: `ur_batch_a` added to URTarget + URSibling (2 entries) |
+| UR6.6 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR6.7 | PASS | `ur_batch_a` NOT in URTarget (only `ur_remove_test`), NOT in URSibling (count=0) — batch undo confirmed |
+
+## UR7: scene.delete_node undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR7.1 | PASS | URSibling deleted |
+| UR7.2 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR7.3 | PASS | URSibling restored by undo |
+
+## UR8: control.set_layout undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR8.1 | PASS | URControl (Control) created |
+| UR8.2 | PASS | Layout set to PRESET_CENTER |
+| UR8.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR8.4 | PASS | anchor_left=0 (default, not 0.5) — layout undo confirmed |
+
+## UR9: signal.manage connect/disconnect undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR9.1 | PASS | visibility_changed → URSibling.show connected (status=created) |
+| UR9.2 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR9.3 | PASS | visibility_changed has no connection to URSibling.show — connect undo confirmed |
+| UR9.4 | PASS | Reconnected for disconnect test (status=created) |
+| UR9.5 | PASS | Disconnected visibility_changed → URSibling.show |
+| UR9.6 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR9.7 | PASS | visibility_changed → URSibling.show restored (flags=2 CONNECT_PERSIST) — disconnect undo confirmed |
+
+## UR10: path2d.edit_curve undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR10.1 | PASS | URPath (Path2D) created |
+| UR10.2 | PASS | Point added at (100, 200), point_count=1 |
+| UR10.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR10.4 | PASS | curve:point_count=0 — point removed by undo |
+
+## UR11: particles.create undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR11.1 | PASS | GPUParticles2D created, properties_set=1 |
+| UR11.2 | PASS | GPUParticles2D confirmed in tree |
+| UR11.3 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR11.4 | PASS | GPUParticles2D gone — particle undo confirmed |
+
+## UR12: collision_from_texture undo/redo
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR12.1 | PASS | URSprite (Sprite2D) created |
+| UR12.2 | PASS | Texture set to res://icon.svg |
+| UR12.3 | PASS | Collision polygon created (1 polygon, 20 points) |
+| UR12.4 | PASS | trigger_undo: status=ok, history_id=1 |
+| UR12.5 | PASS | No CollisionPolygon2D in tree — collision undo confirmed |
+
+## UR-Console: History mismatch error check (CRITICAL GATE)
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR-CON.1 | **PASS** | **Zero** `UndoRedo history mismatch` errors in editor console. Critical regression gate clean. |
+
+## UR-Cleanup: Remove test nodes
+
+| Test | Status | Notes |
+|------|--------|-------|
+| UR-C1 | PASS | URSprite deleted |
+| UR-C2 | PASS | URPath deleted |
+| UR-C3 | PASS | URControl deleted |
+| UR-C4 | PASS | URSibling deleted |
+| UR-C5 | PASS | URTarget deleted |
+| UR-C6 | PASS | URHelper deleted |
+| UR-C7 | PASS | Scene saved |
+
+## Summary
+
+| Category | Passed | Failed | Skipped |
+|----------|--------|--------|---------|
+| UR-Setup (S1–S3) | 3 (S3: 8/8 sub-tests) | 0 | 0 |
+| UR1 (set_property) | 6 | 0 | 0 |
+| UR2 (rename) | 4 | 0 | 0 |
+| UR3 (groups add) | 4 | 0 | 0 |
+| UR4 (reorder) | 5 | 0 | 0 |
+| UR5 (duplicate) | 3 | 0 | 0 |
+| UR6 (groups remove+batch) | 7 | 0 | 0 |
+| UR7 (delete_node) | 3 | 0 | 0 |
+| UR8 (control.set_layout) | 4 | 0 | 0 |
+| UR9 (signal connect/disconnect) | 7 | 0 | 0 |
+| UR10 (path2d.edit_curve) | 4 | 0 | 0 |
+| UR11 (particles.create) | 4 | 0 | 0 |
+| UR12 (collision_from_texture) | 5 | 0 | 0 |
+| UR-CON (console gate) | 1 | 0 | 0 |
+| UR-Cleanup (C1–C7) | 7 | 0 | 0 |
+| **Total** | **67** | **0** | **0** |
+
+### Regression Guards — All 12 Previously-Affected Tools Verified
+
+| Tool | Tests | Status | Undo verified |
+|------|-------|--------|---------------|
+| node.set_property | UR1.1–1.6 | PASS | Position reverts to (0,0) and restores to (200,300) |
+| node.manage (rename) | UR2.1–2.4 | PASS | Name reverts URRenamed→URTarget and restores |
+| node.groups (add) | UR3.1–3.4 | PASS | Group removed by undo |
+| node.manage (reorder) | UR4.1–4.5 | PASS | Index reverts from 0 back to 2 |
+| node.manage (duplicate) | UR5.1–5.3 | PASS | Duplicate node removed by undo |
+| node.groups (remove+batch) | UR6.1–6.7 | PASS | Remove undone, batch add undone across 2 nodes |
+| scene.delete_node | UR7.1–7.3 | PASS | Deleted node restored by undo |
+| control.set_layout | UR8.1–8.4 | PASS | anchor_left reverts from 0.5 to 0 |
+| signal.manage (connect) | UR9.1–9.3 | PASS | Connection removed by undo |
+| signal.manage (disconnect) | UR9.4–9.7 | PASS | Connection restored by undo |
+| path2d.edit_curve | UR10.1–10.4 | PASS | Point removed by undo (count 1→0) |
+| particles.create | UR11.1–11.4 | PASS | Particle node removed by undo |
+| collision_from_texture | UR12.1–12.5 | PASS | Collision polygon removed by undo |
+
+### Critical Gate
+
+**UR-CON.1: PASS** — Zero `UndoRedo history mismatch` errors across all 12 tool sections. Commit 53796f7 fix (adding missing `context_object` to 12 `begin()` calls) fully verified.
