@@ -115,6 +115,13 @@
 
 ---
 
+## Console error check
+
+Call `editor_get_console` and scan output since section start for unexpected errors.
+- **FAIL** if any line contains: `UndoRedo history mismatch`, `SCRIPT ERROR`, `FATAL`, or unexpected `ERROR:` lines not caused by intentional guard tests.
+- **PASS** if only expected noise (e.g., `Failed loading resource` from NOT_FOUND guard tests).
+- Note: expected errors from guard tests (e.g., loading nonexistent resources) are NOT failures.
+
 ## Cleanup
 
 - `scene_delete_node` node_path=`Sv2RefTest`
