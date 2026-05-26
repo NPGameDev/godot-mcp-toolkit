@@ -241,7 +241,7 @@
 - **Expect:** success
 
 **UR10.2** Add a point:
-- `path2d.edit_curve` — node_path=`URPath`, action=`add_point`, position=`{"x": 100, "y": 200}`
+- `path2d.edit_curve` — node_path=`URPath`, action=`add`, points=`[{"position": {"x": 100, "y": 200}}]`
 - **Expect:** success, point_count=1
 
 **UR10.3** Trigger undo:
@@ -250,8 +250,7 @@
 
 **UR10.4** Verify point removed:
 - `node.get_property` — node_path=`URPath`, property=`curve:point_count`
-- If that doesn't work, use `path2d.edit_curve` action=`get_points`
-- **Expect:** 0 points (empty curve or no curve)
+- **Expect:** 0 (empty curve restored by undo)
 
 ---
 
