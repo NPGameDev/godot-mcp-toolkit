@@ -61,5 +61,13 @@ jobs:
           fi
           echo "GDScript validation passed (Godot ${{ matrix.godot-version }})"
 
+      # --script mode needs .godot/global_script_class_cache.cfg to resolve
+      # class_names. The editor step (4.5+) generates it as a side effect;
+      # 4.2–4.4 use --check-only which skips the editor, so we briefly
+      # launch the editor here to populate the cache.
+      - name: Generate script class cache
+        if: matrix.check-method == 'check-only'
+        run: timeout 30 godot --headless --editor --quit 2>&1 || true
+
       - name: Run unit tests
         run: timeout 30 godot --headless --script test/run_unit_tests.gd
