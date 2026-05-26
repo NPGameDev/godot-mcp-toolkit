@@ -223,37 +223,23 @@ func _test_property_undo_redo(ur, root: Node) -> Array[Dictionary]:
 	root.add_child(node)
 	node.owner = root
 
-	var old_pos := node.position  # Vector2(0, 0)
+	var old_pos := node.position
 	var new_pos := Vector2(123, 456)
 
-	# Apply mutation first, then record.
 	node.position = new_pos
-	var action = MCPToolkitUndoRedoAction.begin("test property", node)
-	var builder_active := action.is_active()
-	action.do_property(node, &"position", new_pos) \
+	MCPToolkitUndoRedoAction.begin("test property", node) \
+		.do_property(node, &"position", new_pos) \
 		.undo_property(node, &"position", old_pos) \
 		.commit_recorded()
 
-	# Check state right after commit.
-	var hist_id = ur.get_object_history_id(node)
-	var undo_redo_obj = ur.get_history_undo_redo(hist_id)
-	var has_undo_after = undo_redo_obj.has_undo() if undo_redo_obj != null else false
+	results.append({"test": "prop_set", "pass": node.position == new_pos})
 
-	results.append({"test": "prop_set", "pass": node.position == new_pos,
-		"diag": {"builder_active": builder_active, "history_id": hist_id,
-				"has_undo_after_commit": has_undo_after}})
+	_undo_for(ur, node)
+	results.append({"test": "prop_undo", "pass": node.position == old_pos})
 
-	# Undo — should revert to old_pos.
-	var undo_result := _undo_for(ur, node)
-	results.append({"test": "prop_undo", "pass": node.position == old_pos,
-		"actual_pos": str(node.position), "undo_result": undo_result})
+	_redo_for(ur, node)
+	results.append({"test": "prop_redo", "pass": node.position == new_pos})
 
-	# Redo — should restore new_pos.
-	var redo_result := _redo_for(ur, node)
-	results.append({"test": "prop_redo", "pass": node.position == new_pos,
-		"actual_pos": str(node.position), "redo_result": redo_result})
-
-	# Cleanup: undo to remove state, then free.
 	_undo_for(ur, node)
 	node.get_parent().remove_child(node)
 	node.queue_free()
@@ -266,36 +252,25 @@ func _test_method_undo_redo(ur, root: Node) -> Array[Dictionary]:
 	var child := Sprite2D.new()
 	child.name = "URTest_MethodChild"
 
-	# Apply mutation first: add child to root.
 	root.add_child(child)
 	child.owner = root
 
-	# Record for undo: do=add_child, undo=remove_child.
-	var action = MCPToolkitUndoRedoAction.begin("test method add", child)
-	var builder_active := action.is_active()
-	action.do_method(root.add_child.bind(child)) \
+	MCPToolkitUndoRedoAction.begin("test method add", child) \
+		.do_method(root.add_child.bind(child)) \
 		.do_method(child.set.bind(&"owner", root)) \
 		.do_reference(child) \
 		.undo_method(root.remove_child.bind(child)) \
 		.undo_reference(child) \
 		.commit_recorded()
 
-	results.append({"test": "method_added", "pass": root.has_node("URTest_MethodChild"),
-		"diag": {"builder_active": builder_active}})
+	results.append({"test": "method_added", "pass": root.has_node("URTest_MethodChild")})
 
-	# Undo — child should be removed.
-	var undo_result := _undo_for(ur, root)
-	var child_exists_after_undo := root.has_node("URTest_MethodChild")
-	results.append({"test": "method_undo", "pass": not child_exists_after_undo,
-		"child_exists": child_exists_after_undo, "undo_result": undo_result})
+	_undo_for(ur, root)
+	results.append({"test": "method_undo", "pass": not root.has_node("URTest_MethodChild")})
 
-	# Redo — child should be back.
-	var redo_result := _redo_for(ur, root)
-	var re_added := root.has_node("URTest_MethodChild")
-	results.append({"test": "method_redo", "pass": re_added,
-		"child_exists": re_added, "redo_result": redo_result})
+	_redo_for(ur, root)
+	results.append({"test": "method_redo", "pass": root.has_node("URTest_MethodChild")})
 
-	# Cleanup: undo to remove, then free.
 	_undo_for(ur, root)
 	if is_instance_valid(child) and child.get_parent() != null:
 		child.get_parent().remove_child(child)
@@ -312,23 +287,17 @@ func _test_commit_executes_do(ur, root: Node) -> Array[Dictionary]:
 	root.add_child(node)
 	node.owner = root
 
-	var old_vis := node.visible  # true
-	# Do NOT apply mutation — commit() will execute the do-side.
-	var action = MCPToolkitUndoRedoAction.begin("test commit do-side", node)
-	var builder_active := action.is_active()
-	action.do_property(node, &"visible", false) \
+	var old_vis := node.visible
+	MCPToolkitUndoRedoAction.begin("test commit do-side", node) \
+		.do_property(node, &"visible", false) \
 		.undo_property(node, &"visible", old_vis) \
 		.commit()
 
-	results.append({"test": "commit_do_executes", "pass": node.visible == false,
-		"actual_visible": node.visible, "diag": {"builder_active": builder_active}})
+	results.append({"test": "commit_do_executes", "pass": node.visible == false})
 
-	# Undo — should restore visibility.
-	var undo_result := _undo_for(ur, node)
-	results.append({"test": "commit_undo", "pass": node.visible == old_vis,
-		"actual_visible": node.visible, "undo_result": undo_result})
+	_undo_for(ur, node)
+	results.append({"test": "commit_undo", "pass": node.visible == old_vis})
 
-	# Cleanup.
 	node.get_parent().remove_child(node)
 	node.queue_free()
 	return results
