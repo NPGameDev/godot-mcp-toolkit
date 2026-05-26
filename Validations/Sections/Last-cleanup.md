@@ -1,4 +1,4 @@
-# Section 25 — Global Cleanup
+# Global Cleanup (always runs last)
 
 **Dependencies:** Any (can run standalone to clean up after failed sweep)
 **Purpose:** Remove ALL sv2_validation artifacts and restore project state

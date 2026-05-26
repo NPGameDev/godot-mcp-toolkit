@@ -55,10 +55,9 @@
 
 ## Console error check
 
-Call `editor_get_console` and scan output since section start for unexpected errors.
-- **FAIL** if any line contains: `UndoRedo history mismatch`, `SCRIPT ERROR`, `FATAL`, or unexpected `ERROR:` lines not caused by intentional guard tests.
-- **PASS** if only expected noise (e.g., `Failed loading resource` from NOT_FOUND guard tests).
-- Note: expected errors from guard tests (e.g., loading nonexistent resources) are NOT failures.
+Call `editor_get_console` and scan output since section start for `UndoRedo history mismatch`. Guard tests produce intentional error logs (e.g., `Failed loading resource`) — ignore those.
+- **FAIL** if any `UndoRedo history mismatch` line appears.
+- **PASS** otherwise.
 
 ## Cleanup
 

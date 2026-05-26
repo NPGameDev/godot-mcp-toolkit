@@ -6,7 +6,7 @@ A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all
 
 - **Full sweep:** Tell the agent: "Run the full tool sweep from `Validations/tool-sweep.md`." Read this index, then execute each section file sequentially.
 - **Section-only (targeted):** Tell the agent: "Run sections 3, 7, 14 from the tool sweep." The agent reads only the relevant `Sections/XX-*.md` files. Each section is self-contained with setup/cleanup.
-- **Cleanup only:** Tell the agent: "Run section 25 (Global Cleanup) from the tool sweep."
+- **Cleanup only:** Tell the agent: "Run Global Cleanup (Last-cleanup) from the tool sweep."
 - **Artifacts:** All test files use prefix `sv2_` and live under `res://sv2_validation/`. Nothing touches existing project files except temporary `project_set_setting` changes restored in cleanup.
 
 ### Completeness Rule
@@ -84,9 +84,14 @@ In Claude Code, `ToolSearch` may not return newly-activated tools due to the def
 | 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 14 chains | Multi-tool workflows | S1 |
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 9+ | discover_tools, extensions.refresh | Extensions present |
-| 25 | [25-cleanup.md](Sections/25-cleanup.md) | Global Cleanup | — | folder_delete, resource_delete, scene_delete, script_delete | Any |
 | 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 23+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references | S1, LSP on port 6005 |
 | 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 16+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
+
+### Global Cleanup (always runs last)
+
+| # | File | Description | Tests | Tools | Deps |
+|----|------|-------------|-------|-------|------|
+| Last | [Last-cleanup.md](Sections/Last-cleanup.md) | Global Cleanup | — | folder_delete, resource_delete, scene_delete, script_delete | Any |
 
 ## Dependency Legend
 
