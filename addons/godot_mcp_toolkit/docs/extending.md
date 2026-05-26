@@ -314,6 +314,122 @@ public Dictionary HandleWeather(Dictionary parameters, GodotObject ctx)
   their 1-arg signature and work exactly as before. No context is created,
   no overhead is added.
 
+### Making mutations undoable
+
+Extensions that mutate editor state should record their changes in Godot's
+undo system so users can Ctrl+Z/Ctrl+Shift+Z. The toolkit provides
+`MCPToolkitUndoRedoAction` — a fluent builder that wraps
+`EditorUndoRedoManager` with automatic "MCP: " prefixing and headless-safe
+no-op behavior.
+
+**Recommended pattern — apply first, then record:**
+
+```gdscript
+func _set_custom_prop(params: Dictionary) -> Dictionary:
+    var node = get_tree().edited_scene_root.get_node(params.node_path)
+    var old_val = node.get(params.property)
+    node.set(params.property, params.value)
+
+    MCPToolkitUndoRedoAction.begin(
+        "set %s.%s" % [params.node_path, params.property], node) \
+        .do_property(node, params.property, params.value) \
+        .undo_property(node, params.property, old_val) \
+        .commit_recorded()
+
+    return {"success": true}
+```
+
+The mutation executes first (`node.set(...)`), then the builder records it for
+undo/redo. `commit_recorded()` tells Godot "the do-side already happened —
+just record it." This is the standard pattern for all MCP tools.
+
+**Node creation with reference tracking:**
+
+```gdscript
+func _create_marker(params: Dictionary) -> Dictionary:
+    var parent = get_tree().edited_scene_root.get_node(params.parent_path)
+    var root = get_tree().edited_scene_root
+    var marker = Marker2D.new()
+    marker.name = params.get("name", "Marker")
+    parent.add_child(marker)
+    marker.set_owner(root)
+
+    MCPToolkitUndoRedoAction.begin("create %s" % marker.name, parent) \
+        .do_method(parent.add_child.bind(marker)) \
+        .do_method(marker.set_owner.bind(root)) \
+        .do_reference(marker) \
+        .undo_method(parent.remove_child.bind(marker)) \
+        .commit_recorded()
+
+    return {"success": true, "data": {"node_path": str(marker.get_path())}}
+```
+
+Use `do_reference()` to keep newly created objects alive for redo (they'd
+otherwise be freed when undo removes them). Use `undo_reference()` to keep
+old objects alive for undo (e.g., a resource being replaced).
+
+**Two commit modes:**
+
+| Method | When to use |
+|--------|-------------|
+| `commit_recorded()` | Mutation already applied. **Recommended default.** |
+| `commit()` | UndoRedo executes the do-side. Use for batching scenarios. |
+
+**Skipping expensive snapshots in headless:**
+
+```gdscript
+var action = MCPToolkitUndoRedoAction.begin("expensive op", node)
+if action.is_active():
+    var snapshot = _capture_expensive_state()
+    action.undo_method(Callable(self, "_restore_state").bind(snapshot))
+_apply_mutation(params)
+if action.is_active():
+    action.do_method(Callable(self, "_apply_mutation").bind(params))
+    action.commit_recorded()
+```
+
+`is_active()` returns `false` in headless mode (no editor plugin). Use it to
+skip expensive state capture that's only needed for undo registration.
+
+**Double-commit guard:** Calling `commit()` or `commit_recorded()` twice on
+the same builder instance fires a warning and is a no-op. This prevents
+accidental undo history corruption.
+
+**C# usage:**
+
+C# extensions cannot call GDScript static methods directly. Instead, use the
+registry factory — cache the registry reference from `Register()`:
+
+```csharp
+private GodotObject _registry;
+
+public void Register(GodotObject registry, Node server)
+{
+    _registry = registry;
+    var opts = registry.Call("create_extension_options",
+        "Set custom property on a node").AsGodotObject();
+    registry.Call("add", "custom.set_prop",
+        new Callable(this, MethodName.SetCustomProp), opts);
+}
+
+public Dictionary SetCustomProp(Dictionary parameters)
+{
+    var nodePath = (string)parameters["node_path"];
+    var prop = (string)parameters["property"];
+    var node = GetTree().EditedSceneRoot.GetNode(nodePath);
+    var oldVal = node.Get(prop);
+    node.Set(prop, parameters["value"]);
+
+    var action = _registry.Call("create_undo_action",
+        $"set {nodePath}.{prop}", node).AsGodotObject();
+    action.Call("do_property", node, prop, parameters["value"]);
+    action.Call("undo_property", node, prop, oldVal);
+    action.Call("commit_recorded");
+
+    return new Dictionary { { "success", true } };
+}
+```
+
 ### Concurrency: scene lease and mutation lock
 
 When multiple WebSocket peers (e.g. parallel Claude Code sessions) connect to

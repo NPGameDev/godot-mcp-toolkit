@@ -84,6 +84,7 @@ In Claude Code, `ToolSearch` may not return newly-activated tools due to the def
 | 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 14 chains | Multi-tool workflows | S1 |
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 9+ | discover_tools, extensions.refresh | Extensions present |
+| 25 | [25-undo-redo.md](Sections/25-undo-redo.md) | Undo/Redo Verification | 14 | node.set_property, scene.create_node, node.manage, node.groups, node.call_method | S2 |
 | 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 23+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references | S1, LSP on port 6005 |
 | 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 16+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
 

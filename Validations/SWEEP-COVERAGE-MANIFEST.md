@@ -257,6 +257,15 @@
 | debug.set_breakpoint | 27.2, 27.3, 27.5, 27.7 | 27.9–27.14 | C26 | — | — | GDScript only |
 | debug.continue | 27.15 | 27.16 | C26 | — | — | |
 
+### Undo/Redo Verification (cross-cutting, Section 25)
+
+| Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
+|---|---|---|---|---|---|---|
+| MCPToolkitUndoRedoAction (builder) | UR-S3 | — | — | — | — | Self-contained integration tests via run_undo_redo_tests() |
+| node.set_property | UR1.1–UR1.6 | — | — | — | — | Property undo/redo via trigger_undo/trigger_redo |
+| node.manage (rename) | UR2.1–UR2.4 | — | — | — | — | Rename undo/redo |
+| node.groups (add) | UR3.1–UR3.4 | — | — | — | — | Group add undo/redo |
+
 ---
 
 ## Runtime-Only Tools (12 tools)
