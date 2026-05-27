@@ -42,7 +42,7 @@ func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 func _list_bodies(params: Dictionary) -> Dictionary:
 	var body_type: String = params.get("body_type", "all")
 	# ... scene tree traversal logic ...
-	return {"success": true, "data": bodies}
+	return MCPToolkitSuccess.ok({"data": bodies})
 ```
 
 ### Quick start (C#)
@@ -81,6 +81,12 @@ public partial class MCPToolkitDialogueTools : RefCounted
 	}
 }
 ```
+
+**C# note:** The raw `new Dictionary { { "success", true }, ... }` pattern
+is valid and recommended for C#. Alternatively, you can call the GDScript
+`MCPToolkitSuccess.ok()` via interop
+(`GD.Load<GDScript>("res://addons/godot_mcp_toolkit/mcp_success.gd").Call("ok", dict)`)
+but the raw Dictionary is simpler. Both produce the same result.
 
 **C# requirements:**
 - `[Tool]` attribute mandatory (without it, the .NET object is not
@@ -189,7 +195,7 @@ func _my_handler(params: Dictionary) -> Dictionary:
 	# Escape the deferred-call context before calling progress-dialog APIs.
 	await (Engine.get_main_loop() as SceneTree).process_frame
 	EditorInterface.save_scene()
-	return {"success": true}
+	return MCPToolkitSuccess.ok()
 ```
 
 This adds ~16ms of latency (one frame) and is only needed for the small
@@ -250,7 +256,7 @@ func _handle_weather(params: Dictionary, ctx: MCPToolkitToolContext) -> Dictiona
 	if ctx.is_cancelled():
 		return {}
 
-	return {"success": true, "data": processed}
+	return MCPToolkitSuccess.ok({"data": processed})
 ```
 
 **`MCPToolkitToolContext` API:**
@@ -339,7 +345,7 @@ func _set_custom_prop(params: Dictionary) -> Dictionary:
         .undo_property(node, params.property, old_val) \
         .commit_recorded()
 
-    return {"success": true}
+    return MCPToolkitSuccess.ok()
 ```
 
 The mutation executes first (`node.set(...)`), then the builder records it for
@@ -364,7 +370,7 @@ func _create_marker(params: Dictionary) -> Dictionary:
         .undo_method(parent.remove_child.bind(marker)) \
         .commit_recorded()
 
-    return {"success": true, "data": {"node_path": str(marker.get_path())}}
+    return MCPToolkitSuccess.ok({"data": {"node_path": str(marker.get_path())}})
 ```
 
 Use `do_reference()` to keep newly created objects alive for redo (they'd
@@ -606,24 +612,22 @@ Command handlers must return a `Dictionary` with a `"success"` key. The
 framework enforces this contract at dispatch — malformed returns are caught
 and converted to structured errors.
 
-**Success response:**
+**Success response** (use `MCPToolkitSuccess.ok()`):
 
 ```gdscript
-return {"success": true, "data": result_data}
+return MCPToolkitSuccess.ok({"data": result_data})
+# => {"data": result_data, "success": true}
 ```
 
-**Error response** (prefer `MCPToolkitError.fail()`):
+`MCPToolkitSuccess.ok()` guarantees the `"success": true` key is present,
+symmetric with `MCPToolkitError.fail()` for errors.
+
+**Error response** (use `MCPToolkitError.fail()`):
 
 ```gdscript
 return MCPToolkitError.fail("NOT_FOUND", "Node not found",
     "Use scene.get_tree to list valid node paths.")
 # Returns: {"success": false, "error": "Node not found", "code": "NOT_FOUND", "hint": "..."}
-```
-
-Or construct the dictionary directly:
-
-```gdscript
-return {"success": false, "error": "Node not found", "code": "NOT_FOUND"}
 ```
 
 **Response validation enforcement:**
@@ -636,25 +640,23 @@ sending them to the MCP client:
 - **Dictionary without `success` key** → `push_error` logged, INTERNAL
   error returned to client
 
-Always return a Dictionary with `"success": true` or `"success": false`.
-Use `MCPToolkitError.fail()` for error responses — it guarantees the
-correct shape.
+Use `MCPToolkitSuccess.ok()` for success responses and
+`MCPToolkitError.fail()` for error responses — both guarantee the correct
+shape.
 
 **Partial results:** For tools that process multiple items where some
-succeed and others fail, use `"success": true` with descriptive payload
-fields:
+succeed and others fail, use `MCPToolkitSuccess.ok()` with descriptive
+payload fields:
 
 ```gdscript
-return {
-    "success": true,
+return MCPToolkitSuccess.ok({
     "files_removed": 8,
     "files_failed": 2,
     "errors": ["res://locked.cfg: permission denied", "res://other.cfg: in use"]
-}
+})
 ```
 
-Optionally add `"status": "partial"` for machine-readable disambiguation,
-but `success: true` remains required.
+Optionally add `"status": "partial"` for machine-readable disambiguation.
 
 ### MCPToolkitError — structured error API
 
@@ -714,7 +716,7 @@ registry.add("physics.simulate", _simulate,
         .with_success_hint("Call physics.get_results to see the simulation output."))
 ```
 
-When `_simulate` returns `{"success": true, ...}`, the framework adds
+When `_simulate` returns `MCPToolkitSuccess.ok({...})`, the framework adds
 `"hint": "Call physics.get_results to see the simulation output."` to the
 response — no handler code needed.
 
@@ -725,9 +727,9 @@ handler. Handler-set hints take precedence over the registered default:
 func _simulate(params: Dictionary) -> Dictionary:
     var result = _run_simulation(params)
     if result.collisions > 0:
-        return {"success": true, "data": result,
-            "hint": "%d collisions detected. Call physics.get_collisions for details." % result.collisions}
-    return {"success": true, "data": result}
+        return MCPToolkitSuccess.ok({"data": result,
+            "hint": "%d collisions detected. Call physics.get_collisions for details." % result.collisions})
+    return MCPToolkitSuccess.ok({"data": result})
     # ↑ Falls back to the registered with_success_hint() text
 ```
 

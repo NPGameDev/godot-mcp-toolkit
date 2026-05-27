@@ -89,11 +89,10 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 	await Helpers.ensure_file_indexed(file_path)
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"edits_applied": edits_applied,
-	}
+	})
 
 
 # -- Edit helpers -------------------------------------------------------------

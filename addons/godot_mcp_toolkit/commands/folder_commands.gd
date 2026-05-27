@@ -33,7 +33,7 @@ static func _cmd_folder_create(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("CREATE_DIR_FAILED",
 			"DirAccess.make_dir_recursive_absolute returned %d (path=%s)" % [error, folder_path])
 	var status := "returned" if pre_existed else "created"
-	return {"success": true, "status": status, "path": folder_path}
+	return MCPToolkitSuccess.ok({"status": status, "path": folder_path})
 
 
 static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
@@ -157,7 +157,6 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	# are rare and the scan cost is acceptable.
 	var removal := await Helpers.ensure_file_removed(folder_path)
 	var result := {
-		"success": true,
 		"path": folder_path,
 		"recursive": recursive,
 		"files_deleted": files_deleted,
@@ -173,7 +172,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		result["switched_to"] = outside_scenes[0]
 	if not warnings.is_empty():
 		result["warnings"] = warnings
-	return result
+	return MCPToolkitSuccess.ok(result)
 
 
 # -- Recursive delete helper --------------------------------------------------

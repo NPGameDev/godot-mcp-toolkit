@@ -18,10 +18,9 @@ static func _cmd_set_limits(parameters: Dictionary) -> Dictionary:
 	if ws_buf != null:
 		ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb",
 			maxi(int(ws_buf), 256))
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"script_read_cap_kb": int(ProjectSettings.get_setting(
 			"mcp_toolkit/limits/script_read_cap_kb", 256)),
 		"ws_buffer_kb": int(ProjectSettings.get_setting(
 			"mcp_toolkit/limits/ws_buffer_kb", 1024)),
-	}
+	})

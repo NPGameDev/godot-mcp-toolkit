@@ -110,13 +110,13 @@ static func _cmd_resource_load(parameters: Dictionary) -> Dictionary:
 	if resource is Texture2D:
 		metadata["width"] = resource.get_width()
 		metadata["height"] = resource.get_height()
-	return {
+	return MCPToolkitSuccess.ok({
 		"class": resource_class,
 		"path": file_path,
 		"properties": Untrusted.wrap(
 			"resource", file_path, JSON.stringify(properties)),
 		"metadata": metadata,
-	}
+	})
 
 
 static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
@@ -147,13 +147,12 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 		# Refresh cache so subsequent ResourceRef loads get the updated version
 		ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 		var update_index := await Helpers.ensure_file_indexed(file_path)
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"path": file_path,
 			"resource_class": resource_class,
 			"warnings": warnings,
 			"indexed": update_index["indexed"],
-		}
+		})
 	var resource_class := str(parameters.get("type", ""))
 	if resource_class.is_empty():
 		return MCPToolkitError.fail("NOT_FOUND",
@@ -201,7 +200,6 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 	var create_index := await Helpers.ensure_file_indexed(file_path)
 	var create_result := {
-		"success": true,
 		"status": "created",
 		"path": file_path,
 		"resource_class": resource_class,
@@ -210,7 +208,7 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	}
 	if dirs_created:
 		create_result["dirs_created"] = true
-	return create_result
+	return MCPToolkitSuccess.ok(create_result)
 
 
 static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:

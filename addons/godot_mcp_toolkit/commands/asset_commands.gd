@@ -146,8 +146,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 		root_directory, name_glob, class_filter,
 		normalized_extension_filter, entries, max_results)
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"entries": entries,
 		"count": entries.size(),
 		"truncated": truncated,
@@ -157,7 +156,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 			"class_filter": class_filter,
 			"extension_filter": normalized_extension_filter,
 		},
-	}
+	})
 
 
 static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
@@ -230,15 +229,14 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 		warnings.append(
 			"transitive walk exceeded 50 levels — truncated to prevent unbounded recursion")
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"dependencies": dependencies,
 		"count": dependencies.size(),
 		"truncated": truncated,
 		"include_transitive": include_transitive,
 		"warnings": warnings,
-	}
+	})
 
 
 static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
@@ -303,8 +301,8 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	if file_existed:
 		match if_exists:
 			"return":
-				return {"success": true, "status": "returned",
-					"path": dest_path, "source": null}
+				return MCPToolkitSuccess.ok({"status": "returned",
+					"path": dest_path, "source": null})
 			"fail":
 				return MCPToolkitError.fail("ALREADY_EXISTS",
 					"file already exists at %s; use if_exists:'replace' to overwrite or if_exists:'return' for idempotent no-op" % dest_path)
@@ -348,12 +346,11 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 
 	var status := "replaced" if file_existed else "created"
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"status": status,
 		"path": dest_path,
 		"source": source_label,
 		"size_bytes": bytes_to_write.size(),
 		"class": file_class,
 		"warnings": warnings,
-	}
+	})

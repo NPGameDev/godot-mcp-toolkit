@@ -42,7 +42,7 @@ static func _cmd_save_write(parameters: Dictionary) -> Dictionary:
 			"FileAccess.open for write failed (error=%d, path=%s)" % [FileAccess.get_open_error(), path])
 	f.store_string(content)
 	f.close()
-	return {"success": true, "path": path, "bytes_written": content.length()}
+	return MCPToolkitSuccess.ok({"path": path, "bytes_written": content.length()})
 
 
 static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
@@ -69,25 +69,23 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 	# Binary-safe: try UTF-8 decode; fall back to base64.
 	var text := buffer.get_string_from_utf8()
 	if text.is_empty() and buffer.size() > 0:
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"path": path,
 			"content_base64": Marshalls.raw_to_base64(buffer),
 			"encoding": "base64",
 			"truncated": truncated,
 			"total_bytes": total_bytes,
 			"bytes_returned": buffer.size(),
-		}
+		})
 	var scrubbed := Scrubber.scrub(text, "save.read")
 	var wrapped := Untrusted.wrap("user-file", path, scrubbed["text"])
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": path,
 		"content": wrapped,
 		"truncated": truncated,
 		"total_bytes": total_bytes,
 		"bytes_returned": buffer.size(),
-	}
+	})
 
 
 static func _cmd_save_delete(parameters: Dictionary) -> Dictionary:
@@ -104,7 +102,7 @@ static func _cmd_save_delete(parameters: Dictionary) -> Dictionary:
 	if err != OK:
 		return MCPToolkitError.fail("SAVE_DELETE_FAILED",
 			"DirAccess.remove_absolute returned %d (path=%s)" % [err, path])
-	return {"success": true, "path": path}
+	return MCPToolkitSuccess.ok({"path": path})
 
 
 static func _cmd_save_list(parameters: Dictionary) -> Dictionary:
@@ -126,11 +124,10 @@ static func _cmd_save_list(parameters: Dictionary) -> Dictionary:
 			"DirAccess.open failed (path=%s)" % path)
 	var files := Array(d.get_files())
 	var dirs := Array(d.get_directories())
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": path,
 		"files": files,
 		"directories": dirs,
 		"file_count": files.size(),
 		"directory_count": dirs.size(),
-	}
+	})

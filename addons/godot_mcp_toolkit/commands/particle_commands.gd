@@ -589,7 +589,6 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 
 	# --- Result ---
 	var result := {
-		"success": true,
 		"node_path": str(root.get_path_to(node)),
 		"type": "GPUParticles3D" if is_3d else "GPUParticles2D",
 		"properties_set": properties_set,
@@ -599,7 +598,7 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 		result["preset_applied"] = str(preset_name)
 	if not overrides.is_empty():
 		result["overrides_applied"] = overrides
-	return result
+	return MCPToolkitSuccess.ok(result)
 
 
 static func _apply_sub_resource(

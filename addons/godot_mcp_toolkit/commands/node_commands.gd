@@ -141,9 +141,9 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 			return MCPToolkitError.fail(
 				result.get("code", "NOT_FOUND"),
 				str(result.get("error", "")))
-		return {"value": result["value"]}
+		return MCPToolkitSuccess.ok({"value": result["value"]})
 
-	return {"value": Coerce.serialize_value(node.get(property_name))}
+	return MCPToolkitSuccess.ok({"value": Coerce.serialize_value(node.get(property_name))})
 
 
 static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dictionary:
@@ -201,7 +201,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 				action.do_method(node.add_to_group.bind(g, true))
 				action.undo_method(node.remove_from_group.bind(g))
 		action.commit_recorded()
-		return {"success": true, "groups": new_groups}
+		return MCPToolkitSuccess.ok({"groups": new_groups})
 
 	# Compound / colon-chained paths (e.g. "libraries/test",
 	# "material:shader_parameter/value", "theme_override_colors/font_color").
@@ -244,12 +244,12 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 					action.undo_reference(ui["old_resource"])
 			action.commit_recorded()
 
-		var response := {"success": true}
+		var response := {}
 		if result.has("made_unique"):
 			response["made_unique"] = result["made_unique"]
 		if result.has("warning"):
 			response["warning"] = result["warning"]
-		return response
+		return MCPToolkitSuccess.ok(response)
 
 	var coerce_result := Helpers.coerce_for_property(node, property_name, raw_value)
 	if not coerce_result.get("ok", false):
@@ -277,7 +277,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 			return MCPToolkitError.fail("INVALID_VALUE",
 				"property '%s' expects a Resource, not a bare string path. " % property_name +
 				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw_value))
-	return {"success": true}
+	return MCPToolkitSuccess.ok()
 
 
 ## FIX-7: Batch set multiple properties in one UndoRedo action.
@@ -380,14 +380,14 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 	for r in results:
 		if r.has("warning"):
 			non_persisting.append(str(r.get("property", "")))
-	var response := {"success": true, "results": results}
+	var response := {"results": results}
 	if non_persisting.size() > 0:
 		response["warning"] = (
 			"These compound paths were set on shared external sub-resources "
 			+ "and may not persist after save/reload: %s. " % ", ".join(non_persisting)
 			+ "Retry those entries with make_unique: true to auto-duplicate "
 			+ "them as inline copies that persist.")
-	return response
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _resolve_common_property_names(node: Object) -> Array[String]:
@@ -475,13 +475,13 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 					"hint": int(property.get("hint", 0)),
 					"hint_string": str(property.get("hint_string", "")),
 				})
-	return {
+	return MCPToolkitSuccess.ok({
 		"path": node_path,
 		"class": node.get_class(),
 		"mask": mask,
 		"properties": properties,
 		"count": properties.size(),
-	}
+	})
 
 
 static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
@@ -528,7 +528,6 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var result = node.callv(method_name, coerced_args)
 
 	var response := {
-		"success": true,
 		"path": node_path,
 		"method": method_name,
 		"result": Coerce.serialize_value(result),
@@ -539,7 +538,7 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 			response["hint"] = "Return value was null. C# methods cannot execute in editor mode without the [Tool] attribute — Godot registers the method signature but does not instantiate the managed .NET object. Properties and signals work normally. Use game.start + execute_code to call C# methods at runtime, or set state via node.set_property (most C# logic runs in _Ready() at startup)."
 		else:
 			response["hint"] = "Return value was null. Editor-side callv() on non-@tool scripts may return null if the method relies on uninitialized state (_Ready() has not run). Use game.start + runtime tools (runtime_get_node_state, execute_code) to drive and observe runtime state."
-	return response
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
@@ -567,7 +566,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 		if old_script is Resource:
 			clear_action.undo_reference(old_script)
 		clear_action.commit_recorded()
-		return {"success": true, "path": node_path, "script": null, "properties": []}
+		return MCPToolkitSuccess.ok({"path": node_path, "script": null, "properties": []})
 
 	var guard := FileGuard.resolve_safe(script_path)
 	if guard["error"] != null:
@@ -606,7 +605,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 			"hint_string": str(property.get("hint_string", "")),
 		})
 
-	return {"success": true, "path": node_path, "script": script_path, "properties": exports}
+	return MCPToolkitSuccess.ok({"path": node_path, "script": script_path, "properties": exports})
 
 
 static func _cmd_node_manage(parameters: Dictionary) -> Dictionary:
@@ -659,8 +658,8 @@ static func _manage_rename(
 
 	var parent := node.get_parent()
 	var new_path := str(root.get_path_to(node))
-	return {"success": true, "action": "rename", "old_name": old_name,
-		"new_name": String(node.name), "new_path": new_path}
+	return MCPToolkitSuccess.ok({"action": "rename", "old_name": old_name,
+		"new_name": String(node.name), "new_path": new_path})
 
 
 static func _manage_reparent(
@@ -697,7 +696,7 @@ static func _manage_reparent(
 		.commit_recorded()
 
 	var new_path := str(root.get_path_to(node))
-	return {"success": true, "action": "reparent", "new_path": new_path}
+	return MCPToolkitSuccess.ok({"action": "reparent", "new_path": new_path})
 
 
 static func _manage_reorder(
@@ -724,8 +723,8 @@ static func _manage_reorder(
 		.undo_method(parent.move_child.bind(node, old_index)) \
 		.commit_recorded()
 
-	return {"success": true, "action": "reorder", "path": node_path,
-		"old_index": old_index, "new_index": node.get_index()}
+	return MCPToolkitSuccess.ok({"action": "reorder", "path": node_path,
+		"old_index": old_index, "new_index": node.get_index()})
 
 
 static func _manage_duplicate(
@@ -774,8 +773,8 @@ static func _manage_duplicate(
 			dup.set(prop_name, Coerce.coerce_value_hint(props_raw[key], existing))
 
 	var dup_path := str(root.get_path_to(dup))
-	return {"success": true, "action": "duplicate", "path": dup_path,
-		"class": dup.get_class()}
+	return MCPToolkitSuccess.ok({"action": "duplicate", "path": dup_path,
+		"class": dup.get_class()})
 
 
 static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
@@ -815,7 +814,7 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 				.do_method(node.add_to_group.bind(group, persistent)) \
 				.undo_method(node.remove_from_group.bind(group)) \
 				.commit_recorded()
-			return {"success": true, "action": "add", "node": node_path, "group": group}
+			return MCPToolkitSuccess.ok({"action": "add", "node": node_path, "group": group})
 
 		"remove":
 			var group := str(parameters.get("group", ""))
@@ -829,7 +828,7 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 				.do_method(node.remove_from_group.bind(group)) \
 				.undo_method(node.add_to_group.bind(group, true)) \
 				.commit_recorded()
-			return {"success": true, "action": "remove", "node": node_path, "group": group}
+			return MCPToolkitSuccess.ok({"action": "remove", "node": node_path, "group": group})
 
 		"list":
 			var groups: Array[String] = []
@@ -837,8 +836,8 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 				var gs := str(g)
 				if not gs.begins_with("_"):
 					groups.append(gs)
-			return {"success": true, "action": "list", "node": node_path,
-				"groups": groups, "count": groups.size()}
+			return MCPToolkitSuccess.ok({"action": "list", "node": node_path,
+				"groups": groups, "count": groups.size()})
 
 		_:
 			return MCPToolkitError.fail("INVALID_PARAMS",
@@ -879,7 +878,7 @@ static func _batch_node_groups(root: Node, batch_action: String, entries: Array)
 
 	undo_action.commit_recorded()
 
-	return {"success": true, "action": batch_action, "results": results, "count": results.size()}
+	return MCPToolkitSuccess.ok({"action": batch_action, "results": results, "count": results.size()})
 
 
 const _LAYOUT_PRESETS := {
@@ -983,7 +982,6 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 		.commit_recorded()
 
 	var response := {
-		"success": true,
 		"path": node_path,
 		"preset": preset_name,
 		"final_rect": {
@@ -1000,7 +998,7 @@ static func _cmd_control_set_layout(parameters: Dictionary) -> Dictionary:
 			"The container will override layout on the next layout pass. " +
 			"Consider using size_flags or moving the node outside the container.")
 
-	return response
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
@@ -1081,9 +1079,8 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 
 	coll_action.commit_recorded()
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": first_path,
 		"polygon_count": polygons.size(),
 		"total_points": total_points,
-	}
+	})

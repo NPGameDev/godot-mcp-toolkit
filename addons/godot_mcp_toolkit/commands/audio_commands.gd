@@ -51,8 +51,8 @@ static func _action_add_bus(parameters: Dictionary) -> Dictionary:
 
 	# Check if bus already exists.
 	if _find_bus_index(bus_name) >= 0:
-		return {"success": true, "status": "returned", "action": "add_bus",
-			"bus_name": bus_name, "bus_count": AudioServer.bus_count}
+		return MCPToolkitSuccess.ok({"status": "returned", "action": "add_bus",
+			"bus_name": bus_name, "bus_count": AudioServer.bus_count})
 
 	AudioServer.add_bus()
 	var new_idx := AudioServer.bus_count - 1
@@ -68,8 +68,8 @@ static func _action_add_bus(parameters: Dictionary) -> Dictionary:
 		AudioServer.set_bus_send(new_idx, send_to)
 
 	_save_bus_layout()
-	return {"success": true, "status": "created", "action": "add_bus",
-		"bus_name": bus_name, "bus_count": AudioServer.bus_count}
+	return MCPToolkitSuccess.ok({"status": "created", "action": "add_bus",
+		"bus_name": bus_name, "bus_count": AudioServer.bus_count})
 
 
 static func _action_remove_bus(parameters: Dictionary) -> Dictionary:
@@ -86,8 +86,8 @@ static func _action_remove_bus(parameters: Dictionary) -> Dictionary:
 	var removed_name := AudioServer.get_bus_name(idx)
 	AudioServer.remove_bus(idx)
 	_save_bus_layout()
-	return {"success": true, "action": "remove_bus",
-		"bus_name": removed_name, "bus_count": AudioServer.bus_count}
+	return MCPToolkitSuccess.ok({"action": "remove_bus",
+		"bus_name": removed_name, "bus_count": AudioServer.bus_count})
 
 
 static func _action_set_bus(parameters: Dictionary) -> Dictionary:
@@ -113,8 +113,8 @@ static func _action_set_bus(parameters: Dictionary) -> Dictionary:
 		AudioServer.set_bus_send(idx, send_to)
 
 	_save_bus_layout()
-	return {"success": true, "action": "set_bus",
-		"bus_name": AudioServer.get_bus_name(idx), "bus_count": AudioServer.bus_count}
+	return MCPToolkitSuccess.ok({"action": "set_bus",
+		"bus_name": AudioServer.get_bus_name(idx), "bus_count": AudioServer.bus_count})
 
 
 static func _action_add_effect(parameters: Dictionary) -> Dictionary:
@@ -155,11 +155,11 @@ static func _action_add_effect(parameters: Dictionary) -> Dictionary:
 		AudioServer.set_bus_effect_enabled(idx, at_index, bool(enabled))
 
 	_save_bus_layout()
-	return {"success": true, "action": "add_effect",
+	return MCPToolkitSuccess.ok({"action": "add_effect",
 		"bus_name": AudioServer.get_bus_name(idx),
 		"effect_type": effect.get_class(),
 		"effect_index": at_index,
-		"bus_count": AudioServer.bus_count}
+		"bus_count": AudioServer.bus_count})
 
 
 static func _action_remove_effect(parameters: Dictionary) -> Dictionary:
@@ -185,10 +185,10 @@ static func _action_remove_effect(parameters: Dictionary) -> Dictionary:
 
 	AudioServer.remove_bus_effect(idx, ei)
 	_save_bus_layout()
-	return {"success": true, "action": "remove_effect",
+	return MCPToolkitSuccess.ok({"action": "remove_effect",
 		"bus_name": AudioServer.get_bus_name(idx),
 		"effect_index": ei,
-		"bus_count": AudioServer.bus_count}
+		"bus_count": AudioServer.bus_count})
 
 
 static func _action_list() -> Dictionary:
@@ -211,7 +211,7 @@ static func _action_list() -> Dictionary:
 			"mute": AudioServer.is_bus_mute(i),
 			"effects": effects,
 		})
-	return {"success": true, "bus_count": AudioServer.bus_count, "buses": buses}
+	return MCPToolkitSuccess.ok({"bus_count": AudioServer.bus_count, "buses": buses})
 
 
 # -- Helpers ------------------------------------------------------------------

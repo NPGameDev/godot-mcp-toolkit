@@ -150,8 +150,7 @@ static func _to_vec2(val) -> Vector2:
 
 
 static func _ok(curve: Curve2D) -> Dictionary:
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"point_count": curve.point_count,
 		"baked_length": curve.get_baked_length(),
-	}
+	})

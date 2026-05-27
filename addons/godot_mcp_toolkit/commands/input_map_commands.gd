@@ -199,20 +199,18 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 			return MCPToolkitError.fail("INVALID_PARAMS",
 				"deadzone must be in [0.0, 1.0] (got %f)" % deadzone)
 		if InputMap.has_action(action_name):
-			return {
-				"success": true,
+			return MCPToolkitSuccess.ok({
 				"status": "returned",
 				"name": action_name,
 				"deadzone": InputMap.action_get_deadzone(action_name),
-			}
+			})
 		InputMap.add_action(action_name, deadzone)
 		_persist_input_action(action_name, deadzone)
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"status": "created",
 			"name": action_name,
 			"deadzone": deadzone,
-		}
+		})
 	else:
 		if not InputMap.has_action(action_name):
 			return MCPToolkitError.fail("NOT_FOUND", "no action '%s'" % action_name)
@@ -227,7 +225,7 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 				push_warning(
 					"[MCPServer] ProjectSettings.save after input_map.action remove failed (err %d, action=%s)" % [
 						error, action_name])
-		return {"success": true, "name": action_name}
+		return MCPToolkitSuccess.ok({"name": action_name})
 
 
 static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
@@ -248,20 +246,18 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 	if action == "bind":
 		for existing in InputMap.action_get_events(action_name):
 			if _input_events_equivalent(existing, event):
-				return {
-					"success": true,
+				return MCPToolkitSuccess.ok({
 					"status": "returned",
 					"name": action_name,
 					"event": _serialise_input_event(existing),
-				}
+				})
 		InputMap.action_add_event(action_name, event)
 		_persist_input_action(action_name, InputMap.action_get_deadzone(action_name))
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"status": "created",
 			"name": action_name,
 			"event": _serialise_input_event(event),
-		}
+		})
 	else:
 		var existing_events := InputMap.action_get_events(action_name)
 		var matched: InputEvent = null
@@ -275,8 +271,7 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 					action_name, existing_events.size()])
 		InputMap.action_erase_event(action_name, matched)
 		_persist_input_action(action_name, InputMap.action_get_deadzone(action_name))
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"name": action_name,
 			"event": _serialise_input_event(matched),
-		}
+		})

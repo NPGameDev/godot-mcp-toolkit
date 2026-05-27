@@ -349,6 +349,6 @@ static func _save_resource(resource: Resource, file_path: String,
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
 	await Helpers.ensure_file_indexed(file_path)
-	var result := {"success": true, "file_path": file_path}
+	var result := {"file_path": file_path}
 	result.merge(extra)
-	return result
+	return MCPToolkitSuccess.ok(result)

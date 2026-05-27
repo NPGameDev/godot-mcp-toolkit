@@ -78,13 +78,12 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		if result_bytes > cap_kb * 1024:
 			return MCPToolkitError.fail("FILE_TOO_LARGE",
 				"slice exceeds %d KB response cap; narrow the line range" % cap_kb)
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"content": Untrusted.wrap("script", file_path, result_text),
 			"start_line": clamped_start,
 			"end_line": clamped_end,
 			"total_lines": total_lines,
-		}
+		})
 
 	# Full read with size cap.
 	var content_bytes := content.to_utf8_buffer().size()
@@ -95,7 +94,7 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		size_err["total_bytes"] = content_bytes
 		size_err["hint"] = "re-call script_read with start_line / end_line"
 		return size_err
-	return {"success": true, "content": Untrusted.wrap("script", file_path, content)}
+	return MCPToolkitSuccess.ok({"content": Untrusted.wrap("script", file_path, content)})
 
 
 
@@ -146,8 +145,8 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 	var index_result := await Helpers.ensure_file_indexed(file_path)
 
 	var bytes_written := content.to_utf8_buffer().size()
-	var result := {"success": true, "bytes": bytes_written, "undoable": undoable,
-		"indexed": index_result["indexed"]}
+	var result := MCPToolkitSuccess.ok({"bytes": bytes_written, "undoable": undoable,
+		"indexed": index_result["indexed"]})
 	if dirs_created:
 		result["dirs_created"] = true
 
@@ -205,12 +204,11 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 			"FileAccess error %d reading %s" % [read_error, file_path])
 
 	var validation := _validate_gdscript(content)
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"file_path": file_path,
 		"valid": validation["valid"],
 		"diagnostics": validation["diagnostics"],
-	}
+	})
 
 
 ## Validate GDScript source via GDScript.new().reload() — safe in-process parse.

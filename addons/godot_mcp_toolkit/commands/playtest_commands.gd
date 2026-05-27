@@ -72,8 +72,8 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 		if EditorInterface.is_playing_scene():
 			if if_running == "return":
 				var runtime_port := RegistryClient.get_runtime_port()
-				return {"success": true, "status": "already_running",
-					"runtime_port": runtime_port if runtime_port > 0 else null}
+				return MCPToolkitSuccess.ok({"status": "already_running",
+					"runtime_port": runtime_port if runtime_port > 0 else null})
 			return MCPToolkitError.fail("ALREADY_PLAYING",
 				"a game is already running; call game.stop first, or use runtime_poll:true to re-probe the runtime connection")
 
@@ -133,12 +133,11 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 		#   game_start(if_running:"return", runtime_poll:true)
 		bridge_discovery = true
 
-	var response := {
-		"success": true,
+	var response := MCPToolkitSuccess.ok({
 		"target": target,
 		"runtime_port": runtime_port if runtime_port > 0 else null,
 		"runtime_ready": runtime_ready,
-	}
+	})
 	if bridge_discovery:
 		response["runtime_discovery"] = "bridge"
 		# Hint text suppressed when wait_for_runtime=true — the MCP server
@@ -198,7 +197,7 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 static func _cmd_game_stop(_parameters: Dictionary) -> Dictionary:
 	var was_running := EditorInterface.is_playing_scene()
 	EditorInterface.stop_playing_scene()
-	return {"success": true, "was_running": was_running}
+	return MCPToolkitSuccess.ok({"was_running": was_running})
 
 
 ## Editor-side debugger.get_log — returns cached log entries from the most
@@ -224,26 +223,24 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 			EditorInterface.stop_playing_scene()
 
 	if _game_session_file_offset < 0:
-		var response := {
-			"success": true,
+		var response := MCPToolkitSuccess.ok({
 			"lines": [],
 			"count": 0,
 			"source": "cache",
 			"note": "No game session recorded yet (game_start was never called this editor session)",
-		}
+		})
 		_merge_debug_bridge_data(response)
 		return response
 
 	# Read the log file from the offset where the game session started.
 	var log_path: String = _resolve_log_path()
 	if not FileAccess.file_exists(log_path):
-		var response := {
-			"success": true,
+		var response := MCPToolkitSuccess.ok({
 			"lines": [],
 			"count": 0,
 			"source": "cache",
 			"note": "Log file not found. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart.",
-		}
+		})
 		_merge_debug_bridge_data(response)
 		return response
 
@@ -255,13 +252,12 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	var file_len: int = file.get_length()
 	if file_len <= _game_session_file_offset:
 		file.close()
-		var response := {
-			"success": true,
+		var response := MCPToolkitSuccess.ok({
 			"lines": [],
 			"count": 0,
 			"source": "cache",
 			"note": "No new output since game_start (log file unchanged).",
-		}
+		})
 		_merge_debug_bridge_data(response)
 		return response
 
@@ -297,13 +293,12 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	if truncated:
 		filtered = filtered.slice(filtered.size() - limit)
 
-	var response := {
-		"success": true,
+	var response := MCPToolkitSuccess.ok({
 		"lines": filtered,
 		"count": filtered.size(),
 		"truncated": truncated,
 		"source": "cache",
-	}
+	})
 	# Pass unfiltered lines so error scan always has full context.
 	_merge_debug_bridge_data(response, stripped_lines)
 	if not regex_warning.is_empty():

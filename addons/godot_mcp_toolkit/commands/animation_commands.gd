@@ -139,8 +139,7 @@ static func _cmd_animation_keyframe(
 		var existing_index := animation.track_find_key(
 			track_index, time, Animation.FIND_MODE_EXACT)
 		if existing_index != -1:
-			return {
-				"success": true,
+			return MCPToolkitSuccess.ok({
 				"status": "returned",
 				"player_path": player_path,
 				"animation_name": animation_name,
@@ -150,7 +149,7 @@ static func _cmd_animation_keyframe(
 				"key_idx": existing_index,
 				"value": Coerce.serialize_value(
 					animation.track_get_key_value(track_index, existing_index)),
-			}
+			})
 		animation.track_insert_key(track_index, time, coerced)
 		MCPToolkitUndoRedoAction.begin("animation.keyframe add %s @ %s" % [track_path, time], player) \
 			.do_method(animation.track_insert_key.bind(track_index, time, coerced)) \
@@ -166,8 +165,7 @@ static func _cmd_animation_keyframe(
 			var _lib := player.get_animation_library(_lib_name)
 			if _lib != null and not _lib.resource_path.is_empty():
 				ResourceSaver.save(_lib)
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"status": "created",
 			"player_path": player_path,
 			"animation_name": animation_name,
@@ -176,7 +174,7 @@ static func _cmd_animation_keyframe(
 			"time": time,
 			"key_idx": new_index,
 			"value": Coerce.serialize_value(coerced),
-		}
+		})
 	else:
 		var resolved := _resolve_animation(player_path, animation_name)
 		if resolved.has("error"):
@@ -204,14 +202,13 @@ static func _cmd_animation_keyframe(
 			.undo_method(server.undo_helpers._animation_insert_key_silent.bind(animation, track_index, time, captured_value)) \
 			.undo_reference(animation) \
 			.commit_recorded()
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"player_path": player_path,
 			"animation_name": animation_name,
 			"track_path": track_path,
 			"time": time,
 			"removed_value": serialised_value,
-		}
+		})
 
 
 static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
@@ -242,8 +239,7 @@ static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
 				animation.track_get_key_value(track_index, key_index)),
 			"transition": animation.track_get_key_transition(track_index, key_index),
 		})
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"player_path": player_path,
 		"animation_name": animation_name,
 		"track_path": track_path,
@@ -253,7 +249,7 @@ static func _cmd_animation_get_keys(parameters: Dictionary) -> Dictionary:
 		"keys": Untrusted.wrap(
 			"animation", "%s/%s" % [player_path, animation_name],
 			JSON.stringify(keys)),
-	}
+	})
 
 
 # -- AnimationTree editing ----------------------------------------------------
@@ -385,7 +381,7 @@ static func _at_set_root(
 		action.undo_reference(old_root)
 	action.commit_recorded()
 
-	return {"success": true, "root_type": root_type}
+	return MCPToolkitSuccess.ok({"root_type": root_type})
 
 
 static func _at_add_node(
@@ -406,11 +402,10 @@ static func _at_add_node(
 	if sm.has_node(StringName(node_name)):
 		var existing = sm.get_node(StringName(node_name))
 		var summary := _sm_summary(sm)
-		summary["success"] = true
 		summary["status"] = "returned"
 		summary["node_name"] = node_name
 		summary["node_type"] = existing.get_class()
-		return summary
+		return MCPToolkitSuccess.ok(summary)
 
 	# Instantiate the AnimationNode by class name.
 	if not ClassDB.class_exists(node_type):
@@ -442,11 +437,10 @@ static func _at_add_node(
 		.commit_recorded()
 
 	var summary := _sm_summary(sm)
-	summary["success"] = true
 	summary["status"] = "created"
 	summary["node_name"] = node_name
 	summary["node_type"] = node_type
-	return summary
+	return MCPToolkitSuccess.ok(summary)
 
 
 static func _at_remove_node(
@@ -475,9 +469,8 @@ static func _at_remove_node(
 		.commit_recorded()
 
 	var summary := _sm_summary(sm)
-	summary["success"] = true
 	summary["node_name"] = node_name
-	return summary
+	return MCPToolkitSuccess.ok(summary)
 
 
 static func _at_add_transition(
@@ -502,11 +495,10 @@ static func _at_add_transition(
 	for i in range(sm.get_transition_count()):
 		if str(sm.get_transition_from(i)) == from and str(sm.get_transition_to(i)) == to:
 			var summary := _sm_summary(sm)
-			summary["success"] = true
 			summary["status"] = "returned"
 			summary["from"] = from
 			summary["to"] = to
-			return summary
+			return MCPToolkitSuccess.ok(summary)
 
 	var transition := AnimationNodeStateMachineTransition.new()
 
@@ -530,11 +522,10 @@ static func _at_add_transition(
 		.commit_recorded()
 
 	var summary := _sm_summary(sm)
-	summary["success"] = true
 	summary["status"] = "created"
 	summary["from"] = from
 	summary["to"] = to
-	return summary
+	return MCPToolkitSuccess.ok(summary)
 
 
 static func _at_remove_transition(
@@ -569,10 +560,9 @@ static func _at_remove_transition(
 		.commit_recorded()
 
 	var summary := _sm_summary(sm)
-	summary["success"] = true
 	summary["from"] = from
 	summary["to"] = to
-	return summary
+	return MCPToolkitSuccess.ok(summary)
 
 
 static func _at_set_property(
@@ -609,20 +599,19 @@ static func _at_set_property(
 		.commit_recorded()
 
 	var summary := _sm_summary(sm)
-	summary["success"] = true
 	summary["target_node"] = target_node
 	summary["property"] = property
-	return summary
+	return MCPToolkitSuccess.ok(summary)
 
 
 static func _at_list(tree: AnimationTree) -> Dictionary:
 	var tree_root = tree.tree_root
 	if tree_root == null:
-		return {"success": true, "root_type": "none", "nodes": [], "transitions": []}
+		return MCPToolkitSuccess.ok({"root_type": "none", "nodes": [], "transitions": []})
 
 	var root_type := tree_root.get_class()
 	if not (tree_root is AnimationNodeStateMachine):
-		return {"success": true, "root_type": root_type, "nodes": [], "transitions": []}
+		return MCPToolkitSuccess.ok({"root_type": root_type, "nodes": [], "transitions": []})
 
 	var sm: AnimationNodeStateMachine = tree_root as AnimationNodeStateMachine
 	var nodes: Array = []
@@ -650,8 +639,7 @@ static func _at_list(tree: AnimationTree) -> Dictionary:
 			"advance_mode": _advance_mode_to_string(tr.advance_mode),
 		})
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"root_type": root_type,
 		"nodes": Untrusted.wrap(
 			"animationtree", "nodes",
@@ -659,4 +647,4 @@ static func _at_list(tree: AnimationTree) -> Dictionary:
 		"transitions": Untrusted.wrap(
 			"animationtree", "transitions",
 			JSON.stringify(transitions)),
-	}
+	})

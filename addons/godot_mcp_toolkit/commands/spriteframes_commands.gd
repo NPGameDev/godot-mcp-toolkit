@@ -43,7 +43,7 @@ static func _cmd_create(parameters: Dictionary) -> Dictionary:
 
 	# Idempotency: if file already exists, return early.
 	if FileAccess.file_exists(file_path):
-		return {"success": true, "status": "returned", "path": file_path}
+		return MCPToolkitSuccess.ok({"status": "returned", "path": file_path})
 
 	var sf := SpriteFrames.new()
 	var anim_info := []
@@ -91,7 +91,7 @@ static func _cmd_create(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save() returned error %d for %s" % [save_err, file_path])
 
-	return {"success": true, "path": file_path, "status": "created", "animations": anim_info}
+	return MCPToolkitSuccess.ok({"path": file_path, "status": "created", "animations": anim_info})
 
 
 static func _cmd_edit(parameters: Dictionary) -> Dictionary:
@@ -126,7 +126,7 @@ static func _cmd_edit(parameters: Dictionary) -> Dictionary:
 			if anim_name.is_empty():
 				return MCPToolkitError.fail("INVALID_PARAMS", "animation_name is required")
 			if sf.has_animation(anim_name):
-				return {"success": true, "action": action, "animation_name": anim_name, "status": "returned"}
+				return MCPToolkitSuccess.ok({"action": action, "animation_name": anim_name, "status": "returned"})
 			sf.add_animation(anim_name)
 			var fps_raw = parameters.get("fps", null)
 			if fps_raw != null:
@@ -219,7 +219,7 @@ static func _cmd_edit(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save() returned error %d for %s" % [save_err, file_path])
 
-	return {"success": true, "action": action, "animation_name": anim_name}
+	return MCPToolkitSuccess.ok({"action": action, "animation_name": anim_name})
 
 
 static func _cmd_from_spritesheet(parameters: Dictionary) -> Dictionary:
@@ -253,7 +253,7 @@ static func _cmd_from_spritesheet(parameters: Dictionary) -> Dictionary:
 
 	# Idempotency.
 	if FileAccess.file_exists(file_path):
-		return {"success": true, "status": "returned", "path": file_path}
+		return MCPToolkitSuccess.ok({"status": "returned", "path": file_path})
 
 	if not ResourceLoader.exists(texture_path):
 		return MCPToolkitError.fail("NOT_FOUND", "Spritesheet texture not found: %s" % texture_path)
@@ -323,7 +323,7 @@ static func _cmd_from_spritesheet(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save() returned error %d for %s" % [save_err, file_path])
 
-	return {"success": true, "path": file_path, "status": "created", "animations": anim_info}
+	return MCPToolkitSuccess.ok({"path": file_path, "status": "created", "animations": anim_info})
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -368,4 +368,4 @@ static func _build_list(sf: SpriteFrames) -> Dictionary:
 			"fps": sf.get_animation_speed(anim_name),
 			"loop": sf.get_animation_loop(anim_name),
 		})
-	return {"success": true, "animations": anims}
+	return MCPToolkitSuccess.ok({"animations": anims})

@@ -60,14 +60,13 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 			return result
 		var entries = result.get("entries", [])
 		var response := {
-			"success": true,
 			"errors": Untrusted.wrap(
 				"editor_errors", "godot", JSON.stringify(entries)),
 			"count": result.get("count", 0),
 		}
 		if not regex_warning.is_empty():
 			response["warning"] = regex_warning
-		return response
+		return MCPToolkitSuccess.ok(response)
 
 	var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, ["error"], -1, text_filter, text_regex)
 	var entries: Array = buf_result["entries"]
@@ -75,7 +74,6 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
 	var response := {
-		"success": true,
 		"errors": Untrusted.wrap(
 			"editor_errors", "buffer", JSON.stringify(entries)),
 		"count": buf_result["count"],
@@ -84,7 +82,7 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 		response["hint"] = "Use since_id parameter with the highest id from this response to get only new errors on next call."
 	if not regex_warning.is_empty():
 		response["warning"] = regex_warning
-	return response
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
@@ -111,7 +109,7 @@ static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 		if not FileAccess.file_exists(save_path):
 			return MCPToolkitError.fail("SAVE_FAILED",
 				"save_scene_as did not produce %s" % save_path)
-	return {"success": true, "path": root.scene_file_path}
+	return MCPToolkitSuccess.ok({"path": root.scene_file_path})
 
 
 static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
@@ -175,14 +173,14 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 		if png_bytes.is_empty():
 			return MCPToolkitError.fail("EMPTY_CONTENT",
 				"node '%s' produced no visible image. Node may lack visual content (no texture, no mesh). Use editor_screenshot without node_path for a full viewport capture instead." % node_path)
-		return {
+		return MCPToolkitSuccess.ok({
 			"image_base64": Marshalls.raw_to_base64(png_bytes),
 			"mime_type": "image/png",
 			"width": image.get_width(),
 			"height": image.get_height(),
 			"bytes": png_bytes.size(),
 			"path": node_path,
-		}
+		})
 
 	# Standard viewport screenshot.
 	var save_path := str(parameters.get("save_path", ""))
@@ -232,7 +230,7 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 		response["warning"] = "Screenshot captured only %dx%d — editor may be minimized or running headless. Use script_check and editor_get_console for non-visual verification." % [image.get_width(), image.get_height()]
 	if not persisted_path.is_empty():
 		response["path"] = persisted_path
-	return response
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_editor_refresh(parameters: Dictionary) -> Dictionary:
@@ -264,8 +262,8 @@ static func _cmd_editor_refresh(parameters: Dictionary) -> Dictionary:
 					if target_set.has(open_script.resource_path):
 						open_script.reload(true)
 						reloaded += 1
-		return {"success": true, "mode": "targeted", "file_count": paths.size(),
-			"reloaded": reloaded, "errors_cleared": errors_cleared}
+		return MCPToolkitSuccess.ok({"mode": "targeted", "file_count": paths.size(),
+			"reloaded": reloaded, "errors_cleared": errors_cleared})
 
 	# Full mode: scan() + reload all open scripts.
 	if filesystem != null:
@@ -282,8 +280,8 @@ static func _cmd_editor_refresh(parameters: Dictionary) -> Dictionary:
 			if open_script is Script:
 				open_script.reload(true)
 				reloaded += 1
-	return {"success": true, "mode": "full", "reloaded": reloaded,
-		"scan_waited_ms": scan_waited_ms, "errors_cleared": errors_cleared}
+	return MCPToolkitSuccess.ok({"mode": "full", "reloaded": reloaded,
+		"scan_waited_ms": scan_waited_ms, "errors_cleared": errors_cleared})
 
 
 
@@ -336,7 +334,7 @@ static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 			"timeout_ms must be in [0, 30000] (got %d)" % timeout_ms)
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if not filesystem.is_scanning():
-		return {"success": true, "was_scanning": false, "waited_ms": 0}
+		return MCPToolkitSuccess.ok({"was_scanning": false, "waited_ms": 0})
 	var start := Time.get_ticks_msec()
 	while filesystem.is_scanning() and Time.get_ticks_msec() - start < timeout_ms:
 		await Engine.get_main_loop().create_timer(0.1).timeout
@@ -344,7 +342,7 @@ static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 	if filesystem.is_scanning():
 		return MCPToolkitError.fail("TIMEOUT",
 			"EditorFileSystem still scanning after %dms; consider increasing timeout_ms or checking editor.get_console for import errors" % elapsed)
-	return {"success": true, "was_scanning": true, "waited_ms": elapsed}
+	return MCPToolkitSuccess.ok({"was_scanning": true, "waited_ms": elapsed})
 
 
 static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
@@ -404,7 +402,7 @@ static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
 		if "call to 'load'" in err_text.to_lower():
 			err_text += _make_load_hint(code)
 		return MCPToolkitError.fail("EXECUTE_FAILED", err_text)
-	return {"success": true, "result": Coerce.serialize_value(result)}
+	return MCPToolkitSuccess.ok({"result": Coerce.serialize_value(result)})
 
 
 ## Build a context-aware hint when Expression.execute() fails on load().
@@ -468,7 +466,6 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, tex
 		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
 	var response := {
-		"success": true,
 		"entries": Untrusted.wrap(
 			"console", "buffer", JSON.stringify(entries)),
 		"count": buf_result["count"],
@@ -488,7 +485,7 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, tex
 		var al_hint := _scan_autoload_hints(entries)
 		if not al_hint.is_empty():
 			response["autoload_hint"] = al_hint
-	return response
+	return MCPToolkitSuccess.ok(response)
 
 
 ## Scan console entries for "Identifier X not declared" errors that match
@@ -678,8 +675,7 @@ static func _read_console_log(
 		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"entries": Untrusted.wrap(
 			"console", str(chosen_file), JSON.stringify(entries)),
 		"count": entries.size(),
@@ -688,4 +684,4 @@ static func _read_console_log(
 		"log_file": chosen_file,
 		"log_mtime": chosen_mtime,
 		"warnings": warnings,
-	}
+	})

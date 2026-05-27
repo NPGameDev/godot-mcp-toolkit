@@ -111,8 +111,8 @@ static func _cmd_scene_get_tree(parameters: Dictionary) -> Dictionary:
 		if (typeof(depth_raw) == TYPE_INT or typeof(depth_raw) == TYPE_FLOAT) else 2
 	var include_properties: bool = bool(parameters.get("include_properties", false))
 	var tree := _walk_tree(root, root, depth, include_properties)
-	return {"tree": Untrusted.wrap(
-		"scene_tree", str(root.scene_file_path), JSON.stringify(tree))}
+	return MCPToolkitSuccess.ok({"tree": Untrusted.wrap(
+		"scene_tree", str(root.scene_file_path), JSON.stringify(tree))})
 
 
 static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
@@ -158,8 +158,8 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	if FileAccess.file_exists(file_path):
 		match if_exists:
 			"return":
-				return {"success": true, "status": "returned", "path": file_path,
-					"root_name": file_path.get_file().get_basename(), "root_path": "."}
+				return MCPToolkitSuccess.ok({"status": "returned", "path": file_path,
+					"root_name": file_path.get_file().get_basename(), "root_path": "."})
 			"fail":
 				return MCPToolkitError.fail("ALREADY_EXISTS",
 					"file exists at %s; set if_exists:'replace' to overwrite" % file_path)
@@ -204,10 +204,10 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 
 	var scene_index := await Helpers.ensure_file_indexed(file_path)
-	var response := {"success": true, "path": file_path, "root_type": root_type,
+	var response := MCPToolkitSuccess.ok({"path": file_path, "root_type": root_type,
 		"root_name": file_path.get_file().get_basename(), "root_path": ".",
 		"indexed": scene_index["indexed"],
-		"hint": "Scene saved. Open it for editing with scene_open."}
+		"hint": "Scene saved. Open it for editing with scene_open."})
 	if dirs_created:
 		response["dirs_created"] = true
 	if was_replace:
@@ -236,7 +236,7 @@ static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 	if not FileAccess.file_exists(file_path):
 		return MCPToolkitError.fail("NOT_FOUND", "scene not found: %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 	await Helpers.open_scene_deferred(file_path)
-	return {"success": true, "path": file_path}
+	return MCPToolkitSuccess.ok({"path": file_path})
 
 
 static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
@@ -248,7 +248,7 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	var result := await Helpers.close_scene_tab_safe(file_path)
 	if result.get("closed", false):
-		var response := {"success": true, "path": file_path}
+		var response := MCPToolkitSuccess.ok({"path": file_path})
 		if result.get("switched", false):
 			response["hint"] = _TAB_CLOSE_NOISE_HINT
 		return response
@@ -356,7 +356,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		elif existing_script != null:
 			class_match = existing_script.get_global_name() == class_name_param
 		if class_match:
-			return {"success": true, "status": "returned", "path": _path_in_scene(root, existing)}
+			return MCPToolkitSuccess.ok({"status": "returned", "path": _path_in_scene(root, existing)})
 		var actual := existing_script.get_global_name() if existing_script != null and existing_script.get_global_name() != "" else existing.get_class()
 		return MCPToolkitError.fail("CLASS_MISMATCH",
 			"node '%s' already exists under '%s' as %s, not %s; rename or remove it first" % [
@@ -435,7 +435,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	# unique_name: mark node for scene-unique access (%Name in scripts).
 	var unique_param = parameters.get("unique_name", null)
-	var response := {"success": true, "status": "created", "path": _path_in_scene(root, instance)}
+	var response := MCPToolkitSuccess.ok({"status": "created", "path": _path_in_scene(root, instance)})
 
 	# Report inline property results
 	if not prop_coerced.is_empty() or not prop_failed.is_empty():
@@ -482,7 +482,7 @@ static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
 		.undo_method(node.set_owner.bind(root)) \
 		.undo_reference(node) \
 		.commit_recorded()
-	return {"success": true, "path": node_path}
+	return MCPToolkitSuccess.ok({"path": node_path})
 
 
 static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dictionary:
@@ -536,12 +536,11 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		if as_name != "":
 			# Explicit name — idempotent return.
 			var existing_node := parent_node.get_node(NodePath(target_name))
-			return {
-				"success": true,
+			return MCPToolkitSuccess.ok({
 				"status": "returned",
 				"path": _path_in_scene(root, existing_node),
 				"class_name": existing_node.get_class(),
-			}
+			})
 		# FIX-K: Auto-rename on collision (Player, Player2, Player3...) —
 		# matches Godot editor's own drag-drop naming convention.
 		var suffix := 2
@@ -572,12 +571,11 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		.undo_method(parent_node.remove_child.bind(instance)) \
 		.commit_recorded()
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"status": "created",
 		"path": _path_in_scene(root, instance),
 		"class_name": instance.get_class(),
-	}
+	})
 
 
 static func _batch_instantiate(
@@ -636,8 +634,8 @@ static func _batch_instantiate(
 			"name": String(inst.name),
 		})
 
-	return {"success": true, "status": "created", "count": created.size(),
-		"instances": created}
+	return MCPToolkitSuccess.ok({"status": "created", "count": created.size(),
+		"instances": created})
 
 
 static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
@@ -671,9 +669,9 @@ static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
 
 	# Idempotency: check if target already exists.
 	if FileAccess.file_exists(file_path):
-		return {"success": true, "status": "returned", "file_path": file_path,
+		return MCPToolkitSuccess.ok({"status": "returned", "file_path": file_path,
 			"base_scene": base_scene, "root_name": root_name,
-			"message": "file already exists — no changes made"}
+			"message": "file already exists — no changes made"})
 
 	var dir_result := Helpers.ensure_parent_dir(file_path, "scene.create_inherited")
 	if dir_result.has("error"):
@@ -692,7 +690,7 @@ static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
 
 	await Helpers.ensure_file_indexed(file_path)
 
-	return {"success": true, "file_path": file_path, "base_scene": base_scene, "root_name": root_name}
+	return MCPToolkitSuccess.ok({"file_path": file_path, "base_scene": base_scene, "root_name": root_name})
 
 
 static func _cmd_scene_diff(server: Node, parameters: Dictionary) -> Dictionary:
@@ -708,7 +706,7 @@ static func _cmd_scene_diff(server: Node, parameters: Dictionary) -> Dictionary:
 	var before_string := JSON.stringify(before, "  ", true)
 	var after_string := JSON.stringify(after, "  ", true)
 	if before_string == after_string:
-		return {"changed": false, "diff": "", "added": 0, "removed": 0}
+		return MCPToolkitSuccess.ok({"changed": false, "diff": "", "added": 0, "removed": 0})
 	var before_lines := before_string.split("\n", false)
 	var after_lines := after_string.split("\n", false)
 	var before_set := {}
@@ -728,12 +726,12 @@ static func _cmd_scene_diff(server: Node, parameters: Dictionary) -> Dictionary:
 		if not before_set.has(line):
 			diff_parts.append("+ " + line)
 			added += 1
-	return {
+	return MCPToolkitSuccess.ok({
 		"changed": true,
 		"diff": "\n".join(diff_parts),
 		"added": added,
 		"removed": removed,
-	}
+	})
 
 
 static func _cmd_scene_query(parameters: Dictionary) -> Dictionary:
@@ -770,7 +768,7 @@ static func _cmd_scene_query(parameters: Dictionary) -> Dictionary:
 	_query_recursive(root, edited_scene, class_filter, group_filter, name_pattern,
 		property_filters, include_properties, max_depth, 0, limit, results)
 
-	return {"success": true, "count": results.size(), "nodes": results}
+	return MCPToolkitSuccess.ok({"count": results.size(), "nodes": results})
 
 
 static func _query_recursive(node: Node, scene_root: Node, class_filter, group_filter,

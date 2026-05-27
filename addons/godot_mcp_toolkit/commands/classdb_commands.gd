@@ -61,7 +61,7 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("UNKNOWN_CLASS",
 			"class not found in ClassDB or global class list: %s" % cls, MCPToolkitError.HINT_CLASS_NAME)
 
-	var result: Dictionary = {"success": true, "class_name": cls}
+	var result: Dictionary = {"class_name": cls}
 	var truncated := false
 
 	if is_native:
@@ -103,7 +103,7 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 		var hint := _build_truncation_hint(result, offset)
 		if hint != "":
 			result["hint"] = hint
-	return result
+	return MCPToolkitSuccess.ok(result)
 
 
 static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
@@ -194,23 +194,21 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 			if m["parent"] == "Object" or m["parent"] == "":
 				top_level.append(m)
 		top_level.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"count": top_level.size(),
 			"classes": top_level,
 			"_hint": "No filter provided; showing direct children of Object only. Use base_class or pattern to search.",
-		}
+		})
 
 	matches.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
 	var result: Dictionary = {
-		"success": true,
 		"count": matches.size(),
 		"total": total,
 		"classes": matches,
 	}
 	if matches.size() < total:
 		result["truncated"] = true
-	return result
+	return MCPToolkitSuccess.ok(result)
 
 
 # -- Inheritance chain -------------------------------------------------------

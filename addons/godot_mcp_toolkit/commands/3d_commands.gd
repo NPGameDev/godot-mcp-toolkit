@@ -168,7 +168,7 @@ static func _cmd_create_primitive(parameters: Dictionary) -> Dictionary:
 		mesh_instance.position = _vec3(parameters["position"])
 
 	_add_node_undoable(parent, mesh_instance, root)
-	return {"success": true, "status": "created", "path": _path_in_scene(root, mesh_instance)}
+	return MCPToolkitSuccess.ok({"status": "created", "path": _path_in_scene(root, mesh_instance)})
 
 
 static func _cmd_setup_environment(parameters: Dictionary) -> Dictionary:
@@ -239,7 +239,7 @@ static func _cmd_setup_environment(parameters: Dictionary) -> Dictionary:
 	world_env.environment = env
 
 	_add_node_undoable(parent, world_env, root)
-	return {"success": true, "status": "created", "path": _path_in_scene(root, world_env)}
+	return MCPToolkitSuccess.ok({"status": "created", "path": _path_in_scene(root, world_env)})
 
 
 static func _cmd_create_light(parameters: Dictionary) -> Dictionary:
@@ -284,7 +284,7 @@ static func _cmd_create_light(parameters: Dictionary) -> Dictionary:
 			light.rotation_degrees = _vec3(rot)
 
 	_add_node_undoable(parent, light, root)
-	return {"success": true, "status": "created", "path": _path_in_scene(root, light)}
+	return MCPToolkitSuccess.ok({"status": "created", "path": _path_in_scene(root, light)})
 
 
 static func _cmd_create_camera(parameters: Dictionary) -> Dictionary:
@@ -323,4 +323,4 @@ static func _cmd_create_camera(parameters: Dictionary) -> Dictionary:
 		camera.current = bool(parameters["current"])
 
 	_add_node_undoable(parent, camera, root)
-	return {"success": true, "status": "created", "path": _path_in_scene(root, camera)}
+	return MCPToolkitSuccess.ok({"status": "created", "path": _path_in_scene(root, camera)})

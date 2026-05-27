@@ -180,7 +180,7 @@ static func _cmd_signal_list(parameters: Dictionary) -> Dictionary:
 	var node = _resolve_scene_node(node_path)
 	if node == null:
 		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
-	return {"success": true, "path": node_path, "signals": _signal_list_of(node, include_connections, root)}
+	return MCPToolkitSuccess.ok({"path": node_path, "signals": _signal_list_of(node, include_connections, root)})
 
 
 static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
@@ -199,28 +199,26 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 	var method_name: String = str(resolved["method_name"])
 	if action == "connect":
 		if source.is_connected(signal_name, callable):
-			return {
-				"success": true,
+			return MCPToolkitSuccess.ok({
 				"status": "returned",
 				"source_path": source_path,
 				"signal": signal_name,
 				"target_path": target_path,
 				"method": method_name,
-			}
+			})
 		source.connect(signal_name, callable, Object.CONNECT_PERSIST)
 		MCPToolkitUndoRedoAction.begin("connect %s.%s -> %s.%s" % [
 				source_path, signal_name, target_path, method_name], source) \
 			.do_method(source.connect.bind(signal_name, callable, Object.CONNECT_PERSIST)) \
 			.undo_method(source.disconnect.bind(signal_name, callable)) \
 			.commit_recorded()
-		var response := {
-			"success": true,
+		var response := MCPToolkitSuccess.ok({
 			"status": "created",
 			"source_path": source_path,
 			"signal": signal_name,
 			"target_path": target_path,
 			"method": method_name,
-		}
+		})
 		var target = resolved["target"]
 		var same_scene: bool = (source.owner == target.owner) \
 			or (source == target.owner) or (target == source.owner)
@@ -238,13 +236,12 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 			.do_method(source.disconnect.bind(signal_name, callable)) \
 			.undo_method(source.connect.bind(signal_name, callable, Object.CONNECT_PERSIST)) \
 			.commit_recorded()
-		return {
-			"success": true,
+		return MCPToolkitSuccess.ok({
 			"source_path": source_path,
 			"signal": signal_name,
 			"target_path": target_path,
 			"method": method_name,
-		}
+		})
 
 
 static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
@@ -269,4 +266,4 @@ static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
 	for argument in raw_args:
 		coerced.append(Coerce.coerce_value(argument))
 	node.callv("emit_signal", coerced)
-	return {"success": true}
+	return MCPToolkitSuccess.ok()

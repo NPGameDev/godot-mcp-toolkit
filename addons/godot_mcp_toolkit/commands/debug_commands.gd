@@ -26,15 +26,14 @@ static func register(registry: MCPToolkitCommandRegistry, debug_bridge: RefCount
 
 static func _cmd_debug_state(debug_bridge: RefCounted) -> Dictionary:
 	var state := debug_bridge.get_debug_state() as Dictionary
-	state["success"] = true
-	return state
+	return MCPToolkitSuccess.ok(state)
 
 
 static func _cmd_debug_list_breakpoints() -> Dictionary:
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor == null:
-		return {"success": true, "breakpoints": [], "count": 0,
-			"note": "GDScript breakpoints only"}
+		return MCPToolkitSuccess.ok({"breakpoints": [], "count": 0,
+			"note": "GDScript breakpoints only"})
 
 	var open_scripts := script_editor.get_open_scripts()
 	var breakpoints := []
@@ -69,8 +68,8 @@ static func _cmd_debug_list_breakpoints() -> Dictionary:
 	if original_script != null and original_script is Script:
 		EditorInterface.edit_script(original_script, -1, 0, false)
 
-	return {"success": true, "breakpoints": breakpoints, "count": breakpoints.size(),
-		"note": "GDScript breakpoints only"}
+	return MCPToolkitSuccess.ok({"breakpoints": breakpoints, "count": breakpoints.size(),
+		"note": "GDScript breakpoints only"})
 
 
 static func _cmd_debug_set_breakpoint(params: Dictionary) -> Dictionary:
@@ -134,7 +133,7 @@ static func _cmd_debug_set_breakpoint(params: Dictionary) -> Dictionary:
 	# Set or clear the breakpoint (0-based internally).
 	code_edit.set_line_as_breakpoint(line - 1, enabled)
 
-	return {"success": true, "file_path": file_path, "line": line, "enabled": enabled}
+	return MCPToolkitSuccess.ok({"file_path": file_path, "line": line, "enabled": enabled})
 
 
 static func _cmd_debug_continue(debug_bridge: RefCounted) -> Dictionary:
@@ -150,4 +149,4 @@ static func _cmd_debug_continue(debug_bridge: RefCounted) -> Dictionary:
 					"debug session is active but not paused at a breakpoint")
 			_:
 				return MCPToolkitError.fail("INTERNAL", str(result))
-	return result
+	return MCPToolkitSuccess.ok(result)

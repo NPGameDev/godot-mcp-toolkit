@@ -143,7 +143,6 @@ static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
 			truncated = true
 
 	var result := {
-		"success": true,
 		"cells": cells,
 		"cell_count": cells.size(),
 		"cells_total": cells_total,
@@ -165,7 +164,7 @@ static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
 		else:
 			result["hint"] = version_hint
 
-	return result
+	return MCPToolkitSuccess.ok(result)
 
 
 ## Expand region descriptors into flat cell array (FIX-A).
@@ -305,7 +304,6 @@ static func _cmd_tilemap_set_cells(
 		.do_reference(node) \
 		.commit_recorded()
 	var set_result := {
-		"success": true,
 		"tilemap_path": tilemap_path,
 		"layer": layer,
 		"cells_written": cells_written,
@@ -315,4 +313,4 @@ static func _cmd_tilemap_set_cells(
 	var version_hint := _tilemap_version_hint(is_map)
 	if not version_hint.is_empty():
 		set_result["hint"] = version_hint
-	return set_result
+	return MCPToolkitSuccess.ok(set_result)

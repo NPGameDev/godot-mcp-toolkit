@@ -55,12 +55,12 @@ static func _cmd_project_get_settings(parameters: Dictionary) -> Dictionary:
 		settings[property_name] = Coerce.serialize_value(
 			ProjectSettings.get_setting(property_name))
 
-	return {
+	return MCPToolkitSuccess.ok({
 		"settings": Untrusted.wrap(
 			"project_settings", "godot", JSON.stringify(settings)),
 		"count": settings.size(),
 		"filtered_secret_count": filtered_secrets,
-	}
+	})
 
 
 static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
@@ -105,7 +105,6 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 			"ProjectSettings.save returned %d (key=%s); change is in-memory but not persisted" % [
 				save_error, key])
 	var response := {
-		"success": true,
 		"key": key,
 		"value": Coerce.serialize_value(coerced),
 		"was_set_before": was_set_before,
@@ -113,7 +112,7 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	}
 	if key.begins_with("autoload/"):
 		response["warning"] = "Modifying autoload/* via project.set_setting — the editor cache won't refresh. Consider using autoload_manage instead."
-	return response
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) -> Dictionary:
@@ -153,9 +152,9 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 			var filesystem := EditorInterface.get_resource_filesystem()
 			if filesystem != null:
 				filesystem.update_file(script_path)
-			return {"success": true, "action": "register", "name": aname,
+			return MCPToolkitSuccess.ok({"action": "register", "name": aname,
 				"script_path": script_path, "enabled": enabled,
-				"hint": "Autoload registered and editor cache updated. Reference via get_node('/root/%s')." % aname}
+				"hint": "Autoload registered and editor cache updated. Reference via get_node('/root/%s')." % aname})
 
 		"unregister":
 			var aname := str(parameters.get("name", ""))
@@ -176,7 +175,7 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 					return MCPToolkitError.fail("SAVE_FAILED",
 						"ProjectSettings.save returned %d" % save_error)
 				ProjectSettings.emit_signal("settings_changed")
-			return {"success": true, "action": "unregister", "name": aname}
+			return MCPToolkitSuccess.ok({"action": "unregister", "name": aname})
 
 		"list":
 			var autoloads: Array = []
@@ -189,8 +188,8 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 				var enabled := raw_value.begins_with("*")
 				var path := raw_value.lstrip("*")
 				autoloads.append({"name": aname, "script_path": path, "enabled": enabled})
-			return {"success": true, "action": "list", "autoloads": autoloads,
-				"count": autoloads.size()}
+			return MCPToolkitSuccess.ok({"action": "list", "autoloads": autoloads,
+				"count": autoloads.size()})
 
 		_:
 			return MCPToolkitError.fail("INVALID_PARAMS",
@@ -213,7 +212,7 @@ static func _cmd_get_layer_names(parameters: Dictionary) -> Dictionary:
 			var name: String = str(ProjectSettings.get_setting(key))
 			if not name.is_empty():
 				layers[n] = name
-	return {"success": true, "category": category, "layers": layers}
+	return MCPToolkitSuccess.ok({"category": category, "layers": layers})
 
 
 static func _cmd_set_layer_names(parameters: Dictionary) -> Dictionary:
@@ -249,4 +248,4 @@ static func _cmd_set_layer_names(parameters: Dictionary) -> Dictionary:
 	if save_error != OK:
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"ProjectSettings.save returned %d; changes are in-memory but not persisted" % save_error)
-	return {"success": true, "layers_set": count}
+	return MCPToolkitSuccess.ok({"layers_set": count})

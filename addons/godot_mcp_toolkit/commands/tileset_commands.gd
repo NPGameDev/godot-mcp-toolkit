@@ -155,7 +155,6 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 	await Helpers.ensure_file_indexed(file_path)
 
 	var create_result := {
-		"success": true,
 		"path": file_path,
 		"tile_size": {"x": tile_w, "y": tile_h},
 		"source_id": source_id,
@@ -164,7 +163,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 		"physics": physics,
 	}
 	create_result["hint"] = _layer_node_hint("Assign this TileSet to a ", " node.")
-	return create_result
+	return MCPToolkitSuccess.ok(create_result)
 
 
 static func _cmd_tileset_add_source(parameters: Dictionary) -> Dictionary:
@@ -183,14 +182,13 @@ static func _cmd_tileset_add_source(parameters: Dictionary) -> Dictionary:
 	if save_result.has("error"):
 		return save_result
 	var source_id: int = result["source_id"]
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"new_source_id": source_id,
 		"hint": _layer_node_hint(
 			"Configure tiles on source %d with tileset.edit_* tools, or paint onto a " % source_id,
 			" with tilemap.set_cells."),
-	}
+	})
 
 
 static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
@@ -210,13 +208,12 @@ static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
 	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"removed_source_id": source_id,
 		"hint": _layer_node_hint(
 			"", " cells referencing source %d may become invalid. Check with tilemap.read_cells." % source_id),
-	}
+	})
 
 
 static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
@@ -248,13 +245,12 @@ static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
 	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"tile": {"atlas_x": coord.x, "atlas_y": coord.y},
 		"new_alternative_id": alt_id,
 		"hint": "Alternative %d inherits base tile properties. Customize with tileset.edit_* tools." % alt_id,
-	}
+	})
 
 
 static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionary:
@@ -289,14 +285,13 @@ static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionar
 	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"removed_alternative_id": alt_id,
 		"tile": {"atlas_x": atlas_x, "atlas_y": atlas_y},
 		"hint": _layer_node_hint(
 			"", " cells using alternative %d revert to the base tile (alternative 0). Check with tilemap.read_cells." % alt_id),
-	}
+	})
 
 
 static func _cmd_tileset_setup_layers(parameters: Dictionary) -> Dictionary:
@@ -314,13 +309,12 @@ static func _cmd_tileset_setup_layers(parameters: Dictionary) -> Dictionary:
 	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"hint": _layer_node_hint(
 			"Layers configured. Assign per-tile data with tileset.edit_physics, tileset.edit_terrain, etc., then paint onto a ",
 			" with tilemap.set_cells."),
-	}
+	})
 
 
 static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
@@ -460,7 +454,6 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 		return save_result
 
 	var edit_result := {
-		"success": true,
 		"path": file_path,
 		"tiles_modified": tiles_modified,
 		"errors": tile_errors,
@@ -470,7 +463,7 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 	}
 	if new_source_id != null:
 		edit_result["new_source_id"] = new_source_id
-	return edit_result
+	return MCPToolkitSuccess.ok(edit_result)
 
 
 # -- tileset sub-helpers ------------------------------------------------------

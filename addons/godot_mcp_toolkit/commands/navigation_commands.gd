@@ -111,7 +111,7 @@ static func _action_remove_outline(parameters: Dictionary, nav_poly: NavigationP
 static func _action_clear(nav_poly: NavigationPolygon) -> Dictionary:
 	nav_poly.clear_outlines()
 	nav_poly.clear_polygons()
-	return {"success": true, "outline_count": 0, "vertex_count": 0}
+	return MCPToolkitSuccess.ok({"outline_count": 0, "vertex_count": 0})
 
 
 static func _action_bake(region: NavigationRegion2D, nav_poly: NavigationPolygon) -> Dictionary:
@@ -131,20 +131,18 @@ static func _action_bake(region: NavigationRegion2D, nav_poly: NavigationPolygon
 	for i in nav_poly.get_polygon_count():
 		vertex_count += nav_poly.get_polygon(i).size()
 
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"outline_count": nav_poly.get_outline_count(),
 		"polygon_count": nav_poly.get_polygon_count(),
 		"vertex_count": vertex_count,
-	}
+	})
 
 
 static func _make_result(nav_poly: NavigationPolygon) -> Dictionary:
 	var total_vertices := 0
 	for i in nav_poly.get_outline_count():
 		total_vertices += nav_poly.get_outline(i).size()
-	return {
-		"success": true,
+	return MCPToolkitSuccess.ok({
 		"outline_count": nav_poly.get_outline_count(),
 		"vertex_count": total_vertices,
-	}
+	})
