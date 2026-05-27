@@ -25,7 +25,7 @@ var _status_label: Label = null
 var _peer_label: Label = null
 var _activity_label: Label = null
 var _runtime_label: Label = null
-var _read_only_badge: Label = null
+var _read_only_panel: PanelContainer = null
 var _mcp_json_btn: Button = null
 
 # Node.js warning.
@@ -187,26 +187,41 @@ func _build_ui() -> void:
 	_peer_label.text = "0 peers"
 	status_row.add_child(_peer_label)
 
-	_activity_label = Label.new()
-	_activity_label.text = "Last activity: —"
-	_activity_label.add_theme_font_size_override("font_size", 11)
-	sc.add_child(_activity_label)
+	# Read-only warning — prominent, right after the server status row.
+	_read_only_panel = PanelContainer.new()
+	var ro_sb := StyleBoxFlat.new()
+	ro_sb.bg_color = Color(0.35, 0.22, 0.0)
+	ro_sb.corner_radius_top_left = 4
+	ro_sb.corner_radius_top_right = 4
+	ro_sb.corner_radius_bottom_left = 4
+	ro_sb.corner_radius_bottom_right = 4
+	ro_sb.content_margin_left = 8
+	ro_sb.content_margin_right = 8
+	ro_sb.content_margin_top = 6
+	ro_sb.content_margin_bottom = 6
+	_read_only_panel.add_theme_stylebox_override("panel", ro_sb)
+	_read_only_panel.visible = _is_read_only()
+
+	var ro_label := Label.new()
+	ro_label.text = (
+		"\u26a0\ufe0f READ-ONLY MODE \u2014 mutating tools are hidden. "
+		+ "Set GODOT_MCP_READ_ONLY=0 in .mcp.json and restart to restore full access.")
+	ro_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ro_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	ro_label.add_theme_font_size_override("font_size", 12)
+	_read_only_panel.add_child(ro_label)
+	sc.add_child(_read_only_panel)
 
 	_runtime_label = Label.new()
 	_runtime_label.text = "Runtime: not running"
-	_runtime_label.add_theme_font_size_override("font_size", 11)
-	_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	_runtime_label.add_theme_font_size_override("font_size", 13)
 	sc.add_child(_runtime_label)
 
-	_read_only_badge = Label.new()
-	_read_only_badge.text = (
-		"\u26a0 Read-only mode active \u2014 mutating tools hidden. "
-		+ "Set GODOT_MCP_READ_ONLY=0 in .mcp.json and restart to restore full access.")
-	_read_only_badge.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_read_only_badge.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-	_read_only_badge.add_theme_font_size_override("font_size", 11)
-	_read_only_badge.visible = _is_read_only()
-	sc.add_child(_read_only_badge)
+	_activity_label = Label.new()
+	_activity_label.text = "Last activity: —"
+	_activity_label.add_theme_font_size_override("font_size", 12)
+	_activity_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	sc.add_child(_activity_label)
 
 	# Node.js availability — shared detection.
 	var node_check := NodejsCheck.check()
@@ -394,8 +409,8 @@ func _refresh_status() -> void:
 		_status_label.text = "Not listening"
 	var count: int = _server.get_authed_peer_count()
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
-	if _read_only_badge != null:
-		_read_only_badge.visible = _is_read_only()
+	if _read_only_panel != null:
+		_read_only_panel.visible = _is_read_only()
 	if _mcp_json_btn != null:
 		if _is_read_only():
 			_mcp_json_btn.text = "Open .mcp.json \u26a0"
