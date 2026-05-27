@@ -535,6 +535,37 @@ Use this when your tool:
 - Has side effects that conflict with concurrent mutations
 - Needs serialised access even though it only reads state
 
+### Non-blocking waits
+
+**Never use `OS.delay_msec()` or `OS.delay_usec()` in command handlers.**
+These are hard OS-level thread sleeps that freeze Godot's entire main thread
+— the editor UI, rendering, and input all stop responding until the sleep
+completes. A polling loop with `OS.delay_msec(100)` and a 5-second timeout
+will freeze the editor for up to 5 seconds.
+
+Use `await Engine.get_main_loop().create_timer(seconds).timeout` instead.
+This yields control back to the engine so the UI stays responsive while your
+handler waits:
+
+```gdscript
+# BAD — freezes the editor:
+while some_condition():
+    OS.delay_msec(100)
+
+# GOOD — editor stays responsive:
+while some_condition():
+    await Engine.get_main_loop().create_timer(0.1).timeout
+```
+
+`Engine.get_main_loop()` returns the `SceneTree` and works in both instance
+and static methods. The dispatch system already `await`s every handler call,
+so your handler becoming a coroutine requires no extra setup.
+
+Common scenarios where this applies:
+- Waiting for `EditorFileSystem.is_scanning()` to finish
+- Polling for a process or service to become ready
+- Any loop that needs to pause between iterations
+
 ### Discovery rules
 
 Extensions are discovered via `ProjectSettings.get_global_class_list()` at

@@ -56,7 +56,7 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 
 	var delete_result := Helpers.delete_res_file(file_path, [".uid", ".import"])
 	if delete_result.get("success", false):
-		var removal := Helpers.ensure_file_removed(file_path)
+		var removal := await Helpers.ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
 	if is_scene:
 		delete_result["tab_closed"] = tab_closed

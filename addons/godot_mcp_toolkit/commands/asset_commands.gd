@@ -26,13 +26,13 @@ const IMPORT_MAX_BASE64_BYTES := 5 * 1024 * 1024
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("asset.list", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_asset_list(parameters)
+		return await _cmd_asset_list(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("asset.get_dependencies", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_asset_get_dependencies(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("asset.import", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_asset_import(parameters)
+		return await _cmd_asset_import(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
@@ -133,10 +133,9 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 		if DirAccess.dir_exists_absolute(abs_path):
 			filesystem.scan()
 			# Wait up to 5s for scan to finish (matches editor_refresh timeout)
-			var waited := 0
-			while filesystem.is_scanning() and waited < 5000:
-				OS.delay_msec(100)
-				waited += 100
+			var scan_start := Time.get_ticks_msec()
+			while filesystem.is_scanning() and Time.get_ticks_msec() - scan_start < 5000:
+				await Engine.get_main_loop().create_timer(0.1).timeout
 			root_directory = filesystem.get_filesystem_path(path_prefix)
 		if root_directory == null:
 			return MCPToolkitError.fail("NOT_FOUND",
@@ -338,7 +337,7 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	file_handle.close()
 
 	var warnings: Array[String] = []
-	var index_result := Helpers.ensure_file_indexed(dest_path, wait_for_scan_ms)
+	var index_result := await Helpers.ensure_file_indexed(dest_path, wait_for_scan_ms)
 	if not index_result["indexed"]:
 		warnings.append(
 			"EditorFileSystem did not index %s within %dms — import may not be complete; call editor.wait_for_idle to finish" % [dest_path, wait_for_scan_ms])

@@ -24,13 +24,13 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return await _cmd_editor_screenshot(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("editor.refresh", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_refresh(parameters)
+		return await _cmd_editor_refresh(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("editor.get_console", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_editor_get_console(server, parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("editor.wait_for_idle", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_editor_wait_for_idle(parameters)
+		return await _cmd_editor_wait_for_idle(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("execute.code", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_execute_code(parameters)
@@ -270,10 +270,11 @@ static func _cmd_editor_refresh(parameters: Dictionary) -> Dictionary:
 	# Full mode: scan() + reload all open scripts.
 	if filesystem != null:
 		filesystem.scan()
-		var scan_deadline := Time.get_ticks_msec() + 5000
+		var scan_start := Time.get_ticks_msec()
+		var scan_deadline := scan_start + 5000
 		while filesystem.is_scanning() and Time.get_ticks_msec() < scan_deadline:
-			OS.delay_msec(100)
-			scan_waited_ms += 100
+			await Engine.get_main_loop().create_timer(0.1).timeout
+		scan_waited_ms = Time.get_ticks_msec() - scan_start
 	var reloaded := 0
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor != null:
@@ -336,13 +337,13 @@ static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if not filesystem.is_scanning():
 		return {"success": true, "was_scanning": false, "waited_ms": 0}
-	var elapsed := 0
-	while filesystem.is_scanning() and elapsed < timeout_ms:
-		OS.delay_msec(100)
-		elapsed += 100
+	var start := Time.get_ticks_msec()
+	while filesystem.is_scanning() and Time.get_ticks_msec() - start < timeout_ms:
+		await Engine.get_main_loop().create_timer(0.1).timeout
+	var elapsed := Time.get_ticks_msec() - start
 	if filesystem.is_scanning():
 		return MCPToolkitError.fail("TIMEOUT",
-			"EditorFileSystem still scanning after %dms; consider increasing timeout_ms or checking editor.get_console for import errors" % timeout_ms)
+			"EditorFileSystem still scanning after %dms; consider increasing timeout_ms or checking editor.get_console for import errors" % elapsed)
 	return {"success": true, "was_scanning": true, "waited_ms": elapsed}
 
 

@@ -155,7 +155,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	# Targeted deindex: update_file() on a directory path is a no-op in most
 	# Godot versions, so fall back to scan() for folder removal. Folder deletes
 	# are rare and the scan cost is acceptable.
-	var removal := Helpers.ensure_file_removed(folder_path)
+	var removal := await Helpers.ensure_file_removed(folder_path)
 	var result := {
 		"success": true,
 		"path": folder_path,

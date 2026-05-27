@@ -11,38 +11,38 @@ const Helpers = _Hub.Helpers
 static func register(registry: MCPToolkitCommandRegistry) -> void:
 	# -- tileset group (structural) --
 	registry.add("tileset.create", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_create(parameters)
+		return await _cmd_tileset_create(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.add_source", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_add_source(parameters)
+		return await _cmd_tileset_add_source(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.remove_source", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_remove_source(parameters)
+		return await _cmd_tileset_remove_source(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.add_alternative", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_add_alternative(parameters)
+		return await _cmd_tileset_add_alternative(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.remove_alternative", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_remove_alternative(parameters)
+		return await _cmd_tileset_remove_alternative(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.setup_layers", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_setup_layers(parameters)
+		return await _cmd_tileset_setup_layers(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	# -- tileset_edit group (per-tile properties) --
 	registry.add("tileset.edit_physics", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit_terrain", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit_navigation", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit_visuals", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit_custom_data", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
@@ -70,7 +70,7 @@ static func _save_tileset(ts: TileSet, file_path: String) -> Dictionary:
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	Helpers.ensure_file_indexed(file_path)
+	await Helpers.ensure_file_indexed(file_path)
 	return {}
 
 
@@ -152,7 +152,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 	if loaded == null or not (loaded is TileSet):
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"tileset saved but reload failed — file may be corrupt: %s" % file_path)
-	Helpers.ensure_file_indexed(file_path)
+	await Helpers.ensure_file_indexed(file_path)
 
 	var create_result := {
 		"success": true,
@@ -179,7 +179,7 @@ static func _cmd_tileset_add_source(parameters: Dictionary) -> Dictionary:
 	var result = _apply_add_source(ts, parameters)
 	if result.has("error"):
 		return result
-	var save_result := _save_tileset(ts, file_path)
+	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	var source_id: int = result["source_id"]
@@ -207,7 +207,7 @@ static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("NOT_FOUND",
 			"No source with id %d in TileSet" % source_id)
 	ts.remove_source(source_id)
-	var save_result := _save_tileset(ts, file_path)
+	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	return {
@@ -245,7 +245,7 @@ static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
 	if r.has("error"):
 		return MCPToolkitError.fail("FAILED", r["error"])
 	var alt_id: int = r["alt_id"]
-	var save_result := _save_tileset(ts, file_path)
+	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	return {
@@ -286,7 +286,7 @@ static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionar
 		return MCPToolkitError.fail("NOT_FOUND",
 			"alternative %d not found for tile (%d,%d)" % [alt_id, atlas_x, atlas_y])
 	atlas.remove_alternative_tile(coord, alt_id)
-	var save_result := _save_tileset(ts, file_path)
+	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	return {
@@ -311,7 +311,7 @@ static func _cmd_tileset_setup_layers(parameters: Dictionary) -> Dictionary:
 	var result = _apply_layers(ts, parameters)
 	if result.has("error"):
 		return result
-	var save_result := _save_tileset(ts, file_path)
+	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	return {
@@ -455,7 +455,7 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 				tiles_modified += 1
 
 	# -- Save --
-	var save_result := _save_tileset(ts, file_path)
+	var save_result := await _save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 

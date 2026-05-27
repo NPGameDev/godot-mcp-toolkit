@@ -10,13 +10,13 @@ const Helpers = _Hub.Helpers
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("procedural.edit_gradient", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_edit_gradient(parameters)
+		return await _cmd_edit_gradient(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("procedural.edit_curve", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_edit_curve(parameters)
+		return await _cmd_edit_curve(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("procedural.edit_noise", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_edit_noise(parameters)
+		return await _cmd_edit_noise(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
@@ -104,7 +104,7 @@ static func _cmd_edit_gradient(parameters: Dictionary) -> Dictionary:
 				"interpolation_mode must be one of: linear, constant, cubic (got '%s')" % interp_str)
 		gradient.interpolation_mode = interp_map[interp_str]
 
-	return _save_resource(gradient, file_path, "procedural.edit_gradient",
+	return await _save_resource(gradient, file_path, "procedural.edit_gradient",
 		{"point_count": gradient.get_point_count()})
 
 
@@ -198,7 +198,7 @@ static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 		"clear":
 			curve.clear_points()
 
-	return _save_resource(curve, file_path, "procedural.edit_curve",
+	return await _save_resource(curve, file_path, "procedural.edit_curve",
 		{"point_count": curve.point_count})
 
 
@@ -315,7 +315,7 @@ static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
 	if parameters.has("domain_warp_amplitude"):
 		noise.domain_warp_amplitude = float(parameters["domain_warp_amplitude"])
 
-	return _save_resource(noise, file_path, "procedural.edit_noise",
+	return await _save_resource(noise, file_path, "procedural.edit_noise",
 		{"noise_type": noise.noise_type})
 
 
@@ -348,7 +348,7 @@ static func _save_resource(resource: Resource, file_path: String,
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	Helpers.ensure_file_indexed(file_path)
+	await Helpers.ensure_file_indexed(file_path)
 	var result := {"success": true, "file_path": file_path}
 	result.merge(extra)
 	return result

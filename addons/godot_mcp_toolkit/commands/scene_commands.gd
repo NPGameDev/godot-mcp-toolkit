@@ -41,7 +41,7 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_scene_diff(server, parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("scene.create_inherited", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_create_inherited(parameters)
+		return await _cmd_create_inherited(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("scene.query", func(p: Dictionary) -> Dictionary:
 		return _cmd_scene_query(p)
@@ -203,7 +203,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 
-	var scene_index := Helpers.ensure_file_indexed(file_path)
+	var scene_index := await Helpers.ensure_file_indexed(file_path)
 	var response := {"success": true, "path": file_path, "root_type": root_type,
 		"root_name": file_path.get_file().get_basename(), "root_path": ".",
 		"indexed": scene_index["indexed"],
@@ -296,7 +296,7 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 
 	var delete_result := Helpers.delete_res_file(file_path)
 	if delete_result.get("success", false):
-		var removal := Helpers.ensure_file_removed(file_path)
+		var removal := await Helpers.ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
 	delete_result["tab_closed"] = tab_closed
 	if tab_closed and tab_result.get("switched", false):
@@ -690,7 +690,7 @@ static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
 	file.store_string(tscn_text)
 	file.close()
 
-	Helpers.ensure_file_indexed(file_path)
+	await Helpers.ensure_file_indexed(file_path)
 
 	return {"success": true, "file_path": file_path, "base_scene": base_scene, "root_name": root_name}
 

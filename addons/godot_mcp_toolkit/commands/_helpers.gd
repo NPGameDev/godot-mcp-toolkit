@@ -521,18 +521,17 @@ static func ensure_file_indexed(file_path: String, timeout_ms: int = 3000) -> Di
 	if filesystem == null:
 		return {"indexed": false, "file_class": "", "elapsed_ms": 0}
 	filesystem.update_file(file_path)
-	var elapsed := 0
-	while filesystem.get_file_type(file_path) == "" and elapsed < timeout_ms:
-		OS.delay_msec(100)
-		elapsed += 100
+	var start := Time.get_ticks_msec()
+	while filesystem.get_file_type(file_path) == "" and Time.get_ticks_msec() - start < timeout_ms:
+		await Engine.get_main_loop().create_timer(0.1).timeout
 	if filesystem.get_file_type(file_path) != "":
 		var file_class := filesystem.get_file_type(file_path)
-		return {"indexed": true, "file_class": file_class, "elapsed_ms": elapsed}
+		return {"indexed": true, "file_class": file_class, "elapsed_ms": Time.get_ticks_msec() - start}
 	# Fallback: update_file() could not index — parent dir may be unknown. Full scan.
 	filesystem.scan()
-	while filesystem.is_scanning() and elapsed < timeout_ms:
-		OS.delay_msec(100)
-		elapsed += 100
+	while filesystem.is_scanning() and Time.get_ticks_msec() - start < timeout_ms:
+		await Engine.get_main_loop().create_timer(0.1).timeout
+	var elapsed := Time.get_ticks_msec() - start
 	var file_class := filesystem.get_file_type(file_path)
 	var result := {"indexed": file_class != "", "file_class": file_class, "elapsed_ms": elapsed}
 	if not result["indexed"]:
@@ -549,17 +548,16 @@ static func ensure_file_removed(file_path: String, timeout_ms: int = 3000) -> Di
 	if filesystem == null:
 		return {"removed": false, "elapsed_ms": 0}
 	filesystem.update_file(file_path)
-	var elapsed := 0
-	while filesystem.get_file_type(file_path) != "" and elapsed < timeout_ms:
-		OS.delay_msec(100)
-		elapsed += 100
+	var start := Time.get_ticks_msec()
+	while filesystem.get_file_type(file_path) != "" and Time.get_ticks_msec() - start < timeout_ms:
+		await Engine.get_main_loop().create_timer(0.1).timeout
 	if filesystem.get_file_type(file_path) == "":
-		return {"removed": true, "elapsed_ms": elapsed}
+		return {"removed": true, "elapsed_ms": Time.get_ticks_msec() - start}
 	# Fallback: update_file() did not remove the entry — full scan.
 	filesystem.scan()
-	while filesystem.is_scanning() and elapsed < timeout_ms:
-		OS.delay_msec(100)
-		elapsed += 100
+	while filesystem.is_scanning() and Time.get_ticks_msec() - start < timeout_ms:
+		await Engine.get_main_loop().create_timer(0.1).timeout
+	var elapsed := Time.get_ticks_msec() - start
 	var removed := filesystem.get_file_type(file_path) == ""
 	return {"removed": removed, "elapsed_ms": elapsed}
 

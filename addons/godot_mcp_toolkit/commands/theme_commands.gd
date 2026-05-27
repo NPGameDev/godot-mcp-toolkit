@@ -11,7 +11,7 @@ const _VALID_PROPERTY_TYPES := ["color", "constant", "font", "font_size", "icon"
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("theme.edit", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_theme_edit(parameters)
+		return await _cmd_theme_edit(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
@@ -87,7 +87,7 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("SAVE_FAILED",
 			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	Helpers.ensure_file_indexed(file_path)
+	await Helpers.ensure_file_indexed(file_path)
 
 	return {
 		"success": true,

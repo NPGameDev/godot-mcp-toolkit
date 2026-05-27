@@ -27,7 +27,7 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node,
 		debug_bridge: RefCounted = null) -> void:
 	_debug_bridge = debug_bridge
 	registry.add("game.start", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_game_start(parameters)
+		return await _cmd_game_start(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_exclusive_execution())
 	registry.add("game.stop", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_game_stop(parameters)
@@ -115,10 +115,10 @@ static func _cmd_game_start(parameters: Dictionary) -> Dictionary:
 			runtime_port = RegistryClient.get_runtime_port()
 			if runtime_port > 0:
 				break
-			OS.delay_msec(_REGISTRY_POLL_INTERVAL_MS)
+			await Engine.get_main_loop().create_timer(_REGISTRY_POLL_INTERVAL_MS / 1000.0).timeout
 		if runtime_port > 0:
 			var remaining := maxi(500, deadline - Time.get_ticks_msec())
-			var probe := _poll_runtime_ready(
+			var probe := await _poll_runtime_ready(
 				RUNTIME_HOST, runtime_port, remaining)
 			runtime_ready = probe["ready"]
 			if not runtime_ready:
@@ -427,7 +427,7 @@ static func _poll_runtime_ready(
 		var ws := WebSocketPeer.new()
 		var err := ws.connect_to_url("ws://%s:%d" % [host, port])
 		if err != OK:
-			OS.delay_msec(100)
+			await Engine.get_main_loop().create_timer(0.1).timeout
 			continue
 
 		var auth_sent := false
@@ -439,7 +439,7 @@ static func _poll_runtime_ready(
 					or state == WebSocketPeer.STATE_CLOSING:
 				break
 			if state != WebSocketPeer.STATE_OPEN:
-				OS.delay_msec(10)
+				await Engine.get_main_loop().create_timer(0.01).timeout
 				continue
 
 			if furthest == "ws_connect_timeout":
@@ -448,7 +448,7 @@ static func _poll_runtime_ready(
 			if not auth_sent:
 				ws.send_text(JSON.stringify({"auth": token}))
 				auth_sent = true
-				OS.delay_msec(10)
+				await Engine.get_main_loop().create_timer(0.01).timeout
 				continue
 
 			while ws.get_available_packet_count() > 0:
@@ -470,10 +470,10 @@ static func _poll_runtime_ready(
 						ws.close(1000)
 						return {"ready": true}
 
-			OS.delay_msec(10)
+			await Engine.get_main_loop().create_timer(0.01).timeout
 
 		ws.close()
-		OS.delay_msec(100)
+		await Engine.get_main_loop().create_timer(0.1).timeout
 	return {"ready": false, "failure": furthest}
 
 

@@ -28,10 +28,10 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_script_read(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("script.write", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_write(server, parameters)
+		return await _cmd_script_write(server, parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("script.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_script_delete(parameters)
+		return await _cmd_script_delete(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("script.check", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_script_check(parameters)
@@ -143,7 +143,7 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		_undo.undo_method(server.undo_helpers._delete_file_silent.bind(file_path))
 	_undo.commit_recorded()
 
-	var index_result := Helpers.ensure_file_indexed(file_path)
+	var index_result := await Helpers.ensure_file_indexed(file_path)
 
 	var bytes_written := content.to_utf8_buffer().size()
 	var result := {"success": true, "bytes": bytes_written, "undoable": undoable,
@@ -176,7 +176,7 @@ static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("NOT_FOUND", "no file at %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 	var delete_result := Helpers.delete_res_file(file_path)
 	if delete_result.get("success", false):
-		var removal := Helpers.ensure_file_removed(file_path)
+		var removal := await Helpers.ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
 	return delete_result
 

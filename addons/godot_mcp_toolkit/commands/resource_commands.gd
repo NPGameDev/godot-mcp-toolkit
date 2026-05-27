@@ -18,10 +18,10 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 		return _cmd_resource_load(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("resource.write", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_write(parameters)
+		return await _cmd_resource_write(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("resource.delete", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_resource_delete(parameters)
+		return await _cmd_resource_delete(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
@@ -146,7 +146,7 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 				"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 		# Refresh cache so subsequent ResourceRef loads get the updated version
 		ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-		var update_index := Helpers.ensure_file_indexed(file_path)
+		var update_index := await Helpers.ensure_file_indexed(file_path)
 		return {
 			"success": true,
 			"path": file_path,
@@ -199,7 +199,7 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 			"ResourceSaver.save returned %d (path=%s)" % [save_error, file_path])
 	# Refresh cache so subsequent ResourceRef loads get the new resource
 	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	var create_index := Helpers.ensure_file_indexed(file_path)
+	var create_index := await Helpers.ensure_file_indexed(file_path)
 	var create_result := {
 		"success": true,
 		"status": "created",
@@ -229,6 +229,6 @@ static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("NOT_FOUND", "no file at %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 	var delete_result := Helpers.delete_res_file(file_path)
 	if delete_result.get("success", false):
-		var removal := Helpers.ensure_file_removed(file_path)
+		var removal := await Helpers.ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
 	return delete_result
