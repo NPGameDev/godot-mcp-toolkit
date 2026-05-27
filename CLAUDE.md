@@ -95,16 +95,16 @@ bypasses registry discovery entirely (backwards compat).
 ## Security (iter 18)
 
 - **Session-token auth.** On plugin start the editor generates a 32-byte hex
-  token and writes it to `user://mcp_token` (platform-resolved — see table
-  below). The bridge reads this file on every connect/reconnect and sends
-  `{"auth":"<token>"}` as the first WebSocket message. Peers that don't
-  authenticate within 2 s are closed with WS code 1008.
+  token and writes it to `user://addons/godot_mcp_toolkit/project_instance_<hash>/mcp_token`
+  (platform-resolved — see table below). The bridge reads this file on every
+  connect/reconnect and sends `{"auth":"<token>"}` as the first WebSocket
+  message. Peers that don't authenticate within 2 s are closed with WS code 1008.
 
-  | Platform | Token path                                                       |
-  |----------|------------------------------------------------------------------|
-  | Windows  | `%APPDATA%\Godot\app_userdata\<project>\mcp_token`               |
-  | macOS    | `~/Library/Application Support/Godot/app_userdata/<project>/mcp_token` |
-  | Linux    | `~/.local/share/godot/app_userdata/<project>/mcp_token`          |
+  | Platform | Token path                                                                               |
+  |----------|------------------------------------------------------------------------------------------|
+  | Windows  | `%APPDATA%\Godot\app_userdata\<project>\addons\godot_mcp_toolkit\project_instance_<hash>\mcp_token` |
+  | macOS    | `~/Library/Application Support/Godot/app_userdata/<project>/addons/godot_mcp_toolkit/project_instance_<hash>/mcp_token` |
+  | Linux    | `~/.local/share/godot/app_userdata/<project>/addons/godot_mcp_toolkit/project_instance_<hash>/mcp_token` |
 
   Override with env `GODOT_MCP_TOKEN_PATH` if needed (e.g. multi-project
   setups in iter 23).

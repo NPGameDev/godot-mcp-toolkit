@@ -88,7 +88,7 @@ In Claude Code, `ToolSearch` may not return newly-activated tools due to the def
 | 8 | [08-project-settings.md](Sections/08-project-settings.md) | Project Settings & Autoloads | 12 | project_get/set_settings, autoload_manage, layer_names_get/set | S1 |
 | 9 | [09-execute-code.md](Sections/09-execute-code.md) | execute_code & Hints | 8 | execute_code | S2 |
 | 10 | [10-input-map.md](Sections/10-input-map.md) | Input Map | 4 | input_map_action, input_map_event | None |
-| 11 | [11-save-system.md](Sections/11-save-system.md) | Save System | 4 | save_write, save_read, save_list, save_delete | None |
+| 11 | [11-save-system.md](Sections/11-save-system.md) | Save System | 6 | save_write, save_read, save_list, save_delete | None |
 | 12 | [12-classdb.md](Sections/12-classdb.md) | ClassDB Introspection | 7 | classdb_search, classdb_get_info | None |
 | 13 | [13-animation.md](Sections/13-animation.md) | Animation & AnimationTree | 12 | animation_keyframe, animation_get_keys, animationtree_edit | S2 |
 | 14 | [14-tileset-tilemap.md](Sections/14-tileset-tilemap.md) | TileSet & TileMap | 19 | tileset_create, tileset_edit, tilemap_set_cells, tilemap_read_cells | S2 |

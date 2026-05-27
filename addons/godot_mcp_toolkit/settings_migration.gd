@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 ## One-time settings migration from legacy namespaces and file paths.
-## Called once at plugin startup; safe to delete once legacy users have migrated.
+## TODO(refactor): Delete this file — pre-release, no users to migrate from.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const ProjectPaths = _Hub.ProjectPaths

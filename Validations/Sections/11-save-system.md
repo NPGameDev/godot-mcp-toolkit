@@ -2,7 +2,7 @@
 
 **Dependencies:** None
 **Tools tested:** save_write, save_read, save_list, save_delete
-**Tests:** 4
+**Tests:** 6
 
 ---
 
@@ -17,6 +17,12 @@
 
 **11.4** `save_delete` — save_path=`user://saves/sv2_save.json`
 - **Expect:** success
+
+**11.5** `save_read` — path=`user://addons/godot_mcp_toolkit/anything`
+- **Expect:** PATH_DENIED — the entire `user://addons/godot_mcp_toolkit/` directory is denied (protects auth token, audit log)
+
+**11.6** `save_write` — path=`user://addons/godot_mcp_toolkit/evil.txt`, content=`x`
+- **Expect:** PATH_DENIED
 
 ---
 
