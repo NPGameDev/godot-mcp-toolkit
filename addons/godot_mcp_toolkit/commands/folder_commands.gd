@@ -117,7 +117,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 				continue
 			if resource_path == normalized or resource_path.begins_with(normalized_with_slash):
 				return MCPToolkitError.fail("PATH_IN_USE",
-					"folder %s contains open script %s; close the script editor tab manually (no programmatic close API for script tabs), then retry folder_delete" % [
+					"folder %s contains open script %s; open an existing scene via scene_open to switch the editor away from the script tab, then retry folder_delete (there is no programmatic close API for script tabs)" % [
 						folder_path, resource_path])
 
 	var directory := DirAccess.open(folder_path)
