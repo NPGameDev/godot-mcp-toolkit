@@ -409,7 +409,7 @@ Use `source: "buffer"` (default) for real-time capture.
 
 ### File path conventions
 
-- All paths must use `res://` (project scope) or `user://` (requires `GODOT_MCP_ENABLE_USER_SCOPE=1` + whitelist).
+- All paths must use `res://` (project scope) or `user://` (requires `user_scope_whitelist.json` in the plugin directory).
 - Absolute OS paths (`C:\...`, `/home/...`) are rejected by the file guard.
 - `..` path segments are rejected (no directory traversal).
 - `scene_create` and `script_write` auto-create parent directories.
