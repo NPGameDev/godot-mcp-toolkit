@@ -14,16 +14,11 @@ jobs:
       matrix:
         include:
           - godot-version: "4.2.0"
-            check-method: "check-only"
             skip-unit-tests: true  # 4.2 editor scan aborts on class_name cross-refs, can't generate cache
           - godot-version: "4.3.0"
-            check-method: "check-only"
           - godot-version: "4.4.0"
-            check-method: "check-only"
           - godot-version: "4.5.0"
-            check-method: "editor"
           - godot-version: "4.6.2"
-            check-method: "editor"
     name: GDScript check (Godot ${{ matrix.godot-version }})
     steps:
       - uses: actions/checkout@v4
@@ -35,43 +30,14 @@ jobs:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
 
-      # 4.2–4.4: --check-only does a project-wide parse and exits.
-      - name: GDScript static validation (--check-only)
-        if: matrix.check-method == 'check-only'
-        run: |
-          OUTPUT=$(timeout 30 godot --headless --check-only 2>&1) || true
-          echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qE 'SCRIPT ERROR:|Parse Error:'; then
-            echo ""
-            echo "::error::GDScript parse errors detected on Godot ${{ matrix.godot-version }} (see output above)"
-            exit 1
-          fi
-          echo "GDScript validation passed (Godot ${{ matrix.godot-version }})"
+      # Centralized validation: editor-headless + per-file script runner.
+      # Replaces the split --check-only / editor paths. --check-only was a
+      # no-op without --script (engine source audit, 2026-05-27).
+      - name: GDScript validation
+        run: bash scripts/test_framework/validate_gdscript.sh
 
-      # 4.5+: --check-only requires --script <path>, so launch the editor
-      # headless and grep output for parse errors.
-      - name: GDScript static validation (editor mode)
-        if: matrix.check-method == 'editor'
-        run: |
-          OUTPUT=$(godot --headless --editor --path . --quit-after 1 2>&1) || true
-          echo "$OUTPUT"
-          if echo "$OUTPUT" | grep -qE 'SCRIPT ERROR:|Parse Error:'; then
-            echo ""
-            echo "::error::GDScript parse errors detected on Godot ${{ matrix.godot-version }} (see output above)"
-            exit 1
-          fi
-          echo "GDScript validation passed (Godot ${{ matrix.godot-version }})"
-
-      # --script mode needs .godot/global_script_class_cache.cfg to resolve
-      # class_names. The editor step (4.5+) generates it as a side effect;
-      # 4.3–4.4 use --check-only which skips the editor, so we briefly
-      # launch the editor here to populate the cache.
-      # Skipped on 4.2: editor scan aborts on class_name cross-references
-      # before writing the cache (chicken-and-egg; fixed in 4.3).
-      - name: Generate script class cache
-        if: ${{ matrix.check-method == 'check-only' && !matrix.skip-unit-tests }}
-        run: timeout 30 godot --headless --editor --quit-after 5 2>&1 || true
-
+      # Editor-headless (Pass 1) generates global_script_class_cache.cfg
+      # as a side effect, so no separate cache step is needed.
       - name: Run unit tests
         if: ${{ !matrix.skip-unit-tests }}
         run: timeout 30 godot --headless --script test/run_unit_tests.gd
