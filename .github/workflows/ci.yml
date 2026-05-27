@@ -13,14 +13,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 4.2 standard build: editor scan aborts on class_name cross-refs
-          # (chicken-and-egg in GDScript module, fixed in 4.3). Use the .NET
-          # build instead — its initialization path may resolve the class
-          # cache differently. If this still fails, remove 4.2 from the
-          # matrix entirely (4.2 validated via local sweep+smoke instead).
-          - godot-version: "4.2.0"
-            use-dotnet: true
-            skip-unit-tests: true  # class cache may still not generate for --script mode
+          # 4.2 excluded: editor scan aborts on class_name cross-refs
+          # (chicken-and-egg in GDScript module, fixed in 4.3). Both
+          # standard and .NET builds have the same issue. 4.2 is validated
+          # via local sweep+smoke (see CLAUDE.md and COMPATIBILITY.md).
           - godot-version: "4.3.0"
           - godot-version: "4.4.0"
           - godot-version: "4.5.0"
@@ -34,7 +30,7 @@ jobs:
         uses: chickensoft-games/setup-godot@v2.4.1
         with:
           version: ${{ matrix.godot-version }}
-          use-dotnet: ${{ matrix.use-dotnet || false }}
+          use-dotnet: false
 
       # Centralized validation: editor-headless + per-file script runner.
       # Replaces the split --check-only / editor paths. --check-only was a
