@@ -7,11 +7,8 @@ const RegistryClient = _Hub.RegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const SettingsMigration := preload("res://addons/godot_mcp_toolkit/settings_migration.gd")
-const FeatureGateSettings := preload("res://addons/godot_mcp_toolkit/feature_gate_settings.gd")
-const GateEvents := preload("res://addons/godot_mcp_toolkit/gate_events.gd")
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
-const GateNotifier := preload("res://addons/godot_mcp_toolkit/gate_notifier.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extension_loader.gd")
 const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
@@ -67,9 +64,6 @@ var _server: Node = null
 var _export_plugin: EditorExportPlugin = null
 var _dock: Control = null
 var _wizard: OnboardingWizard = null
-var _feature_settings: FeatureGateSettings = null
-var _notifier: GateNotifier = null
-var _events: GateEvents = null
 var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
 var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
@@ -81,11 +75,6 @@ func _enter_tree() -> void:
 	_Hub._plugin = self
 	SettingsMigration.migrate_user_data_paths()
 	SettingsMigration.migrate_stale_settings()
-
-	_events = GateEvents.new()
-	_feature_settings = FeatureGateSettings.new()
-	_feature_settings.bind_events(_events)
-	_feature_settings.register_all()
 
 	var registry := MCPToolkitCommandRegistry.new()
 	_server = MCPServer.new()
@@ -162,12 +151,7 @@ func _enter_tree() -> void:
 
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
-	_notifier = GateNotifier.new()
-	_notifier.bind(_server, _events)
-
 	_dock.bind(_server, _Hub.Audit.get_log_path())
-	_dock.bind_events(_events)
-	_dock.bind_notifier(_notifier)
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
 
 	_register_menus()
@@ -183,7 +167,7 @@ func _enter_tree() -> void:
 			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues")
 			% [_engine_ver, _Hub.GODOT_TESTED_MAX_VERSION])
 
-	_wizard = OnboardingWizard.new(self, _dock, _notifier)
+	_wizard = OnboardingWizard.new(self, _dock)
 	call_deferred("_check_onboarding")
 
 
@@ -193,7 +177,6 @@ func _check_onboarding() -> void:
 
 func _process(_delta: float) -> void:
 	_detect_playtest_end()
-	_feature_settings.poll()
 
 
 func _detect_playtest_end() -> void:
@@ -235,9 +218,6 @@ func _exit_tree() -> void:
 
 	# RefCounted subsystems — drop our references so they can be collected
 	# once the dock (which also holds them) is freed above.
-	_notifier = null
-	_feature_settings = null
-	_events = null
 	if _user_path_monitor != null:
 		_user_path_monitor.stop()
 		_user_path_monitor = null

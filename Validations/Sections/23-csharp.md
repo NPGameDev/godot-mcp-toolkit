@@ -121,8 +121,6 @@ public partial class Sv2CsGlobal : Node
 
 ## CS10. Runtime probe on C# node
 
-**[gated: skip if execute_code unavailable]**
-
 **CS10.1** `project_set_setting` main_scene=main.tscn
 **CS10.2** `game_start` → **Expect:** success
 **CS10.3** Wait 3 seconds for .NET runtime

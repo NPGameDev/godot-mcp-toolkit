@@ -7,7 +7,6 @@ const FileGuard = _Hub.FileGuard
 const Untrusted = _Hub.Untrusted
 const Scrubber = _Hub.Scrubber
 const Helpers = _Hub.Helpers
-const FeatureGate = _Hub.FeatureGate
 const Coerce = _Hub.Coerce
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
@@ -346,9 +345,6 @@ static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
-	if not FeatureGate.is_enabled("execute_code"):
-		return FeatureGate.disabled_error("execute_code")
-
 	var code := str(parameters.get("code", ""))
 	if code.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing code")

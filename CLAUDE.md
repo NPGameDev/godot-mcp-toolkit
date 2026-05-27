@@ -65,16 +65,6 @@ When activating tool groups via `discover_tools`, always pass
 `include_schemas: true` to receive full parameter schemas in the response.
 This avoids a separate tool lookup for each activated tool.
 
-### Gated tools
-
-Some tools require explicit opt-in via environment variables in `.mcp.json`:
-
-| Scope | Gate env var | Effect when enabled |
-|-------|-------------|---------------------|
-| `execute_code` tool | `GODOT_MCP_ALLOW_EXECUTE_CODE` | Unlocks arbitrary GDScript execution |
-| `node_call_method` tool | `GODOT_MCP_ALLOW_NODE_CALL_METHOD` | Unlocks calling arbitrary methods on nodes |
-| `user_data` group | `GODOT_MCP_ALLOW_USER_SCOPE` | Unlocks `save_read`, `save_write`, `save_delete`, `save_list` |
-
 ## Multi-project support (iter 23)
 
 Multiple Godot editors can run the plugin simultaneously. Each editor
@@ -135,32 +125,28 @@ bypasses registry discovery entirely (backwards compat).
   the LLM. Envelope-tag variants in the body are scrubbed before wrapping
   to prevent tag-breakout injection. Write paths are never wrapped. The
   envelope is a defense-in-depth hint, not a security boundary — the real
-  boundaries are FileGuard, FeatureGate, token auth, and the audit log.
+  boundaries are FileGuard, token auth, and the audit log. See
+  `docs/security-recommendations.md` and the `destructiveHint` MCP annotation
+  on mutating tools for the caller-facing risk signals.
 
 ## Editor UI (iter 21 + 35)
 
 - **MCP dock** — bottom-panel tab ("MCP"). Signal-driven server status (no
-  polling), feature-gate toggles with .mcp.json sync indicators, polled audit
-  log tail (visibility-gated, 500ms Timer). Action buttons: Regenerate Token,
-  Open Full Log, Clear View. Response limit settings (script read cap, WS
-  buffer size) stored in ProjectSettings `mcp/limits/`. Collapsible Info/Help
-  panel with connection status, tool list grouped by domain, version info,
-  multi-instance guidance, read-only mode info, and quick-link buttons.
+  polling), polled audit log tail (visibility-gated, 500ms Timer). Action
+  buttons: Regenerate Token, Open Full Log, Clear View. Response limit settings
+  (script read cap, WS buffer size) stored in ProjectSettings `mcp/limits/`.
+  Collapsible Info/Help panel with connection status, tool list grouped by
+  domain, version info, multi-instance guidance, read-only mode info, and
+  quick-link buttons.
 - **Menu items** — four entries under Project → Tools: Regenerate Token, Show
   Audit Log, Open Project Settings, Write .mcp.json. All also registered in
   the Command Palette (Ctrl+Shift+P → "MCP").
 - **Read-only badge** — when `GODOT_MCP_READ_ONLY=1` is set in `.mcp.json`,
-  the dock displays a yellow badge and the Feature Gates section is collapsed
-  and locked.
+  the dock displays a yellow badge.
 - **Response limits** — configurable in the dock's "Response Limits" section.
   Script read cap (default 256 KB, min 64 KB) and WebSocket buffer (default
   1024 KB, min 256 KB). Stored in ProjectSettings `mcp/limits/`.
-- **Enable All Gates** — available from the onboarding wizard. Enables all
-  feature gates via ProjectSettings. Explicit `deny_<feature>` still overrides.
-  Palette, or the first-run onboarding dialog.
-- **.mcp.json sync** — toggling any gate in the dock or PS Inspector
-  immediately writes the corresponding env var to `.mcp.json`. The dock
-  shows a warning when `.mcp.json` is missing.
+- **.mcp.json sync** — the dock shows a warning when `.mcp.json` is missing.
 - **Plugin disable cleanup** — disabling the plugin via Project Settings →
   Plugins prompts to delete the orphaned `.mcp.json` at project root.
 - **Export stripping** — `EditorExportPlugin` auto-strips all
@@ -168,72 +154,7 @@ bypasses registry discovery entirely (backwards compat).
 - **EditorSettings** (per-user, not committed) — `mcp/personal/dock_default_visible`,
   `mcp/personal/audit_log_tail_lines`.
 
-## Feature gates (iter 19 + 41d-ter refactor)
-
-Seven features are gated behind explicit opt-in. By default all gates are
-**off** — gated tools are absent from the MCP catalogue entirely and
-plugin-side handlers return `FEATURE_DISABLED` as defence-in-depth.
-
-**Gate model (env-var-only):** `.mcp.json` env vars are the sole source of
-truth for gate state. ProjectSettings bools under
-`mcp_toolkit/feature_gates/` are a **mirror UI** — changes from the dock
-or PS Inspector sync bidirectionally with `.mcp.json`. There is no
-dual/single gate distinction; all gates follow the same check order:
-
-1. **Deny** (PS) — `mcp_toolkit/feature_gates/deny_<feature>` always wins
-2. **PS gate bool** — ProjectSettings is the single source of truth
-
-| Feature               | Env var                                  | PS key                                             | Risk |
-|-----------------------|------------------------------------------|----------------------------------------------------|------|
-| `execute_code`        | `GODOT_MCP_ALLOW_EXECUTE_CODE`          | `mcp_toolkit/feature_gates/allow_execute_code`     | Arbitrary GDScript via Expression |
-| `node_call_method`    | `GODOT_MCP_ALLOW_NODE_CALL_METHOD`      | `mcp_toolkit/feature_gates/allow_node_call_method` | Method invocation on edited-scene nodes |
-| `read_user_scope`     | `GODOT_MCP_ALLOW_USER_SCOPE`            | `mcp_toolkit/feature_gates/allow_user_scope`       | Read/write whitelisted user:// paths |
-
-**Dangerous-gate confirmation:** Two RCE-class features (`execute_code`,
-`node_call_method`) show a confirmation dialog the first time they are
-enabled. Once per editor session per feature.
-`execute_code` is the effective security boundary for arbitrary code execution
-(including OS commands and outbound HTTP via GDScript).
-
-### How to enable
-
-Set the env var in `.mcp.json` `env` block:
-```json
-{ "env": { "GODOT_MCP_ALLOW_NODE_CALL_METHOD": "1" } }
-```
-
-Or toggle the gate in the MCP Toolkit dock or Project Settings →
-Mcp Toolkit → Feature Gates (changes sync to `.mcp.json` automatically).
-
-### user:// whitelist (iter 19c)
-
-The `save.*` tools access `user://` paths filtered by a plugin-author-configured
-whitelist at `addons/godot_mcp_toolkit/user_scope_whitelist.json`. The whitelist
-is NOT agent-configured — the plugin author edits it before shipping; end users
-who enable the gate trust the author's whitelist.
-
-```json
-{
-  "$schema_version": 1,
-  "read":   ["saves/", "logs/"],
-  "write":  ["saves/"],
-  "delete": ["saves/"]
-}
-```
-
-- Entries are relative to `user://`. Trailing `/` = prefix match; no trailing
-  `/` = exact match. No wildcards, no `..`.
-- Separate `read`/`write`/`delete` keys let the author grant "read logs but not
-  write/delete them" granularity.
-- Symlink escape guard: paths that resolve outside `OS.get_user_data_dir()` are
-  rejected regardless of whitelist match.
-
-To enable the `save.*` tools:
-1. Set `GODOT_MCP_ALLOW_USER_SCOPE=1` in `.mcp.json` env block.
-2. Enable `mcp_toolkit/feature_gates/allow_user_scope` in Project Settings → Advanced.
-3. Ensure `user_scope_whitelist.json` exists and is valid JSON.
-
-### Breaking changes vs pre-iter-22
+## Breaking changes vs pre-iter-22
 
 **Tool merges (iter 22):**
 - `signal_connect` + `signal_disconnect` → `signal_manage` (action: "connect"|"disconnect")
@@ -246,39 +167,18 @@ To enable the `save.*` tools:
 - Profiles removed entirely. Standard is the only mode. `GODOT_MCP_PROFILE` deprecated (warning if set).
 - Read-only mode (`GODOT_MCP_READ_ONLY=1`) replaces Minimal.
 
-**Gate changes (iters 19, 41d-nonis, 41l-octies):**
-- `node_call_method` — requires `node_call_method` gate.
-- `execute_code` — renamed from `game_eval`; requires `execute_code` gate.
-- `project_set_setting`, `input_map_write` gates removed (tools ungated).
-- Gate storage moved from sidecar to ProjectSettings (41l-octies).
-
-### Error shape
-
-When a gated tool is called while disabled, the plugin returns:
-```json
-{
-  "success": false,
-  "code": "FEATURE_DISABLED",
-  "error": "Feature '<name>' is disabled …",
-  "risk": "<risk description>",
-  "how_to_enable": "Set env GODOT_MCP_ALLOW_… = 1 [and …]"
-}
-```
-
 ## Hot-reload troubleshooting
 
-When gate changes are made in the dock or PS Inspector, the
-plugin writes `.mcp.json`, broadcasts `config_reloaded` to the TS bridge,
-and the bridge calls `server.sendToolListChanged()`. The full diagnostic
-chain logs:
+When configuration changes are made (e.g. from the dock or PS Inspector), the
+plugin broadcasts `config_reloaded` to the TS bridge and the bridge calls
+`server.sendToolListChanged()`. The full diagnostic chain logs:
 
 1. `[MCPServer] broadcasting config_reloaded to N authed peers` (plugin)
 2. `[godot-mcp] plugin notification: config_reloaded` (bridge)
-3. `[godot-mcp] gate states from plugin: {...}` (server)
-4. `[godot-mcp] config reloaded: old → new — N tools registered` (server)
-5. `[godot-mcp] sending notifications/tools/list_changed` (server)
+3. `[godot-mcp] config reloaded: old → new — N tools registered` (server)
+4. `[godot-mcp] sending notifications/tools/list_changed` (server)
 
-If all 5 log lines appear but the MCP client still shows stale tools:
+If all 4 log lines appear but the MCP client still shows stale tools:
 
 - **Claude Code v2.1.0+:** The tool *registry* updates automatically via
   `tools/list_changed`. However, the deferred-tools mechanism caches
@@ -366,7 +266,7 @@ func _cmd_do_thing(params: Dictionary) -> Dictionary:
   `extensions.*`) are rejected at load time.
 - Extensions always register regardless of read-only mode.
 - Extensions run with the same trust level as the plugin itself
-  (they inherit FileGuard, FeatureGate, audit logging).
+  (they inherit FileGuard and audit logging).
 - Errors in extension scripts are logged but never crash the plugin.
 - Restart the editor (or disable/re-enable the plugin) to pick up changes.
 

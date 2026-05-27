@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Navigates to the MCP Toolkit section in the ProjectSettings dialog.
+## Navigates to the Mcp Toolkit section in the ProjectSettings dialog.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 
@@ -12,7 +12,7 @@ static func open_mcp_settings() -> void:
 		var toaster = _Hub.get_toaster()
 		if toaster != null:
 			toaster.push_toast(
-				"Project -> Project Settings -> Mcp Toolkit -> Feature Gates", 0)
+				"Project -> Project Settings -> Mcp Toolkit", 0)
 		return
 
 	# Try the C++ fast-path: popup_project_settings() refreshes the section
@@ -20,7 +20,7 @@ static func open_mcp_settings() -> void:
 	if dialog.has_method("popup_project_settings"):
 		dialog.call("popup_project_settings", false)
 		if dialog.has_method("set_general_page"):
-			dialog.call("set_general_page", "Mcp Toolkit/Feature Gates")
+			dialog.call("set_general_page", "Mcp Toolkit")
 			return
 	else:
 		dialog.popup_centered_clamped(Vector2i(900, 700))
@@ -66,11 +66,8 @@ static func _select_mcp_section(dialog: Window) -> void:
 		var root_item := tree.get_root()
 		if root_item == null:
 			continue
-		# Try "Feature Gates" first (child), then "Mcp Toolkit" (parent),
-		# then any item containing "mcp".
-		var target := _find_tree_item(root_item, "Feature Gates")
-		if target == null:
-			target = _find_tree_item(root_item, "Mcp Toolkit")
+		# Try "Mcp Toolkit" first, then any item containing "mcp".
+		var target := _find_tree_item(root_item, "Mcp Toolkit")
 		if target == null:
 			target = _find_tree_item_contains(root_item, "mcp")
 		if target != null:

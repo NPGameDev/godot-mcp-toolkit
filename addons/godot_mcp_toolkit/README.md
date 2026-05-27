@@ -166,8 +166,8 @@ file if you need these.
   same path as `node_get_property` (primitives / Arrays / Dicts
   round-trip; `Node` refs stringify to their path; `Resource` refs emit
   `{type:"Resource",path,class}`). Mode A only — runtime-live node
-  invocation is deferred. FeatureGate-protected
-  (`node_call_method` is off-by-default in `--lite`).
+  invocation is deferred. Annotated `destructiveHint: true`
+  — agents see the risk signal via MCP annotations.
 
 ### Side-effect note — custom Resource classes
 
@@ -183,12 +183,12 @@ expanded `_coerce_value` set above (5 new type tags: `Vector2i`, `Vector3i`,
 `Rect2i`, `Transform2D`, `Transform3D`).
 
 - `project_set_setting` — write any `ProjectSettings` key + persist via
-  `ProjectSettings.save`. Refuses `mcp/unsafe/*` (toolkit's own gates) and
+  `ProjectSettings.save`. Refuses `mcp_toolkit/*` (toolkit's internal settings) and
   `editor/*` (editor-session state, not project config) — defence-in-depth
   against an agent disabling its own constraints. UPDATE shape (no
   `status`); returns `was_set_before` + `previous_value` for observability.
-  Pairs with `project_get_settings`. **FeatureGate-protected** — high
-  blast-radius (main scene, autoloads, physics tick).
+  Pairs with `project_get_settings`. Annotated `destructiveHint: true` —
+  high blast-radius (main scene, autoloads, physics tick).
 - `input_map_add_action` / `input_map_action_add_event` /
   `input_map_action_remove_event` / `input_map_remove_action` — write path
   for `InputMap`. Persists to `ProjectSettings.input/<action>` via

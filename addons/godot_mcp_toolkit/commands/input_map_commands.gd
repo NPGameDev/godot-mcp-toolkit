@@ -3,7 +3,6 @@ extends RefCounted
 ## input_map.* command handlers — action (add/remove) and event (bind/unbind).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FeatureGate = _Hub.FeatureGate
 
 const BUILTIN_UI_ACTIONS: Array[String] = [
 	"ui_accept", "ui_cancel", "ui_focus_next", "ui_focus_prev",

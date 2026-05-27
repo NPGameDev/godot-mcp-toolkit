@@ -8,10 +8,8 @@ extends RefCounted
 ## user://screenshots/) via the allowed_prefixes parameter.
 ##
 ## resolve_safe_user() extends access to whitelisted user://
-## subpaths behind the read_user_scope FeatureGate + a plugin-author-
-## configured whitelist at addons/godot_mcp_toolkit/user_scope_whitelist.json.
-
-const FeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
+## subpaths behind a plugin-author-configured whitelist at
+## addons/godot_mcp_toolkit/user_scope_whitelist.json.
 
 const _WHITELIST_PATH := "res://addons/godot_mcp_toolkit/user_scope_whitelist.json"
 
@@ -53,18 +51,11 @@ static func _load_user_whitelist() -> Variant:
 	return _user_whitelist
 
 
-## Validate and resolve a user:// path against the whitelist and FeatureGate.
+## Validate and resolve a user:// path against the whitelist.
 ## mode must be "read", "write", or "delete".
 ## Returns { ok: true, absolute_path } on success,
 ## { ok: false, error_code, error_message } on failure.
 static func resolve_safe_user(path: String, mode: String) -> Dictionary:
-	# Gate check.
-	if not FeatureGate.is_enabled("read_user_scope"):
-		return {
-			"ok": false,
-			"error_code": "USER_SCOPE_DISABLED",
-			"error_message": "user:// access is disabled; enable via env GODOT_MCP_ALLOW_USER_SCOPE=1 AND Project Settings mcp_toolkit/feature_gates/allow_user_scope=true",
-		}
 	# Reject .. segments — directory traversal.
 	for segment in path.replace("\\", "/").split("/"):
 		if segment == "..":

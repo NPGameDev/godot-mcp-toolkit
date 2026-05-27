@@ -16,7 +16,6 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const Coerce = _Hub.Coerce
 const Untrusted = _Hub.Untrusted
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
-const FeatureGate = _Hub.FeatureGate
 const Scrubber = _Hub.Scrubber
 const Helpers = _Hub.Helpers
 const RegistryClient = _Hub.RegistryClient
@@ -1129,16 +1128,12 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 	})
 
 
-# execute.code: DANGER — evaluates GDScript via Expression in the running game's
-# context. Dual-gated: requires BOTH env var AND ProjectSettings flag.
-# Defence-in-depth: even if the TS catalogue exposes the tool (env var set),
-# this handler blocks unless PS is also on.
+# execute.code: evaluates GDScript via Expression in the running game's context.
+# Risk communicated via MCP annotations (destructiveHint: true) and
+# security-recommendations.md; agent-side tool filtering is the enforcement layer.
 const _EXECUTE_CODE_LOG_CAP := 256
 
 func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
-	if not FeatureGate.is_enabled("execute_code"):
-		_send_result(peer, id, FeatureGate.disabled_error("execute_code"))
-		return
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
 		return

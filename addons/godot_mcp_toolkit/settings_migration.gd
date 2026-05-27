@@ -4,7 +4,6 @@ extends RefCounted
 ## Called once at plugin startup; safe to delete once legacy users have migrated.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FeatureRegistry = _Hub.FeatureRegistry
 const ProjectPaths = _Hub.ProjectPaths
 
 
@@ -64,66 +63,30 @@ static func migrate_stale_settings() -> void:
 		"mcp/unsafe/allow_project_set_setting",
 		"mcp/unsafe/allow_input_map_write",
 		"application/config/mcp_smoke_15d",
-		# Gates removed in 41d-nonis (no tools used them):
+		# Feature gate subsystem removed entirely (41l-vicies-septies).
+		# Clean up all legacy keys from every era:
+		"mcp_toolkit/feature_gates/allow_execute_code",
+		"mcp_toolkit/feature_gates/allow_node_call_method",
+		"mcp_toolkit/feature_gates/allow_user_scope",
+		"mcp_toolkit/feature_gates/allow_game_eval",
 		"mcp_toolkit/feature_gates/allow_os_execute",
 		"mcp_toolkit/feature_gates/allow_outbound_http",
+		"mcp_toolkit/feature_gates/profile",
+		"mcp_toolkit/feature_gates/power_user_mode",
+		"mcp_toolkit/feature_gates/power_user_warning",
+		"mcp_toolkit/feature_gates/profile_warning",
+		"mcp_toolkit/unsafe/allow_all",
+		"mcp_toolkit/unsafe/power_user_mode",
+		"mcp_toolkit/unsafe/power_user_warning",
+		"mcp_toolkit/power_user_mode",
+		"mcp_toolkit/profile",
+		"mcp_toolkit/internal/pre_power_user_cache",
 	]
 	var removed := 0
 	for key in stale_keys:
 		if ProjectSettings.has_setting(key):
 			ProjectSettings.set_setting(key, null)
 			removed += 1
-	# Migrate unsafe/ -> feature_gates/ per-feature keys.
-	for feature in FeatureRegistry.all_features():
-		var entry: Dictionary = FeatureRegistry.get_entry(feature)
-		var new_key: String = entry["ps_key"]  # already feature_gates/
-		var old_key := new_key.replace("feature_gates/", "unsafe/")
-		if ProjectSettings.has_setting(old_key):
-			var val = ProjectSettings.get_setting(old_key, false)
-			if val:
-				ProjectSettings.set_setting(new_key, true)
-			ProjectSettings.set_setting(old_key, null)
-			removed += 1
-	# Migrate renamed gate: game_eval → execute_code.
-	var _old_ge := "mcp_toolkit/feature_gates/allow_game_eval"
-	if ProjectSettings.has_setting(_old_ge):
-		var val = ProjectSettings.get_setting(_old_ge, false)
-		var _new_ge := "mcp_toolkit/feature_gates/allow_execute_code"
-		if val and not ProjectSettings.has_setting(_new_ge):
-			ProjectSettings.set_setting(_new_ge, true)
-		ProjectSettings.set_setting(_old_ge, null)
-		removed += 1
-	# Migrate old power_user_mode paths -> mcp_toolkit/profile enum.
-	for old_key in ["mcp_toolkit/unsafe/allow_all", "mcp_toolkit/unsafe/power_user_mode", "mcp_toolkit/power_user_mode"]:
-		if ProjectSettings.has_setting(old_key):
-			var val = ProjectSettings.get_setting(old_key, false)
-			if val:
-				ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", 2)  # Power User
-			ProjectSettings.set_setting(old_key, null)
-			removed += 1
-	# Migrate feature_gates/power_user_mode boolean -> mcp_toolkit/profile enum.
-	if ProjectSettings.has_setting("mcp_toolkit/feature_gates/power_user_mode"):
-		var was_pu = ProjectSettings.get_setting("mcp_toolkit/feature_gates/power_user_mode", false)
-		if was_pu:
-			ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", 2)  # Power User
-		ProjectSettings.set_setting("mcp_toolkit/feature_gates/power_user_mode", null)
-		removed += 1
-	# Clean up stale mcp_toolkit/profile (wrong path — should be feature_gates/profile).
-	if ProjectSettings.has_setting("mcp_toolkit/profile"):
-		var val = ProjectSettings.get_setting("mcp_toolkit/profile", 1)
-		if val is int and val != 1 and not ProjectSettings.has_setting("mcp_toolkit/feature_gates/profile"):
-			ProjectSettings.set_setting("mcp_toolkit/feature_gates/profile", val)
-		ProjectSettings.set_setting("mcp_toolkit/profile", null)
-		removed += 1
-	# Remove stale warning keys (renamed to status).
-	for old_warn in ["mcp_toolkit/unsafe/power_user_warning", "mcp_toolkit/feature_gates/power_user_warning", "mcp_toolkit/feature_gates/profile_warning"]:
-		if ProjectSettings.has_setting(old_warn):
-			ProjectSettings.set_setting(old_warn, null)
-			removed += 1
-	# Remove internal cache from ProjectSettings — now stored in user:// file.
-	if ProjectSettings.has_setting("mcp_toolkit/internal/pre_power_user_cache"):
-		ProjectSettings.set_setting("mcp_toolkit/internal/pre_power_user_cache", null)
-		removed += 1
 	if removed > 0:
 		ProjectSettings.save()
 		print("[MCP] Migrated %d stale settings" % removed)

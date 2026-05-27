@@ -12,7 +12,6 @@ signal command_received(method: String)
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const RegistryClient = _Hub.RegistryClient
-const FeatureGate = _Hub.FeatureGate
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
 
@@ -155,7 +154,7 @@ func get_command_methods() -> Array:
 
 
 ## Send a notification to all authenticated WebSocket peers.
-## Used by the dock to signal config changes (e.g. profile / gate updates)
+## Used by the dock to signal config changes (e.g. profile updates)
 ## so the MCP server can reload its tool list without a restart.
 func broadcast_notification(notification_type: String, params: Dictionary = {}) -> void:
 	var payload := {"notification": notification_type}
@@ -413,12 +412,10 @@ func _handle_auth(peer: WebSocketPeer, message: Dictionary) -> void:
 	if MCPAuth.validate(message, _session_token):
 		_peer_authed[peer] = true
 		var vi := Engine.get_version_info()
-		var gates: Dictionary = FeatureGate.snapshot_gates()
 		var plugin_ver := _get_plugin_version()
 		peer.send_text(JSON.stringify({
 			"authed": true,
 			"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
-			"gates": gates,
 			"version": plugin_ver,
 		}))
 		# Version mismatch check — human-only (editor console), nothing on MCP wire.
@@ -589,7 +586,7 @@ func _drain_mutation_queue() -> void:
 		# Skip disconnected peers.
 		if entry.peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
 			continue
-		# Skip unregistered commands (gate toggle race).
+		# Skip unregistered commands (hot-reload race).
 		if not _registry.has_command(entry.method):
 			_send_error(entry.peer, entry.id, -32601,
 				"Method unregistered while queued: %s" % entry.method)
@@ -712,7 +709,7 @@ func _drain_scene_queue() -> void:
 		# Skip disconnected peers.
 		if entry.peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
 			continue
-		# Skip unregistered commands (gate toggle race).
+		# Skip unregistered commands (hot-reload race).
 		if not _registry.has_command(entry.method):
 			_send_error(entry.peer, entry.id, -32601,
 				"Method unregistered while queued: %s" % entry.method)

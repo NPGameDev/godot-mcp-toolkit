@@ -18,7 +18,7 @@
 **7.4** `editor_get_console` — (default params)
 - **Expect:** success, returns console output
 
-**7.5** Seed console — `execute_code` code=`push_warning("SV2_SEED_Alpha42 test_line(parens)")` **[gated: skip if execute_code unavailable]**
+**7.5** Seed console — `execute_code` code=`push_warning("SV2_SEED_Alpha42 test_line(parens)")`
 - **Expect:** success
 
 **7.6** `editor_get_console` — text_filter=`SV2_SEED`, is_regex=`false`

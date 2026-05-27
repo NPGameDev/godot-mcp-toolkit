@@ -5,7 +5,6 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const Coerce = _Hub.Coerce
 const Untrusted = _Hub.Untrusted
-const FeatureGate = _Hub.FeatureGate
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 const _VALID_LAYER_CATEGORIES := ["2d_physics", "2d_render", "3d_physics", "3d_render"]
@@ -69,10 +68,10 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("INVALID_PARAMS", "setting must be a non-empty string")
 	if key.begins_with("mcp_toolkit/"):
 		return MCPToolkitError.fail("INVALID_PATH",
-			"refusing to write mcp_toolkit/* from project.set_setting (those are the toolkit's own settings — use the FeatureGate system or dock UI); got key=%s" % key)
+			"refusing to write mcp_toolkit/* from project.set_setting (those are the toolkit's own settings — use the dock UI); got key=%s" % key)
 	if key.begins_with("mcp/"):
 		return MCPToolkitError.fail("INVALID_PATH",
-			"refusing to write mcp/* from project.set_setting (use the FeatureGate system); got key=%s" % key)
+			"refusing to write mcp/* from project.set_setting (those are the toolkit's internal settings); got key=%s" % key)
 	if key.begins_with("editor/"):
 		return MCPToolkitError.fail("INVALID_PATH",
 			"refusing to write editor/* ProjectSettings from project.set_setting (editor-session state, not project config); got key=%s" % key)

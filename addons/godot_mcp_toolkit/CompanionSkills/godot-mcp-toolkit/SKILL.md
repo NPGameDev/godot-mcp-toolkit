@@ -36,16 +36,10 @@ minimise wasted tool calls.
   only against explicit keywords, not via substring. If a short keyword
   returns no results, use the exact group name instead
 
-**Feature gates** — gated tools require env vars in `.mcp.json` env block:
-
-| Env var | Tool(s) gated |
-|---------|--------------|
-| `GODOT_MCP_ALLOW_EXECUTE_CODE=1` | `execute_code` |
-| `GODOT_MCP_ALLOW_NODE_CALL_METHOD=1` | `node_call_method` |
-| `GODOT_MCP_ALLOW_USER_SCOPE=1` | `save_read`, `save_write`, `save_delete`, `save_list` |
-
-Toggle via the dock UI (Feature Gates checkboxes), not manual `.mcp.json`
-edits. Changes require a full MCP client restart.
+**High-risk tools** — some tools are annotated with `destructiveHint: true` in
+their MCP annotations so agents see the risk signal. These tools are always
+available (no env-var opt-in needed); the agent decides whether to use them
+based on context.
 
 **Finding tools** (Claude Code tip): Use keyword search (e.g., `godot scene`)
 rather than `select:` syntax. Or use full prefixed names
@@ -71,9 +65,8 @@ rather than `select:` syntax. Or use full prefixed names
 - **Reading one property?** Use `node_get_property`. Reserve
   `scene_get_tree(include_properties: true)` for surveying unfamiliar scenes
   with <10 nodes. Even small scenes return hundreds of property lines.
-- **Need a computed value or method call at runtime?** Use `execute_code`
-  (requires `GODOT_MCP_ALLOW_EXECUTE_CODE=1`). For a single property read,
-  `node_get_property` is cheaper.
+- **Need a computed value or method call at runtime?** Use `execute_code`.
+  For a single property read, `node_get_property` is cheaper.
 - **Editor-side vs runtime-side diagnostics?** `editor_get_console` for
   compilation errors and editor warnings. `debugger_get_log` for runtime
   crashes and game-state issues.
@@ -158,13 +151,12 @@ during delays — enemies move, timers tick, damage accumulates.
 
 1. `debugger_get_log` — read `print()` output. Add strategic prints in
    scripts for key state changes (score, health, wave number, game state).
-   Cheapest runtime verification — tiny response, no gate required.
+   Cheapest runtime verification — tiny response, available by default.
 2. `runtime_get_node_state` — check `@export` vars and node existence.
    Design scripts with `@export` on key state vars to make them visible.
 3. `runtime_get_script_vars` — all script variables, not just exports.
-   Activate `runtime_advanced` group via `discover_tools`. No gate required.
-4. `execute_code` — arbitrary queries on any node (requires
-   `GODOT_MCP_ALLOW_EXECUTE_CODE=1` gate). Most flexible but larger
+   Activate `runtime_advanced` group via `discover_tools`. Available by default.
+4. `execute_code` — arbitrary queries on any node. Most flexible but larger
    responses than options 1-3.
 5. `runtime_screenshot` — visual check. **Last resort.** Costs 5-10x more
    tokens than any text tool above. Reserve for UI layout and alignment
@@ -307,7 +299,7 @@ activated via `discover_tools`. Common groups:
 | `runtime_advanced` | `execute_code`, `runtime_get_script_vars`, `runtime_screenshot` |
 | `signals` | `signal_manage`, `signal_emit` |
 | `animation_authoring` | `animation_create`, `animation_add_track`, ... |
-| `input_map` | `input_map_action`, `input_map_event` (gated) |
+| `input_map` | `input_map_action`, `input_map_event` |
 | `tilemap` | `tilemap_set_cells`, `tilemap_read_cells`, `tileset_edit` |
 | `audio` | `audiobus_layout` |
 | `3d_tools` | `mesh_create`, `mesh_surface`, `light_configure`, ... |
@@ -377,14 +369,8 @@ for runtime-side method invocation.
 
 ### Env var lifecycle
 
-Changes to `GODOT_MCP_ALLOW_*` and `GODOT_MCP_PROFILE` require a full MCP
-client restart. Reconnecting alone is not enough.
-
-### .mcp.json is managed by the plugin
-
-Do not manually edit gate state. Use the dock UI (Feature Gates checkboxes)
-to toggle gates. The plugin writes gate state to a sidecar file and syncs
-to `.mcp.json` automatically.
+Changes to `GODOT_MCP_PROFILE` require a full MCP client restart.
+Reconnecting alone is not enough.
 
 ### Never screenshot for debugging logic
 
@@ -423,7 +409,7 @@ Use `source: "buffer"` (default) for real-time capture.
 
 ### File path conventions
 
-- All paths must use `res://` (project scope) or `user://` (requires gate).
+- All paths must use `res://` (project scope) or `user://` (requires `GODOT_MCP_ENABLE_USER_SCOPE=1` + whitelist).
 - Absolute OS paths (`C:\...`, `/home/...`) are rejected by the file guard.
 - `..` path segments are rejected (no directory traversal).
 - `scene_create` and `script_write` auto-create parent directories.
@@ -460,7 +446,7 @@ enemies kill the player before events process).
 | Code | Cause | Recovery |
 |------|-------|----------|
 | `GAME_NOT_RUNNING` | No game started, or it crashed | `game_start`, then `editor_get_console` if it fails again |
-| `FEATURE_GATED` | Tool needs an env var | Check error message for which var. Set in `.mcp.json`, restart client |
+| `FEATURE_GATED` | Tool needs an env var | Check error message for which var. Add to `.mcp.json` env block, restart client |
 | `NODE_NOT_FOUND` | Bad node path | Root is `"."`, children are relative. Check `scene_get_tree` |
 | `PARENT_NOT_FOUND` | Parent dir doesn't exist | `scene_create` and `script_write` auto-create dirs; others may not |
 | `ALREADY_PLAYING` | Game already running | `game_stop` first, or use `if_running: "return"` |
@@ -596,7 +582,7 @@ These are the most common sources of wasted tool calls and retries:
 | `scene_create` vs `scene_create_node` | `scene_create` = new .tscn file; `scene_create_node` = add node to open scene |
 | `autoload_manage` vs `project_set_setting` | Always use `autoload_manage` for autoloads; `project_set_setting` rejects them |
 | `autoload_manage` + console errors | After registering, `editor_refresh` before trusting console errors — stale cache shows false "identifier not found" |
-| `execute_code` | Requires `GODOT_MCP_ALLOW_EXECUTE_CODE=1`; responses are larger than property reads |
+| `execute_code` | Annotated `destructiveHint: true`; responses are larger than property reads |
 | `editor_refresh` | Needed after external writes; especially in headless mode |
 | `scene_delete` / `scene_close` | Console shows `_set_main_scene_state: Cannot convert argument 2 from Object to Object` when closing non-active tabs — this is **benign Godot engine noise** from the deferred queue, not a bug. Tabs close correctly. Do not attempt to fix or investigate this error. |
 | `game_start` | `scene_path` accepts `"main"`, `"current"`, or `res://` path |

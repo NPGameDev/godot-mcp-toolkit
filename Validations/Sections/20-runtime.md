@@ -51,7 +51,7 @@
 **20.11** `debugger_get_log`
 - **Expect:** success, game output (may include _ready prints)
 
-**20.12** Seed runtime log — `execute_code` code=`print("SV2_RUNTIME_SEED_Beta99 check(braces)")` **[gated: skip if execute_code unavailable]**
+**20.12** Seed runtime log — `execute_code` code=`print("SV2_RUNTIME_SEED_Beta99 check(braces)")`
 - **Expect:** success
 
 **20.13** `debugger_get_log` — text_filter=`SV2_RUNTIME_SEED`, is_regex=`false`
@@ -69,7 +69,7 @@
 **20.17** `input_simulate` — events=[{"event_type":"action","event_data":{"action":"ui_accept","pressed":true}}]
 - **Expect:** success
 
-**20.18** `execute_code` (runtime) — code=`get_tree().current_scene.name` **[gated]**
+**20.18** `execute_code` (runtime) — code=`get_tree().current_scene.name`
 - **Expect:** "Sv2Main"
 
 **20.19** `animation_player_control` — node_path=`/root/Sv2Main/Sv2AnimPlayer`, operation=`play`, animation_name=`sv2_lib/idle`

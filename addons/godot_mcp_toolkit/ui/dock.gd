@@ -7,8 +7,6 @@ extends VBoxContainer
 ## during playtests so it updates without requiring server events.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FeatureRegistry = _Hub.FeatureRegistry
-const FeatureGate = _Hub.FeatureGate
 const McpJsonSync = _Hub.McpJsonSync
 const RegistryClient = _Hub.RegistryClient
 const NodejsCheck = _Hub.NodejsCheck
@@ -21,8 +19,6 @@ const _TOAST_ERROR := 2
 
 var _server: Node = null
 var _audit_path: String = ""
-var _events: RefCounted = null  # GateEvents signal bus
-var _notifier: RefCounted = null  # GateNotifier
 
 # Status widgets.
 var _status_label: Label = null
@@ -32,15 +28,8 @@ var _runtime_label: Label = null
 var _read_only_badge: Label = null
 var _mcp_json_btn: Button = null
 
-# Feature rows: { feature_name: { check: CheckBox } }
-var _feature_rows: Dictionary = {}
-var _mcp_json_hint: Label = null
-# Node.js warnings (shared detection via NodejsCheck, two display locations).
+# Node.js warning.
 var _nodejs_status_warning: Label = null
-var _nodejs_gate_warning: Label = null
-# Gates collapsible section — toggle + scroll for read-only lock.
-var _gates_toggle: Button = null
-var _gates_scroll: ScrollContainer = null
 
 # Settings widgets.
 var _script_cap_spinbox: SpinBox = null
@@ -66,24 +55,12 @@ func bind(server: Node, audit_path: String) -> void:
 	_server.client_disconnected.connect(_on_client_disconnected)
 	_server.command_received.connect(_on_command_received)
 	_refresh_status()
-	_refresh_features()
-
-
-func bind_events(events: RefCounted) -> void:
-	_events = events
-	_events.features_changed.connect(_refresh_features)
-	_events.status_changed.connect(_refresh_status)
-
-
-func bind_notifier(notifier: RefCounted) -> void:
-	_notifier = notifier
 
 
 func _ready() -> void:
 	_build_ui()
 	# bind() runs before _ready (node not yet in tree), so its refresh
 	# calls exit early on null widgets. Re-run now that UI exists.
-	_refresh_features()
 	_refresh_status()
 	# Lightweight timer so runtime label updates during playtests without
 	# requiring server events (e.g. port discovery, playtest end).
@@ -95,13 +72,11 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for dialog in [_audit_dialog, _info_dialog, _danger_dialog, _ro_gate_dialog, _catalog_dialog]:
+	for dialog in [_audit_dialog, _info_dialog, _catalog_dialog]:
 		if dialog != null and is_instance_valid(dialog):
 			dialog.queue_free()
 	_audit_dialog = null
 	_info_dialog = null
-	_danger_dialog = null
-	_ro_gate_dialog = null
 	_catalog_dialog = null
 
 
@@ -225,15 +200,15 @@ func _build_ui() -> void:
 
 	_read_only_badge = Label.new()
 	_read_only_badge.text = (
-		"\u26a0 Read-only mode active. Use 'Open .mcp.json' below to edit, "
-		+ "then restart the editor.")
+		"\u26a0 Read-only mode active \u2014 mutating tools hidden. "
+		+ "Set GODOT_MCP_READ_ONLY=0 in .mcp.json and restart to restore full access.")
 	_read_only_badge.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_read_only_badge.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 	_read_only_badge.add_theme_font_size_override("font_size", 11)
 	_read_only_badge.visible = _is_read_only()
 	sc.add_child(_read_only_badge)
 
-	# Node.js availability — shared detection, dual display (Status + Gates).
+	# Node.js availability — shared detection.
 	var node_check := NodejsCheck.check()
 	var nodejs_msg := ""
 	if not node_check["found"]:
@@ -255,49 +230,6 @@ func _build_ui() -> void:
 	sections_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	sections_vbox.add_theme_constant_override("separation", int(2 * scale))
 	add_child(sections_vbox)
-
-	# -- Feature Gates section (expanded by default, collapsed when read-only) --
-	var gates_expanded := not _is_read_only()
-	var fc := _make_collapsible_section(sections_vbox, "Feature Gates", gates_expanded, 36.0)
-	var gates_header: PanelContainer = sections_vbox.get_child(sections_vbox.get_child_count() - 2)
-	_gates_toggle = gates_header.get_child(0) as Button
-	_gates_scroll = sections_vbox.get_child(sections_vbox.get_child_count() - 1) as ScrollContainer
-	# Intercept toggle when read-only — collapse back and show warning.
-	_gates_toggle.toggled.connect(_on_gates_toggle_read_only_check)
-
-	_mcp_json_hint = Label.new()
-	_mcp_json_hint.text = "No .mcp.json found — use Project > Tools > MCP Toolkit > Write .mcp.json"
-	_mcp_json_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_mcp_json_hint.add_theme_color_override("font_color", Color(1.0, 0.6, 0.3))
-	_mcp_json_hint.add_theme_font_size_override("font_size", 11)
-	_mcp_json_hint.visible = false
-	fc.add_child(_mcp_json_hint)
-
-	_nodejs_gate_warning = Label.new()
-	_nodejs_gate_warning.text = nodejs_msg
-	_nodejs_gate_warning.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_nodejs_gate_warning.add_theme_color_override("font_color", Color(1.0, 0.6, 0.3))
-	_nodejs_gate_warning.add_theme_font_size_override("font_size", 11)
-	_nodejs_gate_warning.visible = nodejs_msg != ""
-	fc.add_child(_nodejs_gate_warning)
-
-	var feat_grid := GridContainer.new()
-	feat_grid.columns = 3
-	feat_grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	fc.add_child(feat_grid)
-
-	for feature in FeatureRegistry.all_features():
-		var entry: Dictionary = FeatureRegistry.get_entry(feature)
-
-		var check := CheckBox.new()
-		check.text = feature
-		check.tooltip_text = str(entry["risk"])
-		check.size_flags_horizontal = Control.SIZE_EXPAND | Control.SIZE_SHRINK_CENTER
-		check.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		check.toggled.connect(_on_feature_toggled.bind(feature))
-		feat_grid.add_child(check)
-
-		_feature_rows[feature] = {"check": check}
 
 	# -- Audit Log section (collapsed by default) -----------------------------
 	var ac := _make_collapsible_section(sections_vbox, "Audit Log", false)
@@ -488,149 +420,6 @@ func _refresh_runtime_status() -> void:
 	else:
 		_runtime_label.text = "Runtime: not running (start playtest with F5)"
 		_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-
-
-# ---------------------------------------------------------------------------
-# Feature toggle
-# ---------------------------------------------------------------------------
-
-func _refresh_features() -> void:
-	if _feature_rows.is_empty():
-		return
-
-	var read_only := _is_read_only()
-
-	# Read-only: collapse the gates section and block reopening.
-	if _gates_toggle != null:
-		if read_only:
-			_gates_toggle.button_pressed = false
-			if _gates_scroll != null:
-				_gates_scroll.visible = false
-			_gates_toggle.text = "\u25b6 Feature Gates (read-only)"
-
-	# Show hint when .mcp.json is missing.
-	var has_mcp := McpJsonSync.has_mcp_json()
-	if _mcp_json_hint != null:
-		_mcp_json_hint.visible = not has_mcp
-
-	# Update gate checkboxes from ProjectSettings (single source of truth).
-	for feature in _feature_rows:
-		var row: Dictionary = _feature_rows[feature]
-		var check: CheckBox = row["check"]
-		var entry: Dictionary = FeatureRegistry.get_entry(feature)
-		var enabled: bool = ProjectSettings.get_setting(str(entry["ps_key"]), false)
-		check.set_pressed_no_signal(enabled)
-		check.disabled = read_only
-		check.tooltip_text = str(entry["risk"])
-
-
-func _on_feature_toggled(enabled: bool, feature: String) -> void:
-	var entry: Dictionary = FeatureRegistry.get_entry(feature)
-	if entry == null:
-		return
-
-	# H7: Dangerous-gate confirmation for RCE-class features.
-	if enabled and FeatureGate.needs_danger_warning(feature):
-		_feature_rows[feature]["check"].set_pressed_no_signal(false)
-		_show_danger_confirmation(feature)
-		return
-
-	# Write to ProjectSettings (single source of truth).
-	# Poll loop detects the change and emits signals centrally.
-	ProjectSettings.set_setting(str(entry["ps_key"]), enabled)
-	ProjectSettings.save()
-	_refresh_features()
-
-
-## Read-only gate toggle intercept — block expand and show warning.
-var _ro_gate_dialog: AcceptDialog = null
-
-func _on_gates_toggle_read_only_check(pressed: bool) -> void:
-	if not _is_read_only():
-		return
-	# Collapse back immediately.
-	_gates_toggle.set_pressed_no_signal(false)
-	if _gates_scroll != null:
-		_gates_scroll.visible = false
-	_gates_toggle.text = "\u25b6 Feature Gates (read-only)"
-	if not pressed:
-		return  # collapsing — no warning needed
-	# Show popup.
-	if _ro_gate_dialog != null and is_instance_valid(_ro_gate_dialog):
-		return
-	_ro_gate_dialog = AcceptDialog.new()
-	_ro_gate_dialog.exclusive = false
-	_ro_gate_dialog.title = "Read-Only Mode Active"
-	_ro_gate_dialog.dialog_text = (
-		"Feature gates cannot be changed while read-only mode is active "
-		+ "(GODOT_MCP_READ_ONLY=1 in .mcp.json).\n\n"
-		+ "To restore full access:\n"
-		+ "  1. Remove GODOT_MCP_READ_ONLY from .mcp.json\n"
-		+ "  2. Restart the editor\n"
-		+ "  3. Reconnect the MCP client")
-	_ro_gate_dialog.ok_button_text = "OK"
-	_ro_gate_dialog.confirmed.connect(func():
-		_ro_gate_dialog.queue_free()
-		_ro_gate_dialog = null
-	)
-	_ro_gate_dialog.canceled.connect(func():
-		_ro_gate_dialog.queue_free()
-		_ro_gate_dialog = null
-	)
-	EditorInterface.get_base_control().add_child(_ro_gate_dialog)
-	_ro_gate_dialog.popup_centered()
-
-
-## H7: Dangerous-gate confirmation for RCE-class features.
-var _danger_dialog: ConfirmationDialog = null
-
-func _show_danger_confirmation(feature: String) -> void:
-	# H7: Clean up any lingering dialog (queue_free may not have processed yet).
-	if _danger_dialog != null:
-		if is_instance_valid(_danger_dialog):
-			_danger_dialog.hide()
-			_danger_dialog.queue_free()
-		_danger_dialog = null
-	var entry: Dictionary = FeatureRegistry.get_entry(feature)
-	var warn_text: String = entry.get("warn_text", str(entry["risk"]))
-	_danger_dialog = ConfirmationDialog.new()
-	_danger_dialog.exclusive = false
-	_danger_dialog.title = "Enable %s?" % feature
-	_danger_dialog.dialog_text = (
-		"WARNING: This is a potentially dangerous capability.\n\n"
-		+ "%s\n\n" % warn_text
-		+ "Risk level: %s\n\n" % entry["risk"]
-		+ "Only enable if you trust the current AI context.")
-	_danger_dialog.ok_button_text = "I Understand — Enable"
-	_danger_dialog.confirmed.connect(func():
-		FeatureGate.mark_warned(feature)
-		# Proceed with the toggle as if the user just pressed the checkbox.
-		_on_feature_toggled(true, feature)
-		var d := _danger_dialog
-		_danger_dialog = null
-		if d != null:
-			d.hide()
-			d.queue_free()
-	)
-	_danger_dialog.canceled.connect(func():
-		var d := _danger_dialog
-		_danger_dialog = null
-		if d != null:
-			d.hide()
-			d.queue_free()
-	)
-	EditorInterface.get_base_control().add_child(_danger_dialog)
-	_danger_dialog.popup_centered()
-
-
-## Enable all feature gates (called from onboarding wizard "Enable All" button).
-func enable_all_gates() -> void:
-	for feature in FeatureRegistry.all_features():
-		var entry: Dictionary = FeatureRegistry.get_entry(feature)
-		ProjectSettings.set_setting(str(entry["ps_key"]), true)
-	ProjectSettings.save()
-	_refresh_features()
-	_refresh_status()
 
 
 # ---------------------------------------------------------------------------

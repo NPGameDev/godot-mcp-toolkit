@@ -757,7 +757,7 @@ opts.Call("with_success_hint",
 
 Extensions are **profile-exempt** — they register regardless of the active
 profile (Minimal/Standard/Power User/custom). Extensions run with the same
-trust level as the plugin itself (FileGuard, FeatureGate, audit logging
+trust level as the plugin itself (FileGuard, audit logging
 all apply).
 
 ### Distributable extensions
@@ -937,7 +937,7 @@ hooks. The internal pipeline already exceeds the ecosystem baseline.
 **Post-1.0 roadmap:** If community feedback warrants it, hook extensibility
 could be exposed via a configuration file (e.g., `hooks.json`) that maps
 tool names to pre/post scripts. This would require careful sandboxing to
-prevent hooks from escalating privilege beyond their tool's gate level.
+prevent hooks from escalating privilege beyond their tool's annotation level.
 
 ## Prompts & Resources (Internal API)
 

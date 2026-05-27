@@ -9,8 +9,6 @@ extends RefCounted
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
-const FeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
-const FeatureGate := preload("res://addons/godot_mcp_toolkit/feature_gate.gd")
 const Scrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
 const Audit := preload("res://addons/godot_mcp_toolkit/audit.gd")
 const McpJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")

@@ -3,13 +3,10 @@
 > ⚠️ **Security gate — read first.**
 >
 > **Do not tag release versions, publish to npm, or submit this plugin to the
-> Godot Asset Library before iteration 20 completes.** The current stack has
-> no transport authentication, no filesystem sandbox, no response caps, and
-> no secret scrubbing. Iter 18 adds transport auth + the `FileGuard`
-> `res://` sandbox; iter 19 adds the feature-gate system around unsafe tools
-> (`game_eval` / arbitrary GDScript execution lands in iter 12 behind an
-> env-var gate); iter 20 adds response caps, secret scrubbing, and the audit
-> log. Until all three land, **this project is internal dogfood only.**
+> Godot Asset Library before iteration 20 completes.** Iter 18 adds
+> transport auth + the `FileGuard` `res://` sandbox; iter 19 adds MCP
+> annotations for high-risk tools + the user-scope opt-in; iter 20 adds
+> response caps, secret scrubbing, and the audit log.
 >
 > Iter 08 produces the release *assets* (plugin zip script, npm postbuild,
 > AssetLib submission checklist below); it does not trigger the release.

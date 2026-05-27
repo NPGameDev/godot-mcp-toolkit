@@ -5,9 +5,7 @@ extends RefCounted
 ## Reads the .mcp.json at the Godot project root, finds the
 ## godot-mcp-toolkit server entry, and returns env var values.
 ## The plugin never writes to .mcp.json — it is a user-managed
-## config file. Runtime gate state lives in the sidecar.
-
-const FeatureRegistry := preload("res://addons/godot_mcp_toolkit/feature_registry.gd")
+## config file. Runtime config lives in the sidecar.
 
 
 static func get_mcp_json_path() -> String:
@@ -16,12 +14,6 @@ static func get_mcp_json_path() -> String:
 
 static func has_mcp_json() -> bool:
 	return FileAccess.file_exists(get_mcp_json_path())
-
-
-static func is_gate_enabled(env_var_name: String) -> bool:
-	var data := get_all_env_vars()
-	return data.get(env_var_name, "") == "1"
-
 
 
 static func get_all_env_vars() -> Dictionary:

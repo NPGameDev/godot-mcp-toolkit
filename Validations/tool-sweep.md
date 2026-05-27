@@ -26,7 +26,6 @@ decision. Within each requested section, all tests are still mandatory.
 
 - Godot editor open with the MCP plugin enabled
 - MCP server connected (Claude Code has tool access)
-- Standard mode recommended for full coverage (all tools available). Read-only mode blocks mutations.
 
 ## Execution Protocol
 
@@ -87,7 +86,7 @@ In Claude Code, `ToolSearch` may not return newly-activated tools due to the def
 | 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 8 | script_read, script_write, script_check, asset_list, asset_get_dependencies | S1 |
 | 7 | [07-editor-console.md](Sections/07-editor-console.md) | Editor Operations & Console | 16 | editor_save_scene, editor_screenshot, editor_get_console, editor_get_errors, editor_wait_for_idle, editor_refresh | S2 |
 | 8 | [08-project-settings.md](Sections/08-project-settings.md) | Project Settings & Autoloads | 12 | project_get/set_settings, autoload_manage, layer_names_get/set | S1 |
-| 9 | [09-execute-code.md](Sections/09-execute-code.md) | execute_code & Hints | 8 | execute_code | S2 (gated) |
+| 9 | [09-execute-code.md](Sections/09-execute-code.md) | execute_code & Hints | 8 | execute_code | S2 |
 | 10 | [10-input-map.md](Sections/10-input-map.md) | Input Map | 4 | input_map_action, input_map_event | None |
 | 11 | [11-save-system.md](Sections/11-save-system.md) | Save System | 4 | save_write, save_read, save_list, save_delete | None |
 | 12 | [12-classdb.md](Sections/12-classdb.md) | ClassDB Introspection | 7 | classdb_search, classdb_get_info | None |
@@ -142,7 +141,6 @@ After running the sweep, produce `Validations/RESULTS.md` with:
 - **Date:** YYYY-MM-DD
 - **Godot version:** X.Y
 - **Project type:** GDScript | C# (.NET)
-- **Mode:** standard | read-only
 - **Sections run:** 0-25 (full) | N, M, O (targeted)
 - **Total:** X passed, Y failed, Z skipped (W total)
 

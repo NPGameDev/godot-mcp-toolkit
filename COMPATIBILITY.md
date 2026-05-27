@@ -138,13 +138,12 @@ accurate file paths.
 | UI surface | 4.3 | 4.4 | 4.5+ | Fallback on older |
 |------------|-----|-----|------|-------------------|
 | Bottom-panel dock | OK | OK | OK | `add_control_to_bottom_panel()` stable across all versions |
-| Server status, feature gates, audit log | OK | OK | OK | Standard Control nodes |
-| Guided onboarding wizard (5-step) | OK | OK | OK | `AcceptDialog` + `add_button()` stable since 4.0 |
+| Server status, audit log | OK | OK | OK | Standard Control nodes |
+| Guided onboarding wizard (3-step) | OK | OK | OK | `AcceptDialog` + `add_button()` stable since 4.0 |
 | Toast notifications | Degraded | OK | OK | Silently skipped; `push_warning()` to Output panel |
 | Menu items (Project > Tools) | OK | OK | OK | `add_tool_menu_item()` stable since 4.0 |
 | Command Palette entries | OK | OK | OK | `get_command_palette()` guarded; skipped if unavailable |
 | Info/Help panel | OK | OK | OK | Standard Control nodes |
-| Power User confirmation dialog | OK | OK | OK | `ConfirmationDialog` stable since 4.0 |
 | Plugin disable cleanup dialog | OK | OK | OK | `popup_dialog_centered()` guarded with fallback |
 | Export stripping | OK | OK | OK | `_export_file()` signature stable across 4.x |
 | Inspector plugin | OK | OK | OK | `EditorInspectorPlugin` API stable since 4.0 |
@@ -222,26 +221,26 @@ that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
 | `node_set_property` | ✅ | |
 | `node_get_property_list` | ✅ | |
 | `node_set_script` | ✅ | |
-| `node_call_method` | ✅ | Feature-gated |
+| `node_call_method` | ✅ | |
 | `signal_list` | ✅ | |
 | `signal_manage` | ✅ | |
-| `signal_emit` | ✅ | Feature-gated |
+| `signal_emit` | ✅ | |
 | `resource_load` | ✅ | |
 | `resource_write` | ✅ | |
 | `resource_delete` | ✅ | |
 | `asset_list` | ✅ | |
 | `asset_get_dependencies` | ✅ | |
 | `asset_import` | ✅ | |
-| `save_read` | ✅ | Feature-gated |
-| `save_write` | ✅ | Feature-gated |
-| `save_delete` | ✅ | Feature-gated |
-| `save_list` | ✅ | Feature-gated |
+| `save_read` | ✅ | |
+| `save_write` | ✅ | |
+| `save_delete` | ✅ | |
+| `save_list` | ✅ | |
 | `classdb_get_info` | ✅ | |
 | `classdb_search` | ✅ | |
 | `project_get_settings` | ✅ | |
-| `project_set_setting` | ✅ | Feature-gated |
+| `project_set_setting` | ✅ | |
 | `input_map_action` | ✅ | |
-| `input_map_event` | ✅ | Feature-gated |
+| `input_map_event` | ✅ | |
 | `animation_keyframe` | ✅ | |
 | `animation_get_keys` | ✅ | |
 | `tilemap_set_cells` | ✅ | |

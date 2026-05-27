@@ -81,7 +81,7 @@ npm run format:fix   # auto-fix formatting
 
 ```bash
 cd godot-mcp-server
-npm run smoke        # dual-pass: gates-off then gates-on
+npm run smoke        # single-pass: all tools always available
 npm run smoke:single # single pass (inherits your env vars)
 ```
 

@@ -15,13 +15,9 @@ Before running any test, gather project context. Record these in your report hea
 
 **0.2** Call `asset_list` with folder_path=`res://` — scan for `.csproj` or `.cs` files. If found alongside the dotnet setting, confirm **C# project**. Otherwise, **GDScript project**.
 
-**0.3** Check operating mode and available tools:
-- Call `discover_tools` (no params) — check if gate state is **standard** (full access) or **read-only** (mutations blocked).
-- If read-only: note that mutation tests will fail. Ask how to proceed:
-  - (A) Skip mutation sections, run read-only tests only
-  - (B) Wait for user to switch to standard mode
-- If standard mode, activate all on-demand groups: `discover_tools` with groups: `["runtime_advanced", "signals", "animation_authoring", "input_map", "asset_management", "user_data", "scene_advanced", "editor_advanced", "tilemap", "theme", "node_management"]`
-- Verify `execute_code` and `node_call_method` are available (confirms standard mode)
+**0.3** Activate all on-demand tool groups:
+- Call `discover_tools` with groups: `["runtime_advanced", "signals", "animation_authoring", "input_map", "asset_management", "user_data", "scene_advanced", "editor_advanced", "tilemap", "theme", "node_management"]`
+- Verify `execute_code` and `node_call_method` are available
 
 **0.4** If C# project detected, call `editor_get_console` with level_filter `["error"]` — check for C# build errors. If present, warn the user that C# scripts may not work correctly until the solution is built.
 
@@ -32,7 +28,7 @@ Before running any test, gather project context. Record these in your report hea
 | scene_close | No | No | No | Yes (active tab only) |
 | Logger API (buffer source) | File-dependent | File-dependent | File-dependent | Yes |
 
-Record: `Godot X.Y | GDScript or C# | Mode (standard/read-only) | Main scene`
+Record: `Godot X.Y | GDScript or C# | Main scene`
 
 **0.6** Detect version-gated tools:
 - From the `discover_tools` response or tool list, check for `scene.close` visibility:

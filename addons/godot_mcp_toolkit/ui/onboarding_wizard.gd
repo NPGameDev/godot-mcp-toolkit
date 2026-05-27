@@ -5,43 +5,43 @@ extends RefCounted
 
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 
-const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35b_shown"
+const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v41l_shown"
 const _ONBOARDING_PROGRESS := "user://addons/godot_mcp_toolkit/mcp_onboarding_progress"
-# Projects that already saw the v35 single-dialog onboarding skip the wizard.
+# Previous flag versions — projects that already saw earlier onboarding skip the wizard.
+const _ONBOARDING_FLAG_V35B := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35b_shown"
 const _ONBOARDING_FLAG_V35 := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"
-const _STEP_COUNT := 5
+const _STEP_COUNT := 3
 
 var _plugin: EditorPlugin
 var _dock: Control
-var _notifier: RefCounted = null  # GateNotifier
 var _dialog: AcceptDialog = null
 var _step: int = 0
 var _mcp_exists: bool = false  # Tracks .mcp.json state for step-1 variants.
 var _buttons: Array = []  # Tracked custom buttons for per-step cleanup.
 
 
-func _init(plugin: EditorPlugin, dock: Control, notifier: RefCounted = null) -> void:
+func _init(plugin: EditorPlugin, dock: Control) -> void:
 	_plugin = plugin
 	_dock = dock
-	_notifier = notifier
 
 
 func check_and_show() -> void:
 	if FileAccess.file_exists(_ONBOARDING_FLAG):
 		return
+	if FileAccess.file_exists(_ONBOARDING_FLAG_V35B):
+		_write_flag()
+		return
 	if FileAccess.file_exists(_ONBOARDING_FLAG_V35):
 		_write_flag()
 		return
 
-	# Resume from saved progress (e.g. after Power User restart).
+	# Resume from saved progress (e.g. after restart during wizard).
 	_step = 0
 	if FileAccess.file_exists(_ONBOARDING_PROGRESS):
 		var f := FileAccess.open(_ONBOARDING_PROGRESS, FileAccess.READ)
 		if f != null:
 			_step = clampi(f.get_line().to_int(), 0, _STEP_COUNT - 1)
 			f.close()
-	if _notifier != null:
-		_notifier._wizard_active = true
 	_buttons.clear()
 	var dialog := AcceptDialog.new()
 	dialog.exclusive = false
@@ -62,8 +62,6 @@ func check_and_show() -> void:
 
 
 func free_if_open() -> void:
-	if _notifier != null:
-		_notifier._wizard_active = false
 	_buttons.clear()
 	if _dialog != null and is_instance_valid(_dialog):
 		_dialog.queue_free()
@@ -87,14 +85,15 @@ func _apply_step(dialog: AcceptDialog) -> void:
 		0:
 			dialog.dialog_text = (
 				"Welcome to the Godot MCP Toolkit!\n\n"
-				+ "Three powerful features are gated by default:\n\n"
-				+ "  \u2022 execute_code — arbitrary GDScript via Expression\n"
-				+ "  \u2022 node_call_method — call methods on scene nodes\n"
-				+ "  \u2022 read_user_scope — read/write whitelisted user:// paths\n\n"
-				+ "You can enable all gates now, or toggle them individually\n"
-				+ "later in the MCP dock.")
-			dialog.ok_button_text = "Keep Defaults (Recommended)"
-			_buttons.append(dialog.add_button("Enable All Gates", true, "enable_all"))
+				+ "This plugin exposes your Godot editor to AI agents via MCP.\n"
+				+ "Some tools can modify your project or execute arbitrary code.\n\n"
+				+ "Risk is communicated per-tool via MCP annotations.\n"
+				+ "For details and copy-pasteable agent blocking configs, see:\n"
+				+ "  addons/godot_mcp_toolkit/docs/security-recommendations.md\n\n"
+				+ "All tools are available by default. Use your agent's\n"
+				+ "allowlist/blocklist to restrict specific tools if needed.")
+			dialog.ok_button_text = "Next"
+			_buttons.append(dialog.add_button("Open Security Doc", true, "open_security"))
 
 		1:
 			# .mcp.json — two variants based on whether the file already exists.
@@ -121,60 +120,30 @@ func _apply_step(dialog: AcceptDialog) -> void:
 				dialog.ok_button_text = "Create .mcp.json"
 
 		2:
-			# MCP dock — show it in the bottom panel.
+			# Dock + help + read-only info.
+			if _dock != null:
+				_plugin.make_bottom_panel_item_visible(_dock)
 			dialog.dialog_text = (
 				"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
 				+ "From here you can:\n\n"
 				+ "  \u2022 Monitor server status — connection state, peer count, runtime port\n"
-				+ "  \u2022 Toggle feature gates — enable or disable gated capabilities\n"
 				+ "  \u2022 Review the audit log — see what the AI agent did\n"
 				+ "  \u2022 Adjust security settings — token rotation, response limits\n\n"
-				+ "The footer has quick access to Companion Skills and Info / Help.")
-			dialog.ok_button_text = "Next"
-			if _dock != null:
-				_plugin.make_bottom_panel_item_visible(_dock)
-
-		3:
-			# Feature gates — open Project Settings.
-			dialog.dialog_text = (
-				"Feature gates are also available in Project Settings under "
-				+ "MCP Toolkit > Feature Gates.\n"
-				+ "Changes here sync to the dock and the MCP server "
-				+ "automatically — no restart needed.\n\n"
-				+ "  \u2022 allow_execute_code — GDScript evaluation via Expression\n"
-				+ "  \u2022 allow_node_call_method — call methods on scene nodes\n"
-				+ "  \u2022 allow_user_scope — read/write whitelisted user:// paths")
-			dialog.ok_button_text = "Next"
-			_buttons.append(dialog.add_button("Back", true, "back"))
-			SettingsNavigator.open_mcp_settings()
-
-		4:
-			dialog.dialog_text = (
-				"The 'Info / Help' button at the bottom of the MCP dock\n"
-				+ "shows connection status, tool list, and documentation links.\n\n"
-				+ "Companion Skills for Claude Code are bundled with the toolkit —\n"
-				+ "click the 'Companion Skills' button in the dock to browse them.\n\n"
-				+ "For supervised environments (classrooms, CI, demos), set\n"
-				+ "GODOT_MCP_READ_ONLY=1 in .mcp.json to restrict to read-only tools.\n\n"
+				+ "The 'Info / Help' button shows tool list and documentation links.\n"
+				+ "Companion Skills for Claude Code are in the dock footer.\n\n"
+				+ "For supervised environments, set GODOT_MCP_READ_ONLY=1 in\n"
+				+ ".mcp.json to restrict the toolkit to read-only tools.\n\n"
 				+ "You're all set!")
 			dialog.ok_button_text = "Close"
 			_buttons.append(dialog.add_button("Back", true, "back"))
 			_buttons.append(dialog.add_button("Open Info", true, "open_info"))
-
-	# "Skip Tour" on steps 2–3 (not 0: profile required;
-	# not 1: .mcp.json required; not 4: nothing to skip).
-	if _step >= 2 and _step <= 3:
-		_buttons.append(dialog.add_button("Skip Tour", true, "skip"))
 
 
 # -- Navigation ---------------------------------------------------------------
 
 
 func _on_confirmed(dialog: AcceptDialog) -> void:
-	if _step == 0:
-		# Step 0 OK = "Standard (Recommended)" — no action needed, default profile.
-		pass
-	elif _step == 1 and not _mcp_exists:
+	if _step == 1 and not _mcp_exists:
 		# Step 1 OK = "Create .mcp.json" — write the file now.
 		if _dock != null:
 			_dock.write_mcp_json()
@@ -192,25 +161,10 @@ func _on_confirmed(dialog: AcceptDialog) -> void:
 
 func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 	match str(action):
-		"skip":
-			_write_flag()
-			free_if_open()
 		"back":
 			if _step > 0:
 				_step -= 1
 				_apply_step(dialog)
-		"enable_all":
-			# Enable all feature gates (with implicit RCE consent).
-			if _dock != null:
-				_dock.enable_all_gates()
-			_step = 1
-			_save_progress()
-			_apply_step(dialog)
-		"standard":
-			# Explicit standard choice — advance.
-			_step = 1
-			_save_progress()
-			_apply_step(dialog)
 		"overwrite_mcp":
 			if _dock != null:
 				_dock.write_mcp_json(true)
@@ -222,14 +176,15 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 			free_if_open()
 			if _dock != null:
 				_dock._show_info_dialog()
+		"open_security":
+			var doc_path := "res://addons/godot_mcp_toolkit/docs/security-recommendations.md"
+			var global_path := ProjectSettings.globalize_path(doc_path)
+			OS.shell_open(global_path)
 
 
 # -- Persistence --------------------------------------------------------------
 
 
-## Re-create the onboarding completion flag at the new user:// path after a
-## config/name change. Prevents the wizard from re-showing after a rename.
-## Static so plugin.gd can call it without holding a wizard instance.
 ## Re-create the onboarding completion flag at the new user:// path after a
 ## config/name change. Prevents the wizard from re-showing after a rename.
 ## Called by plugin.gd's project_name_changed handler. Dirs are guaranteed
