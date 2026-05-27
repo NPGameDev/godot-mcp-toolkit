@@ -7,6 +7,7 @@ const RegistryClient = _Hub.RegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const SettingsMigration := preload("res://addons/godot_mcp_toolkit/settings_migration.gd")
+const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/settings_registration.gd")
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extension_loader.gd")
@@ -75,6 +76,7 @@ func _enter_tree() -> void:
 	_Hub._plugin = self
 	SettingsMigration.migrate_user_data_paths()
 	SettingsMigration.migrate_stale_settings()
+	SettingsRegistration.register_all()
 
 	var registry := MCPToolkitCommandRegistry.new()
 	_server = MCPServer.new()
