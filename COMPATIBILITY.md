@@ -13,7 +13,7 @@ untested versions and logs a startup warning.
 | Godot version | Support level | Notes |
 |---------------|---------------|-------|
 | 4.0 - 4.1    | Not supported | EditorInterface is not a global singleton; would require wrapping 70+ call sites |
-| **4.2**       | Core          | All tools work; some UI degradation (see below) |
+| **4.2**       | Core          | All tools work; some UI degradation (see below); no automated CI validation (see [CI limitations](#ci-limitations)) |
 | **4.3**       | Core          | TileMapLayer support added (tilemap tool auto-detects) |
 | **4.4**       | Full UI       | Toast notifications and undo history restored |
 | **4.5+**      | Full          | All tools and UI features available |
@@ -285,6 +285,19 @@ and the call succeeds — no plugin update needed for the guarded code paths.
 A `GODOT_TESTED_MAX_VERSION` constant (currently `"4.6"`) controls the startup
 warning threshold. Versions above this emit a `push_warning()` but do not
 restrict any functionality.
+
+## CI limitations
+
+CI runs `scripts/test_framework/validate_gdscript.sh` (editor-headless +
+per-file script runner) on Godot 4.3+. **Godot 4.2 is excluded from CI
+validation** because its editor scan aborts on `class_name`
+cross-references before completing — all detected errors are false
+positives, not real script problems.
+
+4.2 compatibility is verified via local sweep + smoke tests (mandatory on
+large toolkit iterations, optional on medium ones). Headless unit tests
+also cannot run on 4.2 in CI (same `class_name` root cause), but work
+locally when the editor has generated the class cache.
 
 ## Future development constraints
 
