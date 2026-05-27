@@ -29,9 +29,9 @@ minimise wasted tool calls.
 - `discover_tools({request: ["runtime_advanced", "tilemap"]})` — pass group names or keywords
 - Browse only: add `activate: false` to list tools without loading
 - Deactivate: `discover_tools({reset: true})` (all) or `reset: ["tilemap"]` (selective)
-- **Schema enrichment:** if activated tools are not directly callable and
-  require a separate tool lookup to obtain their schemas, pass
-  `include_schemas: true` to receive full parameter schemas in the response
+- **Schema enrichment:** only if you activated a group but the new tools
+  aren't showing in your tool list, call `discover_tools` again with
+  `include_schemas: true` to get their parameter schemas inline
 - **Short keywords:** fuzzy search matches short terms (e.g. `"3d"`, `"2d"`)
   only against explicit keywords, not via substring. If a short keyword
   returns no results, use the exact group name instead
