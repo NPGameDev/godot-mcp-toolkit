@@ -289,10 +289,13 @@ restrict any functionality.
 ## CI limitations
 
 CI runs `scripts/test_framework/validate_gdscript.sh` (editor-headless +
-per-file script runner) on Godot 4.3+. **Godot 4.2 is excluded from CI
-validation** because its editor scan aborts on `class_name`
+per-file script runner) on Godot 4.3+. **Godot 4.2 is excluded from the
+CI matrix entirely** because its editor scan aborts on `class_name`
 cross-references before completing — all detected errors are false
-positives, not real script problems.
+positives, not real script problems. This is a chicken-and-egg bug in
+Godot 4.2's GDScript module (fixed in 4.3): the scanner needs the class
+cache to resolve `class_name` identifiers, but the class cache is built
+by the scan. Both standard and .NET editor builds have the same issue.
 
 4.2 compatibility is verified via local sweep + smoke tests (mandatory on
 large toolkit iterations, optional on medium ones). Headless unit tests
