@@ -195,6 +195,13 @@ func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 			return err
 		return {"success": true, "path": params["node_path"]}
 	, MCPToolkitExtensionOptions.new("Tool that validates params with MCPToolkitError")
+		.with_input_schema({
+			"type": "object",
+			"properties": {
+				"node_path": {"type": "string", "description": "Node path to validate"}
+			},
+			"required": ["node_path"]
+		})
 		.with_group("sv2_hint_group", "Hint testing"))
 ```
 2. `extensions.refresh`

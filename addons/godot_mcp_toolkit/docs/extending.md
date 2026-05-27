@@ -128,7 +128,7 @@ var opts = MCPToolkitExtensionOptions.new("Describe what your tool does")
 | `mark_scene_independent()` | Tool does not depend on the active editor tab |
 | `mark_exclusive_execution()` | Tool acquires the mutation lock despite being read-only (see below) |
 | `with_description(text)` | Set or override the tool description |
-| `with_input_schema(dict)` | JSON Schema declaring expected parameters (sent to MCP client; not validated at runtime — handlers must check their own inputs) |
+| `with_input_schema(dict)` | JSON Schema declaring expected parameters (sent to MCP client; not validated at runtime — handlers must check their own inputs). **Important:** parameters not declared in the schema may not be forwarded to the handler — always declare every parameter your tool accepts |
 | `with_timeout_ms(ms)` | Per-tool bridge timeout in milliseconds (floor: 1000, cap: 300000) |
 | `with_min_godot_version(ver)` | Hide tool on Godot versions below `ver` (e.g. `"4.5"`) |
 | `with_max_godot_version(ver)` | Hide tool on Godot versions above `ver` (e.g. `"4.6"`) |
