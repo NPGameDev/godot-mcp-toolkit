@@ -1,6 +1,0 @@
-{
-  "$schema_version": 1,
-  "read": ["saves/", "logs/"],
-  "write": ["saves/"],
-  "delete": ["saves/"]
-}

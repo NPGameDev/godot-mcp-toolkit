@@ -121,8 +121,6 @@ func _enter_tree() -> void:
 	# Live hot-reload: watch EditorFileSystem for extension additions/removals.
 	_extension_watcher = ExtensionLoader.start_watcher(registry, _server)
 
-	_validate_user_whitelist()
-
 	_export_plugin = preload("res://addons/godot_mcp_toolkit/export_strip.gd").new()
 	add_export_plugin(_export_plugin)
 
@@ -370,27 +368,6 @@ func _on_write_mcp_json() -> void:
 func _on_extension_catalog() -> void:
 	if _dock != null:
 		_dock.show_extension_catalog()
-
-
-# -- Whitelist validation ------------------------------------------------------
-
-
-func _validate_user_whitelist() -> void:
-	FileGuard.reload_user_whitelist()
-	var wl_path := "res://addons/godot_mcp_toolkit/user_scope_whitelist.json"
-	if not FileAccess.file_exists(wl_path):
-		push_warning("[MCPTools] user_scope_whitelist.json not found at %s; save.* tools will return USER_SCOPE_DISABLED until the file is created" % wl_path)
-		return
-	var f := FileAccess.open(wl_path, FileAccess.READ)
-	if f == null:
-		push_warning("[MCPTools] cannot open user_scope_whitelist.json (error %d); save.* tools will return USER_SCOPE_DISABLED" % FileAccess.get_open_error())
-		return
-	var text := f.get_as_text()
-	f.close()
-	var parsed = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		push_warning("[MCPTools] user_scope_whitelist.json is malformed (expected JSON object); save.* tools will return USER_SCOPE_DISABLED")
-		return
 
 
 # -- EditorSettings registration (per-user, not committed to VCS) -------------

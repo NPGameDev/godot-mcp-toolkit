@@ -7,104 +7,36 @@ extends RefCounted
 ## res:// only; callers opt in to additional prefixes (e.g.
 ## user://screenshots/) via the allowed_prefixes parameter.
 ##
-## resolve_safe_user() extends access to whitelisted user://
-## subpaths behind a plugin-author-configured whitelist at
-## addons/godot_mcp_toolkit/user_scope_whitelist.json.
-
-const _WHITELIST_PATH := "res://addons/godot_mcp_toolkit/user_scope_whitelist.json"
-
-static var _user_whitelist: Variant = null  # null = not loaded; Dictionary = cached
+## resolve_safe_user() validates user:// paths: rejects traversal
+## and symlink escapes, then returns the globalized absolute path.
 
 
-static func reload_user_whitelist() -> void:
-	_user_whitelist = null
-
-
-static func _load_user_whitelist() -> Variant:
-	if _user_whitelist != null:
-		return _user_whitelist
-	if not FileAccess.file_exists(_WHITELIST_PATH):
-		return null
-	var f := FileAccess.open(_WHITELIST_PATH, FileAccess.READ)
-	if f == null:
-		return null
-	var text := f.get_as_text()
-	f.close()
-	var parsed = JSON.parse_string(text)
-	if typeof(parsed) != TYPE_DICTIONARY:
-		return null
-	# Validate entries — reject blanket-match or traversal entries.
-	for mode in ["read", "write", "delete"]:
-		var entries = parsed.get(mode, [])
-		if typeof(entries) != TYPE_ARRAY:
-			parsed[mode] = []
-			continue
-		var clean: Array = []
-		for entry in entries:
-			var s := str(entry)
-			if s == "" or s == "/" or s.find("..") != -1:
-				push_warning("[MCPTools] whitelist entry '%s' in '%s' rejected — too broad or contains .." % [s, mode])
-				continue
-			clean.append(s)
-		parsed[mode] = clean
-	_user_whitelist = parsed
-	return _user_whitelist
-
-
-## Validate and resolve a user:// path against the whitelist.
-## mode must be "read", "write", or "delete".
+## Validate and resolve a user:// path.
 ## Returns { ok: true, absolute_path } on success,
 ## { ok: false, error_code, error_message } on failure.
-static func resolve_safe_user(path: String, mode: String) -> Dictionary:
+static func resolve_safe_user(path: String) -> Dictionary:
 	# Reject .. segments — directory traversal.
 	for segment in path.replace("\\", "/").split("/"):
 		if segment == "..":
 			return {
 				"ok": false,
-				"error_code": "USER_PATH_NOT_WHITELISTED",
+				"error_code": "INVALID_PATH",
 				"error_message": "path contains '..': %s" % path,
 			}
 	# Prefix check.
 	if not path.begins_with("user://"):
 		return {
 			"ok": false,
-			"error_code": "USER_PATH_NOT_WHITELISTED",
+			"error_code": "INVALID_PATH",
 			"error_message": "path must start with user:// (got %s); res:// paths use the res:// tool family (scene.*, script.*, resource.*, folder.*)" % path,
 		}
-	# Load whitelist.
-	var wl = _load_user_whitelist()
-	if wl == null:
-		return {
-			"ok": false,
-			"error_code": "USER_SCOPE_DISABLED",
-			"error_message": "user_scope_whitelist.json missing or malformed at addons/godot_mcp_toolkit/; plugin author must create it before user:// tools are usable",
-		}
-	# Mode entries.
-	var entries: Array = wl.get(mode, [])
-	if entries.is_empty():
-		return {
-			"ok": false,
-			"error_code": "USER_PATH_NOT_WHITELISTED",
-			"error_message": "no user:// paths are whitelisted for %s (whitelist is configured by the plugin author in addons/godot_mcp_toolkit/user_scope_whitelist.json)" % mode,
-		}
-	# Match against whitelist.
+	# Deny toolkit internal paths (token, audit log, onboarding flags).
 	var rel := path.trim_prefix("user://")
-	var matched := false
-	for entry in entries:
-		var e := str(entry)
-		if e.ends_with("/"):
-			if rel.begins_with(e):
-				matched = true
-				break
-		else:
-			if rel == e:
-				matched = true
-				break
-	if not matched:
+	if rel.begins_with("addons/godot_mcp_toolkit/"):
 		return {
 			"ok": false,
-			"error_code": "USER_PATH_NOT_WHITELISTED",
-			"error_message": "path %s not in %s whitelist; whitelisted entries for this mode: [%s]" % [path, mode, ", ".join(entries)],
+			"error_code": "PATH_DENIED",
+			"error_message": "user://addons/godot_mcp_toolkit/ is reserved for plugin internals (auth token, audit log)",
 		}
 	# Normalize + escape guard.
 	var abs_path := ProjectSettings.globalize_path(path)
@@ -112,7 +44,7 @@ static func resolve_safe_user(path: String, mode: String) -> Dictionary:
 	if not abs_path.simplify_path().begins_with(user_root):
 		return {
 			"ok": false,
-			"error_code": "USER_PATH_NOT_WHITELISTED",
+			"error_code": "PATH_DENIED",
 			"error_message": "path %s resolves outside user data dir (possible symlink escape)" % path,
 		}
 	return {"ok": true, "absolute_path": abs_path}

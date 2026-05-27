@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## save.* command handlers — whitelisted user:// file operations.
+## save.* command handlers — user:// file operations.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const FileGuard = _Hub.FileGuard
@@ -31,7 +31,7 @@ static func _cmd_save_write(parameters: Dictionary) -> Dictionary:
 	var content := str(parameters.get("content", ""))
 	if path.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing path")
-	var guard := FileGuard.resolve_safe_user(path, "write")
+	var guard := FileGuard.resolve_safe_user(path)
 	if not guard["ok"]:
 		return MCPToolkitError.fail(str(guard["error_code"]), str(guard["error_message"]))
 	var abs_path: String = guard["absolute_path"]
@@ -53,7 +53,7 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 	if max_bytes <= 0 or max_bytes > 262144:
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"max_bytes must be 1..262144 (got %d)" % max_bytes)
-	var guard := FileGuard.resolve_safe_user(path, "read")
+	var guard := FileGuard.resolve_safe_user(path)
 	if not guard["ok"]:
 		return MCPToolkitError.fail(str(guard["error_code"]), str(guard["error_message"]))
 	var abs_path: String = guard["absolute_path"]
@@ -92,7 +92,7 @@ static func _cmd_save_delete(parameters: Dictionary) -> Dictionary:
 	var path := str(parameters.get("path", ""))
 	if path.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing path")
-	var guard := FileGuard.resolve_safe_user(path, "delete")
+	var guard := FileGuard.resolve_safe_user(path)
 	if not guard["ok"]:
 		return MCPToolkitError.fail(str(guard["error_code"]), str(guard["error_message"]))
 	var abs_path: String = guard["absolute_path"]
@@ -112,7 +112,7 @@ static func _cmd_save_list(parameters: Dictionary) -> Dictionary:
 	if not path.ends_with("/"):
 		return MCPToolkitError.fail("INVALID_PATH",
 			"save.list requires a directory path ending with / (got %s); use save.read for a single file" % path)
-	var guard := FileGuard.resolve_safe_user(path, "read")
+	var guard := FileGuard.resolve_safe_user(path)
 	if not guard["ok"]:
 		return MCPToolkitError.fail(str(guard["error_code"]), str(guard["error_message"]))
 	var abs_path: String = guard["absolute_path"]
