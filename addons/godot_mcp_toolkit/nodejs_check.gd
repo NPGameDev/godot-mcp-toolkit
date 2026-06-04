@@ -6,12 +6,42 @@ extends RefCounted
 
 ## Check if Node.js is installed and meets the minimum version (20+).
 ## Returns { "found": bool, "version": String, "meets_minimum": bool }.
+## On macOS/Linux, if the direct "node" command fails, falls back to a login
+## shell check — GUI apps (e.g. Godot opened from Finder) don't inherit the
+## shell PATH where version managers (nvm, fnm, volta) install Node.
+## The MCP client runs from a terminal and will find Node regardless, so a
+## login-shell hit is treated as "found" with no warning needed.
 static func check(min_major: int = 20) -> Dictionary:
+	var result := _try_direct(min_major)
+	if result["found"]:
+		return result
+	var os_name := OS.get_name()
+	if os_name == "macOS" or os_name == "Linux":
+		return _try_login_shell(min_major)
+	return result
+
+
+static func _try_direct(min_major: int) -> Dictionary:
 	var output := []
 	var exit_code := OS.execute("node", ["--version"], output, true)
 	if exit_code != 0 or output.is_empty():
 		return {"found": false, "version": "", "meets_minimum": false}
-	var raw: String = output[0].strip_edges()
+	return _parse_version(output[0], min_major)
+
+
+static func _try_login_shell(min_major: int) -> Dictionary:
+	var shell: String = OS.get_environment("SHELL")
+	if shell.is_empty():
+		shell = "/bin/bash"
+	var output := []
+	var exit_code := OS.execute(shell, ["-l", "-c", "node --version"], output, true)
+	if exit_code != 0 or output.is_empty():
+		return {"found": false, "version": "", "meets_minimum": false}
+	return _parse_version(output[0], min_major)
+
+
+static func _parse_version(raw_output: String, min_major: int) -> Dictionary:
+	var raw: String = raw_output.strip_edges()
 	if not raw.begins_with("v"):
 		return {"found": true, "version": raw, "meets_minimum": false}
 	var parts := raw.substr(1).split(".")
