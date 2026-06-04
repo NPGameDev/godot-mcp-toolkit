@@ -914,11 +914,20 @@ them. This is a platform-side limitation, not actionable server-side.
 When you export your game, the MCP Toolkit must not ship in the build. The addon
 registers an export plugin that handles this automatically.
 
-**GDScript extensions — automatic, zero action required.** At export time the
-plugin removes every `.gd` file that is an extension (a direct subclass of
-`MCPToolkitExtension`), wherever it lives in the project, plus the entire
-`addons/godot_mcp_toolkit/` folder and `res://.mcp.json`. You do not need to do
-anything — your extension files never ship in the exported game.
+**GDScript extensions — automatic (text export mode).** At export time the
+plugin removes `.gd` extension files (direct subclasses of
+`MCPToolkitExtension`, wherever they live), the entire
+`addons/godot_mcp_toolkit/` folder, and `res://.mcp.json`.
+
+**Known limitation — binary-token script export.** Godot's *default* script
+export mode is "Binary tokens (compressed)". In that mode the engine compiles
+each `.gd` to `.gdc` **before** the addon's strip runs, so addon and extension
+**scripts currently still ship** as compiled `.gdc`. They are orphaned and never
+executed (the loader is editor-only), so there is no runtime effect — but they
+are dead weight. Non-script files and `.mcp.json` are still stripped. For a fully
+clean build today, set the preset's **Script Export Mode to "Text"**, or add
+`res://addons/godot_mcp_toolkit/*` (and any extension paths) to the preset's
+**Resources → exclude filter**. A built-in fix is tracked.
 
 **C# extensions — NOT auto-stripped, author action required.** C# compiles into
 a .NET assembly (DLL); individual classes cannot be removed from it at export.
