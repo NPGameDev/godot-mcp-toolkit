@@ -187,7 +187,9 @@ if res == null:
 
 - `@tool` annotation mandatory (without it, `script.new()` fails in editor)
 - `class_name` can be anything — discovery is by base class, not by prefix
-- `extends MCPToolkitExtension`
+- `extends MCPToolkitExtension` **directly** — multi-level inheritance (an
+  intermediate base class) is NOT supported; share code via composition (a
+  static helper class) instead
 - `register()` signature must exactly match:
   `func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:`
 - File name does NOT need to match class name (unlike C#)

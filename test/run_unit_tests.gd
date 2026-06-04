@@ -33,6 +33,7 @@ func _init() -> void:
 	_test_undo_info()
 	_test_undo_redo_action()
 	_test_error_api()
+	_test_export_strip()
 	await _test_response_validation()
 
 	_report()
@@ -682,6 +683,54 @@ func _test_response_validation() -> void:
 	var r6: Dictionary = await reg.call_command("rv.fail", {})
 	_ok(not r6.has("hint") or r6.get("hint", "") != "Should not appear",
 			"success:false → no success_hint injection")
+
+	print("")
+
+
+# --- Export strip set (~7 assertions) ---------------------------------------
+
+const ExportStrip := preload("res://addons/godot_mcp_toolkit/export_strip.gd")
+
+func _test_export_strip() -> void:
+	_begin("Export strip set")
+
+	# Strip is single-level: only DIRECT subclasses of MCPToolkitExtension
+	# (base == "MCPToolkitExtension") are stripped, mirroring the loader's
+	# definition of an extension. Path-extends to a direct subclass is flattened
+	# by the engine to the same base, so it is covered too.
+	var classes := [
+		{"class": "MCPToolkitExtension", "base": "RefCounted", "path": "res://addons/godot_mcp_toolkit/mcp_toolkit_extension.gd"},
+		{"class": "DirectExt", "base": "MCPToolkitExtension", "path": "res://a/direct.gd"},
+		{"class": "PathDirectExt", "base": "MCPToolkitExtension", "path": "res://e/path_direct.gd"},
+		{"class": "ChildExt", "base": "ParentExt", "path": "res://b/child.gd"},
+		{"class": "GameThing", "base": "Node", "path": "res://g/game.gd"},
+		{"class": "WeirdCs", "base": "MCPToolkitExtension", "path": "res://c/weird.cs"},
+		{"class": "FakeChild", "base": "MCPToolkitFake", "path": "res://f/fakechild.gd"},
+	]
+	var strip: Dictionary = ExportStrip._compute_strip_paths(classes)
+
+	# Direct subclasses (identifier form + path-extends flattened to the same base).
+	_ok(strip.has("res://a/direct.gd"), "direct subclass → stripped")
+	_ok(strip.has("res://e/path_direct.gd"), "path-flattened direct subclass → stripped")
+
+	# Multi-level (base is an intermediate, not MCPToolkitExtension) → NOT stripped
+	# (single-level by design; such files ship as harmless orphans).
+	_ok(not strip.has("res://b/child.gd"), "multi-level child → NOT stripped (single-level)")
+
+	# Unrelated game class → not stripped.
+	_ok(not strip.has("res://g/game.gd"), "unrelated game class → not stripped")
+
+	# .cs excluded by the .gd guard even if its base matched (C# can't be stripped).
+	_ok(not strip.has("res://c/weird.cs"), ".cs excluded by .gd guard")
+
+	# Base class itself (base RefCounted) → not matched; prefix-stripped at runtime.
+	_ok(not strip.has("res://addons/godot_mcp_toolkit/mcp_toolkit_extension.gd"),
+			"base class itself → not matched (prefix-stripped at runtime)")
+
+	# Exact base match → no false positive from a coincidentally MCPToolkit*-named
+	# class (FakeChild's base is "MCPToolkitFake", not "MCPToolkitExtension").
+	_ok(not strip.has("res://f/fakechild.gd"),
+			"subclass of coincidentally-named MCPToolkit* class → not stripped")
 
 	print("")
 

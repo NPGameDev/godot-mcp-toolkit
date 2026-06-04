@@ -578,8 +578,13 @@ Extensions are discovered via `ProjectSettings.get_global_class_list()` at
 plugin startup (and live via hot-reload). The discovery algorithm:
 
 1. Scan all global classes for extension candidates:
-   - **GDScript:** any class whose `base` is `MCPToolkitExtension` (no naming
-	 restriction — your class can be called anything)
+   - **GDScript:** any class whose **immediate** `base` is `MCPToolkitExtension`
+	 — i.e. extend it **directly**. Multi-level inheritance is **not** supported:
+	 a class two or more levels deep (e.g. `class_name Child extends ParentExt`)
+	 is not discovered. Share code across extensions via composition (a static
+	 helper both call), not an intermediate base — independent per-subclass
+	 discovery would otherwise cause order-dependent duplicate registrations.
+	 Your class name can still be anything (discovery is by base class, not prefix).
    - **C#:** any `[GlobalClass]` whose name starts with `MCPToolkit` (C# cannot
 	 extend the GDScript base class, so prefix is the discovery marker)
    - Internal toolkit classes are naturally excluded (they extend `RefCounted`
@@ -603,7 +608,9 @@ registrations of the same method name are rejected with a logged warning.
   `resource.*`, `folder.*`, `file.*`, `signal.*`, `playtest.*`, `project.*`,
   `input_map.*`, `animation.*`, `tilemap.*`, `asset.*`, `save.*`, `meta.*`,
   `game.*`, `diff.*`, `extensions.*`
-- GDScript extensions: no `class_name` prefix required (discovery is by base class)
+- GDScript extensions: extend `MCPToolkitExtension` **directly** (multi-level
+  inheritance is not supported); `class_name` can be anything (discovery is by
+  base class, not prefix)
 - C# extensions: `class_name` must start with `MCPToolkit` (discovery marker)
 
 ### Error handling contract
@@ -901,6 +908,45 @@ most one rescan.
 deferred tools. Mid-session additions may not appear in the client's tool
 list until `/mcp` reconnect, even though the server has already registered
 them. This is a platform-side limitation, not actionable server-side.
+
+## Exporting games with extensions
+
+When you export your game, the MCP Toolkit must not ship in the build. The addon
+registers an export plugin that handles this automatically.
+
+**GDScript extensions — automatic, zero action required.** At export time the
+plugin removes every `.gd` file that is an extension (a direct subclass of
+`MCPToolkitExtension`), wherever it lives in the project, plus the entire
+`addons/godot_mcp_toolkit/` folder and `res://.mcp.json`. You do not need to do
+anything — your extension files never ship in the exported game.
+
+**C# extensions — NOT auto-stripped, author action required.** C# compiles into
+a .NET assembly (DLL); individual classes cannot be removed from it at export.
+The class will be present in the shipped DLL, but the loader that calls
+`Register()` is stripped, so it is never instantiated. To be safe, guard any
+editor-only work so it cannot run in a build:
+
+```csharp
+public void Register(GodotObject registry, Node server)
+{
+    if (!Engine.IsEditorHint()) return; // defence-in-depth
+    // ...
+}
+```
+
+You may also exclude the extension `.cs` from release builds via a `.csproj`
+condition (`<Compile Remove="..." Condition="..." />`).
+
+**If the addon is disabled** (but still on disk) when you export, the export
+plugin does not run, so addon files, extensions, and `.mcp.json` all ship — but
+they are inert: all addon code is editor-only (`@tool`), the runtime server
+refuses to start outside a debug build, and `Register()` is never called.
+Re-enable the addon (or delete the addon folder) before exporting to keep your
+build clean.
+
+**Note on `.mcp.json`:** most projects never export it (Godot skips it unless you
+add a `*.json` non-resource export filter), so this strip is defensive; if it
+does ship it is an inert config file.
 
 ## Known limitations
 
