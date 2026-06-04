@@ -227,8 +227,11 @@ func _build_ui() -> void:
 	var node_check := NodejsCheck.check()
 	var nodejs_msg := ""
 	if not node_check["found"]:
+		var _path_hint := ""
+		if OS.get_name() == "Windows":
+			_path_hint = "\nIf Node.js is installed, ensure it is on your system PATH."
 		nodejs_msg = ("Node.js not found — the MCP server bridge requires "
-			+ "Node.js 20+. Download it from https://nodejs.org")
+			+ "Node.js 20+. Download it from https://nodejs.org" + _path_hint)
 	elif not node_check["meets_minimum"]:
 		nodejs_msg = ("Node.js %s found but 20+ is required. "
 			+ "Update from https://nodejs.org") % str(node_check["version"])
