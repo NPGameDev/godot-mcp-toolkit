@@ -183,23 +183,50 @@ pattern rather than blocking the bridge.
 coroutines). The dispatch path already awaits handler results, so both
 synchronous and asynchronous handlers work without additional configuration.
 
-**Deferred-call context:** Command handlers run inside a `call_deferred`
-dispatch (used to reduce editor crash risk from main-thread reentrancy).
-This means Godot APIs that use the **progress dialog** (e.g.
-`EditorInterface.save_scene()`, `EditorInterface.save_scene_as()`) will
-log `progress_dialog.cpp` errors if called directly. To work around this,
-yield one frame before calling such APIs:
+**Saving a scene from a handler — choose by your scripting language.**
+Handlers run inside a `call_deferred` dispatch. Calling
+`EditorInterface.save_scene()` / `save_scene_as()` directly is **unsafe in any
+language** — the progress dialog re-enters `Main::iteration()`, which can
+dispatch another command mid-save and **wedge or crash the editor** (all Godot
+versions). Use the editor-safe API:
+
+**GDScript (`.gd`) handlers — `await MCPToolkitSafeSceneOps.save_scene()`:**
 
 ```gdscript
 func _my_handler(params: Dictionary) -> Dictionary:
-	# Escape the deferred-call context before calling progress-dialog APIs.
-	await (Engine.get_main_loop() as SceneTree).process_frame
-	EditorInterface.save_scene()
-	return MCPToolkitSuccess.ok()
+	# Waits out any EditorFileSystem scan, escapes the deferred context, and wraps
+	# the synchronous save in a re-entrancy flag. path == "" → active scene.
+	return await MCPToolkitSafeSceneOps.save_scene()
 ```
 
-This adds ~16ms of latency (one frame) and is only needed for the small
-set of Godot APIs that internally show a progress dialog.
+This is the only supported **inline** save (you get the result back). A `.gd`
+handler that wants fire-and-forget can instead call
+`MCPToolkitSafeSceneOps.queue_save(path)` → save id, and poll
+`MCPToolkitSafeSceneOps.check_save(id, clear)`.
+
+**C# (`.cs`) handlers — via the `registry` facade.** C# handlers are
+synchronous and cannot `await` a GDScript coroutine or call its statics, so they
+reach the editor-safe save through the `registry` from `Register(registry,
+server)` — the same single facade as `create_undo_action` / `fail`:
+
+```csharp
+// Start-and-poll. queue_save returns a save id immediately; the editor-safe
+// save runs after your handler returns. path "" = active scene.
+string id = (string)registry.Call("queue_save", path);
+// ...poll until done (e.g. from a companion status tool the client calls):
+var status = (Godot.Collections.Dictionary)registry.Call("check_save", id, /*clear*/ true);
+// status = {done:bool, success:bool, result:{...}}  (or {done:false, unknown:true})
+```
+
+A synchronous C# handler can't wait on the save itself, so polling is
+**client-driven**: return the `id` (or expose a thin `check_*` tool that calls
+`registry.Call("check_save", id, clear)`) and let the MCP client poll until
+`done`. If you don't need the result, the simplest path is **mutate-only** —
+change the scene tree, return, and let the client persist via the built-in
+`editor_save_scene` tool.
+
+> Never call `EditorInterface.save_scene[_as]()` (GDScript) or
+> `EditorInterface.SaveScene()` (C#) directly — the crash applies to both.
 
 **Groups:**
 
@@ -568,7 +595,9 @@ and static methods. The dispatch system already `await`s every handler call,
 so your handler becoming a coroutine requires no extra setup.
 
 Common scenarios where this applies:
-- Waiting for `EditorFileSystem.is_scanning()` to finish
+- Waiting for `EditorFileSystem.is_scanning()` to finish — prefer
+  `await MCPToolkitSafeSceneOps.wait_for_scan_idle()` (bounded by
+  `mcp_toolkit/concurrency/scan_idle_timeout_ms`) over an unbounded loop
 - Polling for a process or service to become ready
 - Any loop that needs to pause between iterations
 

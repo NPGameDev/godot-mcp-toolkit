@@ -101,7 +101,9 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 			if outside_scenes.is_empty():
 				return MCPToolkitError.fail("PATH_IN_USE",
 					"all open scene tabs are inside %s; open a scene outside the folder first via scene_open, then retry folder_delete" % folder_path)
-			await Helpers.open_scene_deferred(outside_scenes[0])
+			if not await Helpers.open_scene_deferred(outside_scenes[0]):
+				return MCPToolkitError.fail("TIMEOUT",
+					"could not switch active scene away from %s — filesystem scanning; retry shortly" % folder_path)
 		stale_tabs = inside_scenes
 		if not EditorInterface.has_method("close_scene"):
 			warnings.append(

@@ -59,6 +59,7 @@ func add(method: String, handler: Callable,
 		"annotations": annotations,
 		"group": opts.get("group", {}),
 		"timeout_ms": timeout_ms,
+		"timeout_declared": raw_timeout > 0,  # author set a positive timeout_ms (vs defaulted)
 		"is_cancellable": bool(opts.get("is_cancellable", false)),
 		"read_only": is_read_only,
 		"active_scene_required": bool(opts.get("is_active_scene_required", true)),
@@ -116,6 +117,20 @@ func has_command(method: String) -> bool:
 	return _commands.has(method)
 
 
+## Watchdog deadline basis for `method`. If the author DECLARED a timeout we
+## trust it (their stated contract — built-ins + careful extensions get a tight,
+## appropriate deadline); if not (the command falls back to the 30 s default,
+## which isn't a deliberate statement about its duration) we use _MAX_TIMEOUT_MS
+## so an undeclared-but-slow method is never force-cleared early.
+func get_watchdog_timeout_ms(method: String) -> int:
+	if not _commands.has(method):
+		return _MAX_TIMEOUT_MS
+	var entry: Dictionary = _commands[method]
+	if bool(entry.get("timeout_declared", false)):
+		return int(entry.get("timeout_ms", _MAX_TIMEOUT_MS))
+	return _MAX_TIMEOUT_MS
+
+
 func is_cancellable(method: String) -> bool:
 	if not _commands.has(method):
 		return false
@@ -155,6 +170,20 @@ func create_extension_options(description: String) -> MCPToolkitExtensionOptions
 
 func create_undo_action(description: String, context_object: Object = null) -> MCPToolkitUndoRedoAction:
 	return MCPToolkitUndoRedoAction.begin(description, context_object)
+
+
+## Editor-safe scene save for extension handlers — wraps MCPToolkitSafeSceneOps
+## (just as create_undo_action wraps MCPToolkitUndoRedoAction), so C# handlers
+## (which can't await or call GDScript statics) reach it through this single
+## registry facade. Usage: `id = registry.Call("queue_save", path)`, then poll
+## `registry.Call("check_save", id [, clear])` until `done` is true. The save
+## runs after the handler returns (C2 scan-idle + C1 re-entrancy guards apply).
+func queue_save(path := "") -> String:
+	return MCPToolkitSafeSceneOps.queue_save(path)
+
+
+func check_save(save_id: String, clear := false) -> Dictionary:
+	return MCPToolkitSafeSceneOps.check_save(save_id, clear)
 
 
 func clear() -> void:

@@ -85,30 +85,11 @@ static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dict
 
 
 static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
-	var root := Helpers.get_edited_root()
-	if root == null:
-		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
-	# Yield one frame to escape the deferred-call context before calling
-	# save_scene/save_scene_as. These APIs use Godot's progress dialog,
-	# which is forbidden during MessageQueue flush (progress_dialog.cpp:191).
-	# The poll body runs via call_deferred, so without this yield the
-	# progress dialog guard fires and logs errors.
-	await (Engine.get_main_loop() as SceneTree).process_frame
-	var save_path := str(parameters.get("file_path", ""))
-	if save_path.is_empty():
-		var save_error := EditorInterface.save_scene()
-		if save_error != OK:
-			return MCPToolkitError.fail("SAVE_FAILED",
-				"EditorInterface.save_scene returned %d" % save_error)
-	else:
-		var guard := FileGuard.resolve_safe(save_path)
-		if guard["error"] != null:
-			return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
-		EditorInterface.save_scene_as(save_path)
-		if not FileAccess.file_exists(save_path):
-			return MCPToolkitError.fail("SAVE_FAILED",
-				"save_scene_as did not produce %s" % save_path)
-	return MCPToolkitSuccess.ok({"path": root.scene_file_path})
+	# Route through the public safety class: C2 scan-idle guard + the C1
+	# _in_dispatch flag around the synchronous save (see
+	# mcp_toolkit_safe_scene_ops.gd). NEVER call EditorInterface.save_scene[_as]
+	# directly — it can re-enter Main::iteration() mid-dispatch and crash/wedge.
+	return await MCPToolkitSafeSceneOps.save_scene(str(parameters.get("file_path", "")))
 
 
 static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:

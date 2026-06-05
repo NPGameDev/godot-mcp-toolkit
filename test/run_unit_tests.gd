@@ -7,6 +7,8 @@ extends SceneTree
 ## The final banner is always printed for environments where exit codes
 ## are unreliable (Windows Godot).
 
+const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/mcp_toolkit_safe_scene_ops.gd")
+
 var _passed := 0
 var _failed := 0
 var _errors: Array[String] = []
@@ -26,6 +28,9 @@ func _init() -> void:
 	_test_extension_options()
 	_test_annotation_mapping()
 	_test_timeout_clamping()
+	_test_watchdog_timeout()
+	_test_scene_lease()
+	_test_safe_scene_ops()
 	_test_tool_context()
 	_test_compile_text_filter()
 	_test_set_property_compound()
@@ -309,6 +314,122 @@ func _test_timeout_clamping() -> void:
 	_ok(not reg.get_command_metadata("to.z").has("timeout_ms"),
 			"timeout 0 → default (omitted from metadata)")
 
+	print("")
+
+
+# --- Mutation-watchdog deadline basis (Fix 6, 41l-tricies) -----------------
+# get_watchdog_timeout_ms: trust a DECLARED timeout; for an undeclared command
+# (the 30s default, not a deliberate duration) use _MAX_TIMEOUT_MS so an
+# undeclared-but-slow method is never force-cleared early.
+
+func _test_watchdog_timeout() -> void:
+	_begin("Watchdog timeout basis")
+	var reg := MCPToolkitCommandRegistry.new()
+
+	# 1. declared timeout → trusted (the author's contract)
+	reg.add("wd.declared", _noop, MCPToolkitCommandOptions.new().with_timeout_ms(5000))
+	_eq(reg.get_watchdog_timeout_ms("wd.declared"), 5000,
+			"declared timeout → trusted (5000)")
+
+	# 2. undeclared (default) → _MAX_TIMEOUT_MS (300000), NOT the 30s default
+	reg.add("wd.default", _noop, MCPToolkitCommandOptions.new())
+	_eq(reg.get_watchdog_timeout_ms("wd.default"), 300000,
+			"undeclared → _MAX_TIMEOUT_MS, not the 30s default")
+
+	# 3. timeout 0 → treated as undeclared → _MAX_TIMEOUT_MS
+	reg.add("wd.zero", _noop, MCPToolkitCommandOptions.new().with_timeout_ms(0))
+	_eq(reg.get_watchdog_timeout_ms("wd.zero"), 300000,
+			"timeout 0 → undeclared → _MAX_TIMEOUT_MS")
+
+	# 4. explicitly declared 30000 is still 'declared' → trusted, NOT forced to _MAX
+	reg.add("wd.d30k", _noop, MCPToolkitCommandOptions.new().with_timeout_ms(30000))
+	_eq(reg.get_watchdog_timeout_ms("wd.d30k"), 30000,
+			"explicitly declared 30000 → trusted (not _MAX)")
+
+	# 5. unknown method → _MAX_TIMEOUT_MS (safe ceiling)
+	_eq(reg.get_watchdog_timeout_ms("wd.unknown"), 300000,
+			"unknown method → _MAX_TIMEOUT_MS")
+
+	print("")
+
+
+# --- Scene-lease bookkeeping (Fix 4, 41l-tricies) --------------------------
+# After Fix 4, _try_acquire_lease is pure bookkeeping (the raw
+# open_scene_from_path was removed), so it is headless-unit-testable. Instantiate
+# mcp_server WITHOUT adding it to the tree, so _ready never fires (no TCP server).
+
+func _test_scene_lease() -> void:
+	_begin("Scene lease bookkeeping")
+	var Server = preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
+	var srv = Server.new()
+	var peer_a := WebSocketPeer.new()
+	var peer_b := WebSocketPeer.new()
+
+	# 1. free lease → A acquires (empty scene skips the file-exists check)
+	_ok(srv._try_acquire_lease(peer_a, ""), "free lease → A acquires")
+	_ok(srv._lease_holder == peer_a, "lease holder is A")
+
+	# 2. same peer → renews
+	_ok(srv._try_acquire_lease(peer_a, ""), "same peer → renews (true)")
+	_ok(srv._lease_holder == peer_a, "A still holds after renew")
+
+	# 3. different peer → contended (false); A keeps it
+	_ok(not srv._try_acquire_lease(peer_b, ""), "other peer → contended (false)")
+	_ok(srv._lease_holder == peer_a, "A still holds under contention")
+
+	# 4. release → no holder
+	srv._release_lease()
+	_ok(srv._lease_holder == null, "release → no holder")
+
+	# 5. after release → B acquires
+	_ok(srv._try_acquire_lease(peer_b, ""), "after release → B acquires")
+	_ok(srv._lease_holder == peer_b, "lease holder is B")
+
+	srv.free()
+	print("")
+
+
+# --- MCPToolkitSafeSceneOps public API (Fix 1, 41l-tricies) ----------------
+# is_dispatching() is the pure, headless-testable surface. wait_for_scan_idle /
+# save_scene / queue_save touch EditorInterface (null in this --script runner),
+# so they are covered by the smoke suite + the editor-required dispatch
+# integration / A-B validation that exercise editor_save_scene end to end.
+
+func _test_safe_scene_ops() -> void:
+	_begin("MCPToolkitSafeSceneOps (public API)")
+	_ok(not _SafeSceneOps.is_dispatching(), "is_dispatching → false by default")
+	_SafeSceneOps._in_dispatch = true
+	_ok(_SafeSceneOps.is_dispatching(), "is_dispatching → true when _in_dispatch set")
+	_SafeSceneOps._in_dispatch = false
+	_ok(not _SafeSceneOps.is_dispatching(), "is_dispatching → false after reset")
+
+	# C# reaches the safe-save API through the registry facade (like
+	# create_undo_action), so verify the registry bridge forwards to SafeSceneOps.
+	# (queue_save fires the editor-coupled save → integration-tested; check_save
+	# is pure dict logic → testable here.)
+	var _reg := MCPToolkitCommandRegistry.new()
+	_ok(_reg.check_save("nope").get("unknown", false),
+			"registry.check_save bridge → forwards to SafeSceneOps")
+
+	# check_save — pure dict logic; seed _save_results directly to bypass the
+	# editor-coupled save in queue_save/_run_queued_save.
+	_SafeSceneOps._save_results = {}
+	_ok(_SafeSceneOps.check_save("nope").get("unknown", false),
+			"check_save(unknown id) → unknown:true")
+	_SafeSceneOps._save_results["s1"] = {"done": false}
+	_ok(not _SafeSceneOps.check_save("s1").get("done", true),
+			"pending save → done:false")
+	_SafeSceneOps._save_results["s1"] = {"done": true, "success": true}
+	_ok(_SafeSceneOps.check_save("s1").get("success", false),
+			"completed save → success:true")
+	_SafeSceneOps.check_save("s1", true)  # clear a done save
+	_ok(_SafeSceneOps.check_save("s1").get("unknown", false),
+			"check_save(clear) on done → record removed")
+	_SafeSceneOps._save_results["s2"] = {"done": false}
+	_SafeSceneOps.check_save("s2", true)  # clear a pending save → no-op
+	_ok(_SafeSceneOps._save_results.has("s2"),
+			"check_save(clear) on pending → kept")
+	_SafeSceneOps._save_results = {}  # reset the shared static
 	print("")
 
 

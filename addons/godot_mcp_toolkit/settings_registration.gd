@@ -36,6 +36,7 @@ const _NODEJS_OLD_VERSION_TEXT := (
 
 static func register_all() -> void:
 	_register_limits()
+	_register_concurrency()
 	_register_audit()
 	_register_bootstrap_flag()
 	_register_status_field()
@@ -50,6 +51,13 @@ static func _register_limits() -> void:
 	_register_basic_int("mcp_toolkit/limits/ws_buffer_kb", 1024,
 		"WebSocket per-peer buffer size, in KB. Minimum 256.")
 	_register_limits_note()
+
+
+static func _register_concurrency() -> void:
+	_register_basic_int("mcp_toolkit/concurrency/scan_idle_timeout_ms", 5000,
+		"How long a scene save/open waits for the EditorFileSystem scan to finish before aborting, in ms. 0 = fail-fast; recommended 1000-30000. Higher lets slow-import projects finish scanning at the cost of longer save stalls. Not clamped.")
+	_register_basic_int("mcp_toolkit/concurrency/mutation_watchdog_grace_ms", 60000,
+		"Grace added to a mutation's deadline before the dispatch watchdog force-clears a wedged lock, in ms. Added to the command's declared timeout (or the 300s ceiling for undeclared commands). The watchdog is a safety net that should normally never fire. Not clamped.")
 
 
 static func _register_audit() -> void:

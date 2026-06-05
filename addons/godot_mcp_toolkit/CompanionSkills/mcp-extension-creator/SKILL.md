@@ -378,7 +378,7 @@ In single-session usage (the common case), both mechanisms are no-ops.
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `progress_dialog.cpp` errors on save | Handler calls `EditorInterface.save_scene()` directly | Yield one frame first: `await (Engine.get_main_loop() as SceneTree).process_frame` before the call |
+| `progress_dialog.cpp` errors / editor wedge on save | Handler calls `EditorInterface.save_scene()` directly (re-enters `Main::iteration()` → wedge/crash) | **`.gd`:** `await MCPToolkitSafeSceneOps.save_scene()` (or `queue_save`/`check_save` for fire-and-forget). **`.cs`:** `id = registry.Call("queue_save", path)` then poll `registry.Call("check_save", id, clear)`, or mutate-only + let the client call `editor_save_scene`. Never call `EditorInterface.save_scene[_as]()` directly. |
 | Extension not discovered | Missing `@tool` (GDScript) or `[Tool]` (C#) | Add the annotation and save/rebuild |
 | GDScript extension not found | Not extending `MCPToolkitExtension` | Add `extends MCPToolkitExtension` |
 | C# extension not in class list | File name ≠ class name | Rename `.cs` file to match class name |

@@ -93,6 +93,17 @@ class _MutationQueueEntry:
 
 var _mutation_in_flight := false
 var _mutation_queue: Array = []  # of _MutationQueueEntry
+# C3 mutation watchdog — recover the lock if an in-flight mutation's coroutine
+# aborts or never resolves (it would otherwise wedge ALL mutations permanently).
+# The deadline is adaptive (the in-flight command's own timeout + grace) and
+# stamped at execution-start, so a slow extension mutation never false-trips it.
+var _mutation_started_ms := 0
+var _mutation_deadline_ms := 0
+var _mutation_peer: WebSocketPeer = null
+var _mutation_id  # int or null — the in-flight mutation's JSON-RPC id
+var _mutation_method := ""
+var _mutation_ctx: MCPToolkitToolContext = null  # cancellable cmd's ctx, for watchdog cooperative-cancel
+var _mutation_generation := 0
 
 # -- Scene lease ---------------------------------------------------------------
 # When multiple peers target different scenes, a time-bounded lease prevents
@@ -305,6 +316,9 @@ func _try_listen() -> void:
 
 
 func _process(_delta: float) -> void:
+	# C3: the mutation watchdog must always run, independent of the poll cadence
+	# and lease state — it is the sole recovery for a wedged mutation lock.
+	_check_mutation_watchdog()
 	_Hub.LogBuffer.poll()
 	_poll_frame_counter += 1
 	if _poll_frame_counter < _POLL_FRAME_INTERVAL:
@@ -318,6 +332,10 @@ func _process(_delta: float) -> void:
 
 
 func _poll_connections() -> void:
+	# C1: skip this re-entrant tick while a save's Main::iteration() re-entry is
+	# in flight — no command may dispatch mid-save.
+	if MCPToolkitSafeSceneOps.is_dispatching():
+		return
 	if _tcp_server == null or not _tcp_server.is_listening():
 		_try_listen()
 		return
@@ -560,20 +578,45 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 
 func _execute_mutation(peer: WebSocketPeer, id, method: String,
 		params: Dictionary, scene_queued_ms: int = 0) -> void:
+	# C3: stamp the watchdog deadline synchronously with the flag, BEFORE any
+	# await — so it tracks only in-flight time (never the queued wait) and can't
+	# race. Deadline = this command's own timeout + grace.
 	_mutation_in_flight = true
+	_mutation_started_ms = Time.get_ticks_msec()
+	var grace_ms: int = ProjectSettings.get_setting(
+		"mcp_toolkit/concurrency/mutation_watchdog_grace_ms", 60000)
+	# Deadline basis: the command's DECLARED timeout if it set one (trust the
+	# author's contract — built-ins + careful extensions get tight, appropriate
+	# recovery), else _MAX_TIMEOUT_MS for undeclared methods (the 30 s default
+	# isn't a deliberate duration statement, so don't force-clear them early).
+	# Grace is added either way; the deadline is stamped at execution-start.
+	_mutation_deadline_ms = _mutation_started_ms + _registry.get_watchdog_timeout_ms(method) + grace_ms
+	_mutation_peer = peer
+	_mutation_id = id
+	_mutation_method = method
+	var my_generation := _mutation_generation
 	_send_notification(peer, "_executing", {"request_id": id})
 	var ctx: MCPToolkitToolContext = null
 	if _registry.is_cancellable(method):
 		ctx = MCPToolkitToolContext.new()
 		_active_contexts[str(id)] = ctx
+	_mutation_ctx = ctx  # tracked so the watchdog can cooperatively cancel a slow-but-alive handler
 	command_received.emit(method)
 	var result: Dictionary = await _registry.call_command(method, params, ctx)
 	_active_contexts.erase(str(id))
+	# C3 generation guard: if the watchdog force-cleared us mid-await (generation
+	# bumped), a successor mutation now owns the lock. Abandon the ENTIRE tail —
+	# the watchdog already responded; touching the flag/queue would corrupt the
+	# successor.
+	if _mutation_generation != my_generation:
+		return
 	if scene_queued_ms > 0:
 		_inject_concurrency_metadata(result, scene_queued_ms)
 	_send_result(peer, id, result)
 	_post_mutation_scene_cleanup(peer, method, params, result)
 	_mutation_in_flight = false
+	_mutation_peer = null
+	_mutation_ctx = null
 	_drain_mutation_queue()
 
 
@@ -599,6 +642,40 @@ func _drain_mutation_queue() -> void:
 		return  # _execute_mutation will call _drain_mutation_queue on completion.
 	# Mutation queue fully drained — check scene queue for same-lease entries.
 	_drain_scene_queue()
+
+
+# C3: sole recovery for a wedged mutation lock. Runs every _process frame,
+# unconditionally. The deadline is adaptive + stamped at execution-start, so a
+# legitimately slow (even maxed-out extension) mutation never trips it; only an
+# aborted/never-resolving one does. SAFETY NET — a fire means the C1 re-entrancy
+# guard failed to prevent the wedge, so it warns loudly.
+func _check_mutation_watchdog() -> void:
+	if not _mutation_in_flight:
+		return
+	if Time.get_ticks_msec() <= _mutation_deadline_ms:
+		return
+	push_warning(("[MCPToolkit] mutation watchdog: '%s' (id %s) exceeded its "
+		+ "deadline (%d ms in flight) — force-clearing the dispatch lock. If this "
+		+ "recurs, the save-reentrancy guard (C1) is not holding.") % [
+			_mutation_method, str(_mutation_id),
+			Time.get_ticks_msec() - _mutation_started_ms])
+	if _mutation_peer != null and _mutation_peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+		_send_error(_mutation_peer, _mutation_id, -32000,
+			"mutation watchdog timeout — the editor did not complete the operation in time")
+	# Cooperatively cancel the in-flight handler (if cancellable + still alive): one
+	# that polls ctx.is_cancelled() bails at its next check, shrinking the window
+	# where a slow-but-alive mutation runs concurrently with its watchdog-started
+	# successor. A hung handler ignores this (harmless).
+	if _mutation_ctx != null:
+		_mutation_ctx.cancel()
+	_active_contexts.erase(str(_mutation_id))
+	# Bump generation FIRST so the wedged coroutine, if it ever resumes, skips its
+	# whole tail (generation guard in _execute_mutation).
+	_mutation_generation += 1
+	_mutation_in_flight = false
+	_mutation_peer = null
+	_mutation_ctx = null
+	_drain_mutation_queue()
 
 
 # -- Scene lease ---------------------------------------------------------------
@@ -670,8 +747,10 @@ func _try_acquire_lease(peer: WebSocketPeer, scene: String) -> bool:
 		_lease_holder = peer
 		_lease_scene = scene
 		_lease_renewed_ms = Time.get_ticks_msec()
-		if _get_active_scene_path() != scene and not scene.is_empty():
-			EditorInterface.open_scene_from_path(scene)
+		# Fix 4: lease acquisition is now pure bookkeeping — the raw
+		# open_scene_from_path was removed (it violated the #75669 deferred-open
+		# rule and was unguarded against scans). Tab activation moves to the
+		# guarded _execute_scene_queued_* paths via _switch_to_affinity_scene.
 		return true
 	if _lease_holder == peer:
 		# Same peer — renew.
@@ -688,6 +767,10 @@ func _release_lease() -> void:
 
 
 func _check_lease_expiry() -> void:
+	# C1: don't steal/drain during a save's re-entry (a lease-steal would drain a
+	# scene-queued command mid-save).
+	if MCPToolkitSafeSceneOps.is_dispatching():
+		return
 	if _lease_holder == null:
 		return
 	if _scene_queue.is_empty():
@@ -738,11 +821,27 @@ func _drain_scene_queue() -> void:
 	# Scene queue fully drained — nothing left.
 
 
+# Fix 4: switch the editor to the peer's affinity scene before executing a
+# scene-queued command (the raw open was removed from _try_acquire_lease).
+# Guarded against an active EditorFileSystem scan. Returns false — and sends the
+# peer a TIMEOUT — if it can't switch, so the caller aborts this one entry (the
+# rest of the queue stays for the next drain trigger).
+func _switch_to_affinity_scene(peer: WebSocketPeer, id) -> bool:
+	var scene := str(_peer_scene_affinity.get(peer, ""))
+	if scene.is_empty() or _get_active_scene_path() == scene:
+		return true
+	if await _Hub.Helpers.open_scene_deferred(scene):
+		return true
+	_send_result(peer, id, MCPToolkitError.fail("TIMEOUT",
+		"could not switch to %s — EditorFileSystem still scanning" % scene))
+	return false
+
+
 func _execute_scene_queued_mutation(entry: _SceneQueueEntry,
 		queued_ms: int) -> void:
-	# Route through mutation lock — the scene lease is already acquired.
+	# Re-queue (no tab switch) BEFORE activating the tab, to avoid an unnecessary
+	# switch when the mutation lock is busy.
 	if _mutation_in_flight:
-		# Re-queue into mutation queue (lease held; executes when lock frees).
 		var m_entry := _MutationQueueEntry.new()
 		m_entry.peer = entry.peer
 		m_entry.id = entry.id
@@ -751,13 +850,18 @@ func _execute_scene_queued_mutation(entry: _SceneQueueEntry,
 		m_entry.scene_queued_ms = queued_ms
 		_mutation_queue.append(m_entry)
 		_send_notification(entry.peer, "_queued", {"request_id": entry.id})
-	else:
-		_execute_mutation(entry.peer, entry.id, entry.method, entry.params,
-			queued_ms)
+		return
+	# Fix 4: activate the peer's affinity scene here, guarded against a scan.
+	if not await _switch_to_affinity_scene(entry.peer, entry.id):
+		return
+	_execute_mutation(entry.peer, entry.id, entry.method, entry.params, queued_ms)
 
 
 func _execute_scene_queued_read(entry: _SceneQueueEntry,
 		queued_ms: int) -> void:
+	# Fix 4: activate the peer's affinity scene (guarded) before the read.
+	if not await _switch_to_affinity_scene(entry.peer, entry.id):
+		return
 	var ctx: MCPToolkitToolContext = null
 	if _registry.is_cancellable(entry.method):
 		ctx = MCPToolkitToolContext.new()

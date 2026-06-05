@@ -306,6 +306,12 @@ the extension allowlist + size cap provide defence in depth.
 `127.0.0.1:6550` — localhost-only bind. Override by setting `GODOT_MCP_PORT`
 on the server-side env.
 
+## Advanced configuration
+
+Optional fine-tuning knobs (concurrency timeouts, buffer limits) live under
+`mcp_toolkit/` in Project Settings — most users never need them. See
+[docs/advanced_configuration.md](docs/advanced_configuration.md).
+
 ## Minimum Godot version
 
 Godot 4.4+. See the [repo-root README](../../README.md) for the full stack

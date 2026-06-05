@@ -409,9 +409,15 @@ static func class_base_chain(type_name: String) -> String:
 ## Open a scene in the editor using call_deferred to avoid deferred-queue
 ## collisions (godotengine/godot#75669). Yields one frame so the editor
 ## fully settles before the next MCP command executes.
-static func open_scene_deferred(file_path: String) -> void:
+static func open_scene_deferred(file_path: String) -> bool:
+	# C2: never open into an active EditorFileSystem scan (the load reads
+	# inconsistent state and can crash). Returns false on scan-idle timeout so
+	# callers can abort rather than collide with the scan.
+	if not await MCPToolkitSafeSceneOps.wait_for_scan_idle():
+		return false
 	EditorInterface.open_scene_from_path.call_deferred(file_path)
 	await (Engine.get_main_loop() as SceneTree).process_frame
+	return true
 
 
 ## Attempt to close the editor tab for `file_path`.
@@ -453,7 +459,8 @@ static func close_scene_tab_safe(file_path: String) -> Dictionary:
 	var current_path := current_root.scene_file_path if current_root else ""
 	var switched := (current_path != file_path)
 	if switched:
-		await open_scene_deferred(file_path)
+		if not await open_scene_deferred(file_path):
+			return {"closed": false, "reason": "scan_timeout"}
 
 	# Close the now-active tab via call_deferred for the same reason.
 	EditorInterface.call_deferred("close_scene")

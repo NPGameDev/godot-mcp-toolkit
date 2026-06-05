@@ -217,9 +217,12 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		# it from disk so the in-memory tree matches the fresh file.
 		var open_scenes := EditorInterface.get_open_scenes()
 		if file_path in open_scenes:
-			await Helpers.open_scene_deferred(file_path)
-			response["reloaded"] = true
-			response["hint"] = "Scene replaced and reloaded in editor."
+			if await Helpers.open_scene_deferred(file_path):
+				response["reloaded"] = true
+				response["hint"] = "Scene replaced and reloaded in editor."
+			else:
+				response["reloaded"] = false
+				response["hint"] = "Scene replaced; reload skipped (filesystem scanning) — reopen with scene_open."
 	else:
 		response["status"] = "created"
 	return response
@@ -235,7 +238,9 @@ static func _cmd_scene_open(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if not FileAccess.file_exists(file_path):
 		return MCPToolkitError.fail("NOT_FOUND", "scene not found: %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
-	await Helpers.open_scene_deferred(file_path)
+	if not await Helpers.open_scene_deferred(file_path):
+		return MCPToolkitError.fail("TIMEOUT",
+			"could not open %s — EditorFileSystem still scanning; retry shortly" % file_path)
 	return MCPToolkitSuccess.ok({"path": file_path})
 
 
