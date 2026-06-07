@@ -44,17 +44,19 @@
 **4.11** Verify — `node_get_property` node_path=`Sv2SpriteCopy`, property=`position`
 - **Expect:** Vector2(200, 300), NOT the original sprite position
 
-**4.12** `node_groups` (batch add) — action=`add`, node_path=`Sv2Player`, groups=`["sv2_enemies", "sv2_actors"]`
-- **Expect:** success
+**4.12** `node_groups` (batch add) — action=`add`, entries=`[{"node_path":"Sv2Player","group":"sv2_enemies"},{"node_path":"Sv2Player","group":"sv2_actors"}]`
+- **Expect:** success, results array with 2 entries (status="added")
 
-> **REGRESSION WATCH (462506b):** If `groups` array (batch mode) is rejected and
-> only single `group` param works, batch node_groups has regressed. Flag as **Major**.
+> **REGRESSION WATCH (462506b):** Batch mode is the `entries` array — each item is
+> a `{node_path, group}` pair (the handler ignores any top-level `node_path`/`group`
+> when `entries` is present). If `entries` is rejected and only single `group` mode
+> works, batch node_groups has regressed. Flag as **Major**.
 
 **4.13** `node_groups` (list) — action=`list`, node_path=`Sv2Player`
 - **Expect:** includes both `sv2_enemies` and `sv2_actors`
 
-**4.14** `node_groups` (batch remove) — action=`remove`, node_path=`Sv2Player`, groups=`["sv2_enemies", "sv2_actors"]`
-- **Expect:** success
+**4.14** `node_groups` (batch remove) — action=`remove`, entries=`[{"node_path":"Sv2Player","group":"sv2_enemies"},{"node_path":"Sv2Player","group":"sv2_actors"}]`
+- **Expect:** success, results array with 2 entries (status="removed")
 
 ---
 

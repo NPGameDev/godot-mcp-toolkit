@@ -48,8 +48,8 @@
 > accepted without any hint/warning, the bare-res detection has regressed. The tool
 > should either reject with a hint or accept with a diagnostic note.
 
-**3.11** `node_set_property` (LayerMask coercion) — node_path=`Sv2Player`, property=`collision_layer`, value=`{"type":"LayerMask","value":5}`
-- **Expect:** success, collision_layer set to 5
+**3.11** `node_set_property` (LayerMask coercion) — node_path=`Sv2Player`, property=`collision_layer`, value=`{"type":"LayerMask","layers":[1,3]}`
+- **Expect:** success, collision_layer set to 5 (layers 1 and 3 → bits 0 and 2 → 1 + 4 = 5)
 
 > **REGRESSION WATCH (462506b):** If `LayerMask` type tag is rejected, coercion
 > has regressed. Flag as **Major**.

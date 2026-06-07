@@ -9,7 +9,7 @@
 **5.1** `signal_list` — node_path=`Sv2Player`
 - **Expect:** Includes `hit` signal from actor.gd
 
-**5.2** `signal_manage` — node_path=`Sv2Player`, signal_name=`hit`, operation=`connect`, target_path=`Sv2Label`, method=`set_text`
+**5.2** `signal_manage` — node_path=`Sv2Player`, signal_name=`hit`, action=`connect`, target_path=`Sv2Label`, method_name=`set_text`
 - **Expect:** success
 
 > **REGRESSION WATCH (FIX-G, 7e63aee):** Parameter must be `node_path`, not old
@@ -18,7 +18,7 @@
 **5.3** `signal_list` — node_path=`Sv2Player`, include_connections=`true`
 - **Expect:** `hit` signal connections array contains `{ target_path: "Sv2Label", method_name: "set_text" }`
 
-**5.4** `signal_manage` (method hint test) — node_path=`Sv2Player`, signal_name=`hit`, operation=`connect`, target_path=`Sv2Label`, method=`nonexistent_method_xyz`
+**5.4** `signal_manage` (method hint test) — node_path=`Sv2Player`, signal_name=`hit`, action=`connect`, target_path=`Sv2Label`, method_name=`nonexistent_method_xyz`
 - **Expect:** success OR warning with method hint. The 3-case diagnostic should fire:
   1. If method exists → connect silently
   2. If method doesn't exist but similar ones do → hint with suggestions
@@ -28,7 +28,7 @@
 > a non-existent method, the signal_manage method diagnostic has regressed.
 > Flag as **Major**.
 
-**5.5** `signal_manage` (disconnect) — node_path=`Sv2Player`, signal_name=`hit`, operation=`disconnect`, target_path=`Sv2Label`, method=`set_text`
+**5.5** `signal_manage` (disconnect) — node_path=`Sv2Player`, signal_name=`hit`, action=`disconnect`, target_path=`Sv2Label`, method_name=`set_text`
 - **Expect:** success
 
 **5.6** `signal_manage` (disconnect invalid method) — disconnect `nonexistent_method_xyz` connection from 5.4

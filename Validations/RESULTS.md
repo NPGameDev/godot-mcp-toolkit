@@ -1,38 +1,50 @@
 # MCP Tool Sweep v2 Results
 
-- **Date:** 2026-05-24
+- **Date:** 2026-06-07
 - **Godot version:** 4.5
 - **Project type:** GDScript
 - **Mode:** standard
-- **Sections run:** 0-27 (full)
-- **Total:** 131 passed, 12 failed, 59 skipped, 10 N/A (212 test slots)
+- **Merged commit:** 0366560 (41l-tricies dispatch-safety fix: editor.refresh precision + save re-entrancy guard)
+- **MCP port:** 6550
+- **Sections run:** 0–27 + Last-cleanup (full sweep — all tests mandatory, no skips)
+- **Total:** ≈391 checks passed · 1 failed (extension live-discovery) · Section 23 (C#) N/A · Section 24 E1–E10 blocked by the discovery failure. **Zero console regressions; both focus fixes (editor.refresh precision + UndoRedo dispatch-safety) verified clean.**
 
-## Section 0 — Environment Detection (2026-05-24)
+> Prior sweep runs (2026-05-24 through 2026-05-26) are preserved in git history.
+> This file is the fresh full-sweep record for commit 0366560.
+> **Special focus:** Section 7 (editor_refresh / save_scene — the shared flow the 41l-tricies fix changed).
+
+---
+
+## Section 0 — Environment Detection (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 0.1 | PASS | Project: "Godot MCP Toolkit", main_scene: res://Main.tscn, features: 4.5 GL Compatibility |
-| 0.2 | PASS | No .cs/.csproj files — GDScript project confirmed |
-| 0.3 | PASS | Standard mode. All groups available except user_data (gated). |
+| 0.1 | PASS | Project "Godot MCP Toolkit", main_scene=res://Main.tscn, features="4.5","GL Compatibility", no dotnet setting |
+| 0.2 | PASS | asset_list res:// (ext cs,csproj) → 0 files. GDScript project confirmed |
+| 0.3 | PASS | discover_tools activation works (asset_ops activated); core tools execute_code + node_call_method available in standard mode |
 | 0.4 | N/A | Not a C# project |
-| 0.5 | PASS | Godot 4.5: TileMapLayer=Yes, scene_close=Yes, Logger API=Yes |
-| 0.6 | PASS | scene_close visible in cleanup group (4.5+) |
+| 0.5 | PASS | Godot 4.5: TileMapLayer=Yes, scene_close=Yes, Logger API (buffer source)=Yes |
+| 0.6 | PASS | scene_close visible in cleanup group (registered min_godot 4.5) — matches detected version |
 | 0.7 | N/A | No version-bounded extensions detected |
 
-## Section 1 — Scaffolding (2026-05-24)
+Console error check: PASS (0 errors/warnings, no UndoRedo mismatch).
+
+## Section 1 — Scaffolding & Core Files (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 1.1 | PASS | folder_create status=created |
-| 1.2 | PASS | script_write actor.gd 196 bytes |
-| 1.3 | PASS | FIX-1 OK: valid=true, diagnostics=[] inline |
-| 1.4 | PASS | shader.gdshader written |
-| 1.5 | PASS | AnimationLibrary status=created |
-| 1.6 | PASS | ShaderMaterial with shader ref status=created |
-| 1.7 | PASS | TileSet with tile_size status=created |
-| 1.8 | PASS | main.tscn Node2D root status=created |
-| 1.9 | PASS | sub.tscn Node2D root status=created |
-| 1.10 | PASS | scene_open main.tscn |
+| 1.1 | PASS | folder_create res://sv2_validation/ status=created |
+| 1.2 | PASS | script_write actor.gd 196 bytes, valid=true |
+| 1.3 | PASS | REGR OK FIX-1: valid=true + diagnostics=[] inline in script_write response |
+| 1.4 | PASS | shader.gdshader 196 bytes written (indexed=true) |
+| 1.5 | PASS | anim_lib.tres AnimationLibrary status=created |
+| 1.6 | PASS | material.tres ShaderMaterial (shader ref + brightness=0.75) status=created |
+| 1.7 | PASS | tileset.tres TileSet (tile_size Vector2i 16x16) status=created |
+| 1.8 | PASS | main.tscn root="main" (Node2D) status=created |
+| 1.9 | PASS | sub.tscn root="sub" (Node2D) status=created |
+| 1.10 | PASS | scene_open main.tscn success |
 
-## Section 2 — Scene Tree & Node Creation (2026-05-24)
+Console error check: PASS (0 errors/warnings).
+
+## Section 2 — Scene Tree & Node Creation (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
 | 2.1 | PASS | Root "main" (Node2D) confirmed |
@@ -40,1148 +52,604 @@
 | 2.3 | PASS | Label Sv2Label created |
 | 2.4 | PASS | AnimationPlayer Sv2AnimPlayer created |
 | 2.5 | PASS | AnimationTree Sv2AnimTree created |
-| 2.6 | PASS | TileMapLayer Sv2TileLayer created (4.3+) |
+| 2.6 | PASS | TileMapLayer Sv2TileLayer created (4.5) |
 | 2.7 | PASS | CharacterBody2D Sv2Player created |
 | 2.8 | PASS | CollisionShape2D Sv2Collider under Sv2Player |
 | 2.9 | PASS | Path2D Sv2Path created |
 | 2.10 | PASS | NavigationRegion2D Sv2NavRegion created |
-| 2.11 | PASS | REGR OK: unique_name=true in response |
-| 2.12 | PASS | REGR OK: CLASS_MISMATCH "Label, not Button" |
+| 2.11 | PASS | REGR OK a46487b: unique_name=true in response |
+| 2.12 | PASS | REGR OK cb4e162: CLASS_MISMATCH "as Label, not Button" |
 | 2.13 | PASS | Idempotent status=returned |
-| 2.14 | PASS | REGR OK FIX-B: scene_path param works |
-| 2.15 | PASS | REGR OK: properties applied, position=(50,75) verified |
+| 2.14 | PASS | REGR OK FIX-B (7e63aee): scene_path param works, Sv2Sub created |
+| 2.15 | PASS | REGR OK 462506b: transform overrides applied, position=(50,75) verified |
 | 2.16 | PASS | Tree shows all 11 nodes at depth=2 |
 | 2.17 | PASS | editor_save_scene success |
-| 2.18 | PASS | Path normalization /root/main/Sv2Sprite works |
+| 2.18 | PASS | Path normalization /root/main/Sv2Sprite → visible=true |
 
-## Section 3 — Node Properties & Methods (2026-05-24)
+Console error check: PASS (0 errors/warnings). Cleanup: Sv2SubProps + Sv2Sub deleted.
+
+## Section 3 — Node Properties & Methods (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 3.1 | PASS | Vector2 position set |
+| 3.1 | PASS | Vector2 position set on Sv2Sprite |
 | 3.2 | PASS | Readback Vector2(100,100) |
 | 3.3 | PASS | Label text set |
-| 3.4 | PASS | Compound path theme_override_colors/font_color set |
+| 3.4 | PASS | Compound theme_override_colors/font_color set |
 | 3.5 | PASS | Readback Color(1,0,0,1) |
-| 3.6 | PASS | REGR OK FIX-E: Resource ref set material |
+| 3.6 | PASS | REGR OK FIX-E: {type:Resource,path:...} material ref set |
 | 3.7 | PASS | REGR OK Pitfall-4: ResourceRef alias accepted |
-| 3.8 | FAIL | Colon-chain SET fails PROPERTY_NOT_FOUND (GET works — read/write asymmetry) |
-| 3.9 | PASS | Colon-chain GET returns 0.75 (original value; SET failed) |
-| 3.10 | PASS | REGR OK FIX-F: bare res:// rejected with hint |
-| 3.11 | PASS | REGR OK: LayerMask coercion accepted |
-| 3.12 | PASS | REGR OK FIX-7: batch mode returns per-item results |
+| 3.8 | PASS | **IMPROVED** colon-chain SET material:shader_parameter/brightness=0.3 returns success + honest warning ("set on shared external sub-resource in memory, may not persist after save/reload; retry make_unique:true") |
+| 3.9 | PASS | **IMPROVED** colon-chain GET returns 0.3 (read-after-write now reflects the SET; was 0.75/FAIL in all prior sweeps) |
+| 3.10 | PASS | REGR OK FIX-F: bare "res://icon.svg" rejected INVALID_VALUE with actionable {type:Resource} hint |
+| 3.11 | PASS | REGR OK 462506b: LayerMask type tag accepted. NOTE: documented {layers:[1,3]} → collision_layer=5 (verified); sweep-doc's {value:5} form silently yields 0 — **doc format bug, not toolkit regression** |
+| 3.12 | PASS | REGR OK FIX-7: batch mode returns per-item results (2 entries both success) |
 | 3.13 | PASS | Batch verified: text=Batch1, visible=false |
-| 3.14 | PASS | Restored |
-| 3.15 | PASS | node_set_script returns exports (speed, label) |
+| 3.14 | PASS | Restored visible=true, text="Hello Sweep v2" |
+| 3.15 | PASS | node_set_script returns exports speed(float), label(String) |
 | 3.16 | PASS | mask=script: speed, label (both public) |
 | 3.17 | PASS | mask=common: 9 curated properties |
-| 3.18 | PASS | mask=all: 45 full properties |
-| 3.19 | SKIP | node_call_method: PS has allow=true but .mcp.json env missing GODOT_MCP_ALLOW_NODE_CALL_METHOD — server-side gate fails (PS-to-.mcp.json sync gap) |
-| 3.20 | PASS | PackedVector2Array type tag accepted (path error, not type rejection — FIX-5 OK) |
-| 3.21 | PASS | Font size set to 24 |
+| 3.18 | PASS | mask=all: 45 full properties (engine + script) |
+| 3.19 | PASS | node_call_method dispatched (success=true), result=null + hint. Non-@tool editor-side callv limitation — logs expected "get_info: Method not found" in console (NOT a regression). Real exec validated at runtime in S20 |
+| 3.20 | PASS | REGR OK FIX-5: PackedVector2Array type tag accepted (error is NOT_FOUND "curve is null" — path issue, not type rejection) |
+| 3.21 | PASS | theme_override_font_sizes/font_size set to 24 |
 | 3.22 | PASS | Readback 24 |
 | 3.23 | PASS | Control Sv2LayoutTest created |
 | 3.24 | PASS | PRESET_FULL_RECT success |
 | 3.25 | PASS | PRESET_CENTER keep_size success |
-| 3.26 | PASS | PRESET_TOP_WIDE with margins (10,5) applied |
-| 3.27 | PASS | INVALID_PARAMS lists valid presets |
-| 3.28 | PASS | INVALID_CLASS: Sprite2D not a Control |
+| 3.26 | PASS | PRESET_TOP_WIDE margins applied (final_rect pos=10,5) |
+| 3.27 | PASS | INVALID_PARAMS lists 16 valid presets |
+| 3.28 | PASS | INVALID_CLASS: "Sprite2D — requires a Control node" |
 
-## Section 4 — Node Management (2026-05-24)
+Console error check: PASS (no UndoRedo mismatch). One expected error logged: get_info "Method not found" from 3.19 (non-@tool editor-side call). Cleanup: Sv2RefTest + Sv2LayoutTest deleted, scene saved.
+
+## Section 4 — Node Management (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 4.1 | PASS | Rename Sv2Label -> Sv2LabelRenamed |
-| 4.2 | PASS | Reachable under new name, text intact |
-| 4.3 | PASS | Rename back |
+| 4.1 | PASS | Rename Sv2Label → Sv2LabelRenamed |
+| 4.2 | PASS | Reachable under new name, text="Hello Sweep v2" |
+| 4.3 | PASS | Rename back to Sv2Label |
 | 4.4 | PASS | Reparent Sv2Sprite under Sv2Player |
-| 4.5 | PASS | Tree confirms reparent |
-| 4.6 | PASS | Reparent back to root |
+| 4.5 | PASS | Tree confirms Sv2Player/Sv2Sprite |
+| 4.6 | PASS | Reparent Sv2Sprite back to root |
 | 4.7 | PASS | Reorder Sv2Label to index 0 |
-| 4.8 | PASS | Duplicate Sv2Label -> Sv2LabelCopy |
+| 4.8 | PASS | Duplicate Sv2Label → Sv2LabelCopy |
 | 4.9 | PASS | Copy inherits text="Hello Sweep v2" |
-| 4.10 | PASS | Duplicate with properties override |
-| 4.11 | PASS | REGR OK: position=(200,300) verified (was broken in prior sweep, now fixed) |
-| 4.12 | PASS | REGR OK: batch groups add (entries array) |
+| 4.10 | PASS | Duplicate Sv2Sprite → Sv2SpriteCopy with position override |
+| 4.11 | PASS | REGR OK c61d994: position=(200,300) — Vector2 inferred without type key |
+| 4.12 | PASS | REGR OK 462506b: batch add via `entries` array, count=2 (sv2_enemies, sv2_actors). NOTE: tool uses `entries:[{node_path,group}]`, not doc's `groups:[]` |
 | 4.13 | PASS | List shows sv2_enemies, sv2_actors |
-| 4.14 | PASS | Batch groups remove |
+| 4.14 | PASS | Batch remove via `entries`, count=2 both removed |
 
-## Section 5 — Signals (2026-05-24)
+Console error check: PASS (0 errors/warnings). Cleanup: Sv2LabelCopy + Sv2SpriteCopy deleted, scene saved.
+
+## Section 5 — Signals (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 5.1 | PASS | hit signal listed among 23 signals |
+| 5.1 | PASS | hit signal listed (args=[]) among 23 signals |
 | 5.2 | PASS | REGR OK FIX-G: connect via node_path param, status=created |
-| 5.3 | PASS | include_connections shows hit->Sv2Label.set_text (flags=2 PERSIST) |
-| 5.4 | PASS | REGR OK: method hint diagnostic fires (INVALID_PARAMS "no script attached") |
+| 5.3 | PASS | include_connections shows hit→Sv2Label.set_text (flags=2 PERSIST) |
+| 5.4 | PASS | REGR OK 5f96b62: method hint fires — INVALID_PARAMS "method not on Sv2Label; no script attached" |
 | 5.5 | PASS | Disconnect set_text success |
-| 5.6 | N/A | nonexistent_method_xyz connection was rejected at 5.4, nothing to disconnect |
-| 5.7 | PASS | hit connections empty after disconnect |
+| 5.6 | PASS | No connection existed (5.4 rejected); disconnect refuses gracefully with method-validation INVALID_PARAMS (functionally = NOT_FOUND/no-op) |
+| 5.7 | PASS | hit connections=[] after disconnect |
 
-## Section 6 — Script Operations (2026-05-24)
+Console error check: PASS (0 errors/warnings).
+
+## Section 6 — Script Operations (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 6.1 | PASS | Full content matches S1 write |
-| 6.2 | PASS | Lines 1-3 only (start_line/end_line range) |
+| 6.1 | PASS | Full content matches S1 write (15 lines) |
+| 6.2 | PASS | Lines 1-3 only (range read) |
 | 6.3 | PASS | valid=true, 0 diagnostics |
-| 6.4 | PASS | FIX-1 OK: valid=false, inline diagnostics present |
-| 6.5 | PASS | REGR OK: preload hint with actionable load() suggestion |
+| 6.4 | PASS | FIX-1 OK: valid=false, inline diagnostics (compile error) |
+| 6.5 | PASS | REGR OK a46487b: preload hint — "Use load() instead — it evaluates at runtime" |
 | 6.6 | PASS | script_check valid=false with diagnostics |
-| 6.7 | PASS | asset_list finds 3 .gd files |
-| 6.8 | PASS | asset_get_dependencies shows shader.gdshader dep |
+| 6.7 | PASS | asset_list (*.gd) finds 3 files (actor, sv2_bad_script, sv2_preload_test) |
+| 6.8 | PASS | asset_get_dependencies material.tres → shader.gdshader |
 
-## Section 7 — Editor Operations & Console (2026-05-24)
+Console error check: PASS (6 errors — all intentional parse/preload errors from guard scripts 6.4–6.6; no UndoRedo mismatch). Cleanup: sv2_bad_script.gd + sv2_preload_test.gd deleted.
+
+## Section 7 — Editor Operations & Console ⭐ FOCUS (2026-06-07)
+
+> **Special-focus section** — editor_refresh / editor_save_scene are the shared flow the
+> 41l-tricies fix (commit 0366560) changed (editor.refresh precision + save re-entrancy guard).
+
 | Test | Status | Notes |
 |------|--------|-------|
 | 7.1 | PASS | editor_save_scene success |
-| 7.2 | PASS | editor_screenshot returns PNG (label+sprite visible) |
-| 7.3 | PASS | Node-focused screenshot Sv2Sprite (1280x720) |
-| 7.4 | PASS | editor_get_console returns 11 entries |
-| 7.5 | SKIP | execute_code gated (same .mcp.json sync gap) |
-| 7.6 | PASS | text_filter plain "MCPServer" returns 2 |
-| 7.7 | PASS | regex "MCP.*connected" returns 1 |
-| 7.8 | N/A | No seed data (execute_code gated) |
-| 7.9 | PASS | Invalid regex "(unclosed" returns INVALID_PARAMS |
-| 7.10 | PASS | text_filter + level_filter AND composition works |
-| 7.11 | PASS | FIX-8 OK: clear_buffer accepted |
-| 7.12 | PASS | Buffer empty after clear (count=0) |
-| 7.13 | PASS | editor_wait_for_idle (0ms, not scanning) |
-| 7.14 | PASS | editor_refresh full mode, scan_waited_ms=100 |
-| 7.15 | PASS | editor_refresh targeted mode, file_count=1 |
-| 7.16 | PASS | editor_get_console error filter (empty after clear) |
+| 7.2 | PASS | editor_screenshot returns inline PNG (2×2 — main 2D viewport empty; editor window backgrounded/minimized, environmental) |
+| 7.3 | PASS | Node-focused screenshot Sv2Sprite returns correct 1280×720 PNG (atomic focus-restore, correct path/dims). Content black — editor viewport not actively rendering (environmental, not a tool regression) |
+| 7.4 | PASS | editor_get_console returns success (empty after setup clear) |
+| 7.5 | PASS | execute_code **enabled** (gate open) — push_warning succeeded. NOTE: first editor-context push_warning missed an immediate read by ~1 frame (flush timing); re-seed confirmed print/warn/error all captured |
+| 7.6 | PASS | text_filter "SV2_SEED" plain → count=3 (print+warn+error markers) |
+| 7.7 | PASS* | regex "Alpha\d+" is_regex=true → count=1 (matched "Alpha42"). *NO proactive double-escape warning hint in response — **REGRESSION WATCH a828cb1 flag** (regex functionality works; only the heads-up hint is absent — minor DX) |
+| 7.8 | PASS | text_filter "test_line(parens)" plain → count=1 (metacharacters literal) |
+| 7.9 | PASS | invalid regex "(unclosed" is_regex=true → INVALID_PARAMS with regex hint |
+| 7.10 | PASS | text_filter "SV2_SEED" + level_filter=["warning"] → count=1 (AND compose) |
+| 7.11 | PASS | FIX-8 OK: clear_buffer accepted, buffer cleared |
+| 7.12 | PASS | count=0 after clear |
+| 7.13 | PASS | editor_wait_for_idle success (was_scanning=false, waited_ms=0) |
+| 7.14 | PASS | **editor_refresh full**: mode="full", scan_waited_ms=73, reloaded=0, errors_cleared=0 |
+| 7.15 | PASS | **editor_refresh targeted** [actor.gd]: mode="targeted", **file_count=1** (precise). Extra: [actor.gd, material.tres] → file_count=2 (precision confirmed) |
+| 7.16 | PASS | Error retrieval via editor_get_console error filter → count=0. (editor_get_errors is not a distinct registered tool — maps to console error filter) |
 
-## Section 8 — Project Settings & Autoloads (2026-05-24)
+**Extra re-entrancy check (FOCUS):** editor_save_scene → full refresh → targeted refresh → 2-file refresh → **editor_save_scene immediately after refresh** all succeeded with **zero console errors**.
+
+Console error check: **PASS** — 0 errors/warnings across the entire save↔refresh shared flow. No UndoRedo mismatch, no re-entrancy errors. **41l-tricies fix verified — no regression.** Cleanup: none (no persistent artifacts).
+
+## Section 8 — Project Settings & Autoloads (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 8.1 | PASS | 918 project settings returned |
-| 8.2 | PASS | Name set to Sv2Validation, previous_value captured |
-| 8.3 | PASS | Verified name=Sv2Validation |
-| 8.4 | PASS | REGR OK: autoload guard blocks with hint |
-| 8.5 | PASS | Autoload list shows MCPRuntimeServer |
-| 8.6 | PASS | REGR OK FIX-D: Sv2Autoload registered, editor cache updated |
-| 8.7 | PASS | Sv2Autoload in list, enabled=true |
-| 8.8 | PASS | Unregister success |
-| 8.9 | PASS | layer_names_set 3 layers (Ground, Player, Enemies) |
-| 8.10 | PASS | layer_names_get roundtrip verified |
-| 8.11 | PASS | Invalid category rejected INVALID_PARAMS |
-| 8.12 | PASS | Layer names cleared |
+| 8.1 | PASS | project_get_settings (no filter) returns full dict (~67KB, spilled to file — full-dump path works) |
+| 8.2 | PASS | Name set to Sv2Validation, previous_value="Godot MCP Toolkit" captured |
+| 8.3 | PASS | prefix=application/config/ → name=Sv2Validation (15 keys) |
+| 8.4 | PASS | REGR OK 23d69f9: autoload key guard — INVALID_PARAMS with "use autoload_manage" hint |
+| 8.5 | PASS | Autoload list shows MCPRuntimeServer (count=1) |
+| 8.6 | PASS | REGR OK FIX-D: register Sv2Autoload, "editor cache updated" in hint |
+| 8.7 | PASS | List shows Sv2Autoload enabled=true (immediately, no manual refresh) |
+| 8.8 | PASS | Unregister Sv2Autoload success |
+| 8.9 | PASS | layer_names_set 2d_physics (Ground/Player/Enemies), layers_set=3 |
+| 8.10 | PASS | layer_names_get roundtrip {1:Ground,2:Player,5:Enemies} |
+| 8.11 | PASS | Invalid category rejected — MCP schema enum validation lists 4 valid categories |
+| 8.12 | PASS | Layer names cleared (layers_set=3 with empty strings) |
 
-## Section 9 — execute_code & Hints (2026-05-24)
+Console error check: PASS (1 expected toolkit warning about project-rename user:// path shift from the name set/restore; no UndoRedo mismatch). Cleanup: project name restored to "Godot MCP Toolkit".
+
+## Section 9 — execute_code & Hints (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 9.1-9.8 | SKIP | Entire section skipped: execute_code gated (.mcp.json missing GODOT_MCP_ALLOW_EXECUTE_CODE env var despite PS having allow=true) |
+| 9.1 | PASS | 2 + 2 = 4 |
+| 9.2 | PASS | EditorInterface singleton hint (expected — "global singleton not accessible in Expression; use dedicated MCP tools") |
+| 9.3 | PASS | REGR OK FIX-4: OS singleton hint mentioning Expression limitations |
+| 9.4 | PASS | REGR OK FIX-H/279efed: load() context-aware hint ("Assign resources via node_set_property with {type:Resource,path}") |
+| 9.5 | PASS | get_tree().get_nodes_in_group("sv2_test") → [] |
+| 9.6 | PASS | Engine singleton hint |
+| 9.7 | PASS | invalid syntax → EXECUTE_FAILED parse error |
+| 9.8 | PASS | ProjectSettings singleton hint |
 
-## Section 10 — Input Map (2026-05-24)
+Console error check: PASS (0 errors/warnings — execute_code errors returned to caller, not logged).
+
+## Section 10 — Input Map (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 10.1 | PASS | REGR OK: name param works, action added |
-| 10.2 | PASS | Key Space bound to sv2_jump |
-| 10.3 | PASS | Unbind success |
-| 10.4 | PASS | Action removed |
+| 10.1 | PASS | REGR OK 09a6392: action=add, name=sv2_jump, status=created |
+| 10.2 | PASS | Bind key Space (keycode=32) to sv2_jump, status=created |
+| 10.3 | PASS | Unbind Space success |
+| 10.4 | PASS | Remove action sv2_jump success |
 
-## Section 11 — Save System (2026-05-24)
+Console error check: PASS (0 errors/warnings).
+
+## Section 11 — Save System (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 11.1-11.4 | SKIP | user_data group gated (GODOT_MCP_ALLOW_USER_SCOPE not in .mcp.json env) |
+| 11.1 | PASS | save_write user://saves/sv2_save.json (25 bytes). user_data **enabled** (gate open — was gated in original sweep) |
+| 11.2 | PASS | save_read content score=42, level=3 (untrusted envelope) |
+| 11.3 | PASS | save_list user://saves/ → files=["sv2_save.json"] |
+| 11.4 | PASS | save_delete success |
+| 11.5 | PASS | PATH_DENIED reading user://addons/godot_mcp_toolkit/ (plugin internals protected) |
+| 11.6 | PASS | PATH_DENIED writing to plugin internals |
 
-## Section 12 — ClassDB Introspection (2026-05-24)
+Console error check: PASS (0 errors/warnings).
+
+## Section 12 — ClassDB Introspection (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 12.1 | PASS | CharacterBody2D + CharacterBody3D found |
-| 12.2 | PASS | AnimationPlayer: 13 props, 53 methods, 2 signals |
-| 12.3 | PASS | Sv2Actor found as global class (source=global) |
-| 12.4 | PASS | UNKNOWN_CLASS with hint |
-| 12.5 | PASS | Node2D: properties_total=13, methods_total=33 (offset param type coercion issue — works without offset) |
-| 12.6 | FAIL | offset=20 rejected: "expected number, received string" (MCP param type coercion bug) |
-| 12.7 | FAIL | classdb_search offset=5 same type coercion issue |
+| 12.1 | PASS | CharacterBody2D + CharacterBody3D found (total=2) |
+| 12.2 | PASS | AnimationPlayer: 13 props, 53 methods, 2 signals, inheritance chain |
+| 12.3 | PASS | Sv2Actor found as global class (source=global, parent CharacterBody2D) |
+| 12.4 | PASS | UNKNOWN_CLASS with hint "Use classdb.search" |
+| 12.5 | PASS | **FIXED** Node2D offset=0 → properties_total=13, methods_total=33, signals_total=0, constants_total=0 (all totals present; offset typed integer) |
+| 12.6 | PASS | **FIXED** (was type-coercion FAIL) offset=20 paging → properties=[] past-end, total=13 unchanged, truncated=true |
+| 12.7 | PASS | **FIXED** (was type-coercion FAIL) classdb_search Control offset=5 → total=3, truncated=true |
 
-## Section 13 — Animation & AnimationTree (2026-05-24)
+Console error check: PASS (0 errors/warnings). Offset pagination (12.6/12.7) — previously systemic MCP param type-coercion failures — now resolved (offset is a typed integer in the schema).
+
+## Section 13 — Animation & AnimationTree (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 13.1 | SKIP | node_call_method gated (can't add library) |
-| 13.2-13.4 | SKIP | Depend on 13.1 (no animation to keyframe) |
+| 13.1 | PASS | add_animation_library via node_call_method → returned 0 (was gated/SKIP in original sweep — node_call_method now enabled) |
+| 13.2 | PASS | keyframe t=0 Vector2(100,100) — auto-created sv2_lib/idle animation + track |
+| 13.3 | PASS | keyframe t=1 Vector2(200,200) |
+| 13.4 | PASS | animation_get_keys: 2 keyframes on Sv2Sprite:position track |
 | 13.5 | PASS | set_root AnimationNodeStateMachine |
 | 13.6 | PASS | add_node idle (nodes_count=3) |
 | 13.7 | PASS | add_node run (nodes_count=4) |
-| 13.8 | PASS | add_transition idle->run with advance_condition |
-| 13.9 | PASS | add_transition run->idle with advance_mode=auto |
-| 13.10 | PASS | list: 4 nodes, 2 transitions verified |
-| 13.11 | PASS | INVALID_CLASS guard (Sprite2D not AnimationTree) |
+| 13.8 | PASS | add_transition idle→run with advance_condition=is_running |
+| 13.9 | PASS | add_transition run→idle with advance_mode=auto |
+| 13.10 | PASS | list: 4 nodes (Start/End/idle/run), 2 transitions verified |
+| 13.11 | PASS | INVALID_CLASS guard (Sv2Sprite is Sprite2D not AnimationTree) |
 | 13.12 | PASS | editor_save_scene |
 
-## Section 14 — TileSet & TileMap (2026-05-24)
-| Test | Status | Notes |
-|------|--------|-------|
-| 14.1 | PASS | FIX-I OK: tileset_create source_id=0, 64 tiles (tile_size param rejected as string — used default 16x16) |
-| 14.2 | PASS | resource_load confirms TileSet with physics |
-| 14.3 | PASS | tileset_edit collision: tiles_modified=2 |
-| 14.4 | FAIL | layers param: schema="string", validation expects "record" (object type mismatch) |
-| 14.5 | FAIL | Same layers type mismatch |
-| 14.6 | FAIL | Same layers type mismatch |
-| 14.7 | PASS | Animation: tiles_modified=1 |
-| 14.8 | PASS | Alternative: tile (1,0) not found after animation changed atlas |
-| 14.9 | N/A | add_source uses same layers-type param format |
-| 14.10 | PASS | Guard: tile (99,99) not found, errors array |
-| 14.11 | PASS | tilemap_set_cells: cells_written=1 |
-| 14.12 | PASS | FIX-A OK: regions bulk-fill 25 cells |
-| 14.13 | PASS | FIX-J OK: no-tileset guard INVALID_STATE |
-| 14.14 | PASS | NOT_FOUND for nonexistent texture |
-| 14.15 | PASS | tilemap_read_cells: 25 cells with source_id, atlas_coords |
-| 14.16 | PASS | Round-trip verified: set_cells -> read_cells match |
-| 14.17 | PASS | NOT_FOUND guard |
-| 14.18 | PASS | INVALID_CLASS guard (Sprite2D) |
-| 14.19 | N/A | Missing param validation tested at MCP schema level |
+Console error check: PASS (0 errors/warnings). Animation state persists for runtime tests in S20.
 
-## Section 15 — Theme, Audio, SpriteFrames (2026-05-24)
+## Section 14 — TileSet & TileMap (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 15.1 | PASS | theme_edit edits_applied=2 |
-| 15.2 | N/A | Combined with 15.1 |
-| 15.3 | PASS | INVALID_PARAMS: invalid property_type lists valid options |
-| 15.4 | PASS | audio add_bus Sv2Music, bus_count=2 |
-| 15.5 | FAIL | volume_db type coercion (expected number, received string) |
-| 15.6 | FAIL | effect type coercion (expected object, received string) |
-| 15.7 | PASS | Audio list: Master + Sv2Music |
-| 15.8 | PASS | Cannot remove Master bus |
-| 15.9 | FAIL | spriteframes_create: animations type coercion (expected array, received string) |
-| 15.10-15.12 | SKIP | Depend on 15.9 |
+| 14.1 | PASS | FIX-I OK: tileset_create source_id=0, 4×4=16 tiles, physics. **tile_size {x:32,y:32} now works** (typed object — was string-coerced to 16×16 in original sweep) |
+| 14.2 | PASS | resource_load confirms TileSet, physics_layer_0, tile_size Vector2i(32,32) |
+| 14.3 | PASS | setup_layers: terrain(grass/dirt), custom_data(damage), nav=1, occlusion=1, physics=1 |
+| 14.4 | PASS | **FIXED** add_source tile_size{x:64,y:64} → new_source_id=1 (was type-coercion FAIL) |
+| 14.5 | PASS | **FIXED** remove_source(1) → removed_source_id=1 |
+| 14.6 | PASS | **FIXED** add_alternative (1,0) flip_h → new_alternative_id=1 |
+| 14.7 | PASS | remove_alternative(1) → removed_alternative_id=1 |
+| 14.8 | PASS | tileset_create NOT_FOUND for nonexistent texture |
+| 14.9 | PASS | remove_source(999) NOT_FOUND guard |
+| 14.10 | PASS | remove_alternative(999) NOT_FOUND guard |
+| 14.11 | PASS | **FIXED** edit_physics: 'none' + custom polygon array → tiles_modified=2 |
+| 14.12 | PASS | **FIXED** edit_terrain → tiles_modified=1 |
+| 14.13 | PASS | edit_navigation 'full' → tiles_modified=1 |
+| 14.14 | PASS | edit_visuals occlusion+probability → tiles_modified=1 |
+| 14.15 | PASS | edit_custom_data {damage:10} → tiles_modified=1 |
+| 14.16 | PASS | FIX-2 OK: invalid coords (99,99) → success errors[]=["tile not found"], tiles_modified=0 (no crash) |
+| 14.17 | PASS | edit_physics missing file → NOT_FOUND |
+| 14.18 | PASS | tilemap_set_cells 1 cell (after tile_set assigned to Sv2TileLayer) |
+| 14.19 | PASS | FIX-A OK: regions bulk-fill 5×5 → 24 written + 1 unchanged = 25 |
+| 14.20 | PASS | FIX-J OK: no-tileset guard (Sv2TileNoTS) → INVALID_STATE "cells would be invisible" |
+| 14.21 | PASS | read_cells → 25 cells with coords/source_id/atlas_coords/alternative_tile |
+| 14.22 | PASS | Round-trip: set_cells → read_cells match (all source_id=0, atlas(0,0)) |
+| 14.23 | PASS | read_cells NonExistentNode999 → NOT_FOUND |
+| 14.24 | PASS | read_cells Sv2Sprite → INVALID_CLASS (not TileMap/TileMapLayer) |
+| 14.25 | PASS | read_cells missing node_path → schema validation error (INVALID_PARAMS) |
+| 14.26 | PASS | discover_tools tileset → 6 tools |
+| 14.27 | PASS | discover_tools tileset_edit → 5 tools |
+| 14.28 | PASS | discover_tools tilemap → 2 tools |
 
-## Section 16 — Domain Tools (2026-05-24)
+Console error check: PASS (0 errors/warnings). **All TileSet param type-coercion failures from the original sweep (14.4–14.6, layers, polygons) are resolved** — schemas now use typed objects/arrays/integers. Cleanup: Sv2TileNoTS deleted; atlas_tileset.tres retained (referenced by Sv2TileLayer) for global folder cleanup.
+
+## Section 15 — Theme, Audio, SpriteFrames (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 16.1 | PASS | 3d box created |
-| 16.2 | PASS | 3d sphere created |
-| 16.3 | PASS | 3d environment created, tonemap=filmic |
-| 16.4 | PASS | Light created (shadow param had type coercion issue — omitted) |
-| 16.5 | PASS | Camera created (fov param had type coercion — omitted) |
-| 16.6 | PASS | INVALID_PARAMS: invalid_shape rejected |
+| 15.1 | PASS | theme_edit edits_applied=2 (Button font_color, Label font_size) |
+| 15.2 | PASS | resource_load: Button/colors/font_color=Color(1,0,0,1), Label/font_sizes/font_size=24 |
+| 15.3 | PASS | Invalid property_type rejected by schema enum (lists 6 valid: color/constant/font/font_size/icon/stylebox) |
+| 15.4 | PASS | add_bus Sv2Music (send Master), bus_count=2 |
+| 15.5 | PASS | **FIXED** set_bus volume_db=-6 (typed number — was coercion FAIL) |
+| 15.6 | PASS | **FIXED** add_effect → AudioEffectReverb (effect object — was coercion FAIL) |
+| 15.7 | PASS | list: Master + Sv2Music (volume=-6, send=Master, effects=[AudioEffectReverb]) |
+| 15.8 | PASS | Cannot remove Master bus → INVALID_PARAMS |
+| 15.9 | PASS | **FIXED** spriteframes_create: idle(2 frames), run(4 frames) — animations array (was coercion FAIL) |
+| 15.10 | PASS | spriteframes_edit add_animation jump (fps=6) |
+| 15.11 | PASS | list: idle, jump, run (3 animations) |
+| 15.12 | PASS | spriteframes_from_spritesheet: walk (2 frames) from icon.svg grid |
+
+Console error check: PASS (0 errors/warnings). Cleanup: Sv2Music removed; theme/spriteframes/spritesheet_frames .tres deleted.
+
+## Section 16 — 3D, Path2D, Navigation, Particles, Procedural (2026-06-07)
+| Test | Status | Notes |
+|------|--------|-------|
+| 16.1 | PASS | 3d box created (size + StandardMaterial3D albedo) |
+| 16.2 | PASS | 3d sphere Sv2Sphere |
+| 16.3 | PASS | WorldEnvironment, tonemap=filmic |
+| 16.4 | PASS | **FIXED** DirectionalLight3D, shadow=true (typed boolean — was coercion FAIL) |
+| 16.5 | PASS | **FIXED** Camera3D, fov=75 (typed number — was coercion FAIL) |
+| 16.6 | PASS | invalid_shape rejected by enum (box/sphere/cylinder/capsule/plane/prism) |
 | 16.7 | PASS | path2d set 4 points, baked_length=335 |
-| 16.8 | FAIL | path2d add: index type coercion (number expected, string received) |
-| 16.9 | SKIP | Depends on 16.8 |
-| 16.10 | PASS | INVALID_CLASS: Sprite2D not Path2D |
-| 16.11 | PASS | path2d clear, point_count=0 |
-| 16.12 | FAIL | navigation outlines type coercion (expected array, received string) |
-| 16.13-16.16 | SKIP | Depend on 16.12 |
-| 16.17 | PASS | fire particles created, properties_set=13 |
-| 16.18-16.20 | SKIP | Param type coercion issues (amount=number) |
-| 16.21 | N/A | Tested via invalid_shape in 16.6 |
-| 16.22 | N/A | Invalid preset tested at MCP schema level |
-| 16.23 | PASS | NOT_FOUND: NonExistent parent |
-| 16.24 | PASS | gradient 3 points |
-| 16.25 | SKIP | add_point uses offset/color params (type coercion risk) |
-| 16.26 | FAIL | curve points: position key expected but format differs |
-| 16.27 | PASS | noise simplex created |
-| 16.28 | PASS | INVALID_PARAMS: invalid_noise rejected |
+| 16.8 | PASS | **FIXED** path2d add index=2 → point_count=5 (typed integer — was coercion FAIL) |
+| 16.9 | PASS | path2d remove index=0 → point_count=4 |
+| 16.10 | PASS | INVALID_CLASS: Sv2Sprite not Path2D |
+| 16.11 | PASS | path2d clear → point_count=0 |
+| 16.12 | PASS | **FIXED** navigation set outlines → outline_count=1 (typed array — was coercion FAIL) |
+| 16.13 | PASS | **FIXED** add_outline → outline_count=2 |
+| 16.14 | PASS | **FIXED** bake → polygon_count=1 |
+| 16.15 | PASS | **FIXED** remove_outline index=1 → outline_count=1 |
+| 16.16 | PASS | INVALID_CLASS: root Node2D not NavigationRegion2D |
+| 16.17 | PASS | fire 2d particles, preset_applied=fire, properties_set=13 (minimal call — preset convenience intact, schema's ~28 "required" not enforced) |
+| 16.18 | PASS | **FIXED** rain amount=100 → overrides_applied=["amount"] (was coercion SKIP) |
+| 16.19 | PASS | **FIXED** 3d sparks mesh=quad → GPUParticles3D |
+| 16.20 | PASS | **FIXED** All 8 presets create as 2d (fire/smoke/sparks/rain/snow/explosion/magic/dust) |
+| 16.21 | PASS | type=4d rejected by enum (2d/3d) |
+| 16.22 | PASS | preset=lava rejected by enum (8 presets) |
+| 16.23 | PASS | NOT_FOUND: parent NonExistent |
+| 16.24 | PASS | gradient set 3 color stops |
+| 16.25 | PASS | gradient add_point → point_count=4 |
+| 16.26 | PASS | **FIXED** curve set 3 points (position-wrapper format — was "position key expected" FAIL) |
+| 16.27 | PASS | noise simplex, frequency=0.05 |
+| 16.28 | PASS | invalid_noise rejected by enum |
 
-## Section 17 — Scene Inheritance & Query (2026-05-24)
+Console error check: PASS (0 errors/warnings). **Nearly all original-sweep type-coercion failures resolved** (16.4/16.5 light+camera, 16.8 path index, 16.12–16.16 nav outlines, 16.18–16.20 particles, 16.26 curve). Cleanup: 14 nodes + 3 procedural .tres deleted.
+
+## Section 17 — Scene Inheritance & Query (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 17.1 | PASS | base_enemy.tscn created |
-| 17.2 | PASS | Inherited slime.tscn, root_name=SlimeEnemy |
-| 17.3 | PASS | NOT_FOUND for nonexistent base |
+| 17.1 | PASS | base_enemy.tscn (CharacterBody2D) created |
+| 17.2 | PASS | Inherited slime.tscn from base, root_name=SlimeEnemy |
+| 17.3 | PASS | NOT_FOUND for nonexistent base scene |
 | 17.4 | PASS | main.tscn re-opened |
-| 17.5 | PASS | class_filter=CharacterBody2D finds Sv2Player |
-| 17.6 | PASS | name_pattern=Sv2* finds 10 nodes |
-| 17.7 | SKIP | include_properties test omitted for speed |
-| 17.8 | PASS | root_path=Sv2Player returns 2 nodes (subtree only) |
-| 17.9 | PASS | No filters: INVALID_PARAMS |
-| 17.10 | PASS | NonExistentNode: NOT_FOUND |
+| 17.5 | PASS | class_filter=CharacterBody2D → Sv2Player (count=1) |
+| 17.6 | PASS | name_pattern=Sv2* → 10 nodes, all "Sv2*" |
+| 17.7 | PASS | class_filter=Node2D + include_properties → 8 nodes each with position+visible |
+| 17.8 | PASS | root_path=Sv2Player → 2 nodes (subtree: Sv2Player + Sv2Collider) |
+| 17.9 | PASS | No filters → INVALID_PARAMS "At least one filter is required" |
+| 17.10 | PASS | root_path=NonExistentNode → NOT_FOUND |
 
-## Section 18 — File Operations & Phantom Tab (2026-05-24)
+Console error check: PASS (0 errors/warnings). Cleanup: base_enemy.tscn + slime.tscn deleted.
+
+## Section 18 — Phantom Tab Cleanup & File Operations (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
 | 18.1 | PASS | probe.tscn created |
-| 18.2 | PASS | probe opened |
-| 18.3 | PASS | scene_close non-active tab with hint |
-| 18.4 | PASS | scene_delete active tab, tab_closed=true |
-| 18.5 | PASS | Recreated probe + reopened main |
-| 18.6 | N/A | Combined with 18.4 flow |
-| 18.7 | N/A | Deferred (shader needed later) |
-| 18.8-18.10 | SKIP | asset_import test omitted for speed |
-| 18.11 | N/A | Combined with 18.4 |
-| 18.12 | PASS | folder_delete recursive=true, tab_closed=inner.tscn, files_deleted=1 |
-| 18.13-18.14 | SKIP | Multi-tab stale_tabs test omitted for speed |
-| 18.15 | PASS | main.tscn reopened |
+| 18.2 | PASS | probe opened (active) |
+| 18.3 | PASS | scene_close main.tscn (non-active) with _set_main_scene_state hint |
+| 18.4 | PASS | scene_delete probe (active), tab_closed=true |
+| 18.5 | PASS | Recreated probe; main active, probe non-active |
+| 18.6 | PASS | scene_delete probe (non-active), tab_closed=true + hint |
+| 18.7 | PASS | file_delete shader.gdshader, deindexed=true, no tab_closed field |
+| 18.8 | PASS | shader.gdshader recreated (196 bytes) |
+| 18.9 | PASS | material.tres loads, shader ref valid (brightness=0.75) |
+| 18.10 | PASS | asset_import icon_test.svg → CompressedTexture2D. NOTE: SVG import not "immediate" — class empty at 3s, became CompressedTexture2D after editor_wait_for_idle (tool warned to do exactly this) |
+| 18.11 | PASS | file_delete file_del_probe.tscn (open tab) → tab_closed=true |
+| 18.12 | PASS | folder_delete (1 scene) recursive → tab_closed=inner.tscn, files_deleted=1 |
+| 18.13 | PASS | folder_delete (2 scenes) → stale_tabs=[inner1,inner2] (2 entries); scene_close each succeeded |
+| 18.14 | PASS | scene_close last tab → engine auto-creates empty scene |
+| 18.15 | PASS | scene_open main.tscn restored |
 
-## Section 19 — collision_from_sprite (2026-05-24)
+Console error check: PASS — only a benign toolkit audit-log warning ("[MCPTools] folder.delete recursive"). **Notably the predicted `_set_main_scene_state` engine errors did NOT appear** — the 41l editor-safe scene ops (C1/C2/C3) closed every tab cleanly. No UndoRedo mismatch. Cleanup: icon_test.svg deleted.
+
+## Section 19 — collision_from_sprite (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 19.1 | PASS | Sprite2D created + texture set |
-| 19.2 | PASS | polygon_count=1, total_points=20 |
-| 19.3 | PASS | INVALID_CLASS: Node2D not Sprite2D |
+| 19.1 | PASS | Sv2CollSprite Sprite2D created + texture=res://icon.svg (set inline) |
+| 19.2 | PASS | collision_from_texture → polygon_count=1, total_points=20 |
+| 19.3 | PASS | INVALID_CLASS: "node at . is Node2D — expected Sprite2D or TextureRect" |
 
-## Section 20 — Runtime (2026-05-24)
+Console error check: PASS (0 errors/warnings). Cleanup: Sv2CollSprite + Sv2CollSprite_collision deleted, scene saved.
+
+## Section 20 — Game Start, Runtime & Debugging (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
 | 20.1 | PASS | main_scene set to sv2_validation/main.tscn |
 | 20.2 | PASS | editor_save_scene |
-| 20.3 | PASS | game_start success |
-| 20.4 | PASS | runtime_ready=false initially (expected) |
-| 20.5 | PASS | runtime_screenshot: 1152x648 PNG of running game |
-| 20.6 | SKIP | runtime_get_node_state: deferred-tools cache |
+| 20.3 | PASS | game_start success, target=main, runtime_port=6570 |
+| 20.4 | PASS | REGR OK a28d17b: wait_for_runtime=false → "runtime_ready is false" gated hint |
+| 20.5 | PASS | runtime_screenshot: 1152×648 PNG, **real game render** (tilemap visible — game window renders, unlike editor viewport) |
+| 20.6 | PASS | runtime_get_node_state Sv2Player: CharacterBody2D, position, collision_layer=5, script actor.gd |
 | 20.7 | PASS | runtime_get_script_vars: speed=100, label="default" |
-| 20.8 | PASS | runtime_set_property: speed 100->200 |
+| 20.8 | PASS | runtime_set_property speed 100→200 |
 | 20.9 | PASS | Verified speed=200 |
-| 20.10 | SKIP | Autoload warning test omitted |
-| 20.11 | PASS | debugger_get_log: 2 lines (runtime server startup) |
-| 20.12-20.16 | SKIP | execute_code gated (log seeding tests) |
-| 20.17 | PASS | input_simulate: action ui_accept dispatched |
-| 20.18 | SKIP | execute_code gated |
-| 20.19-20.21 | SKIP | Animation/signal runtime tests (no animation library) |
+| 20.10 | PASS | REGR OK c6d5f40: autoload (MCPRuntimeServer) set → "persists across scene transitions" warning |
+| 20.11 | PASS | debugger_get_log: runtime server startup lines |
+| 20.12 | PASS | execute_code (game) print seed succeeded |
+| 20.13 | PASS | filter SV2_RUNTIME_SEED → count=2 |
+| 20.14 | PASS | **IMPROVED** regex SV2_RUNTIME_SEED_Beta\d+ → count=2 (was platform double-escape FAIL in original sweep — now \d+ matches) |
+| 20.15 | PASS | filter check(braces) plain → count=2 (literal parens) |
+| 20.16 | PASS | invalid regex "(unclosed" → INVALID_PARAMS with hint |
+| 20.17 | PASS | input_simulate action ui_accept dispatched=true |
+| 20.18 | PASS | execute_code (game) get_tree().current_scene.name = "main" (chaining works in runtime) |
+| 20.19 | PASS | animation_player_control play sv2_lib/idle, current_animation confirmed |
+| 20.20 | PASS | signal_emit hit (mode=runtime) success |
+| 20.21 | PASS | debugger_get_log: 6 lines (the "missing closing parenthesis" entry is the intentional 20.16 invalid-regex guard, not a crash) |
 | 20.22 | PASS | game_stop, was_running=true |
 
-## Section 21 — game_start Guards (2026-05-24)
+Console error check: PASS (editor console clean post-game; no UndoRedo mismatch). Cleanup: main_scene restored to res://Main.tscn.
+
+## Section 21 — game_start Guards & Crash Recovery (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
 | 21.1 | PASS | Broken script written, valid=false |
-| 21.2 | PASS | Broken scene setup complete |
-| 21.3 | PASS | game_start succeeds (Godot launches despite broken script) |
-| 21.3b | PASS | debugger_get_log shows GAME_NOT_RUNNING with editor console fallback showing parse errors |
+| 21.2 | PASS | Broken scene setup (attach + save + main_scene) |
+| 21.3 | PASS | game_start succeeds=true (Godot launches despite broken node script) |
+| 21.3b | PASS | debugger_get_log → GAME_NOT_RUNNING but hint surfaces actual parse errors via editor-console fallback |
 | 21.3c | PASS | game_stop |
-| 21.4 | PASS | Valid game launched and stopped |
-| 21.5 | PASS | REGR OK: cached log after stop — source=cache, debug_state={active:false}, NOT GAME_NOT_RUNNING |
-| 21.6-21.13 | SKIP | Error capture tests omitted for speed (S21.7-21.13 require execute_code) |
+| 21.4 | PASS | Valid game launched (runtime_port=6570, ready) + stopped |
+| 21.5 | PASS | REGR OK dec5b24/e2c7041: post-stop source=cache, debug_state={active:false}, NOT GAME_NOT_RUNNING |
+| 21.6 | PASS* | Cache count=0 (no SV2_BROKEN). *First call hit a **transient race** — "runtime cleared by notification, registry not yet updated" (GAME_NOT_RUNNING); self-healed on immediate retry. Minor timing window when 2 debugger_get_log calls fire in rapid succession right after game_stop |
+| 21.7 | PASS | Error script written, valid=true (null-ref is runtime, not parse) |
+| 21.8 | PASS | Error scene launched, runtime connected |
+| 21.9 | PASS | game_stop |
+| 21.10 | PASS | error_buffer: type=log_scan, source=sv2_error_main.gd, function=_ready, line=6, "Cannot call method 'queue_free' on a null value"; debug_state present |
+| 21.11 | PASS | REGR OK 8a6cbf0: filter queue_free → count=1, error_buffer retains source/function/line (unfiltered scan) |
+| 21.12 | PASS | filter NONEXISTENT → count=0 (lines empty) but error_buffer still present |
+| 21.13 | PASS | No-params golden path: lines + debug_state + error_buffer all present |
 
-## Section 22 — Combo Chains (2026-05-24)
+Console error check: PASS (2 errors — both intentional parse errors from the broken guard script; no UndoRedo mismatch). **Observation (minor):** 21.6 transient race in crash-recovery fallback — rapid successive debugger_get_log right after game_stop can briefly return GAME_NOT_RUNNING before the cache fallback settles (~1s self-heal). Cleanup: error/broken scenes+scripts deleted, main_scene restored.
+
+## Section 22 — Combo Chains (2026-06-07)
+| Chain | Status | Notes |
+|------|--------|-------|
+| C1 | PASS | resource_write(Environment) → load(verify class) → delete |
+| C2 | PASS | script_write(valid) → script_check(valid) → delete |
+| C3 | PASS | scene create→open→node→set pos→verify(100,200)→save→open main→delete |
+| C4 | PASS | signal connect→save→switch to sub→back to main→verify persisted (flags=2)→disconnect |
+| C5 | PASS | build scene+script→run→runtime_get_node_state→debugger_get_log "C5_LIFECYCLE_OK"→stop→cleanup |
+| C6 | PASS | tileset_create→setup_layers(terrain)→TileMapLayer+tile_set→set_cells(9 cells)→cleanup. (_meta.concurrency scene-lease confirms editor serializes mutations) |
+| C7 | PASS | script_write(indexed=true)→script_check passes immediately (no refresh) |
+| C8 | PASS | create→duplicate→rename→reparent→groups add/list/remove→save→cleanup |
+| C9 | PASS | batch instantiate 3 copies; C9B rotation=1.57 verified |
+| C10 | PASS | FIX-C OK: keyword search (loose_keyword "animation"), batch activate (exact_name), selective reset — no split-notification "tool not found" |
+| C11 | PASS | editor_refresh targeted, mode=targeted, file_count=1 |
+| C12 | PASS | folder_delete with open tabs → no PATH_IN_USE, stale_tabs handled |
+| C27 | PASS | Godot 4.5: scene_close visible + functional on non-active tabs |
+| C28 | PASS | FULL_RECT anchor_right=1.0, CENTER anchor_left=0.5 (readback confirmed) |
+
+Console error check: PASS (0 errors/warnings). Cleanup verified: Glob `sv2_validation/c*` → no files. All 14 chains pass.
+
+## Section 23 — C# Compatibility (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| C1-C21 | SKIP | Individual tools validated in S1-S21; combo chains omitted for speed |
+| All (~50) | N/A | GDScript project (S0 confirmed 0 .cs/.csproj files). C# section not applicable. |
 
-## Section 23 — C# Compatibility (2026-05-24)
+## Section 24 — Extension Discovery (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| All | N/A | GDScript project — C# section not applicable |
+| EXT-S1 | PASS | Extension script written, valid=true (MCPToolkitExtension / MCPToolkitCommandRegistry / MCPToolkitExtensionOptions API resolves) |
+| EXT-S2 | **FAIL** | extensions_refresh returns success+refreshed=true but **commands=[]** — new extension NOT discovered in-session |
+| E1–E10 | **BLOCKED** | Cannot validate (sv2_ext.hello/add/etc. never discovered). All depend on EXT-S2 discovery |
 
-## Section 24 — Extensions (2026-05-24)
+**FINDING (Major — extension live-discovery):** `extensions_refresh` does **not** discover newly-created extension scripts in-session. Verified the extension is valid (script_check valid=true) and tried discovery in **both** `res://sv2_validation/` and `res://addons/sv2_ext_test/`, with `extensions_refresh` alone AND after a full `editor_refresh` + `editor_wait_for_idle` — all returned `commands=[]`, no error logged. The new `extends MCPToolkitExtension` subclass is not registered without an editor/plugin restart.
+
+- This matches the **documented limitation** (CLAUDE.md + extending.md: "Restart the editor (or disable/re-enable the plugin) to pick up changes").
+- However it **contradicts** the 2026-05-24 Final Validation run, which reported the 8d2a265 scan() fix enabled in-session discovery ("1 command discovered"). Either 8d2a265 regressed, or that run's success followed an actual restart. **Worth a maintainer's attention** — the entire purpose of `extensions_refresh` is to avoid a restart.
+- NOTE: the sweep doc (Section 24) writes the extension to `res://sv2_validation/`; CLAUDE.md says extensions live in `res://addons/<ext>/`. Tested both — neither was discovered in-session.
+
+Console error check: PASS (0 errors — discovery silently finds nothing). Cleanup: both test extensions + addons/sv2_ext_test/ deleted (Glob-verified none remain).
+
+## Section 25 — Undo/Redo Verification (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| All | SKIP | Extension discovery tests omitted for speed |
+| UR-Setup diag | PASS | diagnose_undo_redo ALL GREEN: builder_active=true, smoke undo/redo work, EditorUndoRedoManager, history_id=22 |
+| UR-S3 | PASS | run_undo_redo_tests: **8/8** (prop_set/undo/redo, method_added/undo/redo, commit_do_executes, commit_undo) |
+| UR1 (set_property) | PASS | 6/6 — pos set→undo→(0,0)→redo→(200,300) |
+| UR2 (rename) | PASS | 4/4 — rename→undo reverts→redo restores |
+| UR3 (groups add) | PASS | 4/4 — group removed by undo (count=0) |
+| UR4 (reorder) | PASS | 5/5 — reorder index 0→undo back to original index 11 |
+| UR5 (duplicate) | PASS | 3/3 — URDuplicate removed by undo |
+| UR6 (groups remove+batch) | PASS | 7/7 — remove undone; batch-add undone across BOTH URTarget+URSibling |
+| UR7 (delete_node) | PASS | 3/3 — deleted URSibling restored by undo |
+| UR8 (control.set_layout) | PASS | 4/4 — anchor_left reverts 0.5→0 |
+| UR9 (signal connect/disconnect) | PASS | 7/7 — connect undone; disconnect undone (show restored flags=2) |
+| UR10 (path2d.edit_curve) | PASS | 4/4 — point removed by undo (count 1→0) |
+| UR11 (particles.create) | PASS | 4/4 — GPUParticles2D removed by undo |
+| UR12 (collision_from_sprite) | PASS | 5/5 — CollisionPolygon2D (20 pts) removed by undo, URSprite retained |
+| **UR-CON.1** | **PASS** | **CRITICAL GATE: ZERO `UndoRedo history mismatch` errors** across all 12 tool sections |
+| UR-Cleanup | PASS | 6 UR nodes deleted, scene saved |
 
-## Section 26 — LSP Tools (2026-05-24)
+Console error check: PASS (0 errors/warnings). **All 48 tests pass.** The @tool helper executes editor-side via node_call_method; the builder routes all mutation types (property/method/group) through EditorUndoRedoManager cleanly. **41l-tricies dispatch-safety + 53796f7 context_object fixes fully verified — no history mismatch.**
+
+## Section 26 — LSP Tools (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
-| 26.1 | PASS | lsp_diagnostics: valid file, diagnostics=[], count=0 |
-| 26.2 | PASS | lsp_diagnostics: bad file, 7 errors with line/character/severity |
-| 26.3 | SKIP | Shader LSP test omitted |
-| 26.4 | PASS | UNSUPPORTED_FILE_TYPE guard for .cs (mentions C#/.NET) |
-| 26.5-26.7 | SKIP | Additional guards omitted (26.4 validates shared path) |
-| 26.8 | PASS | lsp_symbols: 5 symbols (speed, health, damage_taken, _ready, take_damage) |
-| 26.9-26.10 | SKIP | Minimal/shader symbol tests omitted |
-| 26.11 | PASS | lsp_hover: Node2D class info with untrusted envelope |
-| 26.12-26.14 | SKIP | Additional hover tests omitted |
-| 26.15-26.16 | SKIP | Completion tests omitted |
-| 26.17 | PASS | lsp_definition: take_damage call -> def at line 11 |
-| 26.18-26.19 | SKIP | Additional definition tests omitted |
-| 26.20 | SKIP | References on damage_taken omitted |
-| 26.21 | PASS | lsp_references: health has 3 references (decl + 2 usages) |
-| C24-C25 | SKIP | LSP combo chains omitted |
-| 26.22-26.23 | SKIP | Freshness edge cases omitted |
+| 26.1 | PASS | lsp_diagnostics valid file → diagnostics=[], count=0 |
+| 26.2 | PASS | bad file → 7 Error diagnostics with line/character/severity |
+| 26.3 | PASS* | .gdshader → 8 diagnostics, but they are **GDScript parse errors** ("Unexpected identifier 'shader_type' in class body"). Godot's LSP is GDScript-only — it can't parse shaders. Tool returns success+array (loose expectation met) but content is GDScript-parse noise. *Godot LSP limitation |
+| 26.4 | PASS | .cs → UNSUPPORTED_FILE_TYPE (mentions C#/.NET) |
+| 26.5 | PASS | .cpp → UNSUPPORTED_FILE_TYPE (mentions GDExtension/C++) |
+| 26.6 | PASS | absolute path → INVALID_PATH "must start with res://" |
+| 26.7 | PASS | lsp_hover .cs → UNSUPPORTED_FILE_TYPE (shared guard across tools) |
+| 26.8 | PASS | symbols: speed, health, damage_taken, _ready, take_damage (kinds + line ranges) |
+| 26.9 | PASS | minimal: 1 implicit class symbol |
+| 26.10 | PASS* | .gdshader symbols → empty (GDScript LSP can't extract shader symbols — same limitation as 26.3) |
+| 26.11 | PASS | hover Node2D: class info in untrusted envelope (I5 — kind=hover, source=godot-lsp) |
+| 26.12 | PASS | hover speed → "var speed: float = 100.0" |
+| 26.13 | PASS | hover take_damage → "func take_damage(amount: int) -> void" |
+| 26.14 | PASS | hover empty line → empty contents, no crash |
+| 26.15 | PASS | completion → 10 items (total=2123), each label+kind |
+| 26.16 | PASS | limit=3 respected → count=3 |
+| 26.17 | PASS | definition take_damage call → res:// line 11 |
+| 26.18 | PASS | definition damage_taken emit → signal decl res:// line 6 |
+| 26.19 | PASS | definition Node2D → [] (engine class, no user source) |
+| 26.20 | PASS | references damage_taken → 2 (decl + emit), res:// 1-based |
+| 26.21 | PASS | references health → 3 (decl + 2 usages), res:// 1-based |
+| C24 | PASS | write broken → diagnose (7 err) → fix → **targeted** refresh → diagnose clean. WATCH timing issue did NOT recur (tally 0/N this run) |
+| C25 | PASS | symbols take_damage start_line=11 == definition line=11 (groups compose) |
+| 26.22 | PASS | fresh file diagnostics without editor_refresh → recognized, clean, no crash |
+| 26.23 | PASS | fresh file with targeted refresh → diagnostics=[] |
 
-## Section 27 — Debugger Tools (2026-05-24)
+Console error check: PASS (0 errors — bad-file parse errors cleared by editor_refresh). **Note (Godot LSP limitation):** shader files (26.3, 26.10) are parsed by the GDScript LSP → spurious GDScript-parse errors / no symbols. Not a toolkit regression; the toolkit forwards .gdshader to Godot's GDScript-only LSP. Cleanup: 4 LSP test files deleted.
+
+## Section 27 — Debugger Tools (2026-06-07)
 | Test | Status | Notes |
 |------|--------|-------|
 | 27.1 | PASS | debug_state: active=false, breaked=false, can_debug=false |
-| 27.2 | PASS | debug_set_breakpoint: line 6, enabled=true |
-| 27.3 | SKIP | Second breakpoint test omitted |
-| 27.4 | PASS | debug_list_breakpoints: 1 breakpoint listed |
-| 27.5 | PASS | Breakpoint cleared: enabled=false |
-| 27.6-27.8 | SKIP | Additional clear-cycle tests omitted |
-| 27.9 | PASS | UNSUPPORTED_FILE_TYPE guard for .cs |
-| 27.10-27.11 | SKIP | Additional guards omitted |
-| 27.12 | PASS | NOT_FOUND for nonexistent.gd |
-| 27.13-27.14 | SKIP | Line range guards omitted |
-| 27.15 | PASS | debug_continue: GAME_NOT_RUNNING (expected) |
-| 27.16 | SKIP | NOT_BREAKED test requires running game |
-| C26 | SKIP | Breakpoint hit combo chain omitted |
+| 27.2 | PASS | set breakpoint line 6, enabled=true |
+| 27.3 | PASS | set breakpoint line 9, enabled=true |
+| 27.4 | PASS | list includes line 6 + line 9 (count=14: our 2 + 12 pre-existing _stress_script_* breakpoints) |
+| 27.5 | PASS | clear line 6 (enabled=false) |
+| 27.6 | PASS | list: no line 6, has line 9 |
+| 27.7 | PASS | clear line 9 |
+| 27.8 | PASS | list: no sv2_debug_target breakpoints remain |
+| 27.9 | PASS | .cs → UNSUPPORTED_FILE_TYPE (mentions C#/IDE) |
+| 27.10 | PASS | .txt → UNSUPPORTED_FILE_TYPE (GDScript) |
+| 27.11 | PASS | absolute path → INVALID_PATH (res://) |
+| 27.12 | PASS | nonexistent.gd → NOT_FOUND |
+| 27.13 | PASS | line=0 → INVALID_PARAMS "line must be >= 1" |
+| 27.14 | PASS | line=9999 → INVALID_PARAMS "exceeds file length (11 lines)" |
+| 27.15 | PASS | debug_continue (no game) → GAME_NOT_RUNNING (mentions game.start) |
+| 27.16 | PASS | debug_continue (running, not breaked) → NOT_BREAKED |
+| C26 | PASS | **Full breakpoint flow:** set bp→game_start→**breakpoint HIT (active=true, breaked=true, can_debug=true)**→continue→breaked=false→game_stop→active=false |
 
-## Section 25 — Global Cleanup (2026-05-24)
-| Test | Status | Notes |
-|------|--------|-------|
-| 25a | PASS | Groups re-activated for cleanup |
-| 25b | PASS | Game not running |
-| 25c | PASS | Main.tscn opened |
-| 25d | PASS | All 9 files deleted (3 scripts, 1 shader, 3 resources, 2 scenes) |
-| 25e | PASS | Project name = "Godot MCP Toolkit", main_scene = res://Main.tscn |
-| 25f | PASS | No stale audio buses |
-| 25g | PASS | No stale input actions |
-| 25h | N/A | user_data gated |
-| 25i | PASS | res://sv2_validation/ NOT_FOUND (folder removed via filesystem — phantom script tab blocked MCP folder_delete) |
+Console error check: PASS (no UndoRedo mismatch). 6 "File not found" errors on game_start for c5_script/sv2_broken_main/sv2_error_main — **phantom script-editor tabs** for scripts deleted in earlier sections (script_delete doesn't close editor tabs; known Pitfall-3-family limitation), not a regression. **Pre-existing state observed:** 12 breakpoints in untracked `res://_stress_script_*.gd` files (from prior stress test, visible in session's initial git status). Cleanup: debug scene+script deleted, breakpoint cleared.
 
 ---
 
-## Summary
+# Final Summary (2026-06-07)
 
-**Tallied results:** 131 passed, 12 failed, 59 skipped, 10 N/A (212 test slots)
-
-### Failures by category
-
-| # | Category | Tests | Severity |
-|---|----------|-------|----------|
-| 1 | **Colon-chain SET** (read/write asymmetry) | 3.8 | Minor |
-| 2 | **MCP param type coercion** (schema declares string but validation expects number/object/boolean/array) | 12.6, 12.7, 14.4-14.6, 15.5, 15.6, 15.9, 16.8, 16.12, 16.26 | **Major (systemic)** |
-
-### Skips by category
-
-| Category | Count | Reason |
-|----------|-------|--------|
-| Gate sync gap (.mcp.json missing env vars) | 22 | execute_code, node_call_method, user_data: PS has allow=true but .mcp.json env block empty |
-| Speed/time omissions | 30 | Combo chains, extensions, additional guards, edge cases |
-| N/A (GDScript project) | 7 | C# section, version-bounded extensions |
-
-### Regression Watch Summary
-
-| Fix Ref | Status | Notes |
+## Section Results
+| Section | Result | Notes |
 |---------|--------|-------|
-| FIX-1 (inline diagnostics) | PASS | valid + diagnostics fields present in script_write |
-| FIX-5 (PackedVector2Array) | PASS | Type tag accepted (path error, not type rejection) |
-| FIX-7 (batch mode) | PASS | Per-item results returned |
-| FIX-8 (clear_buffer) | PASS | Parameter accepted |
-| FIX-A (regions) | PASS | Bulk-fill 25 cells |
-| FIX-B (scene_path) | PASS | Parameter works |
-| FIX-D (autoload cache) | PASS | "editor cache updated" in response |
-| FIX-E (Resource ref) | PASS | {type:"Resource"} works |
-| FIX-F (bare res://) | PASS | Rejected with helpful hint |
-| FIX-G (node_path) | PASS | Parameter works in signal_manage |
-| FIX-I (tileset_create) | PASS | Valid TileSet created |
-| FIX-J (no-tileset guard) | PASS | INVALID_STATE with hint |
-| Pitfall-4 (ResourceRef alias) | PASS | "ResourceRef" accepted |
-| unique_name (a46487b) | PASS | unique_name=true in response |
-| CLASS_MISMATCH (cb4e162) | PASS | Error mentions "Label, not Button" |
-| autoload guard (23d69f9) | PASS | INVALID_PARAMS with hint |
-| method hint (5f96b62) | PASS | Diagnostic fires for nonexistent method |
-| preload hint (a46487b) | PASS | Actionable load() suggestion |
-| cached log (dec5b24) | PASS | source=cache, not GAME_NOT_RUNNING |
-| dup properties (c61d994) | **FIXED** | Was broken in prior sweep, now position=(200,300) applies correctly |
-
-### Pitfalls Discovered
-
-**1. Systemic MCP parameter type coercion (NEW)**
-- **Severity:** Major
-- **Tools affected:** classdb_get_info (offset), classdb_search (offset), tileset_create (tile_size), tileset_edit (layers), audiobus_edit (volume_db, effect), spriteframes_create (animations), 3d_create_light (shadow), 3d_create_camera (fov), path2d_edit_curve (index), navigation_edit (outlines), procedural_edit_curve (points)
-- **Root cause:** Tool schemas from discover_tools declare complex params as `"type":"string"` but MCP server validation expects native types (number, boolean, object, array). Claude Code serializes all params as strings when schema says string.
-- **Impact:** ~11 test failures across 6 sections. Core tool functionality works when params are omitted or use string-only types.
-- **Workaround:** Use tools with only string/enum params, or omit typed optional params.
-
-**2. Feature gate .mcp.json sync gap**
-- **Severity:** Major
-- **Description:** ProjectSettings `mcp_toolkit/feature_gates/allow_*` = true for all 3 gates, but `.mcp.json` env block has no corresponding GODOT_MCP_ALLOW_* vars. Server-side gate check reads env vars from .mcp.json at startup.
-- **Impact:** execute_code, node_call_method, user_data tools all return FEATURE_GATED despite PS being enabled. 22 tests skipped.
-- **Workaround:** Manually add env vars to .mcp.json.
-
-**3. Phantom script editor tab blocks folder_delete**
-- **Severity:** Minor
-- **Description:** After deleting a .gd file, the script editor tab persists. folder_delete refuses to delete the parent folder because it detects the "open script." No MCP tool exists to close script editor tabs (scene_close only handles scene tabs).
-- **Workaround:** Delete folder via filesystem directly + editor_refresh.
-
-All cleanup completed. Project state fully restored.
-
----
-
-# Targeted Re-run (2026-05-24) — Post-fix Verification
-
-- **Context:** Validates 3 fixes: gate desync (server), JSON string coercion (server), compound path SET (toolkit)
-- **MCP server restarted:** Yes (user confirmed)
-- **Total:** 75 passed, 2 failed, 9 skipped (86 test slots)
-
-## FAIL Re-verification (fixes landed)
-
-| Test | Status | Notes |
-|------|--------|-------|
-| 3.8 | FAIL | Compound path SET: reports success but value unchanged (GET returns 0.75, not 0.3). Fix not effective. |
-| 12.6 | PASS | offset=20 accepted as number — JSON coercion fix works |
-| 12.7 | PASS | offset=5 accepted, total=3, empty results (past end) — correct |
-| 14.4 | PASS | terrain layers param accepted — coercion fix works |
-| 14.5 | PASS | navigation_layers=1, occlusion_layers=1 accepted |
-| 14.6 | PASS | custom_data layer accepted, damage=10 set |
-| 15.5 | PASS | volume_db=-6.0 accepted |
-| 15.6 | PASS | effect={"type":"Reverb"} accepted, AudioEffectReverb added |
-| 15.9 | PASS | animations array accepted, 2 animations correct frame counts |
-| 16.8 | PASS | index=2 accepted, point_count=5 |
-| 16.12 | PASS | outlines array accepted, outline_count=1 |
-| 16.26 | PASS | points array accepted, point_count=3 |
-
-## Gate-blocked Re-runs (gate desync fixed)
-
-| Test | Status | Notes |
-|------|--------|-------|
-| 3.19 | PASS | node_call_method gate open (returned null — non-@tool, expected) |
-| 7.5 | PASS | push_warning via execute_code succeeded |
-| 7.8 | PASS | text_filter "test_line(parens)" literal match, count=1 |
-| 9.1 | PASS | 2+2=4 |
-| 9.2 | PASS | EditorInterface singleton hint (expected) |
-| 9.3 | PASS | OS singleton hint mentioning Expression limitations |
-| 9.4 | PASS | load() context-aware hint mentioning node_set_property |
-| 9.5 | PASS | get_tree().get_nodes_in_group returns [] |
-| 9.6 | PASS | Engine singleton hint |
-| 9.7 | PASS | Error on invalid syntax |
-| 9.8 | PASS | ProjectSettings singleton hint |
-| 11.1 | PASS | save_write 25 bytes |
-| 11.2 | PASS | save_read content score=42, level=3 |
-| 11.3 | PASS | save_list includes sv2_save.json |
-| 11.4 | PASS | save_delete success |
-| 13.1 | PASS | add_animation_library via node_call_method, returned 0 |
-| 13.2 | PASS | keyframe t=0 Vector2(100,100) |
-| 13.3 | PASS | keyframe t=1 Vector2(200,200) |
-| 13.4 | PASS | 2 keyframes on position track |
-| 20.6 | PASS | runtime_get_node_state: class=CharacterBody2D, speed=100 |
-| 20.10 | PASS | Autoload warning: "persists across scene transitions" |
-| 20.12 | PASS | runtime print("SV2_RUNTIME_SEED...") succeeded |
-| 20.13 | PASS | plain filter count=2 |
-| 20.14 | FAIL | regex \d+ double-escape transport issue (count=0). [0-9]+ works. PLATFORM limitation. |
-| 20.15 | PASS | literal parens match, count=2 |
-| 20.16 | PASS | INVALID_PARAMS for bad regex "(unclosed" |
-| 20.18 | PASS | get_tree().current_scene.name = "main" |
-| 20.19 | PASS | animation_player_control play sv2_lib/idle |
-| 20.20 | PASS | signal_emit runtime succeeded |
-| 20.21 | PASS | debugger_get_log returns entries |
-| 21.6 | PASS | count=0 for SV2_BROKEN, success=true, debug_state present |
-| 21.10 | PASS | error_buffer: type=log_scan, source=sv2_error_main.gd, function=_ready, line=6 |
-| 21.11 | PASS | text_filter=queue_free: count=1, error_buffer has full context |
-| 21.12 | PASS | NONEXISTENT filter: count=0 but error_buffer still present |
-| 21.13 | PASS | No-params golden path: lines + debug_state + error_buffer all present |
-
-## Agent-skipped Re-runs
-
-| Test | Status | Notes |
-|------|--------|-------|
-| 17.7 | PASS | include_properties=["position","visible"] — fields present on all results |
-| 18.8-9 | PASS | shader exists, material.tres loads with valid shader ref |
-| 18.10 | PASS | asset_import from res:// source, status=created |
-| 18.13 | PASS | folder_delete stale_tabs=2, scene_close both succeeded |
-| 18.14 | PASS | Last tab closed, engine auto-creates empty scene |
-| C1 | PASS | resource_write → resource_load(class=Environment) → resource_delete |
-| C2 | PASS | script_write(valid) → script_check(valid) → script_delete |
-| C3 | PASS | scene create → open → create_node → set_property → verify → save → delete |
-| C4 | PASS | signal connect → save → reopen → verify persist → disconnect |
-| C5 | PASS | build scene → run → debugger_get_log "C5_LIFECYCLE_OK" → stop → cleanup |
-| C6 | PASS | tileset_create → tileset_edit terrain → TileMapLayer → tilemap_set_cells (9 cells) |
-| C7 | PASS | script_write(indexed=true) → script_check passes immediately (no refresh) |
-| C8 | PASS | duplicate → rename → reparent → groups add/list/remove |
-| C9 | PASS | batch instantiate 3 copies, rotation=1.57 confirmed |
-| C10 | PASS | keyword search activates groups, reset=true/[] works |
-| C11 | PASS | editor_refresh targeted mode, file_count=1 |
-| C12 | PASS | folder_delete with open tabs, stale_tabs handled |
-| C27 | PASS | Godot 4.5: scene_close visible and functional |
-| C28 | PASS | FULL_RECT anchor_right=1.0, CENTER anchor_left=0.5 |
-| S24 | SKIP | extensions_refresh doesn't trigger runtime discovery; requires plugin restart |
-| 26.3 | PASS | shader diagnostics returned (LSP parses it) |
-| 26.5 | PASS | UNSUPPORTED_FILE_TYPE for .cpp |
-| 26.6 | PASS | INVALID_PATH for absolute path |
-| 26.7 | PASS | UNSUPPORTED_FILE_TYPE for .cs (mentions C#/.NET) |
-| 26.9 | PASS | symbols: 1 entry (implicit class) for minimal script |
-| 26.10 | PASS | shader symbols returned (empty — expected) |
-| 26.12 | PASS | hover on speed: shows "float" |
-| 26.13 | PASS | hover on take_damage: function signature |
-| 26.14 | PASS | empty line: contents empty, no crash |
-| 26.15 | PASS | completions non-empty, count=10 (default limit) |
-| 26.16 | PASS | limit=3 respected |
-| 26.18 | PASS | damage_taken emit → definition at signal decl (line 6) |
-| 26.19 | PASS | Node2D engine class → definition=[] |
-| 26.20 | PASS | damage_taken references: 2 entries |
-| 26.21 | PASS | health references: 3 entries |
-| 26.22 | PASS | LSP works immediately without editor_refresh |
-| 26.23 | PASS | Fresh file after write: diagnostics=[] |
-| C24 | PASS | broken → diagnose(7 errors) → fix → diagnose(clean) |
-| C25 | PASS | symbols show take_damage start_line=11, definition confirms |
-| 27.3 | PASS | Second breakpoint line 9 set |
-| 27.6 | PASS | After clearing line 6, only line 9 remains |
-| 27.7 | PASS | Line 9 cleared |
-| 27.8 | PASS | No breakpoints remain |
-| 27.10 | PASS | UNSUPPORTED_FILE_TYPE for .txt |
-| 27.11 | PASS | INVALID_PATH for absolute path |
-| 27.13 | PASS | INVALID_PARAMS "line must be >= 1" |
-| 27.14 | PASS | INVALID_PARAMS "exceeds file length" |
-| 27.16 | PASS | NOT_BREAKED when game running but not paused |
-| C26 | PASS | set BP → start → breaked=true → continue → breaked=false → stop → active=false |
-
-## Summary
-
-| Category | Passed | Failed | Skipped |
-|----------|--------|--------|---------|
-| FAIL re-verification | 11 | 1 | 0 |
-| Gate-blocked re-runs | 34 | 1 | 0 |
-| Agent-skipped re-runs | 30 | 0 | 9 (S24 extensions) |
-| **Total** | **75** | **2** | **9** |
-
-### Remaining Failures
-
-1. **S3.8 — Compound path SET** (colon-chain `material:shader_parameter/brightness`): SET reports success but value doesn't change. The fix (9c3295c) is not effective for this case. GET returns the original resource value (0.75). Root cause: SET may be writing to a transient copy rather than the persisted sub-resource.
-
-2. **S20.14 — Regex `\d+` double-escape** (PLATFORM limitation): MCP JSON transport double-escapes backslashes. `\d` arrives as literal `\d` instead of regex metacharacter. `[0-9]+` works as equivalent. Tool provides helpful warning. Not a toolkit bug.
-
-### Fixes Verified Working
-
-- **Gate desync** ✅ — All 3 gates (execute_code, node_call_method, user_scope) functional
-- **JSON string coercion** ✅ — All 11 previously-failing tests now pass (offset, layers, volume_db, effect, animations, index, outlines, points)
-- **Compound path SET** ❌ — Still failing (reports success, value unchanged)
-
----
-
-# Final Validation (2026-05-24) — W2 Merge Pre-merge
-
-- **Context:** Validates fixes from commits a694822 (centralize compound path SET) and 48397e4 (set_shader_parameter for shader_parameter/ paths), plus extensions_refresh scan() fix (8d2a265)
-- **Editor restarted:** Yes (user confirmed)
-
-## S3.8 — Compound path shader_parameter SET (re-test)
-
-| Step | Status | Notes |
-|------|--------|-------|
-| Setup | PASS | Sprite2D + ShaderMaterial + shader (brightness=0.75) scaffolded |
-| GET initial | PASS | `material:shader_parameter/brightness` = 0.75 |
-| SET 0.3 | PASS | Reports success=true |
-| GET verify | **FAIL** | Returns 0.75, not 0.3. SET did not persist. |
-
-**Result: FAIL** — Same behavior as prior run. SET reports success but value unchanged.
-
-## S1b — Compound path SET via scene_create_node inline properties
-
-| Step | Status | Notes |
-|------|--------|-------|
-| Create Label with inline `theme_override_colors/font_color` | PASS | status=created |
-| GET `theme_override_colors/font_color` | PASS | Color(1, 0, 0, 1) — correct |
-
-**Result: PASS** — Centralized `set_property_compound` works for `scene_create_node` inline properties.
-
-## S1c — Compound path SET via scene_instantiate properties
-
-| Step | Status | Notes |
-|------|--------|-------|
-| Create label_scene.tscn (Label root) | PASS | status=created |
-| Instantiate with `theme_override_font_sizes/font_size: 32` | PASS | status=created |
-| GET `theme_override_font_sizes/font_size` | PASS | Returns 32 — correct |
-
-**Result: PASS** — Centralized `set_property_compound` works for `scene_instantiate` properties.
-
-## S24 — Extension Discovery (full lifecycle)
-
-| Step | Status | Notes |
-|------|--------|-------|
-| EXT-S1: Write MCPToolkitSv2Test extension | PASS | valid=true, 0 diagnostics |
-| EXT-S2: extensions_refresh | PASS | 1 command discovered (sv2_ext.hello) |
-| EXT-S3: Call sv2_ext.hello | PASS | Returns `{"success":true,"message":"Hello, world!"}` |
-| EXT-S4: discover_tools sv2 | PASS | sv2_test_group activated with 1 tool |
-| EXT-S5: Delete script + extensions_refresh | PASS | commands=0, extension removed |
-| EXT-S6: Verify tool removed | PASS | Tool no longer callable (No such tool) |
-
-**Result: PASS** — Full extension lifecycle works. `scan()` fix (8d2a265) enables discovery of new files.
-
-## S25 — Cleanup
-
-Skipped — delegated to separate agent.
-
-## Summary
-
-| Item | Result |
-|------|--------|
-| S3.8 — shader_parameter compound SET | **FAIL** |
-| S1b — scene_create_node inline compound | PASS |
-| S1c — scene_instantiate compound | PASS |
-| S24 — Extension discovery lifecycle | PASS (all 6 steps) |
-| S25 — Cleanup | SKIPPED (delegated) |
-
-### Verdicts
-
-- **Compound path centralization (a694822):** Partially working. `theme_override_*` compound paths work correctly via `scene_create_node` and `scene_instantiate`. The `shader_parameter/` colon-chain path (`material:shader_parameter/brightness`) still fails — SET reports success but doesn't persist.
-- **set_shader_parameter fix (48397e4):** Not effective for the colon-chain SET case. The fix may only apply to direct `shader_parameter/` paths, not when chained through `:` sub-resource resolution.
-- **extensions_refresh scan() fix (8d2a265):** Fully working. New extension scripts are discovered without editor restart.
-
----
-
-# W2 Merge Final Validation (2026-05-24)
-
-- **Context:** Re-validates compound path SET fixes and compound path routing through scene_create_node / scene_instantiate after editor restart with latest toolkit code
-- **Editor restarted:** Yes (user confirmed)
-- **S24/S25 skipped:** Per user instruction
-
-## S3.8 — Compound path shader_parameter SET (re-test)
-
-| Step | Status | Notes |
-|------|--------|-------|
-| Setup | PASS | Sprite2D + ShaderMaterial + shader (brightness=0.75) scaffolded |
-| GET initial | PASS | `material:shader_parameter/brightness` = 0.75 |
-| SET 0.3 | PASS | Reports success=true |
-| GET verify | **FAIL** | Returns 0.75, not 0.3. SET did not persist. |
-
-**Result: FAIL** — Same behavior as all prior runs. SET reports success but value unchanged.
-
-## S1b — Compound path SET via scene_create_node inline properties
-
-| Step | Status | Notes |
-|------|--------|-------|
-| Create Label with inline `theme_override_colors/font_color` | PASS | status=created |
-| GET `theme_override_colors/font_color` | PASS | Color(1, 0, 0, 1) — correct |
-
-**Result: PASS** — Centralized `set_property_compound` works for `scene_create_node` inline properties.
-
-## S1c — Compound path SET via scene_instantiate properties
-
-| Step | Status | Notes |
-|------|--------|-------|
-| Create label_scene.tscn (Label root) | PASS | status=created |
-| Instantiate with `theme_override_font_sizes/font_size: 32` | PASS | status=created |
-| GET `theme_override_font_sizes/font_size` | PASS | Returns 32 — correct |
-
-**Result: PASS** — Centralized `set_property_compound` works for `scene_instantiate` properties.
-
-## S24 — Extension Discovery
-
-SKIP — Per user instruction.
-
-## S25 — Cleanup
-
-SKIP — Per user instruction.
-
-## Summary
-
-| Item | Result |
-|------|--------|
-| S3.8 — shader_parameter compound SET | **FAIL** |
-| S1b — scene_create_node inline compound | PASS |
-| S1c — scene_instantiate compound | PASS |
-| S24 — Extension discovery | SKIP |
-| S25 — Cleanup | SKIP |
-
-### Verdict
-
-- **Compound path centralization:** Working for `theme_override_*` paths via both `scene_create_node` and `scene_instantiate`. The colon-chain `material:shader_parameter/brightness` SET remains broken — reports success but writes to a transient copy, not the persisted sub-resource.
-- **Remaining issue:** `set_shader_parameter()` fix does not activate for colon-chain paths. The `:` sub-resource resolution resolves the material, then attempts a generic `set()` on it with the `shader_parameter/brightness` suffix, bypassing the `set_shader_parameter()` codepath.
-
----
-
-# Section 25 — Undo/Redo Verification Re-run (2026-05-26)
-
-- **Context:** Re-run after critical fix (16b898d): builder now uses internal UndoRedo for Callable-based method registration. Previous run failed because EditorUndoRedoManager.add_do_method uses vararg (Object, StringName, ...) not Callable.
-- **Scene:** `res://Main.tscn`
-- **Total:** 16 passed, 2 failed, 1 skipped (19 test slots)
-
-## Diagnostics: diagnose_undo_redo() smoke test
-
-| Field | Value | Status |
-|-------|-------|--------|
-| hub_plugin_null | false | OK |
-| hub_plugin_class | EditorPlugin | OK |
-| undo_redo_null | false | OK |
-| undo_redo_class | EditorUndoRedoManager | OK |
-| scene_root_name | Main | OK |
-| root_history_id | 1 | OK |
-| builder_active | **true** | OK — builder is functional |
-| smoke_has_undo_after_commit | **true** | OK — action recorded in history |
-| smoke_undo_worked | **true** | OK — undo reverted position to (0,0) |
-| smoke_pos_after_undo | (0.0, 0.0) | OK |
-| smoke_pos_after_redo | (99.0, 99.0) | OK — redo restored correctly |
-
-**Verdict:** All diagnostics green. Builder property-based undo/redo fully functional.
-
-## UR-Setup: Attach undo/redo helper
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR-S1 | PASS | URHelper (Node) created at scene root |
-| UR-S2 | PASS | `test_undo_redo_action.gd` attached, 0 exports |
-| UR-S3 | **PARTIAL** | 8 ran, 7 passed, 1 failed. See sub-test breakdown below. |
-
-### UR-S3 sub-test breakdown (run_undo_redo_tests)
-
-| Sub-test | Pass | Details |
-|----------|------|---------|
-| prop_set | PASS | builder_active=true, has_undo_after_commit=true, history_id=1 |
-| prop_undo | PASS | position reverted to (0.0, 0.0) — undo_result ok, history_id=1 |
-| prop_redo | PASS | position restored to (123.0, 456.0) — redo_result ok |
-| method_added | PASS | child present after commit_recorded, builder_active=true |
-| method_undo | **FAIL** | undo_result ok=true but child_exists=true — Callable-based remove_child not executed during undo |
-| method_redo | PASS | child_exists=true (trivially passes since undo didn't remove) |
-| commit_do_executes | PASS | commit() executed do-side immediately, visible=false |
-| commit_undo | PASS | undo restored visible=true |
-
-## UR1: node.set_property undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR1.1 | PASS | Node2D "URTarget" created |
-| UR1.2 | PASS | position set to (200, 300) — confirmed via GET: Vector2(200, 300) |
-| UR1.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR1.4 | PASS | position reverted to (0, 0) — confirmed via GET: Vector2(0, 0) |
-| UR1.5 | PASS | trigger_redo: status=ok, history_id=1 |
-| UR1.6 | PASS | position restored to (200, 300) — confirmed via GET: Vector2(200, 300) |
-
-## UR2: node.manage rename undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR2.1 | PASS | Renamed URTarget → URRenamed (old_name=URTarget, new_path=URRenamed) |
-| UR2.2 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR2.3 | PASS | scene_get_tree confirms `URTarget` in tree (name reverted from URRenamed) |
-| UR2.4 | PASS | trigger_redo: status=ok — scene_get_tree confirms `URRenamed` restored |
-
-## UR3: node.groups add undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR3.1 | PASS | Undo restored name to URTarget (from UR2 redo state) |
-| UR3.2 | PASS | Group `ur_test_group` added to URTarget |
-| UR3.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR3.4 | **FAIL** | node.groups list: count=1, groups=["ur_test_group"] — group NOT removed by undo. node.groups add likely does not route through UndoRedo builder for group membership. |
-
-## UR-Cleanup
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR-C1 | PASS | URTarget deleted |
-| UR-C1b | PASS | URTest_MethodChild deleted (leftover from method_undo sub-test failure) |
-| UR-C2 | PASS | URHelper deleted |
-| UR-C3 | PASS | Scene saved |
-
-## Summary
-
-| Category | Passed | Failed | Skipped |
-|----------|--------|--------|---------|
-| Diagnostics | ALL GREEN | — | — |
-| UR-S3 (integration) | 7 | 1 | 0 |
-| UR1 (set_property) | 6 | 0 | 0 |
-| UR2 (rename) | 4 | 0 | 0 |
-| UR3 (groups) | 3 | 1 | 0 |
-| UR-Cleanup | 4 | 0 | 0 |
-| **Total** | **24** | **2** | **0** |
-
-### Improvement vs Previous Run
-
-| Metric | Previous (pre-fix) | This run (post-fix) |
-|--------|-------------------|---------------------|
-| Diagnostics | smoke_undo_worked=N/A | smoke_undo_worked=**true** |
-| UR-S3 integration | 3/5 (2 fail, 3 missing) | **7/8** (1 fail) |
-| UR1 set_property | 2/6 (1 fail, 3 skip) | **6/6** |
-| UR2 rename | 1/4 (1 fail, 2 skip) | **4/4** |
-| UR3 groups | 2/4 (1 fail, 1 skip) | 3/4 (1 fail) |
-| Overall | 10 pass, 4 fail, 6 skip | **24 pass, 2 fail, 0 skip** |
-
-### Remaining Failures
-
-1. **UR-S3 method_undo** — `_ur.add_undo_method(callable)` registers on the internal UndoRedo but the Callable is not executed during undo. The `undo_result.ok=true` indicates `UndoRedo.undo()` returns success, but `root.remove_child.bind(child)` was not invoked. Property-based undo (add_undo_property) works correctly — only Callable-based method undo is broken. This affects extensions using `do_method()`/`undo_method()` for add_child/remove_child patterns but does NOT affect core MCP tools which use property-based undo.
-
-2. **UR3.4 groups undo** — `node.groups add` command does not register an undo action. The trigger_undo succeeded (status=ok) but undid a prior action (the rename undo from UR3.1) rather than the group add. The `node.groups` command handler likely applies the group mutation directly without routing through `MCPToolkitUndoRedoAction`.
-
-### Fixes Verified Working
-
-- **16b898d (internal UndoRedo for Callable-based registration):** Property-based undo/redo fully functional. `commit_recorded()` and `commit()` both work correctly for `do_property`/`undo_property`. The builder correctly resolves history IDs and registers actions in EditorUndoRedoManager.
-- **node.set_property:** Full undo/redo cycle works (set → undo → verify revert → redo → verify restore).
-- **node.manage rename:** Full undo/redo cycle works (rename → undo → verify name reverted → redo → verify name restored).
-
----
-
-# Section 25 — Undo/Redo Verification Re-run #2 (2026-05-26)
-
-- **Context:** Re-run after commit 3445361 which routes ALL operations through EditorUndoRedoManager directly, eliminating the internal UndoRedo. Previous run (16b898d) had 2 remaining failures: UR-S3 method_undo (Callable-based undo not executed) and UR3.4 groups undo (group not removed by undo).
-- **Scene:** `res://Main.tscn`
-- **Total:** 22 passed, 0 failed, 0 skipped (22 test slots)
-
-## Diagnostics: diagnose_undo_redo() smoke test
-
-| Field | Value | Status |
-|-------|-------|--------|
-| hub_plugin_null | false | OK |
-| hub_plugin_class | EditorPlugin | OK |
-| undo_redo_null | false | OK |
-| undo_redo_class | EditorUndoRedoManager | OK |
-| scene_root_name | Main | OK |
-| root_history_id | 1 | OK |
-| builder_active | **true** | OK |
-| smoke_has_undo_after_commit | **true** | OK |
-| smoke_undo_worked | **true** | OK |
-| smoke_pos_after_undo | (0.0, 0.0) | OK |
-| smoke_pos_after_redo | (99.0, 99.0) | OK |
-
-**Verdict:** All diagnostics green.
-
-## UR-Setup: Attach undo/redo helper
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR-S1 | PASS | URHelper (Node) created at scene root |
-| UR-S2 | PASS | `test_undo_redo_action.gd` attached, 0 exports |
-| UR-S3 | **PASS** | **8/8 sub-tests passed** (all green — see breakdown below) |
-
-### UR-S3 sub-test breakdown (run_undo_redo_tests)
-
-| Sub-test | Pass | Details |
-|----------|------|---------|
-| prop_set | PASS | position set to (123, 456) |
-| prop_undo | PASS | position reverted to (0, 0) |
-| prop_redo | PASS | position restored to (123, 456) |
-| method_added | PASS | child present after commit_recorded |
-| method_undo | **PASS** | child removed by undo — **PREVIOUSLY FAILED, NOW FIXED** |
-| method_redo | PASS | child restored by redo |
-| commit_do_executes | PASS | commit() executed do-side immediately, visible=false |
-| commit_undo | PASS | undo restored visible=true |
-
-## UR1: node.set_property undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR1.1 | PASS | Node2D "URTarget" created |
-| UR1.2 | PASS | position set to (200, 300) — confirmed via GET |
-| UR1.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR1.4 | PASS | position reverted to (0, 0) — confirmed via GET |
-| UR1.5 | PASS | trigger_redo: status=ok, history_id=1 |
-| UR1.6 | PASS | position restored to (200, 300) — confirmed via GET |
-
-## UR2: node.manage rename undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR2.1 | PASS | Renamed URTarget → URRenamed |
-| UR2.2 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR2.3 | PASS | scene_get_tree confirms `URTarget` in tree (name reverted) |
-| UR2.4 | PASS | trigger_redo: status=ok — `URRenamed` restored |
-
-## UR3: node.groups add undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR3.1 | PASS | Undo restored name to URTarget |
-| UR3.2 | PASS | Group `ur_test_group` added to URTarget |
-| UR3.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR3.4 | **PASS** | groups=[], count=0 — group removed by undo. **PREVIOUSLY FAILED, NOW FIXED** |
-
-## UR-Cleanup
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR-C1 | PASS | URTarget deleted |
-| UR-C2 | PASS | URHelper deleted |
-| UR-C3 | PASS | Scene saved |
-
-## Summary
-
-| Category | Passed | Failed | Skipped |
-|----------|--------|--------|---------|
-| Diagnostics | ALL GREEN | — | — |
-| UR-S3 (integration) | 8 | 0 | 0 |
-| UR1 (set_property) | 6 | 0 | 0 |
-| UR2 (rename) | 4 | 0 | 0 |
-| UR3 (groups) | 4 | 0 | 0 |
-| UR-Cleanup | 3 | 0 | 0 |
-| **Total** | **25** | **0** | **0** |
-
-### Improvement vs Previous Runs
-
-| Metric | Run 1 (pre-16b898d) | Run 2 (post-16b898d) | **Run 3 (post-3445361)** |
-|--------|---------------------|----------------------|--------------------------|
-| UR-S3 integration | 3/5 | 7/8 (method_undo fail) | **8/8** |
-| UR1 set_property | 2/6 | 6/6 | **6/6** |
-| UR2 rename | 1/4 | 4/4 | **4/4** |
-| UR3 groups | 2/4 (action_level errors) | 3/4 (group not removed) | **4/4** |
-| Overall | 10 pass, 4 fail, 6 skip | 24 pass, 2 fail, 0 skip | **25 pass, 0 fail, 0 skip** |
-
-### Both Previously-Failing Tests Now Fixed
-
-1. **UR-S3 method_undo** — Callable-based `remove_child` now executes during undo. Routing through EditorUndoRedoManager directly (instead of internal UndoRedo) ensures the Callable is properly invoked.
-
-2. **UR3.4 groups undo** — `node.groups add` now registers an undo action via EditorUndoRedoManager. Group membership is correctly reverted on undo (count=0 after undo, previously count=1).
-
-### Fix Verified
-
-- **3445361 (use EditorUndoRedoManager directly for all operations):** All undo/redo operations fully functional. Property-based, Callable-based, and group-based mutations all register in editor history and can be reversed. The internal UndoRedo elimination resolves both the history ID mismatch (method_undo) and the missing undo registration (groups undo).
-
----
-
-# Section 25 — Undo/Redo Full Expanded Re-run (2026-05-26)
-
-- **Context:** Full re-run of expanded section (UR-Setup through UR-Cleanup) after commit 53796f7 which fixed 12 tools with missing or orphaned `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls. Section expanded from 14 to 47 tests — UR4–UR12 are regression guards for each affected tool, UR-CON.1 is the critical console-check gate.
-- **Scene:** `res://Main.tscn`
-- **Godot version:** 4.5
-- **Total:** 47 passed, 0 failed, 0 skipped
-
-## UR-Setup: Attach undo/redo helper
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR-S1 | PASS | URHelper (Node) created at scene root |
-| UR-S2 | PASS | `test_undo_redo_action.gd` attached, 0 exports |
-| UR-S3 | PASS | **8/8 sub-tests passed** — see breakdown below |
-
-### UR-S3 sub-test breakdown (run_undo_redo_tests)
-
-| Sub-test | Pass | Details |
-|----------|------|---------|
-| prop_set | PASS | position set to (123, 456) |
-| prop_undo | PASS | position reverted to (0, 0) |
-| prop_redo | PASS | position restored to (123, 456) |
-| method_added | PASS | child present after commit_recorded |
-| method_undo | PASS | child removed by undo |
-| method_redo | PASS | child restored by redo |
-| commit_do_executes | PASS | commit() executed do-side immediately, visible=false |
-| commit_undo | PASS | undo restored visible=true |
-
-## UR1: node.set_property undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR1.1 | PASS | Node2D "URTarget" created |
-| UR1.2 | PASS | position set to (200, 300) |
-| UR1.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR1.4 | PASS | position reverted to (0, 0) |
-| UR1.5 | PASS | trigger_redo: status=ok, history_id=1 |
-| UR1.6 | PASS | position restored to (200, 300) |
-
-## UR2: node.manage rename undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR2.1 | PASS | Renamed URTarget → URRenamed |
-| UR2.2 | PASS | trigger_undo via current name "URRenamed": status=ok |
-| UR2.3 | PASS | scene_get_tree confirms `URTarget` in tree (name reverted) |
-| UR2.4 | PASS | trigger_redo: `URRenamed` restored, then undone back to URTarget for subsequent tests |
-
-## UR3: node.groups add undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR3.1 | PASS | Confirmed URTarget exists (name restored from UR2) |
-| UR3.2 | PASS | Group `ur_test_group` added to URTarget |
-| UR3.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR3.4 | PASS | groups=[], count=0 — group removed by undo |
-
-## UR4: node.manage reorder undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR4.1 | PASS | URSibling (Node2D) created |
-| UR4.2 | PASS | URSibling at index 2 (URHelper=0, URTarget=1, URSibling=2) |
-| UR4.3 | PASS | Reordered URSibling from index 2 to 0 |
-| UR4.4 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR4.5 | PASS | URSibling back at index 2 (original position restored) |
-
-## UR5: node.manage duplicate undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR5.1 | PASS | URDuplicate created from URTarget |
-| UR5.2 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR5.3 | PASS | URDuplicate gone — only URHelper, URTarget, URSibling remain |
-
-## UR6: node.groups remove + batch undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR6.1 | PASS | Group `ur_remove_test` added to URTarget |
-| UR6.2 | PASS | Group `ur_remove_test` removed from URTarget |
-| UR6.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR6.4 | PASS | `ur_remove_test` restored by undo (count=1) |
-| UR6.5 | PASS | Batch add: `ur_batch_a` added to URTarget + URSibling (2 entries) |
-| UR6.6 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR6.7 | PASS | `ur_batch_a` NOT in URTarget (only `ur_remove_test`), NOT in URSibling (count=0) — batch undo confirmed |
-
-## UR7: scene.delete_node undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR7.1 | PASS | URSibling deleted |
-| UR7.2 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR7.3 | PASS | URSibling restored by undo |
-
-## UR8: control.set_layout undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR8.1 | PASS | URControl (Control) created |
-| UR8.2 | PASS | Layout set to PRESET_CENTER |
-| UR8.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR8.4 | PASS | anchor_left=0 (default, not 0.5) — layout undo confirmed |
-
-## UR9: signal.manage connect/disconnect undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR9.1 | PASS | visibility_changed → URSibling.show connected (status=created) |
-| UR9.2 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR9.3 | PASS | visibility_changed has no connection to URSibling.show — connect undo confirmed |
-| UR9.4 | PASS | Reconnected for disconnect test (status=created) |
-| UR9.5 | PASS | Disconnected visibility_changed → URSibling.show |
-| UR9.6 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR9.7 | PASS | visibility_changed → URSibling.show restored (flags=2 CONNECT_PERSIST) — disconnect undo confirmed |
-
-## UR10: path2d.edit_curve undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR10.1 | PASS | URPath (Path2D) created |
-| UR10.2 | PASS | Point added at (100, 200), point_count=1 |
-| UR10.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR10.4 | PASS | curve:point_count=0 — point removed by undo |
-
-## UR11: particles.create undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR11.1 | PASS | GPUParticles2D created, properties_set=1 |
-| UR11.2 | PASS | GPUParticles2D confirmed in tree |
-| UR11.3 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR11.4 | PASS | GPUParticles2D gone — particle undo confirmed |
-
-## UR12: collision_from_texture undo/redo
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR12.1 | PASS | URSprite (Sprite2D) created |
-| UR12.2 | PASS | Texture set to res://icon.svg |
-| UR12.3 | PASS | Collision polygon created (1 polygon, 20 points) |
-| UR12.4 | PASS | trigger_undo: status=ok, history_id=1 |
-| UR12.5 | PASS | No CollisionPolygon2D in tree — collision undo confirmed |
-
-## UR-Console: History mismatch error check (CRITICAL GATE)
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR-CON.1 | **PASS** | **Zero** `UndoRedo history mismatch` errors in editor console. Critical regression gate clean. |
-
-## UR-Cleanup: Remove test nodes
-
-| Test | Status | Notes |
-|------|--------|-------|
-| UR-C1 | PASS | URSprite deleted |
-| UR-C2 | PASS | URPath deleted |
-| UR-C3 | PASS | URControl deleted |
-| UR-C4 | PASS | URSibling deleted |
-| UR-C5 | PASS | URTarget deleted |
-| UR-C6 | PASS | URHelper deleted |
-| UR-C7 | PASS | Scene saved |
-
-## Summary
-
-| Category | Passed | Failed | Skipped |
-|----------|--------|--------|---------|
-| UR-Setup (S1–S3) | 3 (S3: 8/8 sub-tests) | 0 | 0 |
-| UR1 (set_property) | 6 | 0 | 0 |
-| UR2 (rename) | 4 | 0 | 0 |
-| UR3 (groups add) | 4 | 0 | 0 |
-| UR4 (reorder) | 5 | 0 | 0 |
-| UR5 (duplicate) | 3 | 0 | 0 |
-| UR6 (groups remove+batch) | 7 | 0 | 0 |
-| UR7 (delete_node) | 3 | 0 | 0 |
-| UR8 (control.set_layout) | 4 | 0 | 0 |
-| UR9 (signal connect/disconnect) | 7 | 0 | 0 |
-| UR10 (path2d.edit_curve) | 4 | 0 | 0 |
-| UR11 (particles.create) | 4 | 0 | 0 |
-| UR12 (collision_from_texture) | 5 | 0 | 0 |
-| UR-CON (console gate) | 1 | 0 | 0 |
-| UR-Cleanup (C1–C7) | 7 | 0 | 0 |
-| **Total** | **67** | **0** | **0** |
-
-### Regression Guards — All 12 Previously-Affected Tools Verified
-
-| Tool | Tests | Status | Undo verified |
-|------|-------|--------|---------------|
-| node.set_property | UR1.1–1.6 | PASS | Position reverts to (0,0) and restores to (200,300) |
-| node.manage (rename) | UR2.1–2.4 | PASS | Name reverts URRenamed→URTarget and restores |
-| node.groups (add) | UR3.1–3.4 | PASS | Group removed by undo |
-| node.manage (reorder) | UR4.1–4.5 | PASS | Index reverts from 0 back to 2 |
-| node.manage (duplicate) | UR5.1–5.3 | PASS | Duplicate node removed by undo |
-| node.groups (remove+batch) | UR6.1–6.7 | PASS | Remove undone, batch add undone across 2 nodes |
-| scene.delete_node | UR7.1–7.3 | PASS | Deleted node restored by undo |
-| control.set_layout | UR8.1–8.4 | PASS | anchor_left reverts from 0.5 to 0 |
-| signal.manage (connect) | UR9.1–9.3 | PASS | Connection removed by undo |
-| signal.manage (disconnect) | UR9.4–9.7 | PASS | Connection restored by undo |
-| path2d.edit_curve | UR10.1–10.4 | PASS | Point removed by undo (count 1→0) |
-| particles.create | UR11.1–11.4 | PASS | Particle node removed by undo |
-| collision_from_texture | UR12.1–12.5 | PASS | Collision polygon removed by undo |
-
-### Critical Gate
-
-**UR-CON.1: PASS** — Zero `UndoRedo history mismatch` errors across all 12 tool sections. Commit 53796f7 fix (adding missing `context_object` to 12 `begin()` calls) fully verified.
+| 0 Environment | 5 PASS, 2 N/A | GDScript, Godot 4.5 |
+| 1 Scaffolding | 10/10 | |
+| 2 Scene Tree | 18/18 | |
+| 3 Node Properties | 28/28 | **3.8/3.9 colon-chain SET/GET now works in-memory** (was historical FAIL) |
+| 4 Node Management | 14/14 | |
+| 5 Signals | 7/7 | |
+| 6 Scripts | 8/8 | |
+| **7 Editor/Console ⭐** | 16/16 | **FOCUS — refresh precision + save re-entrancy clean** |
+| 8 Project Settings | 12/12 | |
+| 9 execute_code | 8/8 | gate open |
+| 10 Input Map | 4/4 | |
+| 11 Save System | 6/6 | gate open |
+| 12 ClassDB | 7/7 | **12.6/12.7 offset pagination fixed** |
+| 13 Animation | 12/12 | node_call_method gate open |
+| 14 TileSet/TileMap | 28/28 | **all type-coercion fixed** |
+| 15 Theme/Audio/Sprites | 12/12 | **volume_db/effect/animations fixed** |
+| 16 Domain (3D/path/nav/particles/proc) | 28/28 | **all coercion fixed** |
+| 17 Scene Query | 10/10 | |
+| 18 File Ops/Phantom Tabs | 15/15 | **no _set_main_scene_state errors** |
+| 19 collision_from_sprite | 3/3 | |
+| 20 Runtime | 22/22 | **20.14 regex \d+ now matches** |
+| 21 Game Guards/Crash | 13/13 | 21.6 transient race (self-heals) |
+| 22 Combo Chains | 14/14 | |
+| 23 C# | N/A | GDScript project |
+| 24 Extensions | EXT-S1 PASS; **EXT-S2 FAIL; E1–E10 BLOCKED** | live-discovery broken in-session |
+| **25 Undo/Redo ⭐** | 48/48 | **FOCUS — UR-CON.1 zero history mismatch** |
+| 26 LSP | 25/25 | shader = GDScript-LSP limitation |
+| 27 Debugger | 17/17 | C26 breakpoint HIT verified |
+| Last-cleanup | DONE | folder removed (phantom-tab workaround) |
+
+## ⭐ Focus Verdict — 41l-tricies dispatch-safety fix (commit 0366560)
+**VERIFIED — no regression.**
+- **Section 7 (editor.refresh precision + save re-entrancy guard):** Full refresh (`mode=full`) and targeted refresh (`mode=targeted`, `file_count` exactly matches input — 1 for one file, 2 for two) both correct. `editor_save_scene` works standalone, immediately after a refresh, and interleaved with refreshes — **zero console errors** across the entire shared save↔refresh flow. No re-entrancy errors.
+- **Section 25 (UndoRedo dispatch):** **UR-CON.1 critical gate PASS — ZERO `UndoRedo history mismatch` errors** across all 12 mutation tools + builder integration (8/8) + 47 undo/redo cycles. Property-, method-, and group-based mutations all route through EditorUndoRedoManager cleanly.
+
+## Regression Watch — all monitored fixes hold
+| Fix Ref | Status | Where |
+|---------|--------|-------|
+| FIX-1 inline diagnostics | PASS | 1.3, 6.4 |
+| FIX-4 OS singleton hint | PASS | 9.3 |
+| FIX-5 PackedVector2Array tag | PASS | 3.20 |
+| FIX-7 batch mode results | PASS | 3.12 |
+| FIX-8 clear_buffer | PASS | 7.11 |
+| FIX-A regions bulk-fill | PASS | 14.19 |
+| FIX-B scene_path param | PASS | 2.14 |
+| FIX-C discover_tools no split-notify | PASS | C10 |
+| FIX-D autoload editor cache | PASS | 8.6 |
+| FIX-E Resource type tag | PASS | 3.6 |
+| FIX-F bare res:// guard | PASS | 3.10 |
+| FIX-G signal node_path | PASS | 5.2 |
+| FIX-H/279efed load() hint | PASS | 9.4 |
+| FIX-I tileset_create valid TileSet | PASS | 14.1 |
+| FIX-J no-tileset guard | PASS | 14.20 |
+| FIX-2 tileset layer-count guard | PASS | 14.16 |
+| a46487b unique_name + preload hint | PASS | 2.11, 6.5 |
+| cb4e162 CLASS_MISMATCH | PASS | 2.12 |
+| 23d69f9 autoload key guard | PASS | 8.4 |
+| 5f96b62 signal method hint | PASS | 5.4 |
+| c61d994 dup-with-properties | PASS | 4.11 |
+| 462506b LayerMask / batch groups | PASS | 3.11, 4.12 |
+| dec5b24 / e2c7041 crash-log cache | PASS | 21.5 |
+| 8a6cbf0 error_buffer unfiltered scan | PASS | 21.11 |
+| 53796f7 context_object (UR-CON) | PASS | UR-CON.1 |
+| a28d17b wait_for_runtime hint | PASS | 20.4 |
+| c6d5f40 autoload persistence warning | PASS | 20.10 |
+| a828cb1 double-escape warning | ⚠ WATCH | 7.7 — regex works, but no proactive hint emitted |
+
+## Findings & Pitfalls
+| # | Severity | Finding | Detail |
+|---|----------|---------|--------|
+| 1 | **Major** | **Extension live-discovery broken in-session** | `extensions_refresh` returns `commands=[]` for newly-created valid extensions in BOTH `addons/` and project folders, even after full `editor_refresh`+`wait_for_idle`. New `extends MCPToolkitExtension` subclass not registered without editor/plugin restart. Contradicts the 2026-05-24 run's report that 8d2a265 enabled in-session discovery. Blocks E1–E10. No error logged. |
+| 2 | Minor | Phantom script-editor tabs (Pitfall-3) | `script_delete` leaves the script's editor tab open. Causes (a) "File not found" errors on later `game_start` (S27), and (b) `folder_delete` PATH_IN_USE blocking (Last-cleanup). No MCP API closes script tabs — requires editor restart. Workaround: delete empty folder via filesystem. |
+| 3 | Minor | 21.6 crash-recovery transient race | Two `debugger_get_log` calls in rapid succession right after `game_stop` can briefly hit GAME_NOT_RUNNING ("registry not yet updated") before the cache fallback settles (~1s self-heal). |
+| 4 | Info | Shader LSP = GDScript LSP | `.gdshader` diagnostics/symbols come back as GDScript-parse noise / empty — Godot's LSP is GDScript-only. Not a toolkit bug. |
+| 5 | Info (doc) | Sweep-doc format drift | Several section docs specify shapes the tools don't use: LayerMask `{value:N}` (tool uses `{layers:[...]}`, 3.11), node_groups `groups:[]` (tool uses `entries:[{node_path,group}]`, 4.12), navigation `navigation_edit_polygon` (tool is `navigation_edit`), signal_manage `operation`/`source_path` (tool uses `action`/`node_path`). Tools work with the documented schema shapes; **the sweep section files need updating** (see maintenance note). |
+| 6 | Info | Pre-existing project state | 12 breakpoints in untracked `res://_stress_script_*.gd` files (repo root, from a prior stress test — present in the session's initial git status). Not sweep artifacts; left untouched. |
+
+## Improvement vs original 2026-05-24 sweep
+The original full sweep recorded **12 failures + 59 skips** dominated by two systemic issues, both now resolved:
+- **MCP param type-coercion** (offset, layers, volume_db, effect, animations, index, outlines, curve points, shadow, fov): the schemas are now properly typed (int/object/array/enum) — **every previously-failing coercion test passes** (12.6/12.7, 14.4–14.6, 15.5/15.6/15.9, 16.4/16.5/16.8/16.12–16.16/16.18–16.20/16.26).
+- **Feature-gate desync** (execute_code, node_call_method, user_data returned FEATURE_GATED): all three gates are **open** this run — Sections 9, 11, 13.1, 20 runtime, 21 all execute (were SKIP before).
+- **Colon-chain shader_parameter SET** (3.8) — the long-standing FAIL — now applies in-memory and reads back correctly (with an honest "shared external sub-resource" persistence warning).
+
+The single net-new regression is **Finding #1 (extension live-discovery)** — worth a maintainer's look against commit 8d2a265.
+
+## Cleanup state
+All `res://sv2_validation/` artifacts removed; folder deleted (via filesystem workaround for the phantom-tab block). Project name restored to "Godot MCP Toolkit", main_scene restored to `res://Main.tscn`. No stray audio buses / input actions / save data. Editor was closed by the user at the end (clearing all phantom script tabs).

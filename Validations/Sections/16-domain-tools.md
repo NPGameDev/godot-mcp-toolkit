@@ -1,7 +1,7 @@
 # Section 16 — 3D, Path2D, Navigation, Particles, Procedural
 
 **Dependencies:** Section 2 (Sv2Path, Sv2NavRegion exist in main.tscn)
-**Tools tested:** 3d_create_primitive, 3d_setup_environment, 3d_create_light, 3d_create_camera, path2d_edit_curve, navigation_edit_polygon, particles_create, procedural_edit_gradient, procedural_edit_curve, procedural_edit_noise
+**Tools tested:** 3d_create_primitive, 3d_setup_environment, 3d_create_light, 3d_create_camera, path2d_edit_curve, navigation_edit, particles_create, procedural_edit_gradient, procedural_edit_curve, procedural_edit_noise
 **Tests:** 28
 
 ---
@@ -45,19 +45,19 @@
 
 ## Navigation (5 tests)
 
-**16.12** `navigation_edit_polygon` — action=`set`, node_path=`Sv2NavRegion`, outlines=`[[{x:0,y:0},{x:800,y:0},{x:800,y:600},{x:0,y:600}]]`
+**16.12** `navigation_edit` — action=`set`, node_path=`Sv2NavRegion`, outlines=`[[{x:0,y:0},{x:800,y:0},{x:800,y:600},{x:0,y:600}]]`
 - **Expect:** success, outline_count=1
 
-**16.13** `navigation_edit_polygon` — action=`add_outline`, node_path=`Sv2NavRegion`, outline=[{x:200,y:200},{x:400,y:200},{x:400,y:400},{x:200,y:400}]
+**16.13** `navigation_edit` — action=`add_outline`, node_path=`Sv2NavRegion`, outline=[{x:200,y:200},{x:400,y:200},{x:400,y:400},{x:200,y:400}]
 - **Expect:** success, outline_count=2
 
-**16.14** `navigation_edit_polygon` — action=`bake`, node_path=`Sv2NavRegion`
+**16.14** `navigation_edit` — action=`bake`, node_path=`Sv2NavRegion`
 - **Expect:** success, polygon_count > 0
 
-**16.15** `navigation_edit_polygon` — action=`remove_outline`, node_path=`Sv2NavRegion`, index=1
+**16.15** `navigation_edit` — action=`remove_outline`, node_path=`Sv2NavRegion`, index=1
 - **Expect:** success, outline_count=1
 
-**16.16** `navigation_edit_polygon` guard — node_path=`.`
+**16.16** `navigation_edit` guard — node_path=`.`
 - **Expect:** INVALID_CLASS (scene root is Node2D, not NavigationRegion2D)
 
 ## Particles (7 tests)

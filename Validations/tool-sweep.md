@@ -73,6 +73,54 @@ Every section ends with a `## Console error check` block. The full procedure is 
 
 In Claude Code, `ToolSearch` may not return newly-activated tools due to the deferred-tools cache. **This does NOT mean the tools can't be called.** The MCP tools are available on the server side immediately after `discover_tools` activates them — just call them directly by name. Do not treat a missing ToolSearch result as a failure. Only record FAIL if the actual tool call returns "method not found" from the MCP server.
 
+### Batching & Efficiency (learned 2026-06-07 full run)
+
+The biggest speed-up: **the Godot editor processes MCP commands serially on its
+main thread, in arrival order, and preserves order within a single batch.**
+So you do NOT need to split dependent operations across messages.
+
+- **Batch aggressively.** Put a whole chain in one message — e.g.
+  `create → set_property → get_property(verify) → save → open main → delete`,
+  or all of a section's independent reads/guards at once. Earlier writes are
+  visible to later calls in the same batch (confirmed: tilemap `set_cells` then
+  `regions` reports `cells_unchanged:1`; tileset edits accumulate). Splitting
+  one-op-per-message (the slow way) is unnecessary; reserve a separate message
+  only when you must read a result to decide the *next* call.
+- **Tool schemas: "required" is often not enforced, enums are.** Many tools
+  list ~all params as `required` but accept minimal calls (e.g. `particles_create`
+  works with just `parent_path`+`type`+`preset`). Conversely some need filler:
+  single-mode `node_set_property` wants `make_unique:false, batch:[]`;
+  `control_set_layout` wants `margins:{}`; `node_manage` wants `new_index:0,
+  properties:{}`. Invalid enum values ARE rejected server-side (-32602) — use
+  that for "invalid option" guard tests (preset, category, noise_type, type).
+- **Group management:** swap in one call — `discover_tools(request:[new...],
+  reset:[old...])`. Keep `cleanup` + `resource_io` active across the whole run;
+  re-activate `editor_advanced` whenever you need `editor_refresh`. After
+  `script_write`, the file is `indexed:true` immediately — no refresh needed
+  before `script_check`/LSP on that file (LSP cross-file resolution may still
+  want a targeted `editor_refresh`).
+- **Console isolation, 2 calls/section:** `editor_get_console(clear_buffer:true)`
+  at section start; a plain read at section end (scan for `UndoRedo history
+  mismatch`). The next section's setup-clear doubles as teardown.
+- **Param-shape drift to fix in the section files** (tools work, docs are stale):
+  LayerMask is `{type:LayerMask, layers:[1,3]}` not `{value:5}` (S3.11);
+  `node_groups` batch is `entries:[{node_path,group}]` not `groups:[]` (S4);
+  the nav tool is `navigation_edit` not `navigation_edit_polygon` (S16);
+  `signal_manage` uses `action`/`node_path` not `operation`/`source_path` (S5);
+  `audiobus_edit`/`spriteframes_edit` require filler params for non-applicable
+  fields. Section files should be aligned to the live schemas.
+- **Section 24 (extensions) needs an editor restart.** `extensions_refresh` does
+  NOT pick up a newly-created extension in-session (verified in both `addons/`
+  and project folders, even after full refresh). To validate E1–E10, restart the
+  editor (or disable/re-enable the plugin) between writing the extension and
+  refreshing — otherwise expect `commands:[]` and mark E1–E10 BLOCKED.
+- **Last-cleanup: phantom script tabs block `folder_delete`.** `script_delete`
+  doesn't close the script-editor tab, so `folder_delete` on the parent reports
+  `PATH_IN_USE`. Delete files individually first, then remove the now-empty
+  `sv2_validation/` directory from the filesystem (or restart the editor to drop
+  the tabs). Phantom tabs also cause harmless "File not found" console errors on
+  later `game_start`.
+
 ## Section Map
 
 | # | File | Title | Tests | Tools Covered | Dependencies |
