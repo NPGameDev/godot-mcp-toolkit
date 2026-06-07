@@ -195,13 +195,39 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	## Uses scan() (not scan_sources()) so NEW files are discovered —
 	## scan_sources() only re-checks already-known resources.
 	var efs := EditorInterface.get_resource_filesystem()
+
+	# Arm the global-class-flush barrier BEFORE scanning. is_scanning() alone is
+	# NOT a safe barrier: EditorFileSystem clears `scanning` on its worker thread at
+	# the END of the FS walk — BEFORE the main thread flushes the global class list
+	# (store_global_class_list, inside _update_script_classes) and emits
+	# script_classes_updated. A rescan gated only on is_scanning() therefore diffs a
+	# STALE ProjectSettings.get_global_class_list() and misses NEW class_names — the
+	# extensions_refresh "commands:[]" regression (41l-tricies-ter). The signal is
+	# bound 4.2–4.6; has_signal() keeps the connect version-safe regardless.
+	var classes_flushed := [false]
+	var on_flush := func() -> void:
+		classes_flushed[0] = true
+	var has_flush_signal := efs.has_signal("script_classes_updated")
+	if has_flush_signal:
+		efs.script_classes_updated.connect(on_flush)
+
 	efs.scan()
-	# Wait for the full scan to complete (check is_scanning with a timeout
-	# rather than a fixed timer — scan() may take longer than 1s for large
-	# projects but finishes in <100ms for small ones).
-	var deadline := Time.get_ticks_msec() + 5000
-	while efs.is_scanning() and Time.get_ticks_msec() < deadline:
-		await _server.get_tree().create_timer(0.1).timeout
+	# Phase 1 — wait out the FS walk via the canonical scan-idle guard (honors the
+	# configurable scan_idle_timeout_ms; 41l-tricies convention). Proceed regardless
+	# of the bool result, matching the prior best-effort behavior.
+	await MCPToolkitSafeSceneOps.wait_for_scan_idle()
+	# Phase 2 — wait for the main-thread class-list flush, bounded. A no-change scan
+	# never emits script_classes_updated, so settle briefly then proceed rather than
+	# hang; when a class WAS (un)registered the flush fires within a frame or two of
+	# the walk finishing, so this resolves fast. The flag (armed pre-scan) also
+	# captures a flush that already fired during Phase 1.
+	if has_flush_signal:
+		var settle := Time.get_ticks_msec() + 750
+		while not classes_flushed[0] and Time.get_ticks_msec() < settle:
+			await _server.get_tree().create_timer(0.05).timeout
+		if efs.script_classes_updated.is_connected(on_flush):
+			efs.script_classes_updated.disconnect(on_flush)
+
 	# Run rescan on the now-fresh class list (bypass debounce).
 	_debounce_pending = false
 	_do_rescan()
