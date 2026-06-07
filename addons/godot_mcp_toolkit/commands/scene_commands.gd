@@ -356,13 +356,26 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 	if existing != null:
 		var class_match := false
 		var existing_script := existing.get_script() as Script
+		var existing_global_name := ""
+		if existing_script != null:
+			if existing_script.has_method("get_global_name"):
+				# 4.3+: script-direct, authoritative and current -- the same value the
+				# old static call returned (dynamic dispatch so 4.2 never resolves it).
+				existing_global_name = str(existing_script.call("get_global_name"))
+			else:
+				# 4.2: get_global_name is an unbound virtual -- invisible to GDScript.
+				# Reverse-lookup the class list by resource_path (4.2-safe; also C#).
+				for entry in ProjectSettings.get_global_class_list():
+					if str(entry.get("path", "")) == existing_script.resource_path:
+						existing_global_name = str(entry.get("class", ""))
+						break
 		if resolved_kind == "native":
 			class_match = existing.is_class(class_name_param)
 		elif existing_script != null:
-			class_match = existing_script.get_global_name() == class_name_param
+			class_match = existing_global_name == class_name_param
 		if class_match:
 			return MCPToolkitSuccess.ok({"status": "returned", "path": _path_in_scene(root, existing)})
-		var actual := existing_script.get_global_name() if existing_script != null and existing_script.get_global_name() != "" else existing.get_class()
+		var actual := existing_global_name if existing_global_name != "" else existing.get_class()
 		return MCPToolkitError.fail("CLASS_MISMATCH",
 			"node '%s' already exists under '%s' as %s, not %s; rename or remove it first" % [
 				requested_name, _path_in_scene(root, parent_node), actual, class_name_param])
