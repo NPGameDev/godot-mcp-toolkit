@@ -149,7 +149,7 @@ return {"success": false, "error": "Human-readable message", "code": "ERROR_CODE
 ```
 
 **Canonical error codes:** `NOT_FOUND`, `INVALID_PARAM`, `FORBIDDEN`,
-`INTERNAL_ERROR`, `TIMEOUT`, `UNSUPPORTED`.
+`INTERNAL_ERROR`, `TIMEOUT`, `UNSUPPORTED`, `HEADLESS_UNSUPPORTED`.
 
 You can also use the toolkit's `McpError` helper if you preload the hub:
 
@@ -374,6 +374,35 @@ unnecessary queueing when the scene tab is contended by another session.
 
 In single-session usage (the common case), both mechanisms are no-ops.
 
+## Headless compatibility
+
+Extensions are discovered and run identically whether the editor is normal or
+headless (`godot --headless --editor`, used for CI/automation) — reflection
+needs no display. Most tools work headless unchanged: file, scene-tree, node,
+resource, `ClassDB`, and project-settings operations all function (the headless
+editor has a full `SceneTree` and `EditorInterface`).
+
+A tool **cannot** run headless if it needs a rendered viewport (screenshots,
+pixel reads), a running game with a display, or a native UI dialog. Several of
+these fail **silently** — a viewport capture returns a blank image, not an
+error. Guard such tools so the failure is explicit:
+
+```gdscript
+func _capture(params: Dictionary) -> Dictionary:
+    if DisplayServer.get_name() == "headless":
+        return {"success": false, "code": "HEADLESS_UNSUPPORTED",
+            "error": "This tool needs a rendered viewport; run the editor with a display."}
+    # ... capture logic ...
+    return {"success": true, "data": image_data}
+```
+
+C# uses the same check via `DisplayServer.GetName() == "headless"`.
+
+**Only guard when the failure would be silent.** Tools that already error
+loudly headless (e.g. depending on a game process that can't launch) don't need
+it. The built-in tools follow this — only the viewport-dependent screenshot
+tools carry an explicit headless guard.
+
 ## Common pitfalls
 
 | Symptom | Cause | Fix |
@@ -389,3 +418,4 @@ In single-session usage (the common case), both mechanisms are no-ops.
 | Hot-reload not detecting changes | Editor not focused after external edit | Alt-tab to editor or call `extensions.refresh` |
 | New tool not in Claude Code list | Client caches deferred tools | Run `/mcp` reconnect in Claude Code |
 | Grouped tool uncallable after `discover_tools` | `claude -p` (pipe mode) does not process `tools/list_changed` | Use interactive `claude` or Power User profile (`GODOT_MCP_PROFILE=full`) |
+| Tool returns a blank image or junk data when headless | Needs a rendered viewport, running game, or native UI | Guard with `DisplayServer.get_name() == "headless"` → return `HEADLESS_UNSUPPORTED` |

@@ -601,6 +601,40 @@ Common scenarios where this applies:
 - Polling for a process or service to become ready
 - Any loop that needs to pause between iterations
 
+### Headless compatibility
+
+Your extension is discovered and registered identically whether the editor runs
+normally or headless (`godot --headless --editor`, used for CI and automated
+runs) — reflection discovery needs no display. Most tools work unchanged
+headless: file, scene-tree, node, resource, `ClassDB`, and project-settings
+operations all function, because the headless editor still has a full
+`SceneTree` and `EditorInterface`.
+
+A tool **cannot** work headless if it needs a rendered viewport (screenshots,
+pixel reads via `get_viewport().get_texture()`), a running game with a display,
+or a native UI dialog. The trap is that several of these fail **silently** — a
+viewport capture returns a blank image rather than an error — so the caller
+can't tell the result is junk. Guard those tools explicitly:
+
+```gdscript
+func _screenshot_bodies(params: Dictionary) -> Dictionary:
+	if DisplayServer.get_name() == "headless":
+		return MCPToolkitError.fail("HEADLESS_UNSUPPORTED",
+			"physics.screenshot_bodies needs a rendered viewport.",
+			"Run the editor with a display (omit --headless) to use this tool.")
+	# ... capture logic ...
+	return MCPToolkitSuccess.ok({"data": image_data})
+```
+
+C# handlers use the same check via `DisplayServer.GetName() == "headless"`,
+returning the error with `registry.Call("fail", "HEADLESS_UNSUPPORTED", ...)`.
+
+**Rule of thumb:** add this guard only when the tool would otherwise return
+*silent* junk. Tools that already fail loudly headless — e.g. a handler that
+depends on a game process that can't launch — don't need it; the natural error
+is clear enough. This mirrors the built-in tools, where only the
+viewport-dependent screenshot tools carry an explicit headless guard.
+
 ### Discovery rules
 
 Extensions are discovered via `ProjectSettings.get_global_class_list()` at
