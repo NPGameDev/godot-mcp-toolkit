@@ -5,6 +5,18 @@
 **Tests:** 9+
 **Note:** This section creates its own test extensions — no pre-existing extensions required.
 
+> **⚠️ Discovery requirement — a GDScript extension MUST declare an explicit `class_name`.**
+> Extension discovery scans `ProjectSettings.get_global_class_list()`, which contains
+> **only** scripts that declare an explicit `class_name`. A bare
+> `extends MCPToolkitExtension` with no `class_name` is **never** discovered —
+> `extensions.refresh` returns `commands=[]` for it no matter how many times you call
+> it (it is not a registration bug; the script simply is not a global class). Every
+> test script below therefore declares a `class_name` (it can be any unique name —
+> discovery is by base class, not by the name). If a discovery step unexpectedly
+> returns `commands=[]`, first confirm the script has a `class_name` before suspecting
+> the tool. **C# extensions use a different marker** — a `MCPToolkit`-prefixed
+> `[GlobalClass]` — see Section 23 / CS14.
+
 ---
 
 ## EXT-Setup: Create test extension
@@ -12,6 +24,7 @@
 **EXT-S1.** `script_write` — file_path=`res://sv2_validation/sv2_test_extension.gd`, content:
 ```gdscript
 @tool
+class_name Sv2TestExtension
 extends MCPToolkitExtension
 
 func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -79,7 +92,7 @@ Call `extensions.refresh` again (no changes made).
 ## E5. Hot-reload (add/modify/remove)
 
 **Modify:**
-1. `script_write` — rewrite `res://sv2_validation/sv2_test_extension.gd` adding a third tool (`sv2_ext.multiply`)
+1. `script_write` — rewrite `res://sv2_validation/sv2_test_extension.gd` adding a third tool (`sv2_ext.multiply`) — **keep the `@tool` / `class_name Sv2TestExtension` / `extends MCPToolkitExtension` header**, or discovery breaks
 2. `extensions.refresh`
 3. Verify `sv2_ext.multiply` appears alongside `sv2_ext.hello` and `sv2_ext.add`
 4. Call `sv2_ext.multiply` — **Expect:** valid result
@@ -92,7 +105,7 @@ Call `extensions.refresh` again (no changes made).
 
 ## E6. Extension keywords for discover_tools
 
-1. `script_write` — recreate extension with `"keywords": ["math", "arithmetic"]` in the group dict
+1. `script_write` — recreate extension (keeping the `class_name Sv2TestExtension` header) with `"keywords": ["math", "arithmetic"]` in the group dict
 2. `extensions.refresh`
 3. `discover_tools` request=`"math"` — **Expect:** sv2_test_group in results
 4. `discover_tools` request=`"unrelated_xyz"` — **Expect:** sv2_test_group NOT in results
@@ -109,6 +122,7 @@ Call `extensions.refresh` again (no changes made).
 1. `script_write` — file_path=`res://sv2_validation/sv2_ext_annotated.gd`, content:
 ```gdscript
 @tool
+class_name Sv2ExtAnnotated
 extends MCPToolkitExtension
 
 func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -139,6 +153,7 @@ func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 1. `script_write` — file_path=`res://sv2_validation/sv2_ext_versioned.gd`, content:
 ```gdscript
 @tool
+class_name Sv2ExtVersioned
 extends MCPToolkitExtension
 
 func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -171,6 +186,7 @@ func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 1. `script_write` — file_path=`res://sv2_validation/sv2_ext_hints.gd`, content:
 ```gdscript
 @tool
+class_name Sv2ExtHints
 extends MCPToolkitExtension
 
 func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:

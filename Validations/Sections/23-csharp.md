@@ -192,6 +192,16 @@ These tests exercise core tools specifically against C# nodes in the scene, catc
 
 Tests the C# extension pattern: `[Tool][GlobalClass]` on a `RefCounted` subclass with class name prefixed `MCPToolkit`.
 
+> **⚠️ Discovery requirement — the `MCPToolkit` class-name prefix is REQUIRED for C#.**
+> C# classes cannot extend the GDScript `MCPToolkitExtension` base, so the loader
+> identifies a C# extension by a **`[GlobalClass]` whose class name begins with
+> `MCPToolkit`** (plus a `Register` method). A `[GlobalClass]` *without* the prefix —
+> or a `MCPToolkit`-prefixed class that is *not* `[GlobalClass]` — is **never**
+> discovered, and `extensions.refresh` returns `commands=[]` for it (not a registration
+> bug — it fails the discovery marker). The class below (`MCPToolkitSv2CsExt`) is named
+> accordingly. (GDScript uses the base class + an explicit `class_name` of any name
+> instead; see Section 24.)
+
 **CS14.1** `script_write` — file_path=`res://sv2_validation/MCPToolkitSv2CsExt.cs`, content:
 ```csharp
 using Godot;
