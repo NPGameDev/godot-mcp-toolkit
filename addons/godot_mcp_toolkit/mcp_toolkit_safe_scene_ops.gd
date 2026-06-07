@@ -63,6 +63,16 @@ static func save_scene(path := "") -> Dictionary:
 			+ "be indexing — call editor_wait_for_idle or retry")
 	# Escape the call_deferred/flush context before the ProgressDialog.
 	await (Engine.get_main_loop() as SceneTree).process_frame
+	# C1 re-entrancy guard — checked HERE, after the frame yield: an
+	# EditorInterface.save_scene() already in flight pumps Main::iteration(), whose
+	# process_frame emission can RESUME this coroutine mid-pump. If another save
+	# holds the synchronous window (_in_dispatch), opening a second
+	# EditorProgress("save") would error ("Task 'save' already exists") + run a
+	# redundant nested save — so bail cleanly. No await between this check and the
+	# set below, so it stays atomic in single-threaded GDScript. (41l-tricies)
+	if _in_dispatch:
+		return MCPToolkitError.fail("BUSY",
+			"a scene save is already in progress — retry once it completes")
 	# --- C1 synchronous danger window: NO awaits between set and clear ---
 	_in_dispatch = true
 	var save_error := OK

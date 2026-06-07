@@ -8,6 +8,7 @@ extends SceneTree
 ## are unreliable (Windows Godot).
 
 const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/mcp_toolkit_safe_scene_ops.gd")
+const EditorCommands := preload("res://addons/godot_mcp_toolkit/commands/editor_commands.gd")
 
 var _passed := 0
 var _failed := 0
@@ -39,6 +40,7 @@ func _init() -> void:
 	_test_undo_redo_action()
 	_test_error_api()
 	_test_export_strip()
+	_test_editor_refresh_reload_filter()
 	await _test_response_validation()
 
 	_report()
@@ -853,6 +855,34 @@ func _test_export_strip() -> void:
 	_ok(not strip.has("res://f/fakechild.gd"),
 			"subclass of coincidentally-named MCPToolkit* class → not stripped")
 
+	print("")
+
+
+# --- editor.refresh reload filter (Fix, 41l-tricies) -----------------------
+# should_reload_open_script: reload only scan-changed, non-toolkit open scripts.
+# Pins the fix against a regression back to "reload all open scripts" (which
+# cancels suspended coroutines → the C1/C3 crash class).
+
+func _test_editor_refresh_reload_filter() -> void:
+	_begin("editor.refresh reload filter")
+	var changed := {
+		"res://game/player.gd": true,
+		"res://addons/godot_mcp_toolkit/commands/scene_commands.gd": true,
+	}
+	# 1. changed user script → reload
+	_ok(EditorCommands.should_reload_open_script("res://game/player.gd", changed),
+			"changed user script → reload")
+	# 2. unchanged user script → skip
+	_ok(not EditorCommands.should_reload_open_script("res://game/enemy.gd", changed),
+			"unchanged user script → skip")
+	# 3. toolkit's own script, even if scan-changed → skip (never self-reload)
+	_ok(not EditorCommands.should_reload_open_script(
+			"res://addons/godot_mcp_toolkit/commands/scene_commands.gd", changed),
+			"toolkit-own changed script → skip (never self-reload)")
+	# 4. unchanged toolkit script → skip
+	_ok(not EditorCommands.should_reload_open_script(
+			"res://addons/godot_mcp_toolkit/mcp_server.gd", changed),
+			"unchanged toolkit script → skip")
 	print("")
 
 

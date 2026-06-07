@@ -213,6 +213,14 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 	return MCPToolkitSuccess.ok(response)
 
 
+## Whether an open script should be reloaded after a full editor.refresh scan:
+## only scripts the scan actually changed, and NEVER the toolkit's own (reloading
+## an unchanged or toolkit-own script would cancel a suspended coroutine — the
+## C1/C3 crash class; 41l-tricies). Pure logic so it can be unit-tested.
+static func should_reload_open_script(resource_path: String, changed: Dictionary) -> bool:
+	return changed.has(resource_path) and not resource_path.begins_with("res://addons/godot_mcp_toolkit/")
+
+
 static func _cmd_editor_refresh(parameters: Dictionary) -> Dictionary:
 	# Flush stale errors before reload — fresh parse errors will be captured
 	# with new IDs so editor_get_console returns only current-state errors.
@@ -245,21 +253,38 @@ static func _cmd_editor_refresh(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitSuccess.ok({"mode": "targeted", "file_count": paths.size(),
 			"reloaded": reloaded, "errors_cleared": errors_cleared})
 
-	# Full mode: scan() + reload all open scripts.
+	# Full mode: scan(), then reload ONLY the scripts the scan actually changed
+	# (captured via the resources_reload signal — present in all of 4.2-4.6), and
+	# only if they're open. NEVER reload an unchanged script: reload(true) cancels
+	# any suspended coroutine in it, which would break the user's @tool plugins and
+	# (for the toolkit's own scripts) leak the mutation dispatch lock (C3 root cause;
+	# 41l-tricies). The toolkit's own scripts are skipped even when changed.
+	var changed := {}
+	var collector := func(resources: PackedStringArray) -> void:
+		for r in resources:
+			changed[str(r)] = true
 	if filesystem != null:
+		filesystem.resources_reload.connect(collector)
 		filesystem.scan()
 		var scan_start := Time.get_ticks_msec()
 		var scan_deadline := scan_start + 5000
 		while filesystem.is_scanning() and Time.get_ticks_msec() < scan_deadline:
 			await Engine.get_main_loop().create_timer(0.1).timeout
 		scan_waited_ms = Time.get_ticks_msec() - scan_start
+		if filesystem.resources_reload.is_connected(collector):
+			filesystem.resources_reload.disconnect(collector)
 	var reloaded := 0
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor != null:
 		for open_script in script_editor.get_open_scripts():
-			if open_script is Script:
-				open_script.reload(true)
-				reloaded += 1
+			if not (open_script is Script):
+				continue
+			# Reload ONLY scan-changed, non-toolkit open scripts (see
+			# should_reload_open_script — never cancel an unchanged/own coroutine).
+			if not should_reload_open_script(str(open_script.resource_path), changed):
+				continue
+			open_script.reload(true)
+			reloaded += 1
 	return MCPToolkitSuccess.ok({"mode": "full", "reloaded": reloaded,
 		"scan_waited_ms": scan_waited_ms, "errors_cleared": errors_cleared})
 
