@@ -5,17 +5,20 @@
 **Tests:** 9+
 **Note:** This section creates its own test extensions — no pre-existing extensions required.
 
-> **⚠️ Discovery requirement — a GDScript extension MUST declare an explicit `class_name`.**
-> Extension discovery scans `ProjectSettings.get_global_class_list()`, which contains
-> **only** scripts that declare an explicit `class_name`. A bare
-> `extends MCPToolkitExtension` with no `class_name` is **never** discovered —
-> `extensions.refresh` returns `commands=[]` for it no matter how many times you call
-> it (it is not a registration bug; the script simply is not a global class). Every
-> test script below therefore declares a `class_name` (it can be any unique name —
+> **⚠️ Discovery requirement — a GDScript extension MUST have BOTH (1) `extends
+> MCPToolkitExtension` (directly) AND (2) an explicit `class_name`.** Missing *either*
+> one means the script is **never** discovered — `extensions.refresh` returns
+> `commands=[]` for it no matter how many times you call it (it is **not** a
+> registration bug). Why both: discovery scans `ProjectSettings.get_global_class_list()`
+> (which lists **only** scripts that declare a `class_name`) and then filters by
+> **immediate base class** (`MCPToolkitExtension`). So a script that omits the
+> `extends` line, extends it only **indirectly** (two+ levels deep), or omits the
+> `class_name`, is silently skipped. Every test script below therefore has BOTH the
+> `extends MCPToolkitExtension` line AND a `class_name` (the name can be anything —
 > discovery is by base class, not by the name). If a discovery step unexpectedly
-> returns `commands=[]`, first confirm the script has a `class_name` before suspecting
-> the tool. **C# extensions use a different marker** — a `MCPToolkit`-prefixed
-> `[GlobalClass]` — see Section 23 / CS14.
+> returns `commands=[]`, first confirm the script has BOTH before suspecting the tool.
+> **C# extensions use a different marker** — a `MCPToolkit`-prefixed `[GlobalClass]`
+> with a `Register()` method — see Section 23 / CS14.
 
 ---
 
@@ -94,8 +97,17 @@ Call `extensions.refresh` again (no changes made).
 **Modify:**
 1. `script_write` — rewrite `res://sv2_validation/sv2_test_extension.gd` adding a third tool (`sv2_ext.multiply`) — **keep the `@tool` / `class_name Sv2TestExtension` / `extends MCPToolkitExtension` header**, or discovery breaks
 2. `extensions.refresh`
-3. Verify `sv2_ext.multiply` appears alongside `sv2_ext.hello` and `sv2_ext.add`
-4. Call `sv2_ext.multiply` — **Expect:** valid result
+3. **Version-specific expectation (this is the 4.2  vs 4.3+ discrepancy):**
+   - **Godot 4.3+:** `sv2_ext.multiply` appears alongside `sv2_ext.hello` and
+     `sv2_ext.add` (the edit is applied live). Then call `sv2_ext.multiply` —
+     **Expect:** valid result.
+   - **Godot 4.2:** `sv2_ext.multiply` does **NOT** appear — in-session edits to an
+     *existing* extension are not applied on 4.2 (engine reimport-crash avoidance via
+     `CACHE_MODE_REUSE`; see `COMPATIBILITY.md` / `extending.md`). Instead the
+     `extensions.refresh` response includes a `hint` that names `Sv2TestExtension` and
+     tells you to restart the editor (a `push_warning` also appears in the editor's
+     Output panel). **Expect:** multiply absent **AND** the restart hint present. Do
+     not restart mid-sweep. Adding (EXT-S2) and removing (below) still work live on 4.2.
 
 **Remove:**
 1. `script_delete` — `res://sv2_validation/sv2_test_extension.gd`

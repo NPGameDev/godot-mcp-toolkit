@@ -37,6 +37,16 @@ var _class_metadata: Dictionary = {}        # class_name_str -> Dictionary (meth
 var _failed_classes: Dictionary = {}        # class_name_str -> true (failed validation, retry on scan)
 var _debounce_pending := false
 
+# class_name_str -> hash of the extension's source file at the moment it was last
+# loaded into the live registry. Used ONLY on Godot 4.2 to detect an in-session
+# edit to an existing extension that the 4.2 cache path (CACHE_MODE_REUSE) cannot
+# apply live, so extensions.refresh can nudge the caller to restart the editor.
+var _class_source_fingerprint: Dictionary = {}
+# class_name_str -> script_path for extensions whose source changed on disk but
+# could not be re-applied in-session on Godot 4.2 (restart needed). Drained by
+# _cmd_refresh into a response hint.
+var _pending_restart_modifies: Dictionary = {}
+
 
 static func load_all(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	var loader := new()
@@ -110,6 +120,42 @@ static func _is_addon_enabled(script_path: String) -> bool:
 	return EditorInterface.is_plugin_enabled(addon_name)
 
 
+## True on Godot 4.2.x ONLY. The 4.2 editor natively crashes when a brand-new or
+## just-modified @tool extension is (re)loaded in-session via a fresh
+## CACHE_MODE_IGNORE load while EditorFileSystem is still reimporting it: IGNORE forces
+## a second, unregistered, SYNCHRONOUS parallel load (resource_loader.cpp:478-479)
+## that collides with the editor's own reimport during global-class registration
+## (engine bugs godot#95527 / #58883 / #59669). 4.3+ handles this cleanly. The match
+## is explicit major.minor equality so a future 5.2 is NOT caught and all 4.2.x patch
+## releases ARE.
+static func _is_godot_42() -> bool:
+	return _Hub.VersionUtils.get_engine_version_pair() == "4.2"
+
+
+## Cache mode for loading extension scripts. 4.2 uses CACHE_MODE_REUSE, which returns
+## the editor's existing (or in-flight) resource instead of spawning the crash-prone
+## duplicate synchronous load — the trade-off is that an in-session EDIT to an existing
+## extension is not reflected until restart (a cached read; surfaced as a nudge). 4.3+
+## keeps CACHE_MODE_IGNORE: a guaranteed-fresh read (reliable live modify-detection),
+## proven crash-free.
+static func _extension_cache_mode() -> int:
+	return ResourceLoader.CACHE_MODE_REUSE if _is_godot_42() else ResourceLoader.CACHE_MODE_IGNORE
+
+
+## Hash of an extension's source file, or 0 if unreadable. A plain text read — no
+## script instantiation — so it is safe to call mid-reimport on 4.2. Used to detect
+## an in-session edit the 4.2 cache path cannot apply live.
+static func _hash_extension_source(script_path: String) -> int:
+	if not FileAccess.file_exists(script_path):
+		return 0
+	var f := FileAccess.open(script_path, FileAccess.READ)
+	if f == null:
+		return 0
+	var text := f.get_as_text()
+	f.close()
+	return text.hash()
+
+
 func _discover_and_register(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	var classes: Array = ProjectSettings.get_global_class_list()
 	var loaded := 0
@@ -144,12 +190,16 @@ func _rebuild_class_methods_map() -> void:
 	## incrementally in _load_extension_tracked().
 	_class_methods.clear()
 	_class_metadata.clear()
+	_class_source_fingerprint.clear()
 	var all_ext_methods := _registry.get_extension_methods()
 	# We can't perfectly attribute methods to classes after the fact, so we
 	# re-scan: for each known class, load its script and call Register on a
 	# temporary registry to capture which methods it adds.
 	for cn: String in _known_extensions:
 		var sp: String = _known_extensions[cn]
+		# Baseline the on-disk source fingerprint so a later in-session edit is
+		# detectable (drives the Godot 4.2 restart nudge; harmless on 4.3+).
+		_class_source_fingerprint[cn] = _hash_extension_source(sp)
 		var probe := _probe_extension(cn, sp)
 		var methods: Array = probe["methods"]
 		if not methods.is_empty():
@@ -162,7 +212,7 @@ func _probe_extension(class_name_str: String, script_path: String) -> Dictionary
 	## registers and their metadata. Does NOT modify the live registry.
 	## Returns {"methods": Array[String], "metadata": Dictionary}.
 	var empty := {"methods": [] as Array[String], "metadata": {}}
-	var script: Script = ResourceLoader.load(script_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var script: Script = ResourceLoader.load(script_path, "", _extension_cache_mode())
 	if script == null:
 		return empty
 	var instance = script.new()
@@ -196,37 +246,42 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	## scan_sources() only re-checks already-known resources.
 	var efs := EditorInterface.get_resource_filesystem()
 
-	# Arm the global-class-flush barrier BEFORE scanning. is_scanning() alone is
-	# NOT a safe barrier: EditorFileSystem clears `scanning` on its worker thread at
-	# the END of the FS walk — BEFORE the main thread flushes the global class list
-	# (store_global_class_list, inside _update_script_classes) and emits
-	# script_classes_updated. A rescan gated only on is_scanning() therefore diffs a
-	# STALE ProjectSettings.get_global_class_list() and misses NEW class_names — the
-	# extensions_refresh "commands:[]" regression (41l-tricies-ter). The signal is
-	# bound 4.2–4.6; has_signal() keeps the connect version-safe regardless.
-	var classes_flushed := [false]
-	var on_flush := func() -> void:
-		classes_flushed[0] = true
-	var has_flush_signal := efs.has_signal("script_classes_updated")
-	if has_flush_signal:
-		efs.script_classes_updated.connect(on_flush)
-
-	efs.scan()
-	# Phase 1 — wait out the FS walk via the canonical scan-idle guard (honors the
-	# configurable scan_idle_timeout_ms; 41l-tricies convention). Proceed regardless
-	# of the bool result, matching the prior best-effort behavior.
-	await MCPToolkitSafeSceneOps.wait_for_scan_idle()
-	# Phase 2 — wait for the main-thread class-list flush, bounded. A no-change scan
-	# never emits script_classes_updated, so settle briefly then proceed rather than
-	# hang; when a class WAS (un)registered the flush fires within a frame or two of
-	# the walk finishing, so this resolves fast. The flag (armed pre-scan) also
-	# captures a flush that already fired during Phase 1.
-	if has_flush_signal:
-		var settle := Time.get_ticks_msec() + 750
-		while not classes_flushed[0] and Time.get_ticks_msec() < settle:
-			await _server.get_tree().create_timer(0.05).timeout
-		if efs.script_classes_updated.is_connected(on_flush):
-			efs.script_classes_updated.disconnect(on_flush)
+	if _is_godot_42():
+		# Godot 4.2: the lighter is_scanning() wait. The 4.3+ signal-wait below both
+		# (a) widens the await window enough that the editor's @tool reimport races our
+		# extension (re)load and natively crashes 4.2, and (b) has a bounded settle that
+		# is unreliable for 4.2's in-memory class-list flush. Empirically this scan +
+		# is_scanning() wait discovers new extensions immediately on 4.2.
+		efs.scan()
+		var deadline := Time.get_ticks_msec() + 5000
+		while efs.is_scanning() and Time.get_ticks_msec() < deadline:
+			await _server.get_tree().create_timer(0.1).timeout
+	else:
+		# Godot 4.3+: arm the global-class-flush barrier BEFORE scanning. is_scanning()
+		# alone is NOT a safe barrier: EditorFileSystem clears `scanning` on its worker
+		# thread at the END of the FS walk — BEFORE the main thread flushes the global
+		# class list (store_global_class_list, inside _update_script_classes) and emits
+		# script_classes_updated. A rescan gated only on is_scanning() therefore diffs a
+		# STALE ProjectSettings.get_global_class_list() and misses NEW class_names — the
+		# extensions_refresh "commands:[]" regression (41l-tricies-ter).
+		var classes_flushed := [false]
+		var on_flush := func() -> void:
+			classes_flushed[0] = true
+		var has_flush_signal := efs.has_signal("script_classes_updated")
+		if has_flush_signal:
+			efs.script_classes_updated.connect(on_flush)
+		efs.scan()
+		# Phase 1 — wait out the FS walk via the canonical scan-idle guard.
+		await MCPToolkitSafeSceneOps.wait_for_scan_idle()
+		# Phase 2 — wait for the main-thread class-list flush, bounded. A no-change scan
+		# never emits script_classes_updated, so settle briefly then proceed rather than
+		# hang; the flag (armed pre-scan) also captures a flush from Phase 1.
+		if has_flush_signal:
+			var settle := Time.get_ticks_msec() + 750
+			while not classes_flushed[0] and Time.get_ticks_msec() < settle:
+				await _server.get_tree().create_timer(0.05).timeout
+			if efs.script_classes_updated.is_connected(on_flush):
+				efs.script_classes_updated.disconnect(on_flush)
 
 	# Run rescan on the now-fresh class list (bypass debounce).
 	_debounce_pending = false
@@ -261,6 +316,18 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 			"Some extension tools are in on-demand groups and need activation "
 			+ "before use. Call discover_tools(request: '%s') to load them."
 		) % ", ".join(grouped_keywords)
+	# Godot 4.2: surface in-session edits that couldn't be applied live (their updated
+	# tools are absent from `commands` above) so the caller knows to restart the editor.
+	if not _pending_restart_modifies.is_empty():
+		var modified_names: PackedStringArray = []
+		for cn: String in _pending_restart_modifies:
+			modified_names.append(cn)
+		var restart_hint := (
+			"Godot 4.2: extension(s) [%s] were modified on disk but in-session changes "
+			+ "can't be applied — restart the editor to load the updated version. "
+			+ "(New/removed extensions apply live; Godot 4.3+ applies modifications live too.)"
+		) % ", ".join(modified_names)
+		response["hint"] = (str(response["hint"]) + " " + restart_hint) if response.has("hint") else restart_hint
 	return response
 
 
@@ -330,6 +397,22 @@ func _do_rescan() -> void:
 		if not _arrays_equal(fresh_methods, old_methods) or fresh_meta != old_meta:
 			modified_classes[cn] = sp
 
+	# Godot 4.2 only: detect an in-session edit to an existing extension that the 4.2
+	# cache path (CACHE_MODE_REUSE) can't apply live — the modified-detection probe above
+	# reads the cached pre-edit script, so the change is invisible there. Compare the
+	# on-disk source fingerprint instead and queue a one-time restart nudge.
+	if _is_godot_42():
+		for cn: String in current:
+			if cn in added_classes or cn in retry_classes or not _class_source_fingerprint.has(cn):
+				continue
+			if _hash_extension_source(current[cn]) != _class_source_fingerprint[cn]:
+				if cn not in _pending_restart_modifies:
+					push_warning("[MCPExtensions] '%s' was edited but in-session changes can't be applied on Godot 4.2 — restart the editor to load the updated version (Godot 4.3+ applies edits live)." % cn)
+				_pending_restart_modifies[cn] = current[cn]
+			else:
+				# Fingerprint matches the loaded version again (e.g. the edit was reverted).
+				_pending_restart_modifies.erase(cn)
+
 	if added_classes.is_empty() and removed_classes.is_empty() \
 			and retry_classes.is_empty() and modified_classes.is_empty():
 		return
@@ -342,6 +425,8 @@ func _do_rescan() -> void:
 			_class_methods.erase(cn)
 		_class_metadata.erase(cn)
 		_failed_classes.erase(cn)
+		_class_source_fingerprint.erase(cn)
+		_pending_restart_modifies.erase(cn)
 
 	# Handle modified extensions: unregister old methods, then re-load fresh.
 	for cn: String in modified_classes:
@@ -420,6 +505,10 @@ func _load_extension_tracked(class_name_str: String, script_path: String) -> voi
 		_class_methods[class_name_str] = new_methods
 		_class_metadata[class_name_str] = new_metadata
 		_failed_classes.erase(class_name_str)
+		# Record the source fingerprint we just loaded, and clear any pending
+		# restart nudge (this version is now live).
+		_class_source_fingerprint[class_name_str] = _hash_extension_source(script_path)
+		_pending_restart_modifies.erase(class_name_str)
 	else:
 		_failed_classes[class_name_str] = true
 
@@ -448,7 +537,7 @@ func _broadcast_extensions_changed(removed_methods: Array[String]) -> void:
 
 
 func _load_extension(class_name_str: String, script_path: String, registry: MCPToolkitCommandRegistry, server: Node) -> bool:
-	var script: Script = ResourceLoader.load(script_path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var script: Script = ResourceLoader.load(script_path, "", _extension_cache_mode())
 	if script == null:
 		push_warning("[MCPExtensions] '%s': failed to load script at %s" % [class_name_str, script_path])
 		return false

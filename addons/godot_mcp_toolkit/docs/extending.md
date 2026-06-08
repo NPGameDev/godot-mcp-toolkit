@@ -951,6 +951,16 @@ every scan and compares both method lists and metadata (description,
 annotations, schema, timeout). If anything differs, old tools are
 unregistered and the extension is re-loaded fresh.
 
+> **Godot 4.2 only — editing an existing extension needs an editor restart.** On
+> Godot 4.2, re-loading a freshly-edited `@tool` script fresh while the editor is
+> still reimporting it natively crashes the editor (a `CACHE_MODE_IGNORE`
+> reimport reentrancy — see `COMPATIBILITY.md`). To stay crash-safe, the 4.2
+> loader reads through the editor cache, so an in-session **edit** to an existing
+> extension is **not** applied until you restart the editor. `extensions.refresh`
+> returns a `hint` naming the changed extension, and a `push_warning` appears in
+> the editor's Output panel. **Adding** and **removing** extensions still apply
+> live on 4.2. Godot 4.3+ applies all changes (add / edit / remove) live.
+
 **Editor focus required:** Godot's `EditorFileSystem` only scans for external
 file changes when the editor window regains focus. If you create or modify
 extension files from an external tool (terminal, Claude Code, etc.), you must
@@ -1033,6 +1043,7 @@ non-blocking; each has a practical workaround:
 | No persistent configuration API | Extensions store settings ad-hoc | Use `ProjectSettings.set_setting()` for project-level or `ConfigFile` for user-level config |
 | No progress/streaming for long operations | Long-running operations can't report intermediate status | Use a polling pattern: register a companion `_status` tool the LLM calls to check progress |
 | No inter-extension communication | Extension A can't directly call Extension B's tools | Call `registry.call_command("other_ext.tool", params)` directly (works, but undocumented contract) |
+| In-session **edit** of an existing extension not applied (**Godot 4.2 only**) | A `@tool`-script edit isn't reflected until restart — engine reimport-crash avoidance (`CACHE_MODE_REUSE`). Adding/removing extensions still apply live | Restart the editor to load the edit (4.3+ applies edits live); `extensions.refresh` returns a restart `hint` |
 
 Each gap is tracked as a post-1.0 improvement candidate. None prevent an
 extension from being built and shipped — they affect convenience, not

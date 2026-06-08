@@ -28,6 +28,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message. On 4.5+ closes active or inactive tabs; last-tab close auto-creates an empty scene |
 | `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. `gdscript://` URIs in error messages (see below); `class_name` false positive fixed via stripping |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
+| `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
 | All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
 
 ### Degraded behavior by version
@@ -44,6 +45,18 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 - `script_check` limitations apply (see section below).
 - On 4.2 specifically, TileMapLayer nodes do not exist (introduced in 4.3).
   The tilemap tool still works with legacy `TileMap` nodes.
+- **Extension hot-reload — editing an existing extension needs a restart (4.2
+  only).** Adding a new extension and removing one both apply live, but *editing*
+  an already-loaded extension's tools is not reflected in-session. Loading a
+  freshly-edited `@tool` script fresh (`CACHE_MODE_IGNORE`) while
+  `EditorFileSystem` is still reimporting it spawns a second, unregistered,
+  synchronous parallel load during global-class registration and natively crashes
+  the 4.2 editor — the same `CACHE_MODE_IGNORE` hazard already noted for
+  `script_check` (P-056). On 4.2 the extension loader therefore reads through the
+  editor cache (`CACHE_MODE_REUSE`), which is crash-safe but can't see the new
+  edit. `extensions.refresh` returns a `hint` naming the changed extension and
+  telling you to restart the editor; a `push_warning` also shows in the Output
+  panel. Godot 4.3+ applies edits live (validated on 4.5).
 
 **Godot 4.4:**
 - UndoRedo history works for all operations (requires proper
