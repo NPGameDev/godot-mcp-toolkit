@@ -12,6 +12,11 @@
 > Prior sweep runs (2026-05-24 through 2026-05-26) are preserved in git history.
 > This file is the fresh full-sweep record for commit 0366560.
 > **Special focus:** Section 7 (editor_refresh / save_scene — the shared flow the 41l-tricies fix changed).
+>
+> **2026-06-08 update:** Section 24 (Extensions) was re-run against commit `d948f61` to verify the
+> in-session extension-discovery fix — see the dated Section 24 block. Result: **fix VERIFIED**; the
+> Section-24 test extensions need a `class_name` (Finding A); and a **new CRITICAL crash** was found
+> when calling a live-discovered extension tool (Finding B). The rest of this file remains the 0366560 record.
 
 ---
 
@@ -468,20 +473,67 @@ Console error check: PASS (0 errors/warnings). Cleanup verified: Glob `sv2_valid
 |------|--------|-------|
 | All (~50) | N/A | GDScript project (S0 confirmed 0 .cs/.csproj files). C# section not applicable. |
 
-## Section 24 — Extension Discovery (2026-06-07)
+## Section 24 — Extension Discovery (2026-06-08 — targeted re-run, commit d948f61)
+
+> **Targeted re-run** verifying `d948f61 fix(extensions): discover NEW extensions on
+> extensions_refresh in-session` — the fix for the Major "extension live-discovery"
+> failure recorded in the 2026-06-07 full sweep below. Godot 4.5, editor running, MCP
+> port 6550. **This block supersedes the 2026-06-07 EXT-S2 FAIL / E1–E10 BLOCKED result.**
+> Run halted at E3 by an editor crash (Finding B).
+>
+> **✅ RESOLVED 2026-06-08 (continuation session).** Finding B was root-caused + fixed —
+> a **latent Godot 4.2 engine SIGSEGV** (`CACHE_MODE_IGNORE` duplicate synchronous load of
+> a freshly-written `@tool` script *during* `EditorFileSystem` reimport — hypothesis (c)
+> below CONFIRMED; (a) instance/`Callable` lifetime REFUTED, the loader already retains
+> instances on `_instances`). It is **4.2-only** (full Section 24 sweeps are crash-free on
+> 4.3 / 4.4 / 4.5) and was *exposed*, not caused, by d948f61 — a pre-fix bisect crashes
+> 4.2 too, just later (E8 vs E3). **Fix:** toolkit `5f23232` gates `_cmd_refresh` to
+> `CACHE_MODE_REUSE` + `is_scanning` on 4.2 only; 4.3+ unchanged; the 4.2 in-session-edit
+> trade-off is surfaced via an `extensions.refresh` restart `hint`. E1–E10 since
+> re-validated crash-free across 4.2 / 4.3 / 4.4 / 4.5. Full record:
+> `Plan/ExecutionPlan/41l-tricies-ter-extension-live-discovery.md` + engine audit
+> `Insights/extension-reimport-crash-4.2-vs-4.3-analysis.md` (in the plan repo).
+
 | Test | Status | Notes |
 |------|--------|-------|
-| EXT-S1 | PASS | Extension script written, valid=true (MCPToolkitExtension / MCPToolkitCommandRegistry / MCPToolkitExtensionOptions API resolves) |
-| EXT-S2 | **FAIL** | extensions_refresh returns success+refreshed=true but **commands=[]** — new extension NOT discovered in-session |
-| E1–E10 | **BLOCKED** | Cannot validate (sv2_ext.hello/add/etc. never discovered). All depend on EXT-S2 discovery |
+| EXT-S1 | PASS | Extension written `res://sv2_validation/sv2_test_extension.gd`, valid=true. ⚠ **As written in the section file it has no `class_name`** (see Finding A) |
+| EXT-S2 (literal) | **FAIL — misleading, NOT a fix failure** | `extensions_refresh` → `commands:[]`. **Root cause = no `class_name`:** the loader enumerates extensions ONLY from `ProjectSettings.get_global_class_list()` (`extension_loader.gd:113-125, 288-297`); a script without `class_name` is never a global class, so it is structurally absent. Confirmed via `.godot/global_script_class_cache.cfg` — the script is not listed. Undiscoverable by ANY loader version. |
+| EXT-S2 (corrected) | **PASS ✅ — d948f61 VERIFIED** | Re-wrote the same extension adding `class_name MCPToolkitSv2TestExt` (a genuinely-new class_name — exactly the fix's target scenario). `extensions_refresh` → discovered **both** `sv2_ext.hello` + `sv2_ext.add` with full metadata + group `sv2_test_group`, **in-session, no restart.** The documented pre-fix timing (diff against a stale class list) could not reliably produce this → the editor is running the fixed loader and the flush-barrier works. **The Major finding from the 2026-06-07 run is RESOLVED.** |
+| E1 | PASS | `discover_tools` → group `sv2_test_group` listed with 2 tools, correct descriptions |
+| E2 | PASS | `discover_tools request:["sv2_test_group"]` → activated; `sv2_ext_hello` + `sv2_ext_add` exposed with parameter schemas (dot→underscore in MCP tool name) |
+| E3 | **CRASH — CRITICAL** | Calling the discovered tools **crashed the Godot editor.** `sv2_ext_hello(name:"Sweep")` returned empty `{}` (no greeting payload); `sv2_ext_add(a:3,b:7)` → `DISCONNECTED "WebSocket closed before response"`; follow-up `extensions_refresh` → `no connection to ws://127.0.0.1:6550 after 10000ms`. Editor process down. See Finding B. |
+| E4–E10 | **BLOCKED** | Editor crashed at E3. Re-entrancy (E4), hot-reload add/modify/remove (E5), keywords (E6), deletion-while-loaded (E7), annotation options (E8), version bounds (E9), success-hints/error-API (E10) not reachable until restart. |
 
-**FINDING (Major — extension live-discovery):** `extensions_refresh` does **not** discover newly-created extension scripts in-session. Verified the extension is valid (script_check valid=true) and tried discovery in **both** `res://sv2_validation/` and `res://addons/sv2_ext_test/`, with `extensions_refresh` alone AND after a full `editor_refresh` + `editor_wait_for_idle` — all returned `commands=[]`, no error logged. The new `extends MCPToolkitExtension` subclass is not registered without an editor/plugin restart.
+**Finding A (Major — sweep test-authoring bug; affects EXT-S1, E5, E6, E8, E9, E10):**
+Every test extension in `Sections/24-extensions.md` is `@tool` / `extends MCPToolkitExtension`
+with **no `class_name`**. The loader discovers extensions ONLY by scanning
+`ProjectSettings.get_global_class_list()` for entries whose `base == "MCPToolkitExtension"`
+(`extension_loader.gd::_is_extension_candidate` → `_discover_and_register` / `_do_rescan`). A
+script with no `class_name` is not a global class → absent from that list → **undiscoverable,
+independent of the d948f61 fix.** This bug masked the real verification: the literal run fails
+even on a perfectly-working loader. **Action:** add a unique `class_name` to each Section-24 test
+extension (e.g. `class_name MCPToolkitSv2TestExt` / `…AnnotatedExt` / `…VersionedExt` / `…HintsExt`).
+(Also a doc mismatch: `extension_loader.gd` header says GDScript extensions have "no naming
+restriction" — true, any `class_name` works since detection is by base class — while CLAUDE.md
+says the class name "must start with MCPToolkit"; only the C# path enforces the prefix.)
 
-- This matches the **documented limitation** (CLAUDE.md + extending.md: "Restart the editor (or disable/re-enable the plugin) to pick up changes").
-- However it **contradicts** the 2026-05-24 Final Validation run, which reported the 8d2a265 scan() fix enabled in-session discovery ("1 command discovered"). Either 8d2a265 regressed, or that run's success followed an actual restart. **Worth a maintainer's attention** — the entire purpose of `extensions_refresh` is to avoid a restart.
-- NOTE: the sweep doc (Section 24) writes the extension to `res://sv2_validation/`; CLAUDE.md says extensions live in `res://addons/<ext>/`. Tested both — neither was discovered in-session.
+**Finding B (CRITICAL — NEW; almost certainly unmasked by the now-working discovery):**
+Invoking an extension command that was discovered **in-session via the d948f61 `_cmd_refresh`
+path** crashes the editor process. Before d948f61 in-session discovery never worked, so this
+live dispatch path was never exercised — the discovery fix appears to have unmasked a latent
+crash when calling an extension `Callable` registered through the refresh path. Not yet
+root-caused: the interactive editor's crash was not captured to disk (file logging off; the only
+`godot.log` present is the headless 145-unit run). **Hypotheses to check:** (a) instance/`Callable`
+lifetime — refresh-loaded instances are retained on `watcher._instances` whereas startup-loaded
+ones go to `registry.set_meta("_extension_instances")`; a GC of the watcher-held instance would
+dangle the lambda's `self`; (b) the two E3 calls were sent in one batch → possible re-entrancy in
+extension dispatch; (c) `ResourceLoader.load(..., CACHE_MODE_IGNORE)` on a `class_name`'d script
+creates a duplicate Script identity. **Repro plan (post-restart):** call ONE extension tool alone
+and capture the editor's stderr/crash trace; then retry as a 2-call batch to test the re-entrancy angle.
 
-Console error check: PASS (0 errors — discovery silently finds nothing). Cleanup: both test extensions + addons/sv2_ext_test/ deleted (Glob-verified none remain).
+Console error check: N/A — editor crashed. Cleanup: PENDING editor restart — `res://sv2_validation/`
+(incl. `sv2_test_extension.gd` / `class_name MCPToolkitSv2TestExt`) is still on disk. It auto-loads
+at next startup (harmless — startup loads but does not call), but should be removed before a clean sweep.
 
 ## Section 25 — Undo/Redo Verification (2026-06-07)
 | Test | Status | Notes |
@@ -590,7 +642,7 @@ Console error check: PASS (no UndoRedo mismatch). 6 "File not found" errors on g
 | 21 Game Guards/Crash | 13/13 | 21.6 transient race (self-heals) |
 | 22 Combo Chains | 14/14 | |
 | 23 C# | N/A | GDScript project |
-| 24 Extensions | EXT-S1 PASS; **EXT-S2 FAIL; E1–E10 BLOCKED** | live-discovery broken in-session |
+| 24 Extensions | **Re-run 2026-06-08 (d948f61):** EXT-S2 PASS w/ class_name (**fix VERIFIED**); E1–E2 PASS; **E3 CRASH; E4–E10 BLOCKED** | in-session discovery FIXED; NEW crash calling extension tool (Finding B); sweep test exts miss class_name (Finding A) |
 | **25 Undo/Redo ⭐** | 48/48 | **FOCUS — UR-CON.1 zero history mismatch** |
 | 26 LSP | 25/25 | shader = GDScript-LSP limitation |
 | 27 Debugger | 17/17 | C26 breakpoint HIT verified |
@@ -636,7 +688,7 @@ Console error check: PASS (no UndoRedo mismatch). 6 "File not found" errors on g
 ## Findings & Pitfalls
 | # | Severity | Finding | Detail |
 |---|----------|---------|--------|
-| 1 | **Major** | **Extension live-discovery broken in-session** | `extensions_refresh` returns `commands=[]` for newly-created valid extensions in BOTH `addons/` and project folders, even after full `editor_refresh`+`wait_for_idle`. New `extends MCPToolkitExtension` subclass not registered without editor/plugin restart. Contradicts the 2026-05-24 run's report that 8d2a265 enabled in-session discovery. Blocks E1–E10. No error logged. |
+| 1 | **RESOLVED 2026-06-08 (d948f61)** | ~~Extension live-discovery broken in-session~~ → **FIXED** | The 2026-06-07 `commands=[]` had TWO causes: (a) the sweep's test extension has no `class_name`, so it is never a global class and is undiscoverable by design (Finding A in the re-run); (b) pre-d948f61 `_cmd_refresh` diffed a stale class list. Re-run 2026-06-08 with a `class_name`'d extension → **discovered in-session** (updated Section 24, EXT-S2 corrected). **Finding B — RESOLVED 2026-06-08 (`5f23232`):** the live-call crash is a latent **4.2-only** reimport SIGSEGV (`CACHE_MODE_IGNORE` duplicate load during reimport); 4.2 gated to `CACHE_MODE_REUSE`, 4.3/4.4/4.5 crash-free. See iter `41l-tricies-ter` + `Insights/extension-reimport-crash-4.2-vs-4.3-analysis.md`. |
 | 2 | Minor | Phantom script-editor tabs (Pitfall-3) | `script_delete` leaves the script's editor tab open. Causes (a) "File not found" errors on later `game_start` (S27), and (b) `folder_delete` PATH_IN_USE blocking (Last-cleanup). No MCP API closes script tabs — requires editor restart. Workaround: delete empty folder via filesystem. |
 | 3 | Minor | 21.6 crash-recovery transient race | Two `debugger_get_log` calls in rapid succession right after `game_stop` can briefly hit GAME_NOT_RUNNING ("registry not yet updated") before the cache fallback settles (~1s self-heal). |
 | 4 | Info | Shader LSP = GDScript LSP | `.gdshader` diagnostics/symbols come back as GDScript-parse noise / empty — Godot's LSP is GDScript-only. Not a toolkit bug. |
