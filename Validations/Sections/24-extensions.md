@@ -117,7 +117,7 @@ Call `extensions.refresh` again (no changes made).
 
 ## E6. Extension keywords for discover_tools
 
-1. `script_write` — recreate extension (keeping the `class_name Sv2TestExtension` header) with `"keywords": ["math", "arithmetic"]` in the group dict
+1. `script_write` — recreate the extension (keeping the `class_name Sv2TestExtension` header), passing the keywords as the **third positional argument** of `with_group(name, description, keywords)` — i.e. `.with_group("sv2_test_group", "Test extension group", ["math", "arithmetic"])`. Keywords is an `Array` arg, **NOT** a dict key — a `{"keywords": [...]}` dict will not compile (`mcp_toolkit_command_options.gd:48`).
 2. `extensions.refresh`
 3. `discover_tools` request=`"math"` — **Expect:** sv2_test_group in results
 4. `discover_tools` request=`"unrelated_xyz"` — **Expect:** sv2_test_group NOT in results
