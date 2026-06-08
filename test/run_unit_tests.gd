@@ -810,7 +810,7 @@ func _test_response_validation() -> void:
 	print("")
 
 
-# --- Export strip set (~7 assertions) ---------------------------------------
+# --- Export strip + binary-token warning set (~7 strip + 22 warning) --------
 
 const ExportStrip := preload("res://addons/godot_mcp_toolkit/export_strip.gd")
 
@@ -854,6 +854,56 @@ func _test_export_strip() -> void:
 	# class (FakeChild's base is "MCPToolkitFake", not "MCPToolkitExtension").
 	_ok(not strip.has("res://f/fakechild.gd"),
 			"subclass of coincidentally-named MCPToolkit* class → not stripped")
+
+	# ── Binary-token leak warning (Q6) — pure _decide_warning decision ──────
+	# args: (saw_addon_script, saw_addon_nonscript, extension_strip_paths, seen_ext)
+
+	# No leak: text mode / 4.2 → addon scripts AND non-scripts reached us; no exts.
+	var d_clean: Dictionary = ExportStrip._decide_warning(true, true, {}, {})
+	_ok(not d_clean["warn"], "all addon files seen (text mode) → no warning")
+
+	# Addon-only leak (binary mode, no extensions): non-scripts seen, scripts gone.
+	var d_addon: Dictionary = ExportStrip._decide_warning(false, true, {}, {})
+	_ok(d_addon["warn"], "addon non-script seen but no script → warn")
+	_ok(d_addon["addon_leaked"], "addon-only leak → addon_leaked true")
+	_ok(int(d_addon["leaked_ext_count"]) == 0, "addon-only leak → 0 extensions")
+	_ok(str(d_addon["message"]).find("Godot MCP Toolkit addon") >= 0, "addon message names the addon")
+	# Tail always says "extension path"; the subject clause "N extension script(s)" must be absent.
+	_ok(str(d_addon["message"]).find("extension script") < 0, "addon-only message omits extension clause")
+
+	# Both leak (binary mode, 1 extension): addon + one unseen extension path.
+	var d_both: Dictionary = ExportStrip._decide_warning(false, true, {"res://x/ext.gd": true}, {})
+	_ok(d_both["warn"], "addon + unseen extension → warn")
+	_ok(int(d_both["leaked_ext_count"]) == 1, "1 unseen extension counted")
+	_ok(str(d_both["message"]).find("addon and 1 extension script(s)") >= 0, "message joins addon + 1 extension")
+	# REGRESSION: the recipe must list the addon glob AND the explicit extension path.
+	_ok(str(d_both["message"]).find("res://addons/godot_mcp_toolkit/*") >= 0, "message includes the addon exclude glob")
+	_ok(str(d_both["message"]).find("res://x/ext.gd") >= 0, "message lists the leaked extension path explicitly")
+
+	# Two leaked extensions → BOTH paths listed (comma-join regression guard).
+	var d_two: Dictionary = ExportStrip._decide_warning(false, true, {"res://x/a.gd": true, "res://y/b.gd": true}, {})
+	_ok(int(d_two["leaked_ext_count"]) == 2, "2 unseen extensions counted")
+	_ok(d_two["leaked_ext_paths"].size() == 2, "leaked_ext_paths populated")
+	_ok(str(d_two["message"]).find("2 extension script(s)") >= 0, "subject reports 2 extensions")
+	_ok(str(d_two["message"]).find("res://x/a.gd") >= 0 and str(d_two["message"]).find("res://y/b.gd") >= 0, "both extension paths listed")
+
+	# Q6 guard: addon already excluded by the user → NO addon file reaches us.
+	var d_excluded: Dictionary = ExportStrip._decide_warning(false, false, {}, {})
+	_ok(not d_excluded["warn"], "addon excluded (no non-script seen) → no false-positive warning")
+
+	# Extension-only leak: addon excluded but an extension still shipped as .gdc.
+	var d_ext: Dictionary = ExportStrip._decide_warning(false, false, {"res://x/ext.gd": true}, {})
+	_ok(d_ext["warn"], "unseen extension alone → warn")
+	_ok(not d_ext["addon_leaked"], "extension-only leak → addon_leaked false")
+	_ok(str(d_ext["message"]).find("1 extension script(s)") >= 0, "extension-only message names the extension")
+	_ok(str(d_ext["message"]).find("res://x/ext.gd") >= 0, "extension-only message lists the path explicitly")
+	# Addon not leaked → neither the addon subject phrase nor the addon glob appears.
+	_ok(str(d_ext["message"]).find("Godot MCP Toolkit addon") < 0, "extension-only message omits addon clause")
+	_ok(str(d_ext["message"]).find("res://addons/godot_mcp_toolkit/*") < 0, "extension-only message omits addon glob")
+
+	# Extension seen (text mode for the extension) → not counted as leaked.
+	var d_ext_seen: Dictionary = ExportStrip._decide_warning(true, true, {"res://x/ext.gd": true}, {"res://x/ext.gd": true})
+	_ok(not d_ext_seen["warn"], "extension seen (stripped) → no warning")
 
 	print("")
 

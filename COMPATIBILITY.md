@@ -158,9 +158,46 @@ accurate file paths.
 | Command Palette entries | OK | OK | OK | `get_command_palette()` guarded; skipped if unavailable |
 | Info/Help panel | OK | OK | OK | Standard Control nodes |
 | Plugin disable cleanup dialog | OK | OK | OK | `popup_dialog_centered()` guarded with fallback |
-| Export stripping | OK | OK | OK | `_export_file()` signature stable across 4.x |
+| Export stripping (non-script + Text mode) | OK | OK | OK | 4.2 strips all modes (no binary tokens); see below |
+| Binary-token script leak warning | Output log | Export dialog | Export dialog | 4.2: n/a (no binary-token mode) |
 | Inspector plugin | OK | OK | OK | `EditorInspectorPlugin` API stable since 4.0 |
 | Response cap configuration | OK | OK | OK | `SpinBox` / `LineEdit` stable since 4.0 |
+
+## Export stripping (binary-token script gap)
+
+The addon's export plugin removes addon/extension **non-script** files and
+`res://.mcp.json` and nulls the runtime autoload in **every** export mode, and it
+removes addon/extension **scripts** when the preset's *Script Export Mode* is
+**Text**. It does **not** remove scripts in **Binary tokens** / **Binary tokens
+(compressed)** modes (Godot's default on 4.3+): the engine compiles each `.gd` to
+`.gdc` in the built-in GDScript export plugin — which runs **before** ours — so the
+scripts ship as inert, orphaned `.gdc`. The leak is cosmetic (orphaned +
+lazy-loaded → never executed; the runtime autoload is nulled and additionally
+self-gates on `not OS.has_feature("editor")`). There is no safe in-addon strip:
+`EditorExportPreset.set_exclude_filter` is unbound to GDScript (still so in 4.6 —
+godotengine/godot#4054). The plugin therefore **warns** instead of stripping.
+
+The warning fires only when a binary-token mode leaks addon/extension scripts, and
+its delivery depends on the Godot version (`add_message` / `get_export_platform`
+were bound to GDScript in 4.4):
+
+| Godot | Binary-token leak? | Warning delivery |
+|-------|--------------------|------------------|
+| 4.2 | No — no binary-token mode; scripts ship as text and are stripped | none (never fires) |
+| 4.3 | Yes | `push_warning()` → **Output / stderr log** (`add_message` unbound until 4.4) |
+| 4.4 | Yes | `EditorExportPlatform.add_message()` → **export dialog** |
+| 4.5+ | Yes | `add_message()` → **export dialog** |
+
+For a fully clean build in a binary-token mode, set Script Export Mode to **Text**
+or add `res://addons/godot_mcp_toolkit/*` (and each extension `.gd` path) to the
+preset's exclude filter. See ADR 0006.
+
+`project.binary` additionally carries an inert `[mcp_toolkit]` config flag
+(`internal/bootstrap_complete`, plus any limits/audit prefs you customise) — a
+cosmetic fingerprint with **no secrets** (the auth token and registry live in
+`user://`, never packed). `export_strip` leaves it in place (nulling ProjectSettings
+during the bake would add a crash-window risk for a cosmetic-only gain); an optional
+strip is a post-1.0 consideration.
 
 ## Version guard implementation
 

@@ -9,8 +9,11 @@ extends Node
 ## self-destruct in two cases:
 ##   1. Engine.is_editor_hint() — editor process loaded us, not the game.
 ##      Keeping a second WS listener on 6570 while editing is a bug.
-##   2. not OS.is_debug_build() — release export. Mode B must NOT ship
-##      to end users' shipped games. This is security-critical.
+##   2. not OS.has_feature("editor") — any export template (debug AND
+##      release). "editor" is true only under an editor launch (F5/F6) and
+##      false in every export, so Mode B self-protects in ALL exports
+##      regardless of export_strip nulling the autoload. Security-critical;
+##      stronger than is_debug_build() (which is true in a debug export).
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const Coerce = _Hub.Coerce
@@ -61,10 +64,14 @@ func _ready() -> void:
 	if "--check-only" in OS.get_cmdline_args():
 		set_process(false)
 		return
-	# Debug-build gate: shipped (release) games must not listen on 6570.
-	# Same quiescent approach — an empty Node at scene-tree root is cheaper
-	# than the subtle edge cases of auto-freeing during SceneTree setup.
-	if not OS.is_debug_build():
+	# Export gate: shipped games (debug OR release export templates) must not
+	# listen on 6570. has_feature("editor") is true only under an editor launch
+	# (F5/F6) and false in EVERY export template — stronger than is_debug_build()
+	# (true in a debug export), so the runtime server self-protects in all exports
+	# independent of export_strip nulling the autoload. Same quiescent approach —
+	# an empty Node at scene-tree root is cheaper than the subtle edge cases of
+	# auto-freeing during SceneTree setup.
+	if not OS.has_feature("editor"):
 		set_process(false)
 		return
 	_start_server()

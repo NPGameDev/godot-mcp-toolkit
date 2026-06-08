@@ -403,6 +403,24 @@ loudly headless (e.g. depending on a game process that can't launch) don't need
 it. The built-in tools follow this — only the viewport-dependent screenshot
 tools carry an explicit headless guard.
 
+## Exporting your game (extension scripts in builds)
+
+When a user exports their game, the toolkit's export plugin strips the addon,
+your extension's **non-script** files, and `res://.mcp.json` in every mode, and
+strips extension **scripts** too when Script Export Mode is **Text**. In a
+**binary-token** script mode (Godot 4.3+ default) the engine compiles each `.gd`
+to `.gdc` before the strip can run, so your extension `.gd` ships as an inert,
+orphaned `.gdc` — never loaded at runtime, no effect on the game. The plugin warns
+at export time and names the leaked extensions. For a clean strip, set Script
+Export Mode to **Text**, or add your extension's `.gd` path to the preset's
+**Resources → exclude filter**. This is a long-standing engine limitation
+(godotengine/godot#4054), not specific to your extension; Godot 4.2 has no
+binary-token mode, so extension scripts always strip there.
+
+C# extensions compile into the project's .NET assembly and cannot be stripped
+per-class — guard editor-only work with `if (!Engine.IsEditorHint()) return;` so
+nothing runs in a build.
+
 ## Common pitfalls
 
 | Symptom | Cause | Fix |
