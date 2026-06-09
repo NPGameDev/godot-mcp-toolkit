@@ -133,6 +133,11 @@ func _apply_step(dialog: AcceptDialog) -> void:
 				+ "Companion Skills for Claude Code are in the dock footer.\n\n"
 				+ "For supervised environments, set GODOT_MCP_READ_ONLY=1 in\n"
 				+ ".mcp.json to restrict the toolkit to read-only tools.\n\n"
+				+ "The toolkit keeps the editor responsive while it's unfocused during\n"
+				+ "MCP sessions (ON by default; raises background CPU). Toggle it in the\n"
+				+ "dock's Server Status, or in Editor Settings → Mcp Toolkit →\n"
+				+ "Performance — note this setting lives in Editor Settings, unlike\n"
+				+ "the other mcp_toolkit/* keys in Project Settings.\n\n"
 				+ "You're all set!")
 			dialog.ok_button_text = "Close"
 			_buttons.append(dialog.add_button("Back", true, "back"))

@@ -137,6 +137,19 @@ static func _release_lock() -> void:
 		DirAccess.remove_absolute(lp)
 
 
+## Public lock wrappers for callers that need to serialise a machine-wide
+## read-modify-write on a sibling file in registry_dir() across concurrent
+## editor instances (e.g. the unfocused-sleep backup — see mcp_server.gd /
+## unfocused_backup.gd). Same lock as the registry's own writes, so backup and
+## registry operations are mutually exclusive (both are rare and fast).
+static func acquire_lock() -> bool:
+	return _acquire_lock()
+
+
+static func release_lock() -> void:
+	_release_lock()
+
+
 # -- Entry-file I/O -----------------------------------------------------------
 
 

@@ -28,6 +28,10 @@ var _runtime_label: Label = null
 var _read_only_panel: PanelContainer = null
 var _mcp_json_btn: Button = null
 
+# Unfocused-responsive mode — 3-state indicator + inline opt-in toggle.
+var _unfocused_check: CheckBox = null
+var _unfocused_state_label: Label = null
+
 # Node.js warning.
 var _nodejs_status_warning: Label = null
 
@@ -243,6 +247,29 @@ func _build_ui() -> void:
 	_nodejs_status_warning.visible = nodejs_msg != ""
 	sc.add_child(_nodejs_status_warning)
 
+	# Unfocused-responsive mode — inline opt-in toggle + 3-state indicator.
+	# (Lives in Editor Settings, not Project Settings; see ADR 0007.)
+	var unfocused_row := HBoxContainer.new()
+	sc.add_child(unfocused_row)
+
+	_unfocused_check = CheckBox.new()
+	_unfocused_check.text = "Responsive when unfocused"
+	var resp_enabled := true
+	var resp_es := EditorInterface.get_editor_settings()
+	if resp_es != null and resp_es.has_setting(
+			"mcp_toolkit/performance/keep_editor_responsive_unfocused"):
+		resp_enabled = bool(resp_es.get_setting(
+			"mcp_toolkit/performance/keep_editor_responsive_unfocused"))
+	_unfocused_check.set_pressed_no_signal(resp_enabled)
+	_unfocused_check.toggled.connect(_on_unfocused_responsive_toggled)
+	unfocused_row.add_child(_unfocused_check)
+
+	_unfocused_state_label = Label.new()
+	_unfocused_state_label.add_theme_font_size_override("font_size", 11)
+	_unfocused_state_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_unfocused_state_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	unfocused_row.add_child(_unfocused_state_label)
+
 	# == Collapsible sections (titles always visible) =========================
 	var sections_vbox := VBoxContainer.new()
 	sections_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -383,6 +410,7 @@ func _on_client_connected(peer_count: int) -> void:
 	_activity_label.text = "Last activity: client connected"
 	_toast("MCP client connected (%d peer%s)" % [
 		peer_count, "" if peer_count == 1 else "s"])
+	_refresh_unfocused_indicator()
 
 
 func _on_client_disconnected(peer_count: int) -> void:
@@ -390,6 +418,7 @@ func _on_client_disconnected(peer_count: int) -> void:
 	_activity_label.text = "Last activity: client disconnected"
 	if peer_count == 0:
 		_toast("MCP client lost connection", _TOAST_WARNING)
+	_refresh_unfocused_indicator()
 
 
 func _on_command_received(method: String) -> void:
@@ -422,6 +451,7 @@ func _refresh_status() -> void:
 			_mcp_json_btn.text = "Open .mcp.json"
 			_mcp_json_btn.remove_theme_color_override("font_color")
 	_refresh_runtime_status()
+	_refresh_unfocused_indicator()
 
 
 func _refresh_runtime_status() -> void:
@@ -628,6 +658,52 @@ func _on_audit_enabled_toggled(enabled: bool) -> void:
 func _on_audit_max_size_changed(value: float) -> void:
 	ProjectSettings.set_setting("mcp_toolkit/audit/max_size_kb", int(value))
 	ProjectSettings.save()
+
+
+# ---------------------------------------------------------------------------
+# Unfocused-responsive mode (Editor Setting + 3-state indicator)
+# ---------------------------------------------------------------------------
+
+func _on_unfocused_responsive_toggled(enabled: bool) -> void:
+	var es := EditorInterface.get_editor_settings()
+	if es != null:
+		es.set_setting("mcp_toolkit/performance/keep_editor_responsive_unfocused", enabled)
+	# Apply immediately: on while connected → boost now; off while active →
+	# conflict-aware restore now (instead of waiting for the next connect/disconnect).
+	if _server != null:
+		_server.notify_unfocused_responsive_setting_changed()
+	_refresh_unfocused_indicator()
+
+
+## Always-honest 3-state indicator: Off / On (idle) / On · active · {fps} fps.
+func _refresh_unfocused_indicator() -> void:
+	if _unfocused_state_label == null or _unfocused_check == null:
+		return
+	var enabled := true
+	var es := EditorInterface.get_editor_settings()
+	if es != null and es.has_setting(
+			"mcp_toolkit/performance/keep_editor_responsive_unfocused"):
+		enabled = bool(es.get_setting(
+			"mcp_toolkit/performance/keep_editor_responsive_unfocused"))
+	# Keep the checkbox in sync if the setting was changed in Editor Settings.
+	if _unfocused_check.button_pressed != enabled:
+		_unfocused_check.set_pressed_no_signal(enabled)
+	var fps: int = _server.get_unfocused_responsive_fps() if _server != null else 60
+	var connected: bool = _server != null and _server.get_authed_peer_count() > 0
+	_unfocused_check.tooltip_text = (
+		"Editor stays ~%d fps while unfocused so MCP commands stay responsive "
+		+ "while a client is connected — raises background CPU. Off uses Godot's "
+		+ "default low-power unfocused throttle. Configure the rate in "
+		+ "Editor Settings → Mcp Toolkit → Performance.") % fps
+	if not enabled:
+		_unfocused_state_label.text = "Off"
+		_unfocused_state_label.remove_theme_color_override("font_color")
+	elif not connected:
+		_unfocused_state_label.text = "On (idle)"
+		_unfocused_state_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	else:
+		_unfocused_state_label.text = "On · active · %d fps" % fps
+		_unfocused_state_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
 
 
 # ---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ extends SceneTree
 
 const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/mcp_toolkit_safe_scene_ops.gd")
 const EditorCommands := preload("res://addons/godot_mcp_toolkit/commands/editor_commands.gd")
+const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
 
 var _passed := 0
 var _failed := 0
@@ -41,6 +42,7 @@ func _init() -> void:
 	_test_error_api()
 	_test_export_strip()
 	_test_editor_refresh_reload_filter()
+	_test_unfocused_backup()
 	await _test_response_validation()
 
 	_report()
@@ -933,6 +935,73 @@ func _test_editor_refresh_reload_filter() -> void:
 	_ok(not EditorCommands.should_reload_open_script(
 			"res://addons/godot_mcp_toolkit/mcp_server.gd", changed),
 			"unchanged toolkit script → skip")
+	print("")
+
+
+# --- Unfocused-sleep backup (41l-duotricies) -------------------------------
+# Machine-wide crash-safe restore of the global unfocused frame-rate setting.
+# The editor-coupled get/set EditorSettings calls live in mcp_server.gd (covered
+# by interactive verification); the conflict-resolution + first-writer-wins +
+# both-values-stored logic is pure and headless-testable here against a temp dir.
+
+func _test_unfocused_backup() -> void:
+	_begin("Unfocused-sleep backup")
+	var dir := ProjectSettings.globalize_path("user://_mcp_unfocused_backup_test")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var ver := "9.9"  # fixed test key + temp dir → isolated from any real backup
+	UnfocusedBackup.delete_backup(dir, ver)  # clean slate
+
+	# should_capture_boost — opt-out + idempotency gate (the "no-op when off" unit).
+	_ok(UnfocusedBackup.should_capture_boost(true, false),
+			"should_capture_boost(on, idle) → true")
+	_ok(not UnfocusedBackup.should_capture_boost(false, false),
+			"should_capture_boost(off, idle) → false (no-op when off)")
+	_ok(not UnfocusedBackup.should_capture_boost(true, true),
+			"should_capture_boost(on, already active) → false (idempotent)")
+
+	# 1. capture_if_absent writes when no backup exists (first-writer-wins).
+	_ok(UnfocusedBackup.capture_if_absent(dir, 100000, 16666, ver),
+			"first capture → writes backup (true)")
+	_ok(UnfocusedBackup.has_backup(dir, ver), "backup file exists after capture")
+
+	# 2. backup stores BOTH original and boosted.
+	var b: Dictionary = UnfocusedBackup.read_backup(dir, ver)
+	_eq(b.get("original", -1), 100000, "backup stores original")
+	_eq(b.get("boosted", -1), 16666, "backup stores boosted")
+
+	# 3. second capture does NOT overwrite (first-writer-wins).
+	_ok(not UnfocusedBackup.capture_if_absent(dir, 33333, 8333, ver),
+			"second capture → does not overwrite (false)")
+	var b2: Dictionary = UnfocusedBackup.read_backup(dir, ver)
+	_eq(b2.get("original", -1), 100000, "original preserved after second capture")
+	_eq(b2.get("boosted", -1), 16666, "boosted preserved after second capture")
+
+	# 4. resolve_restore: current == boosted → restore the true original (self-heal A).
+	var d1: Dictionary = UnfocusedBackup.resolve_restore(16666, b2)
+	_ok(d1["restore"], "current == boosted → restore true")
+	_eq(d1["value"], 100000, "current == boosted → value is the original")
+
+	# 5. resolve_restore: current != boosted → keep current, conflict-aware (self-heal B).
+	var d2: Dictionary = UnfocusedBackup.resolve_restore(50000, b2)
+	_ok(not d2["restore"], "current != boosted → restore false (kept)")
+	_eq(d2["value"], 50000, "current != boosted → value echoes current")
+
+	# 6. resolve_restore: empty / malformed backup → no-op.
+	_ok(not UnfocusedBackup.resolve_restore(16666, {})["restore"],
+			"empty backup → restore false")
+	_ok(not UnfocusedBackup.resolve_restore(16666, {"original": 100000})["restore"],
+			"backup missing 'boosted' → restore false")
+
+	# 7. delete_backup removes the file; read on missing → empty dict.
+	UnfocusedBackup.delete_backup(dir, ver)
+	_ok(not UnfocusedBackup.has_backup(dir, ver), "delete_backup → file gone")
+	_eq(UnfocusedBackup.read_backup(dir, ver), {}, "read missing backup → empty dict")
+
+	# 8. version_key derives "<major>.<minor>" (override form).
+	_eq(UnfocusedBackup.version_key({"major": 4, "minor": 2}), "4.2",
+			"version_key({4,2}) → '4.2'")
+
+	DirAccess.remove_absolute(dir)  # cleanup
 	print("")
 
 

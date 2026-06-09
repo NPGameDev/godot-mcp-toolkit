@@ -375,10 +375,23 @@ func _on_extension_catalog() -> void:
 
 func _register_editor_settings() -> void:
 	var es := EditorInterface.get_editor_settings()
+	# [type, default, hint_string]. These live in EDITOR Settings (per-user,
+	# machine-wide), NOT Project Settings: the unfocused-responsive keys control a
+	# machine-global editor effect and are a personal battery/CPU preference, so
+	# they must never be committed to project.godot / VCS. See ADR 0007.
 	var settings := {
-		"mcp_toolkit/personal/dock_default_visible": [TYPE_BOOL, true],
+		"mcp_toolkit/personal/dock_default_visible": [TYPE_BOOL, true, ""],
+		"mcp_toolkit/performance/keep_editor_responsive_unfocused": [TYPE_BOOL, true,
+			"Keep the editor responsive (raise its unfocused frame rate) while an MCP client is connected, so commands stay snappy when the editor is unfocused. Off uses Godot's default low-power unfocused throttle. Raises background CPU. A toggle is also in the MCP Toolkit dock."],
+		"mcp_toolkit/performance/unfocused_responsive_sleep_usec": [TYPE_INT, 16666,
+			"Unfocused process sleep in µs applied while a client is connected (lower = higher fps = snappier but more CPU). 16666 ≈ 60 fps (default); 33333 ≈ 30 fps (power-saver). Not clamped."],
 	}
 	for key in settings:
 		if not es.has_setting(key):
 			es.set_setting(key, settings[key][1])
-		es.add_property_info({"name": key, "type": settings[key][0]})
+		es.set_initial_value(key, settings[key][1], false)
+		var info := {"name": key, "type": settings[key][0]}
+		if settings[key][2] != "":
+			info["hint"] = PROPERTY_HINT_NONE
+			info["hint_string"] = settings[key][2]
+		es.add_property_info(info)
