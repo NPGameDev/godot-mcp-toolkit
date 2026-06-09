@@ -569,42 +569,6 @@ static func ensure_file_removed(file_path: String, timeout_ms: int = 3000) -> Di
 	return {"removed": removed, "elapsed_ms": elapsed}
 
 
-# -- ANSI stripping ------------------------------------------------------------
-
-
-## Compiled once at script load — one allocation per editor session.
-## CSI sequences: ESC [ <params> <final>  (e.g. ESC[90m, ESC[0m)
-## Simple escapes: ESC <letter>            (e.g. ESC c)
-static var _ansi_re: RegEx = _compile_ansi_re()
-
-static func _compile_ansi_re() -> RegEx:
-	var re := RegEx.new()
-	re.compile("\\x1b(?:\\[[0-9;]*[A-Za-z]|[A-Za-z])")
-	return re
-
-
-## Strip ANSI/VT100 escape sequences from a string.
-## In headless mode Godot emits ANSI color codes in progress-bar and
-## status messages. These contain raw ESC (0x1B) bytes that Godot's
-## JSON.stringify() does not escape, producing invalid JSON and causing
-## the TypeScript bridge to silently drop responses.
-static func strip_ansi(text: String) -> String:
-	return _ansi_re.sub(text, "", true)
-
-
-# -- Log level detection -------------------------------------------------------
-
-
-static func detect_log_level(line: String) -> String:
-	if line.begins_with("ERROR:") or line.begins_with("USER ERROR:") \
-			or line.begins_with("SCRIPT ERROR:"):
-		return "error"
-	if line.begins_with("WARNING:") or line.begins_with("USER WARNING:") \
-			or line.begins_with("SCRIPT WARNING:"):
-		return "warning"
-	return "info"
-
-
 # -- Profile conversion --------------------------------------------------------
 
 
@@ -622,22 +586,3 @@ static func string_to_profile(s: String) -> int:
 		"standard": return 1
 		"power_user", "full": return 2
 		_: return 1
-
-
-# -- File logging detection ----------------------------------------------------
-
-
-## Check whether file logging is enabled, including platform-specific overrides.
-## ProjectSettings.get_setting() returns the base value; platform overrides
-## (e.g. debug/file_logging/enable_file_logging.windows) are separate keys.
-static func is_file_logging_enabled() -> bool:
-	var key := "debug/file_logging/enable_file_logging"
-	if ProjectSettings.get_setting(key, false):
-		return true
-	for tag in ["pc", "windows", "linuxbsd", "macos", "android", "ios", "web"]:
-		if OS.has_feature(tag):
-			var override_key: String = key + "." + tag
-			if ProjectSettings.has_setting(override_key) \
-					and ProjectSettings.get_setting(override_key, false):
-				return true
-	return false

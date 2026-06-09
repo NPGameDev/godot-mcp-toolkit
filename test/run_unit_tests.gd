@@ -460,7 +460,7 @@ func _test_tool_context() -> void:
 
 # --- Helpers: compile_text_filter (~6 assertions) -------------------------
 
-const Helpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
+const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 
 func _test_compile_text_filter() -> void:
 	_begin("compile_text_filter")

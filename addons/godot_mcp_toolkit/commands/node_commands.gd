@@ -204,7 +204,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 
 	# Compound / colon-chained paths (e.g. "libraries/test",
 	# "material:shader_parameter/value", "theme_override_colors/font_color").
-	# Centralized handler in _helpers.gd handles sub-resource navigation,
+	# Centralized handler in editor_helpers.gd handles sub-resource navigation,
 	# shader_parameter/ dedicated setter, value coercion, and readback.
 	# Returns _undo info for UndoRedo registration (commit_recorded()).
 	if ":" in property_name or "/" in property_name:

@@ -6,6 +6,7 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const FileGuard = _Hub.FileGuard
 const RegistryClient = _Hub.RegistryClient
 const Helpers = _Hub.Helpers
+const LogHelpers = _Hub.LogHelpers
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 
 const RUNTIME_HOST := "127.0.0.1"
@@ -272,7 +273,7 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	# Strip ANSI from all lines once (used for both filtering and error scan).
 	var stripped_lines: Array = []
 	for line in all_lines:
-		var stripped := Helpers.strip_ansi(line.strip_edges())
+		var stripped := LogHelpers.strip_ansi(line.strip_edges())
 		if not stripped.is_empty():
 			stripped_lines.append(stripped)
 

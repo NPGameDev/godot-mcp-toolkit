@@ -7,6 +7,7 @@ const FileGuard = _Hub.FileGuard
 const Untrusted = _Hub.Untrusted
 const Scrubber = _Hub.Scrubber
 const Helpers = _Hub.Helpers
+const LogHelpers = _Hub.LogHelpers
 const Coerce = _Hub.Coerce
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
@@ -478,7 +479,7 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, tex
 	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off
 	# or the log file couldn't be read (locked by OS on Windows).
 	if entries.is_empty() and not _Hub.LogBuffer.uses_logger_api():
-		if not Helpers.is_file_logging_enabled():
+		if not LogHelpers.is_file_logging_enabled():
 			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work."
 		elif _Hub.LogBuffer._tail_open_failures > 0:
 			response["warning"] = "Log file could not be opened for reading (%d failed attempts) — the OS may be locking it. Use source=\"file\" as a fallback." % _Hub.LogBuffer._tail_open_failures
@@ -513,7 +514,7 @@ static func _scan_autoload_hints(entries: Array) -> String:
 
 
 static func _detect_log_level(line: String) -> String:
-	return Helpers.detect_log_level(line)
+	return LogHelpers.detect_log_level(line)
 
 
 static func _read_console_log(
@@ -523,7 +524,7 @@ static func _read_console_log(
 	# user://logs/ read is a narrow read-only exception to the res://-only rule.
 	# Path is internally constructed (not user-supplied), so no FileGuard gate.
 	var logs_dir := "user://logs"
-	var file_logging_enabled: bool = Helpers.is_file_logging_enabled()
+	var file_logging_enabled: bool = LogHelpers.is_file_logging_enabled()
 	if not DirAccess.dir_exists_absolute(logs_dir):
 		if not file_logging_enabled:
 			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor"
@@ -615,7 +616,7 @@ static func _read_console_log(
 	var char_offset: int = 0
 
 	for line_index in range(lines.size()):
-		var line: String = Helpers.strip_ansi(lines[line_index])
+		var line: String = LogHelpers.strip_ansi(lines[line_index])
 		if line.strip_edges().is_empty():
 			char_offset += line.length() + 1
 			continue

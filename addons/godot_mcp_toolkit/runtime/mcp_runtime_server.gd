@@ -15,13 +15,17 @@ extends Node
 ##      regardless of export_strip nulling the autoload. Security-critical;
 ##      stronger than is_debug_build() (which is true in a debug export).
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const Untrusted = _Hub.Untrusted
+# Runtime dependency closure — direct preloads of export-clean scripts only.
+# Deliberately NOT _hub.gd: it statically names EditorInterface/EditorPlugin, which
+# would parse-fail this autoload in an export template (godot#91713). See
+# Insights/runtime-autoload-editor-taint-analysis.md (the "silent-if-shipped" norm).
+const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
+const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
-const Scrubber = _Hub.Scrubber
-const Helpers = _Hub.Helpers
-const RegistryClient = _Hub.RegistryClient
+const Scrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
+const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
+const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
 
 const PORT_BASE := 6570
 const PORT_RANGE := 16  # 6570..6585 inclusive
@@ -82,7 +86,7 @@ func _exit_tree() -> void:
 
 
 func _start_server() -> void:
-	_Hub.LogBuffer.setup()
+	LogBuffer.setup()
 	_relisten_countdown = 0
 	_bound_port = -1
 	# Runtime uses the same token file as the editor server so the bridge can
@@ -173,7 +177,7 @@ func _try_listen() -> void:
 
 
 func _process(_delta: float) -> void:
-	_Hub.LogBuffer.poll()
+	LogBuffer.poll()
 	# Keep the listener up across transient socket loss. Editor / release
 	# gating from _ready prevents _process from running where it shouldn't
 	# (set_process(false)), so reaching here = debug-build runtime.
@@ -566,7 +570,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	var regex_warning := _detect_double_escaped_regex(text_filter) if text_regex != null else ""
 
 	if source == "buffer":
-		var buf_result: Dictionary = _Hub.LogBuffer.get_entries(limit, [], -1, text_filter, text_regex)
+		var buf_result: Dictionary = LogBuffer.get_entries(limit, [], -1, text_filter, text_regex)
 		var entries: Array = buf_result["entries"]
 		for entry in entries:
 			var scrubbed := Scrubber.scrub(str(entry["message"]), "debugger.get_log")
@@ -579,8 +583,8 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 			"source": "buffer",
 		}
 		# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off.
-		if entries.is_empty() and not _Hub.LogBuffer.uses_logger_api():
-			if not Helpers.is_file_logging_enabled():
+		if entries.is_empty() and not LogBuffer.uses_logger_api():
+			if not LogHelpers.is_file_logging_enabled():
 				response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work. Logs from before enabling will not be available."
 		if not regex_warning.is_empty():
 			response["warning"] = regex_warning
@@ -590,10 +594,10 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	# source == "file" — original log-file reader.
 	var log_path := "user://logs/godot.log"
 	if not FileAccess.file_exists(log_path):
-		var file_logging_enabled: bool = Helpers.is_file_logging_enabled()
+		var file_logging_enabled: bool = LogHelpers.is_file_logging_enabled()
 		if not file_logging_enabled:
 			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart"
-			if _Hub.LogBuffer.uses_logger_api():
+			if LogBuffer.uses_logger_api():
 				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
 			else:
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
@@ -614,12 +618,12 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		var open_err := FileAccess.get_open_error()
 		if FileAccess.file_exists(log_path):
 			var _busy_hint := "log file exists but cannot be read right now (err %d) — transient lock during flush, retry in 1-2s" % open_err
-			if _Hub.LogBuffer.uses_logger_api():
+			if LogBuffer.uses_logger_api():
 				_busy_hint += "; consider source=\"buffer\" instead"
 			_send_result(peer, id, MCPToolkitError.fail("LOG_BUSY", _busy_hint))
 		else:
 			var _gone_hint := "log file disappeared at %s — possible log rotation; retry" % log_path
-			if _Hub.LogBuffer.uses_logger_api():
+			if LogBuffer.uses_logger_api():
 				_gone_hint += " or use source=\"buffer\""
 			_send_result(peer, id, MCPToolkitError.fail("LOG_UNAVAILABLE", _gone_hint))
 		return
@@ -631,7 +635,7 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	var start := max(0, total - limit)
 	var slice: Array = []
 	for i in range(start, total):
-		slice.append(Helpers.strip_ansi(all_lines[i]))
+		slice.append(LogHelpers.strip_ansi(all_lines[i]))
 
 	if text_filter != "":
 		var text_filtered: Array = []

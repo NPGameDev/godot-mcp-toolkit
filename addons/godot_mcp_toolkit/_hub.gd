@@ -16,7 +16,8 @@ const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.
 const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/user_path_monitor.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
-const Helpers := preload("res://addons/godot_mcp_toolkit/commands/_helpers.gd")
+const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
+const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 const NodejsCheck := preload("res://addons/godot_mcp_toolkit/nodejs_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/mcp_version_utils.gd")
 
