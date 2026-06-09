@@ -9,6 +9,10 @@ extends Node
 signal client_connected(peer_count: int)
 signal client_disconnected(peer_count: int)
 signal command_received(method: String)
+## Emitted when the MCP server reports a new GDScript LSP verdict
+## (set_reported_lsp_status) so the dock refreshes exactly on change — no polling,
+## no stale label even if the status is re-assessed later (e.g. on an LSP call).
+signal lsp_status_changed
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const RegistryClient = _Hub.RegistryClient
@@ -196,6 +200,7 @@ static func resolve_lsp_endpoint() -> Dictionary:
 ## "unavailable"), host, port, detail. Empty until an MCP server connects.
 func set_reported_lsp_status(status: Dictionary) -> void:
 	_reported_lsp_status = status.duplicate()
+	lsp_status_changed.emit()
 
 
 func get_reported_lsp_status() -> Dictionary:

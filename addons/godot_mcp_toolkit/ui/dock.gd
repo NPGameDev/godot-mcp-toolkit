@@ -59,6 +59,9 @@ func bind(server: Node, audit_path: String) -> void:
 	_server.client_connected.connect(_on_client_connected)
 	_server.client_disconnected.connect(_on_client_disconnected)
 	_server.command_received.connect(_on_command_received)
+	# LSP verdict arrives via editor.set_lsp_status (a command, not a dock signal);
+	# refresh exactly when the server sets it, so the label is never stale.
+	_server.lsp_status_changed.connect(_refresh_lsp_label)
 	_refresh_status()
 
 
@@ -72,9 +75,6 @@ func _ready() -> void:
 	_runtime_timer = Timer.new()
 	_runtime_timer.wait_time = 1.0
 	_runtime_timer.timeout.connect(_refresh_runtime_status)
-	# Poll the server-reported LSP status too — it arrives via editor.set_lsp_status
-	# (a command), not a dock signal, so signal-driven refresh alone would miss it.
-	_runtime_timer.timeout.connect(_refresh_lsp_label)
 	add_child(_runtime_timer)
 	_runtime_timer.start()
 
