@@ -72,6 +72,9 @@ func _ready() -> void:
 	_runtime_timer = Timer.new()
 	_runtime_timer.wait_time = 1.0
 	_runtime_timer.timeout.connect(_refresh_runtime_status)
+	# Poll the server-reported LSP status too — it arrives via editor.set_lsp_status
+	# (a command), not a dock signal, so signal-driven refresh alone would miss it.
+	_runtime_timer.timeout.connect(_refresh_lsp_label)
 	add_child(_runtime_timer)
 	_runtime_timer.start()
 
@@ -498,7 +501,7 @@ func _refresh_lsp_label() -> void:
 			"active":
 				_lsp_label.text = "LSP: %s:%d · active" % [host, port]
 				_lsp_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
-				_lsp_label.tooltip_text = "The MCP server is connected to this editor's GDScript LSP."
+				_lsp_label.tooltip_text = "This editor owns the GDScript LSP port (reported by the MCP server)."
 			"conflict":
 				_lsp_label.text = "LSP: %d ⚠ conflict — another editor owns this port" % port
 				_lsp_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
