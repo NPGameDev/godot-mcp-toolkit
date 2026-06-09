@@ -471,36 +471,3 @@ static func get_lsp_endpoint() -> Dictionary:
 		"host": str(entry.get("lsp_host", "127.0.0.1")),
 		"port": int(entry.get("lsp_port", 6005)),
 	}
-
-
-## Best-effort count of OTHER live editors publishing the same LSP port as us — a
-## UI-only conflict hint (the server's PID-liveness check is authoritative). Uses
-## OS.is_process_running, which false-negatives for live siblings on Windows, so
-## this can undercount; it never false-positives. Pure — no EditorInterface.
-static func lsp_conflict_peers() -> int:
-	var mine := _read_entry()
-	var my_port = mine.get("lsp_port", null)
-	if my_port == null:
-		return 0
-	var path := registry_path()
-	if not FileAccess.file_exists(path):
-		return 0
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return 0
-	var parsed = JSON.parse_string(f.get_as_text())
-	f.close()
-	if parsed == null or not parsed is Dictionary:
-		return 0
-	var my_key := _project_key()
-	var count := 0
-	for key in parsed.get("by_path", {}):
-		if key == my_key:
-			continue
-		var entry = parsed["by_path"][key]
-		if not entry is Dictionary or entry.get("lsp_port", null) != my_port:
-			continue
-		var pid := int(entry.get("pid", 0))
-		if pid > 0 and OS.is_process_running(pid):
-			count += 1
-	return count

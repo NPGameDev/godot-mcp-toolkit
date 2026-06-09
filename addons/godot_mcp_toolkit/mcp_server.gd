@@ -69,6 +69,10 @@ var _bound_port: int = -1
 # Last LSP endpoint published to the registry — the Q4 re-publish baseline.
 var _last_lsp_host: String = ""
 var _last_lsp_port: int = -1
+# Authoritative LSP verdict the MCP server last reported (editor.set_lsp_status).
+# The editor can't read its own LSP bind status, so the server tells us and the
+# dock renders it. {} until a server connects. See ADR 0008.
+var _reported_lsp_status: Dictionary = {}
 # Best-effort in-memory mirror: >= 0 while THIS instance is holding the boost
 # active, -1 otherwise. The machine-wide backup FILE is the source of truth for
 # restore (this only gates whether the disconnect/stop path runs). See the
@@ -183,6 +187,19 @@ static func resolve_lsp_endpoint() -> Dictionary:
 		if es.has_setting("network/language_server/remote_port"):
 			port = int(es.get_setting("network/language_server/remote_port"))
 	return {"host": host, "port": port}
+
+
+## The MCP server reports the authoritative LSP verdict here — it can do reliable
+## cross-process liveness (process.kill) and the real connection/root-verify,
+## which the editor cannot (no engine API for its own LSP bind status). The dock
+## renders whatever was last reported. Keys: state ("active"/"conflict"/
+## "unavailable"), host, port, detail. Empty until an MCP server connects.
+func set_reported_lsp_status(status: Dictionary) -> void:
+	_reported_lsp_status = status.duplicate()
+
+
+func get_reported_lsp_status() -> Dictionary:
+	return _reported_lsp_status
 
 
 func get_command_methods() -> Array:

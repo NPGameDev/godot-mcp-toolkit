@@ -35,9 +35,20 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("execute.code", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_execute_code(parameters)
 	, MCPToolkitCommandOptions.new())
+	registry.add("editor.set_lsp_status", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_set_lsp_status(server, parameters)
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 
 
 # -- Commands -----------------------------------------------------------------
+
+
+## editor.set_lsp_status — the MCP server pushes its authoritative GDScript LSP
+## verdict here (the editor can't read its own LSP bind status). Stored on the
+## server for the dock to display. Internal command — not an MCP tool.
+static func _cmd_set_lsp_status(server: Node, parameters: Dictionary) -> Dictionary:
+	server.set_reported_lsp_status(parameters)
+	return MCPToolkitSuccess.ok({"reported": true})
 
 
 static func _cmd_editor_get_errors(server: Node, parameters: Dictionary) -> Dictionary:

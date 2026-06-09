@@ -480,32 +480,49 @@ func _refresh_runtime_status() -> void:
 		_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 
 
-## Best-effort LSP endpoint indicator: shows the published host:port and a soft
-## warning when another live editor shares the same LSP port. UI only — the
-## server (Fix 2) is the authority that prevents wrong-project LSP results.
+## LSP status indicator. The MCP server reports the authoritative verdict
+## (editor.set_lsp_status) — the editor can't read its own LSP bind status, and
+## in-engine cross-process liveness is unreliable on Windows, so the dock renders
+## what the server determined. Falls back to the configured (published) endpoint
+## until an MCP server connects.
 func _refresh_lsp_label() -> void:
 	if _lsp_label == null:
 		return
+	var st: Dictionary = {}
+	if _server != null and _server.has_method("get_reported_lsp_status"):
+		st = _server.get_reported_lsp_status()
+	if not st.is_empty() and st.has("state"):
+		var host := str(st.get("host", "127.0.0.1"))
+		var port := int(st.get("port", 6005))
+		match str(st.get("state", "")):
+			"active":
+				_lsp_label.text = "LSP: %s:%d · active" % [host, port]
+				_lsp_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
+				_lsp_label.tooltip_text = "The MCP server is connected to this editor's GDScript LSP."
+			"conflict":
+				_lsp_label.text = "LSP: %d ⚠ conflict — another editor owns this port" % port
+				_lsp_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+				_lsp_label.tooltip_text = (
+					"Another editor owns the machine-wide GDScript LSP port, so this editor's "
+					+ "LSP tools are unavailable. Give each editor a distinct --lsp-port + "
+					+ "GODOT_MCP_LSP_PORT. See docs/multi-instance.md.")
+			_:  # "unavailable" / unknown
+				_lsp_label.text = "LSP: %d ⚠ unavailable" % port
+				_lsp_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+				_lsp_label.tooltip_text = str(st.get("detail", "GDScript LSP not reachable."))
+		return
+	# No server has reported yet — show the configured (published) endpoint.
 	var ep := RegistryClient.get_lsp_endpoint()
 	if ep.is_empty():
 		_lsp_label.text = "LSP: —"
 		_lsp_label.tooltip_text = ""
 		_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		return
-	var base := "LSP: %s:%d" % [ep["host"], ep["port"]]
-	var peers := RegistryClient.lsp_conflict_peers()
-	if peers > 0:
-		_lsp_label.text = base + "  ⚠ shared by %d other editor%s" % [
-			peers, "" if peers == 1 else "s"]
-		_lsp_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-		_lsp_label.tooltip_text = (
-			"Another open editor publishes the same GDScript LSP port. LSP tools may "
-			+ "be ambiguous — give each editor a distinct --lsp-port + GODOT_MCP_LSP_PORT. "
-			+ "See docs/multi-instance.md.")
-	else:
-		_lsp_label.text = base
-		_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-		_lsp_label.tooltip_text = "GDScript LSP endpoint the server discovers for this editor."
+	_lsp_label.text = "LSP: %s:%d (configured · awaiting MCP server)" % [ep["host"], ep["port"]]
+	_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	_lsp_label.tooltip_text = (
+		"Configured GDScript LSP endpoint published for the MCP server. Connect an "
+		+ "MCP client to see live status (owner / conflict).")
 
 
 # ---------------------------------------------------------------------------
