@@ -10,6 +10,7 @@ extends SceneTree
 const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/mcp_toolkit_safe_scene_ops.gd")
 const EditorCommands := preload("res://addons/godot_mcp_toolkit/commands/editor_commands.gd")
 const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
+const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 
 var _passed := 0
 var _failed := 0
@@ -26,6 +27,7 @@ func _init() -> void:
 		return
 
 	_test_registry()
+	_test_registry_entry()
 	_test_options_builder()
 	_test_extension_options()
 	_test_annotation_mapping()
@@ -173,6 +175,35 @@ func _test_registry() -> void:
 			"non-existent → metadata empty dict")
 	_ok(reg.needs_serialization("t.nope"),
 			"non-existent → needs_serialization true (safe default)")
+
+	print("")
+
+
+# --- RegistryClient entry build (41l-tertricies) ---------------------------
+# _build_entry is pure (no FS, no EditorInterface): the editor resolves the LSP
+# endpoint (MCPServer.resolve_lsp_endpoint — editor-coupled, interactive-verified)
+# and passes it in, so the entry written to projects.json carries lsp_host/lsp_port
+# for the server's per-project LSP discovery.
+
+func _test_registry_entry() -> void:
+	_begin("RegistryClient entry")
+
+	# 1. Entry carries the LSP endpoint the editor passed in.
+	var e := RegistryClient._build_entry("res://proj", 6550, "tok", "127.0.0.1", 6005, null, null)
+	_eq(e.get("lsp_host", ""), "127.0.0.1", "entry carries lsp_host")
+	_eq(e.get("lsp_port", -1), 6005, "entry carries lsp_port")
+
+	# 2. WS port stays distinct from the LSP port; core keys present.
+	_eq(e.get("port", -1), 6550, "entry carries ws port (distinct from lsp_port)")
+	_eq(e.get("token_path", ""), "tok", "entry carries token_path")
+	_ok(e.has("_key") and e.has("pid") and e.has("started_at"),
+			"entry carries core keys (_key/pid/started_at)")
+	_ok(e.get("runtime_port") == null, "no runtime → runtime_port null")
+
+	# 3. A custom (non-default) LSP port + an active runtime flow through unchanged.
+	var e2 := RegistryClient._build_entry("res://proj", 6551, "tok", "127.0.0.1", 6010, 6570, 4242)
+	_eq(e2.get("lsp_port", -1), 6010, "custom lsp_port flows through")
+	_eq(e2.get("runtime_port", -1), 6570, "runtime_port preserved when set")
 
 	print("")
 

@@ -61,6 +61,24 @@ large payloads (e.g. big `script_write` bodies) and see truncated or dropped
 connections under load. Can also be overridden per-connection by the
 `GODOT_MCP_WS_BUFFER_LIMIT` env var in `.mcp.json`.
 
+## Language server (LSP)
+
+The `lsp_*` tools connect to Godot's built-in GDScript language server. The MCP
+server discovers the right endpoint per project from the registry, so a **single
+editor needs no configuration**. These two env vars (set in a project's
+`.mcp.json` `env` block) override discovery — needed only when running the LSP in
+**more than one editor at once** (see `docs/multi-instance.md`).
+
+### `GODOT_MCP_LSP_PORT` — default: discovered (else `6005`)
+
+The GDScript LSP port this project's server connects to. Top priority — bypasses
+registry discovery. Set it to the `--lsp-port` you launched that editor with.
+
+### `GODOT_MCP_LSP_HOST` — default: discovered (else `127.0.0.1`)
+
+The host for the GDScript LSP. Rarely needed — the LSP is localhost-only. Mirrors
+the familiar `lsp.serverHost` client setting.
+
 ## Editor responsiveness while unfocused
 
 > **Note — these two keys live in Editor Settings, not Project Settings.**

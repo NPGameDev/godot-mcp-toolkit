@@ -77,6 +77,51 @@ full isolation.
 
 ---
 
+## GDScript LSP in two editors at once
+
+The `lsp_*` tools (diagnostics, symbols, hover, completion, definition,
+references) reach Godot's built-in **GDScript Language Server**, which binds a
+single **machine-wide** TCP port (default **6005**) — *not* per project. This is
+independent of the per-project WebSocket above: **any two editors collide on it —
+same-project worktrees (Pattern A) *or* two unrelated projects alike** — because
+they share the one 6005. When the second editor can't bind 6005 its LSP fails
+silently, so without the setup below the second project's `lsp_*` tools would
+reach the *first* editor.
+
+The toolkit publishes each editor's LSP endpoint to the registry and the server
+discovers it per project, but the engine consumes `--lsp-port` before the plugin
+can observe it — so a second editor needs **both** a distinct launch port and a
+matching env var:
+
+> **Recipe.** Give each extra editor its own LSP port (`--lsp-port`; note the
+> **space**, not `=`; Godot ≥ 4.2) **and** tell that editor's MCP server the
+> matching port via `GODOT_MCP_LSP_PORT`:
+>
+> ```bash
+> godot --editor --path /path/to/projectB --lsp-port 6006
+> ```
+> ```json
+> // projectB/.mcp.json — env block
+> "env": { "GODOT_MCP_CONFIG_VERSION": "1", "GODOT_MCP_LSP_PORT": "6006" }
+> ```
+>
+> The default editor (A) needs nothing — it keeps 6005 and the server discovers
+> it. `GODOT_MCP_LSP_HOST` overrides the host the same way (rarely needed — the
+> LSP is localhost). These mirror the familiar `lsp.serverPort` / `lsp.serverHost`
+> client settings.
+
+**Without** a distinct `--lsp-port`, the second editor's server reports a visible
+`LSP_PORT_CONFLICT` and refuses to answer — it will **not** silently return the
+other project's results.
+
+> **Godot 4.2–4.4.** The cross-project safety net (workspace-root verification)
+> needs Godot **4.5+**. On 4.2–4.4 the server cannot detect a foreign or
+> near-simultaneous holder of port 6005, so **always** give each editor a distinct
+> `--lsp-port` + `GODOT_MCP_LSP_PORT` before using `lsp_*` tools with more than one
+> editor open.
+
+---
+
 ## Quick reference
 
 | Pattern | Setup | Status |

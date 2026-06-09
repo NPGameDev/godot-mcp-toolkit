@@ -141,13 +141,17 @@ func _enter_tree() -> void:
 	# until _scan_and_listen() runs.
 	var bound_port: int = _server.get_bound_port()
 	if bound_port > 0:
-		RegistryClient.register(bound_port, MCPAuth.get_token_path())
+		var lsp := MCPServer.resolve_lsp_endpoint()
+		RegistryClient.register(bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
 		# Deferred re-verify: concurrent editors may clobber our entry after
 		# our initial verify passes. Jittered delay ensures all editors have
-		# finished their initial registration before we re-check.
+		# finished their initial registration before we re-check. Re-resolve the
+		# LSP endpoint at fire time so a mid-window Q4 change isn't reverted.
 		var _jitter := randf_range(5.0, 10.0)
 		get_tree().create_timer(_jitter).timeout.connect(
-			func(): RegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path()))
+			func():
+				var lsp_re := MCPServer.resolve_lsp_endpoint()
+				RegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path(), lsp_re["host"], lsp_re["port"]))
 
 	# -- Bottom-panel dock --
 	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()

@@ -29,6 +29,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. `gdscript://` URIs in error messages (see below); `class_name` false positive fixed via stripping |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
+| `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see `docs/multi-instance.md`) |
 | All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
 
 ### Degraded behavior by version
@@ -57,6 +58,12 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   edit. `extensions.refresh` returns a `hint` naming the changed extension and
   telling you to restart the editor; a `push_warning` also shows in the Output
   panel. Godot 4.3+ applies edits live (validated on 4.5).
+- **GDScript LSP multi-editor — root verification needs 4.5+.** The `lsp_*` tools
+  work, but the server's cross-project safety check (the workspace-root mismatch
+  warning) doesn't exist before 4.5. With more than one editor open the server
+  cannot detect a foreign or near-simultaneous holder of LSP port 6005, so each
+  editor must use a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see
+  `docs/multi-instance.md`).
 
 **Godot 4.4:**
 - UndoRedo history works for all operations (requires proper
@@ -66,9 +73,14 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 - `scene_close` returns `UNSUPPORTED`.
 - `scene_delete`/`file_delete`: non-active open scene tabs become phantoms
   with a warning; active scene deletion is blocked (`EDITED_SCENE`).
+- GDScript LSP multi-editor: root verification needs 4.5+ (see the 4.2–4.3 note);
+  a multi-editor LSP setup on 4.4 still needs a distinct `--lsp-port` +
+  `GODOT_MCP_LSP_PORT`.
 
 **Godot 4.5+:**
 - Full functionality. All tools, all UI features.
+- GDScript LSP multi-editor conflict detection fully supported (workspace-root
+  verification catches a wrong-project or non-registry holder of port 6005).
 - Console capture uses the Logger API (zero-latency, in-memory ring buffer)
   instead of the file-tailing backend used on 4.2-4.4.
 

@@ -323,19 +323,32 @@ static func _rebuild_projects_json() -> void:
 # -- Public API ----------------------------------------------------------------
 
 
-static func register(port: int, token_path: String) -> void:
-	var key := _project_key()
-	var my_pid := OS.get_process_id()
-	var my_entry := {
+## Build a registry entry dict from the given facts. Pure — no FS access, no
+## EditorInterface: the editor side resolves the LSP endpoint
+## (MCPServer.resolve_lsp_endpoint) and passes lsp_host/lsp_port in, so this file
+## stays editor-clean and the Mode-B runtime autoload can safely preload it
+## (naming an editor-only class here would parse-fail the autoload in exports —
+## godot#91713). lsp_port/runtime_* are untyped: int when known, null otherwise.
+static func _build_entry(key: String, port: int, token_path: String,
+		lsp_host: String, lsp_port, runtime_port, runtime_pid) -> Dictionary:
+	return {
 		"_key": key,
 		"port": port,
 		"token_path": token_path,
-		"pid": my_pid,
+		"pid": OS.get_process_id(),
 		"started_at": int(Time.get_unix_time_from_system()),
 		"godot_version": _VersionUtils.get_engine_version_pair(),
-		"runtime_port": null,
-		"runtime_pid": null,
+		"runtime_port": runtime_port,
+		"runtime_pid": runtime_pid,
+		"lsp_host": lsp_host,
+		"lsp_port": lsp_port,
 	}
+
+
+static func register(port: int, token_path: String, lsp_host: String, lsp_port: int) -> void:
+	var key := _project_key()
+	var my_pid := OS.get_process_id()
+	var my_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, null, null)
 	# Warn on double-open (same project in two editors).
 	var existing := _read_entry()
 	if not existing.is_empty():
@@ -365,7 +378,9 @@ static func set_runtime(runtime_port: int) -> void:
 	var my_pid := OS.get_process_id()
 	var entry := _read_entry()
 	if entry.is_empty():
-		# Self-heal: entry file was lost — create a minimal one.
+		# Self-heal: entry file was lost — create a minimal one. No editor here to
+		# resolve the LSP endpoint (set_runtime runs from the runtime autoload), so
+		# publish lsp_port: null — the server reads a null lsp_port as a miss.
 		entry = {
 			"_key": key,
 			"port": -1,
@@ -374,6 +389,8 @@ static func set_runtime(runtime_port: int) -> void:
 			"started_at": int(Time.get_unix_time_from_system()),
 			"runtime_port": runtime_port,
 			"runtime_pid": my_pid,
+			"lsp_host": "127.0.0.1",
+			"lsp_port": null,
 		}
 		push_warning("[MCPRegistry] set_runtime: entry file missing for %s — created self-heal entry" % key)
 	else:
@@ -404,12 +421,16 @@ static func clear_runtime() -> void:
 ## ensure our entry file still exists and projects.json is up to date.
 ## In the entry-file architecture this is mostly a rebuild trigger —
 ## our entry file can't be clobbered by another editor (unique path).
-static func ensure_registered(port: int, token_path: String) -> void:
+static func ensure_registered(port: int, token_path: String, lsp_host: String, lsp_port: int) -> void:
 	var key := _project_key()
 	var my_pid := OS.get_process_id()
 	var entry := _read_entry()
 	if not entry.is_empty() and int(entry.get("pid", 0)) == my_pid:
-		# Entry file present with our PID — rebuild to sync projects.json.
+		# Entry file present with our PID — refresh the LSP endpoint (Q4 live
+		# re-publish may pass a changed port/host) and rebuild projects.json.
+		entry["lsp_host"] = lsp_host
+		entry["lsp_port"] = lsp_port
+		_write_entry(entry)
 		_acquire_lock()
 		_rebuild_projects_json()
 		_release_lock()
@@ -421,16 +442,7 @@ static func ensure_registered(port: int, token_path: String) -> void:
 		runtime_port = entry.get("runtime_port", null)
 		runtime_pid = entry.get("runtime_pid", null)
 	push_warning("[MCPRegistry] entry file missing during deferred re-verify; re-creating for %s" % key)
-	var new_entry := {
-		"_key": key,
-		"port": port,
-		"token_path": token_path,
-		"pid": my_pid,
-		"started_at": int(Time.get_unix_time_from_system()),
-		"godot_version": _VersionUtils.get_engine_version_pair(),
-		"runtime_port": runtime_port,
-		"runtime_pid": runtime_pid,
-	}
+	var new_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, runtime_port, runtime_pid)
 	_write_entry(new_entry)
 	_acquire_lock()
 	_rebuild_projects_json()
@@ -447,3 +459,48 @@ static func get_runtime_port() -> int:
 	if rp == null:
 		return -1
 	return int(rp)
+
+
+## Read-only: this editor's published LSP endpoint as {host, port}, or {} when
+## not yet published / unavailable. Backs the dock indicator (Fix 3). Pure.
+static func get_lsp_endpoint() -> Dictionary:
+	var entry := _read_entry()
+	if entry.is_empty() or entry.get("lsp_port", null) == null:
+		return {}
+	return {
+		"host": str(entry.get("lsp_host", "127.0.0.1")),
+		"port": int(entry.get("lsp_port", 6005)),
+	}
+
+
+## Best-effort count of OTHER live editors publishing the same LSP port as us — a
+## UI-only conflict hint (the server's PID-liveness check is authoritative). Uses
+## OS.is_process_running, which false-negatives for live siblings on Windows, so
+## this can undercount; it never false-positives. Pure — no EditorInterface.
+static func lsp_conflict_peers() -> int:
+	var mine := _read_entry()
+	var my_port = mine.get("lsp_port", null)
+	if my_port == null:
+		return 0
+	var path := registry_path()
+	if not FileAccess.file_exists(path):
+		return 0
+	var f := FileAccess.open(path, FileAccess.READ)
+	if f == null:
+		return 0
+	var parsed = JSON.parse_string(f.get_as_text())
+	f.close()
+	if parsed == null or not parsed is Dictionary:
+		return 0
+	var my_key := _project_key()
+	var count := 0
+	for key in parsed.get("by_path", {}):
+		if key == my_key:
+			continue
+		var entry = parsed["by_path"][key]
+		if not entry is Dictionary or entry.get("lsp_port", null) != my_port:
+			continue
+		var pid := int(entry.get("pid", 0))
+		if pid > 0 and OS.is_process_running(pid):
+			count += 1
+	return count

@@ -66,6 +66,9 @@ var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers on
 var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
 # -1 = never bound.
 var _bound_port: int = -1
+# Last LSP endpoint published to the registry — the Q4 re-publish baseline.
+var _last_lsp_host: String = ""
+var _last_lsp_port: int = -1
 # Best-effort in-memory mirror: >= 0 while THIS instance is holding the boost
 # active, -1 otherwise. The machine-wide backup FILE is the source of truth for
 # restore (this only gates whether the disconnect/stop path runs). See the
@@ -163,6 +166,25 @@ func get_bound_port() -> int:
 	return _bound_port
 
 
+## The GDScript LSP endpoint THIS editor's setting points at (default
+## 127.0.0.1:6005). A --lsp-port override is invisible here — the engine consumes
+## it before OS.get_cmdline_args() and never writes it to the setting — so that
+## case rides GODOT_MCP_LSP_PORT on the server (see docs/multi-instance.md).
+## Static + editor-only (names EditorInterface); the registry callers pass the
+## result into register()/ensure_registered() so registry_client.gd stays
+## editor-clean for the Mode-B runtime autoload.
+static func resolve_lsp_endpoint() -> Dictionary:
+	var host := "127.0.0.1"
+	var port := 6005
+	var es := EditorInterface.get_editor_settings()
+	if es != null:
+		if es.has_setting("network/language_server/remote_host"):
+			host = str(es.get_setting("network/language_server/remote_host"))
+		if es.has_setting("network/language_server/remote_port"):
+			port = int(es.get_setting("network/language_server/remote_port"))
+	return {"host": host, "port": port}
+
+
 func get_command_methods() -> Array:
 	if _registry == null:
 		return []
@@ -205,7 +227,8 @@ func _rewrite_token_after_rename() -> void:
 		print("[MCPServer] token re-written to %s" % MCPAuth.get_token_path())
 	# Update registry so the bridge finds the new token_path.
 	if _bound_port > 0:
-		RegistryClient.register(_bound_port, MCPAuth.get_token_path())
+		var lsp := resolve_lsp_endpoint()
+		RegistryClient.register(_bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
 
 
 func regenerate_token() -> void:
@@ -243,10 +266,12 @@ func start() -> void:
 		var token_path := MCPAuth.get_token_path()
 		print("[MCPServer] session token written to %s" % token_path)
 	_scan_and_listen()
+	_connect_lsp_settings_watch()
 
 
 func stop() -> void:
 	set_process(false)
+	_disconnect_lsp_settings_watch()
 	for peer in _peers:
 		if peer != null:
 			peer.close(1000)
@@ -261,6 +286,40 @@ func stop() -> void:
 	_consecutive_failures = 0
 	_bound_port = -1
 	print("[MCPServer] stopped")
+
+
+## Q4 — re-publish the registry entry when the editor's GDScript LSP port/host
+## setting changes mid-session, so the published endpoint never goes stale.
+## EditorSettings.settings_changed fires globally; we debounce by comparing the
+## re-resolved endpoint against the last published one. Connected in start(),
+## disconnected in stop() (I12 symmetry).
+func _connect_lsp_settings_watch() -> void:
+	var lsp := resolve_lsp_endpoint()
+	_last_lsp_host = lsp["host"]
+	_last_lsp_port = lsp["port"]
+	var es := EditorInterface.get_editor_settings()
+	if es != null and es.has_signal("settings_changed") \
+			and not es.settings_changed.is_connected(_on_editor_settings_changed):
+		es.settings_changed.connect(_on_editor_settings_changed)
+
+
+func _disconnect_lsp_settings_watch() -> void:
+	var es := EditorInterface.get_editor_settings()
+	if es != null and es.has_signal("settings_changed") \
+			and es.settings_changed.is_connected(_on_editor_settings_changed):
+		es.settings_changed.disconnect(_on_editor_settings_changed)
+
+
+func _on_editor_settings_changed() -> void:
+	if _bound_port <= 0:
+		return
+	var lsp := resolve_lsp_endpoint()
+	if lsp["host"] == _last_lsp_host and lsp["port"] == _last_lsp_port:
+		return  # LSP endpoint unchanged — ignore unrelated editor-setting churn.
+	_last_lsp_host = lsp["host"]
+	_last_lsp_port = lsp["port"]
+	RegistryClient.ensure_registered(_bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
+	print("[MCPServer] LSP endpoint changed → re-published %s:%d" % [lsp["host"], lsp["port"]])
 
 
 # -- Networking ----------------------------------------------------------------

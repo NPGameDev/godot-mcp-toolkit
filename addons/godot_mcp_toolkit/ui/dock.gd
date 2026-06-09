@@ -25,6 +25,7 @@ var _status_label: Label = null
 var _peer_label: Label = null
 var _activity_label: Label = null
 var _runtime_label: Label = null
+var _lsp_label: Label = null
 var _read_only_panel: PanelContainer = null
 var _mcp_json_btn: Button = null
 
@@ -220,6 +221,14 @@ func _build_ui() -> void:
 	_runtime_label.text = "Runtime: not running"
 	_runtime_label.add_theme_font_size_override("font_size", 13)
 	sc.add_child(_runtime_label)
+
+	# GDScript LSP endpoint the server discovers for this editor (best-effort;
+	# the server is authoritative for conflicts). See Fix 3, 41l-tertricies.
+	_lsp_label = Label.new()
+	_lsp_label.text = "LSP: —"
+	_lsp_label.add_theme_font_size_override("font_size", 12)
+	_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+	sc.add_child(_lsp_label)
 
 	_activity_label = Label.new()
 	_activity_label.text = "Last activity: —"
@@ -451,6 +460,7 @@ func _refresh_status() -> void:
 			_mcp_json_btn.text = "Open .mcp.json"
 			_mcp_json_btn.remove_theme_color_override("font_color")
 	_refresh_runtime_status()
+	_refresh_lsp_label()
 	_refresh_unfocused_indicator()
 
 
@@ -468,6 +478,34 @@ func _refresh_runtime_status() -> void:
 	else:
 		_runtime_label.text = "Runtime: not running (start playtest with F5)"
 		_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+
+
+## Best-effort LSP endpoint indicator: shows the published host:port and a soft
+## warning when another live editor shares the same LSP port. UI only — the
+## server (Fix 2) is the authority that prevents wrong-project LSP results.
+func _refresh_lsp_label() -> void:
+	if _lsp_label == null:
+		return
+	var ep := RegistryClient.get_lsp_endpoint()
+	if ep.is_empty():
+		_lsp_label.text = "LSP: —"
+		_lsp_label.tooltip_text = ""
+		_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		return
+	var base := "LSP: %s:%d" % [ep["host"], ep["port"]]
+	var peers := RegistryClient.lsp_conflict_peers()
+	if peers > 0:
+		_lsp_label.text = base + "  ⚠ shared by %d other editor%s" % [
+			peers, "" if peers == 1 else "s"]
+		_lsp_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+		_lsp_label.tooltip_text = (
+			"Another open editor publishes the same GDScript LSP port. LSP tools may "
+			+ "be ambiguous — give each editor a distinct --lsp-port + GODOT_MCP_LSP_PORT. "
+			+ "See docs/multi-instance.md.")
+	else:
+		_lsp_label.text = base
+		_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
+		_lsp_label.tooltip_text = "GDScript LSP endpoint the server discovers for this editor."
 
 
 # ---------------------------------------------------------------------------
