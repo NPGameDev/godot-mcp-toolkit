@@ -521,11 +521,12 @@ func _refresh_lsp_label() -> void:
 		_lsp_label.tooltip_text = ""
 		_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 		return
-	_lsp_label.text = "LSP: %s:%d (configured · awaiting MCP server)" % [ep["host"], ep["port"]]
+	_lsp_label.text = "LSP: %s:%d (editor setting · awaiting MCP server)" % [ep["host"], ep["port"]]
 	_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
 	_lsp_label.tooltip_text = (
-		"Configured GDScript LSP endpoint published for the MCP server. Connect an "
-		+ "MCP client to see live status (owner / conflict).")
+		"Configured GDScript LSP port (the editor setting). If this editor was launched "
+		+ "with --lsp-port the actual port differs — Godot doesn't expose it to the plugin, "
+		+ "so the MCP server reports the real port (and owner/conflict status) on connect.")
 
 
 # ---------------------------------------------------------------------------
