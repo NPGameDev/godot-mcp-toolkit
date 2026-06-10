@@ -44,6 +44,9 @@ const _RELISTEN_FRAME_INTERVAL := 60
 # progress_dialog.cpp errors. This is acceptable — the alternative
 # (inline _process poll) causes reproducible editor crashes.
 # No upstream structural fix exists as of Godot 4.5/4.6-dev.
+# Cold/hot sleep mode (set_process(false) with no client) was assessed in iter 41m
+# and rejected: no TCPServer accept signal exists to wake on, and gating the loop
+# fights this deferral + the always-run _check_mutation_watchdog() for a tiny gain.
 const _POLL_FRAME_INTERVAL := 4
 # Auth timeout. Peers that don't send a valid auth message within this
 # window are closed with WS close code 1008 (Policy Violation).
