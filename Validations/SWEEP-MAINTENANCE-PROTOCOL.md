@@ -9,6 +9,23 @@ The sweep currently covers all behavior up to and including:
 
 When updating the sweep, run `git log --oneline <this SHA>..HEAD` to find commits that need new test coverage. After updating, bump this SHA to the latest commit included.
 
+## Relationship to the server flow suite (added 41m-bis)
+
+This **sweep** is the **LLM-driven** validation layer (hint/UX quality,
+exploratory edge-discovery). Its deterministic counterpart is the server repo's
+**flow suite** (`godot-mcp-server` → `test/flows/`, run via `npm run flows`),
+which scripts the **cross-tool, stateful flows** that *are* deterministic —
+extension lifecycle (this sweep's Section 24), combo chains (Section 22), and the
+flow-shaped regression-watch items. The two are complementary, not redundant:
+the flow suite is the fast, ~0-token pre-refactor regression baseline; this sweep
+keeps the non-deterministic work **and confirms flow-suite failures** — when
+`npm run flows` reports a FAILED flow/step, re-run *this sweep* targeted at that
+one flow to classify **stale script** (update the test) vs **real regression**
+(fix the code). The word "sweep" is reserved for this LLM layer; the
+deterministic `.ts` layer is the **flow suite** (see the server repo's
+`test/SMOKE-COVERAGE-MANIFEST.md` → "Flow Suite", and plan-repo `CONTEXT.md` →
+"Validation vocabulary"). New tools/params → update **sweep + smoke + flows**.
+
 ## When to update the sweep
 
 Update the tool sweep (`Validations/tool-sweep.md` + relevant `Sections/*.md`) whenever an iteration:
