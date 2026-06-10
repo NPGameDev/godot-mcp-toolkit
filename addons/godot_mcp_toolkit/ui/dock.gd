@@ -429,7 +429,7 @@ func _on_client_disconnected(peer_count: int) -> void:
 	_peer_label.text = "%d peer%s" % [peer_count, "" if peer_count == 1 else "s"]
 	_activity_label.text = "Last activity: client disconnected"
 	if peer_count == 0:
-		_toast("MCP client lost connection", _TOAST_WARNING)
+		_toast("MCP client disconnected")
 	_refresh_unfocused_indicator()
 
 
