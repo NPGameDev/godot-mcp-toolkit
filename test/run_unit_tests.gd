@@ -45,6 +45,7 @@ func _init() -> void:
 	_test_export_strip()
 	_test_editor_refresh_reload_filter()
 	_test_unfocused_backup()
+	_test_stale_instance_hint()
 	await _test_response_validation()
 
 	_report()
@@ -1033,6 +1034,99 @@ func _test_unfocused_backup() -> void:
 			"version_key({4,2}) → '4.2'")
 
 	DirAccess.remove_absolute(dir)  # cleanup
+	print("")
+
+
+# --- Stale-live-instance hint (41m-bis-bis) --------------------------------
+# Pure decision predicates + message builders + on-disk helpers for the
+# stale-live-instance method-call hazard. The editor-coupled callers
+# (script_commands.gd proactive at script.write, node_commands.gd reactive at
+# INVALID_METHOD) read the running version + on-disk source and feed these.
+# Boundary: STALE on Godot < 4.4 (minor 2,3), live on 4.4+ (minor 4,5,6) —
+# empirically characterised across 4.2-4.6 (boundary 4.3->4.4); see
+# Insights/stale-live-instance-method-hazard.md + test/flows/02_*.
+
+const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/stale_instance_hint.gd")
+
+func _test_stale_instance_hint() -> void:
+	_begin("Stale-instance hint")
+
+	# should_warn_on_write(existed, compiled_ok, extension, minor) — proactive gate
+	_ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 2),
+			"write: existing .gd compiled on 4.2 → warn")
+	_ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 3),
+			"write: existing .gd compiled on 4.3 → warn")
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4),
+			"write: 4.4 → no warn (hot-reloads)")
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 5),
+			"write: 4.5 → no warn")
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 6),
+			"write: 4.6 → no warn")
+	_ok(not StaleInstanceHint.should_warn_on_write(false, true, "gd", 3),
+			"write: create (new file) → no warn")
+	_ok(not StaleInstanceHint.should_warn_on_write(true, false, "gd", 3),
+			"write: compile-failed → no warn (Scenario C gate)")
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "cs", 3),
+			"write: .cs → no warn (out of scope)")
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gdshader", 2),
+			"write: .gdshader → no warn")
+
+	# should_hint_on_call(has_method, disk_has_method, disk_compiles, is_gd, minor)
+	_ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 3),
+			"call: stale method on 4.3 → hint")
+	_ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 2),
+			"call: stale method on 4.2 → hint")
+	_ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 4),
+			"call: 4.4 → no hint")
+	_ok(not StaleInstanceHint.should_hint_on_call(false, false, true, true, 3),
+			"call: method absent on disk (typo) → no hint")
+	_ok(not StaleInstanceHint.should_hint_on_call(false, true, false, true, 3),
+			"call: disk doesn't compile → no hint (Option B)")
+	_ok(not StaleInstanceHint.should_hint_on_call(true, true, true, true, 3),
+			"call: has_method true → no hint")
+	_ok(not StaleInstanceHint.should_hint_on_call(false, true, true, false, 3),
+			"call: non-.gd script → no hint")
+
+	# source_compiles — safe GDScript.new().reload() parse (class_name stripped)
+	_ok(StaleInstanceHint.source_compiles("extends Node\nfunc a() -> int:\n\treturn 1\n"),
+			"source_compiles: valid GDScript → true")
+	_ok(not StaleInstanceHint.source_compiles("extends Node\nvar = = =\n"),
+			"source_compiles: broken GDScript → false")
+	_ok(StaleInstanceHint.source_compiles("class_name FooProbe9\nextends Node\nfunc a():\n\tpass\n"),
+			"source_compiles: class_name script → true (no false collision)")
+
+	# source_has_method — line scan, word-exact, string/comment safe
+	_ok(StaleInstanceHint.source_has_method("func foo():\n\tpass", "foo"),
+			"source_has_method: func foo → true")
+	_ok(StaleInstanceHint.source_has_method("static func bar() -> int:\n\treturn 1", "bar"),
+			"source_has_method: static func bar → true")
+	_ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", "baz"),
+			"source_has_method: absent method → false")
+	_ok(not StaleInstanceHint.source_has_method("func foo_bar():\n\tpass", "foo"),
+			"source_has_method: foo_bar not matched by foo (word-exact)")
+	_ok(StaleInstanceHint.source_has_method("\tfunc inner():\n\t\tpass", "inner"),
+			"source_has_method: indented inner method → true")
+	_ok(not StaleInstanceHint.source_has_method("var x = \"func ghost(\"", "ghost"),
+			"source_has_method: 'func' inside a string → false")
+	_ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", ""),
+			"source_has_method: empty method → false")
+
+	# recovery_message — names the version, covers bodies+added, relaunch + fresh-node
+	var msg := StaleInstanceHint.recovery_message("4.3")
+	_ok(msg.contains("4.3"), "recovery_message: names the version")
+	_ok(msg.contains("relaunch"), "recovery_message: recommends relaunch")
+	_ok(msg.contains("fresh node"), "recovery_message: notes a fresh node doesn't help")
+	_ok(msg.contains("changed method bodies") and msg.contains("added members"),
+			"recovery_message: covers changed bodies AND added members")
+
+	# write_hint — validation guidance FIRST, stale nudge in the recency slot (Q3)
+	var wh := StaleInstanceHint.write_hint("4.2")
+	_ok(wh.begins_with("Validate"), "write_hint: validation guidance leads")
+	_ok(wh.contains("script_check"), "write_hint: mentions script_check")
+	_ok(wh.find("Validate") < wh.find("relaunch"),
+			"write_hint: validation before stale nudge (recency ordering)")
+	_ok(wh.contains("4.2"), "write_hint: carries the version label")
+
 	print("")
 
 

@@ -20,6 +20,7 @@ const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 const NodejsCheck := preload("res://addons/godot_mcp_toolkit/nodejs_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/mcp_version_utils.gd")
+const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/stale_instance_hint.gd")
 
 
 # -- Plugin reference (set by plugin.gd _enter_tree / _exit_tree) -----------

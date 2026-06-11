@@ -29,6 +29,8 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. `gdscript://` URIs in error messages (see below); `class_name` false positive fixed via stripping |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
+| `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On Godot **< 4.4**, editing an existing `.gd` already attached to a **live** node carries a relaunch `hint` (the live instance keeps the old code until relaunch — see [Degraded behavior](#degraded-behavior-by-version)) |
+| `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance) carries a relaunch `hint`; a genuine typo does not. 4.4+ hot-reloads, so the call just succeeds |
 | `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see `docs/multi-instance.md`) |
 | All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
 
@@ -58,6 +60,24 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   edit. `extensions.refresh` returns a `hint` naming the changed extension and
   telling you to restart the editor; a `push_warning` also shows in the Output
   panel. Godot 4.3+ applies edits live (validated on 4.5).
+- **Live attached-script reload — editing a script bound to a running instance
+  needs a relaunch (4.2 + 4.3).** A **distinct** boundary from the extension
+  hot-reload above (which is 4.2→4.3): live scene-node attached-script reload is
+  the **4.3→4.4** boundary. On 4.2 and 4.3, after `script_write` edits a `.gd` that
+  is already attached to a live node, that instance keeps the OLD code — *added
+  members* surface as `INVALID_METHOD`, and *changed method bodies* run silently
+  with the old behaviour and **no error**. `editor_refresh`, re-`node_set_script`,
+  and even creating a brand-new node all keep the stale code; only relaunching the
+  editor (or disabling then re-enabling the plugin) picks up the edit. The toolkit
+  surfaces this on < 4.4 as a `hint`: **proactively** on the `script_write`
+  response (an existing `.gd` that compiled OK) and **reactively** on a
+  `node_call_method` `INVALID_METHOD` whose method exists on the on-disk script. A
+  genuine typo (method absent on disk) gets no such hint, and a compile-failed
+  write is left to its diagnostics. Empirically characterised across 4.2–4.6; see
+  `Insights/stale-live-instance-method-hazard.md`. **`.gd` only** — C# (`.cs`) live
+  reload is a different (assembly-rebuild) model and is not yet characterised
+  (`Plan/Ideas/PostRelease/2026-06-11-csharp-live-instance-staleness-research.md`).
+  Godot 4.4+ hot-reloads promptly, so no hint fires.
 - **GDScript LSP multi-editor — root verification needs 4.5+.** The `lsp_*` tools
   work, but the server's cross-project safety check (the workspace-root mismatch
   warning) doesn't exist before 4.5. With more than one editor open the server

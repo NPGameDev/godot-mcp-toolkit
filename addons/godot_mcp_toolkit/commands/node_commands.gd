@@ -483,6 +483,29 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	})
 
 
+## 41m-bis-bis: returns the version-tailored stale-live-instance recovery hint when
+## the target node's ON-DISK .gd defines `method_name` (and compiles) but the live
+## instance lacks it on Godot < 4.4 — i.e. the instance is stale, not the call wrong.
+## "" otherwise (no script / non-.gd / method genuinely absent / disk won't compile /
+## 4.4+). The pure decision lives in StaleInstanceHint; this just reads the running
+## version + the on-disk source. Called only on the INVALID_METHOD error path.
+static func _stale_method_hint(node: Object, method_name: String) -> String:
+	var scr = node.get_script()
+	if scr == null:
+		return ""
+	var scr_path := str(scr.resource_path)
+	if not scr_path.to_lower().ends_with(".gd") or not FileAccess.file_exists(scr_path):
+		return ""
+	var disk_source := FileAccess.get_file_as_string(scr_path)
+	var vi := Engine.get_version_info()
+	var minor := int(vi["minor"])
+	var disk_has := _Hub.StaleInstanceHint.source_has_method(disk_source, method_name)
+	var disk_ok := _Hub.StaleInstanceHint.source_compiles(disk_source)
+	if not _Hub.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, minor):
+		return ""
+	return _Hub.StaleInstanceHint.recovery_message("%d.%d" % [int(vi["major"]), minor])
+
+
 static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
@@ -506,9 +529,12 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("NOT_FOUND",
 			"no node at path %s. This tool is editor-only — for runtime nodes use execute_code or runtime_get_node_state." % node_path)
 	if not node.has_method(method_name):
-		return MCPToolkitError.fail("INVALID_METHOD",
-			"node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [
-				node_path, method_name])
+		var no_method_msg := "node %s has no method '%s'; use scene.get_tree or inspect the script class via ClassDB" % [
+			node_path, method_name]
+		var stale_hint := _stale_method_hint(node, method_name)
+		if stale_hint != "":
+			return MCPToolkitError.fail("INVALID_METHOD", no_method_msg, stale_hint)
+		return MCPToolkitError.fail("INVALID_METHOD", no_method_msg)
 
 	var missing := Coerce.check_resource_paths(args_raw)
 	if missing != "":

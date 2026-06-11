@@ -367,6 +367,18 @@ properties are not visible. Use `execute_code` for internal state.
 `node_call_method` is editor-side only. Use `signal_emit(mode: "runtime")`
 for runtime-side method invocation.
 
+### Stale live instance after a script edit (Godot < 4.4)
+
+On Godot **< 4.4** (4.2, 4.3), editing a `.gd` that is already attached to a
+**live** node does **not** reach that running instance: a newly-added method
+fails with `INVALID_METHOD`, and a changed method **body** runs the old code
+silently. `editor_refresh`, re-`node_set_script`, and even creating a fresh node
+all keep the stale code — **relaunch the editor** (or disable+re-enable the
+plugin) before calling the changed/added members. `script_write` flags this
+proactively in its `hint` on < 4.4, and `node_call_method` flags it on the
+`INVALID_METHOD`. On Godot 4.4+ scripts hot-reload, so this does not apply. Write
+the full script **before** attaching it, or relaunch after an edit.
+
 ### Env var lifecycle
 
 Changes to `GODOT_MCP_PROFILE` require a full MCP client restart.

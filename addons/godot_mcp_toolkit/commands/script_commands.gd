@@ -156,6 +156,16 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
 
+		# 41m-bis-bis: proactive stale-live-instance hint. Editing an EXISTING .gd
+		# that compiled OK on Godot < 4.4 won't reach a live instance until relaunch
+		# (added members AND changed bodies; a fresh node doesn't help either —
+		# empirically characterised, boundary 4.3->4.4). Append to the response hint
+		# (validation guidance first, stale nudge in the recency slot).
+		var vi := Engine.get_version_info()
+		var minor := int(vi["minor"])
+		if _Hub.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], write_extension, minor):
+			result["hint"] = _Hub.StaleInstanceHint.write_hint("%d.%d" % [int(vi["major"]), minor])
+
 	return result
 
 
