@@ -178,6 +178,18 @@ Remaining trade-off:
 cross-check — it reads diagnostics from the editor itself, which have
 accurate file paths.
 
+### `editor_description` + immediate delete (Godot 4.3+)
+
+A narrow engine edge case. On Godot 4.3+, setting a node's `editor_description`
+schedules a 0.5-second editor tooltip update that holds a pointer to that node;
+deleting the **same** node within that window can occasionally trip a
+use-after-free in the editor's scene-tree tooltip code. It is stochastic
+(depends on memory reuse) and effectively unreachable at interactive pace —
+only same-tick scripted/batched `set editor_description` + `delete` on one node
+lines it up. If you script that exact pairing, set the description on a node you
+keep (or delete a step later). Godot 4.2 is unaffected; an upstream fix is
+pending.
+
 ## UI surface compatibility matrix
 
 | UI surface | 4.3 | 4.4 | 4.5+ | Fallback on older |
