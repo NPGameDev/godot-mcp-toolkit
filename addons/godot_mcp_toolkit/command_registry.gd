@@ -5,6 +5,7 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const Audit = _Hub.Audit
+const FileGuard = _Hub.FileGuard
 
 const _DEFAULT_TIMEOUT_MS := 30000
 const _MIN_TIMEOUT_MS := 1000
@@ -65,6 +66,7 @@ func add(method: String, handler: Callable,
 		"active_scene_required": bool(opts.get("is_active_scene_required", true)),
 		"_force_serialize": bool(opts.get("_force_serialize", false)),
 		"success_hint": opts.get("success_hint", ""),
+		"path_guards": opts.get("path_guards", {}),
 	}
 	if min_ver != "":
 		cmd_entry["min_godot_version"] = min_ver
@@ -142,6 +144,15 @@ func is_read_only(method: String) -> bool:
 	return cmd != null and cmd.get("read_only", false)
 
 
+## Declarative path guards for `method` ({param -> "project"|"user"}), or {} if
+## none. Populated from MCPToolkitCommandOptions.guard_project_path/guard_user_path.
+func path_guards(method: String) -> Dictionary:
+	var cmd = _commands.get(method)
+	if cmd == null:
+		return {}
+	return cmd.get("path_guards", {})
+
+
 func is_active_scene_required(method: String) -> bool:
 	var cmd = _commands.get(method)
 	return cmd != null and cmd.get("active_scene_required", true)
@@ -214,6 +225,27 @@ func call_command(method: String, parameters: Dictionary,
 				"%s %s (running: %s)" % [method, detail, info["engine"]])
 		return MCPToolkitError.fail("NOT_FOUND", "unknown method: " + method)
 	Audit.log_call(method, parameters)
+
+	# Declarative path guards (extension commands) — validate a declared path param
+	# BEFORE the handler runs. Built-ins declare none (they self-guard via FileGuard
+	# inside the handler), so this loop is a no-op for them. Absent/empty values
+	# defer to the handler (an unprovided optional path is not a rejection).
+	# Toolkit-side only; the server does not see these. See docs/adr/0009.
+	var guards: Dictionary = _commands[method].get("path_guards", {})
+	for param in guards:
+		var raw = parameters.get(param, "")
+		if not (raw is String) or (raw as String).strip_edges().is_empty():
+			continue
+		if str(guards[param]) == "user":
+			var ug: Dictionary = FileGuard.resolve_safe_user(raw)
+			if not ug.get("ok", false):
+				return MCPToolkitError.fail(
+					str(ug.get("error_code", "PATH_DENIED")), str(ug.get("error_message", "path denied")))
+		else:
+			var pg: Dictionary = FileGuard.resolve_safe(raw)
+			if pg.get("error") != null:
+				return MCPToolkitError.fail("PATH_DENIED", str(pg.get("reason", "path denied")))
+
 	var result
 	if ctx != null:
 		result = await _commands[method]["handler"].call(parameters, ctx)

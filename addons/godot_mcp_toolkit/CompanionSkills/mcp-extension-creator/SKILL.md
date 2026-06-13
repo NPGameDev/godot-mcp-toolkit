@@ -107,6 +107,8 @@ All `mark_*` and `with_*` methods return `self`, so calls can be chained.
 | `with_input_schema(schema: Dictionary)` | JSON Schema defining expected parameters |
 | `with_timeout_ms(ms: int)` | Per-tool bridge timeout in ms (floor: 1000, cap: 300000, default: 30000) |
 | `with_group(name: String, description: String, keywords: Array)` | Registers the tool under a `discover_tools` lazy-loading group |
+| `guard_project_path(param: String)` | Validate a `res://` path param before the handler runs — rejects traversal/escape with `PATH_DENIED` |
+| `guard_user_path(param: String)` | Same, for a `user://` path param |
 | `to_dict()` | Returns the built options as a Dictionary (public, useful for debugging) |
 
 > **Keywords note:** Fuzzy search uses substring matching with a minimum length
@@ -132,9 +134,59 @@ Follow this order in every handler:
 
 1. **Check required parameters** — return `INVALID_PARAM` if missing
 2. **Extract and type-coerce** — use `.get()` with defaults
-3. **Domain validate** — check value ranges, existence of nodes/resources
-4. **Business logic** — perform the actual operation
-5. **Return structured result** — `{"success": true, "data": ...}`
+3. **Guard any LLM-supplied path** — see *Path safety* below
+4. **Domain validate** — check value ranges, existence of nodes/resources
+5. **Business logic** — perform the actual operation
+6. **Return structured result** — `{"success": true, "data": ...}` (wrap untrusted content — see below)
+
+## Path safety and untrusted output
+
+The LLM is the untrusted caller. Two rules keep an extension safe.
+
+**1. Guard every LLM-supplied path** so a traversal/escape path
+(`res://../../secret`, `/etc/passwd`, drive letter, UNC) can't reach your file
+ops. Prefer the **declarative** guard — the dispatch rejects a bad path with
+`PATH_DENIED` before your handler runs:
+
+```gdscript
+var opts = MCPToolkitExtensionOptions.new("Read a config file") \
+    .mark_read_only() \
+    .guard_project_path("file_path")   # res://   (.guard_user_path for user://)
+```
+
+For a path the declarative guard doesn't fit (e.g. one that legitimately accepts
+an absolute filesystem path), guard imperatively:
+
+```gdscript
+const FileGuard = preload("res://addons/godot_mcp_toolkit/file_guard.gd")
+var guard := FileGuard.resolve_safe(params.get("file_path", ""))
+if guard["error"] != null:
+    return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
+```
+
+**2. Wrap untrusted content you return.** There is no automatic output wrapping —
+**you must do it**. Whenever a response field carries bytes from **outside your
+own code** (a file you read, project/scene data, user input echoed back, an
+external tool's output), wrap it so the LLM treats it as data, not instructions:
+
+```gdscript
+const Untrusted = preload("res://addons/godot_mcp_toolkit/untrusted.gd")
+
+func _read_config(params: Dictionary) -> Dictionary:
+    # ... guard params["file_path"] first (rule 1) ...
+    var text := FileAccess.get_file_as_string(params["file_path"])
+    return {
+        "success": true,
+        # kind + source are labels; body is the untrusted text.
+        # JSON.stringify(...) a Dictionary/Array body before wrapping.
+        "content": Untrusted.wrap("config", params["file_path"], text),
+    }
+```
+
+Do **not** re-wrap content a built-in tool already returned to you — it is wrapped
+once, at origin, and re-wrapping corrupts the envelope. Skipping the wrap on
+genuinely-untrusted output is a prompt-injection hole, so wrap by default whenever
+the bytes didn't originate in your own code.
 
 ## Error handling
 

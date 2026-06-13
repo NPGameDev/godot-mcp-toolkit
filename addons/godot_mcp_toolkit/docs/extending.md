@@ -140,6 +140,8 @@ var opts = MCPToolkitExtensionOptions.new("Describe what your tool does")
 | `with_max_godot_version(ver)` | Hide tool on Godot versions above `ver` (e.g. `"4.6"`) |
 | `with_success_hint(text)` | Default hint injected into successful responses (LLM guidance for next steps) |
 | `with_group(name, description)` | Tool group for `discover_tools` (see below) |
+| `guard_project_path(param)` | Validate a `res://` path parameter before your handler runs — rejects traversal/escape with `PATH_DENIED` (see *Path safety* below) |
+| `guard_user_path(param)` | Same, for a `user://` path parameter |
 | `to_dict()` | Returns the options as a Dictionary (for debugging) |
 
 **Registry factory methods** (alternative to direct construction):
@@ -182,6 +184,55 @@ pattern rather than blocking the bridge.
 **Async handlers:** Command handlers can use `await` internally (GDScript
 coroutines). The dispatch path already awaits handler results, so both
 synchronous and asynchronous handlers work without additional configuration.
+
+**Path safety — guard every LLM-supplied path.** If your tool takes a path the
+LLM fills in, validate it so a traversal/escape path (`res://../../secret`,
+`/etc/passwd`, a drive letter, a UNC share) can't reach your file ops. Two ways:
+
+- **Declarative (recommended):** declare the parameter on the builder. The
+  dispatch validates it and returns `PATH_DENIED` *before* your handler runs.
+
+  ```gdscript
+  var opts = MCPToolkitExtensionOptions.new("Read a config file") \
+      .mark_read_only() \
+      .guard_project_path("file_path")   # res:// path parameter
+      # .guard_user_path("slot")          # user:// path parameter
+  ```
+
+- **Imperative:** for a path the declarative guards don't fit (e.g. a parameter
+  that legitimately accepts an *absolute* filesystem path), validate inside the
+  handler with the same guard the built-ins use:
+
+  ```gdscript
+  const FileGuard = preload("res://addons/godot_mcp_toolkit/file_guard.gd")
+  var guard := FileGuard.resolve_safe(params.get("file_path", ""))   # res://, symlink-safe
+  if guard["error"] != null:
+      return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
+  # user:// paths: FileGuard.resolve_safe_user(path) → {ok, error_code, error_message}
+  ```
+
+**Wrap untrusted content you return.** Whenever your tool returns content whose
+bytes came from **outside your own code** — a file you read, project/scene data,
+user input echoed back, an external tool's output — wrap that field so the LLM
+treats it as data, not instructions:
+
+```gdscript
+const Untrusted = preload("res://addons/godot_mcp_toolkit/untrusted.gd")
+
+func _read_config(params: Dictionary) -> Dictionary:
+    var text := FileAccess.get_file_as_string(params["file_path"])
+    return {
+        "success": true,
+        # kind + source are labels; body is the untrusted text.
+        # JSON.stringify(...) a Dictionary/Array body first.
+        "content": Untrusted.wrap("config", params["file_path"], text),
+    }
+```
+
+Built-in tools already wrap file/project content where they read it; do the same
+for content **your** extension produces. Do **not** re-wrap content a built-in
+tool already returned to you — it is wrapped once, at origin, and re-wrapping
+corrupts the envelope.
 
 **Saving a scene from a handler — choose by your scripting language.**
 Handlers run inside a `call_deferred` dispatch. Calling

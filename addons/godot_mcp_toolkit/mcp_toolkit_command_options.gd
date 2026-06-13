@@ -28,6 +28,7 @@ var _force_serialize: bool = false
 var _min_godot_version: String = ""
 var _max_godot_version: String = ""
 var _success_hint: String = ""
+var _path_guards: Dictionary = {}  # param_name -> "project" | "user"
 
 
 func with_description(description: String) -> MCPToolkitCommandOptions:
@@ -95,6 +96,24 @@ func with_success_hint(hint: String) -> MCPToolkitCommandOptions:
 	return self
 
 
+## Declare that `param` carries a res:// project path the dispatch must validate
+## (via FileGuard.resolve_safe) BEFORE the handler runs. Use this for any LLM-
+## supplied path your command reads/writes, so a traversal/escape path is rejected
+## with PATH_DENIED before your code touches it. Built-in tools self-guard; this is
+## the declarative equivalent for extension commands. See docs/adr/0009.
+func guard_project_path(param: String) -> MCPToolkitCommandOptions:
+	_path_guards[param] = "project"
+	return self
+
+
+## Like guard_project_path, but for user:// paths (validated via
+## FileGuard.resolve_safe_user — rejects traversal, non-user:// prefixes, and the
+## plugin's own internal paths).
+func guard_user_path(param: String) -> MCPToolkitCommandOptions:
+	_path_guards[param] = "user"
+	return self
+
+
 func with_max_godot_version(version: String) -> MCPToolkitCommandOptions:
 	if not _is_valid_version(version):
 		push_warning("[MCPToolkit] Invalid max_godot_version format: '%s' (expected 'major.minor', e.g. '4.6')" % version)
@@ -137,4 +156,6 @@ func to_dict() -> Dictionary:
 		d["max_godot_version"] = _max_godot_version
 	if _success_hint != "":
 		d["success_hint"] = _success_hint
+	if not _path_guards.is_empty():
+		d["path_guards"] = _path_guards
 	return d
