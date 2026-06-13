@@ -86,6 +86,30 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   cannot detect a foreign or near-simultaneous holder of LSP port 6005, so each
   editor must use a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see
   `docs/multi-instance.md`).
+- **`animationtree_edit` `list` — node enumeration needs 4.5+ (4.2–4.4).**
+  `AnimationNodeStateMachine.get_node_list()` is a 4.5+ script API, so on 4.2–4.4
+  `animationtree_edit` `list` returns `nodes: []` and summaries report `nodes_count: 0`.
+  Transitions enumerate and every node *operation* (`add_node`/`remove_node`/`has_node` via
+  `add`/`remove`) works on 4.2+ — only *listing existing nodes* is unavailable. The handler
+  guards the call with `has_method("get_node_list")`, so it always returns a well-formed
+  result (never the malformed `INTERNAL`). 4.5+ enumerates fully.
+- **`editor_get_console` — editor parse-error capture needs 4.5+ (4.2–4.4).** Godot's file
+  logging (`user://logs/godot.log`, what `source="file"` reads) captures **running-game**
+  output, **not** editor parse/import errors — the "red" Output-panel errors are not written
+  to a file (per the engine docs; the editor-log-to-file proposal #13479 is still open). The
+  4.5+ `Logger` API hooks the editor's internal error/warning stream into the in-memory
+  buffer; on 4.2–4.4 there is no such hook, so editor *parse* errors are unreachable via
+  `editor_get_console` (neither `source`). Use `script_check` or `script_write`'s inline
+  diagnostics for parse errors instead. (Editor *runtime* warnings — `push_warning` from
+  `@tool` scripts — and game output DO reach `godot.log` and are captured on all versions.)
+- **Scene saves emit benign console errors (4.2 only).** On 4.2, saving a scene prints
+  `"save_scene() resumed after await, but script is gone"` (and a paired *disconnect
+  nonexistent connection 'process_frame'*) from the safe-save coroutine's `await
+  process_frame` (`mcp_toolkit_safe_scene_ops.gd`) — a 4.2 static-coroutine lifecycle quirk.
+  **The save still succeeds**; the editor may show a transient "could not save scene" notice
+  but the file is written. Benign console noise; 4.3+ is unaffected. The `await` is a
+  deliberate scene-save re-entrancy/crash guard, so it is not reworked for this cosmetic
+  4.2-only effect.
 
 **Godot 4.4:**
 - UndoRedo history works for all operations (requires proper
@@ -103,8 +127,11 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 - Full functionality. All tools, all UI features.
 - GDScript LSP multi-editor conflict detection fully supported (workspace-root
   verification catches a wrong-project or non-registry holder of port 6005).
-- Console capture uses the Logger API (zero-latency, in-memory ring buffer)
-  instead of the file-tailing backend used on 4.2-4.4.
+- Console capture uses the Logger API (zero-latency, in-memory ring buffer) instead of
+  the file-tailing backend used on 4.2-4.4 — and, because the Logger hooks the editor's
+  internal error/warning stream, it captures editor **parse/import errors** that
+  `godot.log` file logging does not, so `editor_get_console` surfaces them here.
+- `animationtree_edit` `list` enumerates state-machine nodes fully (`get_node_list` is 4.5+).
 
 ### EditorFileSystem indexing (all versions)
 
