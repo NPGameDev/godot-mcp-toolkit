@@ -248,7 +248,7 @@ static func _validate_gdscript(source: String) -> Dictionary:
 		diagnostics.append({
 			"line": 0,
 			"severity": "error",
-			"message": "GDScript compile error. Call editor_get_console for detailed messages with line numbers.",
+			"message": _compile_error_message(_Hub.VersionUtils.get_engine_version_pair()),
 		})
 		# Scan reload errors for unresolved identifiers that match autoloads.
 		var hints := _check_autoload_hints(pre_id)
@@ -260,6 +260,18 @@ static func _validate_gdscript(source: String) -> Dictionary:
 				"message": hint,
 			})
 	return {"success": true, "valid": is_valid, "diagnostics": diagnostics}
+
+
+## Version-aware compile-error diagnostic message. editor_get_console surfaces editor
+## PARSE errors only on Godot 4.5+ (the Logger API hooks the editor's error stream); on
+## 4.2-4.4 file logging captures running-game output, not editor parse errors, so steering
+## the LLM to editor_get_console there is a dead end — point to lsp_diagnostics (works 4.2+)
+## instead. engine_ver is _Hub.VersionUtils.get_engine_version_pair() (e.g. "4.5"). See
+## 41m-ter + COMPATIBILITY.md ("editor parse-error capture needs 4.5+").
+static func _compile_error_message(engine_ver: String) -> String:
+	const CONSOLE := "GDScript compile error. Call editor_get_console for detailed messages with line numbers."
+	const LSP := "GDScript compile error. On Godot <4.5 editor parse errors are not surfaced by editor_get_console — call lsp_diagnostics for line-level detail (or read the script)."
+	return CONSOLE if _Hub.VersionUtils.is_at_least(engine_ver, "4.5") else LSP
 
 
 ## Scan LogBuffer errors emitted during reload() for unresolved identifiers

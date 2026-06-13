@@ -12,6 +12,7 @@ const EditorCommands := preload("res://addons/godot_mcp_toolkit/commands/editor_
 const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
+const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 
 var _passed := 0
 var _failed := 0
@@ -48,6 +49,7 @@ func _init() -> void:
 	_test_editor_refresh_reload_filter()
 	_test_unfocused_backup()
 	_test_stale_instance_hint()
+	_test_compile_error_message()
 	await _test_response_validation()
 
 	_report()
@@ -160,6 +162,27 @@ func _test_log_level_continuation() -> void:
 		"warning + at: both → warning")
 	_eq(_level_sequence(["a plain info line", "   at: stray (x:1)"]), ["info", "info"],
 		"info + at: → info (no spurious error inherit)")
+
+
+# --- Compile-error diagnostic message (version-aware) (~10 assertions) -----
+# script_check / script_write steer the LLM to the right detail tool: editor_get_console
+# captures editor PARSE errors only on 4.5+ (Logger); on 4.2-4.4 they aren't file-logged,
+# so the diagnostic must point to lsp_diagnostics instead of a dead end. Regression guard
+# for the misleading-message bug (standalone follow-up to 41m-ter).
+
+func _test_compile_error_message() -> void:
+	_begin("Compile-error message (version-aware)")
+	# Discriminator: lsp_diagnostics appears ONLY in the <4.5 message (the 4.5+ message
+	# directs to editor_get_console). The <4.5 message also names editor_get_console — but
+	# only to say it CAN'T capture parse errors there — so don't assert on its mere presence.
+	for ver in ["4.2", "4.3", "4.4"]:
+		var msg: String = ScriptCommands._compile_error_message(ver)
+		_ok(msg.contains("lsp_diagnostics"),
+			"%s → recommends lsp_diagnostics (editor_get_console can't capture parse errors <4.5)" % ver)
+	for ver in ["4.5", "4.6"]:
+		var msg: String = ScriptCommands._compile_error_message(ver)
+		_ok(msg.contains("editor_get_console") and not msg.contains("lsp_diagnostics"),
+			"%s → directs to editor_get_console, not lsp (4.5+ Logger captures parse errors)" % ver)
 
 
 # --- Registry (~17 assertions) --------------------------------------------
