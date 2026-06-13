@@ -1,6 +1,6 @@
 # Universal MCP Tool Sweep v2
 
-A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all 117 MCP tools (95 editor-side + 6 LSP + 4 debugger + 12 runtime).
+A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all 120 MCP tools (98 editor-side + 6 LSP + 4 debugger + 12 runtime).
 
 ## How to Use
 
@@ -153,6 +153,7 @@ So you do NOT need to split dependent operations across messages.
 | 25 | [25-undo-redo.md](Sections/25-undo-redo.md) | Undo/Redo Verification | 14 | node.set_property, scene.create_node, node.manage, node.groups, node.call_method | S2 |
 | 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 23+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references | S1, LSP on port 6005 |
 | 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 16+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
+| 28 | [28-placeholders-spatial.md](Sections/28-placeholders-spatial.md) | Spatial Map & Placeholder Generators | 22 | scene_spatial_map, texture_generate, sound_generate | S2 |
 
 ### Global Cleanup (always runs last)
 

@@ -1,0 +1,113 @@
+# Section 28 — scene_spatial_map + placeholder generators
+
+**Dependencies:** Section 2 (main.tscn open)
+**Tools tested:** scene_spatial_map (eager), texture_generate + sound_generate (`placeholders` group — on-demand)
+**Tests:** 22
+
+> **Group load:** `texture_generate` and `sound_generate` live in the on-demand
+> `placeholders` group. Before 28.8, call `discover_tools` with query
+> `"placeholder texture sound"` and confirm both tools register. `scene_spatial_map`
+> is eager (always available).
+>
+> All generated assets land under `res://sv2_validation/placeholders/` and are
+> removed in Cleanup.
+
+---
+
+## scene_spatial_map (2D)
+
+**28.1** Build three overlapping/disjoint sprites (Sprite2D + the project icon
+gives each a real ~128px texture rect; Node2D `position` is reliable, unlike
+fresh-Control sizing — and Vector2 values use the typed form
+`{"type":"Vector2","x":…,"y":…}`, NOT a bare `[x,y]` array):
+- `scene_create_node` class_name=`Sprite2D`, node_name=`Sv2SpatA`, parent_path=`.`
+- `node_set_property` `Sv2SpatA`.texture = `{"type":"Resource","path":"res://icon.svg"}`; `.position` = `{"type":"Vector2","x":0,"y":0}`
+- Repeat for `Sv2SpatB` at position `{"type":"Vector2","x":20,"y":0}` (overlaps A)
+- Repeat for `Sv2SpatC` at position `{"type":"Vector2","x":500,"y":500}` (disjoint)
+- **Expect:** all succeed
+
+**28.2** `scene_spatial_map` detail=`full`, class=`Sprite2D`
+- **Expect:** success; `Sv2SpatA` node has `space:"2d"`, a `bounds` (Rect2 position+size, non-zero), `overlaps` includes `./Sv2SpatB` but NOT `./Sv2SpatC`, and a `nearest` pointing at `./Sv2SpatB`.
+
+**28.3** `scene_spatial_map` detail=`brief`, class=`Sprite2D`
+- **Expect:** success; nodes carry position/size only — NO `overlaps`/`bounds` keys.
+
+**28.4** `scene_spatial_map` class=`Sprite2D`, region=`[-100,-100,300,300]`
+- **Expect:** success; `./Sv2SpatA` present, `./Sv2SpatC` absent (outside region).
+
+**28.5** `scene_spatial_map` class=`Sprite2D`, radius=`150`, center=`[0,0]`
+- **Expect:** success; `./Sv2SpatC` absent (beyond radius).
+
+**28.6** `scene_spatial_map` class=`Sprite2D`, max_nodes=`1`
+- **Expect:** success; `returned:1`, `truncated:true`, plus a hint to narrow/raise the cap.
+
+**28.7** `scene_spatial_map` guards:
+- detail=`verbose` → **INVALID_PARAMS** mentioning `detail`
+- region=`[1,2,3]` (wrong length) → **INVALID_PARAMS** mentioning `region`
+
+## scene_spatial_map (3D)
+
+**28.7b** 3D bounds:
+- `scene_create_node` class_name=`MeshInstance3D`, node_name=`Sv2SpatMesh`, parent_path=`.`
+- `node_set_property` `Sv2SpatMesh`.position = `{"type":"Vector3","x":1,"y":2,"z":3}` (a mesh is optional — a mesh-less MeshInstance3D yields a zero-size AABB at its origin)
+- `scene_spatial_map` subtree=`Sv2SpatMesh`
+- **Expect:** success; the node reports `space:"3d"` with `bounds`/`size` of length 3 (AABB).
+
+## texture_generate (placeholders group)
+
+**28.8** `discover_tools` query=`"placeholder texture sprite sound"`
+- **Expect:** `texture_generate` and `sound_generate` register (placeholders group loads).
+
+**28.9** Every shape — for each of `solid`, `circle`, `triangle`, `diamond`, `arrow`, `checkerboard`, `grid`:
+- `texture_generate` path=`res://sv2_validation/placeholders/shape_<shape>.png`, shape=`<shape>`, width=`32`, height=`32`, fill_color=`"#3366ff"`, outline_color=`"#000000"`, if_exists=`replace`
+- **Expect:** success; `class` is `Texture2D` (or null with an index warning); `status:"created"`.
+
+**28.10** Colour formats — generate four solids with fill_color = `"#ff8800"` / `"red"` / `[0.1,0.2,0.9]` / `[255,128,0]`
+- **Expect:** all succeed (hex, named, 0-1 array, 0-255 array all parse).
+
+**28.11** Hollow shape — `texture_generate` shape=`circle`, fill_color=`[0,0,0,0]`, outline_color=`"#00ff00"`, outline_width=`3`
+- **Expect:** success (transparent fill → outline-only ring).
+
+**28.12** Label overlay — `texture_generate` shape=`solid`, fill_color=`"#444444"`, label=`"Enemy"`, label_color=`"#ffffff"`
+- **Expect:** success; the PNG carries centred white text (visually confirm if possible).
+
+**28.13** Dimension cap — `texture_generate` shape=`solid`, width=`4096`, height=`4096`
+- **Expect:** success; response echoes `width<=1024`, `height<=1024` (clamped, not rejected).
+
+**28.14** `if_exists` — write `if_exists.png` (replace), then re-call with shape=`circle`, if_exists=`return`
+- **Expect:** second call `status:"returned"` (idempotent no-op). A third call with if_exists=`fail` → **ALREADY_EXISTS**.
+
+**28.15** texture guards:
+- path=`.../x.jpg` → **INVALID_PATH** mentioning `png`
+- path=`res://../escape.png` → **PATH_DENIED**
+- fill+outline+background all `[0,0,0,0]` → **INVALID_PARAMS** mentioning `transparent`
+- shape=`hexagon` → **INVALID_PARAMS** mentioning `shape`
+
+## sound_generate (placeholders group)
+
+**28.16** Every waveform — for each of `sine`, `square`, `triangle`, `sawtooth`, `noise`:
+- `sound_generate` path=`res://sv2_validation/placeholders/wave_<waveform>.wav`, waveform=`<waveform>`, frequency=`440`, duration=`0.1`, if_exists=`replace`
+- **Expect:** success; `class` is `AudioStreamWAV` (or null with an index warning).
+
+**28.17** Pitch sweep + decay — `sound_generate` waveform=`square`, frequency=`200`, end_frequency=`900`, duration=`0.2`, decay=`0.1`
+- **Expect:** success; response echoes `end_frequency`.
+
+**28.18** Duration cap — `sound_generate` waveform=`sine`, duration=`30`
+- **Expect:** success; response echoes `duration<=5` (clamped).
+
+**28.19** sound guards:
+- path=`.../x.mp3` → **INVALID_PATH** mentioning `wav`
+- waveform=`fmsynth` → **INVALID_PARAMS** mentioning `waveform`
+- path=`res://../escape.wav` → **PATH_DENIED**
+
+---
+
+## Console error check
+
+Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol. The only
+expected noise: PNG/WAV reimport messages for the freshly written placeholder files.
+
+## Cleanup
+
+- `scene_delete_node` for `Sv2SpatA`, `Sv2SpatB`, `Sv2SpatC`, `Sv2SpatMesh`
+- `folder_delete` folder_path=`res://sv2_validation/placeholders` (recursive — removes all generated PNG/WAV)

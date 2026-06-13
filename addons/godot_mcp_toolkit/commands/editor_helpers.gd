@@ -8,6 +8,7 @@ extends RefCounted
 ## NOTE: This file is preloaded by _hub.gd, so it CANNOT import _hub.gd
 ## (circular dependency). Use direct preloads for dependencies instead.
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
+const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
 
 
 # -- Property coercion ---------------------------------------------------------
@@ -567,6 +568,102 @@ static func ensure_file_removed(file_path: String, timeout_ms: int = 3000) -> Di
 	var elapsed := Time.get_ticks_msec() - start
 	var removed := filesystem.get_file_type(file_path) == ""
 	return {"removed": removed, "elapsed_ms": elapsed}
+
+
+# -- Shared asset write + import-settle bracket -------------------------------
+
+
+## Write a generated/imported asset to a res:// path with the standard contract
+## shared by asset.import, texture.generate, and sound.generate: path guard ->
+## extension allowlist -> if_exists -> parent dir -> write -> import settle ->
+## status/payload. The actual write is delegated to `write_fn` so each tool
+## supplies only its own save call (raw bytes / Image.save_png / save_to_wav).
+##
+##   dest_path        res:// destination (path-guarded here)
+##   allowed_exts     lowercase extensions this tool may write (e.g. ["png"])
+##   if_exists        "return" (idempotent no-op) | "fail" | "replace"
+##   wait_for_scan_ms import-settle timeout, [0, 30000] (0 disables the wait)
+##   method           handler name, for error/dir context
+##   write_fn         Callable(dest_path: String) -> Dictionary
+##                    {} on success, or an MCPToolkitError.fail(...) dict on failure.
+##
+## Returns the core success payload {status, path, class, warnings, success:true}
+## (status is "created" | "replaced" | "returned"), or an MCPToolkitError dict
+## (PATH_DENIED / INVALID_PATH / INVALID_PARAMS / ALREADY_EXISTS / PARENT_NOT_FOUND /
+## WRITE_FAILED). Callers merge tool-specific fields into the returned dict on
+## success (result.success == true).
+static func write_asset_with_settle(
+	dest_path: String,
+	allowed_exts: PackedStringArray,
+	if_exists: String,
+	wait_for_scan_ms: int,
+	method: String,
+	write_fn: Callable,
+) -> Dictionary:
+	var guard := FileGuard.resolve_safe(dest_path)
+	if guard["error"] != null:
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
+
+	var extension := dest_path.get_extension().to_lower()
+	if not allowed_exts.has(extension):
+		return MCPToolkitError.fail("INVALID_PATH",
+			"extension '%s' not allowed for %s; expected: %s" % [
+				extension, method, ", ".join(allowed_exts)])
+
+	if if_exists not in ["return", "fail", "replace"]:
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"if_exists must be one of 'return', 'fail', 'replace' (got '%s')" % if_exists)
+	if wait_for_scan_ms < 0 or wait_for_scan_ms > 30000:
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"wait_for_scan_ms must be in [0, 30000] (got %d); 0 disables wait" % wait_for_scan_ms)
+
+	var file_existed := FileAccess.file_exists(dest_path)
+	if file_existed:
+		match if_exists:
+			"return":
+				return MCPToolkitSuccess.ok({
+					"status": "returned", "path": dest_path,
+					"class": _file_class_or_null(dest_path), "warnings": []})
+			"fail":
+				return MCPToolkitError.fail("ALREADY_EXISTS",
+					"file already exists at %s; use if_exists:'replace' to overwrite or if_exists:'return' for idempotent no-op" % dest_path)
+			"replace":
+				pass
+
+	var dir_result := ensure_parent_dir(dest_path, method)
+	if dir_result.has("error"):
+		return dir_result
+
+	var write_result: Variant = write_fn.call(dest_path)
+	if typeof(write_result) == TYPE_DICTIONARY and (write_result as Dictionary).has("error"):
+		return write_result
+
+	var warnings: Array[String] = []
+	var index_result := await ensure_file_indexed(dest_path, wait_for_scan_ms)
+	if not index_result["indexed"]:
+		warnings.append(
+			"EditorFileSystem did not index %s within %dms — call editor.wait_for_idle to finish" % [dest_path, wait_for_scan_ms])
+
+	var file_class: Variant = null
+	if str(index_result["file_class"]) != "":
+		file_class = index_result["file_class"]
+
+	var status := "replaced" if file_existed else "created"
+	return MCPToolkitSuccess.ok({
+		"status": status,
+		"path": dest_path,
+		"class": file_class,
+		"warnings": warnings,
+	})
+
+
+## EditorFileSystem class name for an already-indexed file, or null if unknown.
+static func _file_class_or_null(file_path: String) -> Variant:
+	var filesystem := EditorInterface.get_resource_filesystem()
+	if filesystem == null:
+		return null
+	var file_type := filesystem.get_file_type(file_path)
+	return file_type if file_type != "" else null
 
 
 # -- Profile conversion --------------------------------------------------------

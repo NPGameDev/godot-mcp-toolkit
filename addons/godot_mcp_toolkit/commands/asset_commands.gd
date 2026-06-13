@@ -246,9 +246,8 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	var if_exists: String = str(parameters.get("if_exists", "return"))
 	var wait_for_scan_ms: int = int(parameters.get("wait_for_scan_ms", 5000))
 
-	var guard := FileGuard.resolve_safe(dest_path)
-	if guard["error"] != null:
-		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
+	# Extension allowlist — rich asset.import hint kept here; the shared helper
+	# re-checks generically for the other callers.
 	var extension := dest_path.get_extension().to_lower()
 	if extension not in IMPORT_ALLOWED_EXTENSIONS:
 		return MCPToolkitError.fail("INVALID_PATH",
@@ -262,12 +261,6 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 	if not has_source and not has_base64:
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"provide source_path (absolute filesystem path) or base64_data (base64-encoded file content)")
-	if if_exists not in ["return", "fail", "replace"]:
-		return MCPToolkitError.fail("INVALID_PARAMS",
-			"if_exists must be one of 'return', 'fail', 'replace' (got '%s')" % if_exists)
-	if wait_for_scan_ms < 0 or wait_for_scan_ms > 30000:
-		return MCPToolkitError.fail("INVALID_PARAMS",
-			"wait_for_scan_ms must be in [0, 30000] (got %d); 0 disables wait" % wait_for_scan_ms)
 
 	# Source-path mode guards
 	if has_source:
@@ -297,22 +290,6 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 			return MCPToolkitError.fail("INVALID_PARAMS",
 				"decoded base64 data %d bytes exceeds 5 MB limit" % decoded_bytes.size())
 
-	var file_existed := FileAccess.file_exists(dest_path)
-	if file_existed:
-		match if_exists:
-			"return":
-				return MCPToolkitSuccess.ok({"status": "returned",
-					"path": dest_path, "source": null})
-			"fail":
-				return MCPToolkitError.fail("ALREADY_EXISTS",
-					"file already exists at %s; use if_exists:'replace' to overwrite or if_exists:'return' for idempotent no-op" % dest_path)
-			"replace":
-				pass
-
-	var dir_result := Helpers.ensure_parent_dir(dest_path, "asset.import")
-	if dir_result.has("error"):
-		return dir_result
-
 	var bytes_to_write: PackedByteArray
 	var source_label: String
 	if has_source:
@@ -326,31 +303,30 @@ static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:
 		bytes_to_write = decoded_bytes
 		source_label = "base64"
 
-	var file_handle := FileAccess.open(dest_path, FileAccess.WRITE)
-	if file_handle == null:
-		return MCPToolkitError.fail("WRITE_FAILED",
-			"cannot open %s for writing (err %d)" % [
-				dest_path, FileAccess.get_open_error()])
-	file_handle.store_buffer(bytes_to_write)
-	file_handle.close()
+	# Shared write + import-settle bracket. The helper validates if_exists /
+	# wait_for_scan_ms, guards the path, handles if_exists / parent-dir, runs the
+	# write_fn below, and settles the import — identical to texture.generate /
+	# sound.generate. Only the raw-bytes write differs, so it lives in write_fn.
+	var write_fn := func(write_path: String) -> Dictionary:
+		var file_handle := FileAccess.open(write_path, FileAccess.WRITE)
+		if file_handle == null:
+			return MCPToolkitError.fail("WRITE_FAILED",
+				"cannot open %s for writing (err %d)" % [
+					write_path, FileAccess.get_open_error()])
+		file_handle.store_buffer(bytes_to_write)
+		file_handle.close()
+		return {}
 
-	var warnings: Array[String] = []
-	var index_result := await Helpers.ensure_file_indexed(dest_path, wait_for_scan_ms)
-	if not index_result["indexed"]:
-		warnings.append(
-			"EditorFileSystem did not index %s within %dms — import may not be complete; call editor.wait_for_idle to finish" % [dest_path, wait_for_scan_ms])
+	var result := await Helpers.write_asset_with_settle(
+		dest_path, PackedStringArray(IMPORT_ALLOWED_EXTENSIONS),
+		if_exists, wait_for_scan_ms, "asset.import", write_fn)
+	if not result.get("success", false):
+		return result
 
-	var file_class: Variant = null
-	if index_result["file_class"] != "":
-		file_class = index_result["file_class"]
-
-	var status := "replaced" if file_existed else "created"
-
-	return MCPToolkitSuccess.ok({
-		"status": status,
-		"path": dest_path,
-		"source": source_label,
-		"size_bytes": bytes_to_write.size(),
-		"class": file_class,
-		"warnings": warnings,
-	})
+	# asset.import-specific payload fields.
+	if result.get("status") == "returned":
+		result["source"] = null
+	else:
+		result["source"] = source_label
+		result["size_bytes"] = bytes_to_write.size()
+	return result

@@ -38,6 +38,9 @@ const NavigationCommands := preload("res://addons/godot_mcp_toolkit/commands/nav
 const MetaCommands := preload("res://addons/godot_mcp_toolkit/commands/meta_commands.gd")
 const DebugBridge := preload("res://addons/godot_mcp_toolkit/debug_bridge.gd")
 const DebugCommands := preload("res://addons/godot_mcp_toolkit/commands/debug_commands.gd")
+const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
+const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
+const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:6570. Registered/unregistered via add_autoload_singleton /
@@ -112,6 +115,9 @@ func _enter_tree() -> void:
 	NavigationCommands.register(registry, _server)
 	MetaCommands.register(registry)
 	DebugCommands.register(registry, _debug_bridge)
+	SpatialCommands.register(registry, _server)
+	TextureCommands.register(registry, _server)
+	SoundCommands.register(registry, _server)
 
 	# Third-party extensions — profile-exempt, always loaded.
 	ExtensionLoader.load_all(registry, _server)

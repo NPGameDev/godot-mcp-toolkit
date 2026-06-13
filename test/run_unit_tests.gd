@@ -15,6 +15,9 @@ const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
+const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
+const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
+const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
 
 var _passed := 0
 var _failed := 0
@@ -56,6 +59,9 @@ func _init() -> void:
 	_test_untrusted()
 	await _test_extension_path_guard()
 	await _test_response_validation()
+	_test_spatial_map()
+	_test_texture_generate()
+	_test_sound_generate()
 
 	_report()
 	quit(0 if _failed == 0 else 1)
@@ -1320,6 +1326,181 @@ func _test_stale_instance_hint() -> void:
 
 
 # --- Report ----------------------------------------------------------------
+
+# --- 41m-quinquies: scene.spatial_map geometry ----------------------------
+func _test_spatial_map() -> void:
+	_begin("scene.spatial_map (geometry)")
+
+	# _world_bounds dispatch by node type. Nodes stay parentless so global ==
+	# local transform (headless has no initialised World3D for a tree-parented
+	# Node3D; real tree behaviour is covered by interactive smoke/sweep).
+	var n3 := Node3D.new()
+	n3.position = Vector3(1, 2, 3)
+	var b3 = SpatialCommands._world_bounds(n3)
+	_ok(typeof(b3) == TYPE_AABB, "Node3D → AABB")
+	_ok(b3.size == Vector3.ZERO, "Node3D → point AABB (zero size; world pos via interactive)")
+	n3.free()
+
+	var n2 := Node2D.new()
+	n2.position = Vector2(5, 6)
+	var b2 = SpatialCommands._world_bounds(n2)
+	_ok(typeof(b2) == TYPE_RECT2, "Node2D → Rect2")
+	_ok(b2.position == Vector2(5, 6), "Node2D Rect2 at global_position")
+	n2.free()
+
+	var ctrl := Control.new()
+	ctrl.position = Vector2(10, 10)
+	ctrl.size = Vector2(20, 30)
+	var bc = SpatialCommands._world_bounds(ctrl)
+	_ok(typeof(bc) == TYPE_RECT2, "Control → Rect2")
+	_ok(bc.size == Vector2(20, 30), "Control Rect2 size from get_global_rect")
+	ctrl.free()
+
+	var plain := Node.new()
+	_ok(SpatialCommands._world_bounds(plain) == null, "plain Node → null (non-spatial)")
+	plain.free()
+
+	# _xform_rect2 / _xform_aabb world-space transform.
+	_ok(SpatialCommands._xform_rect2(Transform2D.IDENTITY, Rect2(0, 0, 10, 10)) == Rect2(0, 0, 10, 10),
+		"_xform_rect2 identity → same")
+	var rt = SpatialCommands._xform_rect2(Transform2D(0.0, Vector2(5, 5)), Rect2(0, 0, 10, 10))
+	_ok(rt.position == Vector2(5, 5) and rt.size == Vector2(10, 10), "_xform_rect2 translate")
+	_ok(SpatialCommands._xform_aabb(Transform3D.IDENTITY, AABB(Vector3.ZERO, Vector3(2, 2, 2)))
+		== AABB(Vector3.ZERO, Vector3(2, 2, 2)), "_xform_aabb identity → same")
+
+	# _compute_relations: overlap + containment + nearest (full).
+	var entries := [
+		{"path": "a", "bounds": Rect2(0, 0, 10, 10)},
+		{"path": "b", "bounds": Rect2(5, 5, 10, 10)},
+		{"path": "c", "bounds": Rect2(100, 100, 5, 5)},
+		{"path": "d", "bounds": Rect2(2, 2, 3, 3)},
+	]
+	SpatialCommands._compute_relations(entries, "full")
+	_ok(entries[0]["overlaps"].has("b"), "overlap a-b detected")
+	_ok(not entries[0]["overlaps"].has("c"), "no overlap a-c (disjoint)")
+	_ok(entries[0]["contains"].has("d"), "containment a contains d")
+	_ok(entries[3]["contained_by"].has("a"), "containment d contained_by a")
+	_ok(entries[0].has("nearest"), "nearest neighbour computed (full)")
+
+	# 2D and 3D never relate.
+	var mixed := [
+		{"path": "p2", "bounds": Rect2(0, 0, 10, 10)},
+		{"path": "p3", "bounds": AABB(Vector3.ZERO, Vector3(10, 10, 10))},
+	]
+	SpatialCommands._compute_relations(mixed, "normal")
+	_ok(mixed[0]["overlaps"].is_empty(), "2D node never overlaps 3D node")
+
+	# Region parsing + filtering.
+	_ok(typeof(SpatialCommands._parse_region([0, 0, 10, 10])) == TYPE_RECT2, "_parse_region 4 nums → Rect2")
+	_ok(typeof(SpatialCommands._parse_region([0, 0, 0, 1, 1, 1])) == TYPE_AABB, "_parse_region 6 nums → AABB")
+	_ok(SpatialCommands._parse_region([1, 2, 3]).has("error"), "_parse_region bad size → error")
+	_ok(SpatialCommands._parse_region(null) == null, "_parse_region null → null")
+	_ok(SpatialCommands._passes_filters(Rect2(0, 0, 5, 5), Rect2(0, 0, 10, 10), null),
+		"region: 2D node inside → pass")
+	_ok(not SpatialCommands._passes_filters(Rect2(0, 0, 5, 5), AABB(Vector3.ZERO, Vector3.ONE), null),
+		"region: 3D region excludes 2D node")
+
+	# Serialization.
+	_eq(SpatialCommands._vec_to_array(Vector2(1, 2)), [1.0, 2.0], "_vec_to_array Vector2")
+	_eq(SpatialCommands._vec_to_array(Vector3(1, 2, 3)), [1.0, 2.0, 3.0], "_vec_to_array Vector3")
+
+
+# --- 41m-quinquies: texture.generate pixels + colour ----------------------
+func _test_texture_generate() -> void:
+	_begin("texture.generate (pixels + colour)")
+
+	# _parse_color (hex / named, 0-1 vs 0-255 arrays, alpha-absent).
+	_ok(TextureCommands._parse_color(null, Color(0.5, 0.5, 0.5, 1)) == Color(0.5, 0.5, 0.5, 1),
+		"_parse_color null → default")
+	var c_hex = TextureCommands._parse_color("#ff0000", Color.BLACK)
+	_ok(c_hex.r > 0.99 and c_hex.g < 0.01 and c_hex.b < 0.01, "_parse_color #ff0000 → red")
+	_ok(TextureCommands._parse_color([0, 255, 0], Color.BLACK).g > 0.99, "_parse_color [0,255,0] → green (0-255)")
+	_ok(TextureCommands._parse_color([0, 0, 1], Color.BLACK).b > 0.99, "_parse_color [0,0,1] → blue (0-1)")
+	_ok(TextureCommands._parse_color([0, 0, 0, 0], Color.WHITE).a == 0.0,
+		"_parse_color [0,0,0,0] → transparent (alpha-absent)")
+
+	# _in_shape inside/outside.
+	_ok(TextureCommands._in_shape("solid", 8, 8, 16, 16, "up", 0), "solid: center inside")
+	_ok(TextureCommands._in_shape("circle", 8, 8, 16, 16, "up", 0), "circle: center inside")
+	_ok(not TextureCommands._in_shape("circle", 0, 0, 16, 16, "up", 0), "circle: corner outside")
+	_ok(TextureCommands._in_shape("diamond", 8, 8, 16, 16, "up", 0), "diamond: center inside")
+	_ok(not TextureCommands._in_shape("diamond", 0, 0, 16, 16, "up", 0), "diamond: corner outside")
+	_ok(TextureCommands._in_shape("triangle", 8, 14, 16, 16, "up", 0), "triangle(up): bottom-center inside")
+	_ok(not TextureCommands._in_shape("triangle", 1, 1, 16, 16, "up", 0), "triangle(up): top-corner outside")
+
+	var red := Color(1, 0, 0, 1)
+	var blue := Color(0, 0, 1, 1)
+	var clear := Color(0, 0, 0, 0)
+
+	# Solid fill covers everything.
+	var solid := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	solid.fill(clear)
+	TextureCommands._draw_shape(solid, "solid", red, clear, 0, clear, 4, "right")
+	_ok(solid.get_pixel(8, 8) == red, "solid fill: center red")
+	_ok(solid.get_pixel(0, 0) == red, "solid fill: corner red (covers all)")
+
+	# Circle fill on transparent background.
+	var circ := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	circ.fill(clear)
+	TextureCommands._draw_shape(circ, "circle", red, clear, 0, clear, 4, "right")
+	_ok(circ.get_pixel(8, 8) == red, "circle fill: center red")
+	_ok(circ.get_pixel(0, 0).a == 0.0, "circle: corner transparent (background)")
+
+	# Hollow shape: transparent fill + opaque outline → interior clear, band is outline.
+	var hollow := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	hollow.fill(clear)
+	TextureCommands._draw_shape(hollow, "solid", clear, blue, 2, clear, 4, "right")
+	_ok(hollow.get_pixel(0, 0) == blue, "hollow solid: border blue (outline band)")
+	_ok(hollow.get_pixel(8, 8).a == 0.0, "hollow solid: interior transparent (no fill)")
+
+	# Checkerboard alternates fill / background.
+	var checker := Image.create(16, 16, false, Image.FORMAT_RGBA8)
+	checker.fill(clear)
+	TextureCommands._draw_shape(checker, "checkerboard", red, clear, 0, clear, 8, "right")
+	_ok(checker.get_pixel(0, 0) == red, "checkerboard: cell (0,0) fill")
+	_ok(checker.get_pixel(8, 0).a == 0.0, "checkerboard: cell (1,0) background")
+
+
+# --- 41m-quinquies: sound.generate synthesis ------------------------------
+func _test_sound_generate() -> void:
+	_begin("sound.generate (synth)")
+
+	# _oscillator waveforms.
+	_ok(abs(SoundCommands._oscillator("sine", 0.0)) < 0.001, "sine(0) approx 0")
+	_ok(SoundCommands._oscillator("sine", PI / 2.0) > 0.99, "sine(pi/2) approx 1")
+	_ok(SoundCommands._oscillator("square", 0.5) == 1.0, "square(+) = 1")
+	_ok(SoundCommands._oscillator("square", PI + 0.5) == -1.0, "square(-) = -1")
+	_ok(SoundCommands._oscillator("sawtooth", 0.0) < -0.99, "sawtooth(0) approx -1")
+	_ok(SoundCommands._oscillator("triangle", PI / 2.0) > 0.99, "triangle(pi/2) approx 1")
+
+	# _build_pcm length + content (mono 16-bit @ 44100).
+	var pcm := SoundCommands._build_pcm("sine", 440.0, 440.0, false, 0.1, 0.8, 0.003, 0.003, 0.0)
+	var expected_samples := int(0.1 * 44100)
+	_eq(pcm.size(), expected_samples * 2, "_build_pcm byte length = samples*2 (16-bit mono)")
+	var mid := expected_samples / 2
+	var found_nonzero := false
+	for i in range(mid, mini(mid + 120, expected_samples)):
+		if pcm.decode_s16(i * 2) != 0:
+			found_nonzero = true
+			break
+	_ok(found_nonzero, "_build_pcm sine non-silent in sustain")
+
+	# volume 0 → silence.
+	var silent := SoundCommands._build_pcm("sine", 440.0, 440.0, false, 0.05, 0.0, 0.0, 0.0, 0.0)
+	var all_zero := true
+	for i in range(silent.size() / 2):
+		if silent.decode_s16(i * 2) != 0:
+			all_zero = false
+			break
+	_ok(all_zero, "_build_pcm volume 0 → silence")
+
+	# noise varies sample-to-sample.
+	var noise := SoundCommands._build_pcm("noise", 440.0, 440.0, false, 0.05, 0.8, 0.0, 0.0, 0.0)
+	var distinct := {}
+	for i in range(mini(50, noise.size() / 2)):
+		distinct[noise.decode_s16(i * 2)] = true
+	_ok(distinct.size() > 5, "_build_pcm noise varies sample-to-sample")
+
 
 func _report() -> void:
 	print("")

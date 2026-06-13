@@ -1,9 +1,9 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-05-24
-**Toolkit commit:** T:ffe7a13 (41l-duodecies sweep catchup)
-**Total tools:** 117 (93 editor-side + 2 new + 6 LSP + 4 debugger + 12 runtime)
-**Sweep test count:** ~268 numbered test cases + 28 combo chains + C# phase + extension phase
+**Last updated:** 2026-06-14 (41m-quinquies — spatial map + placeholder generators)
+**Toolkit commit:** T:ffe7a13 + 41m-quinquies (final SHA recorded at bookkeeping)
+**Total tools:** 120 (98 editor-side + 6 LSP + 4 debugger + 12 runtime)
+**Sweep test count:** ~290 numbered test cases + 28 combo chains + C# phase + extension phase (Section 28 adds 22)
 
 ---
 
@@ -314,3 +314,18 @@
 - `input_map action_name` → `name` (09a6392)
 - `signal_manage source_path` → `node_path` (FIX-G)
 - `scene_instantiate packed_path` → `scene_path` (FIX-B)
+
+---
+
+## Spatial Map & Placeholder Generation (3 tools — 41m-quinquies, Section 28)
+
+| Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
+|---|---|---|---|---|---|---|
+| scene_spatial_map | 28.1–28.7b | ✓ (28.7: INVALID_PARAMS detail + region size) | — | ✓ (truncation hint, successHint → node_set_property) | — | eager; read-only; 2D + 3D dispatch |
+| texture_generate | 28.8–28.15 | ✓ (28.15: INVALID_PATH png, PATH_DENIED, INVALID_PARAMS transparent/shape, ALREADY_EXISTS) | — | ✓ (successHint → Sprite2D.texture / spriteframes_create) | — | `placeholders` group (on-demand); all 7 shapes, colour formats, hollow, label, dim cap |
+| sound_generate | 28.16–28.19 | ✓ (28.19: INVALID_PATH wav, PATH_DENIED, INVALID_PARAMS waveform) | — | ✓ (successHint → AudioStreamPlayer.stream) | — | `placeholders` group (on-demand); all 5 waveforms, sweep, decay, duration cap |
+
+> **runtime_set_property** was demoted eager → `runtime_advanced` group in
+> 41m-quinquies; it remains covered in the runtime sweep (Section 20). The sweep
+> calls it through the MCP tool surface, so the agent must `discover_tools` the
+> `runtime_advanced` group first.
