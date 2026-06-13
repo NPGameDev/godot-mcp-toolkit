@@ -6,8 +6,16 @@
 
 > **Group load:** `texture_generate` and `sound_generate` live in the on-demand
 > `placeholders` group. Before 28.8, call `discover_tools` with query
-> `"placeholder texture sound"` and confirm both tools register. `scene_spatial_map`
-> is eager (always available).
+> `"placeholder texture sound"` and confirm both tools register.
+>
+> **`scene_spatial_map` is EAGER** — it is in the base `tools/list`, NOT in any
+> group and NOT returned by `discover_tools`. Do **not** hunt for a "spatial"
+> group; it doesn't exist by design. If `scene_spatial_map` is missing from your
+> available tools, your session's tool index predates the tool (the known Claude
+> Code `tools/list_changed` staleness issue — see plan-repo memory
+> `project_claude_p_tools_list_changed`). **Fix: fully restart the Claude Code
+> session** so it re-fetches `tools/list`; the tool will then be present. (The
+> server build is current if `discover_tools` shows the `placeholders` group.)
 >
 > All generated assets land under `res://sv2_validation/placeholders/` and are
 > removed in Cleanup.
