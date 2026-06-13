@@ -11,6 +11,7 @@ const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/mcp_toolkit_safe_
 const EditorCommands := preload("res://addons/godot_mcp_toolkit/commands/editor_commands.gd")
 const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
+const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 
 var _passed := 0
 var _failed := 0
@@ -37,6 +38,7 @@ func _init() -> void:
 	_test_safe_scene_ops()
 	_test_tool_context()
 	_test_compile_text_filter()
+	_test_log_level_continuation()
 	_test_set_property_compound()
 	_test_compound_set_helper()
 	_test_undo_info()
@@ -100,6 +102,64 @@ func _eq(actual, expected, label: String) -> void:
 
 func _noop(_p: Dictionary) -> Dictionary:
 	return {"success": true}
+
+
+# --- Log level + continuation leveling (~14 assertions) -------------------
+# A2/A3 (41m-ter): editor parse errors on Godot 4.2-4.4 log as TWO lines —
+# "SCRIPT ERROR: …" then "   at: <script>.gd:LINE" — and the script path is on the
+# continuation line. LogHelpers.is_continuation_line lets the file-tail buffer
+# (log_buffer.gd) and the source=file reader (editor_commands.gd) keep such a line at
+# the preceding error/warning level instead of "info", so a filename+level=error query
+# finds it. _level_sequence mirrors that loop using the shared primitives under test.
+
+func _level_sequence(lines: Array) -> Array:
+	var out: Array = []
+	var prev := "info"
+	for line in lines:
+		var stripped: String = str(line).strip_edges()
+		if stripped.is_empty():
+			continue
+		var lvl: String
+		if LogHelpers.is_continuation_line(line) and (prev == "error" or prev == "warning"):
+			lvl = prev
+		else:
+			lvl = LogHelpers.detect_log_level(stripped)
+		out.append(lvl)
+		prev = lvl
+	return out
+
+
+func _test_log_level_continuation() -> void:
+	_begin("Log level + continuation leveling")
+
+	# detect_log_level prefixes (SHADER ERROR: is the new one)
+	_eq(LogHelpers.detect_log_level("ERROR: boom"), "error", "ERROR: → error")
+	_eq(LogHelpers.detect_log_level("SCRIPT ERROR: Parse Error: x"), "error", "SCRIPT ERROR: → error")
+	_eq(LogHelpers.detect_log_level("SHADER ERROR: bad shader"), "error", "SHADER ERROR: → error (added)")
+	_eq(LogHelpers.detect_log_level("WARNING: meh"), "warning", "WARNING: → warning")
+	_eq(LogHelpers.detect_log_level("just a message"), "info", "plain → info")
+	_eq(LogHelpers.detect_log_level("at: GDScript::reload (res://x.gd:1)"), "info",
+		"stripped at: line alone → info (no prefix)")
+
+	# is_continuation_line — pass RAW (un-edge-stripped) lines so indentation is visible
+	_ok(LogHelpers.is_continuation_line("   at: GDScript::reload (res://x.gd:1)"),
+		"indented 'at:' → continuation")
+	_ok(LogHelpers.is_continuation_line("at: foo (bar:2)"), "bare 'at:' → continuation")
+	_ok(LogHelpers.is_continuation_line("\ttab indented"), "tab-indented → continuation")
+	_ok(not LogHelpers.is_continuation_line("SCRIPT ERROR: x"), "error line → not continuation")
+	_ok(not LogHelpers.is_continuation_line("plain message"), "plain line → not continuation")
+
+	# Sequence: the exact Godot 4.2 parse-error shape → both lines error-leveled.
+	var parse_err := [
+		'SCRIPT ERROR: Parse Error: Could not find base class "BogusHitClass".',
+		'   at: GDScript::reload (res://smoke_txtflt_hit.gd:1)',
+	]
+	_eq(_level_sequence(parse_err), ["error", "error"],
+		"4.2 parse error: SCRIPT ERROR: + at: both → error")
+	_eq(_level_sequence(["WARNING: w", "   at: foo (x:1)"]), ["warning", "warning"],
+		"warning + at: both → warning")
+	_eq(_level_sequence(["a plain info line", "   at: stray (x:1)"]), ["info", "info"],
+		"info + at: → info (no spurious error inherit)")
 
 
 # --- Registry (~17 assertions) --------------------------------------------

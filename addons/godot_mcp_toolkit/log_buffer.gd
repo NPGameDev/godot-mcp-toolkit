@@ -40,6 +40,10 @@ static var _tail_offset: int = 0
 static var _tail_path: String = ""
 static var _last_poll_ms: int = 0
 static var _tail_open_failures: int = 0
+## Last detected level in the tail stream, so a continuation ("   at: …") line inherits
+## the preceding error/warning level instead of "info" (the location line carries the
+## script path). Reset on (re)setup. See LogHelpers.is_continuation_line / 41m-ter.
+static var _last_tail_level: String = "info"
 
 
 # =============================================================================
@@ -251,6 +255,7 @@ static func _setup_file_tail() -> void:
 	# content written after plugin load may not be visible to our read handle
 	# until flushed. Starting from 0 ensures startup messages are captured.
 	_tail_offset = 0
+	_last_tail_level = "info"
 
 
 static func _tail_log_file() -> void:
@@ -283,8 +288,18 @@ static func _tail_log_file() -> void:
 		var stripped := line.strip_edges()
 		if stripped.is_empty():
 			continue
-		var level := _detect_log_level(stripped)
+		# A continuation ("   at: …") line inherits the preceding error/warning level so
+		# a multi-line error stays error-leveled (its location line carries the script
+		# path) — matching the source=file reader's coalescing and the 4.5+ Logger's
+		# one-entry-per-error. See LogHelpers.is_continuation_line (41m-ter).
+		var level: String
+		if LogHelpers.is_continuation_line(line) \
+				and (_last_tail_level == "error" or _last_tail_level == "warning"):
+			level = _last_tail_level
+		else:
+			level = _detect_log_level(stripped)
 		push(level, stripped)
+		_last_tail_level = level
 
 
 static func _detect_log_level(line: String) -> String:

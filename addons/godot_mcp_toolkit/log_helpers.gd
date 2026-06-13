@@ -41,12 +41,24 @@ static func strip_ansi(text: String) -> String:
 
 static func detect_log_level(line: String) -> String:
 	if line.begins_with("ERROR:") or line.begins_with("USER ERROR:") \
-			or line.begins_with("SCRIPT ERROR:"):
+			or line.begins_with("SCRIPT ERROR:") or line.begins_with("SHADER ERROR:"):
 		return "error"
 	if line.begins_with("WARNING:") or line.begins_with("USER WARNING:") \
 			or line.begins_with("SCRIPT WARNING:"):
 		return "warning"
 	return "info"
+
+
+## True for a Godot error-location continuation line — the indented "   at: …" line
+## that follows an ERROR:/WARNING:/SCRIPT ERROR: message (and any leading-whitespace
+## continuation). Used so a multi-line error is leveled as a unit: the file-tail buffer
+## makes such a line inherit the preceding error/warning level (log_buffer.gd), and the
+## source=file reader coalesces it into the prior entry (editor_commands.gd). Pass a RAW
+## (un-edge-stripped) line so the leading whitespace is still visible.
+static func is_continuation_line(line: String) -> bool:
+	if line.begins_with(" ") or line.begins_with("\t"):
+		return true
+	return line.strip_edges().begins_with("at:")
 
 
 # -- File logging detection ----------------------------------------------------

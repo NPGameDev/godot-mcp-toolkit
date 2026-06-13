@@ -313,9 +313,13 @@ static func _advance_mode_to_string(mode_int: int) -> String:
 
 
 static func _sm_summary(sm: AnimationNodeStateMachine) -> Dictionary:
+	# get_node_list() is a 4.5+ script API (engine: bound to get_node_list_as_typed_array
+	# in 4.5; absent on 4.2-4.4 → calling it errors and corrupts the return). Guard it so
+	# the summary stays well-formed on older versions: node enumeration is unavailable
+	# there, but transitions are (get_transition_count is 4.2+). See 41m-ter A4/A5.
 	var node_count := 0
-	var node_list: Array = sm.get_node_list()
-	node_count = node_list.size()
+	if sm.has_method(&"get_node_list"):
+		node_count = sm.get_node_list().size()
 	return {
 		"nodes_count": node_count,
 		"transitions_count": sm.get_transition_count(),
@@ -615,29 +619,41 @@ static func _at_list(tree: AnimationTree) -> Dictionary:
 
 	var sm: AnimationNodeStateMachine = tree_root as AnimationNodeStateMachine
 	var nodes: Array = []
-	var node_list: Array = sm.get_node_list()
-	for sn_name in node_list:
-		var anim_node: AnimationNode = sm.get_node(sn_name)
-		var pos: Vector2 = sm.get_node_position(sn_name)
-		var entry := {
-			"name": str(sn_name),
-			"type": anim_node.get_class(),
-			"position": {"x": pos.x, "y": pos.y},
-		}
-		if anim_node is AnimationNodeAnimation:
-			entry["animation"] = str((anim_node as AnimationNodeAnimation).animation)
-		nodes.append(entry)
+	# get_node_list() is a 4.5+ script API (absent on 4.2-4.4 → errors); guard it so list
+	# stays well-formed on older versions. Node enumeration is unavailable there (nodes:[]),
+	# but transitions below still enumerate (get_transition_* are 4.2+). See 41m-ter A4/A5.
+	if sm.has_method(&"get_node_list"):
+		for sn_name in sm.get_node_list():
+			var anim_node: AnimationNode = sm.get_node(sn_name)
+			# Robustness: skip an unreadable node rather than dereferencing null.
+			if anim_node == null:
+				continue
+			var pos: Vector2 = sm.get_node_position(sn_name)
+			var entry := {
+				"name": str(sn_name),
+				"type": anim_node.get_class(),
+				"position": {"x": pos.x, "y": pos.y},
+			}
+			if anim_node is AnimationNodeAnimation:
+				entry["animation"] = str((anim_node as AnimationNodeAnimation).animation)
+			nodes.append(entry)
 
 	var transitions: Array = []
 	for i in range(sm.get_transition_count()):
 		var tr: AnimationNodeStateMachineTransition = sm.get_transition(i)
-		transitions.append({
+		var t_entry := {
 			"from": str(sm.get_transition_from(i)),
 			"to": str(sm.get_transition_to(i)),
-			"switch_mode": _switch_mode_to_string(tr.switch_mode),
-			"advance_condition": str(tr.advance_condition),
-			"advance_mode": _advance_mode_to_string(tr.advance_mode),
-		})
+		}
+		# Robustness: on some engine versions get_transition(i) can return null even
+		# for an in-range index (Godot 4.2 runtime divergence — 41m-ter). Emit the
+		# endpoints we have and skip the transition-object fields rather than
+		# dereferencing null (which would yield a malformed return → INTERNAL).
+		if tr != null:
+			t_entry["switch_mode"] = _switch_mode_to_string(tr.switch_mode)
+			t_entry["advance_condition"] = str(tr.advance_condition)
+			t_entry["advance_mode"] = _advance_mode_to_string(tr.advance_mode)
+		transitions.append(t_entry)
 
 	return MCPToolkitSuccess.ok({
 		"root_type": root_type,

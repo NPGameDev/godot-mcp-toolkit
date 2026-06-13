@@ -632,14 +632,12 @@ static func _read_console_log(
 			char_offset += line.length() + 1
 			continue
 		var level := _detect_log_level(line)
-		if level == "info" and entries.size() > 0 and line.length() > 0:
-			var first_char := line[0]
-			if first_char == " " or first_char == "\t" or line.begins_with("   at:"):
-				var previous: Dictionary = entries[-1]
-				if previous["level"] == "error" or previous["level"] == "warning":
-					previous["message"] += "\n" + line
-					char_offset += line.length() + 1
-					continue
+		if level == "info" and entries.size() > 0 and LogHelpers.is_continuation_line(line):
+			var previous: Dictionary = entries[-1]
+			if previous["level"] == "error" or previous["level"] == "warning":
+				previous["message"] += "\n" + line
+				char_offset += line.length() + 1
+				continue
 		entries.append({
 			"id": char_offset,
 			"level": level,
