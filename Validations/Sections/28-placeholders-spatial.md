@@ -19,6 +19,16 @@
 >
 > All generated assets land under `res://sv2_validation/placeholders/` and are
 > removed in Cleanup.
+>
+> **Error contract (enum guards) — 41m-sexies / ADR is server COMPATIBILITY.md.**
+> This sweep runs through the **MCP server** (agent path), so an invalid **enum**
+> value (`detail`, `shape`, `waveform`) is rejected by server-side Zod as
+> **JSON-RPC `-32602`** with the bad param named — it never reaches the plugin.
+> **Non-enum** guards (wrong array length, transparent result, wrong extension,
+> path traversal) reach the plugin and return the toolkit codes
+> (`INVALID_PARAMS` / `INVALID_PATH` / `PATH_DENIED`). Both are correct; the
+> plugin's own enum check is defense-in-depth for the direct-dispatch (`sv2_`)
+> path only.
 
 ---
 
@@ -49,9 +59,9 @@ fresh-Control sizing — and Vector2 values use the typed form
 **28.6** `scene_spatial_map` class=`Sprite2D`, max_nodes=`1`
 - **Expect:** success; `returned:1`, `truncated:true`, plus a hint to narrow/raise the cap.
 
-**28.7** `scene_spatial_map` guards:
-- detail=`verbose` → **INVALID_PARAMS** mentioning `detail`
-- region=`[1,2,3]` (wrong length) → **INVALID_PARAMS** mentioning `region`
+**28.7** `scene_spatial_map` guards (dual error contract — see the intro note):
+- detail=`verbose` → **JSON-RPC -32602** naming `detail` (enum rejected server-side by Zod)
+- region=`[1,2,3]` (wrong length) → **INVALID_PARAMS** mentioning `region` (non-enum guard, reaches the plugin)
 
 ## scene_spatial_map (3D)
 
@@ -64,11 +74,14 @@ fresh-Control sizing — and Vector2 values use the typed form
 ## texture_generate (placeholders group)
 
 **28.8** `discover_tools` query=`"placeholder texture sprite sound"`
-- **Expect:** `texture_generate` and `sound_generate` register (placeholders group loads).
+- **Expect:** `texture_generate` and `sound_generate` register, and the
+  dominant-match filter activates **only** `placeholders` — NOT `asset_ops` or
+  `path_editing` (Item C, 41m-sexies). The incidental `texture`/`sprite`/`sound`
+  substring matches are pruned because `placeholders` dominates the score.
 
 **28.9** Every shape — for each of `solid`, `circle`, `triangle`, `diamond`, `arrow`, `checkerboard`, `grid`:
 - `texture_generate` path=`res://sv2_validation/placeholders/shape_<shape>.png`, shape=`<shape>`, width=`32`, height=`32`, fill_color=`"#3366ff"`, outline_color=`"#000000"`, if_exists=`replace`
-- **Expect:** success; `class` is `Texture2D` (or null with an index warning); `status:"created"`.
+- **Expect:** success; `class` is **`Texture2D`** — always populated (Item B derives it by construction), **no** "did not index within 5000ms" warning, and `elapsed_ms` ≈ 0; `status:"created"`.
 
 **28.10** Colour formats — generate four solids with fill_color = `"#ff8800"` / `"red"` / `[0.1,0.2,0.9]` / `[255,128,0]`
 - **Expect:** all succeed (hex, named, 0-1 array, 0-255 array all parse).
@@ -89,13 +102,13 @@ fresh-Control sizing — and Vector2 values use the typed form
 - path=`.../x.jpg` → **INVALID_PATH** mentioning `png`
 - path=`res://../escape.png` → **PATH_DENIED**
 - fill+outline+background all `[0,0,0,0]` → **INVALID_PARAMS** mentioning `transparent`
-- shape=`hexagon` → **INVALID_PARAMS** mentioning `shape`
+- shape=`hexagon` → **JSON-RPC -32602** naming `shape` (enum, server-side; the plugin's `INVALID_PARAMS` is defense-in-depth on the direct-dispatch path)
 
 ## sound_generate (placeholders group)
 
 **28.16** Every waveform — for each of `sine`, `square`, `triangle`, `sawtooth`, `noise`:
 - `sound_generate` path=`res://sv2_validation/placeholders/wave_<waveform>.wav`, waveform=`<waveform>`, frequency=`440`, duration=`0.1`, if_exists=`replace`
-- **Expect:** success; `class` is `AudioStreamWAV` (or null with an index warning).
+- **Expect:** success; `class` is **`AudioStreamWAV`** — always populated (Item B), **no** index warning, `elapsed_ms` ≈ 0.
 
 **28.17** Pitch sweep + decay — `sound_generate` waveform=`square`, frequency=`200`, end_frequency=`900`, duration=`0.2`, decay=`0.1`
 - **Expect:** success; response echoes `end_frequency`.
@@ -105,7 +118,7 @@ fresh-Control sizing — and Vector2 values use the typed form
 
 **28.19** sound guards:
 - path=`.../x.mp3` → **INVALID_PATH** mentioning `wav`
-- waveform=`fmsynth` → **INVALID_PARAMS** mentioning `waveform`
+- waveform=`fmsynth` → **JSON-RPC -32602** naming `waveform` (enum, server-side)
 - path=`res://../escape.wav` → **PATH_DENIED**
 
 ---

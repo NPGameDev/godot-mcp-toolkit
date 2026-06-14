@@ -234,7 +234,7 @@
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | meta.set_limits | — | — | — | — | — | Internal (server→plugin); not agent-facing |
-| discover_tools | C10 (12 steps) | ✓ (reset, selective reset) | — | — | FIX-3, FIX-C | |
+| discover_tools | C10 (12 steps), 28.8 | ✓ (reset, selective reset) | — | — | FIX-3, FIX-C | **dominant-match (Item C, 41m-sexies):** a vague multi-word query activates only the dominant group (28.8: "placeholder texture sprite sound" → only `placeholders`); server smoke §39 asserts prune + recall |
 | extensions.refresh | E5 | — | — | — | — | Extension phase |
 | *(extension API)* | E10a–E10d | E10c (guard) | — | E10a, E10b (hints) | — | success_hint + MCPToolkitError (41l-vicies-ter) |
 
@@ -321,9 +321,9 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| scene_spatial_map | 28.1–28.7b | ✓ (28.7: INVALID_PARAMS detail + region size) | — | ✓ (truncation hint, successHint → node_set_property) | — | eager; read-only; 2D + 3D dispatch |
-| texture_generate | 28.8–28.15 | ✓ (28.15: INVALID_PATH png, PATH_DENIED, INVALID_PARAMS transparent/shape, ALREADY_EXISTS) | — | ✓ (successHint → Sprite2D.texture / spriteframes_create) | — | `placeholders` group (on-demand); all 7 shapes, colour formats, hollow, label, dim cap |
-| sound_generate | 28.16–28.19 | ✓ (28.19: INVALID_PATH wav, PATH_DENIED, INVALID_PARAMS waveform) | — | ✓ (successHint → AudioStreamPlayer.stream) | — | `placeholders` group (on-demand); all 5 waveforms, sweep, decay, duration cap |
+| scene_spatial_map | 28.1–28.7b | ✓ (28.7: **-32602** detail [enum, server-side] + INVALID_PARAMS region size) | — | ✓ (truncation hint, successHint → node_set_property) | — | eager; read-only; 2D + 3D dispatch |
+| texture_generate | 28.8–28.15 | ✓ (28.15: INVALID_PATH png, PATH_DENIED, INVALID_PARAMS transparent, **-32602** shape [enum], ALREADY_EXISTS) | — | ✓ (successHint → Sprite2D.texture / spriteframes_create) | — | `placeholders` group; all 7 shapes, colour formats, hollow, label, dim cap; **class always Texture2D, no settle wait (Item B, 41m-sexies)** |
+| sound_generate | 28.16–28.19 | ✓ (28.19: INVALID_PATH wav, PATH_DENIED, **-32602** waveform [enum]) | — | ✓ (successHint → AudioStreamPlayer.stream) | — | `placeholders` group; all 5 waveforms, sweep, decay, duration cap; **class always AudioStreamWAV (Item B)** |
 
 > **runtime_set_property** was demoted eager → `runtime_advanced` group in
 > 41m-quinquies; it remains covered in the runtime sweep (Section 20). The sweep
