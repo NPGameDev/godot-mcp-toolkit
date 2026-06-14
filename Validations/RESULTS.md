@@ -705,3 +705,151 @@ The single net-new regression is **Finding #1 (extension live-discovery)** — w
 
 ## Cleanup state
 All `res://sv2_validation/` artifacts removed; folder deleted (via filesystem workaround for the phantom-tab block). Project name restored to "Godot MCP Toolkit", main_scene restored to `res://Main.tscn`. No stray audio buses / input actions / save data. Editor was closed by the user at the end (clearing all phantom script tabs).
+
+---
+
+## Section 28 — Spatial Map & Placeholder Generators (2026-06-14 09:43)
+
+> **Targeted single-section re-run** (not part of the 2026-06-07 full sweep above).
+> Godot 4.5+ (dogfood repo project; `scene_close` present in cleanup group confirms ≥4.5).
+> Repo HEAD `bec44d9` (placeholders/spatial feature from `b92f62a`). Tools exercised:
+> `scene_spatial_map` (eager), `texture_generate` + `sound_generate` (`placeholders` group).
+> **Setup:** `main.tscn` pre-existed as an empty `main` (Node2D) root — used as host scene
+> (nodes created at `parent_path="."`). Section-2 scaffolding not needed.
+
+| Test | Status | Notes |
+|------|--------|-------|
+| 28.1 | PASS | 3 Sprite2D (Sv2SpatA/B/C) created at (0,0)/(20,0)/(500,500); texture=res://icon.svg + Vector2 position set via batch (6/6 ok) |
+| 28.2 | PASS | detail=full,class=Sprite2D: Sv2SpatA space=2d, bounds {pos[-64,-64],size[128,128]}, overlaps=[./Sv2SpatB] (C excluded), nearest=./Sv2SpatB dist=20. Confirms `radius` is omittable despite schema marking it required (minimal call) |
+| 28.3 | PASS | detail=brief: 3 nodes carry position/size/space only — NO overlaps/bounds keys |
+| 28.4 | PASS | region=[-100,-100,300,300]: node_count=2, Sv2SpatA+B present, Sv2SpatC absent (outside region) |
+| 28.5 | PASS | radius=150,center=[0,0]: Sv2SpatC absent (~693 > 150); A+B present |
+| 28.6 | PASS | max_nodes=1: returned=1, truncated=true, hint "narrow with subtree/class/region/radius, or raise max_nodes (<=1000)" |
+| 28.7 | PASS | guards: detail=verbose → -32602 INVALID_PARAMS listing brief\|normal\|full (mentions `detail`); region=[1,2,3] → INVALID_PARAMS "region must have 4 numbers...got 3" (mentions `region`) |
+| 28.7b | PASS | MeshInstance3D Sv2SpatMesh pos Vector3(1,2,3); subtree map → space=3d, bounds {pos[1,2,3],size[0,0,0]}, size len 3 — mesh-less zero-size AABB at origin |
+| 28.8 | PASS | discover_tools "placeholder texture sprite sound" → placeholders activated; texture_generate + sound_generate registered (loose keyword also pulled asset_ops + path_editing) |
+| 28.9 | PASS | all 7 shapes (solid/circle/triangle/diamond/arrow/checkerboard/grid) → status=created; class=null + index warning (accepted per test) |
+| 28.10 | PASS | 4 colour formats all parse + create: hex "#ff8800", named "red", 0-1 array [0.1,0.2,0.9], 0-255 array [255,128,0] |
+| 28.11 | PASS | hollow circle (fill [0,0,0,0] transparent + outline #00ff00 width 3) created |
+| 28.12 | PASS | label overlay "Enemy"/#ffffff on #444444 solid created (call ok; bitmap not visually inspected) |
+| 28.13 | PASS | dimension cap 4096×4096 → response echoes width=1024, height=1024 (clamped, NOT rejected) |
+| 28.14 | PASS | if_exists chain: replace→status=created; return→status=returned (idempotent no-op); fail→ALREADY_EXISTS with replace/return hint |
+| 28.15 | PASS | guards: .jpg→INVALID_PATH "expected: png"; res://../escape.png→PATH_DENIED "contains '..'"; all-transparent→INVALID_PARAMS "fully transparent"; shape=hexagon→-32602 (mentions `shape`) |
+| 28.16 | PASS | all 5 waveforms (sine/square/triangle/sawtooth/noise) → status=created; class=null + index warning |
+| 28.17 | PASS | pitch sweep square 200→900, decay 0.1: response echoes end_frequency=900 |
+| 28.18 | PASS | duration cap 30s → response echoes duration=5 (clamped) |
+| 28.19 | PASS | guards: .mp3→INVALID_PATH "expected: wav"; waveform=fmsynth→-32602 (mentions `waveform`); res://../escape.wav→PATH_DENIED |
+
+Console error check: **PASS** — `UndoRedo history mismatch` count=0, error-level count=0, buffer clean (cleared at section start). The expected PNG/WAV reimport noise did not surface as console errors during the run.
+
+**Observation (not a fail):** every `texture_generate`/`sound_generate` returned `class:null` with an "EditorFileSystem did not index … within 5000ms — call editor.wait_for_idle" warning — the asset write succeeds but the import scan doesn't finish inside the 5 s window under rapid batched writes. The test explicitly accepts "null with an index warning", so this is expected behavior, not a regression. Callers needing the imported `class` immediately should pass `wait_for_scan_ms` or follow with `editor_wait_for_idle`.
+
+Cleanup: Sv2SpatA/B/C/Mesh deleted (4/4); `folder_delete` placeholders recursive → 35 files removed (15 PNG + 7 WAV assets + ~13 `.import` companions; the rest hadn't been indexed yet); verified via filesystem — only `sv2_validation/main.tscn` remains. Groups placeholders/asset_ops/path_editing reset. `main.tscn` left in place (pre-existing empty Node2D; test nodes were in-memory only — `editor_save_scene` never called — so disk was never modified).
+
+**Verdict: 20/20 PASS (28.1–28.19 + 28.7b). Zero failures, zero console regressions.**
+
+---
+
+## 41m-sexies gate (4.5) (2026-06-14)
+
+- **Godot version:** 4.5
+- **Scope:** Section 28 full (28.1–28.19 + 28.7b) + Section 18 folder_delete (18.12, 18.13) + point-checks P1–P5.
+- **What changed this iter:** B (asset settle — `class` always populated, no index warning, `wait_for_scan_ms` defaults to 0, fast return), C (discover_tools dominant-group activation), D (invalid enums rejected server-side as JSON-RPC -32602).
+- **Verdict: ALL GREEN.** Section 28 = 20/20 PASS. Section 18 folder_delete = 2/2 PASS. Point-checks P1–P5 = 5/5 PASS. Zero console regressions (no UndoRedo mismatch, no errors; only benign `[MCPTools]` operational info-warnings + one stray Control-anchor editor warning unrelated to our ops).
+
+### Item B regression-positive (vs the prior Section 28 block above)
+The earlier block recorded `class:null` + "did not index within 5000ms" warning as accepted behavior. **41m-sexies flips this:** every `texture_generate` now returns `class:"Texture2D"` and every `sound_generate` returns `class:"AudioStreamWAV"` — **always populated by construction**, `warnings:[]` (no index warning), `elapsed_ms:0` on the default path. Confirmed across all of 28.9 (7 shapes), 28.16 (5 waveforms), and P1.
+
+### Section 28
+| Test | Status | Notes |
+|------|--------|-------|
+| 28.1 | PASS | 3 Sprite2D (Sv2SpatA/B/C) at (0,0)/(20,0)/(500,500), texture=res://icon.svg via batch (all ok) |
+| 28.2 | PASS | detail=full: Sv2SpatA space=2d, bounds pos[-64,-64] size[128,128], overlaps=[./Sv2SpatB] (C excluded), nearest=./Sv2SpatB dist=20 |
+| 28.3 | PASS | detail=brief: position/size/space only — NO overlaps/bounds keys |
+| 28.4 | PASS | region=[-100,-100,300,300]: node_count=2 (A+B), C absent |
+| 28.5 | PASS | radius=150 center=[0,0]: C absent (~693>150), A+B present |
+| 28.6 | PASS | max_nodes=1: returned=1, truncated=true, hint to narrow/raise cap (<=1000) |
+| 28.7 | PASS | detail=verbose → **-32602** naming `detail` (server Zod); region=[1,2,3] → **INVALID_PARAMS** "region must have 4 numbers...got 3" (plugin) — dual contract confirmed |
+| 28.7b | PASS | MeshInstance3D pos Vector3(1,2,3), subtree map → space=3d, bounds/size length 3 (zero-size AABB at origin) |
+| 28.8 | PASS | discover_tools "placeholder texture sprite sound" → **only** `placeholders` returned; asset_ops/path_editing pruned (Item C dominant-match) |
+| 28.9 | PASS | all 7 shapes → class="Texture2D" (always), warnings=[], elapsed_ms=0, status=created |
+| 28.10 | PASS | 4 colour formats parse+create: "#ff8800", "red", [0.1,0.2,0.9], [255,128,0] |
+| 28.11 | PASS | hollow circle (transparent fill + #00ff00 outline width 3) created |
+| 28.12 | PASS | label overlay "Enemy"/#ffffff on #444444 solid (call ok; bitmap not visually inspected) |
+| 28.13 | PASS | dim cap 4096×4096 → echoes width=1024 height=1024 (clamped) |
+| 28.14 | PASS | if_exists: replace→created; return→status=returned; fail→ALREADY_EXISTS |
+| 28.15 | PASS | .jpg→INVALID_PATH "png"; res://../escape.png→PATH_DENIED; all-transparent→INVALID_PARAMS "transparent"; shape=hexagon→**-32602** naming `shape` |
+| 28.16 | PASS | all 5 waveforms → class="AudioStreamWAV" (always), warnings=[], elapsed_ms=0 |
+| 28.17 | PASS | sweep square 200→900 decay 0.1 → echoes end_frequency=900 |
+| 28.18 | PASS | duration cap 30 → echoes duration=5 (clamped) |
+| 28.19 | PASS | .mp3→INVALID_PATH "wav"; waveform=fmsynth→**-32602** naming `waveform`; res://../escape.wav→PATH_DENIED |
+
+Console error check (Section 28): **PASS** — buffer cleared at start; ending buffer held one benign `[MCPTools] auto-created directory` info-warning + one generic Control-anchor editor warning (background, not from our ops). No UndoRedo mismatch, no errors. No PNG/WAV reimport noise (consistent with the fast no-poll settle).
+
+### Section 18 (folder_delete)
+| Test | Status | Notes |
+|------|--------|-------|
+| 18.12 | PASS | 1 scene inside del_folder → folder_delete recursive: tab_closed=inner.tscn, directories_deleted=1, no stale_tabs |
+| 18.13 | PASS | 2 scenes + main active → stale_tabs=[inner1.tscn, inner2.tscn] (2 entries), hint names _set_main_scene_state; scene_close on both succeeded |
+
+### Point-checks
+| Check | Status | Notes |
+|-------|--------|-------|
+| P1 | PASS | Batched 3 textures + 2 sounds (default path) → all non-null class (Texture2D/AudioStreamWAV), warnings=[], elapsed_ms=0; batch prompt. **Caveat:** explicit `wait_for_scan_ms` 2000/4000/5000 all emitted the "did not index within Xms" timeout warning even after `editor_wait_for_idle` reported FS idle (`was_scanning:false`). Asset still created with class populated; a targeted `editor_refresh` then indexed it (errors_cleared:1). The opt-in poll does NOT settle for FileAccess-written files without a refresh in-session — consistent with *why* Item B demoted the poll to opt-in. Item B's core guarantee (class always populated, no blocking, no default warning) holds. |
+| P2 | PASS | `scene_spatial_map` with NO arguments → success, node_count=5, space="mixed"; radius/max_nodes/region/center confirmed optional (no missing-required-param error) |
+| P3 | PASS | detail=verbose, shape=hexagon, waveform=fmsynth → all **JSON-RPC -32602** with the offending param named — server path, NOT plugin INVALID_PARAMS |
+| P4 | PASS | flat folder (2 files) → directories_deleted=1; nested (root+sub_a+sub_b) → directories_deleted=3 (1 + 2 subdirs); both gone (re-delete → NOT_FOUND) |
+| P5 | PASS | "placeholder texture sprite sound" → only `placeholders` (asset_ops/path_editing pruned); "sound" → both `placeholders` AND `audio` (recall preserved); discover_tools(reset:true) deactivated all groups |
+
+Cleanup: Sv2SpatA/B/C/Mesh deleted (4/4), main.tscn saved, `folder_delete placeholders` recursive → 60 files removed (PNG/WAV assets + .import companions), p4_flat/p4_nested/del_folder all removed during their tests, all tool groups reset. Scene tree verified back to childless `main` Node2D. Final console buffer cleared.
+
+**Gate verdict: PASS — all 5 point-checks green; Section 28 (20/20) + Section 18 folder_delete (2/2) clean; no unexpected console errors. Items B/C/D all verified working.**
+
+---
+
+## 41m-sexies gate (4.2) (2026-06-14)
+
+- **Godot version:** 4.2 (project `application/config/features` = `PackedStringArray("4.2", "GL Compatibility")`; the dogfood repo is 4.5-cached, opened in a live 4.2 editor for this gate)
+- **MCP:** connected via repo `.mcp.json`
+- **Scope:** Section 28 full (28.1–28.19 + 28.7b) against the 4.2 editor. **Mandatory pre-41n pass** — last iter before the 41n architecture-review series. Goal: confirm **no 4.2-only regression** in the version-independent changed behaviors (B/C/D).
+- **Setup:** `res://sv2_validation/main.tscn` pre-existed as an empty `main` (Node2D) — opened as host scene; test nodes created at `parent_path="."`. No project reimport/load noise observed when scanning the console (the one-time 4.5→4.2 reimport, if any, had settled before the run; buffer cleared at start).
+- **Verdict: PASS — 20/20.** Every observed value is **identical to the 4.5 run** (same block above). No 4.2-only regression in Items B, C, or D. Zero console errors, no UndoRedo mismatch.
+
+### Item B (asset settle) — identical on 4.2, no regression
+`class` is **always populated by construction** on 4.2 exactly as on 4.5: every `texture_generate` → `class:"Texture2D"`, every `sound_generate` → `class:"AudioStreamWAV"`, **`warnings:[]`** (no "did not index within 5000ms" warning), **`elapsed_ms:0`**. Verified across 28.9 (7 shapes), 28.10–28.14 (8 more textures), and 28.16 (5 waveforms) + 28.17/28.18. As predicted, the generators derive `class` and skip the FS poll — no version-specific API touched. (`Image.save_png`, `AudioStreamWAV.save_to_wav`, `update_file`, `get_file_type` all behave on 4.2.)
+
+### Item D (enum contract) — identical on 4.2 (server-side Zod)
+Invalid **enums** rejected as JSON-RPC **-32602** naming the param — version-independent, confirmed on 4.2: `detail=verbose` → -32602 `detail`; `shape=hexagon` → -32602 `shape`; `waveform=fmsynth` → -32602 `waveform`. Non-enum guards reach the plugin and return toolkit codes (INVALID_PATH / PATH_DENIED / INVALID_PARAMS), same as 4.5.
+
+### Item C (discover_tools dominant-match) — identical on 4.2 (server-side)
+28.8: `discover_tools "placeholder texture sprite sound"` activated **only** `placeholders` (asset_ops / path_editing pruned) — dominant-match is server-side, version-independent. Confirmed on 4.2.
+
+### Section 28
+| Test | Status | Notes |
+|------|--------|-------|
+| 28.1 | PASS | 3 Sprite2D (Sv2SpatA/B/C) at (0,0)/(20,0)/(500,500), texture=res://icon.svg + Vector2 position via inline props (2/2 each, 6/6) |
+| 28.2 | PASS | detail=full: Sv2SpatA space=2d, bounds pos[-64,-64] size[128,128], overlaps=[./Sv2SpatB] (C excluded), nearest=./Sv2SpatB dist=20 |
+| 28.3 | PASS | detail=brief: position/size/space only — NO overlaps/bounds keys |
+| 28.4 | PASS | region=[-100,-100,300,300]: node_count=2 (A+B), C absent |
+| 28.5 | PASS | radius=150 center=[0,0]: C absent (~693>150), A+B present |
+| 28.6 | PASS | max_nodes=1: returned=1, truncated=true, hint to narrow/raise cap (<=1000) |
+| 28.7 | PASS | detail=verbose → **-32602** naming `detail` (server Zod); region=[1,2,3] → **INVALID_PARAMS** "region must have 4 numbers...got 3" (plugin) — dual contract confirmed |
+| 28.7b | PASS | MeshInstance3D pos Vector3(1,2,3), subtree map → space=3d, bounds pos[1,2,3] size[0,0,0], size length 3 (zero-size AABB at origin) |
+| 28.8 | PASS | discover_tools "placeholder texture sprite sound" → **only** `placeholders` returned; asset_ops/path_editing pruned (Item C dominant-match) |
+| 28.9 | PASS | all 7 shapes (solid/circle/triangle/diamond/arrow/checkerboard/grid) → class="Texture2D" (always), warnings=[], elapsed_ms=0, status=created |
+| 28.10 | PASS | 4 colour formats parse+create: "#ff8800", "red", [0.1,0.2,0.9], [255,128,0] |
+| 28.11 | PASS | hollow circle (transparent fill [0,0,0,0] + #00ff00 outline width 3) created |
+| 28.12 | PASS | label overlay "Enemy"/#ffffff on #444444 solid (call ok; bitmap not visually inspected) |
+| 28.13 | PASS | dim cap 4096×4096 → echoes width=1024 height=1024 (clamped, not rejected) |
+| 28.14 | PASS | if_exists: replace→status=created; return→status=returned (no-op); fail→ALREADY_EXISTS with replace/return hint |
+| 28.15 | PASS | .jpg→INVALID_PATH "expected: png"; res://../escape.png→PATH_DENIED "contains '..'"; all-transparent→INVALID_PARAMS "fully transparent"; shape=hexagon→**-32602** naming `shape` |
+| 28.16 | PASS | all 5 waveforms (sine/square/triangle/sawtooth/noise) → class="AudioStreamWAV" (always), warnings=[], elapsed_ms=0 |
+| 28.17 | PASS | sweep square 200→900 decay 0.1 → echoes end_frequency=900 |
+| 28.18 | PASS | duration cap 30 → echoes duration=5 (clamped) |
+| 28.19 | PASS | .mp3→INVALID_PATH "expected: wav"; waveform=fmsynth→**-32602** naming `waveform`; res://../escape.wav→PATH_DENIED |
+
+Console error check (Section 28): **PASS** — buffer cleared at start; mid-run and end-of-run reads both returned 0 lines. No UndoRedo mismatch, no errors, **no PNG/WAV reimport noise** (consistent with the fast no-poll settle — no `.import` companions were even created, see Cleanup). No 4.2 editor console errors of any kind during Section 28.
+
+Cleanup: Sv2SpatA/B/C/Mesh deleted (4/4), `editor_save_scene` → main.tscn saved, `folder_delete placeholders` recursive → **22 files removed** (15 PNG + 7 WAV — exactly the generated assets; **no `.import` companions**, since the no-poll path never triggered a reimport in-session). Scene tree verified back to childless `main` Node2D; final console buffer clean. All tool groups reset (placeholders + cleanup deactivated).
+
+**4.2 gate verdict: PASS — Section 28 clean 20/20, every value matching the 4.5 run, no 4.2-only regression in Items B/C/D, no unexpected console errors. Cleared for the 41n architecture-review series.**
