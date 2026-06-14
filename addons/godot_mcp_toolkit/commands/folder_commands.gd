@@ -154,6 +154,10 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	if recursive and (file_count + subdir_count) > 0:
 		push_warning("[MCPTools] folder.delete recursive %s (%d files, %d subdirs)" % [
 			folder_path, files_deleted, dirs_deleted])
+	# The target folder itself was just removed above — count it alongside any
+	# nested subdirectories the recursive pass deleted. Previously omitted, so a
+	# flat folder reported directories_deleted:0 despite the folder being gone.
+	dirs_deleted += 1
 	# Targeted deindex: update_file() on a directory path is a no-op in most
 	# Godot versions, so fall back to scan() for folder removal. Folder deletes
 	# are rare and the scan cost is acceptable.
