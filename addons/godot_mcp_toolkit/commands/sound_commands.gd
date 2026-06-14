@@ -74,9 +74,12 @@ static func _cmd_generate(parameters: Dictionary) -> Dictionary:
 		return {}
 
 	var if_exists := str(parameters.get("if_exists", "return"))
-	var wait_for_scan_ms := int(parameters.get("wait_for_scan_ms", 5000))
+	# Default 0 = no import-settle poll: a generated WAV is an AudioStreamWAV by
+	# construction, so the class is reported directly (no FS round-trip). Pass an
+	# explicit wait_for_scan_ms > 0 to force a settle. See ADR 0010.
+	var wait_for_scan_ms := int(parameters.get("wait_for_scan_ms", 0))
 	var result := await Helpers.write_asset_with_settle(
-		path, PackedStringArray(ALLOWED_EXTS), if_exists, wait_for_scan_ms, "sound.generate", write_fn)
+		path, PackedStringArray(ALLOWED_EXTS), if_exists, wait_for_scan_ms, "sound.generate", write_fn, "AudioStreamWAV")
 	if not result.get("success", false):
 		return result
 

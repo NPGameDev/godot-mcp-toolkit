@@ -586,9 +586,17 @@ static func ensure_file_removed(file_path: String, timeout_ms: int = 3000) -> Di
 ##   method           handler name, for error/dir context
 ##   write_fn         Callable(dest_path: String) -> Dictionary
 ##                    {} on success, or an MCPToolkitError.fail(...) dict on failure.
+##   known_class      OPTIONAL. When non-empty, the caller GUARANTEES the saved
+##                    asset's class (e.g. a generator that wrote a PNG knows it is
+##                    a Texture2D). The class is then reported directly and the
+##                    blocking import-settle poll is skipped (a single
+##                    non-blocking update_file() still runs so the FS dock catches
+##                    up). asset.import passes "" because the imported type is
+##                    unknown until the editor runs the import. See ADR 0010.
 ##
-## Returns the core success payload {status, path, class, warnings, success:true}
-## (status is "created" | "replaced" | "returned"), or an MCPToolkitError dict
+## Returns the core success payload
+## {status, path, class, warnings, elapsed_ms, success:true} (status is
+## "created" | "replaced" | "returned"), or an MCPToolkitError dict
 ## (PATH_DENIED / INVALID_PATH / INVALID_PARAMS / ALREADY_EXISTS / PARENT_NOT_FOUND /
 ## WRITE_FAILED). Callers merge tool-specific fields into the returned dict on
 ## success (result.success == true).
@@ -599,6 +607,7 @@ static func write_asset_with_settle(
 	wait_for_scan_ms: int,
 	method: String,
 	write_fn: Callable,
+	known_class: String = "",
 ) -> Dictionary:
 	var guard := FileGuard.resolve_safe(dest_path)
 	if guard["error"] != null:
@@ -623,7 +632,7 @@ static func write_asset_with_settle(
 			"return":
 				return MCPToolkitSuccess.ok({
 					"status": "returned", "path": dest_path,
-					"class": _file_class_or_null(dest_path), "warnings": []})
+					"class": known_class if known_class != "" else _file_class_or_null(dest_path), "warnings": [], "elapsed_ms": 0})
 			"fail":
 				return MCPToolkitError.fail("ALREADY_EXISTS",
 					"file already exists at %s; use if_exists:'replace' to overwrite or if_exists:'return' for idempotent no-op" % dest_path)
@@ -639,14 +648,30 @@ static func write_asset_with_settle(
 		return write_result
 
 	var warnings: Array[String] = []
-	var index_result := await ensure_file_indexed(dest_path, wait_for_scan_ms)
-	if not index_result["indexed"]:
-		warnings.append(
-			"EditorFileSystem did not index %s within %dms — call editor.wait_for_idle to finish" % [dest_path, wait_for_scan_ms])
-
 	var file_class: Variant = null
-	if str(index_result["file_class"]) != "":
-		file_class = index_result["file_class"]
+	var elapsed_ms := 0
+
+	if known_class != "" and wait_for_scan_ms <= 0:
+		# Generator default path: the class is known by construction, so skip the
+		# blocking import-settle poll entirely. Fire one non-blocking update_file()
+		# so the FS dock catches up; the asset is usable regardless (resource_load
+		# imports on demand). No "did not index" warning — we never waited. ADR 0010.
+		var fs := EditorInterface.get_resource_filesystem()
+		if fs != null:
+			fs.update_file(dest_path)
+		file_class = known_class
+	else:
+		# asset.import (type unknown until the editor imports → must settle via the
+		# FS), OR a generator that explicitly opted into a wait (wait_for_scan_ms > 0).
+		var index_result := await ensure_file_indexed(dest_path, wait_for_scan_ms)
+		elapsed_ms = int(index_result["elapsed_ms"])
+		if not index_result["indexed"]:
+			warnings.append(
+				"EditorFileSystem did not index %s within %dms — call editor.wait_for_idle to finish" % [dest_path, wait_for_scan_ms])
+		if known_class != "":
+			file_class = known_class  # generator: the constructed class is authoritative
+		elif str(index_result["file_class"]) != "":
+			file_class = index_result["file_class"]
 
 	var status := "replaced" if file_existed else "created"
 	return MCPToolkitSuccess.ok({
@@ -654,6 +679,7 @@ static func write_asset_with_settle(
 		"path": dest_path,
 		"class": file_class,
 		"warnings": warnings,
+		"elapsed_ms": elapsed_ms,
 	})
 
 
