@@ -241,8 +241,10 @@ static func _render_label(text: String, width: int, height: int, color: Color) -
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Fill the fixed-size SubViewport via anchors. No explicit .size — setting it
+	# alongside FULL_RECT anchors emits a control.cpp:1440 "size overridden after
+	# _ready" warning, and the anchors already produce the same width×height rect.
 	label.set_anchors_preset(Control.PRESET_FULL_RECT)
-	label.size = Vector2(width, height)
 	viewport.add_child(label)
 	tree.root.add_child(viewport)
 	# Let the viewport render once.
