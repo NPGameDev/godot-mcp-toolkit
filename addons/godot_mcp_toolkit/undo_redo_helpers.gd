@@ -1,10 +1,18 @@
 @tool
 extends Node
-## UndoRedo helper methods referenced by STRING NAME from domain command
-## files via EditorUndoRedoManager.add_do_method / add_undo_method.
-## These must live on a Node so UndoRedo can call them by method name.
+## UndoRedo apply/revert methods, invoked by name on undo/redo — possibly long
+## after the originating command has returned.
 ##
-## Domain commands access this node via server.undo_helpers.
+## These live on a persistent, server-owned Node (reached via server.undo_helpers)
+## because EditorUndoRedoManager.add_do_method / add_undo_method take an
+## (object, method) pair and route undo by that object's editor context — unlike
+## the base UndoRedo class, which takes a Callable. MCPToolkitUndoRedoAction
+## unpacks each Callable into (object, method) to feed the editor-manager form, so
+## the bound object must be a real, named method host. Because the call is
+## deferred, that host must outlive the command — hence this dedicated Node.
+##
+## NOT a pre-Callable workaround. Do NOT inline these into command files or bind
+## them on an ad-hoc / transient instance: a freed host means a broken undo.
 
 
 func _write_file_silent(path: String, content: String) -> void:
