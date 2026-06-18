@@ -138,6 +138,10 @@ func _enter_tree() -> void:
 
 	add_child(_server)
 	_server.bind_user_path_monitor(_user_path_monitor)
+	# After a user-path change the server re-writes its token and announces the new
+	# path; we re-publish the registry entry runtime-preservingly (ensure_registered,
+	# not register) so a game running across the rename keeps Mode-B discovery.
+	_server.token_rewritten.connect(_on_token_rewritten)
 	_server.start()
 
 	# Register in the system-wide project registry so the TS bridge can
@@ -204,6 +208,22 @@ func _on_user_path_changed() -> void:
 	# via bind_user_path_monitor().
 	OnboardingWizard.migrate_flag_after_rename()
 	_Hub.LogBuffer.reset_tail_path()
+
+
+# Re-publish this editor's registry entry after the server re-writes its token to
+# a new user:// path. ensure_registered (not register) so an active playtest's
+# runtime_port/runtime_pid are preserved — otherwise Mode-B (running-game)
+# discovery dies for the rest of the session. Re-resolve the LSP endpoint at fire
+# time, mirroring the startup registration, so a concurrent endpoint change isn't
+# reverted to a stale value.
+func _on_token_rewritten(token_path: String) -> void:
+	if _server == null:
+		return
+	var bound_port: int = _server.get_bound_port()
+	if bound_port <= 0:
+		return
+	var lsp := MCPServer.resolve_lsp_endpoint()
+	RegistryClient.ensure_registered(bound_port, token_path, lsp["host"], lsp["port"])
 
 
 func _exit_tree() -> void:
