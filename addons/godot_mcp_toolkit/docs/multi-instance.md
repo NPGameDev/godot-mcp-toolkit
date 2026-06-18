@@ -65,12 +65,20 @@ introspection).
 
 Two Godot editors opening the same project directory simultaneously causes:
 
-- **Registry key collision:** same `project_path` means the second editor
-  overwrites the first's entry (port, token path).
+- **Registry key collision:** the registry is keyed by project-root hash, so
+  both editors map to the *same* slot. The registry tracks only the
+  **last-registering** instance — it's last-writer-wins, *not* a guaranteed
+  newest-wins, so the second editor clobbers the first's entry (port, token
+  path) and which instance the bridge resolves to is undefined.
 - **Token collision:** same absolute path produces the same hashed token
   filename, so auth fails on reconnect.
 - **Godot-level issues:** metadata lock warnings, `user://` cache corruption
-  risk. This is also a Godot anti-pattern.
+  risk. This is also a Godot anti-pattern — the engine itself does not
+  officially support opening one project path in two editors (the GDScript
+  debugger port is a single global setting, and concurrent editors race on
+  shared `user://` temp files): see upstream
+  [godotengine/godot#58723](https://github.com/godotengine/godot/issues/58723)
+  and [#16679](https://github.com/godotengine/godot/issues/16679).
 
 **Use Pattern A instead.** `git worktree add` takes seconds and gives you
 full isolation.
