@@ -2,13 +2,15 @@
 extends RefCounted
 ## System-wide project registry for multi-project concurrency.
 ##
-## Each Godot editor writes its own entry file under entries/<hash>.json.
-## _rebuild_projects_json() aggregates all entry files into projects.json
-## so the TypeScript bridge can discover all active editors.
+## Each Godot editor writes its own entry file under entries/<hash>.json; the
+## editor's runtime child (the running game) writes its OWN entries/<hash>.runtime.json.
+## _rebuild_projects_json() aggregates all entry files into projects.json — merging
+## the runtime overlay onto the editor base by _key — so the TypeScript bridge can
+## discover all active editors and their live runtime ports.
 ##
-## Race-free: concurrent editors write independent files — no shared
-## read-modify-write. Concurrent rebuilds are idempotent (same entry
-## files → same output).
+## One writer per file: distinct projects, and the editor vs its runtime child,
+## each own a separate file — so there is no shared read-modify-write anywhere.
+## Concurrent rebuilds are idempotent (same entry files → same output).
 ##
 ## All methods are static — no instance state. Callers preload via
 ## _hub.gd (RegistryClient) or directly.
@@ -78,6 +80,14 @@ static func _entry_hash() -> String:
 
 static func _entry_file_path() -> String:
 	return _entry_dir().path_join(_entry_hash() + ".json")
+
+
+## Runtime child's own entry file. The running game writes here; the editor
+## writes <hash>.json. Two distinct files, one writer each — so editor and
+## runtime never read-modify-write the same file. _rebuild_projects_json
+## overlays the runtime fields onto the editor base when it aggregates.
+static func _runtime_entry_file_path() -> String:
+	return _entry_dir().path_join(_entry_hash() + ".runtime.json")
 
 
 # -- Lock file -----------------------------------------------------------------
@@ -153,8 +163,9 @@ static func release_lock() -> void:
 # -- Entry-file I/O -----------------------------------------------------------
 
 
-static func _write_entry(entry: Dictionary) -> void:
-	var path := _entry_file_path()
+# Each writer owns its own file (editor: <hash>.json, runtime: <hash>.runtime.json),
+# so the per-path .tmp names never collide between the two processes.
+static func _write_entry_at(path: String, entry: Dictionary) -> void:
 	var tmp := path + ".tmp"
 	var f := FileAccess.open(tmp, FileAccess.WRITE)
 	if f == null:
@@ -171,8 +182,7 @@ static func _write_entry(entry: Dictionary) -> void:
 		DirAccess.remove_absolute(tmp)
 
 
-static func _read_entry() -> Dictionary:
-	var path := _entry_file_path()
+static func _read_entry_at(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return {}
 	var f := FileAccess.open(path, FileAccess.READ)
@@ -186,10 +196,21 @@ static func _read_entry() -> Dictionary:
 	return parsed
 
 
-static func _delete_entry() -> void:
-	var path := _entry_file_path()
+static func _delete_entry_at(path: String) -> void:
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(path)
+
+
+static func _write_entry(entry: Dictionary) -> void:
+	_write_entry_at(_entry_file_path(), entry)
+
+
+static func _read_entry() -> Dictionary:
+	return _read_entry_at(_entry_file_path())
+
+
+static func _delete_entry() -> void:
+	_delete_entry_at(_entry_file_path())
 
 
 # -- Registry I/O (used by rebuild) -------------------------------------------
@@ -234,11 +255,16 @@ static func _write_atomic(data: Dictionary) -> void:
 
 # -- Rebuild projects.json from entry files ------------------------------------
 
+# Fields the runtime child owns. When an editor base entry exists for a _key,
+# only these overlay from <hash>.runtime.json — every other field stays the
+# editor's. A runtime-only entry (no editor base) is schema-complete on its own.
+const _RUNTIME_OWNED_FIELDS := ["runtime_port", "runtime_pid"]
 
-## Scans entries/*.json and writes the aggregated projects.json.
-## OS.is_process_running() is unreliable on Windows (returns false for
-## live sibling editors), so PID-based GC is not used.  Instead, port-
-## conflict pruning removes stale entries: when two entries claim the
+
+## Scans entries/*.json (+ *.runtime.json) and writes the aggregated
+## projects.json. OS.is_process_running() is unreliable on Windows (returns
+## false for live sibling editors), so PID-based GC is not used.  Instead, port-
+## conflict pruning removes stale editor entries: when two entries claim the
 ## same port, the one with the older started_at is pruned (its entry
 ## file is deleted so it doesn't reappear on next rebuild).
 ## Fresh dead entries are cleaned up by deregister() on normal exit or
@@ -252,9 +278,10 @@ static func _rebuild_projects_json() -> void:
 		_write_atomic({"by_path": {}})
 		return
 
-	# Pass 1: scan all entry files.
-	# Each item: { key, entry_dict, fpath, port, started_at }
-	var all_entries: Array[Dictionary] = []
+	# Pass 1: scan editor (<hash>.json) and runtime (<hash>.runtime.json) files
+	# into separate buckets. Each editor item: { data, fpath, port, started_at }.
+	var editor_items: Array[Dictionary] = []
+	var runtime_entries: Array[Dictionary] = []
 	dir.list_dir_begin()
 	var fname := dir.get_next()
 	while fname != "":
@@ -272,52 +299,89 @@ static func _rebuild_projects_json() -> void:
 		if parsed == null or not parsed is Dictionary or not parsed.has("_key"):
 			fname = dir.get_next()
 			continue
-		all_entries.append({
-			"key": parsed["_key"],
-			"data": parsed,
-			"fpath": fpath,
-			"port": int(parsed.get("port", 0)),
-			"started_at": int(parsed.get("started_at", 0)),
-		})
+		var entry: Dictionary = parsed
+		if fname.ends_with(".runtime.json"):
+			runtime_entries.append(entry)
+		else:
+			editor_items.append({
+				"data": entry,
+				"fpath": fpath,
+				"port": int(entry.get("port", 0)),
+				"started_at": int(entry.get("started_at", 0)),
+			})
 		fname = dir.get_next()
 	dir.list_dir_end()
 
-	# Pass 2: for each port, keep only the newest entry (highest started_at).
-	# port → index of the best (newest) entry in all_entries.
-	var best_by_port: Dictionary = {}  # int → int
+	# Pass 2: for each port, keep only the newest editor entry (highest
+	# started_at). Runtime entries carry port -1, so they never participate.
+	var best_by_port: Dictionary = {}  # int → index into editor_items
 	var stale_files: Array[String] = []
-	for i in all_entries.size():
-		var port: int = all_entries[i]["port"]
+	var editor_entries: Array[Dictionary] = []
+	for i in editor_items.size():
+		var port: int = editor_items[i]["port"]
 		if port <= 0:
 			continue  # No port — keep unconditionally.
 		if not best_by_port.has(port):
 			best_by_port[port] = i
 		else:
 			var prev_idx: int = best_by_port[port]
-			if all_entries[i]["started_at"] > all_entries[prev_idx]["started_at"]:
+			if editor_items[i]["started_at"] > editor_items[prev_idx]["started_at"]:
 				# New entry is newer — prune the old one.
-				stale_files.append(all_entries[prev_idx]["fpath"])
-				all_entries[prev_idx]["_pruned"] = true
+				stale_files.append(editor_items[prev_idx]["fpath"])
+				editor_items[prev_idx]["_pruned"] = true
 				best_by_port[port] = i
 			else:
 				# Old entry is newer — prune this one.
-				stale_files.append(all_entries[i]["fpath"])
-				all_entries[i]["_pruned"] = true
-
-	# Pass 3: build by_path from surviving entries.
-	var by_path := {}
-	for item in all_entries:
+				stale_files.append(editor_items[i]["fpath"])
+				editor_items[i]["_pruned"] = true
+	for item in editor_items:
 		if item.get("_pruned", false):
 			continue
-		var key: String = item["key"]
-		var entry: Dictionary = (item["data"] as Dictionary).duplicate()
-		entry.erase("_key")
-		by_path[key] = entry
+		editor_entries.append(item["data"])
+
+	# Pass 3: merge editor base + runtime overlay by _key (pure).
+	var by_path := _merge_by_path(editor_entries, runtime_entries)
 
 	# Delete stale entry files so they don't reappear on next rebuild.
 	for stale_path in stale_files:
 		DirAccess.remove_absolute(stale_path)
 	_write_atomic({"by_path": by_path})
+
+
+## Pure: group editor + runtime entries by _key and produce the by_path map.
+## For each _key the row is the editor base (minus _key) with the runtime-owned
+## fields overlaid from the matching runtime entry. A runtime entry with no
+## editor base contributes its full (schema-complete) shape; an editor entry
+## with no runtime overlay keeps its own runtime_port/runtime_pid (null). No
+## filesystem access — directly unit-testable.
+static func _merge_by_path(editor_entries: Array, runtime_entries: Array) -> Dictionary:
+	# Index runtime entries by _key for overlay lookup.
+	var runtime_by_key: Dictionary = {}
+	for re in runtime_entries:
+		var re_dict: Dictionary = re
+		runtime_by_key[str(re_dict.get("_key", ""))] = re_dict
+
+	var by_path := {}
+	# Editor bases first — overlay runtime-owned fields where a runtime entry exists.
+	for ee in editor_entries:
+		var ee_dict: Dictionary = ee
+		var key := str(ee_dict.get("_key", ""))
+		var row: Dictionary = ee_dict.duplicate()
+		row.erase("_key")
+		if runtime_by_key.has(key):
+			var rt: Dictionary = runtime_by_key[key]
+			for field in _RUNTIME_OWNED_FIELDS:
+				row[field] = rt.get(field, null)
+		by_path[key] = row
+	# Runtime-only entries (no editor base) — use the full runtime shape.
+	for rkey in runtime_by_key:
+		if by_path.has(rkey):
+			continue
+		var rt_only: Dictionary = runtime_by_key[rkey]
+		var rt_row: Dictionary = rt_only.duplicate()
+		rt_row.erase("_key")
+		by_path[rkey] = rt_row
+	return by_path
 
 
 # -- Public API ----------------------------------------------------------------
@@ -346,6 +410,17 @@ static func _build_entry(key: String, port: int, token_path: String,
 
 
 static func register(port: int, token_path: String, lsp_host: String, lsp_port: int) -> void:
+	# Startup reap: drop a stale <hash>.runtime.json left by a previous playtest
+	# that crashed before clear_runtime() could fire — otherwise its dead
+	# runtime_port would overlay this editor's entry until the next playtest
+	# overwrites it. Safe to delete unconditionally here: register() runs only at
+	# editor startup, and the sole writer of <hash>.runtime.json is this project's
+	# playtest child, which dies with its parent editor and so cannot be alive now
+	# (no concurrent RMW). An EXPORTED game's res:// hashes to a different file, so
+	# this never touches it. OS.has_feature("editor") guards against a future stray
+	# non-editor caller (runtime-safe, not editor-tainting).
+	if OS.has_feature("editor"):
+		_delete_entry_at(_runtime_entry_file_path())
 	var key := _project_key()
 	var my_pid := OS.get_process_id()
 	var my_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, null, null)
@@ -373,45 +448,42 @@ static func deregister() -> void:
 	print("[MCPRegistry] deregistered %s" % key)
 
 
+## Called from the runtime autoload (running game) when the Mode-B WS server
+## binds. Writes the runtime's OWN entry file (<hash>.runtime.json) so it never
+## read-modify-writes the editor's <hash>.json. The file is schema-complete on
+## its own: when an editor entry exists, _rebuild_projects_json overlays only
+## runtime_port/runtime_pid onto the editor base; when it doesn't, this file's
+## full shape stands in (port -1, token_path "", lsp_port null — no editor was
+## present to resolve an LSP endpoint, which the server reads as a miss).
 static func set_runtime(runtime_port: int) -> void:
 	var key := _project_key()
 	var my_pid := OS.get_process_id()
-	var entry := _read_entry()
-	if entry.is_empty():
-		# Self-heal: entry file was lost — create a minimal one. No editor here to
-		# resolve the LSP endpoint (set_runtime runs from the runtime autoload), so
-		# publish lsp_port: null — the server reads a null lsp_port as a miss.
-		entry = {
-			"_key": key,
-			"port": -1,
-			"token_path": "",
-			"pid": 0,
-			"started_at": int(Time.get_unix_time_from_system()),
-			"runtime_port": runtime_port,
-			"runtime_pid": my_pid,
-			"lsp_host": "127.0.0.1",
-			"lsp_port": null,
-		}
-		push_warning("[MCPRegistry] set_runtime: entry file missing for %s — created self-heal entry" % key)
-	else:
-		entry["runtime_port"] = runtime_port
-		entry["runtime_pid"] = my_pid
-	_write_entry(entry)
+	var entry := {
+		"_key": key,
+		"port": -1,
+		"token_path": "",
+		"pid": my_pid,
+		"started_at": int(Time.get_unix_time_from_system()),
+		"godot_version": _VersionUtils.get_engine_version_pair(),
+		"runtime_port": runtime_port,
+		"runtime_pid": my_pid,
+		"lsp_host": "127.0.0.1",
+		"lsp_port": null,
+	}
+	_write_entry_at(_runtime_entry_file_path(), entry)
 	_acquire_lock()
 	_rebuild_projects_json()
 	_release_lock()
 	print("[MCPRegistry] runtime port %d registered for %s" % [runtime_port, key])
 
 
+## Runtime counterpart to set_runtime — deletes the runtime's own file so the
+## overlay disappears on the next rebuild. Touches only <hash>.runtime.json.
 static func clear_runtime() -> void:
-	var entry := _read_entry()
-	if entry.is_empty():
-		return
-	if entry.get("runtime_port", null) == null:
-		return  # Already cleared
-	entry["runtime_port"] = null
-	entry["runtime_pid"] = null
-	_write_entry(entry)
+	var path := _runtime_entry_file_path()
+	if not FileAccess.file_exists(path):
+		return  # Already cleared / never set
+	_delete_entry_at(path)
 	_acquire_lock()
 	_rebuild_projects_json()
 	_release_lock()
@@ -435,14 +507,11 @@ static func ensure_registered(port: int, token_path: String, lsp_host: String, l
 		_rebuild_projects_json()
 		_release_lock()
 		return
-	# Entry file missing or wrong PID — re-create.
-	var runtime_port = null
-	var runtime_pid = null
-	if not entry.is_empty():
-		runtime_port = entry.get("runtime_port", null)
-		runtime_pid = entry.get("runtime_pid", null)
+	# Entry file missing or wrong PID — re-create. The editor entry never carries
+	# runtime fields (the runtime child owns <hash>.runtime.json), so pass null;
+	# the runtime overlay re-applies on the next rebuild.
 	push_warning("[MCPRegistry] entry file missing during deferred re-verify; re-creating for %s" % key)
-	var new_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, runtime_port, runtime_pid)
+	var new_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, null, null)
 	_write_entry(new_entry)
 	_acquire_lock()
 	_rebuild_projects_json()
@@ -450,9 +519,11 @@ static func ensure_registered(port: int, token_path: String, lsp_host: String, l
 	print("[MCPRegistry] re-registered %s on port %d (deferred)" % [key, port])
 
 
-## Read-only: returns the runtime_port for this project, or -1.
+## Read-only: returns the runtime_port for this project, or -1. Reads the
+## runtime child's own file (<hash>.runtime.json) — the runtime port lives
+## there, not in the editor's <hash>.json.
 static func get_runtime_port() -> int:
-	var entry := _read_entry()
+	var entry := _read_entry_at(_runtime_entry_file_path())
 	if entry.is_empty():
 		return -1
 	var rp = entry.get("runtime_port", null)

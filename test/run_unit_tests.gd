@@ -35,6 +35,7 @@ func _init() -> void:
 
 	_test_registry()
 	_test_registry_entry()
+	_test_registry_merge()
 	_test_options_builder()
 	_test_extension_options()
 	_test_annotation_mapping()
@@ -422,6 +423,73 @@ func _test_registry_entry() -> void:
 	var e2 := RegistryClient._build_entry("res://proj", 6551, "tok", "127.0.0.1", 6010, 6570, 4242)
 	_eq(e2.get("lsp_port", -1), 6010, "custom lsp_port flows through")
 	_eq(e2.get("runtime_port", -1), 6570, "runtime_port preserved when set")
+
+	print("")
+
+
+# --- RegistryClient entry merge (concern 037, direction b) -----------------
+# The editor process owns entries/<hash>.json; its runtime child owns
+# entries/<hash>.runtime.json (one writer per file — no shared RMW). The rebuild
+# merges them by _key: runtime_port/runtime_pid overlay the editor base. This
+# pins the pure merge so the aggregate projects.json shape stays identical to the
+# pre-split single-file layout the server reads.
+
+func _test_registry_merge() -> void:
+	_begin("RegistryClient entry merge")
+
+	var editor_entry := RegistryClient._build_entry(
+		"res://proj", 6550, "tok", "127.0.0.1", 6005, null, null)
+
+	# 1. Runtime overlay onto an editor base — runtime fields win, the rest is
+	#    the editor's, and the row carries exactly the editor key set (no _key).
+	var runtime_entry := {
+		"_key": "res://proj",
+		"port": -1,
+		"token_path": "",
+		"pid": 4242,
+		"started_at": 999,
+		"godot_version": "4.5",
+		"runtime_port": 6570,
+		"runtime_pid": 4242,
+		"lsp_host": "127.0.0.1",
+		"lsp_port": null,
+	}
+	var merged: Dictionary = RegistryClient._merge_by_path([editor_entry], [runtime_entry])
+	var row: Dictionary = merged.get("res://proj", {})
+	_eq(row.get("runtime_port", -1), 6570, "overlay: runtime_port from runtime file")
+	_eq(row.get("runtime_pid", -1), 4242, "overlay: runtime_pid from runtime file")
+	# Editor-owned fields are NOT clobbered by the runtime file's placeholders.
+	_eq(row.get("port", -99), 6550, "overlay: editor port preserved (not -1)")
+	_eq(row.get("token_path", "x"), "tok", "overlay: editor token_path preserved (not empty)")
+	_eq(row.get("lsp_port", -1), 6005, "overlay: editor lsp_port preserved (not null)")
+	_ok(not row.has("_key"), "overlay: _key erased from row")
+
+	# 2. Runtime-only entry (no editor base) — full runtime shape stands in, and
+	#    it is schema-complete: port -1, token_path "", and godot_version present
+	#    (the old self-heal shim omitted godot_version — concern 037 Low note).
+	var only: Dictionary = RegistryClient._merge_by_path([], [runtime_entry])
+	var orow: Dictionary = only.get("res://proj", {})
+	_eq(orow.get("runtime_port", -1), 6570, "runtime-only: runtime_port present")
+	_eq(orow.get("port", -99), -1, "runtime-only: port -1")
+	_eq(orow.get("token_path", "x"), "", "runtime-only: token_path empty")
+	_ok(orow.has("godot_version"), "runtime-only: godot_version present (schema-complete)")
+	_eq(orow.get("lsp_port", -99), null, "runtime-only: lsp_port null")
+	_ok(not orow.has("_key"), "runtime-only: _key erased")
+
+	# 3. Editor-only entry (no runtime overlay) — runtime fields stay the editor
+	#    base's null; the row is the editor entry verbatim minus _key.
+	var eonly: Dictionary = RegistryClient._merge_by_path([editor_entry], [])
+	var erow: Dictionary = eonly.get("res://proj", {})
+	_eq(erow.get("runtime_port", -99), null, "editor-only: runtime_port null")
+	_eq(erow.get("runtime_pid", -99), null, "editor-only: runtime_pid null")
+	_eq(erow.get("port", -99), 6550, "editor-only: editor port preserved")
+	_ok(not erow.has("_key"), "editor-only: _key erased")
+
+	# 4. clear_runtime semantics: dropping the runtime file removes the overlay —
+	#    re-merging without it returns the editor base (runtime fields back to null).
+	var cleared: Dictionary = RegistryClient._merge_by_path([editor_entry], [])
+	_eq(cleared.get("res://proj", {}).get("runtime_port", -99), null,
+		"clear: overlay gone → runtime_port back to null")
 
 	print("")
 
