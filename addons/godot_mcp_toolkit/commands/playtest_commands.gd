@@ -27,12 +27,16 @@ static var _debug_bridge: RefCounted = null
 static func register(registry: MCPToolkitCommandRegistry, _server: Node,
 		debug_bridge: RefCounted = null) -> void:
 	_debug_bridge = debug_bridge
+	# game.start / game.stop mutate (launch / stop a play session), so they are
+	# NOT read-only. Exclusive-execution is the sole serialization driver: it
+	# forces single-in-flight ordering regardless of read-only status, which is
+	# what these session-lifecycle mutators require.
 	registry.add("game.start", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_game_start(parameters)
-	, MCPToolkitCommandOptions.new().mark_read_only().mark_exclusive_execution())
+	, MCPToolkitCommandOptions.new().mark_exclusive_execution())
 	registry.add("game.stop", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_game_stop(parameters)
-	, MCPToolkitCommandOptions.new().mark_read_only().mark_exclusive_execution().mark_scene_independent())
+	, MCPToolkitCommandOptions.new().mark_exclusive_execution().mark_scene_independent())
 	registry.add("debugger.get_log", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_debugger_get_log_cached(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
@@ -215,13 +219,6 @@ static func _cmd_debugger_get_log_cached(parameters: Dictionary) -> Dictionary:
 	if tf[1] != null:
 		return tf[1]
 	var regex_warning: String = tf[2]
-
-	# Auto-stop: if debug bridge says session is dead but editor still thinks
-	# game is running, stop it to clean up state and flush the log file.
-	if _debug_bridge != null:
-		var ds: Dictionary = _debug_bridge.get_debug_state()
-		if not ds.get("active", false) and EditorInterface.is_playing_scene():
-			EditorInterface.stop_playing_scene()
 
 	if _game_session_file_offset < 0:
 		var response := MCPToolkitSuccess.ok({

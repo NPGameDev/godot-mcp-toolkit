@@ -297,7 +297,7 @@ func _test_compile_error_message() -> void:
 			"%s → directs to editor_get_console, not lsp (4.5+ Logger captures parse errors)" % ver)
 
 
-# --- Registry (~17 assertions) --------------------------------------------
+# --- Registry (~20 assertions) --------------------------------------------
 
 func _test_registry() -> void:
 	_begin("Registry")
@@ -334,6 +334,26 @@ func _test_registry() -> void:
 			"needs_serialization for read-only → false")
 	_ok(reg.needs_serialization("t.def"),
 			"needs_serialization for non-read-only → true")
+
+	# 8a-8c. Concern 030 routing regression — game.start / game.stop are
+	# session-lifecycle mutators marked exclusive-execution and NOT read-only
+	# (needs_serialization = is_force_serialized OR not read_only, exclusive
+	# checked first). The exclusive flag is the sole serialization driver, so:
+	#   - exclusive + non-read-only mutator (game.start/stop shape) → serialises.
+	reg.add("t.exclmut",
+			_noop, MCPToolkitCommandOptions.new().mark_exclusive_execution())
+	_ok(reg.needs_serialization("t.exclmut"),
+			"exclusive + non-read-only mutator → needs_serialization true")
+	_ok(not reg.is_read_only("t.exclmut"),
+			"game.start/stop shape → not read-only")
+	#   - the latent landmine these tools dodge: had a mutator been marked
+	#     read-only, dropping the exclusive flag would let it bypass the lock
+	#     (not read_only → false). A read-only-ONLY command serialises FALSE,
+	#     which is why a mutator must never carry read-only.
+	reg.add("t.romut", _noop, MCPToolkitCommandOptions.new().mark_read_only())
+	_ok(not reg.needs_serialization("t.romut"),
+			"read-only-only command bypasses the lock — a mutator must not be "
+			+ "read-only")
 
 	# 9. remove → has_command false
 	reg.add("t.rm", _noop, MCPToolkitCommandOptions.new())
