@@ -129,11 +129,12 @@ func _enter_tree() -> void:
 
 	_Hub.LogBuffer.setup()
 
-	# P-055: monitor config/name changes that shift user:// paths.
-	# Each consumer connects directly and handles its own recovery.
+	# Monitor the ProjectSettings that shift user:// paths (config/name,
+	# use_custom_user_dir, custom_user_dir_name). Each consumer connects
+	# directly and handles its own recovery.
 	_user_path_monitor = _Hub.UserPathMonitor.new()
 	_user_path_monitor.start()
-	_user_path_monitor.project_name_changed.connect(_on_project_name_changed)
+	_user_path_monitor.user_path_changed.connect(_on_user_path_changed)
 
 	add_child(_server)
 	_server.bind_user_path_monitor(_user_path_monitor)
@@ -197,7 +198,7 @@ func _detect_playtest_end() -> void:
 	_was_playing = playing
 
 
-func _on_project_name_changed(_old_name: String, _new_name: String) -> void:
+func _on_user_path_changed() -> void:
 	# Static consumers that can't connect to signals themselves.
 	# Instance consumers (feature_settings, server) connect directly
 	# via bind_user_path_monitor().

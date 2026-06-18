@@ -62,6 +62,7 @@ func _init() -> void:
 	_test_spatial_map()
 	_test_texture_generate()
 	_test_sound_generate()
+	_test_user_path_monitor()
 
 	_report()
 	quit(0 if _failed == 0 else 1)
@@ -1055,6 +1056,66 @@ func _test_response_validation() -> void:
 	var r6: Dictionary = await reg.call_command("rv.fail", {})
 	_ok(not r6.has("hint") or r6.get("hint", "") != "Should not appear",
 			"success:false → no success_hint injection")
+
+	print("")
+
+
+# --- UserPathMonitor change detection (~8 assertions) ----------------------
+# Godot derives user:// from THREE settings — config/name, use_custom_user_dir,
+# and custom_user_dir_name. _on_settings_changed is the detection method: it
+# compares all three against the primed cache and re-emits user_path_changed
+# when ANY differs. Mutating a key + calling _on_settings_changed directly
+# exercises the detection without the editor's settings_changed plumbing.
+# Originals are restored so project state (and subsequent tests) are unaffected.
+
+const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/user_path_monitor.gd")
+
+func _test_user_path_monitor() -> void:
+	_begin("UserPathMonitor change detection")
+
+	# str()/bool() so these infer concrete types, not Variant (this test file is
+	# outside addons/, so warnings-as-errors applies here even though it doesn't
+	# to the addon source).
+	var orig_name := str(ProjectSettings.get_setting("application/config/name", ""))
+	var orig_use_custom := bool(ProjectSettings.get_setting("application/config/use_custom_user_dir", false))
+	var orig_custom_name := str(ProjectSettings.get_setting("application/config/custom_user_dir_name", ""))
+
+	var monitor := UserPathMonitor.new()
+	var fired := [0]
+	monitor.user_path_changed.connect(func(): fired[0] += 1)
+	# Prime the cache WITHOUT calling start() — start() also subscribes to the
+	# live ProjectSettings.settings_changed, which our set_setting() calls below
+	# would trigger, double-counting emits. We drive _on_settings_changed
+	# directly so each mutation is detected exactly once.
+	monitor._cache_settings()
+
+	# 1. No change → no emit.
+	monitor._on_settings_changed()
+	_eq(fired[0], 0, "no change → signal not emitted")
+
+	# 2. config/name change → emit.
+	ProjectSettings.set_setting("application/config/name", str(orig_name) + "_renamed")
+	monitor._on_settings_changed()
+	_eq(fired[0], 1, "config/name change → signal emitted")
+
+	# 3. use_custom_user_dir toggle → emit (name unchanged from prior step).
+	ProjectSettings.set_setting("application/config/use_custom_user_dir", not bool(orig_use_custom))
+	monitor._on_settings_changed()
+	_eq(fired[0], 2, "use_custom_user_dir toggle → signal emitted")
+
+	# 4. custom_user_dir_name change → emit.
+	ProjectSettings.set_setting("application/config/custom_user_dir_name", str(orig_custom_name) + "_dir")
+	monitor._on_settings_changed()
+	_eq(fired[0], 3, "custom_user_dir_name change → signal emitted")
+
+	# 5. Re-check with no further change → no extra emit (cache updated each time).
+	monitor._on_settings_changed()
+	_eq(fired[0], 3, "stable after change → no spurious re-emit")
+
+	# Restore originals so other tests / the project see pristine settings.
+	ProjectSettings.set_setting("application/config/name", orig_name)
+	ProjectSettings.set_setting("application/config/use_custom_user_dir", orig_use_custom)
+	ProjectSettings.set_setting("application/config/custom_user_dir_name", orig_custom_name)
 
 	print("")
 

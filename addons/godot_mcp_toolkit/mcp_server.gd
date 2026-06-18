@@ -234,10 +234,10 @@ func broadcast_notification(notification_type: String, params: Dictionary = {}) 
 
 
 func bind_user_path_monitor(monitor: RefCounted) -> void:
-	monitor.project_name_changed.connect(_on_project_name_changed)
+	monitor.user_path_changed.connect(_on_user_path_changed)
 
 
-func _on_project_name_changed(_old_name: String, _new_name: String) -> void:
+func _on_user_path_changed() -> void:
 	_rewrite_token_after_rename()
 
 
