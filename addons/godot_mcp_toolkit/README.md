@@ -1,6 +1,6 @@
 # Godot MCP Toolkit
 
-Godot 4.4+ editor plugin that runs a localhost (`127.0.0.1:6550`) WebSocket
+Godot 4.2+ editor plugin that runs a localhost (`127.0.0.1:6550`) WebSocket
 server so Claude Code (or any MCP-compatible client) can drive scene, node,
 script, and editor operations inside the Godot editor.
 
@@ -314,7 +314,7 @@ Optional fine-tuning knobs (concurrency timeouts, buffer limits) live under
 
 ## Minimum Godot version
 
-Godot 4.4+. See the [repo-root README](../../README.md) for the full stack
+Godot 4.2+. See the [repo-root README](../../README.md) for the full stack
 overview and dogfood workflow.
 
 ## Licence
