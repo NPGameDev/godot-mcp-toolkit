@@ -7,9 +7,6 @@ const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_n
 
 const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v41l_shown"
 const _ONBOARDING_PROGRESS := "user://addons/godot_mcp_toolkit/mcp_onboarding_progress"
-# Previous flag versions — projects that already saw earlier onboarding skip the wizard.
-const _ONBOARDING_FLAG_V35B := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35b_shown"
-const _ONBOARDING_FLAG_V35 := "user://addons/godot_mcp_toolkit/mcp_onboarding_v35_shown"
 const _STEP_COUNT := 3
 
 var _plugin: EditorPlugin
@@ -27,12 +24,6 @@ func _init(plugin: EditorPlugin, dock: Control) -> void:
 
 func check_and_show() -> void:
 	if FileAccess.file_exists(_ONBOARDING_FLAG):
-		return
-	if FileAccess.file_exists(_ONBOARDING_FLAG_V35B):
-		_write_flag()
-		return
-	if FileAccess.file_exists(_ONBOARDING_FLAG_V35):
-		_write_flag()
 		return
 
 	# Resume from saved progress (e.g. after restart during wizard).
