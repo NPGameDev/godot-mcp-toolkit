@@ -66,12 +66,13 @@ static func resolve_safe(
 	# Reject absolute OS paths (drive letters, UNC, Unix root).
 	if normalized.length() >= 2 and normalized[1] == ":":
 		return _denied("absolute OS path: %s" % input)
+	# A leading "/" also catches UNC paths: the backslash->slash normalize
+	# above rewrites "\\server\share" as "//server/share", so no separate
+	# UNC branch is needed.
 	if normalized.begins_with("/") \
 			and not normalized.begins_with("res://") \
 			and not normalized.begins_with("user://"):
 		return _denied("absolute OS path: %s" % input)
-	if normalized.begins_with("\\\\"):
-		return _denied("absolute OS path (UNC): %s" % input)
 
 	# Prefix allowlist.
 	var matched := false
