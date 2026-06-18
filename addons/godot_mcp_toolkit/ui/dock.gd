@@ -213,7 +213,7 @@ func _build_ui() -> void:
 	var ro_label := Label.new()
 	ro_label.text = (
 		"\u26a0\ufe0f READ-ONLY MODE \u2014 mutating tools are hidden. "
-		+ "Set GODOT_MCP_READ_ONLY=0 in .mcp.json and restart to restore full access.")
+		+ "Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect the MCP client to restore full access.")
 	ro_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ro_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
 	ro_label.add_theme_font_size_override("font_size", 12)
@@ -909,7 +909,8 @@ func _show_info_dialog() -> void:
 		+ "Set GODOT_MCP_READ_ONLY=1 in your .mcp.json env to restrict\n"
 		+ "the toolkit to read-only tools only. All mutating tools\n"
 		+ "(create, delete, write, execute) are hidden from the AI agent.\n"
-		+ "Remove the env var and reconnect to restore full access.")
+		+ "Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect the\n"
+		+ "MCP client to restore full access.")
 	readonly_note.add_theme_font_size_override("font_size", 11)
 	readonly_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(readonly_note)

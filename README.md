@@ -189,7 +189,7 @@ When Godot runs with `--headless`, the plugin loads and the WebSocket server sta
 
 ## Read-only mode
 
-For supervised environments (classrooms, CI, demos), set `GODOT_MCP_READ_ONLY=1` in your `.mcp.json` env to restrict the toolkit to read-only tools only. All mutating tools (create, delete, write, execute) are hidden from the AI agent. Remove the env var and restart to restore full access.
+For supervised environments (classrooms, CI, demos), set `GODOT_MCP_READ_ONLY=1` in your `.mcp.json` env to restrict the toolkit to read-only tools only. All mutating tools (create, delete, write, execute) are hidden from the AI agent. Remove `GODOT_MCP_READ_ONLY` from your `.mcp.json` and reconnect the MCP client to restore full access.
 
 ## Godot version support
 

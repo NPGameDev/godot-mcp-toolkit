@@ -21,7 +21,7 @@ const _STATUS_KEY := "mcp_toolkit/status"
 const _READ_ONLY_WARNING_TEXT := (
 	"READ-ONLY MODE ACTIVE (GODOT_MCP_READ_ONLY=1) — "
 	+ "Only read-only tools are available. Mutating tools are hidden. "
-	+ "Remove GODOT_MCP_READ_ONLY from .mcp.json env and reconnect "
+	+ "Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect "
 	+ "the MCP client to restore full access.")
 const _MCP_JSON_MISSING_TEXT := (
 	"No .mcp.json found — use Project > Tools > MCP Toolkit > "
