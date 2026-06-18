@@ -292,7 +292,14 @@ func _send_result(peer: WebSocketPeer, id, result) -> void:
 		"id": id,
 		"result": result,
 	}
-	peer.send_text(JSON.stringify(response))
+	# A response larger than the peer's send buffer is rejected wholesale by the
+	# native WS path (no chunking) — guard it into a compact, deliverable
+	# RESPONSE_TOO_LARGE error rather than dropping it silently. max_bytes is the
+	# peer's own buffer (set at accept), so this needs no ProjectSetting read.
+	response = MCPToolkitError.guard_response_size(response, peer.outbound_buffer_size)
+	var send_err := peer.send_text(JSON.stringify(response))
+	if send_err != OK:
+		push_warning("[MCPRuntimeServer] send_text failed for id %s (err %d) — response not delivered" % [str(id), send_err])
 
 
 func _send_error(peer: WebSocketPeer, id, code: int, message: String) -> void:

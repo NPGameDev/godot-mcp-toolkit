@@ -59,6 +59,7 @@ func _init() -> void:
 	_test_untrusted()
 	await _test_extension_path_guard()
 	await _test_response_validation()
+	_test_response_size_guard()
 	_test_spatial_map()
 	_test_texture_generate()
 	_test_sound_generate()
@@ -1056,6 +1057,63 @@ func _test_response_validation() -> void:
 	var r6: Dictionary = await reg.call_command("rv.fail", {})
 	_ok(not r6.has("hint") or r6.get("hint", "") != "Should not appear",
 			"success:false → no success_hint injection")
+
+	print("")
+
+
+# --- Response size guard (~9 assertions) ------------------------------------
+# guard_response_size() defends against the native WS send rejecting any frame
+# whose payload exceeds the peer's outbound buffer (wholesale, no chunking). It
+# is pure dict→dict, so the decision is fully exercisable headless; only the
+# live-peer send_text return path needs an editor (covered by dispatch-
+# integration flows + smoke at Pass 3).
+
+func _test_response_size_guard() -> void:
+	_begin("Response size guard")
+
+	# A roomy cap so an ordinary response is nowhere near the limit.
+	var max_bytes := 65536
+
+	# 1. Under-size response → passed through UNCHANGED (same object identity-wise
+	#    in content: jsonrpc, id, and result all intact).
+	var small := {"jsonrpc": "2.0", "id": 7, "result": {"success": true, "data": "ok"}}
+	var g_small := MCPToolkitError.guard_response_size(small, max_bytes)
+	_eq(g_small["id"], 7, "under-size → id preserved")
+	_eq(g_small["result"]["success"], true, "under-size → result unchanged")
+	_eq(g_small["result"].get("data", ""), "ok", "under-size → result payload intact")
+
+	# 2. Over-size response → replaced with a compact RESPONSE_TOO_LARGE error,
+	#    same id + jsonrpc, and the replacement now fits the cap.
+	var filler := "x".repeat(max_bytes + 4096)  # comfortably over the cap
+	var big := {"jsonrpc": "2.0", "id": 42, "result": {"success": true, "blob": filler}}
+	var g_big := MCPToolkitError.guard_response_size(big, max_bytes)
+	_eq(g_big["id"], 42, "over-size → id preserved")
+	_eq(g_big["jsonrpc"], "2.0", "over-size → jsonrpc preserved")
+	_eq(g_big["result"]["success"], false, "over-size → result.success false")
+	_eq(g_big["result"]["code"], "RESPONSE_TOO_LARGE", "over-size → RESPONSE_TOO_LARGE code")
+	_ok(MCPToolkitError.response_byte_size(g_big) <= max_bytes,
+			"over-size → replacement fits within max_bytes")
+
+	# 3. Boundary: a response sized just BELOW the (max_bytes − margin) threshold
+	#    passes; nudging it just ABOVE the threshold trips the guard. This pins the
+	#    margin to the documented value rather than an arbitrary cushion.
+	var margin := MCPToolkitError._SIZE_GUARD_MARGIN
+	# Envelope overhead (jsonrpc+id+result-wrapping+the "p" key) is a few dozen
+	# bytes; subtract a safe pad so the filler alone lands us just under threshold.
+	var envelope_pad := 64
+	var under_len := (max_bytes - margin) - envelope_pad
+	var at_threshold := {"jsonrpc": "2.0", "id": 1, "result": {"p": "y".repeat(under_len)}}
+	var g_under := MCPToolkitError.guard_response_size(at_threshold, max_bytes)
+	_ok(g_under["result"].has("p"), "boundary just-under → passes through unchanged")
+	# A response OVER (max_bytes − margin) but still UNDER max_bytes itself must
+	# trip — proving the margin (not the raw buffer cap) is the live threshold.
+	var over_len := (max_bytes - margin) + 1024  # ~62464: above threshold, below cap
+	var over_threshold := {"jsonrpc": "2.0", "id": 1, "result": {"p": "y".repeat(over_len)}}
+	_ok(MCPToolkitError.response_byte_size(over_threshold) < max_bytes,
+			"boundary over-case is genuinely under the raw cap")
+	var g_over := MCPToolkitError.guard_response_size(over_threshold, max_bytes)
+	_eq(g_over["result"].get("code", ""), "RESPONSE_TOO_LARGE",
+			"boundary over-margin/under-cap → tripped (margin is load-bearing)")
 
 	print("")
 
