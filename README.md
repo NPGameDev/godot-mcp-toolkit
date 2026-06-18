@@ -197,8 +197,8 @@ For supervised environments (classrooms, CI, demos), set `GODOT_MCP_READ_ONLY=1`
 
 | Godot | Level | Notes |
 |-------|-------|-------|
-| 4.2 – 4.3 | Core | All tools work; undo history and toast notifications degraded |
-| 4.4 | Full UI | Undo history and toasts restored; `scene_close` unavailable |
+| 4.2 – 4.3 | Core | All tools work (undo history included); toast notifications fall back to the Output panel |
+| 4.4 | Full UI | Toast notifications added; `scene_close` unavailable |
 | 4.5+ | Full | All tools and UI features |
 
 Future Godot versions (4.7+) are not blocked — the plugin uses runtime capability checks.

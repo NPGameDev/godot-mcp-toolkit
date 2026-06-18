@@ -34,10 +34,13 @@ Centralized helpers in `_hub.gd`: `get_undo_redo()`,
 Command files import `_Hub` and use these instead of calling
 version-dependent EditorInterface methods directly.
 
-**Degradation on 4.2–4.3:** UndoRedo unavailable (operations work, no undo
-history); toast notifications silently skipped; TileMapLayer unavailable on
-4.2 (legacy TileMap still works). **On 4.4:** everything except
-`scene_close`. **On 4.5+:** full functionality.
+**Degradation on 4.2–4.3:** toast notifications silently skipped
+(`EditorInterface.get_editor_toaster()` is 4.4+; falls back to `push_warning()`);
+TileMapLayer unavailable on 4.2 (legacy TileMap still works). UndoRedo history
+**is** available here — undo goes through `EditorPlugin.get_undo_redo()`
+(`EditorUndoRedoManager`, 4.0+ stable), not the 4.4+
+`EditorInterface.get_editor_undo_redo()`. **On 4.4:** adds toasts; everything
+except `scene_close`. **On 4.5+:** full functionality.
 
 `scene_close` is the only tool with a `godotMinVersion` gate (returns
 `UNSUPPORTED` on < 4.5). The server-side version-check hook enforces

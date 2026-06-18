@@ -15,7 +15,7 @@ untested versions and logs a startup warning.
 | 4.0 - 4.1    | Not supported | EditorInterface is not a global singleton; would require wrapping 70+ call sites |
 | **4.2**       | Core          | All tools work; some UI degradation (see below); no automated CI validation (see [CI limitations](#ci-limitations)) |
 | **4.3**       | Core          | TileMapLayer support added (tilemap tool auto-detects) |
-| **4.4**       | Full UI       | Toast notifications and undo history restored |
+| **4.4**       | Full UI       | Toast notifications added (`EditorInterface.get_editor_toaster()` is 4.4+) |
 | **4.5+**      | Full          | All tools and UI features available |
 | 4.7+ (future) | Expected      | `has_method()` guards are forward-compatible; startup warning only |
 
@@ -34,19 +34,15 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see `docs/multi-instance.md`) |
 | `editor_get_console` | 4.2 | Captures runtime output (errors/warnings/prints) on all versions. **Editor parse errors** (from `editor_refresh` recompiling a script) surface only on **4.5+** (the Logger API hooks editor diagnostics); on **4.2–4.4** they are NOT written to `godot.log`, so neither `source="buffer"` nor `source="file"` can return them — use `script_check` or the `script_write` inline diagnostics instead. Multi-line errors that ARE captured (`SCRIPT ERROR: …` + `   at: <script>.gd:LINE`) are leveled as a unit, so a filename + `level_filter:["error"]` query finds the location line. 4.5+ uses the synchronous Logger (one entry per error, zero-latency) |
 | `animationtree_edit` | 4.2 | All ops work on 4.2+ (set_root, add/remove_node, add/remove_transition, set_property; transitions enumerate on all versions). **`list` node enumeration is 4.5+:** `AnimationNodeStateMachine.get_node_list()` is a 4.5 script API (absent 4.2-4.4), so on 4.2-4.4 `list` returns `nodes: []` and `nodes_count` reads 0 (node *operations* via add/remove/has still work; only listing existing nodes is unavailable). 4.5+ enumerates nodes fully |
-| All other tools | 4.2 | Fully functional (operations execute; UndoRedo history unavailable on < 4.4) |
+| All other tools | 4.2 | Fully functional. Mutating ops register UndoRedo history (undo via Edit > Undo) on all supported versions — the toolkit reaches `EditorUndoRedoManager` through `EditorPlugin.get_undo_redo()`, which is 4.0+ stable |
 
 ### Degraded behavior by version
 
 **Godot 4.2 – 4.3 (minimum):**
-- UndoRedo history is unavailable for node mutations (`scene_create_node`,
-  `scene_delete_node`, `scene_instantiate`), script attachment
-  (`node_set_script`), signal management (`signal_manage`), animation
-  keyframes (`animation_keyframe`), and tilemap edits (`tilemap_set_cells`).
-  Operations still execute correctly but cannot be undone via Edit > Undo.
-  `EditorUndoRedoManager` is accessed via `has_method()` dynamic dispatch
-  and returns `null` on < 4.4, triggering the direct-call fallback.
 - Toast notifications silently skip (no user-visible impact on tool behavior).
+  `EditorInterface.get_editor_toaster()` is 4.4+, so `_Hub.get_toaster()`
+  returns `null` here and the toolkit falls back to `push_warning()` to the
+  Output panel.
 - `script_check` limitations apply (see section below).
 - On 4.2 specifically, TileMapLayer nodes do not exist (introduced in 4.3).
   The tilemap tool still works with legacy `TileMap` nodes.
@@ -112,9 +108,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   4.2-only effect.
 
 **Godot 4.4:**
-- UndoRedo history works for all operations (requires proper
-  `EditorUndoRedoManager` wrapping — direct property mutations bypass history).
-- Toast notifications work.
+- Toast notifications work (`EditorInterface.get_editor_toaster()` is 4.4+).
 - `script_check` limitations apply (see section below).
 - `scene_close` returns `UNSUPPORTED`.
 - `scene_delete`/`file_delete`: non-active open scene tabs become phantoms
@@ -290,9 +284,16 @@ if Engine.get_version_info().minor >= 5:
 Centralized version helpers in `_hub.gd`:
 - `_Hub.VersionUtils.is_at_least(ver, min)` / `is_at_most(ver, max)` — single-bound version checks
 - `_Hub.VersionUtils.is_version_in_range(ver, min, max)` — range version check (used by command registry)
-- `_Hub.get_undo_redo()` — returns `EditorUndoRedoManager` or `null` on < 4.4
+- `_Hub.get_undo_redo()` — returns the editor `EditorUndoRedoManager` via the
+  stored `EditorPlugin` (4.0+ stable; works on all supported versions). Returns
+  `null` only in headless mode or before the plugin is set. Operations registered
+  through it create Edit > Undo history; direct property mutations bypass history.
 - `_Hub.get_toaster()` — returns `EditorToaster` or `null` on < 4.4
-- `_Hub.get_editor_theme()` — returns theme with fallback to `get_base_control().get_theme()`
+  (`EditorInterface.get_editor_toaster()` is 4.4+)
+- `_Hub.get_editor_theme()` — returns the editor theme. Uses
+  `EditorInterface.get_editor_theme()`, which is bound on all supported versions
+  (4.2+); the `get_base_control().get_theme()` fallback only mattered on the
+  unsupported 4.0/4.1 and never triggers on 4.2+
 
 ## Server-side version awareness
 
