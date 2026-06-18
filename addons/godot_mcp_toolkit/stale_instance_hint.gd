@@ -13,13 +13,17 @@ extends RefCounted
 ## no 4.2-vs-4.3 split.
 ##
 ## SPLIT (mirrors unfocused_backup.gd): every function here is PURE and headless —
-## the decision predicates take the version `minor` as data, so run_unit_tests.gd
-## exercises both branches across minor in {2,3,4,5,6} without an editor. The
+## the decision predicates take the version `major`/`minor` as data, so run_unit_tests.gd
+## exercises both branches across major/minor pairs (4.2-4.6 + a 5.0 guard) without
+## an editor. The
 ## editor-coupled callers read the running version / on-disk source and feed these:
 ##   - script_commands.gd  : proactive hint on script.write of an existing .gd
 ##   - node_commands.gd    : reactive hint on node.call_method -> INVALID_METHOD
 ##
-## Godot 4.x is assumed (the toolkit only runs on 4.x); the gate is `minor < 4`.
+## Godot 4.x is the supported world; the gate is `major == 4 and minor < 4`, so the
+## 4.0-4.3 hot-reload hazard is matched while 4.4+ AND any future 5.x correctly skip
+## it. The editor-coupled callers feed both `major` and `minor` (not minor alone) from
+## `Engine.get_version_info()`.
 
 const _RECOVERY := (
 	"On Godot %s, a live instance already running this script keeps the OLD code: "
@@ -37,8 +41,8 @@ const _WRITE_PREFIX := (
 
 ## Proactive trigger: an EXISTING .gd was re-written AND it compiled OK AND the
 ## editor is Godot < 4.4. (Create / 4.4+ / compile-fail / non-.gd -> no hint.)
-static func should_warn_on_write(existed: bool, compiled_ok: bool, extension: String, minor: int) -> bool:
-	return existed and compiled_ok and extension == "gd" and minor < 4
+static func should_warn_on_write(existed: bool, compiled_ok: bool, extension: String, major: int, minor: int) -> bool:
+	return existed and compiled_ok and extension == "gd" and major == 4 and minor < 4
 
 
 ## Reactive trigger: node.call_method hit INVALID_METHOD (has_method false) on a
@@ -47,9 +51,9 @@ static func should_warn_on_write(existed: bool, compiled_ok: bool, extension: St
 ## no hint. Disk doesn't compile -> the real fix is the compile error (Option B), no
 ## stale hint. 4.4+ -> has_method would already be true, so this never fires.
 static func should_hint_on_call(
-	has_method: bool, disk_has_method: bool, disk_compiles: bool, is_gd: bool, minor: int
+	has_method: bool, disk_has_method: bool, disk_compiles: bool, is_gd: bool, major: int, minor: int
 ) -> bool:
-	return (not has_method) and disk_has_method and disk_compiles and is_gd and minor < 4
+	return (not has_method) and disk_has_method and disk_compiles and is_gd and major == 4 and minor < 4
 
 
 ## The shared recovery guidance (single < 4.4 form — 4.2 and 4.3 BOTH need relaunch;

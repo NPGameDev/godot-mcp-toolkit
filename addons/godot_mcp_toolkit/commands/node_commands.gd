@@ -501,7 +501,7 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 	var minor := int(vi["minor"])
 	var disk_has := _Hub.StaleInstanceHint.source_has_method(disk_source, method_name)
 	var disk_ok := _Hub.StaleInstanceHint.source_compiles(disk_source)
-	if not _Hub.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, minor):
+	if not _Hub.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, int(vi["major"]), minor):
 		return ""
 	return _Hub.StaleInstanceHint.recovery_message("%d.%d" % [int(vi["major"]), minor])
 

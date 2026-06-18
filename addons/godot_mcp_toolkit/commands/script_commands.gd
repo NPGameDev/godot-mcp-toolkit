@@ -163,7 +163,7 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		# (validation guidance first, stale nudge in the recency slot).
 		var vi := Engine.get_version_info()
 		var minor := int(vi["minor"])
-		if _Hub.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], write_extension, minor):
+		if _Hub.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], write_extension, int(vi["major"]), minor):
 			result["hint"] = _Hub.StaleInstanceHint.write_hint("%d.%d" % [int(vi["major"]), minor])
 
 	return result

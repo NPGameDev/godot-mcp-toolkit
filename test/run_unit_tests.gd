@@ -1246,41 +1246,45 @@ const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/stale_instanc
 func _test_stale_instance_hint() -> void:
 	_begin("Stale-instance hint")
 
-	# should_warn_on_write(existed, compiled_ok, extension, minor) — proactive gate
-	_ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 2),
+	# should_warn_on_write(existed, compiled_ok, extension, major, minor) — proactive gate
+	_ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 2),
 			"write: existing .gd compiled on 4.2 → warn")
-	_ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 3),
+	_ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 3),
 			"write: existing .gd compiled on 4.3 → warn")
-	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4),
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 4),
 			"write: 4.4 → no warn (hot-reloads)")
-	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 5),
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 5),
 			"write: 4.5 → no warn")
-	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 6),
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 6),
 			"write: 4.6 → no warn")
-	_ok(not StaleInstanceHint.should_warn_on_write(false, true, "gd", 3),
+	_ok(not StaleInstanceHint.should_warn_on_write(false, true, "gd", 4, 3),
 			"write: create (new file) → no warn")
-	_ok(not StaleInstanceHint.should_warn_on_write(true, false, "gd", 3),
+	_ok(not StaleInstanceHint.should_warn_on_write(true, false, "gd", 4, 3),
 			"write: compile-failed → no warn (Scenario C gate)")
-	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "cs", 3),
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "cs", 4, 3),
 			"write: .cs → no warn (out of scope)")
-	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gdshader", 2),
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gdshader", 4, 2),
 			"write: .gdshader → no warn")
+	_ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 5, 0),
+			"should_warn_on_write: Godot 5.0 does not warn — gate is major-aware")
 
-	# should_hint_on_call(has_method, disk_has_method, disk_compiles, is_gd, minor)
-	_ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 3),
+	# should_hint_on_call(has_method, disk_has_method, disk_compiles, is_gd, major, minor)
+	_ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 3),
 			"call: stale method on 4.3 → hint")
-	_ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 2),
+	_ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 2),
 			"call: stale method on 4.2 → hint")
-	_ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 4),
+	_ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 4),
 			"call: 4.4 → no hint")
-	_ok(not StaleInstanceHint.should_hint_on_call(false, false, true, true, 3),
+	_ok(not StaleInstanceHint.should_hint_on_call(false, false, true, true, 4, 3),
 			"call: method absent on disk (typo) → no hint")
-	_ok(not StaleInstanceHint.should_hint_on_call(false, true, false, true, 3),
+	_ok(not StaleInstanceHint.should_hint_on_call(false, true, false, true, 4, 3),
 			"call: disk doesn't compile → no hint (Option B)")
-	_ok(not StaleInstanceHint.should_hint_on_call(true, true, true, true, 3),
+	_ok(not StaleInstanceHint.should_hint_on_call(true, true, true, true, 4, 3),
 			"call: has_method true → no hint")
-	_ok(not StaleInstanceHint.should_hint_on_call(false, true, true, false, 3),
+	_ok(not StaleInstanceHint.should_hint_on_call(false, true, true, false, 4, 3),
 			"call: non-.gd script → no hint")
+	_ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 5, 0),
+			"should_hint_on_call: Godot 5.0 does not hint — gate is major-aware")
 
 	# source_compiles — safe GDScript.new().reload() parse (class_name stripped)
 	_ok(StaleInstanceHint.source_compiles("extends Node\nfunc a() -> int:\n\treturn 1\n"),
