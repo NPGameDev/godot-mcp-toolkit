@@ -26,6 +26,7 @@ const Scrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
+const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
 
 const PORT_BASE := 6570
 const PORT_RANGE := 16  # 6570..6585 inclusive
@@ -288,31 +289,11 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 
 
 func _send_result(peer: WebSocketPeer, id, result) -> void:
-	var response := {
-		"jsonrpc": JSONRPC_VERSION,
-		"id": id,
-		"result": result,
-	}
-	# A response larger than the peer's send buffer is rejected wholesale by the
-	# native WS path (no chunking) — guard it into a compact, deliverable
-	# RESPONSE_TOO_LARGE error rather than dropping it silently. max_bytes is the
-	# peer's own buffer (set at accept), so this needs no ProjectSetting read.
-	response = MCPToolkitError.guard_response_size(response, peer.outbound_buffer_size)
-	var send_err := peer.send_text(JSON.stringify(response))
-	if send_err != OK:
-		push_warning("[MCPRuntimeServer] send_text failed for id %s (err %d) — response not delivered" % [str(id), send_err])
+	Notifier.send_result(peer, id, result, "[MCPRuntimeServer]")
 
 
 func _send_error(peer: WebSocketPeer, id, code: int, message: String) -> void:
-	var response := {
-		"jsonrpc": JSONRPC_VERSION,
-		"id": id,
-		"error": {
-			"code": code,
-			"message": message,
-		},
-	}
-	peer.send_text(JSON.stringify(response))
+	Notifier.send_error(peer, id, code, message)
 
 
 

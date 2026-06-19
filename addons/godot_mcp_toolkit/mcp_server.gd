@@ -25,6 +25,7 @@ const RegistryClient = _Hub.RegistryClient
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
 const _UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
+const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
 
 const PORT_BASE := 6550
 const PORT_RANGE := 11  # 6550..6560 inclusive
@@ -226,21 +227,7 @@ func get_command_methods() -> Array:
 ## Used by the dock to signal config changes (e.g. profile updates)
 ## so the MCP server can reload its tool list without a restart.
 func broadcast_notification(notification_type: String, params: Dictionary = {}) -> void:
-	var payload := {"notification": notification_type}
-	if not params.is_empty():
-		payload["params"] = params
-	var message := JSON.stringify(payload)
-	var count := 0
-	for peer in _peer_authed:
-		if peer is WebSocketPeer and peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
-			# Broadcasts carry no request id, so a too-large frame can't be
-			# answered with an error — at minimum make a dropped frame visible.
-			# Cast: the loop var is Variant (Dictionary key), so the call needs a
-			# typed receiver for the Error return.
-			var send_err := (peer as WebSocketPeer).send_text(message)
-			if send_err != OK:
-				push_warning("[MCPServer] broadcast '%s' send_text failed (err %d)" % [notification_type, send_err])
-			count += 1
+	var count := Notifier.broadcast(_peer_authed.keys(), notification_type, params, "[MCPServer]")
 	print("[MCPServer] broadcasting %s to %d authed peer%s" % [
 		notification_type, count, "" if count == 1 else "s"])
 
@@ -1032,47 +1019,15 @@ func _inject_concurrency_metadata(result: Dictionary, queued_ms: int) -> void:
 
 func _send_notification(peer: WebSocketPeer, method: String,
 		params: Dictionary) -> void:
-	if peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
-		return
-	# No request id → no compact error to answer with; just surface a send
-	# failure so an over-buffer notification is never silently dropped. These
-	# notifications (_queued/_executing) are tiny, so a failure here is almost
-	# always a closed/backed-up peer rather than an oversized frame.
-	var send_err := peer.send_text(JSON.stringify({
-		"jsonrpc": JSONRPC_VERSION,
-		"method": method,
-		"params": params,
-	}))
-	if send_err != OK:
-		push_warning("[MCPServer] notification '%s' send_text failed (err %d)" % [method, send_err])
+	Notifier.send_notification(peer, method, params, "[MCPServer]")
 
 
 func _send_result(peer: WebSocketPeer, id, result) -> void:
-	var response := {
-		"jsonrpc": JSONRPC_VERSION,
-		"id": id,
-		"result": result,
-	}
-	# A response larger than the peer's send buffer is rejected wholesale by the
-	# native WS path (no chunking) — without this guard it would vanish silently
-	# and the bridge would see a hung request. Swap it for a compact, deliverable
-	# RESPONSE_TOO_LARGE error so the caller learns to narrow/paginate.
-	response = MCPToolkitError.guard_response_size(response, peer.outbound_buffer_size)
-	var send_err := peer.send_text(JSON.stringify(response))
-	if send_err != OK:
-		push_warning("[MCPServer] send_text failed for id %s (err %d) — response not delivered" % [str(id), send_err])
+	Notifier.send_result(peer, id, result, "[MCPServer]")
 
 
 func _send_error(peer: WebSocketPeer, id, code: int, error_message: String) -> void:
-	var response := {
-		"jsonrpc": JSONRPC_VERSION,
-		"id": id,
-		"error": {
-			"code": code,
-			"message": error_message,
-		},
-	}
-	peer.send_text(JSON.stringify(response))
+	Notifier.send_error(peer, id, code, error_message)
 
 
 # -- Unfocused sleep management -----------------------------------------------
