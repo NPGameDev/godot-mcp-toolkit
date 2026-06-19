@@ -126,7 +126,7 @@
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | save.write | 67 | — | — | — | — | |
-| save.read | 68 | — | — | — | — | |
+| save.read | 68, 11.7 | ✓ (11.5 PATH_DENIED, 11.7.6 cap exceeded) | — | — | concern 025 | 11.7: byte `offset` paging (`offset`/`next_offset`/`total_bytes`/`truncated`) + configurable `save_read_cap_kb` (default 256, min 64) + FILE_TOO_LARGE frame guard (base64 1.33× vs `ws_buffer_kb`) |
 | save.list | 69 | — | — | — | — | |
 | save.delete | 70 | — | — | — | — | |
 

@@ -48,6 +48,8 @@ static func register_all() -> void:
 static func _register_limits() -> void:
 	_register_basic_int("mcp_toolkit/limits/script_read_cap_kb", 256,
 		"Max script content returned by script.read, in KB. Minimum 64.")
+	_register_basic_int("mcp_toolkit/limits/save_read_cap_kb", 256,
+		"Max user-file content returned per save.read window, in KB. Minimum 64.")
 	_register_basic_int("mcp_toolkit/limits/ws_buffer_kb", 1024,
 		"WebSocket per-peer buffer size, in KB. Minimum 256.")
 	_register_limits_note()

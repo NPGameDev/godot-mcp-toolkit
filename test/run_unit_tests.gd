@@ -78,6 +78,7 @@ func _init() -> void:
 	_test_coerce_roundtrip()
 	_test_node_packed_property_serialize()
 	_test_user_path_monitor()
+	_test_save_read_paging()
 
 	_report()
 	quit(0 if _failed == 0 else 1)
@@ -2146,6 +2147,140 @@ func _test_node_packed_property_serialize() -> void:
 			"node-sourced PackedVector2Array round-trips (coerce(serialize(points)) == written)")
 
 	line.free()
+	print("")
+
+
+# --- save.read configurable cap + byte-offset paging (concern 025) ---------
+# _cmd_save_read gained a configurable cap (save_read_cap_kb, min 64) replacing
+# the hardcoded 256 KB, an `offset` param for windowed paging, a `next_offset`
+# return, and a FILE_TOO_LARGE frame guard (base64 1.33× projection vs
+# ws_buffer_kb) so an oversized window is rejected before it silently vanishes on
+# the transport. Drives the real handler against a user:// temp file; restores
+# the mutated limit settings afterward.
+
+const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_commands.gd")
+
+func _test_save_read_paging() -> void:
+	_begin("save.read cap + offset paging (concern 025)")
+
+	# Preserve the limit settings this test mutates (str/int coercion — Variant
+	# source, warnings-as-error in test/).
+	var orig_cap: int = int(ProjectSettings.get_setting("mcp_toolkit/limits/save_read_cap_kb", 256))
+	var orig_ws: int = int(ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024))
+
+	# A deterministic ASCII fixture so byte offsets == character offsets and the
+	# UTF-8 decode path (not base64) is exercised. 1000 bytes total.
+	var body := "A".repeat(1000)
+	var rel_path := "user://saves/sv2_paging_025.txt"
+	var abs_path := ProjectSettings.globalize_path(rel_path)
+	DirAccess.make_dir_recursive_absolute(abs_path.get_base_dir())
+	var wf := FileAccess.open(abs_path, FileAccess.WRITE)
+	_ok(wf != null, "fixture file opened for write")
+	if wf != null:
+		wf.store_string(body)
+		wf.close()
+
+	# Default cap (256 KB) for the paging assertions.
+	ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb", 256)
+	ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
+
+	# 1. First window: offset 0, max_bytes 400 → 400 bytes, next_offset 400,
+	#    truncated true (600 remain), total_bytes 1000.
+	var p1: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": 400})
+	_ok(p1.get("success", false), "window 1 → success")
+	_eq(p1.get("bytes_returned", -1), 400, "window 1 → 400 bytes returned")
+	_eq(p1.get("offset", -1), 0, "window 1 → offset 0 echoed")
+	_eq(p1.get("next_offset", -1), 400, "window 1 → next_offset 400")
+	_eq(p1.get("total_bytes", -1), 1000, "window 1 → total_bytes 1000")
+	_eq(p1.get("truncated", null), true, "window 1 → truncated true (more remains)")
+
+	# 2. Middle window: seek correctness — offset 400, max_bytes 400 → next_offset
+	#    800, still truncated.
+	var p2: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 400, "max_bytes": 400})
+	_eq(p2.get("bytes_returned", -1), 400, "window 2 → 400 bytes returned")
+	_eq(p2.get("offset", -1), 400, "window 2 → offset 400 echoed")
+	_eq(p2.get("next_offset", -1), 800, "window 2 → next_offset 800")
+	_eq(p2.get("truncated", null), true, "window 2 → still truncated")
+
+	# 3. Final window: offset 800 → only 200 bytes left; next_offset reaches EOF,
+	#    truncated false. Pins next_offset arithmetic = offset + bytes_returned.
+	var p3: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 800, "max_bytes": 400})
+	_eq(p3.get("bytes_returned", -1), 200, "window 3 → 200 bytes (clamped to remaining)")
+	_eq(p3.get("next_offset", -1), 1000, "window 3 → next_offset 1000 (== total)")
+	_eq(p3.get("truncated", null), false, "window 3 → truncated false (reached EOF)")
+
+	# 4. Offset exactly AT EOF → 0 bytes, not an error; next_offset == total,
+	#    truncated false (graceful completion sentinel for a paging caller).
+	var p_eof: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 1000})
+	_ok(p_eof.get("success", false), "offset == EOF → success (not an error)")
+	_eq(p_eof.get("bytes_returned", -1), 0, "offset == EOF → 0 bytes")
+	_eq(p_eof.get("next_offset", -1), 1000, "offset == EOF → next_offset == total")
+	_eq(p_eof.get("truncated", null), false, "offset == EOF → truncated false")
+
+	# 5. Offset PAST EOF → still graceful: 0 bytes, no error.
+	var p_past: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 99999})
+	_ok(p_past.get("success", false), "offset past EOF → success (not an error)")
+	_eq(p_past.get("bytes_returned", -1), 0, "offset past EOF → 0 bytes")
+	_eq(p_past.get("truncated", null), false, "offset past EOF → truncated false")
+
+	# 6. Negative offset → INVALID_PARAMS.
+	var p_neg: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": -1})
+	_eq(p_neg.get("success", null), false, "negative offset → rejected")
+	_eq(str(p_neg.get("code", "")), "INVALID_PARAMS", "negative offset → INVALID_PARAMS")
+
+	# 7. Cap clamp — at the default 256 KB cap, max_bytes one past the cap is
+	#    rejected; exactly at the cap is accepted (the 256 KB default == the former
+	#    hardcoded ceiling, so default behaviour is unchanged).
+	var at_cap := 262144
+	var over_cap: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": at_cap + 1})
+	_eq(over_cap.get("success", null), false, "max_bytes cap+1 → rejected")
+	_eq(str(over_cap.get("code", "")), "INVALID_PARAMS", "max_bytes cap+1 → INVALID_PARAMS")
+	var at_cap_ok: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": at_cap})
+	_ok(at_cap_ok.get("success", false), "max_bytes == cap → accepted")
+
+	# 8. Cap is configurable upward: raise to 512 KB → a max_bytes of 300 KB
+	#    (rejected at the default) is now accepted.
+	ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb", 512)
+	var raised: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": 300 * 1024})
+	_ok(raised.get("success", false), "raised cap 512 KB → 300 KB max_bytes accepted")
+
+	# 9. Cap floor — a sub-minimum cap setting (32) is floored to 64 KB, so a
+	#    max_bytes above 64 KB but below the raw setting is rejected at the floor.
+	ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb", 32)
+	var floored: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": 100 * 1024})
+	_eq(floored.get("success", null), false, "cap 32 floored to 64 KB → 100 KB max_bytes rejected")
+	var floored_ok: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": 64 * 1024})
+	_ok(floored_ok.get("success", false), "cap 32 floored to 64 KB → 64 KB max_bytes accepted")
+
+	# 10. FILE_TOO_LARGE frame guard — raise the cap high and drop ws_buffer_kb to
+	#     256 (its floor). A 250 KB window projects to ~333 KB base64, over the
+	#     256 KB buffer → FILE_TOO_LARGE BEFORE any read, with total_bytes + a hint.
+	#     (Use a larger fixture so 250 KB is actually available to request.)
+	var big_body := "B".repeat(300 * 1024)
+	var big_rel := "user://saves/sv2_paging_025_big.txt"
+	var big_abs := ProjectSettings.globalize_path(big_rel)
+	var bwf := FileAccess.open(big_abs, FileAccess.WRITE)
+	if bwf != null:
+		bwf.store_string(big_body)
+		bwf.close()
+	ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb", 1024)
+	ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb", 256)
+	var too_large: Dictionary = SaveCommands._cmd_save_read({"path": big_rel, "max_bytes": 250 * 1024})
+	_eq(too_large.get("success", null), false, "oversized window → rejected")
+	_eq(str(too_large.get("code", "")), "FILE_TOO_LARGE", "oversized window → FILE_TOO_LARGE")
+	_ok(too_large.has("total_bytes"), "FILE_TOO_LARGE → carries total_bytes")
+	_ok(str(too_large.get("hint", "")).contains("offset"),
+			"FILE_TOO_LARGE → hint mentions offset paging")
+	# A small window of the SAME big file fits and succeeds (guard is per-window,
+	# not per-file).
+	var small_window: Dictionary = SaveCommands._cmd_save_read({"path": big_rel, "max_bytes": 100 * 1024})
+	_ok(small_window.get("success", false), "small window of the big file → fits, succeeds")
+
+	# Cleanup: remove fixtures, restore the mutated limit settings.
+	DirAccess.remove_absolute(abs_path)
+	DirAccess.remove_absolute(big_abs)
+	ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb", orig_cap)
+	ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb", orig_ws)
 	print("")
 
 

@@ -54,12 +54,33 @@ holder may go without renewing before a waiting client can steal the lease.
 
 ## Limits
 
+### `mcp_toolkit/limits/save_read_cap_kb` — default `256`
+
+The largest window `save_read` returns in a single call, in KB (minimum 64). A
+`user://` file bigger than this cap can still be read in full by paging: pass
+`offset` (a byte position, default `0`) and read successive `max_bytes` windows.
+Each response reports `total_bytes`, `bytes_returned`, `next_offset`, and
+`truncated` — feed `next_offset` back as the next `offset` until `truncated` is
+`false`. This is the only way to read a file larger than the WebSocket frame
+ceiling (see `ws_buffer_kb` below), because responses are sent whole.
+
+Raising this above `ws_buffer_kb` is a footgun: a window that would not fit the
+WebSocket buffer is rejected with `FILE_TOO_LARGE` before it is sent, rather than
+silently dropped. If you raise the cap, raise `ws_buffer_kb` to match (and note
+the runtime caveat below).
+
 ### `mcp_toolkit/limits/ws_buffer_kb` — default `1024`
 
 WebSocket per-peer buffer size, in KB (minimum 256). Raise it if you send very
 large payloads (e.g. big `script_write` bodies) and see truncated or dropped
 connections under load. Can also be overridden per-connection by the
 `GODOT_MCP_WS_BUFFER_LIMIT` env var in `.mcp.json`.
+
+> **Runtime (exported game) caveat.** This setting tunes the **editor** server
+> only. The runtime server that runs inside an exported game uses a **fixed 1 MB
+> per-peer buffer** and ignores `ws_buffer_kb`, so raising `ws_buffer_kb` does
+> **not** raise the runtime ceiling — page large runtime reads with `save_read`'s
+> `offset` instead.
 
 ## Language server (LSP)
 

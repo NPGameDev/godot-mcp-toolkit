@@ -38,6 +38,7 @@ var _nodejs_status_warning: Label = null
 
 # Settings widgets.
 var _script_cap_spinbox: SpinBox = null
+var _save_cap_spinbox: SpinBox = null
 var _ws_buffer_spinbox: SpinBox = null
 
 # Info/Help dialog (populated on demand).
@@ -354,6 +355,19 @@ func _build_ui() -> void:
 		"mcp_toolkit/limits/script_read_cap_kb", 256)
 	_script_cap_spinbox.value_changed.connect(_on_script_cap_changed)
 	limits_row.add_child(_script_cap_spinbox)
+	var save_cap_label := Label.new()
+	save_cap_label.text = "Save cap:"
+	limits_row.add_child(save_cap_label)
+	_save_cap_spinbox = SpinBox.new()
+	_save_cap_spinbox.min_value = 64
+	_save_cap_spinbox.max_value = 4096
+	_save_cap_spinbox.step = 64
+	_save_cap_spinbox.suffix = "KB"
+	_save_cap_spinbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_save_cap_spinbox.value = ProjectSettings.get_setting(
+		"mcp_toolkit/limits/save_read_cap_kb", 256)
+	_save_cap_spinbox.value_changed.connect(_on_save_cap_changed)
+	limits_row.add_child(_save_cap_spinbox)
 	var ws_label := Label.new()
 	ws_label.text = "WS buffer:"
 	limits_row.add_child(ws_label)
@@ -700,6 +714,12 @@ func _is_read_only() -> bool:
 func _on_script_cap_changed(value: float) -> void:
 	var clamped := maxi(64, int(value))
 	ProjectSettings.set_setting("mcp_toolkit/limits/script_read_cap_kb", clamped)
+	ProjectSettings.save()
+
+
+func _on_save_cap_changed(value: float) -> void:
+	var clamped := maxi(64, int(value))
+	ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb", clamped)
 	ProjectSettings.save()
 
 

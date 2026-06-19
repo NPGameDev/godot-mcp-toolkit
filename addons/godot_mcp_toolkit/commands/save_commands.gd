@@ -49,10 +49,23 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 	var path := str(parameters.get("path", ""))
 	if path.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing path")
+	# Cap is configurable (mcp_toolkit/limits/save_read_cap_kb, default 256, min
+	# 64) — mirrors script_read_cap_kb. Default 256 KB ⇒ 262144 ⇒ the former
+	# hardcoded ceiling, so the default behaviour is unchanged.
+	var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/save_read_cap_kb", 256)
+	var cap_bytes := maxi(64, cap_kb) * 1024
 	var max_bytes := int(parameters.get("max_bytes", 65536))
-	if max_bytes <= 0 or max_bytes > 262144:
+	if max_bytes <= 0 or max_bytes > cap_bytes:
 		return MCPToolkitError.fail("INVALID_PARAMS",
-			"max_bytes must be 1..262144 (got %d)" % max_bytes)
+			"max_bytes must be 1..%d (got %d); raise mcp_toolkit/limits/save_read_cap_kb to read a larger window"
+			% [cap_bytes, max_bytes])
+	# Byte offset for pagination (default 0) — parity with script.read's line
+	# range. Lets a large file be read in successive ≤max_bytes windows under the
+	# WebSocket frame ceiling, which is the only way the engine ships big files.
+	var offset := int(parameters.get("offset", 0))
+	if offset < 0:
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"offset must be >= 0 (got %d)" % offset)
 	var guard := FileGuard.resolve_safe_user(path)
 	if not guard["ok"]:
 		return MCPToolkitError.fail(str(guard["error_code"]), str(guard["error_message"]))
@@ -62,10 +75,34 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("SAVE_READ_FAILED",
 			"FileAccess.open for read failed (error=%d, path=%s)" % [FileAccess.get_open_error(), path])
 	var total_bytes := int(f.get_length())
-	var bytes_to_read := mini(total_bytes, max_bytes)
-	var truncated := total_bytes > max_bytes
+	# Bytes remaining after the offset. An offset at or past EOF yields 0 bytes
+	# (not an error) so a paging caller can detect completion by next_offset.
+	var remaining := maxi(0, total_bytes - offset)
+	var bytes_to_read := mini(remaining, max_bytes)
+	# Frame-size guard: the engine drops any WebSocket frame larger than the
+	# per-peer outbound buffer wholesale (send_text's result is unchecked → silent
+	# drop). Reject BEFORE reading so an oversized window never reaches the
+	# transport. Sizing basis is the base64 worst case (1.33×), since the binary
+	# fallback path inflates the payload by ~33%. At defaults this never fires
+	# (256 KB × 1.33 ≈ 340 KB < 1 MB); it guards the footgun of raising
+	# save_read_cap_kb above ws_buffer_kb.
+	var ws_buffer_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
+	var projected_bytes := int(ceil(bytes_to_read * 1.33))
+	if projected_bytes > ws_buffer_kb * 1024:
+		f.close()
+		var size_err := MCPToolkitError.fail("FILE_TOO_LARGE",
+			"projected response (~%d KB base64) exceeds the %d KB WebSocket buffer"
+			% [projected_bytes / 1024, ws_buffer_kb])
+		size_err["total_bytes"] = total_bytes
+		size_err["hint"] = "narrow the window: use offset + a smaller max_bytes"
+		return size_err
+	if offset > 0:
+		f.seek(offset)
 	var buffer := f.get_buffer(bytes_to_read)
 	f.close()
+	var next_offset := offset + buffer.size()
+	# Truncated means there is more file beyond what this window returned.
+	var truncated := next_offset < total_bytes
 	# Binary-safe: try UTF-8 decode; fall back to base64.
 	var text := buffer.get_string_from_utf8()
 	if text.is_empty() and buffer.size() > 0:
@@ -76,6 +113,8 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 			"truncated": truncated,
 			"total_bytes": total_bytes,
 			"bytes_returned": buffer.size(),
+			"offset": offset,
+			"next_offset": next_offset,
 		})
 	var scrubbed := Scrubber.scrub(text, "save.read")
 	var wrapped := Untrusted.wrap("user-file", path, scrubbed["text"])
@@ -85,6 +124,8 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 		"truncated": truncated,
 		"total_bytes": total_bytes,
 		"bytes_returned": buffer.size(),
+		"offset": offset,
+		"next_offset": next_offset,
 	})
 
 
