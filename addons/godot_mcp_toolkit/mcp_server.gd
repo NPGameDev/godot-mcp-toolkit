@@ -26,6 +26,7 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
 const _UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
 const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
+const WsTransport := preload("res://addons/godot_mcp_toolkit/ws_transport.gd")
 
 const PORT_BASE := 6550
 const PORT_RANGE := 11  # 6550..6560 inclusive
@@ -59,13 +60,11 @@ const _POLL_FRAME_INTERVAL := 4
 # window are closed with WS close code 1008 (Policy Violation).
 const _AUTH_TIMEOUT_MS := 2000
 
-var _tcp_server: TCPServer = null
-var _peers: Array[WebSocketPeer] = []
-var _relisten_countdown := 0
-# Tracks the current run of consecutive _try_listen() failures so we can log
-# the first one (with a hint), stay silent during retries, and announce the
-# recovery with the attempt count. Reset on every successful listen.
-var _consecutive_failures := 0
+# Owns the TCP listener + WS peers + auth-handshake framing + the bound port +
+# the session token. This file injects the editor-side decisions/side-effects as
+# Callables (auth-ack payload, boost-on-authed, lease cleanup on close) and drives
+# it via _poll_connections → transport.pump().
+var _transport: WsTransport = null
 var _poll_frame_counter := 0
 # Captured at start() so editor.get_console's log-file selection heuristic
 # can prefer post-boot logs over stale rotated ones.
@@ -75,11 +74,6 @@ var _registry: MCPToolkitCommandRegistry = null
 ## JSON-RPC id (string). Populated in _dispatch_rpc; erased after handler
 ## returns. Looked up by _cancel notifications to trigger cooperative cancel.
 var _active_contexts: Dictionary = {}
-var _session_token: String = ""
-var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers only)
-var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
-# -1 = never bound.
-var _bound_port: int = -1
 # Last LSP endpoint published to the registry — the Q4 re-publish baseline.
 var _last_lsp_host: String = ""
 var _last_lsp_port: int = -1
@@ -173,15 +167,15 @@ func get_plugin_boot_time() -> int:
 
 
 func is_listening() -> bool:
-	return _tcp_server != null and _tcp_server.is_listening()
+	return _transport != null and _transport.is_listening()
 
 
 func get_authed_peer_count() -> int:
-	return _peer_authed.size()
+	return _transport.get_authed_count() if _transport != null else 0
 
 
 func get_bound_port() -> int:
-	return _bound_port
+	return _transport.get_bound_port() if _transport != null else -1
 
 
 ## The GDScript LSP endpoint THIS editor's setting points at (default
@@ -227,7 +221,8 @@ func get_command_methods() -> Array:
 ## Used by the dock to signal config changes (e.g. profile updates)
 ## so the MCP server can reload its tool list without a restart.
 func broadcast_notification(notification_type: String, params: Dictionary = {}) -> void:
-	var count := Notifier.broadcast(_peer_authed.keys(), notification_type, params, "[MCPServer]")
+	var authed: Array = _transport.get_authed_peers() if _transport != null else []
+	var count := Notifier.broadcast(authed, notification_type, params, "[MCPServer]")
 	print("[MCPServer] broadcasting %s to %d authed peer%s" % [
 		notification_type, count, "" if count == 1 else "s"])
 
@@ -245,7 +240,9 @@ func _on_user_path_changed() -> void:
 ## stay authenticated. Announces the new token path so the registry owner
 ## (plugin.gd) re-publishes the entry runtime-preservingly.
 func _rewrite_token_after_rename() -> void:
-	var write_err := MCPAuth.write_token(_session_token)
+	if _transport == null:
+		return  # No running transport → no token to re-write, nothing bound.
+	var write_err := MCPAuth.write_token(_transport.get_token())
 	if write_err != OK:
 		push_warning("[MCPServer] failed to re-write token after rename (err %d)" % write_err)
 	else:
@@ -253,24 +250,22 @@ func _rewrite_token_after_rename() -> void:
 	# Announce the new token path; the plugin re-publishes via ensure_registered so
 	# an active game's runtime_port/runtime_pid survive the rename (register nulls
 	# them). The server doesn't reach into the registry from the rename path.
-	if _bound_port > 0:
+	if _transport.get_bound_port() > 0:
 		token_rewritten.emit(MCPAuth.get_token_path())
 
 
 func regenerate_token() -> void:
-	_session_token = MCPAuth.generate_token()
-	var write_err := MCPAuth.write_token(_session_token)
+	var token := MCPAuth.generate_token()
+	if _transport != null:
+		_transport.set_token(token)
+	var write_err := MCPAuth.write_token(token)
 	if write_err != OK:
 		push_warning("[MCPServer] failed to write rotated token (err %d)" % write_err)
 	else:
 		print("[MCPServer] token rotated, written to %s" % MCPAuth.get_token_path())
 	# Close all existing peers — they must re-auth with the new token.
-	for peer in _peers:
-		if peer != null:
-			peer.close(1008, "token rotated")
-	_peers.clear()
-	_peer_authed.clear()
-	_peer_connect_ms.clear()
+	if _transport != null:
+		_transport.close_all(1008, "token rotated")
 
 
 func start() -> void:
@@ -282,35 +277,41 @@ func start() -> void:
 		undo_helpers.name = "UndoRedoHelpers"
 		add_child(undo_helpers)
 	_plugin_boot_time = int(Time.get_unix_time_from_system())
-	_relisten_countdown = 0
-	_bound_port = -1
-	_session_token = MCPAuth.generate_token()
-	var write_err := MCPAuth.write_token(_session_token)
+	_init_transport()
+	var token := MCPAuth.generate_token()
+	_transport.set_token(token)
+	var write_err := MCPAuth.write_token(token)
 	if write_err != OK:
 		push_warning("[MCPServer] failed to write token (err %d); auth will still be enforced but bridge may not find the file" % write_err)
 	else:
 		var token_path := MCPAuth.get_token_path()
 		print("[MCPServer] session token written to %s" % token_path)
-	_scan_and_listen()
+	_transport.ensure_listening()
 	_connect_lsp_settings_watch()
+
+
+# Build the WS transport and inject the editor-side seams: the auth-vs-dispatch
+# router, the auth-ack payload (Mode A adds godot_version + version), the
+# boost-on-first-authed callback, and the lease/unfocused/signal cleanup on close.
+func _init_transport() -> void:
+	_transport = WsTransport.new()
+	# await_messages = true: the editor dispatches sequentially within a poll tick
+	# (its mutation serialisation depends on this).
+	_transport.configure("[MCPServer]", PORT_BASE, PORT_RANGE, BIND,
+		_RELISTEN_FRAME_INTERVAL, _AUTH_TIMEOUT_MS, true,
+		"no free port in %d-%d; will retry every ~1s")
+	_transport.set_handlers(_handle_message, _build_auth_ack, _on_peer_authed,
+		_on_peer_closed)
 
 
 func stop() -> void:
 	set_process(false)
 	_disconnect_lsp_settings_watch()
-	for peer in _peers:
-		if peer != null:
-			peer.close(1000)
-	_peers.clear()
-	_peer_authed.clear()
-	_peer_connect_ms.clear()
+	if _transport != null:
+		_transport.close_all(1000, "")
 	_restore_unfocused_sleep()
-	if _tcp_server != null:
-		_tcp_server.stop()
-		_tcp_server = null
-	_relisten_countdown = 0
-	_consecutive_failures = 0
-	_bound_port = -1
+	if _transport != null:
+		_transport.shutdown_listener()
 	print("[MCPServer] stopped")
 
 
@@ -337,82 +338,16 @@ func _disconnect_lsp_settings_watch() -> void:
 
 
 func _on_editor_settings_changed() -> void:
-	if _bound_port <= 0:
+	var bound_port := _transport.get_bound_port() if _transport != null else -1
+	if bound_port <= 0:
 		return
 	var lsp := resolve_lsp_endpoint()
 	if lsp["host"] == _last_lsp_host and lsp["port"] == _last_lsp_port:
 		return  # LSP endpoint unchanged — ignore unrelated editor-setting churn.
 	_last_lsp_host = lsp["host"]
 	_last_lsp_port = lsp["port"]
-	RegistryClient.ensure_registered(_bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
+	RegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
 	print("[MCPServer] LSP endpoint changed → re-published %s:%d" % [lsp["host"], lsp["port"]])
-
-
-# -- Networking ----------------------------------------------------------------
-
-
-# Records a failed listen attempt: bumps the failure count, warns once on the
-# first failure (with the caller-supplied reason), drops the dead server, and
-# arms the throttled retry. Centralises the recovery bookkeeping shared by the
-# port scan and the idempotent rebind.
-func _note_listen_failure(warning: String) -> void:
-	_consecutive_failures += 1
-	if _consecutive_failures == 1:
-		push_warning(warning)
-	_tcp_server = null
-	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
-
-
-# Records a successful listen: clears the failure count and retry latch. When
-# the caller recovered from a prior failure run, also logs the recovery (the
-# port scan binds fresh on first boot and skips that line).
-func _note_listen_success(emit_recovery_log: bool) -> void:
-	if emit_recovery_log and _consecutive_failures > 0:
-		print("[MCPServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, _bound_port, _consecutive_failures])
-	_consecutive_failures = 0
-	_relisten_countdown = 0
-
-
-# First-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1 and binds
-# the first free port. Sets _bound_port on success. If no port is available,
-# schedules a throttled retry.
-func _scan_and_listen() -> void:
-	for offset in range(PORT_RANGE):
-		var candidate := PORT_BASE + offset
-		var server := TCPServer.new()
-		var err := server.listen(candidate, BIND)
-		if err == OK:
-			_tcp_server = server
-			_bound_port = candidate
-			_note_listen_success(false)
-			print("[MCPServer] listening on %s:%d" % [BIND, _bound_port])
-			return
-		server.stop()
-	# All ports in range exhausted.
-	_note_listen_failure("[MCPServer] no free port in %d-%d; will retry every ~1s" % [PORT_BASE, PORT_BASE + PORT_RANGE - 1])
-
-
-# Idempotent re-listen. Called from _process when the TCPServer falls out
-# of the listening state. If we already found a port (_bound_port > 0),
-# retry that specific port. Otherwise re-scan the range.
-func _try_listen() -> void:
-	if _relisten_countdown > 0:
-		_relisten_countdown -= 1
-		return
-	if _bound_port < 0:
-		_scan_and_listen()
-		return
-	if _tcp_server == null:
-		_tcp_server = TCPServer.new()
-	var error := _tcp_server.listen(_bound_port, BIND)
-	if error == OK:
-		_note_listen_success(true)
-		return
-	var hint := ""
-	if error == ERR_ALREADY_IN_USE:
-		hint = " (ERR_ALREADY_IN_USE — will retry silently every ~1s)"
-	_tcp_server.stop()
-	_note_listen_failure("[MCPServer] rebind %s:%d failed (err %d)%s" % [BIND, _bound_port, error, hint])
 
 
 # -- Frame loop ----------------------------------------------------------------
@@ -435,81 +370,35 @@ func _process(_delta: float) -> void:
 
 
 func _poll_connections() -> void:
+	# Defensive: _process can only fire after start() built the transport (both run
+	# in plugin _enter_tree, synchronously), but guard anyway so a stray pre-start
+	# tick is a no-op rather than a null deref (the pre-extraction loop tolerated a
+	# null listener the same way).
+	if _transport == null:
+		return
 	# C1: skip this re-entrant tick while a save's Main::iteration() re-entry is
 	# in flight — no command may dispatch mid-save.
 	if MCPToolkitSafeSceneOps.is_dispatching():
 		return
-	if _tcp_server == null or not _tcp_server.is_listening():
-		_try_listen()
-		return
-
-	_accept_pending_peers()
-	var closed := await _poll_connected_peers()
-	_cleanup_closed_peers(closed)
-
-
-func _accept_pending_peers() -> void:
-	while _tcp_server.is_connection_available():
-		var stream := _tcp_server.take_connection()
-		var peer := WebSocketPeer.new()
-		var buffer_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
-		peer.inbound_buffer_size = buffer_kb * 1024
-		peer.outbound_buffer_size = buffer_kb * 1024
-		var accept_error := peer.accept_stream(stream)
-		if accept_error != OK:
-			push_warning("[MCPServer] accept_stream failed (%d)" % accept_error)
-			continue
-		_peers.append(peer)
-		_peer_connect_ms[peer] = Time.get_ticks_msec()
-
-
-func _poll_connected_peers() -> Array[WebSocketPeer]:
-	var closed: Array[WebSocketPeer] = []
-	var now_ms := Time.get_ticks_msec()
-	for peer in _peers:
-		peer.poll()
-		var state := peer.get_ready_state()
-		if state == WebSocketPeer.STATE_CLOSED:
-			closed.append(peer)
-			continue
-		if state != WebSocketPeer.STATE_OPEN:
-			continue
-		# Auth timeout — close peers that haven't authed in time.
-		if not _peer_authed.has(peer):
-			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _AUTH_TIMEOUT_MS:
-				peer.close(1008, "auth timeout")
-				closed.append(peer)
-				continue
-		while peer.get_available_packet_count() > 0:
-			var text := peer.get_packet().get_string_from_utf8()
-			await _handle_message(peer, text)
-	return closed
-
-
-func _cleanup_closed_peers(closed: Array[WebSocketPeer]) -> void:
-	var had_authed_disconnect := false
-	for peer in closed:
-		if _peer_authed.has(peer):
-			had_authed_disconnect = true
-		_peers.erase(peer)
-		_peer_authed.erase(peer)
-		_peer_connect_ms.erase(peer)
-		# Scene lease cleanup.
-		_peer_scene_affinity.erase(peer)
-		if _lease_holder == peer:
-			_release_lease()  # Immediate release → drain queue.
-		# Remove queued scene commands for this peer.
-		_scene_queue = _scene_queue.filter(func(entry: _SceneQueueEntry):
-			return entry.peer != peer)
+	# pump() returns whether an authed peer closed this pass. Aggregate the
+	# disconnect ONCE per tick with the FINAL authed count (the pre-extraction
+	# shape), using a local so reentrant deferred polls during a mutation await
+	# can't clobber each other.
+	var had_authed_disconnect: bool = await _transport.pump()
 	if had_authed_disconnect:
-		if _peer_authed.size() == 0:
+		var authed_now := _transport.get_authed_count()
+		if authed_now == 0:
 			_restore_unfocused_sleep()
-		client_disconnected.emit(_peer_authed.size())
+		client_disconnected.emit(authed_now)
 
 
 # -- Message handling ----------------------------------------------------------
 
 
+# The transport delivers each raw frame here. We parse, then route: unauthenticated
+# peers go through the transport's auth handshake (we additionally run the
+# human-only version-mismatch check); authenticated peers go to dispatch. The
+# transport awaits this, so dispatch stays sequential within a poll tick.
 func _handle_message(peer: WebSocketPeer, text: String) -> void:
 	var parser := JSON.new()
 	var parse_error := parser.parse(text)
@@ -522,35 +411,52 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		_send_error(peer, null, -32600, "Invalid Request: top-level must be an object")
 		return
 
-	if not _peer_authed.has(peer):
-		_handle_auth(peer, message)
+	if not _transport.is_authed(peer):
+		if _transport.validate_auth(peer, message):
+			# Version mismatch check — human-only (editor console), nothing on the
+			# MCP wire. Runs only after a successful auth, like the pre-extraction
+			# handshake. A pre-handshake server sends no version → skip.
+			var server_ver: String = str(message.get("version", ""))
+			if not server_ver.is_empty():
+				_check_version_mismatch(_get_plugin_version(), server_ver)
 		return
 
 	await _dispatch_rpc(peer, message)
 
 
-func _handle_auth(peer: WebSocketPeer, message: Dictionary) -> void:
-	if MCPAuth.validate(message, _session_token):
-		_peer_authed[peer] = true
-		var vi := Engine.get_version_info()
-		var plugin_ver := _get_plugin_version()
-		peer.send_text(JSON.stringify({
-			"authed": true,
-			"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
-			"version": plugin_ver,
-		}))
-		# Version mismatch check — human-only (editor console), nothing on MCP wire.
-		var server_ver: String = str(message.get("version", ""))
-		if server_ver.is_empty():
-			# Pre-handshake server — no version sent.
-			pass
-		else:
-			_check_version_mismatch(plugin_ver, server_ver)
-		if _peer_authed.size() == 1:
-			_lower_unfocused_sleep()
-		client_connected.emit(_peer_authed.size())
-	else:
-		peer.close(1008, "invalid token")
+# Supplies the Mode-A auth-ack payload to the transport: the bare {authed:true}
+# plus this editor's Godot + plugin versions (the runtime sends {authed:true}
+# only). Pure — no side effects; the boost/signal happen in _on_peer_authed.
+func _build_auth_ack(_message: Dictionary) -> Dictionary:
+	var vi := Engine.get_version_info()
+	return {
+		"authed": true,
+		"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
+		"version": _get_plugin_version(),
+	}
+
+
+# Fired by the transport after a peer authenticates. On the FIRST authed peer,
+# boost the unfocused responsiveness; always re-emit client_connected for the dock.
+func _on_peer_authed(count: int) -> void:
+	if count == 1:
+		_lower_unfocused_sleep()
+	client_connected.emit(count)
+
+
+# Fired by the transport once per closed peer (the transport has already erased
+# its peer maps). Does the editor-only PER-PEER cleanup: drop the scene affinity,
+# release the lease if this peer held it, drop the peer's queued scene commands.
+# The aggregate client_disconnected emit + unfocused restore happen ONCE per tick
+# in _poll_connections, keyed off pump()'s return — not here. was_authed is unused
+# here (the aggregate uses the transport's batch result).
+func _on_peer_closed(peer: WebSocketPeer, _was_authed: bool) -> void:
+	_peer_scene_affinity.erase(peer)
+	if _lease_holder == peer:
+		_release_lease()  # Immediate release → drain queue.
+	# Remove queued scene commands for this peer.
+	_scene_queue = _scene_queue.filter(func(entry: _SceneQueueEntry):
+		return entry.peer != peer)
 
 
 func _get_plugin_version() -> String:
@@ -1155,8 +1061,8 @@ func _self_heal_unfocused_sleep() -> void:
 	var ver := _UnfocusedBackup.version_key()
 	if not _UnfocusedBackup.has_backup(dir, ver):
 		return
-	if not _peer_authed.is_empty():
-		return  # defensive — never true at start()
+	if _transport != null and _transport.get_authed_count() > 0:
+		return  # defensive — never true at start() (transport not built yet / no authed peer)
 	var es := EditorInterface.get_editor_settings()
 	if es == null:
 		return

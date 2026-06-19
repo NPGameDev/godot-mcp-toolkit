@@ -27,6 +27,7 @@ const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
 const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
+const WsTransport := preload("res://addons/godot_mcp_toolkit/ws_transport.gd")
 
 const PORT_BASE := 6570
 const PORT_RANGE := 16  # 6570..6585 inclusive
@@ -39,17 +40,13 @@ const JSONRPC_VERSION := "2.0"
 const _RELISTEN_FRAME_INTERVAL := 60
 const _AUTH_TIMEOUT_MS := 2000
 
-var _tcp_server: TCPServer = null
-var _peers: Array[WebSocketPeer] = []
-var _relisten_countdown := 0
-# Mirror of mcp_server.gd._consecutive_failures — log first-failure-of-streak
-# then go silent until success/recovery. See that file for rationale.
-var _consecutive_failures := 0
-var _session_token: String = ""
-var _peer_authed: Dictionary = {}
-var _peer_connect_ms: Dictionary = {}
-# -1 = never bound.
-var _bound_port: int = -1
+# Owns the TCP listener + WS peers + auth-handshake framing + the bound port +
+# the session token. The runtime injects only the message router (its command
+# match) and the bind-publish callback; auth-ack defaults to {authed:true} and
+# there are no per-authed/per-closed side-effects (a running game has none).
+# Drives it inline per _process (no call_deferred — a running game has no
+# EditorFileSystem reentrancy to dodge).
+var _transport: WsTransport = null
 
 
 func _ready() -> void:
@@ -88,140 +85,58 @@ func _exit_tree() -> void:
 
 func _start_server() -> void:
 	LogBuffer.setup()
-	_relisten_countdown = 0
-	_bound_port = -1
+	_transport = WsTransport.new()
+	# await_messages = false: the runtime fire-and-forgets each frame so a coroutine
+	# handler (runtime.screenshot) runs independently of the poll loop, as before.
+	_transport.configure("[MCPRuntimeServer]", PORT_BASE, PORT_RANGE, BIND,
+		_RELISTEN_FRAME_INTERVAL, _AUTH_TIMEOUT_MS, false,
+		"no free port in %d–%d; Mode B tools disabled this session")
+	# Runtime seams: only the message router (its command match) and the
+	# bind-publish callback (set_runtime). No auth-ack override ({authed:true}
+	# default) and no per-authed/per-closed side-effects.
+	_transport.set_handlers(_handle_message, Callable(), Callable(), Callable(),
+		_on_bound)
 	# Runtime uses the same token file as the editor server so the bridge can
 	# authenticate against both with one read. The editor server writes first
 	# (plugin enable runs before game launch). If the file doesn't exist yet
 	# (edge case: game launched standalone without plugin), generate our own
 	# token.
+	var token := ""
 	var token_path := MCPAuth.get_token_path()
 	var file := FileAccess.open(token_path, FileAccess.READ)
 	if file != null:
-		_session_token = file.get_as_text().strip_edges()
+		token = file.get_as_text().strip_edges()
 		file.close()
-	if _session_token.is_empty():
-		_session_token = MCPAuth.generate_token()
-		MCPAuth.write_token(_session_token)
-	_scan_and_listen()
+	if token.is_empty():
+		token = MCPAuth.generate_token()
+		MCPAuth.write_token(token)
+	_transport.set_token(token)
+	_transport.ensure_listening()
 
 
 func _stop_server() -> void:
 	set_process(false)
-	for peer in _peers:
-		if peer != null:
-			peer.close(1000)
-	_peers.clear()
-	_peer_authed.clear()
-	_peer_connect_ms.clear()
-	if _tcp_server != null:
-		_tcp_server.stop()
-		_tcp_server = null
-	_relisten_countdown = 0
-	_consecutive_failures = 0
-	_bound_port = -1
+	if _transport != null:
+		_transport.close_all(1000, "")
+		_transport.shutdown_listener()
 	# Best-effort registry cleanup (game may be force-killed).
 	RegistryClient.clear_runtime()
 
 
-# First-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1 and binds
-# the first free port. On success, writes runtime_port to registry.
-func _scan_and_listen() -> void:
-	for offset in range(PORT_RANGE):
-		var candidate := PORT_BASE + offset
-		var server := TCPServer.new()
-		var err := server.listen(candidate, BIND)
-		if err == OK:
-			_tcp_server = server
-			_bound_port = candidate
-			_consecutive_failures = 0
-			_relisten_countdown = 0
-			print("[MCPRuntimeServer] listening on %s:%d" % [BIND, _bound_port])
-			RegistryClient.set_runtime(_bound_port)
-			return
-		server.stop()
-	# All ports in range exhausted — Mode B disabled this session.
-	_consecutive_failures += 1
-	if _consecutive_failures == 1:
-		push_warning("[MCPRuntimeServer] no free port in %d–%d; Mode B tools disabled this session" % [PORT_BASE, PORT_BASE + PORT_RANGE - 1])
-	_tcp_server = null
-	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
-
-
-# Idempotent re-listen. If we already found a port (_bound_port > 0),
-# retry that specific port. Otherwise re-scan.
-func _try_listen() -> void:
-	if _relisten_countdown > 0:
-		_relisten_countdown -= 1
-		return
-	if _bound_port < 0:
-		_scan_and_listen()
-		return
-	if _tcp_server == null:
-		_tcp_server = TCPServer.new()
-	var err := _tcp_server.listen(_bound_port, BIND)
-	if err == OK:
-		if _consecutive_failures > 0:
-			print("[MCPRuntimeServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, _bound_port, _consecutive_failures])
-		_consecutive_failures = 0
-		_relisten_countdown = 0
-		return
-	_consecutive_failures += 1
-	if _consecutive_failures == 1:
-		var hint := ""
-		if err == ERR_ALREADY_IN_USE:
-			hint = " (ERR_ALREADY_IN_USE — will retry silently every ~1s)"
-		push_warning("[MCPRuntimeServer] rebind %s:%d failed (err %d)%s" % [BIND, _bound_port, err, hint])
-	_tcp_server.stop()
-	_tcp_server = null
-	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
+# Fired by the transport when a fresh port scan binds: publish the port so the
+# bridge can discover Mode B. (The editor server has no equivalent — it publishes
+# via the registry lifecycle in plugin.gd.)
+func _on_bound(port: int) -> void:
+	RegistryClient.set_runtime(port)
 
 
 func _process(_delta: float) -> void:
 	LogBuffer.poll()
 	# Keep the listener up across transient socket loss. Editor / release
 	# gating from _ready prevents _process from running where it shouldn't
-	# (set_process(false)), so reaching here = debug-build runtime.
-	if _tcp_server == null or not _tcp_server.is_listening():
-		_try_listen()
-		return
-
-	while _tcp_server.is_connection_available():
-		var stream := _tcp_server.take_connection()
-		var peer := WebSocketPeer.new()
-		var buffer_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
-		peer.inbound_buffer_size = buffer_kb * 1024
-		peer.outbound_buffer_size = buffer_kb * 1024
-		var accept_err := peer.accept_stream(stream)
-		if accept_err != OK:
-			push_warning("[MCPRuntimeServer] accept_stream failed (%d)" % accept_err)
-			continue
-		_peers.append(peer)
-		_peer_connect_ms[peer] = Time.get_ticks_msec()
-
-	var closed_peers: Array[WebSocketPeer] = []
-	var now_ms := Time.get_ticks_msec()
-	for peer in _peers:
-		peer.poll()
-		var state := peer.get_ready_state()
-		if state == WebSocketPeer.STATE_CLOSED:
-			closed_peers.append(peer)
-			continue
-		if state != WebSocketPeer.STATE_OPEN:
-			continue
-		if not _peer_authed.has(peer):
-			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _AUTH_TIMEOUT_MS:
-				peer.close(1008, "auth timeout")
-				closed_peers.append(peer)
-				continue
-		while peer.get_available_packet_count() > 0:
-			var text := peer.get_packet().get_string_from_utf8()
-			_handle_message(peer, text)
-
-	for peer in closed_peers:
-		_peers.erase(peer)
-		_peer_authed.erase(peer)
-		_peer_connect_ms.erase(peer)
+	# (set_process(false)), so reaching here = debug-build runtime. Inline pump
+	# (no call_deferred — a running game has no EditorFileSystem reentrancy).
+	_transport.pump()
 
 
 func _handle_message(peer: WebSocketPeer, text: String) -> void:
@@ -236,13 +151,10 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		_send_error(peer, null, -32600, "Invalid Request: top-level must be an object")
 		return
 
-	# Auth handshake.
-	if not _peer_authed.has(peer):
-		if MCPAuth.validate(msg, _session_token):
-			_peer_authed[peer] = true
-			peer.send_text(JSON.stringify({"authed": true}))
-		else:
-			peer.close(1008, "invalid token")
+	# Auth handshake — the transport validates, marks authed, and sends the
+	# default {authed:true} ack (the runtime supplies no ack override).
+	if not _transport.is_authed(peer):
+		_transport.validate_auth(peer, msg)
 		return
 
 	var id = msg.get("id", null)
