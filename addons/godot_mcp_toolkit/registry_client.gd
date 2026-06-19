@@ -16,13 +16,10 @@ extends RefCounted
 ## _hub.gd (RegistryClient) or directly.
 
 const _VersionUtils := preload("res://addons/godot_mcp_toolkit/mcp_version_utils.gd")
+const FileLock := preload("res://addons/godot_mcp_toolkit/file_lock.gd")
 
 const _REGISTRY_FILENAME := "projects.json"
 const _ENTRIES_DIR := "entries"
-const _LOCK_STALE_SEC := 10
-const _LOCK_BASE_RETRY_MS := 50
-const _LOCK_MAX_RETRY_MS := 1000
-const _LOCK_RETRIES := 10
 
 
 # -- Path helpers --------------------------------------------------------------
@@ -97,67 +94,17 @@ static func _lock_path() -> String:
 	return registry_path() + ".lock"
 
 
-## Returns true if the lock was acquired. On stale-lock detection the
-## stale file is overwritten. Exponential backoff: 50, 100, 200, ... ms
-## capped at 1000 ms per retry. PID-aware stale detection recovers
-## locks from dead processes immediately.
-static func _acquire_lock() -> bool:
-	var lp := _lock_path()
-	var delay_ms := _LOCK_BASE_RETRY_MS
-	for attempt in _LOCK_RETRIES:
-		if FileAccess.file_exists(lp):
-			var f := FileAccess.open(lp, FileAccess.READ)
-			if f != null:
-				var content := f.get_as_text().strip_edges()
-				f.close()
-				var parts := content.split(":")
-				var lock_pid := int(parts[0]) if parts.size() >= 2 else 0
-				var lock_ts := int(parts[-1])
-				# PID check: if the locker is dead, treat as stale immediately.
-				var pid_dead := lock_pid > 0 and not OS.is_process_running(lock_pid)
-				if not pid_dead:
-					var age := int(Time.get_unix_time_from_system()) - lock_ts
-					if age < _LOCK_STALE_SEC:
-						if attempt > 0:
-							push_warning("[MCPRegistry] lock contention (attempt %d/%d, held by PID %d)" % [attempt + 1, _LOCK_RETRIES, lock_pid])
-						OS.delay_msec(delay_ms)
-						delay_ms = mini(delay_ms * 2, _LOCK_MAX_RETRY_MS)
-						continue
-				# Stale lock (age or dead PID) — fall through to overwrite.
-		var f := FileAccess.open(lp, FileAccess.WRITE)
-		if f == null:
-			OS.delay_msec(delay_ms)
-			delay_ms = mini(delay_ms * 2, _LOCK_MAX_RETRY_MS)
-			continue
-		f.store_string("%d:%d" % [OS.get_process_id(), int(Time.get_unix_time_from_system())])
-		f.close()
-		return true
-	push_warning("[MCPRegistry] failed to acquire lock after %d retries; proceeding anyway" % _LOCK_RETRIES)
-	# Force-write the lock as a last resort so the caller can proceed.
-	var f := FileAccess.open(lp, FileAccess.WRITE)
-	if f != null:
-		f.store_string("%d:%d" % [OS.get_process_id(), int(Time.get_unix_time_from_system())])
-		f.close()
-	return true
-
-
-static func _release_lock() -> void:
-	var lp := _lock_path()
-	if FileAccess.file_exists(lp):
-		DirAccess.remove_absolute(lp)
-
-
 ## Public lock wrappers for callers that need to serialise a machine-wide
 ## read-modify-write on a sibling file in registry_dir() across concurrent
 ## editor instances (e.g. the unfocused-sleep backup — see mcp_server.gd /
 ## unfocused_backup.gd). Same lock as the registry's own writes, so backup and
 ## registry operations are mutually exclusive (both are rare and fast).
 static func acquire_lock() -> bool:
-	return _acquire_lock()
+	return FileLock.acquire(_lock_path())
 
 
 static func release_lock() -> void:
-	_release_lock()
+	FileLock.release(_lock_path())
 
 
 # -- Entry-file I/O -----------------------------------------------------------
@@ -433,18 +380,18 @@ static func register(port: int, token_path: String, lsp_host: String, lsp_port: 
 	# Write own entry file — no race: each editor writes a unique file.
 	_write_entry(my_entry)
 	# Rebuild projects.json from all entry files (idempotent).
-	_acquire_lock()
+	acquire_lock()
 	_rebuild_projects_json()
-	_release_lock()
+	release_lock()
 	print("[MCPRegistry] registered %s on port %d" % [key, port])
 
 
 static func deregister() -> void:
 	var key := _project_key()
 	_delete_entry()
-	_acquire_lock()
+	acquire_lock()
 	_rebuild_projects_json()
-	_release_lock()
+	release_lock()
 	print("[MCPRegistry] deregistered %s" % key)
 
 
@@ -471,9 +418,9 @@ static func set_runtime(runtime_port: int) -> void:
 		"lsp_port": null,
 	}
 	_write_entry_at(_runtime_entry_file_path(), entry)
-	_acquire_lock()
+	acquire_lock()
 	_rebuild_projects_json()
-	_release_lock()
+	release_lock()
 	print("[MCPRegistry] runtime port %d registered for %s" % [runtime_port, key])
 
 
@@ -484,9 +431,9 @@ static func clear_runtime() -> void:
 	if not FileAccess.file_exists(path):
 		return  # Already cleared / never set
 	_delete_entry_at(path)
-	_acquire_lock()
+	acquire_lock()
 	_rebuild_projects_json()
-	_release_lock()
+	release_lock()
 
 
 ## Deferred re-verify: called a few seconds after initial register() to
@@ -503,9 +450,9 @@ static func ensure_registered(port: int, token_path: String, lsp_host: String, l
 		entry["lsp_host"] = lsp_host
 		entry["lsp_port"] = lsp_port
 		_write_entry(entry)
-		_acquire_lock()
+		acquire_lock()
 		_rebuild_projects_json()
-		_release_lock()
+		release_lock()
 		return
 	# Entry file missing or wrong PID — re-create. The editor entry never carries
 	# runtime fields (the runtime child owns <hash>.runtime.json), so pass null;
@@ -513,9 +460,9 @@ static func ensure_registered(port: int, token_path: String, lsp_host: String, l
 	push_warning("[MCPRegistry] entry file missing during deferred re-verify; re-creating for %s" % key)
 	var new_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, null, null)
 	_write_entry(new_entry)
-	_acquire_lock()
+	acquire_lock()
 	_rebuild_projects_json()
-	_release_lock()
+	release_lock()
 	print("[MCPRegistry] re-registered %s on port %d (deferred)" % [key, port])
 
 
