@@ -118,7 +118,7 @@ Available under **Project &rarr; Tools** and in the Command Palette (Ctrl+Shift+
 Security is a first-class design goal — not an afterthought.
 
 - **Session auth** — A random 64-character hex token is generated on every plugin start. The MCP server reads it from disk automatically; unauthorized WebSocket connections are rejected.
-- **Filesystem sandbox** — All file operations are restricted to `res://` by default. Path traversal (`..`), absolute OS paths, and symlink escapes are blocked by `FileGuard`.
+- **Filesystem sandbox** — All file operations are restricted to `res://` by default. `FileGuard` blocks path traversal (`..`), absolute OS paths, and paths that resolve outside the boundary after lexical canonicalization, and denies the plugin's own source directory. (Canonicalization is lexical — not OS-symlink resolution.)
 - **Feature gates** — Dangerous capabilities (code execution, method invocation, user-data access) require explicit opt-in via the dock or Project Settings. Three individually gated features with confirmation dialogs for RCE-class capabilities.
 - **Audit log** — Every tool call is logged with an ISO-8601 timestamp and parameter hash. Append-only, per-write flush for crash safety, configurable max size.
 - **Response caps** — Script reads and WebSocket buffers are size-limited to prevent accidental exfiltration of large files.

@@ -59,6 +59,7 @@ func _init() -> void:
 	_test_stale_instance_hint()
 	_test_compile_error_message()
 	_test_file_guard()
+	_test_file_guard_self_protect()
 	_test_untrusted()
 	_test_repo_url_allowlist()
 	_test_compare_versions()
@@ -163,6 +164,42 @@ func _test_file_guard() -> void:
 		_ok(FileGuard.resolve_safe(p).get("error") != null, "fixture DENY res://: %s" % p)
 	_ok(FileGuard.resolve_safe("user://x.json").get("error") != null, "fixture DENY wrong-prefix user→project")
 	_ok(FileGuard.resolve_safe("res://x.gd", ["user://"]).get("error") != null, "fixture DENY wrong-prefix project→user")
+
+
+# --- FileGuard self-protect (concern 020) ---------------------------------
+# resolve_safe() denies the plugin's OWN source dir, symmetric with the
+# resolve_safe_user() keystone that protects user://addons/godot_mcp_toolkit/.
+# FileGuard is operation-agnostic, so this guards both reads and writes. The
+# load-bearing edge is the trailing-slash boundary: a sibling whose name merely
+# starts the same (…_extras) must stay editable, and any OTHER addon is fair game.
+func _test_file_guard_self_protect() -> void:
+	_begin("FileGuard self-protect (concern 020)")
+	# A real file under the plugin's source dir → denied (PATH_DENIED).
+	var hit: Dictionary = FileGuard.resolve_safe("res://addons/godot_mcp_toolkit/file_guard.gd")
+	_eq(hit.get("error"), "PATH_DENIED", "plugin source file → PATH_DENIED")
+	# The bare dir itself (no trailing slash) → denied via the equality arm.
+	_eq(FileGuard.resolve_safe("res://addons/godot_mcp_toolkit").get("error"), "PATH_DENIED",
+		"bare plugin dir → PATH_DENIED")
+	# A nested path deeper in the subtree → denied.
+	_eq(FileGuard.resolve_safe("res://addons/godot_mcp_toolkit/commands/script_commands.gd").get("error"),
+		"PATH_DENIED", "nested plugin source → PATH_DENIED")
+	# Traversal that canonicalizes INTO the protected dir → denied (the check runs
+	# on the simplified virtual path). NOTE: the .. reject also catches this, but
+	# the assertion still pins that such a path never reaches I/O.
+	_eq(FileGuard.resolve_safe("res://foo/../addons/godot_mcp_toolkit/x.gd").get("error"),
+		"PATH_DENIED", "traversal into plugin dir → PATH_DENIED")
+	# Sibling whose NAME merely starts the same → ALLOWED (trailing-slash boundary).
+	# This is the wrong-but-plausible bug a bare-prefix begins_with would introduce.
+	_ok(FileGuard.resolve_safe("res://addons/godot_mcp_toolkit_extras/x.gd").get("error") == null,
+		"sibling _extras (name-prefix collision) → ALLOWED")
+	# Some OTHER addon the user may legitimately edit → ALLOWED.
+	_ok(FileGuard.resolve_safe("res://addons/other_addon/x.gd").get("error") == null,
+		"unrelated addon → ALLOWED")
+	# A file that merely contains the dir name lower in the tree is NOT the plugin
+	# source (only the res://addons/ root is protected) → ALLOWED.
+	_ok(FileGuard.resolve_safe("res://scenes/godot_mcp_toolkit/x.gd").get("error") == null,
+		"same name under a different root → ALLOWED")
+	print("")
 
 
 # --- Untrusted envelope pin (Part C, 41m-quater) --------------------------

@@ -26,8 +26,10 @@ the host from a malicious extension.
 - `FileGuard.resolve_safe(path, ["res://"])` (the **project guard**) and
   `resolve_safe_user(path)` (the **user guard**, `user://`, also denies plugin internals) are
   called by **every** fs handler before any I/O. They reject empty / `..` / absolute / UNC /
-  non-allowed-prefix **and canonicalize** (`globalize_path → simplify_path`) to catch symlink
-  escapes. Canonicalization is editor-side, so only the toolkit can do it.
+  non-allowed-prefix **and canonicalize** (`globalize_path → simplify_path`) to re-assert the
+  boundary after lexical `.`/`..` collapse. Canonicalization is **lexical only** — it does *not*
+  resolve OS symlinks, so a symlink escape is **out of scope** (single-user localhost threat
+  model; see 41n concern 021). Canonicalization is editor-side, so only the toolkit can do it.
 - The server adds a **purely syntactic** pre-filter (`src/path_guard.ts`), declared per-tool
   via `ToolDef.pathParams` and wired once into dispatch (`registerToolWrapped`), that
   fast-fails an out-of-bounds path with `PATH_DENIED` **before** the WS round-trip. It is a

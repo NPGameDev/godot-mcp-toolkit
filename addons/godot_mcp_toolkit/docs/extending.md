@@ -205,7 +205,7 @@ LLM fills in, validate it so a traversal/escape path (`res://../../secret`,
 
   ```gdscript
   const FileGuard = preload("res://addons/godot_mcp_toolkit/file_guard.gd")
-  var guard := FileGuard.resolve_safe(params.get("file_path", ""))   # res://, symlink-safe
+  var guard := FileGuard.resolve_safe(params.get("file_path", ""))   # res://, path-boundary checked
   if guard["error"] != null:
       return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
   # user:// paths: FileGuard.resolve_safe_user(path) → {ok, error_code, error_message}
