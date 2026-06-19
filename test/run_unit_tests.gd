@@ -36,6 +36,7 @@ func _init() -> void:
 	_test_registry()
 	_test_registry_entry()
 	_test_registry_merge()
+	_test_extension_collision_guard()
 	_test_options_builder()
 	_test_extension_options()
 	_test_annotation_mapping()
@@ -490,6 +491,82 @@ func _test_registry_merge() -> void:
 	var cleared: Dictionary = RegistryClient._merge_by_path([editor_entry], [])
 	_eq(cleared.get("res://proj", {}).get("runtime_port", -99), null,
 		"clear: overlay gone → runtime_port back to null")
+
+	print("")
+
+
+# --- Extension-load collision guard (concern 046) -------------------------
+# registry.add() is last-writer-wins by default, but during a bracketed
+# extension load (begin/end_extension_load — what extension_loader.gd wraps each
+# register() with) an add() of an ALREADY-registered name is REFUSED, not
+# overwritten: first-loaded wins. This pins that the incumbent (built-in OR a
+# prior extension) is never hijacked and the refusal is reported per offending
+# name. Pure/registry-level — no editor, no real extension files.
+
+func _test_extension_collision_guard() -> void:
+	_begin("Extension-load collision guard")
+	var reg := MCPToolkitCommandRegistry.new()
+
+	# Stand in for a built-in command and one already-loaded extension command.
+	# Distinct read-only flags let us prove the incumbent options are untouched.
+	reg.add("scene.create_node", _noop, MCPToolkitCommandOptions.new().mark_read_only())
+	reg.add("acme.do_thing", _noop, MCPToolkitCommandOptions.new())
+	reg.mark_extension("acme.do_thing")
+
+	# 1. An extension whose add() targets a BUILT-IN name is refused; the built-in
+	#    handler + options stay exactly as registered.
+	reg.begin_extension_load()
+	reg.add("scene.create_node", _noop, MCPToolkitCommandOptions.new())  # tries to hijack
+	var r1 := reg.end_extension_load()
+	_eq(r1.size(), 1, "built-in collision → one refusal recorded")
+	_eq(str(r1[0].get("method", "")), "scene.create_node", "refusal names the colliding command")
+	_ok(reg.is_read_only("scene.create_node"),
+			"built-in incumbent untouched (options preserved, not overwritten)")
+	_ok(not reg.get_extension_methods().has("scene.create_node"),
+			"_extension_methods never contains the built-in name after a colliding load")
+
+	# 2. Two extensions registering the same NEW name → first-writer-wins; the
+	#    second is refused. (Extension A's add lands; extension B's is refused.)
+	reg.begin_extension_load()
+	reg.add("shared.tool", _noop, MCPToolkitCommandOptions.new().mark_idempotent())  # ext A — lands
+	var r_a := reg.end_extension_load()
+	reg.mark_extension("shared.tool")
+	_eq(r_a.size(), 0, "ext A first add of a new name → not refused")
+	_ok(reg.has_command("shared.tool"), "ext A's command is registered")
+
+	reg.begin_extension_load()
+	reg.add("shared.tool", _noop, MCPToolkitCommandOptions.new())  # ext B — refused
+	var r_b := reg.end_extension_load()
+	_eq(r_b.size(), 1, "ext B duplicate of the same new name → refused (first-writer-wins)")
+	_ok(reg.get_command_metadata("shared.tool")["annotations"]["idempotentHint"],
+			"ext A's options win — ext B did not overwrite")
+
+	# 3. Refusal is per-name, not all-or-nothing: a non-colliding add in the SAME
+	#    load still succeeds alongside a refused one.
+	reg.begin_extension_load()
+	reg.add("acme.do_thing", _noop, MCPToolkitCommandOptions.new())  # collides → refused
+	reg.add("acme.brand_new", _noop, MCPToolkitCommandOptions.new())  # new → lands
+	var r3 := reg.end_extension_load()
+	_eq(r3.size(), 1, "mixed load → exactly the colliding name refused")
+	_eq(str(r3[0].get("method", "")), "acme.do_thing", "the colliding name is the refused one")
+	_ok(reg.has_command("acme.brand_new"), "non-colliding add in the same load still succeeds")
+
+	# 4. Idempotent reload: a name that was REMOVED first is no longer present, so
+	#    re-adding it during the next load is NOT a collision (the loader removes a
+	#    modified/removed extension's methods before re-registering — its own name
+	#    must re-register, only a FOREIGN name is refused).
+	reg.remove("acme.brand_new")
+	reg.begin_extension_load()
+	reg.add("acme.brand_new", _noop, MCPToolkitCommandOptions.new())  # re-add own just-removed name
+	var r4 := reg.end_extension_load()
+	_eq(r4.size(), 0, "re-adding a just-removed own name → not refused")
+	_ok(reg.has_command("acme.brand_new"), "extension re-registers its own command after removal")
+
+	# 5. Outside a load window, add() keeps its documented last-writer-wins
+	#    behaviour (the guard is scoped strictly to begin/end_extension_load).
+	reg.add("acme.brand_new", _noop, MCPToolkitCommandOptions.new().mark_read_only())
+	_ok(reg.is_read_only("acme.brand_new"),
+			"no active load window → add() still overwrites (last-writer-wins)")
 
 	print("")
 

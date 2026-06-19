@@ -15,9 +15,57 @@ var _commands: Dictionary = {}
 var _extension_methods: Array[String] = []
 var _version_blocked: Dictionary = {}  # method -> {min, max, engine}
 
+# Extension-load collision guard. While an extension's register() runs (bracketed
+# by the loader with begin/end_extension_load), any add() of a name that is ALREADY
+# registered is REFUSED — recorded here, never written to _commands. This closes the
+# accidental-reuse footgun at load time: a well-meaning author who reuses a built-in
+# name (or the name of an already-loaded extension) inside register() gets an
+# editor-facing error rather than a silent overwrite; first-loaded wins, atomically.
+# The colliding add is a no-op at the moment it is attempted: no transient overwrite,
+# no chance for the foreign handler's Callable to become GC-broken.
+# Scope: guard is window-scoped — only active during register(). An extension that
+# stashes the registry reference and calls add() after register() returns (via a
+# signal, timer, or deferred call) still lands as last-writer-wins. That path is out
+# of scope by design (ADR 0009 — installed extensions are full-trust in-process code;
+# the guard protects against accidental collision, not deliberate post-load adds).
+# The loader drains _ext_load_refused after register() and surfaces the error to the
+# editor only — never into the MCP response stream. See extension_loader.gd and
+# docs/extending.md (collision policy: first-loaded wins within the load window).
+var _ext_load_guard_active := false
+var _ext_load_refused: Array[Dictionary] = []  # [{method, description}]
+
+
+## Open the extension-load collision window. While open, add() refuses any name
+## already present (records it to the refused list instead of overwriting).
+## The loader calls this immediately before invoking an extension's register().
+func begin_extension_load() -> void:
+	_ext_load_guard_active = true
+	_ext_load_refused.clear()
+
+
+## Close the extension-load collision window and return the names refused during
+## it (each {method, description}), so the loader can raise an editor-facing
+## error attributing the collision to the offending extension. Returns [] when
+## nothing collided.
+func end_extension_load() -> Array[Dictionary]:
+	_ext_load_guard_active = false
+	var refused: Array[Dictionary] = _ext_load_refused.duplicate()
+	_ext_load_refused.clear()
+	return refused
+
 
 func add(method: String, handler: Callable,
 		options: MCPToolkitCommandOptions) -> void:
+	# Collision guard (active only during a bracketed extension load): refuse to
+	# overwrite an existing command. Recorded for the loader to report; the write
+	# below never happens, so the incumbent handler is left fully intact.
+	if _ext_load_guard_active and _commands.has(method):
+		_ext_load_refused.append({
+			"method": method,
+			"description": options.to_dict().get("description", ""),
+		})
+		return
+
 	var opts: Dictionary = options.to_dict()
 
 	# Version gate: block commands incompatible with the running engine.

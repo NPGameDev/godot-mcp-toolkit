@@ -563,11 +563,27 @@ func _load_extension(class_name_str: String, script_path: String, registry: MCPT
 	# Record methods before registration to detect new ones.
 	var before: Array = registry.get_all_methods()
 
+	# Open the load-time collision-guard window around register(). While it is
+	# active, any add() of an already-registered name (built-in or earlier extension)
+	# is refused in the registry rather than silently overwriting it — closing the
+	# accidental-reuse footgun that registry.add() would otherwise allow (it is
+	# last-writer-wins outside this window). First-loaded wins within the window;
+	# the loser is reported below. Note: the guard is window-scoped — it does NOT
+	# prevent a full-trust extension from deferring an add() past register() (ADR 0009).
+	registry.begin_extension_load()
+
 	# Call register — handle both GDScript (snake_case) and C# (PascalCase).
 	if instance.has_method("Register"):
 		instance.Register(registry, server)
 	elif instance.has_method("register"):
 		instance.register(registry, server)
+
+	# Drain + report any collisions the guard refused during register(). These
+	# went to the editor (push_error + a dock toast where available) only — never
+	# into the MCP response stream, so the LLM sees no extra noise.
+	var refused: Array[Dictionary] = registry.end_extension_load()
+	for entry: Dictionary in refused:
+		_report_collision(class_name_str, str(entry.get("method", "")))
 
 	# Validate newly registered methods.
 	var after: Array = registry.get_all_methods()
@@ -593,13 +609,40 @@ func _load_extension(class_name_str: String, script_path: String, registry: MCPT
 			new_count += 1
 
 	if new_count == 0:
-		push_warning("[MCPExtensions] '%s': registered zero new commands" % class_name_str)
+		# When every add() collided, the refusals above are the reason — say so
+		# rather than a bare "zero new commands". Not retaining the instance is
+		# correct here: it registered nothing live, so there is no live Callable
+		# bound to it (no GC-break risk), and every incumbent command it tried to
+		# overwrite is untouched.
+		if refused.is_empty():
+			push_warning("[MCPExtensions] '%s': registered zero new commands" % class_name_str)
+		else:
+			push_warning("[MCPExtensions] '%s': registered zero new commands — all %d add(s) collided with already-registered commands" % [class_name_str, refused.size()])
 		return false
 
 	# Retain the instance reference (critical for C# — prevents GC from
 	# invalidating Callables).
 	_instances.append(instance)
 	return true
+
+
+## Surface a refused extension command collision to the EDITOR only — never the
+## MCP response stream (no agent-facing noise). push_error always fires (Output
+## panel + Errors tab); a dock toast is added when the EditorToaster exists
+## (Godot 4.4+; null-safe degrade below). Names the offending extension + the
+## command it tried to claim. The colliding add() was already refused in the
+## registry, so this is a report, not a mutation.
+func _report_collision(class_name_str: String, method: String) -> void:
+	var msg := (
+		"MCP Toolkit: extension '%s' tried to register '%s', " % [class_name_str, method]
+		+ "but that command is already registered — keeping the existing one. "
+		+ "Rename the extension's command to a unique <namespace>.<action>.")
+	push_error("[MCPExtensions] " + msg)
+	# EditorToaster is 4.4+ — get_toaster() returns null below that, so degrade
+	# to the push_error alone. Severity 2 == EditorToaster.SEVERITY_ERROR.
+	var toaster = _Hub.get_toaster()
+	if toaster != null:
+		toaster.push_toast(msg, 2)
 
 
 static func _register_meta(registry: MCPToolkitCommandRegistry) -> void:
