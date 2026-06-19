@@ -96,8 +96,7 @@ The bottom-panel dock provides at-a-glance status and full control:
 
 | Section | What it shows |
 |---------|---------------|
-| **Server Status** | Listening address, connected peers, last activity, runtime port during playtests |
-| **Feature Gates** | Toggle switches for gated capabilities with risk indicators and sync status |
+| **Server Status** | Listening address, connected peers, read-only-mode badge, last activity, runtime port during playtests |
 | **Audit Log** | Enable/disable, size cap, view/clear the append-only tool-call log |
 | **Security & Limits** | Regenerate auth token, configure script-read and WebSocket buffer caps |
 
@@ -119,7 +118,7 @@ Security is a first-class design goal — not an afterthought.
 
 - **Session auth** — A random 64-character hex token is generated on every plugin start. The MCP server reads it from disk automatically; unauthorized WebSocket connections are rejected.
 - **Filesystem sandbox** — All file operations are restricted to `res://` by default. `FileGuard` blocks path traversal (`..`), absolute OS paths, and paths that resolve outside the boundary after lexical canonicalization, and denies the plugin's own source directory. (Canonicalization is lexical — not OS-symlink resolution.)
-- **Feature gates** — Dangerous capabilities (code execution, method invocation, user-data access) require explicit opt-in via the dock or Project Settings. Three individually gated features with confirmation dialogs for RCE-class capabilities.
+- **Read-only mode & per-tool control** — Set `GODOT_MCP_READ_ONLY=1` in `.mcp.json` and the MCP server hides every mutating tool (code execution, method calls, `user://` writes — all `destructiveHint` tools) from the agent: a server-side guarantee, independent of the editor. For finer control, block individual high-risk tools through your agent's own permission system (e.g. `.claude/settings.json` deny rules). See `docs/security-recommendations.md`.
 - **Audit log** — Every tool call is logged with an ISO-8601 timestamp and parameter hash. Append-only, per-write flush for crash safety, configurable max size.
 - **Response caps** — Script reads and WebSocket buffers are size-limited to prevent accidental exfiltration of large files.
 - **Untrusted envelopes** — Content returned from the editor is wrapped in per-call nonce-tagged envelopes, mitigating prompt injection from file contents.
@@ -151,13 +150,11 @@ When Claude Code runs in pipe mode (`claude -p "..."`), it does not process `too
 | Folder & File | 3 | Create/delete folders, delete files |
 | Asset | 3 | List, dependencies, import (image/audio/font/3D) |
 | Playtest | 2 | Start/stop game with runtime connection |
-| Runtime | 6 | Screenshot, node inspection, game log, input simulation, animation, eval\* |
+| Runtime | 6 | Screenshot, node inspection, game log, input simulation, animation, eval |
 | Signals | 3 | List, connect/disconnect, emit |
 | Animation | 2 | Add/remove keyframes, list keys |
-| Input Map | 2 | Add/remove actions and events\* |
-| User Data | 4 | Read/write/delete/list `user://` files\* |
-
-\*Feature-gated — requires explicit opt-in.
+| Input Map | 2 | Add/remove actions and events |
+| User Data | 4 | Read/write/delete/list `user://` files |
 
 ### Headless mode compatibility
 
@@ -169,7 +166,7 @@ When Godot runs with `--headless`, the plugin loads and the WebSocket server sta
 | Folder & File | ✅ | Pure filesystem operations |
 | Resource | ✅ | Load, write, delete — file-based |
 | Asset | ✅ | List, dependencies, import — uses EditorFileSystem metadata |
-| User Data | ✅ | File I/O on `user://` paths (requires feature-gate opt-in) |
+| User Data | ✅ | File I/O on `user://` paths |
 | ClassDB | ✅ | Engine metadata — always available |
 | Project Settings | ✅ | `project_get_settings`, `project_set_setting` |
 | Editor (non-visual) | ✅ | Save, reload scripts, console, errors, wait for idle |
