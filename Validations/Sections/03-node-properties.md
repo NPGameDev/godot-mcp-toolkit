@@ -108,6 +108,15 @@
 > **REGRESSION WATCH (FIX-5, T:98c02f3):** If `PackedVector2Array` type tag is
 > rejected with "unknown type", packed array coercion has regressed. Flag as **Major**.
 
+> **REGRESSION WATCH (concern 053):** Reading a Packed property
+> (`PackedVector2Array`/`PackedVector3Array`/`PackedColorArray`) back via
+> `node_get_property` must now return the TAGGED dict form
+> `{"type":"PackedVector2Array","values":[…]}`, NOT a `var_to_str` string like
+> `"PackedVector2Array(1, 2, …)"`. Read-form must equal write-form so the LLM can
+> round-trip (read→modify→write `Polygon2D.polygon`, `Line2D.points`, etc.). A
+> string read-back means the `serialize_value` symmetry regressed. (The unit suite
+> holds the authoritative coerce∘serialize round-trip.) Flag as **Major**.
+
 **3.21** `node_set_property` (integer font size) — node_path=`Sv2Label`, property=`theme_override_font_sizes/font_size`, value=24
 - **Expect:** success
 

@@ -267,6 +267,24 @@ static func serialize_value(value: Variant) -> Variant:
 			}
 		TYPE_NODE_PATH:
 			return {"type": "NodePath", "path": str(value)}
+		TYPE_PACKED_VECTOR2_ARRAY:
+			# Emit the tagged form coerce_value parses back: each element is
+			# itself a tagged {type:"Vector2",x,y} dict (recurse so the round-trip
+			# is exact). Iterating a typed PackedVector2Array yields Vector2 elements.
+			var packed_v2: Array = []
+			for element in value:
+				packed_v2.append(serialize_value(element))
+			return {"type": "PackedVector2Array", "values": packed_v2}
+		TYPE_PACKED_VECTOR3_ARRAY:
+			var packed_v3: Array = []
+			for element in value:
+				packed_v3.append(serialize_value(element))
+			return {"type": "PackedVector3Array", "values": packed_v3}
+		TYPE_PACKED_COLOR_ARRAY:
+			var packed_col: Array = []
+			for element in value:
+				packed_col.append(serialize_value(element))
+			return {"type": "PackedColorArray", "values": packed_col}
 		TYPE_STRING_NAME:
 			return str(value)
 		TYPE_ARRAY:

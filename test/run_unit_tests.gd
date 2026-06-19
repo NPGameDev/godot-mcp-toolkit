@@ -2026,10 +2026,12 @@ func _test_tileset_edit_key_enforcement() -> void:
 # as a tagged dict, the Godot-value round-trip coerce_value(serialize_value(V))
 # must reproduce V exactly (native compare — no float-string fragility).
 #
-# Three Packed* tags + LayerMask are coerce-only: serialize_value has no
-# TYPE_PACKED_* / mask-tag case, so the Godot→JSON leg does NOT emit the tagged
-# form (Packed* fall through var_to_str; a mask is a bare int). Those are
-# asserted in the JSON→Godot direction instead — the tag coerce_value owns.
+# Packed* tags (PackedVector2/3Array, PackedColorArray) are bidirectionally
+# symmetric as of concern 053 — serialize_value emits the tagged form, so the full
+# native round-trip coerce_value(serialize_value(V)) == V holds (asserted below).
+# LayerMask stays coerce-only BY DESIGN: a mask is a bare int with no per-value
+# marker, so serialize_value cannot tag it without tagging every int — it reads
+# back as a plain int, itself writable as-is (no value round-trip break).
 # Resource/NewResource are skipped: path-based (ResourceLoader), not value-symmetric.
 
 func _test_coerce_roundtrip() -> void:
@@ -2060,28 +2062,44 @@ func _test_coerce_roundtrip() -> void:
 	var npath: NodePath = NodePath("Player/Sprite2D:position")
 	_ok(Coerce.coerce_value(Coerce.serialize_value(npath)) == npath, "NodePath round-trips")
 
-	# Coerce-only tags (no tagged serialize leg): assert the JSON→Godot direction.
+	# Coerce leg: assert coerce_value parses the EXACT documented tagged wire form
+	# (JSON→Godot). For Packed* this complements the symmetric round-trip below — it
+	# pins the wire shape itself, not just coerce∘serialize self-consistency.
+	# LayerMask is coerce-only by design (see header).
 	var pv2: Variant = Coerce.coerce_value({
 		"type": "PackedVector2Array",
 		"values": [{"type": "Vector2", "x": 1.0, "y": 2.0}, {"type": "Vector2", "x": 3.0, "y": 4.0}],
 	})
 	_ok(pv2 == PackedVector2Array([Vector2(1.0, 2.0), Vector2(3.0, 4.0)]),
-			"PackedVector2Array coerces from tagged dict (coerce-only tag)")
+			"PackedVector2Array coerces from the documented tagged form")
 	var pv3: Variant = Coerce.coerce_value({
 		"type": "PackedVector3Array",
 		"values": [{"type": "Vector3", "x": 1.0, "y": 2.0, "z": 3.0}],
 	})
 	_ok(pv3 == PackedVector3Array([Vector3(1.0, 2.0, 3.0)]),
-			"PackedVector3Array coerces from tagged dict (coerce-only tag)")
+			"PackedVector3Array coerces from the documented tagged form")
 	var pcol: Variant = Coerce.coerce_value({
 		"type": "PackedColorArray",
 		"values": [{"type": "Color", "r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}],
 	})
 	_ok(pcol == PackedColorArray([Color(1.0, 0.0, 0.0, 1.0)]),
-			"PackedColorArray coerces from tagged dict (coerce-only tag)")
+			"PackedColorArray coerces from the documented tagged form")
 	# LayerMask: numeric layers 1 and 3 → bits 0 and 2 → 0b101 = 5 (no ProjectSettings).
 	var mask: Variant = Coerce.coerce_value({"type": "LayerMask", "layers": [1, 3]})
 	_eq(mask, 5, "LayerMask coerces layers [1,3] → bitmask 5 (coerce-only tag)")
+
+	# Concern 053: serialize_value now emits the tagged Packed* form (was a
+	# var_to_str string), so the Packed* tags are bidirectionally symmetric.
+	# Assert the full native round-trip coerce_value(serialize_value(V)) == V.
+	var pv2_native: PackedVector2Array = PackedVector2Array([Vector2(1.0, 2.0), Vector2(-3.5, 4.0)])
+	_ok(Coerce.coerce_value(Coerce.serialize_value(pv2_native)) == pv2_native,
+			"PackedVector2Array round-trips (now symmetric)")
+	var pv3_native: PackedVector3Array = PackedVector3Array([Vector3(1.0, 2.0, 3.0), Vector3(-4.0, 5.5, 6.0)])
+	_ok(Coerce.coerce_value(Coerce.serialize_value(pv3_native)) == pv3_native,
+			"PackedVector3Array round-trips (now symmetric)")
+	var pcol_native: PackedColorArray = PackedColorArray([Color(1.0, 0.0, 0.0, 1.0), Color(0.25, 0.5, 0.75, 0.5)])
+	_ok(Coerce.coerce_value(Coerce.serialize_value(pcol_native)) == pcol_native,
+			"PackedColorArray round-trips (now symmetric)")
 
 	print("")
 
