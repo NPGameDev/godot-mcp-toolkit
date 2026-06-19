@@ -23,6 +23,7 @@ const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_co
 const TilesetCommands := preload("res://addons/godot_mcp_toolkit/commands/tileset_commands.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
+const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
 
 var _passed := 0
 var _failed := 0
@@ -49,6 +50,7 @@ func _init() -> void:
 	_test_watchdog_timeout()
 	_test_scene_lease()
 	_test_signal_pair_resolver()
+	_test_mutation_watchdog()
 	_test_safe_scene_ops()
 	_test_tool_context()
 	_test_compile_text_filter()
@@ -1000,6 +1002,84 @@ func _test_signal_pair_resolver() -> void:
 			"resolve_pair bad method → 'method' message")
 
 	root.free()
+	print("")
+
+
+# --- MutationWatchdog (concern 007 C5) -------------------------------------
+# The pure timer + generation child that recovers the mutation lock when an
+# in-flight mutation aborts/never resolves. Fully headless-testable: inject a fake
+# force_clear Callable (recording into a Dictionary so the lambda can mutate it),
+# and pass the deadline as a value to arm() — a deadline in the PAST forces a trip,
+# one in the FUTURE proves no false-trip, with no time mocking needed (the lane
+# owns the clock; this child only compares against the value handed to arm()).
+
+func _test_mutation_watchdog() -> void:
+	_begin("MutationWatchdog (007 C5)")
+
+	# Recorder the fake force_clear writes into (Dictionary → mutable from the lambda).
+	var rec := {"calls": 0, "last_id": null}
+	var force_clear := func(trapped_id) -> void:
+		rec["calls"] += 1
+		rec["last_id"] = trapped_id
+
+	# 1. Not armed → tick is a no-op (no force_clear, generation untouched).
+	var wd := MutationWatchdog.new()
+	wd.set_force_clear(force_clear)
+	var gen0 := wd.current_generation()
+	wd.tick()
+	_eq(rec["calls"], 0, "not armed → tick does not fire force_clear")
+	_eq(wd.current_generation(), gen0, "not armed → generation untouched")
+
+	# 2. Armed with a FUTURE deadline → tick does NOT trip.
+	var peer := WebSocketPeer.new()  # not OPEN → the peer-error send is guarded off
+	var future := Time.get_ticks_msec() + 60000
+	var gen_armed := wd.arm(peer, 7, "node.create", Time.get_ticks_msec(), future, null)
+	_eq(gen_armed, gen0, "arm → returns the current generation")
+	wd.tick()
+	_eq(rec["calls"], 0, "armed, deadline in future → no trip")
+	_eq(wd.current_generation(), gen0, "future deadline → generation untouched")
+
+	# 3. disarm (normal completion) → tick is a no-op (no trip after disarm).
+	wd.disarm()
+	wd.tick()
+	_eq(rec["calls"], 0, "disarm → tick does not trip")
+
+	# 4. DEADLINE TRIP — arm with a PAST deadline, tick → force_clear fired once with
+	#    the trapped id, and the generation is bumped by exactly 1.
+	var gen_before := wd.current_generation()
+	var past := Time.get_ticks_msec() - 1000
+	wd.arm(peer, 42, "node.create", past, past, null)
+	wd.tick()
+	_eq(rec["calls"], 1, "past deadline → trip fires force_clear once")
+	_eq(rec["last_id"], 42, "trip → force_clear receives the trapped id")
+	_eq(wd.current_generation(), gen_before + 1, "trip → generation bumped by 1")
+
+	# 5. STALE-TAIL ABANDONMENT — the generation captured at arm() no longer matches
+	#    after the trip, so the abandoned coroutine's tail (which compares them) bails.
+	_ok(wd.current_generation() != gen_before, "trip → captured gen != current gen (stale tail bails)")
+
+	# 6. After a trip the watchdog disarmed itself → a second tick is a no-op (no
+	#    double-fire even if _process ticks again before a successor arms).
+	wd.tick()
+	_eq(rec["calls"], 1, "post-trip → second tick does not re-fire force_clear")
+
+	# 7. COOPERATIVE CANCEL — a cancellable in-flight ctx is cancelled on a trip so a
+	#    slow-but-alive handler bails at its next is_cancelled() poll.
+	var ctx := MCPToolkitToolContext.new()
+	wd.arm(peer, 99, "node.create", past, past, ctx)
+	_ok(not ctx.is_cancelled(), "armed ctx → not cancelled before trip")
+	wd.tick()
+	_ok(ctx.is_cancelled(), "trip → in-flight ctx cooperatively cancelled")
+	_eq(rec["last_id"], 99, "trip → force_clear receives the second trapped id")
+
+	# 8. force_clear unset → trip still recovers gracefully (no crash, generation
+	#    still bumps). A real lane always wires it; this proves the is_valid() guard.
+	var wd2 := MutationWatchdog.new()
+	var g2 := wd2.current_generation()
+	wd2.arm(peer, 1, "node.create", past, past, null)
+	wd2.tick()
+	_eq(wd2.current_generation(), g2 + 1, "no force_clear wired → trip still bumps generation (no crash)")
+
 	print("")
 
 

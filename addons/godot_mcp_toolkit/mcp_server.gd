@@ -27,6 +27,7 @@ const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpe
 const _UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
 const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
 const WsTransport := preload("res://addons/godot_mcp_toolkit/ws_transport.gd")
+const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
 
 const PORT_BASE := 6550
 const PORT_RANGE := 11  # 6550..6560 inclusive
@@ -54,7 +55,7 @@ const _RELISTEN_FRAME_INTERVAL := 60
 # No upstream structural fix exists as of Godot 4.5/4.6-dev.
 # Cold/hot sleep mode (set_process(false) with no client) was assessed in iter 41m
 # and rejected: no TCPServer accept signal exists to wake on, and gating the loop
-# fights this deferral + the always-run _check_mutation_watchdog() for a tiny gain.
+# fights this deferral + the always-run _mutation_watchdog.tick() for a tiny gain.
 const _POLL_FRAME_INTERVAL := 4
 # Auth timeout. Peers that don't send a valid auth message within this
 # window are closed with WS close code 1008 (Policy Violation).
@@ -113,17 +114,13 @@ class _MutationQueueEntry:
 
 var _mutation_in_flight := false
 var _mutation_queue: Array = []  # of _MutationQueueEntry
-# C3 mutation watchdog — recover the lock if an in-flight mutation's coroutine
+# C5 mutation watchdog — recovers the lock if an in-flight mutation's coroutine
 # aborts or never resolves (it would otherwise wedge ALL mutations permanently).
-# The deadline is adaptive (the in-flight command's own timeout + grace) and
-# stamped at execution-start, so a slow extension mutation never false-trips it.
-var _mutation_started_ms := 0
-var _mutation_deadline_ms := 0
-var _mutation_peer: WebSocketPeer = null
-var _mutation_id  # int or null — the in-flight mutation's JSON-RPC id
-var _mutation_method := ""
-var _mutation_ctx: MCPToolkitToolContext = null  # cancellable cmd's ctx, for watchdog cooperative-cancel
-var _mutation_generation := 0
+# It owns the in-flight identity + the adaptive deadline + the generation counter;
+# this file keeps only the single-flight flag + FIFO above. Constructed in start()
+# with a force_clear hook back into the lane; armed at execution-start, ticked every
+# _process frame. See mutation_watchdog.gd.
+var _mutation_watchdog: MutationWatchdog = null
 
 # -- Scene lease ---------------------------------------------------------------
 # When multiple peers target different scenes, a time-bounded lease prevents
@@ -278,6 +275,7 @@ func start() -> void:
 		add_child(undo_helpers)
 	_plugin_boot_time = int(Time.get_unix_time_from_system())
 	_init_transport()
+	_init_mutation_watchdog()
 	var token := MCPAuth.generate_token()
 	_transport.set_token(token)
 	var write_err := MCPAuth.write_token(token)
@@ -302,6 +300,24 @@ func _init_transport() -> void:
 		"no free port in %d-%d; will retry every ~1s")
 	_transport.set_handlers(_handle_message, _build_auth_ack, _on_peer_authed,
 		_on_peer_closed)
+
+
+# Build the mutation watchdog and inject the lane-recovery hook it fires on a trip:
+# erase the trapped request's active context, clear the single-flight flag, and
+# drain the queue. The watchdog owns the deadline + generation; this file keeps the
+# flag + FIFO and ticks() the watchdog every _process frame.
+func _init_mutation_watchdog() -> void:
+	_mutation_watchdog = MutationWatchdog.new()
+	_mutation_watchdog.set_force_clear(_force_clear_mutation)
+
+
+# The watchdog's recovery hook (see _init_mutation_watchdog). Runs LAST in a trip,
+# after the watchdog bumped the generation and cleared its own identity, so the
+# drain's synchronous re-arm of a successor is not clobbered.
+func _force_clear_mutation(trapped_id) -> void:
+	_active_contexts.erase(str(trapped_id))
+	_mutation_in_flight = false
+	_drain_mutation_queue()
 
 
 func stop() -> void:
@@ -354,9 +370,12 @@ func _on_editor_settings_changed() -> void:
 
 
 func _process(_delta: float) -> void:
-	# C3: the mutation watchdog must always run, independent of the poll cadence
-	# and lease state — it is the sole recovery for a wedged mutation lock.
-	_check_mutation_watchdog()
+	# C5: the mutation watchdog must always run, independent of the poll cadence
+	# and lease state — it is the sole recovery for a wedged mutation lock. (The
+	# null guard mirrors _poll_connections: start() builds it synchronously in
+	# _enter_tree before any _process, but a stray pre-start tick stays a no-op.)
+	if _mutation_watchdog != null:
+		_mutation_watchdog.tick()
 	_Hub.LogBuffer.poll()
 	_poll_frame_counter += 1
 	if _poll_frame_counter < _POLL_FRAME_INTERVAL:
@@ -587,11 +606,13 @@ func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
 
 func _execute_mutation(peer: WebSocketPeer, id, method: String,
 		params: Dictionary, scene_queued_ms: int = 0) -> void:
-	# C3: stamp the watchdog deadline synchronously with the flag, BEFORE any
-	# await — so it tracks only in-flight time (never the queued wait) and can't
-	# race. Deadline = this command's own timeout + grace.
+	# C5: take the single-flight lock, then arm the watchdog synchronously BEFORE
+	# any await — so its deadline tracks only in-flight time (never the queued wait)
+	# and can't race. We compute the deadline here (we own the registry + the grace
+	# setting) and hand the value to the watchdog; arm() returns the generation we
+	# capture for the post-await guard.
 	_mutation_in_flight = true
-	_mutation_started_ms = Time.get_ticks_msec()
+	var started_ms := Time.get_ticks_msec()
 	var grace_ms: int = ProjectSettings.get_setting(
 		"mcp_toolkit/concurrency/mutation_watchdog_grace_ms", 60000)
 	# Deadline basis: the command's DECLARED timeout if it set one (trust the
@@ -599,33 +620,30 @@ func _execute_mutation(peer: WebSocketPeer, id, method: String,
 	# recovery), else _MAX_TIMEOUT_MS for undeclared methods (the 30 s default
 	# isn't a deliberate duration statement, so don't force-clear them early).
 	# Grace is added either way; the deadline is stamped at execution-start.
-	_mutation_deadline_ms = _mutation_started_ms + _registry.get_watchdog_timeout_ms(method) + grace_ms
-	_mutation_peer = peer
-	_mutation_id = id
-	_mutation_method = method
-	var my_generation := _mutation_generation
+	var deadline_ms := started_ms + _registry.get_watchdog_timeout_ms(method) + grace_ms
 	_send_notification(peer, "_executing", {"request_id": id})
 	var ctx: MCPToolkitToolContext = null
 	if _registry.is_cancellable(method):
 		ctx = MCPToolkitToolContext.new()
 		_active_contexts[str(id)] = ctx
-	_mutation_ctx = ctx  # tracked so the watchdog can cooperatively cancel a slow-but-alive handler
+	# Arm: hands the watchdog the in-flight identity + deadline + ctx (so it can
+	# cooperatively cancel a slow-but-alive handler) and returns the generation.
+	var my_generation := _mutation_watchdog.arm(peer, id, method, started_ms, deadline_ms, ctx)
 	command_received.emit(method)
 	var result: Dictionary = await _registry.call_command(method, params, ctx)
 	_active_contexts.erase(str(id))
-	# C3 generation guard: if the watchdog force-cleared us mid-await (generation
+	# C5 generation guard: if the watchdog force-cleared us mid-await (generation
 	# bumped), a successor mutation now owns the lock. Abandon the ENTIRE tail —
 	# the watchdog already responded; touching the flag/queue would corrupt the
 	# successor.
-	if _mutation_generation != my_generation:
+	if _mutation_watchdog.current_generation() != my_generation:
 		return
 	if scene_queued_ms > 0:
 		_inject_concurrency_metadata(result, scene_queued_ms)
 	_send_result(peer, id, result)
 	_post_mutation_scene_cleanup(peer, method, params, result)
 	_mutation_in_flight = false
-	_mutation_peer = null
-	_mutation_ctx = null
+	_mutation_watchdog.disarm()
 	_drain_mutation_queue()
 
 
@@ -651,40 +669,6 @@ func _drain_mutation_queue() -> void:
 		return  # _execute_mutation will call _drain_mutation_queue on completion.
 	# Mutation queue fully drained — check scene queue for same-lease entries.
 	_drain_scene_queue()
-
-
-# C3: sole recovery for a wedged mutation lock. Runs every _process frame,
-# unconditionally. The deadline is adaptive + stamped at execution-start, so a
-# legitimately slow (even maxed-out extension) mutation never trips it; only an
-# aborted/never-resolving one does. SAFETY NET — a fire means the C1 re-entrancy
-# guard failed to prevent the wedge, so it warns loudly.
-func _check_mutation_watchdog() -> void:
-	if not _mutation_in_flight:
-		return
-	if Time.get_ticks_msec() <= _mutation_deadline_ms:
-		return
-	push_warning(("[MCPToolkit] mutation watchdog: '%s' (id %s) exceeded its "
-		+ "deadline (%d ms in flight) — force-clearing the dispatch lock. If this "
-		+ "recurs, the save-reentrancy guard (C1) is not holding.") % [
-			_mutation_method, str(_mutation_id),
-			Time.get_ticks_msec() - _mutation_started_ms])
-	if _mutation_peer != null and _mutation_peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
-		_send_error(_mutation_peer, _mutation_id, -32000,
-			"mutation watchdog timeout — the editor did not complete the operation in time")
-	# Cooperatively cancel the in-flight handler (if cancellable + still alive): one
-	# that polls ctx.is_cancelled() bails at its next check, shrinking the window
-	# where a slow-but-alive mutation runs concurrently with its watchdog-started
-	# successor. A hung handler ignores this (harmless).
-	if _mutation_ctx != null:
-		_mutation_ctx.cancel()
-	_active_contexts.erase(str(_mutation_id))
-	# Bump generation FIRST so the wedged coroutine, if it ever resumes, skips its
-	# whole tail (generation guard in _execute_mutation).
-	_mutation_generation += 1
-	_mutation_in_flight = false
-	_mutation_peer = null
-	_mutation_ctx = null
-	_drain_mutation_queue()
 
 
 # -- Scene lease ---------------------------------------------------------------
