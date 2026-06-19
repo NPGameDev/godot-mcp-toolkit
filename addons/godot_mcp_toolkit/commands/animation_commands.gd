@@ -127,6 +127,8 @@ static func _cmd_animation_keyframe(
 			return MCPToolkitError.fail("LOAD_FAILED",
 				"failed to load resource at %s" % missing)
 		var coerced = Coerce.coerce_value(raw_value)
+		if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+			return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
 		var track_index := -1
 		var track_path_node_path := NodePath(track_path)
 		for index in range(animation.get_track_count()):
@@ -595,6 +597,8 @@ static func _at_set_property(
 
 	var old_value = anim_node.get(property)
 	var coerced = Coerce.coerce_value(value)
+	if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+		return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
 
 	anim_node.set(property, coerced)
 	MCPToolkitUndoRedoAction.begin("animationtree.edit set_property %s/%s.%s" % [node_path, target_node, property], tree) \

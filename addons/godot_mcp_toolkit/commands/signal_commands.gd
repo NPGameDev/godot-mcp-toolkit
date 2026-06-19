@@ -264,6 +264,9 @@ static func _cmd_signal_emit(parameters: Dictionary) -> Dictionary:
 		raw_args = []
 	var coerced: Array = [signal_name]
 	for argument in raw_args:
-		coerced.append(Coerce.coerce_value(argument))
+		var coerced_arg = Coerce.coerce_value(argument)
+		if typeof(coerced_arg) == TYPE_DICTIONARY and (coerced_arg as Dictionary).has("_coerce_error"):
+			return MCPToolkitError.fail("INVALID_PARAMS", str(coerced_arg["_coerce_error"]))
+		coerced.append(coerced_arg)
 	node.callv("emit_signal", coerced)
 	return MCPToolkitSuccess.ok()

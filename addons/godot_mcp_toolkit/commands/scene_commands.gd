@@ -575,7 +575,13 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 
 	if not transform.is_empty():
 		for key in transform.keys():
-			instance.set(str(key), Coerce.coerce_value(transform[key]))
+			var coerced = Coerce.coerce_value(transform[key])
+			if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+				# instance is instantiated but not yet in the tree — free the
+				# orphan before bailing so a malformed transform can't leak a node.
+				instance.queue_free()
+				return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
+			instance.set(str(key), coerced)
 
 	# FIX-9: Only set owner on instance root — child nodes keep their internal
 	# ownership from PackedScene. _set_owner_recursive caused full property
@@ -617,7 +623,10 @@ static func _batch_instantiate(
 		# Apply transform properties (position, rotation, scale).
 		for key in ["position", "rotation", "scale"]:
 			if inst_dict.has(key):
-				instance.set(key, Coerce.coerce_value(inst_dict[key]))
+				var coerced = Coerce.coerce_value(inst_dict[key])
+				if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+					continue
+				instance.set(key, coerced)
 
 		# Apply arbitrary property overrides (e.g. exports like key_type).
 		# Compound paths (: or /) use the centralized handler.
@@ -628,7 +637,10 @@ static func _batch_instantiate(
 				if ":" in prop_name or "/" in prop_name:
 					Helpers.set_property_compound(instance, prop_name, props[key])
 				else:
-					instance.set(prop_name, Coerce.coerce_value(props[key]))
+					var coerced = Coerce.coerce_value(props[key])
+					if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+						continue
+					instance.set(prop_name, coerced)
 
 		# FIX-9: Only set owner on instance root (same as single-instance path).
 		parent_node.add_child(instance)

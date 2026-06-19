@@ -95,6 +95,8 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	# Resource-typed values in raw_value are gated through FileGuard
 	# via Coerce.coerce_value's Resource branch.
 	var coerced = Coerce.coerce_value(raw_value)
+	if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+		return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
 	var was_set_before := ProjectSettings.has_setting(key)
 	var previous_value = ProjectSettings.get_setting(key) if was_set_before else null
 	ProjectSettings.set_setting(key, coerced)

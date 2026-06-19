@@ -19,6 +19,7 @@ const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/extension_c
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
+const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 
 var _passed := 0
 var _failed := 0
@@ -69,6 +70,7 @@ func _init() -> void:
 	_test_spatial_map()
 	_test_texture_generate()
 	_test_sound_generate()
+	_test_coerce_roundtrip()
 	_test_user_path_monitor()
 
 	_report()
@@ -1871,6 +1873,72 @@ func _test_sound_generate() -> void:
 	for i in range(mini(50, noise.size() / 2)):
 		distinct[noise.decode_s16(i * 2)] = true
 	_ok(distinct.size() > 5, "_build_pcm noise varies sample-to-sample")
+
+
+# --- Coerce/serialize round-trip symmetry (concern 018) -------------------
+# coerce_value (JSON dict → Godot) and serialize_value (Godot → JSON dict)
+# share one tagged-type vocabulary. For value types that serialize_value emits
+# as a tagged dict, the Godot-value round-trip coerce_value(serialize_value(V))
+# must reproduce V exactly (native compare — no float-string fragility).
+#
+# Three Packed* tags + LayerMask are coerce-only: serialize_value has no
+# TYPE_PACKED_* / mask-tag case, so the Godot→JSON leg does NOT emit the tagged
+# form (Packed* fall through var_to_str; a mask is a bare int). Those are
+# asserted in the JSON→Godot direction instead — the tag coerce_value owns.
+# Resource/NewResource are skipped: path-based (ResourceLoader), not value-symmetric.
+
+func _test_coerce_roundtrip() -> void:
+	_begin("Coerce/serialize round-trip (concern 018)")
+
+	# Tagged-dict value types: coerce_value(serialize_value(V)) == V (both legs).
+	var vec2: Vector2 = Vector2(3.5, -2.0)
+	_ok(Coerce.coerce_value(Coerce.serialize_value(vec2)) == vec2, "Vector2 round-trips")
+	var vec3: Vector3 = Vector3(1.0, 2.0, -3.5)
+	_ok(Coerce.coerce_value(Coerce.serialize_value(vec3)) == vec3, "Vector3 round-trips")
+	var vec4: Vector4 = Vector4(1.0, 2.0, 3.0, 4.0)
+	_ok(Coerce.coerce_value(Coerce.serialize_value(vec4)) == vec4, "Vector4 round-trips")
+	var vec2i: Vector2i = Vector2i(7, -8)
+	_ok(Coerce.coerce_value(Coerce.serialize_value(vec2i)) == vec2i, "Vector2i round-trips")
+	var vec3i: Vector3i = Vector3i(-1, 2, 9)
+	_ok(Coerce.coerce_value(Coerce.serialize_value(vec3i)) == vec3i, "Vector3i round-trips")
+	var col: Color = Color(0.25, 0.5, 0.75, 1.0)
+	_ok(Coerce.coerce_value(Coerce.serialize_value(col)) == col, "Color round-trips")
+	var rect2: Rect2 = Rect2(1.0, 2.0, 3.0, 4.0)
+	_ok(Coerce.coerce_value(Coerce.serialize_value(rect2)) == rect2, "Rect2 round-trips")
+	var rect2i: Rect2i = Rect2i(5, 6, 7, 8)
+	_ok(Coerce.coerce_value(Coerce.serialize_value(rect2i)) == rect2i, "Rect2i round-trips")
+	var xform2d: Transform2D = Transform2D(Vector2(0.0, 1.0), Vector2(-1.0, 0.0), Vector2(5.0, 6.0))
+	_ok(Coerce.coerce_value(Coerce.serialize_value(xform2d)) == xform2d, "Transform2D round-trips")
+	var basis: Basis = Basis(Vector3(1.0, 0.0, 0.0), Vector3(0.0, 0.0, -1.0), Vector3(0.0, 1.0, 0.0))
+	var xform3d: Transform3D = Transform3D(basis, Vector3(7.0, 8.0, 9.0))
+	_ok(Coerce.coerce_value(Coerce.serialize_value(xform3d)) == xform3d, "Transform3D round-trips")
+	var npath: NodePath = NodePath("Player/Sprite2D:position")
+	_ok(Coerce.coerce_value(Coerce.serialize_value(npath)) == npath, "NodePath round-trips")
+
+	# Coerce-only tags (no tagged serialize leg): assert the JSON→Godot direction.
+	var pv2: Variant = Coerce.coerce_value({
+		"type": "PackedVector2Array",
+		"values": [{"type": "Vector2", "x": 1.0, "y": 2.0}, {"type": "Vector2", "x": 3.0, "y": 4.0}],
+	})
+	_ok(pv2 == PackedVector2Array([Vector2(1.0, 2.0), Vector2(3.0, 4.0)]),
+			"PackedVector2Array coerces from tagged dict (coerce-only tag)")
+	var pv3: Variant = Coerce.coerce_value({
+		"type": "PackedVector3Array",
+		"values": [{"type": "Vector3", "x": 1.0, "y": 2.0, "z": 3.0}],
+	})
+	_ok(pv3 == PackedVector3Array([Vector3(1.0, 2.0, 3.0)]),
+			"PackedVector3Array coerces from tagged dict (coerce-only tag)")
+	var pcol: Variant = Coerce.coerce_value({
+		"type": "PackedColorArray",
+		"values": [{"type": "Color", "r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}],
+	})
+	_ok(pcol == PackedColorArray([Color(1.0, 0.0, 0.0, 1.0)]),
+			"PackedColorArray coerces from tagged dict (coerce-only tag)")
+	# LayerMask: numeric layers 1 and 3 → bits 0 and 2 → 0b101 = 5 (no ProjectSettings).
+	var mask: Variant = Coerce.coerce_value({"type": "LayerMask", "layers": [1, 3]})
+	_eq(mask, 5, "LayerMask coerces layers [1,3] → bitmask 5 (coerce-only tag)")
+
+	print("")
 
 
 func _report() -> void:

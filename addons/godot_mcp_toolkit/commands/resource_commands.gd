@@ -59,6 +59,10 @@ static func _apply_resource_properties(
 				"property '%s': resource not found at %s; value left unchanged" % [key_string, missing])
 			continue
 		var coerced = Coerce.coerce_value(raw_value)
+		if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+			warnings.append(
+				"property '%s': %s; value left unchanged" % [key_string, str(coerced["_coerce_error"])])
+			continue
 		# Compound paths (e.g. "sources/0", "tiles/0:0/0") route through
 		# Object._set() which many built-in types (TileSet, AnimationLibrary)
 		# use for sub-resource slots not exposed in get_property_list().

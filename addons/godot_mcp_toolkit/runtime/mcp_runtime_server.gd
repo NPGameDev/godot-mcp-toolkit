@@ -517,6 +517,9 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 			return
 
 	var coerced = Coerce.coerce_value(value)
+	if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"])))
+		return
 	# Auto-coerce string → NodePath when the property expects NodePath.
 	if typeof(current) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 		coerced = NodePath(str(coerced))
@@ -836,7 +839,11 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 		raw_args = []
 	var coerced: Array = [signal_name]
 	for a in raw_args:
-		coerced.append(Coerce.coerce_value(a))
+		var coerced_arg = Coerce.coerce_value(a)
+		if typeof(coerced_arg) == TYPE_DICTIONARY and (coerced_arg as Dictionary).has("_coerce_error"):
+			_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", str(coerced_arg["_coerce_error"])))
+			return
+		coerced.append(coerced_arg)
 	node.callv("emit_signal", coerced)
 	_send_result(peer, id, {"success": true})
 

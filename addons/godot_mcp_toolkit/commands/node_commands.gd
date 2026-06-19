@@ -544,6 +544,9 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var coerced_args = Coerce.coerce_value(args_raw)
 	if typeof(coerced_args) != TYPE_ARRAY:
 		coerced_args = []
+	for arg in coerced_args:
+		if typeof(arg) == TYPE_DICTIONARY and (arg as Dictionary).has("_coerce_error"):
+			return MCPToolkitError.fail("INVALID_PARAMS", str(arg["_coerce_error"]))
 	print("[MCPTools] node.call_method invoked %s.%s(%d args)" % [
 		node_path, method_name, (coerced_args as Array).size()])
 	var result = node.callv(method_name, coerced_args)
@@ -791,7 +794,10 @@ static func _manage_duplicate(
 		for key in (props_raw as Dictionary):
 			var prop_name := str(key)
 			var existing = dup.get(prop_name)
-			dup.set(prop_name, Coerce.coerce_value_hint(props_raw[key], existing))
+			var coerced = Coerce.coerce_value_hint(props_raw[key], existing)
+			if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+				return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
+			dup.set(prop_name, coerced)
 
 	var dup_path := str(root.get_path_to(dup))
 	return MCPToolkitSuccess.ok({"action": "duplicate", "path": dup_path,
