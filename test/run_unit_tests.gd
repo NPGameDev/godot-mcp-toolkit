@@ -13,6 +13,7 @@ const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backu
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
+const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog.gd")
@@ -61,6 +62,7 @@ func _init() -> void:
 	_test_unfocused_backup()
 	_test_stale_instance_hint()
 	_test_compile_error_message()
+	_test_groups_property_rejection()
 	_test_file_guard()
 	_test_file_guard_self_protect()
 	_test_untrusted()
@@ -387,6 +389,28 @@ func _test_compile_error_message() -> void:
 		var msg: String = ScriptCommands._compile_error_message(ver)
 		_ok(msg.contains("editor_get_console") and not msg.contains("lsp_diagnostics"),
 			"%s → directs to editor_get_console, not lsp (4.5+ Logger captures parse errors)" % ver)
+
+
+# --- node.set_property "groups" rejection (concern 032) -------------------
+# node.set_property does a declarative full-set replace, so accepting "groups"
+# would silently drop any group not in the list; node.groups is incremental.
+# Single mode whole-call-rejects and batch per-entry-rejects on this one name,
+# steering to node.groups. _is_groups_property is the shared pure decision; the
+# steering text is pinned so a future edit can't drop the node.groups pointer.
+
+func _test_groups_property_rejection() -> void:
+	_begin("node.set_property groups rejection (concern 032)")
+	# The predicate is exact: only the bare "groups" property is refused.
+	_ok(NodeCommands._is_groups_property("groups"), "'groups' → refused")
+	_ok(not NodeCommands._is_groups_property("group"), "'group' → not refused")
+	_ok(not NodeCommands._is_groups_property("groups_enabled"), "'groups_enabled' → not refused")
+	_ok(not NodeCommands._is_groups_property(""), "empty → not refused")
+	_ok(not NodeCommands._is_groups_property("position"), "ordinary property → not refused")
+	# The rejection steers to node.groups (the message/hint can't silently lose it).
+	_ok(not NodeCommands._GROUPS_REJECTION_MESSAGE.is_empty(), "rejection message present")
+	_ok(NodeCommands._GROUPS_REJECTION_HINT.contains("node.groups"),
+		"rejection hint names node.groups")
+	print("")
 
 
 # --- Registry (~20 assertions) --------------------------------------------

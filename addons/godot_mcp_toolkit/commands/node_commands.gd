@@ -7,6 +7,12 @@ const Coerce = _Hub.Coerce
 const FileGuard = _Hub.FileGuard
 const Helpers = _Hub.Helpers
 
+## node.set_property rejects "groups" because its set is a declarative full
+## replace (it would drop any group not in the list), whereas node.groups is
+## incremental. The two semantics are opposites, so groups go through one tool.
+const _GROUPS_REJECTION_MESSAGE := "'groups' cannot be set via node.set_property: it would replace the whole group list and silently drop any group not included."
+const _GROUPS_REJECTION_HINT := "Use node.groups (action 'add'/'remove') to change group membership incrementally, or 'list' to read it."
+
 
 const COMMON_PROPERTIES_BY_CLASS := {
 	"Node": ["name", "process_mode"],
@@ -86,6 +92,13 @@ static func _resolve_scene_node(node_path: String) -> Variant:
 	return Helpers.resolve_scene_node(node_path)
 
 
+## True for the one property name node.set_property refuses in favour of
+## node.groups. Pure (no engine state) so single- and batch-mode share one
+## decision and a unit test can pin it without an editor.
+static func _is_groups_property(property_name: String) -> bool:
+	return property_name == "groups"
+
+
 ## Detect silent compound-path set failure by comparing readback to expected.
 static func _iscompound_set_failure(expected: Variant, actual: Variant) -> bool:
 	if expected == null:
@@ -163,44 +176,19 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 	if node_path.is_empty() or property_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path or property")
 
+	# "groups" is not a regular property — it lives in the .tscn node header,
+	# and a full-set-replace here would silently strip any group not in the
+	# given list. Steer all group mutation to node.groups, whose verbs are
+	# incremental (and which both tools being eager makes always reachable).
+	# Checked before node resolution so the error is consistent regardless of
+	# whether node_path is valid (mirrors the batch-mode placement).
+	if _is_groups_property(property_name):
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			_GROUPS_REJECTION_MESSAGE, _GROUPS_REJECTION_HINT)
+
 	var node := root.get_node_or_null(node_path)
 	if node == null:
 		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
-
-	# P-002: "groups" is not a regular property — it lives in the .tscn node
-	# header and must be set via add_to_group / remove_from_group.
-	if property_name == "groups":
-		var new_groups: Array = []
-		if typeof(raw_value) == TYPE_ARRAY:
-			for g in raw_value:
-				new_groups.append(str(g))
-		elif typeof(raw_value) == TYPE_STRING:
-			new_groups.append(str(raw_value))
-		else:
-			return MCPToolkitError.fail("INVALID_PARAMS",
-				"groups value must be a string or array of strings")
-		var old_groups: Array = []
-		for g in node.get_groups():
-			var gs := str(g)
-			if not gs.begins_with("_"):  # skip engine-internal groups
-				old_groups.append(gs)
-		for g in old_groups:
-			if g not in new_groups:
-				node.remove_from_group(g)
-		for g in new_groups:
-			if g not in old_groups:
-				node.add_to_group(g, true)
-		var action = MCPToolkitUndoRedoAction.begin("set %s groups" % node_path, node)
-		for g in old_groups:
-			if g not in new_groups:
-				action.do_method(node.remove_from_group.bind(g))
-				action.undo_method(node.add_to_group.bind(g, true))
-		for g in new_groups:
-			if g not in old_groups:
-				action.do_method(node.add_to_group.bind(g, true))
-				action.undo_method(node.remove_from_group.bind(g))
-		action.commit_recorded()
-		return MCPToolkitSuccess.ok({"groups": new_groups})
 
 	# Compound / colon-chained paths (e.g. "libraries/test",
 	# "material:shader_parameter/value", "theme_override_colors/font_color").
@@ -298,6 +286,14 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		if np.is_empty() or prop.is_empty():
 			results.append({"node_path": np, "property": prop,
 				"success": false, "error": "missing node_path or property"})
+			continue
+
+		# Reject "groups" per-entry (the rest of the batch still applies). Without
+		# this it would fall through to node.set("groups", …) — a non-property —
+		# and vanish silently; group mutation belongs to node.groups (incremental).
+		if _is_groups_property(prop):
+			results.append({"node_path": np, "property": prop, "success": false,
+				"error": _GROUPS_REJECTION_MESSAGE, "hint": _GROUPS_REJECTION_HINT})
 			continue
 
 		var node := root.get_node_or_null(np)

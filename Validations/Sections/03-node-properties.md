@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in main.tscn)
 **Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout
-**Tests:** 28
+**Tests:** 30
 
 ---
 
@@ -65,6 +65,27 @@
 - **Expect:** Both match
 
 **3.14** Restore — `node_set_property` Sv2Sprite visible=true, Sv2Label text="Hello Sweep v2"
+
+**3.14a** `node_set_property` (groups rejection, single) — node_path=`Sv2Sprite`, property=`groups`, value=`["enemies"]`
+- **Expect:** INVALID_PARAMS, whole call rejected, hint names `node.groups`. The node's group membership is unchanged (nothing added/stripped).
+
+> **REGRESSION WATCH (concern 032):** `node_set_property` must NOT set `groups`.
+> It does a declarative full-set replace (would silently drop groups not listed);
+> group mutation belongs to `node_groups` (incremental). If `property:"groups"`
+> succeeds or alters membership, the rejection has regressed. Flag as **Major**.
+> The guard is parameter-level (fires BEFORE node resolution, mirroring the batch
+> path): an invalid `node_path` with `property:"groups"` must still return
+> INVALID_PARAMS + the `node.groups` hint, NOT NOT_FOUND. If it returns NOT_FOUND,
+> the reject has drifted back behind node resolution.
+
+**3.14b** `node_set_property` (groups rejection, batch — rest still applies) — batch=`[{"node_path":"Sv2Sprite","property":"groups","value":["enemies"]},{"node_path":"Sv2Label","property":"text","value":"AfterGroups"}]`
+- **Expect:** `results[0]` success=false with an error + hint naming `node.groups` (the groups entry is skipped); `results[1]` success=true. Verify `node_get_property` Sv2Label text = "AfterGroups" (the valid sibling entry committed) and Sv2Sprite is NOT in group "enemies".
+- Restore: `node_set_property` Sv2Label text="Hello Sweep v2"
+
+> **REGRESSION WATCH (concern 032):** This pins the per-entry batch contract —
+> a rejected entry must not abort the batch. Before the fix the batch path had no
+> groups branch, so `property:"groups"` fell through to a silent no-op. If the
+> whole batch is rejected, or the groups entry silently "succeeds", flag as **Major**.
 
 **3.15** `node_set_script` — node_path=`Sv2Player`, script_path=`res://sv2_validation/actor.gd`
 - **Expect:** success

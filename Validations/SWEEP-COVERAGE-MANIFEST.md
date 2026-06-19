@@ -30,7 +30,7 @@
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | node.get_property | 28, 31, 33, 36, 43b, 43i, 64g | — | C3, C6, C20 | — | — | |
-| node.set_property | 27, 29, 30, 32, 34, 35 | — | C3, C6 | — | FIX-5, FIX-7, FIX-E, FIX-F | **GAP:** batch mode, LayerMask coercion, bare res:// guard |
+| node.set_property | 27, 29, 30, 32, 34, 35 | ✓ (3.14a: groups single-reject, 3.14b: groups batch per-entry reject) | C3, C6 | ✓ (3.14a/3.14b: hint → node.groups) | FIX-5, FIX-7, FIX-E, FIX-F, concern 032 | groups property steered to node.groups (single whole-reject + batch per-entry). **GAP:** LayerMask coercion, bare res:// guard |
 | node.get_property_list | 38–40 | — | C5 | — | — | |
 | node.call_method | 49, 50 | — | C9 | ✓ (CS3: C# hint) | — | |
 | node.set_script | 37 | — | C5, C8 | — | — | |
