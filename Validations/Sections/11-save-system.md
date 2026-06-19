@@ -27,11 +27,11 @@
 **11.7** `save_read` paging + configurable cap (concern 025)
 1. `save_write` — path=`user://saves/sv2_page.txt`, content = a 1000-char string (e.g. 1000× `A`)
 2. `save_read` — path=`user://saves/sv2_page.txt`, `max_bytes`=400
-   - **Expect:** `bytes_returned`=400, `offset`=0, `next_offset`=400, `total_bytes`=1000, `truncated`=true
+   - **Expect:** `bytes_returned`=400, `offset`=0, `next_offset`=400, `total_bytes`=1000, `truncated`=true. Uniform pagination contract (concern 054): because `truncated` is true, a `hint` field is present naming `next_offset`.
 3. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=400, `max_bytes`=400
-   - **Expect:** `bytes_returned`=400, `next_offset`=800, `truncated`=true
+   - **Expect:** `bytes_returned`=400, `next_offset`=800, `truncated`=true, `hint` present (truncated).
 4. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=800, `max_bytes`=400
-   - **Expect:** `bytes_returned`=200, `next_offset`=1000, `truncated`=false (final window — page until `truncated` is false)
+   - **Expect:** `bytes_returned`=200, `next_offset`=1000, `truncated`=false, **no `hint`** (final window — the hint is omitted once `truncated` is false; page until then). Same contract shape as `script_read` (see Section 6.2), in byte units.
 5. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=1000 (at EOF)
    - **Expect:** success, `bytes_returned`=0, `next_offset`=1000, `truncated`=false (no error past EOF)
 6. Cap: set `mcp_toolkit/limits/save_read_cap_kb`=64 (Project Settings → `mcp_toolkit/limits/`, or `meta_set_limits save_read_cap_kb=64`), then `save_read` with `max_bytes`=100000

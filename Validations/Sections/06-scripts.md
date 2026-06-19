@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (actor.gd exists)
 **Tools tested:** script_read, script_write, script_check, asset_list, asset_get_dependencies
-**Tests:** 8
+**Tests:** 9
 
 ---
 
@@ -10,7 +10,16 @@
 - **Expect:** Full content matching what was written in Section 1
 
 **6.2** `script_read` (range) — file_path=`res://sv2_validation/actor.gd`, start_line=1, end_line=3
-- **Expect:** First 3 lines only
+- **Expect:** First 3 lines only. Uniform pagination contract (concern 054): response carries `total_lines`, `truncated`, and — because line 3 is before EOF — `next_start_line`=4 plus a `hint` naming `next_start_line`. Pass `next_start_line` back as `start_line` and the next window continues; loop until `truncated` is `false`.
+
+> **REGRESSION WATCH (concern 054):** `script_read` and `save_read` share one
+> pagination contract — `truncated` (always on success) + `total_<unit>` +
+> `next_<cursor>` + a `hint`, the last two only when `truncated`. If a range read
+> lacks `truncated`/`total_lines`, or a truncated window lacks `next_start_line`/`hint`,
+> the contract has regressed. Flag as **Major**.
+
+**6.2b** `script_read` (full file) — file_path=`res://sv2_validation/actor.gd` (no range)
+- **Expect:** Full content. Contract fields present: `truncated`=false and `total_lines` (a full read that fits the cap is never truncated, and carries NO `next_start_line`/`hint`).
 
 **6.3** `script_check` — file_path=`res://sv2_validation/actor.gd`
 - **Expect:** valid=true, 0 diagnostics

@@ -79,6 +79,7 @@ func _init() -> void:
 	_test_node_packed_property_serialize()
 	_test_user_path_monitor()
 	_test_save_read_paging()
+	_test_script_read_paging()
 
 	_report()
 	quit(0 if _failed == 0 else 1)
@@ -2193,6 +2194,10 @@ func _test_save_read_paging() -> void:
 	_eq(p1.get("next_offset", -1), 400, "window 1 → next_offset 400")
 	_eq(p1.get("total_bytes", -1), 1000, "window 1 → total_bytes 1000")
 	_eq(p1.get("truncated", null), true, "window 1 → truncated true (more remains)")
+	# Uniform pagination contract (concern 054): truncated window carries a prose
+	# hint naming next_offset; not-truncated windows omit it (asserted below).
+	_ok(p1.has("hint"), "window 1 → hint present (truncated)")
+	_ok(str(p1.get("hint", "")).contains("next_offset"), "window 1 → hint names next_offset")
 
 	# 2. Middle window: seek correctness — offset 400, max_bytes 400 → next_offset
 	#    800, still truncated.
@@ -2208,6 +2213,7 @@ func _test_save_read_paging() -> void:
 	_eq(p3.get("bytes_returned", -1), 200, "window 3 → 200 bytes (clamped to remaining)")
 	_eq(p3.get("next_offset", -1), 1000, "window 3 → next_offset 1000 (== total)")
 	_eq(p3.get("truncated", null), false, "window 3 → truncated false (reached EOF)")
+	_ok(not p3.has("hint"), "window 3 → no hint (not truncated)")
 
 	# 4. Offset exactly AT EOF → 0 bytes, not an error; next_offset == total,
 	#    truncated false (graceful completion sentinel for a paging caller).
@@ -2281,6 +2287,58 @@ func _test_save_read_paging() -> void:
 	DirAccess.remove_absolute(big_abs)
 	ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb", orig_cap)
 	ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb", orig_ws)
+	print("")
+
+
+# --- script.read uniform pagination contract (concern 054) -----------------
+# script.read now mirrors save.read's SHAPE in LINE units: every success carries
+# truncated + total_lines; a windowed read whose end precedes EOF also carries
+# next_start_line (1-based resume = clamped end_line + 1) + a prose hint; a full
+# read (and a window reaching EOF) returns truncated:false with no hint. ADD-ONLY
+# (concern 054) — existing start_line/end_line/total_lines/content are unchanged.
+# Drives the real handler against a res:// temp fixture; removes it afterward.
+
+func _test_script_read_paging() -> void:
+	_begin("script.read pagination contract (concern 054)")
+
+	# A deterministic 5-line fixture (no trailing newline → split("\n") size 5).
+	var fixture := "res://sv2_script_read_054.gd"
+	var sf := FileAccess.open(fixture, FileAccess.WRITE)
+	_ok(sf != null, "fixture script opened for write")
+	if sf != null:
+		sf.store_string("line1\nline2\nline3\nline4\nline5")
+		sf.close()
+
+	# 1. Windowed read that ENDS BEFORE EOF (lines 1..2 of 5) → truncated true,
+	#    next_start_line 3, hint naming next_start_line. total_lines preserved.
+	var w: Dictionary = ScriptCommands._cmd_script_read({"file_path": fixture, "start_line": 1, "end_line": 2})
+	_ok(w.get("success", false), "window 1..2 → success")
+	_eq(w.get("start_line", -1), 1, "window → start_line 1 preserved")
+	_eq(w.get("end_line", -1), 2, "window → end_line 2 preserved")
+	_eq(w.get("total_lines", -1), 5, "window → total_lines 5 preserved")
+	_eq(w.get("truncated", null), true, "window 1..2 → truncated true (2 < 5)")
+	_eq(w.get("next_start_line", -1), 3, "window → next_start_line = end_line + 1 = 3 (1-based)")
+	_ok(str(w.get("hint", "")).contains("next_start_line"), "window → hint names next_start_line")
+
+	# 2. Windowed read that REACHES EOF (lines 3..5; end clamps to 5) → truncated
+	#    false, no next_start_line, no hint.
+	var eofw: Dictionary = ScriptCommands._cmd_script_read({"file_path": fixture, "start_line": 3, "end_line": 999})
+	_eq(eofw.get("end_line", -1), 5, "window 3..999 → end_line clamped to 5")
+	_eq(eofw.get("truncated", null), false, "window reaching EOF → truncated false")
+	_ok(not eofw.has("next_start_line"), "window at EOF → no next_start_line")
+	_ok(not eofw.has("hint"), "window at EOF → no hint")
+
+	# 3. FULL read (no start_line) → truncated false + total_lines, contract-complete.
+	#    Existing 'content' field is still present (additive change).
+	var full: Dictionary = ScriptCommands._cmd_script_read({"file_path": fixture})
+	_ok(full.get("success", false), "full read → success")
+	_ok(full.has("content"), "full read → content preserved")
+	_eq(full.get("total_lines", -1), 5, "full read → total_lines 5 (added for uniformity)")
+	_eq(full.get("truncated", null), false, "full read → truncated false")
+	_ok(not full.has("next_start_line"), "full read → no next_start_line")
+	_ok(not full.has("hint"), "full read → no hint")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
 	print("")
 
 

@@ -103,10 +103,14 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 	var next_offset := offset + buffer.size()
 	# Truncated means there is more file beyond what this window returned.
 	var truncated := next_offset < total_bytes
+	# Uniform pagination contract (concern 054): on a truncated read, hand the LLM
+	# a prose loop instruction — re-call with offset = next_offset until truncated
+	# is false. Present ONLY when truncated; the field is absent on a complete read.
+	var page_hint := "more bytes remain — re-call save.read with offset = next_offset (%d) until truncated is false" % next_offset
 	# Binary-safe: try UTF-8 decode; fall back to base64.
 	var text := buffer.get_string_from_utf8()
 	if text.is_empty() and buffer.size() > 0:
-		return MCPToolkitSuccess.ok({
+		var b64_result := MCPToolkitSuccess.ok({
 			"path": path,
 			"content_base64": Marshalls.raw_to_base64(buffer),
 			"encoding": "base64",
@@ -116,9 +120,12 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 			"offset": offset,
 			"next_offset": next_offset,
 		})
+		if truncated:
+			b64_result["hint"] = page_hint
+		return b64_result
 	var scrubbed := Scrubber.scrub(text, "save.read")
 	var wrapped := Untrusted.wrap("user-file", path, scrubbed["text"])
-	return MCPToolkitSuccess.ok({
+	var utf8_result := MCPToolkitSuccess.ok({
 		"path": path,
 		"content": wrapped,
 		"truncated": truncated,
@@ -127,6 +134,9 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 		"offset": offset,
 		"next_offset": next_offset,
 	})
+	if truncated:
+		utf8_result["hint"] = page_hint
+	return utf8_result
 
 
 static func _cmd_save_delete(parameters: Dictionary) -> Dictionary:

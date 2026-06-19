@@ -52,22 +52,103 @@ holder may go without renewing before a waiting client can steal the lease.
 - Lower = snappier hand-off between clients, but more tab switching.
 - Higher = fewer tab switches, but a waiting client blocks longer.
 
+## Reading large data — caps & the pagination contract
+
+Read tools that can return a large payload are **capped per call** and **paginate**
+instead of streaming a whole file in one response (responses are sent whole over a
+size-limited WebSocket frame, so an uncapped read would silently drop). Two tools
+page today — `save_read` (a `user://` file, in **bytes**) and `script_read` (a
+project script, in **lines**) — and they share one **uniform pagination contract**,
+so the loop you learn for one applies to the other.
+
+### The uniform pagination contract
+
+On a capped read you always get:
+
+- **`truncated`** (bool) — `true` when more data remains beyond this window,
+  `false` when this window reached the end. Always present on a successful read.
+- **`total_<unit>`** — the full size of the source (`total_bytes` for `save_read`,
+  `total_lines` for `script_read`), so you know how much is left.
+- **`next_<cursor>`** — the value to pass back to resume, present **only when
+  `truncated` is `true`** (`next_offset` for `save_read`, `next_start_line` for
+  `script_read`).
+- **`hint`** — a one-line prose instruction, present **only when `truncated` is
+  `true`**, telling you exactly which cursor to feed back.
+
+**The loop is always the same:** call the tool; if `truncated` is `true`, pass the
+returned `next_<cursor>` back as the matching request parameter and call again;
+stop when `truncated` is `false`.
+
+**Worked example — `save_read` (bytes).** Request `offset` (default `0`) +
+`max_bytes`; resume with `next_offset`:
+
+```
+save_read  path=user://saves/big.dat  max_bytes=400
+  → { bytes_returned: 400, offset: 0, next_offset: 400,
+      total_bytes: 1000, truncated: true,
+      hint: "more bytes remain — re-call save.read with offset = next_offset (400) until truncated is false" }
+save_read  path=user://saves/big.dat  offset=400  max_bytes=400
+  → { bytes_returned: 400, next_offset: 800, total_bytes: 1000, truncated: true, hint: … }
+save_read  path=user://saves/big.dat  offset=800  max_bytes=400
+  → { bytes_returned: 200, next_offset: 1000, total_bytes: 1000, truncated: false }   # done — no hint
+```
+
+**Worked example — `script_read` (lines).** Request `start_line`/`end_line`
+(1-based); resume with `next_start_line`:
+
+```
+script_read  file_path=res://big.gd  start_line=1  end_line=200
+  → { start_line: 1, end_line: 200, total_lines: 520, truncated: true,
+      next_start_line: 201,
+      hint: "more lines remain — re-call script.read with start_line = next_start_line (201) until truncated is false" }
+script_read  file_path=res://big.gd  start_line=201  end_line=400
+  → { start_line: 201, end_line: 400, total_lines: 520, truncated: true, next_start_line: 401, hint: … }
+script_read  file_path=res://big.gd  start_line=401  end_line=600
+  → { start_line: 401, end_line: 520, total_lines: 520, truncated: false }   # clamped to EOF, done — no hint
+```
+
+A **full** `script_read` (no `start_line`) that fits under the cap returns
+`truncated: false` and `total_lines` as well, so both read shapes carry the same
+fields. The request-parameter names stay unit-appropriate (`offset`/`max_bytes`
+for bytes, `start_line`/`end_line` for lines) — only the response *shape* is
+uniform.
+
+### When a cap change takes effect (no restart)
+
+The limit settings below are read by the handler **on every call**, so a change —
+via the dock's spinbox, the Settings UI, or `meta_set_limits` — applies to the
+**very next call**. There is no restart and no reconnect.
+
+**The server is not pushed the value.** The MCP server advertises a *static*
+`max_bytes` schema bound as a sanity ceiling; the **toolkit enforces the real,
+live cap at call time**. A request above the live cap is rejected with
+`INVALID_PARAMS` whose message names the *current* cap — so if you lower the cap,
+the model learns the new limit **reactively from that error**, not from the
+advertised schema. (This is why a value that the schema appears to permit can
+still be rejected: the live cap is authoritative.)
+
 ## Limits
 
 ### `mcp_toolkit/limits/save_read_cap_kb` — default `256`
 
 The largest window `save_read` returns in a single call, in KB (minimum 64). A
-`user://` file bigger than this cap can still be read in full by paging: pass
-`offset` (a byte position, default `0`) and read successive `max_bytes` windows.
-Each response reports `total_bytes`, `bytes_returned`, `next_offset`, and
-`truncated` — feed `next_offset` back as the next `offset` until `truncated` is
-`false`. This is the only way to read a file larger than the WebSocket frame
-ceiling (see `ws_buffer_kb` below), because responses are sent whole.
+`user://` file bigger than this cap can still be read in full by paging — see
+**Reading large data** above for the `offset` / `next_offset` loop. This is the
+only way to read a file larger than the WebSocket frame ceiling (see `ws_buffer_kb`
+below), because responses are sent whole.
 
 Raising this above `ws_buffer_kb` is a footgun: a window that would not fit the
 WebSocket buffer is rejected with `FILE_TOO_LARGE` before it is sent, rather than
 silently dropped. If you raise the cap, raise `ws_buffer_kb` to match (and note
 the runtime caveat below).
+
+### `mcp_toolkit/limits/script_read_cap_kb` — default `256`
+
+The largest payload `script_read` returns in a single call, in KB. A project
+script bigger than this cap is read in full by paging on **lines** — see **Reading
+large data** above for the `start_line` / `next_start_line` loop. A full read that
+would exceed the cap is rejected with `FILE_TOO_LARGE` and a hint to use a line
+range.
 
 ### `mcp_toolkit/limits/ws_buffer_kb` — default `1024`
 

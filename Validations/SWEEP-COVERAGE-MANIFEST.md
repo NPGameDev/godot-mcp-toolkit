@@ -43,7 +43,7 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| script.read | 15, 16 | — | — | — | — | |
+| script.read | 15, 16, 6.2, 6.2b | — | — | ✓ (6.2 truncated `hint`) | concern 054 | 6.2/6.2b: uniform pagination contract — every success carries `truncated`+`total_lines`; a windowed read before EOF adds `next_start_line` (1-based = end_line+1) + a prose `hint`; full read / window-at-EOF = `truncated:false`, no hint. Mirrors save.read SHAPE in line units. |
 | script.write | 2, 3 | — | C2, C5, C11, C23 | ✓ (C23: preload hint) | FIX-1 | **GAP:** diagnostics fields in response |
 | script.delete | — | — | C2, C14 | — | — | Only in combos |
 | script.check | 17 | — | C2, C11 | — | — | |
@@ -126,7 +126,7 @@
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | save.write | 67 | — | — | — | — | |
-| save.read | 68, 11.7 | ✓ (11.5 PATH_DENIED, 11.7.6 cap exceeded) | — | — | concern 025 | 11.7: byte `offset` paging (`offset`/`next_offset`/`total_bytes`/`truncated`) + configurable `save_read_cap_kb` (default 256, min 64) + FILE_TOO_LARGE frame guard (base64 1.33× vs `ws_buffer_kb`) |
+| save.read | 68, 11.7 | ✓ (11.5 PATH_DENIED, 11.7.6 cap exceeded) | — | ✓ (11.7 truncated `hint`) | concern 025, 054 | 11.7: byte `offset` paging (`offset`/`next_offset`/`total_bytes`/`truncated`) + configurable `save_read_cap_kb` (default 256, min 64) + FILE_TOO_LARGE frame guard (base64 1.33× vs `ws_buffer_kb`). Concern 054: truncated window carries a prose `hint` naming `next_offset`; absent once `truncated` is false (uniform pagination contract, shared SHAPE with script.read). |
 | save.list | 69 | — | — | — | — | |
 | save.delete | 70 | — | — | — | — | |
 
