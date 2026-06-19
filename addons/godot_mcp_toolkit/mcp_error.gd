@@ -6,15 +6,19 @@ extends RefCounted
 const CODES: Array[String] = [
 	"ALREADY_EXISTS",
 	"ALREADY_PLAYING",
+	"BUSY",
+	"CLASS_MISMATCH",
 	"COMPILATION_FAILED",
 	"CONNECT_FAILED",
 	"CREATE_DIR_FAILED",
 	"DELETE_FAILED",
 	"DIR_NOT_EMPTY",
-	"DISCONNECTED",
+	"DISCONNECTED",  # Reserved — transport/peer drop; not currently emitted.
 	"EDITED_SCENE",
+	"EMPTY_CONTENT",
 	"EXECUTE_FAILED",
-	"FEATURE_DISABLED",
+	"FAILED",
+	"FEATURE_DISABLED",  # Reserved — read-only/profile gating; not currently emitted.
 	"FILE_TOO_LARGE",
 	"FILESYSTEM_NOT_READY",
 	"FOLDER_PROTECTED",
@@ -25,24 +29,33 @@ const CODES: Array[String] = [
 	"INVALID_METHOD",
 	"INVALID_PARAMS",
 	"INVALID_PATH",
+	"INVALID_STATE",
+	"INVALID_VALUE",
 	"LOAD_FAILED",
 	"LOG_BUSY",
 	"LOG_UNAVAILABLE",
 	"NO_SCENE",
+	"NODE_NOT_FOUND",
 	"NOT_A_RESOURCE",
+	"NOT_BREAKED",
 	"NOT_FOUND",
 	"PACK_FAILED",
 	"PARENT_NOT_FOUND",
 	"PARSE_ERROR",
 	"PATH_DENIED",
 	"PATH_IN_USE",
+	"PROPERTY_NOT_FOUND",
 	"READ_FAILED",
 	"RESPONSE_TOO_LARGE",
 	"SAVE_DELETE_FAILED",
 	"SAVE_FAILED",
 	"SAVE_READ_FAILED",
 	"SAVE_WRITE_FAILED",
+	"SET_FAILED",
 	"TIMEOUT",
+	"UNKNOWN_CLASS",
+	"UNSUPPORTED",
+	"UNSUPPORTED_FILE_TYPE",
 	"WRITE_FAILED",
 ]
 
@@ -87,6 +100,9 @@ static func require(parameters: Dictionary, required: Array) -> Variant:
 
 
 static func fail(code: String, message: String, hint: String = "") -> Dictionary:
+	# Debug-only vocabulary guard: an emitted code absent from CODES is drift.
+	# Stripped from release builds, so it never affects the wire payload.
+	assert(code in CODES, "error code '%s' is not declared in MCPToolkitError.CODES" % code)
 	var result := {"success": false, "error": message, "code": code}
 	if hint != "":
 		result["hint"] = hint

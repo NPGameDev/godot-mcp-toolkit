@@ -54,6 +54,7 @@ func _init() -> void:
 	_test_undo_info()
 	_test_undo_redo_action()
 	_test_error_api()
+	_test_error_codes_vocabulary()
 	_test_export_strip()
 	_test_editor_refresh_reload_filter()
 	_test_unfocused_backup()
@@ -1224,6 +1225,59 @@ func _test_error_api() -> void:
 	var e6 = MCPToolkitError.require(bad_params2, ["file_path"])
 	_eq(e6["hint"], MCPToolkitError.HINT_FILE_PATH,
 			"require(file_path) → HINT_FILE_PATH")
+
+	print("")
+
+
+# --- Error-code vocabulary (drift guard) ------------------------------------
+
+## Enforces that MCPToolkitError.CODES is the complete emitted-code vocabulary.
+## (a) Every DEFAULT_HINTS key must be in CODES — this exact invariant catches
+##     the class of bug where a code is emitted (and given a default hint) but
+##     never registered, leaving fail()'s assert and audits with no anchor.
+## (b) Codes confirmed emitted by the contract audit must each be in CODES, so
+##     a future deletion that re-introduces the drift fails here.
+func _test_error_codes_vocabulary() -> void:
+	_begin("MCPToolkitError vocabulary")
+
+	# (a) Every DEFAULT_HINTS key is a declared code.
+	for key in MCPToolkitError.DEFAULT_HINTS.keys():
+		var hint_code: String = str(key)
+		_ok(MCPToolkitError.CODES.has(hint_code),
+				"DEFAULT_HINTS key '%s' present in CODES" % hint_code)
+
+	# (b) Every audit-confirmed emitted code is declared. Sourced from the
+	# error-emit-site sweep across addons/ (fail() literals + re-emitted
+	# {"code": ...} helper results). Keep in sync when adding error codes.
+	var emitted: Array[String] = [
+		"ALREADY_EXISTS", "ALREADY_PLAYING", "BUSY", "CLASS_MISMATCH",
+		"COMPILATION_FAILED", "CONNECT_FAILED", "CREATE_DIR_FAILED",
+		"DELETE_FAILED", "DIR_NOT_EMPTY", "EDITED_SCENE", "EMPTY_CONTENT",
+		"EXECUTE_FAILED", "FAILED", "FILE_TOO_LARGE", "FILESYSTEM_NOT_READY",
+		"FOLDER_PROTECTED", "GAME_NOT_RUNNING", "HEADLESS_UNSUPPORTED",
+		"INTERNAL", "INVALID_CLASS", "INVALID_METHOD", "INVALID_PARAMS",
+		"INVALID_PATH", "INVALID_STATE", "INVALID_VALUE", "LOAD_FAILED",
+		"LOG_BUSY", "LOG_UNAVAILABLE", "NO_SCENE", "NODE_NOT_FOUND",
+		"NOT_A_RESOURCE", "NOT_BREAKED", "NOT_FOUND", "PACK_FAILED",
+		"PARENT_NOT_FOUND", "PARSE_ERROR", "PATH_DENIED", "PATH_IN_USE",
+		"PROPERTY_NOT_FOUND", "READ_FAILED", "RESPONSE_TOO_LARGE",
+		"SAVE_DELETE_FAILED", "SAVE_FAILED", "SAVE_READ_FAILED",
+		"SAVE_WRITE_FAILED", "SET_FAILED", "TIMEOUT", "UNKNOWN_CLASS",
+		"UNSUPPORTED", "UNSUPPORTED_FILE_TYPE", "WRITE_FAILED",
+	]
+	for emitted_code in emitted:
+		_ok(MCPToolkitError.CODES.has(emitted_code),
+				"emitted code '%s' present in CODES" % emitted_code)
+
+	# CODES carries no accidental duplicate entry.
+	var seen: Dictionary = {}
+	var dupes: int = 0
+	for entry in MCPToolkitError.CODES:
+		var entry_str: String = str(entry)
+		if seen.has(entry_str):
+			dupes += 1
+		seen[entry_str] = true
+	_eq(dupes, 0, "CODES has no duplicate entries")
 
 	print("")
 
