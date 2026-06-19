@@ -28,6 +28,7 @@ const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
 const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
 const WsTransport := preload("res://addons/godot_mcp_toolkit/ws_transport.gd")
+const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
 
 const PORT_BASE := 6570
 const PORT_RANGE := 16  # 6570..6585 inclusive
@@ -582,33 +583,21 @@ func _detect_double_escaped_regex(pattern: String) -> String:
 # ---- Signal commands (Mode B mirror of editor handlers) ---------------------
 
 
-# Runtime equivalent of the editor's _resolve_scene_node — uses the LIVE
-# SceneTree root rather than EditorInterface.get_edited_scene_root(). Bare
-# "" / "." resolves to the tree root so callers that just want a top-level
-# signal on the main scene don't need to type the full path.
-func _resolve_runtime_node(path: String):
+# The root-resolver injected into the shared SignalPairResolver: the LIVE SceneTree
+# root (the editor injects EditorInterface.get_edited_scene_root() instead). Returns
+# null when the tree isn't ready, which the resolver treats as "no node".
+func _runtime_root() -> Node:
 	var tree := get_tree()
-	if tree == null or tree.root == null:
-		return null
-	if path.is_empty() or path == ".":
-		return tree.root
-	return tree.root.get_node_or_null(path)
+	return tree.root if tree != null else null
 
 
-func _signal_list_of(node: Object) -> Array:
-	var out: Array = []
-	for sig in node.get_signal_list():
-		var args: Array = []
-		for arg in sig.get("args", []):
-			args.append({
-				"name": str(arg.get("name", "")),
-				"type": int(arg.get("type", 0)),
-			})
-		out.append({
-			"name": str(sig.get("name", "")),
-			"args": args,
-		})
-	return out
+# Runtime equivalent of the editor's _resolve_scene_node — resolves a path against
+# the LIVE SceneTree root via the shared resolver. Bare "" / "." resolves to the
+# tree root so callers that just want a top-level signal don't need the full path.
+# Kept as a thin wrapper so the other runtime commands that resolve a node
+# (signal.emit, animation_player.control, execute.code, …) share one seam.
+func _resolve_runtime_node(path: String):
+	return SignalPairResolver.resolve_node(path, _runtime_root)
 
 
 func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
@@ -620,40 +609,15 @@ func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
 	if node == null:
 		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % path))
 		return
-	_send_result(peer, id, {"path": path, "signals": _signal_list_of(node)})
+	_send_result(peer, id, {"path": path, "signals": SignalPairResolver.list_signals_of(node)})
 
 
-# Returns the same shape as editor SignalCommands._resolve_signal_pair.
-# Duplicated here because runtime uses _resolve_runtime_node (live SceneTree)
-# instead of EditorInterface; the node-resolution difference prevents sharing.
+# Validates a connect/disconnect quartet against the live tree via the shared
+# resolver. Returns the same shape the editor's _resolve_signal_pair does (the
+# editor wraps the same resolver and layers its hint enrichment); the runtime path
+# is deliberately leaner — no instanced-scene / compilation-error hints.
 func _resolve_runtime_signal_pair(params) -> Dictionary:
-	if typeof(params) != TYPE_DICTIONARY:
-		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
-	var source_path := str(params.get("node_path", params.get("source_path", "")))
-	var signal_name := str(params.get("signal_name", ""))
-	var target_path := str(params.get("target_path", ""))
-	var method_name := str(params.get("method_name", ""))
-	if source_path.is_empty() or signal_name.is_empty() or target_path.is_empty() or method_name.is_empty():
-		return {"code": "INVALID_PARAMS", "error": "node_path, signal_name, target_path, method_name are all required"}
-	var source = _resolve_runtime_node(source_path)
-	if source == null:
-		return {"code": "NOT_FOUND", "error": "source node not found: %s" % source_path}
-	var target = _resolve_runtime_node(target_path)
-	if target == null:
-		return {"code": "NOT_FOUND", "error": "target node not found: %s" % target_path}
-	if not source.has_signal(signal_name):
-		return {"code": "INVALID_PARAMS", "error": "signal %s not on %s" % [signal_name, source_path]}
-	if not target.has_method(method_name):
-		return {"code": "INVALID_PARAMS", "error": "method %s not on %s" % [method_name, target_path]}
-	return {
-		"source": source,
-		"target": target,
-		"source_path": source_path,
-		"target_path": target_path,
-		"signal_name": signal_name,
-		"method_name": method_name,
-		"callable": Callable(target, method_name),
-	}
+	return SignalPairResolver.resolve_pair(params, _runtime_root)
 
 
 func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:

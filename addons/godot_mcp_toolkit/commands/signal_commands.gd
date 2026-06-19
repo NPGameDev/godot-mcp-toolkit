@@ -5,6 +5,7 @@ extends RefCounted
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const Coerce = _Hub.Coerce
 const Helpers = _Hub.Helpers
+const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
 
 static var _extends_path_re: RegEx = _compile_extends_path_re()
 
@@ -97,14 +98,22 @@ static func _signal_list_of(
 	return result
 
 
+## Editor wrapper over the shared SignalPairResolver. It normalizes the editor-
+## relative paths, distinguishes the no-edited-scene case as NO_SCENE (the shared
+## resolver only knows NOT_FOUND), delegates the structural validation to the shared
+## resolver, then — on a has_signal/has_method failure — layers the editor-only hint
+## enrichment (instanced-scene hint, script-source method-walk) the runtime path
+## deliberately omits. The shared resolver owns the skeleton; this owns the hints.
 static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 	if typeof(parameters) != TYPE_DICTIONARY:
 		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
-	var source_path := str(parameters.get("node_path", parameters.get("source_path", "")))
-	source_path = Helpers.normalize_editor_path(source_path)
+	# Normalize /root/… paths to editor-relative form before resolving, and keep the
+	# original guard ORDER exactly: required-params first, then no-edited-scene
+	# (NO_SCENE, which the shared resolver can't distinguish from NOT_FOUND).
+	var source_path := Helpers.normalize_editor_path(
+		str(parameters.get("node_path", parameters.get("source_path", ""))))
 	var signal_name := str(parameters.get("signal_name", ""))
-	var target_path := str(parameters.get("target_path", ""))
-	target_path = Helpers.normalize_editor_path(target_path)
+	var target_path := Helpers.normalize_editor_path(str(parameters.get("target_path", "")))
 	var method_name := str(parameters.get("method_name", ""))
 	if source_path.is_empty() or signal_name.is_empty() \
 			or target_path.is_empty() or method_name.is_empty():
@@ -113,15 +122,24 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
 		return {"code": "NO_SCENE", "error": "no edited scene"}
+	# Delegate the structural validation (node resolution + has_signal/has_method)
+	# to the shared resolver with the already-normalized paths; it echoes those
+	# normalized paths in its NOT_FOUND messages, matching the pre-extraction output.
+	var normalized := {
+		"source_path": source_path,
+		"target_path": target_path,
+		"signal_name": signal_name,
+		"method_name": method_name,
+	}
+	var resolved := SignalPairResolver.resolve_pair(normalized, _get_edited_root)
+	if not resolved.has("error"):
+		return resolved
+	# Layer editor-only hints onto the two validation failures (signal/method
+	# missing). A NOT_FOUND (source/target missing) passes through unchanged.
+	if str(resolved.get("code", "")) != "INVALID_PARAMS":
+		return resolved
 	var source = _resolve_scene_node(source_path)
-	if source == null:
-		return {"code": "NOT_FOUND",
-			"error": "source node not found: %s" % source_path}
-	var target = _resolve_scene_node(target_path)
-	if target == null:
-		return {"code": "NOT_FOUND",
-			"error": "target node not found: %s" % target_path}
-	if not source.has_signal(signal_name):
+	if source != null and not source.has_signal(signal_name):
 		var instance_hint := ""
 		var check: Node = source
 		while check != null and check != root:
@@ -131,7 +149,8 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 			check = check.get_parent()
 		return {"code": "INVALID_PARAMS",
 			"error": "signal %s not on %s%s" % [signal_name, source_path, instance_hint]}
-	if not target.has_method(method_name):
+	var target = _resolve_scene_node(target_path)
+	if target != null and not target.has_method(method_name):
 		var method_hint := ""
 		var scr := target.get_script() as Script
 		if scr == null:
@@ -156,15 +175,8 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 				method_hint = "; script %s is attached but does not define this method — check spelling and inheritance chain" % scr.resource_path
 		return {"code": "INVALID_PARAMS",
 			"error": "method %s not on %s%s" % [method_name, target_path, method_hint]}
-	return {
-		"source": source,
-		"target": target,
-		"source_path": source_path,
-		"target_path": target_path,
-		"signal_name": signal_name,
-		"method_name": method_name,
-		"callable": Callable(target, method_name),
-	}
+	# INVALID_PARAMS with no scene node to hint on (e.g. missing params) — pass through.
+	return resolved
 
 
 # -- Commands -----------------------------------------------------------------
