@@ -91,11 +91,21 @@ names the tool that owns it — it is no longer silently applied under the wrong
 **14.33** `tileset_edit_custom_data` foreign key — file_path=`res://sv2_validation/atlas_tileset.tres`, source_id=0, tiles=[{atlas_x:0, atlas_y:0, navigation_polygon:"full"}]
 - **Expect:** INVALID_PARAMS, message names `tileset.edit_navigation`
 
-> **REGRESSION WATCH (concern 031):** If a foreign-concern key (e.g. `terrain_set`
+> **REGRESSION WATCH (concern 031, eef6ecf):** If a foreign-concern key (e.g. `terrain_set`
 > passed to `tileset_edit_physics`) is silently applied and returns
 > success/tiles_modified instead of INVALID_PARAMS, per-verb key enforcement has
 > regressed. The happy-path cases 14.11–14.15 must still succeed unchanged.
 > Flag as **Major**.
+>
+> **Escape-hatch removal (same fix):** the pre-split monolith's vestigial keys —
+> top-level `add_source`/`layers`/`new_source_id` and per-tile `alternative` — were
+> dropped at `eef6ecf` (superseded by the dedicated `tileset.add_source` /
+> `setup_layers` / `add_alternative` tools at the 11-way split). Only per-tile
+> `alternative` is reachable through the bridge (the server forwards unknown per-tile
+> keys); the three top-level keys are zod-stripped before they arrive. Any
+> `tileset_edit_*` call carrying a per-tile `alternative` key must now return
+> INVALID_PARAMS (it is a foreign key like any other) — if it is accepted or creates
+> an alternative tile, the escape hatch has crept back. Flag as **Major**.
 
 ---
 
