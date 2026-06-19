@@ -234,6 +234,123 @@ for content **your** extension produces. Do **not** re-wrap content a built-in
 tool already returned to you — it is wrapped once, at origin, and re-wrapping
 corrupts the envelope.
 
+### Reading large data: size caps & pagination
+
+If your tool reads data and returns it — a file's bytes, scene/resource dumps, a
+list of matches — it faces the **same transport limit as the built-ins**, and it
+should follow the **same pagination contract**. Hand back a megabyte in one
+response and the model never sees it.
+
+**The WebSocket frame ceiling — oversized responses silently vanish.** Every
+response travels as one WebSocket frame that must fit under the per-peer outbound
+buffer (`ws_buffer_kb`, default **1 MB** in the editor; the runtime server that
+ships inside an exported game is **hardcoded at 1 MB** and ignores the setting).
+The engine does **not** chunk a frame that exceeds the buffer — it rejects the
+whole frame at the send call (Godot's `modules/websocket/wsl_peer.cpp`,
+`WSLPeer::_send`, fails with `ERR_OUT_OF_MEMORY` when
+`queued + p_buffer_size > outbound_buffer_size`; this guard is present unchanged
+across 4.2–4.5). The toolkit's send path does **not** inspect that return, so an
+oversized response is **dropped with no error** — the client just waits and times
+out. You cannot rely on "it'll truncate"; it won't. **Never emit a response you
+haven't bounded.**
+
+**Token economics — even a frame that fits can be too big.** Returned text costs
+the model context (and money). A rough rule is ~4 chars/token ≈ **250 tokens/KB**,
+so **256 KB ≈ 64K tokens** and a full **1 MB ≈ ~250K tokens** — enough to swamp the
+context window on a single call (see Anthropic's Claude context-window
+documentation for current limits). Return only what the task needs; let the agent
+page for the rest. For **binary** payloads remember **base64 inflates ~33%** — size
+your cap against the encoded worst case, not the raw bytes.
+
+**Mirror the uniform pagination contract.** A capped or windowed read returns a
+**fixed response shape** so the agent runs the same loop for every paginating tool.
+Match these field names exactly (they are the built-in contract):
+
+| Field | Type | When present | Meaning |
+|-------|------|--------------|---------|
+| `truncated` | bool | **always** (on success) | `true` if more data remains beyond this window; `false` if this window reached the end. |
+| `total_<unit>` | int | **always** | The full size of the source — e.g. `total_bytes`, `total_lines`, `total_entries`. Lets the agent see how much is left. |
+| `next_<cursor>` | (matches request) | only when `truncated` is `true` | The value to pass back to resume — e.g. `next_offset` (bytes), `next_start_line` (lines). |
+| `hint` | string | only when `truncated` is `true` | One prose line telling the agent to re-call with that cursor until `truncated` is `false`. |
+
+The loop the agent runs is always: *call → if `truncated`, pass `next_<cursor>`
+back as the matching request parameter → call again → stop when `truncated` is
+`false`.*
+
+**Copy a built-in.** Two built-ins already implement this — read them and follow
+the same shape:
+
+- **`save.read`** pages a `user://` file by **bytes**: request `offset` (default
+  `0`) + `max_bytes`; response carries `next_offset`, `total_bytes`, `truncated`,
+  and (when truncated) a `hint` to re-call with `offset = next_offset`.
+- **`script.read`** pages a project script by **lines**: request
+  `start_line`/`end_line` (1-based); response carries `next_start_line`,
+  `total_lines`, `truncated`, and (when truncated) a `hint`.
+
+**Keep the request parameters unit-appropriate** — only the *response* shape is
+uniform. Page bytes with a byte `offset`; page lines with a line cursor; don't
+force a byte offset onto a tool whose natural unit is something else. A tool that
+reads a region or set rather than a linear stream may legitimately be
+**cursor-less**: return `truncated` + a count and let the agent narrow by filter
+or re-query (e.g. a tighter region), instead of inventing a meaningless
+`next_offset`. The contract still holds — `truncated` and a total are always
+there; the resumable `next_<cursor>` is simply omitted when there is nothing
+linear to resume.
+
+**Cap the read with a setting, and reject — never dump.** Don't let payload size
+be unbounded. Mirror the built-ins, which cap each window with a project setting
+(`save_read_cap_kb` / `script_read_cap_kb`, default **256 KB**) and read it
+**live** on every call. If a requested window — or the full read — would exceed
+that cap or the frame buffer, return a structured **`FILE_TOO_LARGE`** error with a
+"narrow the range / paginate" hint, **instead of** sending a payload the transport
+will silently drop:
+
+```gdscript
+const CAP_BYTES := 256 * 1024   # better: read a live ProjectSettings limit here
+
+func _read_blob(params: Dictionary) -> Dictionary:
+    var offset: int = max(0, int(params.get("offset", 0)))
+    var total := _blob_size(params)                       # full source size
+    var want: int = clampi(int(params.get("max_bytes", CAP_BYTES)), 1, CAP_BYTES)
+    if want > CAP_BYTES:                                   # window exceeds the cap
+        return MCPToolkitError.fail("FILE_TOO_LARGE",
+            "Requested window exceeds the %d-byte cap." % CAP_BYTES,
+            "Lower max_bytes (cap %d) or page with offset." % CAP_BYTES)
+
+    var chunk := _read_range(params, offset, want)        # at most `want` bytes
+    var end := offset + chunk.size()
+    var more := end < total
+    var out := {
+        "success": true,
+        "bytes_returned": chunk.size(),
+        "offset": offset,
+        "total_bytes": total,        # total_<unit> — always present
+        "truncated": more,           # truncated — always present
+        "content": Untrusted.wrap("blob", str(params.get("path", "")), chunk),
+    }
+    if more:
+        out["next_offset"] = end     # next_<cursor> — only when truncated
+        out["hint"] = "more bytes remain — re-call with offset = next_offset (%d) until truncated is false" % end
+    return out
+```
+
+This is the only safe way to expose data larger than the frame buffer: the agent
+reads it across several capped calls. (A capped read also keeps any *single*
+response cheap — see token economics above.) The same idea applies on the
+**line** axis for a script-style tool: cap the line window, set
+`total_lines` / `truncated` / `next_start_line`, and reject an over-cap full read
+with `FILE_TOO_LARGE` and a "use a line range" hint.
+
+The user-facing **`advanced_configuration.md`** documents this contract from the
+*caller's* side (the loop an agent follows, with worked `save_read` / `script_read`
+examples) — your tool returning these same fields lets an agent that already knows
+the built-in loop page your tool with zero new learning.
+
+> **Future convenience.** A shared helper for capped/paginated reads (cap +
+> `truncated` + `next_<cursor>` bookkeeping) is a plausible addition — but it does
+> **not** exist today. Hand-roll the pattern above; it is small and entirely under
+> your control.
+
 **Saving a scene from a handler — choose by your scripting language.**
 Handlers run inside a `call_deferred` dispatch. Calling
 `EditorInterface.save_scene()` / `save_scene_as()` directly is **unsafe in any
