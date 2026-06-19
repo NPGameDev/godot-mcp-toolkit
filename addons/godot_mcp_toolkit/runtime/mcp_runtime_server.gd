@@ -188,8 +188,9 @@ func _process(_delta: float) -> void:
 	while _tcp_server.is_connection_available():
 		var stream := _tcp_server.take_connection()
 		var peer := WebSocketPeer.new()
-		peer.inbound_buffer_size = 1048576
-		peer.outbound_buffer_size = 1048576
+		var buffer_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
+		peer.inbound_buffer_size = buffer_kb * 1024
+		peer.outbound_buffer_size = buffer_kb * 1024
 		var accept_err := peer.accept_stream(stream)
 		if accept_err != OK:
 			push_warning("[MCPRuntimeServer] accept_stream failed (%d)" % accept_err)
