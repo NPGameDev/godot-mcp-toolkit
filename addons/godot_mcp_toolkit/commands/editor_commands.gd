@@ -105,7 +105,7 @@ static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
 
 
 static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
-	if _Hub.is_headless():
+	if _Hub.VersionUtils.is_headless():
 		return MCPToolkitError.fail("HEADLESS_UNSUPPORTED",
 			"editor.screenshot requires a display server (no viewport in headless mode)")
 

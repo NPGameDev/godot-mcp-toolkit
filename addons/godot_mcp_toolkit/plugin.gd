@@ -75,7 +75,7 @@ var _was_playing: bool = false
 
 
 func _enter_tree() -> void:
-	_Hub._plugin = self
+	_Hub.EditorAccess.set_plugin(self)
 	SettingsRegistration.register_all()
 
 	var registry := MCPToolkitCommandRegistry.new()
@@ -173,11 +173,11 @@ func _enter_tree() -> void:
 
 	# Warn about untested future Godot versions (but don't block).
 	var _engine_ver := _Hub.VersionUtils.get_engine_version_pair()
-	if not _Hub.VersionUtils.is_at_most(_engine_ver, _Hub.GODOT_TESTED_MAX_VERSION):
+	if not _Hub.VersionUtils.is_at_most(_engine_ver, _Hub.VersionUtils.GODOT_TESTED_MAX_VERSION):
 		push_warning(("[MCP] Godot %s detected — latest tested version is %s. "
 			+ "The plugin will run normally but some features may behave unexpectedly. "
 			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues")
-			% [_engine_ver, _Hub.GODOT_TESTED_MAX_VERSION])
+			% [_engine_ver, _Hub.VersionUtils.GODOT_TESTED_MAX_VERSION])
 
 	_wizard = OnboardingWizard.new(self, _dock)
 	call_deferred("_check_onboarding")
@@ -284,8 +284,8 @@ func _exit_tree() -> void:
 		_server.free()
 		_server = null
 
-	# Plugin reference — null last (teardown symmetry with _enter_tree).
-	_Hub._plugin = null
+	# Plugin reference — clear last (teardown symmetry with _enter_tree).
+	_Hub.EditorAccess.clear_plugin()
 
 
 func _enable_plugin() -> void:
@@ -371,7 +371,7 @@ func _on_regen_token() -> void:
 	if _server != null:
 		_server.regenerate_token()
 		print("[MCP] Token rotated")
-		var toaster = _Hub.get_toaster()
+		var toaster = _Hub.EditorAccess.get_toaster()
 		if toaster != null:
 			toaster.push_toast("MCP token rotated", 0)
 

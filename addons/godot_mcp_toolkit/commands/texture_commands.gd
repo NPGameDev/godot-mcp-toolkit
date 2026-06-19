@@ -69,7 +69,7 @@ static func _cmd_generate(parameters: Dictionary) -> Dictionary:
 	var label := str(parameters.get("label", ""))
 	var warnings: Array[String] = []
 	if label != "":
-		if _Hub.is_headless():
+		if _Hub.VersionUtils.is_headless():
 			warnings.append("label overlay skipped: text rasterization needs a display (unavailable in --headless)")
 		else:
 			var label_color := _parse_color(parameters.get("label_color", null), Color(0, 0, 0, 1))

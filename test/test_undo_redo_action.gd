@@ -28,11 +28,10 @@ func diagnose_undo_redo() -> Dictionary:
 	var diag := {}
 
 	# 1. Hub plugin reference
-	diag["hub_plugin_null"] = _Hub._plugin == null
-	diag["hub_plugin_class"] = _Hub._plugin.get_class() if _Hub._plugin != null else "null"
+	diag["hub_plugin_set"] = _Hub.EditorAccess.has_plugin()
 
 	# 2. EditorUndoRedoManager
-	var ur = _Hub.get_undo_redo()
+	var ur = _Hub.EditorAccess.get_undo_redo()
 	diag["undo_redo_null"] = ur == null
 	if ur != null:
 		diag["undo_redo_class"] = ur.get_class()
@@ -103,7 +102,7 @@ func diagnose_undo_redo() -> Dictionary:
 ## [param context_node_path]: optional path relative to scene root — uses
 ##   that node's history. Empty string = edited scene root's history.
 func trigger_undo(context_node_path: String = "") -> Dictionary:
-	var ur = _Hub.get_undo_redo()
+	var ur = _Hub.EditorAccess.get_undo_redo()
 	if ur == null:
 		return {"status": "error", "message": "EditorUndoRedoManager not available (headless or plugin not loaded)"}
 
@@ -123,7 +122,7 @@ func trigger_undo(context_node_path: String = "") -> Dictionary:
 
 ## Trigger redo on the edited scene's history. Returns a status dict.
 func trigger_redo(context_node_path: String = "") -> Dictionary:
-	var ur = _Hub.get_undo_redo()
+	var ur = _Hub.EditorAccess.get_undo_redo()
 	if ur == null:
 		return {"status": "error", "message": "EditorUndoRedoManager not available (headless or plugin not loaded)"}
 
@@ -145,7 +144,7 @@ func trigger_redo(context_node_path: String = "") -> Dictionary:
 ## Creates temporary nodes, mutates via the builder, undoes/redoes
 ## programmatically, and verifies state. Cleans up afterward.
 func run_undo_redo_tests() -> Dictionary:
-	var ur = _Hub.get_undo_redo()
+	var ur = _Hub.EditorAccess.get_undo_redo()
 	if ur == null:
 		return {"status": "skipped", "message": "No EditorUndoRedoManager — cannot run integration tests"}
 

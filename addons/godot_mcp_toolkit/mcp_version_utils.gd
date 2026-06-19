@@ -5,6 +5,16 @@ extends RefCounted
 ## Used by command_registry.gd and extension_loader.gd to filter
 ## commands that require a specific Godot version range.
 
+## Latest version tested. Versions above this still run but log a notice.
+const GODOT_TESTED_MAX_VERSION := "4.6"
+
+
+## True when running under `godot --headless` (no display server).
+## Use to gate tools that require a viewport or running game.
+static func is_headless() -> bool:
+	return DisplayServer.get_name() == "headless"
+
+
 static func get_engine_version_pair() -> String:
 	var info := Engine.get_version_info()
 	return "%d.%d" % [info["major"], info["minor"]]

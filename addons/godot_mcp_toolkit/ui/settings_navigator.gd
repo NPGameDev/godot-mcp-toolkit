@@ -9,7 +9,7 @@ static func open_mcp_settings() -> void:
 	var root := EditorInterface.get_base_control().get_tree().root
 	var dialog := _find_node_by_class(root, "ProjectSettingsEditor")
 	if not dialog is Window:
-		var toaster = _Hub.get_toaster()
+		var toaster = _Hub.EditorAccess.get_toaster()
 		if toaster != null:
 			toaster.push_toast(
 				"Project -> Project Settings -> Mcp Toolkit", 0)

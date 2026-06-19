@@ -99,7 +99,7 @@ func _make_section_style() -> StyleBoxFlat:
 	var scale := EditorInterface.get_editor_scale()
 	# Sample the editor Panel stylebox for a theme-adaptive base color.
 	var base := Color(0.22, 0.22, 0.22)
-	var theme := _Hub.get_editor_theme()
+	var theme := _Hub.EditorAccess.get_editor_theme()
 	if theme:
 		var sb = theme.get_stylebox("panel", "Panel")
 		if sb is StyleBoxFlat:
@@ -1010,6 +1010,6 @@ func _toast(msg: String, severity: int = _TOAST_INFO, tooltip_text: String = "")
 	else:
 		print("[MCP] %s" % msg)
 	# EditorToaster available in Godot 4.4+ (dynamic dispatch for compat).
-	var toaster = _Hub.get_toaster()
+	var toaster = _Hub.EditorAccess.get_toaster()
 	if toaster != null:
 		toaster.push_toast(msg, severity, tooltip_text)

@@ -640,7 +640,7 @@ func _report_collision(class_name_str: String, method: String) -> void:
 	push_error("[MCPExtensions] " + msg)
 	# EditorToaster is 4.4+ — get_toaster() returns null below that, so degrade
 	# to the push_error alone. Severity 2 == EditorToaster.SEVERITY_ERROR.
-	var toaster = _Hub.get_toaster()
+	var toaster = _Hub.EditorAccess.get_toaster()
 	if toaster != null:
 		toaster.push_toast(msg, 2)
 

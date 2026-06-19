@@ -31,7 +31,7 @@ var _committed: bool = false
 ##   the undo action belongs to — important for multi-tab editing).
 static func begin(description: String, context_object: Object = null) -> MCPToolkitUndoRedoAction:
 	var action := MCPToolkitUndoRedoAction.new()
-	var mgr = _Hub.get_undo_redo()
+	var mgr = _Hub.EditorAccess.get_undo_redo()
 	if mgr != null:
 		mgr.create_action("MCP: " + description, 0, context_object)
 		action._mgr = mgr
