@@ -168,11 +168,11 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| tileset.edit_physics | 14.11 | ✓ (14.16: invalid coords, 14.17: missing file) | — | — | — | |
-| tileset.edit_terrain | 14.12 | — | — | — | — | |
-| tileset.edit_navigation | 14.13 | — | — | — | — | |
-| tileset.edit_visuals | 14.14 | — | — | — | FIX-2 | |
-| tileset.edit_custom_data | 14.15 | — | — | — | — | |
+| tileset.edit_physics | 14.11 | ✓ (14.16: invalid coords, 14.17: missing file, 14.29: foreign key → edit_terrain) | — | ✓ (14.29: hint names owning tool) | concern 031 | per-verb key allow-list |
+| tileset.edit_terrain | 14.12 | ✓ (14.30: foreign key → edit_physics) | — | ✓ (14.30) | concern 031 | per-verb key allow-list |
+| tileset.edit_navigation | 14.13 | ✓ (14.31: foreign key → edit_visuals) | — | ✓ (14.31) | concern 031 | per-verb key allow-list |
+| tileset.edit_visuals | 14.14 | ✓ (14.32: foreign key → edit_custom_data) | — | ✓ (14.32) | FIX-2, concern 031 | bundles occlusion+animation+probability |
+| tileset.edit_custom_data | 14.15 | ✓ (14.33: foreign key → edit_navigation) | — | ✓ (14.33) | concern 031 | per-verb key allow-list |
 
 ### Theme (1 tool)
 

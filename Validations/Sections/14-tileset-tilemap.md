@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (Sv2TileLayer exists in main.tscn)
 **Tools tested:** tileset_create, tileset_setup_layers, tileset_add_source, tileset_remove_source, tileset_add_alternative, tileset_remove_alternative, tileset_edit_physics, tileset_edit_terrain, tileset_edit_navigation, tileset_edit_visuals, tileset_edit_custom_data, tilemap_set_cells, tilemap_read_cells
-**Tests:** 28
+**Tests:** 33
 
 ---
 
@@ -69,6 +69,33 @@
 
 **14.17** `tileset_edit_physics` guard (missing file) — file_path=`res://no_such_tileset.tres`, tiles=[{atlas_x:0, atlas_y:0, physics_polygon:"full"}]
 - **Expect:** NOT_FOUND
+
+### Per-verb key enforcement (concern 031)
+
+Each `tileset_edit_*` tool accepts only the keys for its own tile-data concern.
+A key belonging to a sibling tool is rejected (INVALID_PARAMS) with a hint that
+names the tool that owns it — it is no longer silently applied under the wrong verb.
+
+**14.29** `tileset_edit_physics` foreign key — file_path=`res://sv2_validation/atlas_tileset.tres`, source_id=0, tiles=[{atlas_x:0, atlas_y:0, terrain_set:0}]
+- **Expect:** INVALID_PARAMS, message names `tileset.edit_terrain`
+
+**14.30** `tileset_edit_terrain` foreign key — file_path=`res://sv2_validation/atlas_tileset.tres`, source_id=0, tiles=[{atlas_x:0, atlas_y:0, physics_polygon:"full"}]
+- **Expect:** INVALID_PARAMS, message names `tileset.edit_physics`
+
+**14.31** `tileset_edit_navigation` foreign key — file_path=`res://sv2_validation/atlas_tileset.tres`, source_id=0, tiles=[{atlas_x:0, atlas_y:0, probability:0.5}]
+- **Expect:** INVALID_PARAMS, message names `tileset.edit_visuals`
+
+**14.32** `tileset_edit_visuals` foreign key — file_path=`res://sv2_validation/atlas_tileset.tres`, source_id=0, tiles=[{atlas_x:0, atlas_y:0, custom_data:{"damage":1}}]
+- **Expect:** INVALID_PARAMS, message names `tileset.edit_custom_data`
+
+**14.33** `tileset_edit_custom_data` foreign key — file_path=`res://sv2_validation/atlas_tileset.tres`, source_id=0, tiles=[{atlas_x:0, atlas_y:0, navigation_polygon:"full"}]
+- **Expect:** INVALID_PARAMS, message names `tileset.edit_navigation`
+
+> **REGRESSION WATCH (concern 031):** If a foreign-concern key (e.g. `terrain_set`
+> passed to `tileset_edit_physics`) is silently applied and returns
+> success/tiles_modified instead of INVALID_PARAMS, per-verb key enforcement has
+> regressed. The happy-path cases 14.11–14.15 must still succeed unchanged.
+> Flag as **Major**.
 
 ---
 

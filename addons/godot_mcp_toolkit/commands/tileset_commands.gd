@@ -29,20 +29,23 @@ static func register(registry: MCPToolkitCommandRegistry) -> void:
 		return await _cmd_tileset_setup_layers(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	# -- tileset_edit group (per-tile properties) --
+	# Each verb binds the shared editor but pins its own VERB, so the handler can
+	# enforce the per-tile key set its tool name promises (a terrain key sent to
+	# edit_physics is rejected, not silently applied). See _EDIT_KEY_SETS.
 	registry.add("tileset.edit_physics", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters, "physics")
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit_terrain", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters, "terrain")
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit_navigation", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters, "navigation")
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit_visuals", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters, "visuals")
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("tileset.edit_custom_data", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_tileset_edit(parameters)
+		return await _cmd_tileset_edit(parameters, "custom_data")
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
@@ -317,7 +320,64 @@ static func _cmd_tileset_setup_layers(parameters: Dictionary) -> Dictionary:
 	})
 
 
-static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
+# -- Per-verb key enforcement -------------------------------------------------
+#
+# Each tileset.edit_* tool owns exactly one tile-data concern. The five tools all
+# share _cmd_tileset_edit, so without enforcement a key meant for one verb (e.g.
+# terrain_set) applied silently under another (e.g. edit_physics). These tables
+# make the verb authoritative: a verb accepts only its own per-tile keys plus the
+# universal coordinate selectors, and any foreign key is rejected with a hint that
+# names the tool that DOES own it (reverse lookup via _EDIT_KEY_OWNER).
+
+## Coordinate selectors every verb needs to address a tile.
+const _EDIT_COORD_KEYS := ["atlas_x", "atlas_y"]
+
+## Per-tile keys each verb is allowed to read/apply. The key sets are mutually
+## exclusive — one key belongs to exactly one verb — which is what lets a single
+## reverse lookup name the owning tool for a rejection hint.
+const _EDIT_KEY_SETS := {
+	"physics": ["physics_polygon", "physics_layer", "one_way_collision"],
+	"terrain": ["terrain_set", "terrain", "terrain_peering"],
+	"navigation": ["navigation_polygon", "navigation_layer"],
+	"visuals": ["occlusion_polygon", "occlusion_layer", "animation", "probability"],
+	"custom_data": ["custom_data"],
+}
+
+## Reverse map: per-tile key -> the tool that owns it, for the rejection hint.
+const _EDIT_KEY_OWNER := {
+	"physics_polygon": "tileset.edit_physics",
+	"physics_layer": "tileset.edit_physics",
+	"one_way_collision": "tileset.edit_physics",
+	"terrain_set": "tileset.edit_terrain",
+	"terrain": "tileset.edit_terrain",
+	"terrain_peering": "tileset.edit_terrain",
+	"navigation_polygon": "tileset.edit_navigation",
+	"navigation_layer": "tileset.edit_navigation",
+	"occlusion_polygon": "tileset.edit_visuals",
+	"occlusion_layer": "tileset.edit_visuals",
+	"animation": "tileset.edit_visuals",
+	"probability": "tileset.edit_visuals",
+	"custom_data": "tileset.edit_custom_data",
+}
+
+
+## Reject the first per-tile key that does not belong to `verb`. Returns "" when
+## every key is allowed, otherwise an INVALID_PARAMS message that names the tool
+## owning the offending key. Pure (no engine state) so it is unit-testable.
+static func _foreign_key_error(verb: String, tile: Dictionary) -> String:
+	var allowed: Array = _EDIT_KEY_SETS.get(verb, [])
+	for key in tile:
+		var key_str := str(key)
+		if key_str in _EDIT_COORD_KEYS or key_str in allowed:
+			continue
+		if _EDIT_KEY_OWNER.has(key_str):
+			return "key '%s' belongs to %s, not tileset.edit_%s" % [
+				key_str, _EDIT_KEY_OWNER[key_str], verb]
+		return "unknown key '%s' for tileset.edit_%s" % [key_str, verb]
+	return ""
+
+
+static func _cmd_tileset_edit(parameters: Dictionary, verb: String) -> Dictionary:
 	var err = MCPToolkitError.require(parameters, ["file_path"])
 	if err != null:
 		return err
@@ -325,8 +385,6 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	var source_id := int(parameters.get("source_id", 0))
 	var tiles_raw = parameters.get("tiles", null)
-	var add_source_raw = parameters.get("add_source", null)
-	var layers_raw = parameters.get("layers", null)
 
 	var ts_or_err = _load_tileset(file_path)
 	if ts_or_err is Dictionary:
@@ -335,20 +393,6 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 
 	var tile_errors: Array = []
 	var tiles_modified := 0
-	var new_source_id: Variant = null
-
-	# -- add_source (before per-tile edits) --
-	if add_source_raw != null and typeof(add_source_raw) == TYPE_DICTIONARY:
-		var result = _apply_add_source(ts, add_source_raw)
-		if result.has("error"):
-			return result
-		new_source_id = result["source_id"]
-
-	# -- layers (before per-tile edits) --
-	if layers_raw != null and typeof(layers_raw) == TYPE_DICTIONARY:
-		var result = _apply_layers(ts, layers_raw)
-		if result.has("error"):
-			return result
 
 	# -- per-tile edits --
 	if tiles_raw != null and typeof(tiles_raw) == TYPE_ARRAY:
@@ -370,83 +414,34 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 			if not tile.has("atlas_x") or not tile.has("atlas_y"):
 				tile_errors.append("tiles[%d]: missing atlas_x/atlas_y" % i)
 				continue
+			# Enforce the verb: a key for another tool is a caller mistake, so
+			# reject the whole call (don't silently apply the wrong concern).
+			var foreign := _foreign_key_error(verb, tile)
+			if foreign != "":
+				return MCPToolkitError.fail("INVALID_PARAMS",
+					"tiles[%d]: %s" % [i, foreign])
 			var coord := Vector2i(int(tile["atlas_x"]), int(tile["atlas_y"]))
 			if not atlas.has_tile(coord):
 				tile_errors.append("tiles[%d]: tile (%d,%d) not found in source %d" % [
 					i, coord.x, coord.y, source_id])
 				continue
 			var td: TileData = atlas.get_tile_data(coord, 0)
-			var modified := false
 
-			# Feature 1: physics_polygon
-			if tile.has("physics_polygon"):
-				var r = _apply_physics_polygon(td, tile, tile_size)
-				if r.is_empty():
-					modified = true
-				else:
-					tile_errors.append("tiles[%d]: %s" % [i, r])
-
-			# Feature 2: terrain
-			if tile.has("terrain_set"):
-				td.terrain_set = int(tile["terrain_set"])
-				modified = true
-			if tile.has("terrain"):
-				td.terrain = int(tile["terrain"])
-				modified = true
-
-			# Feature 2b: terrain peering bits
-			if tile.has("terrain_peering") and typeof(tile["terrain_peering"]) == TYPE_DICTIONARY:
-				var r = _apply_terrain_peering(td, tile["terrain_peering"])
-				if r.is_empty():
-					modified = true
-				else:
-					tile_errors.append("tiles[%d]: %s" % [i, r])
-
-			# Feature 3: navigation_polygon
-			if tile.has("navigation_polygon"):
-				var r = _apply_navigation_polygon(td, tile, tile_size)
-				if r.is_empty():
-					modified = true
-				else:
-					tile_errors.append("tiles[%d]: %s" % [i, r])
-
-			# Feature 4: occlusion_polygon
-			if tile.has("occlusion_polygon"):
-				var r = _apply_occlusion_polygon(td, tile, tile_size)
-				if r.is_empty():
-					modified = true
-				else:
-					tile_errors.append("tiles[%d]: %s" % [i, r])
-
-			# Feature 5: custom_data
-			if tile.has("custom_data") and typeof(tile["custom_data"]) == TYPE_DICTIONARY:
-				for layer_name in tile["custom_data"]:
-					td.set_custom_data(str(layer_name), tile["custom_data"][layer_name])
-				modified = true
-
-			# Feature 6: animation
-			if tile.has("animation") and typeof(tile["animation"]) == TYPE_DICTIONARY:
-				var r = _apply_animation(atlas, coord, tile["animation"])
-				if r.is_empty():
-					modified = true
-				else:
-					tile_errors.append("tiles[%d]: %s" % [i, r])
-
-			# Feature 7: probability
-			if tile.has("probability"):
-				td.probability = float(tile["probability"])
-				modified = true
-
-			# Feature 8: alternative tile
-			if tile.has("alternative") and typeof(tile["alternative"]) == TYPE_DICTIONARY:
-				var r = _apply_alternative(atlas, coord, tile["alternative"])
-				if r.has("error"):
-					tile_errors.append("tiles[%d]: %s" % [i, r["error"]])
-				else:
-					modified = true
-
-			if modified:
-				tiles_modified += 1
+			# Count a tile only when at least one real edit key was applied — a
+			# tile carrying just the coord selectors applies nothing, so it must
+			# not be counted (matches the pre-split per-tile `modified` flag).
+			var has_real_edit := false
+			for k in tile:
+				if not str(k) in _EDIT_COORD_KEYS:
+					has_real_edit = true
+					break
+			var feature_errors: Array = _apply_verb(verb, atlas, coord, td, tile, tile_size)
+			if feature_errors.is_empty():
+				if has_real_edit:
+					tiles_modified += 1
+			else:
+				for fe in feature_errors:
+					tile_errors.append("tiles[%d]: %s" % [i, str(fe)])
 
 	# -- Save --
 	var save_result := await _save_tileset(ts, file_path)
@@ -461,9 +456,96 @@ static func _cmd_tileset_edit(parameters: Dictionary) -> Dictionary:
 			"Edit more tile properties with tileset.edit_*, or paint tiles onto a ",
 			" with tilemap.set_cells."),
 	}
-	if new_source_id != null:
-		edit_result["new_source_id"] = new_source_id
 	return MCPToolkitSuccess.ok(edit_result)
+
+
+# -- Intent-named per-verb flows ----------------------------------------------
+#
+# One flow per tool, each applying ONLY its own concern's keys to a single tile.
+# Each returns the soft per-tile errors it accumulated ([] = fully applied); the
+# caller folds those into the per-tile errors[] array exactly as before.
+
+
+## Route one tile to the flow that matches `verb`. Keys are already verb-checked.
+static func _apply_verb(
+	verb: String, atlas: TileSetAtlasSource, coord: Vector2i,
+	td: TileData, tile: Dictionary, tile_size: Vector2i
+) -> Array:
+	match verb:
+		"physics":
+			return _apply_physics(td, tile, tile_size)
+		"terrain":
+			return _apply_terrain(td, tile)
+		"navigation":
+			return _apply_navigation(td, tile, tile_size)
+		"visuals":
+			return _apply_visuals(atlas, coord, td, tile, tile_size)
+		"custom_data":
+			return _apply_custom_data(td, tile)
+	return ["unknown tileset edit verb: %s" % verb]
+
+
+## Collision polygon + one-way flag (tileset.edit_physics).
+static func _apply_physics(td: TileData, tile: Dictionary, tile_size: Vector2i) -> Array:
+	var errors: Array = []
+	if tile.has("physics_polygon"):
+		var r := _apply_physics_polygon(td, tile, tile_size)
+		if not r.is_empty():
+			errors.append(r)
+	return errors
+
+
+## Terrain set, terrain index, and peering bits (tileset.edit_terrain).
+static func _apply_terrain(td: TileData, tile: Dictionary) -> Array:
+	var errors: Array = []
+	if tile.has("terrain_set"):
+		td.terrain_set = int(tile["terrain_set"])
+	if tile.has("terrain"):
+		td.terrain = int(tile["terrain"])
+	if tile.has("terrain_peering") and typeof(tile["terrain_peering"]) == TYPE_DICTIONARY:
+		var r := _apply_terrain_peering(td, tile["terrain_peering"])
+		if not r.is_empty():
+			errors.append(r)
+	return errors
+
+
+## Navigation polygon (tileset.edit_navigation).
+static func _apply_navigation(td: TileData, tile: Dictionary, tile_size: Vector2i) -> Array:
+	var errors: Array = []
+	if tile.has("navigation_polygon"):
+		var r := _apply_navigation_polygon(td, tile, tile_size)
+		if not r.is_empty():
+			errors.append(r)
+	return errors
+
+
+## Occlusion, animation, and probability (tileset.edit_visuals). This tool
+## deliberately bundles all three appearance concerns for a tile.
+static func _apply_visuals(
+	atlas: TileSetAtlasSource, coord: Vector2i,
+	td: TileData, tile: Dictionary, tile_size: Vector2i
+) -> Array:
+	var errors: Array = []
+	if tile.has("occlusion_polygon"):
+		var r := _apply_occlusion_polygon(td, tile, tile_size)
+		if not r.is_empty():
+			errors.append(r)
+	if tile.has("animation") and typeof(tile["animation"]) == TYPE_DICTIONARY:
+		var r := _apply_animation(atlas, coord, tile["animation"])
+		if not r.is_empty():
+			errors.append(r)
+	if tile.has("probability"):
+		td.probability = float(tile["probability"])
+	return errors
+
+
+## Custom data layer values (tileset.edit_custom_data).
+static func _apply_custom_data(td: TileData, tile: Dictionary) -> Array:
+	if tile.has("custom_data") and typeof(tile["custom_data"]) == TYPE_DICTIONARY:
+		var cd: Dictionary = tile["custom_data"]
+		for layer_name in cd:
+			td.set_custom_data(str(layer_name), cd[layer_name])
+	return []
 
 
 # -- tileset sub-helpers ------------------------------------------------------

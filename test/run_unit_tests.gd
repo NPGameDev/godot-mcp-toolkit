@@ -19,6 +19,7 @@ const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/extension_c
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
+const TilesetCommands := preload("res://addons/godot_mcp_toolkit/commands/tileset_commands.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 
 var _passed := 0
@@ -71,6 +72,7 @@ func _init() -> void:
 	_test_spatial_map()
 	_test_texture_generate()
 	_test_sound_generate()
+	_test_tileset_edit_key_enforcement()
 	_test_coerce_roundtrip()
 	_test_user_path_monitor()
 
@@ -1927,6 +1929,71 @@ func _test_sound_generate() -> void:
 	for i in range(mini(50, noise.size() / 2)):
 		distinct[noise.decode_s16(i * 2)] = true
 	_ok(distinct.size() > 5, "_build_pcm noise varies sample-to-sample")
+
+
+# --- tileset.edit_* per-verb key enforcement (concern 031) ----------------
+# The five tileset.edit_* tools share one handler but each owns exactly one
+# tile-data concern. _foreign_key_error is the pure gate: it accepts only the
+# verb's own keys (plus the universal atlas_x/atlas_y selectors) and rejects the
+# first foreign key with a message that names the tool owning it. Pure → testable
+# without an editor or a TileSet resource.
+func _test_tileset_edit_key_enforcement() -> void:
+	_begin("tileset.edit_* key enforcement (concern 031)")
+
+	# Happy path: each verb with only its own keys (+ coords) → accepted ("").
+	_eq(TilesetCommands._foreign_key_error("physics",
+		{"atlas_x": 0, "atlas_y": 0, "physics_polygon": "full", "physics_layer": 0,
+			"one_way_collision": true}), "", "physics accepts its own keys")
+	_eq(TilesetCommands._foreign_key_error("terrain",
+		{"atlas_x": 1, "atlas_y": 0, "terrain_set": 0, "terrain": 0,
+			"terrain_peering": {"center": 0}}), "", "terrain accepts its own keys")
+	_eq(TilesetCommands._foreign_key_error("navigation",
+		{"atlas_x": 0, "atlas_y": 0, "navigation_polygon": "full", "navigation_layer": 0}),
+		"", "navigation accepts its own keys")
+	_eq(TilesetCommands._foreign_key_error("visuals",
+		{"atlas_x": 0, "atlas_y": 0, "occlusion_polygon": "full", "occlusion_layer": 0,
+			"animation": {"frame_count": 2}, "probability": 0.5}), "",
+		"visuals accepts occlusion+animation+probability bundle")
+	_eq(TilesetCommands._foreign_key_error("custom_data",
+		{"atlas_x": 0, "atlas_y": 0, "custom_data": {"damage": 10}}), "",
+		"custom_data accepts its own key")
+
+	# Coordinate-only tile is always valid (selectors are universal).
+	_eq(TilesetCommands._foreign_key_error("physics", {"atlas_x": 0, "atlas_y": 0}),
+		"", "coords-only tile accepted")
+
+	# Foreign key → rejected, and the message names the OWNING tool.
+	var r1 := TilesetCommands._foreign_key_error("physics",
+		{"atlas_x": 0, "atlas_y": 0, "terrain_set": 0})
+	_ok(not r1.is_empty(), "terrain_set on physics → rejected")
+	_ok(r1.contains("tileset.edit_terrain"), "physics rejection names tileset.edit_terrain")
+
+	var r2 := TilesetCommands._foreign_key_error("terrain",
+		{"atlas_x": 0, "atlas_y": 0, "physics_polygon": "full"})
+	_ok(r2.contains("tileset.edit_physics"), "physics_polygon on terrain → names edit_physics")
+
+	var r3 := TilesetCommands._foreign_key_error("navigation",
+		{"atlas_x": 0, "atlas_y": 0, "probability": 0.5})
+	_ok(r3.contains("tileset.edit_visuals"), "probability on navigation → names edit_visuals")
+
+	var r4 := TilesetCommands._foreign_key_error("custom_data",
+		{"atlas_x": 0, "atlas_y": 0, "navigation_polygon": "full"})
+	_ok(r4.contains("tileset.edit_navigation"), "navigation_polygon on custom_data → names edit_navigation")
+
+	var r5 := TilesetCommands._foreign_key_error("visuals",
+		{"atlas_x": 0, "atlas_y": 0, "custom_data": {"x": 1}})
+	_ok(r5.contains("tileset.edit_custom_data"), "custom_data on visuals → names edit_custom_data")
+
+	# A key owned by no verb → rejected via the "unknown key" branch (no owner).
+	var r6 := TilesetCommands._foreign_key_error("physics",
+		{"atlas_x": 0, "atlas_y": 0, "bogus_key": 1})
+	_ok(not r6.is_empty(), "unknown key on physics → rejected")
+	_ok(r6.contains("unknown key"), "unknown-key rejection uses unknown-key wording")
+
+	# Unknown verb has an empty allow-list → first non-coord key is foreign.
+	_ok(not TilesetCommands._foreign_key_error("bogus_verb",
+		{"atlas_x": 0, "atlas_y": 0, "physics_polygon": "full"}).is_empty(),
+		"unknown verb rejects any non-coord key")
 
 
 # --- Coerce/serialize round-trip symmetry (concern 018) -------------------
