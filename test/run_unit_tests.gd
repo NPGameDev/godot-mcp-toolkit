@@ -24,6 +24,7 @@ const TilesetCommands := preload("res://addons/godot_mcp_toolkit/commands/tilese
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
+const SceneLease := preload("res://addons/godot_mcp_toolkit/scene_lease.gd")
 
 var _passed := 0
 var _failed := 0
@@ -870,39 +871,48 @@ func _test_watchdog_timeout() -> void:
 	print("")
 
 
-# --- Scene-lease bookkeeping (Fix 4, 41l-tricies) --------------------------
-# After Fix 4, _try_acquire_lease is pure bookkeeping (the raw
-# open_scene_from_path was removed), so it is headless-unit-testable. Instantiate
-# mcp_server WITHOUT adding it to the tree, so _ready never fires (no TCP server).
+# --- Scene-lease bookkeeping (Fix 4, 41l-tricies; concern 007 C6) ----------
+# After Fix 4, lease acquire/release is pure bookkeeping (the raw
+# open_scene_from_path was removed), so it is headless-unit-testable. C6 extracted
+# the lease mechanism into scene_lease.gd, so this now instantiates that child
+# directly and injects a stub root-resolver (the empty-scene acquire/release paths
+# never consult it), exercising the child's public try_acquire / release / lease_holder
+# API instead of poking mcp_server internals. Assertions are unchanged.
 
 func _test_scene_lease() -> void:
-	_begin("Scene lease bookkeeping")
-	var Server = preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
-	var srv = Server.new()
+	_begin("Scene lease bookkeeping (007 C6)")
+	var lease = SceneLease.new()
+	# Stub seams — the empty-scene acquire/release/lease_holder paths exercised here
+	# do not invoke the root-resolver, command re-emit, read core, or mutation lane.
+	var stub_root := func() -> Node: return null
+	var noop_cmd := func(_m: String) -> void: pass
+	var stub_read := func(_m: String, _p: Dictionary, _id) -> Dictionary: return {}
+	var stub_enqueue := func(_pe, _id, _m: String, _p: Dictionary, _q: int) -> bool: return false
+	var stub_exec := func(_pe, _id, _m: String, _p: Dictionary, _q: int) -> void: pass
+	lease.set_handlers(stub_root, noop_cmd, stub_read, stub_enqueue, stub_exec)
 	var peer_a := WebSocketPeer.new()
 	var peer_b := WebSocketPeer.new()
 
 	# 1. free lease → A acquires (empty scene skips the file-exists check)
-	_ok(srv._try_acquire_lease(peer_a, ""), "free lease → A acquires")
-	_ok(srv._lease_holder == peer_a, "lease holder is A")
+	_ok(lease.try_acquire(peer_a, ""), "free lease → A acquires")
+	_ok(lease.lease_holder() == peer_a, "lease holder is A")
 
 	# 2. same peer → renews
-	_ok(srv._try_acquire_lease(peer_a, ""), "same peer → renews (true)")
-	_ok(srv._lease_holder == peer_a, "A still holds after renew")
+	_ok(lease.try_acquire(peer_a, ""), "same peer → renews (true)")
+	_ok(lease.lease_holder() == peer_a, "A still holds after renew")
 
 	# 3. different peer → contended (false); A keeps it
-	_ok(not srv._try_acquire_lease(peer_b, ""), "other peer → contended (false)")
-	_ok(srv._lease_holder == peer_a, "A still holds under contention")
+	_ok(not lease.try_acquire(peer_b, ""), "other peer → contended (false)")
+	_ok(lease.lease_holder() == peer_a, "A still holds under contention")
 
 	# 4. release → no holder
-	srv._release_lease()
-	_ok(srv._lease_holder == null, "release → no holder")
+	lease.release()
+	_ok(lease.lease_holder() == null, "release → no holder")
 
 	# 5. after release → B acquires
-	_ok(srv._try_acquire_lease(peer_b, ""), "after release → B acquires")
-	_ok(srv._lease_holder == peer_b, "lease holder is B")
+	_ok(lease.try_acquire(peer_b, ""), "after release → B acquires")
+	_ok(lease.lease_holder() == peer_b, "lease holder is B")
 
-	srv.free()
 	print("")
 
 

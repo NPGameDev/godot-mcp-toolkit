@@ -23,7 +23,7 @@ static var _save_results: Dictionary = {}
 
 ## True while a save's synchronous EditorInterface.save_scene[_as] call is in
 ## flight. Frame-driven dispatch initiators (_poll_connections,
-## _check_lease_expiry) early-return when this is true so no command dispatches
+## SceneLease.check_expiry) early-return when this is true so no command dispatches
 ## during the ProgressDialog's Main::iteration() re-entry (C1, all versions).
 static func is_dispatching() -> bool:
 	return _in_dispatch
