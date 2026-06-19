@@ -76,6 +76,7 @@ func _init() -> void:
 	_test_sound_generate()
 	_test_tileset_edit_key_enforcement()
 	_test_coerce_roundtrip()
+	_test_node_packed_property_serialize()
 	_test_user_path_monitor()
 
 	_report()
@@ -2101,6 +2102,50 @@ func _test_coerce_roundtrip() -> void:
 	_ok(Coerce.coerce_value(Coerce.serialize_value(pcol_native)) == pcol_native,
 			"PackedColorArray round-trips (now symmetric)")
 
+	print("")
+
+
+# --- node-sourced Packed property serialises tagged (concern 053) ----------
+# The unit suite above pins coerce∘serialize on hand-built Packed* values; this
+# pins the read PATH'S contract: node.get_property serialises the property VALUE
+# through Coerce.serialize_value (node_commands.gd:158 — the single-property read).
+# Here we obtain a PackedVector2Array from an ACTUAL node property (Line2D.points)
+# and assert serialize_value emits the TAGGED dict {type:"PackedVector2Array", …}
+# — NOT a var_to_str String — and that it round-trips back to the exact value.
+# This is the headless proxy for sweep 3.20b (node_set_property → node_get_property).
+# No editor/dispatch context needed: serialize_value is the same call the handler
+# makes on node.get(property), so exercising it on a node-sourced value covers the
+# read path's serialisation without a live scene. Node built with .new()/free().
+func _test_node_packed_property_serialize() -> void:
+	_begin("node-sourced Packed property serialises tagged (concern 053)")
+
+	var line := Line2D.new()
+	var written: PackedVector2Array = PackedVector2Array([
+		Vector2(0.0, 0.0), Vector2(100.0, 50.0), Vector2(200.0, 0.0)])
+	line.points = written
+
+	# Read the property the way the handler does (node.get(...) → Variant), then
+	# serialise it the way node.get_property does (Coerce.serialize_value).
+	var read_value: Variant = line.get("points")
+	_eq(typeof(read_value), TYPE_PACKED_VECTOR2_ARRAY,
+			"Line2D.points reads back as a PackedVector2Array")
+
+	var serialised: Variant = Coerce.serialize_value(read_value)
+	# The contract: a tagged Dictionary, NOT a var_to_str String (the 053 fix).
+	_eq(typeof(serialised), TYPE_DICTIONARY,
+			"serialised node Packed value is a Dictionary, not a String (concern 053)")
+	var serialised_dict: Dictionary = serialised
+	_eq(str(serialised_dict.get("type", "")), "PackedVector2Array",
+			"serialised form carries type tag 'PackedVector2Array' (not a var_to_str string)")
+	var values_field: Variant = serialised_dict.get("values", null)
+	_eq(typeof(values_field), TYPE_ARRAY, "serialised form has a 'values' array")
+
+	# Read-form must round-trip back to the written value (read==write for the LLM).
+	var restored: Variant = Coerce.coerce_value(serialised)
+	_ok(restored == written,
+			"node-sourced PackedVector2Array round-trips (coerce(serialize(points)) == written)")
+
+	line.free()
 	print("")
 
 

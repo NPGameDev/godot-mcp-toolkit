@@ -29,8 +29,8 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| node.get_property | 28, 31, 33, 36, 43b, 43i, 64g | — | C3, C6, C20 | — | — | |
-| node.set_property | 27, 29, 30, 32, 34, 35 | ✓ (3.14a: groups single-reject, 3.14b: groups batch per-entry reject) | C3, C6 | ✓ (3.14a/3.14b: hint → node.groups) | FIX-5, FIX-7, FIX-E, FIX-F, concern 032 | groups property steered to node.groups (single whole-reject + batch per-entry). **GAP:** LayerMask coercion, bare res:// guard |
+| node.get_property | 28, 31, 33, 36, 43b, 43i, 64g, 3.20b | — | C3, C6, C20 | — | concern 053 | 3.20b: Packed read-back is the TAGGED dict (not var_to_str) + read==write (concern 053, T:8856546) |
+| node.set_property | 27, 29, 30, 32, 34, 35, 3.20b | ✓ (3.14a: groups single-reject, 3.14b: groups batch per-entry reject) | C3, C6 | ✓ (3.14a/3.14b: hint → node.groups) | FIX-5, FIX-7, FIX-E, FIX-F, concern 032, concern 053 | groups property steered to node.groups (single whole-reject + batch per-entry); 3.20b sets a top-level PackedVector2Array (Line2D.points) for the 053 read-back round-trip. **GAP:** LayerMask coercion, bare res:// guard |
 | node.get_property_list | 38–40 | — | C5 | — | — | |
 | node.call_method | 49, 50 | — | C9 | ✓ (CS3: C# hint) | — | |
 | node.set_script | 37 | — | C5, C8 | — | — | |

@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in main.tscn)
 **Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout
-**Tests:** 30
+**Tests:** 32
 
 ---
 
@@ -117,6 +117,22 @@
 > string read-back means the `serialize_value` symmetry regressed. (The unit suite
 > holds the authoritative coerce∘serialize round-trip.) Flag as **Major**.
 
+**3.20a** Setup — `scene_create_node` node_type=`Line2D`, node_name=`Sv2PackedLine`, parent_path=`.`
+- **Expect:** success (a node whose `points` is a top-level `PackedVector2Array` — no sub-resource path, so the read==write contract is exercised directly).
+
+**3.20b** `node_set_property` then `node_get_property` (Packed read-back is TAGGED — concern 053):
+- First: `node_set_property` node_path=`Sv2PackedLine`, property=`points`, value=`{"type":"PackedVector2Array","values":[{"type":"Vector2","x":0,"y":0},{"type":"Vector2","x":100,"y":50},{"type":"Vector2","x":200,"y":0}]}`
+- Then: `node_get_property` node_path=`Sv2PackedLine`, property=`points`
+- **Expect:** the read returns the TAGGED dict `{"type":"PackedVector2Array","values":[{"type":"Vector2","x":0,"y":0},{"type":"Vector2","x":100,"y":50},{"type":"Vector2","x":200,"y":0}]}` — a Dictionary with `type=="PackedVector2Array"` and a `values` array, **NOT** a `var_to_str` string like `"PackedVector2Array((0, 0), (100, 50), (200, 0))"`. The read value must equal what was written (read==write round-trip).
+
+> **REGRESSION WATCH (concern 053, T:8856546):** This is the executable backing for
+> the concern-053 watch on 3.20. `node_get_property` of a `PackedVector2Array`
+> property must return the tagged dict (so the LLM can read→modify→write
+> `Line2D.points` / `Polygon2D.polygon`). A String read-back (or any non-Dictionary)
+> means `serialize_value` stopped routing the read path — flag as **Major**. The
+> headless unit `_test_node_packed_property_serialize` pins the same contract on a
+> node-sourced value without an editor.
+
 **3.21** `node_set_property` (integer font size) — node_path=`Sv2Label`, property=`theme_override_font_sizes/font_size`, value=24
 - **Expect:** success
 
@@ -153,3 +169,4 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 - `scene_delete_node` node_path=`Sv2RefTest`
 - `scene_delete_node` node_path=`Sv2LayoutTest`
+- `scene_delete_node` node_path=`Sv2PackedLine`
