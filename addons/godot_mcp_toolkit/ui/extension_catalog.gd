@@ -70,19 +70,50 @@ static func parse_catalog(json_text: String) -> Dictionary:
 	return {"ok": true, "extensions": extensions, "error": ""}
 
 
+## Gate a catalog repo URL before it reaches OS.shell_open. The catalog is a
+## remote, maintainer-edited Gist (untrusted input flowing into a shell sink), so
+## only an https:// URL may be opened — this blocks file://, javascript:, and other
+## scheme-based bypasses regardless of the entry's trust status. Scheme-only by
+## design: a community extension on any host (GitLab, Codeberg, …) must still open.
+static func is_allowed_repo_url(url: String) -> bool:
+	var trimmed := url.strip_edges()
+	if trimmed.is_empty():
+		return false
+	# Case-fold a copy for the check; callers open the ORIGINAL, unmutated URL.
+	return trimmed.to_lower().begins_with("https://")
+
+
 ## Compare two semver strings ("1.2.3" vs "1.3.0").
 ## Returns -1 if a < b, 0 if equal, 1 if a > b.
+## Assumes numeric dotted versions only ("1.2.3"); a pre-release/build tag on a
+## segment ("1.0.0-beta") is not ordered against its release — the leading numeric
+## run of each segment is compared and the suffix ignored. The catalog is
+## author-controlled, so non-numeric versions are out of scope, not an error.
 static func compare_versions(a: String, b: String) -> int:
 	var pa := a.split(".")
 	var pb := b.split(".")
 	for i in maxi(pa.size(), pb.size()):
-		var va := int(pa[i]) if i < pa.size() else 0
-		var vb := int(pb[i]) if i < pb.size() else 0
+		var va := _leading_int(pa[i]) if i < pa.size() else 0
+		var vb := _leading_int(pb[i]) if i < pb.size() else 0
 		if va < vb:
 			return -1
 		if va > vb:
 			return 1
 	return 0
+
+
+## Numeric lead of one dotted segment: the part before any "-"/"+" pre-release or
+## build tag. For a plain numeric segment this is identical to int(part), so valid
+## numeric-version ordering is unchanged.
+static func _leading_int(part: String) -> int:
+	var head := part
+	var dash := head.find("-")
+	if dash != -1:
+		head = head.substr(0, dash)
+	var plus := head.find("+")
+	if plus != -1:
+		head = head.substr(0, plus)
+	return int(head)
 
 
 ## Check if the extension entry is compatible with current toolkit + Godot.

@@ -406,7 +406,21 @@ func _on_search_changed(query: String) -> void:
 # -- Trust warning + GitHub open ----------------------------------------------
 
 
+## Surface a blocked-URL refusal through the footer status line (the dialog's
+## existing visible feedback channel) and the editor log.
+func _refuse_repo_url() -> void:
+	var msg := "Refusing to open a non-https repository URL."
+	push_warning("[MCPCatalog] %s" % msg)
+	_set_status(msg, true)
+
+
 func _on_view_github(repo_url: String, status: String) -> void:
+	# repo_url comes from the remote catalog Gist (untrusted) and flows into a
+	# shell sink — only open an https:// URL, for every status including official.
+	if not ExtensionCatalog.is_allowed_repo_url(repo_url):
+		_refuse_repo_url()
+		return
+
 	if status == "official":
 		OS.shell_open(repo_url)
 		return
@@ -436,7 +450,12 @@ func _on_view_github(repo_url: String, status: String) -> void:
 	_trust_dialog.ok_button_text = "Open Repo"
 	var url := repo_url
 	_trust_dialog.confirmed.connect(func():
-		OS.shell_open(url)
+		# Re-check at the sink (defence in depth): the scheme gate guards every
+		# path to shell_open, not only the official fast-path above.
+		if ExtensionCatalog.is_allowed_repo_url(url):
+			OS.shell_open(url)
+		else:
+			_refuse_repo_url()
 		_trust_dialog.queue_free()
 		_trust_dialog = null
 	)

@@ -15,6 +15,7 @@ const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
+const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog.gd")
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
@@ -59,6 +60,8 @@ func _init() -> void:
 	_test_compile_error_message()
 	_test_file_guard()
 	_test_untrusted()
+	_test_repo_url_allowlist()
+	_test_compare_versions()
 	await _test_extension_path_guard()
 	await _test_response_validation()
 	_test_response_size_guard()
@@ -180,6 +183,49 @@ func _test_untrusted() -> void:
 	_ok(not nested.contains("</untrusted>"), "wrap → inner bare closing tag scrubbed")
 	_ok(nested.contains("[scrubbed-envelope-tag]"), "wrap → scrub placeholder present")
 	_eq(nested.count("<untrusted-"), 1, "wrap → still exactly one real envelope after scrub")
+
+
+# --- Catalog repo-URL allowlist (concern 043) -----------------------------
+# The extension catalog opens an entry's repo_url via OS.shell_open. repo_url
+# comes from a remote maintainer Gist (untrusted), so the scheme is gated to
+# https:// before any shell_open — for every status, including official. Pins
+# the scheme-only allowlist and its bypass-rejection cases.
+func _test_repo_url_allowlist() -> void:
+	_begin("Catalog repo-URL allowlist (concern 043)")
+	# Allowed: https, case-insensitive scheme, surrounding whitespace tolerated.
+	_ok(ExtensionCatalog.is_allowed_repo_url("https://github.com/x/y"), "https github → allowed")
+	_ok(ExtensionCatalog.is_allowed_repo_url("https://gitlab.com/x/y"),
+		"https non-github host → allowed (scheme-only, not host)")
+	_ok(ExtensionCatalog.is_allowed_repo_url("HTTPS://github.com/x/y"), "HTTPS uppercase → allowed")
+	_ok(ExtensionCatalog.is_allowed_repo_url("Https://github.com/x/y"), "Https mixed-case → allowed")
+	_ok(ExtensionCatalog.is_allowed_repo_url("  https://github.com/x/y  "), "surrounding whitespace → allowed")
+	# Rejected: other schemes, missing scheme, empty.
+	_ok(not ExtensionCatalog.is_allowed_repo_url("http://github.com/x/y"), "http (no TLS) → rejected")
+	_ok(not ExtensionCatalog.is_allowed_repo_url("file:///etc/passwd"), "file:// → rejected")
+	_ok(not ExtensionCatalog.is_allowed_repo_url("ftp://host/x"), "ftp:// → rejected")
+	_ok(not ExtensionCatalog.is_allowed_repo_url("javascript:alert(1)"), "javascript: → rejected")
+	_ok(not ExtensionCatalog.is_allowed_repo_url(""), "empty string → rejected")
+	_ok(not ExtensionCatalog.is_allowed_repo_url("github.com/x/y"), "bare host (no scheme) → rejected")
+	print("")
+
+
+# --- Catalog compare_versions numeric-lead guard (concern 043 minor) -------
+# compare_versions assumes numeric dotted versions; the defensive numeric-lead
+# guard must leave valid numeric ordering unchanged while tolerating a stray
+# pre-release/build tag (author-controlled catalog → low risk, not an error).
+func _test_compare_versions() -> void:
+	_begin("Catalog compare_versions (numeric-lead guard)")
+	# Valid numeric versions order exactly as before.
+	_eq(ExtensionCatalog.compare_versions("1.2.3", "1.2.3"), 0, "equal → 0")
+	_eq(ExtensionCatalog.compare_versions("1.2.3", "1.3.0"), -1, "1.2.3 < 1.3.0 → -1")
+	_eq(ExtensionCatalog.compare_versions("2.0.0", "1.9.9"), 1, "2.0.0 > 1.9.9 → 1")
+	_eq(ExtensionCatalog.compare_versions("1.2", "1.2.0"), 0, "missing segment treated as 0 → equal")
+	_eq(ExtensionCatalog.compare_versions("1.10.0", "1.9.0"), 1, "1.10.0 > 1.9.0 (numeric, not lexical) → 1")
+	# Pre-release/build tag: numeric lead compared, suffix ignored (no crash).
+	_eq(ExtensionCatalog.compare_versions("1.0.0-beta", "1.0.0"), 0, "1.0.0-beta lead == 1.0.0 → 0")
+	_eq(ExtensionCatalog.compare_versions("1.2.0", "1.3.0-rc1"), -1, "1.2.0 < 1.3.0-rc1 (lead 3) → -1")
+	_eq(ExtensionCatalog.compare_versions("1.0.0+build5", "1.0.0"), 0, "build metadata ignored → 0")
+	print("")
 
 
 # --- Extension path-guard (Part D, 41m-quater) ----------------------------
