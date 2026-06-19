@@ -364,6 +364,28 @@ func _on_editor_settings_changed() -> void:
 # -- Networking ----------------------------------------------------------------
 
 
+# Records a failed listen attempt: bumps the failure count, warns once on the
+# first failure (with the caller-supplied reason), drops the dead server, and
+# arms the throttled retry. Centralises the recovery bookkeeping shared by the
+# port scan and the idempotent rebind.
+func _note_listen_failure(warning: String) -> void:
+	_consecutive_failures += 1
+	if _consecutive_failures == 1:
+		push_warning(warning)
+	_tcp_server = null
+	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
+
+
+# Records a successful listen: clears the failure count and retry latch. When
+# the caller recovered from a prior failure run, also logs the recovery (the
+# port scan binds fresh on first boot and skips that line).
+func _note_listen_success(emit_recovery_log: bool) -> void:
+	if emit_recovery_log and _consecutive_failures > 0:
+		print("[MCPServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, _bound_port, _consecutive_failures])
+	_consecutive_failures = 0
+	_relisten_countdown = 0
+
+
 # First-time port scan. Tries PORT_BASE..PORT_BASE+PORT_RANGE-1 and binds
 # the first free port. Sets _bound_port on success. If no port is available,
 # schedules a throttled retry.
@@ -375,17 +397,12 @@ func _scan_and_listen() -> void:
 		if err == OK:
 			_tcp_server = server
 			_bound_port = candidate
-			_consecutive_failures = 0
-			_relisten_countdown = 0
+			_note_listen_success(false)
 			print("[MCPServer] listening on %s:%d" % [BIND, _bound_port])
 			return
 		server.stop()
 	# All ports in range exhausted.
-	_consecutive_failures += 1
-	if _consecutive_failures == 1:
-		push_warning("[MCPServer] no free port in %d-%d; will retry every ~1s" % [PORT_BASE, PORT_BASE + PORT_RANGE - 1])
-	_tcp_server = null
-	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
+	_note_listen_failure("[MCPServer] no free port in %d-%d; will retry every ~1s" % [PORT_BASE, PORT_BASE + PORT_RANGE - 1])
 
 
 # Idempotent re-listen. Called from _process when the TCPServer falls out
@@ -402,20 +419,13 @@ func _try_listen() -> void:
 		_tcp_server = TCPServer.new()
 	var error := _tcp_server.listen(_bound_port, BIND)
 	if error == OK:
-		if _consecutive_failures > 0:
-			print("[MCPServer] listening on %s:%d (recovered after %d failed attempts)" % [BIND, _bound_port, _consecutive_failures])
-		_consecutive_failures = 0
-		_relisten_countdown = 0
+		_note_listen_success(true)
 		return
-	_consecutive_failures += 1
-	if _consecutive_failures == 1:
-		var hint := ""
-		if error == ERR_ALREADY_IN_USE:
-			hint = " (ERR_ALREADY_IN_USE — will retry silently every ~1s)"
-		push_warning("[MCPServer] rebind %s:%d failed (err %d)%s" % [BIND, _bound_port, error, hint])
+	var hint := ""
+	if error == ERR_ALREADY_IN_USE:
+		hint = " (ERR_ALREADY_IN_USE — will retry silently every ~1s)"
 	_tcp_server.stop()
-	_tcp_server = null
-	_relisten_countdown = _RELISTEN_FRAME_INTERVAL
+	_note_listen_failure("[MCPServer] rebind %s:%d failed (err %d)%s" % [BIND, _bound_port, error, hint])
 
 
 # -- Frame loop ----------------------------------------------------------------
