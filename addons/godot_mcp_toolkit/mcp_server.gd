@@ -24,13 +24,13 @@ const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const RegistryClient = _Hub.RegistryClient
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
-const _UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
 const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
 const WsTransport := preload("res://addons/godot_mcp_toolkit/ws_transport.gd")
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
 const SceneLease := preload("res://addons/godot_mcp_toolkit/scene_lease.gd")
 const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/rpc_dispatcher.gd")
 const DispatchLane := preload("res://addons/godot_mcp_toolkit/dispatch_lane.gd")
+const UnfocusedSleepController := preload("res://addons/godot_mcp_toolkit/unfocused_sleep_controller.gd")
 
 const PORT_BASE := 6550
 const PORT_RANGE := 11  # 6550..6560 inclusive
@@ -87,16 +87,17 @@ var _last_lsp_port: int = -1
 # The editor can't read its own LSP bind status, so the server tells us and the
 # dock renders it. {} until a server connects. See ADR 0008.
 var _reported_lsp_status: Dictionary = {}
-# Best-effort in-memory mirror: >= 0 while THIS instance is holding the boost
-# active, -1 otherwise. The machine-wide backup FILE is the source of truth for
-# restore (this only gates whether the disconnect/stop path runs). See the
-# "Unfocused sleep management" section below.
-var _original_unfocused_sleep_usec: int = -1
+# C8: the unfocused-responsive mechanism (lower/restore/self-heal the machine-wide
+# unfocused-sleep EditorSetting + its first-writer-wins backup) lives in
+# unfocused_sleep_controller.gd. This file keeps only the cross-subsystem TRIGGER
+# points (first authed connect → lower; last disconnect → restore; start() →
+# self-heal first) and the public getters the dock reads, delegating each to this
+# child. Constructed in start() with the EditorSettings accessor injected. See
+# unfocused_sleep_controller.gd / docs/adr/0007-unfocused-responsive-mode.md.
+var _unfocused: UnfocusedSleepController = null
 ## Set by plugin.gd so domain commands can call EditorPlugin API
 ## (e.g. add_autoload_singleton for immediate editor cache refresh).
 var editor_plugin: EditorPlugin = null
-# Default for the tunable EditorSetting unfocused_responsive_sleep_usec.
-const _ACTIVE_UNFOCUSED_SLEEP_USEC := 16666  # ~= 60 fps while a client is connected
 
 ## Node holding UndoRedo helper methods that domain commands reference by
 ## string name. Populated in start(); command closures access it via
@@ -269,7 +270,9 @@ func regenerate_token() -> void:
 func start() -> void:
 	# Self-heal a leftover boost (from a crash or a concurrent instance) before
 	# listening, so the global key can never persist without a live connection.
-	_self_heal_unfocused_sleep()
+	# Build the child first (self_heal is its method); no peer can be authed yet.
+	_init_unfocused_sleep()
+	_unfocused.self_heal(get_authed_peer_count())
 	if undo_helpers == null:
 		undo_helpers = UndoRedoHelpers.new()
 		undo_helpers.name = "UndoRedoHelpers"
@@ -317,6 +320,17 @@ func _init_transport() -> void:
 # every _process frame (it must run regardless of lane state — C5/R4).
 func _init_mutation_watchdog() -> void:
 	_mutation_watchdog = MutationWatchdog.new()
+
+
+# Build the unfocused-sleep controller, injecting the EditorSettings accessor (the
+# child's ONLY editor reach — behind a Callable so it stays the testability seam, and
+# the EditorInterface name stays in this editor file, mirroring scene_lease's
+# root-resolver). The orchestrator keeps the trigger points (boost on first authed,
+# restore on last disconnect, self-heal at start); the child owns the mechanism.
+func _init_unfocused_sleep() -> void:
+	_unfocused = UnfocusedSleepController.new()
+	_unfocused.set_settings_accessor(func() -> EditorSettings:
+		return EditorInterface.get_editor_settings())
 
 
 # Construct the scene-lease coordinator and seed the registry. Its seams are wired in
@@ -371,7 +385,8 @@ func stop() -> void:
 	_disconnect_lsp_settings_watch()
 	if _transport != null:
 		_transport.close_all(1000, "")
-	_restore_unfocused_sleep()
+	if _unfocused != null:
+		_unfocused.restore()
 	if _transport != null:
 		_transport.shutdown_listener()
 	print("[MCPServer] stopped")
@@ -454,7 +469,7 @@ func _poll_connections() -> void:
 	if had_authed_disconnect:
 		var authed_now := _transport.get_authed_count()
 		if authed_now == 0:
-			_restore_unfocused_sleep()
+			_unfocused.restore()
 		client_disconnected.emit(authed_now)
 
 
@@ -506,7 +521,7 @@ func _build_auth_ack(_message: Dictionary) -> Dictionary:
 # boost the unfocused responsiveness; always re-emit client_connected for the dock.
 func _on_peer_authed(count: int) -> void:
 	if count == 1:
-		_lower_unfocused_sleep()
+		_unfocused.lower()
 	client_connected.emit(count)
 
 
@@ -553,146 +568,34 @@ func _send_error(peer: WebSocketPeer, id, code: int, error_message: String) -> v
 
 
 # -- Unfocused sleep management -----------------------------------------------
-# When the editor loses focus, Godot's unfocused_low_processor_mode_sleep_usec
-# (default ~100000 µs ≈ 10 fps) throttles _process. Since we poll WebSocket in
-# _process, that slows MCP interactions to ~2-3 Hz — and the editor is normally
-# UNFOCUSED during an MCP session (the user is on the chat), so this is the
-# common case, not an edge. While an authenticated client is connected AND the
-# user has opted in, we lower the sleep to keep the editor responsive unfocused,
-# then restore it on the last disconnect / stop.
-#
-# The key is a machine-wide EditorSetting (every project on this editor version),
-# and set_setting only reaches disk on a later save() — so a crash (after a flush)
-# or a concurrent second editor could strand it at the boosted value and, worse,
-# re-read that as the "original" on the next launch, losing the true default. We
-# guard against that with a machine-wide, version-keyed, first-writer-wins backup
-# of the TRUE original (in the registry dir, under the registry lock) plus a
-# conflict-aware restore and a startup self-heal. Opt-in + tunable rate live in
-# EditorSettings (registered in plugin.gd::_register_editor_settings). See iter
-# 41l-duotricies / docs/adr/0007-unfocused-responsive-mode.md /
-# Insights/unfocused-throttle-analysis.md.
-
-const _UNFOCUSED_SLEEP_KEY := "interface/editor/unfocused_low_processor_mode_sleep_usec"
-const _RESPONSIVE_ENABLED_KEY := "mcp_toolkit/performance/keep_editor_responsive_unfocused"
-const _RESPONSIVE_SLEEP_KEY := "mcp_toolkit/performance/unfocused_responsive_sleep_usec"
+# The lower/restore/self-heal mechanism + the first-writer-wins backup moved to
+# unfocused_sleep_controller.gd in concern 007 C8. This file keeps the public
+# getters the dock reads and delegates each to _unfocused; the cross-subsystem
+# trigger points (boost on first authed connect, restore on last disconnect,
+# self-heal at start) live in _on_peer_authed / _poll_connections / start(). The
+# null guards keep the dock's pre-start indicator refresh honest (the child is
+# built in start()), preserving the pre-extraction defaults.
 
 
 ## True when the user has opted in (default true). Missing/unavailable settings
 ## fall back to the default so behaviour is unchanged from before this iter.
 func is_unfocused_responsive_enabled() -> bool:
-	var es := EditorInterface.get_editor_settings()
-	if es == null or not es.has_setting(_RESPONSIVE_ENABLED_KEY):
-		return true
-	return bool(es.get_setting(_RESPONSIVE_ENABLED_KEY))
-
-
-## Configured boosted sleep value in µs (default 16666 = 60 fps; not clamped).
-func _configured_responsive_usec() -> int:
-	var es := EditorInterface.get_editor_settings()
-	if es == null or not es.has_setting(_RESPONSIVE_SLEEP_KEY):
-		return _ACTIVE_UNFOCUSED_SLEEP_USEC
-	return int(es.get_setting(_RESPONSIVE_SLEEP_KEY))
+	return _unfocused.is_unfocused_responsive_enabled() if _unfocused != null else true
 
 
 ## fps implied by the configured boosted value, for the dock indicator + log.
 func get_unfocused_responsive_fps() -> int:
-	var usec := _configured_responsive_usec()
-	if usec <= 0:
-		return 0
-	return int(round(1_000_000.0 / float(usec)))
+	return _unfocused.get_unfocused_responsive_fps() if _unfocused != null else 60
 
 
 ## True while THIS instance holds the boost active (best-effort; the backup file
 ## is authoritative for restore). Used by the dock's 3-state indicator.
 func is_unfocused_boost_active() -> bool:
-	return _original_unfocused_sleep_usec >= 0
+	return _unfocused.is_unfocused_boost_active() if _unfocused != null else false
 
 
 ## Called by the dock when the user flips the opt-in toggle, so the boost is
 ## applied/restored immediately rather than only on the next connect/disconnect.
 func notify_unfocused_responsive_setting_changed() -> void:
-	if is_unfocused_responsive_enabled():
-		if get_authed_peer_count() > 0:
-			_lower_unfocused_sleep()
-	else:
-		_restore_unfocused_sleep()
-
-
-func _lower_unfocused_sleep() -> void:
-	if not _UnfocusedBackup.should_capture_boost(
-			is_unfocused_responsive_enabled(), is_unfocused_boost_active()):
-		return
-	var es := EditorInterface.get_editor_settings()
-	if es == null:
-		return
-	var live := int(es.get_setting(_UNFOCUSED_SLEEP_KEY))
-	var boosted := _configured_responsive_usec()
-	# Machine-wide first-writer-wins backup of the TRUE original, under the
-	# registry lock so a concurrent instance can't capture an already-boosted
-	# value as the original.
-	var dir := RegistryClient.registry_dir()
-	var ver := _UnfocusedBackup.version_key()
-	RegistryClient.acquire_lock()
-	_UnfocusedBackup.capture_if_absent(dir, live, boosted, ver)
-	RegistryClient.release_lock()
-	es.set_setting(_UNFOCUSED_SLEEP_KEY, boosted)
-	_original_unfocused_sleep_usec = live
-	print("[MCPServer] unfocused-responsive mode ON: %s %d → %d (~%d fps while unfocused)" % [
-		_UNFOCUSED_SLEEP_KEY, live, boosted, get_unfocused_responsive_fps()])
-
-
-func _restore_unfocused_sleep() -> void:
-	if not is_unfocused_boost_active():
-		return
-	var es := EditorInterface.get_editor_settings()
-	if es == null:
-		_original_unfocused_sleep_usec = -1
-		return
-	var dir := RegistryClient.registry_dir()
-	var ver := _UnfocusedBackup.version_key()
-	RegistryClient.acquire_lock()
-	var backup := _UnfocusedBackup.read_backup(dir, ver)
-	var current := int(es.get_setting(_UNFOCUSED_SLEEP_KEY))
-	var decision := _UnfocusedBackup.resolve_restore(current, backup)
-	if decision["restore"]:
-		es.set_setting(_UNFOCUSED_SLEEP_KEY, int(decision["value"]))
-	_UnfocusedBackup.delete_backup(dir, ver)
-	RegistryClient.release_lock()
-	_original_unfocused_sleep_usec = -1
-	if decision["restore"]:
-		print("[MCPServer] unfocused-responsive mode OFF: %s restored to %d" % [
-			_UNFOCUSED_SLEEP_KEY, int(decision["value"])])
-	else:
-		print("[MCPServer] unfocused-responsive mode OFF: %s left at %d (changed during boost; backup cleared)" % [
-			_UNFOCUSED_SLEEP_KEY, current])
-
-
-## Startup self-heal: if a previous session (crash) or a concurrent instance left
-## a backup behind, revert the global key conflict-aware and clear the backup so
-## the boost can never persist without a live connection. Runs regardless of the
-## opt-in setting (a leftover from when it was ON must be cleaned even after the
-## user turns it OFF). Safe at start(): no peer can be authed yet.
-func _self_heal_unfocused_sleep() -> void:
-	var dir := RegistryClient.registry_dir()
-	var ver := _UnfocusedBackup.version_key()
-	if not _UnfocusedBackup.has_backup(dir, ver):
-		return
-	if _transport != null and _transport.get_authed_count() > 0:
-		return  # defensive — never true at start() (transport not built yet / no authed peer)
-	var es := EditorInterface.get_editor_settings()
-	if es == null:
-		return
-	RegistryClient.acquire_lock()
-	var backup := _UnfocusedBackup.read_backup(dir, ver)
-	var current := int(es.get_setting(_UNFOCUSED_SLEEP_KEY))
-	var decision := _UnfocusedBackup.resolve_restore(current, backup)
-	if decision["restore"]:
-		es.set_setting(_UNFOCUSED_SLEEP_KEY, int(decision["value"]))
-	_UnfocusedBackup.delete_backup(dir, ver)
-	RegistryClient.release_lock()
-	if decision["restore"]:
-		print("[MCPServer] unfocused-responsive self-heal: reverted leftover %s to %d (crash/concurrent leftover)" % [
-			_UNFOCUSED_SLEEP_KEY, int(decision["value"])])
-	else:
-		print("[MCPServer] unfocused-responsive self-heal: %s changed since boost (now %d); kept it, cleared stale backup" % [
-			_UNFOCUSED_SLEEP_KEY, current])
+	if _unfocused != null:
+		_unfocused.notify_unfocused_responsive_setting_changed(get_authed_peer_count())

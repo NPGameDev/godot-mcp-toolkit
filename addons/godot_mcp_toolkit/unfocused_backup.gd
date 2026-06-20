@@ -103,7 +103,7 @@ static func resolve_restore(current: int, backup: Dictionary) -> Dictionary:
 	return {"restore": false, "value": current}
 
 
-## Pure gate for `_lower_unfocused_sleep`: boost only when the user opted in AND
+## Pure gate for `unfocused_sleep_controller.lower()`: boost only when the user opted in AND
 ## this instance is not already boosting (idempotent). Folds the opt-out and the
 ## double-boost guard into one testable predicate.
 static func should_capture_boost(enabled: bool, already_active: bool) -> bool:
