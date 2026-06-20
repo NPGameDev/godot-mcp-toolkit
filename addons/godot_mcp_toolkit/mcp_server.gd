@@ -21,7 +21,6 @@ signal lsp_status_changed
 signal token_rewritten(token_path: String)
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const RegistryClient = _Hub.RegistryClient
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
 const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
@@ -31,6 +30,7 @@ const SceneLease := preload("res://addons/godot_mcp_toolkit/scene_lease.gd")
 const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/rpc_dispatcher.gd")
 const DispatchLane := preload("res://addons/godot_mcp_toolkit/dispatch_lane.gd")
 const UnfocusedSleepController := preload("res://addons/godot_mcp_toolkit/unfocused_sleep_controller.gd")
+const LspPublisher := preload("res://addons/godot_mcp_toolkit/lsp_publisher.gd")
 
 const PORT_BASE := 6550
 const PORT_RANGE := 11  # 6550..6560 inclusive
@@ -80,13 +80,16 @@ var _registry: MCPToolkitCommandRegistry = null
 # lanes need injected (the scene-lease handlers, the watchdog, command_received). Built in
 # start(); _handle_message hands it each authed frame. See rpc_dispatcher.gd / dispatch_lane.gd.
 var _dispatcher: RpcDispatcher = null
-# Last LSP endpoint published to the registry — the Q4 re-publish baseline.
-var _last_lsp_host: String = ""
-var _last_lsp_port: int = -1
-# Authoritative LSP verdict the MCP server last reported (editor.set_lsp_status).
-# The editor can't read its own LSP bind status, so the server tells us and the
-# dock renders it. {} until a server connects. See ADR 0008.
-var _reported_lsp_status: Dictionary = {}
+# C9: the LSP endpoint publisher (resolve THIS editor's GDScript-LSP endpoint,
+# publish it to the registry, re-publish on a debounced settings change) + the
+# server-reported LSP liveness mirror live in lsp_publisher.gd. This file keeps only
+# the cross-subsystem TRIGGER points (start() → connect the watch; stop() → disconnect
+# it; server reports a verdict → set_reported_lsp_status), the public LSP getters the
+# dock + commands reach (delegated to this child), and the lsp_status_changed SIGNAL
+# (re-emitted here when the child reports a change — the dock binds it on the server).
+# Constructed in start() with the bound-port source + the status-changed re-emit
+# injected. See lsp_publisher.gd / docs/adr/0008-lsp-port-registry-authoritative.md.
+var _lsp: LspPublisher = null
 # C8: the unfocused-responsive mechanism (lower/restore/self-heal the machine-wide
 # unfocused-sleep EditorSetting + its first-writer-wins backup) lives in
 # unfocused_sleep_controller.gd. This file keeps only the cross-subsystem TRIGGER
@@ -178,36 +181,25 @@ func get_bound_port() -> int:
 
 
 ## The GDScript LSP endpoint THIS editor's setting points at (default
-## 127.0.0.1:6005). A --lsp-port override is invisible here — the engine consumes
-## it before OS.get_cmdline_args() and never writes it to the setting — so that
-## case rides GODOT_MCP_LSP_PORT on the server (see docs/multi-instance.md).
-## Static + editor-only (names EditorInterface); the registry callers pass the
-## result into register()/ensure_registered() so registry_client.gd stays
-## editor-clean for the Mode-B runtime autoload.
+## 127.0.0.1:6005). Thin static delegate to lsp_publisher.gd (C9) — kept here because
+## plugin.gd + the registry callers call MCPServer.resolve_lsp_endpoint() statically;
+## the resolved host/port are passed into register()/ensure_registered() so
+## registry_client.gd stays editor-clean for the Mode-B runtime autoload.
 static func resolve_lsp_endpoint() -> Dictionary:
-	var host := "127.0.0.1"
-	var port := 6005
-	var es := EditorInterface.get_editor_settings()
-	if es != null:
-		if es.has_setting("network/language_server/remote_host"):
-			host = str(es.get_setting("network/language_server/remote_host"))
-		if es.has_setting("network/language_server/remote_port"):
-			port = int(es.get_setting("network/language_server/remote_port"))
-	return {"host": host, "port": port}
+	return LspPublisher.resolve_lsp_endpoint()
 
 
-## The MCP server reports the authoritative LSP verdict here — it can do reliable
-## cross-process liveness (process.kill) and the real connection/root-verify,
-## which the editor cannot (no engine API for its own LSP bind status). The dock
-## renders whatever was last reported. Keys: state ("active"/"conflict"/
-## "unavailable"), host, port, detail. Empty until an MCP server connects.
+## The MCP server reports the authoritative LSP verdict here (editor.set_lsp_status);
+## delegates to the LSP publisher, which stores it and re-emits lsp_status_changed via
+## the injected handler so the dock refreshes. The signal stays on this object (the
+## dock binds it here). See lsp_publisher.gd / ADR 0008.
 func set_reported_lsp_status(status: Dictionary) -> void:
-	_reported_lsp_status = status.duplicate()
-	lsp_status_changed.emit()
+	if _lsp != null:
+		_lsp.set_reported_lsp_status(status)
 
 
 func get_reported_lsp_status() -> Dictionary:
-	return _reported_lsp_status
+	return _lsp.get_reported_lsp_status() if _lsp != null else {}
 
 
 func get_command_methods() -> Array:
@@ -288,6 +280,7 @@ func start() -> void:
 	_init_scene_lease()
 	_init_dispatcher()
 	_wire_scene_lease_to_lanes()
+	_init_lsp_publisher()
 	var token := MCPAuth.generate_token()
 	_transport.set_token(token)
 	var write_err := MCPAuth.write_token(token)
@@ -380,6 +373,20 @@ func _wire_scene_lease_to_lanes() -> void:
 	)
 
 
+# Build the LSP publisher and inject the two seams it needs from this orchestrator: the
+# bound-WS-port source (the transport owns the port; the watch reads it to skip
+# re-publishing before the server is listening) and the lsp_status_changed re-emit (the
+# signal stays on this object because the dock binds it here). resolve_lsp_endpoint is
+# static on the child — it names EditorInterface directly, which is fine for this
+# editor-only file (never runtime-preloaded). Constructed in start() before the watch
+# is connected.
+func _init_lsp_publisher() -> void:
+	_lsp = LspPublisher.new()
+	_lsp.set_bound_port_provider(func() -> int:
+		return _transport.get_bound_port() if _transport != null else -1)
+	_lsp.set_status_changed_handler(func() -> void: lsp_status_changed.emit())
+
+
 func stop() -> void:
 	set_process(false)
 	_disconnect_lsp_settings_watch()
@@ -392,39 +399,19 @@ func stop() -> void:
 	print("[MCPServer] stopped")
 
 
-## Q4 — re-publish the registry entry when the editor's GDScript LSP port/host
-## setting changes mid-session, so the published endpoint never goes stale.
-## EditorSettings.settings_changed fires globally; we debounce by comparing the
-## re-resolved endpoint against the last published one. Connected in start(),
-## disconnected in stop() (I12 symmetry).
+# LSP settings-watch trigger points (the mechanism lives in lsp_publisher.gd, C9).
+# start() connects the watch (resolve baseline + listen on EditorSettings.settings_changed
+# for a mid-session GDScript LSP port/host change → debounced registry re-publish);
+# stop() disconnects it (I12 symmetry). Thin null-guarded delegates so the lifecycle
+# sequencing stays here while the child owns the watch + debounce + re-publish.
 func _connect_lsp_settings_watch() -> void:
-	var lsp := resolve_lsp_endpoint()
-	_last_lsp_host = lsp["host"]
-	_last_lsp_port = lsp["port"]
-	var es := EditorInterface.get_editor_settings()
-	if es != null and es.has_signal("settings_changed") \
-			and not es.settings_changed.is_connected(_on_editor_settings_changed):
-		es.settings_changed.connect(_on_editor_settings_changed)
+	if _lsp != null:
+		_lsp.connect_settings_watch()
 
 
 func _disconnect_lsp_settings_watch() -> void:
-	var es := EditorInterface.get_editor_settings()
-	if es != null and es.has_signal("settings_changed") \
-			and es.settings_changed.is_connected(_on_editor_settings_changed):
-		es.settings_changed.disconnect(_on_editor_settings_changed)
-
-
-func _on_editor_settings_changed() -> void:
-	var bound_port := _transport.get_bound_port() if _transport != null else -1
-	if bound_port <= 0:
-		return
-	var lsp := resolve_lsp_endpoint()
-	if lsp["host"] == _last_lsp_host and lsp["port"] == _last_lsp_port:
-		return  # LSP endpoint unchanged — ignore unrelated editor-setting churn.
-	_last_lsp_host = lsp["host"]
-	_last_lsp_port = lsp["port"]
-	RegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
-	print("[MCPServer] LSP endpoint changed → re-published %s:%d" % [lsp["host"], lsp["port"]])
+	if _lsp != null:
+		_lsp.disconnect_settings_watch()
 
 
 # -- Frame loop ----------------------------------------------------------------

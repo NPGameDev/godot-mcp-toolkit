@@ -523,9 +523,10 @@ func _test_registry() -> void:
 
 # --- RegistryClient entry build (41l-tertricies) ---------------------------
 # _build_entry is pure (no FS, no EditorInterface): the editor resolves the LSP
-# endpoint (MCPServer.resolve_lsp_endpoint — editor-coupled, interactive-verified)
-# and passes it in, so the entry written to projects.json carries lsp_host/lsp_port
-# for the server's per-project LSP discovery.
+# endpoint (LspPublisher.resolve_lsp_endpoint, also reachable via the thin static
+# MCPServer.resolve_lsp_endpoint delegate — editor-coupled, interactive-verified) and
+# passes it in, so the entry written to projects.json carries lsp_host/lsp_port for
+# the server's per-project LSP discovery.
 
 func _test_registry_entry() -> void:
 	_begin("RegistryClient entry")
