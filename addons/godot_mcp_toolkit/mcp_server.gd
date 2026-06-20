@@ -29,6 +29,8 @@ const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
 const WsTransport := preload("res://addons/godot_mcp_toolkit/ws_transport.gd")
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
 const SceneLease := preload("res://addons/godot_mcp_toolkit/scene_lease.gd")
+const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/rpc_dispatcher.gd")
+const DispatchLane := preload("res://addons/godot_mcp_toolkit/dispatch_lane.gd")
 
 const PORT_BASE := 6550
 const PORT_RANGE := 11  # 6550..6560 inclusive
@@ -72,10 +74,12 @@ var _poll_frame_counter := 0
 # can prefer post-boot logs over stale rotated ones.
 var _plugin_boot_time: int = 0
 var _registry: MCPToolkitCommandRegistry = null
-## Tracks MCPToolkitToolContext per in-flight cancellable request, keyed by
-## JSON-RPC id (string). Populated in _dispatch_rpc; erased after handler
-## returns. Looked up by _cancel notifications to trigger cooperative cancel.
-var _active_contexts: Dictionary = {}
+# C7: routes a parsed JSON-RPC request to the lane its registry policy selects (read /
+# mutation / scene-lease) and drives it. Owns the in-flight cancellable-context map + the
+# three lanes; this file keeps only the lifecycle wiring + the cross-subsystem seams the
+# lanes need injected (the scene-lease handlers, the watchdog, command_received). Built in
+# start(); _handle_message hands it each authed frame. See rpc_dispatcher.gd / dispatch_lane.gd.
+var _dispatcher: RpcDispatcher = null
 # Last LSP endpoint published to the registry — the Q4 re-publish baseline.
 var _last_lsp_host: String = ""
 var _last_lsp_port: int = -1
@@ -104,23 +108,18 @@ var undo_helpers: Node = null
 # interleave at await boundaries. A single-flight flag + FIFO queue ensures
 # that at most one mutation executes at any time. Read-only commands bypass
 # the lock entirely. See iter 41l-decies for the full design.
+#
+# C7: the single-flight flag + FIFO queue + the mutation execute/drain now live in
+# dispatch_lane.gd's MutationLane (constructed by the dispatcher). This file keeps only
+# the watchdog INSTANCE (it must tick every _process frame, independent of lane state —
+# C5/R4) and hands it to the dispatcher to wire into the mutation lane's recovery hook.
 
-class _MutationQueueEntry:
-	var peer: WebSocketPeer
-	var id  # int or null (JSON-RPC id)
-	var method: String
-	var params: Dictionary
-	var cancelled: bool = false
-	var scene_queued_ms: int = 0  # Non-zero when first queued in the scene queue.
-
-var _mutation_in_flight := false
-var _mutation_queue: Array = []  # of _MutationQueueEntry
 # C5 mutation watchdog — recovers the lock if an in-flight mutation's coroutine
 # aborts or never resolves (it would otherwise wedge ALL mutations permanently).
-# It owns the in-flight identity + the adaptive deadline + the generation counter;
-# this file keeps only the single-flight flag + FIFO above. Constructed in start()
-# with a force_clear hook back into the lane; armed at execution-start, ticked every
-# _process frame. See mutation_watchdog.gd.
+# It owns the in-flight identity + the adaptive deadline + the generation counter.
+# Constructed in start() and handed to the dispatcher, which wires its force_clear hook
+# into the mutation lane; armed at execution-start by that lane, ticked every _process
+# frame HERE (it must run regardless of lane state). See mutation_watchdog.gd.
 var _mutation_watchdog: MutationWatchdog = null
 
 # -- Scene lease ---------------------------------------------------------------
@@ -129,20 +128,22 @@ var _mutation_watchdog: MutationWatchdog = null
 # affinity scene matches the active tab. See iter 41l-decies-bis for design.
 #
 # C6: the lease mechanism (state + acquire/renew/release/steal/drain + the
-# scene-affinity queue + scene.open contention) lives in scene_lease.gd; this file
-# keeps only the dispatch ROUTING into it (C7 extracts the routing). Constructed in
-# start() with the editor's root-resolver + the dispatcher/mutation-lane seams
-# injected; the dispatcher routes via _scene_lease.try_queue_for_lease /
+# scene-affinity queue + scene.open contention) lives in scene_lease.gd. C7: the dispatch
+# ROUTING into it now lives in the scene-lease lane (dispatch_lane.gd), reached through
+# the dispatcher. Constructed in start() with the editor's root-resolver + the lane seams
+# injected; the scene-lease lane routes via _scene_lease.try_queue_for_lease /
 # handle_scene_open, and _process ticks _scene_lease.check_expiry. See scene_lease.gd.
 var _scene_lease: SceneLease = null
 
 
 func set_registry(registry: MCPToolkitCommandRegistry) -> void:
 	_registry = registry
-	# Push to the lease child if it already exists (set_registry normally runs
-	# before start() builds it, in which case _init_scene_lease seeds it instead).
+	# Push to the children if they already exist (set_registry normally runs before
+	# start() builds them, in which case _init_scene_lease / _init_dispatcher seed it).
 	if _scene_lease != null:
 		_scene_lease.set_registry(registry)
+	if _dispatcher != null:
+		_dispatcher.set_registry(registry)
 
 
 ## Release the command registry and all its Callable references.
@@ -151,10 +152,12 @@ func clear_registry() -> void:
 	if _registry != null:
 		_registry.clear()
 		_registry = null
-	# Break the lease child's registry + seam Callable chains too (it holds the
-	# registry and seams bound back to this server).
+	# Break the children's registry + seam Callable chains too (they hold the registry
+	# and seams bound back to this server).
 	if _scene_lease != null:
 		_scene_lease.clear_registry()
+	if _dispatcher != null:
+		_dispatcher.clear()
 
 
 func get_plugin_boot_time() -> int:
@@ -274,7 +277,14 @@ func start() -> void:
 	_plugin_boot_time = int(Time.get_unix_time_from_system())
 	_init_transport()
 	_init_mutation_watchdog()
+	# Build scene_lease + dispatcher, then cross-wire. The two have a mutual seam
+	# dependency (the scene-lease lane routes into the lease child; the lease child's
+	# queued paths re-enter the read/mutation lanes), so both are CONSTRUCTED first, then
+	# wired: _init_dispatcher binds the lanes to the (now-existing) lease methods, and
+	# _init_scene_lease binds the lease seams to the (now-existing) lane methods.
 	_init_scene_lease()
+	_init_dispatcher()
+	_wire_scene_lease_to_lanes()
 	var token := MCPAuth.generate_token()
 	_transport.set_token(token)
 	var write_err := MCPAuth.write_token(token)
@@ -301,73 +311,59 @@ func _init_transport() -> void:
 		_on_peer_closed)
 
 
-# Build the mutation watchdog and inject the lane-recovery hook it fires on a trip:
-# erase the trapped request's active context, clear the single-flight flag, and
-# drain the queue. The watchdog owns the deadline + generation; this file keeps the
-# flag + FIFO and ticks() the watchdog every _process frame.
+# Build the mutation watchdog. Its force_clear recovery hook is wired by the mutation
+# lane (in the dispatcher) — the lane owns the single-flight flag the hook clears, so the
+# hook belongs with the lane (C7). This file only constructs the watchdog and ticks() it
+# every _process frame (it must run regardless of lane state — C5/R4).
 func _init_mutation_watchdog() -> void:
 	_mutation_watchdog = MutationWatchdog.new()
-	_mutation_watchdog.set_force_clear(_force_clear_mutation)
 
 
-# The watchdog's recovery hook (see _init_mutation_watchdog). Runs LAST in a trip,
-# after the watchdog bumped the generation and cleared its own identity, so the
-# drain's synchronous re-arm of a successor is not clobbered.
-func _force_clear_mutation(trapped_id) -> void:
-	_active_contexts.erase(str(trapped_id))
-	_mutation_in_flight = false
-	_drain_mutation_queue()
-
-
-# Build the scene-lease coordinator and inject its seams: the editor's root-resolver
-# (the ONLY EditorInterface reach — kept behind a Callable so it is the testability
-# seam), the command_received re-emit, the read-only execute core, the mutation
-# busy-enqueue, and the mutation-lane entry. The lease child owns the lease state +
-# scene-affinity queue; this file keeps the dispatch ROUTING into it (C7 extracts the
-# routing). set_registry usually ran before start() built this, so seed the registry.
+# Construct the scene-lease coordinator and seed the registry. Its seams are wired in
+# _wire_scene_lease_to_lanes (after the dispatcher's lanes exist — they have a mutual
+# dependency). set_registry usually ran before start() built this, so seed the registry.
 func _init_scene_lease() -> void:
 	_scene_lease = SceneLease.new()
 	_scene_lease.set_registry(_registry)
-	_scene_lease.set_handlers(
-		func() -> Node: return EditorInterface.get_edited_scene_root(),
+
+
+# Build the dispatcher + its three lanes, injecting the cross-subsystem seams the lanes
+# need (each behind a Callable so the dispatcher + lanes stay editor-clean): the
+# command_received re-emit, the mutation watchdog, and the scene-lease lane's seams bound
+# to the (already-constructed) lease child — handle_scene_open / try_queue_for_lease /
+# cancel_queued for routing, and inject_concurrency_metadata / post_mutation_cleanup /
+# drain for the mutation lane's completion path. set_registry usually ran before start(),
+# so seed the dispatcher's registry too.
+func _init_dispatcher() -> void:
+	_dispatcher = RpcDispatcher.new()
+	_dispatcher.set_registry(_registry)
+	_dispatcher.build_lanes(
 		func(method: String) -> void: command_received.emit(method),
-		_run_read_command,
-		_enqueue_mutation_if_busy,
-		_execute_mutation,
+		_mutation_watchdog,
+		_scene_lease.inject_concurrency_metadata,
+		_scene_lease.post_mutation_cleanup,
+		_scene_lease.drain,
+		_scene_lease.handle_scene_open,
+		_scene_lease.try_queue_for_lease,
+		_scene_lease.cancel_queued,
 	)
 
 
-# The dispatcher's read-only execute core, shared with the scene-queued read path
-# (injected into the lease child as _run_read). Owns the context bookkeeping so
-# _active_contexts stays dispatcher-private and is not shared across the lease seam.
-func _run_read_command(method: String, params: Dictionary, id) -> Dictionary:
-	var ctx: MCPToolkitToolContext = null
-	if _registry.is_cancellable(method):
-		ctx = MCPToolkitToolContext.new()
-		_active_contexts[str(id)] = ctx
-	command_received.emit(method)
-	var result: Dictionary = await _registry.call_command(method, params, ctx)
-	_active_contexts.erase(str(id))
-	return result
-
-
-# If a mutation is in flight, append this command to the mutation FIFO and notify the
-# peer it is queued; return true. Else return false (the caller proceeds to execute).
-# Injected into the lease child as _enqueue_mutation_if_busy so the mutation-lane
-# state (_mutation_in_flight / _mutation_queue) stays in this file.
-func _enqueue_mutation_if_busy(peer: WebSocketPeer, id, method: String,
-		params: Dictionary, queued_ms: int) -> bool:
-	if not _mutation_in_flight:
-		return false
-	var m_entry := _MutationQueueEntry.new()
-	m_entry.peer = peer
-	m_entry.id = id
-	m_entry.method = method
-	m_entry.params = params
-	m_entry.scene_queued_ms = queued_ms
-	_mutation_queue.append(m_entry)
-	_send_notification(peer, "_queued", {"request_id": id})
-	return true
+# Inject the lane methods into the scene-lease child (the second half of the mutual
+# wiring): the editor's root-resolver (the ONLY EditorInterface reach — behind a Callable
+# so it is the testability seam), the command_received re-emit, the read lane's
+# result-returning core (the queued-read path injects concurrency metadata before
+# sending, so it needs the result, not a send), and the mutation lane's busy-enqueue +
+# execute entry. Runs after _init_dispatcher built the lanes.
+func _wire_scene_lease_to_lanes() -> void:
+	var mutation_lane = _dispatcher.mutation_lane()
+	_scene_lease.set_handlers(
+		func() -> Node: return EditorInterface.get_edited_scene_root(),
+		func(method: String) -> void: command_received.emit(method),
+		_dispatcher.read_lane().run_returning,
+		mutation_lane.enqueue_if_busy,
+		mutation_lane.execute,
+	)
 
 
 func stop() -> void:
@@ -491,7 +487,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 				_check_version_mismatch(_get_plugin_version(), server_ver)
 		return
 
-	await _dispatch_rpc(peer, message)
+	await _dispatcher.route_request(peer, message)
 
 
 # Supplies the Mode-A auth-ack payload to the transport: the bare {authed:true}
@@ -545,162 +541,11 @@ func _check_version_mismatch(local: String, remote: String) -> void:
 		push_warning("[MCPServer] Version mismatch — plugin %s, server %s. Consider updating." % [local, remote])
 
 
-func _dispatch_rpc(peer: WebSocketPeer, message: Dictionary) -> void:
-	var id = message.get("id", null)
-	# Godot's JSON parser returns every number as float; coerce whole-float ids
-	# back to int so {"id": 1} round-trips as {"id": 1}, not {"id": 1.0}.
-	if typeof(id) == TYPE_FLOAT and int(id) == id:
-		id = int(id)
-	var method := str(message.get("method", ""))
-	var parameters = message.get("params", null)
-
-	if method.is_empty():
-		_send_error(peer, id, -32600, "Invalid Request: missing method")
-		return
-
-	# _cancel is a fire-and-forget notification from the bridge — no response.
-	# Triggers cooperative cancellation on the MCPToolkitToolContext for the target
-	# request. Scans both mutation and scene queues for queued (not-yet-
-	# executing) commands and flags them for skip-on-drain.
-	if method == "_cancel":
-		var safe_params: Dictionary = parameters \
-			if typeof(parameters) == TYPE_DICTIONARY else {}
-		var target_id := str(safe_params.get("request_id", ""))
-		# In-flight: cancel via context.
-		if _active_contexts.has(target_id):
-			_active_contexts[target_id].cancel()
-			return
-		# Queued in mutation queue:
-		for entry in _mutation_queue:
-			if str(entry.id) == target_id:
-				entry.cancelled = true
-				return
-		# Queued in scene queue (lease child owns it):
-		_scene_lease.cancel_queued(target_id)
-		return
-
-	# echo is a transport-level diagnostic, not a domain command.
-	if method == "echo":
-		_send_result(peer, id, parameters)
-		return
-
-	if _registry == null or not _registry.has_command(method):
-		_send_error(peer, id, -32601, "Method not found: %s" % method)
-		return
-
-	var safe_parameters: Dictionary = parameters \
-		if typeof(parameters) == TYPE_DICTIONARY else {}
-
-	# -- Scene lease routing (mechanism lives in scene_lease.gd; C7 extracts this
-	# routing) -----------------------------------------------------------------
-
-	# scene.open: intercepted at dispatch level because under contention
-	# we must NOT call open_scene_from_path — the tab switch would interfere
-	# with the lease holder. Validation mirrors _cmd_scene_open.
-	if method == "scene.open":
-		await _scene_lease.handle_scene_open(peer, id, safe_parameters)
-		return
-
-	# Tab-dependent commands: route through the scene lease when targeting a
-	# different scene than the active tab. Returns true if queued (no response yet);
-	# false to proceed (it renews the lease if this peer holds the active tab).
-	if _scene_lease.try_queue_for_lease(peer, id, method, safe_parameters):
-		return
-
-	# -- Mutation lock routing (unchanged from 41l-decies) ---------------------
-
-	if _registry.needs_serialization(method):
-		if _mutation_in_flight:
-			var entry := _MutationQueueEntry.new()
-			entry.peer = peer
-			entry.id = id
-			entry.method = method
-			entry.params = safe_parameters
-			_mutation_queue.append(entry)
-			_send_notification(peer, "_queued", {"request_id": id})
-		else:
-			await _execute_mutation(peer, id, method, safe_parameters)
-	else:
-		# Read-only: execute immediately, no lock needed. _run_read_command owns the
-		# context bookkeeping + call (shared with the lease child's queued-read path).
-		var result: Dictionary = await _run_read_command(method, safe_parameters, id)
-		_send_result(peer, id, result)
-
-
-func _execute_mutation(peer: WebSocketPeer, id, method: String,
-		params: Dictionary, scene_queued_ms: int = 0) -> void:
-	# C5: take the single-flight lock, then arm the watchdog synchronously BEFORE
-	# any await — so its deadline tracks only in-flight time (never the queued wait)
-	# and can't race. We compute the deadline here (we own the registry + the grace
-	# setting) and hand the value to the watchdog; arm() returns the generation we
-	# capture for the post-await guard.
-	_mutation_in_flight = true
-	var started_ms := Time.get_ticks_msec()
-	var grace_ms: int = ProjectSettings.get_setting(
-		"mcp_toolkit/concurrency/mutation_watchdog_grace_ms", 60000)
-	# Deadline basis: the command's DECLARED timeout if it set one (trust the
-	# author's contract — built-ins + careful extensions get tight, appropriate
-	# recovery), else _MAX_TIMEOUT_MS for undeclared methods (the 30 s default
-	# isn't a deliberate duration statement, so don't force-clear them early).
-	# Grace is added either way; the deadline is stamped at execution-start.
-	var deadline_ms := started_ms + _registry.get_watchdog_timeout_ms(method) + grace_ms
-	_send_notification(peer, "_executing", {"request_id": id})
-	var ctx: MCPToolkitToolContext = null
-	if _registry.is_cancellable(method):
-		ctx = MCPToolkitToolContext.new()
-		_active_contexts[str(id)] = ctx
-	# Arm: hands the watchdog the in-flight identity + deadline + ctx (so it can
-	# cooperatively cancel a slow-but-alive handler) and returns the generation.
-	var my_generation := _mutation_watchdog.arm(peer, id, method, started_ms, deadline_ms, ctx)
-	command_received.emit(method)
-	var result: Dictionary = await _registry.call_command(method, params, ctx)
-	_active_contexts.erase(str(id))
-	# C5 generation guard: if the watchdog force-cleared us mid-await (generation
-	# bumped), a successor mutation now owns the lock. Abandon the ENTIRE tail —
-	# the watchdog already responded; touching the flag/queue would corrupt the
-	# successor.
-	if _mutation_watchdog.current_generation() != my_generation:
-		return
-	if scene_queued_ms > 0:
-		_scene_lease.inject_concurrency_metadata(result, scene_queued_ms)
-	_send_result(peer, id, result)
-	_scene_lease.post_mutation_cleanup(peer, method, params, result)
-	_mutation_in_flight = false
-	_mutation_watchdog.disarm()
-	_drain_mutation_queue()
-
-
-func _drain_mutation_queue() -> void:
-	while not _mutation_queue.is_empty():
-		var entry: _MutationQueueEntry = _mutation_queue.pop_front()
-		# Skip cancelled entries.
-		if entry.cancelled:
-			continue
-		# Skip disconnected peers.
-		if entry.peer.get_ready_state() != WebSocketPeer.STATE_OPEN:
-			continue
-		# Skip unregistered commands (hot-reload race).
-		if not _registry.has_command(entry.method):
-			_send_error(entry.peer, entry.id, -32601,
-				"Method unregistered while queued: %s" % entry.method)
-			continue
-		# Found a valid entry — execute it.
-		# _execute_mutation sets _mutation_in_flight = true synchronously
-		# before its first await, so there is no race window.
-		_execute_mutation(entry.peer, entry.id, entry.method, entry.params,
-			entry.scene_queued_ms)
-		return  # _execute_mutation will call _drain_mutation_queue on completion.
-	# Mutation queue fully drained — check scene queue for same-lease entries.
-	_scene_lease.drain()
-
-
-func _send_notification(peer: WebSocketPeer, method: String,
-		params: Dictionary) -> void:
-	Notifier.send_notification(peer, method, params, "[MCPServer]")
-
-
-func _send_result(peer: WebSocketPeer, id, result) -> void:
-	Notifier.send_result(peer, id, result, "[MCPServer]")
+# Dispatch routing (_dispatch_rpc), the mutation lane (_execute_mutation /
+# _drain_mutation_queue), and the read/scene-lease routes moved to rpc_dispatcher.gd +
+# dispatch_lane.gd in concern 007 C7. _handle_message now hands each authed frame to
+# _dispatcher.route_request. The framing helper below stays — the orchestrator itself
+# sends the pre-dispatch parse errors (-32700 / -32600) in _handle_message.
 
 
 func _send_error(peer: WebSocketPeer, id, code: int, error_message: String) -> void:

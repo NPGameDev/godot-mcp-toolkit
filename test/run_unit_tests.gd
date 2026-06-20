@@ -25,6 +25,7 @@ const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
 const SceneLease := preload("res://addons/godot_mcp_toolkit/scene_lease.gd")
+const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/rpc_dispatcher.gd")
 
 var _passed := 0
 var _failed := 0
@@ -52,6 +53,7 @@ func _init() -> void:
 	_test_scene_lease()
 	_test_signal_pair_resolver()
 	_test_mutation_watchdog()
+	_test_lane_selection()
 	_test_safe_scene_ops()
 	_test_tool_context()
 	_test_compile_text_filter()
@@ -1089,6 +1091,70 @@ func _test_mutation_watchdog() -> void:
 	wd2.arm(peer, 1, "node.create", past, past, null)
 	wd2.tick()
 	_eq(wd2.current_generation(), g2 + 1, "no force_clear wired → trip still bumps generation (no crash)")
+
+	print("")
+
+
+# --- Lane selection (concern 007 C7) ---------------------------------------
+# rpc_dispatcher.lane_kind_for is the pure data→route mapping at the heart of the Lane
+# abstraction: from a command's registry flags alone it decides read / mutation /
+# scene_lease. Fully headless-testable — set a registry with commands carrying specific
+# flag combos and assert the kind, no live lanes / peers / editor needed. This pins the
+# behaviour-preserving routing the pre-extraction _dispatch_rpc hand-coded:
+#   - read-only + scene-independent          → read     (bypass lock, no lease)
+#   - mutator + scene-independent            → mutation (single-flight FIFO)
+#   - active-scene-required (read OR mutate)  → scene_lease (queue on tab contention)
+#   - scene.open                             → scene_lease ALWAYS (special-cased), even
+#                                              though it is registered scene-independent.
+
+func _test_lane_selection() -> void:
+	_begin("Lane selection (007 C7)")
+	var reg := MCPToolkitCommandRegistry.new()
+	var disp := RpcDispatcher.new()
+	disp.set_registry(reg)
+
+	# read-only + scene-independent → ReadOnlyLane (no lock, no lease).
+	reg.add("t.read", _noop,
+			MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
+	_eq(disp.lane_kind_for("t.read"), RpcDispatcher.LANE_READ,
+			"read-only + scene-independent → read lane")
+
+	# mutator (default, not read-only) + scene-independent → MutationLane.
+	reg.add("t.mutate", _noop, MCPToolkitCommandOptions.new().mark_scene_independent())
+	_eq(disp.lane_kind_for("t.mutate"), RpcDispatcher.LANE_MUTATION,
+			"mutator + scene-independent → mutation lane")
+
+	# exclusive-execution mutator + scene-independent → MutationLane (force-serialized).
+	reg.add("t.excl", _noop,
+			MCPToolkitCommandOptions.new().mark_exclusive_execution().mark_scene_independent())
+	_eq(disp.lane_kind_for("t.excl"), RpcDispatcher.LANE_MUTATION,
+			"exclusive-execution + scene-independent → mutation lane")
+
+	# active-scene-required mutator (the default — no mark_scene_independent) → SceneLeaseLane.
+	reg.add("t.scene_mut", _noop, MCPToolkitCommandOptions.new())
+	_eq(disp.lane_kind_for("t.scene_mut"), RpcDispatcher.LANE_SCENE_LEASE,
+			"active-scene-required mutator → scene-lease lane")
+
+	# active-scene-required READ (read-only but NOT scene-independent) → SceneLeaseLane.
+	# Scene affinity wins over the read bypass — a read of the active tree still queues.
+	reg.add("t.scene_read", _noop, MCPToolkitCommandOptions.new().mark_read_only())
+	_eq(disp.lane_kind_for("t.scene_read"), RpcDispatcher.LANE_SCENE_LEASE,
+			"active-scene-required read → scene-lease lane (affinity over read bypass)")
+
+	# scene.open → scene_lease ALWAYS, even registered scene-independent (the explicit
+	# special-case clause — under contention it must NOT open the scene / switch tabs).
+	reg.add("scene.open", _noop, MCPToolkitCommandOptions.new().mark_scene_independent())
+	_eq(disp.lane_kind_for("scene.open"), RpcDispatcher.LANE_SCENE_LEASE,
+			"scene.open → scene-lease lane always (special-cased, despite scene-independent)")
+
+	# Unknown/unregistered method → mutation lane (the conservative serialized
+	# default): is_active_scene_required defaults false for an absent command
+	# (cmd == null), so the scene-lease clause is skipped, but needs_serialization
+	# defaults true for an absent command, so it falls through to MutationLane.
+	# Moot in production — the dispatcher's registry-miss guard returns -32601
+	# before lane selection is ever reached for an unregistered method.
+	_eq(disp.lane_kind_for("t.unknown"), RpcDispatcher.LANE_MUTATION,
+			"unknown method → mutation lane (conservative serialized default; moot in prod, -32601 guard fires first)")
 
 	print("")
 
