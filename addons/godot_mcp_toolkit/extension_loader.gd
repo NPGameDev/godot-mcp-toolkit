@@ -12,6 +12,7 @@ extends RefCounted
 ## "extensions.changed" notification to all connected MCP bridges.
 
 const _Support := preload("res://addons/godot_mcp_toolkit/extension_support.gd")
+const _MetaCommands := preload("res://addons/godot_mcp_toolkit/extension_meta_commands.gd")
 
 # Retain references to C# extension instances to prevent GC from
 # invalidating registered Callables.
@@ -44,7 +45,7 @@ static func load_all(registry: MCPToolkitCommandRegistry, server: Node) -> int:
 	if loaded > 0:
 		print("[MCPExtensions] Discovered %d extension(s) via reflection" % loaded)
 	# Register the meta command for bridge discovery.
-	_register_meta(registry)
+	_MetaCommands.register_list_command(registry)
 	# Transfer instance ownership to the registry so they outlive this call.
 	if not loader._instances.is_empty():
 		registry.set_meta("_extension_instances", loader._instances)
@@ -186,23 +187,12 @@ func _cmd_refresh(_params: Dictionary) -> Dictionary:
 	var result: Array[Dictionary] = []
 	var grouped_keywords: PackedStringArray = []
 	for method: String in methods:
-		var meta := _registry.get_command_metadata(method)
-		var entry: Dictionary = {"method": method}
-		if meta.get("description", "") != "":
-			entry["description"] = meta["description"]
-		if not meta.get("input_schema", {}).is_empty():
-			entry["input_schema"] = meta["input_schema"]
-		if not meta.get("annotations", {}).is_empty():
-			entry["annotations"] = meta["annotations"]
-		var group: Dictionary = meta.get("group", {})
-		if not group.is_empty():
-			entry["group"] = group
-			# Collect keywords for the activation hint.
-			for kw in group.get("keywords", []):
-				if str(kw) not in grouped_keywords:
-					grouped_keywords.append(str(kw))
-		if meta.has("timeout_ms"):
-			entry["timeout_ms"] = meta["timeout_ms"]
+		var entry := _MetaCommands.build_command_entry(_registry, method)
+		# Collect keywords for the activation hint (a refresh-local post-step on the
+		# shared wire entry — read back from the entry the builder produced).
+		for kw in entry.get("group", {}).get("keywords", []):
+			if str(kw) not in grouped_keywords:
+				grouped_keywords.append(str(kw))
 		result.append(entry)
 	var response := {"success": true, "refreshed": true, "commands": result}
 	if not grouped_keywords.is_empty():
@@ -416,48 +406,6 @@ func _broadcast_extensions_changed(removed_methods: Array[String]) -> void:
 	var commands: Array[Dictionary] = []
 	var methods := _registry.get_extension_methods()
 	for method: String in methods:
-		var meta := _registry.get_command_metadata(method)
-		var entry: Dictionary = {"method": method}
-		if meta.get("description", "") != "":
-			entry["description"] = meta["description"]
-		if not meta.get("input_schema", {}).is_empty():
-			entry["input_schema"] = meta["input_schema"]
-		if not meta.get("annotations", {}).is_empty():
-			entry["annotations"] = meta["annotations"]
-		if not meta.get("group", {}).is_empty():
-			entry["group"] = meta["group"]
-		if meta.has("timeout_ms"):
-			entry["timeout_ms"] = meta["timeout_ms"]
-		commands.append(entry)
+		commands.append(_MetaCommands.build_command_entry(_registry, method))
 	var params := {"commands": commands, "removed": removed_methods}
 	_server.broadcast_notification("extensions.changed", params)
-
-
-static func _register_meta(registry: MCPToolkitCommandRegistry) -> void:
-	var handler := func(params: Dictionary) -> Dictionary:
-		return _cmd_extensions_list(registry, params)
-	registry.add("extensions.list", handler, MCPToolkitCommandOptions.new()
-		.with_description("List all discovered third-party extensions and their commands")
-		.mark_read_only()
-		.mark_idempotent()
-		.mark_scene_independent())
-
-
-static func _cmd_extensions_list(registry: MCPToolkitCommandRegistry, _params: Dictionary) -> Dictionary:
-	var methods := registry.get_extension_methods()
-	var result: Array[Dictionary] = []
-	for method: String in methods:
-		var meta := registry.get_command_metadata(method)
-		var entry: Dictionary = {"method": method}
-		if meta.get("description", "") != "":
-			entry["description"] = meta["description"]
-		if not meta.get("input_schema", {}).is_empty():
-			entry["input_schema"] = meta["input_schema"]
-		if not meta.get("annotations", {}).is_empty():
-			entry["annotations"] = meta["annotations"]
-		if not meta.get("group", {}).is_empty():
-			entry["group"] = meta["group"]
-		if meta.has("timeout_ms"):
-			entry["timeout_ms"] = meta["timeout_ms"]
-		result.append(entry)
-	return {"success": true, "commands": result}

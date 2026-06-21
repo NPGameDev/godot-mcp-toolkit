@@ -18,6 +18,7 @@ const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog.gd")
 const ExtensionSupport := preload("res://addons/godot_mcp_toolkit/extension_support.gd")
+const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extension_meta_commands.gd")
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
@@ -55,6 +56,7 @@ func _init() -> void:
 	_test_registry_merge()
 	_test_extension_collision_guard()
 	_test_extension_support()
+	_test_build_command_entry()
 	_test_options_builder()
 	_test_extension_options()
 	_test_annotation_mapping()
@@ -877,6 +879,56 @@ func _test_extension_support() -> void:
 	# on disk, so file_exists is deterministically false headlessly.
 	_ok(ExtensionSupport.is_addon_enabled("res://addons/_nonexistent_addon_xyz/ext.gd"),
 			"addons/ path with no plugin.cfg → enabled (not a formal addon)")
+
+	print("")
+
+
+# --- Command-entry wire-shape builder (the Published-Language contract pin) --
+
+func _test_build_command_entry() -> void:
+	_begin("build_command_entry (extensions.list/refresh/changed wire shape)")
+
+	# This group locks the per-command wire shape that extensions.list,
+	# extensions.refresh, and extensions.changed all share via build_command_entry.
+	# Any future drift in which fields are present (and the present-iff-non-empty
+	# rule) breaks the MCP bridge contract — this group catches it headlessly.
+	var registry := MCPToolkitCommandRegistry.new()
+	var noop := func(_p: Dictionary) -> Dictionary: return {}
+
+	# A command with every metadata field populated, plus a non-default timeout.
+	registry.add("ext.full", noop, MCPToolkitCommandOptions.new()
+		.with_description("Full entry")
+		.with_input_schema({"type": "object", "properties": {"x": {"type": "string"}}})
+		.with_group("grp", "Group desc", ["kw1", "kw2"])
+		.with_timeout_ms(5000))
+	var full := ExtensionMetaCommands.build_command_entry(registry, "ext.full")
+	_eq(full.get("method", ""), "ext.full", "full → method seed present")
+	_eq(full.get("description", ""), "Full entry", "full → description present")
+	_ok(full.has("input_schema") and not full.get("input_schema", {}).is_empty(),
+			"full → input_schema present (non-empty)")
+	_ok(full.has("annotations"), "full → annotations present (registry always sets them)")
+	_ok(full.has("group") and full.get("group", {}).get("name", "") == "grp",
+			"full → group present with name")
+	_ok(full.get("group", {}).get("keywords", []).has("kw1"),
+			"full → group keywords carried through (the refresh hint source)")
+	_eq(full.get("timeout_ms", -1), 5000, "full → non-default timeout_ms present")
+
+	# A command with no description/schema/group and the default timeout: every
+	# omittable field must be ABSENT (present-iff-non-empty), but method seed and
+	# the always-built annotations must be present.
+	registry.add("ext.minimal", noop, MCPToolkitCommandOptions.new())
+	var minimal := ExtensionMetaCommands.build_command_entry(registry, "ext.minimal")
+	_eq(minimal.get("method", ""), "ext.minimal", "minimal → method seed present")
+	_ok(not minimal.has("description"), "minimal → description omitted (empty)")
+	_ok(not minimal.has("input_schema"), "minimal → input_schema omitted (empty)")
+	_ok(not minimal.has("group"), "minimal → group omitted (empty)")
+	_ok(not minimal.has("timeout_ms"), "minimal → timeout_ms omitted (default)")
+	_ok(minimal.has("annotations"), "minimal → annotations present (always built)")
+
+	# An unregistered method yields just the method seed (empty metadata → all omitted).
+	var unknown := ExtensionMetaCommands.build_command_entry(registry, "ext.unknown")
+	_eq(unknown.size(), 1, "unknown method → entry holds only the method seed")
+	_eq(unknown.get("method", ""), "ext.unknown", "unknown method → method seed present")
 
 	print("")
 
