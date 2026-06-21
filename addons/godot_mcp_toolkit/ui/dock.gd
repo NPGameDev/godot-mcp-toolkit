@@ -11,6 +11,7 @@ const McpJsonSync = _Hub.McpJsonSync
 const RegistryClient = _Hub.RegistryClient
 const NodejsCheck = _Hub.NodejsCheck
 const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog_dialog.gd")
+const AuditLogDialog := preload("res://addons/godot_mcp_toolkit/ui/audit_log_dialog.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -550,78 +551,10 @@ func _refresh_lsp_label() -> void:
 # ---------------------------------------------------------------------------
 
 func show_audit_dialog() -> void:
-	# Read the log file.
-	var path := _audit_path
-	if path.is_empty():
-		path = _Hub.Audit.get_log_path()
-	var log_text := ""
-	if FileAccess.file_exists(path):
-		var file := FileAccess.open(path, FileAccess.READ)
-		if file != null:
-			var full_text := file.get_as_text()
-			file.close()
-			var lines := full_text.split("\n")
-			if lines.size() > 100:
-				var tail := lines.slice(lines.size() - 100)
-				log_text = "\n".join(tail)
-				log_text += "\n\n... Showing last 100 lines. Open the file to view the full log."
-			else:
-				log_text = full_text
-	if log_text.strip_edges().is_empty():
-		log_text = "(audit log is empty)"
-
-	# Reuse or create dialog.
-	if _audit_dialog != null and is_instance_valid(_audit_dialog):
-		_audit_dialog.queue_free()
-		_audit_dialog = null
-
-	_audit_dialog = AcceptDialog.new()
-	_audit_dialog.title = "MCP Toolkit — Audit Log"
-	_audit_dialog.ok_button_text = "Close"
-	_audit_dialog.exclusive = false
-	_audit_dialog.min_size = Vector2i(620, 480)
-	_audit_dialog.confirmed.connect(func():
-		_audit_dialog.queue_free()
-		_audit_dialog = null
-	)
-	_audit_dialog.canceled.connect(func():
-		_audit_dialog.queue_free()
-		_audit_dialog = null
-	)
-
-	_audit_dialog.add_button("Open File", true, "open_file")
-	_audit_dialog.custom_action.connect(func(action: StringName):
-		if action == "open_file":
-			var global_path := ProjectSettings.globalize_path(path)
-			OS.shell_open(global_path)
-	)
-
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_audit_dialog.add_child(vbox)
-
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(600, 400)
-	vbox.add_child(scroll)
-
-	var text_label := RichTextLabel.new()
-	text_label.bbcode_enabled = false
-	text_label.fit_content = true
-	text_label.scroll_active = false  # scroll handled by parent ScrollContainer
-	text_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	text_label.selection_enabled = true
-	text_label.text = log_text
-	text_label.add_theme_font_size_override("normal_font_size", 11)
-	scroll.add_child(text_label)
-
-	# Scroll to bottom after layout pass.
-	EditorInterface.get_base_control().add_child(_audit_dialog)
-	_audit_dialog.popup_centered()
-	await get_tree().process_frame
-	scroll.scroll_vertical = scroll.get_v_scroll_bar().max_value
+	if _audit_dialog == null or not is_instance_valid(_audit_dialog):
+		_audit_dialog = AuditLogDialog.new()
+		EditorInterface.get_base_control().add_child(_audit_dialog)
+	_audit_dialog.show_log(_audit_path)
 
 
 func _on_clear_audit_log() -> void:
