@@ -26,6 +26,8 @@ const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
 const SceneLease := preload("res://addons/godot_mcp_toolkit/scene_lease.gd")
 const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/rpc_dispatcher.gd")
+const ProjectKey := preload("res://addons/godot_mcp_toolkit/project_key.gd")
+const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 
 var _passed := 0
 var _failed := 0
@@ -41,6 +43,7 @@ func _init() -> void:
 		quit(1)
 		return
 
+	_test_project_key()
 	_test_registry()
 	_test_registry_entry()
 	_test_registry_merge()
@@ -140,6 +143,13 @@ func _eq(actual, expected, label: String) -> void:
 
 func _noop(_p: Dictionary) -> Dictionary:
 	return {"success": true}
+
+
+# True on case-insensitive default filesystems (Windows/macOS), where
+# ProjectKey.canonical lowercases — mirrors the recipe's own platform branch so
+# the canonicalization assertions are correct on every host.
+func _case_folds() -> bool:
+	return OS.get_name() in ["Windows", "macOS"]
 
 
 # --- FileGuard boundary pin (Part C, 41m-quater) --------------------------
@@ -517,6 +527,52 @@ func _test_registry() -> void:
 			"non-existent → metadata empty dict")
 	_ok(reg.needs_serialization("t.nope"),
 			"non-existent → needs_serialization true (safe default)")
+
+	print("")
+
+
+# --- ProjectKey identity (concern 039 C0, 005-D) --------------------------
+# The single canonicalization SSOT: normalize a project root and derive its
+# 12-char hash. Pins the recipe (slash + trailing-slash + case-fold) and the
+# hash, plus the Shared-Kernel invariant that ProjectPaths (the user:// dir
+# hash) and RegistryClient (the entry-file hash) can never drift apart.
+
+func _test_project_key() -> void:
+	_begin("ProjectKey identity")
+
+	# 1. Normalization: backslash → slash, trailing slash(es) stripped.
+	_eq(ProjectKey.canonical("C:\\a\\b"), "c:/a/b" if _case_folds() else "C:/a/b",
+			"canonical: backslash → slash")
+	_eq(ProjectKey.canonical("/a/b/"), "/a/b", "canonical: trailing slash stripped")
+	_eq(ProjectKey.canonical("/a/b///"), "/a/b", "canonical: repeated trailing slashes stripped")
+	_eq(ProjectKey.canonical(""), "", "canonical: empty stays empty")
+
+	# 2. Case-fold is filesystem-conditional (Windows/macOS lowercase, else verbatim).
+	if _case_folds():
+		_eq(ProjectKey.canonical("/A/B"), "/a/b", "canonical: lowercased on case-insensitive FS")
+	else:
+		_eq(ProjectKey.canonical("/A/B"), "/A/B", "canonical: case preserved on case-sensitive FS")
+
+	# 3. hash_of: 12 hex chars, deterministic, and hashes its argument VERBATIM
+	#    (no re-canonicalization) — two different strings give two different hashes.
+	var h := ProjectKey.hash_of("/some/canonical/key")
+	_eq(h.length(), 12, "hash_of: 12 chars")
+	_eq(ProjectKey.hash_of("/some/canonical/key"), h, "hash_of: deterministic")
+	_ok(ProjectKey.hash_of("/some/canonical/key") != ProjectKey.hash_of("/other/key"),
+			"hash_of: distinct inputs → distinct hashes")
+	_ok(ProjectKey.hash_of("/A/B") != ProjectKey.hash_of("/a/b"),
+			"hash_of: hashes verbatim (does not re-canonicalize)")
+
+	# 4. current_hash() == hash_of(current()) by construction.
+	_eq(ProjectKey.current_hash(), ProjectKey.hash_of(ProjectKey.current()),
+			"current_hash == hash_of(current)")
+
+	# 5. Shared-Kernel pin (005-D): ONE canonicalization, two consumers. The
+	#    user:// instance-dir hash (ProjectPaths) and the registry entry-file hash
+	#    (ProjectKey) MUST match, or a single instance would split into two
+	#    identities. This single assertion guards the de-dup against future drift.
+	_eq(ProjectPaths.project_hash(), ProjectKey.current_hash(),
+			"005-D: ProjectPaths.project_hash() == ProjectKey.current_hash()")
 
 	print("")
 

@@ -17,6 +17,10 @@ extends RefCounted
 
 const _VersionUtils := preload("res://addons/godot_mcp_toolkit/mcp_version_utils.gd")
 const FileLock := preload("res://addons/godot_mcp_toolkit/file_lock.gd")
+# Direct preload (NOT via _hub.gd): this file is in the runtime autoload's
+# preload closure (mcp_runtime_server.gd), so it must stay editor-clean — _hub.gd
+# names EditorInterface and would taint the autoload in exports (godot#91713).
+const _ProjectKey := preload("res://addons/godot_mcp_toolkit/project_key.gd")
 
 const _REGISTRY_FILENAME := "projects.json"
 const _ENTRIES_DIR := "entries"
@@ -50,18 +54,8 @@ static func registry_path() -> String:
 	return registry_dir().path_join(_REGISTRY_FILENAME)
 
 
-static func _normalize_path(p: String) -> String:
-	var result := p.replace("\\", "/").rstrip("/")
-	# Windows and macOS default filesystems are case-insensitive; lowercase
-	# avoids mismatches between Godot's globalize_path and Node.js
-	# process.cwd() when the TS bridge reads the same registry file.
-	if OS.get_name() in ["Windows", "macOS"]:
-		result = result.to_lower()
-	return result
-
-
 static func _project_key() -> String:
-	return _normalize_path(ProjectSettings.globalize_path("res://"))
+	return _ProjectKey.current()
 
 
 static func _entry_dir() -> String:
@@ -72,7 +66,7 @@ static func _entry_dir() -> String:
 
 
 static func _entry_hash() -> String:
-	return _project_key().sha256_text().substr(0, 12)
+	return _ProjectKey.current_hash()
 
 
 static func _entry_file_path() -> String:
