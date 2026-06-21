@@ -25,6 +25,7 @@ const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatia
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
 const TilesetCommands := preload("res://addons/godot_mcp_toolkit/commands/tileset_commands.gd")
+const TilesetIo := preload("res://addons/godot_mcp_toolkit/commands/tileset_io.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
@@ -99,6 +100,7 @@ func _init() -> void:
 	_test_sound_generate()
 	_test_create_collision_resolver()
 	_test_tileset_edit_key_enforcement()
+	_test_tileset_io_polygon()
 	_test_coerce_roundtrip()
 	_test_color_from_dict()
 	_test_node_packed_property_serialize()
@@ -2716,6 +2718,31 @@ func _test_tileset_edit_key_enforcement() -> void:
 	_ok(not TilesetCommands._foreign_key_error("bogus_verb",
 		{"atlas_x": 0, "atlas_y": 0, "physics_polygon": "full"}).is_empty(),
 		"unknown verb rejects any non-coord key")
+
+
+# --- tileset_io full-tile polygon (decompose 034 C1, DRY ×3 → 1) ----------
+# build_full_tile_polygon is the consolidated unit rectangle that create's
+# collision seed and edit_physics' "full"/"one_way" shape all share. Pure
+# geometry — pin the exact vertex output so the DRY can never drift.
+func _test_tileset_io_polygon() -> void:
+	_begin("tileset_io.build_full_tile_polygon (geometry)")
+
+	# 16×16 tile → ±8 corners, wound TL → TR → BR → BL (the order create and
+	# edit_physics both rely on for set_collision_polygon_points).
+	var p16 := TilesetIo.build_full_tile_polygon(Vector2i(16, 16))
+	_eq(p16, PackedVector2Array([
+		Vector2(-8, -8), Vector2(8, -8), Vector2(8, 8), Vector2(-8, 8)]),
+		"16x16 → exact ±8 rectangle in winding order")
+
+	# Non-square tile uses x and y half-extents independently.
+	var p_rect := TilesetIo.build_full_tile_polygon(Vector2i(32, 16))
+	_eq(p_rect, PackedVector2Array([
+		Vector2(-16, -8), Vector2(16, -8), Vector2(16, 8), Vector2(-16, 8)]),
+		"32x16 → independent half-extents")
+
+	# Odd size keeps the float half (/ 2.0) — no integer truncation.
+	var p_odd := TilesetIo.build_full_tile_polygon(Vector2i(15, 15))
+	_eq(p_odd[0], Vector2(-7.5, -7.5), "odd size keeps .5 half (float division)")
 
 
 # --- Coerce/serialize round-trip symmetry (concern 018) -------------------

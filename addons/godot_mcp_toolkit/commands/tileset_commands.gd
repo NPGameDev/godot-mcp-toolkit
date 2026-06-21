@@ -3,6 +3,7 @@ extends RefCounted
 ## tileset.* command handlers — TileSet resource creation, editing, and management.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const _IO := preload("res://addons/godot_mcp_toolkit/commands/tileset_io.gd")
 const Coerce = _Hub.Coerce
 const FileGuard = _Hub.FileGuard
 const Helpers = _Hub.Helpers
@@ -49,39 +50,9 @@ static func register(registry: MCPToolkitCommandRegistry) -> void:
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
-# -- Helpers ------------------------------------------------------------------
-
-
-## Load and validate a TileSet from file_path. Returns TileSet or error Dictionary.
-static func _load_tileset(file_path: String) -> Variant:
-	var guard := FileGuard.resolve_safe(file_path)
-	if guard["error"] != null:
-		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
-	if not FileAccess.file_exists(file_path):
-		return MCPToolkitError.fail("NOT_FOUND", "TileSet not found: %s" % file_path)
-	var ts = ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_IGNORE)
-	if ts == null or not (ts is TileSet):
-		return MCPToolkitError.fail("INVALID_CLASS",
-			"Resource at %s is not a TileSet" % file_path)
-	return ts
-
-
-## Save a TileSet, reload cache, and index. Returns empty dict on success or error.
-static func _save_tileset(ts: TileSet, file_path: String) -> Dictionary:
-	var save_err := ResourceSaver.save(ts, file_path)
-	if save_err != OK:
-		return MCPToolkitError.fail("SAVE_FAILED",
-			"ResourceSaver.save returned %d (path=%s)" % [save_err, file_path])
-	ResourceLoader.load(file_path, "", ResourceLoader.CACHE_MODE_REPLACE)
-	await Helpers.ensure_file_indexed(file_path)
-	return {}
-
-
-static func _layer_node_hint(prefix: String, suffix: String) -> String:
-	var ver := _Hub.VersionUtils.get_engine_version_pair()
-	var has_tilemaplayer := _Hub.VersionUtils.is_at_least(ver, "4.3")
-	var node_name := "TileMapLayer" if has_tilemaplayer else "TileMap"
-	return prefix + node_name + suffix
+# Load / save+reindex / the layer-node version hint / the full-tile polygon all
+# live on the shared tileset_io.gd leaf (_IO) — they are the I/O spine every
+# tileset.* command group relies on, so no single command child can own them.
 
 
 # -- Commands -----------------------------------------------------------------
@@ -129,11 +100,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 	var cols := int(tex_size.x) / tile_w
 	var rows := int(tex_size.y) / tile_h
 	var tiles_created := 0
-	var half_w := tile_w / 2.0
-	var half_h := tile_h / 2.0
-	var full_tile_polygon := PackedVector2Array([
-		Vector2(-half_w, -half_h), Vector2(half_w, -half_h),
-		Vector2(half_w, half_h), Vector2(-half_w, half_h)])
+	var full_tile_polygon := _IO.build_full_tile_polygon(ts.tile_size)
 	for row in range(rows):
 		for col in range(cols):
 			var atlas_coord := Vector2i(col, row)
@@ -165,7 +132,7 @@ static func _cmd_tileset_create(parameters: Dictionary) -> Dictionary:
 		"tiles_created": tiles_created,
 		"physics": physics,
 	}
-	create_result["hint"] = _layer_node_hint("Assign this TileSet to a ", " node.")
+	create_result["hint"] = _IO.layer_node_hint("Assign this TileSet to a ", " node.")
 	return MCPToolkitSuccess.ok(create_result)
 
 
@@ -174,21 +141,21 @@ static func _cmd_tileset_add_source(parameters: Dictionary) -> Dictionary:
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var ts_or_err = _load_tileset(file_path)
+	var ts_or_err = _IO.load_tileset(file_path)
 	if ts_or_err is Dictionary:
 		return ts_or_err
 	var ts: TileSet = ts_or_err
 	var result = _apply_add_source(ts, parameters)
 	if result.has("error"):
 		return result
-	var save_result := await _save_tileset(ts, file_path)
+	var save_result := await _IO.save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	var source_id: int = result["source_id"]
 	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"new_source_id": source_id,
-		"hint": _layer_node_hint(
+		"hint": _IO.layer_node_hint(
 			"Configure tiles on source %d with tileset.edit_* tools, or paint onto a " % source_id,
 			" with tilemap.set_cells."),
 	})
@@ -200,7 +167,7 @@ static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var source_id := int(parameters.get("source_id", 0))
-	var ts_or_err = _load_tileset(file_path)
+	var ts_or_err = _IO.load_tileset(file_path)
 	if ts_or_err is Dictionary:
 		return ts_or_err
 	var ts: TileSet = ts_or_err
@@ -208,13 +175,13 @@ static func _cmd_tileset_remove_source(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("NOT_FOUND",
 			"No source with id %d in TileSet" % source_id)
 	ts.remove_source(source_id)
-	var save_result := await _save_tileset(ts, file_path)
+	var save_result := await _IO.save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"removed_source_id": source_id,
-		"hint": _layer_node_hint(
+		"hint": _IO.layer_node_hint(
 			"", " cells referencing source %d may become invalid. Check with tilemap.read_cells." % source_id),
 	})
 
@@ -225,7 +192,7 @@ static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
 	var source_id := int(parameters.get("source_id", 0))
-	var ts_or_err = _load_tileset(file_path)
+	var ts_or_err = _IO.load_tileset(file_path)
 	if ts_or_err is Dictionary:
 		return ts_or_err
 	var ts: TileSet = ts_or_err
@@ -245,7 +212,7 @@ static func _cmd_tileset_add_alternative(parameters: Dictionary) -> Dictionary:
 	if r.has("error"):
 		return MCPToolkitError.fail("FAILED", r["error"])
 	var alt_id: int = r["alt_id"]
-	var save_result := await _save_tileset(ts, file_path)
+	var save_result := await _IO.save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	return MCPToolkitSuccess.ok({
@@ -265,7 +232,7 @@ static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionar
 	var atlas_x := int(parameters.get("atlas_x", 0))
 	var atlas_y := int(parameters.get("atlas_y", 0))
 	var alt_id := int(parameters.get("alternative_id", 0))
-	var ts_or_err = _load_tileset(file_path)
+	var ts_or_err = _IO.load_tileset(file_path)
 	if ts_or_err is Dictionary:
 		return ts_or_err
 	var ts: TileSet = ts_or_err
@@ -285,14 +252,14 @@ static func _cmd_tileset_remove_alternative(parameters: Dictionary) -> Dictionar
 		return MCPToolkitError.fail("NOT_FOUND",
 			"alternative %d not found for tile (%d,%d)" % [alt_id, atlas_x, atlas_y])
 	atlas.remove_alternative_tile(coord, alt_id)
-	var save_result := await _save_tileset(ts, file_path)
+	var save_result := await _IO.save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	return MCPToolkitSuccess.ok({
 		"path": file_path,
 		"removed_alternative_id": alt_id,
 		"tile": {"atlas_x": atlas_x, "atlas_y": atlas_y},
-		"hint": _layer_node_hint(
+		"hint": _IO.layer_node_hint(
 			"", " cells using alternative %d revert to the base tile (alternative 0). Check with tilemap.read_cells." % alt_id),
 	})
 
@@ -302,19 +269,19 @@ static func _cmd_tileset_setup_layers(parameters: Dictionary) -> Dictionary:
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var ts_or_err = _load_tileset(file_path)
+	var ts_or_err = _IO.load_tileset(file_path)
 	if ts_or_err is Dictionary:
 		return ts_or_err
 	var ts: TileSet = ts_or_err
 	var result = _apply_layers(ts, parameters)
 	if result.has("error"):
 		return result
-	var save_result := await _save_tileset(ts, file_path)
+	var save_result := await _IO.save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 	return MCPToolkitSuccess.ok({
 		"path": file_path,
-		"hint": _layer_node_hint(
+		"hint": _IO.layer_node_hint(
 			"Layers configured. Assign per-tile data with tileset.edit_physics, tileset.edit_terrain, etc., then paint onto a ",
 			" with tilemap.set_cells."),
 	})
@@ -386,7 +353,7 @@ static func _cmd_tileset_edit(parameters: Dictionary, verb: String) -> Dictionar
 	var source_id := int(parameters.get("source_id", 0))
 	var tiles_raw = parameters.get("tiles", null)
 
-	var ts_or_err = _load_tileset(file_path)
+	var ts_or_err = _IO.load_tileset(file_path)
 	if ts_or_err is Dictionary:
 		return ts_or_err
 	var ts: TileSet = ts_or_err
@@ -444,7 +411,7 @@ static func _cmd_tileset_edit(parameters: Dictionary, verb: String) -> Dictionar
 					tile_errors.append("tiles[%d]: %s" % [i, str(fe)])
 
 	# -- Save --
-	var save_result := await _save_tileset(ts, file_path)
+	var save_result := await _IO.save_tileset(ts, file_path)
 	if save_result.has("error"):
 		return save_result
 
@@ -452,7 +419,7 @@ static func _cmd_tileset_edit(parameters: Dictionary, verb: String) -> Dictionar
 		"path": file_path,
 		"tiles_modified": tiles_modified,
 		"errors": tile_errors,
-		"hint": _layer_node_hint(
+		"hint": _IO.layer_node_hint(
 			"Edit more tile properties with tileset.edit_*, or paint tiles onto a ",
 			" with tilemap.set_cells."),
 	}
@@ -652,14 +619,6 @@ static func _variant_type_from_string(s: String) -> int:
 		_:         return TYPE_INT
 
 
-static func _build_full_tile_polygon(tile_size: Vector2i) -> PackedVector2Array:
-	var hw := tile_size.x / 2.0
-	var hh := tile_size.y / 2.0
-	return PackedVector2Array([
-		Vector2(-hw, -hh), Vector2(hw, -hh),
-		Vector2(hw, hh), Vector2(-hw, hh)])
-
-
 static func _ensure_collision_polygon(td: TileData, physics_layer: int) -> void:
 	if td.get_collision_polygons_count(physics_layer) == 0:
 		td.add_collision_polygon(physics_layer)
@@ -675,14 +634,14 @@ static func _apply_physics_polygon(
 			"full":
 				_ensure_collision_polygon(td, physics_layer)
 				td.set_collision_polygon_points(physics_layer, 0,
-					_build_full_tile_polygon(tile_size))
+					_IO.build_full_tile_polygon(tile_size))
 			"none":
 				while td.get_collision_polygons_count(physics_layer) > 0:
 					td.remove_collision_polygon(physics_layer, 0)
 			"one_way":
 				_ensure_collision_polygon(td, physics_layer)
 				td.set_collision_polygon_points(physics_layer, 0,
-					_build_full_tile_polygon(tile_size))
+					_IO.build_full_tile_polygon(tile_size))
 				td.set_collision_polygon_one_way(physics_layer, 0, true)
 			_:
 				return "unknown physics_polygon shorthand: %s" % val
