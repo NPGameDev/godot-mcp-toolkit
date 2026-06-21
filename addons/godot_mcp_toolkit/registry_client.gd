@@ -24,6 +24,9 @@ const _ProjectKey := preload("res://addons/godot_mcp_toolkit/project_key.gd")
 # Direct preload (NOT via _hub.gd): same runtime-closure cleanliness reason as
 # above — RegistryPaths is editor-clean and owns the on-disk layout.
 const _RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry_paths.gd")
+# Direct preload (NOT via _hub.gd): same runtime-closure cleanliness reason —
+# RegistryEntryFile is editor-clean and owns single-entry-file I/O + the builder.
+const _RegistryEntryFile := preload("res://addons/godot_mcp_toolkit/registry_entry_file.gd")
 
 
 # -- Path helpers (delegate to RegistryPaths — the layout authority) -----------
@@ -71,57 +74,28 @@ static func release_lock() -> void:
 	FileLock.release(_RegistryPaths.lock_path())
 
 
-# -- Entry-file I/O -----------------------------------------------------------
+# -- Entry-file I/O (delegates to RegistryEntryFile — the I/O leaf) ------------
 
 
-# Each writer owns its own file (editor: <hash>.json, runtime: <hash>.runtime.json),
-# so the per-path .tmp names never collide between the two processes.
-static func _write_entry_at(path: String, entry: Dictionary) -> void:
-	var tmp := path + ".tmp"
-	var f := FileAccess.open(tmp, FileAccess.WRITE)
-	if f == null:
-		push_warning("[MCPRegistry] cannot write entry %s (err %d)" % [tmp, FileAccess.get_open_error()])
-		return
-	f.store_string(JSON.stringify(entry, "\t"))
-	f.close()
-	# Atomic rename: remove target first (Windows rename fails if exists).
-	if FileAccess.file_exists(path):
-		DirAccess.remove_absolute(path)
-	var err := DirAccess.rename_absolute(tmp, path)
-	if err != OK:
-		push_warning("[MCPRegistry] rename %s -> %s failed (err %d)" % [tmp, path, err])
-		DirAccess.remove_absolute(tmp)
-
-
-static func _read_entry_at(path: String) -> Dictionary:
-	if not FileAccess.file_exists(path):
-		return {}
-	var f := FileAccess.open(path, FileAccess.READ)
-	if f == null:
-		return {}
-	var text := f.get_as_text()
-	f.close()
-	var parsed = JSON.parse_string(text)
-	if parsed == null or not parsed is Dictionary:
-		return {}
-	return parsed
-
-
-static func _delete_entry_at(path: String) -> void:
-	if FileAccess.file_exists(path):
-		DirAccess.remove_absolute(path)
-
-
+# Current-instance shorthands: bind this editor's entry path and delegate the
+# atomic I/O to RegistryEntryFile. The lifecycle methods below sequence these.
 static func _write_entry(entry: Dictionary) -> void:
-	_write_entry_at(_entry_file_path(), entry)
+	_RegistryEntryFile.write(_entry_file_path(), entry)
 
 
 static func _read_entry() -> Dictionary:
-	return _read_entry_at(_entry_file_path())
+	return _RegistryEntryFile.read(_entry_file_path())
 
 
 static func _delete_entry() -> void:
-	_delete_entry_at(_entry_file_path())
+	_RegistryEntryFile.delete(_entry_file_path())
+
+
+# Build this instance's entry dict — delegate to the I/O leaf's pure builder.
+static func _build_entry(key: String, port: int, token_path: String,
+		lsp_host: String, lsp_port, runtime_port, runtime_pid) -> Dictionary:
+	return _RegistryEntryFile.build_entry(
+		key, port, token_path, lsp_host, lsp_port, runtime_port, runtime_pid)
 
 
 # -- Registry I/O (used by rebuild) -------------------------------------------
@@ -295,29 +269,7 @@ static func _merge_by_path(editor_entries: Array, runtime_entries: Array) -> Dic
 	return by_path
 
 
-# -- Public API ----------------------------------------------------------------
-
-
-## Build a registry entry dict from the given facts. Pure — no FS access, no
-## EditorInterface: the editor side resolves the LSP endpoint
-## (MCPServer.resolve_lsp_endpoint) and passes lsp_host/lsp_port in, so this file
-## stays editor-clean and the Mode-B runtime autoload can safely preload it
-## (naming an editor-only class here would parse-fail the autoload in exports —
-## godot#91713). lsp_port/runtime_* are untyped: int when known, null otherwise.
-static func _build_entry(key: String, port: int, token_path: String,
-		lsp_host: String, lsp_port, runtime_port, runtime_pid) -> Dictionary:
-	return {
-		"_key": key,
-		"port": port,
-		"token_path": token_path,
-		"pid": OS.get_process_id(),
-		"started_at": int(Time.get_unix_time_from_system()),
-		"godot_version": _VersionUtils.get_engine_version_pair(),
-		"runtime_port": runtime_port,
-		"runtime_pid": runtime_pid,
-		"lsp_host": lsp_host,
-		"lsp_port": lsp_port,
-	}
+# -- Lifecycle (public façade) -------------------------------------------------
 
 
 static func register(port: int, token_path: String, lsp_host: String, lsp_port: int) -> void:
@@ -331,7 +283,7 @@ static func register(port: int, token_path: String, lsp_host: String, lsp_port: 
 	# this never touches it. OS.has_feature("editor") guards against a future stray
 	# non-editor caller (runtime-safe, not editor-tainting).
 	if OS.has_feature("editor"):
-		_delete_entry_at(_runtime_entry_file_path())
+		_RegistryEntryFile.delete(_runtime_entry_file_path())
 	var key := _project_key()
 	var my_pid := OS.get_process_id()
 	var my_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, null, null)
@@ -381,7 +333,7 @@ static func set_runtime(runtime_port: int) -> void:
 		"lsp_host": "127.0.0.1",
 		"lsp_port": null,
 	}
-	_write_entry_at(_runtime_entry_file_path(), entry)
+	_RegistryEntryFile.write(_runtime_entry_file_path(), entry)
 	acquire_lock()
 	_rebuild_projects_json()
 	release_lock()
@@ -394,7 +346,7 @@ static func clear_runtime() -> void:
 	var path := _runtime_entry_file_path()
 	if not FileAccess.file_exists(path):
 		return  # Already cleared / never set
-	_delete_entry_at(path)
+	_RegistryEntryFile.delete(path)
 	acquire_lock()
 	_rebuild_projects_json()
 	release_lock()
@@ -434,7 +386,7 @@ static func ensure_registered(port: int, token_path: String, lsp_host: String, l
 ## runtime child's own file (<hash>.runtime.json) — the runtime port lives
 ## there, not in the editor's <hash>.json.
 static func get_runtime_port() -> int:
-	var entry := _read_entry_at(_runtime_entry_file_path())
+	var entry := _RegistryEntryFile.read(_runtime_entry_file_path())
 	if entry.is_empty():
 		return -1
 	var rp = entry.get("runtime_port", null)

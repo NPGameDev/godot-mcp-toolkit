@@ -29,6 +29,7 @@ const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/rpc_dispatcher.gd
 const ProjectKey := preload("res://addons/godot_mcp_toolkit/project_key.gd")
 const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 const RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry_paths.gd")
+const RegistryEntryFile := preload("res://addons/godot_mcp_toolkit/registry_entry_file.gd")
 
 var _passed := 0
 var _failed := 0
@@ -48,6 +49,7 @@ func _init() -> void:
 	_test_registry_paths()
 	_test_registry()
 	_test_registry_entry()
+	_test_registry_entry_file_io()
 	_test_registry_merge()
 	_test_extension_collision_guard()
 	_test_options_builder()
@@ -622,18 +624,18 @@ func _test_registry_paths() -> void:
 	print("")
 
 
-# --- RegistryClient entry build (41l-tertricies) ---------------------------
-# _build_entry is pure (no FS, no EditorInterface): the editor resolves the LSP
-# endpoint (LspPublisher.resolve_lsp_endpoint, also reachable via the thin static
-# MCPServer.resolve_lsp_endpoint delegate — editor-coupled, interactive-verified) and
-# passes it in, so the entry written to projects.json carries lsp_host/lsp_port for
-# the server's per-project LSP discovery.
+# --- RegistryEntryFile build_entry (concern 039 C2) ------------------------
+# RegistryEntryFile.build_entry is pure (no FS, no EditorInterface): the editor
+# resolves the LSP endpoint (LspPublisher.resolve_lsp_endpoint, also reachable via the
+# thin static MCPServer.resolve_lsp_endpoint delegate — editor-coupled, interactive-
+# verified) and passes it in, so the entry written to projects.json carries
+# lsp_host/lsp_port for the server's per-project LSP discovery.
 
 func _test_registry_entry() -> void:
-	_begin("RegistryClient entry")
+	_begin("RegistryEntryFile build_entry")
 
 	# 1. Entry carries the LSP endpoint the editor passed in.
-	var e := RegistryClient._build_entry("res://proj", 6550, "tok", "127.0.0.1", 6005, null, null)
+	var e := RegistryEntryFile.build_entry("res://proj", 6550, "tok", "127.0.0.1", 6005, null, null)
 	_eq(e.get("lsp_host", ""), "127.0.0.1", "entry carries lsp_host")
 	_eq(e.get("lsp_port", -1), 6005, "entry carries lsp_port")
 
@@ -645,9 +647,49 @@ func _test_registry_entry() -> void:
 	_ok(e.get("runtime_port") == null, "no runtime → runtime_port null")
 
 	# 3. A custom (non-default) LSP port + an active runtime flow through unchanged.
-	var e2 := RegistryClient._build_entry("res://proj", 6551, "tok", "127.0.0.1", 6010, 6570, 4242)
+	var e2 := RegistryEntryFile.build_entry("res://proj", 6551, "tok", "127.0.0.1", 6010, 6570, 4242)
 	_eq(e2.get("lsp_port", -1), 6010, "custom lsp_port flows through")
 	_eq(e2.get("runtime_port", -1), 6570, "runtime_port preserved when set")
+
+	print("")
+
+
+# --- RegistryEntryFile write/read/delete round-trip (concern 039 C2) -------
+# The path-keyed atomic I/O leaf: a write then read returns the same dict; a
+# delete removes the file so a subsequent read is empty; reading a path that was
+# never written is empty too. Uses a user:// temp path and cleans up after.
+
+func _test_registry_entry_file_io() -> void:
+	_begin("RegistryEntryFile write/read/delete")
+
+	var tmp := "user://_test_registry_entry_file_%d.json" % OS.get_process_id()
+	# Start clean in case a prior aborted run left the file behind.
+	RegistryEntryFile.delete(tmp)
+
+	# 1. Reading a path that was never written → empty dict.
+	_eq(RegistryEntryFile.read(tmp), {}, "read(nonexistent) → {}")
+
+	# 2. write → read round-trips every field. JSON parses numbers as float, so
+	#    the numeric field reads back as a float — assert it via int() (exactly
+	#    how production reads it back, e.g. get_runtime_port), not a whole-dict
+	#    compare that would spuriously fail on int-vs-float.
+	var entry := {
+		"_key": "res://proj",
+		"port": 6550,
+		"token_path": "tok",
+		"runtime_port": null,
+	}
+	RegistryEntryFile.write(tmp, entry)
+	var got: Dictionary = RegistryEntryFile.read(tmp)
+	_eq(got.size(), entry.size(), "write then read → same field count")
+	_eq(got.get("_key", ""), "res://proj", "round-trip: _key preserved")
+	_eq(int(got.get("port", -1)), 6550, "round-trip: port (JSON floats ints → int())")
+	_eq(got.get("token_path", ""), "tok", "round-trip: token_path preserved")
+	_ok(got.get("runtime_port", 0) == null, "round-trip: runtime_port null preserved")
+
+	# 3. delete → the file is gone, so read returns empty again.
+	RegistryEntryFile.delete(tmp)
+	_eq(RegistryEntryFile.read(tmp), {}, "delete then read → {}")
 
 	print("")
 
