@@ -13,6 +13,7 @@ const NodejsCheck = _Hub.NodejsCheck
 const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog_dialog.gd")
 const AuditLogDialog := preload("res://addons/godot_mcp_toolkit/ui/audit_log_dialog.gd")
 const InfoDialog := preload("res://addons/godot_mcp_toolkit/ui/info_dialog.gd")
+const DockConfirm := preload("res://addons/godot_mcp_toolkit/ui/dock_confirm.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -630,25 +631,20 @@ func show_audit_dialog() -> void:
 
 
 func _on_clear_audit_log() -> void:
-	var dialog := ConfirmationDialog.new()
-	dialog.exclusive = false
-	dialog.title = "Clear Audit Log?"
-	dialog.dialog_text = "This will permanently delete all audit log entries."
-	dialog.ok_button_text = "Clear"
-	dialog.confirmed.connect(func():
-		var path := _audit_path
-		if path.is_empty():
-			path = _Hub.Audit.get_log_path()
-		var file := FileAccess.open(path, FileAccess.WRITE)
-		if file != null:
-			file.store_string("")
-			file.close()
-		_toast("Audit log cleared")
-		dialog.queue_free()
+	DockConfirm.confirm(
+		"Clear Audit Log?",
+		"This will permanently delete all audit log entries.",
+		"Clear",
+		func() -> void:
+			var path := _audit_path
+			if path.is_empty():
+				path = _Hub.Audit.get_log_path()
+			var file := FileAccess.open(path, FileAccess.WRITE)
+			if file != null:
+				file.store_string("")
+				file.close()
+			_toast("Audit log cleared")
 	)
-	dialog.canceled.connect(func(): dialog.queue_free())
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
 
 
 # ---------------------------------------------------------------------------
@@ -671,28 +667,19 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 	# and not already forced, confirm first, then write on confirmation.
 	if not force_overwrite and McpJsonSync.needs_overwrite_confirm():
 		var dest := McpJsonSync.get_mcp_json_path()
-		var dialog := ConfirmationDialog.new()
-		dialog.exclusive = false
-		dialog.title = ".mcp.json already exists"
-		dialog.dialog_text = (
-			"Overwrite .mcp.json with a clean template?\n\n" + dest
-			+ "\n\nThis replaces your current content — choose \"Open .mcp.json\" instead to edit the file yourself.")
-		dialog.ok_button_text = "Overwrite"
-		dialog.cancel_button_text = "Open .mcp.json"
-		dialog.confirmed.connect(func():
-			McpJsonSync.write_from_template(true, _on_mcp_json_write_result)
-			dialog.queue_free()
-		)
 		# "Cancel" is repurposed as "Open .mcp.json": declining the overwrite opens
 		# the file so the user can edit it (fix a malformed file, or inspect a valid
-		# one) rather than lose it. Esc/✕ route here too (the canceled signal) — the
-		# intended "don't overwrite, let me look at it" path.
-		dialog.canceled.connect(func():
-			OS.shell_open(dest)
-			dialog.queue_free()
+		# one) rather than lose it. Esc/✕ route through the same path — the intended
+		# "don't overwrite, let me look at it" recovery.
+		DockConfirm.confirm(
+			".mcp.json already exists",
+			"Overwrite .mcp.json with a clean template?\n\n" + dest
+				+ "\n\nThis replaces your current content — choose \"Open .mcp.json\" instead to edit the file yourself.",
+			"Overwrite",
+			func() -> void: McpJsonSync.write_from_template(true, _on_mcp_json_write_result),
+			"Open .mcp.json",
+			func() -> void: OS.shell_open(dest),
 		)
-		EditorInterface.get_base_control().add_child(dialog)
-		dialog.popup_centered()
 		return
 
 	McpJsonSync.write_from_template(force_overwrite, _on_mcp_json_write_result)
