@@ -12,14 +12,15 @@ extends RefCounted
 ## "extensions.changed" notification to all connected MCP bridges.
 
 const _Support := preload("res://addons/godot_mcp_toolkit/extension_support.gd")
+const _Discovery := preload("res://addons/godot_mcp_toolkit/extension_discovery.gd")
 const _MetaCommands := preload("res://addons/godot_mcp_toolkit/extension_meta_commands.gd")
-
-# Retain references to C# extension instances to prevent GC from
-# invalidating registered Callables.
-var _instances: Array = []
 
 # ── Live watcher state ───────────────────────────────────────────────
 # Populated only when start_watcher() creates a persistent instance.
+# Retain references to C# extension instances loaded during hot-reload to prevent
+# GC from invalidating registered Callables (the startup pass retains its own via
+# the registry meta — see extension_discovery.gd).
+var _instances: Array = []
 var _registry: MCPToolkitCommandRegistry = null
 var _server: Node = null
 var _known_extensions: Dictionary = {}      # class_name_str -> script_path
@@ -40,15 +41,14 @@ var _pending_restart_modifies: Dictionary = {}
 
 
 static func load_all(registry: MCPToolkitCommandRegistry, server: Node) -> int:
-	var loader := new()
-	var loaded := loader._discover_and_register(registry, server)
+	# Run the one-shot startup discovery pass — it loads every enabled extension
+	# candidate into the registry and stores the retained C# instances as a registry
+	# meta so they outlive this call.
+	var loaded := _Discovery.discover_and_register(registry, server)
 	if loaded > 0:
 		print("[MCPExtensions] Discovered %d extension(s) via reflection" % loaded)
 	# Register the meta command for bridge discovery.
 	_MetaCommands.register_list_command(registry)
-	# Transfer instance ownership to the registry so they outlive this call.
-	if not loader._instances.is_empty():
-		registry.set_meta("_extension_instances", loader._instances)
 	return loaded
 
 
@@ -78,25 +78,6 @@ static func start_watcher(registry: MCPToolkitCommandRegistry, server: Node) -> 
 		.mark_scene_independent())
 	print("[MCPExtensions] Hot-reload watcher active")
 	return watcher
-
-
-func _discover_and_register(registry: MCPToolkitCommandRegistry, server: Node) -> int:
-	var classes: Array = ProjectSettings.get_global_class_list()
-	var loaded := 0
-	for entry in classes:
-		if not _Support.is_extension_candidate(entry):
-			continue
-		var script_path: String = entry.get("path", "")
-		if not _Support.is_addon_enabled(script_path):
-			continue
-		var class_name_str: String = entry.get("class", "")
-		# Retain the returned instance (C# GC-safety) — load_extension no longer
-		# holds it; the caller owns retention.
-		var instance := _Support.load_extension(class_name_str, script_path, registry, server)
-		if instance != null:
-			_instances.append(instance)
-			loaded += 1
-	return loaded
 
 
 # ── Watcher internals ────────────────────────────────────────────────
