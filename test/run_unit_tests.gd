@@ -30,6 +30,7 @@ const ProjectKey := preload("res://addons/godot_mcp_toolkit/project_key.gd")
 const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
 const RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry_paths.gd")
 const RegistryEntryFile := preload("res://addons/godot_mcp_toolkit/registry_entry_file.gd")
+const RegistryProjection := preload("res://addons/godot_mcp_toolkit/registry_projection.gd")
 
 var _passed := 0
 var _failed := 0
@@ -704,7 +705,7 @@ func _test_registry_entry_file_io() -> void:
 func _test_registry_merge() -> void:
 	_begin("RegistryClient entry merge")
 
-	var editor_entry := RegistryClient._build_entry(
+	var editor_entry := RegistryEntryFile.build_entry(
 		"res://proj", 6550, "tok", "127.0.0.1", 6005, null, null)
 
 	# 1. Runtime overlay onto an editor base — runtime fields win, the rest is
@@ -721,7 +722,7 @@ func _test_registry_merge() -> void:
 		"lsp_host": "127.0.0.1",
 		"lsp_port": null,
 	}
-	var merged: Dictionary = RegistryClient._merge_by_path([editor_entry], [runtime_entry])
+	var merged: Dictionary = RegistryProjection.merge_by_path([editor_entry], [runtime_entry])
 	var row: Dictionary = merged.get("res://proj", {})
 	_eq(row.get("runtime_port", -1), 6570, "overlay: runtime_port from runtime file")
 	_eq(row.get("runtime_pid", -1), 4242, "overlay: runtime_pid from runtime file")
@@ -734,7 +735,7 @@ func _test_registry_merge() -> void:
 	# 2. Runtime-only entry (no editor base) — full runtime shape stands in, and
 	#    it is schema-complete: port -1, token_path "", and godot_version present
 	#    (the old self-heal shim omitted godot_version — concern 037 Low note).
-	var only: Dictionary = RegistryClient._merge_by_path([], [runtime_entry])
+	var only: Dictionary = RegistryProjection.merge_by_path([], [runtime_entry])
 	var orow: Dictionary = only.get("res://proj", {})
 	_eq(orow.get("runtime_port", -1), 6570, "runtime-only: runtime_port present")
 	_eq(orow.get("port", -99), -1, "runtime-only: port -1")
@@ -745,7 +746,7 @@ func _test_registry_merge() -> void:
 
 	# 3. Editor-only entry (no runtime overlay) — runtime fields stay the editor
 	#    base's null; the row is the editor entry verbatim minus _key.
-	var eonly: Dictionary = RegistryClient._merge_by_path([editor_entry], [])
+	var eonly: Dictionary = RegistryProjection.merge_by_path([editor_entry], [])
 	var erow: Dictionary = eonly.get("res://proj", {})
 	_eq(erow.get("runtime_port", -99), null, "editor-only: runtime_port null")
 	_eq(erow.get("runtime_pid", -99), null, "editor-only: runtime_pid null")
@@ -754,7 +755,7 @@ func _test_registry_merge() -> void:
 
 	# 4. clear_runtime semantics: dropping the runtime file removes the overlay —
 	#    re-merging without it returns the editor base (runtime fields back to null).
-	var cleared: Dictionary = RegistryClient._merge_by_path([editor_entry], [])
+	var cleared: Dictionary = RegistryProjection.merge_by_path([editor_entry], [])
 	_eq(cleared.get("res://proj", {}).get("runtime_port", -99), null,
 		"clear: overlay gone → runtime_port back to null")
 
