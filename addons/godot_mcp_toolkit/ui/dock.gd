@@ -68,10 +68,9 @@ func _ready() -> void:
 	# bind() runs before _ready (node not yet in tree), so its refresh
 	# calls exit early on null widgets. Re-run now that UI exists.
 	_refresh_status()
-	# Lightweight timer so the runtime label updates during playtests without
-	# requiring server events (e.g. port discovery, playtest end). The .mcp.json
-	# panel owns its OWN validity poll (file presence / malformed → button mode +
-	# warning); read-only stays server-synced (see _on_client_connected), never polled.
+	# One 1s timer, fanned out in _on_runtime_timer_timeout to the runtime label
+	# (playtest port discovery / playtest end) and the .mcp.json panel's file-validity
+	# refresh; read-only stays server-synced (see _on_client_connected), never polled.
 	_runtime_timer = Timer.new()
 	_runtime_timer.wait_time = 1.0
 	_runtime_timer.timeout.connect(_on_runtime_timer_timeout)
@@ -252,11 +251,15 @@ func _on_lsp_status_changed() -> void:
 		_status_panel.refresh_lsp()
 
 
-# 1s runtime poll — route to the status panel's runtime label so it updates
-# during playtests (port discovery, playtest end) without server events.
+# 1s poll — one timer fans out to the runtime label (playtest port discovery /
+# playtest end) AND the .mcp.json panel's file-validity refresh (file presence /
+# malformed → button mode + warning). Both are live FACTs safe to poll; read-only
+# stays server-synced (see _on_client_connected), never on this timer.
 func _on_runtime_timer_timeout() -> void:
 	if _status_panel != null:
 		_status_panel.refresh_runtime()
+	if _mcp_json_panel != null:
+		_mcp_json_panel.refresh()
 
 
 # ---------------------------------------------------------------------------

@@ -13,8 +13,8 @@ extends PanelContainer
 ## and the malformed-file "Fix"), and the periodic file-validity poll.
 ##
 ## Two refresh triggers, deliberately distinct (preserves 68fb6eb's model):
-##   * file VALIDITY/presence is a live FACT — polled on this panel's own 1s Timer
-##     (refresh(): Write-vs-Open-vs-Fix button mode + the missing/malformed warning).
+##   * file VALIDITY/presence is a live FACT — refreshed by the dock's 1s timer
+##     fan-out (refresh(): Write-vs-Open-vs-Fix button mode + missing/malformed warning).
 ##   * read-only is SERVER STATE — synced only on server (re)connect + startup +
 ##     after a dock write (sync_read_only_state()), NEVER on the timer: the server
 ##     reads GODOT_MCP_READ_ONLY once at launch, so a live poll would claim
@@ -47,11 +47,6 @@ var _warning_label: Label = null
 # its launch and never re-checks, so a live poll would claim read-only is active
 # before the server applies it (a client→server relaunch is what takes effect).
 var _read_only_active: bool = false
-
-# Own 1s validity poll — keeps the BUTTON + warning honest about file presence /
-# malformed JSON (a cheap file_exists + a silent parse, never misleading). It
-# deliberately does NOT re-sync read-only (that is server-state; see above).
-var _validity_timer: Timer = null
 
 
 func _init(mcp_json_button: Button, toast: Callable) -> void:
@@ -88,22 +83,8 @@ func _init(mcp_json_button: Button, toast: Callable) -> void:
 		_mcp_json_btn.pressed.connect(on_button_pressed)
 
 
-func _ready() -> void:
-	# Own validity poll — keeps the button mode + missing/malformed warning honest
-	# about the live file without server events. Read-only is NOT refreshed here
-	# (server-state, synced on reconnect via sync_read_only_state). A child Timer
-	# auto-frees with this panel (in-tree), so no _exit_tree cleanup is needed.
-	_validity_timer = Timer.new()
-	_validity_timer.wait_time = 1.0
-	_validity_timer.timeout.connect(refresh)
-	add_child(_validity_timer)
-	_validity_timer.start()
-	# Paint the initial file-validity state now that the panel is in the tree.
-	refresh()
-
-
 # ---------------------------------------------------------------------------
-# Refresh — file validity (live FACT, polled) + read-only (server-state, synced)
+# Refresh — file validity (dock-timer-driven FACT) + read-only (server-synced)
 # ---------------------------------------------------------------------------
 
 
