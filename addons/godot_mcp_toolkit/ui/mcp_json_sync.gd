@@ -17,6 +17,11 @@ extends RefCounted
 # Bundled source the plugin-initiated write copies from.
 const _TEMPLATE_PATH := "res://addons/godot_mcp_toolkit/.mcp.json.template"
 
+# Reused JSON parser — avoids allocating a JSON on every poll (the dock re-checks
+# .mcp.json validity ~1s). Editor-only + main-thread, so one shared instance is
+# safe; each parse() overwrites the prior data.
+static var _json := JSON.new()
+
 
 static func get_mcp_json_path() -> String:
 	return ProjectSettings.globalize_path("res://") + ".mcp.json"
@@ -37,13 +42,24 @@ static func get_all_env_vars() -> Dictionary:
 	return coerced
 
 
-static func _read_server_env() -> Dictionary:
+## Parse .mcp.json WITHOUT spamming the console. JSON.parse_string() ERR_PRINTs on
+## a malformed file ("Parse JSON failed. Error at line ..."), and the dock re-checks
+## validity every ~1s — so use JSON.new().parse(), which reports failure via its
+## return code silently. Returns the parsed object, or null if the file is missing /
+## not valid JSON / not a JSON object.
+static func _parse_mcp_json():
 	var path := get_mcp_json_path()
 	if not FileAccess.file_exists(path):
-		return {}
+		return null
 	var text := FileAccess.get_file_as_string(path)
-	var parsed = JSON.parse_string(text)
-	if parsed == null or not parsed is Dictionary:
+	if _json.parse(text) != OK or not _json.data is Dictionary:
+		return null
+	return _json.data
+
+
+static func _read_server_env() -> Dictionary:
+	var parsed = _parse_mcp_json()
+	if parsed == null:
 		return {}
 	var servers: Dictionary = parsed.get("mcpServers", {})
 	var server_key := _find_server_key(servers)
@@ -79,11 +95,7 @@ static func is_read_only() -> bool:
 ## silently returns {}). A live FACT about the file's current content — safe to
 ## check on the dock's 1s timer like file presence, unlike read-only (server-state).
 static func is_malformed() -> bool:
-	if not has_mcp_json():
-		return false
-	var text := FileAccess.get_file_as_string(get_mcp_json_path())
-	var parsed = JSON.parse_string(text)
-	return parsed == null or not parsed is Dictionary
+	return has_mcp_json() and _parse_mcp_json() == null
 
 
 ## True iff a .mcp.json already exists at the project root, so a write would
