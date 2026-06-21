@@ -532,7 +532,7 @@ func _refresh_mcp_json_indicators() -> void:
 		btn_tip = "No .mcp.json found — write one from the bundled template"
 		highlight = true
 	elif McpJsonSync.is_malformed():  # live file FACT — present but invalid JSON
-		warn_text = "⚠️ .mcp.json isn't valid JSON — the MCP client can't read it, so it won't connect. Click \"Fix .mcp.json\" to replace it with a clean template (you'll be asked to confirm first; current content is lost), or edit the file directly to fix the syntax yourself."
+		warn_text = "⚠️ .mcp.json isn't valid JSON — the MCP client can't read it, so it won't connect. Click \"Fix .mcp.json\" to repair it: overwrite with a clean template, or open the file to fix the JSON yourself."
 		btn_text = "Fix .mcp.json"
 		btn_tip = "Replace the malformed .mcp.json with a clean template (asks to confirm before overwriting)"
 		highlight = true
@@ -675,14 +675,22 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 		dialog.exclusive = false
 		dialog.title = ".mcp.json already exists"
 		dialog.dialog_text = (
-			"Overwrite existing .mcp.json at:\n" + dest
-			+ "\n\nThis will replace any custom env vars you have set.")
+			"Overwrite .mcp.json with a clean template?\n\n" + dest
+			+ "\n\nThis replaces your current content — choose \"Open .mcp.json\" instead to edit the file yourself.")
 		dialog.ok_button_text = "Overwrite"
+		dialog.cancel_button_text = "Open .mcp.json"
 		dialog.confirmed.connect(func():
 			McpJsonSync.write_from_template(true, _on_mcp_json_write_result)
 			dialog.queue_free()
 		)
-		dialog.canceled.connect(func(): dialog.queue_free())
+		# "Cancel" is repurposed as "Open .mcp.json": declining the overwrite opens
+		# the file so the user can edit it (fix a malformed file, or inspect a valid
+		# one) rather than lose it. Esc/✕ route here too (the canceled signal) — the
+		# intended "don't overwrite, let me look at it" path.
+		dialog.canceled.connect(func():
+			OS.shell_open(dest)
+			dialog.queue_free()
+		)
 		EditorInterface.get_base_control().add_child(dialog)
 		dialog.popup_centered()
 		return
