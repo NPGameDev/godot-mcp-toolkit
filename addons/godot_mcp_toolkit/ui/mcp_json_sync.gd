@@ -74,6 +74,18 @@ static func is_read_only() -> bool:
 	return env.get("GODOT_MCP_READ_ONLY", "") == "1"
 
 
+## True iff .mcp.json exists but is NOT valid JSON (or not a JSON object) — the
+## MCP client can't parse it, so it won't launch the server (and get_all_env_vars
+## silently returns {}). A live FACT about the file's current content — safe to
+## check on the dock's 1s timer like file presence, unlike read-only (server-state).
+static func is_malformed() -> bool:
+	if not has_mcp_json():
+		return false
+	var text := FileAccess.get_file_as_string(get_mcp_json_path())
+	var parsed = JSON.parse_string(text)
+	return parsed == null or not parsed is Dictionary
+
+
 ## True iff a .mcp.json already exists at the project root, so a write would
 ## overwrite it. The dock uses this to decide whether to show its overwrite
 ## confirmation dialog before calling write_from_template().

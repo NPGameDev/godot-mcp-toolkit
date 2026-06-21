@@ -531,6 +531,11 @@ func _refresh_mcp_json_indicators() -> void:
 		btn_text = "Write .mcp.json"
 		btn_tip = "No .mcp.json found — write one from the bundled template"
 		highlight = true
+	elif McpJsonSync.is_malformed():  # live file FACT — present but invalid JSON
+		warn_text = "⚠️ .mcp.json isn't valid JSON — the MCP client can't read it, so it won't connect. Click \"Fix .mcp.json\" to replace it with a clean template (you'll be asked to confirm first; current content is lost), or edit the file directly to fix the syntax yourself."
+		btn_text = "Fix .mcp.json"
+		btn_tip = "Replace the malformed .mcp.json with a clean template (asks to confirm before overwriting)"
+		highlight = true
 	elif _read_only_active:  # cached, server-synced (NOT a live read-only poll)
 		warn_text = "⚠️ READ-ONLY MODE — mutating tools are hidden. Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect the MCP client to restore full access."
 		btn_text = "Open .mcp.json ⚠"
@@ -779,14 +784,19 @@ func _refresh_unfocused_indicator() -> void:
 # .mcp.json
 # ---------------------------------------------------------------------------
 
-# Dual-mode footer button: opens .mcp.json when it exists, writes it from the
-# bundled template when it doesn't. Intended behaviour change (user-requested):
-# a missing file is now one click to create from the dock rather than a toast
-# redirecting to the Tools menu. write_mcp_json() handles the missing case as a
-# direct write (no overwrite-confirm), and its result toast / refresh flips the
-# button label from "Write" back to "Open".
+# Tri-mode footer button (label set by _refresh_mcp_json_indicators):
+#   * present + valid   -> "Open"  : open .mcp.json in the system editor.
+#   * missing           -> "Write" : write_mcp_json() — a direct write (no file to
+#                                    overwrite, so no confirm).
+#   * present + invalid -> "Fix"   : write_mcp_json() — the file EXISTS, so the
+#                                    existing overwrite-confirm fires before
+#                                    replacing it with a clean template; a malformed
+#                                    file is never silently clobbered (Cancel keeps
+#                                    it for a manual fix). Same tested write flow.
+# Re-checks state on press, so the action is always correct even if the label is
+# momentarily stale.
 func _on_mcp_json_btn_pressed() -> void:
-	if McpJsonSync.has_mcp_json():
+	if McpJsonSync.has_mcp_json() and not McpJsonSync.is_malformed():
 		OS.shell_open(McpJsonSync.get_mcp_json_path())
 	else:
 		write_mcp_json()
