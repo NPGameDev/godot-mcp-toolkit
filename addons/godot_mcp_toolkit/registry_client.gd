@@ -21,37 +21,22 @@ const FileLock := preload("res://addons/godot_mcp_toolkit/file_lock.gd")
 # preload closure (mcp_runtime_server.gd), so it must stay editor-clean — _hub.gd
 # names EditorInterface and would taint the autoload in exports (godot#91713).
 const _ProjectKey := preload("res://addons/godot_mcp_toolkit/project_key.gd")
-
-const _REGISTRY_FILENAME := "projects.json"
-const _ENTRIES_DIR := "entries"
-
-
-# -- Path helpers --------------------------------------------------------------
+# Direct preload (NOT via _hub.gd): same runtime-closure cleanliness reason as
+# above — RegistryPaths is editor-clean and owns the on-disk layout.
+const _RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry_paths.gd")
 
 
+# -- Path helpers (delegate to RegistryPaths — the layout authority) -----------
+
+
+## Façade pass-through — external callers (unfocused_sleep_controller,
+## extension_catalog) bind to RegistryClient.registry_dir().
 static func registry_dir() -> String:
-	var dir: String
-	match OS.get_name():
-		"Windows":
-			var appdata := OS.get_environment("APPDATA")
-			if appdata.is_empty():
-				appdata = OS.get_environment("USERPROFILE").path_join("AppData/Roaming")
-			dir = appdata.path_join("godot-mcp-toolkit")
-		"macOS":
-			dir = OS.get_environment("HOME").path_join(
-				"Library/Application Support/godot-mcp-toolkit")
-		_:  # Linux / BSD
-			var data_home := OS.get_environment("XDG_DATA_HOME")
-			if data_home.is_empty():
-				data_home = OS.get_environment("HOME").path_join(".local/share")
-			dir = data_home.path_join("godot-mcp-toolkit")
-	if not DirAccess.dir_exists_absolute(dir):
-		DirAccess.make_dir_recursive_absolute(dir)
-	return dir
+	return _RegistryPaths.registry_dir()
 
 
 static func registry_path() -> String:
-	return registry_dir().path_join(_REGISTRY_FILENAME)
+	return _RegistryPaths.registry_path()
 
 
 static func _project_key() -> String:
@@ -59,33 +44,18 @@ static func _project_key() -> String:
 
 
 static func _entry_dir() -> String:
-	var d := registry_dir().path_join(_ENTRIES_DIR)
-	if not DirAccess.dir_exists_absolute(d):
-		DirAccess.make_dir_recursive_absolute(d)
-	return d
-
-
-static func _entry_hash() -> String:
-	return _ProjectKey.current_hash()
+	return _RegistryPaths.entry_dir()
 
 
 static func _entry_file_path() -> String:
-	return _entry_dir().path_join(_entry_hash() + ".json")
+	return _RegistryPaths.entry_file_path()
 
 
-## Runtime child's own entry file. The running game writes here; the editor
-## writes <hash>.json. Two distinct files, one writer each — so editor and
-## runtime never read-modify-write the same file. _rebuild_projects_json
-## overlays the runtime fields onto the editor base when it aggregates.
 static func _runtime_entry_file_path() -> String:
-	return _entry_dir().path_join(_entry_hash() + ".runtime.json")
+	return _RegistryPaths.runtime_entry_file_path()
 
 
 # -- Lock file -----------------------------------------------------------------
-
-
-static func _lock_path() -> String:
-	return registry_path() + ".lock"
 
 
 ## Public lock wrappers for callers that need to serialise a machine-wide
@@ -94,11 +64,11 @@ static func _lock_path() -> String:
 ## unfocused_backup.gd). Same lock as the registry's own writes, so backup and
 ## registry operations are mutually exclusive (both are rare and fast).
 static func acquire_lock() -> bool:
-	return FileLock.acquire(_lock_path())
+	return FileLock.acquire(_RegistryPaths.lock_path())
 
 
 static func release_lock() -> void:
-	FileLock.release(_lock_path())
+	FileLock.release(_RegistryPaths.lock_path())
 
 
 # -- Entry-file I/O -----------------------------------------------------------

@@ -28,6 +28,7 @@ const SceneLease := preload("res://addons/godot_mcp_toolkit/scene_lease.gd")
 const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/rpc_dispatcher.gd")
 const ProjectKey := preload("res://addons/godot_mcp_toolkit/project_key.gd")
 const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
+const RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry_paths.gd")
 
 var _passed := 0
 var _failed := 0
@@ -44,6 +45,7 @@ func _init() -> void:
 		return
 
 	_test_project_key()
+	_test_registry_paths()
 	_test_registry()
 	_test_registry_entry()
 	_test_registry_merge()
@@ -573,6 +575,49 @@ func _test_project_key() -> void:
 	#    identities. This single assertion guards the de-dup against future drift.
 	_eq(ProjectPaths.project_hash(), ProjectKey.current_hash(),
 			"005-D: ProjectPaths.project_hash() == ProjectKey.current_hash()")
+
+	print("")
+
+
+# --- RegistryPaths layout (concern 039 C1) --------------------------------
+# The on-disk layout authority: the machine-wide registry dir + every canonical
+# path within it. Pins the path SHAPE (filename suffixes + the lock-path
+# derivation) without asserting filesystem state, which is environmental. The
+# per-instance entry filenames carry ProjectKey.current_hash() — one
+# canonicalization, shared with the user:// instance dir.
+
+func _test_registry_paths() -> void:
+	_begin("RegistryPaths layout")
+
+	# 1. projects.json is the aggregate file under the registry dir.
+	_ok(RegistryPaths.registry_path().ends_with("projects.json"),
+			"registry_path ends with projects.json")
+	_eq(RegistryPaths.registry_path(),
+			RegistryPaths.registry_dir().path_join("projects.json"),
+			"registry_path == registry_dir/projects.json")
+
+	# 2. Entry files live in entries/ and are keyed by the project hash.
+	var h := ProjectKey.current_hash()
+	_ok(RegistryPaths.entry_dir().ends_with("entries"),
+			"entry_dir ends with entries")
+	_eq(RegistryPaths.entry_file_path(),
+			RegistryPaths.entry_dir().path_join(h + ".json"),
+			"entry_file_path == entry_dir/<hash>.json")
+	_eq(RegistryPaths.runtime_entry_file_path(),
+			RegistryPaths.entry_dir().path_join(h + ".runtime.json"),
+			"runtime_entry_file_path == entry_dir/<hash>.runtime.json")
+
+	# 3. The two entry files are distinct (editor base vs runtime overlay).
+	_ok(RegistryPaths.entry_file_path() != RegistryPaths.runtime_entry_file_path(),
+			"editor entry path != runtime entry path")
+
+	# 4. The lock file is the registry path + ".lock".
+	_eq(RegistryPaths.lock_path(), RegistryPaths.registry_path() + ".lock",
+			"lock_path == registry_path + .lock")
+
+	# 5. The façade still routes through here (callers bind to RegistryClient).
+	_eq(RegistryClient.registry_dir(), RegistryPaths.registry_dir(),
+			"RegistryClient.registry_dir delegates to RegistryPaths")
 
 	print("")
 
