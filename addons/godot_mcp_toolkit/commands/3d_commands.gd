@@ -4,6 +4,7 @@ extends RefCounted
 ## and environment setups in the edited scene.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const Coerce = _Hub.Coerce
 const Helpers = _Hub.Helpers
 
 const _VALID_PRIMITIVES := ["box", "sphere", "cylinder", "capsule", "plane", "prism"]
@@ -37,11 +38,7 @@ static func _vec3(d: Variant) -> Vector3:
 
 
 static func _color(d: Variant) -> Color:
-	if typeof(d) != TYPE_DICTIONARY:
-		return Color.WHITE
-	return Color(
-		float(d.get("r", 1.0)), float(d.get("g", 1.0)),
-		float(d.get("b", 1.0)), float(d.get("a", 1.0)))
+	return Coerce.color_from_dict(d)
 
 
 static func _path_in_scene(root: Node, node: Node) -> String:

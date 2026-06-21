@@ -100,6 +100,7 @@ func _init() -> void:
 	_test_create_collision_resolver()
 	_test_tileset_edit_key_enforcement()
 	_test_coerce_roundtrip()
+	_test_color_from_dict()
 	_test_node_packed_property_serialize()
 	_test_user_path_monitor()
 	_test_save_read_paging()
@@ -2797,6 +2798,38 @@ func _test_coerce_roundtrip() -> void:
 	var pcol_native: PackedColorArray = PackedColorArray([Color(1.0, 0.0, 0.0, 1.0), Color(0.25, 0.5, 0.75, 0.5)])
 	_ok(Coerce.coerce_value(Coerce.serialize_value(pcol_native)) == pcol_native,
 			"PackedColorArray round-trips (now symmetric)")
+
+	print("")
+
+
+# --- color_from_dict white-default projection -----------------------------
+# Pins both default behaviours of Coerce.color_from_dict so neither the
+# white-default (modulate/tint) family nor the override path drifts after the
+# 3d/particle/procedural/tileset sites were routed through this one helper.
+func _test_color_from_dict() -> void:
+	_begin("Coerce.color_from_dict white-default projection")
+
+	# Full {r,g,b,a} dict → exact Color, no defaulting.
+	_eq(Coerce.color_from_dict({"r": 0.25, "g": 0.5, "b": 0.75, "a": 0.5}),
+			Color(0.25, 0.5, 0.75, 0.5), "full {r,g,b,a} → exact Color")
+	# Missing channels fall to opaque-white (1.0) — alpha included.
+	_eq(Coerce.color_from_dict({"r": 1.0, "g": 0.0, "b": 0.0}),
+			Color(1.0, 0.0, 0.0, 1.0), "missing alpha → opaque (a defaults 1.0)")
+	# Empty dict → all channels default 1.0 → opaque white.
+	_eq(Coerce.color_from_dict({}), Color(1.0, 1.0, 1.0, 1.0),
+			"empty dict → opaque white via channel defaults")
+	# Non-dict, no override → the white default.
+	_eq(Coerce.color_from_dict(null), Color(1.0, 1.0, 1.0, 1.0),
+			"non-dict → white default")
+	_eq(Coerce.color_from_dict("not a dict"), Color(1.0, 1.0, 1.0, 1.0),
+			"non-dict string → white default")
+	# default override governs the non-dict case only.
+	_eq(Coerce.color_from_dict(null, Color.BLACK), Color(0.0, 0.0, 0.0, 1.0),
+			"non-dict + BLACK override → black default")
+	# A dict still channel-defaults to white even when an override is passed
+	# (override is the non-dict fallback, not a per-channel source).
+	_eq(Coerce.color_from_dict({"r": 0.5}, Color.BLACK), Color(0.5, 1.0, 1.0, 1.0),
+			"dict ignores override; channels stay opaque white")
 
 	print("")
 

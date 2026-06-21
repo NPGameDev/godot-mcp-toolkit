@@ -838,7 +838,5 @@ static func _apply_alternative(
 	if alt.has("modulate"):
 		var m = alt["modulate"]
 		if typeof(m) == TYPE_DICTIONARY:
-			alt_td.modulate = Color(
-				float(m.get("r", 1.0)), float(m.get("g", 1.0)),
-				float(m.get("b", 1.0)), float(m.get("a", 1.0)))
+			alt_td.modulate = Coerce.color_from_dict(m)
 	return {"alt_id": alt_id}

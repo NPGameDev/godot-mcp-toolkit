@@ -218,6 +218,20 @@ static func _resolve_layer_name(layer_name: String, category: String) -> int:
 	return -1
 
 
+## Project a {r,g,b,a} JSON dict onto a Color with opaque-white channel
+## defaults (tint / modulate semantics).  A non-dict value yields [param default]
+## (itself opaque white unless overridden); within a dict, each absent channel
+## falls to 1.0 so a partial {r,g,b} stays fully opaque.  Distinct from the
+## "Color" type tag above, whose channels default to opaque BLACK (paint
+## semantics) — the two defaults must not be conflated.
+static func color_from_dict(d: Variant, default: Color = Color(1, 1, 1, 1)) -> Color:
+	if typeof(d) != TYPE_DICTIONARY:
+		return default
+	return Color(
+		float(d.get("r", 1.0)), float(d.get("g", 1.0)),
+		float(d.get("b", 1.0)), float(d.get("a", 1.0)))
+
+
 static func serialize_value(value: Variant) -> Variant:
 	match typeof(value):
 		TYPE_NIL:

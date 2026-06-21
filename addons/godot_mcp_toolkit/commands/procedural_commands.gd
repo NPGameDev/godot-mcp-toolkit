@@ -4,6 +4,7 @@ extends RefCounted
 ## FastNoiseLite resources as standalone .tres files.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const Coerce = _Hub.Coerce
 const FileGuard = _Hub.FileGuard
 const Helpers = _Hub.Helpers
 
@@ -323,10 +324,7 @@ static func _cmd_edit_noise(parameters: Dictionary) -> Dictionary:
 
 
 static func _color(d: Variant) -> Color:
-	if typeof(d) != TYPE_DICTIONARY:
-		return Color.WHITE
-	return Color(float(d.get("r", 1.0)), float(d.get("g", 1.0)),
-		float(d.get("b", 1.0)), float(d.get("a", 1.0)))
+	return Coerce.color_from_dict(d)
 
 
 static func _tangent_mode(val) -> int:

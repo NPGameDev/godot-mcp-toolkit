@@ -3,6 +3,7 @@ extends RefCounted
 ## particles.* command handlers — GPU particle system creation with presets.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const Coerce = _Hub.Coerce
 const Helpers = _Hub.Helpers
 
 const _VALID_PRESETS := ["fire", "smoke", "sparks", "rain", "snow", "explosion", "magic", "dust"]
@@ -275,11 +276,7 @@ static func _vec3(d: Variant) -> Vector3:
 
 
 static func _color(d: Variant) -> Color:
-	if typeof(d) != TYPE_DICTIONARY:
-		return Color.WHITE
-	return Color(
-		float(d.get("r", 1.0)), float(d.get("g", 1.0)),
-		float(d.get("b", 1.0)), float(d.get("a", 1.0)))
+	return Coerce.color_from_dict(d)
 
 
 static func _expand_range(v: Variant) -> Array:
