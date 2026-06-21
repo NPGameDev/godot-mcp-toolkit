@@ -570,6 +570,44 @@ static func ensure_file_removed(file_path: String, timeout_ms: int = 3000) -> Di
 	return {"removed": removed, "elapsed_ms": elapsed}
 
 
+# -- File-create collision decision -------------------------------------------
+
+
+## Resolve the file-level idempotency collision decision shared by file creators
+## (scene.create, asset.import, texture/sound.generate). Pure query: validates
+## if_exists, checks destination existence, and returns the DECISION only — the
+## caller owns its own early-return payload, its own write, and its own status
+## string (`"replaced" if existed else "created"`). Centralising the *decision*
+## (not the payloads) keeps each creator's emitted bytes — which legitimately
+## differ (extra keys, replace side-effects, message wording) — under the
+## caller's control while killing the duplicated validate->exists->branch logic.
+## (§12.4 DRY, §12.5 CQS — this returns data, changes nothing.)
+##
+##   dest_path   res:// destination (NOT path-guarded here — callers guard first)
+##   if_exists   "return" | "fail" | "replace"
+##
+## Returns a DECISION dict:
+##   {valid: false}                                — if_exists was not a legal value;
+##                                                   caller emits its own INVALID_PARAMS.
+##   {valid: true, existed: false, action: "create"}
+##                                                 — no collision; caller writes, "created".
+##   {valid: true, existed: true,  action: "return"}
+##                                                 — idempotent no-op; caller emits its own
+##                                                   "returned" success payload.
+##   {valid: true, existed: true,  action: "fail"} — caller emits its own ALREADY_EXISTS error.
+##   {valid: true, existed: true,  action: "replace"}
+##                                                 — caller runs its own replace side-effects
+##                                                   + write, status "replaced".
+static func resolve_create_collision(dest_path: String, if_exists: String) -> Dictionary:
+	if if_exists not in ["return", "fail", "replace"]:
+		return {"valid": false}
+	var existed := FileAccess.file_exists(dest_path)
+	if not existed:
+		return {"valid": true, "existed": false, "action": "create"}
+	# Collision: the legal if_exists value IS the action verb for this case.
+	return {"valid": true, "existed": true, "action": if_exists}
+
+
 # -- Shared asset write + import-settle bracket -------------------------------
 
 
@@ -619,16 +657,17 @@ static func write_asset_with_settle(
 			"extension '%s' not allowed for %s; expected: %s" % [
 				extension, method, ", ".join(allowed_exts)])
 
-	if if_exists not in ["return", "fail", "replace"]:
+	var collision := resolve_create_collision(dest_path, if_exists)
+	if not collision["valid"]:
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"if_exists must be one of 'return', 'fail', 'replace' (got '%s')" % if_exists)
 	if wait_for_scan_ms < 0 or wait_for_scan_ms > 30000:
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"wait_for_scan_ms must be in [0, 30000] (got %d); 0 disables wait" % wait_for_scan_ms)
 
-	var file_existed := FileAccess.file_exists(dest_path)
+	var file_existed: bool = collision["existed"]
 	if file_existed:
-		match if_exists:
+		match collision["action"]:
 			"return":
 				return MCPToolkitSuccess.ok({
 					"status": "returned", "path": dest_path,

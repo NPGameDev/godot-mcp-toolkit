@@ -149,14 +149,15 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	if not _class_descends_from(root_type, "Node"):
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [root_type, _class_base_chain(root_type)])
-	if not (if_exists in ["return", "fail", "replace"]):
+	var collision := Helpers.resolve_create_collision(file_path, if_exists)
+	if not collision["valid"]:
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"if_exists must be one of 'return'|'fail'|'replace' (got %s); default is 'return'" % if_exists)
 
 	var was_replace := false
 	var previous_root_type := ""
-	if FileAccess.file_exists(file_path):
-		match if_exists:
+	if collision["existed"]:
+		match collision["action"]:
 			"return":
 				return MCPToolkitSuccess.ok({"status": "returned", "path": file_path,
 					"root_name": file_path.get_file().get_basename(), "root_path": "."})

@@ -97,6 +97,7 @@ func _init() -> void:
 	_test_spatial_map()
 	_test_texture_generate()
 	_test_sound_generate()
+	_test_create_collision_resolver()
 	_test_tileset_edit_key_enforcement()
 	_test_coerce_roundtrip()
 	_test_node_packed_property_serialize()
@@ -2594,6 +2595,61 @@ func _test_sound_generate() -> void:
 	for i in range(mini(50, noise.size() / 2)):
 		distinct[noise.decode_s16(i * 2)] = true
 	_ok(distinct.size() > 5, "_build_pcm noise varies sample-to-sample")
+
+
+# --- resolve_create_collision (concern 017) -------------------------------
+# Pure decision query shared by the file creators (scene.create, asset.import,
+# texture/sound.generate). Validates if_exists, stats the destination, returns
+# the {valid, existed, action} DECISION — no payload, no write. Editor-free:
+# FileAccess.file_exists sees user:// paths, so existence cases use a temp file.
+func _test_create_collision_resolver() -> void:
+	_begin("resolve_create_collision (concern 017)")
+
+	# A guaranteed-absent res:// path (randomised to dodge any stray fixture).
+	var absent := "res://__nope_%d.png" % (randi() % 1_000_000)
+
+	# Not-exists: every legal if_exists short-circuits to action "create".
+	var c_create := Helpers.resolve_create_collision(absent, "return")
+	_eq(c_create.get("valid"), true, "absent + return → valid")
+	_eq(c_create.get("existed"), false, "absent + return → existed false")
+	_eq(c_create.get("action"), "create", "absent + return → action create")
+	_eq(Helpers.resolve_create_collision(absent, "fail").get("action"), "create",
+		"absent + fail → action create (value irrelevant when absent)")
+	_eq(Helpers.resolve_create_collision(absent, "replace").get("action"), "create",
+		"absent + replace → action create")
+
+	# Invalid if_exists → {valid:false} (no existence read needed).
+	_eq(Helpers.resolve_create_collision(absent, "clobber").get("valid"), false,
+		"invalid value 'clobber' → valid false")
+	_eq(Helpers.resolve_create_collision(absent, "").get("valid"), false,
+		"empty value → valid false")
+	_eq(Helpers.resolve_create_collision(absent, "Return").get("valid"), false,
+		"wrong-case 'Return' → valid false (exact-case match)")
+
+	# Exists: write a temp file under user://, assert the action == if_exists, clean up.
+	var present := "user://__collision_test_%d.tmp" % (randi() % 1_000_000)
+	var f := FileAccess.open(present, FileAccess.WRITE)
+	if f == null:
+		_ok(false, "could not open temp file for existence cases — SKIPPED exists path")
+	else:
+		f.store_string("x")
+		f.close()
+
+		var c_return := Helpers.resolve_create_collision(present, "return")
+		_eq(c_return.get("valid"), true, "exists + return → valid")
+		_eq(c_return.get("existed"), true, "exists + return → existed true")
+		_eq(c_return.get("action"), "return", "exists + return → action return")
+		_eq(Helpers.resolve_create_collision(present, "fail").get("action"), "fail",
+			"exists + fail → action fail")
+		_eq(Helpers.resolve_create_collision(present, "replace").get("action"), "replace",
+			"exists + replace → action replace")
+
+		# Validation precedes existence: invalid value while the file exists is
+		# still {valid:false} — locks that the value check runs before the stat.
+		_eq(Helpers.resolve_create_collision(present, "nope").get("valid"), false,
+			"exists + invalid value → valid false (validation precedes existence)")
+
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(present))
 
 
 # --- tileset.edit_* per-verb key enforcement (concern 031) ----------------
