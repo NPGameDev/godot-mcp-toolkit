@@ -47,7 +47,7 @@ func check_and_show() -> void:
 	)
 
 	_dialog = dialog
-	_apply_step(dialog)
+	_show_step(dialog)
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
 
@@ -60,61 +60,92 @@ func free_if_open() -> void:
 
 
 # -- Step rendering -----------------------------------------------------------
+#
+# Each step contributes a "spec" — a plain data description of its content — while
+# a single renderer (_show_step) owns the boilerplate every step shares: the
+# title, the previous step's button cleanup, applying text/ok-label, and
+# add+track of each custom button (tracking is automatic, so a button can't leak
+# from the per-step cleanup loop). Adding a step means adding a spec, not another
+# rendering arm that has to re-implement the cleanup/track/popup contract.
+#
+# Spec shape (all values plain data except on_enter):
+#   text:      String    — the dialog body
+#   ok_label:  String    — the OK button caption
+#   buttons:   Array     — [ { label: String, action: String }, ... ], in order
+#   on_enter:  Callable  — optional side-effect run as the step is shown
 
 
-func _apply_step(dialog: AcceptDialog) -> void:
-	dialog.title = "MCP Toolkit — Setup Wizard (%d of %d)" % [
-		_step + 1, _STEP_COUNT]
-
-	# Free all tracked custom buttons from the previous step.
-	for btn in _buttons:
-		if is_instance_valid(btn):
-			btn.queue_free()
-	_buttons.clear()
-
+# Build the spec for the current step. Pure with respect to the dialog: it returns
+# data and may set _mcp_exists (which navigation reads), but never touches the
+# dialog — so each step's text, ok-label, and buttons are unit-checkable without
+# an editor.
+func _spec_for_step() -> Dictionary:
 	match _step:
 		0:
-			dialog.dialog_text = (
-				"Welcome to the Godot MCP Toolkit!\n\n"
-				+ "This plugin exposes your Godot editor to AI agents via MCP.\n"
-				+ "Some tools can modify your project or execute arbitrary code.\n\n"
-				+ "Risk is communicated per-tool via MCP annotations.\n"
-				+ "For details and copy-pasteable agent blocking configs, see:\n"
-				+ "  addons/godot_mcp_toolkit/docs/security-recommendations.md\n\n"
-				+ "All tools are available by default. Use your agent's\n"
-				+ "allowlist/blocklist to restrict specific tools if needed.")
-			dialog.ok_button_text = "Next"
-			_buttons.append(dialog.add_button("Open Security Doc", true, "open_security"))
-
+			return _spec_welcome()
 		1:
-			# .mcp.json — two variants based on whether the file already exists.
+			# Probe the filesystem here (the impure part) and record it for
+			# navigation; the spec body itself is built purely from the result.
 			_mcp_exists = FileAccess.file_exists(
 				ProjectSettings.globalize_path("res://") + ".mcp.json")
-			if _mcp_exists:
-				dialog.dialog_text = (
-					"Your MCP client reads .mcp.json from the project root "
-					+ "to locate and configure the server.\n\n"
-					+ "The MCP server bridge requires Node.js 20+ to run. "
-					+ "Download it from https://nodejs.org if not installed.\n\n"
-					+ "An .mcp.json already exists in your project.")
-				dialog.ok_button_text = "Continue (keep existing .mcp.json)"
-				_buttons.append(
-					dialog.add_button("Overwrite with clean .mcp.json", true, "overwrite_mcp"))
-			else:
-				dialog.dialog_text = (
-					"Your MCP client reads .mcp.json from the project root "
-					+ "to locate and configure the server.\n\n"
-					+ "The MCP server bridge requires Node.js 20+ to run. "
-					+ "Download it from https://nodejs.org if not installed.\n\n"
-					+ "No .mcp.json was found — this file is required for your "
-					+ "MCP client to connect to the toolkit.")
-				dialog.ok_button_text = "Create .mcp.json"
-
+			return _spec_mcp_json(_mcp_exists)
 		2:
-			# Dock + help + read-only info.
-			if _dock != null:
-				_plugin.make_bottom_panel_item_visible(_dock)
-			dialog.dialog_text = (
+			return _spec_dock_overview()
+	return {}
+
+
+func _spec_welcome() -> Dictionary:
+	return {
+		"text": (
+			"Welcome to the Godot MCP Toolkit!\n\n"
+			+ "This plugin exposes your Godot editor to AI agents via MCP.\n"
+			+ "Some tools can modify your project or execute arbitrary code.\n\n"
+			+ "Risk is communicated per-tool via MCP annotations.\n"
+			+ "For details and copy-pasteable agent blocking configs, see:\n"
+			+ "  addons/godot_mcp_toolkit/docs/security-recommendations.md\n\n"
+			+ "All tools are available by default. Use your agent's\n"
+			+ "allowlist/blocklist to restrict specific tools if needed."),
+		"ok_label": "Next",
+		"buttons": [{"label": "Open Security Doc", "action": "open_security"}],
+	}
+
+
+# Pure: the .mcp.json step has two variants keyed on whether the file already
+# exists. The OK action also differs (keep-vs-create), which navigation drives off
+# _mcp_exists — set by the caller, not here.
+func _spec_mcp_json(mcp_exists: bool) -> Dictionary:
+	var intro := (
+		"Your MCP client reads .mcp.json from the project root "
+		+ "to locate and configure the server.\n\n"
+		+ "The MCP server bridge requires Node.js 20+ to run. "
+		+ "Download it from https://nodejs.org if not installed.\n\n")
+	if mcp_exists:
+		return {
+			"text": intro + "An .mcp.json already exists in your project.",
+			"ok_label": "Continue (keep existing .mcp.json)",
+			"buttons": [{
+				"label": "Overwrite with clean .mcp.json",
+				"action": "overwrite_mcp",
+			}],
+		}
+	return {
+		"text": intro + (
+			"No .mcp.json was found — this file is required for your "
+			+ "MCP client to connect to the toolkit."),
+		"ok_label": "Create .mcp.json",
+		"buttons": [],
+	}
+
+
+func _spec_dock_overview() -> Dictionary:
+	# Surfacing the dock is a side-effect, so it rides as on_enter rather than
+	# being baked into the (otherwise pure) spec. Assigned as a separate statement
+	# (not an inline dict value) to keep the multi-line lambda unambiguous to parse.
+	var reveal_dock := func() -> void:
+		if _dock != null:
+			_plugin.make_bottom_panel_item_visible(_dock)
+	var spec := {
+		"text": (
 				"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
 				+ "From here you can:\n\n"
 				+ "  \u2022 Monitor server status — connection state, peer count, runtime port\n"
@@ -129,10 +160,42 @@ func _apply_step(dialog: AcceptDialog) -> void:
 				+ "dock's Server Status, or in Editor Settings → Mcp Toolkit →\n"
 				+ "Performance — note this setting lives in Editor Settings, unlike\n"
 				+ "the other mcp_toolkit/* keys in Project Settings.\n\n"
-				+ "You're all set!")
-			dialog.ok_button_text = "Close"
-			_buttons.append(dialog.add_button("Back", true, "back"))
-			_buttons.append(dialog.add_button("Open Info", true, "open_info"))
+				+ "You're all set!"),
+		"ok_label": "Close",
+		"buttons": [
+			{"label": "Back", "action": "back"},
+			{"label": "Open Info", "action": "open_info"},
+		],
+	}
+	spec["on_enter"] = reveal_dock
+	return spec
+
+
+# Render the current step's spec onto the dialog. Owns the boilerplate every step
+# shares: title, previous-button cleanup, text + ok-label, and add+track of each
+# custom button (tracking happens here, so a button can never leak from the
+# per-step cleanup loop). on_enter, if present, fires before the caller pops up.
+func _show_step(dialog: AcceptDialog) -> void:
+	dialog.title = "MCP Toolkit — Setup Wizard (%d of %d)" % [
+		_step + 1, _STEP_COUNT]
+
+	# Free all tracked custom buttons from the previous step.
+	for btn in _buttons:
+		if is_instance_valid(btn):
+			btn.queue_free()
+	_buttons.clear()
+
+	var spec := _spec_for_step()
+	dialog.dialog_text = str(spec.get("text", ""))
+	dialog.ok_button_text = str(spec.get("ok_label", ""))
+	var buttons: Array = spec.get("buttons", [])
+	for entry in buttons:
+		var button: Dictionary = entry
+		_buttons.append(dialog.add_button(
+			str(button.get("label", "")), true, str(button.get("action", ""))))
+	if spec.has("on_enter"):
+		var on_enter: Callable = spec.get("on_enter")
+		on_enter.call()
 
 
 # -- Navigation ---------------------------------------------------------------
@@ -150,7 +213,7 @@ func _on_confirmed(dialog: AcceptDialog) -> void:
 		return
 	_step += 1
 	_save_progress()
-	_apply_step(dialog)
+	_show_step(dialog)
 	# AcceptDialog auto-hides on confirmed — re-show for the next step.
 	dialog.popup_centered()
 
@@ -160,13 +223,13 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 		"back":
 			if _step > 0:
 				_step -= 1
-				_apply_step(dialog)
+				_show_step(dialog)
 		"overwrite_mcp":
 			if _dock != null:
 				_dock.write_mcp_json(true)
 			_step += 1
 			_save_progress()
-			_apply_step(dialog)
+			_show_step(dialog)
 		"open_info":
 			_write_flag()
 			free_if_open()
