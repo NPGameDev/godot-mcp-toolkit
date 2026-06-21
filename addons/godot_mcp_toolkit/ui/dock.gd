@@ -12,6 +12,7 @@ const RegistryClient = _Hub.RegistryClient
 const NodejsCheck = _Hub.NodejsCheck
 const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog_dialog.gd")
 const AuditLogDialog := preload("res://addons/godot_mcp_toolkit/ui/audit_log_dialog.gd")
+const InfoDialog := preload("res://addons/godot_mcp_toolkit/ui/info_dialog.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -43,7 +44,7 @@ var _save_cap_spinbox: SpinBox = null
 var _ws_buffer_spinbox: SpinBox = null
 
 # Info/Help dialog (populated on demand).
-var _info_dialog: AcceptDialog = null
+var _info_dialog: InfoDialog = null
 
 # Extension catalog dialog (populated on demand).
 var _catalog_dialog: Window = null
@@ -742,178 +743,10 @@ func show_extension_catalog() -> void:
 # ---------------------------------------------------------------------------
 
 func _show_info_dialog() -> void:
-	if _info_dialog != null and is_instance_valid(_info_dialog):
-		_info_dialog.popup_centered()
-		return
-
-	_info_dialog = AcceptDialog.new()
-	_info_dialog.title = "MCP Toolkit — Info / Help"
-	_info_dialog.ok_button_text = "Close"
-	_info_dialog.exclusive = false
-	_info_dialog.min_size = Vector2i(520, 460)
-	_info_dialog.confirmed.connect(func():
-		_info_dialog.queue_free()
-		_info_dialog = null
-	)
-	_info_dialog.canceled.connect(func():
-		_info_dialog.queue_free()
-		_info_dialog = null
-	)
-
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(500, 400)
-	_info_dialog.add_child(scroll)
-
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(vbox)
-
-	# -- Connection info --
-	_add_info_header(vbox, "Connection")
-	if _server != null and _server.is_listening():
-		var port: int = _server.get_bound_port()
-		var peers: int = _server.get_authed_peer_count()
-		_add_info_row(vbox, "Address", "127.0.0.1:%d" % port)
-		_add_info_row(vbox, "Peers", "%d connected" % peers)
-	else:
-		_add_info_row(vbox, "Address", "not listening")
-	if McpJsonSync.is_read_only():
-		_add_info_row(vbox, "Mode", "Read-only (GODOT_MCP_READ_ONLY=1)")
-
-	# -- Version --
-	var plugin_ver := _get_plugin_version()
-	var vi := Engine.get_version_info()
-	var godot_ver := "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]]
-	_add_info_row(vbox, "Plugin", "v%s" % plugin_ver)
-	_add_info_row(vbox, "Godot", godot_ver)
-
-	# -- Registered tools --
-	_add_info_header(vbox, "Registered Tools")
-	if _server != null and _server.has_method("get_command_methods"):
-		var methods: Array = _server.get_command_methods()
-		methods.sort()
-		var groups: Dictionary = {}
-		for method in methods:
-			var parts := str(method).split(".", true, 1)
-			var domain: String = parts[0] if parts.size() > 0 else "other"
-			if not groups.has(domain):
-				groups[domain] = []
-			groups[domain].append(str(method))
-		var domain_keys: Array = groups.keys()
-		domain_keys.sort()
-		_add_info_row(vbox, "Total", "%d+ tools (plugin-side)" % methods.size())
-		var extra_note := Label.new()
-		extra_note.text = (
-			"Additional tools (LSP, discover_tools, extensions) live in "
-			+ "the MCP server and are not listed here.")
-		extra_note.add_theme_font_size_override("font_size", 11)
-		extra_note.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
-		extra_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		vbox.add_child(extra_note)
-		for domain in domain_keys:
-			var tools: Array = groups[domain]
-			var lbl := Label.new()
-			lbl.text = "  %s (%d): %s" % [
-				str(domain).capitalize(), tools.size(),
-				", ".join(PackedStringArray(tools))]
-			lbl.add_theme_font_size_override("font_size", 11)
-			lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			vbox.add_child(lbl)
-	else:
-		_add_info_row(vbox, "Status", "server not ready")
-
-	# -- Multi-instance support --
-	_add_info_header(vbox, "Multi-Instance Multiplayer")
-	var multi := Label.new()
-	multi.text = (
-		"A:  Two copies via git worktree — FULLY SUPPORTED\n"
-		+ "     Each editor gets its own project root, registry entry, and port.\n\n"
-		+ "B:  Built-in multi-instance run (F5 + multiple windows) — MOSTLY SUPPORTED\n"
-		+ "     Runtime server available; editor MCP commands limited to the host.\n\n"
-		+ "C:  Same directory, two editors — NOT SUPPORTED\n"
-		+ "     Port collision and registry overwrite; use Pattern A instead.\n\n"
-		+ "See addons/godot_mcp_toolkit/docs/multi-instance.md for full details.")
-	multi.add_theme_font_size_override("font_size", 11)
-	multi.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(multi)
-
-	# -- Read-only mode --
-	_add_info_header(vbox, "Read-Only Mode")
-	var readonly_note := Label.new()
-	readonly_note.text = (
-		"For supervised environments (classrooms, CI, demos).\n"
-		+ "Set GODOT_MCP_READ_ONLY=1 in your .mcp.json env to restrict\n"
-		+ "the toolkit to read-only tools only. All mutating tools\n"
-		+ "(create, delete, write, execute) are hidden from the AI agent.\n"
-		+ "Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect the\n"
-		+ "MCP client to restore full access.")
-	readonly_note.add_theme_font_size_override("font_size", 11)
-	readonly_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(readonly_note)
-
-	# -- Companion Skills --
-	_add_info_header(vbox, "Companion Skills")
-	var skills_note := Label.new()
-	skills_note.text = (
-		"Claude Code skills for common toolkit workflows are bundled\n"
-		+ "with the plugin. Click the 'Companion Skills' button in the\n"
-		+ "dock to browse them, then copy any skill you want into your\n"
-		+ "project's .claude/skills/ directory.")
-	skills_note.add_theme_font_size_override("font_size", 11)
-	skills_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(skills_note)
-
-	# -- Links --
-	_add_info_header(vbox, "Links")
-	var links_row := HBoxContainer.new()
-	vbox.add_child(links_row)
-	for pair in [
-		["GitHub", "https://github.com/NPGameDev/godot-mcp-toolkit"],
-		["Issues", "https://github.com/NPGameDev/godot-mcp-toolkit/issues"],
-		["Server Repo", "https://github.com/NPGameDev/godot-mcp-server"],
-		["Contributing", "https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/CONTRIBUTING.md"],
-	]:
-		var btn := Button.new()
-		btn.text = pair[0]
-		var url: String = pair[1]
-		btn.pressed.connect(func(): OS.shell_open(url))
-		links_row.add_child(btn)
-
-	EditorInterface.get_base_control().add_child(_info_dialog)
-	_info_dialog.popup_centered()
-
-
-func _add_info_header(parent: VBoxContainer, title: String) -> void:
-	parent.add_child(HSeparator.new())
-	var lbl := Label.new()
-	lbl.text = title
-	lbl.add_theme_font_size_override("font_size", 13)
-	parent.add_child(lbl)
-
-
-func _add_info_row(parent: VBoxContainer, key: String, value: String) -> void:
-	var row := HBoxContainer.new()
-	parent.add_child(row)
-	var k := Label.new()
-	k.text = key + ":"
-	k.custom_minimum_size.x = 80
-	k.add_theme_font_size_override("font_size", 12)
-	row.add_child(k)
-	var v := Label.new()
-	v.text = value
-	v.add_theme_font_size_override("font_size", 12)
-	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	row.add_child(v)
-
-
-func _get_plugin_version() -> String:
-	var cfg := ConfigFile.new()
-	var err := cfg.load("res://addons/godot_mcp_toolkit/plugin.cfg")
-	if err != OK:
-		return "unknown"
-	return cfg.get_value("plugin", "version", "unknown")
+	if _info_dialog == null or not is_instance_valid(_info_dialog):
+		_info_dialog = InfoDialog.new()
+		EditorInterface.get_base_control().add_child(_info_dialog)
+	_info_dialog.show_info(_server)
 
 
 # ---------------------------------------------------------------------------
