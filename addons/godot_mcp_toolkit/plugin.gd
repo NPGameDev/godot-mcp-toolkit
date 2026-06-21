@@ -11,6 +11,7 @@ const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_n
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extension_loader.gd")
 const CommandRegistrar := preload("res://addons/godot_mcp_toolkit/command_registrar.gd")
+const PlaytestWatcher := preload("res://addons/godot_mcp_toolkit/playtest_watcher.gd")
 const DebugBridge := preload("res://addons/godot_mcp_toolkit/debug_bridge.gd")
 # Retained (not moved to the registrar): _exit_tree calls PlaytestCommands.clear_debug_bridge()
 # as the I12 teardown counterpart of its register(..., _debug_bridge) — a teardown op, not a
@@ -46,8 +47,7 @@ var _wizard: OnboardingWizard = null
 var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
 var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
-# Playtest-end detection for runtime port cleanup.
-var _was_playing: bool = false
+var _playtest_watcher: PlaytestWatcher = null  # Edge-detects the play→stop transition
 
 
 func _enter_tree() -> void:
@@ -82,6 +82,9 @@ func _enter_tree() -> void:
 	_user_path_monitor = _Hub.UserPathMonitor.new()
 	_user_path_monitor.start()
 	_user_path_monitor.user_path_changed.connect(_on_user_path_changed)
+
+	# Edge-detects the play→stop transition; polled each _process.
+	_playtest_watcher = PlaytestWatcher.new(_server)
 
 	add_child(_server)
 	_server.bind_user_path_monitor(_user_path_monitor)
@@ -135,18 +138,7 @@ func _check_onboarding() -> void:
 
 
 func _process(_delta: float) -> void:
-	_detect_playtest_end()
-
-
-func _detect_playtest_end() -> void:
-	var playing := EditorInterface.is_playing_scene()
-	if _was_playing and not playing:
-		RegistryClient.clear_runtime()
-		# Proactive notification: tell the MCP server bridge the game stopped
-		# so it can tear down the runtime channel immediately — no need to wait
-		# for the next callRuntime() to discover the dead connection.
-		_server.broadcast_notification("game_stopped")
-	_was_playing = playing
+	_playtest_watcher.poll()
 
 
 func _on_user_path_changed() -> void:
@@ -196,6 +188,10 @@ func _exit_tree() -> void:
 	if _user_path_monitor != null:
 		_user_path_monitor.stop()
 		_user_path_monitor = null
+
+	# Playtest watcher (RefCounted — just null) — drop before server teardown
+	# since it holds a server reference.
+	_playtest_watcher = null
 
 	# Extension watcher — disconnect global signals, then drop before server
 	# teardown (holds registry ref). Without explicit disconnect, the
