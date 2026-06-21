@@ -17,6 +17,7 @@ const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_comm
 const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog.gd")
+const ExtensionSupport := preload("res://addons/godot_mcp_toolkit/extension_support.gd")
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
@@ -53,6 +54,7 @@ func _init() -> void:
 	_test_registry_entry_file_io()
 	_test_registry_merge()
 	_test_extension_collision_guard()
+	_test_extension_support()
 	_test_options_builder()
 	_test_extension_options()
 	_test_annotation_mapping()
@@ -834,6 +836,47 @@ func _test_extension_collision_guard() -> void:
 	reg.add("acme.brand_new", _noop, MCPToolkitCommandOptions.new().mark_read_only())
 	_ok(reg.is_read_only("acme.brand_new"),
 			"no active load window → add() still overwrites (last-writer-wins)")
+
+	print("")
+
+
+# --- Extension support: candidate + addon-enabled detection (concern 047) --
+# extension_support.gd is the shared leaf both discovery and the watcher consume.
+# is_extension_candidate and is_addon_enabled are the pure shape-detection
+# boundaries: GDScript extensions are matched by base class, C# ones by the
+# MCPToolkit prefix on a .cs path, and a script outside a formal (plugin.cfg)
+# addon is always enabled. Pure — no editor, no real extension files (the
+# disabled-addon branch needs EditorInterface and is left to the §24/§23 sweep).
+
+func _test_extension_support() -> void:
+	_begin("Extension support (candidate + addon-enabled)")
+
+	# is_extension_candidate — GDScript matched by base class.
+	_ok(ExtensionSupport.is_extension_candidate({"base": "MCPToolkitExtension"}),
+			"GDScript base == MCPToolkitExtension → candidate")
+	# C# matched by MCPToolkit prefix on a .cs path (can't extend the GDScript base).
+	_ok(ExtensionSupport.is_extension_candidate({"class": "MCPToolkitFoo", "path": "res://foo.cs"}),
+			"C# MCPToolkit-prefixed .cs → candidate")
+	# Negatives: prefix without .cs, .cs without prefix, unrelated base, empty.
+	_ok(not ExtensionSupport.is_extension_candidate({"class": "MCPToolkitFoo", "path": "res://foo.gd"}),
+			"MCPToolkit-prefixed but .gd (no GDScript base) → not a candidate")
+	_ok(not ExtensionSupport.is_extension_candidate({"class": "PlainCs", "path": "res://plain.cs"}),
+			"non-prefixed .cs → not a candidate")
+	_ok(not ExtensionSupport.is_extension_candidate({"base": "RefCounted", "class": "Internal"}),
+			"unrelated base class → not a candidate")
+	_ok(not ExtensionSupport.is_extension_candidate({}),
+			"empty entry → not a candidate")
+
+	# is_addon_enabled — a script outside res://addons/ has no addon toggle → enabled.
+	_ok(ExtensionSupport.is_addon_enabled("res://my_ext.gd"),
+			"non-addon path → enabled")
+	_ok(ExtensionSupport.is_addon_enabled("res://scenes/foo/bar.gd"),
+			"nested non-addon path → enabled")
+	# A path under res://addons/<name>/ where <name> has no plugin.cfg is not a
+	# formal addon (no toggle mechanism) → enabled. Uses a name that does not exist
+	# on disk, so file_exists is deterministically false headlessly.
+	_ok(ExtensionSupport.is_addon_enabled("res://addons/_nonexistent_addon_xyz/ext.gd"),
+			"addons/ path with no plugin.cfg → enabled (not a formal addon)")
 
 	print("")
 
