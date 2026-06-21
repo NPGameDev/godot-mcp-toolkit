@@ -7,11 +7,11 @@ extends VBoxContainer
 ## during playtests so it updates without requiring server events.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const RegistryClient = _Hub.RegistryClient
 const NodejsCheck = _Hub.NodejsCheck
 const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog_dialog.gd")
 const InfoDialog := preload("res://addons/godot_mcp_toolkit/ui/info_dialog.gd")
 const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock_section_card.gd")
+const DockStatusPanel := preload("res://addons/godot_mcp_toolkit/ui/dock_status_panel.gd")
 const DockLimitsSection := preload("res://addons/godot_mcp_toolkit/ui/dock_limits_section.gd")
 const DockUnfocusedControl := preload("res://addons/godot_mcp_toolkit/ui/dock_unfocused_control.gd")
 const DockAuditSection := preload("res://addons/godot_mcp_toolkit/ui/dock_audit_section.gd")
@@ -25,12 +25,8 @@ const _TOAST_ERROR := 2
 var _server: Node = null
 var _audit_path: String = ""
 
-# Status widgets.
-var _status_label: Label = null
-var _peer_label: Label = null
-var _activity_label: Label = null
-var _runtime_label: Label = null
-var _lsp_label: Label = null
+# Server-status section — listening/peer/runtime/LSP/activity labels (own sub-panel).
+var _status_panel: DockStatusPanel = null
 
 # .mcp.json health surface — shared missing/malformed/read-only warning panel +
 # the tri-mode footer button + read-only cache + write/open/fix flow (own sub-panel).
@@ -63,7 +59,7 @@ func bind(server: Node, audit_path: String) -> void:
 	_server.command_received.connect(_on_command_received)
 	# LSP verdict arrives via editor.set_lsp_status (a command, not a dock signal);
 	# refresh exactly when the server sets it, so the label is never stale.
-	_server.lsp_status_changed.connect(_refresh_lsp_label)
+	_server.lsp_status_changed.connect(_on_lsp_status_changed)
 	_refresh_status()
 
 
@@ -78,17 +74,21 @@ func _ready() -> void:
 	# warning); read-only stays server-synced (see _on_client_connected), never polled.
 	_runtime_timer = Timer.new()
 	_runtime_timer.wait_time = 1.0
-	_runtime_timer.timeout.connect(_refresh_runtime_status)
+	_runtime_timer.timeout.connect(_on_runtime_timer_timeout)
 	add_child(_runtime_timer)
 	_runtime_timer.start()
 
 
 func _exit_tree() -> void:
 	# The audit-log viewer is owned + freed by _audit_section (its own _exit_tree).
-	# These two dialogs are base-control children the dock owns directly.
+	# These two dialogs are base-control children the dock owns directly. Free them
+	# immediately (not queue_free) so their reference chains are released before
+	# ObjectDB's exit-time leak check runs — _exit_tree runs inside the dock's own
+	# immediate free() (plugin_composer dispose()), and a deferred free at process
+	# exit may not flush before the RenderingServer/ObjectDB leak check (§10.5).
 	for dialog in [_info_dialog, _catalog_dialog]:
 		if dialog != null and is_instance_valid(dialog):
-			dialog.queue_free()
+			dialog.free()
 	_info_dialog = null
 	_catalog_dialog = null
 
@@ -108,45 +108,21 @@ func _build_ui() -> void:
 	add_child(status_section)
 	var sc: VBoxContainer = status_section.get_meta("content")
 
-	var status_row := HBoxContainer.new()
-	sc.add_child(status_row)
-
-	_status_label = Label.new()
-	_status_label.text = "... starting"
-	_status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	status_row.add_child(_status_label)
-
-	_peer_label = Label.new()
-	_peer_label.text = "0 peers"
-	status_row.add_child(_peer_label)
+	# Server-status labels (listening/peer/runtime/LSP/activity) — own sub-panel.
+	# The dock routes server signals to it for label updates; it reads the server.
+	_status_panel = DockStatusPanel.new(_server)
+	sc.add_child(_status_panel)
 
 	# .mcp.json health panel — the shared missing/malformed/read-only warning sits
-	# here (prominent, right after the server status row); its tri-mode button lives
-	# in the footer (placement = orchestrator) but is driven by this panel (meaning).
+	# right after the server status row (prominent); its tri-mode button lives in
+	# the footer (placement = orchestrator) but is driven by this panel (meaning).
 	# Create the button now so the panel can bind it; the footer positions it below.
+	# The warning panel is hosted inside the status panel (between the status row and
+	# the runtime label) — placement is the status panel's, behavior stays here.
 	var mcp_json_btn := Button.new()
 	mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_mcp_json_panel = DockMcpJsonPanel.new(mcp_json_btn, Callable(self, "_toast"))
-	sc.add_child(_mcp_json_panel)
-
-	_runtime_label = Label.new()
-	_runtime_label.text = "Runtime: not running"
-	_runtime_label.add_theme_font_size_override("font_size", 13)
-	sc.add_child(_runtime_label)
-
-	# GDScript LSP endpoint the server discovers for this editor (best-effort;
-	# the server is authoritative for conflicts). See Fix 3, 41l-tertricies.
-	_lsp_label = Label.new()
-	_lsp_label.text = "LSP: —"
-	_lsp_label.add_theme_font_size_override("font_size", 12)
-	_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	sc.add_child(_lsp_label)
-
-	_activity_label = Label.new()
-	_activity_label.text = "Last activity: —"
-	_activity_label.add_theme_font_size_override("font_size", 12)
-	_activity_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	sc.add_child(_activity_label)
+	_status_panel.insert_warning_panel(_mcp_json_panel)
 
 	# Node.js availability — shared detection.
 	var node_check := NodejsCheck.check()
@@ -235,8 +211,11 @@ func _build_ui() -> void:
 # ---------------------------------------------------------------------------
 
 func _on_client_connected(peer_count: int) -> void:
-	_peer_label.text = "%d peer%s" % [peer_count, "" if peer_count == 1 else "s"]
-	_activity_label.text = "Last activity: client connected"
+	# Status labels live in the status panel; the dock keeps the toast + the
+	# fan-out to the other sub-panels (it knows which panel reacts to which event).
+	if _status_panel != null:
+		_status_panel.set_peer_count(peer_count)
+		_status_panel.set_activity("Last activity: client connected")
 	_toast("MCP client connected (%d peer%s)" % [
 		peer_count, "" if peer_count == 1 else "s"])
 	# A (re)connecting MCP server has just read GODOT_MCP_READ_ONLY from its env, so
@@ -252,8 +231,9 @@ func _on_client_connected(peer_count: int) -> void:
 
 
 func _on_client_disconnected(peer_count: int) -> void:
-	_peer_label.text = "%d peer%s" % [peer_count, "" if peer_count == 1 else "s"]
-	_activity_label.text = "Last activity: client disconnected"
+	if _status_panel != null:
+		_status_panel.set_peer_count(peer_count)
+		_status_panel.set_activity("Last activity: client disconnected")
 	if peer_count == 0:
 		_toast("MCP client disconnected")
 	if _unfocused_control != null:
@@ -261,93 +241,35 @@ func _on_client_disconnected(peer_count: int) -> void:
 
 
 func _on_command_received(method: String) -> void:
-	if _activity_label != null:
-		_activity_label.text = "Last activity: %s" % method
+	if _status_panel != null:
+		_status_panel.set_activity("Last activity: %s" % method)
+
+
+# LSP verdict signal — route to the status panel's LSP label (server-driven,
+# never stale). Separate handler so bind() can connect before _build_ui exists.
+func _on_lsp_status_changed() -> void:
+	if _status_panel != null:
+		_status_panel.refresh_lsp()
+
+
+# 1s runtime poll — route to the status panel's runtime label so it updates
+# during playtests (port discovery, playtest end) without server events.
+func _on_runtime_timer_timeout() -> void:
+	if _status_panel != null:
+		_status_panel.refresh_runtime()
 
 
 # ---------------------------------------------------------------------------
-# Status refresh
+# Status refresh — thin fan-out (the orchestrator decides what refreshes when)
 # ---------------------------------------------------------------------------
 
 func _refresh_status() -> void:
-	if _server == null or _status_label == null:
-		return
-	var port: int = _server.get_bound_port()
-	var port_str := str(port) if port > 0 else "6550"
-	if _server.is_listening():
-		_status_label.text = "Listening on 127.0.0.1:%s" % port_str
-	else:
-		_status_label.text = "Not listening"
-	var count: int = _server.get_authed_peer_count()
-	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
+	if _status_panel != null:
+		_status_panel.refresh()
 	if _mcp_json_panel != null:
 		_mcp_json_panel.sync_read_only_state()
-	_refresh_runtime_status()
-	_refresh_lsp_label()
 	if _unfocused_control != null:
 		_unfocused_control.refresh()
-
-
-func _refresh_runtime_status() -> void:
-	if _runtime_label == null:
-		return
-	if EditorInterface.is_playing_scene():
-		var rt_port := RegistryClient.get_runtime_port()
-		if rt_port > 0:
-			_runtime_label.text = "Runtime: listening on 127.0.0.1:%d" % rt_port
-			_runtime_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
-		else:
-			_runtime_label.text = "Runtime: game running, waiting for port..."
-			_runtime_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-	else:
-		_runtime_label.text = "Runtime: not running (start playtest with F5)"
-		_runtime_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-
-
-## LSP status indicator. The MCP server reports the authoritative verdict
-## (editor.set_lsp_status) — the editor can't read its own LSP bind status, and
-## in-engine cross-process liveness is unreliable on Windows, so the dock renders
-## what the server determined. Falls back to the configured (published) endpoint
-## until an MCP server connects.
-func _refresh_lsp_label() -> void:
-	if _lsp_label == null:
-		return
-	var st: Dictionary = {}
-	if _server != null and _server.has_method("get_reported_lsp_status"):
-		st = _server.get_reported_lsp_status()
-	if not st.is_empty() and st.has("state"):
-		var host := str(st.get("host", "127.0.0.1"))
-		var port := int(st.get("port", 6005))
-		match str(st.get("state", "")):
-			"active":
-				_lsp_label.text = "LSP: %s:%d · active" % [host, port]
-				_lsp_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
-				_lsp_label.tooltip_text = "This editor owns the GDScript LSP port (reported by the MCP server)."
-			"conflict":
-				_lsp_label.text = "LSP: %d ⚠ conflict — another editor owns this port" % port
-				_lsp_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-				_lsp_label.tooltip_text = (
-					"Another editor owns the machine-wide GDScript LSP port, so this editor's "
-					+ "LSP tools are unavailable. Give each editor a distinct --lsp-port + "
-					+ "GODOT_MCP_LSP_PORT. See docs/multi-instance.md.")
-			_:  # "unavailable" / unknown
-				_lsp_label.text = "LSP: %d ⚠ unavailable" % port
-				_lsp_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-				_lsp_label.tooltip_text = str(st.get("detail", "GDScript LSP not reachable."))
-		return
-	# No server has reported yet — show the configured (published) endpoint.
-	var ep := RegistryClient.get_lsp_endpoint()
-	if ep.is_empty():
-		_lsp_label.text = "LSP: —"
-		_lsp_label.tooltip_text = ""
-		_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-		return
-	_lsp_label.text = "LSP: %s:%d (editor setting · awaiting MCP server)" % [ep["host"], ep["port"]]
-	_lsp_label.add_theme_color_override("font_color", Color(0.6, 0.6, 0.6))
-	_lsp_label.tooltip_text = (
-		"Configured GDScript LSP port (the editor setting). If this editor was launched "
-		+ "with --lsp-port the actual port differs — Godot doesn't expose it to the plugin, "
-		+ "so the MCP server reports the real port (and owner/conflict status) on connect.")
 
 
 # ---------------------------------------------------------------------------
