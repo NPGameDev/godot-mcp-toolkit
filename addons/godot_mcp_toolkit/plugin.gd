@@ -7,11 +7,11 @@ const RegistryClient = _Hub.RegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/settings_registration.gd")
-const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extension_loader.gd")
 const CommandRegistrar := preload("res://addons/godot_mcp_toolkit/command_registrar.gd")
 const PlaytestWatcher := preload("res://addons/godot_mcp_toolkit/playtest_watcher.gd")
+const ToolMenu := preload("res://addons/godot_mcp_toolkit/tool_menu.gd")
 const DebugBridge := preload("res://addons/godot_mcp_toolkit/debug_bridge.gd")
 # Retained (not moved to the registrar): _exit_tree calls PlaytestCommands.clear_debug_bridge()
 # as the I12 teardown counterpart of its register(..., _debug_bridge) — a teardown op, not a
@@ -27,18 +27,7 @@ const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playt
 const RUNTIME_AUTOLOAD_NAME := "MCPRuntimeServer"
 const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 
-# Data-driven menu / command-palette registration.
-# "label" is the command-palette name (prefixed for discoverability);
-# "menu_label" is the short name shown inside the Tools > MCP Toolkit submenu.
-const _ACTIONS := [
-	{"label": "MCP Toolkit: Regenerate Token", "menu_label": "Regenerate Token", "key": "mcp/regenerate_token", "method": "_on_regen_token"},
-	{"label": "MCP Toolkit: Show Audit Log", "menu_label": "Show Audit Log", "key": "mcp/show_audit_log", "method": "_on_show_audit"},
-	{"label": "MCP Toolkit: Open Project Settings", "menu_label": "Open Project Settings", "key": "mcp/open_settings", "method": "_on_open_settings"},
-	{"label": "MCP Toolkit: Write .mcp.json", "menu_label": "Write .mcp.json", "key": "mcp/write_mcp_json", "method": "_on_write_mcp_json"},
-	{"label": "MCP Toolkit: Extension Catalog", "menu_label": "Extension Catalog...", "key": "mcp/extension_catalog", "method": "_on_extension_catalog"},
-]
-
-var _tool_submenu: PopupMenu = null
+var _tool_menu: ToolMenu = null
 
 var _server: Node = null
 var _export_plugin: EditorExportPlugin = null
@@ -116,7 +105,8 @@ func _enter_tree() -> void:
 	_dock.bind(_server, _Hub.Audit.get_log_path())
 	add_control_to_bottom_panel(_dock, "MCP Toolkit")
 
-	_register_menus()
+	_tool_menu = ToolMenu.new(self, _server, _dock)
+	_tool_menu.install()
 
 	# -- Per-user EditorSettings --
 	_register_editor_settings()
@@ -173,7 +163,9 @@ func _exit_tree() -> void:
 		_wizard = null
 
 	# Menus + command palette.
-	_unregister_menus()
+	if _tool_menu != null:
+		_tool_menu.uninstall()
+		_tool_menu = null
 
 	# Dock — remove from panel, then free() immediately (not queue_free())
 	# so its script preload chain is released before ObjectDB's exit-time
@@ -262,83 +254,6 @@ func _disable_plugin() -> void:
 		)
 		EditorInterface.get_base_control().add_child(dialog)
 		dialog.popup_centered()
-
-
-# -- Menu registration ---------------------------------------------------------
-
-
-func _register_menus() -> void:
-	# Tools > MCP Toolkit submenu.
-	_tool_submenu = PopupMenu.new()
-	_tool_submenu.name = "MCPToolkitMenu"
-	for i in _ACTIONS.size():
-		_tool_submenu.add_item(_ACTIONS[i]["menu_label"], i)
-	_tool_submenu.id_pressed.connect(_on_submenu_id_pressed)
-	add_tool_submenu_item("MCP Toolkit", _tool_submenu)
-	# -- Command Palette (4.0+; guard anyway for safety) --
-	if EditorInterface.has_method("get_command_palette"):
-		var palette = EditorInterface.call("get_command_palette")
-		if palette != null:
-			for action in _ACTIONS:
-				palette.add_command(
-					action["label"], action["key"],
-					Callable(self, action["method"]))
-
-
-func _unregister_menus() -> void:
-	# Command Palette.
-	if EditorInterface.has_method("get_command_palette"):
-		var palette = EditorInterface.call("get_command_palette")
-		if palette != null:
-			for action in _ACTIONS:
-				palette.remove_command(action["key"])
-	# Submenu.
-	remove_tool_menu_item("MCP Toolkit")
-	if _tool_submenu != null:
-		_tool_submenu.queue_free()
-		_tool_submenu = null
-
-
-# -- Submenu router ------------------------------------------------------------
-
-
-func _on_submenu_id_pressed(id: int) -> void:
-	if id >= 0 and id < _ACTIONS.size():
-		Callable(self, _ACTIONS[id]["method"]).call()
-
-
-# -- Menu handlers -------------------------------------------------------------
-
-
-func _on_regen_token() -> void:
-	if _server != null:
-		_server.regenerate_token()
-		print("[MCP] Token rotated")
-		var toaster = _Hub.EditorAccess.get_toaster()
-		if toaster != null:
-			toaster.push_toast("MCP token rotated", 0)
-
-
-func _on_show_audit() -> void:
-	if _dock != null:
-		_dock.show_audit_dialog()
-	else:
-		var global_path := ProjectSettings.globalize_path(_Hub.Audit.get_log_path())
-		OS.shell_open(global_path)
-
-
-func _on_open_settings() -> void:
-	SettingsNavigator.open_mcp_settings()
-
-
-func _on_write_mcp_json() -> void:
-	if _dock != null:
-		_dock.write_mcp_json()
-
-
-func _on_extension_catalog() -> void:
-	if _dock != null:
-		_dock.show_extension_catalog()
 
 
 # -- EditorSettings registration (per-user, not committed to VCS) -------------
