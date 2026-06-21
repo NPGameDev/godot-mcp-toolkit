@@ -30,6 +30,11 @@ var _runtime_label: Label = null
 var _lsp_label: Label = null
 var _read_only_panel: PanelContainer = null
 var _mcp_json_btn: Button = null
+# Cached read-only state — synced from .mcp.json on server (re)connect + startup,
+# NOT on the 1s timer: the server reads GODOT_MCP_READ_ONLY from process.env once
+# at its launch and never re-checks, so a live poll would claim read-only is active
+# before the server applies it (a client→server relaunch is what takes effect).
+var _read_only_active: bool = false
 
 # Unfocused-responsive mode — 3-state indicator + inline opt-in toggle.
 var _unfocused_check: CheckBox = null
@@ -73,11 +78,15 @@ func _ready() -> void:
 	# bind() runs before _ready (node not yet in tree), so its refresh
 	# calls exit early on null widgets. Re-run now that UI exists.
 	_refresh_status()
-	# Lightweight timer so runtime label updates during playtests without
-	# requiring server events (e.g. port discovery, playtest end).
+	# Lightweight timer so the runtime label updates during playtests without
+	# requiring server events (e.g. port discovery, playtest end). It also keeps the
+	# .mcp.json BUTTON honest about file presence (Write vs Open) — a cheap
+	# file_exists, never misleading. It deliberately does NOT refresh the read-only
+	# state: that is server-synced (see _on_client_connected), never polled.
 	_runtime_timer = Timer.new()
 	_runtime_timer.wait_time = 1.0
 	_runtime_timer.timeout.connect(_refresh_runtime_status)
+	_runtime_timer.timeout.connect(_refresh_mcp_json_button)
 	add_child(_runtime_timer)
 	_runtime_timer.start()
 
@@ -415,9 +424,12 @@ func _build_ui() -> void:
 	footer_row.add_child(extensions_btn)
 
 	_mcp_json_btn = Button.new()
+	# Label/tooltip/colour are owned by _refresh_mcp_json_button() (driven by the
+	# first _refresh_status() + the 1s timer); this initial text is just a
+	# pre-refresh placeholder.
 	_mcp_json_btn.text = "Open .mcp.json"
 	_mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor"
-	_mcp_json_btn.pressed.connect(_open_mcp_json)
+	_mcp_json_btn.pressed.connect(_on_mcp_json_btn_pressed)
 	_mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(_mcp_json_btn)
 
@@ -438,6 +450,9 @@ func _on_client_connected(peer_count: int) -> void:
 	_activity_label.text = "Last activity: client connected"
 	_toast("MCP client connected (%d peer%s)" % [
 		peer_count, "" if peer_count == 1 else "s"])
+	# A (re)connecting MCP server has just read GODOT_MCP_READ_ONLY from its env, so
+	# this is exactly when read-only takes effect — sync the badge to match it.
+	_refresh_read_only_state()
 	_refresh_unfocused_indicator()
 
 
@@ -469,20 +484,45 @@ func _refresh_status() -> void:
 		_status_label.text = "Not listening"
 	var count: int = _server.get_authed_peer_count()
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
-	# One .mcp.json parse per refresh — both the panel and the button share it.
-	var read_only := McpJsonSync.is_read_only()
-	if _read_only_panel != null:
-		_read_only_panel.visible = read_only
-	if _mcp_json_btn != null:
-		if read_only:
-			_mcp_json_btn.text = "Open .mcp.json \u26a0"
-			_mcp_json_btn.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-		else:
-			_mcp_json_btn.text = "Open .mcp.json"
-			_mcp_json_btn.remove_theme_color_override("font_color")
+	_refresh_read_only_state()
 	_refresh_runtime_status()
 	_refresh_lsp_label()
 	_refresh_unfocused_indicator()
+
+
+## Sync the read-only state from .mcp.json: cache it in _read_only_active, show/hide
+## the warning panel, then refresh the button (its ⚠ depends on this). Called on
+## startup, on server (re)connect, and after a dock write — NEVER on the 1s timer:
+## read-only takes effect server-side only when the MCP client relaunches the server
+## (it reads GODOT_MCP_READ_ONLY from process.env once at startup), so polling would
+## falsely show read-only before the server actually applies it.
+func _refresh_read_only_state() -> void:
+	_read_only_active = McpJsonSync.has_mcp_json() and McpJsonSync.is_read_only()
+	if _read_only_panel != null:
+		_read_only_panel.visible = _read_only_active
+	_refresh_mcp_json_button()
+
+
+## Refresh the dual-mode footer button from LIVE file presence (Write when missing,
+## Open when present) plus the last-synced read-only state (the ⚠). Presence is a
+## cheap file_exists — safe to poll on the 1s timer and never misleading; the ⚠ uses
+## the cached _read_only_active (server-synced), not a live read-only poll. The
+## button's action re-checks has_mcp_json() on press, so it is never wrong.
+func _refresh_mcp_json_button() -> void:
+	if _mcp_json_btn == null:
+		return
+	if not McpJsonSync.has_mcp_json():
+		_mcp_json_btn.text = "Write .mcp.json"
+		_mcp_json_btn.tooltip_text = "No .mcp.json found — write one from the bundled template"
+		_mcp_json_btn.remove_theme_color_override("font_color")
+	elif _read_only_active:
+		_mcp_json_btn.text = "Open .mcp.json ⚠"
+		_mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor (read-only mode active)"
+		_mcp_json_btn.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+	else:
+		_mcp_json_btn.text = "Open .mcp.json"
+		_mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor"
+		_mcp_json_btn.remove_theme_color_override("font_color")
 
 
 func _refresh_runtime_status() -> void:
@@ -621,9 +661,14 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 
 # Result sink for McpJsonSync.write_from_template — maps the repository's
 # (ok, message, severity, tooltip) report straight onto a toast. `severity`
-# already matches the _TOAST_* scale (0 info / 1 warning / 2 error).
-func _on_mcp_json_write_result(_ok: bool, message: String, severity: int, tooltip: String) -> void:
+# already matches the _TOAST_* scale (0 info / 1 warning / 2 error). On success
+# (e.g. a dock write of a missing file), re-sync the read-only + button state now
+# so the dual-mode button flips "Write" -> "Open" immediately rather than on the
+# next timer tick.
+func _on_mcp_json_write_result(ok: bool, message: String, severity: int, tooltip: String) -> void:
 	_toast(message, severity, tooltip)
+	if ok:
+		_refresh_read_only_state()
 
 
 # ---------------------------------------------------------------------------
@@ -708,12 +753,17 @@ func _refresh_unfocused_indicator() -> void:
 # .mcp.json
 # ---------------------------------------------------------------------------
 
-func _open_mcp_json() -> void:
-	var path := McpJsonSync.get_mcp_json_path()
-	if FileAccess.file_exists(path):
-		OS.shell_open(path)
+# Dual-mode footer button: opens .mcp.json when it exists, writes it from the
+# bundled template when it doesn't. Intended behaviour change (user-requested):
+# a missing file is now one click to create from the dock rather than a toast
+# redirecting to the Tools menu. write_mcp_json() handles the missing case as a
+# direct write (no overwrite-confirm), and its result toast / refresh flips the
+# button label from "Write" back to "Open".
+func _on_mcp_json_btn_pressed() -> void:
+	if McpJsonSync.has_mcp_json():
+		OS.shell_open(McpJsonSync.get_mcp_json_path())
 	else:
-		_toast("No .mcp.json found — use Write .mcp.json from the Tools menu", _TOAST_WARNING)
+		write_mcp_json()
 
 
 # ---------------------------------------------------------------------------
