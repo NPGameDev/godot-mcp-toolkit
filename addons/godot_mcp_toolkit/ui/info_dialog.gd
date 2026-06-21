@@ -114,7 +114,10 @@ func show_info(server: Node) -> void:
 		+ "the toolkit to read-only tools only. All mutating tools\n"
 		+ "(create, delete, write, execute) are hidden from the AI agent.\n"
 		+ "Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect the\n"
-		+ "MCP client to restore full access.")
+		+ "MCP client to restore full access.\n"
+		+ "Read-only is applied when the MCP server launches, so changing\n"
+		+ "it requires reconnecting the MCP client — existing connections\n"
+		+ "keep their current setting until then.")
 	readonly_note.add_theme_font_size_override("font_size", 11)
 	readonly_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	vbox.add_child(readonly_note)

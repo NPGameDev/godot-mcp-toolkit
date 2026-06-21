@@ -28,7 +28,12 @@ var _peer_label: Label = null
 var _activity_label: Label = null
 var _runtime_label: Label = null
 var _lsp_label: Label = null
-var _read_only_panel: PanelContainer = null
+# Shared warning panel for the two "something needs attention" .mcp.json states:
+# missing file (live FACT) OR read-only mode (server-synced). Its label text is
+# set per-state by _refresh_mcp_json_indicators(); the panel/label are built once
+# in _build_ui (style fixed there).
+var _warning_panel: PanelContainer = null
+var _warning_label: Label = null
 var _mcp_json_btn: Button = null
 # Cached read-only state — synced from .mcp.json on server (re)connect + startup,
 # NOT on the 1s timer: the server reads GODOT_MCP_READ_ONLY from process.env once
@@ -80,13 +85,14 @@ func _ready() -> void:
 	_refresh_status()
 	# Lightweight timer so the runtime label updates during playtests without
 	# requiring server events (e.g. port discovery, playtest end). It also keeps the
-	# .mcp.json BUTTON honest about file presence (Write vs Open) — a cheap
-	# file_exists, never misleading. It deliberately does NOT refresh the read-only
-	# state: that is server-synced (see _on_client_connected), never polled.
+	# .mcp.json BUTTON + warning panel honest about file presence (Write vs Open,
+	# missing-warning) — a cheap file_exists, never misleading. It deliberately does
+	# NOT refresh the read-only state: that is server-synced (see _on_client_connected),
+	# never polled.
 	_runtime_timer = Timer.new()
 	_runtime_timer.wait_time = 1.0
 	_runtime_timer.timeout.connect(_refresh_runtime_status)
-	_runtime_timer.timeout.connect(_refresh_mcp_json_button)
+	_runtime_timer.timeout.connect(_refresh_mcp_json_indicators)
 	add_child(_runtime_timer)
 	_runtime_timer.start()
 
@@ -207,30 +213,30 @@ func _build_ui() -> void:
 	_peer_label.text = "0 peers"
 	status_row.add_child(_peer_label)
 
-	# Read-only warning — prominent, right after the server status row.
-	_read_only_panel = PanelContainer.new()
-	var ro_sb := StyleBoxFlat.new()
-	ro_sb.bg_color = Color(0.35, 0.22, 0.0)
-	ro_sb.corner_radius_top_left = 4
-	ro_sb.corner_radius_top_right = 4
-	ro_sb.corner_radius_bottom_left = 4
-	ro_sb.corner_radius_bottom_right = 4
-	ro_sb.content_margin_left = 8
-	ro_sb.content_margin_right = 8
-	ro_sb.content_margin_top = 6
-	ro_sb.content_margin_bottom = 6
-	_read_only_panel.add_theme_stylebox_override("panel", ro_sb)
-	_read_only_panel.visible = McpJsonSync.is_read_only()
+	# Shared missing/read-only warning — prominent, right after the server status
+	# row. Text + visibility are owned by _refresh_mcp_json_indicators() (driven by
+	# the first _refresh_status() + the 1s timer); built hidden + empty here.
+	_warning_panel = PanelContainer.new()
+	var warn_sb := StyleBoxFlat.new()
+	warn_sb.bg_color = Color(0.35, 0.22, 0.0)
+	warn_sb.corner_radius_top_left = 4
+	warn_sb.corner_radius_top_right = 4
+	warn_sb.corner_radius_bottom_left = 4
+	warn_sb.corner_radius_bottom_right = 4
+	warn_sb.content_margin_left = 8
+	warn_sb.content_margin_right = 8
+	warn_sb.content_margin_top = 6
+	warn_sb.content_margin_bottom = 6
+	_warning_panel.add_theme_stylebox_override("panel", warn_sb)
+	_warning_panel.visible = false
 
-	var ro_label := Label.new()
-	ro_label.text = (
-		"\u26a0\ufe0f READ-ONLY MODE \u2014 mutating tools are hidden. "
-		+ "Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect the MCP client to restore full access.")
-	ro_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	ro_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
-	ro_label.add_theme_font_size_override("font_size", 12)
-	_read_only_panel.add_child(ro_label)
-	sc.add_child(_read_only_panel)
+	_warning_label = Label.new()
+	_warning_label.text = ""
+	_warning_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_warning_label.add_theme_color_override("font_color", Color(1.0, 0.85, 0.3))
+	_warning_label.add_theme_font_size_override("font_size", 12)
+	_warning_panel.add_child(_warning_label)
+	sc.add_child(_warning_panel)
 
 	_runtime_label = Label.new()
 	_runtime_label.text = "Runtime: not running"
@@ -424,7 +430,7 @@ func _build_ui() -> void:
 	footer_row.add_child(extensions_btn)
 
 	_mcp_json_btn = Button.new()
-	# Label/tooltip/colour are owned by _refresh_mcp_json_button() (driven by the
+	# Label/tooltip/colour are owned by _refresh_mcp_json_indicators() (driven by the
 	# first _refresh_status() + the 1s timer); this initial text is just a
 	# pre-refresh placeholder.
 	_mcp_json_btn.text = "Open .mcp.json"
@@ -452,6 +458,10 @@ func _on_client_connected(peer_count: int) -> void:
 		peer_count, "" if peer_count == 1 else "s"])
 	# A (re)connecting MCP server has just read GODOT_MCP_READ_ONLY from its env, so
 	# this is exactly when read-only takes effect — sync the badge to match it.
+	# Caveat: an already-connected server keeps its launch-time read-only and does
+	# NOT switch on a later .mcp.json edit (the server reads the env once at launch).
+	# The badge reflects the latest connect's .mcp.json; older still-running servers
+	# (multi-client) won't switch until they themselves reconnect.
 	_refresh_read_only_state()
 	_refresh_unfocused_indicator()
 
@@ -490,39 +500,55 @@ func _refresh_status() -> void:
 	_refresh_unfocused_indicator()
 
 
-## Sync the read-only state from .mcp.json: cache it in _read_only_active, show/hide
-## the warning panel, then refresh the button (its ⚠ depends on this). Called on
-## startup, on server (re)connect, and after a dock write — NEVER on the 1s timer:
-## read-only takes effect server-side only when the MCP client relaunches the server
-## (it reads GODOT_MCP_READ_ONLY from process.env once at startup), so polling would
-## falsely show read-only before the server actually applies it.
+## Sync the read-only state from .mcp.json: cache it in _read_only_active, then
+## refresh the indicators (the shared warning panel + the dual-mode button, whose
+## ⚠ depends on this). Called on startup, on server (re)connect, and after a dock
+## write — NEVER on the 1s timer: read-only takes effect server-side only when the
+## MCP client relaunches the server (it reads GODOT_MCP_READ_ONLY from process.env
+## once at startup), so polling would falsely show read-only before the server
+## actually applies it. (The panel's visibility is owned by
+## _refresh_mcp_json_indicators, which this calls — this method only caches state.)
 func _refresh_read_only_state() -> void:
 	_read_only_active = McpJsonSync.has_mcp_json() and McpJsonSync.is_read_only()
-	if _read_only_panel != null:
-		_read_only_panel.visible = _read_only_active
-	_refresh_mcp_json_button()
+	_refresh_mcp_json_indicators()
 
 
-## Refresh the dual-mode footer button from LIVE file presence (Write when missing,
-## Open when present) plus the last-synced read-only state (the ⚠). Presence is a
-## cheap file_exists — safe to poll on the 1s timer and never misleading; the ⚠ uses
-## the cached _read_only_active (server-synced), not a live read-only poll. The
-## button's action re-checks has_mcp_json() on press, so it is never wrong.
-func _refresh_mcp_json_button() -> void:
-	if _mcp_json_btn == null:
-		return
-	if not McpJsonSync.has_mcp_json():
-		_mcp_json_btn.text = "Write .mcp.json"
-		_mcp_json_btn.tooltip_text = "No .mcp.json found — write one from the bundled template"
-		_mcp_json_btn.remove_theme_color_override("font_color")
-	elif _read_only_active:
-		_mcp_json_btn.text = "Open .mcp.json ⚠"
-		_mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor (read-only mode active)"
-		_mcp_json_btn.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
-	else:
-		_mcp_json_btn.text = "Open .mcp.json"
-		_mcp_json_btn.tooltip_text = "Open .mcp.json in the system editor"
-		_mcp_json_btn.remove_theme_color_override("font_color")
+## Refresh BOTH the shared warning panel AND the dual-mode footer button from one
+## computed state (DRY) — three cases: missing .mcp.json, read-only, or normal.
+##   * MISSING is a LIVE file FACT (cheap file_exists) — safe to poll on the 1s
+##     timer and never misleading: panel warns + button says "Write" + amber.
+##   * READ-ONLY uses the cached _read_only_active (server-synced, NOT a live
+##     read-only poll): panel warns + button says "Open ⚠" + amber.
+##   * NORMAL: panel hidden + button "Open" + neutral.
+## The button's action re-checks has_mcp_json() on press, so it is never wrong.
+func _refresh_mcp_json_indicators() -> void:
+	var warn_text := ""
+	var btn_text := "Open .mcp.json"
+	var btn_tip := "Open .mcp.json in the system editor"
+	var highlight := false
+	if not McpJsonSync.has_mcp_json():  # live file FACT — safe to show live
+		warn_text = "⚠️ NO .mcp.json — the MCP client has nothing to connect with. Use the \"Write .mcp.json\" button below to create one from the bundled template."
+		btn_text = "Write .mcp.json"
+		btn_tip = "No .mcp.json found — write one from the bundled template"
+		highlight = true
+	elif _read_only_active:  # cached, server-synced (NOT a live read-only poll)
+		warn_text = "⚠️ READ-ONLY MODE — mutating tools are hidden. Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect the MCP client to restore full access."
+		btn_text = "Open .mcp.json ⚠"
+		btn_tip = "Open .mcp.json in the system editor (read-only mode active)"
+		highlight = true
+	# Warning panel (shared by both states).
+	if _warning_panel != null:
+		_warning_panel.visible = not warn_text.is_empty()
+		if not warn_text.is_empty() and _warning_label != null:
+			_warning_label.text = warn_text
+	# Dual-mode button (shared amber highlight).
+	if _mcp_json_btn != null:
+		_mcp_json_btn.text = btn_text
+		_mcp_json_btn.tooltip_text = btn_tip
+		if highlight:
+			_mcp_json_btn.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
+		else:
+			_mcp_json_btn.remove_theme_color_override("font_color")
 
 
 func _refresh_runtime_status() -> void:
