@@ -19,6 +19,7 @@ const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog.gd")
 const ExtensionSupport := preload("res://addons/godot_mcp_toolkit/extension_support.gd")
 const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extension_meta_commands.gd")
+const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extension_watcher.gd")
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
@@ -57,6 +58,7 @@ func _init() -> void:
 	_test_extension_collision_guard()
 	_test_extension_support()
 	_test_build_command_entry()
+	_test_compute_class_diff()
 	_test_options_builder()
 	_test_extension_options()
 	_test_annotation_mapping()
@@ -929,6 +931,65 @@ func _test_build_command_entry() -> void:
 	var unknown := ExtensionMetaCommands.build_command_entry(registry, "ext.unknown")
 	_eq(unknown.size(), 1, "unknown method → entry holds only the method seed")
 	_eq(unknown.get("method", ""), "ext.unknown", "unknown method → method seed present")
+
+	print("")
+
+
+# --- Watcher set-diff kernel (concern 047 C5) -----------------------------
+# compute_class_diff is the pure heart of the watcher's hot-reload rescan,
+# extracted so the add/remove/retry classification is testable without an editor
+# or real extension files. It takes the freshly-scanned class set plus the
+# watcher's known + previously-failed dicts and returns {added, removed, retry}.
+# The load-bearing edge: `retry` is computed AGAINST `added` — a previously-failed
+# class that is ALSO newly-added counts as added, not a retry (no double-load).
+
+func _test_compute_class_diff() -> void:
+	_begin("Watcher set-diff kernel (concern 047 C5)")
+
+	# A class only in `current` → added; carries its path.
+	var d1 := ExtensionWatcher.compute_class_diff(
+		{"NewExt": "res://new.gd"}, {}, {})
+	_ok(d1["added"].has("NewExt"), "class only in current → added")
+	_eq(d1["added"].get("NewExt", ""), "res://new.gd", "added carries the script path")
+	_ok(d1["removed"].is_empty(), "nothing known → removed empty")
+	_ok(d1["retry"].is_empty(), "nothing failed → retry empty")
+
+	# A class only in `known` → removed (by name); not added.
+	var d2 := ExtensionWatcher.compute_class_diff(
+		{}, {"GoneExt": "res://gone.gd"}, {})
+	_ok("GoneExt" in d2["removed"], "class only in known → removed")
+	_ok(d2["added"].is_empty(), "nothing current → added empty")
+
+	# A class in `failed` ∩ `current`, NOT newly-added (also in known) → retry.
+	var d3 := ExtensionWatcher.compute_class_diff(
+		{"FixedExt": "res://fixed.gd"},
+		{"FixedExt": "res://fixed.gd"},
+		{"FixedExt": true})
+	_ok(d3["retry"].has("FixedExt"), "failed ∩ current (known) → retry")
+	_eq(d3["retry"].get("FixedExt", ""), "res://fixed.gd", "retry carries the script path")
+	_ok(d3["added"].is_empty(), "already known → not added")
+	_ok(d3["removed"].is_empty(), "still present → not removed")
+
+	# A failed class that is ALSO newly-added (not in known) counts as added, not
+	# retry — `retry` excludes anything already in `added` (no double-load).
+	var d4 := ExtensionWatcher.compute_class_diff(
+		{"FlakyExt": "res://flaky.gd"}, {}, {"FlakyExt": true})
+	_ok(d4["added"].has("FlakyExt"), "failed + new → added")
+	_ok(d4["retry"].is_empty(), "failed + new → NOT retry (excluded by added)")
+
+	# An unchanged class (in both current and known, not failed) → in none.
+	var d5 := ExtensionWatcher.compute_class_diff(
+		{"StableExt": "res://stable.gd"},
+		{"StableExt": "res://stable.gd"},
+		{})
+	_ok(d5["added"].is_empty(), "unchanged → not added")
+	_ok(d5["removed"].is_empty(), "unchanged → not removed")
+	_ok(d5["retry"].is_empty(), "unchanged → not retried")
+
+	# Empty inputs → empty delta on every axis.
+	var d6 := ExtensionWatcher.compute_class_diff({}, {}, {})
+	_ok(d6["added"].is_empty() and d6["removed"].is_empty() and d6["retry"].is_empty(),
+			"empty inputs → empty delta")
 
 	print("")
 

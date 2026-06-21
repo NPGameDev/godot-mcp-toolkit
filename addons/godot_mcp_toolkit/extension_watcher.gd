@@ -206,8 +206,39 @@ func _schedule_rescan() -> void:
 	_server.get_tree().create_timer(0.5).timeout.connect(_do_rescan)
 
 
-func _do_rescan() -> void:
-	_debounce_pending = false
+## Pure set-diff kernel: classify the freshly-scanned class set against the
+## watcher's known + previously-failed state, with no script loads and no global
+## state — every input is passed in, so it is headless-unit-testable. Returns
+## {"added": Dictionary, "removed": Array[String], "retry": Dictionary}:
+##   added   = classes in `current` not in `known`           (class_name -> path)
+##   removed = classes in `known` not in `current`           (class_name list)
+##   retry   = previously-failed classes now present and NOT newly-added.
+## `retry` is computed against `added`, so `added` is built first below.
+static func compute_class_diff(current: Dictionary, known: Dictionary, failed: Dictionary) -> Dictionary:
+	var added: Dictionary = {}     # class_name -> path
+	var removed: Array[String] = []
+	for cn: String in current:
+		if cn not in known:
+			added[cn] = current[cn]
+	for cn: String in known:
+		if cn not in current:
+			removed.append(cn)
+
+	# Retry previously-failed classes (script was fixed since last scan).
+	var retry: Dictionary = {}
+	for cn: String in failed:
+		if cn in current and cn not in added:
+			retry[cn] = current[cn]
+
+	return {"added": added, "removed": removed, "retry": retry}
+
+
+## Compute-phase: scan the live class list and classify it against known state,
+## WITHOUT mutating the registry or the watcher's tracking dicts (the one
+## exception is _pending_restart_modifies, the 4.2 restart-nudge ledger, which is
+## a probe artifact, not registry state). Returns a delta dict carrying
+## everything _apply_delta needs: {current, added, removed, retry, modified}.
+func _compute_delta() -> Dictionary:
 	var current: Dictionary = {}
 	var classes: Array = ProjectSettings.get_global_class_list()
 	for entry in classes:
@@ -217,21 +248,11 @@ func _do_rescan() -> void:
 			continue
 		current[entry.get("class", "")] = entry.get("path", "")
 
-	# Diff against known state.
-	var added_classes: Dictionary = {}     # class_name -> path
-	var removed_classes: Array[String] = []
-	for cn: String in current:
-		if cn not in _known_extensions:
-			added_classes[cn] = current[cn]
-	for cn: String in _known_extensions:
-		if cn not in current:
-			removed_classes.append(cn)
-
-	# Retry previously-failed classes (script was fixed since last scan).
-	var retry_classes: Dictionary = {}
-	for cn: String in _failed_classes:
-		if cn in current and cn not in added_classes:
-			retry_classes[cn] = current[cn]
+	# Pure add/remove/retry diff against known state.
+	var diff := compute_class_diff(current, _known_extensions, _failed_classes)
+	var added_classes: Dictionary = diff["added"]
+	var removed_classes: Array[String] = diff["removed"]
+	var retry_classes: Dictionary = diff["retry"]
 
 	# Detect content changes in existing extensions (tools added/removed/modified
 	# within the same class). Re-probe each known class and compare method lists
@@ -267,9 +288,24 @@ func _do_rescan() -> void:
 				# Fingerprint matches the loaded version again (e.g. the edit was reverted).
 				_pending_restart_modifies.erase(cn)
 
-	if added_classes.is_empty() and removed_classes.is_empty() \
-			and retry_classes.is_empty() and modified_classes.is_empty():
-		return
+	return {
+		"current": current,
+		"added": added_classes,
+		"removed": removed_classes,
+		"retry": retry_classes,
+		"modified": modified_classes,
+	}
+
+
+## Apply-phase: mutate the live registry + watcher tracking dicts to match the
+## computed delta — unregister removed/modified methods, (re)load added/retry/
+## modified classes, adopt the new known set, then broadcast + log the change.
+func _apply_delta(delta: Dictionary) -> void:
+	var current: Dictionary = delta["current"]
+	var added_classes: Dictionary = delta["added"]
+	var removed_classes: Array[String] = delta["removed"]
+	var retry_classes: Dictionary = delta["retry"]
+	var modified_classes: Dictionary = delta["modified"]
 
 	# Collect removed method names before modifying state.
 	var removed_methods: Array[String] = []
@@ -343,6 +379,17 @@ func _do_rescan() -> void:
 			parts.append("-%d" % removed_classes.size())
 		if not parts.is_empty():
 			print("[MCPExtensions] Hot-reload: %s class(es) changed" % " ".join(parts))
+
+
+func _do_rescan() -> void:
+	_debounce_pending = false
+	var delta := _compute_delta()
+	# Nothing changed — skip the apply phase entirely (no registry mutation, no
+	# broadcast). Mirrors the pre-split early return.
+	if delta["added"].is_empty() and delta["removed"].is_empty() \
+			and delta["retry"].is_empty() and delta["modified"].is_empty():
+		return
+	_apply_delta(delta)
 
 
 func _load_extension_tracked(class_name_str: String, script_path: String) -> void:
