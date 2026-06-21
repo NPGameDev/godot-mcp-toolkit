@@ -15,6 +15,7 @@ const AuditLogDialog := preload("res://addons/godot_mcp_toolkit/ui/audit_log_dia
 const InfoDialog := preload("res://addons/godot_mcp_toolkit/ui/info_dialog.gd")
 const DockConfirm := preload("res://addons/godot_mcp_toolkit/ui/dock_confirm.gd")
 const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock_section_card.gd")
+const DockLimitsSection := preload("res://addons/godot_mcp_toolkit/ui/dock_limits_section.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -49,11 +50,6 @@ var _unfocused_state_label: Label = null
 
 # Node.js warning.
 var _nodejs_status_warning: Label = null
-
-# Settings widgets.
-var _script_cap_spinbox: SpinBox = null
-var _save_cap_spinbox: SpinBox = null
-var _ws_buffer_spinbox: SpinBox = null
 
 # Info/Help dialog (populated on demand).
 var _info_dialog: InfoDialog = null
@@ -273,60 +269,9 @@ func _build_ui() -> void:
 
 	# -- Security & Response Limits section (collapsed by default) ------------
 	var lc := DockSectionCard.make_collapsible(sections_vbox, "Security & Response Limits", false)
-
-	var regen_btn := Button.new()
-	regen_btn.text = "Regenerate Token"
-	regen_btn.pressed.connect(_on_regen_token)
-	lc.add_child(regen_btn)
-
-	var limits_row := HBoxContainer.new()
-	lc.add_child(limits_row)
-	var cap_label := Label.new()
-	cap_label.text = "Script cap:"
-	limits_row.add_child(cap_label)
-	_script_cap_spinbox = SpinBox.new()
-	_script_cap_spinbox.min_value = 64
-	_script_cap_spinbox.max_value = 4096
-	_script_cap_spinbox.step = 64
-	_script_cap_spinbox.suffix = "KB"
-	_script_cap_spinbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_script_cap_spinbox.value = ProjectSettings.get_setting(
-		"mcp_toolkit/limits/script_read_cap_kb", 256)
-	_script_cap_spinbox.value_changed.connect(_on_script_cap_changed)
-	limits_row.add_child(_script_cap_spinbox)
-	var save_cap_label := Label.new()
-	save_cap_label.text = "Save cap:"
-	limits_row.add_child(save_cap_label)
-	_save_cap_spinbox = SpinBox.new()
-	_save_cap_spinbox.min_value = 64
-	_save_cap_spinbox.max_value = 4096
-	_save_cap_spinbox.step = 64
-	_save_cap_spinbox.suffix = "KB"
-	_save_cap_spinbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_save_cap_spinbox.value = ProjectSettings.get_setting(
-		"mcp_toolkit/limits/save_read_cap_kb", 256)
-	_save_cap_spinbox.value_changed.connect(_on_save_cap_changed)
-	limits_row.add_child(_save_cap_spinbox)
-	var ws_label := Label.new()
-	ws_label.text = "WS buffer:"
-	limits_row.add_child(ws_label)
-	_ws_buffer_spinbox = SpinBox.new()
-	_ws_buffer_spinbox.min_value = 256
-	_ws_buffer_spinbox.max_value = 8192
-	_ws_buffer_spinbox.step = 256
-	_ws_buffer_spinbox.suffix = "KB"
-	_ws_buffer_spinbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_ws_buffer_spinbox.value = ProjectSettings.get_setting(
-		"mcp_toolkit/limits/ws_buffer_kb", 1024)
-	_ws_buffer_spinbox.value_changed.connect(_on_ws_buffer_changed)
-	limits_row.add_child(_ws_buffer_spinbox)
-
-	var limits_note := Label.new()
-	limits_note.text = "These may be overridden by env vars in .mcp.json on connect."
-	limits_note.add_theme_font_size_override("font_size", 11)
-	limits_note.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
-	limits_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	lc.add_child(limits_note)
+	var limits_section := DockLimitsSection.new()
+	limits_section.regenerate_token_requested.connect(_on_regen_token)
+	lc.add_child(limits_section)
 
 	# == Footer (pinned at bottom) ============================================
 	var footer := PanelContainer.new()
@@ -621,24 +566,6 @@ func _on_mcp_json_write_result(ok: bool, message: String, severity: int, tooltip
 # ---------------------------------------------------------------------------
 # Settings handlers
 # ---------------------------------------------------------------------------
-
-func _on_script_cap_changed(value: float) -> void:
-	var clamped := maxi(64, int(value))
-	ProjectSettings.set_setting("mcp_toolkit/limits/script_read_cap_kb", clamped)
-	ProjectSettings.save()
-
-
-func _on_save_cap_changed(value: float) -> void:
-	var clamped := maxi(64, int(value))
-	ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb", clamped)
-	ProjectSettings.save()
-
-
-func _on_ws_buffer_changed(value: float) -> void:
-	var clamped := maxi(256, int(value))
-	ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb", clamped)
-	ProjectSettings.save()
-
 
 func _on_audit_enabled_toggled(enabled: bool) -> void:
 	ProjectSettings.set_setting("mcp_toolkit/audit/enabled", enabled)
