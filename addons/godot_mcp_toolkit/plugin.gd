@@ -3,21 +3,10 @@ extends EditorPlugin
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const FileGuard = _Hub.FileGuard
-const RegistryClient = _Hub.RegistryClient
-const MCPServer := preload("res://addons/godot_mcp_toolkit/mcp_server.gd")
-const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/settings_registration.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
-const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extension_loader.gd")
-const CommandRegistrar := preload("res://addons/godot_mcp_toolkit/command_registrar.gd")
-const PlaytestWatcher := preload("res://addons/godot_mcp_toolkit/playtest_watcher.gd")
+const PluginComposer := preload("res://addons/godot_mcp_toolkit/plugin_composer.gd")
 const ToolMenu := preload("res://addons/godot_mcp_toolkit/tool_menu.gd")
-const DebugBridge := preload("res://addons/godot_mcp_toolkit/debug_bridge.gd")
-# Retained (not moved to the registrar): _exit_tree calls PlaytestCommands.clear_debug_bridge()
-# as the I12 teardown counterpart of its register(..., _debug_bridge) — a teardown op, not a
-# registration, so it stays with the debug-bridge teardown here. The registrar keeps its own
-# preload for the register call (preload is resource-idempotent).
-const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest_commands.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:6570. Registered/unregistered via add_autoload_singleton /
@@ -27,85 +16,30 @@ const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playt
 const RUNTIME_AUTOLOAD_NAME := "MCPRuntimeServer"
 const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 
-var _tool_menu: ToolMenu = null
+# The composed collaborator graph (server, dock, export plugin, watchers, debug
+# bridge, user-path monitor, playtest watcher). PluginComposer.compose() builds
+# it; the orchestrator drives it and calls _handle.dispose() on exit.
+var _handle = null
 
-var _server: Node = null
-var _export_plugin: EditorExportPlugin = null
-var _dock: Control = null
+var _tool_menu: ToolMenu = null
 var _wizard: OnboardingWizard = null
-var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
-var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
-var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
-var _playtest_watcher: PlaytestWatcher = null  # Edge-detects the play→stop transition
 
 
 func _enter_tree() -> void:
+	# Lifecycle phase sequence. The "why this order" narrative lives here; the
+	# composer owns the internal construction order of the graph it builds.
 	_Hub.EditorAccess.set_plugin(self)
 	SettingsRegistration.register_all()
 
-	var registry := MCPToolkitCommandRegistry.new()
-	_server = MCPServer.new()
-	_server.name = "MCPServer"
-	_server.set_registry(registry)
-	_server.editor_plugin = self
+	# Construct + wire the whole collaborator graph (registry, server, debug
+	# bridge, command registrar, extensions, export plugin, log buffer, user-path
+	# monitor, registry registration, playtest watcher, dock) and register in the
+	# system-wide registry.
+	_handle = PluginComposer.compose(self, _on_user_path_changed)
 
-	# Debugger bridge — create early so command registrars can reference it.
-	_debug_bridge = DebugBridge.new()
-	add_debugger_plugin(_debug_bridge)
-
-	CommandRegistrar.register_all(registry, _server, _debug_bridge)
-
-	# Third-party extensions — profile-exempt, always loaded.
-	ExtensionLoader.load_all(registry, _server)
-	# Live hot-reload: watch EditorFileSystem for extension additions/removals.
-	_extension_watcher = ExtensionLoader.start_watcher(registry, _server)
-
-	_export_plugin = preload("res://addons/godot_mcp_toolkit/export_strip.gd").new()
-	add_export_plugin(_export_plugin)
-
-	_Hub.LogBuffer.setup()
-
-	# Monitor the ProjectSettings that shift user:// paths (config/name,
-	# use_custom_user_dir, custom_user_dir_name). Each consumer connects
-	# directly and handles its own recovery.
-	_user_path_monitor = _Hub.UserPathMonitor.new()
-	_user_path_monitor.start()
-	_user_path_monitor.user_path_changed.connect(_on_user_path_changed)
-
-	# Edge-detects the play→stop transition; polled each _process.
-	_playtest_watcher = PlaytestWatcher.new(_server)
-
-	add_child(_server)
-	_server.bind_user_path_monitor(_user_path_monitor)
-	# After a user-path change the server re-writes its token and announces the new
-	# path; we re-publish the registry entry runtime-preservingly (ensure_registered,
-	# not register) so a game running across the rename keeps Mode-B discovery.
-	_server.token_rewritten.connect(_on_token_rewritten)
-	_server.start()
-
-	# Register in the system-wide project registry so the TS bridge can
-	# discover us by project path. Must come after start() — port unknown
-	# until _scan_and_listen() runs.
-	var bound_port: int = _server.get_bound_port()
-	if bound_port > 0:
-		var lsp := MCPServer.resolve_lsp_endpoint()
-		RegistryClient.register(bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
-		# Deferred re-verify: concurrent editors may clobber our entry after
-		# our initial verify passes. Jittered delay ensures all editors have
-		# finished their initial registration before we re-check. Re-resolve the
-		# LSP endpoint at fire time so a mid-window Q4 change isn't reverted.
-		var _jitter := randf_range(5.0, 10.0)
-		get_tree().create_timer(_jitter).timeout.connect(
-			func():
-				var lsp_re := MCPServer.resolve_lsp_endpoint()
-				RegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path(), lsp_re["host"], lsp_re["port"]))
-
-	# -- Bottom-panel dock --
-	_dock = preload("res://addons/godot_mcp_toolkit/ui/dock.tscn").instantiate()
-	_dock.bind(_server, _Hub.Audit.get_log_path())
-	add_control_to_bottom_panel(_dock, "MCP Toolkit")
-
-	_tool_menu = ToolMenu.new(self, _server, _dock)
+	# Tools > MCP Toolkit submenu + command palette (needs the server + dock the
+	# composer just built).
+	_tool_menu = ToolMenu.new(self, _handle.server(), _handle.dock())
 	_tool_menu.install()
 
 	# -- Per-user EditorSettings --
@@ -119,7 +53,7 @@ func _enter_tree() -> void:
 			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues")
 			% [_engine_ver, _Hub.VersionUtils.GODOT_TESTED_MAX_VERSION])
 
-	_wizard = OnboardingWizard.new(self, _dock)
+	_wizard = OnboardingWizard.new(self, _handle.dock())
 	call_deferred("_check_onboarding")
 
 
@@ -128,7 +62,8 @@ func _check_onboarding() -> void:
 
 
 func _process(_delta: float) -> void:
-	_playtest_watcher.poll()
+	if _handle != null:
+		_handle.poll_playtest()
 
 
 func _on_user_path_changed() -> void:
@@ -139,24 +74,8 @@ func _on_user_path_changed() -> void:
 	_Hub.LogBuffer.reset_tail_path()
 
 
-# Re-publish this editor's registry entry after the server re-writes its token to
-# a new user:// path. ensure_registered (not register) so an active playtest's
-# runtime_port/runtime_pid are preserved — otherwise Mode-B (running-game)
-# discovery dies for the rest of the session. Re-resolve the LSP endpoint at fire
-# time, mirroring the startup registration, so a concurrent endpoint change isn't
-# reverted to a stale value.
-func _on_token_rewritten(token_path: String) -> void:
-	if _server == null:
-		return
-	var bound_port: int = _server.get_bound_port()
-	if bound_port <= 0:
-		return
-	var lsp := MCPServer.resolve_lsp_endpoint()
-	RegistryClient.ensure_registered(bound_port, token_path, lsp["host"], lsp["port"])
-
-
 func _exit_tree() -> void:
-	# Teardown symmetry — reverse order of _enter_tree registrations.
+	# Teardown symmetry — reverse order of _enter_tree's phases.
 	# Onboarding wizard (if still open).
 	if _wizard != null:
 		_wizard.free_if_open()
@@ -167,57 +86,11 @@ func _exit_tree() -> void:
 		_tool_menu.uninstall()
 		_tool_menu = null
 
-	# Dock — remove from panel, then free() immediately (not queue_free())
-	# so its script preload chain is released before ObjectDB's exit-time
-	# leak check runs.
-	if _dock != null:
-		remove_control_from_bottom_panel(_dock)
-		_dock.free()
-		_dock = null
-
-	# RefCounted subsystems — drop our references so they can be collected
-	# once the dock (which also holds them) is freed above.
-	if _user_path_monitor != null:
-		_user_path_monitor.stop()
-		_user_path_monitor = null
-
-	# Playtest watcher (RefCounted — just null) — drop before server teardown
-	# since it holds a server reference.
-	_playtest_watcher = null
-
-	# Extension watcher — disconnect global signals, then drop before server
-	# teardown (holds registry ref). Without explicit disconnect, the
-	# filesystem_changed / settings_changed handlers become zombie callbacks.
-	if _extension_watcher != null:
-		var efs := EditorInterface.get_resource_filesystem()
-		if efs.filesystem_changed.is_connected(_extension_watcher.on_filesystem_changed):
-			efs.filesystem_changed.disconnect(_extension_watcher.on_filesystem_changed)
-		if ProjectSettings.settings_changed.is_connected(_extension_watcher.on_settings_changed):
-			ProjectSettings.settings_changed.disconnect(_extension_watcher.on_settings_changed)
-	_extension_watcher = null
-
-	# Debugger bridge — unregister before server teardown (I12 symmetry).
-	PlaytestCommands.clear_debug_bridge()
-	if _debug_bridge != null:
-		_debug_bridge.cleanup()
-		remove_debugger_plugin(_debug_bridge)
-		_debug_bridge = null
-
-	# Export plugin (RefCounted — do NOT queue_free, just null).
-	if _export_plugin != null:
-		remove_export_plugin(_export_plugin)
-		_export_plugin = null
-
-	# Server + registry — clear command registry first to break the
-	# Callable → GDScript reference chains, then free() immediately.
-	# queue_free() alone causes "resources still in use at exit" because
-	# deferred deletion runs after ObjectDB's leak check.
-	if _server != null:
-		_server.stop()
-		_server.clear_registry()
-		RegistryClient.deregister()
-		_server.free()
-		_server = null
+	# Composed graph (dock, monitor, watchers, debug bridge, export plugin,
+	# server + registry) — disposed in reverse construction order.
+	if _handle != null:
+		_handle.dispose()
+		_handle = null
 
 	# Plugin reference — clear last (teardown symmetry with _enter_tree).
 	_Hub.EditorAccess.clear_plugin()
