@@ -11,12 +11,12 @@ const McpJsonSync = _Hub.McpJsonSync
 const RegistryClient = _Hub.RegistryClient
 const NodejsCheck = _Hub.NodejsCheck
 const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog_dialog.gd")
-const AuditLogDialog := preload("res://addons/godot_mcp_toolkit/ui/audit_log_dialog.gd")
 const InfoDialog := preload("res://addons/godot_mcp_toolkit/ui/info_dialog.gd")
 const DockConfirm := preload("res://addons/godot_mcp_toolkit/ui/dock_confirm.gd")
 const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock_section_card.gd")
 const DockLimitsSection := preload("res://addons/godot_mcp_toolkit/ui/dock_limits_section.gd")
 const DockUnfocusedControl := preload("res://addons/godot_mcp_toolkit/ui/dock_unfocused_control.gd")
+const DockAuditSection := preload("res://addons/godot_mcp_toolkit/ui/dock_audit_section.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -48,6 +48,9 @@ var _read_only_active: bool = false
 # Unfocused-responsive mode — opt-in toggle + 3-state indicator (own sub-panel).
 var _unfocused_control: DockUnfocusedControl = null
 
+# Audit Log section — settings + view/clear + the lazy log viewer (own sub-panel).
+var _audit_section: DockAuditSection = null
+
 # Node.js warning.
 var _nodejs_status_warning: Label = null
 
@@ -56,9 +59,6 @@ var _info_dialog: InfoDialog = null
 
 # Extension catalog dialog (populated on demand).
 var _catalog_dialog: Window = null
-
-# Audit log dialog (populated on demand).
-var _audit_dialog: AcceptDialog = null
 
 # Lightweight timer for runtime-status polling during playtests.
 var _runtime_timer: Timer = null
@@ -96,10 +96,11 @@ func _ready() -> void:
 
 
 func _exit_tree() -> void:
-	for dialog in [_audit_dialog, _info_dialog, _catalog_dialog]:
+	# The audit-log viewer is owned + freed by _audit_section (its own _exit_tree).
+	# These two dialogs are base-control children the dock owns directly.
+	for dialog in [_info_dialog, _catalog_dialog]:
 		if dialog != null and is_instance_valid(dialog):
 			dialog.queue_free()
-	_audit_dialog = null
 	_info_dialog = null
 	_catalog_dialog = null
 
@@ -210,47 +211,11 @@ func _build_ui() -> void:
 	add_child(sections_vbox)
 
 	# -- Audit Log section (collapsed by default) -----------------------------
+	# The panel owns the audit settings + view/clear buttons + the lazy log
+	# viewer; the dock injects its toast so the panel needs no toaster dependency.
 	var ac := DockSectionCard.make_collapsible(sections_vbox, "Audit Log", false)
-
-	var audit_settings_row := HBoxContainer.new()
-	ac.add_child(audit_settings_row)
-
-	var audit_enabled_check := CheckBox.new()
-	audit_enabled_check.text = "Enabled"
-	audit_enabled_check.button_pressed = ProjectSettings.get_setting(
-		"mcp_toolkit/audit/enabled", true)
-	audit_enabled_check.toggled.connect(_on_audit_enabled_toggled)
-	audit_settings_row.add_child(audit_enabled_check)
-
-	var audit_size_label := Label.new()
-	audit_size_label.text = "  Max KB:"
-	audit_size_label.add_theme_font_size_override("font_size", 11)
-	audit_settings_row.add_child(audit_size_label)
-
-	var audit_size_spin := SpinBox.new()
-	audit_size_spin.min_value = 0
-	audit_size_spin.max_value = 10240
-	audit_size_spin.step = 128
-	audit_size_spin.value = ProjectSettings.get_setting(
-		"mcp_toolkit/audit/max_size_kb", 1024)
-	audit_size_spin.tooltip_text = "0 = unlimited"
-	audit_size_spin.value_changed.connect(_on_audit_max_size_changed)
-	audit_settings_row.add_child(audit_size_spin)
-
-	var audit_btns := HBoxContainer.new()
-	ac.add_child(audit_btns)
-
-	var view_log_btn := Button.new()
-	view_log_btn.text = "View Audit Log"
-	view_log_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	view_log_btn.pressed.connect(show_audit_dialog)
-	audit_btns.add_child(view_log_btn)
-
-	var clear_log_btn := Button.new()
-	clear_log_btn.text = "Clear Audit Log"
-	clear_log_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	clear_log_btn.pressed.connect(_on_clear_audit_log)
-	audit_btns.add_child(clear_log_btn)
+	_audit_section = DockAuditSection.new(_audit_path, Callable(self, "_toast"))
+	ac.add_child(_audit_section)
 
 	# -- Security & Response Limits section (collapsed by default) ------------
 	var lc := DockSectionCard.make_collapsible(sections_vbox, "Security & Response Limits", false)
@@ -477,28 +442,11 @@ func _refresh_lsp_label() -> void:
 # Audit log popup
 # ---------------------------------------------------------------------------
 
+# Thin delegator — the audit dialog now lives in _audit_section. Kept public so
+# the Tools menu (tool_menu.gd) can still open the log via the dock.
 func show_audit_dialog() -> void:
-	if _audit_dialog == null or not is_instance_valid(_audit_dialog):
-		_audit_dialog = AuditLogDialog.new()
-		EditorInterface.get_base_control().add_child(_audit_dialog)
-	_audit_dialog.show_log(_audit_path)
-
-
-func _on_clear_audit_log() -> void:
-	DockConfirm.confirm(
-		"Clear Audit Log?",
-		"This will permanently delete all audit log entries.",
-		"Clear",
-		func() -> void:
-			var path := _audit_path
-			if path.is_empty():
-				path = _Hub.Audit.get_log_path()
-			var file := FileAccess.open(path, FileAccess.WRITE)
-			if file != null:
-				file.store_string("")
-				file.close()
-			_toast("Audit log cleared")
-	)
+	if _audit_section != null:
+		_audit_section.show_dialog()
 
 
 # ---------------------------------------------------------------------------
@@ -549,20 +497,6 @@ func _on_mcp_json_write_result(ok: bool, message: String, severity: int, tooltip
 	_toast(message, severity, tooltip)
 	if ok:
 		_refresh_read_only_state()
-
-
-# ---------------------------------------------------------------------------
-# Settings handlers
-# ---------------------------------------------------------------------------
-
-func _on_audit_enabled_toggled(enabled: bool) -> void:
-	ProjectSettings.set_setting("mcp_toolkit/audit/enabled", enabled)
-	ProjectSettings.save()
-
-
-func _on_audit_max_size_changed(value: float) -> void:
-	ProjectSettings.set_setting("mcp_toolkit/audit/max_size_kb", int(value))
-	ProjectSettings.save()
 
 
 # ---------------------------------------------------------------------------
