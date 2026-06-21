@@ -1,19 +1,23 @@
 @tool
 extends RefCounted
-## System-wide project registry for multi-project concurrency.
+## Thin lifecycle orchestrator + stable façade for the multi-instance registry.
 ##
-## Each Godot editor writes its own entry file under entries/<hash>.json; the
-## editor's runtime child (the running game) writes its OWN entries/<hash>.runtime.json.
-## _rebuild_projects_json() aggregates all entry files into projects.json — merging
-## the runtime overlay onto the editor base by _key — so the TypeScript bridge can
-## discover all active editors and their live runtime ports.
+## This is the public surface callers bind to (register / deregister /
+## set_runtime / clear_runtime / ensure_registered, the runtime-port and
+## LSP-endpoint read-backs, and the lock/dir pass-throughs). It owns sequencing
+## only — the startup reap, the double-open warning, the write-then-lock-then-
+## rebuild ordering, the deferred re-verify, and read-back composition. The "how"
+## lives in the registry leaves it delegates to:
+##   • ProjectKey       — the canonical project identity (path + 12-char hash)
+##   • RegistryPaths    — the machine-wide registry dir and every file path
+##   • RegistryEntryFile — atomic read/write/delete of one entry file + the builder
+##   • RegistryProjection — fans the entry files in to the projects.json read model
+##   • FileLock         — the advisory lock around each projection rebuild
 ##
-## One writer per file: distinct projects, and the editor vs its runtime child,
-## each own a separate file — so there is no shared read-modify-write anywhere.
-## Concurrent rebuilds are idempotent (same entry files → same output).
-##
-## All methods are static — no instance state. Callers preload via
-## _hub.gd (RegistryClient) or directly.
+## All methods are static — no instance state. Stays @tool and editor-clean
+## (names zero Editor* symbols): it is in the runtime autoload's preload closure
+## (mcp_runtime_server.gd), so an editor-tainted reference here would fail the
+## autoload to parse in an export (godot#91713).
 
 const _VersionUtils := preload("res://addons/godot_mcp_toolkit/mcp_version_utils.gd")
 const FileLock := preload("res://addons/godot_mcp_toolkit/file_lock.gd")
@@ -41,16 +45,8 @@ static func registry_dir() -> String:
 	return _RegistryPaths.registry_dir()
 
 
-static func registry_path() -> String:
-	return _RegistryPaths.registry_path()
-
-
 static func _project_key() -> String:
 	return _ProjectKey.current()
-
-
-static func _entry_dir() -> String:
-	return _RegistryPaths.entry_dir()
 
 
 static func _entry_file_path() -> String:
@@ -69,6 +65,12 @@ static func _runtime_entry_file_path() -> String:
 ## editor instances (e.g. the unfocused-sleep backup — see mcp_server.gd /
 ## unfocused_backup.gd). Same lock as the registry's own writes, so backup and
 ## registry operations are mutually exclusive (both are rare and fast).
+##
+## These lock/dir wrappers stay on the registry façade deliberately: there is
+## exactly ONE external lock client today (unfocused_sleep_controller, using just
+## registry_dir + acquire_lock + release_lock), so a segregated lock role would be
+## premature. If a 2nd non-registry lock client appears, extract a dedicated
+## RegistryLock role (rule-of-three / ISP) and point both clients at it.
 static func acquire_lock() -> bool:
 	return FileLock.acquire(_RegistryPaths.lock_path())
 
