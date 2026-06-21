@@ -209,7 +209,7 @@ func _build_ui() -> void:
 	ro_sb.content_margin_top = 6
 	ro_sb.content_margin_bottom = 6
 	_read_only_panel.add_theme_stylebox_override("panel", ro_sb)
-	_read_only_panel.visible = _is_read_only()
+	_read_only_panel.visible = McpJsonSync.is_read_only()
 
 	var ro_label := Label.new()
 	ro_label.text = (
@@ -467,10 +467,12 @@ func _refresh_status() -> void:
 		_status_label.text = "Not listening"
 	var count: int = _server.get_authed_peer_count()
 	_peer_label.text = "%d peer%s" % [count, "" if count == 1 else "s"]
+	# One .mcp.json parse per refresh — both the panel and the button share it.
+	var read_only := McpJsonSync.is_read_only()
 	if _read_only_panel != null:
-		_read_only_panel.visible = _is_read_only()
+		_read_only_panel.visible = read_only
 	if _mcp_json_btn != null:
-		if _is_read_only():
+		if read_only:
 			_mcp_json_btn.text = "Open .mcp.json \u26a0"
 			_mcp_json_btn.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 		else:
@@ -659,14 +661,11 @@ func _on_regen_token() -> void:
 # ---------------------------------------------------------------------------
 
 func write_mcp_json(force_overwrite: bool = false) -> void:
-	var template_path := "res://addons/godot_mcp_toolkit/.mcp.json.template"
-	if not FileAccess.file_exists(template_path):
-		_toast("Template not found: " + template_path, _TOAST_ERROR)
-		return
-	var content := FileAccess.get_file_as_string(template_path)
-	var dest := McpJsonSync.get_mcp_json_path()
-
-	if FileAccess.file_exists(dest) and not force_overwrite:
+	# UI (the overwrite-confirm dialog + the result toast) stays here; the file
+	# I/O lives in the McpJsonSync repository. When overwriting an existing file
+	# and not already forced, confirm first, then write on confirmation.
+	if not force_overwrite and McpJsonSync.needs_overwrite_confirm():
+		var dest := McpJsonSync.get_mcp_json_path()
 		var dialog := ConfirmationDialog.new()
 		dialog.exclusive = false
 		dialog.title = ".mcp.json already exists"
@@ -675,7 +674,7 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 			+ "\n\nThis will replace any custom env vars you have set.")
 		dialog.ok_button_text = "Overwrite"
 		dialog.confirmed.connect(func():
-			_do_write_mcp_json(dest, content)
+			McpJsonSync.write_from_template(true, _on_mcp_json_write_result)
 			dialog.queue_free()
 		)
 		dialog.canceled.connect(func(): dialog.queue_free())
@@ -683,28 +682,14 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 		dialog.popup_centered()
 		return
 
-	_do_write_mcp_json(dest, content)
+	McpJsonSync.write_from_template(force_overwrite, _on_mcp_json_write_result)
 
 
-func _do_write_mcp_json(dest: String, content: String) -> void:
-	var file := FileAccess.open(dest, FileAccess.WRITE)
-	if file == null:
-		_toast("Failed to write .mcp.json (err %d)" % FileAccess.get_open_error(),
-			_TOAST_ERROR)
-		return
-	file.store_string(content)
-	file.close()
-	_toast("MCP: .mcp.json created from template", _TOAST_INFO,
-		"Wrote to " + dest)
-
-
-# ---------------------------------------------------------------------------
-# Read-only mode detection
-# ---------------------------------------------------------------------------
-
-func _is_read_only() -> bool:
-	var env := McpJsonSync.get_all_env_vars()
-	return env.get("GODOT_MCP_READ_ONLY", "") == "1"
+# Result sink for McpJsonSync.write_from_template — maps the repository's
+# (ok, message, severity, tooltip) report straight onto a toast. `severity`
+# already matches the _TOAST_* scale (0 info / 1 warning / 2 error).
+func _on_mcp_json_write_result(_ok: bool, message: String, severity: int, tooltip: String) -> void:
+	_toast(message, severity, tooltip)
 
 
 # ---------------------------------------------------------------------------
@@ -861,7 +846,7 @@ func _show_info_dialog() -> void:
 		_add_info_row(vbox, "Peers", "%d connected" % peers)
 	else:
 		_add_info_row(vbox, "Address", "not listening")
-	if _is_read_only():
+	if McpJsonSync.is_read_only():
 		_add_info_row(vbox, "Mode", "Read-only (GODOT_MCP_READ_ONLY=1)")
 
 	# -- Version --
@@ -1003,8 +988,6 @@ func _get_plugin_version() -> String:
 # ---------------------------------------------------------------------------
 
 func _toast(msg: String, severity: int = _TOAST_INFO, tooltip_text: String = "") -> void:
-	if not Engine.is_editor_hint():
-		return
 	if severity >= _TOAST_WARNING:
 		push_warning("[MCP] %s" % msg)
 	else:
