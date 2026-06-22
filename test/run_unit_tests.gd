@@ -8,7 +8,7 @@ extends SceneTree
 ## are unreliable (Windows Godot).
 
 const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/mcp_toolkit_safe_scene_ops.gd")
-const EditorCommands := preload("res://addons/godot_mcp_toolkit/commands/editor_commands.gd")
+const EditorRescan := preload("res://addons/godot_mcp_toolkit/commands/editor_rescan.gd")
 const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
@@ -2243,17 +2243,17 @@ func _test_editor_refresh_reload_filter() -> void:
 		"res://addons/godot_mcp_toolkit/commands/scene_commands.gd": true,
 	}
 	# 1. changed user script → reload
-	_ok(EditorCommands.should_reload_open_script("res://game/player.gd", changed),
+	_ok(EditorRescan.should_reload_open_script("res://game/player.gd", changed),
 			"changed user script → reload")
 	# 2. unchanged user script → skip
-	_ok(not EditorCommands.should_reload_open_script("res://game/enemy.gd", changed),
+	_ok(not EditorRescan.should_reload_open_script("res://game/enemy.gd", changed),
 			"unchanged user script → skip")
 	# 3. toolkit's own script, even if scan-changed → skip (never self-reload)
-	_ok(not EditorCommands.should_reload_open_script(
+	_ok(not EditorRescan.should_reload_open_script(
 			"res://addons/godot_mcp_toolkit/commands/scene_commands.gd", changed),
 			"toolkit-own changed script → skip (never self-reload)")
 	# 4. unchanged toolkit script → skip
-	_ok(not EditorCommands.should_reload_open_script(
+	_ok(not EditorRescan.should_reload_open_script(
 			"res://addons/godot_mcp_toolkit/mcp_server.gd", changed),
 			"unchanged toolkit script → skip")
 	print("")

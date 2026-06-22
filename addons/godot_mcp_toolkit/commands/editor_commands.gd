@@ -4,6 +4,7 @@ extends RefCounted
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const _LogReader := preload("res://addons/godot_mcp_toolkit/commands/editor_log_reader.gd")
+const _Rescan := preload("res://addons/godot_mcp_toolkit/commands/editor_rescan.gd")
 const FileGuard = _Hub.FileGuard
 const Untrusted = _Hub.Untrusted
 const Scrubber = _Hub.Scrubber
@@ -25,13 +26,13 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return await _cmd_editor_screenshot(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("editor.refresh", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_editor_refresh(parameters)
+		return await _Rescan.cmd_refresh(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("editor.get_console", func(parameters: Dictionary) -> Dictionary:
 		return _LogReader.cmd_get_console(server, parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("editor.wait_for_idle", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_editor_wait_for_idle(parameters)
+		return await _Rescan.cmd_wait_for_idle(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("execute.code", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_execute_code(parameters)
@@ -179,101 +180,6 @@ static func _cmd_editor_screenshot(parameters: Dictionary) -> Dictionary:
 	if not persisted_path.is_empty():
 		response["path"] = persisted_path
 	return MCPToolkitSuccess.ok(response)
-
-
-## Whether an open script should be reloaded after a full editor.refresh scan:
-## only scripts the scan actually changed, and NEVER the toolkit's own (reloading
-## an unchanged or toolkit-own script would cancel a suspended coroutine — the
-## C1/C3 crash class; 41l-tricies). Pure logic so it can be unit-tested.
-static func should_reload_open_script(resource_path: String, changed: Dictionary) -> bool:
-	return changed.has(resource_path) and not resource_path.begins_with("res://addons/godot_mcp_toolkit/")
-
-
-static func _cmd_editor_refresh(parameters: Dictionary) -> Dictionary:
-	# Flush stale errors before reload — fresh parse errors will be captured
-	# with new IDs so editor_get_console returns only current-state errors.
-	var errors_cleared := _Hub.LogBuffer.clear_level("error")
-
-	var file_paths_raw = parameters.get("file_paths", null)
-	var targeted := file_paths_raw != null and typeof(file_paths_raw) == TYPE_ARRAY \
-		and (file_paths_raw as Array).size() > 0
-
-	var filesystem := EditorInterface.get_resource_filesystem()
-	var scan_waited_ms := 0
-
-	if targeted:
-		# Targeted mode: update_file() per path — O(1) per file.
-		var paths: Array = file_paths_raw as Array
-		if filesystem != null:
-			for path in paths:
-				filesystem.update_file(str(path))
-		var reloaded := 0
-		var script_editor := EditorInterface.get_script_editor()
-		if script_editor != null:
-			var target_set := {}
-			for path in paths:
-				target_set[str(path)] = true
-			for open_script in script_editor.get_open_scripts():
-				if open_script is Script:
-					if target_set.has(open_script.resource_path):
-						open_script.reload(true)
-						reloaded += 1
-		return MCPToolkitSuccess.ok({"mode": "targeted", "file_count": paths.size(),
-			"reloaded": reloaded, "errors_cleared": errors_cleared})
-
-	# Full mode: scan(), then reload ONLY the scripts the scan actually changed
-	# (captured via the resources_reload signal — present in all of 4.2-4.6), and
-	# only if they're open. NEVER reload an unchanged script: reload(true) cancels
-	# any suspended coroutine in it, which would break the user's @tool plugins and
-	# (for the toolkit's own scripts) leak the mutation dispatch lock (C3 root cause;
-	# 41l-tricies). The toolkit's own scripts are skipped even when changed.
-	var changed := {}
-	var collector := func(resources: PackedStringArray) -> void:
-		for r in resources:
-			changed[str(r)] = true
-	if filesystem != null:
-		filesystem.resources_reload.connect(collector)
-		filesystem.scan()
-		var scan_start := Time.get_ticks_msec()
-		var scan_deadline := scan_start + 5000
-		while filesystem.is_scanning() and Time.get_ticks_msec() < scan_deadline:
-			await Engine.get_main_loop().create_timer(0.1).timeout
-		scan_waited_ms = Time.get_ticks_msec() - scan_start
-		if filesystem.resources_reload.is_connected(collector):
-			filesystem.resources_reload.disconnect(collector)
-	var reloaded := 0
-	var script_editor := EditorInterface.get_script_editor()
-	if script_editor != null:
-		for open_script in script_editor.get_open_scripts():
-			if not (open_script is Script):
-				continue
-			# Reload ONLY scan-changed, non-toolkit open scripts (see
-			# should_reload_open_script — never cancel an unchanged/own coroutine).
-			if not should_reload_open_script(str(open_script.resource_path), changed):
-				continue
-			open_script.reload(true)
-			reloaded += 1
-	return MCPToolkitSuccess.ok({"mode": "full", "reloaded": reloaded,
-		"scan_waited_ms": scan_waited_ms, "errors_cleared": errors_cleared})
-
-
-
-static func _cmd_editor_wait_for_idle(parameters: Dictionary) -> Dictionary:
-	var timeout_ms: int = int(parameters.get("timeout_ms", 10000))
-	if timeout_ms < 0 or timeout_ms > 30000:
-		return MCPToolkitError.fail("INVALID_PARAMS",
-			"timeout_ms must be in [0, 30000] (got %d)" % timeout_ms)
-	var filesystem := EditorInterface.get_resource_filesystem()
-	if not filesystem.is_scanning():
-		return MCPToolkitSuccess.ok({"was_scanning": false, "waited_ms": 0})
-	var start := Time.get_ticks_msec()
-	while filesystem.is_scanning() and Time.get_ticks_msec() - start < timeout_ms:
-		await Engine.get_main_loop().create_timer(0.1).timeout
-	var elapsed := Time.get_ticks_msec() - start
-	if filesystem.is_scanning():
-		return MCPToolkitError.fail("TIMEOUT",
-			"EditorFileSystem still scanning after %dms; consider increasing timeout_ms or checking editor.get_console for import errors" % elapsed)
-	return MCPToolkitSuccess.ok({"was_scanning": true, "waited_ms": elapsed})
 
 
 static func _cmd_execute_code(parameters: Dictionary) -> Dictionary:
