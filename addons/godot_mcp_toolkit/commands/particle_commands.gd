@@ -34,13 +34,20 @@ const _RANGE_PARAMS := {
 	"hue_variation": "hue_variation",
 }
 
-# Coercion modes for the data-driven property applier (_apply_props).
-# Each mirrors the EXACT cast the old pass-7 apply ladder used so the emitted
-# property value stays byte-identical:
-#   INT/FLOAT/BOOL — wrap eff[key] in int()/float()/bool() before setting.
-#   RAW            — assign eff[key] directly (preset/merge already stored the
-#                    right Vector3/Color; the old code assigned it untouched).
-enum { _COERCE_INT, _COERCE_FLOAT, _COERCE_BOOL, _COERCE_RAW }
+# Coercion modes shared by the two data-driven passes (_apply_props pass 7 and
+# _merge_overrides pass 6). Each value mirrors the EXACT cast the old hand-written
+# ladder used so both the emitted property value AND the merged eff value stay
+# byte-identical:
+#   INT/FLOAT/BOOL — wrap the source in int()/float()/bool() before storing.
+#   VEC3/COLOR     — coerce a raw user param via _vec3()/_color() (the merge ladder
+#                    converted the {x,y,z}/{r,g,b,a} request dict into a Vector3/Color).
+#   RAW            — assign the source directly (the apply ladder stored the value
+#                    untouched; by then the preset/merge had already produced the
+#                    right Vector3/Color, so it was assigned as-is).
+# _apply_props uses INT/FLOAT/BOOL/RAW (its inputs are already typed); _merge_overrides
+# uses INT/FLOAT/BOOL/VEC3/COLOR (its inputs are raw user params). The VEC3/COLOR rows
+# are exactly the keys the apply pass treats as RAW — the coercion happens at merge.
+enum { _COERCE_INT, _COERCE_FLOAT, _COERCE_BOOL, _COERCE_RAW, _COERCE_VEC3, _COERCE_COLOR }
 
 # Targets for the applier: the node vs the ParticleProcessMaterial.
 enum { _TARGET_NODE, _TARGET_MATERIAL }
@@ -73,6 +80,36 @@ const _PROP_SPEC := [
 	["emission_box_extents", _TARGET_MATERIAL, _COERCE_RAW],
 	["turbulence_enabled", _TARGET_MATERIAL, _COERCE_BOOL],
 	["turbulence_noise_strength", _TARGET_MATERIAL, _COERCE_FLOAT],
+]
+
+# Data-driven map of the uniform simple-override rows of pass 6 (the merge that
+# layers user params onto the preset-seeded eff dict; GodotCodeStandards §12.4).
+# Each row is [param_key, coerce] and writes eff[param_key] = coerce(parameters[key]).
+# Rows stay in the EXACT order of the old merge key-list (:464-483 pre-refactor),
+# because every shadow append into overrides_applied happens in this order and the
+# array's element order is part of the particles.create response contract — so this
+# loop's iteration order is load-bearing (unlike _PROP_SPEC, whose writes are
+# independent and order-invariant). The coercion column uses the merge modes
+# (VEC3/COLOR convert the request dict), NOT the apply modes. The genuine specials —
+# range pairs and the emission-shape override — are NOT in this table; they keep
+# their dedicated blocks in _merge_overrides (different shape: a _min/_max pair, and
+# a name-validated string) and append AFTER this table, preserving the old order.
+const _OVERRIDE_SPEC := [
+	["amount", _COERCE_INT],
+	["lifetime", _COERCE_FLOAT],
+	["one_shot", _COERCE_BOOL],
+	["explosiveness", _COERCE_FLOAT],
+	["speed_scale", _COERCE_FLOAT],
+	["local_coords", _COERCE_BOOL],
+	["direction", _COERCE_VEC3],
+	["spread", _COERCE_FLOAT],
+	["gravity", _COERCE_VEC3],
+	["color", _COERCE_COLOR],
+	["particle_flag_align_y", _COERCE_BOOL],
+	["emission_sphere_radius", _COERCE_FLOAT],
+	["emission_box_extents", _COERCE_VEC3],
+	["turbulence_enabled", _COERCE_BOOL],
+	["turbulence_noise_strength", _COERCE_FLOAT],
 ]
 
 # Presets defined in 2D units. When type=="3d", _adjust_for_3d() is applied.
@@ -398,6 +435,60 @@ static func _apply_props(node: Node, material: ParticleProcessMaterial, eff: Dic
 	return count
 
 
+static func _merge_overrides(eff: Dictionary, parameters: Dictionary) -> Array:
+	## Layer the request's user params onto the preset-seeded eff dict (pass 6),
+	## returning the overrides_applied array — the names of params that SHADOWED a
+	## preset value, in contract order. eff is mutated in place. Three sub-passes,
+	## appended strictly in the original order so the returned array is byte-identical:
+	##   1. the uniform simple props (_OVERRIDE_SPEC, in order);
+	##   2. the range params (_RANGE_PARAMS → {prefix}_min/_max);
+	##   3. the emission-shape name override.
+	## A param shadows the preset only when eff already holds the key (range: the
+	## _min half) — matching the old `if eff.has(...): overrides.append(...)` guards.
+	var overrides: Array = []
+
+	# 1. Simple user overrides (table-driven; was the :464-483 match-ladder).
+	for spec in _OVERRIDE_SPEC:
+		var key: String = spec[0]
+		if not parameters.has(key):
+			continue
+		if eff.has(key):
+			overrides.append(key)
+		var raw: Variant = parameters[key]
+		match spec[1]:
+			_COERCE_INT:
+				eff[key] = int(raw)
+			_COERCE_BOOL:
+				eff[key] = bool(raw)
+			_COERCE_VEC3:
+				eff[key] = _vec3(raw)
+			_COERCE_COLOR:
+				eff[key] = _color(raw)
+			_:  # _COERCE_FLOAT — the old ladder's default arm.
+				eff[key] = float(raw)
+
+	# 2. Range params: user float or {min,max} → internal _min/_max (was :485-494).
+	for user_key in _RANGE_PARAMS:
+		if not parameters.has(user_key):
+			continue
+		var prefix: String = _RANGE_PARAMS[user_key]
+		var r := _expand_range(parameters[user_key])
+		if eff.has(prefix + "_min"):
+			overrides.append(user_key)
+		eff[prefix + "_min"] = r[0]
+		eff[prefix + "_max"] = r[1]
+
+	# 3. Emission shape override (was :496-500). The name was already validated
+	# against _EMISSION_SHAPES in the handler before this merge runs.
+	var emission_shape_str = parameters.get("emission_shape")
+	if emission_shape_str != null:
+		if eff.has("emission_shape"):
+			overrides.append("emission_shape")
+		eff["emission_shape"] = str(emission_shape_str)
+
+	return overrides
+
+
 # -- Command ------------------------------------------------------------------
 
 
@@ -455,49 +546,16 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 	var material := ParticleProcessMaterial.new()
 	var sub_resources: Array = [material]
 	var properties_set := 0
-	var overrides: Array = []
 	var version_notes: Array = []
 
 	# Build effective config: preset base, user overrides on top.
 	var eff := preset.duplicate(true)
 
-	# --- Merge simple user overrides ---
-	for key in ["amount", "lifetime", "one_shot", "explosiveness", "speed_scale",
-			"local_coords", "direction", "spread", "gravity", "color",
-			"particle_flag_align_y", "emission_sphere_radius",
-			"emission_box_extents", "turbulence_enabled", "turbulence_noise_strength"]:
-		if not parameters.has(key):
-			continue
-		if eff.has(key):
-			overrides.append(key)
-		match key:
-			"direction", "gravity", "emission_box_extents":
-				eff[key] = _vec3(parameters[key])
-			"color":
-				eff[key] = _color(parameters[key])
-			"amount":
-				eff[key] = int(parameters[key])
-			"one_shot", "local_coords", "particle_flag_align_y", "turbulence_enabled":
-				eff[key] = bool(parameters[key])
-			_:
-				eff[key] = float(parameters[key])
-
-	# Range params: user float or {min,max} → internal _min/_max.
-	for user_key in _RANGE_PARAMS:
-		if not parameters.has(user_key):
-			continue
-		var prefix: String = _RANGE_PARAMS[user_key]
-		var r := _expand_range(parameters[user_key])
-		if eff.has(prefix + "_min"):
-			overrides.append(user_key)
-		eff[prefix + "_min"] = r[0]
-		eff[prefix + "_max"] = r[1]
-
-	# Emission shape override.
-	if emission_shape_str != null:
-		if eff.has("emission_shape"):
-			overrides.append("emission_shape")
-		eff["emission_shape"] = str(emission_shape_str)
+	# --- Merge user overrides (data-driven; see _OVERRIDE_SPEC) ---
+	# overrides holds the names of params that shadowed a preset value, in the order
+	# the response contract expects (simple props, then range params, then emission
+	# shape). The sub-resource pass appends to it below; the result reads it last.
+	var overrides: Array = _merge_overrides(eff, parameters)
 
 	# --- Apply node + material properties (data-driven; see _PROP_SPEC) ---
 	# The uniform single-property rows of pass 7 are applied by _apply_props.

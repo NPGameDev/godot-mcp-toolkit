@@ -99,6 +99,7 @@ func _init() -> void:
 	_test_spatial_map()
 	_test_texture_generate()
 	_test_particle_prop_apply()
+	_test_particle_merge_overrides()
 	_test_sound_generate()
 	_test_create_collision_resolver()
 	_test_tileset_edit_key_enforcement()
@@ -2645,6 +2646,75 @@ func _test_particle_prop_apply() -> void:
 	# A prop absent from the subset eff must NOT have been counted/written.
 	_eq(node_sub.amount, node_none.amount, "subset: absent amount stays default")
 	node_sub.free()
+
+
+# --- 41n/034 C2: particles.create _OVERRIDE_SPEC / _merge_overrides --------
+# Pins the data-driven override merge that replaced pass 6's match-ladder. The
+# load-bearing contracts are (a) the merged eff values + casts and (b) the RETURNED
+# overrides_applied array — its CONTENTS and ORDER are part of the particles.create
+# response. Pure dict→dict logic, so this runs headless (no node, no editor).
+func _test_particle_merge_overrides() -> void:
+	_begin("particles _merge_overrides (_OVERRIDE_SPEC)")
+
+	# --- Preset-only (no params) → eff unchanged, overrides empty.
+	var fire: Dictionary = ParticleCommands._PRESETS["fire"].duplicate(true)
+	var eff_pre: Dictionary = fire.duplicate(true)
+	var ov_none := ParticleCommands._merge_overrides(eff_pre, {})
+	_eq(ov_none.size(), 0, "no params → overrides_applied empty")
+	_eq(eff_pre, fire, "no params → eff identical to preset")
+
+	# --- Subset shadowing the preset → values + casts land, overrides in order.
+	# fire has amount, spread, initial_velocity_min → all three shadow. params arrive
+	# in the "wrong" numeric type to pin the cast (amount float→int, spread int→float).
+	var eff_sub: Dictionary = fire.duplicate(true)
+	var ov_sub := ParticleCommands._merge_overrides(eff_sub, {
+		"amount": 99.0,  # float in → int out
+		"spread": 5,  # int in → float out
+		"initial_velocity": {"min": 1.0, "max": 2.0},
+	})
+	# _OVERRIDE_SPEC order puts amount before spread; range params append after.
+	_eq(ov_sub, ["amount", "spread", "initial_velocity"], "shadowing overrides in contract order")
+	_eq(eff_sub["amount"], 99, "amount float 99.0 → int 99")
+	_ok(typeof(eff_sub["amount"]) == TYPE_INT, "amount cast to int")
+	_ok(is_equal_approx(eff_sub["spread"], 5.0), "spread int 5 → float 5.0")
+	_ok(is_equal_approx(eff_sub["initial_velocity_min"], 1.0), "range min landed")
+	_ok(is_equal_approx(eff_sub["initial_velocity_max"], 2.0), "range max landed")
+
+	# --- Vector/colour coercion (the merge VEC3/COLOR modes, distinct from apply RAW).
+	var eff_vec := {}
+	var ov_vec := ParticleCommands._merge_overrides(eff_vec, {
+		"direction": {"x": 0.0, "y": -1.0, "z": 0.0},
+		"color": {"r": 0.2, "g": 0.4, "b": 0.6, "a": 0.8},
+		"gravity": {"x": 0.0, "y": 49.0, "z": 0.0},
+	})
+	_eq(ov_vec.size(), 0, "no preset → vec/colour applied but nothing shadowed")
+	_eq(eff_vec["direction"], Vector3(0, -1, 0), "direction dict → Vector3")
+	_eq(eff_vec["color"], Color(0.2, 0.4, 0.6, 0.8), "color dict → Color")
+	_eq(eff_vec["gravity"], Vector3(0, 49, 0), "gravity dict → Vector3")
+
+	# --- No preset → values written to eff but NONE appended (no shadow); range as
+	# a bare scalar fans into _min/_max; an absent key never appears.
+	var eff_np := {}
+	var ov_np := ParticleCommands._merge_overrides(eff_np, {
+		"amount": 7,
+		"scale_range": 2.0,  # bare scalar → min == max
+	})
+	_eq(ov_np.size(), 0, "empty eff → nothing shadowed → overrides empty")
+	_eq(eff_np["amount"], 7, "no-preset: amount still written to eff")
+	_ok(is_equal_approx(eff_np["scale_min"], 2.0), "scalar range → scale_min")
+	_ok(is_equal_approx(eff_np["scale_max"], 2.0), "scalar range → scale_max == min")
+	_ok(not eff_np.has("lifetime"), "absent param never written")
+
+	# --- Cross-sub-pass ORDER pin: simple + range + emission against an eff that
+	# holds all three preset keys → array order is [simple, range, emission].
+	var eff_ord := {"color": Color.WHITE, "scale_min": 0.5, "emission_shape": "point"}
+	var ov_ord := ParticleCommands._merge_overrides(eff_ord, {
+		"emission_shape": "box",
+		"scale_range": {"min": 1.0, "max": 3.0},
+		"color": {"r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0},
+	})
+	_eq(ov_ord, ["color", "scale_range", "emission_shape"], "order: simple → range → emission")
+	_eq(eff_ord["emission_shape"], "box", "emission_shape override landed (name kept)")
 
 
 # --- 41m-quinquies: sound.generate synthesis ------------------------------
