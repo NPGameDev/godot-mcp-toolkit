@@ -2,10 +2,10 @@
 extends RefCounted
 ## signal.* command handlers — list, manage (connect/disconnect), emit on edited-scene nodes.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const Helpers = _Hub.Helpers
-const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const Helpers = Modules.Helpers
+const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/scene/signal_pair_resolver.gd")
 
 static var _extends_path_re: RegEx = _compile_extends_path_re()
 

@@ -5,10 +5,10 @@ extends RefCounted
 ## checks, file deletion, directory creation, log-level detection,
 ## and profile string conversion.
 
-## NOTE: This file is preloaded by _hub.gd, so it CANNOT import _hub.gd
+## NOTE: This file is preloaded by core/modules.gd, so it CANNOT import core/modules.gd
 ## (circular dependency). Use direct preloads for dependencies instead.
-const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
-const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
+const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 
 
 # -- Property coercion ---------------------------------------------------------

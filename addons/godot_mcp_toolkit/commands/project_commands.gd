@@ -2,9 +2,9 @@
 extends RefCounted
 ## project.* command handlers — get_settings, set_setting, layer names.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const Untrusted = _Hub.Untrusted
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const Untrusted = Modules.Untrusted
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 const _VALID_LAYER_CATEGORIES := ["2d_physics", "2d_render", "3d_physics", "3d_render"]

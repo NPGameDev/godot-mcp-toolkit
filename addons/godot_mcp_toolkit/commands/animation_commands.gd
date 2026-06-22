@@ -2,10 +2,10 @@
 extends RefCounted
 ## animation.* command handlers — keyframe (add/remove) and get_keys on AnimationPlayer tracks.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const Untrusted = _Hub.Untrusted
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const Untrusted = Modules.Untrusted
+const Helpers = Modules.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:

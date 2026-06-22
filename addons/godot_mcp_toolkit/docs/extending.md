@@ -85,7 +85,7 @@ public partial class MCPToolkitDialogueTools : RefCounted
 **C# note:** The raw `new Dictionary { { "success", true }, ... }` pattern
 is valid and recommended for C#. Alternatively, you can call the GDScript
 `MCPToolkitSuccess.ok()` via interop
-(`GD.Load<GDScript>("res://addons/godot_mcp_toolkit/mcp_success.gd").Call("ok", dict)`)
+(`GD.Load<GDScript>("res://addons/godot_mcp_toolkit/contract/mcp_success.gd").Call("ok", dict)`)
 but the raw Dictionary is simpler. Both produce the same result.
 
 **C# requirements:**
@@ -204,7 +204,7 @@ LLM fills in, validate it so a traversal/escape path (`res://../../secret`,
   handler with the same guard the built-ins use:
 
   ```gdscript
-  const FileGuard = preload("res://addons/godot_mcp_toolkit/file_guard.gd")
+  const FileGuard = preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
   var guard := FileGuard.resolve_safe(params.get("file_path", ""))   # res://, path-boundary checked
   if guard["error"] != null:
       return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
@@ -217,7 +217,7 @@ user input echoed back, an external tool's output — wrap that field so the LLM
 treats it as data, not instructions:
 
 ```gdscript
-const Untrusted = preload("res://addons/godot_mcp_toolkit/untrusted.gd")
+const Untrusted = preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 
 func _read_config(params: Dictionary) -> Dictionary:
     var text := FileAccess.get_file_as_string(params["file_path"])

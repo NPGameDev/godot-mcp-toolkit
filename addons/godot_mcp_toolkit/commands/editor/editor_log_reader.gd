@@ -1,0 +1,366 @@
+@tool
+extends RefCounted
+## editor.* log/console reader: read the editor's captured output — from the
+## in-memory LogBuffer (source="buffer") or a user://logs/*.log file
+## (source="file") — filtered by level/text/since_id, scrubbed, and shaped into
+## the entry list. Serves both the console tool and the error-pinned errors tool
+## (get_errors is get_console with the level filter fixed to ["error"]).
+##
+## Stateless — every handler takes (server, parameters) and returns the response
+## Dictionary; the reader-spine helpers take their inputs as parameters. The log
+## subsystem (LogBuffer / LogHelpers), the secret scrubber, the untrusted-content
+## wrapper, and the text-filter compiler are consumed via Modules aliases. Consumed
+## by editor_commands.gd via a `preload` alias.
+
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Untrusted = Modules.Untrusted
+const Scrubber = Modules.Scrubber
+const Helpers = Modules.Helpers
+const LogHelpers = Modules.LogHelpers
+
+
+# -- Commands -----------------------------------------------------------------
+
+
+static func cmd_get_errors(server: Node, parameters: Dictionary) -> Dictionary:
+	var limit: int = int(parameters.get("limit", 50))
+	var source: String = str(parameters.get("source", "buffer"))
+	if not (source in ["buffer", "file"]):
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"source must be 'buffer' or 'file' (got %s)" % source)
+
+	var tf := _compile_text_filter(parameters)
+	if tf[2] != null:
+		return tf[2]
+	var text_filter: String = tf[0]
+	var text_regex: RegEx = tf[1]
+	var regex_warning: String = tf[3]
+
+	if source == "file":
+		var result := _read_console_log(server, limit, ["error"], -1, text_filter, text_regex)
+		if result.get("success", false) == false:
+			return result
+		var entries = result.get("entries", [])
+		var response := {
+			"errors": Untrusted.wrap(
+				"editor_errors", "godot", JSON.stringify(entries)),
+			"count": result.get("count", 0),
+		}
+		if not regex_warning.is_empty():
+			response["warning"] = regex_warning
+		return MCPToolkitSuccess.ok(response)
+
+	var buf_result: Dictionary = Modules.LogBuffer.get_entries(limit, ["error"], -1, text_filter, text_regex)
+	var entries: Array = buf_result["entries"]
+	for entry in entries:
+		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
+		entry["message"] = scrubbed["text"]
+	var response := {
+		"errors": Untrusted.wrap(
+			"editor_errors", "buffer", JSON.stringify(entries)),
+		"count": buf_result["count"],
+	}
+	if buf_result["count"] > 0:
+		response["hint"] = "Use since_id parameter with the highest id from this response to get only new errors on next call."
+	if not regex_warning.is_empty():
+		response["warning"] = regex_warning
+	return MCPToolkitSuccess.ok(response)
+
+
+static func cmd_get_console(server: Node, parameters: Dictionary) -> Dictionary:
+	# FIX-8: clear_buffer flushes stale log entries before reading.
+	var clear_buffer: bool = parameters.get("clear_buffer", false) == true
+	if clear_buffer:
+		Modules.LogBuffer.clear()
+
+	var limit: int = int(parameters.get("limit", 200))
+	var level_filter: Array = parameters.get("level_filter", [])
+	if typeof(level_filter) != TYPE_ARRAY:
+		level_filter = []
+	var since_id: int = int(parameters.get("since_id", -1))
+	var source: String = str(parameters.get("source", "buffer"))
+
+	if limit < 1 or limit > 1000:
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"limit must be in [1, 1000] (got %d)" % limit)
+	if not (source in ["buffer", "file"]):
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"source must be 'buffer' or 'file' (got %s)" % source)
+	var valid_levels := ["info", "warning", "error"]
+	for level_filter_entry in level_filter:
+		if not str(level_filter_entry) in valid_levels:
+			return MCPToolkitError.fail("INVALID_PARAMS",
+				"level_filter entries must be one of 'info' | 'warning' | 'error' (got %s)" % str(level_filter_entry))
+
+	var tf := _compile_text_filter(parameters)
+	if tf[2] != null:
+		return tf[2]
+	var text_filter: String = tf[0]
+	var text_regex: RegEx = tf[1]
+	var regex_warning: String = tf[3]
+
+	var result: Dictionary
+	if source == "file":
+		result = _read_console_log(server, limit, level_filter, since_id, text_filter, text_regex)
+	else:
+		result = _read_buffer_log(limit, level_filter, since_id, text_filter, text_regex)
+	if not regex_warning.is_empty() and result.get("success", false):
+		result["warning"] = regex_warning
+	return result
+
+
+# -- Helpers ------------------------------------------------------------------
+
+
+## Compile text_filter params into [text_filter, RegEx-or-null, error-or-null, warning].
+## Delegates to Helpers.compile_text_filter for regex compilation + double-escape detection.
+static func _compile_text_filter(parameters: Dictionary) -> Array:
+	var text_filter: String = str(parameters.get("text_filter", ""))
+	var is_regex: bool = bool(parameters.get("is_regex", false))
+	if text_filter == "" or not is_regex:
+		return [text_filter, null, null, ""]
+	var tf := Helpers.compile_text_filter(parameters)
+	# tf = [RegEx-or-null, error-or-null, warning]
+	if tf[1] != null:
+		return ["", null, tf[1], ""]
+	return [text_filter, tf[0], null, tf[2]]
+
+
+static func _godot_error_name(code: int) -> String:
+	match code:
+		0: return "OK"
+		7: return "ERR_FILE_NOT_FOUND"
+		12: return "ERR_CANT_OPEN"
+		13: return "ERR_CANT_WRITE"
+		31: return "ERR_FILE_CANT_WRITE"
+		32: return "ERR_FILE_CANT_READ"
+		_: return "Error(%d)" % code
+
+
+# -- Buffer log reader --------------------------------------------------------
+
+
+static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, text_filter: String = "", text_regex: RegEx = null) -> Dictionary:
+	var buf_result: Dictionary = Modules.LogBuffer.get_entries(limit, level_filter, since_id, text_filter, text_regex)
+	var entries: Array = buf_result["entries"]
+	for entry in entries:
+		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
+		entry["message"] = scrubbed["text"]
+	var response := {
+		"entries": Untrusted.wrap(
+			"console", "buffer", JSON.stringify(entries)),
+		"count": buf_result["count"],
+		"next_id": buf_result["next_id"],
+		"truncated": buf_result["truncated"],
+		"source": "buffer",
+	}
+	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off
+	# or the log file couldn't be read (locked by OS on Windows).
+	if entries.is_empty() and not Modules.LogBuffer.uses_logger_api():
+		if not LogHelpers.is_file_logging_enabled():
+			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work."
+		elif Modules.LogBuffer._tail_open_failures > 0:
+			response["warning"] = "Log file could not be opened for reading (%d failed attempts) — the OS may be locking it. Use source=\"file\" as a fallback." % Modules.LogBuffer._tail_open_failures
+	# Autoload hint — scan error entries for unresolved identifiers matching autoloads.
+	if level_filter.is_empty() or ("error" in level_filter):
+		var al_hint := _scan_autoload_hints(entries)
+		if not al_hint.is_empty():
+			response["autoload_hint"] = al_hint
+	return MCPToolkitSuccess.ok(response)
+
+
+## Scan console entries for "Identifier X not declared" errors that match
+## registered autoloads, returning a combined hint string (empty if none).
+static func _scan_autoload_hints(entries: Array) -> String:
+	var re := RegEx.new()
+	re.compile('Identifier "(\\w+)" not declared')
+	var found: Array = []
+	for entry in entries:
+		var msg: String = str(entry.get("message", ""))
+		var m := re.search(msg)
+		if m == null:
+			continue
+		var ident: String = m.get_string(1)
+		if ProjectSettings.has_setting("autoload/" + ident) and not (ident in found):
+			found.append(ident)
+	if found.is_empty():
+		return ""
+	return "Some errors reference registered autoloads (%s). The editor cache may be stale — call autoload_manage to re-register them." % ", ".join(found)
+
+
+# -- Console log reader -------------------------------------------------------
+
+
+static func _detect_log_level(line: String) -> String:
+	return LogHelpers.detect_log_level(line)
+
+
+static func _read_console_log(
+	server: Node, limit: int, level_filter: Array, since_id: int,
+	text_filter: String = "", text_regex: RegEx = null,
+) -> Dictionary:
+	# user://logs/ read is a narrow read-only exception to the res://-only rule.
+	# Path is internally constructed (not user-supplied), so no FileGuard gate.
+	var logs_dir := "user://logs"
+	var file_logging_enabled: bool = LogHelpers.is_file_logging_enabled()
+	if not DirAccess.dir_exists_absolute(logs_dir):
+		if not file_logging_enabled:
+			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor"
+			if Modules.LogBuffer.uses_logger_api():
+				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
+			else:
+				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
+			return MCPToolkitError.fail("LOG_UNAVAILABLE", _hint)
+		return MCPToolkitError.fail("LOG_UNAVAILABLE",
+			"no log directory at user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
+
+	var all_files := DirAccess.get_files_at(logs_dir)
+	var log_files: Array[String] = []
+	for file_name in all_files:
+		if String(file_name).ends_with(".log"):
+			log_files.append(String(file_name))
+	if log_files.is_empty():
+		if not file_logging_enabled:
+			var _hint := "file logging is disabled — enable it in ProjectSettings → Debug → File Logging → Enable File Logging, then restart the editor"
+			if Modules.LogBuffer.uses_logger_api():
+				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
+			else:
+				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
+			return MCPToolkitError.fail("LOG_UNAVAILABLE", _hint)
+		return MCPToolkitError.fail("LOG_UNAVAILABLE",
+			"no .log files under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
+
+	var plugin_boot_time: int = server.get_plugin_boot_time()
+
+	var chosen_file := ""
+	var chosen_mtime: int = 0
+	var warnings: Array[String] = []
+	if not file_logging_enabled:
+		if Modules.LogBuffer.uses_logger_api():
+			warnings.append("file logging is disabled — data may be stale from a previous session; use source=\"buffer\" for real-time output")
+		else:
+			warnings.append("file logging is disabled — data may be stale from a previous session. On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources may be stale")
+
+	var godot_log := logs_dir + "/godot.log"
+	var godot_log_mtime: int = 0
+	if FileAccess.file_exists(godot_log):
+		godot_log_mtime = FileAccess.get_modified_time(godot_log)
+	if godot_log_mtime > 0 and godot_log_mtime >= plugin_boot_time:
+		chosen_file = godot_log
+		chosen_mtime = godot_log_mtime
+	else:
+		var best_file := ""
+		var best_mtime: int = 0
+		for log_file_name in log_files:
+			var full_path := logs_dir + "/" + log_file_name
+			var mtime := FileAccess.get_modified_time(full_path)
+			if mtime >= plugin_boot_time and mtime > best_mtime:
+				best_file = full_path
+				best_mtime = mtime
+		if best_file != "":
+			chosen_file = best_file
+			chosen_mtime = best_mtime
+		else:
+			for log_file_name in log_files:
+				var full_path := logs_dir + "/" + log_file_name
+				var mtime := FileAccess.get_modified_time(full_path)
+				if mtime > best_mtime:
+					best_file = full_path
+					best_mtime = mtime
+			if best_file != "":
+				chosen_file = best_file
+				chosen_mtime = best_mtime
+				warnings.append("fallback to stale log — no post-boot log found")
+
+	if chosen_file == "":
+		return MCPToolkitError.fail("LOG_UNAVAILABLE",
+			"no readable log file under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging; playtest may have rotated the editor's log mid-session")
+
+	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
+	if file_handle == null:
+		var open_err := FileAccess.get_open_error()
+		if FileAccess.file_exists(chosen_file):
+			var _busy_hint := "log file exists but cannot be read right now (%s) — transient lock during file flush, retry in 1-2 seconds" % _godot_error_name(open_err)
+			if Modules.LogBuffer.uses_logger_api():
+				_busy_hint += "; consider using source=\"buffer\" instead"
+			return MCPToolkitError.fail("LOG_BUSY", _busy_hint)
+		return MCPToolkitError.fail("LOG_UNAVAILABLE",
+			"cannot open %s (%s)" % [chosen_file, _godot_error_name(open_err)])
+	var content := file_handle.get_as_text()
+	file_handle.close()
+
+	var lines := content.split("\n")
+	var entries: Array = []
+	var char_offset: int = 0
+
+	for line_index in range(lines.size()):
+		var line: String = LogHelpers.strip_ansi(lines[line_index])
+		if line.strip_edges().is_empty():
+			char_offset += line.length() + 1
+			continue
+		var level := _detect_log_level(line)
+		if level == "info" and entries.size() > 0 and LogHelpers.is_continuation_line(line):
+			var previous: Dictionary = entries[-1]
+			if previous["level"] == "error" or previous["level"] == "warning":
+				previous["message"] += "\n" + line
+				char_offset += line.length() + 1
+				continue
+		entries.append({
+			"id": char_offset,
+			"level": level,
+			"message": line,
+			"timestamp_unix": null,
+		})
+		char_offset += line.length() + 1
+
+	if level_filter.size() > 0:
+		var level_set: Array[String] = []
+		for filter_entry in level_filter:
+			level_set.append(str(filter_entry))
+		var filtered: Array = []
+		for entry in entries:
+			if entry["level"] in level_set:
+				filtered.append(entry)
+		entries = filtered
+
+	if since_id >= 0:
+		var filtered: Array = []
+		for entry in entries:
+			if entry["id"] > since_id:
+				filtered.append(entry)
+		entries = filtered
+
+	if text_filter != "":
+		var text_filtered: Array = []
+		for entry in entries:
+			var msg: String = str(entry["message"])
+			if text_regex != null:
+				if text_regex.search(msg):
+					text_filtered.append(entry)
+			else:
+				if msg.findn(text_filter) >= 0:
+					text_filtered.append(entry)
+		entries = text_filtered
+
+	var truncated := entries.size() > limit
+	if truncated:
+		entries = entries.slice(entries.size() - limit)
+
+	var next_id: int = -1
+	if entries.size() > 0:
+		next_id = entries[-1]["id"]
+
+	for entry in entries:
+		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
+		entry["message"] = scrubbed["text"]
+
+	return MCPToolkitSuccess.ok({
+		"entries": Untrusted.wrap(
+			"console", str(chosen_file), JSON.stringify(entries)),
+		"count": entries.size(),
+		"next_id": next_id,
+		"truncated": truncated,
+		"log_file": chosen_file,
+		"log_mtime": chosen_mtime,
+		"warnings": warnings,
+	})

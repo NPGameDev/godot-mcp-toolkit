@@ -2,7 +2,7 @@
 extends RefCounted
 ## classdb.* command handlers — ClassDB and global class introspection.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
 const _VALID_SECTIONS: Array[String] = ["properties", "methods", "signals", "constants"]
 const _MAX_ENTRIES_PER_SECTION := 200

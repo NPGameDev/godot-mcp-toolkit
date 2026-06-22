@@ -8,8 +8,8 @@ extends RefCounted
 ## or noise, with an optional pitch sweep and a numeric de-click/decay envelope —
 ## as a mono 16-bit WAV. SFX only; music/melodies are out of scope.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Helpers = Modules.Helpers
 
 const ALLOWED_EXTS := ["wav"]
 const MIX_RATE := 44100

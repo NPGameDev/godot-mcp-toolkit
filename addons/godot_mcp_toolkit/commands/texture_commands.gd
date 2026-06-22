@@ -8,8 +8,8 @@ extends RefCounted
 ## (fill / outline / background, alpha-absent = layer omitted) plus an optional
 ## text label overlay — and writes a PNG that imports as a Texture2D.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Helpers = Modules.Helpers
 
 const ALLOWED_EXTS := ["png"]
 const MAX_DIM := 1024
@@ -69,7 +69,7 @@ static func _cmd_generate(parameters: Dictionary) -> Dictionary:
 	var label := str(parameters.get("label", ""))
 	var warnings: Array[String] = []
 	if label != "":
-		if _Hub.VersionUtils.is_headless():
+		if Modules.VersionUtils.is_headless():
 			warnings.append("label overlay skipped: text rasterization needs a display (unavailable in --headless)")
 		else:
 			var label_color := _parse_color(parameters.get("label_color", null), Color(0, 0, 0, 1))

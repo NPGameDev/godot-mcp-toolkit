@@ -40,7 +40,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 
 **Godot 4.2 – 4.3 (minimum):**
 - Toast notifications silently skip (no user-visible impact on tool behavior).
-  `EditorInterface.get_editor_toaster()` is 4.4+, so `_Hub.get_toaster()`
+  `EditorInterface.get_editor_toaster()` is 4.4+, so `Modules.get_toaster()`
   returns `null` here and the toolkit falls back to `push_warning()` to the
   Output panel.
 - `script_check` limitations apply (see section below).
@@ -281,16 +281,16 @@ if Engine.get_version_info().minor >= 5:
     EditorInterface.close_scene()  # ERROR on 4.4: method not found at parse time
 ```
 
-Centralized version helpers in `_hub.gd`:
-- `_Hub.VersionUtils.is_at_least(ver, min)` / `is_at_most(ver, max)` — single-bound version checks
-- `_Hub.VersionUtils.is_version_in_range(ver, min, max)` — range version check (used by command registry)
-- `_Hub.get_undo_redo()` — returns the editor `EditorUndoRedoManager` via the
+Centralized version helpers in `core/modules.gd`:
+- `Modules.VersionUtils.is_at_least(ver, min)` / `is_at_most(ver, max)` — single-bound version checks
+- `Modules.VersionUtils.is_version_in_range(ver, min, max)` — range version check (used by command registry)
+- `Modules.get_undo_redo()` — returns the editor `EditorUndoRedoManager` via the
   stored `EditorPlugin` (4.0+ stable; works on all supported versions). Returns
   `null` only in headless mode or before the plugin is set. Operations registered
   through it create Edit > Undo history; direct property mutations bypass history.
-- `_Hub.get_toaster()` — returns `EditorToaster` or `null` on < 4.4
+- `Modules.get_toaster()` — returns `EditorToaster` or `null` on < 4.4
   (`EditorInterface.get_editor_toaster()` is 4.4+)
-- `_Hub.get_editor_theme()` — returns the editor theme. Uses
+- `Modules.get_editor_theme()` — returns the editor theme. Uses
   `EditorInterface.get_editor_theme()`, which is bound on all supported versions
   (4.2+); the `get_base_control().get_theme()` fallback only mattered on the
   unsupported 4.0/4.1 and never triggers on 4.2+
@@ -318,7 +318,7 @@ Results are consistent across all tested versions.
 
 ### Detection
 
-`_Hub.is_headless()` checks `DisplayServer.get_name() == "headless"`. Tools
+`Modules.is_headless()` checks `DisplayServer.get_name() == "headless"`. Tools
 that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
 
 ### Per-tool headless matrix

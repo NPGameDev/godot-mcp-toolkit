@@ -3,9 +3,9 @@ extends RefCounted
 ## 3d.* command handlers — create 3D primitives, lights, cameras,
 ## and environment setups in the edited scene.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const Helpers = Modules.Helpers
 
 const _VALID_PRIMITIVES := ["box", "sphere", "cylinder", "capsule", "plane", "prism"]
 const _VALID_LIGHT_TYPES := ["directional", "omni", "spot"]

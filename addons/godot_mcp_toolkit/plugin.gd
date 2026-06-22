@@ -1,12 +1,12 @@
 @tool
 extends EditorPlugin
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FileGuard = _Hub.FileGuard
-const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/settings_registration.gd")
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const FileGuard = Modules.FileGuard
+const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
-const PluginComposer := preload("res://addons/godot_mcp_toolkit/plugin_composer.gd")
-const ToolMenu := preload("res://addons/godot_mcp_toolkit/tool_menu.gd")
+const PluginComposer := preload("res://addons/godot_mcp_toolkit/core/plugin_composer.gd")
+const ToolMenu := preload("res://addons/godot_mcp_toolkit/core/tool_menu.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:6570. Registered/unregistered via add_autoload_singleton /
@@ -28,7 +28,7 @@ var _wizard: OnboardingWizard = null
 func _enter_tree() -> void:
 	# Lifecycle phase sequence. The "why this order" narrative lives here; the
 	# composer owns the internal construction order of the graph it builds.
-	_Hub.EditorAccess.set_plugin(self)
+	Modules.EditorAccess.set_plugin(self)
 	SettingsRegistration.register_all()
 
 	# Construct + wire the whole collaborator graph (registry, server, debug
@@ -46,12 +46,12 @@ func _enter_tree() -> void:
 	_register_editor_settings()
 
 	# Warn about untested future Godot versions (but don't block).
-	var _engine_ver := _Hub.VersionUtils.get_engine_version_pair()
-	if not _Hub.VersionUtils.is_at_most(_engine_ver, _Hub.VersionUtils.GODOT_TESTED_MAX_VERSION):
+	var _engine_ver := Modules.VersionUtils.get_engine_version_pair()
+	if not Modules.VersionUtils.is_at_most(_engine_ver, Modules.VersionUtils.GODOT_TESTED_MAX_VERSION):
 		push_warning(("[MCP] Godot %s detected — latest tested version is %s. "
 			+ "The plugin will run normally but some features may behave unexpectedly. "
 			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues")
-			% [_engine_ver, _Hub.VersionUtils.GODOT_TESTED_MAX_VERSION])
+			% [_engine_ver, Modules.VersionUtils.GODOT_TESTED_MAX_VERSION])
 
 	_wizard = OnboardingWizard.new(self, _handle.dock())
 	call_deferred("_check_onboarding")
@@ -71,7 +71,7 @@ func _on_user_path_changed() -> void:
 	# Instance consumers (feature_settings, server) connect directly
 	# via bind_user_path_monitor().
 	OnboardingWizard.migrate_flag_after_rename()
-	_Hub.LogBuffer.reset_tail_path()
+	Modules.LogBuffer.reset_tail_path()
 
 
 func _exit_tree() -> void:
@@ -93,7 +93,7 @@ func _exit_tree() -> void:
 		_handle = null
 
 	# Plugin reference — clear last (teardown symmetry with _enter_tree).
-	_Hub.EditorAccess.clear_plugin()
+	Modules.EditorAccess.clear_plugin()
 
 
 func _enable_plugin() -> void:

@@ -2,8 +2,8 @@
 extends RefCounted
 ## debug.* command handlers — breakpoint management + debug state.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FileGuard = _Hub.FileGuard
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const FileGuard = Modules.FileGuard
 
 
 static func register(registry: MCPToolkitCommandRegistry, debug_bridge: RefCounted) -> void:

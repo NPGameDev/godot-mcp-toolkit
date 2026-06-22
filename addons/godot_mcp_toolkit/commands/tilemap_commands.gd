@@ -2,10 +2,10 @@
 extends RefCounted
 ## tilemap.* command handlers — batch cell painting with UndoRedo.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const FileGuard = _Hub.FileGuard
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const FileGuard = Modules.FileGuard
+const Helpers = Modules.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
@@ -30,8 +30,8 @@ const _MAX_CELLS := 500
 ## Version-aware hint for tilemap tools.
 static func _tilemap_version_hint(is_deprecated_tilemap: bool) -> String:
 	if is_deprecated_tilemap:
-		var ver := _Hub.VersionUtils.get_engine_version_pair()
-		if _Hub.VersionUtils.is_at_least(ver, "4.3"):
+		var ver := Modules.VersionUtils.get_engine_version_pair()
+		if Modules.VersionUtils.is_at_least(ver, "4.3"):
 			return "Using deprecated TileMap node. Godot 4.3+ provides TileMapLayer — consider upgrading."
 		return ""
 	return ""

@@ -2,7 +2,7 @@
 extends RefCounted
 ## input_map.* command handlers — action (add/remove) and event (bind/unbind).
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
 const BUILTIN_UI_ACTIONS: Array[String] = [
 	"ui_accept", "ui_cancel", "ui_focus_next", "ui_focus_prev",

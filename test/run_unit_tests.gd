@@ -7,39 +7,39 @@ extends SceneTree
 ## The final banner is always printed for environments where exit codes
 ## are unreliable (Windows Godot).
 
-const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/mcp_toolkit_safe_scene_ops.gd")
-const EditorRescan := preload("res://addons/godot_mcp_toolkit/commands/editor_rescan.gd")
-const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
-const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
-const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/settings_registration.gd")
-const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
+const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/scene/mcp_toolkit_safe_scene_ops.gd")
+const EditorRescan := preload("res://addons/godot_mcp_toolkit/commands/editor/editor_rescan.gd")
+const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/core/unfocused_backup.gd")
+const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
+const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
+const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
-const FileGuard := preload("res://addons/godot_mcp_toolkit/file_guard.gd")
-const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
-const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/extension_catalog.gd")
+const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
+const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
+const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
-const ExtensionSupport := preload("res://addons/godot_mcp_toolkit/extension_support.gd")
-const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extension_meta_commands.gd")
-const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extension_watcher.gd")
+const ExtensionSupport := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_support.gd")
+const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_meta_commands.gd")
+const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd")
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const ParticleCommands := preload("res://addons/godot_mcp_toolkit/commands/particle_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
-const TilesetTileData := preload("res://addons/godot_mcp_toolkit/commands/tileset_tile_data.gd")
-const TilesetIo := preload("res://addons/godot_mcp_toolkit/commands/tileset_io.gd")
+const TilesetTileData := preload("res://addons/godot_mcp_toolkit/commands/tileset/tileset_tile_data.gd")
+const TilesetIo := preload("res://addons/godot_mcp_toolkit/commands/tileset/tileset_io.gd")
 const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
 const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
-const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
-const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
-const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
-const SceneLease := preload("res://addons/godot_mcp_toolkit/scene_lease.gd")
-const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/rpc_dispatcher.gd")
-const ProjectKey := preload("res://addons/godot_mcp_toolkit/project_key.gd")
-const ProjectPaths := preload("res://addons/godot_mcp_toolkit/project_paths.gd")
-const RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry_paths.gd")
-const RegistryEntryFile := preload("res://addons/godot_mcp_toolkit/registry_entry_file.gd")
-const RegistryProjection := preload("res://addons/godot_mcp_toolkit/registry_projection.gd")
+const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/scene/signal_pair_resolver.gd")
+const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/transport/dispatch/mutation_watchdog.gd")
+const SceneLease := preload("res://addons/godot_mcp_toolkit/scene/scene_lease.gd")
+const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/transport/dispatch/rpc_dispatcher.gd")
+const ProjectKey := preload("res://addons/godot_mcp_toolkit/paths/project_key.gd")
+const ProjectPaths := preload("res://addons/godot_mcp_toolkit/paths/project_paths.gd")
+const RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry/store/registry_paths.gd")
+const RegistryEntryFile := preload("res://addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd")
+const RegistryProjection := preload("res://addons/godot_mcp_toolkit/registry/store/registry_projection.gd")
 
 var _passed := 0
 var _failed := 0
@@ -229,7 +229,7 @@ func _test_file_guard() -> void:
 func _test_file_guard_self_protect() -> void:
 	_begin("FileGuard self-protect (concern 020)")
 	# A real file under the plugin's source dir → denied (PATH_DENIED).
-	var hit: Dictionary = FileGuard.resolve_safe("res://addons/godot_mcp_toolkit/file_guard.gd")
+	var hit: Dictionary = FileGuard.resolve_safe("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 	_eq(hit.get("error"), "PATH_DENIED", "plugin source file → PATH_DENIED")
 	# The bare dir itself (no trailing slash) → denied via the equality arm.
 	_eq(FileGuard.resolve_safe("res://addons/godot_mcp_toolkit").get("error"), "PATH_DENIED",
@@ -1701,7 +1701,7 @@ func _test_set_property_compound() -> void:
 
 # --- compound_set helper (~8 assertions) ------------------------------------
 
-const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/undo_redo_helpers.gd")
+const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
 
 func _test_compound_set_helper() -> void:
 	_begin("compound_set helper")
@@ -2121,7 +2121,7 @@ func _test_response_size_guard() -> void:
 # exercises the detection without the editor's settings_changed plumbing.
 # Originals are restored so project state (and subsequent tests) are unaffected.
 
-const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/user_path_monitor.gd")
+const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/paths/user_path_monitor.gd")
 
 func _test_user_path_monitor() -> void:
 	_begin("UserPathMonitor change detection")
@@ -2175,7 +2175,7 @@ func _test_user_path_monitor() -> void:
 
 # --- Export strip + binary-token warning set (~7 strip + 22 warning) --------
 
-const ExportStrip := preload("res://addons/godot_mcp_toolkit/export_strip.gd")
+const ExportStrip := preload("res://addons/godot_mcp_toolkit/core/export_strip.gd")
 
 func _test_export_strip() -> void:
 	_begin("Export strip set")
@@ -2185,7 +2185,7 @@ func _test_export_strip() -> void:
 	# definition of an extension. Path-extends to a direct subclass is flattened
 	# by the engine to the same base, so it is covered too.
 	var classes := [
-		{"class": "MCPToolkitExtension", "base": "RefCounted", "path": "res://addons/godot_mcp_toolkit/mcp_toolkit_extension.gd"},
+		{"class": "MCPToolkitExtension", "base": "RefCounted", "path": "res://addons/godot_mcp_toolkit/extensions/mcp_toolkit_extension.gd"},
 		{"class": "DirectExt", "base": "MCPToolkitExtension", "path": "res://a/direct.gd"},
 		{"class": "PathDirectExt", "base": "MCPToolkitExtension", "path": "res://e/path_direct.gd"},
 		{"class": "ChildExt", "base": "ParentExt", "path": "res://b/child.gd"},
@@ -2210,7 +2210,7 @@ func _test_export_strip() -> void:
 	_ok(not strip.has("res://c/weird.cs"), ".cs excluded by .gd guard")
 
 	# Base class itself (base RefCounted) → not matched; prefix-stripped at runtime.
-	_ok(not strip.has("res://addons/godot_mcp_toolkit/mcp_toolkit_extension.gd"),
+	_ok(not strip.has("res://addons/godot_mcp_toolkit/extensions/mcp_toolkit_extension.gd"),
 			"base class itself → not matched (prefix-stripped at runtime)")
 
 	# Exact base match → no false positive from a coincidentally MCPToolkit*-named
@@ -2294,7 +2294,7 @@ func _test_editor_refresh_reload_filter() -> void:
 			"toolkit-own changed script → skip (never self-reload)")
 	# 4. unchanged toolkit script → skip
 	_ok(not EditorRescan.should_reload_open_script(
-			"res://addons/godot_mcp_toolkit/mcp_server.gd", changed),
+			"res://addons/godot_mcp_toolkit/transport/mcp_server.gd", changed),
 			"unchanged toolkit script → skip")
 	print("")
 
@@ -2375,7 +2375,7 @@ func _test_unfocused_backup() -> void:
 # empirically characterised across 4.2-4.6 (boundary 4.3->4.4); see
 # Insights/stale-live-instance-method-hazard.md + test/flows/02_*.
 
-const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/stale_instance_hint.gd")
+const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 
 func _test_stale_instance_hint() -> void:
 	_begin("Stale-instance hint")

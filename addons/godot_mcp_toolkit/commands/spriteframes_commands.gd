@@ -2,9 +2,9 @@
 extends RefCounted
 ## spriteframes.* command handlers — SpriteFrames resource creation and editing.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FileGuard = _Hub.FileGuard
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const FileGuard = Modules.FileGuard
+const Helpers = Modules.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:

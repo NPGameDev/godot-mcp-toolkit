@@ -12,8 +12,8 @@ extends RefCounted
 ## not in a standalone "spatial" namespace. The file noun "spatial" is internal
 ## vocabulary; the scene-read is the contract.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Helpers = Modules.Helpers
 
 ## Hard cap on nodes returned (also bounds the O(n^2) relation pass).
 const DEFAULT_MAX_NODES := 200

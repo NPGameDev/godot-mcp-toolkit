@@ -2,8 +2,8 @@
 extends RefCounted
 ## navigation.* command handlers — NavigationRegion2D polygon editing + baking.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Helpers = Modules.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:

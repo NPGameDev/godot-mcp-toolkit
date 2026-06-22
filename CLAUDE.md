@@ -28,10 +28,10 @@ dispatch) — never direct static calls behind an `if` version check.
 GDScript resolves methods at parse time; a direct call to a non-existent
 method causes a parse error even inside a dead branch.
 
-Centralized helpers in `_hub.gd`: `get_undo_redo()`,
+Centralized helpers in `core/modules.gd`: `get_undo_redo()`,
 `get_toaster()`, `get_editor_theme()`. Version checks use
-`_Hub.VersionUtils.is_at_least()` / `is_at_most()` / `is_version_in_range()`.
-Command files import `_Hub` and use these instead of calling
+`Modules.VersionUtils.is_at_least()` / `is_at_most()` / `is_version_in_range()`.
+Command files import `Modules` and use these instead of calling
 version-dependent EditorInterface methods directly.
 
 **Degradation on 4.2–4.3:** toast notifications silently skipped

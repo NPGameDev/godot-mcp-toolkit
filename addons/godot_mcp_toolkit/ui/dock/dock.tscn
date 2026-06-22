@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/godot_mcp_toolkit/ui/dock/dock.gd" id="1_dock"]
+
+[node name="MCPDock" type="VBoxContainer"]
+script = ExtResource("1_dock")

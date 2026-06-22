@@ -2,9 +2,9 @@
 extends RefCounted
 ## folder.* command handlers — create and delete directories under res://.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FileGuard = _Hub.FileGuard
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const FileGuard = Modules.FileGuard
+const Helpers = Modules.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:

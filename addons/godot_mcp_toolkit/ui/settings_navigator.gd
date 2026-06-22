@@ -2,14 +2,14 @@
 extends RefCounted
 ## Navigates to the Mcp Toolkit section in the ProjectSettings dialog.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
 
 static func open_mcp_settings() -> void:
 	var root := EditorInterface.get_base_control().get_tree().root
 	var dialog := _find_node_by_class(root, "ProjectSettingsEditor")
 	if not dialog is Window:
-		var toaster = _Hub.EditorAccess.get_toaster()
+		var toaster = Modules.EditorAccess.get_toaster()
 		if toaster != null:
 			toaster.push_toast(
 				"Project -> Project Settings -> Mcp Toolkit", 0)

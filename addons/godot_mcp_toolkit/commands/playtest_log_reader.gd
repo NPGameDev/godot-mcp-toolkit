@@ -18,9 +18,9 @@ extends RefCounted
 ##     debug_commands.gd) + set_debug_bridge()/clear_debug_bridge().
 ## Consumed by playtest_commands.gd via a `preload` alias.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Helpers = _Hub.Helpers
-const LogHelpers = _Hub.LogHelpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Helpers = Modules.Helpers
+const LogHelpers = Modules.LogHelpers
 
 # Log-file offset snapshot at game_start — bytes after this offset belong to
 # the current/most-recent game session. The log file (user://logs/godot.log)

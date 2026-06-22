@@ -2,10 +2,10 @@
 extends RefCounted
 ## save.* command handlers — user:// file operations.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FileGuard = _Hub.FileGuard
-const Untrusted = _Hub.Untrusted
-const Scrubber = _Hub.Scrubber
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const FileGuard = Modules.FileGuard
+const Untrusted = Modules.Untrusted
+const Scrubber = Modules.Scrubber
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:

@@ -3,11 +3,11 @@ extends RefCounted
 ## scene.* command handlers — tree read, scene create/open/close/delete,
 ## node creation, instantiation.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const FileGuard = _Hub.FileGuard
-const Untrusted = _Hub.Untrusted
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const FileGuard = Modules.FileGuard
+const Untrusted = Modules.Untrusted
+const Helpers = Modules.Helpers
 
 const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _set_main_scene_state error in the editor console. This is benign Godot engine noise — safe to ignore."
 
@@ -257,7 +257,7 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 			"scene is not open in any editor tab: %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
 	if reason == "no_api":
 		return MCPToolkitError.fail("UNSUPPORTED",
-			"scene.close requires Godot 4.5+ (connected: %s)" % _Hub.VersionUtils.get_engine_version_pair())
+			"scene.close requires Godot 4.5+ (connected: %s)" % Modules.VersionUtils.get_engine_version_pair())
 	return MCPToolkitError.fail("INTERNAL", "unexpected close_scene_tab_safe reason: %s" % reason)
 
 

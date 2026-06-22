@@ -2,9 +2,9 @@
 extends RefCounted
 ## particles.* command handlers — GPU particle system creation with presets.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const Helpers = Modules.Helpers
 
 const _VALID_PRESETS := ["fire", "smoke", "sparks", "rain", "snow", "explosion", "magic", "dust"]
 

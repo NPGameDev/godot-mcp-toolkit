@@ -2,10 +2,10 @@
 extends RefCounted
 ## script.* command handlers — read, write, delete for .gd/.cs/.gdshader/.gdshaderinc.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const FileGuard = _Hub.FileGuard
-const Untrusted = _Hub.Untrusted
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const FileGuard = Modules.FileGuard
+const Untrusted = Modules.Untrusted
+const Helpers = Modules.Helpers
 
 const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"]
 
@@ -180,8 +180,8 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		# (validation guidance first, stale nudge in the recency slot).
 		var vi := Engine.get_version_info()
 		var minor := int(vi["minor"])
-		if _Hub.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], write_extension, int(vi["major"]), minor):
-			result["hint"] = _Hub.StaleInstanceHint.write_hint("%d.%d" % [int(vi["major"]), minor])
+		if Modules.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], write_extension, int(vi["major"]), minor):
+			result["hint"] = Modules.StaleInstanceHint.write_hint("%d.%d" % [int(vi["major"]), minor])
 
 	return result
 
@@ -252,7 +252,7 @@ static func _validate_gdscript(source: String) -> Dictionary:
 	# Snapshot LogBuffer position so we can scan errors produced by reload().
 	# _next_id is the ID the next pushed entry will receive; since_id uses
 	# "entries with id > since_id", so subtract 1 to include that first entry.
-	var pre_id: int = _Hub.LogBuffer._next_id - 1
+	var pre_id: int = Modules.LogBuffer._next_id - 1
 	var script := GDScript.new()
 	script.source_code = "\n".join(lines)
 	var is_valid := script.reload(false) == OK
@@ -262,7 +262,7 @@ static func _validate_gdscript(source: String) -> Dictionary:
 		diagnostics.append({
 			"line": 0,
 			"severity": "error",
-			"message": _compile_error_message(_Hub.VersionUtils.get_engine_version_pair()),
+			"message": _compile_error_message(Modules.VersionUtils.get_engine_version_pair()),
 		})
 		# Scan reload errors for unresolved identifiers that match autoloads.
 		var hints := _check_autoload_hints(pre_id)
@@ -280,18 +280,18 @@ static func _validate_gdscript(source: String) -> Dictionary:
 ## PARSE errors only on Godot 4.5+ (the Logger API hooks the editor's error stream); on
 ## 4.2-4.4 file logging captures running-game output, not editor parse errors, so steering
 ## the LLM to editor_get_console there is a dead end — point to lsp_diagnostics (works 4.2+)
-## instead. engine_ver is _Hub.VersionUtils.get_engine_version_pair() (e.g. "4.5"). See
+## instead. engine_ver is Modules.VersionUtils.get_engine_version_pair() (e.g. "4.5"). See
 ## 41m-ter + COMPATIBILITY.md ("editor parse-error capture needs 4.5+").
 static func _compile_error_message(engine_ver: String) -> String:
 	const CONSOLE := "GDScript compile error. Call editor_get_console for detailed messages with line numbers."
 	const LSP := "GDScript compile error. On Godot <4.5 editor parse errors are not surfaced by editor_get_console — call lsp_diagnostics for line-level detail (or read the script)."
-	return CONSOLE if _Hub.VersionUtils.is_at_least(engine_ver, "4.5") else LSP
+	return CONSOLE if Modules.VersionUtils.is_at_least(engine_ver, "4.5") else LSP
 
 
 ## Scan LogBuffer errors emitted during reload() for unresolved identifiers
 ## that match registered autoloads, returning actionable hint strings.
 static func _check_autoload_hints(pre_id: int) -> Array:
-	var buf := _Hub.LogBuffer.get_entries(50, ["error"], pre_id)
+	var buf := Modules.LogBuffer.get_entries(50, ["error"], pre_id)
 	var entries: Array = buf.get("entries", [])
 	var seen := {}
 	var hints: Array = []
@@ -317,7 +317,7 @@ static func _check_autoload_hints(pre_id: int) -> Array:
 
 ## Scan LogBuffer errors for preload() failures referencing missing files.
 static func _check_preload_hints(pre_id: int) -> Array:
-	var buf := _Hub.LogBuffer.get_entries(50, ["error"], pre_id)
+	var buf := Modules.LogBuffer.get_entries(50, ["error"], pre_id)
 	var entries: Array = buf.get("entries", [])
 	var seen := {}
 	var hints: Array = []

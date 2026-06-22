@@ -3,10 +3,10 @@ extends RefCounted
 ## procedural.* command handlers — create/edit Gradient, Curve, and
 ## FastNoiseLite resources as standalone .tres files.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const FileGuard = _Hub.FileGuard
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const FileGuard = Modules.FileGuard
+const Helpers = Modules.Helpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:

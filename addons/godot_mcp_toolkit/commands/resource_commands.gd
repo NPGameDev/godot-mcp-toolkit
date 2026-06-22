@@ -2,11 +2,11 @@
 extends RefCounted
 ## resource.* command handlers — load, write (create/update upsert), delete for .tres/.res files.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const FileGuard = _Hub.FileGuard
-const Untrusted = _Hub.Untrusted
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const FileGuard = Modules.FileGuard
+const Untrusted = Modules.Untrusted
+const Helpers = Modules.Helpers
 
 const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 	"image", "mesh_arrays", "surface_arrays", "_data",

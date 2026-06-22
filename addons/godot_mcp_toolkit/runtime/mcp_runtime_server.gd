@@ -16,19 +16,19 @@ extends Node
 ##      stronger than is_debug_build() (which is true in a debug export).
 
 # Runtime dependency closure — direct preloads of export-clean scripts only.
-# Deliberately NOT _hub.gd: it statically names EditorInterface/EditorPlugin, which
+# Deliberately NOT core/modules.gd: it statically names EditorInterface/EditorPlugin, which
 # would parse-fail this autoload in an export template (godot#91713). See
 # Insights/runtime-autoload-editor-taint-analysis.md (the "silent-if-shipped" norm).
-const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
-const Untrusted := preload("res://addons/godot_mcp_toolkit/untrusted.gd")
-const MCPAuth := preload("res://addons/godot_mcp_toolkit/auth.gd")
-const Scrubber := preload("res://addons/godot_mcp_toolkit/scrubber.gd")
-const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
-const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
-const LogBuffer := preload("res://addons/godot_mcp_toolkit/log_buffer.gd")
-const Notifier := preload("res://addons/godot_mcp_toolkit/notifier.gd")
-const WsTransport := preload("res://addons/godot_mcp_toolkit/ws_transport.gd")
-const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
+const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
+const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
+const Scrubber := preload("res://addons/godot_mcp_toolkit/security/scrubber.gd")
+const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
+const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
+const Notifier := preload("res://addons/godot_mcp_toolkit/transport/notifier.gd")
+const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transport.gd")
+const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/scene/signal_pair_resolver.gd")
 
 const PORT_BASE := 6570
 const PORT_RANGE := 16  # 6570..6585 inclusive

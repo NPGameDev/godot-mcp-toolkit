@@ -2,10 +2,10 @@
 extends RefCounted
 ## node.* command handlers — property get/set/list, method calls, script attachment.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const Coerce = _Hub.Coerce
-const FileGuard = _Hub.FileGuard
-const Helpers = _Hub.Helpers
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const Coerce = Modules.Coerce
+const FileGuard = Modules.FileGuard
+const Helpers = Modules.Helpers
 
 ## node.set_property rejects "groups" because its set is a declarative full
 ## replace (it would drop any group not in the list), whereas node.groups is
@@ -521,11 +521,11 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 	var disk_source := FileAccess.get_file_as_string(scr_path)
 	var vi := Engine.get_version_info()
 	var minor := int(vi["minor"])
-	var disk_has := _Hub.StaleInstanceHint.source_has_method(disk_source, method_name)
-	var disk_ok := _Hub.StaleInstanceHint.source_compiles(disk_source)
-	if not _Hub.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, int(vi["major"]), minor):
+	var disk_has := Modules.StaleInstanceHint.source_has_method(disk_source, method_name)
+	var disk_ok := Modules.StaleInstanceHint.source_compiles(disk_source)
+	if not Modules.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, int(vi["major"]), minor):
 		return ""
-	return _Hub.StaleInstanceHint.recovery_message("%d.%d" % [int(vi["major"]), minor])
+	return Modules.StaleInstanceHint.recovery_message("%d.%d" % [int(vi["major"]), minor])
 
 
 static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:

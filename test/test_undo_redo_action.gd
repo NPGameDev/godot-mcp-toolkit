@@ -15,8 +15,8 @@ extends Node
 ## undo history by default. Pass a node_path to target a specific node's
 ## history (for multi-tab editing scenarios).
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const MCPToolkitUndoRedoAction = preload("res://addons/godot_mcp_toolkit/mcp_toolkit_undo_redo_action.gd")
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const MCPToolkitUndoRedoAction = preload("res://addons/godot_mcp_toolkit/scene/mcp_toolkit_undo_redo_action.gd")
 
 
 # -- Diagnostics (call first to verify environment) ---------------------------
@@ -28,10 +28,10 @@ func diagnose_undo_redo() -> Dictionary:
 	var diag := {}
 
 	# 1. Hub plugin reference
-	diag["hub_plugin_set"] = _Hub.EditorAccess.has_plugin()
+	diag["hub_plugin_set"] = Modules.EditorAccess.has_plugin()
 
 	# 2. EditorUndoRedoManager
-	var ur = _Hub.EditorAccess.get_undo_redo()
+	var ur = Modules.EditorAccess.get_undo_redo()
 	diag["undo_redo_null"] = ur == null
 	if ur != null:
 		diag["undo_redo_class"] = ur.get_class()
@@ -102,7 +102,7 @@ func diagnose_undo_redo() -> Dictionary:
 ## [param context_node_path]: optional path relative to scene root — uses
 ##   that node's history. Empty string = edited scene root's history.
 func trigger_undo(context_node_path: String = "") -> Dictionary:
-	var ur = _Hub.EditorAccess.get_undo_redo()
+	var ur = Modules.EditorAccess.get_undo_redo()
 	if ur == null:
 		return {"status": "error", "message": "EditorUndoRedoManager not available (headless or plugin not loaded)"}
 
@@ -122,7 +122,7 @@ func trigger_undo(context_node_path: String = "") -> Dictionary:
 
 ## Trigger redo on the edited scene's history. Returns a status dict.
 func trigger_redo(context_node_path: String = "") -> Dictionary:
-	var ur = _Hub.EditorAccess.get_undo_redo()
+	var ur = Modules.EditorAccess.get_undo_redo()
 	if ur == null:
 		return {"status": "error", "message": "EditorUndoRedoManager not available (headless or plugin not loaded)"}
 
@@ -144,7 +144,7 @@ func trigger_redo(context_node_path: String = "") -> Dictionary:
 ## Creates temporary nodes, mutates via the builder, undoes/redoes
 ## programmatically, and verifies state. Cleans up afterward.
 func run_undo_redo_tests() -> Dictionary:
-	var ur = _Hub.EditorAccess.get_undo_redo()
+	var ur = Modules.EditorAccess.get_undo_redo()
 	if ur == null:
 		return {"status": "skipped", "message": "No EditorUndoRedoManager — cannot run integration tests"}
 

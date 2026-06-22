@@ -158,7 +158,7 @@ For a path the declarative guard doesn't fit (e.g. one that legitimately accepts
 an absolute filesystem path), guard imperatively:
 
 ```gdscript
-const FileGuard = preload("res://addons/godot_mcp_toolkit/file_guard.gd")
+const FileGuard = preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 var guard := FileGuard.resolve_safe(params.get("file_path", ""))
 if guard["error"] != null:
     return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
@@ -170,7 +170,7 @@ own code** (a file you read, project/scene data, user input echoed back, an
 external tool's output), wrap it so the LLM treats it as data, not instructions:
 
 ```gdscript
-const Untrusted = preload("res://addons/godot_mcp_toolkit/untrusted.gd")
+const Untrusted = preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 
 func _read_config(params: Dictionary) -> Dictionary:
     # ... guard params["file_path"] first (rule 1) ...
@@ -206,8 +206,8 @@ return {"success": false, "error": "Human-readable message", "code": "ERROR_CODE
 You can also use the toolkit's `McpError` helper if you preload the hub:
 
 ```gdscript
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
-const McpError = _Hub.McpError
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const McpError = Modules.McpError
 
 # Then in handlers:
 return McpError.make("NOT_FOUND", "Node not found at path: " + path)
