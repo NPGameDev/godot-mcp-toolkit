@@ -404,6 +404,18 @@ static func class_base_chain(type_name: String) -> String:
 	return " -> ".join(chain)
 
 
+## Resolve a class name to its kind. Returns {"kind": "native"|"global"|"",
+## "entry": Dictionary} -- "entry" is the global-class-list row for a global
+## class, {} otherwise. Caller owns the unknown-class error + the descends-from check.
+static func resolve_class_kind(type_name: String) -> Dictionary:
+	if ClassDB.class_exists(type_name):
+		return {"kind": "native", "entry": {}}
+	for entry in ProjectSettings.get_global_class_list():
+		if str(entry.get("class", "")) == type_name:
+			return {"kind": "global", "entry": entry}
+	return {"kind": "", "entry": {}}
+
+
 # -- Scene tab management ------------------------------------------------------
 
 

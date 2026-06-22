@@ -165,16 +165,9 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	if dir_result.has("error"):
 		return dir_result
 	var dirs_created: bool = dir_result["dirs_created"]
-	var resolved_kind := ""
-	var global_entry: Dictionary = {}
-	if ClassDB.class_exists(resource_class):
-		resolved_kind = "native"
-	else:
-		for entry in ProjectSettings.get_global_class_list():
-			if str(entry.get("class", "")) == resource_class:
-				resolved_kind = "global"
-				global_entry = entry
-				break
+	var rk := Helpers.resolve_class_kind(resource_class)
+	var resolved_kind: String = rk["kind"]
+	var global_entry: Dictionary = rk["entry"]
 	if resolved_kind.is_empty():
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"unknown class %s; check ClassDB or ProjectSettings global class list" % resource_class, MCPToolkitError.HINT_CLASS_NAME)

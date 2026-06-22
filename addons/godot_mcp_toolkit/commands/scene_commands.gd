@@ -133,16 +133,9 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		return dir_result
 	var dirs_created: bool = dir_result["dirs_created"]
 
-	var resolved_kind := ""
-	var global_entry: Dictionary = {}
-	if ClassDB.class_exists(root_type):
-		resolved_kind = "native"
-	else:
-		for entry in ProjectSettings.get_global_class_list():
-			if str(entry.get("class", "")) == root_type:
-				resolved_kind = "global"
-				global_entry = entry
-				break
+	var rk := Helpers.resolve_class_kind(root_type)
+	var resolved_kind: String = rk["kind"]
+	var global_entry: Dictionary = rk["entry"]
 	if resolved_kind.is_empty():
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % root_type, MCPToolkitError.HINT_CLASS_NAME)
