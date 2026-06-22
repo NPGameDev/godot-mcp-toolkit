@@ -608,24 +608,45 @@ static func _batch_instantiate(
 	packed_path: String, parent_path: String, instances: Array,
 ) -> Dictionary:
 	var node_refs: Array = []
+	# Per-entry outcome record (concern 034 D): every entry — success OR failure —
+	# gets a dict so a partial batch no longer hides its failures. Built parallel
+	# to `node_refs`; success entries are backfilled with their post-commit path
+	# below. `results[i]` lines up with `instances[i]`. `_result_slots` maps each
+	# surviving node to its slot so the deferred path read patches the right row.
+	var results: Array = []
+	var _result_slots: Array = []
 	var _undo := MCPToolkitUndoRedoAction.begin(
 		"batch instantiate %d × %s" % [instances.size(), packed_path], parent_node)
 
-	for entry in instances:
+	for i in instances.size():
+		var entry = instances[i]
 		var inst_dict: Dictionary = entry if typeof(entry) == TYPE_DICTIONARY else {}
+		var inst_name := str(inst_dict.get("name", ""))
 		var instance: Node = packed.instantiate()
 		if instance == null:
+			# Previously a silent `continue` — the failed entry vanished. Record it.
+			results.append({
+				"index": i,
+				"success": false,
+				"name": inst_name,
+				"error": "PackedScene.instantiate returned null for %s" % packed_path,
+			})
 			continue
 
-		var inst_name := str(inst_dict.get("name", ""))
 		if not inst_name.is_empty():
 			instance.name = inst_name
+
+		# Per-key coerce failures used to `continue` the inner loop silently — the
+		# node still lands but the key was dropped invisibly. Capture each into
+		# `property_errors` on this (succeeding) entry instead of losing it.
+		var property_errors: Array = []
 
 		# Apply transform properties (position, rotation, scale).
 		for key in ["position", "rotation", "scale"]:
 			if inst_dict.has(key):
 				var coerced = Coerce.coerce_value(inst_dict[key])
 				if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+					property_errors.append({"property": key, "error": str(coerced["_coerce_error"])})
 					continue
 				instance.set(key, coerced)
 
@@ -640,6 +661,7 @@ static func _batch_instantiate(
 				else:
 					var coerced = Coerce.coerce_value(props[key])
 					if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+						property_errors.append({"property": prop_name, "error": str(coerced["_coerce_error"])})
 						continue
 					instance.set(prop_name, coerced)
 
@@ -652,21 +674,39 @@ static func _batch_instantiate(
 			.undo_method(parent_node.remove_child.bind(instance))
 
 		node_refs.append(instance)
+		# Success row — path/class are filled after commit (see below). Carry any
+		# per-key coerce failures so they're no longer invisible.
+		var slot := {"index": i, "success": true}
+		if not property_errors.is_empty():
+			slot["property_errors"] = property_errors
+		results.append(slot)
+		_result_slots.append(slot)
 
 	_undo.commit_recorded()
 
 	# Collect paths AFTER commit_action — instances are now in the tree,
 	# so get_path_to() can find the common parent.
 	var created: Array = []
-	for inst in node_refs:
+	for idx in node_refs.size():
+		var inst: Node = node_refs[idx]
+		var inst_path := _path_in_scene(root, inst)
+		var inst_class := inst.get_class()
+		var resolved_name := String(inst.name)
 		created.append({
-			"path": _path_in_scene(root, inst),
-			"class": inst.get_class(),
-			"name": String(inst.name),
+			"path": inst_path,
+			"class": inst_class,
+			"name": resolved_name,
 		})
+		# Backfill the matching success row with its now-resolvable path/class/name.
+		var slot: Dictionary = _result_slots[idx]
+		slot["path"] = inst_path
+		slot["class"] = inst_class
+		slot["name"] = resolved_name
 
-	return MCPToolkitSuccess.ok({"status": "created", "count": created.size(),
-		"instances": created})
+	# Roll any failed entries up into a top-level `failed` + `hint` (no-op when all
+	# succeeded — `instances`/`count` stay exactly as before).
+	return MCPToolkitSuccess.ok(Helpers.summarize_batch({"status": "created",
+		"count": created.size(), "instances": created, "results": results}, "results"))
 
 
 static func _cmd_create_inherited(parameters: Dictionary) -> Dictionary:
