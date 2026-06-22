@@ -325,11 +325,7 @@ static func _apply_navigation_polygon(
 	if typeof(val) == TYPE_STRING:
 		match val:
 			"full":
-				var hw := tile_size.x / 2.0
-				var hh := tile_size.y / 2.0
-				var verts := PackedVector2Array([
-					Vector2(-hw, -hh), Vector2(hw, -hh),
-					Vector2(hw, hh), Vector2(-hw, hh)])
+				var verts := _IO.build_full_tile_polygon(tile_size)
 				td.set_navigation_polygon(nav_layer, _build_nav_polygon(verts))
 			"none":
 				td.set_navigation_polygon(nav_layer, null)
@@ -355,11 +351,7 @@ static func _apply_occlusion_polygon(
 		match val:
 			"full":
 				var op := OccluderPolygon2D.new()
-				var hw := tile_size.x / 2.0
-				var hh := tile_size.y / 2.0
-				op.polygon = PackedVector2Array([
-					Vector2(-hw, -hh), Vector2(hw, -hh),
-					Vector2(hw, hh), Vector2(-hw, hh)])
+				op.polygon = _IO.build_full_tile_polygon(tile_size)
 				td.set_occluder(occ_layer, op)
 			"none":
 				td.set_occluder(occ_layer, null)
