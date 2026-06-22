@@ -34,6 +34,47 @@ const _RANGE_PARAMS := {
 	"hue_variation": "hue_variation",
 }
 
+# Coercion modes for the data-driven property applier (_apply_props).
+# Each mirrors the EXACT cast the old pass-7 apply ladder used so the emitted
+# property value stays byte-identical:
+#   INT/FLOAT/BOOL — wrap eff[key] in int()/float()/bool() before setting.
+#   RAW            — assign eff[key] directly (preset/merge already stored the
+#                    right Vector3/Color; the old code assigned it untouched).
+enum { _COERCE_INT, _COERCE_FLOAT, _COERCE_BOOL, _COERCE_RAW }
+
+# Targets for the applier: the node vs the ParticleProcessMaterial.
+enum { _TARGET_NODE, _TARGET_MATERIAL }
+
+# Data-driven map of the uniform "if eff.has(k): target.set(prop, cast(eff[k]));
+# properties_set += 1" rows of pass 7 (GodotCodeStandards §12.4 within-file DRY).
+# Each row is [eff_key, target, coerce] and contributes weight 1. Transcribed
+# row-by-row from the old apply ladder; the original eff_key == the target
+# property name in every case, so a single `key` field doubles as both. Rows
+# stay in the original apply ORDER (node group, then material group); the genuine
+# specials — range pairs (weight 2), the emission-shape name→enum lookup,
+# sub-resources, version-gated props, the 2D/3D forks — are NOT in this table and
+# remain explicit. Property writes here are mutually independent, so the integer
+# count and the final object state are invariant under their relative order.
+const _PROP_SPEC := [
+	# Node group (was :437-448).
+	["amount", _TARGET_NODE, _COERCE_INT],
+	["lifetime", _TARGET_NODE, _COERCE_FLOAT],
+	["explosiveness", _TARGET_NODE, _COERCE_FLOAT],
+	["speed_scale", _TARGET_NODE, _COERCE_FLOAT],
+	["one_shot", _TARGET_NODE, _COERCE_BOOL],
+	["local_coords", _TARGET_NODE, _COERCE_BOOL],
+	# Material group (was :451-495, minus the range loop + emission-shape arm).
+	["direction", _TARGET_MATERIAL, _COERCE_RAW],
+	["spread", _TARGET_MATERIAL, _COERCE_FLOAT],
+	["gravity", _TARGET_MATERIAL, _COERCE_RAW],
+	["color", _TARGET_MATERIAL, _COERCE_RAW],
+	["particle_flag_align_y", _TARGET_MATERIAL, _COERCE_BOOL],
+	["emission_sphere_radius", _TARGET_MATERIAL, _COERCE_FLOAT],
+	["emission_box_extents", _TARGET_MATERIAL, _COERCE_RAW],
+	["turbulence_enabled", _TARGET_MATERIAL, _COERCE_BOOL],
+	["turbulence_noise_strength", _TARGET_MATERIAL, _COERCE_FLOAT],
+]
+
 # Presets defined in 2D units. When type=="3d", _adjust_for_3d() is applied.
 const _PRESETS := {
 	"fire": {
@@ -332,6 +373,31 @@ static func _build_curve_texture(points: Array) -> Array:
 	return [texture, curve]
 
 
+static func _apply_props(node: Node, material: ParticleProcessMaterial, eff: Dictionary) -> int:
+	## Apply every uniform _PROP_SPEC entry present in eff onto its target,
+	## returning the properties_set delta (the data-driven replacement for the
+	## simple-property half of pass 7). The range-pair loop and the emission-shape
+	## name→enum lookup are NOT covered here and stay explicit in the handler.
+	var count := 0
+	for spec in _PROP_SPEC:
+		var key: String = spec[0]
+		if not eff.has(key):
+			continue
+		var target: Object = node if spec[1] == _TARGET_NODE else material
+		var raw: Variant = eff[key]
+		match spec[2]:
+			_COERCE_INT:
+				target.set(key, int(raw))
+			_COERCE_FLOAT:
+				target.set(key, float(raw))
+			_COERCE_BOOL:
+				target.set(key, bool(raw))
+			_:  # _COERCE_RAW — assign untouched (already the right Vector3/Color).
+				target.set(key, raw)
+		count += 1
+	return count
+
+
 # -- Command ------------------------------------------------------------------
 
 
@@ -433,35 +499,14 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 			overrides.append("emission_shape")
 		eff["emission_shape"] = str(emission_shape_str)
 
-	# --- Apply node properties ---
-	for key in ["amount"]:
-		if eff.has(key):
-			node.set(key, int(eff[key]))
-			properties_set += 1
-	for key in ["lifetime", "explosiveness", "speed_scale"]:
-		if eff.has(key):
-			node.set(key, float(eff[key]))
-			properties_set += 1
-	for key in ["one_shot", "local_coords"]:
-		if eff.has(key):
-			node.set(key, bool(eff[key]))
-			properties_set += 1
+	# --- Apply node + material properties (data-driven; see _PROP_SPEC) ---
+	# The uniform single-property rows of pass 7 are applied by _apply_props.
+	# The range-pair loop and the emission-shape name→enum lookup are NOT uniform
+	# (weight 2 / value is an enum lookup) and stay explicit below. These writes
+	# are mutually independent, so the count and final state are order-invariant.
+	properties_set += _apply_props(node, material, eff)
 
-	# --- Apply material properties ---
-	if eff.has("direction"):
-		material.direction = eff["direction"]
-		properties_set += 1
-	if eff.has("spread"):
-		material.spread = float(eff["spread"])
-		properties_set += 1
-	if eff.has("gravity"):
-		material.gravity = eff["gravity"]
-		properties_set += 1
-	if eff.has("color"):
-		material.color = eff["color"]
-		properties_set += 1
-
-	# Range params on material.
+	# Range params on material (weight 2 each — kept explicit).
 	for prefix in ["initial_velocity", "damping", "orbit_velocity", "scale",
 			"angle", "angular_velocity", "hue_variation"]:
 		if eff.has(prefix + "_min"):
@@ -469,30 +514,12 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 			material.set(prefix + "_max", float(eff[prefix + "_max"]))
 			properties_set += 2
 
-	if eff.has("particle_flag_align_y"):
-		material.particle_flag_align_y = bool(eff["particle_flag_align_y"])
-		properties_set += 1
-
-	# Emission shape.
+	# Emission shape (name → enum lookup — kept explicit).
 	if eff.has("emission_shape"):
 		var shape_name := str(eff["emission_shape"])
 		if shape_name in _EMISSION_SHAPES:
 			material.emission_shape = _EMISSION_SHAPES[shape_name]
 			properties_set += 1
-	if eff.has("emission_sphere_radius"):
-		material.emission_sphere_radius = float(eff["emission_sphere_radius"])
-		properties_set += 1
-	if eff.has("emission_box_extents"):
-		material.emission_box_extents = eff["emission_box_extents"]
-		properties_set += 1
-
-	# Turbulence.
-	if eff.has("turbulence_enabled"):
-		material.turbulence_enabled = bool(eff["turbulence_enabled"])
-		properties_set += 1
-	if eff.has("turbulence_noise_strength"):
-		material.turbulence_noise_strength = float(eff["turbulence_noise_strength"])
-		properties_set += 1
 
 	# --- Sub-resources: color_ramp, alpha_curve, scale_curve ---
 	var sr_err = _apply_sub_resource(parameters, eff, preset, material,

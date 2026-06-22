@@ -23,6 +23,7 @@ const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extension
 const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extension_watcher.gd")
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
+const ParticleCommands := preload("res://addons/godot_mcp_toolkit/commands/particle_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
 const TilesetTileData := preload("res://addons/godot_mcp_toolkit/commands/tileset_tile_data.gd")
 const TilesetIo := preload("res://addons/godot_mcp_toolkit/commands/tileset_io.gd")
@@ -97,6 +98,7 @@ func _init() -> void:
 	_test_response_size_guard()
 	_test_spatial_map()
 	_test_texture_generate()
+	_test_particle_prop_apply()
 	_test_sound_generate()
 	_test_create_collision_resolver()
 	_test_tileset_edit_key_enforcement()
@@ -2557,6 +2559,92 @@ func _test_texture_generate() -> void:
 	TextureCommands._draw_shape(checker, "checkerboard", red, clear, 0, clear, 8, "right")
 	_ok(checker.get_pixel(0, 0) == red, "checkerboard: cell (0,0) fill")
 	_ok(checker.get_pixel(8, 0).a == 0.0, "checkerboard: cell (1,0) background")
+
+
+# --- 41n/034 C1: particles.create _PROP_SPEC / _apply_props ----------------
+# Pins the data-driven property applier that replaced pass 7's if-ladder. The
+# load-bearing contract is the RETURNED count (== properties_set delta) plus the
+# exact value + cast landing on the node / material. ParticleProcessMaterial and
+# GPUParticles2D are not editor-only, so this runs headless.
+func _test_particle_prop_apply() -> void:
+	_begin("particles _apply_props (_PROP_SPEC)")
+
+	# --- All 15 uniform props present → count 15, every value lands + cast.
+	# Scalars deliberately arrive in the "wrong" numeric type to pin the cast:
+	# amount as a float (→ int), spread as an int (→ float), one_shot as int 1
+	# (→ bool true). Vectors/colour are pre-built (RAW direct-assign, no recast).
+	var node_all := GPUParticles2D.new()
+	var mat_all := ParticleProcessMaterial.new()
+	var dir := Vector3(0, -1, 0)
+	var grav := Vector3(0, 49, 0)
+	var box := Vector3(100, 50, 0)
+	var col := Color(0.2, 0.4, 0.6, 0.8)
+	var eff_all := {
+		"amount": 24.0,  # float in → int out
+		"lifetime": 1.5,
+		"explosiveness": 0.5,
+		"speed_scale": 2.0,
+		"one_shot": 1,  # int in → bool out
+		"local_coords": true,
+		"direction": dir,
+		"spread": 30,  # int in → float out
+		"gravity": grav,
+		"color": col,
+		"particle_flag_align_y": true,
+		"emission_sphere_radius": 12.0,
+		"emission_box_extents": box,
+		"turbulence_enabled": true,
+		"turbulence_noise_strength": 0.75,
+	}
+	var n_all := ParticleCommands._apply_props(node_all, mat_all, eff_all)
+	_eq(n_all, 15, "all 15 props present → count 15")
+
+	# Node group values + casts.
+	_eq(node_all.amount, 24, "amount float 24.0 → int 24")
+	_ok(typeof(node_all.amount) == TYPE_INT, "amount cast to int")
+	_ok(is_equal_approx(node_all.lifetime, 1.5), "lifetime → 1.5")
+	_ok(is_equal_approx(node_all.explosiveness, 0.5), "explosiveness → 0.5")
+	_ok(is_equal_approx(node_all.speed_scale, 2.0), "speed_scale → 2.0")
+	_eq(node_all.one_shot, true, "one_shot int 1 → bool true")
+	_eq(node_all.local_coords, true, "local_coords → true")
+
+	# Material group values + casts.
+	_eq(mat_all.direction, dir, "direction → Vector3 (raw assign)")
+	_ok(is_equal_approx(mat_all.spread, 30.0), "spread int 30 → float 30.0")
+	_eq(mat_all.gravity, grav, "gravity → Vector3 (raw assign)")
+	_eq(mat_all.color, col, "color → Color (raw assign)")
+	_eq(mat_all.particle_flag_align_y, true, "particle_flag_align_y → true")
+	_ok(is_equal_approx(mat_all.emission_sphere_radius, 12.0), "emission_sphere_radius → 12.0")
+	_eq(mat_all.emission_box_extents, box, "emission_box_extents → Vector3 (raw assign)")
+	_eq(mat_all.turbulence_enabled, true, "turbulence_enabled → true")
+	_ok(is_equal_approx(mat_all.turbulence_noise_strength, 0.75), "turbulence_noise_strength → 0.75")
+	node_all.free()
+
+	# --- No props present → count 0, nothing written (props keep defaults).
+	var node_none := GPUParticles2D.new()
+	var mat_none := ParticleProcessMaterial.new()
+	var amount_default := node_none.amount
+	var spread_default := mat_none.spread
+	_eq(ParticleCommands._apply_props(node_none, mat_none, {}), 0, "empty eff → count 0")
+	_eq(node_none.amount, amount_default, "empty eff → amount untouched")
+	_eq(mat_none.spread, spread_default, "empty eff → spread untouched")
+	node_none.free()
+
+	# --- Subset (1 node + 2 material) → count 3, only those land.
+	var node_sub := GPUParticles2D.new()
+	var mat_sub := ParticleProcessMaterial.new()
+	var n_sub := ParticleCommands._apply_props(node_sub, mat_sub, {
+		"lifetime": 3.0,
+		"spread": 45.0,
+		"turbulence_enabled": true,
+	})
+	_eq(n_sub, 3, "subset of 3 → count 3")
+	_ok(is_equal_approx(node_sub.lifetime, 3.0), "subset: lifetime landed")
+	_ok(is_equal_approx(mat_sub.spread, 45.0), "subset: spread landed")
+	_eq(mat_sub.turbulence_enabled, true, "subset: turbulence_enabled landed")
+	# A prop absent from the subset eff must NOT have been counted/written.
+	_eq(node_sub.amount, node_none.amount, "subset: absent amount stays default")
+	node_sub.free()
 
 
 # --- 41m-quinquies: sound.generate synthesis ------------------------------
