@@ -1,15 +1,14 @@
 @tool
 extends RefCounted
-## editor.* command handlers — errors, save, screenshot, reload, console, wait-for-idle.
+## editor.* / execute.* command registration orchestrator — wires every editor.*
+## and execute.* tool onto the registry and delegates each handler to its command
+## child (log-reader, rescan, screenshot, execute). Holds no subdomain logic; the
+## only handler it keeps local is the two-line editor.set_lsp_status server push.
 
-const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const _LogReader := preload("res://addons/godot_mcp_toolkit/commands/editor_log_reader.gd")
 const _Rescan := preload("res://addons/godot_mcp_toolkit/commands/editor_rescan.gd")
 const _Screenshot := preload("res://addons/godot_mcp_toolkit/commands/editor_screenshot.gd")
 const _Execute := preload("res://addons/godot_mcp_toolkit/commands/editor_execute.gd")
-const Untrusted = _Hub.Untrusted
-const Scrubber = _Hub.Scrubber
-const LogHelpers = _Hub.LogHelpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
@@ -17,7 +16,11 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _LogReader.cmd_get_errors(server, parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("editor.save_scene", func(parameters: Dictionary) -> Dictionary:
-		return await _cmd_editor_save_scene(parameters)
+		# Route through the public safety class: C2 scan-idle guard + the C1
+		# _in_dispatch flag around the synchronous save (see
+		# mcp_toolkit_safe_scene_ops.gd). NEVER call EditorInterface.save_scene[_as]
+		# directly — it can re-enter Main::iteration() mid-dispatch and crash/wedge.
+		return await MCPToolkitSafeSceneOps.save_scene(str(parameters.get("file_path", "")))
 	, MCPToolkitCommandOptions.new())
 	registry.add("editor.screenshot", func(parameters: Dictionary) -> Dictionary:
 		return await _Screenshot.cmd_screenshot(parameters)
@@ -48,11 +51,3 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 static func _cmd_set_lsp_status(server: Node, parameters: Dictionary) -> Dictionary:
 	server.set_reported_lsp_status(parameters)
 	return MCPToolkitSuccess.ok({"reported": true})
-
-
-static func _cmd_editor_save_scene(parameters: Dictionary) -> Dictionary:
-	# Route through the public safety class: C2 scan-idle guard + the C1
-	# _in_dispatch flag around the synchronous save (see
-	# mcp_toolkit_safe_scene_ops.gd). NEVER call EditorInterface.save_scene[_as]
-	# directly — it can re-enter Main::iteration() mid-dispatch and crash/wedge.
-	return await MCPToolkitSafeSceneOps.save_scene(str(parameters.get("file_path", "")))
