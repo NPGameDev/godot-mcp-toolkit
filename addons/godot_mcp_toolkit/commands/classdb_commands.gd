@@ -70,11 +70,11 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 		result["inheritance_chain"] = _build_chain(cls)
 		var no_inheritance := not include_inherited
 		if want_properties:
-			truncated = _add_properties_native(result, cls, no_inheritance, offset) or truncated
+			truncated = _add_property_section(result, ClassDB.class_get_property_list(cls, no_inheritance), offset) or truncated
 		if want_methods:
-			truncated = _add_methods_native(result, cls, no_inheritance, offset) or truncated
+			truncated = _add_method_section(result, ClassDB.class_get_method_list(cls, no_inheritance), offset) or truncated
 		if want_signals:
-			truncated = _add_signals_native(result, cls, no_inheritance, offset) or truncated
+			truncated = _add_signal_section(result, ClassDB.class_get_signal_list(cls, no_inheritance), offset) or truncated
 		if want_constants:
 			truncated = _add_constants_native(result, cls, no_inheritance, offset) or truncated
 	else:
@@ -87,11 +87,11 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 			return MCPToolkitError.fail("LOAD_FAILED",
 				"could not load script at %s for class %s" % [script_path, cls])
 		if want_properties:
-			truncated = _add_properties_script(result, script, offset) or truncated
+			truncated = _add_property_section(result, script.get_script_property_list(), offset) or truncated
 		if want_methods:
-			truncated = _add_methods_script(result, script, offset) or truncated
+			truncated = _add_method_section(result, script.get_script_method_list(), offset) or truncated
 		if want_signals:
-			truncated = _add_signals_script(result, script, offset) or truncated
+			truncated = _add_signal_section(result, script.get_script_signal_list(), offset) or truncated
 		if want_constants:
 			result["constants"] = {}
 			result["constants_total"] = 0
@@ -242,13 +242,15 @@ static func _build_chain_global(cls: String, entry: Dictionary) -> Array[String]
 	return chain
 
 
-# -- Native class sections ---------------------------------------------------
+# -- Section builders --------------------------------------------------------
+# Each builder paginates a pre-fetched metadata list (`raw`) and writes its
+# section + "<section>_total" into `result`. The caller supplies `raw` from
+# whichever source applies — ClassDB.class_get_*_list() for native classes,
+# script.get_script_*_list() for global (class_name) classes — so the builders
+# depend only on the rows, not on how they were fetched.
 
 
-static func _add_properties_native(
-	result: Dictionary, cls: String, no_inheritance: bool, offset: int,
-) -> bool:
-	var raw := ClassDB.class_get_property_list(cls, no_inheritance)
+static func _add_property_section(result: Dictionary, raw: Array, offset: int) -> bool:
 	var total := raw.size()
 	result["properties_total"] = total
 	var out: Array = []
@@ -269,10 +271,7 @@ static func _add_properties_native(
 	return out.size() < total
 
 
-static func _add_methods_native(
-	result: Dictionary, cls: String, no_inheritance: bool, offset: int,
-) -> bool:
-	var raw := ClassDB.class_get_method_list(cls, no_inheritance)
+static func _add_method_section(result: Dictionary, raw: Array, offset: int) -> bool:
 	var total := raw.size()
 	result["methods_total"] = total
 	var out: Array = []
@@ -293,10 +292,7 @@ static func _add_methods_native(
 	return out.size() < total
 
 
-static func _add_signals_native(
-	result: Dictionary, cls: String, no_inheritance: bool, offset: int,
-) -> bool:
-	var raw := ClassDB.class_get_signal_list(cls, no_inheritance)
+static func _add_signal_section(result: Dictionary, raw: Array, offset: int) -> bool:
 	var total := raw.size()
 	result["signals_total"] = total
 	var out: Array = []
@@ -313,6 +309,9 @@ static func _add_signals_native(
 		})
 	result["signals"] = out
 	return out.size() < total
+
+
+# -- Native-only sections (constants + enums; no script twin) -----------------
 
 
 static func _add_constants_native(
@@ -349,73 +348,6 @@ static func _add_constants_native(
 		enums[enum_name] = members
 	result["enums"] = enums
 	return constants.size() < const_total or enums.size() < enum_total
-
-
-# -- Script (global class) sections ------------------------------------------
-
-
-static func _add_properties_script(result: Dictionary, script: Script, offset: int) -> bool:
-	var raw := script.get_script_property_list()
-	var total := raw.size()
-	result["properties_total"] = total
-	var out: Array = []
-	var skipped := 0
-	for p in raw:
-		if skipped < offset:
-			skipped += 1
-			continue
-		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			break
-		out.append({
-			"name": p.get("name", ""),
-			"type": p.get("type", 0),
-			"hint": p.get("hint", 0),
-			"hint_string": p.get("hint_string", ""),
-		})
-	result["properties"] = out
-	return out.size() < total
-
-
-static func _add_methods_script(result: Dictionary, script: Script, offset: int) -> bool:
-	var raw := script.get_script_method_list()
-	var total := raw.size()
-	result["methods_total"] = total
-	var out: Array = []
-	var skipped := 0
-	for m in raw:
-		if skipped < offset:
-			skipped += 1
-			continue
-		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			break
-		out.append({
-			"name": m.get("name", ""),
-			"args": _format_args(m.get("args", [])),
-			"return_type": _resolve_type(m.get("return", {}), true),
-			"flags": m.get("flags", 0),
-		})
-	result["methods"] = out
-	return out.size() < total
-
-
-static func _add_signals_script(result: Dictionary, script: Script, offset: int) -> bool:
-	var raw := script.get_script_signal_list()
-	var total := raw.size()
-	result["signals_total"] = total
-	var out: Array = []
-	var skipped := 0
-	for s in raw:
-		if skipped < offset:
-			skipped += 1
-			continue
-		if out.size() >= _MAX_ENTRIES_PER_SECTION:
-			break
-		out.append({
-			"name": s.get("name", ""),
-			"args": _format_args(s.get("args", [])),
-		})
-	result["signals"] = out
-	return out.size() < total
 
 
 # -- Truncation hint builder --------------------------------------------------
