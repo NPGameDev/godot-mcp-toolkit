@@ -9,6 +9,17 @@ extends RefCounted
 ##
 ## Editor-only: uses EditorInterface.is_playing_scene(), so it is constructed by
 ## the editor-only plugin.gd and never reached by the runtime autoload.
+##
+## Why poll every frame instead of connecting to a signal?  Godot exposes no
+## public, ClassDB-bound, cross-version (4.2–4.7) play-state signal an addon can
+## connect to.  The engine's play/stop signals live on the internal run-bar node
+## (EditorNode.project_run_bar ≤4.4 / EditorRunBar 4.5+), which is not registered
+## in ClassDB and is reachable only from inside the editor.  is_playing_scene() is
+## therefore the only public cross-version surface for the play→stop edge, and
+## per-frame polling is the pragmatic norm.  A coarse Timer is rejected: it would
+## delay the runtime-clear + game_stopped broadcast past the stop edge; the poll
+## body is O(1) (one bound bool call + a cached-flag compare).
+## (Verified against Godot 4.2–4.7 engine source — arch review 41n concern 003.)
 
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
 
