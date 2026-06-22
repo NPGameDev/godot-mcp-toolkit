@@ -27,7 +27,7 @@ const Notifier := preload("res://addons/godot_mcp_toolkit/transport/notifier.gd"
 const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transport.gd")
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/transport/dispatch/mutation_watchdog.gd")
 const SceneLease := preload("res://addons/godot_mcp_toolkit/scene/scene_lease.gd")
-const RpcDispatcher := preload("res://addons/godot_mcp_toolkit/transport/dispatch/rpc_dispatcher.gd")
+const ServerRequestRouter := preload("res://addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd")
 const DispatchLane := preload("res://addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd")
 const UnfocusedSleepController := preload("res://addons/godot_mcp_toolkit/core/unfocused_sleep_controller.gd")
 const LspPublisher := preload("res://addons/godot_mcp_toolkit/paths/lsp_publisher.gd")
@@ -78,8 +78,8 @@ var _registry: MCPToolkitCommandRegistry = null
 # mutation / scene-lease) and drives it. Owns the in-flight cancellable-context map + the
 # three lanes; this file keeps only the lifecycle wiring + the cross-subsystem seams the
 # lanes need injected (the scene-lease handlers, the watchdog, command_received). Built in
-# start(); _handle_message hands it each authed frame. See rpc_dispatcher.gd / dispatch_lane.gd.
-var _dispatcher: RpcDispatcher = null
+# start(); _handle_message hands it each authed frame. See server_request_router.gd / dispatch_lane.gd.
+var _router: ServerRequestRouter = null
 # C9: the LSP endpoint publisher (resolve THIS editor's GDScript-LSP endpoint,
 # publish it to the registry, re-publish on a debounced settings change) + the
 # server-reported LSP liveness mirror live in lsp_publisher.gd. This file keeps only
@@ -143,11 +143,11 @@ var _scene_lease: SceneLease = null
 func set_registry(registry: MCPToolkitCommandRegistry) -> void:
 	_registry = registry
 	# Push to the children if they already exist (set_registry normally runs before
-	# start() builds them, in which case _init_scene_lease / _init_dispatcher seed it).
+	# start() builds them, in which case _init_scene_lease / _init_router seed it).
 	if _scene_lease != null:
 		_scene_lease.set_registry(registry)
-	if _dispatcher != null:
-		_dispatcher.set_registry(registry)
+	if _router != null:
+		_router.set_registry(registry)
 
 
 ## Release the command registry and all its Callable references.
@@ -160,8 +160,8 @@ func clear_registry() -> void:
 	# and seams bound back to this server).
 	if _scene_lease != null:
 		_scene_lease.clear_registry()
-	if _dispatcher != null:
-		_dispatcher.clear()
+	if _router != null:
+		_router.clear()
 
 
 func get_plugin_boot_time() -> int:
@@ -275,10 +275,10 @@ func start() -> void:
 	# Build scene_lease + dispatcher, then cross-wire. The two have a mutual seam
 	# dependency (the scene-lease lane routes into the lease child; the lease child's
 	# queued paths re-enter the read/mutation lanes), so both are CONSTRUCTED first, then
-	# wired: _init_dispatcher binds the lanes to the (now-existing) lease methods, and
+	# wired: _init_router binds the lanes to the (now-existing) lease methods, and
 	# _init_scene_lease binds the lease seams to the (now-existing) lane methods.
 	_init_scene_lease()
-	_init_dispatcher()
+	_init_router()
 	_wire_scene_lease_to_lanes()
 	_init_lsp_publisher()
 	var token := MCPAuth.generate_token()
@@ -341,10 +341,10 @@ func _init_scene_lease() -> void:
 # cancel_queued for routing, and inject_concurrency_metadata / post_mutation_cleanup /
 # drain for the mutation lane's completion path. set_registry usually ran before start(),
 # so seed the dispatcher's registry too.
-func _init_dispatcher() -> void:
-	_dispatcher = RpcDispatcher.new()
-	_dispatcher.set_registry(_registry)
-	_dispatcher.build_lanes(
+func _init_router() -> void:
+	_router = ServerRequestRouter.new()
+	_router.set_registry(_registry)
+	_router.build_lanes(
 		func(method: String) -> void: command_received.emit(method),
 		_mutation_watchdog,
 		_scene_lease.inject_concurrency_metadata,
@@ -361,13 +361,13 @@ func _init_dispatcher() -> void:
 # so it is the testability seam), the command_received re-emit, the read lane's
 # result-returning core (the queued-read path injects concurrency metadata before
 # sending, so it needs the result, not a send), and the mutation lane's busy-enqueue +
-# execute entry. Runs after _init_dispatcher built the lanes.
+# execute entry. Runs after _init_router built the lanes.
 func _wire_scene_lease_to_lanes() -> void:
-	var mutation_lane = _dispatcher.mutation_lane()
+	var mutation_lane = _router.mutation_lane()
 	_scene_lease.set_handlers(
 		func() -> Node: return EditorInterface.get_edited_scene_root(),
 		func(method: String) -> void: command_received.emit(method),
-		_dispatcher.read_lane().run_returning,
+		_router.read_lane().run_returning,
 		mutation_lane.enqueue_if_busy,
 		mutation_lane.execute,
 	)
@@ -489,7 +489,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 				_check_version_mismatch(_get_plugin_version(), server_ver)
 		return
 
-	await _dispatcher.route_request(peer, message)
+	await _router.route_request(peer, message)
 
 
 # Supplies the Mode-A auth-ack payload to the transport: the bare {authed:true}
@@ -544,9 +544,9 @@ func _check_version_mismatch(local: String, remote: String) -> void:
 
 
 # Dispatch routing (_dispatch_rpc), the mutation lane (_execute_mutation /
-# _drain_mutation_queue), and the read/scene-lease routes moved to rpc_dispatcher.gd +
+# _drain_mutation_queue), and the read/scene-lease routes moved to server_request_router.gd +
 # dispatch_lane.gd in concern 007 C7. _handle_message now hands each authed frame to
-# _dispatcher.route_request. The framing helper below stays — the orchestrator itself
+# _router.route_request. The framing helper below stays — the orchestrator itself
 # sends the pre-dispatch parse errors (-32700 / -32600) in _handle_message.
 
 

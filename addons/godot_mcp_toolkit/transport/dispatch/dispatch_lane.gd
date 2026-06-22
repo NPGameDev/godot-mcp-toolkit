@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## The three dispatch lanes a parsed JSON-RPC request can take. rpc_dispatcher.gd
+## The three dispatch lanes a parsed JSON-RPC request can take. server_request_router.gd
 ## selects ONE lane per request from the command's registry flags and calls
 ## lane.drive(...); each lane owns the concurrency discipline for its class of command:
 ##   - ReadOnlyLane    — execute immediately, no lock (read-only commands).
