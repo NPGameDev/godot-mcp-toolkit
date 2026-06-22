@@ -27,6 +27,7 @@ const ParticleCommands := preload("res://addons/godot_mcp_toolkit/commands/parti
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
 const TilesetTileData := preload("res://addons/godot_mcp_toolkit/commands/tileset_tile_data.gd")
 const TilesetIo := preload("res://addons/godot_mcp_toolkit/commands/tileset_io.gd")
+const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
@@ -107,6 +108,7 @@ func _init() -> void:
 	_test_tileset_io_polygon()
 	_test_coerce_roundtrip()
 	_test_color_from_dict()
+	_test_color_from_dict_opaque()
 	_test_node_packed_property_serialize()
 	_test_user_path_monitor()
 	_test_save_read_paging()
@@ -3071,6 +3073,28 @@ func _test_color_from_dict() -> void:
 	# (override is the non-dict fallback, not a per-channel source).
 	_eq(Coerce.color_from_dict({"r": 0.5}, Color.BLACK), Color(0.5, 1.0, 1.0, 1.0),
 			"dict ignores override; channels stay opaque white")
+
+	print("")
+
+
+# --- _color_from_dict_opaque black-default projection ---------------------
+# Pins the paint/opaque-BLACK channel defaults of theme_commands'
+# _color_from_dict_opaque (r/g/b default 0.0, a defaults 1.0) — the sibling of
+# Coerce.color_from_dict's opaque-WHITE defaults. The partial-dict case is the
+# decisive contrast: a missing g/b must stay 0.0 here, NOT 1.0 (that is the tint
+# helper), so the two paint/tint facts never drift together.
+func _test_color_from_dict_opaque() -> void:
+	_begin("theme _color_from_dict_opaque black-default projection")
+
+	# Partial dict: missing g/b default 0.0 (the contrast vs the white helper).
+	_eq(ThemeCommands._color_from_dict_opaque({"r": 0.5}), Color(0.5, 0, 0, 1),
+			"partial {r} → missing g/b default 0.0 (paint, not tint)")
+	# Full {r,g,b,a} dict → exact Color, no defaulting.
+	_eq(ThemeCommands._color_from_dict_opaque({"r": 0.25, "g": 0.5, "b": 0.75, "a": 0.5}),
+			Color(0.25, 0.5, 0.75, 0.5), "full {r,g,b,a} → exact Color")
+	# Non-dict → opaque black.
+	_eq(ThemeCommands._color_from_dict_opaque(null), Color(0, 0, 0, 1),
+			"non-dict → opaque black")
 
 	print("")
 

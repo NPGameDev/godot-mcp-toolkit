@@ -98,6 +98,17 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 # -- Edit helpers -------------------------------------------------------------
 
 
+## Project a {r,g,b,a} dict onto a Color with opaque-BLACK channel defaults
+## (paint semantics: r/g/b default 0.0, a defaults 1.0). Distinct from
+## Coerce.color_from_dict (opaque-WHITE / tint) — do not conflate. Non-dict -> opaque black.
+static func _color_from_dict_opaque(d: Variant) -> Color:
+	if typeof(d) != TYPE_DICTIONARY:
+		return Color(0, 0, 0, 1)
+	return Color(
+		float(d.get("r", 0.0)), float(d.get("g", 0.0)),
+		float(d.get("b", 0.0)), float(d.get("a", 1.0)))
+
+
 static func _apply_edit(
 	theme: Theme, type_name: String, property_type: String,
 	property_name: String, value: Variant, index: int,
@@ -106,11 +117,7 @@ static func _apply_edit(
 		"color":
 			if typeof(value) != TYPE_DICTIONARY:
 				return "edits[%d] color value must be {r, g, b, a?}" % index
-			theme.set_color(property_name, type_name, Color(
-				float(value.get("r", 0.0)),
-				float(value.get("g", 0.0)),
-				float(value.get("b", 0.0)),
-				float(value.get("a", 1.0))))
+			theme.set_color(property_name, type_name, _color_from_dict_opaque(value))
 
 		"constant":
 			theme.set_constant(property_name, type_name, int(value))
@@ -149,10 +156,7 @@ static func _create_stylebox(sb_type: String, value: Dictionary, index: int) -> 
 		"StyleBoxFlat":
 			var sb := StyleBoxFlat.new()
 			if value.has("bg_color") and typeof(value["bg_color"]) == TYPE_DICTIONARY:
-				var c: Dictionary = value["bg_color"]
-				sb.bg_color = Color(
-					float(c.get("r", 0.0)), float(c.get("g", 0.0)),
-					float(c.get("b", 0.0)), float(c.get("a", 1.0)))
+				sb.bg_color = _color_from_dict_opaque(value["bg_color"])
 			if value.has("corner_radius"):
 				var r := int(value["corner_radius"])
 				sb.corner_radius_top_left = r
@@ -172,10 +176,7 @@ static func _create_stylebox(sb_type: String, value: Dictionary, index: int) -> 
 				sb.border_width_right = w
 				sb.border_width_bottom = w
 			if value.has("border_color") and typeof(value["border_color"]) == TYPE_DICTIONARY:
-				var c: Dictionary = value["border_color"]
-				sb.border_color = Color(
-					float(c.get("r", 0.0)), float(c.get("g", 0.0)),
-					float(c.get("b", 0.0)), float(c.get("a", 1.0)))
+				sb.border_color = _color_from_dict_opaque(value["border_color"])
 			return sb
 
 		"StyleBoxTexture":
@@ -196,10 +197,7 @@ static func _create_stylebox(sb_type: String, value: Dictionary, index: int) -> 
 		"StyleBoxLine":
 			var sb := StyleBoxLine.new()
 			if value.has("color") and typeof(value["color"]) == TYPE_DICTIONARY:
-				var c: Dictionary = value["color"]
-				sb.color = Color(
-					float(c.get("r", 0.0)), float(c.get("g", 0.0)),
-					float(c.get("b", 0.0)), float(c.get("a", 1.0)))
+				sb.color = _color_from_dict_opaque(value["color"])
 			if value.has("thickness"):
 				sb.thickness = int(value["thickness"])
 			if value.has("vertical"):
