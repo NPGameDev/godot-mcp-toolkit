@@ -200,10 +200,7 @@ static func _cmd_script_delete(parameters: Dictionary) -> Dictionary:
 			"script.delete only removes .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.delete for .tscn, resource.delete for .tres/.res, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
 		return MCPToolkitError.fail("NOT_FOUND", "no file at %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
-	var delete_result := Helpers.delete_res_file(file_path)
-	if delete_result.get("success", false):
-		var removal := await Helpers.ensure_file_removed(file_path)
-		delete_result["deindexed"] = removal["removed"]
+	var delete_result: Dictionary = await Helpers.delete_res_file_and_deindex(file_path)
 	return delete_result
 
 

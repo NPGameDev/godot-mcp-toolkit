@@ -229,8 +229,5 @@ static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
 			"resource.delete only removes .tres or .res files (got %s); use scene.delete for .tscn, script.delete for .gd/.cs/.gdshader/.gdshaderinc, or a different tool for other file types" % file_path)
 	if not FileAccess.file_exists(file_path):
 		return MCPToolkitError.fail("NOT_FOUND", "no file at %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
-	var delete_result := Helpers.delete_res_file(file_path)
-	if delete_result.get("success", false):
-		var removal := await Helpers.ensure_file_removed(file_path)
-		delete_result["deindexed"] = removal["removed"]
+	var delete_result: Dictionary = await Helpers.delete_res_file_and_deindex(file_path)
 	return delete_result

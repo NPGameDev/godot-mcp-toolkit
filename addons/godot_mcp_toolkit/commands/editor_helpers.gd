@@ -570,6 +570,23 @@ static func ensure_file_removed(file_path: String, timeout_ms: int = 3000) -> Di
 	return {"removed": removed, "elapsed_ms": elapsed}
 
 
+## Delete a res:// file (+companions) then targeted-deindex it. Returns the
+## delete_res_file dict with "deindexed": bool merged in on success; on failure
+## the dict is the unmodified delete_res_file error (no "deindexed" key). Folds
+## the delete -> ensure_file_removed -> deindexed sequence shared by file/scene/
+## resource/script delete so each caller no longer repeats the success-guard +
+## key write. delete_res_file is not a coroutine (not awaited); only the
+## ensure_file_removed poll yields.
+static func delete_res_file_and_deindex(
+	file_path: String, companions: Array = [".uid"],
+) -> Dictionary:
+	var delete_result: Dictionary = delete_res_file(file_path, companions)
+	if delete_result.get("success", false):
+		var removal: Dictionary = await ensure_file_removed(file_path)
+		delete_result["deindexed"] = removal["removed"]
+	return delete_result
+
+
 # -- File-create collision decision -------------------------------------------
 
 

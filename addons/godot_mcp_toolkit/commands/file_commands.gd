@@ -54,10 +54,8 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 				warnings.append(
 					"phantom tab: scene tab for %s remains open; Godot 4.2-4.4 has no API to close tabs — it will vanish on editor restart or manual close" % file_path)
 
-	var delete_result := Helpers.delete_res_file(file_path, [".uid", ".import"])
-	if delete_result.get("success", false):
-		var removal := await Helpers.ensure_file_removed(file_path)
-		delete_result["deindexed"] = removal["removed"]
+	var delete_result: Dictionary = await Helpers.delete_res_file_and_deindex(
+		file_path, [".uid", ".import"])
 	if is_scene:
 		delete_result["tab_closed"] = tab_closed
 		if tab_closed and tab_result.get("switched", false):
