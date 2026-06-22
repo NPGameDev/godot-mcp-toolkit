@@ -45,6 +45,32 @@ static func register_all() -> void:
 		ProjectSettings.set_setting("mcp_toolkit/feature_gates/status", null)
 
 
+## Mirror of register_all — scrub every mcp_toolkit/* ProjectSettings key on
+## uninstall (_disable_plugin only). Prefix-scans the live property list so it
+## covers all current + future mcp_toolkit/* keys (incl. the legacy
+## feature_gates/ one) with no hardcoded list to go stale, then persists
+## project.godot. Never call on _exit_tree (that fires every reload).
+static func unregister_all() -> void:
+	# Two-pass: collect first (read-only), then null — never mutate the property
+	# list while iterating it.
+	var names := _collect_mcp_setting_names()
+	for name in names:
+		ProjectSettings.set_setting(name, null)
+	ProjectSettings.save()
+
+
+## Read-only: collect every ProjectSettings key under the mcp_toolkit/ prefix.
+## Side-effect-free core of unregister_all (and the only unit-testable seam) —
+## scans ProjectSettings.get_property_list() and returns the matching names.
+static func _collect_mcp_setting_names() -> PackedStringArray:
+	var out := PackedStringArray()
+	for entry in ProjectSettings.get_property_list():
+		var name := str(entry.get("name", ""))
+		if name.begins_with("mcp_toolkit/"):
+			out.append(name)
+	return out
+
+
 static func _register_limits() -> void:
 	_register_basic_int("mcp_toolkit/limits/script_read_cap_kb", 256,
 		"Max script content returned by script.read, in KB. Minimum 64.")

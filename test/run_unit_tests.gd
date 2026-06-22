@@ -11,6 +11,7 @@ const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/mcp_toolkit_safe_
 const EditorRescan := preload("res://addons/godot_mcp_toolkit/commands/editor_rescan.gd")
 const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/unfocused_backup.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry_client.gd")
+const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/settings_registration.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/log_helpers.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
@@ -113,6 +114,7 @@ func _init() -> void:
 	_test_user_path_monitor()
 	_test_save_read_paging()
 	_test_script_read_paging()
+	_test_settings_collect_names()
 
 	_report()
 	quit(0 if _failed == 0 else 1)
@@ -3331,6 +3333,40 @@ func _test_script_read_paging() -> void:
 	_ok(not full.has("hint"), "full read → no hint")
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+	print("")
+
+
+# --- SettingsRegistration mcp_toolkit/* collector (concern 002) -------------
+# unregister_all() scrubs every mcp_toolkit/* ProjectSettings key on uninstall
+# via a PREFIX SCAN, not a hardcoded list — that staleness is the concern (its
+# own list missed save_read_cap_kb). _collect_mcp_setting_names is the read-only
+# core that scan drives; pinning it proves the prefix matches the keys that
+# matter (incl. the one the stale list dropped) and excludes engine keys.
+# READ-ONLY by design: asserts the collector only — it must NOT call
+# unregister_all / set_setting-persist / save (the runner loads the real dogfood
+# project, so a save would scrub project.godot). It calls register_all() first
+# (mirroring the plugin's _enter_tree) so the collector sees the full registered
+# set — register_all is in-memory only (no save), so project.godot stays clean.
+func _test_settings_collect_names() -> void:
+	_begin("SettingsRegistration mcp_toolkit/* collector (concern 002)")
+	# Establish production's precondition: register_all() runs in the plugin's
+	# _enter_tree before unregister_all() is ever reached in _disable_plugin. The
+	# headless --script runner doesn't run _enter_tree, so register the keys here
+	# so the collector sees the full set. register_all() does NOT call
+	# ProjectSettings.save() — purely in-memory, so project.godot is untouched.
+	SettingsRegistration.register_all()
+	var names := SettingsRegistration._collect_mcp_setting_names()
+	# Regression-pin: the exact key the concern's stale hardcoded list missed.
+	_ok(names.has("mcp_toolkit/limits/save_read_cap_kb"),
+			"collector includes save_read_cap_kb (the key the stale list missed)")
+	_ok(names.has("mcp_toolkit/limits/script_read_cap_kb"),
+			"collector includes script_read_cap_kb")
+	_ok(names.has("mcp_toolkit/status"), "collector includes status")
+	_ok(names.has("mcp_toolkit/internal/bootstrap_complete"),
+			"collector includes internal/bootstrap_complete")
+	# An unrelated engine key is NOT swept by the mcp_toolkit/ prefix.
+	_ok(not names.has("application/config/name"),
+			"collector excludes unrelated engine key (application/config/name)")
 	print("")
 
 

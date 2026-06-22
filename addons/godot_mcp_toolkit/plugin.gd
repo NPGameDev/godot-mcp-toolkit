@@ -103,7 +103,15 @@ func _enable_plugin() -> void:
 func _disable_plugin() -> void:
 	remove_autoload_singleton(RUNTIME_AUTOLOAD_NAME)
 
-	# Warn about orphaned .mcp.json.
+	# Scrub the project-local mcp_toolkit/* ProjectSettings unconditionally —
+	# they belong to project.godot and are meaningless once the plugin is gone.
+	# (EditorSettings are machine-wide and need a confirm — see below.)
+	SettingsRegistration.unregister_all()
+
+	# Warn about orphaned .mcp.json. Dialogs are shown SEQUENTIALLY (one at a
+	# time — two popup_centered dialogs would overlap), so the EditorSettings
+	# cleanup prompt is chained off this one's resolution (both confirm/cancel)
+	# and only shown directly when there is no .mcp.json prompt to follow.
 	var mcp_json_path := ProjectSettings.globalize_path("res://") + ".mcp.json"
 	if FileAccess.file_exists(mcp_json_path):
 		var dialog := ConfirmationDialog.new()
@@ -120,13 +128,55 @@ func _disable_plugin() -> void:
 			DirAccess.remove_absolute(mcp_json_path)
 			print("[MCP] Deleted .mcp.json at %s" % mcp_json_path)
 			dialog.queue_free()
+			_prompt_editor_settings_cleanup()
 		)
 		dialog.canceled.connect(func():
 			print("[MCP] .mcp.json kept at %s" % mcp_json_path)
 			dialog.queue_free()
+			_prompt_editor_settings_cleanup()
 		)
 		EditorInterface.get_base_control().add_child(dialog)
 		dialog.popup_centered()
+	else:
+		_prompt_editor_settings_cleanup()
+
+
+# Confirm-then-erase the machine-wide EditorSettings keys this plugin registers.
+# These are PER-USER, MACHINE-WIDE prefs shared across every project that uses
+# the toolkit (ADR 0007), so — unlike the project-local ProjectSettings — they
+# are NEVER scrubbed silently: removing them affects the user's other projects.
+func _prompt_editor_settings_cleanup() -> void:
+	const EDITOR_SETTING_KEYS := [
+		"mcp_toolkit/personal/dock_default_visible",
+		"mcp_toolkit/performance/keep_editor_responsive_unfocused",
+		"mcp_toolkit/performance/unfocused_responsive_sleep_usec",
+	]
+	var dialog := ConfirmationDialog.new()
+	dialog.exclusive = false
+	dialog.title = "MCP Plugin Disabled — Editor Preferences"
+	dialog.dialog_text = (
+		"The MCP Toolkit also stored per-user editor preferences (dock "
+		+ "visibility and the unfocused-responsive setting).\n\n"
+		+ "These live in your EDITOR settings — they are machine-wide and "
+		+ "SHARED across every project that uses the toolkit, so removing them "
+		+ "affects your other projects too.\n\n"
+		+ "If you're uninstalling everywhere, you may want to remove them.\n"
+		+ "If you still use the MCP Toolkit in another project, keep them.")
+	dialog.ok_button_text = "Remove editor preferences"
+	dialog.cancel_button_text = "Keep"
+	dialog.confirmed.connect(func():
+		var es := EditorInterface.get_editor_settings()
+		for key in EDITOR_SETTING_KEYS:
+			es.erase(key)
+		print("[MCP] Removed machine-wide editor preferences")
+		dialog.queue_free()
+	)
+	dialog.canceled.connect(func():
+		print("[MCP] Kept machine-wide editor preferences")
+		dialog.queue_free()
+	)
+	EditorInterface.get_base_control().add_child(dialog)
+	dialog.popup_centered()
 
 
 # -- EditorSettings registration (per-user, not committed to VCS) -------------
