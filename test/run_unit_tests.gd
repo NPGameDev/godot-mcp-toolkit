@@ -24,7 +24,7 @@ const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extension_watc
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
-const TilesetCommands := preload("res://addons/godot_mcp_toolkit/commands/tileset_commands.gd")
+const TilesetTileData := preload("res://addons/godot_mcp_toolkit/commands/tileset_tile_data.gd")
 const TilesetIo := preload("res://addons/godot_mcp_toolkit/commands/tileset_io.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
@@ -2665,57 +2665,57 @@ func _test_tileset_edit_key_enforcement() -> void:
 	_begin("tileset.edit_* key enforcement (concern 031)")
 
 	# Happy path: each verb with only its own keys (+ coords) → accepted ("").
-	_eq(TilesetCommands._foreign_key_error("physics",
+	_eq(TilesetTileData._foreign_key_error("physics",
 		{"atlas_x": 0, "atlas_y": 0, "physics_polygon": "full", "physics_layer": 0,
 			"one_way_collision": true}), "", "physics accepts its own keys")
-	_eq(TilesetCommands._foreign_key_error("terrain",
+	_eq(TilesetTileData._foreign_key_error("terrain",
 		{"atlas_x": 1, "atlas_y": 0, "terrain_set": 0, "terrain": 0,
 			"terrain_peering": {"center": 0}}), "", "terrain accepts its own keys")
-	_eq(TilesetCommands._foreign_key_error("navigation",
+	_eq(TilesetTileData._foreign_key_error("navigation",
 		{"atlas_x": 0, "atlas_y": 0, "navigation_polygon": "full", "navigation_layer": 0}),
 		"", "navigation accepts its own keys")
-	_eq(TilesetCommands._foreign_key_error("visuals",
+	_eq(TilesetTileData._foreign_key_error("visuals",
 		{"atlas_x": 0, "atlas_y": 0, "occlusion_polygon": "full", "occlusion_layer": 0,
 			"animation": {"frame_count": 2}, "probability": 0.5}), "",
 		"visuals accepts occlusion+animation+probability bundle")
-	_eq(TilesetCommands._foreign_key_error("custom_data",
+	_eq(TilesetTileData._foreign_key_error("custom_data",
 		{"atlas_x": 0, "atlas_y": 0, "custom_data": {"damage": 10}}), "",
 		"custom_data accepts its own key")
 
 	# Coordinate-only tile is always valid (selectors are universal).
-	_eq(TilesetCommands._foreign_key_error("physics", {"atlas_x": 0, "atlas_y": 0}),
+	_eq(TilesetTileData._foreign_key_error("physics", {"atlas_x": 0, "atlas_y": 0}),
 		"", "coords-only tile accepted")
 
 	# Foreign key → rejected, and the message names the OWNING tool.
-	var r1 := TilesetCommands._foreign_key_error("physics",
+	var r1 := TilesetTileData._foreign_key_error("physics",
 		{"atlas_x": 0, "atlas_y": 0, "terrain_set": 0})
 	_ok(not r1.is_empty(), "terrain_set on physics → rejected")
 	_ok(r1.contains("tileset.edit_terrain"), "physics rejection names tileset.edit_terrain")
 
-	var r2 := TilesetCommands._foreign_key_error("terrain",
+	var r2 := TilesetTileData._foreign_key_error("terrain",
 		{"atlas_x": 0, "atlas_y": 0, "physics_polygon": "full"})
 	_ok(r2.contains("tileset.edit_physics"), "physics_polygon on terrain → names edit_physics")
 
-	var r3 := TilesetCommands._foreign_key_error("navigation",
+	var r3 := TilesetTileData._foreign_key_error("navigation",
 		{"atlas_x": 0, "atlas_y": 0, "probability": 0.5})
 	_ok(r3.contains("tileset.edit_visuals"), "probability on navigation → names edit_visuals")
 
-	var r4 := TilesetCommands._foreign_key_error("custom_data",
+	var r4 := TilesetTileData._foreign_key_error("custom_data",
 		{"atlas_x": 0, "atlas_y": 0, "navigation_polygon": "full"})
 	_ok(r4.contains("tileset.edit_navigation"), "navigation_polygon on custom_data → names edit_navigation")
 
-	var r5 := TilesetCommands._foreign_key_error("visuals",
+	var r5 := TilesetTileData._foreign_key_error("visuals",
 		{"atlas_x": 0, "atlas_y": 0, "custom_data": {"x": 1}})
 	_ok(r5.contains("tileset.edit_custom_data"), "custom_data on visuals → names edit_custom_data")
 
 	# A key owned by no verb → rejected via the "unknown key" branch (no owner).
-	var r6 := TilesetCommands._foreign_key_error("physics",
+	var r6 := TilesetTileData._foreign_key_error("physics",
 		{"atlas_x": 0, "atlas_y": 0, "bogus_key": 1})
 	_ok(not r6.is_empty(), "unknown key on physics → rejected")
 	_ok(r6.contains("unknown key"), "unknown-key rejection uses unknown-key wording")
 
 	# Unknown verb has an empty allow-list → first non-coord key is foreign.
-	_ok(not TilesetCommands._foreign_key_error("bogus_verb",
+	_ok(not TilesetTileData._foreign_key_error("bogus_verb",
 		{"atlas_x": 0, "atlas_y": 0, "physics_polygon": "full"}).is_empty(),
 		"unknown verb rejects any non-coord key")
 
