@@ -191,53 +191,77 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 		return MCPToolkitError.fail("NOT_FOUND", "node not found: %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
 	# Compound / colon-chained paths (e.g. "libraries/test",
-	# "material:shader_parameter/value", "theme_override_colors/font_color").
-	# Centralized handler in editor_helpers.gd handles sub-resource navigation,
-	# shader_parameter/ dedicated setter, value coercion, and readback.
-	# Returns _undo info for UndoRedo registration (commit_recorded()).
+	# "material:shader_parameter/value", "theme_override_colors/font_color") take
+	# the sub-resource navigation + UndoRedo path; everything else is a scalar set.
 	if ":" in property_name or "/" in property_name:
-		var do_unique := bool(parameters.get("make_unique", false))
-		var result := Helpers.set_property_compound(
-			node, property_name, raw_value, do_unique)
-		if not result.get("ok", false):
-			return MCPToolkitError.fail(
-				result.get("code", "INVALID_VALUE"),
-				str(result.get("error", "")))
+		return _set_property_compound_single(
+			server, node, node_path, property_name, raw_value, parameters)
+	return _set_property_scalar_single(node, node_path, property_name, raw_value)
 
-		# Register UndoRedo for compound paths. All do/undo methods route
-		# through server.undo_helpers.compound_set for consistent
-		# EditorUndoRedoManager context (avoids history mismatch errors).
-		var ui: Dictionary = result.get("_undo", {})
-		var undo_type: String = str(ui.get("type", ""))
-		if undo_type != "":
-			var undo_path: String = ui["path"]
-			var new_val = ui.get("new", node.get(undo_path))
-			var action = MCPToolkitUndoRedoAction.begin("set %s.%s" % [node_path, property_name], node)
+
+## Set one compound / colon-chained property and register its UndoRedo. The
+## centralized handler in editor_helpers.gd does the sub-resource navigation,
+## shader_parameter/ dedicated setter, value coercion, and readback; it returns
+## _undo info we register here via commit_recorded(). Leaf mechanics of
+## node.set_property's compound branch, lifted out of the handler so the latter
+## reads as a top-down orchestrator (GodotCodeStandards §12 SRP/extract-method).
+## Reads only `make_unique` from parameters. Returns the response dict directly.
+static func _set_property_compound_single(
+	server: Node, node: Node, node_path: String, property_name: String,
+	raw_value: Variant, parameters: Dictionary,
+) -> Dictionary:
+	var do_unique := bool(parameters.get("make_unique", false))
+	var result := Helpers.set_property_compound(
+		node, property_name, raw_value, do_unique)
+	if not result.get("ok", false):
+		return MCPToolkitError.fail(
+			result.get("code", "INVALID_VALUE"),
+			str(result.get("error", "")))
+
+	# Register UndoRedo for compound paths. All do/undo methods route
+	# through server.undo_helpers.compound_set for consistent
+	# EditorUndoRedoManager context (avoids history mismatch errors).
+	var ui: Dictionary = result.get("_undo", {})
+	var undo_type: String = str(ui.get("type", ""))
+	if undo_type != "":
+		var undo_path: String = ui["path"]
+		var new_val = ui.get("new", node.get(undo_path))
+		var action = MCPToolkitUndoRedoAction.begin("set %s.%s" % [node_path, property_name], node)
+		action.do_method(server.undo_helpers.compound_set.bind(
+			node, undo_path, new_val))
+		action.undo_method(server.undo_helpers.compound_set.bind(
+			node, undo_path, ui["old"]))
+		# make_unique: undo restores original external resource.
+		if ui.has("old_resource_prop"):
+			var res_prop: String = ui["old_resource_prop"]
+			var new_res = node.get(res_prop)
 			action.do_method(server.undo_helpers.compound_set.bind(
-				node, undo_path, new_val))
+				node, res_prop, new_res))
 			action.undo_method(server.undo_helpers.compound_set.bind(
-				node, undo_path, ui["old"]))
-			# make_unique: undo restores original external resource.
-			if ui.has("old_resource_prop"):
-				var res_prop: String = ui["old_resource_prop"]
-				var new_res = node.get(res_prop)
-				action.do_method(server.undo_helpers.compound_set.bind(
-					node, res_prop, new_res))
-				action.undo_method(server.undo_helpers.compound_set.bind(
-					node, res_prop, ui["old_resource"]))
-				if new_res is Resource:
-					action.do_reference(new_res)
-				if ui["old_resource"] is Resource:
-					action.undo_reference(ui["old_resource"])
-			action.commit_recorded()
+				node, res_prop, ui["old_resource"]))
+			if new_res is Resource:
+				action.do_reference(new_res)
+			if ui["old_resource"] is Resource:
+				action.undo_reference(ui["old_resource"])
+		action.commit_recorded()
 
-		var response := {}
-		if result.has("made_unique"):
-			response["made_unique"] = result["made_unique"]
-		if result.has("warning"):
-			response["warning"] = result["warning"]
-		return MCPToolkitSuccess.ok(response)
+	var response := {}
+	if result.has("made_unique"):
+		response["made_unique"] = result["made_unique"]
+	if result.has("warning"):
+		response["warning"] = result["warning"]
+	return MCPToolkitSuccess.ok(response)
 
+
+## Set one scalar (non-compound) property: coerce → set → register UndoRedo,
+## then the FIX-F bare-res:// readback guard (a bare "res://…" string assigned
+## to a Resource-typed property silently fails to load — detect it and steer the
+## caller to the tagged {type:"Resource", path:…} form). Leaf mechanics of
+## node.set_property's scalar branch, lifted out of the handler for SRP
+## (GodotCodeStandards §12). Needs no `server` — scalar undo uses do/undo_property.
+static func _set_property_scalar_single(
+	node: Node, node_path: String, property_name: String, raw_value: Variant,
+) -> Dictionary:
 	var coerce_result := Helpers.coerce_for_property(node, property_name, raw_value)
 	if not coerce_result.get("ok", false):
 		return MCPToolkitError.fail(
