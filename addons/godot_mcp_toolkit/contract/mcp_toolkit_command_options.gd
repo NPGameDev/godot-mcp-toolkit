@@ -6,9 +6,13 @@ extends RefCounted
 ## Usage (built-in tools):
 ##   var opts = MCPToolkitCommandOptions.new() \
 ##       .mark_read_only() \
-##       .mark_idempotent() \
 ##       .with_timeout_ms(60000) \
 ##       .with_group("physics_tools", "Physics inspection", ["physics", "force"])
+##
+## For built-ins, only mark_read_only() is load-bearing (routing/serialization). The
+## client-visible readOnly/destructive/idempotent HINTS are server-authoritative
+## (server src/catalogue.ts); mark_destructive()/mark_idempotent() apply only to
+## EXTENSION tools, whose annotations the bridge reads via get_command_metadata().
 ##
 ## Extension tools should use MCPToolkitExtensionOptions instead, which
 ## enforces a description at construction time.

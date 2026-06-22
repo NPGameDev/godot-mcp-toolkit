@@ -143,6 +143,13 @@ func get_extension_methods() -> Array[String]:
 	return _extension_methods.duplicate()
 
 
+## Returns the stored metadata for `method`, including its annotations dict.
+## NOTE: this dict is consumed ONLY via the extension path — extension_loader
+## and extension services iterate it to describe extension commands to the bridge.
+## Built-in client-visible annotations (readOnlyHint/destructiveHint/idempotentHint)
+## are SERVER-authoritative (server src/catalogue.ts → MCP tools/list); the server
+## never calls this function. mark_read_only() on built-ins is load-bearing for
+## routing/serialization (needs_serialization), not the client hint.
 func get_command_metadata(method: String) -> Dictionary:
 	if not _commands.has(method):
 		return {}
