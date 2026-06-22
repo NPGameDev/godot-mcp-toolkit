@@ -200,14 +200,23 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 				"unknown action '%s'; must be register|unregister|list" % action)
 
 
-static func _cmd_get_layer_names(parameters: Dictionary) -> Dictionary:
-	var category := str(parameters.get("category", ""))
+## Validate the layer category param. Returns null when valid, an
+## MCPToolkitError dict otherwise.
+static func _validate_layer_category(category: String) -> Variant:
 	if category.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing category")
 	if not category in _VALID_LAYER_CATEGORIES:
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"invalid category '%s'; must be one of: %s" % [
 				category, ", ".join(_VALID_LAYER_CATEGORIES)])
+	return null
+
+
+static func _cmd_get_layer_names(parameters: Dictionary) -> Dictionary:
+	var category := str(parameters.get("category", ""))
+	var cat_err = _validate_layer_category(category)
+	if cat_err != null:
+		return cat_err
 
 	var layers := {}
 	for n in range(1, 33):
@@ -221,12 +230,9 @@ static func _cmd_get_layer_names(parameters: Dictionary) -> Dictionary:
 
 static func _cmd_set_layer_names(parameters: Dictionary) -> Dictionary:
 	var category := str(parameters.get("category", ""))
-	if category.is_empty():
-		return MCPToolkitError.fail("INVALID_PARAMS", "missing category")
-	if not category in _VALID_LAYER_CATEGORIES:
-		return MCPToolkitError.fail("INVALID_PARAMS",
-			"invalid category '%s'; must be one of: %s" % [
-				category, ", ".join(_VALID_LAYER_CATEGORIES)])
+	var cat_err = _validate_layer_category(category)
+	if cat_err != null:
+		return cat_err
 
 	var raw_layers = parameters.get("layers", null)
 	if raw_layers == null or typeof(raw_layers) != TYPE_DICTIONARY:
