@@ -9,6 +9,9 @@ static func register(registry: MCPToolkitCommandRegistry) -> void:
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
+## The sanctioned writer for `mcp_toolkit/limits/*` — `project.set_setting`
+## deliberately refuses that prefix, routing limit changes here so the floor
+## clamps are always applied (script/save read caps >= 64 KB, ws_buffer >= 256 KB).
 static func _cmd_set_limits(parameters: Dictionary) -> Dictionary:
 	var script_cap = parameters.get("script_read_cap_kb", null)
 	var save_cap = parameters.get("save_read_cap_kb", null)

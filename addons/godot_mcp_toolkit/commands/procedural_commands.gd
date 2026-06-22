@@ -109,6 +109,9 @@ static func _cmd_edit_gradient(parameters: Dictionary) -> Dictionary:
 		{"point_count": gradient.get_point_count()})
 
 
+## Authors a 1D **Curve** resource as a standalone .tres file (tool
+## `procedural.edit_curve`). NOT `path2d.edit_curve`, which edits a **Curve2D**
+## on a Path2D scene node — different engine type, different aggregate.
 static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
 	var err = MCPToolkitError.require(parameters, ["file_path"])
 	if err != null:

@@ -8,14 +8,18 @@ const Helpers = _Hub.Helpers
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	registry.add("path2d.edit_curve", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_edit_curve(parameters)
+		return _cmd_edit_curve2d(parameters)
 	, MCPToolkitCommandOptions.new())
 
 
 # -- Commands -----------------------------------------------------------------
 
 
-static func _cmd_edit_curve(parameters: Dictionary) -> Dictionary:
+## Edits the **Curve2D** on a Path2D scene node (tool `path2d.edit_curve`). NOT
+## `procedural.edit_curve`, which authors a 1D **Curve** .tres resource —
+## different engine type, different aggregate. The private name carries the
+## `2d` suffix so even internal symbols distinguish Curve from Curve2D.
+static func _cmd_edit_curve2d(parameters: Dictionary) -> Dictionary:
 	var err = MCPToolkitError.require(parameters, ["node_path", "action"])
 	if err != null:
 		return err

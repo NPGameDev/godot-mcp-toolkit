@@ -1,6 +1,10 @@
 @tool
 extends RefCounted
 ## audiobus.* command handlers — audio bus layout management.
+##
+## The published prefix is `audiobus.*` (audio-BUS routing: buses, sends,
+## effects), deliberately distinct from `sound.*` (audio sample generation).
+## A file noun of "audio" alone would blur the two — name by the bus concept.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const FileGuard = _Hub.FileGuard

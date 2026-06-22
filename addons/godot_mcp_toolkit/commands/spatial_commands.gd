@@ -6,6 +6,11 @@ extends RefCounted
 ## (2D Rect2 / 3D AABB), size, and the computed relations LLMs can't easily
 ## derive blind — pairwise overlaps, containment, and nearest-neighbour gaps.
 ## Read-only and tab-dependent (operates on EditorInterface.get_edited_scene_root).
+##
+## Published under the `scene.*` prefix (`scene.spatial_map`) because it reads
+## the currently edited scene — it belongs beside `scene.create`/`scene.delete`,
+## not in a standalone "spatial" namespace. The file noun "spatial" is internal
+## vocabulary; the scene-read is the contract.
 
 const _Hub := preload("res://addons/godot_mcp_toolkit/_hub.gd")
 const Helpers = _Hub.Helpers
