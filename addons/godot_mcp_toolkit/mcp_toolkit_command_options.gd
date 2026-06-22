@@ -24,7 +24,7 @@ var _group_name: String = ""
 var _group_description: String = ""
 var _group_keywords: Array = []
 var _is_scene_independent: bool = false  # inverted: true means NOT required
-var _force_serialize: bool = false
+var _exclusive_execution: bool = false
 var _min_godot_version: String = ""
 var _max_godot_version: String = ""
 var _success_hint: String = ""
@@ -80,7 +80,7 @@ func mark_scene_independent() -> MCPToolkitCommandOptions:
 
 
 func mark_exclusive_execution() -> MCPToolkitCommandOptions:
-	_force_serialize = true
+	_exclusive_execution = true
 	return self
 
 
@@ -137,8 +137,8 @@ func to_dict() -> Dictionary:
 		"is_cancellable": _is_cancellable,
 		"is_active_scene_required": not _is_scene_independent,
 	}
-	if _force_serialize:
-		d["_force_serialize"] = true
+	if _exclusive_execution:
+		d["exclusive_execution"] = true
 	if not _input_schema.is_empty():
 		d["input_schema"] = _input_schema
 	if _timeout_ms > 0:

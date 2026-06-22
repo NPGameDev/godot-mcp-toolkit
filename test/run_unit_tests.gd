@@ -479,10 +479,10 @@ func _test_registry() -> void:
 	_ok(reg.is_active_scene_required("t.def"),
 			"default → is_active_scene_required true")
 
-	# 5. mark_exclusive_execution → is_force_serialized true
+	# 5. mark_exclusive_execution → is_exclusive_execution true
 	reg.add("t.excl", _noop, MCPToolkitCommandOptions.new().mark_exclusive_execution())
-	_ok(reg.is_force_serialized("t.excl"),
-			"mark_exclusive_execution → is_force_serialized true")
+	_ok(reg.is_exclusive_execution("t.excl"),
+			"mark_exclusive_execution → is_exclusive_execution true")
 
 	# 6. mark_cancellable → is_cancellable true
 	reg.add("t.canc", _noop, MCPToolkitCommandOptions.new().mark_cancellable())
@@ -496,7 +496,7 @@ func _test_registry() -> void:
 
 	# 8a-8c. Concern 030 routing regression — game.start / game.stop are
 	# session-lifecycle mutators marked exclusive-execution and NOT read-only
-	# (needs_serialization = is_force_serialized OR not read_only, exclusive
+	# (needs_serialization = is_exclusive_execution OR not read_only, exclusive
 	# checked first). The exclusive flag is the sole serialization driver, so:
 	#   - exclusive + non-read-only mutator (game.start/stop shape) → serialises.
 	reg.add("t.exclmut",
@@ -1097,8 +1097,8 @@ func _test_options_builder() -> void:
 	_ok(MCPToolkitCommandOptions.new().mark_idempotent().to_dict()["is_idempotent"],
 			"mark_idempotent → to_dict is_idempotent true")
 	_ok(MCPToolkitCommandOptions.new().mark_exclusive_execution().to_dict() \
-			.get("_force_serialize", false),
-			"mark_exclusive_execution → to_dict _force_serialize true")
+			.get("exclusive_execution", false),
+			"mark_exclusive_execution → to_dict exclusive_execution true")
 	_ok(MCPToolkitCommandOptions.new().mark_cancellable().to_dict()["is_cancellable"],
 			"mark_cancellable → to_dict is_cancellable true")
 

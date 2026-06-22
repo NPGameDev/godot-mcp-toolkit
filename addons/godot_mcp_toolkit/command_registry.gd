@@ -112,7 +112,7 @@ func add(method: String, handler: Callable,
 		"is_cancellable": bool(opts.get("is_cancellable", false)),
 		"read_only": is_read_only,
 		"active_scene_required": bool(opts.get("is_active_scene_required", true)),
-		"_force_serialize": bool(opts.get("_force_serialize", false)),
+		"exclusive_execution": bool(opts.get("exclusive_execution", false)),
 		"success_hint": opts.get("success_hint", ""),
 		"path_guards": opts.get("path_guards", {}),
 	}
@@ -206,15 +206,15 @@ func is_active_scene_required(method: String) -> bool:
 	return cmd != null and cmd.get("active_scene_required", true)
 
 
-func is_force_serialized(method: String) -> bool:
+func is_exclusive_execution(method: String) -> bool:
 	var cmd = _commands.get(method)
-	return cmd != null and cmd.get("_force_serialize", false)
+	return cmd != null and cmd.get("exclusive_execution", false)
 
 
 func needs_serialization(method: String) -> bool:
 	if not _commands.has(method):
 		return true  # Safe default for unknown commands.
-	if is_force_serialized(method):
+	if is_exclusive_execution(method):
 		return true
 	return not is_read_only(method)
 
