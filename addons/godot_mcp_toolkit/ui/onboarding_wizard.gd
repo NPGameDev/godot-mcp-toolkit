@@ -234,7 +234,7 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 			_write_flag()
 			free_if_open()
 			if _dock != null:
-				_dock._show_info_dialog()
+				_dock.show_info_dialog()
 		"open_security":
 			var doc_path := "res://addons/godot_mcp_toolkit/docs/security-recommendations.md"
 			var global_path := ProjectSettings.globalize_path(doc_path)

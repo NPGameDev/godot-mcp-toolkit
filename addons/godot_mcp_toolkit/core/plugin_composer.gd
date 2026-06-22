@@ -22,8 +22,8 @@ const RegistryClient = Modules.RegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/transport/mcp_server.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/extension_loader.gd")
-const CommandRegistrar := preload("res://addons/godot_mcp_toolkit/transport/command_registrar.gd")
-const PlaytestWatcher := preload("res://addons/godot_mcp_toolkit/core/playtest_watcher.gd")
+const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
+const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
 const DebugBridge := preload("res://addons/godot_mcp_toolkit/transport/debug_bridge.gd")
 # Teardown counterpart of PlaytestCommands.register(..., debug_bridge): dispose()
 # calls PlaytestCommands.clear_debug_bridge() as the I12 reverse of that register.
@@ -48,7 +48,7 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	var debug_bridge := DebugBridge.new()
 	plugin.add_debugger_plugin(debug_bridge)
 
-	CommandRegistrar.register_all(registry, server, debug_bridge)
+	BuiltinCommandRegistration.register_all(registry, server, debug_bridge)
 
 	# Third-party extensions — profile-exempt, always loaded.
 	ExtensionLoader.load_all(registry, server)
@@ -68,7 +68,7 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	user_path_monitor.user_path_changed.connect(on_user_path_changed)
 
 	# Edge-detects the play→stop transition; polled each _process.
-	var playtest_watcher := PlaytestWatcher.new(server)
+	var playtest_end_detector := PlaytestEndDetector.new(server)
 
 	plugin.add_child(server)
 	server.bind_user_path_monitor(user_path_monitor)
@@ -94,7 +94,7 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	handle._extension_watcher = extension_watcher
 	handle._debug_bridge = debug_bridge
 	handle._user_path_monitor = user_path_monitor
-	handle._playtest_watcher = playtest_watcher
+	handle._playtest_end_detector = playtest_end_detector
 	return handle
 
 
@@ -147,7 +147,7 @@ class Handle:
 	const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 	const RegistryClient = Modules.RegistryClient
 	const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_commands.gd")
-	const PlaytestWatcher := preload("res://addons/godot_mcp_toolkit/core/playtest_watcher.gd")
+	const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
 
 	var _plugin: EditorPlugin = null
 	var _server: Node = null
@@ -156,7 +156,7 @@ class Handle:
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 	var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
 	var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
-	var _playtest_watcher: PlaytestWatcher = null  # Edge-detects the play→stop transition
+	var _playtest_end_detector: PlaytestEndDetector = null  # Edge-detects the play→stop transition
 
 	## The MCP server node (orchestrator passes it to the tool menu).
 	func server() -> Node:
@@ -168,8 +168,8 @@ class Handle:
 
 	## Edge-detect the playtest end. Called by the orchestrator's _process.
 	func poll_playtest() -> void:
-		if _playtest_watcher != null:
-			_playtest_watcher.poll()
+		if _playtest_end_detector != null:
+			_playtest_end_detector.poll()
 
 	## Tear down the composed graph in reverse construction order. Behavior-critical
 	## ordering — dock → user-path monitor → playtest watcher → extension watcher →
@@ -189,9 +189,9 @@ class Handle:
 			_user_path_monitor.stop()
 			_user_path_monitor = null
 
-		# Playtest watcher (RefCounted — just null) — drop before server teardown
+		# Playtest end detector (RefCounted — just null) — drop before server teardown
 		# since it holds a server reference.
-		_playtest_watcher = null
+		_playtest_end_detector = null
 
 		# Extension watcher — disconnect global signals, then drop before server
 		# teardown (holds registry ref). Without explicit disconnect, the

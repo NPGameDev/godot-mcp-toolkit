@@ -199,7 +199,7 @@ func _build_ui() -> void:
 
 	var info_btn := Button.new()
 	info_btn.text = "Info / Help"
-	info_btn.pressed.connect(_show_info_dialog)
+	info_btn.pressed.connect(show_info_dialog)
 	info_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(info_btn)
 
@@ -334,7 +334,7 @@ func show_extension_catalog() -> void:
 # Info / Help popup
 # ---------------------------------------------------------------------------
 
-func _show_info_dialog() -> void:
+func show_info_dialog() -> void:
 	if _info_dialog == null or not is_instance_valid(_info_dialog):
 		_info_dialog = InfoDialog.new()
 		EditorInterface.get_base_control().add_child(_info_dialog)
