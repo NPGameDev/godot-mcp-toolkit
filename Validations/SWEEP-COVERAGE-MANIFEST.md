@@ -1,9 +1,9 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-06-14 (41m-quinquies — spatial map + placeholder generators)
-**Toolkit commit:** T:ffe7a13 + 41m-quinquies (final SHA recorded at bookkeeping)
+**Last updated:** 2026-06-22 (41n concern 034 D — batch partial-failure rollup sweep coverage)
+**Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
 **Total tools:** 120 (98 editor-side + 6 LSP + 4 debugger + 12 runtime)
-**Sweep test count:** ~290 numbered test cases + 28 combo chains + C# phase + extension phase (Section 28 adds 22)
+**Sweep test count:** ~295 numbered test cases + 28 combo chains + C# phase + extension phase (Section 28 adds 22) — concern 034 D added 5 batch-rollup cases (3.14c/3.14d, 4.15/4.16, 2.15a)
 
 ---
 
@@ -19,7 +19,7 @@
 | scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3, C18 | ✓ (tab_closed, phantom warning) | — | |
 | scene.create_node | 20–26, 64h | ✓ (C22: CLASS_MISMATCH) | C5, C8, C10, C19 | ✓ (preload, unique_name) | FIX-G (P6), cb4e162 | **GAP:** unique_name param untested |
 | scene.delete_node | 43j, 43s, 64i | — | C19 | — | — | |
-| scene.instantiate | 41, 43q–43s | — | C20 | — | FIX-B, FIX-9, FIX-K | **GAP:** properties param, auto-rename |
+| scene.instantiate | 41, 43q–43s, 2.15a | — | C20 | — | FIX-B, FIX-9, FIX-K, concern 034 | 2.15a: all-success batch → `failed`/`hint` ABSENT (additive rollup, summarize_batch). Partial-failure path (`instantiate()==null`) is unit-pinned (`_test_summarize_batch`) — not selectively triggerable from a valid .tscn. **GAP:** properties param, auto-rename |
 | scene.diff | 63 | — | — | — | — | |
 | scene.create_inherited | 80a–80d | ✓ (NOT_FOUND) | — | — | — | |
 | scene.query | 83a–83j | ✓ (no filters, NOT_FOUND) | — | — | — | |
@@ -30,12 +30,12 @@
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | node.get_property | 28, 31, 33, 36, 43b, 43i, 64g, 3.20b | — | C3, C6, C20 | — | concern 053 | 3.20b: Packed read-back is the TAGGED dict (not var_to_str) + read==write (concern 053, T:8856546) |
-| node.set_property | 27, 29, 30, 32, 34, 35, 3.20b | ✓ (3.14a: groups single-reject, 3.14b: groups batch per-entry reject) | C3, C6 | ✓ (3.14a/3.14b: hint → node.groups) | FIX-5, FIX-7, FIX-E, FIX-F, concern 032, concern 053 | groups property steered to node.groups (single whole-reject + batch per-entry); 3.20b sets a top-level PackedVector2Array (Line2D.points) for the 053 read-back round-trip. **GAP:** LayerMask coercion, bare res:// guard |
+| node.set_property | 27, 29, 30, 32, 34, 35, 3.20b, 3.14c, 3.14d | ✓ (3.14a: groups single-reject, 3.14b: groups batch per-entry reject) | C3, C6 | ✓ (3.14a/3.14b: hint → node.groups) | FIX-5, FIX-7, FIX-E, FIX-F, concern 032, concern 053, concern 034 | groups property steered to node.groups (single whole-reject + batch per-entry); 3.20b sets a top-level PackedVector2Array (Line2D.points) for the 053 read-back round-trip. 3.14c/3.14d: batch partial-failure rollup — 3.14c asserts top-level `failed`(int, `int(...)`-coerced)+`hint` on a one-bad-entry batch; 3.14d asserts both ABSENT on all-success (summarize_batch, additive). **GAP:** LayerMask coercion, bare res:// guard |
 | node.get_property_list | 38–40 | — | C5 | — | — | |
 | node.call_method | 49, 50 | — | C9 | ✓ (CS3: C# hint) | — | |
 | node.set_script | 37 | — | C5, C8 | — | — | |
 | node.manage | 43a–43j | ✓ (43h2: properties) | C19 | — | FIX-K | |
-| node.groups | 43k–43l | — | C19 | — | 462506b | **GAP:** batch mode untested |
+| node.groups | 43k–43l, 4.12–4.16 | — | C19 | — | 462506b, concern 034 | 4.12/4.14: batch add/remove happy path; 4.15/4.16: batch partial-failure rollup — 4.15 asserts top-level `failed`(int)+`hint` via the shape-tolerant predicate on site-2's `{status?, error?}` (no-`success`) entries; 4.16 asserts both ABSENT on all-success (summarize_batch, additive) |
 | node.collision_from_sprite | 78a–78d | ✓ (INVALID_CLASS) | — | — | — | |
 | control.set_layout | 3.24–3.26 | ✓ (3.27: invalid preset, 3.28: wrong class) | C28 | — | 4d7e432 | W1 Lane 2 |
 
@@ -298,8 +298,8 @@
 **Tools with incomplete coverage (missing new params/guards):** 12
 - `scene.create_node` — unique_name param
 - `scene.instantiate` — properties param, auto-rename (FIX-K)
-- `node.set_property` — batch mode (FIX-7), LayerMask coercion, bare res:// guard (FIX-F)
-- `node.groups` — batch mode
+- `node.set_property` — LayerMask coercion, bare res:// guard (FIX-F). _Batch mode covered (3.12 happy path + 3.14c/3.14d partial-failure rollup, concern 034 D)._
+- `node.groups` — _batch mode covered (4.12/4.14 happy path + 4.15/4.16 partial-failure rollup, concern 034 D)._
 - `script.write` — diagnostics response fields (FIX-1)
 - `editor.get_console` — clear_buffer param (FIX-8)
 - `execute.code` — singleton hints (FIX-4), load() hint (FIX-H, 279efed)

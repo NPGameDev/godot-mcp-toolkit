@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (main.tscn exists and is open)
 **Tools tested:** scene_create_node, scene_instantiate, scene_get_tree, editor_save_scene
-**Tests:** 18
+**Tests:** 19
 
 ---
 
@@ -63,6 +63,22 @@
 
 > **REGRESSION WATCH (462506b):** If `properties` param is rejected or position
 > is not applied, scene_instantiate properties support has regressed. Flag as **Major**.
+
+**2.15a** `scene_instantiate` (batch all-success — rollup keys ABSENT) — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`, instances=`[{"name":"Sv2SubBatchA"},{"name":"Sv2SubBatchB"}]`
+- **Expect:** success, `instances` array with 2 created nodes (Sv2SubBatchA, Sv2SubBatchB), `count`=2, and **NO** top-level `failed` key and **NO** top-level `hint` key (the batch-rollup is purely additive — an all-success batch keeps its prior `{status, count, instances, results}` shape). The per-entry `results` rows are all success=true.
+- Cleanup: `scene_delete_node` node_path=`Sv2SubBatchA`, `scene_delete_node` node_path=`Sv2SubBatchB`
+
+> **REGRESSION WATCH (concern 034 D, summarize_batch / 7244950):** `scene_instantiate`
+> batch is wired to `Helpers.summarize_batch` over its `results[]`. On all-success,
+> `failed`/`hint` must be ABSENT. If either key appears here, the `failed > 0` gate
+> regressed. Flag as **Major**.
+> **Partial-failure note:** the failing-entry path (a per-entry `{index, success:false,
+> error}` row) only fires when `PackedScene.instantiate()` returns null for an entry,
+> which cannot be selectively triggered from a valid `.tscn` via the MCP surface (a
+> corrupt/missing scene fails the whole call at `LOAD_FAILED`/`NOT_FOUND` before the
+> batch loop). That partial-failure rollup is therefore pinned by the headless unit
+> `_test_summarize_batch` (site-3 `{success:false}` shape) rather than this sweep —
+> see `test/run_unit_tests.gd`.
 
 **2.16** `scene_get_tree` — depth=2
 - **Expect:** Tree shows all created nodes: Sv2Sprite, Sv2Label, Sv2AnimPlayer, Sv2AnimTree, Sv2TileLayer, Sv2Player/Sv2Collider, Sv2Path, Sv2NavRegion, Sv2Unique, Sv2Sub, Sv2SubProps

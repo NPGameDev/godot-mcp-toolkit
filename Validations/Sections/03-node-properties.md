@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in main.tscn)
 **Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout
-**Tests:** 32
+**Tests:** 34
 
 ---
 
@@ -65,6 +65,27 @@
 - **Expect:** Both match
 
 **3.14** Restore — `node_set_property` Sv2Sprite visible=true, Sv2Label text="Hello Sweep v2"
+
+**3.14c** `node_set_property` (batch partial failure — top-level rollup) — batch=`[{"node_path":"Sv2Label","property":"text","value":"BatchOK"},{"node_path":"Sv2NoSuchNode","property":"text","value":"x"}]`
+- **Expect:** success (the call itself succeeds). `results[0]` success=true; `results[1]` success=false with error "node not found". A top-level `failed` = **1** (integer — the round-trip floats ints, so compare as `int(failed) == 1`, never a bare-int whole-dict compare) AND a top-level `hint` string is present, reading "1 of 2 entries failed — inspect results[] for per-entry .error.". The valid sibling still committed: `node_get_property` Sv2Label text = "BatchOK".
+- Restore: `node_set_property` Sv2Label text="Hello Sweep v2"
+
+> **REGRESSION WATCH (concern 034 D, summarize_batch / eb25de5):** A batch with ≥1
+> failing entry must surface a top-level `failed` (int count) + `hint` so a caller
+> reading only the top of the response sees the partial failure without inspecting
+> every entry. The fields come from `Helpers.summarize_batch` (`editor_helpers.gd`).
+> If `failed`/`hint` are absent when an entry failed, the additive rollup has
+> regressed. Flag as **Major**. (`failed` crosses a JSON boundary → coerce with
+> `int(...)`; never assert the whole response dict by equality.)
+
+**3.14d** `node_set_property` (batch all-success — rollup keys ABSENT) — batch=`[{"node_path":"Sv2Label","property":"text","value":"AllOK"},{"node_path":"Sv2Sprite","property":"visible","value":true}]`
+- **Expect:** success, both `results` entries success=true, and **NO** top-level `failed` key and **NO** top-level `hint` key (the rollup is purely additive — an all-success batch is byte-identical to before the fix).
+- Restore: `node_set_property` Sv2Label text="Hello Sweep v2"
+
+> **REGRESSION WATCH (concern 034 D, summarize_batch):** This is the additive-only
+> control — `failed`/`hint` must NOT appear when every entry succeeded. If either
+> key shows up on an all-success batch, the helper stopped gating on `failed > 0`
+> and existing clients would see a changed shape. Flag as **Major**.
 
 **3.14a** `node_set_property` (groups rejection, single) — node_path=`Sv2Sprite`, property=`groups`, value=`["enemies"]`
 - **Expect:** INVALID_PARAMS, whole call rejected, hint names `node.groups`. The node's group membership is unchanged (nothing added/stripped).
