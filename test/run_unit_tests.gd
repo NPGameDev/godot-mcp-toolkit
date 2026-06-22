@@ -102,6 +102,7 @@ func _init() -> void:
 	_test_particle_merge_overrides()
 	_test_sound_generate()
 	_test_create_collision_resolver()
+	_test_summarize_batch()
 	_test_tileset_edit_key_enforcement()
 	_test_tileset_io_polygon()
 	_test_coerce_roundtrip()
@@ -2811,6 +2812,61 @@ func _test_create_collision_resolver() -> void:
 			"exists + invalid value → valid false (validation precedes existence)")
 
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(present))
+
+
+# --- summarize_batch (batch partial-failure rollup) -----------------------
+# Pure response shaper: rolls a per-entry results[] up into a top-level failed
+# count + hint, additively (all-success batches stay byte-identical). The failure
+# predicate is shape-tolerant so it serves both batch conventions: {success:bool}
+# (node.set_property batch) AND {status?, error?} with no success key (node.groups
+# batch). Pure → pinned here with hand-built dicts, no editor.
+func _test_summarize_batch() -> void:
+	_begin("summarize_batch batch partial-failure rollup")
+
+	# All-success {success:true} → UNCHANGED (no failed, no hint added).
+	var all_ok := {"results": [{"success": true}, {"success": true}], "count": 2}
+	var r_all_ok := Helpers.summarize_batch(all_ok, "results")
+	_ok(not r_all_ok.has("failed"), "all-success → no failed key (additive: unchanged)")
+	_ok(not r_all_ok.has("hint"), "all-success → no hint key")
+	_eq(r_all_ok.get("count"), 2, "all-success → pre-existing keys preserved")
+
+	# 1-of-3 {success:false} → failed=1 + hint naming results[].
+	var one_fail := {"results": [
+		{"success": true}, {"success": false, "error": "boom"}, {"success": true}]}
+	var r_one_fail := Helpers.summarize_batch(one_fail, "results")
+	_eq(r_one_fail.get("failed"), 1, "1-of-3 success:false → failed=1")
+	_ok(str(r_one_fail.get("hint", "")).contains("1 of 3"), "hint reports 1 of 3")
+	_ok(str(r_one_fail.get("hint", "")).contains("results[]"), "hint steers to results[]")
+
+	# Site-2 shape: {status?, error?} with NO success key. An entry with an error
+	# and no success is a failure; an entry with a status and no error is not.
+	var groups_shape := {"action": "add", "count": 2, "results": [
+		{"node_path": "A", "group": "g", "status": "added"},
+		{"node_path": "B", "group": "g", "error": "node not found"}]}
+	var r_groups := Helpers.summarize_batch(groups_shape, "results")
+	_eq(r_groups.get("failed"), 1, "site-2 (no success key) error entry → counted")
+	_eq(r_groups.get("count"), 2, "site-2 → pre-existing count preserved")
+	_eq(r_groups.get("action"), "add", "site-2 → pre-existing action preserved")
+
+	# A status-only entry (no error, no success) is NOT a failure.
+	var all_added := {"results": [
+		{"status": "added"}, {"status": "removed"}], "count": 2}
+	var r_all_added := Helpers.summarize_batch(all_added, "results")
+	_ok(not r_all_added.has("failed"), "site-2 all-status (no error) → no failed key")
+
+	# Empty results → UNCHANGED.
+	var empty := {"results": [], "count": 0}
+	var r_empty := Helpers.summarize_batch(empty, "results")
+	_ok(not r_empty.has("failed"), "empty results → no failed key")
+	_ok(not r_empty.has("hint"), "empty results → no hint key")
+
+	# Non-dict entries are tolerated (skipped), not counted as failures by accident
+	# of the predicate; a real {success:false} alongside still counts.
+	var mixed := {"results": [42, {"success": false, "error": "x"}]}
+	var r_mixed := Helpers.summarize_batch(mixed, "results")
+	_eq(r_mixed.get("failed"), 1, "non-dict entry skipped; success:false counted")
+
+	print("")
 
 
 # --- tileset.edit_* per-verb key enforcement (concern 031) ----------------

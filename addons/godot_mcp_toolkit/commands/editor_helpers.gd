@@ -608,6 +608,44 @@ static func resolve_create_collision(dest_path: String, if_exists: String) -> Di
 	return {"valid": true, "existed": true, "action": if_exists}
 
 
+# -- Batch partial-failure summary --------------------------------------------
+
+
+## Roll a per-entry results[] up into a top-level partial-failure summary so a
+## caller (or LLM) that reads only the top of the response still sees that some
+## entries failed, instead of having to inspect every entry.
+##
+## Mutates and returns the SAME `response` dict: when >=1 entry failed it ADDS
+## `failed` (int count) + `hint` (String); when every entry succeeded it returns
+## `response` UNCHANGED (no keys added) — so an all-success batch is byte-identical
+## to before. Every pre-existing key (results, count, action, warning, …) is left
+## exactly as the caller set it; this only ever ADDS the two summary keys.
+##
+## The failure predicate is shape-tolerant so one helper serves both batch
+## conventions in use: an entry is a failure iff it is a Dictionary AND
+## (success == false) OR (it has no `success` key but has an `error` key). That
+## covers the {success: bool} shape (node.set_property batch) and the
+## {status?, error?} shape with no success field (node.groups batch).
+##
+## Pure (no engine state) → a headless unit test pins it with hand-built dicts.
+## (GodotCodeStandards §12 DRY/extract-method, §5 — shared response shaper beside
+## the other pure response/decision helpers here.)
+static func summarize_batch(response: Dictionary, results_key := "results") -> Dictionary:
+	var entries: Array = response.get(results_key, [])
+	var total := entries.size()
+	var failed := 0
+	for entry in entries:
+		if typeof(entry) != TYPE_DICTIONARY:
+			continue
+		var e := entry as Dictionary
+		if e.get("success") == false or (not e.has("success") and e.has("error")):
+			failed += 1
+	if failed > 0:
+		response["failed"] = failed
+		response["hint"] = "%d of %d entries failed — inspect results[] for per-entry .error." % [failed, total]
+	return response
+
+
 # -- Shared asset write + import-settle bracket -------------------------------
 
 

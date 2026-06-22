@@ -406,7 +406,9 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 			+ "and may not persist after save/reload: %s. " % ", ".join(non_persisting)
 			+ "Retry those entries with make_unique: true to auto-duplicate "
 			+ "them as inline copies that persist.")
-	return MCPToolkitSuccess.ok(response)
+	# Roll per-entry failures up into a top-level failed count + hint (additive:
+	# all-success batches are byte-identical; the existing warning is preserved).
+	return MCPToolkitSuccess.ok(Helpers.summarize_batch(response, "results"))
 
 
 static func _resolve_common_property_names(node: Object) -> Array[String]:
@@ -925,7 +927,11 @@ static func _batch_node_groups(root: Node, batch_action: String, entries: Array)
 
 	undo_action.commit_recorded()
 
-	return MCPToolkitSuccess.ok({"action": batch_action, "results": results, "count": results.size()})
+	# Entries here carry {status?, error?} with no `success` key — summarize_batch's
+	# tolerant predicate (no-success + error => failure) counts them. Additive:
+	# all-success batches keep the same {action, results, count} shape.
+	var response := {"action": batch_action, "results": results, "count": results.size()}
+	return MCPToolkitSuccess.ok(Helpers.summarize_batch(response, "results"))
 
 
 const _LAYOUT_PRESETS := {
