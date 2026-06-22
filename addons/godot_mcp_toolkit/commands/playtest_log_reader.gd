@@ -160,6 +160,22 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 # -- Helpers ------------------------------------------------------------------
 
 
+## Shared error-entry shape for debug_state/error_buffer responses.
+## timestamp_ms + entry_type vary by source (live capture vs log scan); all
+## other fields are pass-through. Explicit types so the builder never :=-infers
+## from a Variant — message/source/function are str()-typed at the call sites.
+static func make_error_entry(timestamp_ms: int, message: String, source: String,
+		function: String, line: int, entry_type: String) -> Dictionary:
+	return {
+		"timestamp_ms": timestamp_ms,
+		"message": message,
+		"source": source,
+		"function": function,
+		"line": line,
+		"type": entry_type,
+	}
+
+
 ## Merge debug bridge error buffer + state into a debugger.get_log response.
 ## all_lines: unfiltered log lines — error scan needs adjacent "at:" lines
 ## that text_filter might exclude.
@@ -215,14 +231,8 @@ static func _scan_lines_for_errors(lines: Array) -> Array:
 							source = loc.left(colon)
 							source_line = int(loc.substr(colon + 1))
 					i += 1  # Skip the "at:" line
-			errors.append({
-				"timestamp_ms": 0,
-				"message": msg,
-				"source": source,
-				"function": func_name,
-				"line": source_line,
-				"type": "log_scan",
-			})
+			errors.append(make_error_entry(
+				0, msg, source, func_name, source_line, "log_scan"))
 		i += 1
 	return errors
 

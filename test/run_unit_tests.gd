@@ -29,6 +29,7 @@ const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_co
 const TilesetTileData := preload("res://addons/godot_mcp_toolkit/commands/tileset_tile_data.gd")
 const TilesetIo := preload("res://addons/godot_mcp_toolkit/commands/tileset_io.gd")
 const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
+const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/_coerce.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/signal_pair_resolver.gd")
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/mutation_watchdog.gd")
@@ -84,6 +85,7 @@ func _init() -> void:
 	_test_undo_redo_action()
 	_test_error_api()
 	_test_error_codes_vocabulary()
+	_test_make_error_entry()
 	_test_export_strip()
 	_test_editor_refresh_reload_filter()
 	_test_unfocused_backup()
@@ -1957,6 +1959,36 @@ func _test_error_codes_vocabulary() -> void:
 			dupes += 1
 		seen[entry_str] = true
 	_eq(dupes, 0, "CODES has no duplicate entries")
+
+	print("")
+
+
+# --- debug_bridge error-entry shape (concern 033 DRY) -----------------------
+# make_error_entry is the single shared constructor for the error-buffer dict
+# emitted by the live capture path (debug_bridge), the break fallback, and the
+# log-scan fallback (playtest_log_reader). Pins the exact key set + order +
+# pass-through so the DRY extraction can't drift any one call site's output.
+# In-process call (no JSON/WS boundary), so line/timestamp_ms stay true int.
+
+func _test_make_error_entry() -> void:
+	_begin("debug_bridge error-entry shape")
+	var e := PlaytestLogReader.make_error_entry(123, "msg", "res://a.gd", "f", 7, "error")
+	# exact key set, count, and order-of-keys pinned
+	_eq(e.size(), 6, "entry has exactly 6 keys")
+	_ok(e.keys() == ["timestamp_ms", "message", "source", "function", "line", "type"],
+			"key set + order pinned")
+	_eq(e["timestamp_ms"], 123, "timestamp_ms passthrough")
+	_eq(e["message"], "msg", "message passthrough")
+	_eq(e["source"], "res://a.gd", "source passthrough")
+	_eq(e["function"], "f", "function passthrough")
+	_eq(e["line"], 7, "line passthrough")
+	_eq(e["type"], "error", "type passthrough")
+	_ok(typeof(e["line"]) == TYPE_INT, "line is int (no JSON float coercion in-process)")
+	_ok(typeof(e["timestamp_ms"]) == TYPE_INT, "timestamp_ms is int")
+	# log-scan variant reproduces Site-2 derivation
+	var e2 := PlaytestLogReader.make_error_entry(0, "m2", "", "", 0, "log_scan")
+	_eq(e2["timestamp_ms"], 0, "log_scan timestamp_ms=0 preserved")
+	_eq(e2["type"], "log_scan", "log_scan type preserved")
 
 	print("")
 

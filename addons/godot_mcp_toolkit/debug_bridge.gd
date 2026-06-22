@@ -7,6 +7,9 @@ extends EditorDebuggerPlugin
 ## remove_debugger_plugin (I12 symmetry). Session signals feed the
 ## debug.state command; send_message("continue") feeds debug.continue.
 
+## Shared error-entry shape (timestamp + type vary by source; rest pass-through).
+const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
+
 const _ERROR_BUFFER_MAX := 50
 
 var _session: EditorDebuggerSession = null
@@ -76,14 +79,10 @@ func _on_breaked(can_debug: bool) -> void:
 	# Fallback: if _capture didn't fire for this break (built-in debugger
 	# may intercept error messages before plugins), record a generic entry.
 	if can_debug and _error_buffer.is_empty():
-		_buffer_error({
-			"timestamp_ms": Time.get_ticks_msec(),
-			"message": "Game paused at error (details in editor Errors tab or log)",
-			"source": "",
-			"function": "",
-			"line": 0,
-			"type": "break",
-		})
+		_buffer_error(PlaytestLogReader.make_error_entry(
+				Time.get_ticks_msec(),
+				"Game paused at error (details in editor Errors tab or log)",
+				"", "", 0, "break"))
 
 
 func _on_continued() -> void:
@@ -128,40 +127,39 @@ func cleanup() -> void:
 
 
 ## Parse error data from the debugger protocol and append to the ring buffer.
-## Data layout (stable 4.0–4.5):
-##   [0] = callstack_entry_count * 3
-##   [1..stack] = stack frames (file, func, line triples)
-##   After stack: hr_error, hr_cond, source_file, source_func, source_line, error_type, is_warning
+##
+## DEFENSIVE / forward-looking — currently unreachable on the live path: the
+## engine routes the bare "error" message to the registered _msg_error handler
+## (script_editor_debugger.cpp), so it never reaches plugins_capture / _capture.
+## The _on_breaked and log-scan fallbacks are what actually populate the buffer
+## today. Kept (and decoded correctly) in case a future engine version surfaces
+## "error" to capture plugins.
+##
+## Data layout — DebuggerMarshalls::OutputError::serialize(), fields-first /
+## stack-LAST, verified unchanged across Godot 4.0–4.7:
+##   [0]=hr  [1]=min  [2]=sec  [3]=msec  [4]=source_file  [5]=source_func
+##   [6]=source_line  [7]=error  [8]=error_descr  [9]=warning
+##   [10]=callstack.size()*3   [11+]=(file, func, line) triples
 func _parse_and_buffer_error(data: Array) -> void:
-	if data.size() < 2:
-		return
-	var stack_entries: int = int(data[0]) if data.size() > 0 else 0
-	var i: int = 1 + stack_entries  # Skip past callstack frames
-	if i >= data.size():
-		return  # Malformed — not enough fields after stack
+	if data.size() < 10:
+		return  # Malformed — not enough fields for the fixed header
 
-	var hr_error := str(data[i]) if data.size() > i else ""
-	var hr_cond := str(data[i + 1]) if data.size() > i + 1 else ""
-	var source_file := str(data[i + 2]) if data.size() > i + 2 else ""
-	var source_func := str(data[i + 3]) if data.size() > i + 3 else ""
-	var source_line: int = int(data[i + 4]) if data.size() > i + 4 else 0
-	var is_warning: bool = bool(data[i + 6]) if data.size() > i + 6 else false
+	var source_file := str(data[4])
+	var source_func := str(data[5])
+	var source_line: int = int(data[6])
+	var error := str(data[7])
+	var error_descr := str(data[8])
+	var is_warning: bool = bool(data[9])
 
 	if is_warning:
 		return  # Only capture errors, not warnings
 
-	var msg := hr_error
-	if not hr_cond.is_empty():
-		msg += ": " + hr_cond
+	# Prefer the human-readable description; fall back to the bare error text.
+	var msg := error_descr if not error_descr.is_empty() else error
 
-	_buffer_error({
-		"timestamp_ms": Time.get_ticks_msec(),
-		"message": msg,
-		"source": source_file,
-		"function": source_func,
-		"line": source_line,
-		"type": "error",
-	})
+	_buffer_error(PlaytestLogReader.make_error_entry(
+			Time.get_ticks_msec(), msg, source_file, source_func,
+			source_line, "error"))
 
 
 func _buffer_error(entry: Dictionary) -> void:

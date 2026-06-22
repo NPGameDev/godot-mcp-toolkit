@@ -59,6 +59,12 @@ This is a minor limitation. MCP usage during multiplayer testing is
 predominantly Mode A (editor introspection), not Mode B (runtime
 introspection).
 
+The editor's debug bridge has the same single-session limit: it tracks only
+the most-recently-launched game process, so `debug_state`, `debug_continue`,
+and the `debugger_get_log` error buffer reflect that last instance only. For
+per-instance debugging of several running games at once, use Pattern A
+(separate editors), where each instance has its own editor and debug bridge.
+
 ---
 
 ## Pattern C -- Same project, same directory, two editors: NOT SUPPORTED
