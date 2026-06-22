@@ -9,7 +9,7 @@ extends RefCounted
 ## as a mono 16-bit WAV. SFX only; music/melodies are out of scope.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 const ALLOWED_EXTS := ["wav"]
 const MIX_RATE := 44100

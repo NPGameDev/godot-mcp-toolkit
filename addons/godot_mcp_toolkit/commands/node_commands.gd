@@ -5,7 +5,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 ## node.set_property rejects "groups" because its set is a declarative full
 ## replace (it would drop any group not in the list), whereas node.groups is

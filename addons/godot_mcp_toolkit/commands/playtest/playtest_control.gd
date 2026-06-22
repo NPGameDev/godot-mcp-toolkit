@@ -15,7 +15,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
 const RegistryClient = Modules.RegistryClient
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const _LogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 

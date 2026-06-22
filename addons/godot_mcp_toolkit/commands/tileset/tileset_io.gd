@@ -11,7 +11,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 
 ## Load and validate a TileSet from file_path. Returns TileSet or error Dictionary.

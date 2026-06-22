@@ -13,7 +13,7 @@ extends RefCounted
 ## vocabulary; the scene-read is the contract.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 ## Hard cap on nodes returned (also bounds the O(n^2) relation pass).
 const DEFAULT_MAX_NODES := 200

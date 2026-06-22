@@ -12,7 +12,7 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const _IO := preload("res://addons/godot_mcp_toolkit/commands/tileset/tileset_io.gd")
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 
 # -- Commands -----------------------------------------------------------------

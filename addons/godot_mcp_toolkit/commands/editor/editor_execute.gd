@@ -12,7 +12,7 @@ extends RefCounted
 ## Consumed by editor_commands.gd via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 const Coerce = Modules.Coerce
 
 

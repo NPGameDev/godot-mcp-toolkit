@@ -11,7 +11,7 @@ extends RefCounted
 ## NOT this commit).
 ##
 ## Editor-side ONLY — and TAINTED by design: it names EditorInterface (via the
-## injected root-resolver) and reaches Modules.Helpers.open_scene_deferred. That is
+## injected root-resolver) and reaches Modules.CommandHelpers.open_scene_deferred. That is
 ## allowed because the Mode-B runtime autoload has NO scene lease and must NEVER
 ## preload this file (it has no affinity/tab concept — a running game always owns
 ## its single SceneTree). #91713 therefore does not gate this child, but a runtime
@@ -332,7 +332,7 @@ func _switch_to_affinity_scene(peer: WebSocketPeer, id) -> bool:
 	var scene := str(_peer_scene_affinity.get(peer, ""))
 	if scene.is_empty() or _active_scene_path() == scene:
 		return true
-	if await Modules.Helpers.open_scene_deferred(scene):
+	if await Modules.CommandHelpers.open_scene_deferred(scene):
 		return true
 	Notifier.send_result(peer, id, MCPToolkitError.fail("TIMEOUT",
 		"could not switch to %s — EditorFileSystem still scanning" % scene), "[MCPServer]")

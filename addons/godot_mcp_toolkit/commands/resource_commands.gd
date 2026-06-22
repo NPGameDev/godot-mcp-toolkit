@@ -6,7 +6,7 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 	"image", "mesh_arrays", "surface_arrays", "_data",

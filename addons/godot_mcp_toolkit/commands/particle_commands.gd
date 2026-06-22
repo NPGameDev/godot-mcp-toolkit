@@ -4,7 +4,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 const _VALID_PRESETS := ["fire", "smoke", "sparks", "rain", "snow", "explosion", "magic", "dust"]
 

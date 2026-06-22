@@ -15,7 +15,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Untrusted = Modules.Untrusted
 const Scrubber = Modules.Scrubber
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 const LogHelpers = Modules.LogHelpers
 
 

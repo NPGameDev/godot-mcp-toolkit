@@ -5,7 +5,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 const _VALID_PRIMITIVES := ["box", "sphere", "cylinder", "capsule", "plane", "prism"]
 const _VALID_LIGHT_TYPES := ["directional", "omni", "spot"]

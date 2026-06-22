@@ -4,7 +4,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/scene/signal_pair_resolver.gd")
 
 static var _extends_path_re: RegEx = _compile_extends_path_re()

@@ -5,7 +5,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const Untrusted = Modules.Untrusted
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:

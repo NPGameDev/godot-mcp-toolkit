@@ -4,7 +4,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _set_main_scene_state error in the editor console. This is benign Godot engine noise — safe to ignore."
 

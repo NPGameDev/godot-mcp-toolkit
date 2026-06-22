@@ -9,7 +9,7 @@ extends RefCounted
 ## text label overlay — and writes a PNG that imports as a Texture2D.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 const ALLOWED_EXTS := ["png"]
 const MAX_DIM := 1024

@@ -4,7 +4,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 
 const _VALID_PROPERTY_TYPES := ["color", "constant", "font", "font_size", "icon", "stylebox"]
 

@@ -13,7 +13,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
 

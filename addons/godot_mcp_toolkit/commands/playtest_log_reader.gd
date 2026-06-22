@@ -19,7 +19,7 @@ extends RefCounted
 ## Consumed by playtest_commands.gd via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const Helpers = Modules.Helpers
+const Helpers = Modules.CommandHelpers
 const LogHelpers = Modules.LogHelpers
 
 # Log-file offset snapshot at game_start — bytes after this offset belong to
