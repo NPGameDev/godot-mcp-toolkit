@@ -49,7 +49,7 @@ func show_info(server: Node) -> void:
 		_add_info_row(vbox, "Mode", "Read-only (GODOT_MCP_READ_ONLY=1)")
 
 	# -- Version --
-	var plugin_ver := _get_plugin_version()
+	var plugin_ver := Modules.VersionUtils.read_plugin_version()
 	var vi := Engine.get_version_info()
 	var godot_ver := "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]]
 	_add_info_row(vbox, "Plugin", "v%s" % plugin_ver)
@@ -192,11 +192,3 @@ func _add_info_row(parent: VBoxContainer, key: String, value: String) -> void:
 	v.add_theme_font_size_override("font_size", 12)
 	v.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(v)
-
-
-func _get_plugin_version() -> String:
-	var cfg := ConfigFile.new()
-	var err := cfg.load("res://addons/godot_mcp_toolkit/plugin.cfg")
-	if err != OK:
-		return "unknown"
-	return cfg.get_value("plugin", "version", "unknown")

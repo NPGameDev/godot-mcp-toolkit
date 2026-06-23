@@ -486,7 +486,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 			# handshake. A pre-handshake server sends no version → skip.
 			var server_ver: String = str(message.get("version", ""))
 			if not server_ver.is_empty():
-				_check_version_mismatch(_get_plugin_version(), server_ver)
+				_check_version_mismatch(Modules.VersionUtils.read_plugin_version(), server_ver)
 		return
 
 	await _router.route_request(peer, message)
@@ -500,7 +500,7 @@ func _build_auth_ack(_message: Dictionary) -> Dictionary:
 	return {
 		"authed": true,
 		"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
-		"version": _get_plugin_version(),
+		"version": Modules.VersionUtils.read_plugin_version(),
 	}
 
 
@@ -520,14 +520,6 @@ func _on_peer_authed(count: int) -> void:
 # here (the aggregate uses the transport's batch result).
 func _on_peer_closed(peer: WebSocketPeer, _was_authed: bool) -> void:
 	_scene_lease.on_peer_closed(peer)
-
-
-func _get_plugin_version() -> String:
-	var cfg := ConfigFile.new()
-	var err := cfg.load("res://addons/godot_mcp_toolkit/plugin.cfg")
-	if err != OK:
-		return "unknown"
-	return cfg.get_value("plugin", "version", "unknown")
 
 
 func _check_version_mismatch(local: String, remote: String) -> void:
