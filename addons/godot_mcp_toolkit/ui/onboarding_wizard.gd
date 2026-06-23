@@ -5,7 +5,7 @@ extends RefCounted
 
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 
-const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_v41l_shown"
+const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_shown_v001"
 const _ONBOARDING_PROGRESS := "user://addons/godot_mcp_toolkit/mcp_onboarding_progress"
 const _STEP_COUNT := 3
 
