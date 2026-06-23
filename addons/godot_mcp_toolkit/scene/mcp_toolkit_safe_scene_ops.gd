@@ -1,9 +1,24 @@
 @tool
 class_name MCPToolkitSafeSceneOps
 extends RefCounted
-## Editor-safe scene operations. Command handlers (toolkit OR extension) must
-## call MCPToolkitSafeSceneOps.save_scene() — never EditorInterface.save_scene()
-## / save_scene_as() directly. See docs/extending.md and docs/advanced_configuration.md.
+## Editor-safe scene saving for command handlers.
+##
+## Command handlers (toolkit OR extension) must save through this class — never by
+## calling [code]EditorInterface.save_scene()[/code] / [code]save_scene_as()[/code]
+## directly — so the dispatch-safety guards apply: a scan-idle wait (C2) and a
+## re-entrancy guard around the synchronous save (C1) that together keep a save from
+## corrupting an in-flight import or another save. From GDScript, [code]await[/code]
+## [method save_scene] for the result inline; from a synchronous caller (notably a
+## C# handler that cannot await), call [method queue_save] and poll
+## [method check_save]. See [code]docs/extending.md[/code] and
+## [code]docs/advanced_configuration.md[/code].[br]
+## [br]
+## Example (GDScript handler):
+## [codeblock]
+## var result := await MCPToolkitSafeSceneOps.save_scene()
+## if not result.get("success", false):
+##     return result
+## [/codeblock]
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
@@ -21,17 +36,21 @@ static var _save_counter := 0
 static var _save_results: Dictionary = {}
 
 
-## True while a save's synchronous EditorInterface.save_scene[_as] call is in
-## flight. Frame-driven dispatch initiators (_poll_connections,
-## SceneLease.check_expiry) early-return when this is true so no command dispatches
-## during the ProgressDialog's Main::iteration() re-entry (C1, all versions).
+## Returns [code]true[/code] while a save's synchronous
+## [code]EditorInterface.save_scene[/code]/[code]save_scene_as[/code] call is in
+## flight. Frame-driven dispatch initiators early-return when this is true so no
+## command dispatches during the save's re-entrant main-loop pump (the C1 guard,
+## all engine versions).
 static func is_dispatching() -> bool:
 	return _in_dispatch
 
 
-## Wait until the EditorFileSystem scan finishes. Returns true if idle was
-## reached, false on timeout. timeout_ms < 0 → use the configured default
-## (mcp_toolkit/concurrency/scan_idle_timeout_ms, default 5000). 0 = fail-fast.
+## Awaits until the EditorFileSystem scan finishes (this is a coroutine — call it
+## with [code]await[/code]). Returns [code]true[/code] if idle was reached,
+## [code]false[/code] on timeout. A negative [param timeout_ms] (the default) uses
+## the configured default ([code]mcp_toolkit/concurrency/scan_idle_timeout_ms[/code],
+## default 5000); [code]0[/code] fails fast (returns immediately unless already
+## idle).
 static func wait_for_scan_idle(timeout_ms := -1) -> bool:
 	var efs := EditorInterface.get_resource_filesystem()
 	if efs == null or not efs.is_scanning():
@@ -45,9 +64,14 @@ static func wait_for_scan_idle(timeout_ms := -1) -> bool:
 	return not efs.is_scanning()
 
 
-## Safe scene save. C2 guard (scan-idle, abort-on-timeout) + C1 guard
-## (_in_dispatch around the synchronous save). path == "" saves the active
-## scene; non-empty does save_scene_as.
+## Saves a scene safely (this is a coroutine — call it with [code]await[/code]).
+## An empty [param path] (the default) saves the active edited scene; a non-empty
+## [param path] saves to that [code]res://[/code] location (a save-as, path-guarded).
+## Applies the C2 guard (waits for scan idle, aborting on timeout) and the C1 guard
+## (serializes the synchronous save against any other in-flight save). Returns a
+## success dict carrying the saved [code]path[/code], or an error dict
+## ([code]NO_SCENE[/code], [code]PATH_DENIED[/code], [code]TIMEOUT[/code],
+## [code]BUSY[/code], or [code]SAVE_FAILED[/code]).
 static func save_scene(path := "") -> Dictionary:
 	var root := EditorInterface.get_edited_scene_root()
 	if root == null:
@@ -93,12 +117,13 @@ static func save_scene(path := "") -> Dictionary:
 	return MCPToolkitSuccess.ok({"path": path})
 
 
-## Editor-safe save for SYNCHRONOUS callers — notably C# extension handlers,
-## which can't await a GDScript coroutine. Schedules save_scene() as a detached
-## coroutine (the C1 re-entrancy flag + C2 scan-idle guard still apply) and
-## returns a **save id** immediately. Poll the id with check_save() to learn the
-## outcome (the save completes after you return). From GDScript, prefer the
-## awaited save_scene() directly when you need the result inline.
+## Editor-safe save for SYNCHRONOUS callers — notably C# extension handlers, which
+## cannot await a GDScript coroutine. Schedules [method save_scene] (with
+## [param path], same semantics) as a detached coroutine — the C1 and C2 guards still
+## apply — and returns a save id immediately, before the save runs. Poll that id
+## with [method check_save] to learn the outcome. Returns the save id. From
+## GDScript, prefer awaiting [method save_scene] directly when you need the result
+## inline.
 static func queue_save(path := "") -> String:
 	_save_counter += 1
 	var save_id := "save_%d" % _save_counter
@@ -119,11 +144,14 @@ static func _run_queued_save(save_id: String, path: String) -> void:
 			save_id, str(result.get("error", result))])
 
 
-## Poll a queued save by id. Returns `{done = false}` while still in flight,
-## `{done = false, unknown = true}` for an unknown id, or
-## `{done = true, success = bool, result = {...}}` once complete. A caller can
-## yield a frame and poll until `done`. If `clear` is true AND the save is done,
-## the record is removed (a later check_save returns `unknown`).
+## Polls a queued save by [param save_id] (the id returned from
+## [method queue_save]). Returns [code]{done = false}[/code] while still in flight,
+## [code]{done = false, unknown = true}[/code] for an unknown id, or
+## [code]{done = true, success = bool, result = {...}}[/code] once complete, where
+## [code]result[/code] is the [method save_scene] dict. Yield a frame and poll
+## until [code]done[/code]. When [param clear] is [code]true[/code] and the save is
+## done, the record is removed (a later [method check_save] returns
+## [code]unknown[/code]).
 static func check_save(save_id: String, clear := false) -> Dictionary:
 	if not _save_results.has(save_id):
 		return {"done": false, "unknown": true}

@@ -1,13 +1,17 @@
 @tool
 class_name MCPToolkitSuccess
 extends RefCounted
-## Success-response builder — symmetric with MCPToolkitError.fail().
+## Success-response builder — symmetric with [method MCPToolkitError.fail].
 ##
-## Guarantees every success response includes "success": true so handlers
-## cannot accidentally omit the key required by ADR 0004.
+## [method ok] stamps every success response with [code]"success": true[/code], so
+## a handler cannot accidentally omit the key the dispatch contract requires
+## (ADR 0004). Use it for every successful return, just as [MCPToolkitError] is
+## used for every failure.
 
 
-## Build a success response Dictionary.
+## Stamps [param data] with [code]"success": true[/code] and returns it as the
+## success response. [param data] carries the handler's result payload (default an
+## empty dict). The returned dictionary is [param data] itself, mutated in place.
 ## [codeblock]
 ## return MCPToolkitSuccess.ok({"value": 42})
 ## # => {"value": 42, "success": true}

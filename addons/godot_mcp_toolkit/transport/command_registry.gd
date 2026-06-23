@@ -2,6 +2,26 @@
 class_name MCPToolkitCommandRegistry
 extends RefCounted
 ## Central dispatch table for MCP commands.
+##
+## Holds every registered command — built-in and extension — keyed by method name,
+## and routes incoming calls to their handlers via [method call_command]. Built-in
+## modules and extensions populate it with [method add], passing a
+## [MCPToolkitCommandOptions] (or [MCPToolkitExtensionOptions]) that declares the
+## command's contract; the per-command metadata it derives drives version gating,
+## annotations, timeout clamping, path guards, and the read-only/serialization
+## routing the dispatcher reads back through the various accessor methods here. It
+## also exposes thin facades ([method create_options], [method fail],
+## [method require], [method create_undo_action], [method queue_save], …) so a
+## handler — including a C# one that cannot reach the GDScript statics directly — can
+## build options, errors, and undo actions through this one object.[br]
+## [br]
+## An extension registers its commands by overriding
+## [method MCPToolkitExtension.register], which receives the live registry:
+## [codeblock]
+## func register(registry, server):
+##     registry.add("physics_list_bodies", _on_list_bodies,
+##         MCPToolkitExtensionOptions.new("List all physics bodies").mark_read_only())
+## [/codeblock]
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Audit = Modules.Audit
@@ -54,6 +74,27 @@ func end_extension_load() -> Array[Dictionary]:
 	return refused
 
 
+## Registers the command named [param method], dispatched to [param handler], with
+## the contract declared by [param options]. The handler is a [Callable] taking the
+## parameters [Dictionary] (and, for a cancellable command, a
+## [MCPToolkitToolContext]) and returning a response [Dictionary]. This is the
+## single registration entry point for both built-in modules and extensions.[br]
+## [br]
+## From [param options] it derives and stores the command's metadata, applying
+## several rules: a command outside the running engine's
+## [method MCPToolkitCommandOptions.with_min_godot_version] /
+## [method MCPToolkitCommandOptions.with_max_godot_version] range is recorded as
+## version-blocked and NOT registered; read-only and destructive together are
+## contradictory, so destructive is forced off with a warning; and the timeout is
+## clamped (a non-positive value becomes the 30 s default, a positive one is floored
+## at 1 s and capped at 300 s). During a bracketed extension load (see
+## [method begin_extension_load]) an [param method] that already exists is refused
+## rather than overwritten.[br]
+## [br]
+## [codeblock]
+## registry.add("physics_list_bodies", _on_list_bodies,
+##     MCPToolkitExtensionOptions.new("List all physics bodies").mark_read_only())
+## [/codeblock]
 func add(method: String, handler: Callable,
 		options: MCPToolkitCommandOptions) -> void:
 	# Collision guard (active only during a bracketed extension load): refuse to
@@ -123,6 +164,8 @@ func add(method: String, handler: Callable,
 	_commands[method] = cmd_entry
 
 
+## Unregisters the command named [param method], removing both its handler and its
+## extension marking (if any). A no-op when the command is not registered.
 func remove(method: String) -> void:
 	_commands.erase(method)
 	var idx := _extension_methods.find(method)
@@ -130,15 +173,21 @@ func remove(method: String) -> void:
 		_extension_methods.remove_at(idx)
 
 
+## Returns the names of all currently registered commands.
 func get_all_methods() -> Array:
 	return _commands.keys()
 
 
+## Marks the command named [param method] as extension-provided (as opposed to
+## built-in). Idempotent. The extension loader calls this after [method add] so the
+## bridge can tell extension commands apart; see [method get_extension_methods].
 func mark_extension(method: String) -> void:
 	if method not in _extension_methods:
 		_extension_methods.append(method)
 
 
+## Returns a copy of the names marked as extension commands via
+## [method mark_extension].
 func get_extension_methods() -> Array[String]:
 	return _extension_methods.duplicate()
 
@@ -170,6 +219,7 @@ func get_command_metadata(method: String) -> Dictionary:
 	return meta
 
 
+## Returns [code]true[/code] if a command named [param method] is registered.
 func has_command(method: String) -> bool:
 	return _commands.has(method)
 
@@ -188,12 +238,19 @@ func get_watchdog_timeout_ms(method: String) -> int:
 	return _MAX_TIMEOUT_MS
 
 
+## Returns [code]true[/code] if the command named [param method] was registered as
+## cancellable (see [method MCPToolkitCommandOptions.mark_cancellable]), meaning the
+## dispatcher passes it a [MCPToolkitToolContext]. [code]false[/code] for an unknown
+## command.
 func is_cancellable(method: String) -> bool:
 	if not _commands.has(method):
 		return false
 	return _commands[method].get("is_cancellable", false)
 
 
+## Returns [code]true[/code] if the command named [param method] was marked
+## read-only (see [method MCPToolkitCommandOptions.mark_read_only]).
+## [code]false[/code] for an unknown command.
 func is_read_only(method: String) -> bool:
 	var cmd = _commands.get(method)
 	return cmd != null and cmd.get("read_only", false)
@@ -208,16 +265,28 @@ func path_guards(method: String) -> Dictionary:
 	return cmd.get("path_guards", {})
 
 
+## Returns [code]true[/code] if the command named [param method] requires an open
+## edited scene, i.e. it was NOT marked scene-independent (see
+## [method MCPToolkitCommandOptions.mark_scene_independent]); a registered command
+## defaults to [code]true[/code]. [code]false[/code] for an unknown command.
 func is_active_scene_required(method: String) -> bool:
 	var cmd = _commands.get(method)
 	return cmd != null and cmd.get("active_scene_required", true)
 
 
+## Returns [code]true[/code] if the command named [param method] was marked for
+## exclusive execution (see
+## [method MCPToolkitCommandOptions.mark_exclusive_execution]). [code]false[/code]
+## for an unknown command.
 func is_exclusive_execution(method: String) -> bool:
 	var cmd = _commands.get(method)
 	return cmd != null and cmd.get("exclusive_execution", false)
 
 
+## Returns [code]true[/code] if calls to the command named [param method] must be
+## serialized against mutations — i.e. it is exclusive, or it is not read-only.
+## Read-only, non-exclusive commands return [code]false[/code] (they may run
+## concurrently). An unknown command returns [code]true[/code] (the safe default).
 func needs_serialization(method: String) -> bool:
 	if not _commands.has(method):
 		return true  # Safe default for unknown commands.
@@ -226,14 +295,25 @@ func needs_serialization(method: String) -> bool:
 	return not is_read_only(method)
 
 
+## Returns a fresh [MCPToolkitCommandOptions] builder. A convenience facade so a
+## handler (notably a C# one that cannot reach the GDScript [code]new()[/code]
+## directly) can build options through the registry. Returns the new builder.
 func create_options() -> MCPToolkitCommandOptions:
 	return MCPToolkitCommandOptions.new()
 
 
+## Returns a fresh [MCPToolkitExtensionOptions] builder seeded with
+## [param description]. A facade equivalent to
+## [code]MCPToolkitExtensionOptions.new(description)[/code], reachable through the
+## registry by a C# handler. Returns the new builder.
 func create_extension_options(description: String) -> MCPToolkitExtensionOptions:
 	return MCPToolkitExtensionOptions.new(description)
 
 
+## Begins an undo action named [param description] (optionally scoped to
+## [param context_object]) and returns its [MCPToolkitUndoRedoAction] builder. A
+## facade over [method MCPToolkitUndoRedoAction.begin] so a C# handler — which
+## cannot call that GDScript static — can build undo actions through the registry.
 func create_undo_action(description: String, context_object: Object = null) -> MCPToolkitUndoRedoAction:
 	return MCPToolkitUndoRedoAction.begin(description, context_object)
 
@@ -248,24 +328,51 @@ func queue_save(path := "") -> String:
 	return MCPToolkitSafeSceneOps.queue_save(path)
 
 
+## Polls a queued save by [param save_id], optionally clearing the record when
+## [param clear] is true and the save is done. A facade over
+## [method MCPToolkitSafeSceneOps.check_save] (paired with [method queue_save]) for
+## a synchronous/C# handler. Returns the same status dictionary that method does.
 func check_save(save_id: String, clear := false) -> Dictionary:
 	return MCPToolkitSafeSceneOps.check_save(save_id, clear)
 
 
+## Removes every registered command and clears the extension-marking and
+## version-blocked state. Used at plugin teardown to break handler [Callable]
+## references before the editor's exit-time leak check.
 func clear() -> void:
 	_commands.clear()
 	_extension_methods.clear()
 	_version_blocked.clear()
 
 
+## Builds a failure response with [param code], [param message], and an optional
+## [param hint]. A facade over [method MCPToolkitError.fail] so a handler can
+## return errors through the registry. Returns the failure dictionary.
 func fail(code: String, message: String, hint: String = "") -> Dictionary:
 	return MCPToolkitError.fail(code, message, hint)
 
 
+## Validates that every key in [param required] is present and non-empty in
+## [param parameters]. A facade over [method MCPToolkitError.require]: returns
+## [code]null[/code] when satisfied, or an [code]INVALID_PARAMS[/code] error dict
+## for the first missing key.
 func require(parameters: Dictionary, required: Array) -> Variant:
 	return MCPToolkitError.require(parameters, required)
 
 
+## Dispatches a registered command (this is a coroutine — call it with
+## [code]await[/code]). Looks up [param method], runs its declared path guards
+## against [param parameters], invokes the handler (passing [param ctx] when the
+## command is cancellable), and enforces the response contract before returning.[br]
+## [br]
+## Returns the handler's response [Dictionary], or an error dict when: the command
+## is unknown ([code]NOT_FOUND[/code], or [code]UNSUPPORTED[/code] when it was
+## version-blocked for the running engine); a guarded path is rejected
+## ([code]PATH_DENIED[/code]); or the handler violates the contract by returning a
+## non-dictionary or omitting the [code]success[/code] key ([code]INTERNAL[/code]).
+## On a successful response with no hint, the command's registered success hint (if
+## any) is attached. [param ctx] is the per-invocation [MCPToolkitToolContext] for a
+## cancellable command, or [code]null[/code].
 func call_command(method: String, parameters: Dictionary,
 		ctx: MCPToolkitToolContext = null) -> Dictionary:
 	if not _commands.has(method):

@@ -2,7 +2,24 @@
 class_name MCPToolkitError
 extends RefCounted
 ## Shared MCP error contract — canonical error codes and failure envelope.
+##
+## Every command that fails returns a uniform dictionary built by [method fail]:
+## [code]{"success": false, "error": <message>, "code": <code>}[/code], plus an
+## optional [code]"hint"[/code] with recovery guidance. [constant CODES] is the
+## authoritative vocabulary of [code]code[/code] values; [method require] is the
+## shared "required parameters present" check; and [method guard_response_size]
+## keeps an oversized response from exceeding the transport buffer. Mirrors
+## [MCPToolkitSuccess], which builds the success envelope.[br]
+## [br]
+## Example:
+## [codeblock]
+## if node == null:
+##     return MCPToolkitError.fail("NODE_NOT_FOUND", "no node at " + path)
+## [/codeblock]
 
+## The authoritative set of error [code]code[/code] values a response may carry.
+## [method fail] asserts (in debug builds) that the code it is given appears here,
+## so an undeclared code is caught as drift during development.
 const CODES: Array[String] = [
 	"ALREADY_EXISTS",
 	"ALREADY_PLAYING",
@@ -59,13 +76,22 @@ const CODES: Array[String] = [
 	"WRITE_FAILED",
 ]
 
-## Hint constants for common dead-end recovery at call sites.
+## Recovery hint suggesting how to find a valid node path, for a call site that
+## received an unresolvable one. Pass it as the [param hint] of [method fail].
 const HINT_NODE_PATH := "Use scene.get_tree to list valid node paths. Root node is always path '.'."
+
+## Recovery hint suggesting how to find a valid file path, for a call site that
+## received an unresolvable one. Pass it as the [param hint] of [method fail].
 const HINT_FILE_PATH := "Use asset.list to search for files. Paths must start with res://"
+
+## Recovery hint suggesting how to find a valid class name, for a call site that
+## received an unknown one. Pass it as the [param hint] of [method fail].
 const HINT_CLASS_NAME := "Use classdb.search to find valid class names."
 
-## Default hints auto-attached to error codes that always benefit from
-## the same recovery guidance, regardless of call site context.
+## Per-code default recovery hints, keyed by error code. When [method fail] is
+## given an empty hint but the code has an entry here, that hint is auto-attached —
+## so codes whose recovery advice never depends on call-site context carry it
+## automatically. An explicit [param hint] passed to [method fail] wins over this.
 const DEFAULT_HINTS := {
 	"TIMEOUT": "The editor may be busy. Try editor.wait_for_idle before retrying.",
 	"UNSUPPORTED": "Check COMPATIBILITY.md for version requirements.",
@@ -79,8 +105,11 @@ const DEFAULT_HINTS := {
 }
 
 
-## Validate that all keys in `required` are present and non-empty strings
-## in `parameters`. Returns null on success or an INVALID_PARAMS error dict.
+## Validates that every key listed in [param required] is present in
+## [param parameters] as a non-empty string. Returns [code]null[/code] when all
+## required keys are satisfied, or an [code]INVALID_PARAMS[/code] error dict (built
+## by [method fail], with a path/class recovery hint for known keys) for the first
+## missing one. Call it at the top of a handler and return its result if non-null.
 static func require(parameters: Dictionary, required: Array) -> Variant:
 	for key in required:
 		var val = parameters.get(key, "")
@@ -99,6 +128,18 @@ static func require(parameters: Dictionary, required: Array) -> Variant:
 	return null
 
 
+## Builds a failure response. [param code] is the machine-readable error code
+## (must be one of [constant CODES]); [param message] is the human-readable
+## explanation. Returns
+## [code]{"success": false, "error": message, "code": code}[/code]. When
+## [param hint] is non-empty it is attached as [code]"hint"[/code]; otherwise, if
+## [param code] has a [constant DEFAULT_HINTS] entry, that default hint is attached.
+## This is the canonical way every handler reports an error.[br]
+## [br]
+## Example:
+## [codeblock]
+## return MCPToolkitError.fail("INVALID_PATH", "path must start with res://")
+## [/codeblock]
 static func fail(code: String, message: String, hint: String = "") -> Dictionary:
 	# Debug-only vocabulary guard: an emitted code absent from CODES is drift.
 	# Stripped from release builds, so it never affects the wire payload.
@@ -123,23 +164,26 @@ static func fail(code: String, message: String, hint: String = "") -> Dictionary
 const _SIZE_GUARD_MARGIN := 4096
 
 
-## UTF-8 byte length of `dict` once stringified — the unit the WS send path
-## measures (not character count). Pure; safe in editor and runtime.
+## Returns the UTF-8 byte length of [param dict] once stringified to JSON — the
+## unit the WebSocket send path measures (not character count). Pure; safe to call
+## in both the editor and the runtime.
 static func response_byte_size(dict: Dictionary) -> int:
 	return JSON.stringify(dict).to_utf8_buffer().size()
 
 
-## Size-guard a fully-built JSON-RPC response against the peer's send buffer.
+## Size-guards a fully-built JSON-RPC response against the peer's send buffer.
 ##
-## Returns `response` unchanged when it fits, or — when its UTF-8 byte length
-## would exceed `max_bytes` minus the framing margin — a size-safe replacement
-## that preserves `jsonrpc` + `id` and swaps `result` for a compact
-## RESPONSE_TOO_LARGE failure (carrying the recovery hint). The replacement is
-## tiny by construction, so the caller can send it without re-checking.
-##
-## `max_bytes` is the peer's outbound_buffer_size (captured at accept), so the
-## guard works identically for the editor server (mcp_toolkit/limits/ws_buffer_kb)
-## and the runtime server (fixed 1 MB) with no ProjectSetting re-read here.
+## Returns [param response] unchanged when it fits, or — when its UTF-8 byte
+## length would exceed [param max_bytes] minus the framing margin — a size-safe
+## replacement that preserves [code]jsonrpc[/code] + [code]id[/code] and swaps
+## [code]result[/code] for a compact [code]RESPONSE_TOO_LARGE[/code] failure
+## (carrying the recovery hint). The replacement is tiny by construction, so the
+## caller can send it without re-checking.[br]
+## [br]
+## [param max_bytes] is the peer's outbound_buffer_size (captured at accept), so
+## the guard works identically for the editor server
+## ([code]mcp_toolkit/limits/ws_buffer_kb[/code]) and the runtime server
+## (fixed 1 MB) with no ProjectSetting re-read here.
 static func guard_response_size(response: Dictionary, max_bytes: int) -> Dictionary:
 	if max_bytes <= 0:
 		return response  # No buffer cap configured — nothing to guard against.
