@@ -226,7 +226,7 @@ func _log_error(_function: String, _file: String, _line: int,
 
 
 ## Re-resolve the log tail path after a config/name change shifts user://.
-## Called by plugin.gd via UserPathMonitor. No-op when using Logger API (4.5+).
+## No-op when using Logger API (4.5+).
 static func reset_tail_path() -> void:
 	if _use_logger:
 		return

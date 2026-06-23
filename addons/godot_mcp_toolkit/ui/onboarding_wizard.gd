@@ -246,9 +246,9 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 
 ## Re-create the onboarding completion flag at the new user:// path after a
 ## user:// path shift (config/name, use_custom_user_dir, or custom_user_dir_name
-## change). Prevents the wizard from re-showing once the path moves. Called by
-## plugin.gd's user_path_changed handler. Dirs are guaranteed to exist
-## (UserPathMonitor calls ensure_dirs() before emitting the signal).
+## change). Prevents the wizard from re-showing once the path moves.
+## Dirs are guaranteed to exist (UserPathMonitor calls ensure_dirs() before
+## emitting the signal).
 static func migrate_flag_after_rename() -> void:
 	var f := FileAccess.open(_ONBOARDING_FLAG, FileAccess.WRITE)
 	if f != null:

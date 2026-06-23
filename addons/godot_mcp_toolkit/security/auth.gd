@@ -15,10 +15,9 @@ static func generate_token() -> String:
 	return Crypto.new().generate_random_bytes(32).hex_encode()
 
 
-## Absolute OS path where the token is written / read.
-## Per-instance: lives in user://…/project_instance_<hash>/mcp_token so
-## two worktrees of the same repo get distinct files.
-## Env override: GODOT_MCP_TOKEN_PATH bypasses the hash.
+## The token path — a user:// path per-instance under
+## user://…/project_instance_<hash>/mcp_token (two worktrees of the same
+## repo get distinct files), or the absolute GODOT_MCP_TOKEN_PATH override.
 static func get_token_path() -> String:
 	var env_path := OS.get_environment("GODOT_MCP_TOKEN_PATH")
 	if not env_path.is_empty():

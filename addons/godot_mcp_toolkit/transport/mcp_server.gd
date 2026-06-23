@@ -209,8 +209,8 @@ func get_command_methods() -> Array:
 
 
 ## Send a notification to all authenticated WebSocket peers.
-## Used by the dock to signal config changes (e.g. profile updates)
-## so the MCP server can reload its tool list without a restart.
+## Triggers a server-side tool-list reload without a restart
+## (e.g. after a config change such as a profile update).
 func broadcast_notification(notification_type: String, params: Dictionary = {}) -> void:
 	var authed: Array = _transport.get_authed_peers() if _transport != null else []
 	var count := Notifier.broadcast(authed, notification_type, params, "[MCPServer]")
@@ -581,8 +581,8 @@ func is_unfocused_boost_active() -> bool:
 	return _unfocused.is_unfocused_boost_active() if _unfocused != null else false
 
 
-## Called by the dock when the user flips the opt-in toggle, so the boost is
-## applied/restored immediately rather than only on the next connect/disconnect.
+## Apply or restore the unfocused-responsive boost immediately when the opt-in
+## setting changes, rather than waiting for the next connect/disconnect.
 func notify_unfocused_responsive_setting_changed() -> void:
 	if _unfocused != null:
 		_unfocused.notify_unfocused_responsive_setting_changed(get_authed_peer_count())

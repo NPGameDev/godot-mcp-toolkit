@@ -189,7 +189,6 @@ static func coerce_value(value: Variant) -> Variant:
 ## Accepts: int (returned as-is), or Array of layer numbers (int) or
 ## named layers (String) → bitmask.  Named layers are resolved via
 ## ProjectSettings (layer_names/{category}/layer_N).
-## Used by the LayerMask type tag and tileset_create collision params.
 static func layers_to_mask(value: Variant, category: String = "2d_physics") -> int:
 	if typeof(value) == TYPE_ARRAY:
 		var mask := 0

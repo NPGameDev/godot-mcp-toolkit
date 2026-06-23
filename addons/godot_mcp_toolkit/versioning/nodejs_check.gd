@@ -1,7 +1,8 @@
 @tool
 extends RefCounted
-## Node.js availability check used by the onboarding wizard and dock
-## warnings. Centralised so both UI surfaces share a single detection path.
+## Detects whether Node.js is installed and meets the minimum version.
+## Centralises detection so every UI surface uses the same path and
+## macOS/Linux login-shell fallback (for version managers like nvm).
 
 
 ## Check if Node.js is installed and meets the minimum version (20+).

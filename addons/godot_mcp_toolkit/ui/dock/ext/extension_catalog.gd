@@ -1,7 +1,6 @@
 @tool
 extends RefCounted
-## Extension catalog data layer — fetch URL, parse logic, cache I/O,
-## and version comparison. Used by extension_catalog_dialog.gd.
+## Extension catalog data layer — fetch URL, parse logic, cache I/O, and version comparison.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const RegistryClient = Modules.RegistryClient

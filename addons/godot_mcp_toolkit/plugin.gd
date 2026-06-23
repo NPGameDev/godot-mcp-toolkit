@@ -1,5 +1,6 @@
 @tool
 extends EditorPlugin
+## EditorPlugin entry point — thin orchestrator that delegates to PluginComposer.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard

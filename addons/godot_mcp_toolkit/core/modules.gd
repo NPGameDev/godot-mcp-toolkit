@@ -2,7 +2,6 @@
 extends RefCounted
 ## Centralized preloads for plugin-internal scripts.
 ##
-## Centralized preloads for plugin-internal scripts.
 ## Script paths live here only — if a file moves, update this file and nothing else.
 ## MCPToolkitError has class_name and needs no preload.
 

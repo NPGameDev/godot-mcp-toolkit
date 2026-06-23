@@ -6,8 +6,7 @@ extends RefCounted
 ## Each tool dispatch writes one line:
 ##   <ISO8601Z>\t<method>\t<params_sha256_hex[:12]>
 ##
-## Opened and flushed per write for crash safety. Invoked by
-## CommandRegistry.call_command before handler dispatch.
+## Opened and flushed per write for crash safety.
 
 const ProjectPaths := preload("res://addons/godot_mcp_toolkit/paths/project_paths.gd")
 

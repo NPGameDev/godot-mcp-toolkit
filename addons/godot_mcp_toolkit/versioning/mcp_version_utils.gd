@@ -1,9 +1,10 @@
 @tool
 extends RefCounted
-## Centralized engine version helpers for version-gated tools.
+## Engine-version comparison helpers for version-gated command registration.
 ##
-## Used by command_registry.gd and extension_loader.gd to filter
-## commands that require a specific Godot version range.
+## Provides is_at_least / is_at_most / is_version_in_range checks against
+## the running engine version, used to gate commands by their min/max Godot
+## version requirements.
 
 ## Latest version tested. Versions above this still run but log a notice.
 const GODOT_TESTED_MAX_VERSION := "4.6"
@@ -44,5 +45,6 @@ static func _parse(v: String) -> Array[int]:
 
 
 static func _compare(a: Array[int], b: Array[int]) -> int:
-	if a[0] != b[0]: return a[0] - b[0]
+	if a[0] != b[0]:
+		return a[0] - b[0]
 	return a[1] - b[1]

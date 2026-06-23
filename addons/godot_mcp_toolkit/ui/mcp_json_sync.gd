@@ -7,7 +7,7 @@ extends RefCounted
 ## performs the plugin-initiated template write. The file remains
 ## user-owned for edits; the plugin only ever writes it from the bundled
 ## template on explicit user action (the dock's / Tools-menu's "Write
-## .mcp.json"). Runtime config lives in the sidecar.
+## .mcp.json").
 ##
 ## UI-free by design: the write reports its outcome through an injected
 ## on_result Callable so the overwrite-confirmation dialog and the toasts

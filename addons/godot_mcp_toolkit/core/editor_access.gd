@@ -12,12 +12,12 @@ extends RefCounted
 static var _plugin: EditorPlugin
 
 
-## Inject the EditorPlugin instance. Called by plugin.gd on _enter_tree.
+## Inject the EditorPlugin instance to enable editor-service access (pair with [method clear_plugin]).
 static func set_plugin(plugin: EditorPlugin) -> void:
 	_plugin = plugin
 
 
-## Clear the stored plugin reference. Called by plugin.gd on _exit_tree.
+## Clear the stored plugin reference at teardown (pairs with [method set_plugin]).
 static func clear_plugin() -> void:
 	_plugin = null
 
