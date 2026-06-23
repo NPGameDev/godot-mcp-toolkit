@@ -7,7 +7,7 @@ extends SceneTree
 ## The final banner is always printed for environments where exit codes
 ## are unreliable (Windows Godot).
 
-const Harness := preload("res://test/units/_harness.gd")
+const Testing := preload("res://test/units/testing.gd")
 const SecurityTests := preload("res://test/units/security_tests.gd")
 const RegistryCommandTests := preload("res://test/units/registry_command_tests.gd")
 const RegistryStoreTests := preload("res://test/units/registry_store_tests.gd")
@@ -32,23 +32,23 @@ func _init() -> void:
 		quit(1)
 		return
 
-	var h := Harness.new()
-	SecurityTests.run(h)
-	RegistryCommandTests.run(h)
-	RegistryStoreTests.run(h)
-	await ExtensionMetaTests.run(h)  # M3 holds group 6 (path-guard) await → coroutine
-	OptionsTests.run(h)
-	DispatchLaneTests.run(h)
-	SignalResolverTests.run(h)
-	SceneOpsTests.run(h)
-	PropertyEditTests.run(h)
-	UndoRedoTests.run(h)
-	await ErrorContractTests.run(h)  # M10 holds group 40 (response-validation) await → coroutine
-	PathsVersioningTests.run(h)
-	ProceduralAssetTests.run(h)
-	SerializeIoTests.run(h)
+	var testing := Testing.new()
+	SecurityTests.run(testing)
+	RegistryCommandTests.run(testing)
+	RegistryStoreTests.run(testing)
+	await ExtensionMetaTests.run(testing)  # M3 holds group 6 (path-guard) await → coroutine
+	OptionsTests.run(testing)
+	DispatchLaneTests.run(testing)
+	SignalResolverTests.run(testing)
+	SceneOpsTests.run(testing)
+	PropertyEditTests.run(testing)
+	UndoRedoTests.run(testing)
+	await ErrorContractTests.run(testing)  # M10 holds group 40 (response-validation) await → coroutine
+	PathsVersioningTests.run(testing)
+	ProceduralAssetTests.run(testing)
+	SerializeIoTests.run(testing)
 
-	var failed := h.report()
+	var failed := testing.report()
 	quit(0 if failed == 0 else 1)
 
 

@@ -14,13 +14,13 @@ const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/core/unfocused_
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 
 
-static func run(h) -> void:
-	_test_compile_error_message(h)
-	_test_groups_property_rejection(h)
-	_test_user_path_monitor(h)
-	_test_editor_refresh_reload_filter(h)
-	_test_unfocused_backup(h)
-	_test_stale_instance_hint(h)
+static func run(testing) -> void:
+	_test_compile_error_message(testing)
+	_test_groups_property_rejection(testing)
+	_test_user_path_monitor(testing)
+	_test_editor_refresh_reload_filter(testing)
+	_test_unfocused_backup(testing)
+	_test_stale_instance_hint(testing)
 
 
 # --- Compile-error diagnostic message (version-aware) (~10 assertions) -----
@@ -29,18 +29,18 @@ static func run(h) -> void:
 # so the diagnostic must point to lsp_diagnostics instead of a dead end. Regression guard
 # for the misleading-message bug.
 
-static func _test_compile_error_message(h) -> void:
-	h.begin("Compile-error message (version-aware)")
+static func _test_compile_error_message(testing) -> void:
+	testing.begin("Compile-error message (version-aware)")
 	# Discriminator: lsp_diagnostics appears ONLY in the <4.5 message (the 4.5+ message
 	# directs to editor_get_console). The <4.5 message also names editor_get_console — but
 	# only to say it CAN'T capture parse errors there — so don't assert on its mere presence.
 	for ver in ["4.2", "4.3", "4.4"]:
 		var msg: String = ScriptCommands._compile_error_message(ver)
-		h.ok(msg.contains("lsp_diagnostics"),
+		testing.ok(msg.contains("lsp_diagnostics"),
 			"%s → recommends lsp_diagnostics (editor_get_console can't capture parse errors <4.5)" % ver)
 	for ver in ["4.5", "4.6"]:
 		var msg: String = ScriptCommands._compile_error_message(ver)
-		h.ok(msg.contains("editor_get_console") and not msg.contains("lsp_diagnostics"),
+		testing.ok(msg.contains("editor_get_console") and not msg.contains("lsp_diagnostics"),
 			"%s → directs to editor_get_console, not lsp (4.5+ Logger captures parse errors)" % ver)
 
 
@@ -51,17 +51,17 @@ static func _test_compile_error_message(h) -> void:
 # steering to node.groups. _is_groups_property is the shared pure decision; the
 # steering text is pinned so a future edit can't drop the node.groups pointer.
 
-static func _test_groups_property_rejection(h) -> void:
-	h.begin("node.set_property groups rejection")
+static func _test_groups_property_rejection(testing) -> void:
+	testing.begin("node.set_property groups rejection")
 	# The predicate is exact: only the bare "groups" property is refused.
-	h.ok(NodeCommands._is_groups_property("groups"), "'groups' → refused")
-	h.ok(not NodeCommands._is_groups_property("group"), "'group' → not refused")
-	h.ok(not NodeCommands._is_groups_property("groups_enabled"), "'groups_enabled' → not refused")
-	h.ok(not NodeCommands._is_groups_property(""), "empty → not refused")
-	h.ok(not NodeCommands._is_groups_property("position"), "ordinary property → not refused")
+	testing.ok(NodeCommands._is_groups_property("groups"), "'groups' → refused")
+	testing.ok(not NodeCommands._is_groups_property("group"), "'group' → not refused")
+	testing.ok(not NodeCommands._is_groups_property("groups_enabled"), "'groups_enabled' → not refused")
+	testing.ok(not NodeCommands._is_groups_property(""), "empty → not refused")
+	testing.ok(not NodeCommands._is_groups_property("position"), "ordinary property → not refused")
 	# The rejection steers to node.groups (the message/hint can't silently lose it).
-	h.ok(not NodeCommands._GROUPS_REJECTION_MESSAGE.is_empty(), "rejection message present")
-	h.ok(NodeCommands._GROUPS_REJECTION_HINT.contains("node.groups"),
+	testing.ok(not NodeCommands._GROUPS_REJECTION_MESSAGE.is_empty(), "rejection message present")
+	testing.ok(NodeCommands._GROUPS_REJECTION_HINT.contains("node.groups"),
 		"rejection hint names node.groups")
 	print("")
 
@@ -74,8 +74,8 @@ static func _test_groups_property_rejection(h) -> void:
 # exercises the detection without the editor's settings_changed plumbing.
 # Originals are restored so project state (and subsequent tests) are unaffected.
 
-static func _test_user_path_monitor(h) -> void:
-	h.begin("UserPathMonitor change detection")
+static func _test_user_path_monitor(testing) -> void:
+	testing.begin("UserPathMonitor change detection")
 
 	# str()/bool() so these infer concrete types, not Variant (this test file is
 	# outside addons/, so warnings-as-errors applies here even though it doesn't
@@ -95,26 +95,26 @@ static func _test_user_path_monitor(h) -> void:
 
 	# 1. No change → no emit.
 	monitor._on_settings_changed()
-	h.eq(fired[0], 0, "no change → signal not emitted")
+	testing.eq(fired[0], 0, "no change → signal not emitted")
 
 	# 2. config/name change → emit.
 	ProjectSettings.set_setting("application/config/name", str(orig_name) + "_renamed")
 	monitor._on_settings_changed()
-	h.eq(fired[0], 1, "config/name change → signal emitted")
+	testing.eq(fired[0], 1, "config/name change → signal emitted")
 
 	# 3. use_custom_user_dir toggle → emit (name unchanged from prior step).
 	ProjectSettings.set_setting("application/config/use_custom_user_dir", not bool(orig_use_custom))
 	monitor._on_settings_changed()
-	h.eq(fired[0], 2, "use_custom_user_dir toggle → signal emitted")
+	testing.eq(fired[0], 2, "use_custom_user_dir toggle → signal emitted")
 
 	# 4. custom_user_dir_name change → emit.
 	ProjectSettings.set_setting("application/config/custom_user_dir_name", str(orig_custom_name) + "_dir")
 	monitor._on_settings_changed()
-	h.eq(fired[0], 3, "custom_user_dir_name change → signal emitted")
+	testing.eq(fired[0], 3, "custom_user_dir_name change → signal emitted")
 
 	# 5. Re-check with no further change → no extra emit (cache updated each time).
 	monitor._on_settings_changed()
-	h.eq(fired[0], 3, "stable after change → no spurious re-emit")
+	testing.eq(fired[0], 3, "stable after change → no spurious re-emit")
 
 	# Restore originals so other tests / the project see pristine settings.
 	ProjectSettings.set_setting("application/config/name", orig_name)
@@ -129,24 +129,24 @@ static func _test_user_path_monitor(h) -> void:
 # Guards against a regression back to "reload all open scripts" (which cancels
 # suspended coroutines mid-dispatch → an editor crash).
 
-static func _test_editor_refresh_reload_filter(h) -> void:
-	h.begin("editor.refresh reload filter")
+static func _test_editor_refresh_reload_filter(testing) -> void:
+	testing.begin("editor.refresh reload filter")
 	var changed := {
 		"res://game/player.gd": true,
 		"res://addons/godot_mcp_toolkit/commands/scene_commands.gd": true,
 	}
 	# 1. changed user script → reload
-	h.ok(EditorRescan.should_reload_open_script("res://game/player.gd", changed),
+	testing.ok(EditorRescan.should_reload_open_script("res://game/player.gd", changed),
 			"changed user script → reload")
 	# 2. unchanged user script → skip
-	h.ok(not EditorRescan.should_reload_open_script("res://game/enemy.gd", changed),
+	testing.ok(not EditorRescan.should_reload_open_script("res://game/enemy.gd", changed),
 			"unchanged user script → skip")
 	# 3. toolkit's own script, even if scan-changed → skip (never self-reload)
-	h.ok(not EditorRescan.should_reload_open_script(
+	testing.ok(not EditorRescan.should_reload_open_script(
 			"res://addons/godot_mcp_toolkit/commands/scene_commands.gd", changed),
 			"toolkit-own changed script → skip (never self-reload)")
 	# 4. unchanged toolkit script → skip
-	h.ok(not EditorRescan.should_reload_open_script(
+	testing.ok(not EditorRescan.should_reload_open_script(
 			"res://addons/godot_mcp_toolkit/transport/mcp_server.gd", changed),
 			"unchanged toolkit script → skip")
 	print("")
@@ -158,61 +158,61 @@ static func _test_editor_refresh_reload_filter(h) -> void:
 # by interactive verification); the conflict-resolution + first-writer-wins +
 # both-values-stored logic is pure and headless-testable here against a temp dir.
 
-static func _test_unfocused_backup(h) -> void:
-	h.begin("Unfocused-sleep backup")
+static func _test_unfocused_backup(testing) -> void:
+	testing.begin("Unfocused-sleep backup")
 	var dir := ProjectSettings.globalize_path("user://_mcp_unfocused_backup_test")
 	DirAccess.make_dir_recursive_absolute(dir)
 	var ver := "9.9"  # fixed test key + temp dir → isolated from any real backup
 	UnfocusedBackup.delete_backup(dir, ver)  # clean slate
 
 	# should_capture_boost — opt-out + idempotency gate (the "no-op when off" unit).
-	h.ok(UnfocusedBackup.should_capture_boost(true, false),
+	testing.ok(UnfocusedBackup.should_capture_boost(true, false),
 			"should_capture_boost(on, idle) → true")
-	h.ok(not UnfocusedBackup.should_capture_boost(false, false),
+	testing.ok(not UnfocusedBackup.should_capture_boost(false, false),
 			"should_capture_boost(off, idle) → false (no-op when off)")
-	h.ok(not UnfocusedBackup.should_capture_boost(true, true),
+	testing.ok(not UnfocusedBackup.should_capture_boost(true, true),
 			"should_capture_boost(on, already active) → false (idempotent)")
 
 	# 1. capture_if_absent writes when no backup exists (first-writer-wins).
-	h.ok(UnfocusedBackup.capture_if_absent(dir, 100000, 16666, ver),
+	testing.ok(UnfocusedBackup.capture_if_absent(dir, 100000, 16666, ver),
 			"first capture → writes backup (true)")
-	h.ok(UnfocusedBackup.has_backup(dir, ver), "backup file exists after capture")
+	testing.ok(UnfocusedBackup.has_backup(dir, ver), "backup file exists after capture")
 
 	# 2. backup stores BOTH original and boosted.
 	var b: Dictionary = UnfocusedBackup.read_backup(dir, ver)
-	h.eq(b.get("original", -1), 100000, "backup stores original")
-	h.eq(b.get("boosted", -1), 16666, "backup stores boosted")
+	testing.eq(b.get("original", -1), 100000, "backup stores original")
+	testing.eq(b.get("boosted", -1), 16666, "backup stores boosted")
 
 	# 3. second capture does NOT overwrite (first-writer-wins).
-	h.ok(not UnfocusedBackup.capture_if_absent(dir, 33333, 8333, ver),
+	testing.ok(not UnfocusedBackup.capture_if_absent(dir, 33333, 8333, ver),
 			"second capture → does not overwrite (false)")
 	var b2: Dictionary = UnfocusedBackup.read_backup(dir, ver)
-	h.eq(b2.get("original", -1), 100000, "original preserved after second capture")
-	h.eq(b2.get("boosted", -1), 16666, "boosted preserved after second capture")
+	testing.eq(b2.get("original", -1), 100000, "original preserved after second capture")
+	testing.eq(b2.get("boosted", -1), 16666, "boosted preserved after second capture")
 
 	# 4. resolve_restore: current == boosted → restore the true original (self-heal A).
 	var d1: Dictionary = UnfocusedBackup.resolve_restore(16666, b2)
-	h.ok(d1["restore"], "current == boosted → restore true")
-	h.eq(d1["value"], 100000, "current == boosted → value is the original")
+	testing.ok(d1["restore"], "current == boosted → restore true")
+	testing.eq(d1["value"], 100000, "current == boosted → value is the original")
 
 	# 5. resolve_restore: current != boosted → keep current, conflict-aware (self-heal B).
 	var d2: Dictionary = UnfocusedBackup.resolve_restore(50000, b2)
-	h.ok(not d2["restore"], "current != boosted → restore false (kept)")
-	h.eq(d2["value"], 50000, "current != boosted → value echoes current")
+	testing.ok(not d2["restore"], "current != boosted → restore false (kept)")
+	testing.eq(d2["value"], 50000, "current != boosted → value echoes current")
 
 	# 6. resolve_restore: empty / malformed backup → no-op.
-	h.ok(not UnfocusedBackup.resolve_restore(16666, {})["restore"],
+	testing.ok(not UnfocusedBackup.resolve_restore(16666, {})["restore"],
 			"empty backup → restore false")
-	h.ok(not UnfocusedBackup.resolve_restore(16666, {"original": 100000})["restore"],
+	testing.ok(not UnfocusedBackup.resolve_restore(16666, {"original": 100000})["restore"],
 			"backup missing 'boosted' → restore false")
 
 	# 7. delete_backup removes the file; read on missing → empty dict.
 	UnfocusedBackup.delete_backup(dir, ver)
-	h.ok(not UnfocusedBackup.has_backup(dir, ver), "delete_backup → file gone")
-	h.eq(UnfocusedBackup.read_backup(dir, ver), {}, "read missing backup → empty dict")
+	testing.ok(not UnfocusedBackup.has_backup(dir, ver), "delete_backup → file gone")
+	testing.eq(UnfocusedBackup.read_backup(dir, ver), {}, "read missing backup → empty dict")
 
 	# 8. version_key derives "<major>.<minor>" (override form).
-	h.eq(UnfocusedBackup.version_key({"major": 4, "minor": 2}), "4.2",
+	testing.eq(UnfocusedBackup.version_key({"major": 4, "minor": 2}), "4.2",
 			"version_key({4,2}) → '4.2'")
 
 	DirAccess.remove_absolute(dir)  # cleanup
@@ -227,87 +227,87 @@ static func _test_unfocused_backup(h) -> void:
 # Boundary: STALE on Godot < 4.4 (minor 2,3), live on 4.4+ (boundary 4.3→4.4); see
 # Insights/stale-live-instance-method-hazard.md + test/flows/02_*.
 
-static func _test_stale_instance_hint(h) -> void:
-	h.begin("Stale-instance hint")
+static func _test_stale_instance_hint(testing) -> void:
+	testing.begin("Stale-instance hint")
 
 	# should_warn_on_write(existed, compiled_ok, extension, major, minor) — proactive gate
-	h.ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 2),
+	testing.ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 2),
 			"write: existing .gd compiled on 4.2 → warn")
-	h.ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 3),
+	testing.ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 3),
 			"write: existing .gd compiled on 4.3 → warn")
-	h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 4),
+	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 4),
 			"write: 4.4 → no warn (hot-reloads)")
-	h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 5),
+	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 5),
 			"write: 4.5 → no warn")
-	h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 6),
+	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 6),
 			"write: 4.6 → no warn")
-	h.ok(not StaleInstanceHint.should_warn_on_write(false, true, "gd", 4, 3),
+	testing.ok(not StaleInstanceHint.should_warn_on_write(false, true, "gd", 4, 3),
 			"write: create (new file) → no warn")
-	h.ok(not StaleInstanceHint.should_warn_on_write(true, false, "gd", 4, 3),
+	testing.ok(not StaleInstanceHint.should_warn_on_write(true, false, "gd", 4, 3),
 			"write: compile-failed → no warn (Scenario C gate)")
-	h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "cs", 4, 3),
+	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "cs", 4, 3),
 			"write: .cs → no warn (out of scope)")
-	h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gdshader", 4, 2),
+	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gdshader", 4, 2),
 			"write: .gdshader → no warn")
-	h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 5, 0),
+	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 5, 0),
 			"should_warn_on_write: Godot 5.0 does not warn — gate is major-aware")
 
 	# should_hint_on_call(has_method, disk_has_method, disk_compiles, is_gd, major, minor)
-	h.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 3),
+	testing.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 3),
 			"call: stale method on 4.3 → hint")
-	h.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 2),
+	testing.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 2),
 			"call: stale method on 4.2 → hint")
-	h.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 4),
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 4),
 			"call: 4.4 → no hint")
-	h.ok(not StaleInstanceHint.should_hint_on_call(false, false, true, true, 4, 3),
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, false, true, true, 4, 3),
 			"call: method absent on disk (typo) → no hint")
-	h.ok(not StaleInstanceHint.should_hint_on_call(false, true, false, true, 4, 3),
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, false, true, 4, 3),
 			"call: disk doesn't compile → no hint (Option B)")
-	h.ok(not StaleInstanceHint.should_hint_on_call(true, true, true, true, 4, 3),
+	testing.ok(not StaleInstanceHint.should_hint_on_call(true, true, true, true, 4, 3),
 			"call: has_method true → no hint")
-	h.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, false, 4, 3),
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, false, 4, 3),
 			"call: non-.gd script → no hint")
-	h.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 5, 0),
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 5, 0),
 			"should_hint_on_call: Godot 5.0 does not hint — gate is major-aware")
 
 	# source_compiles — safe GDScript.new().reload() parse (class_name stripped)
-	h.ok(StaleInstanceHint.source_compiles("extends Node\nfunc a() -> int:\n\treturn 1\n"),
+	testing.ok(StaleInstanceHint.source_compiles("extends Node\nfunc a() -> int:\n\treturn 1\n"),
 			"source_compiles: valid GDScript → true")
-	h.ok(not StaleInstanceHint.source_compiles("extends Node\nvar = = =\n"),
+	testing.ok(not StaleInstanceHint.source_compiles("extends Node\nvar = = =\n"),
 			"source_compiles: broken GDScript → false")
-	h.ok(StaleInstanceHint.source_compiles("class_name FooProbe9\nextends Node\nfunc a():\n\tpass\n"),
+	testing.ok(StaleInstanceHint.source_compiles("class_name FooProbe9\nextends Node\nfunc a():\n\tpass\n"),
 			"source_compiles: class_name script → true (no false collision)")
 
 	# source_has_method — line scan, word-exact, string/comment safe
-	h.ok(StaleInstanceHint.source_has_method("func foo():\n\tpass", "foo"),
+	testing.ok(StaleInstanceHint.source_has_method("func foo():\n\tpass", "foo"),
 			"source_has_method: func foo → true")
-	h.ok(StaleInstanceHint.source_has_method("static func bar() -> int:\n\treturn 1", "bar"),
+	testing.ok(StaleInstanceHint.source_has_method("static func bar() -> int:\n\treturn 1", "bar"),
 			"source_has_method: static func bar → true")
-	h.ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", "baz"),
+	testing.ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", "baz"),
 			"source_has_method: absent method → false")
-	h.ok(not StaleInstanceHint.source_has_method("func foo_bar():\n\tpass", "foo"),
+	testing.ok(not StaleInstanceHint.source_has_method("func foo_bar():\n\tpass", "foo"),
 			"source_has_method: foo_bar not matched by foo (word-exact)")
-	h.ok(StaleInstanceHint.source_has_method("\tfunc inner():\n\t\tpass", "inner"),
+	testing.ok(StaleInstanceHint.source_has_method("\tfunc inner():\n\t\tpass", "inner"),
 			"source_has_method: indented inner method → true")
-	h.ok(not StaleInstanceHint.source_has_method("var x = \"func ghost(\"", "ghost"),
+	testing.ok(not StaleInstanceHint.source_has_method("var x = \"func ghost(\"", "ghost"),
 			"source_has_method: 'func' inside a string → false")
-	h.ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", ""),
+	testing.ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", ""),
 			"source_has_method: empty method → false")
 
 	# recovery_message — names the version, covers bodies+added, relaunch + fresh-node
 	var msg := StaleInstanceHint.recovery_message("4.3")
-	h.ok(msg.contains("4.3"), "recovery_message: names the version")
-	h.ok(msg.contains("relaunch"), "recovery_message: recommends relaunch")
-	h.ok(msg.contains("fresh node"), "recovery_message: notes a fresh node doesn't help")
-	h.ok(msg.contains("changed method bodies") and msg.contains("added members"),
+	testing.ok(msg.contains("4.3"), "recovery_message: names the version")
+	testing.ok(msg.contains("relaunch"), "recovery_message: recommends relaunch")
+	testing.ok(msg.contains("fresh node"), "recovery_message: notes a fresh node doesn't help")
+	testing.ok(msg.contains("changed method bodies") and msg.contains("added members"),
 			"recovery_message: covers changed bodies AND added members")
 
 	# write_hint — validation guidance FIRST, stale nudge in the recency slot
 	var wh := StaleInstanceHint.write_hint("4.2")
-	h.ok(wh.begins_with("Validate"), "write_hint: validation guidance leads")
-	h.ok(wh.contains("script_check"), "write_hint: mentions script_check")
-	h.ok(wh.find("Validate") < wh.find("relaunch"),
+	testing.ok(wh.begins_with("Validate"), "write_hint: validation guidance leads")
+	testing.ok(wh.contains("script_check"), "write_hint: mentions script_check")
+	testing.ok(wh.find("Validate") < wh.find("relaunch"),
 			"write_hint: validation before stale nudge (recency ordering)")
-	h.ok(wh.contains("4.2"), "write_hint: carries the version label")
+	testing.ok(wh.contains("4.2"), "write_hint: carries the version label")
 
 	print("")

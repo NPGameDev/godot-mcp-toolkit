@@ -1,9 +1,9 @@
 @tool
 extends RefCounted
-## Shared assertion harness for the decomposed unit suite.
+## Shared test-assertion object for the decomposed unit suite.
 ##
 ## One instance is built by the thin run_unit_tests.gd orchestrator and passed to
-## every test module's `static func run(h)`. Owns the pass/fail counters and the
+## every test module's `static func run(testing)`. Owns the pass/fail counters and the
 ## current-group label; modules call begin/ok/eq and never touch the counters.
 
 var _passed := 0
