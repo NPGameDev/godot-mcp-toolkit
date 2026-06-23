@@ -179,26 +179,26 @@ static func _test_unfocused_backup(testing) -> void:
 	testing.ok(UnfocusedBackup.has_backup(dir, ver), "backup file exists after capture")
 
 	# 2. backup stores BOTH original and boosted.
-	var b: Dictionary = UnfocusedBackup.read_backup(dir, ver)
-	testing.eq(b.get("original", -1), 100000, "backup stores original")
-	testing.eq(b.get("boosted", -1), 16666, "backup stores boosted")
+	var backup: Dictionary = UnfocusedBackup.read_backup(dir, ver)
+	testing.eq(backup.get("original", -1), 100000, "backup stores original")
+	testing.eq(backup.get("boosted", -1), 16666, "backup stores boosted")
 
 	# 3. second capture does NOT overwrite (first-writer-wins).
 	testing.ok(not UnfocusedBackup.capture_if_absent(dir, 33333, 8333, ver),
 			"second capture → does not overwrite (false)")
-	var b2: Dictionary = UnfocusedBackup.read_backup(dir, ver)
-	testing.eq(b2.get("original", -1), 100000, "original preserved after second capture")
-	testing.eq(b2.get("boosted", -1), 16666, "boosted preserved after second capture")
+	var backup_after_second: Dictionary = UnfocusedBackup.read_backup(dir, ver)
+	testing.eq(backup_after_second.get("original", -1), 100000, "original preserved after second capture")
+	testing.eq(backup_after_second.get("boosted", -1), 16666, "boosted preserved after second capture")
 
 	# 4. resolve_restore: current == boosted → restore the true original (self-heal A).
-	var d1: Dictionary = UnfocusedBackup.resolve_restore(16666, b2)
-	testing.ok(d1["restore"], "current == boosted → restore true")
-	testing.eq(d1["value"], 100000, "current == boosted → value is the original")
+	var restore_when_boosted: Dictionary = UnfocusedBackup.resolve_restore(16666, backup_after_second)
+	testing.ok(restore_when_boosted["restore"], "current == boosted → restore true")
+	testing.eq(restore_when_boosted["value"], 100000, "current == boosted → value is the original")
 
 	# 5. resolve_restore: current != boosted → keep current, conflict-aware (self-heal B).
-	var d2: Dictionary = UnfocusedBackup.resolve_restore(50000, b2)
-	testing.ok(not d2["restore"], "current != boosted → restore false (kept)")
-	testing.eq(d2["value"], 50000, "current != boosted → value echoes current")
+	var restore_when_changed: Dictionary = UnfocusedBackup.resolve_restore(50000, backup_after_second)
+	testing.ok(not restore_when_changed["restore"], "current != boosted → restore false (kept)")
+	testing.eq(restore_when_changed["value"], 50000, "current != boosted → value echoes current")
 
 	# 6. resolve_restore: empty / malformed backup → no-op.
 	testing.ok(not UnfocusedBackup.resolve_restore(16666, {})["restore"],

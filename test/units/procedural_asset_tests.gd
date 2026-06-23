@@ -32,26 +32,26 @@ static func _test_spatial_map(testing) -> void:
 	# _world_bounds dispatch by node type. Nodes stay parentless so global ==
 	# local transform (headless has no initialised World3D for a tree-parented
 	# Node3D; real tree behaviour is covered by interactive smoke/sweep).
-	var n3 := Node3D.new()
-	n3.position = Vector3(1, 2, 3)
-	var b3 = SpatialCommands._world_bounds(n3)
-	testing.ok(typeof(b3) == TYPE_AABB, "Node3D → AABB")
-	testing.ok(b3.size == Vector3.ZERO, "Node3D → point AABB (zero size; world pos via interactive)")
-	n3.free()
+	var node_3d := Node3D.new()
+	node_3d.position = Vector3(1, 2, 3)
+	var bounds_3d = SpatialCommands._world_bounds(node_3d)
+	testing.ok(typeof(bounds_3d) == TYPE_AABB, "Node3D → AABB")
+	testing.ok(bounds_3d.size == Vector3.ZERO, "Node3D → point AABB (zero size; world pos via interactive)")
+	node_3d.free()
 
-	var n2 := Node2D.new()
-	n2.position = Vector2(5, 6)
-	var b2 = SpatialCommands._world_bounds(n2)
-	testing.ok(typeof(b2) == TYPE_RECT2, "Node2D → Rect2")
-	testing.ok(b2.position == Vector2(5, 6), "Node2D Rect2 at global_position")
-	n2.free()
+	var node_2d := Node2D.new()
+	node_2d.position = Vector2(5, 6)
+	var bounds_2d = SpatialCommands._world_bounds(node_2d)
+	testing.ok(typeof(bounds_2d) == TYPE_RECT2, "Node2D → Rect2")
+	testing.ok(bounds_2d.position == Vector2(5, 6), "Node2D Rect2 at global_position")
+	node_2d.free()
 
 	var ctrl := Control.new()
 	ctrl.position = Vector2(10, 10)
 	ctrl.size = Vector2(20, 30)
-	var bc = SpatialCommands._world_bounds(ctrl)
-	testing.ok(typeof(bc) == TYPE_RECT2, "Control → Rect2")
-	testing.ok(bc.size == Vector2(20, 30), "Control Rect2 size from get_global_rect")
+	var control_bounds = SpatialCommands._world_bounds(ctrl)
+	testing.ok(typeof(control_bounds) == TYPE_RECT2, "Control → Rect2")
+	testing.ok(control_bounds.size == Vector2(20, 30), "Control Rect2 size from get_global_rect")
 	ctrl.free()
 
 	var plain := Node.new()
@@ -61,8 +61,8 @@ static func _test_spatial_map(testing) -> void:
 	# _xform_rect2 / _xform_aabb world-space transform.
 	testing.ok(SpatialCommands._xform_rect2(Transform2D.IDENTITY, Rect2(0, 0, 10, 10)) == Rect2(0, 0, 10, 10),
 		"_xform_rect2 identity → same")
-	var rt = SpatialCommands._xform_rect2(Transform2D(0.0, Vector2(5, 5)), Rect2(0, 0, 10, 10))
-	testing.ok(rt.position == Vector2(5, 5) and rt.size == Vector2(10, 10), "_xform_rect2 translate")
+	var translated_rect = SpatialCommands._xform_rect2(Transform2D(0.0, Vector2(5, 5)), Rect2(0, 0, 10, 10))
+	testing.ok(translated_rect.position == Vector2(5, 5) and translated_rect.size == Vector2(10, 10), "_xform_rect2 translate")
 	testing.ok(SpatialCommands._xform_aabb(Transform3D.IDENTITY, AABB(Vector3.ZERO, Vector3(2, 2, 2)))
 		== AABB(Vector3.ZERO, Vector3(2, 2, 2)), "_xform_aabb identity → same")
 
@@ -387,32 +387,32 @@ static func _test_tileset_edit_key_enforcement(testing) -> void:
 		"", "coords-only tile accepted")
 
 	# Foreign key → rejected, and the message names the OWNING tool.
-	var r1 := TilesetTileData._foreign_key_error("physics",
+	var terrain_on_physics_error := TilesetTileData._foreign_key_error("physics",
 		{"atlas_x": 0, "atlas_y": 0, "terrain_set": 0})
-	testing.ok(not r1.is_empty(), "terrain_set on physics → rejected")
-	testing.ok(r1.contains("tileset.edit_terrain"), "physics rejection names tileset.edit_terrain")
+	testing.ok(not terrain_on_physics_error.is_empty(), "terrain_set on physics → rejected")
+	testing.ok(terrain_on_physics_error.contains("tileset.edit_terrain"), "physics rejection names tileset.edit_terrain")
 
-	var r2 := TilesetTileData._foreign_key_error("terrain",
+	var physics_on_terrain_error := TilesetTileData._foreign_key_error("terrain",
 		{"atlas_x": 0, "atlas_y": 0, "physics_polygon": "full"})
-	testing.ok(r2.contains("tileset.edit_physics"), "physics_polygon on terrain → names edit_physics")
+	testing.ok(physics_on_terrain_error.contains("tileset.edit_physics"), "physics_polygon on terrain → names edit_physics")
 
-	var r3 := TilesetTileData._foreign_key_error("navigation",
+	var visuals_on_navigation_error := TilesetTileData._foreign_key_error("navigation",
 		{"atlas_x": 0, "atlas_y": 0, "probability": 0.5})
-	testing.ok(r3.contains("tileset.edit_visuals"), "probability on navigation → names edit_visuals")
+	testing.ok(visuals_on_navigation_error.contains("tileset.edit_visuals"), "probability on navigation → names edit_visuals")
 
-	var r4 := TilesetTileData._foreign_key_error("custom_data",
+	var navigation_on_custom_data_error := TilesetTileData._foreign_key_error("custom_data",
 		{"atlas_x": 0, "atlas_y": 0, "navigation_polygon": "full"})
-	testing.ok(r4.contains("tileset.edit_navigation"), "navigation_polygon on custom_data → names edit_navigation")
+	testing.ok(navigation_on_custom_data_error.contains("tileset.edit_navigation"), "navigation_polygon on custom_data → names edit_navigation")
 
-	var r5 := TilesetTileData._foreign_key_error("visuals",
+	var custom_data_on_visuals_error := TilesetTileData._foreign_key_error("visuals",
 		{"atlas_x": 0, "atlas_y": 0, "custom_data": {"x": 1}})
-	testing.ok(r5.contains("tileset.edit_custom_data"), "custom_data on visuals → names edit_custom_data")
+	testing.ok(custom_data_on_visuals_error.contains("tileset.edit_custom_data"), "custom_data on visuals → names edit_custom_data")
 
 	# A key owned by no verb → rejected via the "unknown key" branch (no owner).
-	var r6 := TilesetTileData._foreign_key_error("physics",
+	var unknown_key_error := TilesetTileData._foreign_key_error("physics",
 		{"atlas_x": 0, "atlas_y": 0, "bogus_key": 1})
-	testing.ok(not r6.is_empty(), "unknown key on physics → rejected")
-	testing.ok(r6.contains("unknown key"), "unknown-key rejection uses unknown-key wording")
+	testing.ok(not unknown_key_error.is_empty(), "unknown key on physics → rejected")
+	testing.ok(unknown_key_error.contains("unknown key"), "unknown-key rejection uses unknown-key wording")
 
 	# Unknown verb has an empty allow-list → first non-coord key is foreign.
 	testing.ok(not TilesetTileData._foreign_key_error("bogus_verb",
@@ -429,8 +429,8 @@ static func _test_tileset_io_polygon(testing) -> void:
 
 	# 16×16 tile → ±8 corners, wound TL → TR → BR → BL (the order create and
 	# edit_physics both rely on for set_collision_polygon_points).
-	var p16 := TilesetIo.build_full_tile_polygon(Vector2i(16, 16))
-	testing.eq(p16, PackedVector2Array([
+	var full_tile_polygon := TilesetIo.build_full_tile_polygon(Vector2i(16, 16))
+	testing.eq(full_tile_polygon, PackedVector2Array([
 		Vector2(-8, -8), Vector2(8, -8), Vector2(8, 8), Vector2(-8, 8)]),
 		"16x16 → exact ±8 rectangle in winding order")
 
@@ -476,12 +476,12 @@ static func _test_create_collision_resolver(testing) -> void:
 
 	# Exists: write a temp file under user://, assert the action == if_exists, clean up.
 	var present := "user://__collision_test_%d.tmp" % (randi() % 1_000_000)
-	var f := FileAccess.open(present, FileAccess.WRITE)
-	if f == null:
+	var file := FileAccess.open(present, FileAccess.WRITE)
+	if file == null:
 		testing.ok(false, "could not open temp file for existence cases — SKIPPED exists path")
 	else:
-		f.store_string("x")
-		f.close()
+		file.store_string("x")
+		file.close()
 
 		var c_return := Helpers.resolve_create_collision(present, "return")
 		testing.eq(c_return.get("valid"), true, "exists + return → valid")

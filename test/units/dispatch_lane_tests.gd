@@ -25,30 +25,30 @@ static func run(testing) -> void:
 
 static func _test_watchdog_timeout(testing) -> void:
 	testing.begin("Watchdog timeout basis")
-	var reg := MCPToolkitCommandRegistry.new()
+	var registry := MCPToolkitCommandRegistry.new()
 
 	# 1. declared timeout → trusted (the author's contract)
-	reg.add("wd.declared", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(5000))
-	testing.eq(reg.get_watchdog_timeout_ms("wd.declared"), 5000,
+	registry.add("wd.declared", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(5000))
+	testing.eq(registry.get_watchdog_timeout_ms("wd.declared"), 5000,
 			"declared timeout → trusted (5000)")
 
 	# 2. undeclared (default) → _MAX_TIMEOUT_MS (300000), NOT the 30s default
-	reg.add("wd.default", testing.noop, MCPToolkitCommandOptions.new())
-	testing.eq(reg.get_watchdog_timeout_ms("wd.default"), 300000,
+	registry.add("wd.default", testing.noop, MCPToolkitCommandOptions.new())
+	testing.eq(registry.get_watchdog_timeout_ms("wd.default"), 300000,
 			"undeclared → _MAX_TIMEOUT_MS, not the 30s default")
 
 	# 3. timeout 0 → treated as undeclared → _MAX_TIMEOUT_MS
-	reg.add("wd.zero", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(0))
-	testing.eq(reg.get_watchdog_timeout_ms("wd.zero"), 300000,
+	registry.add("wd.zero", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(0))
+	testing.eq(registry.get_watchdog_timeout_ms("wd.zero"), 300000,
 			"timeout 0 → undeclared → _MAX_TIMEOUT_MS")
 
 	# 4. explicitly declared 30000 is still 'declared' → trusted, NOT forced to _MAX
-	reg.add("wd.d30k", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(30000))
-	testing.eq(reg.get_watchdog_timeout_ms("wd.d30k"), 30000,
+	registry.add("wd.d30k", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(30000))
+	testing.eq(registry.get_watchdog_timeout_ms("wd.d30k"), 30000,
 			"explicitly declared 30000 → trusted (not _MAX)")
 
 	# 5. unknown method → _MAX_TIMEOUT_MS (safe ceiling)
-	testing.eq(reg.get_watchdog_timeout_ms("wd.unknown"), 300000,
+	testing.eq(registry.get_watchdog_timeout_ms("wd.unknown"), 300000,
 			"unknown method → _MAX_TIMEOUT_MS")
 
 	print("")
@@ -110,68 +110,68 @@ static func _test_mutation_watchdog(testing) -> void:
 	testing.begin("MutationWatchdog timer + generation recovery")
 
 	# Recorder the fake force_clear writes into (Dictionary → mutable from the lambda).
-	var rec := {"calls": 0, "last_id": null}
+	var recorder := {"calls": 0, "last_id": null}
 	var force_clear := func(trapped_id) -> void:
-		rec["calls"] += 1
-		rec["last_id"] = trapped_id
+		recorder["calls"] += 1
+		recorder["last_id"] = trapped_id
 
 	# 1. Not armed → tick is a no-op (no force_clear, generation untouched).
-	var wd := MutationWatchdog.new()
-	wd.set_force_clear(force_clear)
-	var gen0 := wd.current_generation()
-	wd.tick()
-	testing.eq(rec["calls"], 0, "not armed → tick does not fire force_clear")
-	testing.eq(wd.current_generation(), gen0, "not armed → generation untouched")
+	var watchdog := MutationWatchdog.new()
+	watchdog.set_force_clear(force_clear)
+	var initial_generation := watchdog.current_generation()
+	watchdog.tick()
+	testing.eq(recorder["calls"], 0, "not armed → tick does not fire force_clear")
+	testing.eq(watchdog.current_generation(), initial_generation, "not armed → generation untouched")
 
 	# 2. Armed with a FUTURE deadline → tick does NOT trip.
 	var peer := WebSocketPeer.new()  # not OPEN → the peer-error send is guarded off
 	var future := Time.get_ticks_msec() + 60000
-	var gen_armed := wd.arm(peer, 7, "node.create", Time.get_ticks_msec(), future, null)
-	testing.eq(gen_armed, gen0, "arm → returns the current generation")
-	wd.tick()
-	testing.eq(rec["calls"], 0, "armed, deadline in future → no trip")
-	testing.eq(wd.current_generation(), gen0, "future deadline → generation untouched")
+	var armed_generation := watchdog.arm(peer, 7, "node.create", Time.get_ticks_msec(), future, null)
+	testing.eq(armed_generation, initial_generation, "arm → returns the current generation")
+	watchdog.tick()
+	testing.eq(recorder["calls"], 0, "armed, deadline in future → no trip")
+	testing.eq(watchdog.current_generation(), initial_generation, "future deadline → generation untouched")
 
 	# 3. disarm (normal completion) → tick is a no-op (no trip after disarm).
-	wd.disarm()
-	wd.tick()
-	testing.eq(rec["calls"], 0, "disarm → tick does not trip")
+	watchdog.disarm()
+	watchdog.tick()
+	testing.eq(recorder["calls"], 0, "disarm → tick does not trip")
 
 	# 4. DEADLINE TRIP — arm with a PAST deadline, tick → force_clear fired once with
 	#    the trapped id, and the generation is bumped by exactly 1.
-	var gen_before := wd.current_generation()
+	var generation_before_trip := watchdog.current_generation()
 	var past := Time.get_ticks_msec() - 1000
-	wd.arm(peer, 42, "node.create", past, past, null)
-	wd.tick()
-	testing.eq(rec["calls"], 1, "past deadline → trip fires force_clear once")
-	testing.eq(rec["last_id"], 42, "trip → force_clear receives the trapped id")
-	testing.eq(wd.current_generation(), gen_before + 1, "trip → generation bumped by 1")
+	watchdog.arm(peer, 42, "node.create", past, past, null)
+	watchdog.tick()
+	testing.eq(recorder["calls"], 1, "past deadline → trip fires force_clear once")
+	testing.eq(recorder["last_id"], 42, "trip → force_clear receives the trapped id")
+	testing.eq(watchdog.current_generation(), generation_before_trip + 1, "trip → generation bumped by 1")
 
 	# 5. STALE-TAIL ABANDONMENT — the generation captured at arm() no longer matches
 	#    after the trip, so the abandoned coroutine's tail (which compares them) bails.
-	testing.ok(wd.current_generation() != gen_before, "trip → captured gen != current gen (stale tail bails)")
+	testing.ok(watchdog.current_generation() != generation_before_trip, "trip → captured gen != current gen (stale tail bails)")
 
 	# 6. After a trip the watchdog disarmed itself → a second tick is a no-op (no
 	#    double-fire even if _process ticks again before a successor arms).
-	wd.tick()
-	testing.eq(rec["calls"], 1, "post-trip → second tick does not re-fire force_clear")
+	watchdog.tick()
+	testing.eq(recorder["calls"], 1, "post-trip → second tick does not re-fire force_clear")
 
 	# 7. COOPERATIVE CANCEL — a cancellable in-flight ctx is cancelled on a trip so a
 	#    slow-but-alive handler bails at its next is_cancelled() poll.
-	var ctx := MCPToolkitToolContext.new()
-	wd.arm(peer, 99, "node.create", past, past, ctx)
-	testing.ok(not ctx.is_cancelled(), "armed ctx → not cancelled before trip")
-	wd.tick()
-	testing.ok(ctx.is_cancelled(), "trip → in-flight ctx cooperatively cancelled")
-	testing.eq(rec["last_id"], 99, "trip → force_clear receives the second trapped id")
+	var context := MCPToolkitToolContext.new()
+	watchdog.arm(peer, 99, "node.create", past, past, context)
+	testing.ok(not context.is_cancelled(), "armed ctx → not cancelled before trip")
+	watchdog.tick()
+	testing.ok(context.is_cancelled(), "trip → in-flight ctx cooperatively cancelled")
+	testing.eq(recorder["last_id"], 99, "trip → force_clear receives the second trapped id")
 
 	# 8. force_clear unset → trip still recovers gracefully (no crash, generation
 	#    still bumps). A real lane always wires it; this proves the is_valid() guard.
-	var wd2 := MutationWatchdog.new()
-	var g2 := wd2.current_generation()
-	wd2.arm(peer, 1, "node.create", past, past, null)
-	wd2.tick()
-	testing.eq(wd2.current_generation(), g2 + 1, "no force_clear wired → trip still bumps generation (no crash)")
+	var unwired_watchdog := MutationWatchdog.new()
+	var unwired_generation := unwired_watchdog.current_generation()
+	unwired_watchdog.arm(peer, 1, "node.create", past, past, null)
+	unwired_watchdog.tick()
+	testing.eq(unwired_watchdog.current_generation(), unwired_generation + 1, "no force_clear wired → trip still bumps generation (no crash)")
 
 	print("")
 
@@ -190,42 +190,42 @@ static func _test_mutation_watchdog(testing) -> void:
 
 static func _test_lane_selection(testing) -> void:
 	testing.begin("Lane selection (read / mutation / scene-lease routing)")
-	var reg := MCPToolkitCommandRegistry.new()
-	var disp := ServerRequestRouter.new()
-	disp.set_registry(reg)
+	var registry := MCPToolkitCommandRegistry.new()
+	var router := ServerRequestRouter.new()
+	router.set_registry(registry)
 
 	# read-only + scene-independent → ReadOnlyLane (no lock, no lease).
-	reg.add("t.read", testing.noop,
+	registry.add("t.read", testing.noop,
 			MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
-	testing.eq(disp.lane_kind_for("t.read"), ServerRequestRouter.LANE_READ,
+	testing.eq(router.lane_kind_for("t.read"), ServerRequestRouter.LANE_READ,
 			"read-only + scene-independent → read lane")
 
 	# mutator (default, not read-only) + scene-independent → MutationLane.
-	reg.add("t.mutate", testing.noop, MCPToolkitCommandOptions.new().mark_scene_independent())
-	testing.eq(disp.lane_kind_for("t.mutate"), ServerRequestRouter.LANE_MUTATION,
+	registry.add("t.mutate", testing.noop, MCPToolkitCommandOptions.new().mark_scene_independent())
+	testing.eq(router.lane_kind_for("t.mutate"), ServerRequestRouter.LANE_MUTATION,
 			"mutator + scene-independent → mutation lane")
 
 	# exclusive-execution mutator + scene-independent → MutationLane (force-serialized).
-	reg.add("t.excl", testing.noop,
+	registry.add("t.excl", testing.noop,
 			MCPToolkitCommandOptions.new().mark_exclusive_execution().mark_scene_independent())
-	testing.eq(disp.lane_kind_for("t.excl"), ServerRequestRouter.LANE_MUTATION,
+	testing.eq(router.lane_kind_for("t.excl"), ServerRequestRouter.LANE_MUTATION,
 			"exclusive-execution + scene-independent → mutation lane")
 
 	# active-scene-required mutator (the default — no mark_scene_independent) → SceneLeaseLane.
-	reg.add("t.scene_mut", testing.noop, MCPToolkitCommandOptions.new())
-	testing.eq(disp.lane_kind_for("t.scene_mut"), ServerRequestRouter.LANE_SCENE_LEASE,
+	registry.add("t.scene_mut", testing.noop, MCPToolkitCommandOptions.new())
+	testing.eq(router.lane_kind_for("t.scene_mut"), ServerRequestRouter.LANE_SCENE_LEASE,
 			"active-scene-required mutator → scene-lease lane")
 
 	# active-scene-required READ (read-only but NOT scene-independent) → SceneLeaseLane.
 	# Scene affinity wins over the read bypass — a read of the active tree still queues.
-	reg.add("t.scene_read", testing.noop, MCPToolkitCommandOptions.new().mark_read_only())
-	testing.eq(disp.lane_kind_for("t.scene_read"), ServerRequestRouter.LANE_SCENE_LEASE,
+	registry.add("t.scene_read", testing.noop, MCPToolkitCommandOptions.new().mark_read_only())
+	testing.eq(router.lane_kind_for("t.scene_read"), ServerRequestRouter.LANE_SCENE_LEASE,
 			"active-scene-required read → scene-lease lane (affinity over read bypass)")
 
 	# scene.open → scene_lease ALWAYS, even registered scene-independent (the explicit
 	# special-case clause — under contention it must NOT open the scene / switch tabs).
-	reg.add("scene.open", testing.noop, MCPToolkitCommandOptions.new().mark_scene_independent())
-	testing.eq(disp.lane_kind_for("scene.open"), ServerRequestRouter.LANE_SCENE_LEASE,
+	registry.add("scene.open", testing.noop, MCPToolkitCommandOptions.new().mark_scene_independent())
+	testing.eq(router.lane_kind_for("scene.open"), ServerRequestRouter.LANE_SCENE_LEASE,
 			"scene.open → scene-lease lane always (special-cased, despite scene-independent)")
 
 	# Unknown/unregistered method → mutation lane (the conservative serialized
@@ -234,7 +234,7 @@ static func _test_lane_selection(testing) -> void:
 	# defaults true for an absent command, so it falls through to MutationLane.
 	# Moot in production — the router's registry-miss guard returns -32601
 	# before lane selection is ever reached for an unregistered method.
-	testing.eq(disp.lane_kind_for("t.unknown"), ServerRequestRouter.LANE_MUTATION,
+	testing.eq(router.lane_kind_for("t.unknown"), ServerRequestRouter.LANE_MUTATION,
 			"unknown method → mutation lane (conservative serialized default; moot in prod, -32601 guard fires first)")
 
 	print("")

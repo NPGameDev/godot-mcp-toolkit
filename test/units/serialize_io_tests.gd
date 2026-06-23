@@ -45,22 +45,22 @@ static func _test_coerce_roundtrip(testing) -> void:
 	testing.begin("Coerce/serialize value round-trip symmetry")
 
 	# Tagged-dict value types: coerce_value(serialize_value(V)) == V (both legs).
-	var vec2: Vector2 = Vector2(3.5, -2.0)
-	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vec2)) == vec2, "Vector2 round-trips")
-	var vec3: Vector3 = Vector3(1.0, 2.0, -3.5)
-	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vec3)) == vec3, "Vector3 round-trips")
-	var vec4: Vector4 = Vector4(1.0, 2.0, 3.0, 4.0)
-	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vec4)) == vec4, "Vector4 round-trips")
-	var vec2i: Vector2i = Vector2i(7, -8)
-	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vec2i)) == vec2i, "Vector2i round-trips")
-	var vec3i: Vector3i = Vector3i(-1, 2, 9)
-	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vec3i)) == vec3i, "Vector3i round-trips")
+	var vector2_value: Vector2 = Vector2(3.5, -2.0)
+	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vector2_value)) == vector2_value, "Vector2 round-trips")
+	var vector3_value: Vector3 = Vector3(1.0, 2.0, -3.5)
+	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vector3_value)) == vector3_value, "Vector3 round-trips")
+	var vector4_value: Vector4 = Vector4(1.0, 2.0, 3.0, 4.0)
+	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vector4_value)) == vector4_value, "Vector4 round-trips")
+	var vector2i_value: Vector2i = Vector2i(7, -8)
+	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vector2i_value)) == vector2i_value, "Vector2i round-trips")
+	var vector3i_value: Vector3i = Vector3i(-1, 2, 9)
+	testing.ok(Coerce.coerce_value(Coerce.serialize_value(vector3i_value)) == vector3i_value, "Vector3i round-trips")
 	var col: Color = Color(0.25, 0.5, 0.75, 1.0)
 	testing.ok(Coerce.coerce_value(Coerce.serialize_value(col)) == col, "Color round-trips")
-	var rect2: Rect2 = Rect2(1.0, 2.0, 3.0, 4.0)
-	testing.ok(Coerce.coerce_value(Coerce.serialize_value(rect2)) == rect2, "Rect2 round-trips")
-	var rect2i: Rect2i = Rect2i(5, 6, 7, 8)
-	testing.ok(Coerce.coerce_value(Coerce.serialize_value(rect2i)) == rect2i, "Rect2i round-trips")
+	var rect2_value: Rect2 = Rect2(1.0, 2.0, 3.0, 4.0)
+	testing.ok(Coerce.coerce_value(Coerce.serialize_value(rect2_value)) == rect2_value, "Rect2 round-trips")
+	var rect2i_value: Rect2i = Rect2i(5, 6, 7, 8)
+	testing.ok(Coerce.coerce_value(Coerce.serialize_value(rect2i_value)) == rect2i_value, "Rect2i round-trips")
 	var xform2d: Transform2D = Transform2D(Vector2(0.0, 1.0), Vector2(-1.0, 0.0), Vector2(5.0, 6.0))
 	testing.ok(Coerce.coerce_value(Coerce.serialize_value(xform2d)) == xform2d, "Transform2D round-trips")
 	var basis: Basis = Basis(Vector3(1.0, 0.0, 0.0), Vector3(0.0, 0.0, -1.0), Vector3(0.0, 1.0, 0.0))
@@ -73,23 +73,23 @@ static func _test_coerce_roundtrip(testing) -> void:
 	# (JSON→Godot). For Packed* this complements the symmetric round-trip below — it
 	# pins the wire shape itself, not just coerce∘serialize self-consistency.
 	# LayerMask is coerce-only by design (see header).
-	var pv2: Variant = Coerce.coerce_value({
+	var packed_vector2: Variant = Coerce.coerce_value({
 		"type": "PackedVector2Array",
 		"values": [{"type": "Vector2", "x": 1.0, "y": 2.0}, {"type": "Vector2", "x": 3.0, "y": 4.0}],
 	})
-	testing.ok(pv2 == PackedVector2Array([Vector2(1.0, 2.0), Vector2(3.0, 4.0)]),
+	testing.ok(packed_vector2 == PackedVector2Array([Vector2(1.0, 2.0), Vector2(3.0, 4.0)]),
 			"PackedVector2Array coerces from the documented tagged form")
-	var pv3: Variant = Coerce.coerce_value({
+	var packed_vector3: Variant = Coerce.coerce_value({
 		"type": "PackedVector3Array",
 		"values": [{"type": "Vector3", "x": 1.0, "y": 2.0, "z": 3.0}],
 	})
-	testing.ok(pv3 == PackedVector3Array([Vector3(1.0, 2.0, 3.0)]),
+	testing.ok(packed_vector3 == PackedVector3Array([Vector3(1.0, 2.0, 3.0)]),
 			"PackedVector3Array coerces from the documented tagged form")
-	var pcol: Variant = Coerce.coerce_value({
+	var packed_color: Variant = Coerce.coerce_value({
 		"type": "PackedColorArray",
 		"values": [{"type": "Color", "r": 1.0, "g": 0.0, "b": 0.0, "a": 1.0}],
 	})
-	testing.ok(pcol == PackedColorArray([Color(1.0, 0.0, 0.0, 1.0)]),
+	testing.ok(packed_color == PackedColorArray([Color(1.0, 0.0, 0.0, 1.0)]),
 			"PackedColorArray coerces from the documented tagged form")
 	# LayerMask: numeric layers 1 and 3 → bits 0 and 2 → 0b101 = 5 (no ProjectSettings).
 	var mask: Variant = Coerce.coerce_value({"type": "LayerMask", "layers": [1, 3]})
@@ -242,33 +242,33 @@ static func _test_save_read_paging(testing) -> void:
 
 	# 1. First window: offset 0, max_bytes 400 → 400 bytes, next_offset 400,
 	#    truncated true (600 remain), total_bytes 1000.
-	var p1: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": 400})
-	testing.ok(p1.get("success", false), "window 1 → success")
-	testing.eq(p1.get("bytes_returned", -1), 400, "window 1 → 400 bytes returned")
-	testing.eq(p1.get("offset", -1), 0, "window 1 → offset 0 echoed")
-	testing.eq(p1.get("next_offset", -1), 400, "window 1 → next_offset 400")
-	testing.eq(p1.get("total_bytes", -1), 1000, "window 1 → total_bytes 1000")
-	testing.eq(p1.get("truncated", null), true, "window 1 → truncated true (more remains)")
+	var first_window: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": 400})
+	testing.ok(first_window.get("success", false), "window 1 → success")
+	testing.eq(first_window.get("bytes_returned", -1), 400, "window 1 → 400 bytes returned")
+	testing.eq(first_window.get("offset", -1), 0, "window 1 → offset 0 echoed")
+	testing.eq(first_window.get("next_offset", -1), 400, "window 1 → next_offset 400")
+	testing.eq(first_window.get("total_bytes", -1), 1000, "window 1 → total_bytes 1000")
+	testing.eq(first_window.get("truncated", null), true, "window 1 → truncated true (more remains)")
 	# Uniform pagination contract: truncated window carries a prose hint naming
 	# next_offset; not-truncated windows omit it (asserted below).
-	testing.ok(p1.has("hint"), "window 1 → hint present (truncated)")
-	testing.ok(str(p1.get("hint", "")).contains("next_offset"), "window 1 → hint names next_offset")
+	testing.ok(first_window.has("hint"), "window 1 → hint present (truncated)")
+	testing.ok(str(first_window.get("hint", "")).contains("next_offset"), "window 1 → hint names next_offset")
 
 	# 2. Middle window: seek correctness — offset 400, max_bytes 400 → next_offset
 	#    800, still truncated.
-	var p2: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 400, "max_bytes": 400})
-	testing.eq(p2.get("bytes_returned", -1), 400, "window 2 → 400 bytes returned")
-	testing.eq(p2.get("offset", -1), 400, "window 2 → offset 400 echoed")
-	testing.eq(p2.get("next_offset", -1), 800, "window 2 → next_offset 800")
-	testing.eq(p2.get("truncated", null), true, "window 2 → still truncated")
+	var middle_window: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 400, "max_bytes": 400})
+	testing.eq(middle_window.get("bytes_returned", -1), 400, "window 2 → 400 bytes returned")
+	testing.eq(middle_window.get("offset", -1), 400, "window 2 → offset 400 echoed")
+	testing.eq(middle_window.get("next_offset", -1), 800, "window 2 → next_offset 800")
+	testing.eq(middle_window.get("truncated", null), true, "window 2 → still truncated")
 
 	# 3. Final window: offset 800 → only 200 bytes left; next_offset reaches EOF,
 	#    truncated false. Pins next_offset arithmetic = offset + bytes_returned.
-	var p3: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 800, "max_bytes": 400})
-	testing.eq(p3.get("bytes_returned", -1), 200, "window 3 → 200 bytes (clamped to remaining)")
-	testing.eq(p3.get("next_offset", -1), 1000, "window 3 → next_offset 1000 (== total)")
-	testing.eq(p3.get("truncated", null), false, "window 3 → truncated false (reached EOF)")
-	testing.ok(not p3.has("hint"), "window 3 → no hint (not truncated)")
+	var final_window: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 800, "max_bytes": 400})
+	testing.eq(final_window.get("bytes_returned", -1), 200, "window 3 → 200 bytes (clamped to remaining)")
+	testing.eq(final_window.get("next_offset", -1), 1000, "window 3 → next_offset 1000 (== total)")
+	testing.eq(final_window.get("truncated", null), false, "window 3 → truncated false (reached EOF)")
+	testing.ok(not final_window.has("hint"), "window 3 → no hint (not truncated)")
 
 	# 4. Offset exactly AT EOF → 0 bytes, not an error; next_offset == total,
 	#    truncated false (graceful completion sentinel for a paging caller).
@@ -366,14 +366,14 @@ static func _test_script_read_paging(testing) -> void:
 
 	# 1. Windowed read that ENDS BEFORE EOF (lines 1..2 of 5) → truncated true,
 	#    next_start_line 3, hint naming next_start_line. total_lines preserved.
-	var w: Dictionary = ScriptCommands._cmd_script_read({"file_path": fixture, "start_line": 1, "end_line": 2})
-	testing.ok(w.get("success", false), "window 1..2 → success")
-	testing.eq(w.get("start_line", -1), 1, "window → start_line 1 preserved")
-	testing.eq(w.get("end_line", -1), 2, "window → end_line 2 preserved")
-	testing.eq(w.get("total_lines", -1), 5, "window → total_lines 5 preserved")
-	testing.eq(w.get("truncated", null), true, "window 1..2 → truncated true (2 < 5)")
-	testing.eq(w.get("next_start_line", -1), 3, "window → next_start_line = end_line + 1 = 3 (1-based)")
-	testing.ok(str(w.get("hint", "")).contains("next_start_line"), "window → hint names next_start_line")
+	var window: Dictionary = ScriptCommands._cmd_script_read({"file_path": fixture, "start_line": 1, "end_line": 2})
+	testing.ok(window.get("success", false), "window 1..2 → success")
+	testing.eq(window.get("start_line", -1), 1, "window → start_line 1 preserved")
+	testing.eq(window.get("end_line", -1), 2, "window → end_line 2 preserved")
+	testing.eq(window.get("total_lines", -1), 5, "window → total_lines 5 preserved")
+	testing.eq(window.get("truncated", null), true, "window 1..2 → truncated true (2 < 5)")
+	testing.eq(window.get("next_start_line", -1), 3, "window → next_start_line = end_line + 1 = 3 (1-based)")
+	testing.ok(str(window.get("hint", "")).contains("next_start_line"), "window → hint names next_start_line")
 
 	# 2. Windowed read that REACHES EOF (lines 3..5; end clamps to 5) → truncated
 	#    false, no next_start_line, no hint.

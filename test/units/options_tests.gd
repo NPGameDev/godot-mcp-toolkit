@@ -38,11 +38,11 @@ static func _test_options_builder(testing) -> void:
 			"chained builder returns same reference")
 
 	# 8. with_group sets name, description, keywords
-	var g: Dictionary = MCPToolkitCommandOptions.new() \
+	var group: Dictionary = MCPToolkitCommandOptions.new() \
 			.with_group("grp", "Desc", ["kw"]).to_dict().get("group", {})
-	testing.eq(g.get("name", ""), "grp", "with_group → name")
-	testing.eq(g.get("description", ""), "Desc", "with_group → description")
-	testing.ok(g.get("keywords", []).has("kw"), "with_group → keywords")
+	testing.eq(group.get("name", ""), "grp", "with_group → name")
+	testing.eq(group.get("description", ""), "Desc", "with_group → description")
+	testing.ok(group.get("keywords", []).has("kw"), "with_group → keywords")
 
 	# 9-10. Version gating
 	testing.eq(MCPToolkitCommandOptions.new().with_min_godot_version("4.5") \
@@ -53,10 +53,10 @@ static func _test_options_builder(testing) -> void:
 			"with_max_godot_version → '4.4'")
 
 	# 11. chained version bounds
-	var vd: Dictionary = MCPToolkitCommandOptions.new() \
+	var version_dict: Dictionary = MCPToolkitCommandOptions.new() \
 			.with_min_godot_version("4.3") \
 			.with_max_godot_version("4.5").to_dict()
-	testing.ok(vd.has("min_godot_version") and vd.has("max_godot_version"),
+	testing.ok(version_dict.has("min_godot_version") and version_dict.has("max_godot_version"),
 			"chained version bounds → both present")
 
 	# 12. invalid version string — stored despite push_warning
@@ -72,8 +72,8 @@ static func _test_extension_options(testing) -> void:
 	testing.begin("Extension options")
 
 	# 1. constructor sets description
-	var d: Dictionary = MCPToolkitExtensionOptions.new("My tool").to_dict()
-	testing.eq(d["description"], "My tool", "constructor sets description")
+	var extension_dict: Dictionary = MCPToolkitExtensionOptions.new("My tool").to_dict()
+	testing.eq(extension_dict["description"], "My tool", "constructor sets description")
 
 	# 2. inherits builder methods (chaining returns same ref)
 	var ext := MCPToolkitExtensionOptions.new("Ext")
@@ -91,26 +91,26 @@ static func _test_extension_options(testing) -> void:
 # --- Annotation mapping (~6 assertions) -----------------------------------
 static func _test_annotation_mapping(testing) -> void:
 	testing.begin("Annotation mapping")
-	var reg := MCPToolkitCommandRegistry.new()
+	var registry := MCPToolkitCommandRegistry.new()
 
 	# 1. mark_read_only → readOnlyHint true
-	reg.add("a.ro", testing.noop, MCPToolkitCommandOptions.new().mark_read_only())
-	testing.ok(reg.get_command_metadata("a.ro")["annotations"]["readOnlyHint"],
+	registry.add("a.ro", testing.noop, MCPToolkitCommandOptions.new().mark_read_only())
+	testing.ok(registry.get_command_metadata("a.ro")["annotations"]["readOnlyHint"],
 			"mark_read_only → readOnlyHint true")
 
 	# 2. mark_destructive → destructiveHint true
-	reg.add("a.ds", testing.noop, MCPToolkitCommandOptions.new().mark_destructive())
-	testing.ok(reg.get_command_metadata("a.ds")["annotations"]["destructiveHint"],
+	registry.add("a.ds", testing.noop, MCPToolkitCommandOptions.new().mark_destructive())
+	testing.ok(registry.get_command_metadata("a.ds")["annotations"]["destructiveHint"],
 			"mark_destructive → destructiveHint true")
 
 	# 3. mark_idempotent → idempotentHint true
-	reg.add("a.id", testing.noop, MCPToolkitCommandOptions.new().mark_idempotent())
-	testing.ok(reg.get_command_metadata("a.id")["annotations"]["idempotentHint"],
+	registry.add("a.id", testing.noop, MCPToolkitCommandOptions.new().mark_idempotent())
+	testing.ok(registry.get_command_metadata("a.id")["annotations"]["idempotentHint"],
 			"mark_idempotent → idempotentHint true")
 
 	# 4. no marks → all hints false
-	reg.add("a.plain", testing.noop, MCPToolkitCommandOptions.new())
-	var ann: Dictionary = reg.get_command_metadata("a.plain").get("annotations", {})
+	registry.add("a.plain", testing.noop, MCPToolkitCommandOptions.new())
+	var ann: Dictionary = registry.get_command_metadata("a.plain").get("annotations", {})
 	testing.ok(not ann.get("readOnlyHint", false), "no marks → readOnlyHint false")
 	testing.ok(not ann.get("destructiveHint", false), "no marks → destructiveHint false")
 	testing.ok(not ann.get("idempotentHint", false), "no marks → idempotentHint false")
@@ -121,31 +121,31 @@ static func _test_annotation_mapping(testing) -> void:
 # --- Timeout clamping (~5 assertions) -------------------------------------
 static func _test_timeout_clamping(testing) -> void:
 	testing.begin("Timeout clamping")
-	var reg := MCPToolkitCommandRegistry.new()
+	var registry := MCPToolkitCommandRegistry.new()
 
 	# 1. no timeout → default 30000 (metadata omits key)
-	reg.add("to.def", testing.noop, MCPToolkitCommandOptions.new())
-	testing.ok(not reg.get_command_metadata("to.def").has("timeout_ms"),
+	registry.add("to.def", testing.noop, MCPToolkitCommandOptions.new())
+	testing.ok(not registry.get_command_metadata("to.def").has("timeout_ms"),
 			"no timeout → default 30000 (omitted from metadata)")
 
 	# 2. below min → clamped to 1000
-	reg.add("to.lo", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(500))
-	testing.eq(reg.get_command_metadata("to.lo").get("timeout_ms", -1), 1000,
+	registry.add("to.lo", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(500))
+	testing.eq(registry.get_command_metadata("to.lo").get("timeout_ms", -1), 1000,
 			"timeout 500 → clamped to 1000")
 
 	# 3. above max → clamped to 300000
-	reg.add("to.hi", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(500000))
-	testing.eq(reg.get_command_metadata("to.hi").get("timeout_ms", -1), 300000,
+	registry.add("to.hi", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(500000))
+	testing.eq(registry.get_command_metadata("to.hi").get("timeout_ms", -1), 300000,
 			"timeout 500000 → clamped to 300000")
 
 	# 4. in range → unchanged
-	reg.add("to.ok", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(5000))
-	testing.eq(reg.get_command_metadata("to.ok").get("timeout_ms", -1), 5000,
+	registry.add("to.ok", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(5000))
+	testing.eq(registry.get_command_metadata("to.ok").get("timeout_ms", -1), 5000,
 			"timeout 5000 → unchanged")
 
 	# 5. zero → default (same as no timeout)
-	reg.add("to.z", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(0))
-	testing.ok(not reg.get_command_metadata("to.z").has("timeout_ms"),
+	registry.add("to.z", testing.noop, MCPToolkitCommandOptions.new().with_timeout_ms(0))
+	testing.ok(not registry.get_command_metadata("to.z").has("timeout_ms"),
 			"timeout 0 → default (omitted from metadata)")
 
 	print("")

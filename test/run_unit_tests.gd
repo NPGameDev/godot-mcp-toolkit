@@ -58,11 +58,11 @@ func _guard_addon_classes() -> bool:
 	# If any class_name is unavailable (addon not enabled), Godot throws a
 	# parse error before _init() runs. This runtime check is defence-in-depth
 	# for unexpected constructor failures.
-	var r := MCPToolkitCommandRegistry.new()
-	var o := MCPToolkitCommandOptions.new()
-	var e := MCPToolkitExtensionOptions.new("guard")
-	var c := MCPToolkitToolContext.new()
-	if r == null or o == null or e == null or c == null:
+	var registry := MCPToolkitCommandRegistry.new()
+	var options := MCPToolkitCommandOptions.new()
+	var extension_options := MCPToolkitExtensionOptions.new("guard")
+	var tool_context := MCPToolkitToolContext.new()
+	if registry == null or options == null or extension_options == null or tool_context == null:
 		print("FAIL: addon classes not accessible — is the addon enabled in project.godot?")
 		return false
 	print("Guard: all 4 addon classes accessible")

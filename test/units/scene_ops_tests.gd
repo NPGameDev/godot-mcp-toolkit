@@ -62,18 +62,18 @@ static func _test_tool_context(testing) -> void:
 	testing.begin("ToolContext cancellation")
 
 	# 1. fresh → is_cancelled false
-	var ctx := MCPToolkitToolContext.new()
-	testing.ok(not ctx.is_cancelled(), "fresh context → is_cancelled false")
+	var context := MCPToolkitToolContext.new()
+	testing.ok(not context.is_cancelled(), "fresh context → is_cancelled false")
 
 	# 2. cancel → is_cancelled true
-	ctx.cancel()
-	testing.ok(ctx.is_cancelled(), "after cancel → is_cancelled true")
+	context.cancel()
+	testing.ok(context.is_cancelled(), "after cancel → is_cancelled true")
 
 	# 3. cancelled signal fires synchronously
-	var ctx2 := MCPToolkitToolContext.new()
+	var signal_context := MCPToolkitToolContext.new()
 	var fired := [false]
-	ctx2.cancelled.connect(func(): fired[0] = true)
-	ctx2.cancel()
+	signal_context.cancelled.connect(func(): fired[0] = true)
+	signal_context.cancel()
 	testing.ok(fired[0], "cancel → cancelled signal fires")
 
 	print("")

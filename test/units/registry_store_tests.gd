@@ -123,21 +123,21 @@ static func _test_registry_entry(testing) -> void:
 	testing.begin("RegistryEntryFile build_entry")
 
 	# 1. Entry carries the LSP endpoint the editor passed in.
-	var e := RegistryEntryFile.build_entry("res://proj", 6550, "tok", "127.0.0.1", 6005, null, null)
-	testing.eq(e.get("lsp_host", ""), "127.0.0.1", "entry carries lsp_host")
-	testing.eq(e.get("lsp_port", -1), 6005, "entry carries lsp_port")
+	var entry := RegistryEntryFile.build_entry("res://proj", 6550, "tok", "127.0.0.1", 6005, null, null)
+	testing.eq(entry.get("lsp_host", ""), "127.0.0.1", "entry carries lsp_host")
+	testing.eq(entry.get("lsp_port", -1), 6005, "entry carries lsp_port")
 
 	# 2. WS port stays distinct from the LSP port; core keys present.
-	testing.eq(e.get("port", -1), 6550, "entry carries ws port (distinct from lsp_port)")
-	testing.eq(e.get("token_path", ""), "tok", "entry carries token_path")
-	testing.ok(e.has("_key") and e.has("pid") and e.has("started_at"),
+	testing.eq(entry.get("port", -1), 6550, "entry carries ws port (distinct from lsp_port)")
+	testing.eq(entry.get("token_path", ""), "tok", "entry carries token_path")
+	testing.ok(entry.has("_key") and entry.has("pid") and entry.has("started_at"),
 			"entry carries core keys (_key/pid/started_at)")
-	testing.ok(e.get("runtime_port") == null, "no runtime → runtime_port null")
+	testing.ok(entry.get("runtime_port") == null, "no runtime → runtime_port null")
 
 	# 3. A custom (non-default) LSP port + an active runtime flow through unchanged.
-	var e2 := RegistryEntryFile.build_entry("res://proj", 6551, "tok", "127.0.0.1", 6010, 6570, 4242)
-	testing.eq(e2.get("lsp_port", -1), 6010, "custom lsp_port flows through")
-	testing.eq(e2.get("runtime_port", -1), 6570, "runtime_port preserved when set")
+	var custom_entry := RegistryEntryFile.build_entry("res://proj", 6551, "tok", "127.0.0.1", 6010, 6570, 4242)
+	testing.eq(custom_entry.get("lsp_port", -1), 6010, "custom lsp_port flows through")
+	testing.eq(custom_entry.get("runtime_port", -1), 6570, "runtime_port preserved when set")
 
 	print("")
 

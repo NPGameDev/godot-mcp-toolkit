@@ -47,12 +47,12 @@ static func _test_file_guard(testing) -> void:
 	testing.ok(not FileGuard.resolve_safe_user("user://addons/godot_mcp_toolkit/mcp_token").get("ok", false),
 		"resolve_safe_user plugin-internal → denied")
 	# Shared subset fixture (mirror of server PATH_FIXTURE).
-	for p in ["res://x.gd", "res://a/b/c.tscn", "res://addons/foo/bar.gd", "res://my..thing/x.gd",
+	for path in ["res://x.gd", "res://a/b/c.tscn", "res://addons/foo/bar.gd", "res://my..thing/x.gd",
 			"res://a.b.c/d.gd", "res://a/b/"]:
-		testing.ok(FileGuard.resolve_safe(p).get("error") == null, "fixture ALLOW res://: %s" % p)
-	for p in ["res://../escape.gd", "res://a/../../../escape", "../../etc/passwd", "/etc/passwd",
+		testing.ok(FileGuard.resolve_safe(path).get("error") == null, "fixture ALLOW res://: %s" % path)
+	for path in ["res://../escape.gd", "res://a/../../../escape", "../../etc/passwd", "/etc/passwd",
 			"C:/Windows/x", "random/x.gd", "file:///etc/passwd"]:
-		testing.ok(FileGuard.resolve_safe(p).get("error") != null, "fixture DENY res://: %s" % p)
+		testing.ok(FileGuard.resolve_safe(path).get("error") != null, "fixture DENY res://: %s" % path)
 	testing.ok(FileGuard.resolve_safe("user://x.json").get("error") != null, "fixture DENY wrong-prefix user→project")
 	testing.ok(FileGuard.resolve_safe("res://x.gd", ["user://"]).get("error") != null, "fixture DENY wrong-prefix project→user")
 

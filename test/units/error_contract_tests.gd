@@ -4,7 +4,7 @@ extends RefCounted
 ## debug_bridge error-entry shape, response validation (handler-return contract),
 ## and the response size guard. Exercises the contract/error surface headless.
 ##
-## run() is a coroutine — the response-validation group awaits reg.call_command().
+## run() is a coroutine — the response-validation group awaits registry.call_command().
 
 const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 
@@ -27,24 +27,24 @@ static func _test_error_api(testing) -> void:
 	testing.begin("MCPToolkitError API")
 
 	# 1. fail() returns correct shape
-	var e1 := MCPToolkitError.fail("NOT_FOUND", "Node missing")
-	testing.ok(e1["success"] == false, "fail() → success false")
-	testing.eq(e1["error"], "Node missing", "fail() → error message")
-	testing.eq(e1["code"], "NOT_FOUND", "fail() → code")
+	var not_found_error := MCPToolkitError.fail("NOT_FOUND", "Node missing")
+	testing.ok(not_found_error["success"] == false, "fail() → success false")
+	testing.eq(not_found_error["error"], "Node missing", "fail() → error message")
+	testing.eq(not_found_error["code"], "NOT_FOUND", "fail() → code")
 
 	# 2. fail() with DEFAULT_HINTS code → auto-hint attached
-	var e2 := MCPToolkitError.fail("TIMEOUT", "Editor busy")
-	testing.ok(e2.has("hint"), "fail(TIMEOUT) → auto-hint attached")
-	testing.eq(e2["hint"], MCPToolkitError.DEFAULT_HINTS["TIMEOUT"],
+	var timeout_error := MCPToolkitError.fail("TIMEOUT", "Editor busy")
+	testing.ok(timeout_error.has("hint"), "fail(TIMEOUT) → auto-hint attached")
+	testing.eq(timeout_error["hint"], MCPToolkitError.DEFAULT_HINTS["TIMEOUT"],
 			"fail(TIMEOUT) → hint matches DEFAULT_HINTS")
 
 	# 3. fail() with explicit hint → overrides auto-hint
-	var e3 := MCPToolkitError.fail("TIMEOUT", "Custom", "My hint")
-	testing.eq(e3["hint"], "My hint", "fail() explicit hint → overrides auto-hint")
+	var explicit_hint_error := MCPToolkitError.fail("TIMEOUT", "Custom", "My hint")
+	testing.eq(explicit_hint_error["hint"], "My hint", "fail() explicit hint → overrides auto-hint")
 
 	# 4. fail() with non-DEFAULT_HINTS code and no hint → no hint key
-	var e4 := MCPToolkitError.fail("NOT_FOUND", "Missing")
-	testing.ok(not e4.has("hint"), "fail(NOT_FOUND, no hint) → no hint key")
+	var no_hint_error := MCPToolkitError.fail("NOT_FOUND", "Missing")
+	testing.ok(not no_hint_error.has("hint"), "fail(NOT_FOUND, no hint) → no hint key")
 
 	# 5. require() with all params present → returns null
 	var ok_params := {"node_path": "/root/Player", "file_path": "res://s.gd"}
@@ -52,17 +52,17 @@ static func _test_error_api(testing) -> void:
 			"require() all present → null")
 
 	# 6. require() with missing param → returns error with hint
-	var bad_params := {"node_path": ""}
-	var e5 = MCPToolkitError.require(bad_params, ["node_path"])
-	testing.ok(e5 is Dictionary, "require() missing → returns Dictionary")
-	testing.eq(e5["code"], "INVALID_PARAMS", "require() missing → INVALID_PARAMS")
-	testing.eq(e5["hint"], MCPToolkitError.HINT_NODE_PATH,
+	var node_path_only_params := {"node_path": ""}
+	var missing_node_path_error = MCPToolkitError.require(node_path_only_params, ["node_path"])
+	testing.ok(missing_node_path_error is Dictionary, "require() missing → returns Dictionary")
+	testing.eq(missing_node_path_error["code"], "INVALID_PARAMS", "require() missing → INVALID_PARAMS")
+	testing.eq(missing_node_path_error["hint"], MCPToolkitError.HINT_NODE_PATH,
 			"require(node_path) → HINT_NODE_PATH")
 
 	# 7. require() with missing file_path → HINT_FILE_PATH
-	var bad_params2 := {"file_path": ""}
-	var e6 = MCPToolkitError.require(bad_params2, ["file_path"])
-	testing.eq(e6["hint"], MCPToolkitError.HINT_FILE_PATH,
+	var file_path_only_params := {"file_path": ""}
+	var missing_file_path_error = MCPToolkitError.require(file_path_only_params, ["file_path"])
+	testing.eq(missing_file_path_error["hint"], MCPToolkitError.HINT_FILE_PATH,
 			"require(file_path) → HINT_FILE_PATH")
 
 	print("")
@@ -130,23 +130,23 @@ static func _test_error_codes_vocabulary(testing) -> void:
 
 static func _test_make_error_entry(testing) -> void:
 	testing.begin("debug_bridge error-entry shape")
-	var e := PlaytestLogReader.make_error_entry(123, "msg", "res://a.gd", "f", 7, "error")
+	var entry := PlaytestLogReader.make_error_entry(123, "msg", "res://a.gd", "f", 7, "error")
 	# exact key set, count, and order-of-keys pinned
-	testing.eq(e.size(), 6, "entry has exactly 6 keys")
-	testing.ok(e.keys() == ["timestamp_ms", "message", "source", "function", "line", "type"],
+	testing.eq(entry.size(), 6, "entry has exactly 6 keys")
+	testing.ok(entry.keys() == ["timestamp_ms", "message", "source", "function", "line", "type"],
 			"key set + order pinned")
-	testing.eq(e["timestamp_ms"], 123, "timestamp_ms passthrough")
-	testing.eq(e["message"], "msg", "message passthrough")
-	testing.eq(e["source"], "res://a.gd", "source passthrough")
-	testing.eq(e["function"], "f", "function passthrough")
-	testing.eq(e["line"], 7, "line passthrough")
-	testing.eq(e["type"], "error", "type passthrough")
-	testing.ok(typeof(e["line"]) == TYPE_INT, "line is int (no JSON float coercion in-process)")
-	testing.ok(typeof(e["timestamp_ms"]) == TYPE_INT, "timestamp_ms is int")
+	testing.eq(entry["timestamp_ms"], 123, "timestamp_ms passthrough")
+	testing.eq(entry["message"], "msg", "message passthrough")
+	testing.eq(entry["source"], "res://a.gd", "source passthrough")
+	testing.eq(entry["function"], "f", "function passthrough")
+	testing.eq(entry["line"], 7, "line passthrough")
+	testing.eq(entry["type"], "error", "type passthrough")
+	testing.ok(typeof(entry["line"]) == TYPE_INT, "line is int (no JSON float coercion in-process)")
+	testing.ok(typeof(entry["timestamp_ms"]) == TYPE_INT, "timestamp_ms is int")
 	# log-scan variant reproduces Site-2 derivation
-	var e2 := PlaytestLogReader.make_error_entry(0, "m2", "", "", 0, "log_scan")
-	testing.eq(e2["timestamp_ms"], 0, "log_scan timestamp_ms=0 preserved")
-	testing.eq(e2["type"], "log_scan", "log_scan type preserved")
+	var log_scan_entry := PlaytestLogReader.make_error_entry(0, "m2", "", "", 0, "log_scan")
+	testing.eq(log_scan_entry["timestamp_ms"], 0, "log_scan timestamp_ms=0 preserved")
+	testing.eq(log_scan_entry["type"], "log_scan", "log_scan type preserved")
 
 	print("")
 
@@ -171,45 +171,45 @@ class _Handlers extends RefCounted:
 static func _test_response_validation(testing) -> void:
 	testing.begin("Response validation")
 	var handlers := _Handlers.new()
-	var reg := MCPToolkitCommandRegistry.new()
+	var registry := MCPToolkitCommandRegistry.new()
 
 	# 1. Handler returns non-Dictionary → INTERNAL error
-	reg.add("rv.bad_type", handlers.non_dict,
+	registry.add("rv.bad_type", handlers.non_dict,
 			MCPToolkitCommandOptions.new())
-	var r1: Dictionary = await reg.call_command("rv.bad_type", {})
-	testing.eq(r1["success"], false, "non-Dict handler → success false")
-	testing.eq(r1["code"], "INTERNAL", "non-Dict handler → INTERNAL code")
+	var bad_type_result: Dictionary = await registry.call_command("rv.bad_type", {})
+	testing.eq(bad_type_result["success"], false, "non-Dict handler → success false")
+	testing.eq(bad_type_result["code"], "INTERNAL", "non-Dict handler → INTERNAL code")
 
 	# 2. Handler returns Dict without success → INTERNAL error
-	reg.add("rv.no_success", handlers.no_success,
+	registry.add("rv.no_success", handlers.no_success,
 			MCPToolkitCommandOptions.new())
-	var r2: Dictionary = await reg.call_command("rv.no_success", {})
-	testing.eq(r2["success"], false, "no-success handler → success false")
-	testing.eq(r2["code"], "INTERNAL", "no-success handler → INTERNAL code")
+	var no_success_result: Dictionary = await registry.call_command("rv.no_success", {})
+	testing.eq(no_success_result["success"], false, "no-success handler → success false")
+	testing.eq(no_success_result["code"], "INTERNAL", "no-success handler → INTERNAL code")
 
 	# 3. Good handler → passes through
-	reg.add("rv.good", handlers.good, MCPToolkitCommandOptions.new())
-	var r3: Dictionary = await reg.call_command("rv.good", {})
-	testing.eq(r3["success"], true, "good handler → success true")
-	testing.eq(r3["data"], "ok", "good handler → data preserved")
+	registry.add("rv.good", handlers.good, MCPToolkitCommandOptions.new())
+	var good_result: Dictionary = await registry.call_command("rv.good", {})
+	testing.eq(good_result["success"], true, "good handler → success true")
+	testing.eq(good_result["data"], "ok", "good handler → data preserved")
 
 	# 4. with_success_hint() auto-injection on success
-	reg.add("rv.hinted", handlers.good,
+	registry.add("rv.hinted", handlers.good,
 			MCPToolkitCommandOptions.new().with_success_hint("Next step"))
-	var r4: Dictionary = await reg.call_command("rv.hinted", {})
-	testing.eq(r4["hint"], "Next step", "with_success_hint → auto-injected")
+	var hinted_result: Dictionary = await registry.call_command("rv.hinted", {})
+	testing.eq(hinted_result["hint"], "Next step", "with_success_hint → auto-injected")
 
 	# 5. Handler hint overrides registered hint
-	reg.add("rv.override", handlers.with_hint,
+	registry.add("rv.override", handlers.with_hint,
 			MCPToolkitCommandOptions.new().with_success_hint("Registered"))
-	var r5: Dictionary = await reg.call_command("rv.override", {})
-	testing.eq(r5["hint"], "handler hint", "handler hint → overrides registered")
+	var override_result: Dictionary = await registry.call_command("rv.override", {})
+	testing.eq(override_result["hint"], "handler hint", "handler hint → overrides registered")
 
 	# 6. No injection on success: false
-	reg.add("rv.fail", handlers.fail,
+	registry.add("rv.fail", handlers.fail,
 			MCPToolkitCommandOptions.new().with_success_hint("Should not appear"))
-	var r6: Dictionary = await reg.call_command("rv.fail", {})
-	testing.ok(not r6.has("hint") or r6.get("hint", "") != "Should not appear",
+	var fail_result: Dictionary = await registry.call_command("rv.fail", {})
+	testing.ok(not fail_result.has("hint") or fail_result.get("hint", "") != "Should not appear",
 			"success:false → no success_hint injection")
 
 	print("")
@@ -231,21 +231,21 @@ static func _test_response_size_guard(testing) -> void:
 	# 1. Under-size response → passed through UNCHANGED (same object identity-wise
 	#    in content: jsonrpc, id, and result all intact).
 	var small := {"jsonrpc": "2.0", "id": 7, "result": {"success": true, "data": "ok"}}
-	var g_small := MCPToolkitError.guard_response_size(small, max_bytes)
-	testing.eq(g_small["id"], 7, "under-size → id preserved")
-	testing.eq(g_small["result"]["success"], true, "under-size → result unchanged")
-	testing.eq(g_small["result"].get("data", ""), "ok", "under-size → result payload intact")
+	var guarded_small := MCPToolkitError.guard_response_size(small, max_bytes)
+	testing.eq(guarded_small["id"], 7, "under-size → id preserved")
+	testing.eq(guarded_small["result"]["success"], true, "under-size → result unchanged")
+	testing.eq(guarded_small["result"].get("data", ""), "ok", "under-size → result payload intact")
 
 	# 2. Over-size response → replaced with a compact RESPONSE_TOO_LARGE error,
 	#    same id + jsonrpc, and the replacement now fits the cap.
 	var filler := "x".repeat(max_bytes + 4096)  # comfortably over the cap
 	var big := {"jsonrpc": "2.0", "id": 42, "result": {"success": true, "blob": filler}}
-	var g_big := MCPToolkitError.guard_response_size(big, max_bytes)
-	testing.eq(g_big["id"], 42, "over-size → id preserved")
-	testing.eq(g_big["jsonrpc"], "2.0", "over-size → jsonrpc preserved")
-	testing.eq(g_big["result"]["success"], false, "over-size → result.success false")
-	testing.eq(g_big["result"]["code"], "RESPONSE_TOO_LARGE", "over-size → RESPONSE_TOO_LARGE code")
-	testing.ok(MCPToolkitError.response_byte_size(g_big) <= max_bytes,
+	var guarded_big := MCPToolkitError.guard_response_size(big, max_bytes)
+	testing.eq(guarded_big["id"], 42, "over-size → id preserved")
+	testing.eq(guarded_big["jsonrpc"], "2.0", "over-size → jsonrpc preserved")
+	testing.eq(guarded_big["result"]["success"], false, "over-size → result.success false")
+	testing.eq(guarded_big["result"]["code"], "RESPONSE_TOO_LARGE", "over-size → RESPONSE_TOO_LARGE code")
+	testing.ok(MCPToolkitError.response_byte_size(guarded_big) <= max_bytes,
 			"over-size → replacement fits within max_bytes")
 
 	# 3. Boundary: a response sized just BELOW the (max_bytes − margin) threshold
@@ -257,16 +257,16 @@ static func _test_response_size_guard(testing) -> void:
 	var envelope_pad := 64
 	var under_len := (max_bytes - margin) - envelope_pad
 	var at_threshold := {"jsonrpc": "2.0", "id": 1, "result": {"p": "y".repeat(under_len)}}
-	var g_under := MCPToolkitError.guard_response_size(at_threshold, max_bytes)
-	testing.ok(g_under["result"].has("p"), "boundary just-under → passes through unchanged")
+	var guarded_under := MCPToolkitError.guard_response_size(at_threshold, max_bytes)
+	testing.ok(guarded_under["result"].has("p"), "boundary just-under → passes through unchanged")
 	# A response OVER (max_bytes − margin) but still UNDER max_bytes itself must
 	# trip — proving the margin (not the raw buffer cap) is the live threshold.
 	var over_len := (max_bytes - margin) + 1024  # ~62464: above threshold, below cap
 	var over_threshold := {"jsonrpc": "2.0", "id": 1, "result": {"p": "y".repeat(over_len)}}
 	testing.ok(MCPToolkitError.response_byte_size(over_threshold) < max_bytes,
 			"boundary over-case is genuinely under the raw cap")
-	var g_over := MCPToolkitError.guard_response_size(over_threshold, max_bytes)
-	testing.eq(g_over["result"].get("code", ""), "RESPONSE_TOO_LARGE",
+	var guarded_over := MCPToolkitError.guard_response_size(over_threshold, max_bytes)
+	testing.eq(guarded_over["result"].get("code", ""), "RESPONSE_TOO_LARGE",
 			"boundary over-margin/under-cap → tripped (margin is load-bearing)")
 
 	print("")

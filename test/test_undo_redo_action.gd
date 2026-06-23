@@ -25,42 +25,42 @@ const MCPToolkitUndoRedoAction = preload("res://addons/godot_mcp_toolkit/scene/m
 ## Returns diagnostic info about the undo/redo environment.
 ## Call this before any tests to verify the builder is functional.
 func diagnose_undo_redo() -> Dictionary:
-	var diag := {}
+	var diagnostics := {}
 
 	# 1. Hub plugin reference
-	diag["hub_plugin_set"] = Modules.EditorAccess.has_plugin()
+	diagnostics["hub_plugin_set"] = Modules.EditorAccess.has_plugin()
 
 	# 2. EditorUndoRedoManager
-	var ur = Modules.EditorAccess.get_undo_redo()
-	diag["undo_redo_null"] = ur == null
-	if ur != null:
-		diag["undo_redo_class"] = ur.get_class()
+	var undo_redo_manager = Modules.EditorAccess.get_undo_redo()
+	diagnostics["undo_redo_null"] = undo_redo_manager == null
+	if undo_redo_manager != null:
+		diagnostics["undo_redo_class"] = undo_redo_manager.get_class()
 
 	# 3. Scene context
 	var root = EditorInterface.get_edited_scene_root()
-	diag["scene_root_null"] = root == null
+	diagnostics["scene_root_null"] = root == null
 	if root != null:
-		diag["scene_root_name"] = root.name
+		diagnostics["scene_root_name"] = root.name
 
 	# 4. History resolution
-	if ur != null and root != null:
-		var hist_id = ur.get_object_history_id(root)
-		diag["root_history_id"] = hist_id
-		var undo_redo = ur.get_history_undo_redo(hist_id)
-		diag["history_undo_redo_null"] = undo_redo == null
+	if undo_redo_manager != null and root != null:
+		var history_id = undo_redo_manager.get_object_history_id(root)
+		diagnostics["root_history_id"] = history_id
+		var undo_redo = undo_redo_manager.get_history_undo_redo(history_id)
+		diagnostics["history_undo_redo_null"] = undo_redo == null
 		if undo_redo != null:
-			diag["has_undo"] = undo_redo.has_undo()
-			diag["has_redo"] = undo_redo.has_redo()
+			diagnostics["has_undo"] = undo_redo.has_undo()
+			diagnostics["has_redo"] = undo_redo.has_redo()
 
 	# 5. Builder smoke test: create and commit a trivial action
-	if ur != null and root != null:
+	if undo_redo_manager != null and root != null:
 		var test_node := Node2D.new()
 		test_node.name = "URDiag_SmokeNode"
 		root.add_child(test_node)
 		test_node.owner = root
 
 		var action = MCPToolkitUndoRedoAction.begin("diag smoke", test_node)
-		diag["builder_active"] = action.is_active()
+		diagnostics["builder_active"] = action.is_active()
 
 		test_node.position = Vector2(99, 99)
 		action.do_property(test_node, &"position", Vector2(99, 99))
@@ -68,31 +68,31 @@ func diagnose_undo_redo() -> Dictionary:
 		action.commit_recorded()
 
 		# Check if action was recorded
-		var hist_id2 = ur.get_object_history_id(test_node)
-		diag["smoke_history_id"] = hist_id2
-		var ur2 = ur.get_history_undo_redo(hist_id2)
-		if ur2 != null:
-			diag["smoke_has_undo_after_commit"] = ur2.has_undo()
+		var smoke_history_id = undo_redo_manager.get_object_history_id(test_node)
+		diagnostics["smoke_history_id"] = smoke_history_id
+		var smoke_undo_redo = undo_redo_manager.get_history_undo_redo(smoke_history_id)
+		if smoke_undo_redo != null:
+			diagnostics["smoke_has_undo_after_commit"] = smoke_undo_redo.has_undo()
 			# Try undo
-			if ur2.has_undo():
-				ur2.undo()
-				diag["smoke_pos_after_undo"] = str(test_node.position)
-				diag["smoke_undo_worked"] = test_node.position == Vector2.ZERO
+			if smoke_undo_redo.has_undo():
+				smoke_undo_redo.undo()
+				diagnostics["smoke_pos_after_undo"] = str(test_node.position)
+				diagnostics["smoke_undo_worked"] = test_node.position == Vector2.ZERO
 				# Redo
-				if ur2.has_redo():
-					ur2.redo()
-					diag["smoke_pos_after_redo"] = str(test_node.position)
+				if smoke_undo_redo.has_redo():
+					smoke_undo_redo.redo()
+					diagnostics["smoke_pos_after_redo"] = str(test_node.position)
 				# Undo again to clean up
-				if ur2.has_undo():
-					ur2.undo()
+				if smoke_undo_redo.has_undo():
+					smoke_undo_redo.undo()
 		else:
-			diag["smoke_undo_redo_null"] = true
+			diagnostics["smoke_undo_redo_null"] = true
 
 		# Cleanup
 		test_node.get_parent().remove_child(test_node)
 		test_node.queue_free()
 
-	return diag
+	return diagnostics
 
 
 # -- Agent-facing methods (called via node_call_method) -----------------------
@@ -102,15 +102,15 @@ func diagnose_undo_redo() -> Dictionary:
 ## [param context_node_path]: optional path relative to scene root — uses
 ##   that node's history. Empty string = edited scene root's history.
 func trigger_undo(context_node_path: String = "") -> Dictionary:
-	var ur = Modules.EditorAccess.get_undo_redo()
-	if ur == null:
+	var undo_redo_manager = Modules.EditorAccess.get_undo_redo()
+	if undo_redo_manager == null:
 		return {"status": "error", "message": "EditorUndoRedoManager not available (headless or plugin not loaded)"}
 
-	var history_id := _resolve_history_id(ur, context_node_path)
+	var history_id := _resolve_history_id(undo_redo_manager, context_node_path)
 	if history_id == -99:  # INVALID_HISTORY
 		return {"status": "error", "message": "Could not resolve history for '%s'" % context_node_path}
 
-	var undo_redo = ur.get_history_undo_redo(history_id)
+	var undo_redo = undo_redo_manager.get_history_undo_redo(history_id)
 	if undo_redo == null:
 		return {"status": "error", "message": "get_history_undo_redo(%d) returned null" % history_id}
 	if not undo_redo.has_undo():
@@ -122,15 +122,15 @@ func trigger_undo(context_node_path: String = "") -> Dictionary:
 
 ## Trigger redo on the edited scene's history. Returns a status dict.
 func trigger_redo(context_node_path: String = "") -> Dictionary:
-	var ur = Modules.EditorAccess.get_undo_redo()
-	if ur == null:
+	var undo_redo_manager = Modules.EditorAccess.get_undo_redo()
+	if undo_redo_manager == null:
 		return {"status": "error", "message": "EditorUndoRedoManager not available (headless or plugin not loaded)"}
 
-	var history_id := _resolve_history_id(ur, context_node_path)
+	var history_id := _resolve_history_id(undo_redo_manager, context_node_path)
 	if history_id == -99:
 		return {"status": "error", "message": "Could not resolve history for '%s'" % context_node_path}
 
-	var undo_redo = ur.get_history_undo_redo(history_id)
+	var undo_redo = undo_redo_manager.get_history_undo_redo(history_id)
 	if undo_redo == null:
 		return {"status": "error", "message": "get_history_undo_redo(%d) returned null" % history_id}
 	if not undo_redo.has_redo():
@@ -144,8 +144,8 @@ func trigger_redo(context_node_path: String = "") -> Dictionary:
 ## Creates temporary nodes, mutates via the builder, undoes/redoes
 ## programmatically, and verifies state. Cleans up afterward.
 func run_undo_redo_tests() -> Dictionary:
-	var ur = Modules.EditorAccess.get_undo_redo()
-	if ur == null:
+	var undo_redo_manager = Modules.EditorAccess.get_undo_redo()
+	if undo_redo_manager == null:
 		return {"status": "skipped", "message": "No EditorUndoRedoManager — cannot run integration tests"}
 
 	var root = EditorInterface.get_edited_scene_root()
@@ -155,19 +155,19 @@ func run_undo_redo_tests() -> Dictionary:
 	var results: Array[Dictionary] = []
 
 	# --- Test 1: Property set + undo/redo (commit_recorded) ---
-	var t1 = _test_property_undo_redo(ur, root)
-	results.append_array(t1)
+	var property_results = _test_property_undo_redo(undo_redo_manager, root)
+	results.append_array(property_results)
 
 	# --- Test 2: Method-based undo/redo (add_child/remove_child) ---
-	var t2 = _test_method_undo_redo(ur, root)
-	results.append_array(t2)
+	var method_results = _test_method_undo_redo(undo_redo_manager, root)
+	results.append_array(method_results)
 
 	# --- Test 3: commit() executes do-side ---
-	var t3 = _test_commit_executes_do(ur, root)
-	results.append_array(t3)
+	var commit_results = _test_commit_executes_do(undo_redo_manager, root)
+	results.append_array(commit_results)
 
-	var passed := results.filter(func(r: Dictionary) -> bool: return r["pass"]).size()
-	var failed := results.filter(func(r: Dictionary) -> bool: return not r["pass"]).size()
+	var passed := results.filter(func(result: Dictionary) -> bool: return result["pass"]).size()
+	var failed := results.filter(func(result: Dictionary) -> bool: return not result["pass"]).size()
 	return {
 		"status": "ok" if failed == 0 else "fail",
 		"passed": passed,
@@ -180,7 +180,7 @@ func run_undo_redo_tests() -> Dictionary:
 # -- Internal helpers ---------------------------------------------------------
 
 
-func _resolve_history_id(ur, context_node_path: String) -> int:
+func _resolve_history_id(undo_redo_manager, context_node_path: String) -> int:
 	var root = EditorInterface.get_edited_scene_root()
 	if root == null:
 		return -99  # INVALID_HISTORY
@@ -188,34 +188,34 @@ func _resolve_history_id(ur, context_node_path: String) -> int:
 		var node = root.get_node_or_null(context_node_path)
 		if node == null:
 			return -99
-		return ur.get_object_history_id(node)
-	return ur.get_object_history_id(root)
+		return undo_redo_manager.get_object_history_id(node)
+	return undo_redo_manager.get_object_history_id(root)
 
 
-func _undo_for(ur, node: Node) -> Dictionary:
-	var hist_id = ur.get_object_history_id(node)
-	var undo_redo = ur.get_history_undo_redo(hist_id)
+func _undo_for(undo_redo_manager, node: Node) -> Dictionary:
+	var history_id = undo_redo_manager.get_object_history_id(node)
+	var undo_redo = undo_redo_manager.get_history_undo_redo(history_id)
 	if undo_redo == null:
-		return {"ok": false, "reason": "undo_redo null for history %s" % str(hist_id)}
+		return {"ok": false, "reason": "undo_redo null for history %s" % str(history_id)}
 	if not undo_redo.has_undo():
-		return {"ok": false, "reason": "has_undo false in history %s" % str(hist_id)}
+		return {"ok": false, "reason": "has_undo false in history %s" % str(history_id)}
 	var success = undo_redo.undo()
-	return {"ok": bool(success), "history_id": hist_id}
+	return {"ok": bool(success), "history_id": history_id}
 
 
-func _redo_for(ur, node: Node) -> Dictionary:
-	var hist_id = ur.get_object_history_id(node)
-	var undo_redo = ur.get_history_undo_redo(hist_id)
+func _redo_for(undo_redo_manager, node: Node) -> Dictionary:
+	var history_id = undo_redo_manager.get_object_history_id(node)
+	var undo_redo = undo_redo_manager.get_history_undo_redo(history_id)
 	if undo_redo == null:
-		return {"ok": false, "reason": "undo_redo null for history %s" % str(hist_id)}
+		return {"ok": false, "reason": "undo_redo null for history %s" % str(history_id)}
 	if not undo_redo.has_redo():
-		return {"ok": false, "reason": "has_redo false in history %s" % str(hist_id)}
+		return {"ok": false, "reason": "has_redo false in history %s" % str(history_id)}
 	var success = undo_redo.redo()
-	return {"ok": bool(success), "history_id": hist_id}
+	return {"ok": bool(success), "history_id": history_id}
 
 
 ## Test 1: simple property set -> undo -> redo via commit_recorded().
-func _test_property_undo_redo(ur, root: Node) -> Array[Dictionary]:
+func _test_property_undo_redo(undo_redo_manager, root: Node) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
 	var node := Node2D.new()
 	node.name = "URTest_PropNode"
@@ -233,20 +233,20 @@ func _test_property_undo_redo(ur, root: Node) -> Array[Dictionary]:
 
 	results.append({"test": "prop_set", "pass": node.position == new_pos})
 
-	_undo_for(ur, node)
+	_undo_for(undo_redo_manager, node)
 	results.append({"test": "prop_undo", "pass": node.position == old_pos})
 
-	_redo_for(ur, node)
+	_redo_for(undo_redo_manager, node)
 	results.append({"test": "prop_redo", "pass": node.position == new_pos})
 
-	_undo_for(ur, node)
+	_undo_for(undo_redo_manager, node)
 	node.get_parent().remove_child(node)
 	node.queue_free()
 	return results
 
 
 ## Test 2: method-based add_child / remove_child + references.
-func _test_method_undo_redo(ur, root: Node) -> Array[Dictionary]:
+func _test_method_undo_redo(undo_redo_manager, root: Node) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
 	var child := Sprite2D.new()
 	child.name = "URTest_MethodChild"
@@ -264,13 +264,13 @@ func _test_method_undo_redo(ur, root: Node) -> Array[Dictionary]:
 
 	results.append({"test": "method_added", "pass": root.has_node("URTest_MethodChild")})
 
-	_undo_for(ur, root)
+	_undo_for(undo_redo_manager, root)
 	results.append({"test": "method_undo", "pass": not root.has_node("URTest_MethodChild")})
 
-	_redo_for(ur, root)
+	_redo_for(undo_redo_manager, root)
 	results.append({"test": "method_redo", "pass": root.has_node("URTest_MethodChild")})
 
-	_undo_for(ur, root)
+	_undo_for(undo_redo_manager, root)
 	if is_instance_valid(child) and child.get_parent() != null:
 		child.get_parent().remove_child(child)
 	if is_instance_valid(child):
@@ -279,7 +279,7 @@ func _test_method_undo_redo(ur, root: Node) -> Array[Dictionary]:
 
 
 ## Test 3: commit() (non-recorded) executes the do-side immediately.
-func _test_commit_executes_do(ur, root: Node) -> Array[Dictionary]:
+func _test_commit_executes_do(undo_redo_manager, root: Node) -> Array[Dictionary]:
 	var results: Array[Dictionary] = []
 	var node := Node2D.new()
 	node.name = "URTest_CommitNode"
@@ -294,7 +294,7 @@ func _test_commit_executes_do(ur, root: Node) -> Array[Dictionary]:
 
 	results.append({"test": "commit_do_executes", "pass": node.visible == false})
 
-	_undo_for(ur, node)
+	_undo_for(undo_redo_manager, node)
 	results.append({"test": "commit_undo", "pass": node.visible == old_vis})
 
 	node.get_parent().remove_child(node)

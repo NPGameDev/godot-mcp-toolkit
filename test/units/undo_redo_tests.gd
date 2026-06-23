@@ -22,20 +22,20 @@ static func _test_undo_redo_action(testing) -> void:
 	testing.ok(not action.is_active(), "is_active() false in headless")
 
 	# 3. Fluent chaining — every method returns self
-	var a2 := MCPToolkitUndoRedoAction.begin("chain test")
+	var chain_action := MCPToolkitUndoRedoAction.begin("chain test")
 	var node := Node2D.new()
-	var r1 = a2.do_property(node, &"position", Vector2(1, 2))
-	testing.ok(r1 == a2, "do_property returns self")
-	var r2 = a2.undo_property(node, &"position", Vector2.ZERO)
-	testing.ok(r2 == a2, "undo_property returns self")
-	var r3 = a2.do_method(node.set.bind(&"rotation", 1.0))
-	testing.ok(r3 == a2, "do_method returns self")
-	var r4 = a2.undo_method(node.set.bind(&"rotation", 0.0))
-	testing.ok(r4 == a2, "undo_method returns self")
-	var r5 = a2.do_reference(node)
-	testing.ok(r5 == a2, "do_reference returns self")
-	var r6 = a2.undo_reference(node)
-	testing.ok(r6 == a2, "undo_reference returns self")
+	var do_property_return = chain_action.do_property(node, &"position", Vector2(1, 2))
+	testing.ok(do_property_return == chain_action, "do_property returns self")
+	var undo_property_return = chain_action.undo_property(node, &"position", Vector2.ZERO)
+	testing.ok(undo_property_return == chain_action, "undo_property returns self")
+	var do_method_return = chain_action.do_method(node.set.bind(&"rotation", 1.0))
+	testing.ok(do_method_return == chain_action, "do_method returns self")
+	var undo_method_return = chain_action.undo_method(node.set.bind(&"rotation", 0.0))
+	testing.ok(undo_method_return == chain_action, "undo_method returns self")
+	var do_reference_return = chain_action.do_reference(node)
+	testing.ok(do_reference_return == chain_action, "do_reference returns self")
+	var undo_reference_return = chain_action.undo_reference(node)
+	testing.ok(undo_reference_return == chain_action, "undo_reference returns self")
 	node.free()
 
 	# 4. All methods no-op without crash when inactive
@@ -48,26 +48,26 @@ static func _test_undo_redo_action(testing) -> void:
 	testing.ok(true, "all methods no-op without crash when inactive")
 
 	# 5. Double-commit guard — second call is no-op (warning logged)
-	var a3 := MCPToolkitUndoRedoAction.begin("double commit")
-	a3.commit_recorded()
-	a3.commit_recorded()  # should push_warning, not crash
+	var double_commit_action := MCPToolkitUndoRedoAction.begin("double commit")
+	double_commit_action.commit_recorded()
+	double_commit_action.commit_recorded()  # should push_warning, not crash
 	testing.ok(true, "double commit_recorded() does not crash")
 
 	# 6. commit() also guarded
-	var a4 := MCPToolkitUndoRedoAction.begin("commit guard")
-	a4.commit()
-	a4.commit()  # should push_warning, not crash
+	var commit_guard_action := MCPToolkitUndoRedoAction.begin("commit guard")
+	commit_guard_action.commit()
+	commit_guard_action.commit()  # should push_warning, not crash
 	testing.ok(true, "double commit() does not crash")
 
 	# 7. Cross-commit guard (commit after commit_recorded)
-	var a5 := MCPToolkitUndoRedoAction.begin("cross commit")
-	a5.commit_recorded()
-	a5.commit()  # should push_warning, not crash
+	var cross_commit_action := MCPToolkitUndoRedoAction.begin("cross commit")
+	cross_commit_action.commit_recorded()
+	cross_commit_action.commit()  # should push_warning, not crash
 	testing.ok(true, "commit() after commit_recorded() does not crash")
 
 	# 8. Registry factory returns valid instance
-	var reg := MCPToolkitCommandRegistry.new()
-	var factory_action := reg.create_undo_action("factory test")
+	var registry := MCPToolkitCommandRegistry.new()
+	var factory_action := registry.create_undo_action("factory test")
 	testing.ok(factory_action != null, "create_undo_action() returns non-null")
 	testing.ok(not factory_action.is_active(), "factory action inactive in headless")
 

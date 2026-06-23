@@ -55,6 +55,6 @@ func report() -> int:
 		print("=== ALL %d PASSED ===" % _passed)
 	else:
 		print("=== %d FAILED (%d passed) ===" % [_failed, _passed])
-		for e in _errors:
-			print("  FAIL: %s" % e)
+		for error_summary in _errors:
+			print("  FAIL: %s" % error_summary)
 	return _failed
