@@ -7,13 +7,10 @@ extends SceneTree
 ## The final banner is always printed for environments where exit codes
 ## are unreliable (Windows Godot).
 
-const EditorRescan := preload("res://addons/godot_mcp_toolkit/commands/editor/editor_rescan.gd")
-const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/core/unfocused_backup.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
-const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog.gd")
@@ -43,8 +40,10 @@ const OptionsTests := preload("res://test/units/options_tests.gd")
 const DispatchLaneTests := preload("res://test/units/dispatch_lane_tests.gd")
 const SignalResolverTests := preload("res://test/units/signal_resolver_tests.gd")
 const SceneOpsTests := preload("res://test/units/scene_ops_tests.gd")
+const PropertyEditTests := preload("res://test/units/property_edit_tests.gd")
 const UndoRedoTests := preload("res://test/units/undo_redo_tests.gd")
 const ErrorContractTests := preload("res://test/units/error_contract_tests.gd")
+const PathsVersioningTests := preload("res://test/units/paths_versioning_tests.gd")
 
 var _h := Harness.new()
 
@@ -65,19 +64,12 @@ func _init() -> void:
 	DispatchLaneTests.run(_h)
 	SignalResolverTests.run(_h)
 	SceneOpsTests.run(_h)
-	_test_compile_text_filter()
+	PropertyEditTests.run(_h)
 	_test_log_level_continuation()
-	_test_set_property_compound()
-	_test_compound_set_helper()
-	_test_undo_info()
 	UndoRedoTests.run(_h)
 	await ErrorContractTests.run(_h)
+	PathsVersioningTests.run(_h)
 	_test_export_strip()
-	_test_editor_refresh_reload_filter()
-	_test_unfocused_backup()
-	_test_stale_instance_hint()
-	_test_compile_error_message()
-	_test_groups_property_rejection()
 	_test_spatial_map()
 	_test_texture_generate()
 	_test_particle_prop_apply()
@@ -90,7 +82,6 @@ func _init() -> void:
 	_test_color_from_dict()
 	_test_color_from_dict_opaque()
 	_test_node_packed_property_serialize()
-	_test_user_path_monitor()
 	_test_save_read_paging()
 	_test_script_read_paging()
 	_test_settings_collect_names()
@@ -175,284 +166,7 @@ func _test_log_level_continuation() -> void:
 		"info + at: → info (no spurious error inherit)")
 
 
-# --- Compile-error diagnostic message (version-aware) (~10 assertions) -----
-# script_check / script_write steer the LLM to the right detail tool: editor_get_console
-# captures editor PARSE errors only on 4.5+ (Logger); on 4.2-4.4 they aren't file-logged,
-# so the diagnostic must point to lsp_diagnostics instead of a dead end. Regression guard
-# for the misleading-message bug (standalone follow-up to 41m-ter).
-
-func _test_compile_error_message() -> void:
-	_h.begin("Compile-error message (version-aware)")
-	# Discriminator: lsp_diagnostics appears ONLY in the <4.5 message (the 4.5+ message
-	# directs to editor_get_console). The <4.5 message also names editor_get_console — but
-	# only to say it CAN'T capture parse errors there — so don't assert on its mere presence.
-	for ver in ["4.2", "4.3", "4.4"]:
-		var msg: String = ScriptCommands._compile_error_message(ver)
-		_h.ok(msg.contains("lsp_diagnostics"),
-			"%s → recommends lsp_diagnostics (editor_get_console can't capture parse errors <4.5)" % ver)
-	for ver in ["4.5", "4.6"]:
-		var msg: String = ScriptCommands._compile_error_message(ver)
-		_h.ok(msg.contains("editor_get_console") and not msg.contains("lsp_diagnostics"),
-			"%s → directs to editor_get_console, not lsp (4.5+ Logger captures parse errors)" % ver)
-
-
-# --- node.set_property "groups" rejection (concern 032) -------------------
-# node.set_property does a declarative full-set replace, so accepting "groups"
-# would silently drop any group not in the list; node.groups is incremental.
-# Single mode whole-call-rejects and batch per-entry-rejects on this one name,
-# steering to node.groups. _is_groups_property is the shared pure decision; the
-# steering text is pinned so a future edit can't drop the node.groups pointer.
-
-func _test_groups_property_rejection() -> void:
-	_h.begin("node.set_property groups rejection (concern 032)")
-	# The predicate is exact: only the bare "groups" property is refused.
-	_h.ok(NodeCommands._is_groups_property("groups"), "'groups' → refused")
-	_h.ok(not NodeCommands._is_groups_property("group"), "'group' → not refused")
-	_h.ok(not NodeCommands._is_groups_property("groups_enabled"), "'groups_enabled' → not refused")
-	_h.ok(not NodeCommands._is_groups_property(""), "empty → not refused")
-	_h.ok(not NodeCommands._is_groups_property("position"), "ordinary property → not refused")
-	# The rejection steers to node.groups (the message/hint can't silently lose it).
-	_h.ok(not NodeCommands._GROUPS_REJECTION_MESSAGE.is_empty(), "rejection message present")
-	_h.ok(NodeCommands._GROUPS_REJECTION_HINT.contains("node.groups"),
-		"rejection hint names node.groups")
-	print("")
-
-
-# --- Helpers: compile_text_filter (~6 assertions) -------------------------
-
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
-
-func _test_compile_text_filter() -> void:
-	_h.begin("compile_text_filter")
-
-	# 1. Empty filter → null regex, no error
-	var r1 := Helpers.compile_text_filter({"text_filter": "", "is_regex": true})
-	_h.ok(r1[0] == null, "empty filter → null regex")
-	_h.ok(r1[1] == null, "empty filter → no error")
-
-	# 2. Non-regex → null regex
-	var r2 := Helpers.compile_text_filter({"text_filter": "hello", "is_regex": false})
-	_h.ok(r2[0] == null, "is_regex=false → null regex")
-
-	# 3. Valid regex compiles
-	var r3 := Helpers.compile_text_filter({"text_filter": "[0-9]+", "is_regex": true})
-	_h.ok(r3[0] != null, "valid regex → RegEx instance")
-	_h.ok(r3[1] == null, "valid regex → no error")
-
-	# 4. Invalid regex → error returned
-	var r4 := Helpers.compile_text_filter({"text_filter": "(unclosed", "is_regex": true})
-	_h.ok(r4[0] == null, "invalid regex → null regex")
-	_h.ok(r4[1] != null, "invalid regex → error dict")
-
-	# 5. Double-escaped \\d → warning
-	var r5 := Helpers.compile_text_filter({"text_filter": "test\\\\d+", "is_regex": true})
-	_h.ok(r5[2] != "", "double-escaped \\d → warning not empty")
-
-	# 6. Clean regex → empty warning
-	var r6 := Helpers.compile_text_filter({"text_filter": "[0-9]+", "is_regex": true})
-	_h.ok(r6[2] == "", "clean regex → empty warning")
-
-	print("")
-
-
-# --- Helpers: set_property_compound (~6 assertions) -----------------------
-
-func _test_set_property_compound() -> void:
-	_h.begin("set_property_compound")
-
-	# 1. Simple slash path on a Control (theme_override)
-	var ctrl := Control.new()
-	var r1 := Helpers.set_property_compound(
-		ctrl, "theme_override_font_sizes/font_size", 24)
-	_h.ok(r1.get("ok", false), "theme_override slash path → ok")
-	_h.eq(ctrl.get("theme_override_font_sizes/font_size"), 24,
-		"theme_override readback = 24")
-	ctrl.free()
-
-	# 2. Colon path to sub-resource (ShaderMaterial shader_parameter)
-	var shader := Shader.new()
-	shader.code = "shader_type canvas_item;\nuniform float brightness : hint_range(0, 1) = 0.75;"
-	var mat := ShaderMaterial.new()
-	mat.shader = shader
-	# The node needs the material as a property for colon-chain navigation.
-	# Use a Sprite2D which has a "material" property.
-	var sprite := Sprite2D.new()
-	sprite.material = mat
-	var r2 := Helpers.set_property_compound(
-		sprite, "material:shader_parameter/brightness", 0.3)
-	_h.ok(r2.get("ok", false), "shader_parameter colon path → ok")
-	var readback = sprite.get("material").get_shader_parameter("brightness")
-	_h.eq(readback, 0.3, "shader_parameter readback = 0.3")
-	sprite.free()
-
-	# 3. Non-existent sub-resource → NOT_FOUND
-	var node := Node2D.new()
-	var r3 := Helpers.set_property_compound(
-		node, "material:shader_parameter/x", 1.0)
-	_h.ok(not r3.get("ok", false), "null sub-resource → error")
-	_h.eq(r3.get("code", ""), "NOT_FOUND", "error code = NOT_FOUND")
-	node.free()
-
-	print("")
-
-
-# --- compound_set helper (~8 assertions) ------------------------------------
-
-const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
-
-func _test_compound_set_helper() -> void:
-	_h.begin("compound_set helper")
-	var helpers := UndoRedoHelpers.new()
-
-	# 1. Slash-only path (theme override on Control)
-	var ctrl := Control.new()
-	ctrl.add_theme_font_size_override("font_size", 16)
-	helpers.compound_set(ctrl, "theme_override_font_sizes/font_size", 32)
-	_h.eq(ctrl.get("theme_override_font_sizes/font_size"), 32,
-		"slash-only: theme_override set to 32")
-	ctrl.free()
-
-	# 2. Single-colon sub-resource (shader_parameter on ShaderMaterial)
-	var shader := Shader.new()
-	shader.code = "shader_type canvas_item;\nuniform float brightness : hint_range(0, 1) = 0.75;"
-	var mat := ShaderMaterial.new()
-	mat.shader = shader
-	var sprite := Sprite2D.new()
-	sprite.material = mat
-	helpers.compound_set(sprite, "material:shader_parameter/brightness", 0.4)
-	_h.eq(mat.get_shader_parameter("brightness"), 0.4,
-		"single-colon: shader_parameter set to 0.4")
-	# Undo by setting back
-	helpers.compound_set(sprite, "material:shader_parameter/brightness", 0.75)
-	_h.eq(mat.get_shader_parameter("brightness"), 0.75,
-		"single-colon: shader_parameter restored to 0.75")
-	sprite.free()
-
-	# 3. Multi-colon sub-resource navigation
-	var shader2 := Shader.new()
-	shader2.code = "shader_type canvas_item;\nuniform float glow : hint_range(0, 1) = 0.0;"
-	var pass2 := ShaderMaterial.new()
-	pass2.shader = shader2
-	var mat2 := ShaderMaterial.new()
-	mat2.shader = shader
-	mat2.next_pass = pass2
-	var sprite2 := Sprite2D.new()
-	sprite2.material = mat2
-	helpers.compound_set(sprite2, "material:next_pass:shader_parameter/glow", 0.5)
-	_h.eq(pass2.get_shader_parameter("glow"), 0.5,
-		"multi-colon: next_pass shader_parameter set to 0.5")
-	sprite2.free()
-
-	# 4. Simple property (no colon, no slash)
-	var node := Node2D.new()
-	node.visible = true
-	helpers.compound_set(node, "visible", false)
-	_h.eq(node.visible, false, "simple: visible set to false")
-	node.free()
-
-	# 5. Null sub-resource → no crash (silent return)
-	var empty := Sprite2D.new()
-	helpers.compound_set(empty, "material:shader_parameter/x", 1.0)
-	_h.ok(true, "null sub-resource: no crash")
-	empty.free()
-
-	helpers.free()
-	print("")
-
-
-# --- _undo info from set_property_compound (~6 assertions) ------------------
-
-func _test_undo_info() -> void:
-	_h.begin("_undo info")
-
-	# 1. Slash-only path returns property type
-	var ctrl := Control.new()
-	var r1 := Helpers.set_property_compound(
-		ctrl, "theme_override_font_sizes/font_size", 24)
-	_h.ok(r1.get("ok", false), "slash-only: set ok")
-	var u1: Dictionary = r1.get("_undo", {})
-	_h.eq(u1.get("type"), "property", "slash-only: _undo type = property")
-	_h.eq(u1.get("path"), "theme_override_font_sizes/font_size",
-		"slash-only: _undo path preserved")
-	ctrl.free()
-
-	# 2. Single-colon path returns sub_resource type (readback null for in-memory)
-	var shader := Shader.new()
-	shader.code = "shader_type canvas_item;\nuniform float brightness : hint_range(0, 1) = 0.75;"
-	var mat := ShaderMaterial.new()
-	mat.shader = shader
-	var sprite := Sprite2D.new()
-	sprite.material = mat
-	var r2 := Helpers.set_property_compound(
-		sprite, "material:shader_parameter/brightness", 0.3)
-	_h.ok(r2.get("ok", false), "colon: set ok")
-	var u2: Dictionary = r2.get("_undo", {})
-	_h.ok(u2.get("type") == "property" or u2.get("type") == "sub_resource",
-		"colon: _undo type is property or sub_resource")
-	_h.eq(u2.get("old"), null, "colon: _undo old = null (no prior override)")
-	sprite.free()
-
-	print("")
-
-
-# --- UserPathMonitor change detection (~8 assertions) ----------------------
-# Godot derives user:// from THREE settings — config/name, use_custom_user_dir,
-# and custom_user_dir_name. _on_settings_changed is the detection method: it
-# compares all three against the primed cache and re-emits user_path_changed
-# when ANY differs. Mutating a key + calling _on_settings_changed directly
-# exercises the detection without the editor's settings_changed plumbing.
-# Originals are restored so project state (and subsequent tests) are unaffected.
-
-const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/paths/user_path_monitor.gd")
-
-func _test_user_path_monitor() -> void:
-	_h.begin("UserPathMonitor change detection")
-
-	# str()/bool() so these infer concrete types, not Variant (this test file is
-	# outside addons/, so warnings-as-errors applies here even though it doesn't
-	# to the addon source).
-	var orig_name := str(ProjectSettings.get_setting("application/config/name", ""))
-	var orig_use_custom := bool(ProjectSettings.get_setting("application/config/use_custom_user_dir", false))
-	var orig_custom_name := str(ProjectSettings.get_setting("application/config/custom_user_dir_name", ""))
-
-	var monitor := UserPathMonitor.new()
-	var fired := [0]
-	monitor.user_path_changed.connect(func(): fired[0] += 1)
-	# Prime the cache WITHOUT calling start() — start() also subscribes to the
-	# live ProjectSettings.settings_changed, which our set_setting() calls below
-	# would trigger, double-counting emits. We drive _on_settings_changed
-	# directly so each mutation is detected exactly once.
-	monitor._cache_settings()
-
-	# 1. No change → no emit.
-	monitor._on_settings_changed()
-	_h.eq(fired[0], 0, "no change → signal not emitted")
-
-	# 2. config/name change → emit.
-	ProjectSettings.set_setting("application/config/name", str(orig_name) + "_renamed")
-	monitor._on_settings_changed()
-	_h.eq(fired[0], 1, "config/name change → signal emitted")
-
-	# 3. use_custom_user_dir toggle → emit (name unchanged from prior step).
-	ProjectSettings.set_setting("application/config/use_custom_user_dir", not bool(orig_use_custom))
-	monitor._on_settings_changed()
-	_h.eq(fired[0], 2, "use_custom_user_dir toggle → signal emitted")
-
-	# 4. custom_user_dir_name change → emit.
-	ProjectSettings.set_setting("application/config/custom_user_dir_name", str(orig_custom_name) + "_dir")
-	monitor._on_settings_changed()
-	_h.eq(fired[0], 3, "custom_user_dir_name change → signal emitted")
-
-	# 5. Re-check with no further change → no extra emit (cache updated each time).
-	monitor._on_settings_changed()
-	_h.eq(fired[0], 3, "stable after change → no spurious re-emit")
-
-	# Restore originals so other tests / the project see pristine settings.
-	ProjectSettings.set_setting("application/config/name", orig_name)
-	ProjectSettings.set_setting("application/config/use_custom_user_dir", orig_use_custom)
-	ProjectSettings.set_setting("application/config/custom_user_dir_name", orig_custom_name)
-
-	print("")
 
 
 # --- Export strip + binary-token warning set (~7 strip + 22 warning) --------
@@ -549,198 +263,6 @@ func _test_export_strip() -> void:
 	# Extension seen (text mode for the extension) → not counted as leaked.
 	var d_ext_seen: Dictionary = ExportStrip._decide_warning(true, true, {"res://x/ext.gd": true}, {"res://x/ext.gd": true})
 	_h.ok(not d_ext_seen["warn"], "extension seen (stripped) → no warning")
-
-	print("")
-
-
-# --- editor.refresh reload filter (Fix, 41l-tricies) -----------------------
-# should_reload_open_script: reload only scan-changed, non-toolkit open scripts.
-# Pins the fix against a regression back to "reload all open scripts" (which
-# cancels suspended coroutines → the C1/C3 crash class).
-
-func _test_editor_refresh_reload_filter() -> void:
-	_h.begin("editor.refresh reload filter")
-	var changed := {
-		"res://game/player.gd": true,
-		"res://addons/godot_mcp_toolkit/commands/scene_commands.gd": true,
-	}
-	# 1. changed user script → reload
-	_h.ok(EditorRescan.should_reload_open_script("res://game/player.gd", changed),
-			"changed user script → reload")
-	# 2. unchanged user script → skip
-	_h.ok(not EditorRescan.should_reload_open_script("res://game/enemy.gd", changed),
-			"unchanged user script → skip")
-	# 3. toolkit's own script, even if scan-changed → skip (never self-reload)
-	_h.ok(not EditorRescan.should_reload_open_script(
-			"res://addons/godot_mcp_toolkit/commands/scene_commands.gd", changed),
-			"toolkit-own changed script → skip (never self-reload)")
-	# 4. unchanged toolkit script → skip
-	_h.ok(not EditorRescan.should_reload_open_script(
-			"res://addons/godot_mcp_toolkit/transport/mcp_server.gd", changed),
-			"unchanged toolkit script → skip")
-	print("")
-
-
-# --- Unfocused-sleep backup (41l-duotricies) -------------------------------
-# Machine-wide crash-safe restore of the global unfocused frame-rate setting.
-# The editor-coupled get/set EditorSettings calls live in mcp_server.gd (covered
-# by interactive verification); the conflict-resolution + first-writer-wins +
-# both-values-stored logic is pure and headless-testable here against a temp dir.
-
-func _test_unfocused_backup() -> void:
-	_h.begin("Unfocused-sleep backup")
-	var dir := ProjectSettings.globalize_path("user://_mcp_unfocused_backup_test")
-	DirAccess.make_dir_recursive_absolute(dir)
-	var ver := "9.9"  # fixed test key + temp dir → isolated from any real backup
-	UnfocusedBackup.delete_backup(dir, ver)  # clean slate
-
-	# should_capture_boost — opt-out + idempotency gate (the "no-op when off" unit).
-	_h.ok(UnfocusedBackup.should_capture_boost(true, false),
-			"should_capture_boost(on, idle) → true")
-	_h.ok(not UnfocusedBackup.should_capture_boost(false, false),
-			"should_capture_boost(off, idle) → false (no-op when off)")
-	_h.ok(not UnfocusedBackup.should_capture_boost(true, true),
-			"should_capture_boost(on, already active) → false (idempotent)")
-
-	# 1. capture_if_absent writes when no backup exists (first-writer-wins).
-	_h.ok(UnfocusedBackup.capture_if_absent(dir, 100000, 16666, ver),
-			"first capture → writes backup (true)")
-	_h.ok(UnfocusedBackup.has_backup(dir, ver), "backup file exists after capture")
-
-	# 2. backup stores BOTH original and boosted.
-	var b: Dictionary = UnfocusedBackup.read_backup(dir, ver)
-	_h.eq(b.get("original", -1), 100000, "backup stores original")
-	_h.eq(b.get("boosted", -1), 16666, "backup stores boosted")
-
-	# 3. second capture does NOT overwrite (first-writer-wins).
-	_h.ok(not UnfocusedBackup.capture_if_absent(dir, 33333, 8333, ver),
-			"second capture → does not overwrite (false)")
-	var b2: Dictionary = UnfocusedBackup.read_backup(dir, ver)
-	_h.eq(b2.get("original", -1), 100000, "original preserved after second capture")
-	_h.eq(b2.get("boosted", -1), 16666, "boosted preserved after second capture")
-
-	# 4. resolve_restore: current == boosted → restore the true original (self-heal A).
-	var d1: Dictionary = UnfocusedBackup.resolve_restore(16666, b2)
-	_h.ok(d1["restore"], "current == boosted → restore true")
-	_h.eq(d1["value"], 100000, "current == boosted → value is the original")
-
-	# 5. resolve_restore: current != boosted → keep current, conflict-aware (self-heal B).
-	var d2: Dictionary = UnfocusedBackup.resolve_restore(50000, b2)
-	_h.ok(not d2["restore"], "current != boosted → restore false (kept)")
-	_h.eq(d2["value"], 50000, "current != boosted → value echoes current")
-
-	# 6. resolve_restore: empty / malformed backup → no-op.
-	_h.ok(not UnfocusedBackup.resolve_restore(16666, {})["restore"],
-			"empty backup → restore false")
-	_h.ok(not UnfocusedBackup.resolve_restore(16666, {"original": 100000})["restore"],
-			"backup missing 'boosted' → restore false")
-
-	# 7. delete_backup removes the file; read on missing → empty dict.
-	UnfocusedBackup.delete_backup(dir, ver)
-	_h.ok(not UnfocusedBackup.has_backup(dir, ver), "delete_backup → file gone")
-	_h.eq(UnfocusedBackup.read_backup(dir, ver), {}, "read missing backup → empty dict")
-
-	# 8. version_key derives "<major>.<minor>" (override form).
-	_h.eq(UnfocusedBackup.version_key({"major": 4, "minor": 2}), "4.2",
-			"version_key({4,2}) → '4.2'")
-
-	DirAccess.remove_absolute(dir)  # cleanup
-	print("")
-
-
-# --- Stale-live-instance hint (41m-bis-bis) --------------------------------
-# Pure decision predicates + message builders + on-disk helpers for the
-# stale-live-instance method-call hazard. The editor-coupled callers
-# (script_commands.gd proactive at script.write, node_commands.gd reactive at
-# INVALID_METHOD) read the running version + on-disk source and feed these.
-# Boundary: STALE on Godot < 4.4 (minor 2,3), live on 4.4+ (minor 4,5,6) —
-# empirically characterised across 4.2-4.6 (boundary 4.3->4.4); see
-# Insights/stale-live-instance-method-hazard.md + test/flows/02_*.
-
-const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
-
-func _test_stale_instance_hint() -> void:
-	_h.begin("Stale-instance hint")
-
-	# should_warn_on_write(existed, compiled_ok, extension, major, minor) — proactive gate
-	_h.ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 2),
-			"write: existing .gd compiled on 4.2 → warn")
-	_h.ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 3),
-			"write: existing .gd compiled on 4.3 → warn")
-	_h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 4),
-			"write: 4.4 → no warn (hot-reloads)")
-	_h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 5),
-			"write: 4.5 → no warn")
-	_h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 6),
-			"write: 4.6 → no warn")
-	_h.ok(not StaleInstanceHint.should_warn_on_write(false, true, "gd", 4, 3),
-			"write: create (new file) → no warn")
-	_h.ok(not StaleInstanceHint.should_warn_on_write(true, false, "gd", 4, 3),
-			"write: compile-failed → no warn (Scenario C gate)")
-	_h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "cs", 4, 3),
-			"write: .cs → no warn (out of scope)")
-	_h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gdshader", 4, 2),
-			"write: .gdshader → no warn")
-	_h.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 5, 0),
-			"should_warn_on_write: Godot 5.0 does not warn — gate is major-aware")
-
-	# should_hint_on_call(has_method, disk_has_method, disk_compiles, is_gd, major, minor)
-	_h.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 3),
-			"call: stale method on 4.3 → hint")
-	_h.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 2),
-			"call: stale method on 4.2 → hint")
-	_h.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 4),
-			"call: 4.4 → no hint")
-	_h.ok(not StaleInstanceHint.should_hint_on_call(false, false, true, true, 4, 3),
-			"call: method absent on disk (typo) → no hint")
-	_h.ok(not StaleInstanceHint.should_hint_on_call(false, true, false, true, 4, 3),
-			"call: disk doesn't compile → no hint (Option B)")
-	_h.ok(not StaleInstanceHint.should_hint_on_call(true, true, true, true, 4, 3),
-			"call: has_method true → no hint")
-	_h.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, false, 4, 3),
-			"call: non-.gd script → no hint")
-	_h.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 5, 0),
-			"should_hint_on_call: Godot 5.0 does not hint — gate is major-aware")
-
-	# source_compiles — safe GDScript.new().reload() parse (class_name stripped)
-	_h.ok(StaleInstanceHint.source_compiles("extends Node\nfunc a() -> int:\n\treturn 1\n"),
-			"source_compiles: valid GDScript → true")
-	_h.ok(not StaleInstanceHint.source_compiles("extends Node\nvar = = =\n"),
-			"source_compiles: broken GDScript → false")
-	_h.ok(StaleInstanceHint.source_compiles("class_name FooProbe9\nextends Node\nfunc a():\n\tpass\n"),
-			"source_compiles: class_name script → true (no false collision)")
-
-	# source_has_method — line scan, word-exact, string/comment safe
-	_h.ok(StaleInstanceHint.source_has_method("func foo():\n\tpass", "foo"),
-			"source_has_method: func foo → true")
-	_h.ok(StaleInstanceHint.source_has_method("static func bar() -> int:\n\treturn 1", "bar"),
-			"source_has_method: static func bar → true")
-	_h.ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", "baz"),
-			"source_has_method: absent method → false")
-	_h.ok(not StaleInstanceHint.source_has_method("func foo_bar():\n\tpass", "foo"),
-			"source_has_method: foo_bar not matched by foo (word-exact)")
-	_h.ok(StaleInstanceHint.source_has_method("\tfunc inner():\n\t\tpass", "inner"),
-			"source_has_method: indented inner method → true")
-	_h.ok(not StaleInstanceHint.source_has_method("var x = \"func ghost(\"", "ghost"),
-			"source_has_method: 'func' inside a string → false")
-	_h.ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", ""),
-			"source_has_method: empty method → false")
-
-	# recovery_message — names the version, covers bodies+added, relaunch + fresh-node
-	var msg := StaleInstanceHint.recovery_message("4.3")
-	_h.ok(msg.contains("4.3"), "recovery_message: names the version")
-	_h.ok(msg.contains("relaunch"), "recovery_message: recommends relaunch")
-	_h.ok(msg.contains("fresh node"), "recovery_message: notes a fresh node doesn't help")
-	_h.ok(msg.contains("changed method bodies") and msg.contains("added members"),
-			"recovery_message: covers changed bodies AND added members")
-
-	# write_hint — validation guidance FIRST, stale nudge in the recency slot (Q3)
-	var wh := StaleInstanceHint.write_hint("4.2")
-	_h.ok(wh.begins_with("Validate"), "write_hint: validation guidance leads")
-	_h.ok(wh.contains("script_check"), "write_hint: mentions script_check")
-	_h.ok(wh.find("Validate") < wh.find("relaunch"),
-			"write_hint: validation before stale nudge (recency ordering)")
-	_h.ok(wh.contains("4.2"), "write_hint: carries the version label")
 
 	print("")
 
