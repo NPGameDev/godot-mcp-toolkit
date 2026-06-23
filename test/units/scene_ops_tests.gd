@@ -12,7 +12,7 @@ static func run(h) -> void:
 	_test_tool_context(h)
 
 
-# --- MCPToolkitSafeSceneOps public API (Fix 1, 41l-tricies) ----------------
+# --- MCPToolkitSafeSceneOps public API -------------------------------------
 # is_dispatching() is the pure, headless-testable surface. wait_for_scan_idle /
 # save_scene / queue_save touch EditorInterface (null in this --script runner),
 # so they are covered by the smoke suite + the editor-required dispatch

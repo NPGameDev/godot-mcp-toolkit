@@ -16,12 +16,12 @@ static func run(h) -> void:
 	_test_compare_versions(h)
 
 
-# --- FileGuard boundary pin (Part C, 41m-quater) --------------------------
+# --- FileGuard boundary pin -----------------------------------------------
 # Pins the authoritative fs guard so a future refactor can't silently drop it.
 # The res:// fixture mirrors server src/path_guard.ts PATH_FIXTURE — the cross-
 # repo invariant: every path the server denies, the toolkit also denies.
 static func _test_file_guard(h) -> void:
-	h.begin("FileGuard (Part C boundary pin)")
+	h.begin("FileGuard boundary pin")
 	# resolve_safe — project (res://) boundary.
 	h.ok(FileGuard.resolve_safe("res://x.gd").get("error") == null, "resolve_safe res:// → ok")
 	h.ok(FileGuard.resolve_safe("res://a/b/c.tscn").get("error") == null, "resolve_safe nested → ok")
@@ -57,14 +57,14 @@ static func _test_file_guard(h) -> void:
 	h.ok(FileGuard.resolve_safe("res://x.gd", ["user://"]).get("error") != null, "fixture DENY wrong-prefix project→user")
 
 
-# --- FileGuard self-protect (concern 020) ---------------------------------
+# --- FileGuard self-protect (denies its own plugin source dir) ------------
 # resolve_safe() denies the plugin's OWN source dir, symmetric with the
 # resolve_safe_user() keystone that protects user://addons/godot_mcp_toolkit/.
 # FileGuard is operation-agnostic, so this guards both reads and writes. The
 # load-bearing edge is the trailing-slash boundary: a sibling whose name merely
 # starts the same (…_extras) must stay editable, and any OTHER addon is fair game.
 static func _test_file_guard_self_protect(h) -> void:
-	h.begin("FileGuard self-protect (concern 020)")
+	h.begin("FileGuard denies its own plugin source dir")
 	# A real file under the plugin's source dir → denied (PATH_DENIED).
 	var hit: Dictionary = FileGuard.resolve_safe("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 	h.eq(hit.get("error"), "PATH_DENIED", "plugin source file → PATH_DENIED")
@@ -93,9 +93,9 @@ static func _test_file_guard_self_protect(h) -> void:
 	print("")
 
 
-# --- Untrusted envelope pin (Part C, 41m-quater) --------------------------
+# --- Untrusted envelope pin ------------------------------------------------
 static func _test_untrusted(h) -> void:
-	h.begin("Untrusted (Part C boundary pin)")
+	h.begin("Untrusted envelope boundary pin")
 	var wrapped: String = Untrusted.wrap("script", "res://x.gd", "var x = 1")
 	h.ok(wrapped.contains("<untrusted-"), "wrap → envelope present")
 	h.ok(wrapped.contains("kind=\"script\""), "wrap → kind attr present")
@@ -113,13 +113,13 @@ static func _test_untrusted(h) -> void:
 	h.eq(nested.count("<untrusted-"), 1, "wrap → still exactly one real envelope after scrub")
 
 
-# --- Catalog repo-URL allowlist (concern 043) -----------------------------
+# --- Catalog repo-URL https-only allowlist --------------------------------
 # The extension catalog opens an entry's repo_url via OS.shell_open. repo_url
 # comes from a remote maintainer Gist (untrusted), so the scheme is gated to
 # https:// before any shell_open — for every status, including official. Pins
 # the scheme-only allowlist and its bypass-rejection cases.
 static func _test_repo_url_allowlist(h) -> void:
-	h.begin("Catalog repo-URL allowlist (concern 043)")
+	h.begin("Catalog repo-URL https-only allowlist")
 	# Allowed: https, case-insensitive scheme, surrounding whitespace tolerated.
 	h.ok(ExtensionCatalog.is_allowed_repo_url("https://github.com/x/y"), "https github → allowed")
 	h.ok(ExtensionCatalog.is_allowed_repo_url("https://gitlab.com/x/y"),
@@ -137,7 +137,7 @@ static func _test_repo_url_allowlist(h) -> void:
 	print("")
 
 
-# --- Catalog compare_versions numeric-lead guard (concern 043 minor) -------
+# --- Catalog compare_versions numeric-lead guard --------------------------
 # compare_versions assumes numeric dotted versions; the defensive numeric-lead
 # guard must leave valid numeric ordering unchanged while tolerating a stray
 # pre-release/build tag (author-controlled catalog → low risk, not an error).

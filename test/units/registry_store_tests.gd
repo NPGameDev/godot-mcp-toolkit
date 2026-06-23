@@ -26,7 +26,7 @@ static func _case_folds() -> bool:
 	return OS.get_name() in ["Windows", "macOS"]
 
 
-# --- ProjectKey identity (concern 039 C0, 005-D) --------------------------
+# --- ProjectKey identity (005-D shared-kernel keystone) -------------------
 # The single canonicalization SSOT: normalize a project root and derive its
 # 12-char hash. Pins the recipe (slash + trailing-slash + case-fold) and the
 # hash, plus the Shared-Kernel invariant that ProjectPaths (the user:// dir
@@ -71,7 +71,7 @@ static func _test_project_key(h) -> void:
 	print("")
 
 
-# --- RegistryPaths layout (concern 039 C1) --------------------------------
+# --- RegistryPaths layout --------------------------------------------------
 # The on-disk layout authority: the machine-wide registry dir + every canonical
 # path within it. Pins the path SHAPE (filename suffixes + the lock-path
 # derivation) without asserting filesystem state, which is environmental. The
@@ -113,7 +113,7 @@ static func _test_registry_paths(h) -> void:
 	print("")
 
 
-# --- RegistryEntryFile build_entry (concern 039 C2) ------------------------
+# --- RegistryEntryFile.build_entry (pure entry-dict builder) ---------------
 # RegistryEntryFile.build_entry is pure (no FS, no EditorInterface): the editor
 # resolves the LSP endpoint (LspPublisher.resolve_lsp_endpoint, also reachable via the
 # thin static MCPServer.resolve_lsp_endpoint delegate — editor-coupled, interactive-
@@ -142,7 +142,7 @@ static func _test_registry_entry(h) -> void:
 	print("")
 
 
-# --- RegistryEntryFile write/read/delete round-trip (concern 039 C2) -------
+# --- RegistryEntryFile write/read/delete round-trip -----------------------
 # The path-keyed atomic I/O leaf: a write then read returns the same dict; a
 # delete removes the file so a subsequent read is empty; reading a path that was
 # never written is empty too. Uses a user:// temp path and cleans up after.
@@ -181,7 +181,7 @@ static func _test_registry_entry_file_io(h) -> void:
 	print("")
 
 
-# --- RegistryClient entry merge (concern 037, direction b) -----------------
+# --- RegistryClient entry merge (runtime overlay onto editor base) --------
 # The editor process owns entries/<hash>.json; its runtime child owns
 # entries/<hash>.runtime.json (one writer per file — no shared RMW). The rebuild
 # merges them by _key: runtime_port/runtime_pid overlay the editor base. This
@@ -218,8 +218,7 @@ static func _test_registry_merge(h) -> void:
 	h.ok(not row.has("_key"), "overlay: _key erased from row")
 
 	# 2. Runtime-only entry (no editor base) — full runtime shape stands in, and
-	#    it is schema-complete: port -1, token_path "", and godot_version present
-	#    (the old self-heal shim omitted godot_version — concern 037 Low note).
+	#    it is schema-complete: port -1, token_path "", and godot_version present.
 	var only: Dictionary = RegistryProjection.merge_by_path([], [runtime_entry])
 	var orow: Dictionary = only.get("res://proj", {})
 	h.eq(orow.get("runtime_port", -1), 6570, "runtime-only: runtime_port present")

@@ -121,7 +121,7 @@ static func _test_error_codes_vocabulary(h) -> void:
 	print("")
 
 
-# --- debug_bridge error-entry shape (concern 033 DRY) -----------------------
+# --- debug_bridge error-entry shape (single shared constructor) ------------
 # make_error_entry is the single shared constructor for the error-buffer dict
 # emitted by the live capture path (debug_bridge), the break fallback, and the
 # log-scan fallback (playtest_log_reader). Pins the exact key set + order +

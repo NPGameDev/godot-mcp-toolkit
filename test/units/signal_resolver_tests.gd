@@ -11,7 +11,7 @@ static func run(h) -> void:
 	_test_signal_pair_resolver(h)
 
 
-# --- SignalPairResolver (concern 007 C4) -----------------------------------
+# --- SignalPairResolver (tree resolution + guards) -------------------------
 # The export-clean skeleton shared by the editor signal handlers and the runtime
 # autoload. Pure logic over a tree whose root is supplied by an injected resolver
 # Callable, so it is fully headless-testable: build a tiny Node tree, inject
@@ -19,7 +19,7 @@ static func run(h) -> void:
 # Node signals/methods (`ready` / `queue_free`) so no custom class is needed.
 
 static func _test_signal_pair_resolver(h) -> void:
-	h.begin("SignalPairResolver (007 C4)")
+	h.begin("SignalPairResolver (tree resolution + guards)")
 	var root := Node.new()
 	root.name = "Root"
 	var src := Node.new()

@@ -25,7 +25,7 @@ static func run(h) -> void:
 	_test_create_collision_resolver(h)
 
 
-# --- 41m-quinquies: scene.spatial_map geometry ----------------------------
+# --- scene.spatial_map geometry --------------------------------------------
 static func _test_spatial_map(h) -> void:
 	h.begin("scene.spatial_map (geometry)")
 
@@ -103,7 +103,7 @@ static func _test_spatial_map(h) -> void:
 	h.eq(SpatialCommands._vec_to_array(Vector3(1, 2, 3)), [1.0, 2.0, 3.0], "_vec_to_array Vector3")
 
 
-# --- 41m-quinquies: texture.generate pixels + colour ----------------------
+# --- texture.generate pixels + colour --------------------------------------
 static func _test_texture_generate(h) -> void:
 	h.begin("texture.generate (pixels + colour)")
 
@@ -159,11 +159,11 @@ static func _test_texture_generate(h) -> void:
 	h.ok(checker.get_pixel(8, 0).a == 0.0, "checkerboard: cell (1,0) background")
 
 
-# --- 41n/034 C1: particles.create _PROP_SPEC / _apply_props ----------------
-# Pins the data-driven property applier that replaced pass 7's if-ladder. The
-# load-bearing contract is the RETURNED count (== properties_set delta) plus the
-# exact value + cast landing on the node / material. ParticleProcessMaterial and
-# GPUParticles2D are not editor-only, so this runs headless.
+# --- particles.create _PROP_SPEC / _apply_props ----------------------------
+# Pins the data-driven property applier. The load-bearing contract is the
+# RETURNED count (== properties_set delta) plus the exact value + cast landing on
+# the node / material. ParticleProcessMaterial and GPUParticles2D are not
+# editor-only, so this runs headless.
 static func _test_particle_prop_apply(h) -> void:
 	h.begin("particles _apply_props (_PROP_SPEC)")
 
@@ -245,11 +245,11 @@ static func _test_particle_prop_apply(h) -> void:
 	node_sub.free()
 
 
-# --- 41n/034 C2: particles.create _OVERRIDE_SPEC / _merge_overrides --------
-# Pins the data-driven override merge that replaced pass 6's match-ladder. The
-# load-bearing contracts are (a) the merged eff values + casts and (b) the RETURNED
-# overrides_applied array — its CONTENTS and ORDER are part of the particles.create
-# response. Pure dict→dict logic, so this runs headless (no node, no editor).
+# --- particles.create _OVERRIDE_SPEC / _merge_overrides --------------------
+# Pins the data-driven override merge. The load-bearing contracts are (a) the
+# merged eff values + casts and (b) the RETURNED overrides_applied array — its
+# CONTENTS and ORDER are part of the particles.create response. Pure dict→dict
+# logic, so this runs headless (no node, no editor).
 static func _test_particle_merge_overrides(h) -> void:
 	h.begin("particles _merge_overrides (_OVERRIDE_SPEC)")
 
@@ -314,7 +314,7 @@ static func _test_particle_merge_overrides(h) -> void:
 	h.eq(eff_ord["emission_shape"], "box", "emission_shape override landed (name kept)")
 
 
-# --- 41m-quinquies: sound.generate synthesis ------------------------------
+# --- sound.generate synthesis ----------------------------------------------
 static func _test_sound_generate(h) -> void:
 	h.begin("sound.generate (synth)")
 
@@ -355,14 +355,14 @@ static func _test_sound_generate(h) -> void:
 	h.ok(distinct.size() > 5, "_build_pcm noise varies sample-to-sample")
 
 
-# --- tileset.edit_* per-verb key enforcement (concern 031) ----------------
+# --- tileset.edit_* per-verb foreign-key rejection ------------------------
 # The five tileset.edit_* tools share one handler but each owns exactly one
 # tile-data concern. _foreign_key_error is the pure gate: it accepts only the
 # verb's own keys (plus the universal atlas_x/atlas_y selectors) and rejects the
 # first foreign key with a message that names the tool owning it. Pure → testable
 # without an editor or a TileSet resource.
 static func _test_tileset_edit_key_enforcement(h) -> void:
-	h.begin("tileset.edit_* key enforcement (concern 031)")
+	h.begin("tileset.edit_* per-verb foreign-key rejection")
 
 	# Happy path: each verb with only its own keys (+ coords) → accepted ("").
 	h.eq(TilesetTileData._foreign_key_error("physics",
@@ -420,10 +420,10 @@ static func _test_tileset_edit_key_enforcement(h) -> void:
 		"unknown verb rejects any non-coord key")
 
 
-# --- tileset_io full-tile polygon (decompose 034 C1, DRY ×3 → 1) ----------
+# --- tileset_io full-tile polygon (shared unit rectangle) -----------------
 # build_full_tile_polygon is the consolidated unit rectangle that create's
 # collision seed and edit_physics' "full"/"one_way" shape all share. Pure
-# geometry — pin the exact vertex output so the DRY can never drift.
+# geometry — pin the exact vertex output so the shared helper can never drift.
 static func _test_tileset_io_polygon(h) -> void:
 	h.begin("tileset_io.build_full_tile_polygon (geometry)")
 
@@ -445,13 +445,13 @@ static func _test_tileset_io_polygon(h) -> void:
 	h.eq(p_odd[0], Vector2(-7.5, -7.5), "odd size keeps .5 half (float division)")
 
 
-# --- resolve_create_collision (concern 017) -------------------------------
+# --- resolve_create_collision (shared if_exists decision) -----------------
 # Pure decision query shared by the file creators (scene.create, asset.import,
 # texture/sound.generate). Validates if_exists, stats the destination, returns
 # the {valid, existed, action} DECISION — no payload, no write. Editor-free:
 # FileAccess.file_exists sees user:// paths, so existence cases use a temp file.
 static func _test_create_collision_resolver(h) -> void:
-	h.begin("resolve_create_collision (concern 017)")
+	h.begin("resolve_create_collision (if_exists decision)")
 
 	# A guaranteed-absent res:// path (randomised to dodge any stray fixture).
 	var absent := "res://__nope_%d.png" % (randi() % 1_000_000)

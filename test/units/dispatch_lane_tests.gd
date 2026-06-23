@@ -18,7 +18,7 @@ static func run(h) -> void:
 	_test_summarize_batch(h)
 
 
-# --- Mutation-watchdog deadline basis (Fix 6, 41l-tricies) -----------------
+# --- Mutation-watchdog deadline basis --------------------------------------
 # get_watchdog_timeout_ms: trust a DECLARED timeout; for an undeclared command
 # (the 30s default, not a deliberate duration) use _MAX_TIMEOUT_MS so an
 # undeclared-but-slow method is never force-cleared early.
@@ -54,16 +54,15 @@ static func _test_watchdog_timeout(h) -> void:
 	print("")
 
 
-# --- Scene-lease bookkeeping (Fix 4, 41l-tricies; concern 007 C6) ----------
-# After Fix 4, lease acquire/release is pure bookkeeping (the raw
-# open_scene_from_path was removed), so it is headless-unit-testable. C6 extracted
-# the lease mechanism into scene_lease.gd, so this now instantiates that child
-# directly and injects a stub root-resolver (the empty-scene acquire/release paths
-# never consult it), exercising the child's public try_acquire / release / lease_holder
-# API instead of poking mcp_server internals. Assertions are unchanged.
+# --- Scene-lease acquire/release bookkeeping -------------------------------
+# Lease acquire/release is pure bookkeeping (no raw open_scene_from_path), so it
+# is headless-unit-testable. The lease mechanism lives in scene_lease.gd, so this
+# instantiates that child directly and injects a stub root-resolver (the empty-scene
+# acquire/release paths never consult it), exercising the child's public
+# try_acquire / release / lease_holder API instead of poking mcp_server internals.
 
 static func _test_scene_lease(h) -> void:
-	h.begin("Scene lease bookkeeping (007 C6)")
+	h.begin("Scene lease acquire/release bookkeeping")
 	var lease = SceneLease.new()
 	# Stub seams — the empty-scene acquire/release/lease_holder paths exercised here
 	# do not invoke the root-resolver, command re-emit, read core, or mutation lane.
@@ -99,7 +98,7 @@ static func _test_scene_lease(h) -> void:
 	print("")
 
 
-# --- MutationWatchdog (concern 007 C5) -------------------------------------
+# --- MutationWatchdog timer + generation recovery --------------------------
 # The pure timer + generation child that recovers the mutation lock when an
 # in-flight mutation aborts/never resolves. Fully headless-testable: inject a fake
 # force_clear Callable (recording into a Dictionary so the lambda can mutate it),
@@ -108,7 +107,7 @@ static func _test_scene_lease(h) -> void:
 # owns the clock; this child only compares against the value handed to arm()).
 
 static func _test_mutation_watchdog(h) -> void:
-	h.begin("MutationWatchdog (007 C5)")
+	h.begin("MutationWatchdog timer + generation recovery")
 
 	# Recorder the fake force_clear writes into (Dictionary → mutable from the lambda).
 	var rec := {"calls": 0, "last_id": null}
@@ -177,7 +176,7 @@ static func _test_mutation_watchdog(h) -> void:
 	print("")
 
 
-# --- Lane selection (concern 007 C7) ---------------------------------------
+# --- Lane selection (data→route mapping) -----------------------------------
 # server_request_router.lane_kind_for is the pure data→route mapping at the heart of the
 # Lane abstraction: from a command's registry flags alone it decides read / mutation /
 # scene_lease. Fully headless-testable — set a registry with commands carrying specific
@@ -190,7 +189,7 @@ static func _test_mutation_watchdog(h) -> void:
 #                                              though it is registered scene-independent.
 
 static func _test_lane_selection(h) -> void:
-	h.begin("Lane selection (007 C7)")
+	h.begin("Lane selection (read / mutation / scene-lease routing)")
 	var reg := MCPToolkitCommandRegistry.new()
 	var disp := ServerRequestRouter.new()
 	disp.set_registry(reg)

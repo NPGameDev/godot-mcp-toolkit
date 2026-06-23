@@ -22,7 +22,7 @@ static func run(h) -> void:
 	await _test_extension_path_guard(h)
 
 
-# --- Extension-load collision guard (concern 046) -------------------------
+# --- Extension-load collision guard (first-loaded wins) -------------------
 # registry.add() is last-writer-wins by default, but during a bracketed
 # extension load (begin/end_extension_load — what extension_loader.gd wraps each
 # register() with) an add() of an ALREADY-registered name is REFUSED, not
@@ -97,13 +97,13 @@ static func _test_extension_collision_guard(h) -> void:
 	print("")
 
 
-# --- Extension support: candidate + addon-enabled detection (concern 047) --
+# --- Extension support: candidate + addon-enabled detection ---------------
 # extension_support.gd is the shared leaf both discovery and the watcher consume.
 # is_extension_candidate and is_addon_enabled are the pure shape-detection
 # boundaries: GDScript extensions are matched by base class, C# ones by the
 # MCPToolkit prefix on a .cs path, and a script outside a formal (plugin.cfg)
 # addon is always enabled. Pure — no editor, no real extension files (the
-# disabled-addon branch needs EditorInterface and is left to the §24/§23 sweep).
+# disabled-addon branch needs EditorInterface and is left to the interactive sweep).
 static func _test_extension_support(h) -> void:
 	h.begin("Extension support (candidate + addon-enabled)")
 
@@ -265,7 +265,7 @@ static func _test_build_command_entry(h) -> void:
 	print("")
 
 
-# --- Watcher set-diff kernel (concern 047 C5) -----------------------------
+# --- Watcher set-diff kernel (add/remove/retry classification) ------------
 # compute_class_diff is the pure heart of the watcher's hot-reload rescan,
 # extracted so the add/remove/retry classification is testable without an editor
 # or real extension files. It takes the freshly-scanned class set plus the
@@ -273,7 +273,7 @@ static func _test_build_command_entry(h) -> void:
 # The load-bearing edge: `retry` is computed AGAINST `added` — a previously-failed
 # class that is ALSO newly-added counts as added, not a retry (no double-load).
 static func _test_compute_class_diff(h) -> void:
-	h.begin("Watcher set-diff kernel (concern 047 C5)")
+	h.begin("Watcher set-diff kernel (add/remove/retry classification)")
 
 	# A class only in `current` → added; carries its path.
 	var d1 := ExtensionWatcher.compute_class_diff(
@@ -323,10 +323,10 @@ static func _test_compute_class_diff(h) -> void:
 	print("")
 
 
-# --- Extension path-guard (Part D, 41m-quater) ----------------------------
+# --- Extension path-guard (dispatch enforcement) --------------------------
 # Builder → to_dict → registry storage → dispatch enforcement (toolkit-side).
 static func _test_extension_path_guard(h) -> void:
-	h.begin("Extension path-guard (Part D)")
+	h.begin("Extension path-guard (dispatch enforcement)")
 	# Builder serializes path_guards.
 	var d := MCPToolkitExtensionOptions.new("test") \
 		.guard_project_path("file_path") \

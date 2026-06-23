@@ -27,7 +27,7 @@ static func run(h) -> void:
 # script_check / script_write steer the LLM to the right detail tool: editor_get_console
 # captures editor PARSE errors only on 4.5+ (Logger); on 4.2-4.4 they aren't file-logged,
 # so the diagnostic must point to lsp_diagnostics instead of a dead end. Regression guard
-# for the misleading-message bug (standalone follow-up to 41m-ter).
+# for the misleading-message bug.
 
 static func _test_compile_error_message(h) -> void:
 	h.begin("Compile-error message (version-aware)")
@@ -44,7 +44,7 @@ static func _test_compile_error_message(h) -> void:
 			"%s → directs to editor_get_console, not lsp (4.5+ Logger captures parse errors)" % ver)
 
 
-# --- node.set_property "groups" rejection (concern 032) -------------------
+# --- node.set_property "groups" rejection ----------------------------------
 # node.set_property does a declarative full-set replace, so accepting "groups"
 # would silently drop any group not in the list; node.groups is incremental.
 # Single mode whole-call-rejects and batch per-entry-rejects on this one name,
@@ -52,7 +52,7 @@ static func _test_compile_error_message(h) -> void:
 # steering text is pinned so a future edit can't drop the node.groups pointer.
 
 static func _test_groups_property_rejection(h) -> void:
-	h.begin("node.set_property groups rejection (concern 032)")
+	h.begin("node.set_property groups rejection")
 	# The predicate is exact: only the bare "groups" property is refused.
 	h.ok(NodeCommands._is_groups_property("groups"), "'groups' → refused")
 	h.ok(not NodeCommands._is_groups_property("group"), "'group' → not refused")
@@ -124,10 +124,10 @@ static func _test_user_path_monitor(h) -> void:
 	print("")
 
 
-# --- editor.refresh reload filter (Fix, 41l-tricies) -----------------------
+# --- editor.refresh reload filter ------------------------------------------
 # should_reload_open_script: reload only scan-changed, non-toolkit open scripts.
-# Pins the fix against a regression back to "reload all open scripts" (which
-# cancels suspended coroutines → the C1/C3 crash class).
+# Guards against a regression back to "reload all open scripts" (which cancels
+# suspended coroutines mid-dispatch → an editor crash).
 
 static func _test_editor_refresh_reload_filter(h) -> void:
 	h.begin("editor.refresh reload filter")
@@ -152,7 +152,7 @@ static func _test_editor_refresh_reload_filter(h) -> void:
 	print("")
 
 
-# --- Unfocused-sleep backup (41l-duotricies) -------------------------------
+# --- Unfocused-sleep backup ------------------------------------------------
 # Machine-wide crash-safe restore of the global unfocused frame-rate setting.
 # The editor-coupled get/set EditorSettings calls live in mcp_server.gd (covered
 # by interactive verification); the conflict-resolution + first-writer-wins +
@@ -219,13 +219,12 @@ static func _test_unfocused_backup(h) -> void:
 	print("")
 
 
-# --- Stale-live-instance hint (41m-bis-bis) --------------------------------
+# --- Stale-live-instance hint ----------------------------------------------
 # Pure decision predicates + message builders + on-disk helpers for the
-# stale-live-instance method-call hazard. The editor-coupled callers
-# (script_commands.gd proactive at script.write, node_commands.gd reactive at
-# INVALID_METHOD) read the running version + on-disk source and feed these.
-# Boundary: STALE on Godot < 4.4 (minor 2,3), live on 4.4+ (minor 4,5,6) —
-# empirically characterised across 4.2-4.6 (boundary 4.3->4.4); see
+# stale-live-instance method-call hazard. Models the pure decision that the
+# proactive script-write path and the reactive INVALID-METHOD path both consume
+# (each reads the running version + on-disk source and feeds these).
+# Boundary: STALE on Godot < 4.4 (minor 2,3), live on 4.4+ (boundary 4.3→4.4); see
 # Insights/stale-live-instance-method-hazard.md + test/flows/02_*.
 
 static func _test_stale_instance_hint(h) -> void:
@@ -303,7 +302,7 @@ static func _test_stale_instance_hint(h) -> void:
 	h.ok(msg.contains("changed method bodies") and msg.contains("added members"),
 			"recovery_message: covers changed bodies AND added members")
 
-	# write_hint — validation guidance FIRST, stale nudge in the recency slot (Q3)
+	# write_hint — validation guidance FIRST, stale nudge in the recency slot
 	var wh := StaleInstanceHint.write_hint("4.2")
 	h.ok(wh.begins_with("Validate"), "write_hint: validation guidance leads")
 	h.ok(wh.contains("script_check"), "write_hint: mentions script_check")

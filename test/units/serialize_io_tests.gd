@@ -27,22 +27,22 @@ static func run(h) -> void:
 	_test_settings_collect_names(h)
 
 
-# --- Coerce/serialize round-trip symmetry (concern 018) -------------------
+# --- Coerce/serialize round-trip symmetry ---------------------------------
 # coerce_value (JSON dict → Godot) and serialize_value (Godot → JSON dict)
 # share one tagged-type vocabulary. For value types that serialize_value emits
 # as a tagged dict, the Godot-value round-trip coerce_value(serialize_value(V))
 # must reproduce V exactly (native compare — no float-string fragility).
 #
 # Packed* tags (PackedVector2/3Array, PackedColorArray) are bidirectionally
-# symmetric as of concern 053 — serialize_value emits the tagged form, so the full
-# native round-trip coerce_value(serialize_value(V)) == V holds (asserted below).
+# symmetric — serialize_value emits the tagged form, so the full native round-trip
+# coerce_value(serialize_value(V)) == V holds (asserted below).
 # LayerMask stays coerce-only BY DESIGN: a mask is a bare int with no per-value
 # marker, so serialize_value cannot tag it without tagging every int — it reads
 # back as a plain int, itself writable as-is (no value round-trip break).
 # Resource/NewResource are skipped: path-based (ResourceLoader), not value-symmetric.
 
 static func _test_coerce_roundtrip(h) -> void:
-	h.begin("Coerce/serialize round-trip (concern 018)")
+	h.begin("Coerce/serialize value round-trip symmetry")
 
 	# Tagged-dict value types: coerce_value(serialize_value(V)) == V (both legs).
 	var vec2: Vector2 = Vector2(3.5, -2.0)
@@ -95,8 +95,8 @@ static func _test_coerce_roundtrip(h) -> void:
 	var mask: Variant = Coerce.coerce_value({"type": "LayerMask", "layers": [1, 3]})
 	h.eq(mask, 5, "LayerMask coerces layers [1,3] → bitmask 5 (coerce-only tag)")
 
-	# Concern 053: serialize_value now emits the tagged Packed* form (was a
-	# var_to_str string), so the Packed* tags are bidirectionally symmetric.
+	# serialize_value emits the tagged Packed* form (not a var_to_str string), so
+	# the Packed* tags are bidirectionally symmetric.
 	# Assert the full native round-trip coerce_value(serialize_value(V)) == V.
 	var pv2_native: PackedVector2Array = PackedVector2Array([Vector2(1.0, 2.0), Vector2(-3.5, 4.0)])
 	h.ok(Coerce.coerce_value(Coerce.serialize_value(pv2_native)) == pv2_native,
@@ -165,19 +165,18 @@ static func _test_color_from_dict_opaque(h) -> void:
 	print("")
 
 
-# --- node-sourced Packed property serialises tagged (concern 053) ----------
+# --- node-sourced Packed property serialises as a tagged dict -------------
 # The unit suite above pins coerce∘serialize on hand-built Packed* values; this
 # pins the read PATH'S contract: node.get_property serialises the property VALUE
-# through Coerce.serialize_value (node_commands.gd:158 — the single-property read).
+# through Coerce.serialize_value (the single-property read in node_commands.gd).
 # Here we obtain a PackedVector2Array from an ACTUAL node property (Line2D.points)
 # and assert serialize_value emits the TAGGED dict {type:"PackedVector2Array", …}
 # — NOT a var_to_str String — and that it round-trips back to the exact value.
-# This is the headless proxy for sweep 3.20b (node_set_property → node_get_property).
 # No editor/dispatch context needed: serialize_value is the same call the handler
 # makes on node.get(property), so exercising it on a node-sourced value covers the
 # read path's serialisation without a live scene. Node built with .new()/free().
 static func _test_node_packed_property_serialize(h) -> void:
-	h.begin("node-sourced Packed property serialises tagged (concern 053)")
+	h.begin("node-sourced Packed property serialises as a tagged dict")
 
 	var line := Line2D.new()
 	var written: PackedVector2Array = PackedVector2Array([
@@ -191,9 +190,9 @@ static func _test_node_packed_property_serialize(h) -> void:
 			"Line2D.points reads back as a PackedVector2Array")
 
 	var serialised: Variant = Coerce.serialize_value(read_value)
-	# The contract: a tagged Dictionary, NOT a var_to_str String (the 053 fix).
+	# The contract: a tagged Dictionary, NOT a var_to_str String.
 	h.eq(typeof(serialised), TYPE_DICTIONARY,
-			"serialised node Packed value is a Dictionary, not a String (concern 053)")
+			"serialised node Packed value is a Dictionary, not a String")
 	var serialised_dict: Dictionary = serialised
 	h.eq(str(serialised_dict.get("type", "")), "PackedVector2Array",
 			"serialised form carries type tag 'PackedVector2Array' (not a var_to_str string)")
@@ -209,7 +208,7 @@ static func _test_node_packed_property_serialize(h) -> void:
 	print("")
 
 
-# --- save.read configurable cap + byte-offset paging (concern 025) ---------
+# --- save.read configurable cap + byte-offset paging ----------------------
 # _cmd_save_read gained a configurable cap (save_read_cap_kb, min 64) replacing
 # the hardcoded 256 KB, an `offset` param for windowed paging, a `next_offset`
 # return, and a FILE_TOO_LARGE frame guard (base64 1.33× projection vs
@@ -218,7 +217,7 @@ static func _test_node_packed_property_serialize(h) -> void:
 # the mutated limit settings afterward.
 
 static func _test_save_read_paging(h) -> void:
-	h.begin("save.read cap + offset paging (concern 025)")
+	h.begin("save.read configurable cap + byte-offset paging")
 
 	# Preserve the limit settings this test mutates (str/int coercion — Variant
 	# source, warnings-as-error in test/).
@@ -250,8 +249,8 @@ static func _test_save_read_paging(h) -> void:
 	h.eq(p1.get("next_offset", -1), 400, "window 1 → next_offset 400")
 	h.eq(p1.get("total_bytes", -1), 1000, "window 1 → total_bytes 1000")
 	h.eq(p1.get("truncated", null), true, "window 1 → truncated true (more remains)")
-	# Uniform pagination contract (concern 054): truncated window carries a prose
-	# hint naming next_offset; not-truncated windows omit it (asserted below).
+	# Uniform pagination contract: truncated window carries a prose hint naming
+	# next_offset; not-truncated windows omit it (asserted below).
 	h.ok(p1.has("hint"), "window 1 → hint present (truncated)")
 	h.ok(str(p1.get("hint", "")).contains("next_offset"), "window 1 → hint names next_offset")
 
@@ -346,16 +345,16 @@ static func _test_save_read_paging(h) -> void:
 	print("")
 
 
-# --- script.read uniform pagination contract (concern 054) -----------------
-# script.read now mirrors save.read's SHAPE in LINE units: every success carries
+# --- script.read uniform pagination contract ------------------------------
+# script.read mirrors save.read's SHAPE in LINE units: every success carries
 # truncated + total_lines; a windowed read whose end precedes EOF also carries
 # next_start_line (1-based resume = clamped end_line + 1) + a prose hint; a full
 # read (and a window reaching EOF) returns truncated:false with no hint. ADD-ONLY
-# (concern 054) — existing start_line/end_line/total_lines/content are unchanged.
+# — existing start_line/end_line/total_lines/content are unchanged.
 # Drives the real handler against a res:// temp fixture; removes it afterward.
 
 static func _test_script_read_paging(h) -> void:
-	h.begin("script.read pagination contract (concern 054)")
+	h.begin("script.read line-paging contract")
 
 	# A deterministic 5-line fixture (no trailing newline → split("\n") size 5).
 	var fixture := "res://sv2_script_read_054.gd"
@@ -441,7 +440,7 @@ static func _test_export_strip(h) -> void:
 	h.ok(not strip.has("res://f/fakechild.gd"),
 			"subclass of coincidentally-named MCPToolkit* class → not stripped")
 
-	# ── Binary-token leak warning (Q6) — pure _decide_warning decision ──────
+	# ── Binary-token leak warning — pure _decide_warning decision ──────────
 	# args: (saw_addon_script, saw_addon_nonscript, extension_strip_paths, seen_ext)
 
 	# No leak: text mode / 4.2 → addon scripts AND non-scripts reached us; no exts.
@@ -462,7 +461,7 @@ static func _test_export_strip(h) -> void:
 	h.ok(d_both["warn"], "addon + unseen extension → warn")
 	h.ok(int(d_both["leaked_ext_count"]) == 1, "1 unseen extension counted")
 	h.ok(str(d_both["message"]).find("addon and 1 extension script(s)") >= 0, "message joins addon + 1 extension")
-	# REGRESSION: the recipe must list the addon glob AND the explicit extension path.
+	# The recipe must list the addon glob AND the explicit extension path.
 	h.ok(str(d_both["message"]).find("res://addons/godot_mcp_toolkit/*") >= 0, "message includes the addon exclude glob")
 	h.ok(str(d_both["message"]).find("res://x/ext.gd") >= 0, "message lists the leaked extension path explicitly")
 
@@ -473,7 +472,7 @@ static func _test_export_strip(h) -> void:
 	h.ok(str(d_two["message"]).find("2 extension script(s)") >= 0, "subject reports 2 extensions")
 	h.ok(str(d_two["message"]).find("res://x/a.gd") >= 0 and str(d_two["message"]).find("res://y/b.gd") >= 0, "both extension paths listed")
 
-	# Q6 guard: addon already excluded by the user → NO addon file reaches us.
+	# Addon already excluded by the user → NO addon file reaches us.
 	var d_excluded: Dictionary = ExportStrip._decide_warning(false, false, {}, {})
 	h.ok(not d_excluded["warn"], "addon excluded (no non-script seen) → no false-positive warning")
 
@@ -495,12 +494,12 @@ static func _test_export_strip(h) -> void:
 
 
 # --- Log level + continuation leveling (~14 assertions) -------------------
-# A2/A3 (41m-ter): editor parse errors on Godot 4.2-4.4 log as TWO lines —
-# "SCRIPT ERROR: …" then "   at: <script>.gd:LINE" — and the script path is on the
-# continuation line. LogHelpers.is_continuation_line lets the file-tail buffer
-# (log_buffer.gd) and the source=file reader (editor_commands.gd) keep such a line at
-# the preceding error/warning level instead of "info", so a filename+level=error query
-# finds it. _level_sequence mirrors that loop using the shared primitives under test.
+# On Godot 4.2-4.4 an editor parse error logs as two lines — "SCRIPT ERROR: …"
+# then "   at: <script>.gd:LINE" — and the script path is on the continuation
+# line. LogHelpers.is_continuation_line lets the file-tail buffer (log_buffer.gd)
+# and the source=file reader (editor_commands.gd) keep such a line at the preceding
+# error/warning level instead of "info", so a filename+level=error query finds it.
+# _level_sequence mirrors that loop using the shared primitives under test.
 
 static func _level_sequence(lines: Array) -> Array:
 	var out: Array = []
@@ -552,7 +551,7 @@ static func _test_log_level_continuation(h) -> void:
 		"info + at: → info (no spurious error inherit)")
 
 
-# --- SettingsRegistration mcp_toolkit/* collector (concern 002) -------------
+# --- SettingsRegistration mcp_toolkit/* prefix collector ------------------
 # unregister_all() scrubs every mcp_toolkit/* ProjectSettings key on uninstall
 # via a PREFIX SCAN, not a hardcoded list — that staleness is the concern (its
 # own list missed save_read_cap_kb). _collect_mcp_setting_names is the read-only
@@ -564,7 +563,7 @@ static func _test_log_level_continuation(h) -> void:
 # (mirroring the plugin's _enter_tree) so the collector sees the full registered
 # set — register_all is in-memory only (no save), so project.godot stays clean.
 static func _test_settings_collect_names(h) -> void:
-	h.begin("SettingsRegistration mcp_toolkit/* collector (concern 002)")
+	h.begin("SettingsRegistration mcp_toolkit/* prefix collector")
 	# Establish production's precondition: register_all() runs in the plugin's
 	# _enter_tree before unregister_all() is ever reached in _disable_plugin. The
 	# headless --script runner doesn't run _enter_tree, so register the keys here
