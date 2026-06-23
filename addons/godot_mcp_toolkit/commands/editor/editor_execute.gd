@@ -9,7 +9,7 @@ extends RefCounted
 ## Stateless — the handler takes (parameters) and returns the response Dictionary.
 ## Reaches the Expression evaluator / EditorInterface directly; scope-path
 ## normalization and result serialization are reached via the Modules aliases.
-## Consumed by editor_commands.gd via a `preload` alias.
+## An extracted submodule of the editor-command group, reached via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Helpers = Modules.CommandHelpers

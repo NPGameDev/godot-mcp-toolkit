@@ -9,7 +9,8 @@ extends RefCounted
 ## Stateless — the handler takes (parameters) and returns the response Dictionary.
 ## Reaches the viewport / RenderingServer / EditorInterface directly; the headless
 ## check, path normalization/edited-root lookup, and save-path guard are reached
-## via the Modules aliases. Consumed by editor_commands.gd via a `preload` alias.
+## via the Modules aliases. An extracted submodule of the editor-command group,
+## reached via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard

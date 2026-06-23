@@ -9,7 +9,7 @@ extends AcceptDialog
 ## the current connection.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const McpJsonSync = Modules.McpJsonSync
+const MCPJsonSync = Modules.MCPJsonSync
 
 # One-time dialog chrome (title/buttons) is installed on first show; the
 # scrollable content is cleared and rebuilt on every call.
@@ -45,7 +45,7 @@ func show_info(server: Node) -> void:
 		_add_info_row(vbox, "Peers", "%d connected" % peers)
 	else:
 		_add_info_row(vbox, "Address", "not listening")
-	if McpJsonSync.is_read_only():
+	if MCPJsonSync.is_read_only():
 		_add_info_row(vbox, "Mode", "Read-only (GODOT_MCP_READ_ONLY=1)")
 
 	# -- Version --

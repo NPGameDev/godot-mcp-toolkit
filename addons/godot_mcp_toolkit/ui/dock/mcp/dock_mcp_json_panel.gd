@@ -24,7 +24,7 @@ extends PanelContainer
 ## touches the dock's private toaster.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const McpJsonSync = Modules.McpJsonSync
+const MCPJsonSync = Modules.MCPJsonSync
 const DockConfirm := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_confirm.gd")
 
 # Toast severity constants (match EditorToaster.Severity / the dock's _TOAST_*).
@@ -98,12 +98,12 @@ func refresh() -> void:
 	var btn_text := "Open .mcp.json"
 	var btn_tip := "Open .mcp.json in the system editor"
 	var highlight := false
-	if not McpJsonSync.has_mcp_json():  # live file FACT — safe to show live
+	if not MCPJsonSync.has_mcp_json():  # live file FACT — safe to show live
 		warn_text = "⚠️ NO .mcp.json — the MCP client has nothing to connect with. Use the \"Write .mcp.json\" button below to create one from the bundled template."
 		btn_text = "Write .mcp.json"
 		btn_tip = "No .mcp.json found — write one from the bundled template"
 		highlight = true
-	elif McpJsonSync.is_malformed():  # live file FACT — present but invalid JSON
+	elif MCPJsonSync.is_malformed():  # live file FACT — present but invalid JSON
 		warn_text = "⚠️ .mcp.json isn't valid JSON — the MCP client can't read it, so it won't connect. Click \"Fix .mcp.json\" to repair it: overwrite with a clean template, or open the file to fix the JSON yourself."
 		btn_text = "Fix .mcp.json"
 		btn_tip = "Replace the malformed .mcp.json with a clean template (asks to confirm before overwriting)"
@@ -133,7 +133,7 @@ func refresh() -> void:
 ## server (it reads GODOT_MCP_READ_ONLY from process.env once at startup), so
 ## polling would falsely show read-only before the server actually applies it.
 func sync_read_only_state() -> void:
-	_read_only_active = McpJsonSync.has_mcp_json() and McpJsonSync.is_read_only()
+	_read_only_active = MCPJsonSync.has_mcp_json() and MCPJsonSync.is_read_only()
 	refresh()
 
 
@@ -154,8 +154,8 @@ func sync_read_only_state() -> void:
 # Re-checks state on press, so the action is always correct even if the label is
 # momentarily stale.
 func on_button_pressed() -> void:
-	if McpJsonSync.has_mcp_json() and not McpJsonSync.is_malformed():
-		OS.shell_open(McpJsonSync.get_mcp_json_path())
+	if MCPJsonSync.has_mcp_json() and not MCPJsonSync.is_malformed():
+		OS.shell_open(MCPJsonSync.get_mcp_json_path())
 	else:
 		write_mcp_json()
 
@@ -165,10 +165,10 @@ func on_button_pressed() -> void:
 ## wizard call dock.write_mcp_json(), which delegates here (cross-file contract).
 func write_mcp_json(force_overwrite: bool = false) -> void:
 	# UI (the overwrite-confirm dialog + the result toast) stays here; the file
-	# I/O lives in the McpJsonSync repository. When overwriting an existing file
+	# I/O lives in the MCPJsonSync repository. When overwriting an existing file
 	# and not already forced, confirm first, then write on confirmation.
-	if not force_overwrite and McpJsonSync.needs_overwrite_confirm():
-		var dest := McpJsonSync.get_mcp_json_path()
+	if not force_overwrite and MCPJsonSync.needs_overwrite_confirm():
+		var dest := MCPJsonSync.get_mcp_json_path()
 		# "Cancel" is repurposed as "Open .mcp.json": declining the overwrite opens
 		# the file so the user can edit it (fix a malformed file, or inspect a valid
 		# one) rather than lose it. Esc/✕ route through the same path — the intended
@@ -178,16 +178,16 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 			"Overwrite .mcp.json with a clean template?\n\n" + dest
 				+ "\n\nThis replaces your current content — choose \"Open .mcp.json\" instead to edit the file yourself.",
 			"Overwrite",
-			func() -> void: McpJsonSync.write_from_template(true, _on_mcp_json_write_result),
+			func() -> void: MCPJsonSync.write_from_template(true, _on_mcp_json_write_result),
 			"Open .mcp.json",
 			func() -> void: OS.shell_open(dest),
 		)
 		return
 
-	McpJsonSync.write_from_template(force_overwrite, _on_mcp_json_write_result)
+	MCPJsonSync.write_from_template(force_overwrite, _on_mcp_json_write_result)
 
 
-# Result sink for McpJsonSync.write_from_template — maps the repository's
+# Result sink for MCPJsonSync.write_from_template — maps the repository's
 # (ok, message, severity, tooltip) report straight onto a toast. `severity`
 # already matches the _TOAST_* scale (0 info / 1 warning / 2 error). On success
 # (e.g. a dock write of a missing file), re-sync the read-only + button state now

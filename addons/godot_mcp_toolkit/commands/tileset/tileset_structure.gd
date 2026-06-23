@@ -6,7 +6,8 @@ extends RefCounted
 ## Stateless — every handler takes its parameters Dictionary and returns the
 ## response Dictionary. Persistence, the layer-node hint, and the full-tile polygon
 ## come from the shared tileset_io.gd leaf (_IO); this module owns only the
-## structural-shape logic. Consumed by tileset_commands.gd via a `preload` alias.
+## structural-shape logic. An extracted submodule of the tileset-command group,
+## reached via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const _IO := preload("res://addons/godot_mcp_toolkit/commands/tileset/tileset_io.gd")

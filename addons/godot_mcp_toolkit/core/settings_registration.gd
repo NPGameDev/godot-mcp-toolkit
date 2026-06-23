@@ -6,7 +6,7 @@ extends RefCounted
 ## in the Project Settings inspector with correct types and defaults.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const McpJsonSync = Modules.McpJsonSync
+const MCPJsonSync = Modules.MCPJsonSync
 const NodejsCheck = Modules.NodejsCheck
 
 const _BOOTSTRAP_KEY := "mcp_toolkit/internal/bootstrap_complete"
@@ -120,11 +120,11 @@ static func _register_status_field() -> void:
 static func _compute_status_text() -> String:
 	var parts := PackedStringArray()
 	# Read-only mode check.
-	var env := McpJsonSync.get_all_env_vars()
+	var env := MCPJsonSync.get_all_env_vars()
 	if env.get("GODOT_MCP_READ_ONLY", "") == "1":
 		parts.append(_READ_ONLY_WARNING_TEXT)
 	# .mcp.json presence.
-	if not McpJsonSync.has_mcp_json():
+	if not MCPJsonSync.has_mcp_json():
 		parts.append(_MCP_JSON_MISSING_TEXT)
 	# Node.js availability.
 	var node_check := NodejsCheck.check()

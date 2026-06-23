@@ -16,7 +16,7 @@ extends RefCounted
 ##     game.start to mark "read only output after here";
 ##   - the injected _debug_bridge (the EditorDebuggerPlugin, shared upstream with
 ##     debug_commands.gd) + set_debug_bridge()/clear_debug_bridge().
-## Consumed by playtest_commands.gd via a `preload` alias.
+## An extracted submodule of the playtest-command group, reached via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Helpers = Modules.CommandHelpers

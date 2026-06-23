@@ -10,7 +10,7 @@ extends RefCounted
 ## game never started). game.start snapshots the debug-log session offset by
 ## calling the log-reader's public snapshot_session_offset() — the one-datum
 ## handoff to the Debug-Log Retrieval child.
-## Consumed by playtest_commands.gd via a `preload` alias.
+## An extracted submodule of the playtest-command group, reached via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard

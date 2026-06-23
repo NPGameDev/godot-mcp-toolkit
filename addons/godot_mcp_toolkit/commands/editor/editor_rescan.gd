@@ -10,7 +10,8 @@ extends RefCounted
 ## Stateless — each handler takes (parameters) and returns the response Dictionary.
 ## The error-buffer flush (clear_level) is reached via the Modules alias; the rescan
 ## itself goes straight to EditorInterface.get_resource_filesystem() /
-## get_script_editor(). Consumed by editor_commands.gd via a `preload` alias.
+## get_script_editor(). An extracted submodule of the editor-command group,
+## reached via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
