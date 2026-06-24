@@ -8,6 +8,7 @@ const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/setti
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const PluginComposer := preload("res://addons/godot_mcp_toolkit/core/plugin_composer.gd")
 const ToolMenu := preload("res://addons/godot_mcp_toolkit/core/tool_menu.gd")
+const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/disable_cleanup_coordinator.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:6570. Registered/unregistered via add_autoload_singleton /
@@ -109,75 +110,13 @@ func _disable_plugin() -> void:
 	# (EditorSettings are machine-wide and need a confirm — see below.)
 	SettingsRegistration.unregister_all()
 
-	# Warn about orphaned .mcp.json. Dialogs are shown SEQUENTIALLY (one at a
-	# time — two popup_centered dialogs would overlap), so the EditorSettings
-	# cleanup prompt is chained off this one's resolution (both confirm/cancel)
-	# and only shown directly when there is no .mcp.json prompt to follow.
-	var mcp_json_path := ProjectSettings.globalize_path("res://") + ".mcp.json"
-	if FileAccess.file_exists(mcp_json_path):
-		var dialog := ConfirmationDialog.new()
-		dialog.exclusive = false
-		dialog.title = "MCP Plugin Disabled"
-		dialog.dialog_text = (
-			"The .mcp.json configuration file is still at your project root:\n"
-			+ mcp_json_path + "\n\n"
-			+ "If you're uninstalling the plugin, you may want to remove it.\n"
-			+ "If you're just disabling temporarily, keep it.")
-		dialog.ok_button_text = "Delete .mcp.json"
-		dialog.cancel_button_text = "Keep"
-		dialog.confirmed.connect(func():
-			DirAccess.remove_absolute(mcp_json_path)
-			print("[MCP] Deleted .mcp.json at %s" % mcp_json_path)
-			dialog.queue_free()
-			_prompt_editor_settings_cleanup()
-		)
-		dialog.canceled.connect(func():
-			print("[MCP] .mcp.json kept at %s" % mcp_json_path)
-			dialog.queue_free()
-			_prompt_editor_settings_cleanup()
-		)
-		EditorInterface.get_base_control().add_child(dialog)
-		dialog.popup_centered()
-	else:
-		_prompt_editor_settings_cleanup()
-
-
-# Confirm-then-erase the machine-wide EditorSettings keys this plugin registers.
-# These are PER-USER, MACHINE-WIDE prefs shared across every project that uses
-# the toolkit (ADR 0007), so — unlike the project-local ProjectSettings — they
-# are NEVER scrubbed silently: removing them affects the user's other projects.
-func _prompt_editor_settings_cleanup() -> void:
-	const EDITOR_SETTING_KEYS := [
-		"mcp_toolkit/personal/dock_default_visible",
-		"mcp_toolkit/performance/keep_editor_responsive_unfocused",
-		"mcp_toolkit/performance/unfocused_responsive_sleep_usec",
-	]
-	var dialog := ConfirmationDialog.new()
-	dialog.exclusive = false
-	dialog.title = "MCP Plugin Disabled — Editor Preferences"
-	dialog.dialog_text = (
-		"The MCP Toolkit also stored per-user editor preferences (dock "
-		+ "visibility and the unfocused-responsive setting).\n\n"
-		+ "These live in your EDITOR settings — they are machine-wide and "
-		+ "SHARED across every project that uses the toolkit, so removing them "
-		+ "affects your other projects too.\n\n"
-		+ "If you're uninstalling everywhere, you may want to remove them.\n"
-		+ "If you still use the MCP Toolkit in another project, keep them.")
-	dialog.ok_button_text = "Remove editor preferences"
-	dialog.cancel_button_text = "Keep"
-	dialog.confirmed.connect(func():
-		var es := EditorInterface.get_editor_settings()
-		for key in EDITOR_SETTING_KEYS:
-			es.erase(key)
-		print("[MCP] Removed machine-wide editor preferences")
-		dialog.queue_free()
-	)
-	dialog.canceled.connect(func():
-		print("[MCP] Kept machine-wide editor preferences")
-		dialog.queue_free()
-	)
-	EditorInterface.get_base_control().add_child(dialog)
-	dialog.popup_centered()
+	# Warn about an orphaned .mcp.json, then (chained off its resolution) about
+	# the machine-wide EditorSettings keys. The editor frees THIS plugin the
+	# instant this method returns (and _exit_tree runs) — before the user answers
+	# the prompts — so the sequence must NOT be driven by plugin-bound callbacks
+	# (they would fire into a freed object and silently no-op). Hand it to a
+	# detached coordinator that outlives the plugin and owns the dialog flow.
+	DisableCleanupCoordinator.new().start()
 
 
 # -- EditorSettings registration (per-user, not committed to VCS) -------------
