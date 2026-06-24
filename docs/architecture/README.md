@@ -195,16 +195,16 @@ sequenceDiagram
     participant T as WsTransport
     participant S as mcp_server (Mode A)
     participant R as ServerRequestRouter
-    C->>T: TCP connect → WebSocket upgrade
-    C->>T: first frame {"auth":"&lt;token&gt;","version":"x.y.z"}
-    T->>S: build_auth_ack(message)
-    S-->>C: {"authed":true,"godot_version":"...","version":"..."}
-    Note over C,S: silence > 2000 ms before auth → WS close 1008
-    C->>T: {"jsonrpc":"2.0","id":1,"method":"scene.create","params":{...}}
+    C->>T: TCP connect, WebSocket upgrade
+    C->>T: first frame — auth token (plus optional version)
+    T->>S: build_auth_ack
+    S-->>C: authed = true (plus godot_version, plugin version)
+    Note over C,S: no auth within 2000 ms closes the socket (1008)
+    C->>T: JSON-RPC request (e.g. scene.create)
     T->>S: _handle_message (peer authed)
-    S->>R: route_request(peer, message)
-    R->>R: select lane → call handler
-    R-->>C: {"jsonrpc":"2.0","id":1,"result":{"success":true,"status":"created",...}}
+    S->>R: route_request
+    R->>R: select lane, call handler
+    R-->>C: JSON-RPC result (success + status)
 ```
 *Figure 3 — connect → auth handshake → dispatch · verified b552824*
 
