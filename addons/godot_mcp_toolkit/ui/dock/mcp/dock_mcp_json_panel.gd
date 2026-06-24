@@ -169,6 +169,14 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 	# and not already forced, confirm first, then write on confirmation.
 	if not force_overwrite and MCPJsonSync.needs_overwrite_confirm():
 		var dest := MCPJsonSync.get_mcp_json_path()
+		# Bind the result sink to this panel HERE (in the method body, where `self`
+		# is live) and capture the local in the confirm lambda. A bare
+		# `_on_mcp_json_write_result` *inside* the lambda compiles to a `self`-based
+		# member lookup, but a lambda that references only a member FUNCTION is not
+		# marked use-self on Godot 4.2 (fixed in 4.3) — so its `self` is Nil and the
+		# lookup throws "Invalid get index … on base 'Nil'" on every confirm.
+		# Capturing a pre-bound Callable local sidesteps the unbound-`self` lookup.
+		var write_result := Callable(self, "_on_mcp_json_write_result")
 		# "Cancel" is repurposed as "Open .mcp.json": declining the overwrite opens
 		# the file so the user can edit it (fix a malformed file, or inspect a valid
 		# one) rather than lose it. Esc/✕ route through the same path — the intended
@@ -178,7 +186,7 @@ func write_mcp_json(force_overwrite: bool = false) -> void:
 			"Overwrite .mcp.json with a clean template?\n\n" + dest
 				+ "\n\nThis replaces your current content — choose \"Open .mcp.json\" instead to edit the file yourself.",
 			"Overwrite",
-			func() -> void: MCPJsonSync.write_from_template(true, _on_mcp_json_write_result),
+			func() -> void: MCPJsonSync.write_from_template(true, write_result),
 			"Open .mcp.json",
 			func() -> void: OS.shell_open(dest),
 		)
