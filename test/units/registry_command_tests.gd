@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Command-registry flag unit tests: the transport command_registry.gd
+## Command-registry flag unit tests: the transport mcp_toolkit_command_registry.gd
 ## is_read_only / mutation / serialization flags and metadata fallbacks.
 
 

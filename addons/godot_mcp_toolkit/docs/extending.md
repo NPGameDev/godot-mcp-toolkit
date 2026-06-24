@@ -85,7 +85,7 @@ public partial class MCPToolkitDialogueTools : RefCounted
 **C# note:** The raw `new Dictionary { { "success", true }, ... }` pattern
 is valid and recommended for C#. Alternatively, you can call the GDScript
 `MCPToolkitSuccess.ok()` via interop
-(`GD.Load<GDScript>("res://addons/godot_mcp_toolkit/contract/mcp_success.gd").Call("ok", dict)`)
+(`GD.Load<GDScript>("res://addons/godot_mcp_toolkit/contract/mcp_toolkit_success.gd").Call("ok", dict)`)
 but the raw Dictionary is simpler. Both produce the same result.
 
 **C# requirements:**

@@ -47,7 +47,7 @@ relies on.
 
 **Extension path guards — declarative, toolkit-enforced only.** `MCPToolkitCommandOptions`
 exposes `.guard_project_path(param)` / `.guard_user_path(param)`; the dispatch
-(`command_registry.call_command`) runs the matching `FileGuard` on the declared param before
+(`mcp_toolkit_command_registry.call_command`) runs the matching `FileGuard` on the declared param before
 invoking the handler. Opt-in; **not** flowed to the server (the toolkit is authoritative, and
 this keeps the extension contract flexible). Extension authors also have the imperative
 helpers — `Untrusted.wrap` and `FileGuard.resolve_safe`/`resolve_safe_user` — documented in
