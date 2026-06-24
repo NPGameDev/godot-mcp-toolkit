@@ -1,0 +1,23 @@
+# GitHub Pages config — polished surface for the in-repo Markdown docs.
+#
+# CI-free: enable in repo Settings → Pages → "Deploy from a branch" → main /docs.
+# just-the-docs is a remote theme (no Gemfile needed on GitHub's Pages build) and
+# renders the SAME Markdown that github.com renders natively — one source, two
+# surfaces. The canonical doc is always the in-repo .md; this only makes it prettier.
+title: Godot MCP Toolkit
+description: Localhost MCP bridge so an AI coding assistant can drive the Godot 4.2+ editor.
+remote_theme: just-the-docs/just-the-docs
+
+# Native Mermaid rendering for the architecture diagrams (fenced ```mermaid blocks).
+# Pinned so the Pages render matches what was authored; bump deliberately.
+mermaid:
+  version: "10.9.1"
+
+# Repo links in the nav.
+aux_links:
+  "GitHub":
+    - "https://github.com/NPGameDev/godot-mcp-toolkit"
+
+# Jekyll should not try to build addon/source trees — only the docs live here.
+exclude:
+  - "*.gd"
