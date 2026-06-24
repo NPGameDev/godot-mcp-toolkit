@@ -106,6 +106,12 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   but the file is written. Benign console noise; 4.3+ is unaffected. The `await` is a
   deliberate scene-save re-entrancy/crash guard, so it is not reworked for this cosmetic
   4.2-only effect.
+- **`MCPToolkit*` class docs appear lazily in the in-editor reference (4.2 only).** A
+  `MCPToolkit*` public class's documentation shows in the in-editor class reference (Help →
+  Search Help / F1) only **after its script has been opened/loaded once** in the session — 4.2
+  generates custom-class docs lazily (on script load), whereas **4.3+** loads them eagerly at
+  scan (`EditorFileSystem::_update_script_documentation`, added in 4.3). Workaround on 4.2: open
+  the script once. Not a toolkit issue.
 
 **Godot 4.4:**
 - Toast notifications work (`EditorInterface.get_editor_toaster()` is 4.4+).
