@@ -207,7 +207,7 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 	matches.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
 	# Canonical fields: total_classes + truncated ALWAYS present; on truncation add
 	# the next_offset resume cursor + prose hint.
-	var truncated := matches.size() < total
+	var truncated := offset + matches.size() < total
 	var result: Dictionary = {
 		"count": matches.size(),
 		"total_classes": total,
@@ -278,7 +278,7 @@ static func _add_property_section(result: Dictionary, raw: Array, offset: int) -
 			"hint_string": p.get("hint_string", ""),
 		})
 	result["properties"] = out
-	return out.size() < total
+	return offset + out.size() < total
 
 
 static func _add_method_section(result: Dictionary, raw: Array, offset: int) -> bool:
@@ -299,7 +299,7 @@ static func _add_method_section(result: Dictionary, raw: Array, offset: int) -> 
 			"flags": m.get("flags", 0),
 		})
 	result["methods"] = out
-	return out.size() < total
+	return offset + out.size() < total
 
 
 static func _add_signal_section(result: Dictionary, raw: Array, offset: int) -> bool:
@@ -318,7 +318,7 @@ static func _add_signal_section(result: Dictionary, raw: Array, offset: int) -> 
 			"args": _format_args(s.get("args", [])),
 		})
 	result["signals"] = out
-	return out.size() < total
+	return offset + out.size() < total
 
 
 # -- Native-only sections (constants + enums; no script twin) -----------------
@@ -357,7 +357,7 @@ static func _add_constants_native(
 			members.append(ec)
 		enums[enum_name] = members
 	result["enums"] = enums
-	return constants.size() < const_total or enums.size() < enum_total
+	return offset + constants.size() < const_total or offset + enums.size() < enum_total
 
 
 # -- Truncation hint builder --------------------------------------------------

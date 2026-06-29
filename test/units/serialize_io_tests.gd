@@ -2,7 +2,7 @@
 extends RefCounted
 ## Serialization + I/O + content-boundary unit tests: Coerce/serialize round-trip,
 ## color_from_dict (white + black defaults), node-sourced Packed property serialize,
-## save.read / script.read paging, export-strip warning set, log-level continuation,
+## save.read / script.read / classdb paging, export-strip warning set, log-level continuation,
 ## and the SettingsRegistration mcp_toolkit/* collector. Exercises the
 ## serialize/IO/content subsystems' pure logic headless.
 
@@ -10,6 +10,7 @@ const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
 const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_commands.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
+const ClassDbCommands := preload("res://addons/godot_mcp_toolkit/commands/classdb_commands.gd")
 const ExportStrip := preload("res://addons/godot_mcp_toolkit/core/export_strip.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
@@ -22,6 +23,7 @@ static func run(testing) -> void:
 	_test_node_packed_property_serialize(testing)
 	_test_save_read_paging(testing)
 	_test_script_read_paging(testing)
+	_test_classdb_pagination(testing)
 	_test_export_strip(testing)
 	_test_log_level_continuation(testing)
 	_test_settings_collect_names(testing)
@@ -394,6 +396,73 @@ static func _test_script_read_paging(testing) -> void:
 	testing.ok(not full.has("hint"), "full read → no hint")
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+	print("")
+
+
+# --- classdb pagination: truncated flag + resume cursor are offset-aware -----
+# classdb.get_info / classdb.search report `truncated` plus a forward `next_offset`
+# cursor with the same "items remain past offset + returned" rule as save.read /
+# script.read. The decisive cases are the page boundaries: an offset landing AT or
+# PAST the last page must report truncated:false with NO cursor — a cursor equal to
+# the input offset would loop a "page until truncated is false" caller forever.
+# Drives the real static handlers directly; ClassDB is the fixture, so totals are
+# read back from the first call and the edge offsets need no hardcoded engine counts.
+
+static func _test_classdb_pagination(testing) -> void:
+	testing.begin("classdb offset-aware pagination")
+
+	# get_info methods section. total_methods reports the FULL count even when the
+	# page is capped, so the edge offsets below stay version-independent.
+	var info0: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"]})
+	testing.ok(info0.get("success", false), "get_info Control methods → success")
+	var total_methods: int = int(info0.get("total_methods", 0))
+	testing.ok(total_methods >= 5, "Control exposes enough inherited methods to page")
+
+	# Partial final page reaching the EXACT end (offset + returned == total) →
+	# truncated false, no cursor. The core regression: an offset-blind returned<total
+	# wrongly flagged truncated here.
+	var info_at_end: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "offset": total_methods - 5})
+	testing.eq(info_at_end.get("truncated", null), false, "get_info offset at exact end → truncated false")
+	testing.ok(not info_at_end.has("next_offset"), "get_info offset at exact end → no next_offset cursor")
+
+	# Offset exactly AT the total → empty page, graceful completion, no cursor.
+	var info_on_end: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "offset": total_methods})
+	testing.eq(info_on_end.get("truncated", null), false, "get_info offset == total → truncated false")
+	testing.ok(not info_on_end.has("next_offset"), "get_info offset == total → no next_offset cursor")
+
+	# Offset PAST the end → still graceful: truncated false, no self-looping cursor.
+	var info_past: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "offset": total_methods + 100})
+	testing.eq(info_past.get("truncated", null), false, "get_info offset past end → truncated false")
+	testing.ok(not info_past.has("next_offset"), "get_info offset past end → no next_offset cursor")
+
+	# offset 0 on a section over the 200-item page cap → genuinely truncated, with a
+	# forward cursor at the cap boundary. Guarded: only a >200 section can truncate.
+	if total_methods > 200:
+		testing.eq(info0.get("truncated", null), true, "get_info offset 0 over cap → truncated true")
+		testing.eq(int(info0.get("next_offset", -1)), 200, "get_info truncated → next_offset at cap boundary")
+
+	# search: base_class Object + instantiable_only false matches every class (>200),
+	# a deterministic over-cap truncation carrying a forward cursor.
+	var search0: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false})
+	testing.ok(search0.get("success", false), "search Object → success")
+	var total_classes: int = int(search0.get("total_classes", 0))
+	testing.ok(total_classes > 200, "Object matches exceed the page cap (truncation reachable)")
+	testing.eq(search0.get("truncated", null), true, "search offset 0 over cap → truncated true")
+	testing.eq(int(search0.get("next_offset", -1)), 200, "search truncated → next_offset at cap boundary")
+	testing.eq(int(search0.get("count", -1)), 200, "search truncated → 200 returned (page cap)")
+
+	# Partial final page reaching the EXACT end → truncated false and, crucially, NO
+	# next_offset equal to the input offset (the page-until-false loop must terminate).
+	var search_at_end: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false, "offset": total_classes - 5})
+	testing.eq(search_at_end.get("truncated", null), false, "search offset at exact end → truncated false")
+	testing.ok(not search_at_end.has("next_offset"), "search offset at exact end → no self-loop cursor")
+
+	# Offset PAST the end → truncated false, no cursor, zero matches.
+	var search_past: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false, "offset": total_classes + 100})
+	testing.eq(search_past.get("truncated", null), false, "search offset past end → truncated false")
+	testing.ok(not search_past.has("next_offset"), "search offset past end → no self-loop cursor")
+	testing.eq(int(search_past.get("count", -1)), 0, "search offset past end → 0 matches")
+
 	print("")
 
 
