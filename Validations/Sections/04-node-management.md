@@ -1,6 +1,6 @@
 # Section 4 — Node Management
 
-**Dependencies:** Section 2 (nodes exist in main.tscn)
+**Dependencies:** Section 2 (nodes exist in Sv2Main.tscn)
 **Tools tested:** node_manage (rename, reparent, reorder, duplicate), node_groups
 **Tests:** 16
 

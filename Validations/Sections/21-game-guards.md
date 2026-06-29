@@ -30,7 +30,8 @@ func _ready():
 - **Known limitation:** The COMPILATION_FAILED check (4be3454) only fires when the game process completely fails to start (e.g., missing main scene). Individual script errors manifest at runtime, not pre-launch. The agent discovers them via `debugger_get_log` after launch.
 
 **21.3b** `debugger_get_log` — immediately after 21.3's game_start
-- **Expect:** contains GDScript parse error for sv2_broken_main.gd (the error surfaces in runtime logs)
+- **Expect:** `GAME_NOT_RUNNING` (no runtime/output cache for a compile-failing main scene)
+- **Note:** a main-scene script that fails to COMPILE crashes the game pre-runtime-connection, so no output cache is built; the parse error surfaces in the **editor console** (`editor_get_console` level=error), NOT the runtime debugger log.
 
 **21.3c** `game_stop`
 - **Expect:** success
@@ -40,8 +41,8 @@ func _ready():
 ### Editor-side fallback + debug_state (41l-quater-bis)
 
 **21.4** Restore and run valid game:
-- `project_set_setting` application/run/main_scene = `"res://sv2_validation/main.tscn"`
-- `scene_open` file_path=`res://sv2_validation/main.tscn`
+- `project_set_setting` application/run/main_scene = `"res://sv2_validation/Sv2Main.tscn"`
+- `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn`
 - `game_start`
 - **Expect:** success (valid scene launches)
 - Wait 2s, then `game_stop`
@@ -132,7 +133,7 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 ## Cleanup
 
-- `scene_open` file_path=`res://sv2_validation/main.tscn`
+- `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn`
 - `scene_delete` file_path=`res://sv2_validation/sv2_error.tscn`
 - `script_delete` file_path=`res://sv2_validation/sv2_error_main.gd`
 - `scene_delete` file_path=`res://sv2_validation/sv2_broken.tscn`

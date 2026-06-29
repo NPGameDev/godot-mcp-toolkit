@@ -1,6 +1,6 @@
 # Section 28 — scene_spatial_map + placeholder generators
 
-**Dependencies:** Section 2 (main.tscn open)
+**Dependencies:** Section 2 (Sv2Main.tscn open)
 **Tools tested:** scene_spatial_map (eager), texture_generate + sound_generate (`placeholders` group — on-demand)
 **Tests:** 22
 

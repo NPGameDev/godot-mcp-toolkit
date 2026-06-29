@@ -1,6 +1,6 @@
 # Section 23 — C# Compatibility
 
-**Dependencies:** Section 2 (nodes in main.tscn), .NET project detected in Section 0
+**Dependencies:** Section 2 (nodes in Sv2Main.tscn), .NET project detected in Section 0
 **Tools tested:** All tools interacting with C# scripts/nodes
 **Tests:** ~50
 **Gate:** Skip entire section if Section 0 detected GDScript-only project
@@ -48,7 +48,7 @@ public partial class Sv2CsGlobal : Node
 **CS-S2.** `editor_refresh` — pick up rebuilt assembly
 - **Expect:** success
 
-**CS-S3.** `scene_open` main.tscn → `scene_create_node` Node, name=`Sv2CsNode`, parent=`.` → `node_set_script` script_path=`res://sv2_validation/Sv2CsNode.cs` → `editor_save_scene`
+**CS-S3.** `scene_open` Sv2Main.tscn → `scene_create_node` Node, name=`Sv2CsNode`, parent=`.` → `node_set_script` script_path=`res://sv2_validation/Sv2CsNode.cs` → `editor_save_scene`
 - **Expect:** all succeed
 
 ---
@@ -105,7 +105,7 @@ public partial class Sv2CsGlobal : Node
 ## CS8. Asset introspection
 
 **CS8.1** `asset_list` folder_path=res://sv2_validation/ → **Expect:** includes .cs files
-**CS8.2** `asset_get_dependencies` main.tscn → **Expect:** includes Sv2CsNode.cs
+**CS8.2** `asset_get_dependencies` Sv2Main.tscn → **Expect:** includes Sv2CsNode.cs
 
 ## CS9. [GlobalClass] in ClassDB
 
@@ -121,7 +121,7 @@ public partial class Sv2CsGlobal : Node
 
 ## CS10. Runtime probe on C# node
 
-**CS10.1** `project_set_setting` main_scene=main.tscn
+**CS10.1** `project_set_setting` main_scene=Sv2Main.tscn
 **CS10.2** `game_start` → **Expect:** success
 **CS10.3** Wait 3 seconds for .NET runtime
 **CS10.4** `runtime_get_node_state` /root/Sv2Main/Sv2CsNode → **Expect:** class, properties
@@ -146,7 +146,7 @@ public partial class Sv2CsGlobal : Node
 **CS12.2** `scene_open` cs_sub.tscn
 **CS12.3** `node_set_script` root → Sv2CsNode.cs
 **CS12.4** `editor_save_scene`
-**CS12.5** `scene_open` main.tscn
+**CS12.5** `scene_open` Sv2Main.tscn
 **CS12.6** `scene_instantiate` scene_path=cs_sub.tscn → **Expect:** success
 **CS12.7** `scene_get_tree` → **Expect:** ValCsSub present with C# script
 **CS12.8** `scene_delete_node` ValCsSub

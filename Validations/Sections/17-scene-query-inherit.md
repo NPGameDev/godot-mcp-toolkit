@@ -15,7 +15,7 @@
 **17.3** `scene_create_inherited` guard — base_scene=`res://nonexistent.tscn`
 - **Expect:** NOT_FOUND
 
-**17.4** Open main scene: `scene_open` file_path=`res://sv2_validation/main.tscn`
+**17.4** Open main scene: `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn`
 
 **17.5** `scene_query` — class_filter=`"CharacterBody2D"`
 - **Expect:** success, includes Sv2Player

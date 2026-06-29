@@ -1,6 +1,6 @@
 # Section 13 — Animation & AnimationTree
 
-**Dependencies:** Section 2 (Sv2AnimPlayer and Sv2AnimTree exist in main.tscn)
+**Dependencies:** Section 2 (Sv2AnimPlayer and Sv2AnimTree exist in Sv2Main.tscn)
 **Tools tested:** animation_keyframe, animation_get_keys, animationtree_edit, animationtree_list, node_call_method
 **Tests:** 12
 

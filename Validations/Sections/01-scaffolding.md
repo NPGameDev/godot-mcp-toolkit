@@ -59,13 +59,14 @@ void fragment() {
 **1.7** `resource_write` — file_path=`res://sv2_validation/tileset.tres`, type=`TileSet`, properties=`{"tile_size": {"type": "Vector2i", "x": 16, "y": 16}}`
 - **Expect:** success
 
-**1.8** `scene_create` — file_path=`res://sv2_validation/main.tscn`, root_type=`Node2D`, root_name=`Sv2Main`
+**1.8** `scene_create` — file_path=`res://sv2_validation/Sv2Main.tscn`, root_type=`Node2D`
 - **Expect:** success
+- **Note:** `scene_create` has NO `root_name` param (it is ignored). The root node is named by the filename STEM, so `Sv2Main.tscn` → root node `Sv2Main` (no `root_name` needed).
 
 **1.9** `scene_create` — file_path=`res://sv2_validation/sub.tscn`, root_type=`Node2D`, root_name=`Sv2Sub`
 - **Expect:** success
 
-**1.10** `scene_open` — file_path=`res://sv2_validation/main.tscn`
+**1.10** `scene_open` — file_path=`res://sv2_validation/Sv2Main.tscn`
 - **Expect:** success
 
 ---

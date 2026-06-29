@@ -1,6 +1,6 @@
 # Section 2 — Scene Tree & Node Creation
 
-**Dependencies:** Section 1 (main.tscn exists and is open)
+**Dependencies:** Section 1 (Sv2Main.tscn exists and is open)
 **Tools tested:** scene_create_node, scene_instantiate, scene_get_tree, editor_save_scene
 **Tests:** 19
 

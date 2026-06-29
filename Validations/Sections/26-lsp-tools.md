@@ -125,6 +125,7 @@ All 6 LSP tools share `validateGdscriptPath()`. Tests below verify via two diffe
 
 **26.10** `lsp_symbols` — file_path=`res://sv2_validation/sv2_lsp_test.gdshader`
 - **Expect:** success=true, symbols returned (look for `strength` uniform and/or `fragment` function). SKIP if shader not created.
+- **Note:** On Godot 4.x the LSP parses `.gdshader` as GDScript and may return `[]` (shader symbol extraction unsupported) — `[]` is acceptable here (PASS/SKIP), not a FAIL.
 
 ---
 
@@ -157,23 +158,23 @@ All 6 LSP tools share `validateGdscriptPath()`. Tests below verify via two diffe
 ## lsp_definition (lsp_code_navigation group)
 
 **26.17** `lsp_definition` — file_path=`res://sv2_validation/sv2_lsp_valid.gd`, line=8, column=1
-- **Expect:** success=true, definition.file_path=`res://sv2_validation/sv2_lsp_valid.gd`, definition.line ≈ 11 (1-based, pointing to `func take_damage` on 0-based line 10). Path is res://.
+- **Expect:** success=true, definition.file_path is the globalized-absolute form (`file:///C%3A/.../sv2_validation/sv2_lsp_valid.gd`) per ledger #4 (NOT `res://`), definition.line ≈ 11 (1-based, pointing to `func take_damage` on 0-based line 10).
 
 **26.18** `lsp_definition` — file_path=`res://sv2_validation/sv2_lsp_valid.gd`, line=12, column=1
-- **Expect:** success=true, definition points to signal `damage_taken` declaration at ≈ line 6 (1-based, 0-based line 5). Path is res://.
+- **Expect:** success=true, definition points to signal `damage_taken` declaration at ≈ line 6 (1-based, 0-based line 5). Path is the globalized-absolute form (`file:///C%3A/...`) per ledger #4 (NOT `res://`).
 
 **26.19** `lsp_definition` — file_path=`res://sv2_validation/sv2_lsp_valid.gd`, line=0, column=8
-- **Expect:** success=true, definition=null (Node2D is an engine class with no user-file source).
+- **Expect:** success=true, definition=null OR `[]` (Node2D is an engine class with no user-file source).
 
 ---
 
 ## lsp_references (lsp_code_navigation group)
 
 **26.20** `lsp_references` — file_path=`res://sv2_validation/sv2_lsp_valid.gd`, line=5, column=7
-- **Expect:** success=true, references array with ≥ 2 entries for `damage_taken` (declaration + emit site). All entries have res:// file_path and 1-based line/column numbers.
+- **Expect:** success=true, references array with ≥ 2 entries for `damage_taken` (declaration + emit site). All entries have `file:///` globalized-absolute file_path (ledger #4) and 1-based line/column numbers.
 
 **26.21** `lsp_references` — file_path=`res://sv2_validation/sv2_lsp_valid.gd`, line=3, column=4
-- **Expect:** success=true, references array with ≥ 2 entries for `health` (declaration + at least one usage site). Paths are res://, lines are 1-based.
+- **Expect:** success=true, references array with ≥ 2 entries for `health` (declaration + at least one usage site). Paths are `file:///` globalized-absolute (ledger #4), lines are 1-based.
 
 ---
 

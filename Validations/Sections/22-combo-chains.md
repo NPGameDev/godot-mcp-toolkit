@@ -1,6 +1,6 @@
 # Section 22 — Combo Chains
 
-**Dependencies:** Section 1 (sv2_validation/ exists, main.tscn with nodes)
+**Dependencies:** Section 1 (sv2_validation/ exists, Sv2Main.tscn with nodes)
 **Tools tested:** Multi-tool workflows testing interoperability
 **Tests:** 14 chains (each self-contained with own setup and cleanup)
 
@@ -18,17 +18,17 @@
 
 ## C3. Scene build round-trip
 
-`scene_create` (res://sv2_validation/c3_scene.tscn, Node2D) → `scene_open` → `scene_create_node` (Sprite2D, "C3Sprite") → `node_set_property` (position={100,200}) → `node_get_property` (verify 100,200) → `editor_save_scene` → `scene_open` main.tscn → `scene_delete` c3_scene.tscn
+`scene_create` (res://sv2_validation/c3_scene.tscn, Node2D) → `scene_open` → `scene_create_node` (Sprite2D, "C3Sprite") → `node_set_property` (position={100,200}) → `node_get_property` (verify 100,200) → `editor_save_scene` → `scene_open` Sv2Main.tscn → `scene_delete` c3_scene.tscn
 - **Expect:** full create-edit-save-close cycle works
 
 ## C4. Signal persistence round-trip
 
-`signal_manage` connect Sv2Player.hit → Sv2Label.set_text → `editor_save_scene` → `scene_open` sub.tscn (switch away) → `scene_open` main.tscn (switch back) → `signal_list` include_connections=true → verify connection persisted → `signal_manage` disconnect
+`signal_manage` connect Sv2Player.hit → Sv2Label.set_text → `editor_save_scene` → `scene_open` sub.tscn (switch away) → `scene_open` Sv2Main.tscn (switch back) → `signal_list` include_connections=true → verify connection persisted → `signal_manage` disconnect
 - **Expect:** signal connection survives save/reopen
 
 ## C5. Full game lifecycle
 
-`scene_create` (res://sv2_validation/c5_game.tscn, Node2D, "C5Root") → `scene_open` → `scene_create_node` (Node2D, "C5Node") → `script_write` (res://sv2_validation/c5_script.gd, content with `print("C5_LIFECYCLE_OK")`) → `node_set_script` C5Node → `editor_save_scene` → `project_set_setting` main_scene=c5_game.tscn → `game_start` → wait 2s → `runtime_get_node_state` /root/C5Root/C5Node → `debugger_get_log` text_filter=C5_LIFECYCLE → `game_stop` → cleanup (restore main_scene, `scene_open` main.tscn, `scene_delete` c5_game.tscn, `script_delete` c5_script.gd)
+`scene_create` (res://sv2_validation/c5_game.tscn, Node2D, "C5Root") → `scene_open` → `scene_create_node` (Node2D, "C5Node") → `script_write` (res://sv2_validation/c5_script.gd, content with `print("C5_LIFECYCLE_OK")`) → `node_set_script` C5Node → `editor_save_scene` → `project_set_setting` main_scene=c5_game.tscn → `game_start` → wait 2s → `runtime_get_node_state` /root/C5Root/C5Node → `debugger_get_log` text_filter=C5_LIFECYCLE → `game_stop` → cleanup (restore main_scene, `scene_open` Sv2Main.tscn, `scene_delete` c5_game.tscn, `script_delete` c5_script.gd)
 - **Expect:** complete build-run-inspect cycle
 
 ## C6. TileMap painting pipeline
@@ -43,7 +43,7 @@
 
 ## C8. Node management pipeline
 
-`scene_create` (res://sv2_validation/c8_nm.tscn, Node2D, "C8Root") → `scene_open` → `scene_create_node` (Sprite2D, "NM") → `node_manage` (duplicate, new_name="NMCopy") → `node_manage` (rename NMCopy → NMRenamed) → `node_manage` (reparent NMRenamed under NM) → `node_groups` (add, groups=["c8_test"]) → `node_groups` (list, verify c8_test) → `node_groups` (remove) → `editor_save_scene` → `scene_open` main.tscn → `scene_delete` c8_nm.tscn
+`scene_create` (res://sv2_validation/c8_nm.tscn, Node2D, "C8Root") → `scene_open` → `scene_create_node` (Sprite2D, "NM") → `node_manage` (duplicate, new_name="NMCopy") → `node_manage` (rename NMCopy → NMRenamed) → `node_manage` (reparent NMRenamed under NM) → `node_groups` (add, groups=["c8_test"]) → `node_groups` (list, verify c8_test) → `node_groups` (remove) → `editor_save_scene` → `scene_open` Sv2Main.tscn → `scene_delete` c8_nm.tscn
 - **Expect:** full duplicate→rename→reparent→groups cycle
 
 ## C9. Batch instantiate with transforms
@@ -56,7 +56,7 @@
 Run discover_tools queries:
 1. request="animation" → animation_authoring activated
 2. request="tilemap" → tilemap activated
-3. request="rename node" → node_management activated
+3. request="rename node" → no on-demand group match (node_manage/node_groups are CORE; verified working in C8 without activation) — CORRECT, not a failure
 4. request="signal" → signals activated
 5. request="input" → input_map activated
 6. request="screenshot" → editor_advanced + core_matches
@@ -87,7 +87,7 @@ Run discover_tools queries:
 
 ## C12. folder_delete with open scene tabs
 
-`folder_create` (res://sv2_validation/c12_tabs/) → `scene_create` (res://sv2_validation/c12_tabs/tabA.tscn) → `scene_create` (res://sv2_validation/c12_tabs/tabB.tscn) → `scene_open` tabA → `scene_open` tabB → `scene_open` main.tscn (ensure outside scene active) → `folder_delete` (res://sv2_validation/c12_tabs/, recursive=true)
+`folder_create` (res://sv2_validation/c12_tabs/) → `scene_create` (res://sv2_validation/c12_tabs/tabA.tscn) → `scene_create` (res://sv2_validation/c12_tabs/tabB.tscn) → `scene_open` tabA → `scene_open` tabB → `scene_open` Sv2Main.tscn (ensure outside scene active) → `folder_delete` (res://sv2_validation/c12_tabs/, recursive=true)
 - **Expect:** no PATH_IN_USE errors, folder deleted successfully
 
 ## C27. Version-gate tool visibility (41l-undecies)
@@ -103,7 +103,7 @@ Run discover_tools queries:
 
 ## C28. control.set_layout round-trip (41l — W1 Lane 2)
 
-`scene_create` (res://sv2_validation/c28_layout.tscn, Control, "C28Root") → `scene_open` → `scene_create_node` (Button, "C28Btn", parent=".") → `control_set_layout` (node_path="C28Btn", preset="PRESET_FULL_RECT") → `node_get_property` (C28Btn, "anchor_right") → verify anchor_right=1.0 → `control_set_layout` (node_path="C28Btn", preset="PRESET_CENTER", resize_mode="keep_size") → `node_get_property` (C28Btn, "anchor_left") → verify anchor_left=0.5 → `scene_open` main.tscn → `scene_delete` c28_layout.tscn
+`scene_create` (res://sv2_validation/c28_layout.tscn, Control, "C28Root") → `scene_open` → `scene_create_node` (Button, "C28Btn", parent=".") → `control_set_layout` (node_path="C28Btn", preset="PRESET_FULL_RECT") → `node_get_property` (C28Btn, "anchor_right") → verify anchor_right=1.0 → `control_set_layout` (node_path="C28Btn", preset="PRESET_CENTER", resize_mode="keep_size") → `node_get_property` (C28Btn, "anchor_left") → verify anchor_left=0.5 → `scene_open` Sv2Main.tscn → `scene_delete` c28_layout.tscn
 - **Expect:** Layout presets correctly set anchors and readback confirms
 
 ---
@@ -115,4 +115,5 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 ## Cleanup
 
 Each chain cleans up after itself. After all chains, verify no leftover artifacts:
+`editor_refresh` (full — no `file_paths`) FIRST — `asset_list`'s EditorFileSystem-backed view lags `resource_delete`'s deindex, so a refresh is needed before the `c*` check to avoid a false "leftover".
 `asset_list` folder_path=`res://sv2_validation/`, name_glob=`c*` → **Expect:** no matches

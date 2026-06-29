@@ -14,7 +14,9 @@ route to **41n-ter-bis** via the RESULTS.md rows.
 - **S19** — tool-name `collision_from_sprite` → `collision_from_texture` (stale name); cleanup note corrected (generated CollisionPolygon2D is a *sibling* of the sprite, not a child).
 - **S20** — runtime paths `Sv2Main` → `main` and `current_scene.name` `"Sv2Main"` → `"main"` (verified live: main.tscn root node is `main`).
 
-## Deferred — present to user at end (DO NOT apply during the run)
+## Deferred findings — ✅ ALL APPLIED in a standalone fix (2026-06-30)
+
+*D1–D7 below were applied to the `Sections/` specs (40 `main.tscn`→`Sv2Main.tscn` renames across 18 files + the `20-runtime.md` `/root/main`→`/root/Sv2Main` revert + targeted edits). Kept here as the record of what changed and why. Companion toolkit-side items (D7's no-script-tab-close API, etc.) remain routed to 41n-ter-bis.*
 
 ### D1 — Test-scene root naming / throwaway "Sv2Main" scene  (raised by user)
 The sweep's main test scene is `res://sv2_validation/main.tscn`. `scene_create`

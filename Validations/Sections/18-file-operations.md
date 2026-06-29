@@ -1,6 +1,6 @@
 # Section 18 — Phantom Tab Cleanup & File Operations
 
-**Dependencies:** Section 1 (main.tscn exists)
+**Dependencies:** Section 1 (Sv2Main.tscn exists)
 **Tools tested:** scene_close, scene_delete, file_delete, folder_delete, asset_import, scene_open
 **Tests:** 16
 
@@ -12,7 +12,7 @@
 **18.2** `scene_open` — file_path=`res://sv2_validation/probe.tscn` (now active tab)
 - **Expect:** success
 
-**18.3** **[4.5+]** `scene_close` — file_path=`res://sv2_validation/main.tscn` (non-active tab)
+**18.3** **[4.5+]** `scene_close` — file_path=`res://sv2_validation/Sv2Main.tscn` (non-active tab)
 - **Expect:** success — non-active tab closed. Response includes `hint` about `_set_main_scene_state` engine noise.
 
 **18.4** **[4.5+]** `scene_delete` — file_path=`res://sv2_validation/probe.tscn` (active tab)
@@ -20,9 +20,9 @@
 
 **18.5** Recreate probe for further tests:
 - `scene_create` file_path=`res://sv2_validation/probe.tscn`, root_type=`Node2D`
-- `scene_open` file_path=`res://sv2_validation/main.tscn` (make main active)
+- `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn` (make main active)
 - `scene_open` file_path=`res://sv2_validation/probe.tscn` (open probe as non-active... then switch to main)
-- `scene_open` file_path=`res://sv2_validation/main.tscn`
+- `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn`
 - **Expect:** all succeed, main is active, probe is open but non-active
 
 **18.6** `scene_delete` — file_path=`res://sv2_validation/probe.tscn` (non-active open tab)
@@ -48,7 +48,7 @@
 **18.11** **[4.5+]** `file_delete` on `.tscn` with open tab:
 - `scene_create` file_path=`res://sv2_validation/file_del_probe.tscn`, root_type=`Node2D`
 - `scene_open` file_path=`res://sv2_validation/file_del_probe.tscn`
-- `scene_open` file_path=`res://sv2_validation/main.tscn` (main active, probe non-active)
+- `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn` (main active, probe non-active)
 - `file_delete` file_path=`res://sv2_validation/file_del_probe.tscn`
 - **Expect:** success, `tab_closed: true`, hint about `_set_main_scene_state`
 
@@ -62,19 +62,19 @@
 **18.13** **[4.5+]** `folder_delete` with 2 scenes → stale_tabs follow-up:
 - `folder_create` folder_path=`res://sv2_validation/del_folder`
 - `scene_create` 2 scenes inside (`inner1.tscn`, `inner2.tscn`)
-- `scene_open` both + ensure main.tscn is also open
-- `scene_open` file_path=`res://sv2_validation/main.tscn` (main active)
+- `scene_open` both + ensure Sv2Main.tscn is also open
+- `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn` (main active)
 - `folder_delete` folder_path=`res://sv2_validation/del_folder`, recursive=true
 - **Expect:** success, `stale_tabs` array has 2 entries, hint mentions `_set_main_scene_state`
 - Call `scene_close` on each stale tab path
 - **Expect:** both close successfully
 
 **18.14** **[4.5+]** `scene_close` on last tab:
-- Close all tabs except one: close main.tscn if other tabs exist
+- Close all tabs except one: close Sv2Main.tscn if other tabs exist
 - Close the final remaining tab
 - **Expect:** success — engine auto-creates empty scene tab
 
-**18.15** Restore main scene: `scene_open` file_path=`res://sv2_validation/main.tscn`
+**18.15** Restore main scene: `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn`
 - **Expect:** success
 
 ---

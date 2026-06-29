@@ -1,6 +1,6 @@
 # Section 14 — TileSet & TileMap
 
-**Dependencies:** Section 2 (Sv2TileLayer exists in main.tscn)
+**Dependencies:** Section 2 (Sv2TileLayer exists in Sv2Main.tscn)
 **Tools tested:** tileset_create, tileset_setup_layers, tileset_add_source, tileset_remove_source, tileset_add_alternative, tileset_remove_alternative, tileset_edit_physics, tileset_edit_terrain, tileset_edit_navigation, tileset_edit_visuals, tileset_edit_custom_data, tilemap_set_cells, tilemap_read_cells
 **Tests:** 33
 

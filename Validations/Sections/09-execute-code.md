@@ -1,6 +1,6 @@
 # Section 9 — execute_code & Hints
 
-**Dependencies:** Section 2 (main.tscn open with nodes)
+**Dependencies:** Section 2 (Sv2Main.tscn open with nodes)
 **Tools tested:** execute_code (editor context)
 **Tests:** 8
 

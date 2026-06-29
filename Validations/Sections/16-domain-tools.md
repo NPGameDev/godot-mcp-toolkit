@@ -1,6 +1,6 @@
 # Section 16 — 3D, Path2D, Navigation, Particles, Procedural
 
-**Dependencies:** Section 2 (Sv2Path, Sv2NavRegion exist in main.tscn)
+**Dependencies:** Section 2 (Sv2Path, Sv2NavRegion exist in Sv2Main.tscn)
 **Tools tested:** 3d_create_primitive, 3d_setup_environment, 3d_create_light, 3d_create_camera, path2d_edit_curve, navigation_edit, particles_create, procedural_edit_gradient, procedural_edit_curve, procedural_edit_noise
 **Tests:** 28
 

@@ -1,6 +1,6 @@
 # Section 19 — collision_from_texture
 
-**Dependencies:** Section 2 (main.tscn open)
+**Dependencies:** Section 2 (Sv2Main.tscn open)
 **Tools tested:** collision_from_texture
 **Tests:** 3
 

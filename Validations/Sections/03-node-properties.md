@@ -1,6 +1,6 @@
 # Section 3 — Node Properties & Methods
 
-**Dependencies:** Section 2 (nodes exist in main.tscn)
+**Dependencies:** Section 2 (nodes exist in Sv2Main.tscn)
 **Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout
 **Tests:** 34
 

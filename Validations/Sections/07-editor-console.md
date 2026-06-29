@@ -1,6 +1,6 @@
 # Section 7 — Editor Operations & Console
 
-**Dependencies:** Section 2 (nodes in main.tscn)
+**Dependencies:** Section 2 (nodes in Sv2Main.tscn)
 **Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_get_errors, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
 **Tests:** 16
 

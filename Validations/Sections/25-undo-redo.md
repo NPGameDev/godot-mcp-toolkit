@@ -1,6 +1,6 @@
 # Section 25 — Undo/Redo Verification
 
-**Dependencies:** Section 2 (nodes exist in `res://sv2_validation/main.tscn`)
+**Dependencies:** Section 2 (nodes exist in `res://sv2_validation/Sv2Main.tscn`)
 **Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, particles.create, node.collision_from_sprite, node.set_script
 **Tests:** 48
 **Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene. Sections UR4–UR12 are regression guards for tools that previously had missing `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls, which caused `UndoRedo history mismatch` errors.
@@ -281,7 +281,7 @@
 - **Expect:** success
 
 **UR12.2** Assign texture:
-- `node.set_property` — node_path=`URSprite`, property=`texture`, value=`res://icon.svg`
+- `node.set_property` — node_path=`URSprite`, property=`texture`, value=`{"type":"Resource","path":"res://icon.svg"}`
 - **Expect:** success
 
 **UR12.3** Generate collision:
