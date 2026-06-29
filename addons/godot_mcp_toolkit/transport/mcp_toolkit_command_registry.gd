@@ -384,7 +384,7 @@ func call_command(method: String, parameters: Dictionary,
 			if info["max"] != "":
 				detail += " <= %s" % info["max"]
 			return MCPToolkitError.fail("UNSUPPORTED",
-				"%s %s (running: %s)" % [method, detail, info["engine"]])
+				"%s %s (connected: %s)" % [method, detail, info["engine"]])
 		return MCPToolkitError.fail("NOT_FOUND", "unknown method: " + method)
 	Audit.log_call(method, parameters)
 

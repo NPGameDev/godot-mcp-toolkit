@@ -7,6 +7,20 @@
 
 ---
 
+## Version-Parity Invariant (hand-maintained — D-#1)
+
+> A version-gated built-in needs BOTH a toolkit gate (`.with_min_godot_version`)
+> AND a matching server-catalogue bound (`ToolDef.godotMinVersion`). The **server
+> bound is authoritative for the `UNSUPPORTED` error message** (`"… (connected:
+> <maj>.<min>)"`); the toolkit's own version-block branch
+> (`transport/mcp_toolkit_command_registry.gd`) mirrors that wording. No automated
+> cross-repo parity check ships for 1.0 — keep the two version tables in sync **by
+> hand** whenever you add or change a version-gated built-in. Currently exactly
+> one: `scene.close` (server `scene_close`) @ 4.5+. Automated guard deferred to
+> PostRelease.
+
+---
+
 ## Tool → Sweep Test Matrix
 
 ### Scene Management (11 tools)
