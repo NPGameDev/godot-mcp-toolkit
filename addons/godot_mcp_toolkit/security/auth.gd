@@ -25,6 +25,15 @@ static func get_token_path() -> String:
 	return ProjectPaths.instance_dir() + "mcp_token"
 
 
+## The token path in REGISTRY-PUBLISH form: an absolute, globalized path the
+## out-of-engine server opens directly. globalize_path() reads use_custom_user_dir
+## live, so a relocated user:// is honored and the server never re-derives the user
+## dir. In-engine callers use get_token_path()'s user:// form; the registry publish
+## sites use this absolute form.
+static func get_published_token_path() -> String:
+	return ProjectSettings.globalize_path(get_token_path())
+
+
 ## Write token to disk. Returns OK or an error code.
 static func write_token(token: String) -> int:
 	ProjectPaths.ensure_dirs()

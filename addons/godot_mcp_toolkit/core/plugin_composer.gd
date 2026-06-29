@@ -106,7 +106,7 @@ static func _register_in_registry(server: Node) -> void:
 	var bound_port: int = server.get_bound_port()
 	if bound_port > 0:
 		var lsp := MCPServer.resolve_lsp_endpoint()
-		RegistryClient.register(bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
+		RegistryClient.register(bound_port, MCPAuth.get_published_token_path(), lsp["host"], lsp["port"])
 		# Deferred re-verify: concurrent editors may clobber our entry after
 		# our initial verify passes. Jittered delay ensures all editors have
 		# finished their initial registration before we re-check. Re-resolve the
@@ -115,7 +115,7 @@ static func _register_in_registry(server: Node) -> void:
 		server.get_tree().create_timer(_jitter).timeout.connect(
 			func():
 				var lsp_re := MCPServer.resolve_lsp_endpoint()
-				RegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path(), lsp_re["host"], lsp_re["port"]))
+				RegistryClient.ensure_registered(bound_port, MCPAuth.get_published_token_path(), lsp_re["host"], lsp_re["port"]))
 
 
 # Re-publish this editor's registry entry after the server re-writes its token to
@@ -131,7 +131,11 @@ static func _republish_on_token_rewrite(server: Node, token_path: String) -> voi
 	if bound_port <= 0:
 		return
 	var lsp := MCPServer.resolve_lsp_endpoint()
-	RegistryClient.ensure_registered(bound_port, token_path, lsp["host"], lsp["port"])
+	# The signal carries the rewritten path in user:// form; publish it in the
+	# absolute form the out-of-engine server opens (see MCPAuth.get_published_token_path).
+	RegistryClient.ensure_registered(
+		bound_port, ProjectSettings.globalize_path(token_path), lsp["host"], lsp["port"]
+	)
 
 
 ## Owns the collaborator graph compose() built and disposes it in reverse.

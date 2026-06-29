@@ -22,6 +22,7 @@ const ErrorContractTests := preload("res://test/units/error_contract_tests.gd")
 const PathsVersioningTests := preload("res://test/units/paths_versioning_tests.gd")
 const ProceduralAssetTests := preload("res://test/units/procedural_asset_tests.gd")
 const SerializeIoTests := preload("res://test/units/serialize_io_tests.gd")
+const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
 func _init() -> void:
@@ -47,9 +48,37 @@ func _init() -> void:
 	PathsVersioningTests.run(testing)
 	ProceduralAssetTests.run(testing)
 	SerializeIoTests.run(testing)
+	_test_published_token_path(testing)
 
 	var failed := testing.report()
 	quit(0 if failed == 0 else 1)
+
+
+# Pins that the REGISTRY-PUBLISH token path tracks a relocated user:// dir.
+# globalize_path("user://…") reads application/config/use_custom_user_dir live, so
+# the published absolute path follows a custom user dir instead of the default
+# app_userdata location, which is what lets such projects authenticate. GDScript
+# has no try/finally, so the relocated setting is restored BEFORE any check runs:
+# a failure can never leave the project settings dirty.
+func _test_published_token_path(testing: Testing) -> void:
+	testing.begin("Published token path honors use_custom_user_dir")
+	# Variant source (ProjectSettings.get_setting) → explicit coercion, not inference.
+	var prev_use: bool = bool(ProjectSettings.get_setting("application/config/use_custom_user_dir", false))
+	var prev_name: String = str(ProjectSettings.get_setting("application/config/custom_user_dir_name", ""))
+
+	ProjectSettings.set_setting("application/config/use_custom_user_dir", true)
+	ProjectSettings.set_setting("application/config/custom_user_dir_name", "godot_mcp_toolkit_unit_test")
+
+	var published: String = MCPAuth.get_published_token_path()
+
+	ProjectSettings.set_setting("application/config/use_custom_user_dir", prev_use)
+	ProjectSettings.set_setting("application/config/custom_user_dir_name", prev_name)
+
+	testing.ok(published.contains("godot_mcp_toolkit_unit_test"), "relocated user dir honored at publish")
+	testing.ok(published.begins_with("/") or published.substr(1, 2) == ":/", "absolute path (POSIX or Windows drive)")
+	testing.ok(published.contains("project_instance_"), "per-instance segment present")
+	testing.ok(published.ends_with("/mcp_token"), "token filename suffix")
+	print("")
 
 
 # --- Guards ----------------------------------------------------------------

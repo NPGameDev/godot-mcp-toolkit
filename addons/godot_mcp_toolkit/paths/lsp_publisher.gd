@@ -140,5 +140,5 @@ func _on_editor_settings_changed() -> void:
 		return  # LSP endpoint unchanged — ignore unrelated editor-setting churn.
 	_last_lsp_host = lsp["host"]
 	_last_lsp_port = lsp["port"]
-	RegistryClient.ensure_registered(bound_port, MCPAuth.get_token_path(), lsp["host"], lsp["port"])
+	RegistryClient.ensure_registered(bound_port, MCPAuth.get_published_token_path(), lsp["host"], lsp["port"])
 	print("[MCPServer] LSP endpoint changed → re-published %s:%d" % [lsp["host"], lsp["port"]])
