@@ -142,10 +142,12 @@ static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
 		else:
 			truncated = true
 
+	# total_cells: full match count (counted past the cap); cursor-less — use
+	# 'region' to query spatial subsets.
 	var result := {
 		"cells": cells,
 		"cell_count": cells.size(),
-		"cells_total": cells_total,
+		"total_cells": cells_total,
 		"truncated": truncated,
 		"bounds": bounds,
 		"node_class": node.get_class(),
@@ -153,9 +155,8 @@ static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
 
 	if truncated:
 		result["hint"] = (
-			"Result truncated to %d of %d cells. " % [_MAX_CELLS, cells_total] +
-			"Use the 'region' parameter to query spatial subsets: " +
-			"{x, y, width, height}.")
+			"%d of %d cells returned (capped at %d) — " % [cells.size(), cells_total, _MAX_CELLS] +
+			"use the 'region' parameter {x, y, width, height} to query spatial subsets (cursor-less).")
 
 	var version_hint := _tilemap_version_hint(is_map)
 	if not version_hint.is_empty():

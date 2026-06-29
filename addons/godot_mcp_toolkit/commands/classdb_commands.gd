@@ -94,12 +94,14 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 			truncated = _add_signal_section(result, script.get_script_signal_list(), offset) or truncated
 		if want_constants:
 			result["constants"] = {}
-			result["constants_total"] = 0
+			result["total_constants"] = 0
 			result["enums"] = {}
-			result["enums_total"] = 0
+			result["total_enums"] = 0
 
+	# truncated is ALWAYS present (false on a complete read). On a single-section
+	# truncation the hint builder also adds a structured next_offset resume cursor.
+	result["truncated"] = truncated
 	if truncated:
-		result["truncated"] = true
 		var hint := _build_truncation_hint(result, offset)
 		if hint != "":
 			result["hint"] = hint
@@ -196,18 +198,26 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 		top_level.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
 		return MCPToolkitSuccess.ok({
 			"count": top_level.size(),
+			"total_classes": top_level.size(),
 			"classes": top_level,
-			"_hint": "No filter provided; showing direct children of Object only. Use base_class or pattern to search.",
+			"truncated": false,
+			"hint": "No filter provided; showing direct children of Object only. Use base_class or pattern to search.",
 		})
 
 	matches.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
+	# Canonical fields: total_classes + truncated ALWAYS present; on truncation add
+	# the next_offset resume cursor + prose hint.
+	var truncated := matches.size() < total
 	var result: Dictionary = {
 		"count": matches.size(),
-		"total": total,
+		"total_classes": total,
 		"classes": matches,
+		"truncated": truncated,
 	}
-	if matches.size() < total:
-		result["truncated"] = true
+	if truncated:
+		var next_offset := offset + matches.size()
+		result["next_offset"] = next_offset
+		result["hint"] = "more classes remain — re-call classdb.search with offset = next_offset (%d) until truncated is false" % next_offset
 	return MCPToolkitSuccess.ok(result)
 
 
@@ -244,7 +254,7 @@ static func _build_chain_global(cls: String, entry: Dictionary) -> Array[String]
 
 # -- Section builders --------------------------------------------------------
 # Each builder paginates a pre-fetched metadata list (`raw`) and writes its
-# section + "<section>_total" into `result`. The caller supplies `raw` from
+# section + "total_<section>" into `result`. The caller supplies `raw` from
 # whichever source applies — ClassDB.class_get_*_list() for native classes,
 # script.get_script_*_list() for global (class_name) classes — so the builders
 # depend only on the rows, not on how they were fetched.
@@ -252,7 +262,7 @@ static func _build_chain_global(cls: String, entry: Dictionary) -> Array[String]
 
 static func _add_property_section(result: Dictionary, raw: Array, offset: int) -> bool:
 	var total := raw.size()
-	result["properties_total"] = total
+	result["total_properties"] = total
 	var out: Array = []
 	var skipped := 0
 	for p in raw:
@@ -273,7 +283,7 @@ static func _add_property_section(result: Dictionary, raw: Array, offset: int) -
 
 static func _add_method_section(result: Dictionary, raw: Array, offset: int) -> bool:
 	var total := raw.size()
-	result["methods_total"] = total
+	result["total_methods"] = total
 	var out: Array = []
 	var skipped := 0
 	for m in raw:
@@ -294,7 +304,7 @@ static func _add_method_section(result: Dictionary, raw: Array, offset: int) -> 
 
 static func _add_signal_section(result: Dictionary, raw: Array, offset: int) -> bool:
 	var total := raw.size()
-	result["signals_total"] = total
+	result["total_signals"] = total
 	var out: Array = []
 	var skipped := 0
 	for s in raw:
@@ -319,7 +329,7 @@ static func _add_constants_native(
 ) -> bool:
 	var const_list := ClassDB.class_get_integer_constant_list(cls, no_inheritance)
 	var const_total := const_list.size()
-	result["constants_total"] = const_total
+	result["total_constants"] = const_total
 	var constants: Dictionary = {}
 	var skipped := 0
 	for c_name in const_list:
@@ -333,7 +343,7 @@ static func _add_constants_native(
 
 	var enum_list := ClassDB.class_get_enum_list(cls, no_inheritance)
 	var enum_total := enum_list.size()
-	result["enums_total"] = enum_total
+	result["total_enums"] = enum_total
 	var enums: Dictionary = {}
 	var enum_skipped := 0
 	for enum_name in enum_list:
@@ -358,7 +368,7 @@ static func _build_truncation_hint(result: Dictionary, offset: int) -> String:
 	var single_section := ""
 	var single_next_offset := 0
 	for section in ["properties", "methods", "signals", "constants", "enums"]:
-		var total_key: String = section + "_total"
+		var total_key: String = "total_" + section
 		if not result.has(total_key):
 			continue
 		var total: int = result[total_key]
@@ -377,9 +387,11 @@ static func _build_truncation_hint(result: Dictionary, offset: int) -> String:
 	if parts.is_empty():
 		return ""
 	if parts.size() == 1:
-		return "%s truncated. Use sections: ['%s'], offset: %d to fetch the rest." % [
-			parts[0], single_section, single_next_offset]
-	return "%s truncated. Page each with sections + offset." % " + ".join(parts)
+		# Surface the resume cursor as a structured next_offset alongside the prose loop hint.
+		result["next_offset"] = single_next_offset
+		return "more %s remain — re-call classdb.get_info with offset = next_offset (%d) until truncated is false" % [
+			single_section, single_next_offset]
+	return "%s truncated. Page each section with sections + offset until truncated is false." % " + ".join(parts)
 
 
 # -- Shared formatting helpers -----------------------------------------------

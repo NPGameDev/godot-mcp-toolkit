@@ -46,10 +46,13 @@ static func _walk_filesystem_directory(
 	extension_filter: Array[String],
 	entries: Array,
 	max_count: int,
-) -> bool:
+) -> int:
+	# Returns the FULL count of matching assets in this subtree (drives total_assets).
+	# Collecting into `entries` stops once it hits max_count, but counting
+	# continues past the cap — mirrors spatial_map's "keep counting total, stop
+	# collecting". The walk is over the in-memory EditorFileSystem cache.
+	var total := 0
 	for index in range(directory.get_file_count()):
-		if entries.size() >= max_count:
-			return true
 		var file_path := directory.get_file_path(index)
 		var file_name := directory.get_file(index)
 		var file_type := directory.get_file_type(index)
@@ -67,20 +70,19 @@ static func _walk_filesystem_directory(
 		# deletion (mtime 0 = file gone from disk but index not flushed).
 		if mtime == 0 and not FileAccess.file_exists(file_path):
 			continue
-		entries.append({
-			"path": file_path,
-			"class": file_type,
-			"size_bytes": null,
-			"modified_unix": mtime,
-		})
+		total += 1
+		if entries.size() < max_count:
+			entries.append({
+				"path": file_path,
+				"class": file_type,
+				"size_bytes": null,
+				"modified_unix": mtime,
+			})
 	for subdir_index in range(directory.get_subdir_count()):
-		if entries.size() >= max_count:
-			return true
-		if _walk_filesystem_directory(
-				directory.get_subdir(subdir_index),
-				name_glob, class_filter, extension_filter, entries, max_count):
-			return true
-	return false
+		total += _walk_filesystem_directory(
+			directory.get_subdir(subdir_index),
+			name_glob, class_filter, extension_filter, entries, max_count)
+	return total
 
 
 # -- Commands -----------------------------------------------------------------
@@ -142,13 +144,17 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 				"no indexed directory at %s (path may exist on disk but not yet scanned — call editor.refresh or wait for is_scanning to clear)" % path_prefix, MCPToolkitError.HINT_FILE_PATH)
 
 	var entries: Array = []
-	var truncated := _walk_filesystem_directory(
+	var total_assets := _walk_filesystem_directory(
 		root_directory, name_glob, class_filter,
 		normalized_extension_filter, entries, max_results)
+	var truncated := total_assets > entries.size()
 
-	return MCPToolkitSuccess.ok({
+	# total_assets: the full match count (count-past-cap). Cursor-less — the depth-first
+	# FS walk is not linearly resumable, so the hint advises narrowing filters / raising max_results.
+	var response: Dictionary = {
 		"entries": entries,
 		"count": entries.size(),
+		"total_assets": total_assets,
 		"truncated": truncated,
 		"path_prefix": path_prefix,
 		"filters_applied": {
@@ -156,7 +162,10 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 			"class_filter": class_filter,
 			"extension_filter": normalized_extension_filter,
 		},
-	})
+	}
+	if truncated:
+		response["hint"] = "%d of %d assets returned (capped at max_results) — narrow with path_prefix/name_glob/class_filter/extension_filter, or raise max_results (<= 2000)." % [entries.size(), total_assets]
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
@@ -182,16 +191,17 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 	var queue: Array[String] = [file_path]
 	visited[file_path] = true
 	var truncated := false
+	var total_dependencies := 0
 	var depth := 0
 	const MAX_TRANSITIVE_DEPTH := 50
 
-	while queue.size() > 0 and not truncated:
+	# Count every unique dependency for total_dependencies, but stop COLLECTING rows
+	# once the cap is hit (count-past-cap, still bounded by MAX_TRANSITIVE_DEPTH). The first max_results
+	# collected rows are byte-identical to before — only counting continues past it.
+	while queue.size() > 0:
 		var current := queue.pop_front() as String
 		var raw_dependencies := ResourceLoader.get_dependencies(current)
 		for raw_dependency in raw_dependencies:
-			if dependencies.size() >= max_results:
-				truncated = true
-				break
 			var raw_string := String(raw_dependency)
 			var parts: PackedStringArray = raw_string.split("::")
 			var stripped := parts[0]
@@ -212,31 +222,40 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 			if visited.has(stripped):
 				continue
 			visited[stripped] = true
-			dependencies.append({
-				"path": stripped,
-				"raw_path": raw_string,
-				"class": dependency_class,
-			})
+			total_dependencies += 1
+			if dependencies.size() < max_results:
+				dependencies.append({
+					"path": stripped,
+					"raw_path": raw_string,
+					"class": dependency_class,
+				})
+			else:
+				truncated = true
 			if include_transitive:
 				if FileAccess.file_exists(stripped):
 					queue.append(stripped)
 		depth += 1
 		if depth > MAX_TRANSITIVE_DEPTH:
 			truncated = true
+			break
 
 	var warnings: Array[String] = []
 	if depth > MAX_TRANSITIVE_DEPTH:
 		warnings.append(
 			"transitive walk exceeded 50 levels — truncated to prevent unbounded recursion")
 
-	return MCPToolkitSuccess.ok({
+	var response: Dictionary = {
 		"path": file_path,
 		"dependencies": dependencies,
 		"count": dependencies.size(),
+		"total_dependencies": total_dependencies,
 		"truncated": truncated,
 		"include_transitive": include_transitive,
 		"warnings": warnings,
-	})
+	}
+	if truncated:
+		response["hint"] = "%d of %d dependencies returned (capped at max_results) — raise max_results (no cursor), or set include_transitive=false to reduce the set." % [dependencies.size(), total_dependencies]
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:

@@ -109,6 +109,9 @@ static func get_entries(limit: int, level_filter: Array = [], since_id: int = -1
 		filtered.append(entry.duplicate())
 	_mutex.unlock()
 
+	# Capture the pre-slice filtered count for total_lines before the
+	# slice below reassigns `filtered` to the capped tail.
+	var total_lines := filtered.size()
 	var truncated := filtered.size() > limit
 	if truncated:
 		filtered = filtered.slice(filtered.size() - limit)
@@ -122,6 +125,7 @@ static func get_entries(limit: int, level_filter: Array = [], since_id: int = -1
 		"count": filtered.size(),
 		"next_id": next_id,
 		"truncated": truncated,
+		"total_lines": total_lines,
 	}
 
 

@@ -127,16 +127,18 @@ static func _cmd_spatial_map(parameters: Dictionary) -> Dictionary:
 	elif count_3d > 0:
 		space = "3d"
 
+	# total_nodes: full match count (counted past the cap); cursor-less — narrow
+	# with filters or raise max_nodes to resume.
 	var result := {
 		"space": space,
 		"detail": detail,
-		"node_count": total_spatial,
+		"total_nodes": total_spatial,
 		"returned": nodes_out.size(),
 		"truncated": total_spatial > nodes_out.size(),
 		"nodes": nodes_out,
 	}
 	if result["truncated"]:
-		result["hint"] = ("response capped at %d of %d spatial nodes; narrow with "
+		result["hint"] = ("%d of %d spatial nodes returned (capped at max_nodes) — narrow with "
 			+ "subtree / class / region / radius, or raise max_nodes (<= %d).") % [
 				nodes_out.size(), total_spatial, HARD_MAX_NODES]
 	return MCPToolkitSuccess.ok(result)

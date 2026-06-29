@@ -77,6 +77,8 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 		var response := MCPToolkitSuccess.ok({
 			"lines": [],
 			"count": 0,
+			"truncated": false,
+			"total_lines": 0,
 			"source": "cache",
 			"note": "No game session recorded yet (game_start was never called this editor session)",
 		})
@@ -89,6 +91,8 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 		var response := MCPToolkitSuccess.ok({
 			"lines": [],
 			"count": 0,
+			"truncated": false,
+			"total_lines": 0,
 			"source": "cache",
 			"note": "Log file not found. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart.",
 		})
@@ -106,6 +110,8 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 		var response := MCPToolkitSuccess.ok({
 			"lines": [],
 			"count": 0,
+			"truncated": false,
+			"total_lines": 0,
 			"source": "cache",
 			"note": "No new output since game_start (log file unchanged).",
 		})
@@ -140,6 +146,9 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 		filtered.append(stripped)
 
 	# Apply limit (take last N lines).
+	# Capture the pre-slice filtered count for total_lines before the
+	# slice reassigns `filtered` to the capped tail.
+	var total_lines := filtered.size()
 	var truncated := filtered.size() > limit
 	if truncated:
 		filtered = filtered.slice(filtered.size() - limit)
@@ -148,8 +157,13 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 		"lines": filtered,
 		"count": filtered.size(),
 		"truncated": truncated,
+		"total_lines": total_lines,
 		"source": "cache",
 	})
+	# Capped-tail pagination (oldest lines drop first, no cursor) — advise raising
+	# limit / text_filter rather than a cursor.
+	if truncated:
+		response["hint"] = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
 	# Pass unfiltered lines so error scan always has full context.
 	_merge_debug_bridge_data(response, stripped_lines)
 	if not regex_warning.is_empty():

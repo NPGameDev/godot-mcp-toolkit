@@ -58,8 +58,8 @@
 **7.15** `editor_refresh` — file_paths=[`res://sv2_validation/actor.gd`]
 - **Expect:** success, mode=`"targeted"`, file_count=1
 
-**7.16** `editor_get_errors`
-- **Expect:** success (may be empty list)
+**7.16** `editor_get_errors` (toolkit-internal — NOT an MCP tool; the LLM-facing errors path is `editor_get_console` with `level_filter:["error"]`)
+- **Expect:** success (may be empty list). Editor-side the handler now returns `truncated`/`next_id`/`total_errors` + a paginate hint (uniform pagination contract, ledger #9); not reachable via the MCP server (F1).
 
 ---
 

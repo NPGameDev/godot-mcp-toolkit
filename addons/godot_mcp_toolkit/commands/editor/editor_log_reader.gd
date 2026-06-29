@@ -24,6 +24,7 @@ const LogHelpers = Modules.LogHelpers
 
 static func cmd_get_errors(server: Node, parameters: Dictionary) -> Dictionary:
 	var limit: int = int(parameters.get("limit", 50))
+	var since_id: int = int(parameters.get("since_id", -1))
 	var source: String = str(parameters.get("source", "buffer"))
 	if not (source in ["buffer", "file"]):
 		return MCPToolkitError.fail("INVALID_PARAMS",
@@ -37,31 +38,43 @@ static func cmd_get_errors(server: Node, parameters: Dictionary) -> Dictionary:
 	var regex_warning: String = tf[3]
 
 	if source == "file":
-		var result := _read_console_log(server, limit, ["error"], -1, text_filter, text_regex)
+		var result := _read_console_log(server, limit, ["error"], since_id, text_filter, text_regex)
 		if result.get("success", false) == false:
 			return result
 		var entries = result.get("entries", [])
+		# Surface truncated/next_id/total_errors the reader already computes; use the
+		# truncation-gated loop hint instead of a dead static message.
+		var file_truncated: bool = result.get("truncated", false)
 		var response := {
 			"errors": Untrusted.wrap(
 				"editor_errors", "godot", JSON.stringify(entries)),
 			"count": result.get("count", 0),
+			"truncated": file_truncated,
+			"next_id": result.get("next_id", -1),
+			"total_errors": result.get("total_lines", 0),
 		}
+		if file_truncated:
+			response["hint"] = "more errors remain — re-call editor.get_errors with since_id = next_id (%d) until truncated is false" % int(result.get("next_id", -1))
 		if not regex_warning.is_empty():
 			response["warning"] = regex_warning
 		return MCPToolkitSuccess.ok(response)
 
-	var buf_result: Dictionary = Modules.LogBuffer.get_entries(limit, ["error"], -1, text_filter, text_regex)
+	var buf_result: Dictionary = Modules.LogBuffer.get_entries(limit, ["error"], since_id, text_filter, text_regex)
 	var entries: Array = buf_result["entries"]
 	for entry in entries:
 		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
+	var buf_truncated: bool = buf_result["truncated"]
 	var response := {
 		"errors": Untrusted.wrap(
 			"editor_errors", "buffer", JSON.stringify(entries)),
 		"count": buf_result["count"],
+		"truncated": buf_truncated,
+		"next_id": buf_result["next_id"],
+		"total_errors": buf_result["total_lines"],
 	}
-	if buf_result["count"] > 0:
-		response["hint"] = "Use since_id parameter with the highest id from this response to get only new errors on next call."
+	if buf_truncated:
+		response["hint"] = "more errors remain — re-call editor.get_errors with since_id = next_id (%d) until truncated is false" % int(buf_result["next_id"])
 	if not regex_warning.is_empty():
 		response["warning"] = regex_warning
 	return MCPToolkitSuccess.ok(response)
@@ -152,8 +165,12 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, tex
 		"count": buf_result["count"],
 		"next_id": buf_result["next_id"],
 		"truncated": buf_result["truncated"],
+		"total_lines": buf_result["total_lines"],
 		"source": "buffer",
 	}
+	# On a truncated read, page via since_id = next_id.
+	if buf_result["truncated"]:
+		response["hint"] = "more lines remain — re-call editor.get_console with since_id = next_id (%d) until truncated is false" % int(buf_result["next_id"])
 	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off
 	# or the log file couldn't be read (locked by OS on Windows).
 	if entries.is_empty() and not Modules.LogBuffer.uses_logger_api():
@@ -342,6 +359,9 @@ static func _read_console_log(
 					text_filtered.append(entry)
 		entries = text_filtered
 
+	# Capture the pre-slice entry count for total_lines before the slice
+	# below reassigns `entries` to the capped tail.
+	var total_lines := entries.size()
 	var truncated := entries.size() > limit
 	if truncated:
 		entries = entries.slice(entries.size() - limit)
@@ -354,13 +374,17 @@ static func _read_console_log(
 		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
 
-	return MCPToolkitSuccess.ok({
+	var response := {
 		"entries": Untrusted.wrap(
 			"console", str(chosen_file), JSON.stringify(entries)),
 		"count": entries.size(),
 		"next_id": next_id,
 		"truncated": truncated,
+		"total_lines": total_lines,
 		"log_file": chosen_file,
 		"log_mtime": chosen_mtime,
 		"warnings": warnings,
-	})
+	}
+	if truncated:
+		response["hint"] = "more lines remain — re-call editor.get_console with since_id = next_id (%d) until truncated is false" % next_id
+	return MCPToolkitSuccess.ok(response)

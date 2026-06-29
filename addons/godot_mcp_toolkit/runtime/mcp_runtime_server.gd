@@ -485,8 +485,12 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 			"count": buf_result["count"],
 			"next_id": buf_result["next_id"],
 			"truncated": buf_result["truncated"],
+			"total_lines": buf_result["total_lines"],
 			"source": "buffer",
 		}
+		# Capped-tail pagination (oldest lines drop first, no cursor): on truncation, guide the caller to raise limit / narrow text_filter.
+		if buf_result["truncated"]:
+			response["hint"] = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
 		# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off.
 		if entries.is_empty() and not LogBuffer.uses_logger_api():
 			if not LogHelpers.is_file_logging_enabled():
@@ -511,7 +515,8 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 			_send_result(peer, id, {
 				"lines": [],
 				"count": 0,
-				"total": 0,
+				"total_lines": 0,
+				"truncated": false,
 				"path": log_path,
 				"source": "file",
 				"note": "log file not yet written — new game with no prints, or file flush pending",
@@ -555,13 +560,19 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 
 	var json_slice := JSON.stringify(slice)
 	var scrubbed := Scrubber.scrub(json_slice, "debugger.get_log")
+	# total_lines = full file line count; truncated = the limit cap dropped older
+	# head lines (start > 0), independent of any text_filter. Capped tail, cursor-less.
+	var file_truncated: bool = start > 0
 	var file_response := {
 		"lines": Untrusted.wrap("game_log", "godot", scrubbed["text"]),
 		"count": slice.size(),
-		"total": total,
+		"total_lines": total,
+		"truncated": file_truncated,
 		"path": log_path,
 		"source": "file",
 	}
+	if file_truncated:
+		file_response["hint"] = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
 	if not regex_warning.is_empty():
 		file_response["warning"] = regex_warning
 	_send_result(peer, id, file_response)

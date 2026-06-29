@@ -66,11 +66,11 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| editor.get_errors | — | — | — | — | — | **GAP:** no dedicated test |
+| editor.get_errors | — | — | — | — | — | **GAP:** no dedicated test — toolkit-internal, NOT an MCP tool (F1, ledger #9); harmonized editor-side (truncated/next_id/total_errors + since_id); LLM path = editor.get_console level_filter=["error"] |
 | editor.save_scene | 55, 64 | — | C3, C5, C7, C8, C9 | — | — | |
 | editor.screenshot | 56, 57 | — | — | — | — | |
 | editor.refresh | 61 | — | C15, C16 | — | 5f96b62 | Renamed from reload_scripts |
-| editor.get_console | 58, 58a–58h | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param |
+| editor.get_console | 58, 58a–58h | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #9: total_lines/next_id/truncated |
 | editor.wait_for_idle | 60 | — | — | — | — | |
 | execute.code | 58a_seed, 77 | — | — | — | FIX-4, FIX-H, 279efed | **GAP:** load() hint, singleton hint |
 
@@ -88,8 +88,8 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| asset.list | 12 | — | C14, C18 | — | — | |
-| asset.get_dependencies | 13 | — | — | — | — | |
+| asset.list | 12 | — | C14, C18 | — | — | ledger #9: total_assets/truncated (cursor-less) |
+| asset.get_dependencies | 13 | — | — | — | — | ledger #9: total_dependencies/truncated (cursor-less) |
 | asset.import | 42, 42b | — | — | — | — | |
 
 ### Resource Management (3 tools)
@@ -117,8 +117,8 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| classdb.get_info | 10, 12.5, 12.6 | — | — | ✓ (truncation hint) | 45975fc | Offset pagination (W1) |
-| classdb.search | 9, 12.7 | — | — | ✓ (pagination hint) | 45975fc | Offset pagination (W1) |
+| classdb.get_info | 10, 12.5, 12.6 | — | — | ✓ (truncation hint) | 45975fc | Offset pagination (W1); ledger #9: total_<section> (was *_total)/truncated/next_offset |
+| classdb.search | 9, 12.7 | — | — | ✓ (pagination hint) | 45975fc | Offset pagination (W1); ledger #9: total_classes (was total)/next_offset |
 
 ### Signal Management (3 tools)
 
@@ -150,7 +150,7 @@
 |---|---|---|---|---|---|---|
 | game.start | 71 | — | C8 | — | 4be3454, a28d17b | **GAP:** compilation failure guard, wait_for_runtime hint |
 | game.stop | 81 | — | C8 | — | — | |
-| debugger.get_log | 75, 75a–75f, 80, 80a–80f | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis) |
+| debugger.get_log | 75, 75a–75f, 80, 80a–80f | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis). ledger #9: total_lines/truncated (capped tail) |
 
 ### Animation (4 tools)
 
@@ -166,7 +166,7 @@
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | tilemap.set_cells | 14.18–14.19 | ✓ (14.20: no-tileset) | C10 | — | FIX-A, FIX-J | |
-| tilemap.read_cells | 14.21–14.22 | ✓ (14.23: NOT_FOUND, 14.24: wrong class, 14.25: missing param) | — | — | c7f56c8 | read-only |
+| tilemap.read_cells | 14.21–14.22 | ✓ (14.23: NOT_FOUND, 14.24: wrong class, 14.25: missing param) | — | — | c7f56c8 | read-only; ledger #9: total_cells (was cells_total)/truncated |
 
 ### TileSet — structural (6 tools)
 
@@ -293,7 +293,7 @@
 | runtime.get_node_state | 73 | — | C8 | — | — | |
 | runtime.get_script_vars | 74 | — | — | — | — | |
 | runtime.set_property | — | — | — | — | c6d5f40 | **GAP:** no test + autoload warning |
-| debugger.get_log | 75, 75a–75f, 80a–80f | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state |
+| debugger.get_log | 75, 75a–75f, 80a–80f | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state; ledger #9: runtime total→total_lines + truncated (capped tail) |
 | signal.list | (via editor 44–48) | — | — | — | — | Runtime uses same handler |
 | signal.connect | (via editor 45) | — | — | — | — | Runtime uses same handler |
 | signal.disconnect | (via editor 47) | — | — | — | — | Runtime uses same handler |
@@ -307,7 +307,7 @@
 ## Gap Summary
 
 **Tools with NO dedicated test:** 3
-- `editor.get_errors` — no standalone test (partially covered by CS11.2)
+- `editor.get_errors` — no standalone test (partially covered by CS11.2); toolkit-internal, no MCP tool (F1, ledger #9) — expected gap
 - `meta.set_limits` — no test at all
 - `runtime.set_property` — no test at all
 
@@ -337,7 +337,7 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| scene_spatial_map | 28.1–28.7b | ✓ (28.7: **-32602** detail [enum, server-side] + INVALID_PARAMS region size) | — | ✓ (truncation hint, successHint → node_set_property) | — | eager; read-only; 2D + 3D dispatch |
+| scene_spatial_map | 28.1–28.7b | ✓ (28.7: **-32602** detail [enum, server-side] + INVALID_PARAMS region size) | — | ✓ (truncation hint, successHint → node_set_property) | — | eager; read-only; 2D + 3D dispatch; ledger #9: total_nodes (was node_count)/truncated |
 | texture_generate | 28.8–28.15 | ✓ (28.15: INVALID_PATH png, PATH_DENIED, INVALID_PARAMS transparent, **-32602** shape [enum], ALREADY_EXISTS) | — | ✓ (successHint → Sprite2D.texture / spriteframes_create) | — | `placeholders` group; all 7 shapes, colour formats, hollow, label, dim cap; **class always Texture2D, no settle wait (Item B, 41m-sexies)** |
 | sound_generate | 28.16–28.19 | ✓ (28.19: INVALID_PATH wav, PATH_DENIED, **-32602** waveform [enum]) | — | ✓ (successHint → AudioStreamPlayer.stream) | — | `placeholders` group; all 5 waveforms, sweep, decay, duration cap; **class always AudioStreamWAV (Item B)** |
 
