@@ -1,7 +1,7 @@
 # Section 15 — Theme, Audio, SpriteFrames
 
 **Dependencies:** Section 1 (sv2_validation/ folder exists)
-**Tools tested:** theme_edit, audiobus_edit, spriteframes_create, spriteframes_edit, spriteframes_from_spritesheet
+**Tools tested:** theme_edit, audiobus_edit, audiobus_list, spriteframes_create, spriteframes_edit, spriteframes_from_spritesheet
 **Tests:** 12
 
 ---
@@ -24,7 +24,7 @@
 **15.6** `audiobus_edit` — action=`add_effect`, bus_name=`"Sv2Music"`, effect=`{"type":"Reverb"}`
 - **Expect:** success
 
-**15.7** `audiobus_edit` — action=`list`
+**15.7** `audiobus_list` — (no params)
 - **Expect:** buses include Master + Sv2Music with Reverb effect
 
 **15.8** `audiobus_edit` guard — action=`remove_bus`, bus_name=`"Master"`

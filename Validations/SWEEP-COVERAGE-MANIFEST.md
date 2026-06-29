@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-06-22 (41n concern 034 D — batch partial-failure rollup sweep coverage)
 **Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
-**Total tools:** 120 (98 editor-side + 6 LSP + 4 debugger + 12 runtime)
+**Total tools:** 122 (100 editor-side + 6 LSP + 4 debugger + 12 runtime)
 **Sweep test count:** ~295 numbered test cases + 28 combo chains + C# phase + extension phase (Section 28 adds 22) — concern 034 D added 5 batch-rollup cases (3.14c/3.14d, 4.15/4.16, 2.15a)
 
 ---
@@ -152,13 +152,14 @@
 | game.stop | 81 | — | C8 | — | — | |
 | debugger.get_log | 75, 75a–75f, 80, 80a–80f | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis) |
 
-### Animation (3 tools)
+### Animation (4 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | animation.keyframe | 51, 52 | — | C9 | — | — | |
 | animation.get_keys | 53 | — | C9 | — | — | |
-| animationtree.edit | 54m–54s | ✓ (54s: INVALID_CLASS) | — | — | — | |
+| animationtree.edit | 13.5–13.9 | — | — | — | — | 5 mutating sub-ops; `list` extracted to `animationtree.list` (ledger #3 CQS split). _Test IDs reconciled to current `Sections/13` scheme (were stale `54m–54s`)._ |
+| animationtree.list | 13.10 | ✓ (13.11: INVALID_CLASS) | — | — | — | Read-only structure list (extracted from `animationtree.edit`, ledger #3) |
 
 ### TileMap (2 tools)
 
@@ -203,11 +204,12 @@
 | 3d.create_light | 77e | — | — | — | — | |
 | 3d.create_camera | 77f | — | — | — | — | |
 
-### Audio Bus (1 tool)
+### Audio Bus (2 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| audiobus.edit | 81a–81g | ✓ (81f: Master removal) | — | — | — | |
+| audiobus.edit | 15.4–15.6, 15.8 | ✓ (15.8: Master removal) | — | — | — | Mutating sub-ops; `list` extracted to `audiobus.list` (ledger #3 CQS split). _Test IDs reconciled to current `Sections/15` scheme (were stale `81a–81g`)._ |
+| audiobus.list | 15.7 | — | — | — | — | Read-only bus-layout snapshot (extracted from `audiobus.edit`, ledger #3) |
 
 ### Navigation (1 tool)
 

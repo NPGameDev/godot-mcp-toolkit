@@ -18,6 +18,9 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("animationtree.edit", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_animationtree_edit(server, parameters)
 	, MCPToolkitCommandOptions.new())
+	registry.add("animationtree.list", func(parameters: Dictionary) -> Dictionary:
+		return _cmd_animationtree_list(parameters)
+	, MCPToolkitCommandOptions.new().mark_read_only())
 
 
 # -- Helpers ------------------------------------------------------------------
@@ -328,6 +331,16 @@ static func _sm_summary(sm: AnimationNodeStateMachine) -> Dictionary:
 	}
 
 
+static func _cmd_animationtree_list(parameters: Dictionary) -> Dictionary:
+	var node_path := str(parameters.get("node_path", ""))
+	node_path = Helpers.normalize_editor_path(node_path)
+	var resolved = _resolve_tree(node_path)
+	if resolved is Dictionary:
+		return resolved
+	var tree: AnimationTree = resolved
+	return _at_list(tree)
+
+
 static func _cmd_animationtree_edit(
 	server: Node, parameters: Dictionary,
 ) -> Dictionary:
@@ -355,11 +368,9 @@ static func _cmd_animationtree_edit(
 			return _at_remove_transition(server, tree, node_path, parameters)
 		"set_property":
 			return _at_set_property(server, tree, node_path, parameters)
-		"list":
-			return _at_list(tree)
 		_:
 			return MCPToolkitError.fail("INVALID_PARAMS",
-				"unknown action '%s'; expected set_root|add_node|remove_node|add_transition|remove_transition|set_property|list" % action)
+				"unknown action '%s'; expected set_root|add_node|remove_node|add_transition|remove_transition|set_property" % action)
 
 
 static func _at_set_root(

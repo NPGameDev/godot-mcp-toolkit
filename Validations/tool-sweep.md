@@ -1,6 +1,6 @@
 # Universal MCP Tool Sweep v2
 
-A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all 120 MCP tools (98 editor-side + 6 LSP + 4 debugger + 12 runtime).
+A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all 122 MCP tools (100 editor-side + 6 LSP + 4 debugger + 12 runtime).
 
 ## How to Use
 
@@ -138,9 +138,9 @@ So you do NOT need to split dependent operations across messages.
 | 10 | [10-input-map.md](Sections/10-input-map.md) | Input Map | 4 | input_map_action, input_map_event | None |
 | 11 | [11-save-system.md](Sections/11-save-system.md) | Save System | 6 | save_write, save_read, save_list, save_delete | None |
 | 12 | [12-classdb.md](Sections/12-classdb.md) | ClassDB Introspection | 7 | classdb_search, classdb_get_info | None |
-| 13 | [13-animation.md](Sections/13-animation.md) | Animation & AnimationTree | 12 | animation_keyframe, animation_get_keys, animationtree_edit | S2 |
+| 13 | [13-animation.md](Sections/13-animation.md) | Animation & AnimationTree | 12 | animation_keyframe, animation_get_keys, animationtree_edit, animationtree_list | S2 |
 | 14 | [14-tileset-tilemap.md](Sections/14-tileset-tilemap.md) | TileSet & TileMap | 19 | tileset_create, tileset_edit, tilemap_set_cells, tilemap_read_cells | S2 |
-| 15 | [15-theme-audio-sprites.md](Sections/15-theme-audio-sprites.md) | Theme, Audio, SpriteFrames | 12 | theme_edit, audiobus_edit, spriteframes_create/edit/from_spritesheet | S1 |
+| 15 | [15-theme-audio-sprites.md](Sections/15-theme-audio-sprites.md) | Theme, Audio, SpriteFrames | 12 | theme_edit, audiobus_edit, audiobus_list, spriteframes_create/edit/from_spritesheet | S1 |
 | 16 | [16-domain-tools.md](Sections/16-domain-tools.md) | 3D, Path2D, Navigation, Particles, Procedural | 28 | 3d_*, path2d_edit_curve, navigation_edit_polygon, particles_create, procedural_edit_* | S2 |
 | 17 | [17-scene-query-inherit.md](Sections/17-scene-query-inherit.md) | Scene Inheritance & Query | 10 | scene_create_inherited, scene_query | S1 |
 | 18 | [18-file-operations.md](Sections/18-file-operations.md) | Phantom Tab Cleanup & File Operations | 16 | scene_close, scene_delete, file_delete, folder_delete, asset_import | S1 |

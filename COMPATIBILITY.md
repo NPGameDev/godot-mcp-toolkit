@@ -33,7 +33,8 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance) carries a relaunch `hint`; a genuine typo does not. 4.4+ hot-reloads, so the call just succeeds |
 | `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see `docs/multi-instance.md`) |
 | `editor_get_console` | 4.2 | Captures runtime output (errors/warnings/prints) on all versions. **Editor parse errors** (from `editor_refresh` recompiling a script) surface only on **4.5+** (the Logger API hooks editor diagnostics); on **4.2–4.4** they are NOT written to `godot.log`, so neither `source="buffer"` nor `source="file"` can return them — use `script_check` or the `script_write` inline diagnostics instead. Multi-line errors that ARE captured (`SCRIPT ERROR: …` + `   at: <script>.gd:LINE`) are leveled as a unit, so a filename + `level_filter:["error"]` query finds the location line. 4.5+ uses the synchronous Logger (one entry per error, zero-latency) |
-| `animationtree_edit` | 4.2 | All ops work on 4.2+ (set_root, add/remove_node, add/remove_transition, set_property; transitions enumerate on all versions). **`list` node enumeration is 4.5+:** `AnimationNodeStateMachine.get_node_list()` is a 4.5 script API (absent 4.2-4.4), so on 4.2-4.4 `list` returns `nodes: []` and `nodes_count` reads 0 (node *operations* via add/remove/has still work; only listing existing nodes is unavailable). 4.5+ enumerates nodes fully |
+| `animationtree_edit` | 4.2 | All ops work on 4.2+ (set_root, add/remove_node, add/remove_transition, set_property; transitions enumerate on all versions) |
+| `animationtree_list` | 4.2 | Listing works on 4.2+, but **node enumeration is 4.5+:** `AnimationNodeStateMachine.get_node_list()` is a 4.5 script API (absent 4.2-4.4), so on 4.2-4.4 `animationtree_list` returns `nodes: []` and `nodes_count` reads 0 (node *operations* via `animationtree_edit` add/remove/has still work; only listing existing nodes is unavailable). 4.5+ enumerates nodes fully |
 | All other tools | 4.2 | Fully functional. Mutating ops register UndoRedo history (undo via Edit > Undo) on all supported versions — the toolkit reaches `EditorUndoRedoManager` through `EditorPlugin.get_undo_redo()`, which is 4.0+ stable |
 
 ### Degraded behavior by version
@@ -82,9 +83,9 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   cannot detect a foreign or near-simultaneous holder of LSP port 6005, so each
   editor must use a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see
   `docs/multi-instance.md`).
-- **`animationtree_edit` `list` — node enumeration needs 4.5+ (4.2–4.4).**
+- **`animationtree_list` — node enumeration needs 4.5+ (4.2–4.4).**
   `AnimationNodeStateMachine.get_node_list()` is a 4.5+ script API, so on 4.2–4.4
-  `animationtree_edit` `list` returns `nodes: []` and summaries report `nodes_count: 0`.
+  `animationtree_list` returns `nodes: []` and summaries report `nodes_count: 0`.
   Transitions enumerate and every node *operation* (`add_node`/`remove_node`/`has_node` via
   `add`/`remove`) works on 4.2+ — only *listing existing nodes* is unavailable. The handler
   guards the call with `has_method("get_node_list")`, so it always returns a well-formed
@@ -131,7 +132,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   the file-tailing backend used on 4.2-4.4 — and, because the Logger hooks the editor's
   internal error/warning stream, it captures editor **parse/import errors** that
   `godot.log` file logging does not, so `editor_get_console` surfaces them here.
-- `animationtree_edit` `list` enumerates state-machine nodes fully (`get_node_list` is 4.5+).
+- `animationtree_list` enumerates state-machine nodes fully (`get_node_list` is 4.5+).
 
 ### EditorFileSystem indexing (all versions)
 

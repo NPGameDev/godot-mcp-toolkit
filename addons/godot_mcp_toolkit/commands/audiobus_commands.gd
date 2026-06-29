@@ -15,6 +15,9 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 	registry.add("audiobus.edit", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_audiobus_edit(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
+	registry.add("audiobus.list", func(_parameters: Dictionary) -> Dictionary:
+		return _action_list()
+	, MCPToolkitCommandOptions.new().mark_scene_independent().mark_read_only())
 
 
 # -- Commands -----------------------------------------------------------------
@@ -38,11 +41,9 @@ static func _cmd_audiobus_edit(parameters: Dictionary) -> Dictionary:
 			return _action_add_effect(parameters)
 		"remove_effect":
 			return _action_remove_effect(parameters)
-		"list":
-			return _action_list()
 		_:
 			return MCPToolkitError.fail("INVALID_PARAMS",
-				"Unknown action '%s'; expected add_bus, remove_bus, set_bus, add_effect, remove_effect, or list" % action)
+				"Unknown action '%s'; expected add_bus, remove_bus, set_bus, add_effect, or remove_effect" % action)
 
 
 # -- Actions ------------------------------------------------------------------

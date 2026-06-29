@@ -1,7 +1,7 @@
 # Section 13 — Animation & AnimationTree
 
 **Dependencies:** Section 2 (Sv2AnimPlayer and Sv2AnimTree exist in main.tscn)
-**Tools tested:** animation_keyframe, animation_get_keys, animationtree_edit, node_call_method
+**Tools tested:** animation_keyframe, animation_get_keys, animationtree_edit, animationtree_list, node_call_method
 **Tests:** 12
 
 ---
@@ -33,10 +33,10 @@
 **13.9** `animationtree_edit` (add transition) — node_path=`Sv2AnimTree`, action=`add_transition`, from=`run`, to=`idle`, advance_mode=`auto`
 - **Expect:** success
 
-**13.10** `animationtree_edit` (list) — node_path=`Sv2AnimTree`, action=`list`
+**13.10** `animationtree_list` — node_path=`Sv2AnimTree`
 - **Expect:** nodes=[idle, run], transitions=[2 entries]
 
-**13.11** `animationtree_edit` guard — node_path=`Sv2Sprite`, action=`list`
+**13.11** `animationtree_list` guard — node_path=`Sv2Sprite`
 - **Expect:** INVALID_CLASS mentioning AnimationTree
 
 **13.12** `editor_save_scene`
