@@ -6,11 +6,14 @@ nav_order: 2
 
 # Godot MCP Toolkit — Architecture
 
-> **Architecture as of `b552824`** — 41n cohesion refactor: the large command and
-> infrastructure files were decomposed into thin orchestrators over single-responsibility
-> children, the addon was reorganised into DDD domain folders
-> (`commands/`, `contract/`, `transport/`, `registry/`, `extensions/`, …), and the old
-> `_hub.gd` was split into the `Modules` preload registry plus the `EditorAccess` facade.
+> **Architecture as of `0d461c2`** — 41n-ter cross-repo contract alignment: token-path
+> authority ([ADR 0011](#14-key-decisions-adrs); the toolkit now publishes the
+> globalized-absolute token path), uniform pagination (`total_<unit>` / `truncated` /
+> `next_<cursor>`), the audiobus / animationtree command-query (CQS) split, and the
+> extension-collision guard. Structural baseline unchanged from the 41n cohesion refactor
+> (thin orchestrators over single-responsibility children; DDD domain folders such as
+> `commands/`, `contract/`, `transport/`, `registry/`, `extensions/`; the `Modules` preload
+> registry + the `EditorAccess` facade).
 
 This document explains how the toolkit is built, for users and contributors who want to
 understand it without reading all 113 GDScript files. It covers the major subsystems and
@@ -56,7 +59,9 @@ The rules that keep it honest:
    depicted files moved since their `data-verified` SHA. It over-flags by design — a false
    re-check costs a glance; a missed drift ships a lying diagram.
 
-Diagrams below are verified against `b552824` (the tip of the 41n refactor).
+Diagrams below are verified against `b552824` (the 41n refactor), except those on the seams
+the 41n-ter contract alignment touched, which are re-verified to `0d461c2` — each diagram's own
+`data-verified` comment is authoritative.
 
 ---
 
@@ -100,7 +105,7 @@ below:
 | `transport/` + `transport/dispatch/` | editor server, WebSocket framing, request routing, concurrency lanes | [§3](#3-transport--connection), [§4](#4-dispatch--concurrency) |
 | `runtime/` | the in-game (Mode B) server | [§2](#2-the-editorruntime-split), [§3](#3-transport--connection) |
 | `contract/` | response envelope, error codes, type coercion, the command registry | [§5](#5-the-response-contract), [§6](#6-command-registry--catalogue) |
-| `commands/` | the ~99 built-in tool handlers | [§6](#6-command-registry--catalogue) |
+| `commands/` | the ~101 built-in tool handlers | [§6](#6-command-registry--catalogue) |
 | `core/` | plugin composition root, tool menu, the `Modules` preload registry, `EditorAccess` | [§7](#7-plugin-lifecycle) |
 | `extensions/` | third-party extension discovery, loading, hot-reload | [§8](#8-extension-system) |
 | `registry/` + `registry/store/` | multi-instance discovery (`projects.json`) | [§9](#9-multi-project-registry) |
@@ -188,7 +193,7 @@ first-frame auth handshake. The shared mechanics live in `ws_transport.gd` (list
 poll / auth framing) and `notifier.gd` (result / error / notification / broadcast). The two
 servers differ only in what they inject into that base and how they pump it.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="0d461c2" -->
 ```mermaid
 sequenceDiagram
     participant C as Bridge (client)
@@ -214,10 +219,13 @@ ProjectSetting (default 1024 KiB). A response frame larger than the peer buffer 
 wholesale by the engine** (no chunking), which is why oversized reads are guarded centrally
 and `save.read` / `script.read` paginate.
 
-**Auth.** The token is a 256-bit CSPRNG value (`auth.gd`), written to a per-instance file
-whose path is published in the registry so the bridge can read it. The handshake reply differs
-by mode: Mode A returns `godot_version` + plugin `version` (the server's version-gating input),
-Mode B returns `{"authed":true}` only.
+**Auth.** The token is a 256-bit CSPRNG value (`auth.gd`), written to a per-instance file; its
+**globalized absolute path** is published in the registry entry (`get_published_token_path()` —
+`ProjectSettings.globalize_path` of the `user://` token file) so the bridge can read **and
+structurally validate** it without re-deriving the path ([ADR 0011](#14-key-decisions-adrs)).
+In-engine readers keep the `user://` form. The handshake reply differs by mode: Mode A returns
+`godot_version` + plugin `version` (the server's version-gating input), Mode B returns
+`{"authed":true}` only.
 
 **The editor poll loop is deliberately indirect.** Editor mutations must not run re-entrantly
 inside `_process` (a scene save pumps the main loop, which could resume a coroutine mid-pump).
@@ -388,9 +396,10 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
     # … more verbs
 ```
 
-There are **~99 built-in handlers across 31 modules**; the server projects these to **108 MCP
-tool definitions** (including 2 meta tools), owns the tool **groups** and on-demand activation,
-and the `domain.verb` ⟷ tool-name mapping stays in lockstep across the two repos.
+There are **~101 built-in handlers across 31 modules**; the server projects these to **110 MCP
+tool definitions** (plus 2 meta tools registered separately), owns the tool **groups** and
+on-demand activation, and the `domain.verb` ⟷ tool-name mapping stays in lockstep across the two
+repos.
 
 | Domain area | Modules (selected) |
 |-------------|--------------------|
@@ -686,6 +695,7 @@ ones most relevant to this document:
 | [0008](../adr/0008-lsp-port-registry-authoritative.md) | LSP port discovery is registry-authoritative | [§2](#2-the-editorruntime-split), [§9](#9-multi-project-registry) |
 | [0009](../adr/0009-fs-content-trust-boundary.md) | Filesystem-content trust boundary; extensions are full-trust | [§8](#8-extension-system), [§10](#10-security--trust-boundaries) |
 | [0010](../adr/0010-generated-assets-report-constructed-class.md) | Generated assets report their constructed class & skip import-settle | [§5](#5-the-response-contract) |
+| [0011](../adr/0011-token-path-authority.md) | Token-path authority — the toolkit publishes the globalized-absolute path; the server reads & structurally validates it | [§3](#3-transport--connection), [§10](#10-security--trust-boundaries) |
 
 ---
 
