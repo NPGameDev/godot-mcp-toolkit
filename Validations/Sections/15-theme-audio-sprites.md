@@ -30,8 +30,12 @@
 **15.8** `audiobus_edit` guard — action=`remove_bus`, bus_name=`"Master"`
 - **Expect:** INVALID_PARAMS — cannot remove Master bus
 
-**15.9** `spriteframes_create` — file_path=`res://sv2_validation/spriteframes.tres`, animations=[{name:"idle", frames:[{texture:"res://icon.svg"},{texture:"res://icon.svg"}]}, {name:"run", frames:[{texture:"res://icon.svg"},{texture:"res://icon.svg"},{texture:"res://icon.svg"},{texture:"res://icon.svg"}]}]
-- **Expect:** success, 2 animations with correct frame counts
+**15.9** `spriteframes_create` — file_path=`res://sv2_validation/spriteframes.tres`, animations=[{name:"idle", frames:[{texture:"res://icon.svg"}]}, {name:"run", frames:[{texture:"res://icon.svg"},{texture:"res://icon.svg"}]}]
+- **Expect:** success, 2 animations with correct frame counts (idle=1, run=2)
+
+> **Fixture size — keep tiny on purpose.** Distinct per-animation frame counts
+> (1 and 2) prove the frame-count contract exactly as larger counts would;
+> byte-identical extra frames add no coverage. Do not inflate.
 
 **15.10** `spriteframes_edit` — action=`add_animation`, animation_name=`"jump"`, file_path=`res://sv2_validation/spriteframes.tres`, fps=6
 - **Expect:** success

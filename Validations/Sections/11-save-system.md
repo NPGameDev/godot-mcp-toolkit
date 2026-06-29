@@ -25,15 +25,23 @@
 - **Expect:** PATH_DENIED
 
 **11.7** `save_read` paging + configurable cap (concern 025)
-1. `save_write` — path=`user://saves/sv2_page.txt`, content = a 1000-char string (e.g. 1000× `A`)
-2. `save_read` — path=`user://saves/sv2_page.txt`, `max_bytes`=400
-   - **Expect:** `bytes_returned`=400, `offset`=0, `next_offset`=400, `total_bytes`=1000, `truncated`=true. Uniform pagination contract (concern 054): because `truncated` is true, a `hint` field is present naming `next_offset`.
-3. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=400, `max_bytes`=400
-   - **Expect:** `bytes_returned`=400, `next_offset`=800, `truncated`=true, `hint` present (truncated).
-4. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=800, `max_bytes`=400
-   - **Expect:** `bytes_returned`=200, `next_offset`=1000, `truncated`=false, **no `hint`** (final window — the hint is omitted once `truncated` is false; page until then). Same contract shape as `script_read` (see Section 6.2), in byte units.
-5. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=1000 (at EOF)
-   - **Expect:** success, `bytes_returned`=0, `next_offset`=1000, `truncated`=false (no error past EOF)
+
+> **Fixture size — keep tiny on purpose.** A 10-byte file exercises the exact
+> same multi-window pagination contract (truncated → truncated → final, hint
+> presence/absence, clean EOF) as a megabyte file. Use a small `max_bytes` so a
+> few bytes page across 3 windows. Do NOT inflate the fixture to hundreds or
+> thousands of bytes — large inline content bloats agent context and slows the
+> sweep substantially with zero added coverage.
+
+1. `save_write` — path=`user://saves/sv2_page.txt`, content = a 10-char string (`AAAAAAAAAA`, 10× `A`)
+2. `save_read` — path=`user://saves/sv2_page.txt`, `max_bytes`=4
+   - **Expect:** `bytes_returned`=4, `offset`=0, `next_offset`=4, `total_bytes`=10, `truncated`=true. Uniform pagination contract (concern 054): because `truncated` is true, a `hint` field is present naming `next_offset`.
+3. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=4, `max_bytes`=4
+   - **Expect:** `bytes_returned`=4, `next_offset`=8, `truncated`=true, `hint` present (truncated).
+4. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=8, `max_bytes`=4
+   - **Expect:** `bytes_returned`=2, `next_offset`=10, `truncated`=false, **no `hint`** (final window — the hint is omitted once `truncated` is false; page until then). Same contract shape as `script_read` (see Section 6.2), in byte units.
+5. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=10 (at EOF)
+   - **Expect:** success, `bytes_returned`=0, `next_offset`=10, `truncated`=false (no error past EOF)
 6. Cap: set `mcp_toolkit/limits/save_read_cap_kb`=64 (Project Settings → `mcp_toolkit/limits/`, or `meta_set_limits save_read_cap_kb=64`), then `save_read` with `max_bytes`=100000
    - **Expect:** INVALID_PARAMS (window exceeds the 64 KB cap; default 256 KB == the former hardcoded ceiling, so the default is unchanged)
    - Restore the cap to 256 afterward.

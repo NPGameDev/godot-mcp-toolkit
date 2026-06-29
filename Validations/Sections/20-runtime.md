@@ -29,16 +29,16 @@
 **20.5** Wait 2-3 seconds for runtime, then: `runtime_screenshot`
 - **Expect:** PNG of running game
 
-**20.6** `runtime_get_node_state` — node_path=`/root/Sv2Main/Sv2Player`
+**20.6** `runtime_get_node_state` — node_path=`/root/main/Sv2Player`
 - **Expect:** class, path, properties including position
 
-**20.7** `runtime_get_script_vars` — node_path=`/root/Sv2Main/Sv2Player`
+**20.7** `runtime_get_script_vars` — node_path=`/root/main/Sv2Player`
 - **Expect:** speed=100.0, label="default"
 
-**20.8** `runtime_set_property` — node_path=`/root/Sv2Main/Sv2Player`, property=`speed`, value=200.0
+**20.8** `runtime_set_property` — node_path=`/root/main/Sv2Player`, property=`speed`, value=200.0
 - **Expect:** success
 
-**20.9** `runtime_get_script_vars` — node_path=`/root/Sv2Main/Sv2Player` (verify change)
+**20.9** `runtime_get_script_vars` — node_path=`/root/main/Sv2Player` (verify change)
 - **Expect:** speed=200.0
 
 **20.10** `runtime_set_property` (autoload warning) — target an autoload node if one exists. If no autoload registered, skip this test.
@@ -70,12 +70,12 @@
 - **Expect:** success
 
 **20.18** `execute_code` (runtime) — code=`get_tree().current_scene.name`
-- **Expect:** "Sv2Main"
+- **Expect:** "main"
 
-**20.19** `animation_player_control` — node_path=`/root/Sv2Main/Sv2AnimPlayer`, operation=`play`, animation_name=`sv2_lib/idle`
+**20.19** `animation_player_control` — node_path=`/root/main/Sv2AnimPlayer`, operation=`play`, animation_name=`sv2_lib/idle`
 - **Expect:** success (or error if animation wasn't created — note in report)
 
-**20.20** `signal_emit` — node_path=`/root/Sv2Main/Sv2Player`, signal_name=`hit`
+**20.20** `signal_emit` — node_path=`/root/main/Sv2Player`, signal_name=`hit`
 - **Expect:** success
 
 **20.21** `debugger_get_log` — (check for any signal-related output)

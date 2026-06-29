@@ -32,8 +32,8 @@
 **17.9** `scene_query` guard — (no filters provided)
 - **Expect:** INVALID_PARAMS mentioning "filter"
 
-**17.10** `scene_query` guard — root_path=`"NonExistentNode"`
-- **Expect:** NOT_FOUND
+**17.10** `scene_query` guard — root_path=`"NonExistentNode"`, class_filter=`"Node"`
+- **Expect:** NOT_FOUND ("Root node not found"). NOTE: `scene_query` requires at least one filter (`class_filter`/`group_filter`/`name_pattern`/`property_filters`); `root_path` is NOT a filter, so a `root_path`-only call trips the filter-required guard (that is 17.9's case) *before* the node-existence check. Pair the bad `root_path` with any filter to reach the NOT_FOUND path. (Verified 41n-ter: tool returns NOT_FOUND correctly with a filter present — the prior filterless spec could never reach it.)
 
 ---
 
