@@ -29,6 +29,7 @@ const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd
 const Notifier := preload("res://addons/godot_mcp_toolkit/transport/notifier.gd")
 const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transport.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/scene/signal_pair_resolver.gd")
+const TextInputSynth := preload("res://addons/godot_mcp_toolkit/runtime/text_input_synth.gd")
 
 const PORT_BASE := 6570
 const PORT_RANGE := 16  # 6570..6585 inclusive
@@ -722,8 +723,10 @@ func _cmd_signal_emit(peer: WebSocketPeer, id, params) -> void:
 # ---- Playtest commands ------------------------------------------------------
 
 
-# input.simulate: process an array of {event_type, event_data, delay_ms?} and
-# feed them through Input.parse_input_event sequentially with optional delays.
+# input.simulate: process an array of {event_type, event_data, delay_ms?}
+# sequentially with optional delays. key/action events feed the Input singleton
+# via Input.parse_input_event; mouse and send_text events route through
+# Viewport.push_input (driving gui_input/focus).
 func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))
@@ -790,11 +793,98 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			Input.parse_input_event(act)
 			event_result["action"] = str(action_name)
 			event_result["pressed"] = is_pressed
+		elif et == "send_text":
+			# Type a string into a text surface via the focus owner so the real
+			# gui_input → text_changed/text_submitted fire (set_property(.text)
+			# skips them). event_data values are Variant — coerce each explicitly.
+			var text_val: String = str(ed.get("text", ""))
+			var node_path_str: String = str(ed.get("node_path", ""))
+			var do_submit: bool = bool(ed.get("submit", false))
+
+			# Focus precedence: an explicit Control node_path wins; otherwise type
+			# into whatever currently holds GUI focus. A custom _input reader gets
+			# the events regardless of focus, so "none" is a hint, not a failure.
+			var target: Node = null
+			var focus_source := "none"
+			var node_path_problem := ""
+			if not node_path_str.is_empty():
+				# Resolve against /root (NOT click_node's current_scene resolver) so
+				# absolute /root/... paths and autoloads resolve as documented.
+				var resolved = _resolve_runtime_node(node_path_str)
+				if resolved == null:
+					node_path_problem = "not found"
+				elif resolved is Control:
+					target = resolved
+					(resolved as Control).grab_focus()
+					# One frame for the focus change to settle before typing.
+					await get_tree().process_frame
+					focus_source = "node_path"
+				else:
+					node_path_problem = "is not a Control (%s)" % resolved.get_class()
+			if target == null:
+				target = vp.gui_get_focus_owner() if vp != null else null
+				focus_source = "existing" if target != null else "none"
+
+			# Capture before/after only when the target exposes a readable String
+			# `text`; a custom reader has none → text_changed stays null.
+			var has_text := false
+			var text_before := ""
+			if target != null:
+				var tb: Variant = target.get("text")
+				if typeof(tb) == TYPE_STRING:
+					has_text = true
+					text_before = tb
+			# Redact the echo when the target's `secret` is true (LineEdit.secret);
+			# the change comparison below still reads the real value — only the echo masks.
+			var is_secret := false
+			if target != null:
+				var sec: Variant = target.get("secret")
+				is_secret = typeof(sec) == TYPE_BOOL and bool(sec)
+
+			# Deliver via push_input (routes a key event to gui.key_focus); mirror
+			# the mouse path's parse_input_event fallback when there is no viewport.
+			for key_ev in TextInputSynth.synthesize_text_events(text_val):
+				if vp != null:
+					vp.push_input(key_ev)
+				else:
+					Input.parse_input_event(key_ev)
+			if do_submit:
+				for enter_ev in TextInputSynth.synthesize_enter():
+					if vp != null:
+						vp.push_input(enter_ev)
+					else:
+						Input.parse_input_event(enter_ev)
+			var chars_sent := text_val.length()
+
+			var text_changed: Variant = null
+			if has_text:
+				var ta: Variant = target.get("text")
+				var raw_after: String = ta if typeof(ta) == TYPE_STRING else ""
+				text_changed = raw_after != text_before
+				event_result["text_after"] = TextInputSynth.format_text_after(raw_after, is_secret)
+			event_result["chars_sent"] = chars_sent
+			event_result["focus_source"] = focus_source
+			if target != null:
+				event_result["focus_target"] = {"path": str(target.get_path()), "class": target.get_class()}
+			else:
+				event_result["focus_target"] = null
+			event_result["text_changed"] = text_changed
+
+			if node_path_problem != "":
+				event_result["hint"] = "node_path '%s' %s; pass a valid Control path or omit node_path to type into the focused field." % [node_path_str, node_path_problem]
+			else:
+				var focus_path := str(target.get_path()) if target != null else ""
+				var focus_class := target.get_class() if target != null else ""
+				var paused := bool(event_result.get("tree_paused", false))
+				var send_text_hint := TextInputSynth.build_hint(
+					focus_source, text_changed, focus_path, focus_class, chars_sent, paused)
+				if send_text_hint != "":
+					event_result["hint"] = send_text_hint
 		else:
 			var ev := _build_input_event(et, ed)
 			if ev == null:
 				event_result["dispatched"] = false
-				event_result["error"] = "unknown event_type (expected key|mouse_button|mouse_motion|action|click|click_node)"
+				event_result["error"] = "unknown event_type (expected key|mouse_button|mouse_motion|action|click|click_node|send_text)"
 				results.append(event_result)
 				var err := MCPToolkitError.fail("INVALID_PARAMS",
 					"unknown event_type at index %d: %s" % [i, et])
