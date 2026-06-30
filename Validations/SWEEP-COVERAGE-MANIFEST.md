@@ -150,7 +150,7 @@
 |---|---|---|---|---|---|---|
 | game.start | 71 | — | C8 | — | 4be3454, a28d17b | **GAP:** compilation failure guard, wait_for_runtime hint |
 | game.stop | 81 | — | C8 | — | — | |
-| debugger.get_log | 75, 75a–75f, 80, 80a–80f | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis). ledger #9: total_lines/truncated (capped tail) |
+| debugger.get_log | 75, 75a–75f, 80, 80a–80f, 20.15a | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis). ledger #9: total_lines/truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a — supersedes the file-path capped-tail `truncated=start>0`) |
 
 ### Animation (4 tools)
 
@@ -293,7 +293,7 @@
 | runtime.get_node_state | 73 | — | C8 | — | — | |
 | runtime.get_script_vars | 74 | — | — | — | — | |
 | runtime.set_property | — | — | — | — | c6d5f40 | **GAP:** no test + autoload warning |
-| debugger.get_log | 75, 75a–75f, 80a–80f | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state; ledger #9: runtime total→total_lines + truncated (capped tail) |
+| debugger.get_log | 75, 75a–75f, 80a–80f, 20.15a | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state; ledger #9: runtime total→total_lines + truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a) |
 | signal.list | (via editor 44–48) | — | — | — | — | Runtime uses same handler |
 | signal.connect | (via editor 45) | — | — | — | — | Runtime uses same handler |
 | signal.disconnect | (via editor 47) | — | — | — | — | Runtime uses same handler |

@@ -540,29 +540,31 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	var text := file.get_as_text()
 	file.close()
 
+	# Filter-then-slice — uniform with the buffer source (LogBuffer.get_entries):
+	# strip ANSI and apply text_filter across ALL lines FIRST, then take the last
+	# `limit` matches. total_lines counts the matching lines (pre-cap); truncated
+	# means the matches exceeded limit so older matches were dropped. Capped tail, cursor-less.
 	var all_lines := text.split("\n", false)
-	var total := all_lines.size()
-	var start := max(0, total - limit)
-	var slice: Array = []
-	for i in range(start, total):
-		slice.append(LogHelpers.strip_ansi(all_lines[i]))
-
-	if text_filter != "":
-		var text_filtered: Array = []
-		for line in slice:
+	var filtered: Array = []
+	for raw_line in all_lines:
+		var line: String = LogHelpers.strip_ansi(str(raw_line))
+		if text_filter != "":
 			if text_regex != null:
-				if text_regex.search(line):
-					text_filtered.append(line)
+				if not text_regex.search(line):
+					continue
 			else:
-				if line.findn(text_filter) >= 0:
-					text_filtered.append(line)
-		slice = text_filtered
+				if line.findn(text_filter) < 0:
+					continue
+		filtered.append(line)
+
+	var total := filtered.size()
+	var file_truncated: bool = filtered.size() > limit
+	if file_truncated:
+		filtered = filtered.slice(filtered.size() - limit)
+	var slice: Array = filtered
 
 	var json_slice := JSON.stringify(slice)
 	var scrubbed := Scrubber.scrub(json_slice, "debugger.get_log")
-	# total_lines = full file line count; truncated = the limit cap dropped older
-	# head lines (start > 0), independent of any text_filter. Capped tail, cursor-less.
-	var file_truncated: bool = start > 0
 	var file_response := {
 		"lines": Untrusted.wrap("game_log", "godot", scrubbed["text"]),
 		"count": slice.size(),
