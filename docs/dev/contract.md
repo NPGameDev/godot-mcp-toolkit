@@ -1,0 +1,238 @@
+# Contract Surface — `godot-mcp-toolkit` ⇄ `godot-mcp-server`
+
+The **as-built wire contract** between the two repos: every format, protocol message, and
+field the **server consumes from the toolkit**, each with a **stability tier**.
+
+The **toolkit owns this contract.** It is the protocol producer/publisher — it owns the ports,
+the WebSocket framing, the response envelope, the error-code vocabulary, and the registry /
+token / LSP publishing. The server (`godot-mcp-server`, the npm MCP bridge) is the consumer; it
+opens a localhost WebSocket to the toolkit and forwards an AI assistant's MCP calls over it.
+This document is the canonical, version-controlled description of that boundary; the
+[architecture doc](../architecture/) covers the toolkit's internals.
+
+Each entry records the **toolkit shape** (the authoritative wire form, with the file where it is
+defined) and the **server consumer** (how the bridge reads or produces it). File references name
+the file only — line numbers rot and are omitted; grep the named file for the symbol.
+
+## Stability tiers
+
+The tiers feed semantic versioning:
+
+- **public** — semver-protected. **Breaking a public contract requires a major version bump.**
+- **semi-public** — deprecate first, then change across a minor release.
+- **internal** — no compatibility guarantee; may change at any time.
+
+The full per-tool **name + parameter-schema** catalogue (C8) and the **tool-group** catalogue
+(C12) are **not** duplicated here — they live in the generated **tool-reference** doc. This
+document describes the *framing* of tools and groups (naming convention, registration,
+activation), not the per-tool list.
+
+## Maintaining this document
+
+Each detail section below carries a **provenance comment** immediately above it:
+
+```
+<!-- data-depicts="<toolkit source files>" data-verified="<short-sha>" -->
+```
+
+`data-depicts` lists the **toolkit** (publisher-side) files the section is drawn from, as
+**space-separated, repo-root-relative** paths; `data-verified` is the commit the section was last
+checked-correct against. **Bumping `data-verified` is an attestation** that a human or agent
+re-read the section against the code at that SHA — it is never auto-generated. Provenance tracks
+the toolkit/publisher side only; the freshness check is single-repo. Server-side consumer drift
+is caught by the smoke suite and contract-alignment review, not by this check.
+
+When the contract changes: edit the affected section, then bump its `data-verified`. Find what to
+re-check by grepping `data-depicts` for a file you changed; the advisory, non-blocking freshness
+check (`scripts/check_arch_freshness.sh docs/dev/contract.md`) lists sections whose depicted files
+moved since their `data-verified` SHA. It over-flags by design — a false re-check costs a glance;
+a missed drift ships a lying contract.
+
+The chronological record of *how* the contract reached this state lives in the plan repo's
+**contract-change-ledger** (a closed historical record). This document carries only the current
+as-built state.
+
+---
+
+## Summary index
+
+| # | Contract | Where defined (toolkit) | Tier |
+|---|----------|-------------------------|------|
+| C1 | **WebSocket transport & framing** (JSON-RPC 2.0/WS, ports, bind, buffer) | `transport/mcp_server.gd`, `runtime/mcp_runtime_server.gd`, `transport/ws_transport.gd` | public |
+| C2 | **Auth handshake** (first-frame token exchange; version field) | `security/auth.gd` + both servers + `transport/ws_transport.gd` | public |
+| C3 | **Response envelope** (success + error shape) | `contract/mcp_toolkit_success.gd`, `contract/mcp_toolkit_error.gd` | public |
+| C4 | **Error-code vocabulary** (`CODES`) | `contract/mcp_toolkit_error.gd` | public |
+| C5 | **Dispatch + concurrency notifications** (JSON-RPC codes; `_queued`/`_executing`/`_cancel`/`echo`; id coercion) | `transport/dispatch/{server_request_router,dispatch_lane,mutation_watchdog}.gd` + `transport/mcp_server.gd` | public |
+| C6 | **Idempotency** (`status` + `if_exists`) | create commands + `commands/editor_helpers.gd` | public |
+| C7 | **Type-tag coercion vocabulary** (18 tags, bidirectional) | `contract/coerce.gd` | public |
+| C8 | **Tool names & param schemas** (`domain.verb`) | `commands/*.gd` + `transport/mcp_toolkit_command_registry.gd` | public |
+| C9 | **Read-only model** (`GODOT_MCP_READ_ONLY`; server-authoritative; published annotations) | toolkit annotations + `transport/mcp_toolkit_command_registry.gd` | public |
+| C10 | **Environment variables** | `security/auth.gd`, `transport/mcp_server.gd`, `.mcp.json.template` | public |
+| C11 | **`.mcp.json` file format** | `ui/mcp_json_sync.gd` (read) + `ui/dock/mcp/dock_mcp_json_panel.gd` (write) | public |
+| C12 | **Tool group names** | toolkit publishes `group` per command (options builder); catalogue is server-side | semi-public |
+| C13 | **Extension API** (`register`; options/undo/save/ctx facades; base classes) | `transport/mcp_toolkit_command_registry.gd` + `extensions/mcp_toolkit_extension*.gd`, `contract/mcp_toolkit_tool_context.gd` | semi-public |
+| C14 | **Extension surface signaling** (`extensions.list`/`refresh`; `extensions.changed` broadcast) | `extensions/services/{extension_meta_commands,extension_watcher}.gd` | semi-public |
+| C15 | **LSP status round-trip** (reverse: server→toolkit `set_lsp_status`) | `commands/editor/editor_commands.gd` + `transport/mcp_server.gd` | semi-public |
+| C16 | **`projects.json` registry format** (entry fields + aggregate) | `registry/registry_client.gd` + `registry/store/*` | internal |
+| C17 | **Project-instance hash** | `paths/project_paths.gd` + `paths/project_key.gd` | internal |
+| C18 | **Token file discovery** (`token_path` field) | `security/auth.gd` + `registry/registry_client.gd` | internal |
+| C19 | **LSP endpoint publishing** (`lsp_host`/`lsp_port`) | `paths/lsp_publisher.gd` → registry | internal |
+| C20 | **Runtime discovery** (`runtime_port`/`runtime_pid`) | `registry/registry_client.gd` | internal |
+| C21 | **Untrusted envelope** | `security/untrusted.gd` | internal (LLM-facing) |
+| C22 | **ProjectSettings keys** | `core/settings_registration.gd` | internal |
+
+---
+
+## Detail
+
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="16a9e3c" -->
+### C1 — WebSocket transport & framing  ·  **public**
+- **Toolkit shape:** JSON-RPC 2.0 messages over a WebSocket text channel, one JSON object per frame.
+  - **Mode A (editor):** ports **6550–6560** (`PORT_BASE=6550`, `PORT_RANGE=11` in `transport/mcp_server.gd`), bind **`127.0.0.1`** (the `BIND` const). Peer buffer from the ProjectSetting **`mcp_toolkit/limits/ws_buffer_kb`**, default **1024** KiB, read once and applied in/outbound by the shared transport (`transport/ws_transport.gd`).
+  - **Mode B (runtime / in-game):** ports **6570–6585** (`PORT_BASE=6570`, `PORT_RANGE=16` in `runtime/mcp_runtime_server.gd`), bind `127.0.0.1`. Peer buffer is **hardcoded 1 048 576** B in/out, passed into the shared transport's `configure()` — the runtime does **not** read the ProjectSetting.
+- **Constraint:** a response frame larger than the peer buffer is **dropped wholesale** by the engine (`wsl_peer.cpp`, 4.2 & 4.5 — no chunking), surfacing to the LLM as a hung request. The buffer-ceiling guard (C4 `RESPONSE_TOO_LARGE`) exists to pre-empt this.
+- **Server consumer:** the bridge does **not** blind-scan the ranges — it is a **registry-driven** consumer. `createBridge` (`transport/bridge.ts`) → `createChannel` (`transport/channel.ts`) reaches the **editor** channel via the port read from `projects.json` (`registry.ts`) and the **runtime** channel via the entry's `runtime_port` (C20), opening a `ws://127.0.0.1:<port>` text channel that speaks the same one-JSON-object-per-frame JSON-RPC 2.0 framing. Static `GODOT_MCP_PORT` / `GODOT_MCP_RUNTIME_PORT` overrides pin a port and skip the registry lookup (read in `index.ts`, threaded into `createBridge`). The toolkit's per-frame framing and WS buffer ceiling are matched by the `ws` library.
+- **Example:** request `{"jsonrpc":"2.0","id":1,"method":"scene.create","params":{...}}` → response `{"jsonrpc":"2.0","id":1,"result":{"success":true,...}}`.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="16a9e3c" -->
+### C2 — Auth handshake  ·  **public**
+- **Toolkit shape:** before any RPC, the client's **first WS text frame** must be `{"auth":"<token>"}` (an optional `"version":"X.Y.Z"` client hint may accompany). The **request is identical** across modes; the **success reply differs by mode**:
+  - **Mode A (editor):** `{"authed":true,"godot_version":"<M.m.p>","version":"<plugin-version>"}` (the ack override in `transport/mcp_server.gd`) — carries the engine + plugin version, the server's version-gating input.
+  - **Mode B (runtime):** `{"authed":true}` only — the shared transport's default ack; the runtime supplies no override (`runtime/mcp_runtime_server.gd`) — **no** version fields.
+  - **Failure:** WS close **1008** "invalid token". **Silence > 2000 ms** (`_AUTH_TIMEOUT_MS`) → WS close **1008** "auth timeout" (`transport/ws_transport.gd`). Auth handling is unified in the shared transport for both modes.
+- **Token:** 64-char lowercase hex / 256-bit, `Crypto.new().generate_random_bytes(32).hex_encode()` (`security/auth.gd`); written **raw, no trailing newline** (`write_token`); validated by plain `==` (`validate`). Shared by both modes.
+- **Server consumer:** the bridge sends the exact `{"auth":"<token>"}` first frame via `createChannel`'s `performAuth`, **re-reading the token from disk on every connect** (`transport/channel.ts` → `readToken`, C18) so it always matches whatever the editor/runtime last wrote (the standalone-game self-heal relies on this re-read). From the **editor** ack it parses `godot_version` → the bridge's `getGodotVersion()` (`transport/bridge.ts`) and stores it (feeds the version gate, C5/C9). For **Mode B (runtime)** the ack carries no version → the bridge gets the Godot version from the **registry** pre-pop instead (`lookupProject`, `transport/bridge.ts`), not the handshake.
+- **Constraint:** localhost-only + a single shared token ⇒ this is a single-user local tool (the real boundary, alongside the read-only filter and the human in the editor).
+
+<!-- data-depicts="addons/godot_mcp_toolkit/contract/mcp_toolkit_success.gd addons/godot_mcp_toolkit/contract/mcp_toolkit_error.gd" data-verified="16a9e3c" -->
+### C3 — Response envelope  ·  **public**
+- **Toolkit shape:**
+  - **Success:** `MCPToolkitSuccess.ok(data)` returns `data` with `success=true` added (`contract/mcp_toolkit_success.gd`). It **mutates its argument in place** (deliberate). Success payloads **never** carry `code`.
+  - **Error:** `MCPToolkitError.fail(code,message,hint)` → `{"success":false,"error":<message>,"code":<code>}`, plus `"hint"` **iff** an explicit non-empty hint is passed **or** `code ∈ DEFAULT_HINTS` (`contract/mcp_toolkit_error.gd`). Error payloads **never** carry `status`.
+- **Server consumer:** the bridge **branches on the toolkit's `success` field**: `callAndWrap` (`registration/toolDispatch.ts`) treats `{success:false}` → `toolErrorFromPayload` (`shared/errorContract.ts`, preserving `code` + `message` + the toolkit `hint`); the happy path → `stableStringify(result)` (`shared/schemaMin.ts`, key-sort only) forwarded **verbatim** (REFLECT — no response-schema re-encode; the WS response resolves at `message.result` in `transport/channel.ts`, the single forwarding point, wrapped as `{content:[{type:"text",text:…}]}`). A toolkit-supplied `hint` is **never overwritten** — a server-side `successHint` is injected only when the toolkit set none (`injectSuccessHint`, `registration/toolDispatch.ts`).
+- **Example:** success `{"success":true,"status":"created","path":"res://scenes/main.tscn","root_name":"main"}` · error `{"success":false,"error":"file exists at res://…; set if_exists:'replace'…","code":"ALREADY_EXISTS"}`.
+- **Cross-ref:** the `code` vocabulary and hint auto-attach list = **C4**.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/contract/mcp_toolkit_error.gd" data-verified="16a9e3c" -->
+### C4 — Error-code vocabulary (`CODES`)  ·  **public**
+- **Toolkit shape:** `MCPToolkitError.CODES` enumerates **53** codes (`contract/mcp_toolkit_error.gd`) — the canonical wire vocabulary (full list in source). `DEFAULT_HINTS` auto-attach for **9** codes: `TIMEOUT`, `UNSUPPORTED`, `PATH_DENIED`, `LOG_BUSY`, `LOG_UNAVAILABLE`, `PARENT_NOT_FOUND`, `COMPILATION_FAILED`, `GAME_NOT_RUNNING`, `RESPONSE_TOO_LARGE`.
+- **`fail()` is string-tolerant by design:** it does **not** hard-validate `code ∈ CODES`, so the `emitted ⊆ CODES` audit is a toolkit-internal advisory, not an enforced gate. (`UNSUPPORTED`, `CLASS_MISMATCH`, and `UNSUPPORTED_FILE_TYPE` are all in `CODES`.)
+- **Server consumer (own-enum + string-tolerant):** the server keeps its **own** authoritative `ErrorCode` union (`shared/types.ts`) with a "keep in sync with the toolkit codes" header obligation — **but the emit path is deliberately string-tolerant**: `toolError(code: ErrorCode | string, …)` (`shared/errorContract.ts`) and `toolErrorFromPayload` (`typeof obj.code === "string" ? obj.code : "INTERNAL"`) **forward any unknown plugin code verbatim**, never reject or remap. The union is also a **superset by design** — it carries bridge-origin transport codes the plugin never sends (`CLOSED`, `NO_RUNTIME_URL`, `RPC_ERROR`, `SEND_FAILED`). Any toolkit code, including ones the server's union has not mirrored yet, passes straight through; the dual enum is **documented own-enum + string-tolerant wire**, not a defect.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd addons/godot_mcp_toolkit/transport/dispatch/mutation_watchdog.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/notifier.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="16a9e3c" -->
+### C5 — Dispatch + concurrency notifications  ·  **public**
+- **Toolkit shape** (dispatch lives in `transport/dispatch/*` + `transport/notifier.gd`):
+  - **JSON-RPC errors:** `-32700` parse, `-32600` invalid request, `-32601` method not found / unregistered / hot-reload race (`transport/dispatch/server_request_router.gd`, `transport/dispatch/dispatch_lane.gd`), **`-32000` mutation-watchdog timeout** (server-emitted, `transport/dispatch/mutation_watchdog.gd`).
+  - **Server→client notifications:** `_queued {"request_id":<id>}` (command parked behind a mutation-lock or scene-lease) and `_executing {"request_id":<id>}` (mutation began) — both from `dispatch_lane.gd`, sent via `transport/notifier.gd`.
+  - **Client→server notifications:** `_cancel {"request_id":"<id>"}` (fire-and-forget cooperative cancel — triggers an in-flight `ctx.cancel()` or flags queued entries) and `echo <params>` (transport diagnostic, echoes back) — both in `server_request_router.gd`.
+  - **id coercion:** JSON numbers parse as float; whole-float ids coerce back to int so `{"id":1}` round-trips (`server_request_router.gd`).
+  - **Lanes:** read-only commands bypass both locks; mutations serialize single-in-flight FIFO; scene-lease routing precedes both (`is_read_only` / `needs_serialization`, `transport/mcp_toolkit_command_registry.gd`).
+- **Server consumer:** the bridge owns the JSON-RPC **id↔response correlation** (per-request id, resolver map) in `createChannel` (`transport/channel.ts`) and understands `_queued`/`_executing`; LSP tools are the one exception that bypasses this dispatch entirely (own TCP client, C15/C19, `groups/groupToolHandlers.ts`). The server is **authoritative for the version-unsupported error**: two layers gate before the WS forward — (1) a **registration-time** filter (`registration/toolRegistry.ts`) drops a known-incompatible tool from `tools/list`; (2) a **per-call** defense-in-depth check returns `toolError("UNSUPPORTED", "<name> is not supported on this Godot version (connected: <maj>.<min>)", "<versionSupportText> Use classdb.get_info for alternatives.")` — the version **requirement rides in the hint**, not the message body. On the happy path the server therefore **never sees** the toolkit's `-32601` version-block.
+- **Version-gating parity invariant:** the server is authoritative and reports the connected version as `connected:`. A version-gated built-in needs **both** a toolkit `.with_min_godot_version` gate **and** a matching server-catalogue bound (the server bound is authoritative for the message). The toolkit's own version-block branch is unreachable via live transport — the `-32601 has_command` short-circuit wins over it. Exactly one built-in is gated today: `scene.close @4.5+`.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd addons/godot_mcp_toolkit/commands/node_commands.gd addons/godot_mcp_toolkit/commands/playtest/playtest_control.gd" data-verified="16a9e3c" -->
+### C6 — Idempotency: `status` + `if_exists`  ·  **public**
+- **Toolkit shape:**
+  - **`status` (result discriminator):** the **create subset** is the closed set **`created`** / **`returned`** (idempotent no-op) / **`replaced`** (`commands/scene_commands.gd`, `commands/resource_commands.gd`, `commands/editor_helpers.gd`). `status` is a **general** result discriminator, not create-only — non-create mutations also set it (`added` / `removed` for node-group ops in `commands/node_commands.gd`; `already_running` in `commands/playtest/playtest_control.gd`). The create subset is closed; the full field is open per-command.
+  - **`if_exists` (file-level creates):** **`return`** (default → idempotent no-op, `status:"returned"`) / **`fail`** (→ `ALREADY_EXISTS`) / **`replace`** (→ overwrite, `status:"replaced"` + metadata). An invalid value → `INVALID_PARAMS`.
+  - **File-level (support `if_exists`):** `scene.create`, `scene.create_inherited`, `resource.write` (via `write_asset_with_settle` in `commands/editor_helpers.gd`). **Node-level (return-only, no `if_exists`):** `scene.create_node` (matching class → `returned`, else `CLASS_MISMATCH`), `scene.instantiate` (collision → `returned` or auto-rename).
+- **Server consumer:** **pure passthrough (REFLECT).** `if_exists` is a request param the LLM sets (carried in `inputSchema`); `status` is a response field the bridge forwards verbatim via `callAndWrap` (`registration/toolDispatch.ts`) → `stableStringify` (`shared/schemaMin.ts`) → `message.result` (`transport/channel.ts`) — no server-side interpretation of `created`/`returned`/`replaced`. The toolkit owns the discriminator; the server adds no idempotency logic of its own.
+- **Example:** `{"success":true,"status":"replaced","path":"res://x.tres","previous_root_type":"Resource"}`.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/contract/coerce.gd" data-verified="16a9e3c" -->
+### C7 — Type-tag coercion vocabulary  ·  **public**
+- **Toolkit shape** (`contract/coerce.gd`, bidirectional `coerce_value` ⟷ `serialize_value`): complex Godot types cross JSON as tagged dicts `{"type":"<Tag>",…}`. **18 tags:**
+  - `Vector2{x,y}` · `Vector3{x,y,z}` · `Vector4{x,y,z,w}` · `Vector2i{x,y}` · `Vector3i{x,y,z}` (no `Vector4i`) · `Color{r,g,b,a}` (a default 1.0) · `Rect2{x,y,w,h}` · `Rect2i{x,y,w,h}` · `Transform2D{x_axis,y_axis,origin}` · `Transform3D{basis{x,y,z},origin}` · `NodePath{path}` · `Resource{path[,class]}` · `ResourceRef{path}` (alias of Resource) · `NewResource{class,properties}` (input-only) · `PackedVector2Array{values:[…]}` · `PackedVector3Array{values:[…]}` · `PackedColorArray{values:[…]}` · `LayerMask{category="2d_physics",layers:[…]}` → int bitmask.
+  - **Unknown tag → reject** with `{"_coerce_error":"Unknown type tag '<x>'. Supported: …"}` — not passed through.
+- **Server consumer (REFLECT):** the server does **all** coercion handling on the **request path only** — `inputSchema` Zod with LLM string-coercion (`addStringCoercion`, `shared/schemaCoercion.ts`) so a JSON-stringified tagged dict re-parses; it does **not** re-encode on the response path. The tagged read-back forms (including the `serialize_value` Packed* arms and the `save.read` / `script.read` paging fields) surface **transparently** through `callAndWrap` (`registration/toolDispatch.ts`) → `stableStringify` (key-sort only, `shared/schemaMin.ts`) → `message.result` (`transport/channel.ts`). The bidirectional symmetry is therefore the **toolkit's** `contract/coerce.gd` contract; the server forwards both directions verbatim. (Some top-level paging keys, e.g. `offset`, are declared in the **request** Zod so the catalogue does not strip them — request-path, not a response re-encode.)
+- **Example:** `{"type":"Transform3D","basis":{"x":{"x":1,"y":0,"z":0},"y":{"x":0,"y":1,"z":0},"z":{"x":0,"y":0,"z":1}},"origin":{"x":0,"y":1,"z":0}}`.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/commands addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd addons/godot_mcp_toolkit/contract/mcp_toolkit_command_options.gd" data-verified="16a9e3c" -->
+### C8 — Tool names & param schemas  ·  **public**
+- **Toolkit shape:** ~101 handlers across the `commands/*.gd` modules (including the `commands/{editor,playtest,tileset}/` subdirs), each a `static register(registry, server)`, named **`domain.verb`** (e.g. `scene.create`, `node.set_property`). Param schemas are the JSON shapes each handler reads from `params` (including the C7 tagged types). The naming convention `domain.verb` → `domain_verb` (snake_case tool name) is what the server mirrors.
+- **Server consumer:** the projected surface is the **catalogue** — `ALL_TOOL_DEFS` (`registration/catalogue.ts`), the single deduplicated SSOT of every `ToolDef {name (snake_case), method (dotted), inputSchema, annotations?, godotMin/MaxVersion?, successHint?, pathParams?}` (`shared/types.ts`), spread from `tools/*.ts`. The **eager** startup surface is a **visibility partition** = `EAGER_TOOLS − GROUP_TOOL_NAMES` (`startup/serverMode.ts`, `security/profiles.ts`), plus **2 meta tools** (`discover_tools`, `extensions_refresh`) registered directly in `index.ts` / `groups.ts` — **outside** `ALL_TOOL_DEFS`; on-demand group tools are **absent** (no stubs) until `discover_tools` activates them. Every registration funnels through the single **`registerToolWrapped`** choke point (`registration/toolRegistry.ts`). A CI completeness gate (`test/sections/01_catalogue.ts`) asserts the group / runtime / LSP names ⊆ `ALL_TOOL_NAMES`, no dups — the naming lockstep is build-enforced. Current scale is ~110 tool defs (≈33 eager + ≈77 on-demand) plus the 2 meta tools.
+- **Tool list lives elsewhere:** the authoritative per-tool **name + parameter schema** list is **not** duplicated here — it lives in the generated **tool-reference** doc. This section covers the naming convention and the registration/activation mechanism only.
+- **Read/write split:** read-only sibling tools are kept separate from their mutating verbs (command-query separation) — e.g. `audiobus.list` (`commands/audiobus_commands.gd`) and `animationtree.list` (`commands/animation_commands.gd`) are standalone read tools, not sub-actions of an `*.edit` verb.
+- **Uniform pagination contract:** read/cap tools follow one convention — a canonical **`total_<unit>`** count (`total_classes`, `total_nodes`, `total_cells`, `total_assets`, `total_dependencies`, `total_lines`), **`truncated`** always present, and **`next_<cursor>`** where the read is resumable, with the paginate guidance surfaced in each tool's `.describe()` text. Most are REFLECT; two handlers (`consoleSummaryHandler`, `debuggerLogHandler`) compute `total_lines` server-side.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd addons/godot_mcp_toolkit/contract/mcp_toolkit_command_options.gd addons/godot_mcp_toolkit/ui/mcp_json_sync.gd" data-verified="16a9e3c" -->
+### C9 — Read-only model  ·  **public**
+- **Toolkit shape:** **server-authoritative.** The toolkit publishes per-tool **annotations** (`readOnlyHint` / `destructiveHint`, via the friendly→MCP map on the options builder, `contract/mcp_toolkit_command_options.gd`); it **does not gate dispatch** on `GODOT_MCP_READ_ONLY`. It consumes its own `read_only` flag only for (1) **concurrency routing** (`is_read_only()` → `needs_serialization` read-bypass, `transport/mcp_toolkit_command_registry.gd`) and (2) a **best-effort dock/status mirror** parsed from `.mcp.json` (`ui/mcp_json_sync.gd`, non-authoritative). Annotation correctness is load-bearing for **both** read-only filtering **and** the concurrency lock-bypass. `save.write` / `save.delete` carry `destructiveHint:true`.
+- **Known annotation caveats:** `game.start` / `game.stop` are marked `read_only` (masked in practice by exclusive execution), and `debugger.get_log` is read-only yet can `stop_playing_scene`. These are minor accuracy edges, not contract guarantees.
+- **Server consumer:** **(a) layer = filter at registration** — `isExcludedByReadOnly(readOnly, annotations)` (`security/profiles.ts`) **skips** the tool so it is never registered → absent from `tools/list` (reg sites across `registration/toolRegistry.ts`, `groups/groupActivation.ts`, `groups/extensionGroups.ts`, `extensions/extensionRegistrar.ts`, `extensions/extensionChanges.ts`). There is **no per-call forward-time reject** — the tool simply is not there. **(b) semantics = STRICT:** `isAllowedInReadOnly` (`security/profiles.ts`) exposes a tool iff `readOnlyHint:true ∧ ¬destructiveHint`; an **un-annotated tool → excluded (safe)**, so an un-annotated *mutating* tool is hidden. The server adds **one server-local rule**: `readOnlyHint ∧ destructiveHint` is a contradiction → treat-as-mutating + stderr warn. **(c) test:** `groups.test.ts` read-only-filter contract + `profiles` unit coverage.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/.mcp.json.template" data-verified="16a9e3c" -->
+### C10 — Environment variables  ·  **public**
+- **Toolkit-consumed:** `GODOT_MCP_TOKEN_PATH` (overrides `get_token_path()`, `security/auth.gd`), `GODOT_MCP_PORT` (port override). `GODOT_MCP_HIDE_UNAVAILABLE` is reserved/unused.
+- **Server-consumed** (the bridge reads its process env, launched from `.mcp.json`): `GODOT_MCP_READ_ONLY` (→ the C9 registration filter, `security/profiles.ts`); `GODOT_MCP_PORT` / `GODOT_MCP_RUNTIME_PORT` (pin a channel port, skip the registry lookup — read in `index.ts`, threaded into `createBridge`); `GODOT_MCP_LSP_PORT` / `GODOT_MCP_LSP_HOST` (the **top-priority** LSP endpoint override, the multi-instance lever — `lsp/lspClient.ts`, C19); `GODOT_MCP_PROJECT_PATH` (`?? cwd` for registry lookup + LSP dispatch — `index.ts`, `groups/groupToolHandlers.ts`); `GODOT_MCP_CONFIG_VERSION` (set by the template, a migration marker). The deprecation-only `GODOT_MCP_PROFILE` / `--lite` are migration aids (`security/profiles.ts`), not live config. `GODOT_MCP_TOKEN_PATH` is also the **server-side operator override** (C18, `transport/tokenPath.ts`).
+- **Constraint:** the `.mcp.json.template` sets `GODOT_MCP_CONFIG_VERSION` but **not** `GODOT_MCP_TOKEN_PATH`; with it unset the toolkit **globalizes** `user://…/mcp_token` to an absolute path before publishing `token_path` (→ C18), so the bridge does not have to derive it.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/ui/mcp_json_sync.gd addons/godot_mcp_toolkit/ui/dock/mcp/dock_mcp_json_panel.gd addons/godot_mcp_toolkit/ui/dock/dock.gd addons/godot_mcp_toolkit/.mcp.json.template" data-verified="16a9e3c" -->
+### C11 — `.mcp.json` file format  ·  **public**
+- **Toolkit shape:** **read** (`ui/mcp_json_sync.gd`) — reads `mcpServers.<key>.env` (string-coerced), keying on a `godot-mcp-toolkit` / `godot-mcp` substring. **write** (`ui/dock/mcp/dock_mcp_json_panel.gd`, via the `ui/dock/dock.gd` facade) — copies `.mcp.json.template` **verbatim**.
+- **Server consumer:** the **MCP client** (Claude Code) reads `.mcp.json` to launch the server with the right command + env. The **server itself** re-reads it on config-reload: `readMcpJsonEnv` (`startup/configReload.ts`) finds the `godot-mcp*` server entry (mirroring the toolkit's `_find_server_key`) and `applyEnvUpdate` reconciles **only** `GODOT_MCP_*` keys (deletes removed, sets new — never touches unrelated env), driven by the debounced `handleConfigReload` (`startup/reconcile.ts`). The `config_version` migration is a client/server matter, outside this cell's wire shape.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/contract/mcp_toolkit_command_options.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="16a9e3c" -->
+### C12 — Tool group names  ·  **semi-public**
+- **Toolkit shape:** each command may declare a **`group`** via the options builder (`contract/mcp_toolkit_command_options.gd`); the registry publishes that per-command `group` (`transport/mcp_toolkit_command_registry.gd`). Group **membership + on-demand activation** are **server-side**.
+- **Server consumer:** the server **owns** the group catalogue — `GROUPS: GroupDef[]` (canonical order in `groups/builtinGroups.ts`, per-group defs in `groups/defs/*.ts`; each `{name, description, tools: string[], keywords: string[]}`) + the derived `GROUP_TOOL_NAMES` / `RUNTIME_TOOLS` / `LSP_TOOLS` index sets (`groups/groupCatalogue.ts`). `discover_tools` keyword-searches/scores/activates these group names (`groups/groupMatch.ts` scoring + `groups/groupActivation.ts`); group membership holds **tool names** resolved against `ALL_TOOL_DEFS`.
+- **Group list lives elsewhere:** the authoritative group-name catalogue is **not** duplicated here — it lives in the generated **tool-reference** doc.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd addons/godot_mcp_toolkit/extensions/mcp_toolkit_extension.gd addons/godot_mcp_toolkit/extensions/mcp_toolkit_extension_options.gd addons/godot_mcp_toolkit/contract/mcp_toolkit_tool_context.gd addons/godot_mcp_toolkit/scene/mcp_toolkit_safe_scene_ops.gd addons/godot_mcp_toolkit/scene/mcp_toolkit_undo_redo_action.gd" data-verified="16a9e3c" -->
+### C13 — Extension API  ·  **semi-public**
+- **Toolkit shape:** an extension is an `MCPToolkitExtension` (GDScript, `extensions/mcp_toolkit_extension.gd`) or an `MCPToolkit*`-prefixed `.cs` (C#) with one virtual **`register(registry, server)`**. The **`registry` facade** (the single reachable surface, especially for C# which cannot await GDScript statics) exposes **7** methods (`transport/mcp_toolkit_command_registry.gd`): `create_options()`, `create_extension_options(description)`, `create_undo_action(description, context_object=null)`, `queue_save(path="")`, `check_save(save_id, clear=false)`, `fail(code,message,hint="")`, `require(parameters, required)`.
+  - **Cancellation ctx** (`contract/mcp_toolkit_tool_context.gd`): `signal cancelled` + `is_cancelled() → bool`. **Handler arity** — non-cancellable handlers get `(params)`, cancellable get `(params, ctx)` (dispatch passes `ctx` when the command is `is_cancellable`).
+  - **Safe-save** (`scene/mcp_toolkit_safe_scene_ops.gd`) and the **undo builder** (`scene/mcp_toolkit_undo_redo_action.gd`, headless-no-op) are the other semi-public extension surfaces — extension code depends on their method names.
+- **Server consumer:** the server **projects** each discovered extension command into an MCP tool. `discoverExtensions()` (`extensions/extensionDiscovery.ts`) reads the toolkit's `extensions.list` commands → builds `{readOnlyHint/destructiveHint/idempotentHint ?? false}` annotations, applies the C9 read-only skip, and registers via `registerToolWrapped` (`extensions/extensionRegistrar.ts`); **grouped** extension commands defer to a dynamic **extension-group** (`groups/extensionGroups.ts` `addExtensionGroup`). Each extension cmd carries its own raw JSON-Schema → Zod (`jsonSchemaToZodShape`, `shared/schemaCoercion.ts`) + version bounds (`min/max_godot_version`). Threat model = full-trust ([ADR 0009](../adr/)).
+- **Collision guard:** the toolkit **rejects** a colliding extension `add` (wire shape unchanged); the server **also** guards explicitly — `extensionNameCollides(toolName)` = `isBuiltinToolName` (`registration/catalogue.ts`, covers on-demand + meta built-ins that `hasToolRef` misses pre-registration) **OR** `hasToolRef`, checked at **all 4** ext-registration sites (helper `registration/extensionCollision.ts`). A colliding extension name is **skipped + warned**; the incumbent (built-in / first-registered) always **wins**, never crashes. The MCP SDK's `registerTool` **throws** on a dup, so the pre-check prevents that aborting the batch. The guard also covers the reconcile ledger-add and grouped activation.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/extensions/services/extension_meta_commands.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="16a9e3c" -->
+### C14 — Extension surface signaling  ·  **semi-public**
+- **Toolkit shape** (`extensions/extension_loader.gd` is a thin facade; the work lives in `extensions/services/*`):
+  - **`extensions.list`** → `{"success":true,"commands":[{method,description?,input_schema?,annotations?,group?,timeout_ms?}]}` (`extensions/services/extension_meta_commands.gd`).
+  - **`extensions.refresh`** → the same + `{"refreshed":true,"hint"?}` (`extensions/services/extension_watcher.gd`).
+  - **`extensions.changed`** broadcast (on hot-reload add/remove/modify): `{"notification":"extensions.changed","params":{"commands":[…],"removed":[…method names]}}`, sent to all authed peers via `server.broadcast_notification` (`extension_watcher.gd` → `transport/mcp_server.gd`).
+- **Server consumer:** the server declares `capabilities.tools.listChanged: true` (`index.ts`) and emits **exactly one** `tools/list_changed` per change via `batchToolRegistration` (`registration/toolRegistry.ts`, the monkey-patch-then-fire-once primitive). On the toolkit's `extensions.changed` broadcast, `handleExtensionsChanged()` (`extensions/extensionChanges.ts`) reconciles the dynamic extension surface — re-adding via the idempotent `addExtensionGroup` (`groups/extensionGroups.ts`, dedup-by-method) + re-registering ungrouped cmds — inside one batch. **`extensions_refresh`** is the always-on meta-tool (`extensions/extensionRegistrar.ts`) the LLM calls to force a manual re-sync.
+- **Platform caveat:** `tools/list_changed` is **unreliable in all Claude Code modes** (dropped notifications). The bridge cannot rely on the broadcast alone for live refresh; `extensions_refresh` + eager-promotion of dynamic-activation-sensitive tools (`security/profiles.ts` `EAGER_TOOLS`) compensate.
+- **Extension read pattern:** extension-provided **read** commands follow the same **uniform pagination contract** as built-ins (canonical `total_<unit>` + `truncated` + `next_<cursor>` where resumable; C8). Like every extension response it surfaces **transparently (REFLECT)** — the server forwards `message.result` verbatim (C3/C7) — so a paginating extension read needs no server-side schema; the contract is the only convention to follow.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/editor/editor_commands.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/paths/lsp_publisher.gd" data-verified="16a9e3c" -->
+### C15 — LSP status round-trip (reverse: server→toolkit)  ·  **semi-public**
+- **Toolkit shape:** the **bridge** is the LSP-liveness authority (cross-process liveness + a root-verify the editor cannot do) and pushes `set_lsp_status {state: active|conflict|unavailable, host, port, detail}` **back** to the toolkit; the toolkit receives it as the `editor.set_lsp_status` command (`commands/editor/editor_commands.gd`) → `set_reported_lsp_status` (`transport/mcp_server.gd`) → `paths/lsp_publisher.gd` → dock render. (The toolkit *publishes the intended endpoint* — C19; the server *verifies + reports*.)
+- **Server consumer (the server is the EMITTER, not a reader):** the server **computes** the dock verdict and pushes it. Two tiers: a fast **registry verdict** `getLspStatus(projectPath)` (`lsp/lspClient.ts`, resolution only, no socket) fired on bridge connect/reconnect + config-reload, then a **verified verdict** from a real connect via the status reporter inside `ensureLsp` (`lsp/lspSession.ts`) — both de-duped by `state:host:port` and sent through `sendLspStatus` → `editor.set_lsp_status` ([ADR 0008](../adr/), `lsp/lspStatusReporter.ts`). `LspStatus = {state: active|conflict|unavailable, host, port, detail}` (`lsp/lspClient.ts`). The toolkit only renders it; the server originates it (the editor cannot self-determine its own LSP bind status).
+
+<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_paths.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd" data-verified="16a9e3c" -->
+### C16 — `projects.json` registry format  ·  **internal**
+- **Toolkit shape:** a machine-wide registry dir (NOT `user://`; `%APPDATA%` / `~/Library/Application Support` / `$XDG_DATA_HOME`, `registry/store/registry_paths.gd`). Each editor writes a unique **`entries/<hash>.json`** (`registry/registry_client.gd`); a locked rebuild (`_rebuild_projects_json` → `registry/store/registry_projection.gd` `merge_by_path`) fans in to **`projects.json`** for the bridge. Per-entry fields: `_key` (project path), `port`, `token_path`, `pid`, `started_at`, `godot_version`, `runtime_port`, `runtime_pid`, `lsp_host`, `lsp_port` (`registry/store/registry_entry_file.gd` `build_entry`). Atomic writes (entry tmp→rename; registry two-phase tmp→.bak→target). GC = port-conflict pruning only (PID-GC removed — Windows `is_process_running` false-positives).
+- **Server consumer:** `readRegistry()` reads **exactly** `registryPath()` = `…/godot-mcp-toolkit/projects.json` (`registry.ts`) — **never** the per-instance `entries/` dir, so any runtime-side entry split is purely toolkit-internal. The server's `RegistryEntry` type (`registry.ts`) matches the toolkit `build_entry` writer field-for-field, with `godot_version?` / `lsp_*?` **optional** as the forward-compat seam for old-toolkit entries. **Tolerance:** stale editor entries linger (no PID-GC) and the server reads them; runtime-only entries (`port:-1`, `token_path:""`, `lsp_port:null`) are read gracefully (`discoverLspEndpoint` returns null on `lsp_port==null`); ping-pong port transitions are absorbed tear-down-before-connect by `diffAndNotify`. The path-normalization parity (`normalizePath` ↔ toolkit `canonical()`) has **no shared equivalence fixture** — a candidate cross-repo regression test.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/paths/project_paths.gd addons/godot_mcp_toolkit/paths/project_key.gd" data-verified="16a9e3c" -->
+### C17 — Project-instance hash  ·  **internal**
+- **Toolkit shape:** `ProjectPaths.project_hash()` (`paths/project_paths.gd`) = SHA-256 of the canonical project root → `\`→`/` → strip trailing `/` → lowercase on Win/macOS → first **12** hex (`paths/project_key.gd` `current_hash`).
+- **Server consumer:** the bridge **does NOT recompute the sha256 hash.** `by_path` is keyed by **`_key` = the canonical project PATH** (`registry/store/registry_projection.gd` `merge_by_path`; the frozen contract in `paths/project_key.gd` — the normalized path is the `_key` the TypeScript bridge reads, while the 12-char hash names the per-instance entry file). The server forms the same key by `normalizePath(projectPath)` (`registry.ts`, used by `lookupProject`) — recomputing the **path normalization** (backslash→`/`, strip trailing `/`, lowercase on Win/macOS), **not** the hash. The 12-char hash is a toolkit-internal filename / `user://`-dir token the bridge never consumes; the only cross-repo recompute is the canonicalization recipe (the no-shared-fixture gap → the C16 test candidate).
+
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="16a9e3c" -->
+### C18 — Token file discovery (`token_path`)  ·  **internal**
+- **Toolkit shape:** the token is written to `<instance_dir>/mcp_token` (or `$GODOT_MCP_TOKEN_PATH`); the **`token_path` published in the registry entry is the GLOBALIZED ABSOLUTE path** — `MCPAuth.get_published_token_path()` = `ProjectSettings.globalize_path(get_token_path())` (`security/auth.gd`), used at the editor publish sites. In-engine readers keep the `user://` form (`get_token_path()`, unchanged); the runtime autoload's empty-`token_path` writer is untouched.
+- **Server consumer:** the bridge **looks up `entry.token_path` via `lookupProject` and structurally validates it** before opening — it does **NOT** recompute `sha256(path)` or re-derive the path. `readToken(projectPath)` (`transport/tokenPath.ts`, consumed by `transport/channel.ts` `performAuth` on every connect) → `lookupProject` (`registry.ts`) → `assertPublishedTokenPath` (`transport/tokenPath.ts`): **absolute** · **no `..`** · an existing **regular file** · suffix matching `…/addons/godot_mcp_toolkit/project_instance_<12-hex>/mcp_token` (a **format** check on the instance segment `[0-9a-f]{12}`, **not** a recomputed hash; **lexical** only). `GODOT_MCP_TOKEN_PATH` is an **operator override** read directly (absolute + existing-file; **bypasses** the suffix check). Every failure throws a distinct, actionable **`AUTH_FAILED`** (no silent stale-open). Because `globalize_path` reads `use_custom_user_dir` live, a relocated `user://` is honored. See [ADR 0009 / 0011](../adr/).
+
+<!-- data-depicts="addons/godot_mcp_toolkit/paths/lsp_publisher.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="16a9e3c" -->
+### C19 — LSP endpoint publishing  ·  **internal**
+- **Toolkit shape:** the editor resolves the endpoint via `resolve_lsp_endpoint` (EditorSettings `network/language_server/remote_host` / `remote_port`; default `127.0.0.1:6005`) — the logic lives in `paths/lsp_publisher.gd`, delegated from `transport/mcp_server.gd` — and passes the resolved **`lsp_host`/`lsp_port`** into `register()`. `registry/registry_client.gd` stays **export-clean** (it receives params, never touches `EditorInterface`).
+- **Server consumer:** the LSP client reads `entry.lsp_host` / `lsp_port` from `projects.json` via `discoverLspEndpoint(projectPath)` (`registry.ts`) — the **middle tier** of the 3-tier resolver (`GODOT_MCP_LSP_PORT` env → registry → guarded-6005-never-blind; `lsp/lspClient.ts`). The registry tier applies an **earliest-live-claimant** ownership rule (`liveLspClaimants`, `registry.ts`: connect only if strictly the earliest live claimant by `started_at`, else `{conflict}` → `LSP_PORT_CONFLICT`) with PID-liveness via `isPidAlive` → `process.kill(pid,0)` (reliable on Windows, unlike the toolkit's `OS.is_process_running`). Then it verifies the live endpoint and reports the verdict → C15. The `null`-`lsp_port` runtime-only case returns null (no LSP), per C16.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="16a9e3c" -->
+### C20 — Runtime discovery  ·  **internal**
+- **Toolkit shape:** a live game writes **`runtime_port`/`runtime_pid`** into its registry entry on bind (`registry/registry_client.gd` `set_runtime`, read-merge); both are cleared on stop.
+- **Server consumer:** the bridge reads `runtime_port` via `discoverRuntime` / `getCachedRuntimePort` (`registry.ts`) to reach the running game (Mode B, `callRuntime`) vs the edited scene (Mode A, `call`); `diffAndNotify` (`registry.ts`) watches **only `runtime_port` transitions** (null→port / port→null / port→port) to re-target the runtime channel — editor `port` / `godot_version` / `lsp_port` changes do **not** flow through it (by design — the watcher exists for playtest discovery). **Liveness asymmetry:** the runtime path does **not** gate on `isPidAlive(runtime_pid)` (the LSP path does), so it can return a stale `runtime_port` from a crashed playtest; the bridge's connect-failure absorbs it.
+- **Constraint:** a `config/name` rename currently re-publishes via `register`, which **nulls** `runtime_port`/`runtime_pid`; the editor⟷runtime entry RMW is unsynchronized. The server tolerates the resulting transitions (above).
+
+<!-- data-depicts="addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd" data-verified="16a9e3c" -->
+### C21 — Untrusted envelope  ·  **internal (LLM-facing)**
+- **Toolkit shape:** read-path project content is wrapped `<untrusted-{nonce} kind="…" source="…">\n{body}\n</untrusted-{nonce}>`, the nonce `%08x randi()`, with any existing `<untrusted…>` tags pre-scrubbed (anti tag-breakout). Read-paths only (never writes / binary). `Scrubber.scrub` (`security/scrubber.gd`) redacts secrets from logs/console before return (3 precision regexes → `[REDACTED]`).
+- **Server consumer (REFLECT verbatim):** the toolkit does the **primary** wrapping (`security/untrusted.gd` `wrap`, across script / scene_tree / user-file / resource / project_settings / editor_errors / animation / game_log read paths) and the server **forwards it verbatim** — `callAndWrap` (`registration/toolDispatch.ts`) → `stableStringify` (`shared/schemaMin.ts`) → `message.result` (`transport/channel.ts`), no double-wrap, no unwrap/parse. The server has its **own** `untrustedWrap` (`security/untrusted.ts`, an exact TS mirror — same envelope + scrub) used in **exactly one** place: `tools/lsp.ts` wraps `lsp_hover` text, which never transits the toolkit wrapper (it comes straight from the engine LSP over the server's own TCP socket). The other 5 LSP tools return structured data (no free-form prose) → no wrap.
+
+<!-- data-depicts="addons/godot_mcp_toolkit/core/settings_registration.gd" data-verified="16a9e3c" -->
+### C22 — ProjectSettings keys  ·  **internal**
+- **Toolkit shape** (`core/settings_registration.gd`): `mcp_toolkit/limits/ws_buffer_kb` (1024) + `save_read_cap_kb` (256), plus the limits / audit / status keys (audit `audit/enabled` default-on; `limits/*` clamped). Personal prefs (e.g. the unfocused-editor setting) live in **EditorSettings**, not ProjectSettings.
+- **Server consumer: NONE.** These ProjectSettings are **toolkit-internal config** — the server never reads or writes `mcp_toolkit/*`. The `ws_buffer_kb` / `save_read_cap_kb` / audit / status keys are honored entirely editor-side; the server learns their *effect* only through wire behavior (a dropped over-buffer frame, C1; the `save.read` cap surfaced via response fields). The contract that the toolkit **denies** LLM writes to `mcp_toolkit/*` / `mcp/*` / `editor/*` is toolkit-enforced. Listed for completeness; no server consumer applies.
