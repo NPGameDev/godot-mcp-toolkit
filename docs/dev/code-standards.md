@@ -28,7 +28,7 @@ the general rules like every other file.
 Godot style guide because the addon runs inside the editor process and ships in export
 templates. Those deviations live in [§8 — Godot editor-plugin hard gates](#8-godot-editor-plugin-hard-gates),
 and they override stylistic preference wherever the two collide. Each is driven by a concrete
-engine bug, an export-template failure mode, or a multi-version API gap.
+engine bug, an export-template failure mode, a multi-version API gap, or a security boundary at an OS sink.
 
 Primary references:
 
@@ -561,7 +561,7 @@ file/folder naming and 1.5.6 "folder carries domain".)*
 ## 8. Godot editor-plugin hard gates
 
 This is the load-bearing section. Each rule here is driven by a concrete engine bug, an
-export-template failure mode, or a multi-version API gap; they are non-negotiable for an `@tool`
+export-template failure mode, a multi-version API gap, or a security boundary at an OS sink; they are non-negotiable for an `@tool`
 addon and **override [§1](#1-file-folder-and-symbol-naming)–[§7](#7-design-solid-cohesion-and-decomposition)
 on conflict.**
 
@@ -711,6 +711,16 @@ transport failure to diagnose.*
   user updates the addon in an existing project. Keep them git-tracked, never delete them in a
   release/build script, and never `export-ignore` them, so **every** channel ships byte-identical
   sidecars. *(Pre-4.4 editors ignore `.uid` harmlessly — safe across the whole 4.2+ floor.)*
+
+### 8.13 Validate a data-derived URL's scheme before `OS.shell_open`
+
+A URL that originates from untrusted or remote-fetched data (a downloaded catalog, a
+maintainer-supplied link, any `res://` an adversary could rewrite) must have its scheme validated
+against an allowlist (`http` / `https`) before it is passed to `OS.shell_open` or any OS handoff. An
+attacker-controlled scheme (`file:`, `javascript:`, a custom handler) reaching an OS sink is an
+input-validation boundary breach — reject, don't open, anything outside the allowlist. *Rationale:
+the OS handler, not the editor, decides what a non-`http` scheme does; the allowlist keeps an
+untrusted link from steering it.*
 
 ---
 
@@ -900,3 +910,4 @@ tooling). The **plugin** rows apply to **addon** files only — test scripts are
 - [ ] `@tool` on the file; if runtime-shipped, zero editor-only class names anywhere in its preload graph ([§8.1](#81-universal-tool), [§8.2](#82-editorruntime-split-by-the-static-dependency-graph-not-runtime-branches))
 - [ ] Version-gated calls use `has_method()` + `call()`; compares go through the version utility; teardown frees with `free()` (RefCounted subsystems just null'd); failed `TCPServer.listen()` → `stop()` + null + fresh instance; listener/scene I/O stays deferred + throttled; response sends check `send_text` + central size-guard ([§8.3](#83-cross-version-compatibility)–[§8.9](#89-check-the-send_text-return--oversized-websocket-frames-drop-wholesale))
 - [ ] `plugin.cfg` only the documented fields; folder id unchanged; shipped files reference no unshipped paths; `.uid`/`.import` sidecars shipped, never stripped or git-ignored ([§8.12](#812-asset-library-shipping-hygiene))
+- [ ] Any `OS.shell_open` / OS handoff of a data-derived URL allowlists the scheme (http/https) ([§8.13](#813-validate-a-data-derived-urls-scheme-before-osshell_open))
