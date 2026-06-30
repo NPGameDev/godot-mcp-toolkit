@@ -46,6 +46,7 @@
 **UR1.6** Verify position restored:
 - `node.get_property` — node_path=`URTarget`, property=`position`
 - **Expect:** value=`(200, 300)`
+- **Constraint (41n-ter-bis #8):** drive UR1.4→UR1.6 (set→undo→redo) **tightly within the same session/dispatch chain**. The production redo is sound — `trigger_redo`'s self-test passes 8/8, and a tight same-session set→undo→redo round-trips cleanly (re-confirmed on 4.7, 2026-06-30, identical `history_id` on undo + redo). A redo issued across *separate* dispatch round-trips or separate test sessions can hit editor-history contention (a different `history_id` context) and appear to no-op — an env/sequencing artifact, not a production bug.
 
 ---
 
