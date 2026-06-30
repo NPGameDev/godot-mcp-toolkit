@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (Sv2Main.tscn with nodes, script attached to Sv2Player)
 **Tools tested:** game_start, game_stop, runtime_screenshot, runtime_get_node_state, runtime_get_script_vars, runtime_set_property, debugger_get_log, input_simulate, execute_code (runtime), animation_player_control, signal_emit, autoload_manage (20.10 setup)
-**Tests:** 22
+**Tests:** 29
 
 ---
 
@@ -16,6 +16,15 @@
 - `autoload_manage` — action=`register`, name=`Sv2RuntimeAutoload`, script_path=`res://sv2_validation/actor.gd`
 - **Expect:** success (autoload registered + project settings persisted). It will appear at `/root/Sv2RuntimeAutoload` once the game launches.
 - **Fallback (if 20.10's warning can't be driven):** after 20.5, verify the autoload is live with `runtime_get_node_state` `/root/Sv2RuntimeAutoload`; if it isn't present in the running tree, fall back to a committed dogfood autoload fixture. Either way 20.10 needs an autoload present at runtime.
+
+**20.2b** Build a text-surface fixture for the `send_text` cases (20.17a–20.17g). These nodes must be **in `Sv2Main.tscn` before launch** so they are live in the running game. With `Sv2Main.tscn` open (from Section 2), as children of the `Sv2Main` root:
+- `scene_create_node` — class=`LineEdit`, name=`Sv2FeedbackEdit`
+- `scene_create_node` — class=`LineEdit`, name=`Sv2SecretEdit`, then `node_set_property` node_path=`Sv2SecretEdit`, property=`secret`, value=`true`
+- `scene_create_node` — class=`TextEdit`, name=`Sv2MultilineEdit`
+- `scene_create_node` — class=`Label`, name=`Sv2ReadonlyLabel`, then `node_set_property` text=`"readonly"` (a non-editable text surface for 20.17f)
+- **Observer for 20.17d:** `script_write` a tiny observer to `res://sv2_validation/sv2_submit_observer.gd` (`extends LineEdit`; in `_ready` connect `text_submitted` to a method that `print("SV2_SUBMITTED:", t)`), then `node_set_script` it onto `Sv2FeedbackEdit` so the submit fires an observable log line.
+- `editor_save_scene`
+- **Expect:** success; once the game launches the fields are reachable at `/root/Sv2Main/Sv2FeedbackEdit`, `/root/Sv2Main/Sv2SecretEdit`, `/root/Sv2Main/Sv2MultilineEdit`, `/root/Sv2Main/Sv2ReadonlyLabel`.
 
 **20.3** `game_start`
 - **Expect:** success, game launches
@@ -84,6 +93,27 @@
 **20.17** `input_simulate` — events=[{"event_type":"action","event_data":{"action":"ui_accept","pressed":true}}]
 - **Expect:** success
 
+**20.17a** `input_simulate` send_text into a named field — events=[{"event_type":"send_text","event_data":{"text":"hello","node_path":"/root/Sv2Main/Sv2FeedbackEdit"}}]
+- **Expect:** success; `last_event.focus_source`="node_path", `focus_target.class`="LineEdit", `text_changed`=true, `text_after`="hello", `chars_sent`=5. No `hint` (clean success).
+
+**20.17b** `input_simulate` send_text into the currently-focused field — first focus it with `input_simulate` events=[{"event_type":"click_node","event_data":{"node_path":"/root/Sv2Main/Sv2FeedbackEdit"}}] (or rely on 20.17a's focus), then events=[{"event_type":"send_text","event_data":{"text":" world"}}] (no node_path)
+- **Expect:** success; `focus_source`="existing", `text_changed`=true (the field already held focus; text appended).
+
+**20.17c** `input_simulate` send_text with nothing focused → hint — ensure no field has focus (e.g. send to a fresh scene state), events=[{"event_type":"send_text","event_data":{"text":"ghost"}}]
+- **Expect:** success, `focus_source`="none", `focus_target`=null, and a `hint` mentioning `node_path`. `chars_sent`=5.
+
+**20.17d** `input_simulate` send_text with submit → `text_submitted` — events=[{"event_type":"send_text","event_data":{"text":"go","node_path":"/root/Sv2Main/Sv2FeedbackEdit","submit":true}}], then `debugger_get_log` text_filter=`SV2_SUBMITTED`, is_regex=`false`
+- **Expect:** send_text success; the log shows `SV2_SUBMITTED:...` (the observer script from 20.2b confirms the Enter fired `text_submitted` on the `LineEdit`).
+
+**20.17e** `input_simulate` send_text into the secret field → redacted — events=[{"event_type":"send_text","event_data":{"text":"hunter2","node_path":"/root/Sv2Main/Sv2SecretEdit"}}]
+- **Expect:** success, `text_changed`=true, and `text_after`="[redacted: 7 chars]" — the typed value `hunter2` is **absent** from the response. **Flag as Critical** if `hunter2` appears anywhere in the result.
+
+**20.17f** `input_simulate` send_text targeting a non-editable surface → text_changed:false + hint — events=[{"event_type":"send_text","event_data":{"text":"nope","node_path":"/root/Sv2Main/Sv2ReadonlyLabel"}}]
+- **Expect:** success; either `node_path` problem hint (a `Label` is not a focusable text field) or `text_changed`=false with a "didn't change" hint. The typed text does not land.
+
+**20.17g** `input_simulate` send_text + submit into a multiline `TextEdit` → newline (not submit) — events=[{"event_type":"send_text","event_data":{"text":"line1","node_path":"/root/Sv2Main/Sv2MultilineEdit","submit":true}}]
+- **Expect:** success, `text_changed`=true; the Enter inserts a newline in the multiline `TextEdit` (no `text_submitted`), so `text_after` contains `line1` plus a trailing newline.
+
 **20.18** `execute_code` (runtime) — code=`get_tree().current_scene.name`
 - **Expect:** "Sv2Main"
 
@@ -108,5 +138,6 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 ## Cleanup
 
 - `autoload_manage` — action=`unregister`, name=`Sv2RuntimeAutoload` (remove the temp autoload registered in 20.2a)
+- `script_delete` — `res://sv2_validation/sv2_submit_observer.gd` (the 20.2b submit observer; the fixture nodes themselves live in `Sv2Main.tscn`, cleaned up globally)
 - `project_set_setting` — restore `application/run/main_scene` to original value from Section 0
 - Call `discover_tools` with reset=true to deactivate all on-demand groups activated during this section

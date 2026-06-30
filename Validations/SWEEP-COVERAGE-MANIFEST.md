@@ -3,7 +3,7 @@
 **Last updated:** 2026-06-22 (41n concern 034 D — batch partial-failure rollup sweep coverage)
 **Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
 **Total tools:** 122 (100 editor-side + 6 LSP + 4 debugger + 12 runtime)
-**Sweep test count:** ~295 numbered test cases + 28 combo chains + C# phase + extension phase (Section 28 adds 22) — concern 034 D added 5 batch-rollup cases (3.14c/3.14d, 4.15/4.16, 2.15a)
+**Sweep test count:** ~295 numbered test cases + 28 combo chains + C# phase + extension phase (Section 28 adds 22) — concern 034 D added 5 batch-rollup cases (3.14c/3.14d, 4.15/4.16, 2.15a); 41n-sexies added 7 send_text cases (20.17a–20.17g)
 
 ---
 
@@ -297,7 +297,7 @@
 | signal.connect | (via editor 45) | — | — | — | — | Runtime uses same handler |
 | signal.disconnect | (via editor 47) | — | — | — | — | Runtime uses same handler |
 | signal.emit | 79 | — | — | — | — | |
-| input.simulate | 76 | — | — | — | — | |
+| input.simulate | 20.17, 20.17a–20.17g | — | — | ✓ (20.17c no-focus, 20.17f non-editable) | — | send_text event (41n-sexies): node_path focus + text_changed (20.17a), current-focus (20.17b), no-focus→hint (20.17c), submit→text_submitted via observer (20.17d), secret→redacted (20.17e), non-editable→text_changed:false+hint (20.17f), multiline newline-on-submit (20.17g). FLAG-5: reconciled stale flat `76`→20.x section-local numbering |
 | animation_player.control | 78 | — | — | — | — | |
 | execute.code | 77 | — | — | — | FIX-4, 279efed | Runtime context |
 

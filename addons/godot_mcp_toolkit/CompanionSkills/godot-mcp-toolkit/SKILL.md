@@ -280,10 +280,12 @@ Events use `event_type` + `event_data`. Common types:
 | `action` | `action`, `pressed` | Matches Input Map action names |
 | `click` | `position: {x, y}` | Shorthand: auto press+release |
 | `click_node` | `node_path` | Click a node's center (2D/Control) |
+| `send_text` | `text`, `node_path?`, `submit?` | Type a string into the focused (or `node_path`) text field — fires real `text_changed`/`text_submitted` (unlike setting `.text`) |
 
 - Wrap multiple events in an `events` array for a sequence
 - `delay_after_ms` per event (keep to 100–300ms; >500ms is dangerous)
 - `summary: true` (default) returns compact output
+- `send_text` returns `focus_target`, `focus_source`, `text_changed`, `text_after` (secret fields redacted), `chars_sent`, and a `hint` steering to `node_path` when nothing is focused
 
 ---
 
