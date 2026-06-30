@@ -19,3 +19,9 @@ offset_top = 40.0
 offset_right = 200.0
 offset_bottom = 70.0
 secret = true
+
+[node name="SmokeMultiEdit" type="TextEdit" parent="."]
+layout_mode = 1
+offset_top = 80.0
+offset_right = 200.0
+offset_bottom = 180.0
