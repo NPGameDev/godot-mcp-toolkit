@@ -89,8 +89,7 @@ return {"created": true}
   - message non-empty (describes the parse error)
 
 **26.3** `lsp_diagnostics` — file_path=`res://sv2_validation/sv2_lsp_test.gdshader`
-- **Expect:** success=true, **no diagnostics** on a valid shader (empty array). The `languageId:"gdshader"` fix (41n-ter-bis #10) stops the server opening shaders as GDScript, so a valid `.gdshader` no longer yields bogus GDScript parse-error diagnostics. SKIP if shader wasn't created in S4.
-- **Note:** Before the fix the server opened shaders with `languageId:"gdscript"`, so a VALID shader returned fake GDScript parse errors. Confirmed clean (empty diagnostics) on 4.7 (2026-06-30).
+- **Expect:** success=true, **no diagnostics** on a valid shader (empty array) — the LSP does not parse `.gdshader` as GDScript, so a valid shader yields no parse errors. SKIP if shader wasn't created in S4.
 
 ---
 
@@ -124,8 +123,7 @@ All 6 LSP tools share `validateGdscriptPath()`. Tests below verify via two diffe
 - **Expect:** success=true, symbols array with ≤ 2 entries (possibly empty or just implicit class)
 
 **26.10** `lsp_symbols` — file_path=`res://sv2_validation/sv2_lsp_test.gdshader`
-- **Expect:** success=true, symbols **`[]`** (empty). The server sends `languageId:"gdshader"` (41n-ter-bis #10), so the engine skips GDScript parsing — uniform `[]` across 4.2–4.7. SKIP if shader not created.
-- **Note:** No stable Godot 4.x LSP serves shader `documentSymbol` (GDScript-only). Before the #10 fix, 4.6/4.7 returned a single junk root symbol named after the file (would FAIL a `== []` assert); the `languageId` fix makes `[]` uniform. Confirmed empty on 4.7 (2026-06-30).
+- **Expect:** success=true, symbols **`[]`** (empty), uniform across 4.2–4.7 — no Godot 4.x LSP serves shader `documentSymbol`. SKIP if shader not created.
 
 ---
 
