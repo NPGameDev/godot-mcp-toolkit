@@ -302,6 +302,15 @@ Centralized version helpers in `core/modules.gd`:
   (4.2+); the `get_base_control().get_theme()` fallback only mattered on the
   unsupported 4.0/4.1 and never triggers on 4.2+
 
+**Bare static-method `Callable` — 4.2 NIL-self abort.** Don't form a `Callable` from a bare
+static-method reference. On Godot **4.2 only**, the compiler binds a bare member-function
+reference to `SELF`; inside a `static` function `SELF` is `NIL`, so the call silently aborts
+(`Invalid get index '<method>' (on base: 'Nil')`) and returns a typed-default value **with no
+error propagated** — a silent wrong result on 4.2, correct on 4.3+. Fixed upstream between 4.2
+and 4.5 (`gdscript_compiler.cpp` SELF→CLASS for static members). **Instead:** pass the resolved
+value directly (e.g. the `Node`), or inject an instance method. Guarded by a headless 4.2 unit
+test (`test/units/signal_resolver_tests.gd`).
+
 ## Server-side version awareness
 
 The plugin sends its Godot version in the WebSocket auth handshake. The

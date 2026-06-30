@@ -600,6 +600,13 @@ newer API unconditionally.
 - **Dynamic dispatch for version-gated methods:** prefer `obj.has_method("foo")` +
   `obj.call("foo", …)` over a direct call when the method is absent in some supported version.
   (Examples: `EditorInterface.close_scene` is 4.5+; `get_editor_toaster` is 4.4+.)
+- **Don't form a `Callable` from a bare static-method reference.** On Godot **4.2 only**, the
+  compiler binds a bare member-function reference to `SELF`; inside a `static` function `SELF` is
+  `NIL`, so the call silently aborts (`Invalid get index '<method>' (on base: 'Nil')`) and returns a
+  typed-default value **with no error propagated** — a silent wrong result on 4.2, correct on 4.3+.
+  Fixed upstream between 4.2 and 4.5 (`gdscript_compiler.cpp` SELF→CLASS for static members).
+  **Instead:** pass the resolved value directly (e.g. the `Node`), or inject an instance method.
+  Guarded by a headless 4.2 unit test.
 - **Typed `Dictionary[K, V]` is 4.4+ only** — do not use it; use plain `Dictionary`
   ([§4.3](#4-static-typing)). Typed `Array[...]` is fine (4.0+).
 - **Centralize version comparisons** in one version-utility module (an `is_at_least` /
@@ -908,6 +915,6 @@ tooling). The **plugin** rows apply to **addon** files only — test scripts are
 - [ ] Internal scripts via `preload` const through the aggregator; no `class_name` leakage; no aggregator cycle; stateless helpers `static func`; command modules expose `register(registry, server)` ([§6](#6-preloads-class_name-and-the-preload-aggregator), [§8.11](#811-static-func-utility-modules))
 - [ ] Every `add_*` has a reverse-order `remove_*`; autoload via `_enable/_disable_plugin`; owned controls freed; signals disconnected; GDScript-2.0 connect syntax; custom settings guarded + `set_as_basic` + scrubbed on uninstall (prefix-scan, prompt before erasing machine-wide) ([§8.5](#85-editorplugin-lifecycle-and-teardown-symmetry), [§8.10](#810-custom-projectsettings--editorsettings))
 - [ ] `@tool` on the file; if runtime-shipped, zero editor-only class names anywhere in its preload graph ([§8.1](#81-universal-tool), [§8.2](#82-editorruntime-split-by-the-static-dependency-graph-not-runtime-branches))
-- [ ] Version-gated calls use `has_method()` + `call()`; compares go through the version utility; teardown frees with `free()` (RefCounted subsystems just null'd); failed `TCPServer.listen()` → `stop()` + null + fresh instance; listener/scene I/O stays deferred + throttled; response sends check `send_text` + central size-guard ([§8.3](#83-cross-version-compatibility)–[§8.9](#89-check-the-send_text-return--oversized-websocket-frames-drop-wholesale))
+- [ ] Version-gated calls use `has_method()` + `call()`; no `Callable` formed from a bare static-method reference (4.2 binds it to a NIL `self` → silent abort + typed-default return); compares go through the version utility; teardown frees with `free()` (RefCounted subsystems just null'd); failed `TCPServer.listen()` → `stop()` + null + fresh instance; listener/scene I/O stays deferred + throttled; response sends check `send_text` + central size-guard ([§8.3](#83-cross-version-compatibility)–[§8.9](#89-check-the-send_text-return--oversized-websocket-frames-drop-wholesale))
 - [ ] `plugin.cfg` only the documented fields; folder id unchanged; shipped files reference no unshipped paths; `.uid`/`.import` sidecars shipped, never stripped or git-ignored ([§8.12](#812-asset-library-shipping-hygiene))
 - [ ] Any `OS.shell_open` / OS handoff of a data-derived URL allowlists the scheme (http/https) ([§8.13](#813-validate-a-data-derived-urls-scheme-before-osshell_open))
