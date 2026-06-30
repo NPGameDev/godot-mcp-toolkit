@@ -97,6 +97,27 @@ silent drift from caret ranges. When adding a dependency, pin it:
 npm install --save-exact some-package
 ```
 
+## Code standards
+
+This repo ships its own coding standards and a cross-repo contract. Read them
+before writing code — they are the authoritative references for how toolkit code
+should look and behave. New to the codebase? Read these in order:
+
+1. [`docs/architecture/README.md`](docs/architecture/README.md) — the
+   subsystems, the editor/runtime split, and the transport, with diagrams. Start
+   here for the big picture.
+2. [`docs/dev/code-standards.md`](docs/dev/code-standards.md) — GDScript style,
+   naming, static typing, and comment conventions, plus the editor-plugin hard
+   gates every contribution must respect.
+3. [`docs/dev/contract.md`](docs/dev/contract.md) — the request/response and
+   transport contract between the toolkit and the server. The toolkit owns this
+   contract; read it before touching dispatch, command results, ports, or the
+   WebSocket protocol.
+4. [`docs/dev/glossary.md`](docs/dev/glossary.md) — the shared vocabulary used
+   throughout the code and docs.
+5. [`docs/adr/`](docs/adr/) — architecture decision records: the rationale
+   behind the larger design choices.
+
 ## Submitting changes
 
 ### Branch naming
@@ -126,6 +147,8 @@ per logical change.
 
 - [ ] `godot --headless --check-only` passes (if GDScript changed)
 - [ ] Smoke test passes (`npm run smoke` in server repo)
+- [ ] Code follows the [coding standards](docs/dev/code-standards.md)
+- [ ] Contract changes (dispatch, command results, transport) are reflected in [`docs/dev/contract.md`](docs/dev/contract.md)
 - [ ] No unrelated changes included
 - [ ] Commit message follows Conventional Commits format
 - [ ] CHANGELOG.md updated if user-facing
@@ -138,11 +161,14 @@ per logical change.
 
 ## Architecture overview
 
-For detailed context on the project's architecture, iteration history, and
-design decisions, see the execution plan in the
-[`godot-mcp-creation`](https://github.com/NPGameDev/godot-mcp-creation) repo:
+For an in-depth, up-to-date explanation of the toolkit's subsystems, the
+editor/runtime split, the transport, and the key design decisions, read the
+in-repo architecture document:
 
-`Plan/ExecutionPlan/00-index.md`
+[`docs/architecture/README.md`](docs/architecture/README.md)
+
+It renders on GitHub with diagrams inline and is the canonical reference for how
+the toolkit fits together.
 
 ## Code of conduct
 
