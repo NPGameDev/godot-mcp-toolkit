@@ -101,7 +101,7 @@ dynamically allocates a port from the 6550–6560 range (editor) or 6570–6585
 The TypeScript bridge discovers which port belongs to which project by matching
 `process.cwd()` (or `GODOT_MCP_PROJECT_PATH` env) against the registry.
 
-**Single-project users need no configuration changes.** Port 6505 is tried
+**Single-project users need no configuration changes.** Port 6550 is tried
 first and will be assigned unless another editor already holds it.
 
 **Decoupled CWD** — if Claude Code's CWD differs from the Godot project root,
