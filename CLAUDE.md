@@ -11,6 +11,24 @@ calling tools, not to agents changing the plugin's internals.
 
 ---
 
+## Contributor docs — read first
+
+**Before changing the wire protocol, error handling, or tool contracts, read
+[`docs/dev/contract.md`](docs/dev/contract.md); write all code per
+[`docs/dev/code-standards.md`](docs/dev/code-standards.md).** Those are the
+authoritative, in-repo SSOTs (the OSS comment canon is inlined into the code
+standard). This `CLAUDE.md` is orientation + operational gotchas, not the contract.
+
+Full dev-doc map, in read order:
+
+1. [`docs/architecture/README.md`](docs/architecture/README.md) — how the plugin is built (subsystems, the editor↔runtime split, transport + contract surface).
+2. [`docs/dev/code-standards.md`](docs/dev/code-standards.md) — GDScript / Godot-plugin conventions + hard gates (Portable core + Project bindings).
+3. [`docs/dev/contract.md`](docs/dev/contract.md) — the as-built wire contract this repo **owns** (the server is the consumer).
+4. [`docs/dev/glossary.md`](docs/dev/glossary.md) — the project's ubiquitous language (cross-repo SSOT for shared terms).
+5. [`docs/adr/`](docs/adr/) — architecture decision records (rationale trail).
+
+---
+
 ## What this plugin does
 
 Runs a localhost WebSocket server inside the Godot editor (dynamic port
@@ -97,11 +115,14 @@ bypasses registry discovery entirely (backwards compat).
 
 ## Security (iter 18)
 
-- **Session-token auth.** On plugin start the editor generates a 32-byte hex
-  token and writes it to `user://addons/godot_mcp_toolkit/project_instance_<hash>/mcp_token`
-  (platform-resolved — see table below). The bridge reads this file on every
-  connect/reconnect and sends `{"auth":"<token>"}` as the first WebSocket
-  message. Peers that don't authenticate within 2 s are closed with WS code 1008.
+- **Session-token auth (operational summary).** On plugin start the editor
+  generates a session token and writes it to the per-instance `mcp_token` file
+  (platform-resolved — see table below); the bridge reads it and authenticates on
+  every connect/reconnect. The full wire shape — token format, the
+  `{"auth":"<token>"}` first-frame handshake, the per-mode ack, the 2 s auth
+  timeout, and WS close 1008 — is the contract's **C2 (auth handshake)** + **C18
+  (token discovery)** in [`docs/dev/contract.md`](docs/dev/contract.md); not
+  restated here.
 
   | Platform | Token path                                                                               |
   |----------|------------------------------------------------------------------------------------------|
@@ -216,25 +237,18 @@ If all 4 log lines appear but the MCP client still shows stale tools:
 - **The Godot editor with this plugin enabled must be running** — the bridge
   has no way to launch Godot for you. If `/mcp` shows the server as
   disconnected, check Project Settings → Plugins → "Godot MCP Toolkit".
-- **Idempotency (`status` discriminator):** every `create_*` success
-  payload carries a `status` field:
-  - `"created"` — fresh create.
-  - `"returned"` — the thing already existed (idempotent no-op; default path
-	for `scene_create_node`, `signal_manage` connect, `folder_create`, and
-	file-level `scene_create` / `resource_write` on new file).
-  - `"replaced"` — file-level `scene_create` with `if_exists: "replace"`.
+- **Idempotency (`status` + `if_exists`):** create successes carry a `status`
+  discriminator (`created` / `returned` / `replaced`) and file-level creates accept
+  `if_exists` (`return` / `fail` / `replace`); an update (e.g. an existing-file
+  `resource_write`) carries no `status`. The full rule — which tools are file-level
+  vs node-level, the closed create-status set, and the `if_exists` semantics — is
+  the contract's **C6 (idempotency)** in
+  [`docs/dev/contract.md`](docs/dev/contract.md); not restated here.
 
-  `resource_write` on an existing file is an update (upsert) — no `status`
-  field. The absence is itself the discriminator.
-
-  Error payloads still carry `code` (`ALREADY_EXISTS` via `scene_create` /
-  `resource_create`'s opt-in `if_exists: "fail"`; `INVALID_CLASS`,
-  `INVALID_PATH`, `PARENT_NOT_FOUND`, `NOT_A_RESOURCE`, `DIR_NOT_EMPTY`,
-  `FOLDER_PROTECTED`, `PATH_IN_USE`, `CREATE_DIR_FAILED`, etc.). Success
-  payloads do NOT carry `code` — the `status` discriminator replaces the
-  legacy `code`-in-success pattern. See the server repo's `CLAUDE.md`
-  **Error code reference** for the canonical list (keep in sync per
-  watch-item #3).
+  Success payloads never carry `code`; error payloads carry `code` from the
+  canonical error vocabulary. See the server repo's `CLAUDE.md` **Error code
+  reference** for the full list (the operational SSOT; keep in sync per
+  watch-item #3) and the contract's **C4** for its wire framing + stability tier.
 
 ## Extension points (iter 25)
 
@@ -289,6 +303,11 @@ The server-side exposes:
   is always on. Rate limiting via `GODOT_MCP_RATE_LIMIT` env var.
 
 ## Code style
+
+Write all GDScript per [`docs/dev/code-standards.md`](docs/dev/code-standards.md)
+— the authoritative standard (Godot/GDScript conventions, hard gates, naming,
+typing, decomposition, and the inlined OSS comment canon). The notes below are the
+quick operational facts only.
 
 - **`.editorconfig`** — tab indent for `.gd`/`.cfg`/`.tres`/`.tscn` (Godot
   convention), 2-space for `.json`/`.md`, UTF-8, LF line endings.
