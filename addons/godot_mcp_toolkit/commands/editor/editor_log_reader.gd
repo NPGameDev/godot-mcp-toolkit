@@ -3,8 +3,7 @@ extends RefCounted
 ## editor.* log/console reader: read the editor's captured output — from the
 ## in-memory LogBuffer (source="buffer") or a user://logs/*.log file
 ## (source="file") — filtered by level/text/since_id, scrubbed, and shaped into
-## the entry list. Serves both the console tool and the error-pinned errors tool
-## (get_errors is get_console with the level filter fixed to ["error"]).
+## the entry list. Serves the console reader tool.
 ##
 ## Stateless — every handler takes (server, parameters) and returns the response
 ## Dictionary; the reader-spine helpers take their inputs as parameters. The log
@@ -20,64 +19,6 @@ const LogHelpers = Modules.LogHelpers
 
 
 # -- Commands -----------------------------------------------------------------
-
-
-static func cmd_get_errors(server: Node, parameters: Dictionary) -> Dictionary:
-	var limit: int = int(parameters.get("limit", 50))
-	var since_id: int = int(parameters.get("since_id", -1))
-	var source: String = str(parameters.get("source", "buffer"))
-	if not (source in ["buffer", "file"]):
-		return MCPToolkitError.fail("INVALID_PARAMS",
-			"source must be 'buffer' or 'file' (got %s)" % source)
-
-	var tf := _compile_text_filter(parameters)
-	if tf[2] != null:
-		return tf[2]
-	var text_filter: String = tf[0]
-	var text_regex: RegEx = tf[1]
-	var regex_warning: String = tf[3]
-
-	if source == "file":
-		var result := _read_console_log(server, limit, ["error"], since_id, text_filter, text_regex)
-		if result.get("success", false) == false:
-			return result
-		var entries = result.get("entries", [])
-		# Surface truncated/next_id/total_errors the reader already computes; use the
-		# truncation-gated loop hint instead of a dead static message.
-		var file_truncated: bool = result.get("truncated", false)
-		var response := {
-			"errors": Untrusted.wrap(
-				"editor_errors", "godot", JSON.stringify(entries)),
-			"count": result.get("count", 0),
-			"truncated": file_truncated,
-			"next_id": result.get("next_id", -1),
-			"total_errors": result.get("total_lines", 0),
-		}
-		if file_truncated:
-			response["hint"] = "more errors remain — re-call editor.get_errors with since_id = next_id (%d) until truncated is false" % int(result.get("next_id", -1))
-		if not regex_warning.is_empty():
-			response["warning"] = regex_warning
-		return MCPToolkitSuccess.ok(response)
-
-	var buf_result: Dictionary = Modules.LogBuffer.get_entries(limit, ["error"], since_id, text_filter, text_regex)
-	var entries: Array = buf_result["entries"]
-	for entry in entries:
-		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
-		entry["message"] = scrubbed["text"]
-	var buf_truncated: bool = buf_result["truncated"]
-	var response := {
-		"errors": Untrusted.wrap(
-			"editor_errors", "buffer", JSON.stringify(entries)),
-		"count": buf_result["count"],
-		"truncated": buf_truncated,
-		"next_id": buf_result["next_id"],
-		"total_errors": buf_result["total_lines"],
-	}
-	if buf_truncated:
-		response["hint"] = "more errors remain — re-call editor.get_errors with since_id = next_id (%d) until truncated is false" % int(buf_result["next_id"])
-	if not regex_warning.is_empty():
-		response["warning"] = regex_warning
-	return MCPToolkitSuccess.ok(response)
 
 
 static func cmd_get_console(server: Node, parameters: Dictionary) -> Dictionary:

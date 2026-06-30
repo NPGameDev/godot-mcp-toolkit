@@ -12,9 +12,6 @@ const _Execute := preload("res://addons/godot_mcp_toolkit/commands/editor/editor
 
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
-	registry.add("editor.get_errors", func(parameters: Dictionary) -> Dictionary:
-		return _LogReader.cmd_get_errors(server, parameters)
-	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("editor.save_scene", func(parameters: Dictionary) -> Dictionary:
 		# Route through the public safety class: C2 scan-idle guard + the C1
 		# _in_dispatch flag around the synchronous save (see

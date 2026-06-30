@@ -257,16 +257,16 @@ runtime sees the new bindings (Godot loads `InputMap` from
   most-recent `.log`. Multi-line error blocks (stack traces starting with
   whitespace or `"   at:"`) are folded into the preceding entry.
   `LOG_UNAVAILABLE` if no readable log file exists.
-- `editor_get_errors` — **deprecated, removed from MCP catalogue**. The
-  `editor.get_console` command with `level_filter=["error"]` provides the
-  same functionality with richer output. The GDScript handler remains
-  registered for backwards compatibility with existing bridge-level tests.
+- `editor_get_errors` — **removed** (no longer registered). There is no
+  `editor.get_errors` command; the error path is `editor_get_console` with
+  `level_filter=["error"]`, which provides the same data with richer output
+  (autoload + empty-buffer hints).
 
 ### Console-reader notes
 
 - **`user://logs/` read exception.** This is a narrow read-only deviation from
   the `res://`-only path rule. FileGuard explicitly allowlists
-  `editor.get_console` + `editor.get_errors` for `user://logs/` reads only.
+  `editor.get_console` for `user://logs/` reads only.
 - **Playtest-rotation ambiguity.** When a Mode-B playtest starts, Godot
   rotates the editor's log; `editor.get_console` may surface game output
   instead. Prefer `debugger.get_log` during playtest.

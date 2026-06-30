@@ -62,11 +62,10 @@
 | script.delete | — | — | C2, C14 | — | — | Only in combos |
 | script.check | 17 | — | C2, C11 | — | — | |
 
-### Editor Core (7 tools)
+### Editor Core (6 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| editor.get_errors | — | — | — | — | — | **GAP:** no dedicated test — toolkit-internal, NOT an MCP tool (F1, ledger #9); harmonized editor-side (truncated/next_id/total_errors + since_id); LLM path = editor.get_console level_filter=["error"] |
 | editor.save_scene | 55, 64 | — | C3, C5, C7, C8, C9 | — | — | |
 | editor.screenshot | 56, 57 | — | — | — | — | |
 | editor.refresh | 61 | — | C15, C16 | — | 5f96b62 | Renamed from reload_scripts |
@@ -306,8 +305,7 @@
 
 ## Gap Summary
 
-**Tools with NO dedicated test:** 3
-- `editor.get_errors` — no standalone test (partially covered by CS11.2); toolkit-internal, no MCP tool (F1, ledger #9) — expected gap
+**Tools with NO dedicated test:** 2
 - `meta.set_limits` — no test at all
 - `runtime.set_property` — no test at all
 
