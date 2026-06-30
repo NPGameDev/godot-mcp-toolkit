@@ -1,7 +1,8 @@
 # Section 7 — Editor Operations & Console
 
 **Dependencies:** Section 2 (nodes in Sv2Main.tscn)
-**Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_get_errors, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
+**Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
+**Also exercised (NOT an MCP tool):** `editor_get_errors` (toolkit-internal, bridge-only — see 7.16; the LLM-facing errors path is `editor_get_console` with `level_filter:["error"]`)
 **Tests:** 16
 
 ---

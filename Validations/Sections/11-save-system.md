@@ -24,7 +24,16 @@
 **11.6** `save_write` — path=`user://addons/godot_mcp_toolkit/evil.txt`, content=`x`
 - **Expect:** PATH_DENIED
 
-**11.7** `save_read` paging + configurable cap (concern 025)
+**11.7** `save_read` paging (concern 054 — uniform pagination)
+
+> **`save_read_cap_kb` is NOT covered here — by design.** The configurable
+> read cap (`mcp_toolkit/limits/save_read_cap_kb`) is *config*, not an
+> agent-settable param — and it intentionally is not (you do not want an LLM
+> raising its own output ceiling). It cannot be exercised end-to-end from the
+> agent-driven sweep, so it is validated **server-side** in smoke
+> `test/sections/21_response_caps.ts` (§21), which owns the cap-enforcement
+> coverage (window-exceeds-cap → INVALID_PARAMS, default-ceiling unchanged).
+> Do not re-add a cap step here.
 
 > **Fixture size — keep tiny on purpose.** A 10-byte file exercises the exact
 > same multi-window pagination contract (truncated → truncated → final, hint
@@ -42,10 +51,7 @@
    - **Expect:** `bytes_returned`=2, `next_offset`=10, `truncated`=false, **no `hint`** (final window — the hint is omitted once `truncated` is false; page until then). Same contract shape as `script_read` (see Section 6.2), in byte units.
 5. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=10 (at EOF)
    - **Expect:** success, `bytes_returned`=0, `next_offset`=10, `truncated`=false (no error past EOF)
-6. Cap: set `mcp_toolkit/limits/save_read_cap_kb`=64 (Project Settings → `mcp_toolkit/limits/`, or `meta_set_limits save_read_cap_kb=64`), then `save_read` with `max_bytes`=100000
-   - **Expect:** INVALID_PARAMS (window exceeds the 64 KB cap; default 256 KB == the former hardcoded ceiling, so the default is unchanged)
-   - Restore the cap to 256 afterward.
-7. `save_delete` — path=`user://saves/sv2_page.txt` (cleanup)
+6. `save_delete` — path=`user://saves/sv2_page.txt` (cleanup)
 
 ---
 

@@ -26,6 +26,39 @@ deterministic `.ts` layer is the **flow suite** (see the server repo's
 `test/SMOKE-COVERAGE-MANIFEST.md` → "Flow Suite", and plan-repo `CONTEXT.md` →
 "Validation vocabulary"). New tools/params → update **sweep + smoke + flows**.
 
+## Agent-drivability principle
+
+**Every sweep section must be agent-drivable in its applicable environment.** The
+sweep is the **LLM-driven** layer: each step is exercised end-to-end by an agent
+calling MCP tools. A step that cannot actually be run shouldn't sit in a
+content-map masquerading as coverage — it inflates the count and lulls a reviewer
+into thinking a behavior is tested when nothing exercises it.
+
+When a step looks un-runnable, classify it honestly into one of two buckets:
+
+- **(a) Un-runnable *anywhere* by the agent** — e.g. config-only knobs the agent
+  can't (and *shouldn't*) set, or behaviors with no agent-reachable fixture.
+  → **Make it drivable** by spelling out concrete setup with real MCP tools that
+  *provisions* the precondition (e.g. register a temp autoload via
+  `autoload_manage` before `game_start`; launch a breakpoint-free scene to force
+  `NOT_BREAKED`). If it genuinely can't be driven from the sweep, **remove it**
+  and cover the behavior in the layer that *can* — typically server smoke
+  (`test/sections/*.ts`) — and leave a one-line cross-reference here naming the
+  owning layer. Do **not** leave a dead step in place.
+  - *Example:* the `save_read_cap_kb` cap is config, not an agent-settable param,
+    so it was removed from §11 and is owned by smoke `21_response_caps.ts` (§21).
+
+- **(b) Legitimately env-gated** — runnable in a *specific legitimate environment*
+  the dogfood project isn't, e.g. the C# section (needs a .NET project + Mono
+  editor). → **Keep it.** It is real coverage, just gated. Annotate the section
+  with its required environment and an **expected-SKIP** elsewhere so a skip on the
+  default project reads as the gate working, not a failure.
+  - *Example:* §S23 (C#) is C#/.NET-only; expected-SKIP on the GDScript dogfood.
+
+The distinction matters: bucket (a) is a **coverage bug** (fix or relocate);
+bucket (b) is **correct design** (keep + gate). Never silently downgrade a (a)
+into a perpetual SKIP — that hides the gap.
+
 ## When to update the sweep
 
 Update the tool sweep (`Validations/tool-sweep.md` + relevant `Sections/*.md`) whenever an iteration:

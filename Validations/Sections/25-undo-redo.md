@@ -55,9 +55,10 @@
 - `node.manage` — node_path=`URTarget`, action=`rename`, new_name=`URRenamed`
 - **Expect:** success
 
-**UR2.2** Trigger undo:
-- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URTarget"]`
-- **Expect:** status=`ok` (uses the original path for history lookup — node may still be at old path)
+**UR2.2** Trigger undo (use the current name `URRenamed` or empty path `""` — NOT the stale pre-rename path):
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`[""]`
+- **Expect:** status=`ok`. **By design:** undo history is scene-keyed and the helper resolves via the *live* node path, so a stale **pre-rename** path (`URTarget` — the node now lives at `URRenamed`) cannot resolve ("Could not resolve history"). Pass the current name (`URRenamed`) or empty path `""` (targets scene history directly).
+- **Constraint:** after a rename, always reference the node by its *current* name (or `""` for scene history) when driving undo/redo — the old path is dead.
 
 **UR2.3** Verify name reverted:
 - `scene.get_tree` — verify `URTarget` exists (original name restored)

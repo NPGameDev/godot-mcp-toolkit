@@ -3,7 +3,8 @@
 **Dependencies:** Section 2 (nodes in Sv2Main.tscn), .NET project detected in Section 0
 **Tools tested:** All tools interacting with C# scripts/nodes
 **Tests:** ~50
-**Gate:** Skip entire section if Section 0 detected GDScript-only project
+**Environment:** C#/.NET-only — requires the addon installed in a **.NET project** (a `.csproj`/`.sln` present) **and a Mono/.NET editor build**. This is a legitimately **env-gated** section, not dead coverage: it is fully drivable in its applicable environment.
+**Gate:** **Expected-SKIP on the GDScript dogfood** (Section 0 detects 0 `.cs`/`.csproj`/`.sln` → skip the entire section). A skip here is the gate working as designed — **NOT a failure**. Run this section against a .NET project + Mono editor to exercise it.
 
 ---
 

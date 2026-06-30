@@ -106,11 +106,25 @@ func _process(delta: float) -> void:
 **27.15** `debug_continue` — (no params, no game running)
 - **Expect:** success=false, code=`GAME_NOT_RUNNING`, error mentions "game.start"
 
-**27.16** (Conditional — only if a game is running but NOT breaked)
-`debug_continue` — (no params, game running but not paused)
-- **Expect:** success=false, code=`NOT_BREAKED`, error mentions "breakpoint"
-- **Note:** This test requires starting a game without hitting a breakpoint.
-  If not practical during the sweep, mark as SKIP and verify during interactive validation.
+**27.16** `debug_continue` while a game is running but NOT paused → `NOT_BREAKED` (drivable)
+
+Setup — launch a game that hits no breakpoint, then continue:
+1. `debug_list_breakpoints` — **Expect:** no *enabled* breakpoints remain for `sv2_debug_target.gd` (27.5–27.8 disabled both). If any remain, disable them via `debug_set_breakpoint` enabled=false first.
+2. `scene_create` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn`, root_type=`Node2D`
+   - **Expect:** success
+3. `node_set_script` — node_path=`.`, file_path=`res://sv2_validation/sv2_debug_target.gd`
+   - **Expect:** success (attaches the target script; its breakpoints are disabled so `_ready` won't pause)
+4. `editor_save_scene`
+   - **Expect:** success
+5. `game_start` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn`
+   - **Expect:** success. The game runs `_ready`/`_process` straight through — no enabled breakpoint, so it never pauses.
+6. `debug_state`
+   - **Expect:** active=true, breaked=false (running, not paused)
+7. `debug_continue` — (no params)
+   - **Expect:** success=false, code=`NOT_BREAKED`, error mentions "breakpoint" ← the assertion
+8. `game_stop`
+   - **Expect:** success
+9. `scene_delete` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn` (cleanup)
 
 ---
 
@@ -151,5 +165,6 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 - `debug_set_breakpoint` res://sv2_validation/sv2_debug_target.gd, line=6, enabled=false (if set)
 - `debug_set_breakpoint` res://sv2_validation/sv2_debug_target.gd, line=9, enabled=false (if set)
 - `scene_delete` res://sv2_validation/sv2_debug_scene.tscn (if created in C26)
+- `scene_delete` res://sv2_validation/sv2_nobreak_scene.tscn (if created in 27.16)
 - `script_delete` res://sv2_validation/sv2_debug_target.gd
 - `discover_tools` with reset=`["debugger"]`
