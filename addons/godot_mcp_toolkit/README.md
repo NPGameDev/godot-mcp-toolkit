@@ -265,8 +265,10 @@ runtime sees the new bindings (Godot loads `InputMap` from
 ### Console-reader notes
 
 - **`user://logs/` read exception.** This is a narrow read-only deviation from
-  the `res://`-only path rule. FileGuard explicitly allowlists
-  `editor.get_console` for `user://logs/` reads only.
+  the `res://`-only path rule: the console reader reads an
+  **internally-constructed** `user://logs/` path (never caller-supplied), so it
+  sits outside FileGuard's path validation rather than being allowlisted through
+  it.
 - **Playtest-rotation ambiguity.** When a Mode-B playtest starts, Godot
   rotates the editor's log; `editor.get_console` may surface game output
   instead. Prefer `debugger.get_log` during playtest.
