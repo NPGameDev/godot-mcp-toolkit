@@ -442,15 +442,18 @@ former `tileset` / `editor` / `playtest` god-files over the leaves now under
 
 ## 7. Plugin lifecycle
 
-`plugin.gd` is a thin `EditorPlugin` (~157 lines). `_enter_tree` delegates the whole collaborator
+`plugin.gd` is a thin `EditorPlugin` (~222 lines). `_enter_tree` first **self-heals the runtime
+autoload** — re-asserting `MCPRuntimeServer` before the graph is wired if the project was enabled
+out-of-band with the `[autoload]` entry missing (ADR 0013) — then delegates the whole collaborator
 graph to `PluginComposer.compose()`, which returns a `Handle`; `_exit_tree` calls
 `Handle.dispose()`, which tears the graph down in **exact reverse order** — the add/remove
 symmetry (invariant I12) that keeps plugin reload clean.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="a366d58" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
+    plugin -->|"_self_heal_autoloads() — pre-compose"| heal["re-assert runtime autoload<br/>(enabled-out-of-band gap · ADR 0013)"]
     plugin -->|"compose()"| composer["PluginComposer → Handle"]
     composer --> reg["registry + mcp_server"]
     composer --> bridge["debug bridge"]
@@ -463,7 +466,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order (I12)"| composer
 ```
-*Figure 10 — plugin composition root (concern 001) · verified b552824*
+*Figure 10 — plugin composition root (concern 001) · verified a366d58*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
