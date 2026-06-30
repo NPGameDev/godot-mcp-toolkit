@@ -89,7 +89,7 @@ return {"created": true}
   - message non-empty (describes the parse error)
 
 **26.3** `lsp_diagnostics` — file_path=`res://sv2_validation/sv2_lsp_test.gdshader`
-- **Expect:** success=true, **no diagnostics** on a valid shader (empty array) — the LSP does not parse `.gdshader` as GDScript, so a valid shader yields no parse errors. SKIP if shader wasn't created in S4.
+- **Expect:** success=true, diagnostics `[]` (empty) + a `note` field — the server short-circuits `.gdshader`/`.gdshaderinc` (Godot's LSP analyzes GDScript only, so any shader "diagnostic" would be a bogus GDScript parse). Uniform across 4.2–4.7. SKIP if shader wasn't created in S4.
 
 ---
 
