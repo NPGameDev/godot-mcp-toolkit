@@ -1,13 +1,16 @@
 # Section 17 — Scene Inheritance & Query
 
 **Dependencies:** Section 1 (sv2_validation/ exists)
-**Tools tested:** scene_create_inherited, scene_query
-**Tests:** 10
+**Tools tested:** scene_create, scene_create_inherited, scene_query
+**Tests:** 11
 
 ---
 
 **17.1** `scene_create` — file_path=`res://sv2_validation/base_enemy.tscn`, root_type=`CharacterBody2D`, root_name=`BaseEnemy`
-- **Expect:** success
+- **Expect:** success, `root_name=BaseEnemy` — the optional override is honored, so the root node is named `BaseEnemy` (not the filename stem `base_enemy`). Harmonizes with `scene_create_inherited`'s `root_name`.
+
+**17.1b** `scene_create` default root_name — file_path=`res://sv2_validation/default_root.tscn`, root_type=`Node2D` (omit `root_name`)
+- **Expect:** success, `root_name=default_root` — omitting `root_name` falls back to the filename stem (preserves the prior default behavior).
 
 **17.2** `scene_create_inherited` — file_path=`res://sv2_validation/slime.tscn`, base_scene=`res://sv2_validation/base_enemy.tscn`, root_name=`SlimeEnemy`
 - **Expect:** success, root_name=SlimeEnemy
@@ -45,3 +48,4 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 - `scene_delete` file_path=`res://sv2_validation/base_enemy.tscn`
 - `scene_delete` file_path=`res://sv2_validation/slime.tscn`
+- `scene_delete` file_path=`res://sv2_validation/default_root.tscn`

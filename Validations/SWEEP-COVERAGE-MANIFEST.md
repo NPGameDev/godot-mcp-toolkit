@@ -27,7 +27,7 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| scene.create | 7, 8 | — | C3, C5, C8, C13, C18, C19 | — | — | |
+| scene.create | 7, 8, 17.1, 17.1b | — | C3, C5, C8, C13, C18, C19 | — | — | 17.1/17.1b: root_name override + stem default |
 | scene.open | 18, 64a, 64d, 64f | — | C3, C7, C8 | — | — | |
 | scene.close | 18.3, 18.14, 64b, 64f | ✓ (non-active, last tab) | C3, C7, C27 | ✓ (_set_main_scene_state hint) | — | 4.5+ only (version-gated via min_godot_version) |
 | scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3, C18 | ✓ (tab_closed, phantom warning) | — | |

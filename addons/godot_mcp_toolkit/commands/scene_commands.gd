@@ -122,6 +122,10 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	var root_type := str(parameters.get("root_type", "Node"))
 	var if_exists := str(parameters.get("if_exists", "return"))
+	# Optional root_name; empty falls back to the filename stem (preserves the prior default).
+	var root_name := str(parameters.get("root_name", ""))
+	if root_name.is_empty():
+		root_name = file_path.get_file().get_basename()
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
@@ -153,7 +157,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 		match collision["action"]:
 			"return":
 				return MCPToolkitSuccess.ok({"status": "returned", "path": file_path,
-					"root_name": file_path.get_file().get_basename(), "root_path": "."})
+					"root_name": root_name, "root_path": "."})
 			"fail":
 				return MCPToolkitError.fail("ALREADY_EXISTS",
 					"file exists at %s; set if_exists:'replace' to overwrite" % file_path)
@@ -184,7 +188,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	if root == null:
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"instantiation returned null for %s" % root_type)
-	root.name = file_path.get_file().get_basename()
+	root.name = root_name
 	var packed := PackedScene.new()
 	var pack_error := packed.pack(root)
 	if pack_error != OK:
@@ -199,7 +203,7 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 
 	var scene_index := await Helpers.ensure_file_indexed(file_path)
 	var response := MCPToolkitSuccess.ok({"path": file_path, "root_type": root_type,
-		"root_name": file_path.get_file().get_basename(), "root_path": ".",
+		"root_name": root_name, "root_path": ".",
 		"indexed": scene_index["indexed"],
 		"hint": "Scene saved. Open it for editing with scene_open."})
 	if dirs_created:
