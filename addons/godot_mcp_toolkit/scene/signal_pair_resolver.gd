@@ -1,13 +1,13 @@
 @tool
 extends RefCounted
 ## Validates a {source, signal, target, method} quartet against a scene tree whose
-## root is supplied by an injected root-resolver Callable, returning the
-## connect-ready pair (source/target/callable/echoed paths+names) or a {code, error}
-## dict. This is the structural skeleton shared by the editor signal handlers
-## (Mode A) and the runtime autoload (Mode B): both resolve a node path against a
-## root, then guard has_signal / has_method identically — the ONLY thing that
-## differs is where the root comes from (the editor's edited-scene root vs the live
-## SceneTree root), which the caller injects as a Callable.
+## root the caller resolves and passes in, returning the connect-ready pair
+## (source/target/callable/echoed paths+names) or a {code, error} dict. This is the
+## structural skeleton shared by the editor signal handlers (Mode A) and the runtime
+## autoload (Mode B): both resolve a node path against a root, then guard
+## has_signal / has_method identically — the ONLY thing that differs is where the
+## root comes from (the editor's edited-scene root vs the live SceneTree root), which
+## the caller resolves itself and passes in as a Node.
 ##
 ## Deliberately bare: it returns the leanest validated pair (the runtime's historic
 ## shape). The editor wraps it and layers its friendly hint enrichment (instanced-
@@ -20,22 +20,23 @@ extends RefCounted
 ## GDScript resolves identifiers at parse time (before any is_editor_hint() guard),
 ## so naming ANY editor-only class — or preloading a script that does — would
 ## parse-fail the autoload in an export template (godotengine/godot#91713, unfixed
-## 4.2–4.6). The entire identifier set here is core (Node/Object/Callable/Dictionary
-## + the injected resolver) and it preloads nothing. Keep it that way: a grep for
-## "Editor" must return zero non-comment hits.
+## 4.2–4.6). The entire identifier set here is core (Node/Object/Callable/Dictionary)
+## and it preloads nothing. Keep it that way: a grep for "Editor" must return zero
+## non-comment hits.
 
 
-## Resolves a single node path against the tree the root_resolver returns.
+## Resolves a single node path against the supplied scene-tree [param root].
 ##
 ## The skeleton both servers shared: a null root yields null (no scene / no live
 ## tree); an empty or "." path resolves to the root itself (so a caller wanting a
 ## top-level signal need not type the full path); anything else goes through
-## get_node_or_null. root_resolver is `func() -> Node` — the editor injects one that
-## returns EditorInterface.get_edited_scene_root(); the runtime injects one that
-## returns get_tree().root. The return is Variant because a missing node is a valid
-## null result the caller branches on.
-static func resolve_node(path: String, root_resolver: Callable) -> Variant:
-	var root: Node = root_resolver.call()
+## get_node_or_null. [param root] is the editor's edited-scene root or the runtime's
+## live SceneTree root — each caller resolves its own root and passes the Node, never
+## a root-resolver Callable: a bare static-method reference used as a Callable
+## mis-binds to a NIL self on Godot 4.2 and silently aborts, so this shared static
+## helper takes the resolved value, not a Callable to call. The return is Variant
+## because a missing node is a valid null result the caller branches on.
+static func resolve_node(path: String, root: Node) -> Variant:
 	if root == null:
 		return null
 	if path.is_empty() or path == ".":
@@ -67,10 +68,12 @@ static func list_signals_of(node: Object) -> Array:
 ##
 ## params accepts node_path OR source_path for the source. The caller is expected to
 ## have already normalized the paths it cares about (the editor normalizes /root/…
-## paths before calling); this resolver treats the paths as given. The has_signal /
-## has_method guards return the leanest message — the editor layers its richer hints
-## on top of an INVALID_PARAMS failure by re-resolving the offending node itself.
-static func resolve_pair(params: Variant, root_resolver: Callable) -> Dictionary:
+## paths before calling); this resolver treats the paths as given. [param root] is the
+## scene-tree root both paths resolve against (see [method resolve_node]). The
+## has_signal / has_method guards return the leanest message — the editor layers its
+## richer hints on top of an INVALID_PARAMS failure by re-resolving the offending node
+## itself.
+static func resolve_pair(params: Variant, root: Node) -> Dictionary:
 	if typeof(params) != TYPE_DICTIONARY:
 		return {"code": "INVALID_PARAMS", "error": "params must be an object"}
 	var source_path := str(params.get("node_path", params.get("source_path", "")))
@@ -81,10 +84,10 @@ static func resolve_pair(params: Variant, root_resolver: Callable) -> Dictionary
 			or target_path.is_empty() or method_name.is_empty():
 		return {"code": "INVALID_PARAMS",
 			"error": "node_path, signal_name, target_path, method_name are all required"}
-	var source = resolve_node(source_path, root_resolver)
+	var source = resolve_node(source_path, root)
 	if source == null:
 		return {"code": "NOT_FOUND", "error": "source node not found: %s" % source_path}
-	var target = resolve_node(target_path, root_resolver)
+	var target = resolve_node(target_path, root)
 	if target == null:
 		return {"code": "NOT_FOUND", "error": "target node not found: %s" % target_path}
 	# Explicit bool — `source`/`target` are Variant (resolve_node return), so the

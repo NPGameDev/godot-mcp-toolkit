@@ -610,7 +610,7 @@ func _runtime_root() -> Node:
 # Kept as a thin wrapper so the other runtime commands that resolve a node
 # (signal.emit, animation_player.control, execute.code, …) share one seam.
 func _resolve_runtime_node(path: String):
-	return SignalPairResolver.resolve_node(path, _runtime_root)
+	return SignalPairResolver.resolve_node(path, _runtime_root())
 
 
 func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
@@ -630,7 +630,7 @@ func _cmd_signal_list(peer: WebSocketPeer, id, params) -> void:
 # editor wraps the same resolver and layers its hint enrichment); the runtime path
 # is deliberately leaner — no instanced-scene / compilation-error hints.
 func _resolve_runtime_signal_pair(params) -> Dictionary:
-	return SignalPairResolver.resolve_pair(params, _runtime_root)
+	return SignalPairResolver.resolve_pair(params, _runtime_root())
 
 
 func _cmd_signal_connect(peer: WebSocketPeer, id, params) -> void:

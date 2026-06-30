@@ -131,7 +131,7 @@ static func _resolve_signal_pair(parameters: Variant) -> Dictionary:
 		"signal_name": signal_name,
 		"method_name": method_name,
 	}
-	var resolved := SignalPairResolver.resolve_pair(normalized, _get_edited_root)
+	var resolved := SignalPairResolver.resolve_pair(normalized, root)
 	if not resolved.has("error"):
 		return resolved
 	# Layer editor-only hints onto the two validation failures (signal/method
