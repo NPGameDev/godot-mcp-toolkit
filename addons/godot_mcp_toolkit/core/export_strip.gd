@@ -21,7 +21,9 @@ const _MCP_JSON_PATH := "res://.mcp.json"
 # the strip is deliberately single-level too.
 const _EXTENSION_BASE := "MCPToolkitExtension"
 
-# COUPLING: Must match plugin.gd _enable_plugin()'s add_autoload_singleton() call.
+# COUPLING: Must match plugin.gd's _REQUIRED_AUTOLOADS registration set (consumed
+# by _enable_plugin() and the on-load _ensure_autoloads_registered() heal). A
+# headless unit asserts this set equality so drift = the autoload ships in builds.
 const _AUTOLOAD_KEY := "autoload/MCPRuntimeServer"
 const _AUTOLOAD_VAL := "*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 

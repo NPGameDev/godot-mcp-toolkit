@@ -23,6 +23,7 @@ const PathsVersioningTests := preload("res://test/units/paths_versioning_tests.g
 const ProceduralAssetTests := preload("res://test/units/procedural_asset_tests.gd")
 const TextInputTests := preload("res://test/units/text_input_tests.gd")
 const SerializeIoTests := preload("res://test/units/serialize_io_tests.gd")
+const AutoloadHealTests := preload("res://test/units/autoload_heal_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -50,6 +51,7 @@ func _init() -> void:
 	ProceduralAssetTests.run(testing)
 	TextInputTests.run(testing)
 	SerializeIoTests.run(testing)
+	AutoloadHealTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()
