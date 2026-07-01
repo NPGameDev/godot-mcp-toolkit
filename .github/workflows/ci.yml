@@ -21,6 +21,7 @@ jobs:
           - godot-version: "4.4.0"
           - godot-version: "4.5.0"
           - godot-version: "4.6.2"
+          - godot-version: "4.7.0"
     name: GDScript check (Godot ${{ matrix.godot-version }})
     steps:
       - uses: actions/checkout@v4
@@ -43,3 +44,30 @@ jobs:
       - name: Run unit tests
         if: ${{ !matrix.skip-unit-tests }}
         run: timeout 30 godot --headless --script test/run_unit_tests.gd
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # INSERTION SITE — manifest-diff regression gate (FILLED BY 41n-quinquies)
+  # ───────────────────────────────────────────────────────────────────────────
+  # 41n-quinquies wires a lightweight, EDITOR-FREE static check here: dump each
+  # matrix version's surface via `godot --headless --dump-extension-api` and diff
+  # it against the committed distilled compat map. Because it is headless +
+  # editor-free it belongs in this floor (ci.yml), NOT the spike-gated behavioral
+  # cross-version.yml — it must exist regardless of the spike outcome.
+  #
+  # 41n-quater leaves ONLY this labeled placeholder (no logic). Suggested shape
+  # for 41n-quinquies: a matrix job over 4.3/4.4/4.5/4.6/4.7 using
+  # chickensoft-games/setup-godot (as gdscript-check does), then:
+  #   godot --headless --dump-extension-api
+  #   node scripts/diff-extension-api.mjs <version>   # compare vs committed map
+  #
+  # manifest-diff:
+  #   runs-on: ubuntu-latest
+  #   strategy: { fail-fast: false, matrix: { godot-version: ["4.3.0","4.4.0","4.5.0","4.6.2","4.7.0"] } }
+  #   name: manifest-diff (Godot ${{ matrix.godot-version }})
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: chickensoft-games/setup-godot@v2.4.1
+  #       with: { version: ${{ matrix.godot-version }}, use-dotnet: false }
+  #     - run: godot --headless --dump-extension-api
+  #     - run: node scripts/diff-extension-api.mjs ${{ matrix.godot-version }}
+  # ═══════════════════════════════════════════════════════════════════════════

@@ -1,0 +1,112 @@
+# Behavioral cross-version tier (GDScript) — opt-in, editor-required.
+#
+# The static floor (ci.yml) gates every push/PR. This tier launches a real
+# headless Godot editor against the toolkit dogfood and round-trips the FULL
+# smoke + flows suites through the WS bridge, one job per supported minor. It is
+# NOT a merge gate — it runs only on explicit opt-in:
+#   • [run-cross-version-ci] in the push commit message  (deliberate "run it")
+#   • a v* release tag                                    (backstop: never SHIP a
+#                                                          cross-version regression)
+#   • workflow_dispatch                                   (manual)
+# No schedule: — versions are explicitly pinned (no drift between pushes) and a
+# nightly over-runs a sparse post-release repo (feasibility spike 41n-quater).
+#
+# Feasibility proven 2026-07-01 (41n-quater Stage-2): a display-less ubuntu-latest
+# runner keeps the editor alive and serves the WS round-trip (standard 29/0).
+#
+# The smoke/flows harness lives in the SERVER repo, so this workflow checks the
+# server out as a sibling and launches the toolkit's OWN dogfood editor. While the
+# repos are private the sibling checkout needs a read-only PAT (CROSS_REPO_READ_TOKEN);
+# once public the || github.token fallback makes it tokenless.
+name: cross-version (GDScript behavioral)
+
+on:
+  workflow_dispatch:
+    inputs:
+      versions:
+        description: "Space-separated Godot versions (informational; matrix is fixed)"
+        required: false
+  push:
+    branches: [main]
+    tags: ["v*"]
+
+jobs:
+  gdscript-behavioral:
+    # Opt-in only: manual dispatch, a v* tag, or the token in the commit message.
+    # A plain main push (no token) evaluates this to false → the job shows as
+    # "skipped" with zero runner cost.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(github.event.head_commit.message, '[run-cross-version-ci]')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        godot-version: ["4.3.0", "4.4.0", "4.5.0", "4.6.2", "4.7.0"]
+    name: GDScript behavioral (Godot ${{ matrix.godot-version }})
+    steps:
+      - uses: actions/checkout@v4 # toolkit (self) = the editor/dogfood project
+
+      - uses: actions/checkout@v4 # server = smoke + flows harness
+        with:
+          repository: NPGameDev/godot-mcp-server
+          path: server
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+
+      - name: Setup Godot (standard)
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: "${{ matrix.godot-version }}"
+          use-dotnet: false
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+
+      - name: Build harness
+        working-directory: server
+        run: npm ci && npm run build
+
+      - name: Launch dogfood editor headless + poll 6550 (<=60s)
+        run: |
+          godot --headless --editor --path "$GITHUB_WORKSPACE" > editor.log 2>&1 &
+          echo "EDITOR_PID=$!" >> "$GITHUB_ENV"
+          for i in $(seq 1 60); do
+            node -e 'const n=require("net");const s=n.connect(6550,"127.0.0.1");s.on("connect",()=>{s.destroy();process.exit(0)});s.on("error",()=>process.exit(1));s.setTimeout(1000,()=>process.exit(1))' && break
+            sleep 1
+          done
+
+      # HEADLESS WORKAROUND (--skip 10,14) — pending iter 41n-quater-bis (headless-DX
+      # determinism). These sections silently degrade on a display-less runner and are
+      # covered by the local display-ful sweep:
+      #   §10 game.start — the launched game doesn't establish the runtime WS headless
+      #        (runtime_ready:false), so its "already playing" assertion can't hold.
+      #   §14 editor_get_console — editor parse-error capture needs GUI revalidation to
+      #        re-emit after editor.refresh's buffer clear; headless never re-emits.
+      # §04/§13/§18 screenshots stay IN the run — they assert the deterministic
+      # HEADLESS_UNSUPPORTED guard (via passIfHeadlessUnsupported). 41n-quater-bis makes
+      # §10/§14 deterministic + removes this skip.
+      - name: Smoke (full suite, minus headless-incompatible §10/§14)
+        working-directory: server
+        env:
+          GODOT_MCP_PROJECT_PATH: ${{ github.workspace }}
+          GODOT_MCP_PROJECT_NAME: "Godot MCP Toolkit"
+        run: npm run smoke -- --skip 10,14
+
+      # --skip 2: flows §02 (hot_reload_reachability) needs live editor script
+      # re-instantiation that doesn't reflect headless — pending 41n-quater-bis. §01/§03 run.
+      - name: Flows (minus headless-incompatible §02)
+        working-directory: server
+        env:
+          GODOT_MCP_PROJECT_PATH: ${{ github.workspace }}
+          GODOT_MCP_PROJECT_NAME: "Godot MCP Toolkit"
+        run: npm run flows -- --skip 2
+
+      - if: always()
+        run: kill "$EDITOR_PID" 2>/dev/null || true
+      - name: Editor log (always)
+        if: always()
+        run: cat editor.log || true
