@@ -674,6 +674,37 @@ public Dictionary SetCustomProp(Dictionary parameters)
 }
 ```
 
+### Setting `editor_description` (Godot 4.3 crash guard)
+
+Setting a node's `editor_description` arms a 0.5-second one-shot tooltip timer in
+the editor's scene-tree dock that holds a **raw pointer to that node's tree row**.
+On **Godot 4.3**, the very next scene-tree mutation frees that row (4.3 rebuilds
+the whole dock on every node add/remove/move), so the timer can fire on freed
+memory and crash the editor with a use-after-free. Godot 4.2 has no such timer,
+and 4.4+ keeps the row alive across mutations — 4.3 is the only affected version.
+
+If your extension tool sets `editor_description`, defuse the timer right after the
+set by awaiting the shared helper. It holds the mutation lock until the 0.5 s
+timer has safely fired (so no following mutation can free the row first) and is a
+**no-op on every version except 4.3** — zero cost elsewhere:
+
+```gdscript
+const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
+
+func _annotate(params: Dictionary) -> Dictionary:
+	var node := _resolve(params)  # a node in the edited scene
+	node.set("editor_description", str(params.get("text", "")))
+	# ... register undo (see "Making mutations undoable" above) ...
+	await Helpers.settle_tooltip_after_editor_description(true)  # no-op off 4.3
+	return MCPToolkitSuccess.ok({})
+```
+
+The built-in `node_set_property` and `scene_create_node` tools already call this,
+so you only need it in your own handlers. If you cannot await (e.g. a C#
+extension, which cannot call the GDScript helper), set `editor_description` only
+on a node you will **not** mutate or delete within half a second — never on a node
+you delete in the same tool call.
+
 ### Concurrency: scene lease and mutation lock
 
 When multiple WebSocket peers (e.g. parallel Claude Code sessions) connect to

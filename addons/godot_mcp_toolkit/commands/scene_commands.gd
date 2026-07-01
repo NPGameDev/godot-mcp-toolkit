@@ -29,7 +29,16 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return await _cmd_scene_delete(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("scene.create_node", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_scene_create_node(parameters)
+		var result := _cmd_scene_create_node(parameters)
+		# Godot 4.3 SceneTreeEditor tooltip-timer UAF: an inline editor_description arms
+		# a 0.5s one-shot timer bound to the new node's TreeItem, which the next mutation
+		# frees. Settle it under the single-flight mutation lock (no-op off 4.3). See
+		# Helpers.settle_tooltip_after_editor_description.
+		var props = parameters.get("properties", null)
+		await Helpers.settle_tooltip_after_editor_description(
+			result.get("success", false) \
+			and typeof(props) == TYPE_DICTIONARY and (props as Dictionary).has("editor_description"))
+		return result
 	, MCPToolkitCommandOptions.new())
 	registry.add("scene.delete_node", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_scene_delete_node(parameters)

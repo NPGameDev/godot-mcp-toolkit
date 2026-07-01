@@ -209,17 +209,41 @@ Remaining trade-off:
 cross-check — it reads diagnostics from the editor itself, which have
 accurate file paths.
 
-### `editor_description` + immediate delete (Godot 4.3+)
+### `editor_description` tooltip timer (Godot 4.3+ engine UAF)
 
-A narrow engine edge case. On Godot 4.3+, setting a node's `editor_description`
-schedules a 0.5-second editor tooltip update that holds a pointer to that node;
-deleting the **same** node within that window can occasionally trip a
-use-after-free in the editor's scene-tree tooltip code. It is stochastic
-(depends on memory reuse) and effectively unreachable at interactive pace —
-only same-tick scripted/batched `set editor_description` + `delete` on one node
-lines it up. If you script that exact pairing, set the description on a node you
-keep (or delete a step later). Godot 4.2 is unaffected; an upstream fix is
-pending.
+Setting a node's `editor_description` arms a 0.5-second one-shot timer in the
+editor's `SceneTreeEditor` that holds a **raw pointer to that node's tree row**
+(`TreeItem`). If the `TreeItem` is freed before the timer fires, the timer
+dereferences freed memory → editor use-after-free crash (SIGSEGV). It is
+stochastic (depends on heap reuse) and was introduced in Godot **4.3** (4.2
+renders node tooltips synchronously, with no deferred timer, and is unaffected).
+Unpatched upstream as of 4.6.
+
+Which mutations free the `TreeItem` depends on the version:
+
+- **Godot 4.3 — *any* scene-tree mutation.** 4.3 rebuilds the entire scene dock
+  (a full `tree->clear()` that frees and recreates every `TreeItem`) on every
+  node add/remove/move, so *any* mutation within 0.5 s of an `editor_description`
+  set frees the armed row — even a mutation on an *unrelated* node. **The toolkit
+  guards this automatically:** after any built-in tool sets `editor_description`
+  on 4.3 (`node_set_property` scalar/batch, `scene_create_node` inline
+  properties), the handler waits out the 0.5 s timer — holding the single-flight
+  mutation lock so no following mutation can free the row first — before
+  returning. No action needed on 4.3.
+- **Godot 4.4+ — deleting the described node.** 4.4 added a `SceneTreeEditor`
+  node cache (PR #99700) that keeps `TreeItem`s alive across unrelated mutations,
+  so only *deleting the described node itself* within 0.5 s frees its row. That is
+  effectively unreachable at interactive pace — only same-tick scripted/batched
+  `set editor_description` + `delete` on one node lines it up. If you script that
+  exact pairing, set the description on a node you keep, or delete a step later.
+  (This delete-side case is not auto-guarded: a wait before every node deletion
+  would stall the mutation queue; the upstream engine fix is the real cure.)
+
+**Extension authors:** any new tool that sets `editor_description` must call
+`Modules.CommandHelpers.settle_tooltip_after_editor_description(true)` right after
+the set (a no-op off Godot 4.3) so it can't reintroduce the crash — see
+`addons/godot_mcp_toolkit/docs/extending.md`. Root-cause writeup:
+`Insights/scene-tree-tooltip-timer-uaf-4.3.md`.
 
 ## UI surface compatibility matrix
 

@@ -9,6 +9,7 @@ extends RefCounted
 ## (circular dependency). Use direct preloads for dependencies instead.
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
 
 # -- Property coercion ---------------------------------------------------------
@@ -597,6 +598,44 @@ static func delete_res_file_and_deindex(
 		var removal: Dictionary = await ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
 	return delete_result
+
+
+# -- Godot 4.3 SceneTreeEditor tooltip-timer UAF mitigation -------------------
+
+
+## Seconds to await after an editor_description set so Godot 4.3's one-shot
+## SceneTreeEditor tooltip Timer (hardcoded 0.5s) fires while its bound TreeItem
+## is still valid. A 0.1s margin over 0.5s absorbs scheduling jitter.
+const _TOOLTIP_UAF_SETTLE_S := 0.6
+
+
+## Pure decision for [method settle_tooltip_after_editor_description]: settle only
+## on Godot 4.3.x, and only when an editor_description was actually set. 4.3 is the
+## sole affected line — 4.2 renders tooltips synchronously (no deferred timer) and
+## 4.4+ caches TreeItems across tree rebuilds (the bound item survives), so neither
+## can fault. Split out as a pure predicate (engine_ver injected) so the version
+## boundary is headless-unit-tested. engine_ver is VersionUtils.get_engine_version_pair().
+static func should_settle_tooltip_uaf(did_set_editor_description: bool, engine_ver: String) -> bool:
+	return did_set_editor_description and engine_ver == "4.3"
+
+
+## Godot 4.3-only guard against the SceneTreeEditor tooltip-timer use-after-free.
+## Setting a node's [code]editor_description[/code] arms a 0.5s one-shot Timer that
+## binds the node's raw [code]TreeItem*[/code] (editor/gui/scene_tree_editor.cpp).
+## On 4.3 the next scene-tree mutation runs a full [code]tree->clear()[/code] (there
+## is no NodeCache before 4.4), freeing that TreeItem, so the timer detonates on
+## freed memory → editor SIGSEGV. Awaiting past the timer's 0.5s here — while the
+## caller still holds the single-flight mutation lock — lets the one-shot fire on
+## the still-valid item, so no following mutation can free it first.[br]
+## [br]
+## No-op unless an editor_description was set AND the engine is 4.3.x (see
+## [method should_settle_tooltip_uaf]). Statically a coroutine — callers MUST
+## [code]await[/code] it. Any new tool or extension that sets editor_description
+## MUST call this right after the set (see COMPATIBILITY.md and docs/extending.md).
+static func settle_tooltip_after_editor_description(did_set_editor_description: bool) -> void:
+	if not should_settle_tooltip_uaf(did_set_editor_description, VersionUtils.get_engine_version_pair()):
+		return
+	await Engine.get_main_loop().create_timer(_TOOLTIP_UAF_SETTLE_S).timeout
 
 
 # -- File-create collision decision -------------------------------------------
