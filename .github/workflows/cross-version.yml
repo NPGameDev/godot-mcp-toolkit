@@ -104,7 +104,7 @@ jobs:
   # via TOOLKIT_ADDON_SRC. The .NET tier now runs 4.2.0 too (41n-quater-septies): the
   # shared composite's cold class-cache warm-up ports to dotnet (CWD = the C# fixture;
   # run_units_cold.sh invoked from the pinned server checkout's toolkit sibling).
-  # Mono pins mirror the server C# matrix EXACTLY (4.6.2, not the standard 4.6.0);
+  # Mono pins mirror the server C# matrix EXACTLY (initial stables — 4.6.0, same as GDScript);
   # TFM tracks the net6->net8 boundary at 4.4 so the editor's on-open build produces
   # an assembly its bundled runtime can load.
   dotnet-behavioral:
@@ -131,7 +131,7 @@ jobs:
             tfm: "net8.0"
           - godot-version: "4.5.0"
             tfm: "net8.0"
-          - godot-version: "4.6.2"
+          - godot-version: "4.6.0"
             tfm: "net8.0"
           - godot-version: "4.7.0"
             tfm: "net8.0"
@@ -165,7 +165,7 @@ jobs:
   # 4.2-on-mono now runs too (41n-quater-septies): run_units_cold.sh warms the cold
   # class-cache first on EVERY version (via the godot-units composite), so 4.2.0 is
   # handled inherently — no composite change needed. Mono pins mirror the server C#
-  # matrix exactly (4.6.2, not the standard 4.6.0). Lives
+  # matrix exactly (initial stables — 4.6.0). Lives
   # HERE (not in the server workflow) because the unit suite is toolkit code —
   # a toolkit push/tag must re-run it.
   mono-units:
@@ -180,7 +180,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.2", "4.7.0"]
+        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
     name: "Unit tests (.NET/mono editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v4
