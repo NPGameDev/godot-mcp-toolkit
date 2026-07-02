@@ -16,9 +16,9 @@ jobs:
           # 4.2 excluded from THIS static-validation matrix: its editor scan
           # aborts on class_name cross-refs (chicken-and-egg in the GDScript
           # module, fixed in 4.3; both standard and .NET builds share it). 4.2
-          # still gets an execution signal from the unit-tests-4-2 job below,
-          # which warms the class cache and runs the unit suite. See CLAUDE.md
-          # and COMPATIBILITY.md.
+          # still gets an execution signal from the unit-tests job below (a
+          # 4.2-4.7 matrix), which warms the class cache and runs the unit
+          # suite. See CLAUDE.md and COMPATIBILITY.md.
           - godot-version: "4.3.0"
           - godot-version: "4.4.0"
           - godot-version: "4.5.0"
@@ -41,25 +41,28 @@ jobs:
       - name: GDScript validation
         run: bash scripts/test_framework/validate_gdscript.sh
 
-      # Editor-headless (Pass 1) generates global_script_class_cache.cfg
-      # as a side effect, so no separate cache step is needed.
-      - name: Run unit tests
-        if: ${{ !matrix.skip-unit-tests }}
-        run: timeout 30 godot --headless --script test/run_unit_tests.gd
-
-  # Godot 4.2 unit-execution leg. 4.2 can't run the editor-headless static
-  # validator above (its scan aborts on cross-file class_name refs), so this
-  # job warms the class cache with an editor-scan boot gated on the cache
-  # artifact and runs the unit suite instead — the 4.2 execution signal at
-  # the support floor. Merge gate.
-  unit-tests-4-2:
+  # Unit-execution leg — a real execution signal across ALL supported versions
+  # (standard editor, gating). Generalized from the former 4.2-only job
+  # (41n-quater-ter): the godot-units composite runs run_units_cold.sh, whose
+  # class-cache warm-up is required on 4.2 (its editor scan aborts on cross-file
+  # class_name refs before it completes, fixed in 4.3) and idempotent on 4.3+,
+  # so the identical script runs on every version. This is where 4.3-4.7 units
+  # run too (moved out of gdscript-check to avoid a double run). Merge gate.
+  unit-tests:
     runs-on: ubuntu-latest
-    # Fuse: the leg finishes in a few minutes — at 10 min it is hung, not slow.
+    # Fuse: a leg finishes in a few minutes — at 10 min it is hung, not slow.
     timeout-minutes: 10
-    name: Unit tests (Godot 4.2)
+    strategy:
+      fail-fast: false
+      matrix:
+        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
+    name: Unit tests (Godot ${{ matrix.godot-version }})
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/godot-4.2-units
+      - uses: ./.github/actions/godot-units
+        with:
+          godot-version: ${{ matrix.godot-version }}
+          use-dotnet: false
 
   # ═══════════════════════════════════════════════════════════════════════════
   # INSERTION SITE — manifest-diff regression gate (FILLED BY 41n-quinquies)

@@ -2,7 +2,11 @@
 #
 # The static floor (ci.yml) gates every push/PR. This tier launches a real
 # headless Godot editor against the toolkit dogfood and round-trips the FULL
-# smoke + flows suites through the WS bridge, one job per supported minor. It is
+# smoke + flows suites through the WS bridge, one job per supported minor — via
+# the SHARED language-parameterized composite that also drives the server's C#
+# tier (.github/actions/cross-version-behavioral in the SERVER repo, reached
+# through the sibling checkout; language: gdscript). Both tiers run the
+# byte-identical section set, so they cannot drift (iter 41n-quater-ter). It is
 # NOT a merge gate — it runs only on explicit opt-in:
 #   • [run-cross-version-ci] in the push commit message  (deliberate "run it")
 #   • a v* release tag                                    (backstop: never SHIP a
@@ -14,10 +18,10 @@
 # Feasibility proven 2026-07-01 (41n-quater Stage-2): a display-less ubuntu-latest
 # runner keeps the editor alive and serves the WS round-trip (standard 29/0).
 #
-# The smoke/flows harness lives in the SERVER repo, so this workflow checks the
-# server out as a sibling and launches the toolkit's OWN dogfood editor. While the
-# repos are private the sibling checkout needs a read-only PAT (CROSS_REPO_READ_TOKEN);
-# once public the || github.token fallback makes it tokenless.
+# The smoke/flows harness AND the shared composite live in the SERVER repo, so this
+# workflow checks the server out as a sibling and invokes the composite from that
+# path. While the repos are private the sibling checkout needs a read-only PAT
+# (CROSS_REPO_READ_TOKEN); once public the || github.token fallback makes it tokenless.
 name: cross-version (GDScript behavioral)
 
 on:
@@ -40,102 +44,56 @@ jobs:
       startsWith(github.ref, 'refs/tags/v') ||
       contains(github.event.head_commit.message, '[run-cross-version-ci]')
     runs-on: ubuntu-latest
-    # Fuse: observed legs finish in ~2 min (4.3-4.7) — a leg still running at
-    # 30 min is hung (e.g. an editor boot that never serves the port), not slow.
+    # Fuse: observed legs finish in ~7 min (full smoke+flows) — a leg still running
+    # at 30 min is hung (e.g. an editor boot that never serves the port), not slow.
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
-    name: GDScript behavioral (Godot ${{ matrix.godot-version }})
+    name: "Behavioral (GDScript editor · Godot ${{ matrix.godot-version }}): smoke+flows"
     steps:
       - uses: actions/checkout@v4 # toolkit (self) = the editor/dogfood project
 
-      - uses: actions/checkout@v4 # server = smoke + flows harness
+      - uses: actions/checkout@v4 # server = smoke + flows harness + shared composite
         with:
           repository: NPGameDev/godot-mcp-server
           path: server
           token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
 
-      # The nested harness checkout is not project content: a .gdignore makes
-      # the editor scan skip server/ entirely. Without it every leg's scan
-      # crawls node_modules — pure waste, and a suspect (unproven; a local
-      # container scans it in seconds) in the 4.2.0 warm-up hang this
-      # workflow once hit.
-      - name: Shield harness checkout from the editor scan
-        run: touch server/.gdignore
-
-      - name: Setup Godot (standard)
-        uses: chickensoft-games/setup-godot@v2.4.1
+      - name: "Behavioral (GDScript editor · Godot ${{ matrix.godot-version }}): smoke+flows"
+        uses: ./server/.github/actions/cross-version-behavioral
         with:
-          version: "${{ matrix.godot-version }}"
-          use-dotnet: false
+          language: gdscript
+          godot-version: ${{ matrix.godot-version }}
+          server-dir: server
+          project-path: ${{ github.workspace }}
+          project-name: "Godot MCP Toolkit"
 
-      - uses: actions/setup-node@v4
+  # Opt-in .NET/mono-editor unit leg — the mono side of the units mirror (R4). The
+  # STANDARD-editor units gate merges on the floor (ci.yml, all versions); the
+  # heavier mono provisioning (a .NET SDK install) rides this opt-in tier. Same
+  # run_units_cold.sh via the shared godot-units composite, use-dotnet: true.
+  # 4.2-on-mono is deferred to 41n-quater-septies (untested cold-cache × mono-editor
+  # interaction), so this leg is gated 4.3-4.7; septies adds the 4.2 row. Mono pins
+  # mirror the server C# matrix exactly (4.6.2, not the standard 4.6.0).
+  mono-units:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(github.event.head_commit.message, '[run-cross-version-ci]')
+    runs-on: ubuntu-latest
+    # Fuse: a leg finishes in a few minutes — at 15 min it is hung, not slow (mono
+    # provisioning adds a couple minutes over the standard floor units).
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        godot-version: ["4.3.0", "4.4.0", "4.5.0", "4.6.2", "4.7.0"]
+    name: "Units (.NET editor · Godot ${{ matrix.godot-version }})"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/godot-units
         with:
-          node-version: 22.x
-          cache: npm
-          cache-dependency-path: server/package-lock.json
-
-      - name: Build harness
-        working-directory: server
-        run: npm ci && npm run build
-
-      # 4.2 only: warm the script-class cache before the editor launch. On a cold
-      # checkout, 4.2's editor scan aborts on cross-file class_name refs (fixed in
-      # 4.3), so the plugin would fail to load. The warm-up logic lives in
-      # run_units_cold.sh (GODOT_WARM_ONLY skips the unit run): it boots the
-      # editor scan and gates on the cache ARTIFACT — a frame-count quit races
-      # the threaded scan on slow runner disks, and --import cannot warm 4.2.0
-      # at all (hangs without writing the cache; engine bug, fixed by 4.2.2).
-      # A warm-up that cannot produce the cache fails THIS step fast and loud
-      # (summary + tail land in warmup.log for the always() step) — a job-level
-      # fuse kill would skip the always() steps entirely. 4.3+ needs no warm-up.
-      - name: Warm class cache (4.2 only)
-        if: startsWith(matrix.godot-version, '4.2')
-        run: |
-          set -o pipefail
-          GODOT_WARM_ONLY=1 timeout 300 bash ./scripts/test_framework/run_units_cold.sh 2>&1 | tee warmup.log
-
-      - name: Launch dogfood editor headless + poll 6550 (<=60s)
-        run: |
-          godot --headless --editor --path "$GITHUB_WORKSPACE" > editor.log 2>&1 &
-          echo "EDITOR_PID=$!" >> "$GITHUB_ENV"
-          for i in $(seq 1 60); do
-            node -e 'const n=require("net");const s=n.connect(6550,"127.0.0.1");s.on("connect",()=>{s.destroy();process.exit(0)});s.on("error",()=>process.exit(1));s.setTimeout(1000,()=>process.exit(1))' && break
-            sleep 1
-          done
-
-      # HEADLESS WORKAROUND (--skip 10,14) — pending iter 41n-quater-bis (headless-DX
-      # determinism). These sections silently degrade on a display-less runner and are
-      # covered by the local display-ful sweep:
-      #   §10 game.start — the launched game doesn't establish the runtime WS headless
-      #        (runtime_ready:false), so its "already playing" assertion can't hold.
-      #   §14 editor_get_console — editor parse-error capture needs GUI revalidation to
-      #        re-emit after editor.refresh's buffer clear; headless never re-emits.
-      # §04/§13/§18 screenshots stay IN the run — they assert the deterministic
-      # HEADLESS_UNSUPPORTED guard (via passIfHeadlessUnsupported). 41n-quater-bis makes
-      # §10/§14 deterministic + removes this skip.
-      - name: Smoke (full suite, minus headless-incompatible §10/§14)
-        working-directory: server
-        env:
-          GODOT_MCP_PROJECT_PATH: ${{ github.workspace }}
-          GODOT_MCP_PROJECT_NAME: "Godot MCP Toolkit"
-        run: npm run smoke -- --skip 10,14
-
-      # --skip 2: flows §02 (hot_reload_reachability) needs live editor script
-      # re-instantiation that doesn't reflect headless — pending 41n-quater-bis. §01/§03 run.
-      - name: Flows (minus headless-incompatible §02)
-        working-directory: server
-        env:
-          GODOT_MCP_PROJECT_PATH: ${{ github.workspace }}
-          GODOT_MCP_PROJECT_NAME: "Godot MCP Toolkit"
-        run: npm run flows -- --skip 2
-
-      - if: always()
-        run: kill "$EDITOR_PID" 2>/dev/null || true
-      - name: Editor + warm-up logs (always)
-        if: always()
-        run: |
-          cat warmup.log 2>/dev/null || true
-          cat editor.log || true
+          godot-version: ${{ matrix.godot-version }}
+          use-dotnet: true

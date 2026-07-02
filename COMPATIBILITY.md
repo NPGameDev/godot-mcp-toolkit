@@ -462,8 +462,9 @@ Godot 4.2's GDScript module (fixed in 4.3): the scanner needs the class
 cache to resolve `class_name` identifiers, but the class cache is built
 by the scan. Both standard and .NET editor builds have the same issue.
 
-**Godot 4.2 unit tests DO run in CI**, via the floor `unit-tests-4-2` job
-(`.github/workflows/ci.yml`, a composite action). It warms the global class
+**Godot 4.2 unit tests DO run in CI**, via the floor `unit-tests` job
+(`.github/workflows/ci.yml`, a 4.2-4.7 matrix using the `godot-units` composite
+action). On the 4.2 leg it warms the global class
 cache with a background editor-scan boot gated on the cache artifact itself
 (a frame-count quit races the threaded scan, and `--import` cannot warm
 4.2.0 — it hangs without writing the cache, an engine bug fixed by 4.2.2),
@@ -479,6 +480,11 @@ alongside 4.3–4.7, with a 4.2-only class-cache warm-up step before the editor
 launch (same editor-scan warm-up as the unit job). The interactive
 tool sweep stays local (mandatory on large toolkit iterations, optional on
 medium ones).
+
+> **Validation vocabulary.** **SWEEP** = the toolkit's interactive, GDScript
+> tool-exercise suite (`Validations/`, not run in CI). **SMOKE** = the server's
+> automated, WS-behavioral suite (`godot-mcp-server` `test/sections/`, the CI
+> cross-version tier). Both exercise the tools; only SMOKE runs in CI.
 
 ## Future development constraints
 
