@@ -55,7 +55,7 @@ on:
 # [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
 # the sibling-ref dispatch input. See Plan/Reference/ci-test-topology.md.
 env:
-  SIBLING_PIN_SERVER: "11d8d0a4f4355bbb712834178c8c6225a6e20a26"
+  SIBLING_PIN_SERVER: "e4475b6f50b79dce667cd01ace2e4688531779da"
 
 jobs:
   gdscript-behavioral:
@@ -101,8 +101,9 @@ jobs:
   # composite (language: dotnet), byte-identical section set as the server repo's
   # own C# tier. The C# fixture AND the smoke/flows harness live in the SERVER repo,
   # so they ride the sibling checkout; the addon injects from this (toolkit) checkout
-  # via TOOLKIT_ADDON_SRC. 4.2 is excluded — pending the dedicated 4.2-mono leg
-  # (41n-quater-septies), which adds the 4.2 row on top of this shared composite.
+  # via TOOLKIT_ADDON_SRC. The .NET tier now runs 4.2.0 too (41n-quater-septies): the
+  # shared composite's cold class-cache warm-up ports to dotnet (CWD = the C# fixture;
+  # run_units_cold.sh invoked from the pinned server checkout's toolkit sibling).
   # Mono pins mirror the server C# matrix EXACTLY (4.6.2, not the standard 4.6.0);
   # TFM tracks the net6->net8 boundary at 4.4 so the editor's on-open build produces
   # an assembly its bundled runtime can load.
@@ -119,6 +120,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # 4.2.0 (net6.0): 4.2-mono behavioral leg (41n-quater-septies). Its cold
+          # class-cache warm-up runs in the shared composite (dotnet path). 4.2 & 4.3
+          # are both net6.0 (the net6->net8 TFM boundary is 4.4).
+          - godot-version: "4.2.0"
+            tfm: "net6.0"
           - godot-version: "4.3.0"
             tfm: "net6.0"
           - godot-version: "4.4.0"
@@ -156,9 +162,10 @@ jobs:
   # STANDARD-editor units gate merges on the floor (ci.yml, all versions); the
   # heavier mono provisioning (a .NET SDK install) rides this opt-in tier. Same
   # run_units_cold.sh via the shared godot-units composite, use-dotnet: true.
-  # 4.2-on-mono is deferred to 41n-quater-septies (untested cold-cache × mono-editor
-  # interaction), so this leg is gated 4.3-4.7; septies adds the 4.2 row. Mono pins
-  # mirror the server C# matrix exactly (4.6.2, not the standard 4.6.0). Lives
+  # 4.2-on-mono now runs too (41n-quater-septies): run_units_cold.sh warms the cold
+  # class-cache first on EVERY version (via the godot-units composite), so 4.2.0 is
+  # handled inherently — no composite change needed. Mono pins mirror the server C#
+  # matrix exactly (4.6.2, not the standard 4.6.0). Lives
   # HERE (not in the server workflow) because the unit suite is toolkit code —
   # a toolkit push/tag must re-run it.
   mono-units:
@@ -173,7 +180,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        godot-version: ["4.3.0", "4.4.0", "4.5.0", "4.6.2", "4.7.0"]
+        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.2", "4.7.0"]
     name: "Unit tests (.NET/mono editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v4
