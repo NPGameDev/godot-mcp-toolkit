@@ -22,7 +22,7 @@ static func run(testing) -> void:
 	_test_editor_refresh_reload_filter(testing)
 	_test_unfocused_backup(testing)
 	_test_stale_instance_hint(testing)
-	_test_tooltip_uaf_settle_decision(testing)
+	_test_tooltip_uaf_disarm_decision(testing)
 
 
 # --- Compile-error diagnostic message (version-aware) (~10 assertions) -----
@@ -315,29 +315,27 @@ static func _test_stale_instance_hint(testing) -> void:
 	print("")
 
 
-# --- Godot 4.3 tooltip-UAF settle decision ---------------------------------
-# should_settle_tooltip_uaf(did_set_editor_description, engine_ver): the gate for
-# the SceneTreeEditor tooltip-timer UAF mitigation. TRUE only on 4.3.x AND when an
-# editor_description was actually set. 4.2 renders node tooltips synchronously (no
-# deferred timer to detonate); 4.4+ caches TreeItems across tree rebuilds (the
-# bound item survives) — both stay FALSE even when a description is set. Pins the
-# exact 4.3-only boundary so the guard can't silently widen (needless 0.6s stalls)
-# or narrow (reintroduced crash). See editor_helpers.settle_tooltip_after_editor_description.
+# --- Godot 4.3 tooltip-UAF disarm decision ---------------------------------
+# should_disarm_tooltip_uaf(engine_ver): the version gate for the SceneTreeEditor
+# tooltip-timer UAF disarm. TRUE only on 4.3.x — the sole line with a deferred tooltip
+# timer (4.2 renders tooltips synchronously) and no TreeItem cache (4.4+ keeps rows
+# alive across rebuilds, PR #99700). Pins the exact 4.3-only boundary so the guard
+# can't silently widen (needless disconnects) or narrow (reintroduced crash). The
+# disarm is zero-cost, so the gate is version-only — no OS axis. See
+# editor_helpers.disarm_tooltip_uaf.
 
-static func _test_tooltip_uaf_settle_decision(testing) -> void:
-	testing.begin("Tooltip-UAF settle decision (4.3-only)")
-	# Armed (editor_description set): settle ONLY on 4.3.
-	testing.ok(Helpers.should_settle_tooltip_uaf(true, "4.3"),
-			"armed on 4.3 → settle (deferred timer + full tree-clear UAF)")
-	testing.ok(not Helpers.should_settle_tooltip_uaf(true, "4.2"),
-			"armed on 4.2 → no settle (tooltips synchronous, no timer)")
-	testing.ok(not Helpers.should_settle_tooltip_uaf(true, "4.4"),
-			"armed on 4.4 → no settle (NodeCache keeps the TreeItem alive)")
-	testing.ok(not Helpers.should_settle_tooltip_uaf(true, "4.5"),
-			"armed on 4.5 → no settle")
-	testing.ok(not Helpers.should_settle_tooltip_uaf(true, "5.0"),
-			"armed on 5.0 → no settle (gate is exact 4.3, not >=4.3)")
-	# Not armed (no editor_description set): always false, even on 4.3.
-	testing.ok(not Helpers.should_settle_tooltip_uaf(false, "4.3"),
-			"not armed on 4.3 → no settle (nothing to defuse)")
+static func _test_tooltip_uaf_disarm_decision(testing) -> void:
+	testing.begin("Tooltip-UAF disarm decision (4.3-only)")
+	testing.ok(Helpers.should_disarm_tooltip_uaf("4.3"),
+			"4.3 → disarm (deferred timer + full tree-clear, no TreeItem cache)")
+	testing.ok(not Helpers.should_disarm_tooltip_uaf("4.2"),
+			"4.2 → no disarm (tooltips synchronous, no timer)")
+	testing.ok(not Helpers.should_disarm_tooltip_uaf("4.4"),
+			"4.4 → no disarm (TreeItem cache keeps the row alive)")
+	testing.ok(not Helpers.should_disarm_tooltip_uaf("4.5"),
+			"4.5 → no disarm")
+	testing.ok(not Helpers.should_disarm_tooltip_uaf("4.6"),
+			"4.6 → no disarm")
+	testing.ok(not Helpers.should_disarm_tooltip_uaf("4.7"),
+			"4.7 → no disarm (gate is exact 4.3, not >=4.3)")
 	print("")

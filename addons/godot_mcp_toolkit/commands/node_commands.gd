@@ -56,13 +56,7 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return _cmd_node_get_property(parameters)
 	, MCPToolkitCommandOptions.new().mark_read_only())
 	registry.add("node.set_property", func(parameters: Dictionary) -> Dictionary:
-		var result := _cmd_node_set_property(server, parameters)
-		# Godot 4.3 SceneTreeEditor tooltip-timer UAF: an editor_description set arms a
-		# 0.5s one-shot timer bound to the node's TreeItem, which the next mutation frees.
-		# Settle it while we still hold the single-flight mutation lock (no-op off 4.3).
-		await Helpers.settle_tooltip_after_editor_description(
-			result.get("success", false) and _params_set_editor_description(parameters))
-		return result
+		return _cmd_node_set_property(server, parameters)
 	, MCPToolkitCommandOptions.new())
 	registry.add("node.get_property_list", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_node_get_property_list(parameters)
@@ -162,22 +156,6 @@ static func _cmd_node_get_property(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitSuccess.ok({"value": result["value"]})
 
 	return MCPToolkitSuccess.ok({"value": Coerce.serialize_value(node.get(property_name))})
-
-
-## True when these node.set_property parameters set editor_description (scalar
-## property or any batch entry) — i.e. they arm the Godot 4.3 SceneTreeEditor
-## tooltip-timer UAF. Mirrors _cmd_node_set_property's batch-vs-scalar branch so
-## the settle guard triggers on exactly the paths that call node.set(). See
-## Helpers.settle_tooltip_after_editor_description.
-static func _params_set_editor_description(parameters: Dictionary) -> bool:
-	var batch_raw = parameters.get("batch", null)
-	if batch_raw != null and typeof(batch_raw) == TYPE_ARRAY and (batch_raw as Array).size() > 0:
-		for entry in (batch_raw as Array):
-			if typeof(entry) == TYPE_DICTIONARY \
-					and str((entry as Dictionary).get("property", "")) == "editor_description":
-				return true
-		return false
-	return str(parameters.get("property", "")) == "editor_description"
 
 
 static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dictionary:
@@ -293,6 +271,11 @@ static func _set_property_scalar_single(
 
 	var old_value = node.get(property_name)
 
+	# Drop Godot 4.3's SceneTreeEditor tooltip-timer connections before writing
+	# editor_description so this set arms no timer against a soon-freed tree row
+	# (no-op for other properties / other versions). A later human undo/redo replays
+	# the set outside this guard — out of scope, cured in 4.4. See disarm_tooltip_uaf.
+	Helpers.disarm_tooltip_uaf(node, property_name)
 	node.set(property_name, coerced)
 	var action = MCPToolkitUndoRedoAction.begin("set %s.%s" % [node_path, property_name], node)
 	action.do_property(node, property_name, coerced)
@@ -404,7 +387,9 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 			coerced = NodePath(str(coerced))
 
-		# Apply mutation unconditionally, then record for undo.
+		# Apply mutation unconditionally, then record for undo. Disarm the Godot 4.3
+		# tooltip-timer UAF first when prop is editor_description (no-op otherwise).
+		Helpers.disarm_tooltip_uaf(node, prop)
 		node.set(prop, coerced)
 		action.do_method(server.undo_helpers.compound_set.bind(node, prop, coerced))
 		action.undo_method(server.undo_helpers.compound_set.bind(node, prop, old_value))

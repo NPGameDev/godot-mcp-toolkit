@@ -29,16 +29,7 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 		return await _cmd_scene_delete(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("scene.create_node", func(parameters: Dictionary) -> Dictionary:
-		var result := _cmd_scene_create_node(parameters)
-		# Godot 4.3 SceneTreeEditor tooltip-timer UAF: an inline editor_description arms
-		# a 0.5s one-shot timer bound to the new node's TreeItem, which the next mutation
-		# frees. Settle it under the single-flight mutation lock (no-op off 4.3). See
-		# Helpers.settle_tooltip_after_editor_description.
-		var props = parameters.get("properties", null)
-		await Helpers.settle_tooltip_after_editor_description(
-			result.get("success", false) \
-			and typeof(props) == TYPE_DICTIONARY and (props as Dictionary).has("editor_description"))
-		return result
+		return _cmd_scene_create_node(parameters)
 	, MCPToolkitCommandOptions.new())
 	registry.add("scene.delete_node", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_scene_delete_node(parameters)
@@ -429,6 +420,10 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 	parent_node.add_child(instance)
 	instance.set_owner(root)
 	for prop in prop_coerced:
+		# Disarm the Godot 4.3 tooltip-timer UAF before an editor_description write
+		# (no-op otherwise). Usually a no-op here — the new row is (re)built deferred —
+		# but it keeps every built-in editor_description write behind one guard.
+		Helpers.disarm_tooltip_uaf(instance, str(prop["name"]))
 		instance.set(prop["name"], prop["value"])
 	var _undo := MCPToolkitUndoRedoAction.begin("create %s" % requested_name, parent_node) \
 		.do_method(parent_node.add_child.bind(instance)) \

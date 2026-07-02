@@ -603,39 +603,47 @@ static func delete_res_file_and_deindex(
 # -- Godot 4.3 SceneTreeEditor tooltip-timer UAF mitigation -------------------
 
 
-## Seconds to await after an editor_description set so Godot 4.3's one-shot
-## SceneTreeEditor tooltip Timer (hardcoded 0.5s) fires while its bound TreeItem
-## is still valid. A 0.1s margin over 0.5s absorbs scheduling jitter.
-const _TOOLTIP_UAF_SETTLE_S := 0.6
+## True on Godot 4.3.x — the only engine line that needs the tooltip-timer disarm.
+## 4.2 renders node tooltips synchronously (no deferred timer to strand); 4.4+ caches
+## TreeItems across tree rebuilds (PR #99700) so the bound row outlives the churn.
+## Pure (engine_ver injected, e.g. VersionUtils.get_engine_version_pair()) so the
+## exact 4.3-only boundary is headless-unit-tested. The disarm is zero-cost, so the
+## gate is version-only — no OS axis.
+static func should_disarm_tooltip_uaf(engine_ver: String) -> bool:
+	return engine_ver == "4.3"
 
 
-## Pure decision for [method settle_tooltip_after_editor_description]: settle only
-## on Godot 4.3.x, and only when an editor_description was actually set. 4.3 is the
-## sole affected line — 4.2 renders tooltips synchronously (no deferred timer) and
-## 4.4+ caches TreeItems across tree rebuilds (the bound item survives), so neither
-## can fault. Split out as a pure predicate (engine_ver injected) so the version
-## boundary is headless-unit-tested. engine_ver is VersionUtils.get_engine_version_pair().
-static func should_settle_tooltip_uaf(did_set_editor_description: bool, engine_ver: String) -> bool:
-	return did_set_editor_description and engine_ver == "4.3"
-
-
-## Godot 4.3-only guard against the SceneTreeEditor tooltip-timer use-after-free.
-## Setting a node's [code]editor_description[/code] arms a 0.5s one-shot Timer that
-## binds the node's raw [code]TreeItem*[/code] (editor/gui/scene_tree_editor.cpp).
-## On 4.3 the next scene-tree mutation runs a full [code]tree->clear()[/code] (there
-## is no NodeCache before 4.4), freeing that TreeItem, so the timer detonates on
-## freed memory → editor SIGSEGV. Awaiting past the timer's 0.5s here — while the
-## caller still holds the single-flight mutation lock — lets the one-shot fire on
-## the still-valid item, so no following mutation can free it first.[br]
+## Before a toolkit write of [param node]'s [param property], drop Godot 4.3's
+## SceneTreeEditor tooltip-timer connections so the write cannot arm a use-after-free.
+## No-op unless [param property] is [code]editor_description[/code] and the engine is
+## 4.3.x (see [method should_disarm_tooltip_uaf]).
 ## [br]
-## No-op unless an editor_description was set AND the engine is 4.3.x (see
-## [method should_settle_tooltip_uaf]). Statically a coroutine — callers MUST
-## [code]await[/code] it. Any new tool or extension that sets editor_description
-## MUST call this right after the set (see COMPATIBILITY.md and docs/extending.md).
-static func settle_tooltip_after_editor_description(did_set_editor_description: bool) -> void:
-	if not should_settle_tooltip_uaf(did_set_editor_description, VersionUtils.get_engine_version_pair()):
+## On 4.3, setting [code]editor_description[/code] emits
+## [code]editor_description_changed[/code]; each connected SceneTreeEditor arms a 0.5s
+## one-shot Timer bound to the node's current [code]TreeItem*[/code], and concurrent
+## tree churn then runs [code]tree->clear()[/code] (no TreeItem cache before 4.4),
+## freeing that row — so the timer fires on freed memory → editor SIGSEGV. Removing the
+## SceneTreeEditor slots before the set means nothing arms. No reconnect is needed: the
+## editor re-adds the connection with a fresh row bind and refreshes the tooltip
+## synchronously on its next tree rebuild (scene_tree_editor.cpp:371-376), so no tooltip
+## is lost. Only SceneTreeEditor slots are removed — a user script connected to the same
+## public signal is left intact.
+## [br]
+## Call this immediately before the set with no [code]await[/code] in between; a yield
+## would let tree churn re-add and re-arm a slot. A later human undo/redo replays the set
+## outside this guard, exposing it exactly like any inspector edit — out of scope here
+## (cured upstream in 4.4). Any new tool or extension that writes editor_description MUST
+## call this (see COMPATIBILITY.md and docs/extending.md).
+static func disarm_tooltip_uaf(node: Object, property: String) -> void:
+	if property != "editor_description":
 		return
-	await Engine.get_main_loop().create_timer(_TOOLTIP_UAF_SETTLE_S).timeout
+	if not should_disarm_tooltip_uaf(VersionUtils.get_engine_version_pair()):
+		return
+	for conn in node.get_signal_connection_list(&"editor_description_changed"):
+		var callable: Callable = conn["callable"]
+		var target: Object = callable.get_object()
+		if target != null and target.get_class() == "SceneTreeEditor":
+			node.disconnect(&"editor_description_changed", callable)
 
 
 # -- File-create collision decision -------------------------------------------
