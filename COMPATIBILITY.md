@@ -462,7 +462,7 @@ Godot 4.2's GDScript module (fixed in 4.3): the scanner needs the class
 cache to resolve `class_name` identifiers, but the class cache is built
 by the scan. Both standard and .NET editor builds have the same issue.
 
-**Godot 4.2 unit tests DO run in CI**, via the floor `unit-tests-4.2` job
+**Godot 4.2 unit tests DO run in CI**, via the floor `unit-tests-4-2` job
 (`.github/workflows/ci.yml`, a composite action). It warms the global class
 cache with two `godot --headless --import` passes — the first populates the
 cache while emitting the transient `class_name` errors, the second resolves

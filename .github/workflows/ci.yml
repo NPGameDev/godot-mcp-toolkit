@@ -16,7 +16,7 @@ jobs:
           # 4.2 excluded from THIS static-validation matrix: its editor scan
           # aborts on class_name cross-refs (chicken-and-egg in the GDScript
           # module, fixed in 4.3; both standard and .NET builds share it). 4.2
-          # still gets an execution signal from the unit-tests-4.2 job below,
+          # still gets an execution signal from the unit-tests-4-2 job below,
           # which warms the class cache and runs the unit suite. See CLAUDE.md
           # and COMPATIBILITY.md.
           - godot-version: "4.3.0"
@@ -51,7 +51,7 @@ jobs:
   # validator above (its scan aborts on cross-file class_name refs), so this
   # job warms the class cache with two --import passes and runs the unit suite
   # instead — the 4.2 execution signal at the support floor. Merge gate.
-  unit-tests-4.2:
+  unit-tests-4-2:
     runs-on: ubuntu-latest
     name: Unit tests (Godot 4.2)
     steps:
