@@ -163,6 +163,18 @@ static func _detect_log_level(line: String) -> String:
 	return LogHelpers.detect_log_level(line)
 
 
+## Builds a source="file" LOG_UNAVAILABLE failure, attaching a `headless_hint` when
+## running headless. A headless `--editor` never writes `user://logs/godot.log` — file
+## logging is hard-disabled in editor mode on every version (the engine's `!editor` guard
+## term, main.cpp) — so the missing file is expected, not a misconfiguration; steer the
+## caller to source="buffer". is_headless-gated, so the display response is byte-identical.
+static func _log_unavailable_for_file(message: String) -> Dictionary:
+	var result := MCPToolkitError.fail("LOG_UNAVAILABLE", message)
+	if Modules.VersionUtils.is_headless():
+		result["headless_hint"] = "editor log file is unavailable — headless editors don't write one (file logging is disabled in editor mode) — use source=\"buffer\" (the default; in-memory, works headless on Godot 4.5+)."
+	return result
+
+
 static func _read_console_log(
 	server: Node, limit: int, level_filter: Array, since_id: int,
 	text_filter: String = "", text_regex: RegEx = null,
@@ -178,8 +190,8 @@ static func _read_console_log(
 				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
 			else:
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
-			return MCPToolkitError.fail("LOG_UNAVAILABLE", _hint)
-		return MCPToolkitError.fail("LOG_UNAVAILABLE",
+			return _log_unavailable_for_file(_hint)
+		return _log_unavailable_for_file(
 			"no log directory at user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
 
 	var all_files := DirAccess.get_files_at(logs_dir)
@@ -194,8 +206,8 @@ static func _read_console_log(
 				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
 			else:
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
-			return MCPToolkitError.fail("LOG_UNAVAILABLE", _hint)
-		return MCPToolkitError.fail("LOG_UNAVAILABLE",
+			return _log_unavailable_for_file(_hint)
+		return _log_unavailable_for_file(
 			"no .log files under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
 
 	var plugin_boot_time: int = server.get_plugin_boot_time()
@@ -241,7 +253,7 @@ static func _read_console_log(
 				warnings.append("fallback to stale log — no post-boot log found")
 
 	if chosen_file == "":
-		return MCPToolkitError.fail("LOG_UNAVAILABLE",
+		return _log_unavailable_for_file(
 			"no readable log file under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging; playtest may have rotated the editor's log mid-session")
 
 	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
