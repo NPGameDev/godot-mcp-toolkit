@@ -1,6 +1,6 @@
 name: Godot 4.2 unit tests
 description: >
-  Provision Godot 4.2.2 and run the toolkit unit suite from a cold script-class
+  Provision Godot 4.2.0 and run the toolkit unit suite from a cold script-class
   cache. Gives 4.2 a real execution signal where the editor-headless static
   validator cannot run (4.2's scan aborts on cross-file class_name references).
   The caller must check out the repository first.
@@ -8,17 +8,18 @@ description: >
 runs:
   using: composite
   steps:
-    - name: Setup Godot (4.2.2)
+    - name: Setup Godot (4.2.0)
       # pinned to v2.4.1 — update tag manually after reviewing changelogs
       uses: chickensoft-games/setup-godot@v2.4.1
       with:
-        version: "4.2.2"
+        version: "4.2.0"
         use-dotnet: false
 
-    # Two --import passes warm global_script_class_cache.cfg (pass 1 emits the
-    # transient class_name errors, pass 2 resolves clean), then the unit runner
-    # runs and its exit code gates the job. `godot` is on PATH after setup-godot,
-    # so the wrapper defaults GODOT_BIN to it.
+    # A bounded editor-scan boot warms global_script_class_cache.cfg (the
+    # transient class_name errors are summarized; the full warm-up log is
+    # dumped only on unit failure), then the unit runner runs and its exit
+    # code gates the job. `godot` is on PATH after setup-godot, so the
+    # wrapper defaults GODOT_BIN to it.
     - name: Run unit tests (cold class-cache warm-up)
       shell: bash
       run: bash ./scripts/test_framework/run_units_cold.sh

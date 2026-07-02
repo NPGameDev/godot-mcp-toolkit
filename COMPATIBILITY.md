@@ -13,7 +13,7 @@ untested versions and logs a startup warning.
 | Godot version | Support level | Notes |
 |---------------|---------------|-------|
 | 4.0 - 4.1    | Not supported | EditorInterface is not a global singleton; would require wrapping 70+ call sites |
-| **4.2**       | Core          | All tools work; some UI degradation (see below); no automated **static** CI validation (unit tests do run in CI — see [CI limitations](#ci-limitations)) |
+| **4.2**       | Core          | All tools work; some UI degradation (see below); no automated **static** CI validation (unit tests and the cross-version smoke run in CI — see [CI limitations](#ci-limitations)) |
 | **4.3**       | Core          | TileMapLayer support added (tilemap tool auto-detects) |
 | **4.4**       | Full UI       | Toast notifications added (`EditorInterface.get_editor_toaster()` is 4.4+) |
 | **4.5+**      | Full          | All tools and UI features available |
@@ -464,15 +464,19 @@ by the scan. Both standard and .NET editor builds have the same issue.
 
 **Godot 4.2 unit tests DO run in CI**, via the floor `unit-tests-4-2` job
 (`.github/workflows/ci.yml`, a composite action). It warms the global class
-cache with two `godot --headless --import` passes — the first populates the
-cache while emitting the transient `class_name` errors, the second resolves
-clean — then runs the headless unit suite and gates on the unit runner's
-exit code, so 4.2 gets a real execution signal on every push/PR. A clean
+cache with a bounded editor-scan boot (`--editor --quit-after`; `--import`
+cannot warm 4.2.0 — it hangs without writing the cache, an engine bug fixed
+by 4.2.2), tolerating the transient `class_name` errors, then runs the
+headless unit suite and gates on the unit runner's exit code, so 4.2 gets a real execution signal on every push/PR. A clean
 cross-file `class_name` *static* validation still cannot run on 4.2 (that is
-the 4.3 analyzer fix) — the 4.2 CI signal is unit execution.
+the 4.3 analyzer fix) — the 4.2 CI signals are unit execution (floor) and
+the behavioral run below.
 
-Behavioral 4.2 coverage (the full tool surface) is still verified via local
-sweep + smoke tests (mandatory on large toolkit iterations, optional on
+**Godot 4.2 also runs the behavioral CI tier**: the cross-version workflow's
+smoke + flows matrix (`.github/workflows/cross-version.yml`) includes 4.2
+alongside 4.3–4.7, with a 4.2-only class-cache warm-up step before the editor
+launch (same editor-scan warm-up as the unit job). The interactive
+tool sweep stays local (mandatory on large toolkit iterations, optional on
 medium ones).
 
 ## Future development constraints

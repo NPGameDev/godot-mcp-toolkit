@@ -40,10 +40,13 @@ jobs:
       startsWith(github.ref, 'refs/tags/v') ||
       contains(github.event.head_commit.message, '[run-cross-version-ci]')
     runs-on: ubuntu-latest
+    # Fuse: observed legs finish in ~2 min (4.3-4.7) — a leg still running at
+    # 30 min is hung (e.g. an editor boot that never serves the port), not slow.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        godot-version: ["4.3.0", "4.4.0", "4.5.0", "4.6.2", "4.7.0"]
+        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
     name: GDScript behavioral (Godot ${{ matrix.godot-version }})
     steps:
       - uses: actions/checkout@v4 # toolkit (self) = the editor/dogfood project
@@ -69,6 +72,21 @@ jobs:
       - name: Build harness
         working-directory: server
         run: npm ci && npm run build
+
+      # 4.2 only: warm the script-class cache before the editor launch. On a cold
+      # checkout, 4.2's editor scan aborts on cross-file class_name refs (fixed in
+      # 4.3), so the plugin would fail to load. A bounded editor-scan boot
+      # (--quit-after) writes global_script_class_cache.cfg in one pass; the
+      # transient "not declared" errors it emits are expected and summarized here
+      # (full log surfaces in the always() log step). --import cannot warm 4.2.0:
+      # it hangs without writing the cache (engine bug, fixed by 4.2.2). Same
+      # rationale as scripts/test_framework/run_units_cold.sh. 4.3+ needs no
+      # warm-up.
+      - name: Warm class cache (4.2 only)
+        if: startsWith(matrix.godot-version, '4.2')
+        run: |
+          godot --headless --editor --path "$GITHUB_WORKSPACE" --quit-after 100 > warmup.log 2>&1 || true
+          echo "warm-up: $(grep -c 'not declared' warmup.log || true) transient 'not declared' errors (expected on 4.2), cache written: $([ -f .godot/global_script_class_cache.cfg ] && echo yes || echo no)"
 
       - name: Launch dogfood editor headless + poll 6550 (<=60s)
         run: |
@@ -107,27 +125,8 @@ jobs:
 
       - if: always()
         run: kill "$EDITOR_PID" 2>/dev/null || true
-      - name: Editor log (always)
+      - name: Editor + warm-up logs (always)
         if: always()
-        run: cat editor.log || true
-
-  # Godot 4.2 unit-execution leg — the cross-version companion to the floor
-  # ci.yml unit-tests-4-2 job. 4.2 can't run the editor-headless static
-  # validator (scan aborts on cross-file class_name refs), so this warms the
-  # class cache with two --import passes and runs the unit suite. Editor-free
-  # and server-free: no dogfood editor, no smoke/flows — just the composite
-  # action.
-  unit-tests-4-2:
-    # Rides the same cross-version opt-in as gdscript-behavioral: manual
-    # dispatch, a v* tag, or the [run-cross-version-ci] token. A plain main push
-    # evaluates this to false → skipped; the floor ci.yml unit-tests-4-2 job
-    # covers plain pushes, so this only double-runs on a token push.
-    if: >
-      github.event_name == 'workflow_dispatch' ||
-      startsWith(github.ref, 'refs/tags/v') ||
-      contains(github.event.head_commit.message, '[run-cross-version-ci]')
-    runs-on: ubuntu-latest
-    name: Unit tests (Godot 4.2)
-    steps:
-      - uses: actions/checkout@v4 # toolkit (self) = the unit project
-      - uses: ./.github/actions/godot-4.2-units
+        run: |
+          cat warmup.log 2>/dev/null || true
+          cat editor.log || true
