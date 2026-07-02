@@ -49,9 +49,9 @@ jobs:
 
   # Godot 4.2 unit-execution leg. 4.2 can't run the editor-headless static
   # validator above (its scan aborts on cross-file class_name refs), so this
-  # job warms the class cache with a bounded editor-scan boot and runs the
-  # unit suite instead — the 4.2 execution signal at the support floor.
-  # Merge gate.
+  # job warms the class cache with an editor-scan boot gated on the cache
+  # artifact and runs the unit suite instead — the 4.2 execution signal at
+  # the support floor. Merge gate.
   unit-tests-4-2:
     runs-on: ubuntu-latest
     # Fuse: the leg finishes in a few minutes — at 10 min it is hung, not slow.

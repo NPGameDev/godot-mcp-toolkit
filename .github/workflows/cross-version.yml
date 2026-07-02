@@ -83,26 +83,19 @@ jobs:
 
       # 4.2 only: warm the script-class cache before the editor launch. On a cold
       # checkout, 4.2's editor scan aborts on cross-file class_name refs (fixed in
-      # 4.3), so the plugin would fail to load. A bounded editor-scan boot
-      # (--quit-after) writes global_script_class_cache.cfg in one pass; the
-      # transient "not declared" errors it emits are expected and summarized here
-      # (full log surfaces in the always() log step). --import cannot warm 4.2.0:
-      # it hangs without writing the cache (engine bug, fixed by 4.2.2). Same
-      # rationale as scripts/test_framework/run_units_cold.sh. 4.3+ needs no
-      # warm-up.
-      # timeout + cache gate: a warm-up that cannot produce the cache fails
-      # THIS step fast and loud (tail here, full log in the always() step) —
-      # a job-level fuse kill would skip the always() steps entirely.
+      # 4.3), so the plugin would fail to load. The warm-up logic lives in
+      # run_units_cold.sh (GODOT_WARM_ONLY skips the unit run): it boots the
+      # editor scan and gates on the cache ARTIFACT — a frame-count quit races
+      # the threaded scan on slow runner disks, and --import cannot warm 4.2.0
+      # at all (hangs without writing the cache; engine bug, fixed by 4.2.2).
+      # A warm-up that cannot produce the cache fails THIS step fast and loud
+      # (summary + tail land in warmup.log for the always() step) — a job-level
+      # fuse kill would skip the always() steps entirely. 4.3+ needs no warm-up.
       - name: Warm class cache (4.2 only)
         if: startsWith(matrix.godot-version, '4.2')
         run: |
-          timeout 300 godot --headless --editor --path "$GITHUB_WORKSPACE" --quit-after 100 > warmup.log 2>&1 || true
-          echo "warm-up: $(grep -c 'not declared' warmup.log || true) transient 'not declared' errors (expected on 4.2), cache written: $([ -f .godot/global_script_class_cache.cfg ] && echo yes || echo no)"
-          if [ ! -f .godot/global_script_class_cache.cfg ]; then
-            echo "warm-up failed to write the class cache — log tail:"
-            tail -40 warmup.log
-            exit 1
-          fi
+          set -o pipefail
+          GODOT_WARM_ONLY=1 timeout 300 bash ./scripts/test_framework/run_units_cold.sh 2>&1 | tee warmup.log
 
       - name: Launch dogfood editor headless + poll 6550 (<=60s)
         run: |
