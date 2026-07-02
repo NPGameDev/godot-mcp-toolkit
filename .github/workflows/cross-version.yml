@@ -14,6 +14,9 @@
 #   • workflow_dispatch                                   (manual)
 # No schedule: — versions are explicitly pinned (no drift between pushes) and a
 # nightly over-runs a sparse post-release repo (feasibility spike 41n-quater).
+# The .NET/mono-editor BEHAVIORAL mirror is the SERVER repo's cross-version.yml — same shared
+# composite, identical section set; this workflow hosts the GDScript-editor legs plus the
+# mono-editor UNIT leg (the unit suite is toolkit code, so it re-runs on toolkit pushes/tags).
 #
 # Feasibility proven 2026-07-01 (41n-quater Stage-2): a display-less ubuntu-latest
 # runner keeps the editor alive and serves the WS round-trip (standard 29/0).
@@ -51,7 +54,7 @@ jobs:
       fail-fast: false
       matrix:
         godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
-    name: "Behavioral (GDScript editor · Godot ${{ matrix.godot-version }}): smoke+flows"
+    name: "Full smoke+flows (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v4 # toolkit (self) = the editor/dogfood project
 
@@ -61,7 +64,7 @@ jobs:
           path: server
           token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
 
-      - name: "Behavioral (GDScript editor · Godot ${{ matrix.godot-version }}): smoke+flows"
+      - name: "Full smoke+flows (GDScript editor · Godot ${{ matrix.godot-version }})"
         uses: ./server/.github/actions/cross-version-behavioral
         with:
           language: gdscript
@@ -76,7 +79,9 @@ jobs:
   # run_units_cold.sh via the shared godot-units composite, use-dotnet: true.
   # 4.2-on-mono is deferred to 41n-quater-septies (untested cold-cache × mono-editor
   # interaction), so this leg is gated 4.3-4.7; septies adds the 4.2 row. Mono pins
-  # mirror the server C# matrix exactly (4.6.2, not the standard 4.6.0).
+  # mirror the server C# matrix exactly (4.6.2, not the standard 4.6.0). Lives
+  # HERE (not in the server workflow) because the unit suite is toolkit code —
+  # a toolkit push/tag must re-run it.
   mono-units:
     if: >
       github.event_name == 'workflow_dispatch' ||
@@ -90,7 +95,7 @@ jobs:
       fail-fast: false
       matrix:
         godot-version: ["4.3.0", "4.4.0", "4.5.0", "4.6.2", "4.7.0"]
-    name: "Units (.NET editor · Godot ${{ matrix.godot-version }})"
+    name: "Unit tests (.NET/mono editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/godot-units

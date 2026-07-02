@@ -24,7 +24,7 @@ jobs:
           - godot-version: "4.5.0"
           - godot-version: "4.6.0"
           - godot-version: "4.7.0"
-    name: GDScript check (Godot ${{ matrix.godot-version }})
+    name: "Static validation (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v4
 
@@ -56,7 +56,7 @@ jobs:
       fail-fast: false
       matrix:
         godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
-    name: Unit tests (Godot ${{ matrix.godot-version }})
+    name: "Unit tests (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/godot-units
