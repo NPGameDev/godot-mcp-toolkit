@@ -1,31 +1,39 @@
-# Behavioral cross-version tier (GDScript) — opt-in, editor-required.
+# Cross-version behavioral matrix (toolkit) — opt-in, editor-required.
 #
-# The static floor (ci.yml) gates every push/PR. This tier launches a real
-# headless Godot editor against the toolkit dogfood and round-trips the FULL
-# smoke + flows suites through the WS bridge, one job per supported minor — via
-# the SHARED language-parameterized composite that also drives the server's C#
-# tier (.github/actions/cross-version-behavioral in the SERVER repo, reached
-# through the sibling checkout; language: gdscript). Both tiers run the
-# byte-identical section set, so they cannot drift (iter 41n-quater-ter). It is
-# NOT a merge gate — it runs only on explicit opt-in:
+# The static floor (ci.yml) gates every push/PR. This workflow runs the FULL
+# two-editor behavioral matrix for a TOOLKIT change — a GDScript-editor tier AND
+# a .NET/mono-editor tier — plus the mono-editor UNIT leg, all against the PINNED
+# server sibling. Both behavioral tiers launch a real headless Godot editor and
+# round-trip the FULL smoke + flows suites through the WS bridge, one job per
+# supported minor, via the SHARED language-parameterized composite
+# (.github/actions/cross-version-behavioral in the SERVER repo, reached through the
+# sibling checkout; language: gdscript | dotnet). The section set is byte-identical
+# across both languages AND across both repos, so the tiers cannot drift (iter
+# 41n-quater-ter + the "full behavioral matrix in both repos" follow-on). The
+# SERVER repo's cross-version.yml runs the SAME full two-editor matrix for its own
+# changes against the pinned toolkit — so an opt-in on EITHER repo proves the full
+# GDScript+.NET contract for that repo's change.
+#
+# NOT a merge gate — runs only on explicit opt-in:
 #   • [run-cross-version-ci] in the push commit message  (deliberate "run it")
 #   • a v* release tag                                    (backstop: never SHIP a
 #                                                          cross-version regression)
 #   • workflow_dispatch                                   (manual)
 # No schedule: — versions are explicitly pinned (no drift between pushes) and a
 # nightly over-runs a sparse post-release repo (feasibility spike 41n-quater).
-# The .NET/mono-editor BEHAVIORAL mirror is the SERVER repo's cross-version.yml — same shared
-# composite, identical section set; this workflow hosts the GDScript-editor legs plus the
-# mono-editor UNIT leg (the unit suite is toolkit code, so it re-runs on toolkit pushes/tags).
+# The mono-editor UNIT leg lives HERE (not the server) because the unit suite is
+# toolkit code — a toolkit push/tag must re-run it.
 #
 # Feasibility proven 2026-07-01 (41n-quater Stage-2): a display-less ubuntu-latest
-# runner keeps the editor alive and serves the WS round-trip (standard 29/0).
-#
-# The smoke/flows harness AND the shared composite live in the SERVER repo, so this
-# workflow checks the server out as a sibling and invokes the composite from that
-# path. While the repos are private the sibling checkout needs a read-only PAT
-# (CROSS_REPO_READ_TOKEN); once public the || github.token fallback makes it tokenless.
-name: cross-version (GDScript behavioral)
+# runner keeps the editor alive and serves the WS round-trip (standard 29/0; mono
+# §25 15/0). The smoke/flows harness, the C# fixture, AND the shared composite all
+# live in the SERVER repo, so this workflow checks the server out as a sibling and
+# invokes the composite from that path (both behavioral tiers). While the repos are
+# private the sibling checkout needs a read-only PAT (CROSS_REPO_READ_TOKEN); once
+# public the || github.token fallback makes it tokenless. The server checkout is
+# PINNED to a recorded revision (env.SIBLING_PIN_SERVER, see below) — no race with
+# server main; bump the pin deliberately, with [run-cross-version-ci] on the bump commit.
+name: cross-version (toolkit)
 
 on:
   workflow_dispatch:
@@ -33,9 +41,21 @@ on:
       versions:
         description: "Space-separated Godot versions (informational; matrix is fixed)"
         required: false
+      sibling-ref:
+        description: "Override the pinned server sibling ref (ad-hoc cross-testing / spike trials)"
+        required: false
+        default: ""
   push:
     branches: [main]
     tags: ["v*"]
+
+# SIBLING-PIN(server): deterministic sibling — BOTH behavioral jobs below (gdscript +
+# dotnet) test against exactly this server revision, not floating main. This env var is
+# the SINGLE bump point: bump it deliberately in a dedicated commit carrying
+# [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
+# the sibling-ref dispatch input. See Plan/Reference/ci-test-topology.md.
+env:
+  SIBLING_PIN_SERVER: "11d8d0a4f4355bbb712834178c8c6225a6e20a26"
 
 jobs:
   gdscript-behavioral:
@@ -63,6 +83,8 @@ jobs:
           repository: NPGameDev/godot-mcp-server
           path: server
           token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+          # SIBLING-PIN(server): pinned via env.SIBLING_PIN_SERVER (workflow-level env above).
+          ref: ${{ inputs.sibling-ref || env.SIBLING_PIN_SERVER }}
 
       - name: "Full smoke+flows (GDScript editor · Godot ${{ matrix.godot-version }})"
         uses: ./server/.github/actions/cross-version-behavioral
@@ -72,6 +94,63 @@ jobs:
           server-dir: server
           project-path: ${{ github.workspace }}
           project-name: "Godot MCP Toolkit"
+
+  # Opt-in .NET/mono-editor BEHAVIORAL tier — the .NET mirror hosted HERE so a
+  # toolkit opt-in proves the full GDScript+.NET contract for a toolkit change (the
+  # addon under test is toolkit code) against the PINNED server sibling. Same shared
+  # composite (language: dotnet), byte-identical section set as the server repo's
+  # own C# tier. The C# fixture AND the smoke/flows harness live in the SERVER repo,
+  # so they ride the sibling checkout; the addon injects from this (toolkit) checkout
+  # via TOOLKIT_ADDON_SRC. 4.2 is excluded — pending the dedicated 4.2-mono leg
+  # (41n-quater-septies), which adds the 4.2 row on top of this shared composite.
+  # Mono pins mirror the server C# matrix EXACTLY (4.6.2, not the standard 4.6.0);
+  # TFM tracks the net6->net8 boundary at 4.4 so the editor's on-open build produces
+  # an assembly its bundled runtime can load.
+  dotnet-behavioral:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(github.event.head_commit.message, '[run-cross-version-ci]')
+    runs-on: ubuntu-latest
+    # Fuse: observed legs finish in ~7 min (full smoke+flows on mono) — a leg still
+    # running at 30 min is hung (e.g. an editor boot that never serves the port).
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - godot-version: "4.3.0"
+            tfm: "net6.0"
+          - godot-version: "4.4.0"
+            tfm: "net8.0"
+          - godot-version: "4.5.0"
+            tfm: "net8.0"
+          - godot-version: "4.6.2"
+            tfm: "net8.0"
+          - godot-version: "4.7.0"
+            tfm: "net8.0"
+    name: "Full smoke+flows (.NET/mono editor · Godot ${{ matrix.godot-version }} / ${{ matrix.tfm }})"
+    steps:
+      - uses: actions/checkout@v4 # toolkit (self) = addon source (injected into fixture)
+
+      - uses: actions/checkout@v4 # server = harness + C# fixture + shared composite
+        with:
+          repository: NPGameDev/godot-mcp-server
+          path: server
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+          # SIBLING-PIN(server): pinned via env.SIBLING_PIN_SERVER (workflow-level env above).
+          ref: ${{ inputs.sibling-ref || env.SIBLING_PIN_SERVER }}
+
+      - name: "Full smoke+flows (.NET/mono editor · Godot ${{ matrix.godot-version }})"
+        uses: ./server/.github/actions/cross-version-behavioral
+        with:
+          language: dotnet
+          godot-version: ${{ matrix.godot-version }}
+          tfm: ${{ matrix.tfm }}
+          server-dir: server
+          project-path: ${{ github.workspace }}/server/test/fixtures/csharp-project
+          project-name: "MCP CSharp Fixture"
+          toolkit-addon-src: ${{ github.workspace }}/addons/godot_mcp_toolkit
 
   # Opt-in .NET/mono-editor unit leg — the mono side of the units mirror (R4). The
   # STANDARD-editor units gate merges on the floor (ci.yml, all versions); the

@@ -326,13 +326,17 @@ quick operational facts only.
   every version; on 4.2 it is the only signal, since static validation can't
   run there).
 - **Cross-version** (`.github/workflows/cross-version.yml`) — opt-in
-  behavioral tier (manual dispatch, `v*` tag, or `[run-cross-version-ci]`
-  in the commit message). Launches the dogfood editor headless and runs the
-  full smoke + flows suites per supported minor, 4.2–4.7, via the shared
-  language-parameterized composite in the server repo (the same one drives
-  the server's C# tier); the 4.2 leg warms the class cache before the editor
-  launch. A companion opt-in `mono-units` leg runs the unit suite on the .NET
-  editor (4.3-4.7; 4.2-mono → 41n-quater-septies).
+  behavioral matrix (manual dispatch, `v*` tag, or `[run-cross-version-ci]`
+  in the commit message), all against the **pinned** server sibling via the
+  shared language-parameterized composite in the server repo. Hosts BOTH
+  behavioral tiers, so a toolkit opt-in proves the full GDScript+.NET contract:
+  a **GDScript-editor** tier (dogfood project, full smoke + flows per minor,
+  4.2–4.7; the 4.2 leg warms the class cache before the editor launch) AND a
+  **.NET/mono-editor** tier (the server's C# fixture with this addon injected,
+  4.3–4.7; 4.2-mono → 41n-quater-septies). A companion opt-in `mono-units` leg
+  runs the unit suite on the .NET editor (4.3-4.7; 4.2-mono →
+  41n-quater-septies). The server repo runs the same two-editor matrix for its
+  own changes.
 - **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push.
   Validates tag matches `plugin.cfg` version, builds the plugin zip via
   `scripts/build-plugin-release.sh`, and uploads it as a GitHub Release
