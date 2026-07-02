@@ -57,6 +57,14 @@ jobs:
           path: server
           token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
 
+      # The nested harness checkout is not project content: a .gdignore makes
+      # the editor scan skip server/ entirely. Without it every leg's scan
+      # crawls node_modules — pure waste, and a suspect (unproven; a local
+      # container scans it in seconds) in the 4.2.0 warm-up hang this
+      # workflow once hit.
+      - name: Shield harness checkout from the editor scan
+        run: touch server/.gdignore
+
       - name: Setup Godot (standard)
         uses: chickensoft-games/setup-godot@v2.4.1
         with:
@@ -82,11 +90,19 @@ jobs:
       # it hangs without writing the cache (engine bug, fixed by 4.2.2). Same
       # rationale as scripts/test_framework/run_units_cold.sh. 4.3+ needs no
       # warm-up.
+      # timeout + cache gate: a warm-up that cannot produce the cache fails
+      # THIS step fast and loud (tail here, full log in the always() step) —
+      # a job-level fuse kill would skip the always() steps entirely.
       - name: Warm class cache (4.2 only)
         if: startsWith(matrix.godot-version, '4.2')
         run: |
-          godot --headless --editor --path "$GITHUB_WORKSPACE" --quit-after 100 > warmup.log 2>&1 || true
+          timeout 300 godot --headless --editor --path "$GITHUB_WORKSPACE" --quit-after 100 > warmup.log 2>&1 || true
           echo "warm-up: $(grep -c 'not declared' warmup.log || true) transient 'not declared' errors (expected on 4.2), cache written: $([ -f .godot/global_script_class_cache.cfg ] && echo yes || echo no)"
+          if [ ! -f .godot/global_script_class_cache.cfg ]; then
+            echo "warm-up failed to write the class cache — log tail:"
+            tail -40 warmup.log
+            exit 1
+          fi
 
       - name: Launch dogfood editor headless + poll 6550 (<=60s)
         run: |
