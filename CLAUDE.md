@@ -319,7 +319,10 @@ quick operational facts only.
 
 - **CI** (`.github/workflows/ci.yml`) — runs on push/PR to main. Installs
   Godot headless via `chickensoft-games/setup-godot`, runs
-  `godot --headless --check-only` for GDScript static validation.
+  `scripts/test_framework/validate_gdscript.sh` (editor-headless static
+  validation) on 4.3+, plus the `unit-tests-4.2` job (two `--import` passes
+  warm the cold class cache, then the headless unit suite runs — 4.2's
+  execution signal; static validation can't run there).
 - **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push.
   Validates tag matches `plugin.cfg` version, builds the plugin zip via
   `scripts/build-plugin-release.sh`, and uploads it as a GitHub Release

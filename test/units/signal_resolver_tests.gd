@@ -122,7 +122,7 @@ static func _test_signal_pair_resolver(testing) -> void:
 # INTERNAL. Fixed upstream between 4.2 and 4.5; we side-stepped it by passing the resolved
 # Node. This guard locks that contract: with a Node root the production path resolves a
 # full pair and never yields the empty typed-default. No Callable is formed here, so it
-# passes identically on 4.2–4.7 (CI only runs 4.3+, which cannot catch this class), and
+# passes identically on 4.2–4.7 (CI now runs the 4.2 unit suite, which catches this class), and
 # reintroducing a Callable parameter breaks the Node argument below.
 static func _test_no_static_callable_indirection_regression(testing) -> void:
 	testing.begin("SignalPairResolver — no static-Callable indirection (4.2 regression guard)")

@@ -13,10 +13,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 4.2 excluded: editor scan aborts on class_name cross-refs
-          # (chicken-and-egg in GDScript module, fixed in 4.3). Both
-          # standard and .NET builds have the same issue. 4.2 is validated
-          # via local sweep+smoke (see CLAUDE.md and COMPATIBILITY.md).
+          # 4.2 excluded from THIS static-validation matrix: its editor scan
+          # aborts on class_name cross-refs (chicken-and-egg in the GDScript
+          # module, fixed in 4.3; both standard and .NET builds share it). 4.2
+          # still gets an execution signal from the unit-tests-4.2 job below,
+          # which warms the class cache and runs the unit suite. See CLAUDE.md
+          # and COMPATIBILITY.md.
           - godot-version: "4.3.0"
           - godot-version: "4.4.0"
           - godot-version: "4.5.0"
@@ -44,6 +46,17 @@ jobs:
       - name: Run unit tests
         if: ${{ !matrix.skip-unit-tests }}
         run: timeout 30 godot --headless --script test/run_unit_tests.gd
+
+  # Godot 4.2 unit-execution leg. 4.2 can't run the editor-headless static
+  # validator above (its scan aborts on cross-file class_name refs), so this
+  # job warms the class cache with two --import passes and runs the unit suite
+  # instead — the 4.2 execution signal at the support floor. Merge gate.
+  unit-tests-4.2:
+    runs-on: ubuntu-latest
+    name: Unit tests (Godot 4.2)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/godot-4.2-units
 
   # ═══════════════════════════════════════════════════════════════════════════
   # INSERTION SITE — manifest-diff regression gate (FILLED BY 41n-quinquies)

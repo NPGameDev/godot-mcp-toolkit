@@ -110,3 +110,24 @@ jobs:
       - name: Editor log (always)
         if: always()
         run: cat editor.log || true
+
+  # Godot 4.2 unit-execution leg — the cross-version companion to the floor
+  # ci.yml unit-tests-4.2 job. 4.2 can't run the editor-headless static
+  # validator (scan aborts on cross-file class_name refs), so this warms the
+  # class cache with two --import passes and runs the unit suite. Editor-free
+  # and server-free: no dogfood editor, no smoke/flows — just the composite
+  # action.
+  unit-tests-4.2:
+    # Rides the same cross-version opt-in as gdscript-behavioral: manual
+    # dispatch, a v* tag, or the [run-cross-version-ci] token. A plain main push
+    # evaluates this to false → skipped; the floor ci.yml unit-tests-4.2 job
+    # covers plain pushes, so this only double-runs on a token push.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(github.event.head_commit.message, '[run-cross-version-ci]')
+    runs-on: ubuntu-latest
+    name: Unit tests (Godot 4.2)
+    steps:
+      - uses: actions/checkout@v4 # toolkit (self) = the unit project
+      - uses: ./.github/actions/godot-4.2-units

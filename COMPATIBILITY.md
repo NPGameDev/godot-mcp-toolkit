@@ -13,7 +13,7 @@ untested versions and logs a startup warning.
 | Godot version | Support level | Notes |
 |---------------|---------------|-------|
 | 4.0 - 4.1    | Not supported | EditorInterface is not a global singleton; would require wrapping 70+ call sites |
-| **4.2**       | Core          | All tools work; some UI degradation (see below); no automated CI validation (see [CI limitations](#ci-limitations)) |
+| **4.2**       | Core          | All tools work; some UI degradation (see below); no automated **static** CI validation (unit tests do run in CI — see [CI limitations](#ci-limitations)) |
 | **4.3**       | Core          | TileMapLayer support added (tilemap tool auto-detects) |
 | **4.4**       | Full UI       | Toast notifications added (`EditorInterface.get_editor_toaster()` is 4.4+) |
 | **4.5+**      | Full          | All tools and UI features available |
@@ -454,18 +454,26 @@ restrict any functionality.
 ## CI limitations
 
 CI runs `scripts/test_framework/validate_gdscript.sh` (editor-headless +
-per-file script runner) on Godot 4.3+. **Godot 4.2 is excluded from the
-CI matrix entirely** because its editor scan aborts on `class_name`
+per-file script runner) on Godot 4.3+. **Godot 4.2 is excluded from this
+static-validation matrix** because its editor scan aborts on `class_name`
 cross-references before completing — all detected errors are false
 positives, not real script problems. This is a chicken-and-egg bug in
 Godot 4.2's GDScript module (fixed in 4.3): the scanner needs the class
 cache to resolve `class_name` identifiers, but the class cache is built
 by the scan. Both standard and .NET editor builds have the same issue.
 
-4.2 compatibility is verified via local sweep + smoke tests (mandatory on
-large toolkit iterations, optional on medium ones). Headless unit tests
-also cannot run on 4.2 in CI (same `class_name` root cause), but work
-locally when the editor has generated the class cache.
+**Godot 4.2 unit tests DO run in CI**, via the floor `unit-tests-4.2` job
+(`.github/workflows/ci.yml`, a composite action). It warms the global class
+cache with two `godot --headless --import` passes — the first populates the
+cache while emitting the transient `class_name` errors, the second resolves
+clean — then runs the headless unit suite and gates on the unit runner's
+exit code, so 4.2 gets a real execution signal on every push/PR. A clean
+cross-file `class_name` *static* validation still cannot run on 4.2 (that is
+the 4.3 analyzer fix) — the 4.2 CI signal is unit execution.
+
+Behavioral 4.2 coverage (the full tool surface) is still verified via local
+sweep + smoke tests (mandatory on large toolkit iterations, optional on
+medium ones).
 
 ## Future development constraints
 
