@@ -464,10 +464,11 @@ by the scan. Both standard and .NET editor builds have the same issue.
 
 **Godot 4.2 unit tests DO run in CI**, via the floor `unit-tests-4-2` job
 (`.github/workflows/ci.yml`, a composite action). It warms the global class
-cache with a bounded editor-scan boot (`--editor --quit-after`; `--import`
-cannot warm 4.2.0 — it hangs without writing the cache, an engine bug fixed
-by 4.2.2), tolerating the transient `class_name` errors, then runs the
-headless unit suite and gates on the unit runner's exit code, so 4.2 gets a real execution signal on every push/PR. A clean
+cache with a background editor-scan boot gated on the cache artifact itself
+(a frame-count quit races the threaded scan, and `--import` cannot warm
+4.2.0 — it hangs without writing the cache, an engine bug fixed by 4.2.2),
+tolerating the transient `class_name` errors, then runs the headless unit
+suite and gates on the unit runner's exit code, so 4.2 gets a real execution signal on every push/PR. A clean
 cross-file `class_name` *static* validation still cannot run on 4.2 (that is
 the 4.3 analyzer fix) — the 4.2 CI signals are unit execution (floor) and
 the behavioral run below.
