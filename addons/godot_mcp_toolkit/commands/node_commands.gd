@@ -512,12 +512,14 @@ static func _cmd_node_get_property_list(parameters: Dictionary) -> Dictionary:
 	})
 
 
-## 41m-bis-bis: returns the version-tailored stale-live-instance recovery hint when
-## the target node's ON-DISK .gd defines `method_name` (and compiles) but the live
-## instance lacks it on Godot < 4.4 — i.e. the instance is stale, not the call wrong.
-## "" otherwise (no script / non-.gd / method genuinely absent / disk won't compile /
-## 4.4+). The pure decision lives in StaleInstanceHint; this just reads the running
-## version + the on-disk source. Called only on the INVALID_METHOD error path.
+## Returns the version-tailored stale-live-instance recovery hint when the target node's
+## ON-DISK .gd defines `method_name` (and compiles) but the live instance lacks it —
+## i.e. the instance is stale, not the call wrong. Fires on Godot < 4.4 (any mode) and on
+## 4.4+ when HEADLESS (a headless editor never re-instantiates a reloaded node). ""
+## otherwise (no script / non-.gd / method genuinely absent / disk won't compile / 4.4+
+## with a display). The pure decision lives in StaleInstanceHint; this just reads the
+## running version + headless flag + the on-disk source. Called only on the
+## INVALID_METHOD error path.
 static func _stale_method_hint(node: Object, method_name: String) -> String:
 	var scr = node.get_script()
 	if scr == null:
@@ -528,11 +530,12 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 	var disk_source := FileAccess.get_file_as_string(scr_path)
 	var vi := Engine.get_version_info()
 	var minor := int(vi["minor"])
+	var headless := Modules.VersionUtils.is_headless()
 	var disk_has := Modules.StaleInstanceHint.source_has_method(disk_source, method_name)
 	var disk_ok := Modules.StaleInstanceHint.source_compiles(disk_source)
-	if not Modules.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, int(vi["major"]), minor):
+	if not Modules.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, int(vi["major"]), minor, headless):
 		return ""
-	return Modules.StaleInstanceHint.recovery_message("%d.%d" % [int(vi["major"]), minor])
+	return Modules.StaleInstanceHint.recovery_message("%d.%d" % [int(vi["major"]), minor], minor, headless)
 
 
 static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:

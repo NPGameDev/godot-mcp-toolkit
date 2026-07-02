@@ -272,6 +272,29 @@ static func _test_stale_instance_hint(testing) -> void:
 	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 5, 0),
 			"should_hint_on_call: Godot 5.0 does not hint — gate is major-aware")
 
+	# Headless axis: 4.4+ hot-reloads on a display editor but never re-instantiates a
+	# reloaded node headless, so the reactive stale hint fires there too. < 4.4 already
+	# hints in any mode; every other short-circuit (typo / no-compile / has_method / 5.x)
+	# must still win over the headless flag.
+	testing.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 4, true),
+			"call: 4.4 headless → hint (no re-instantiation)")
+	testing.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 5, true),
+			"call: 4.5 headless → hint")
+	testing.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 6, true),
+			"call: 4.6 headless → hint")
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 5, false),
+			"call: 4.5 display → no hint (hot-reloads)")
+	testing.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 3, true),
+			"call: 4.3 headless → hint (< 4.4 stale in any mode)")
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, false, true, true, 4, 5, true),
+			"call: 4.5 headless but method absent on disk (typo) → no hint")
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, false, true, 4, 5, true),
+			"call: 4.5 headless but disk doesn't compile → no hint")
+	testing.ok(not StaleInstanceHint.should_hint_on_call(true, true, true, true, 4, 5, true),
+			"call: 4.5 headless but has_method true → no hint")
+	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 5, 0, true),
+			"call: 5.0 headless → no hint (gate is major-aware)")
+
 	# source_compiles — safe GDScript.new().reload() parse (class_name stripped)
 	testing.ok(StaleInstanceHint.source_compiles("extends Node\nfunc a() -> int:\n\treturn 1\n"),
 			"source_compiles: valid GDScript → true")
@@ -303,6 +326,23 @@ static func _test_stale_instance_hint(testing) -> void:
 	testing.ok(msg.contains("fresh node"), "recovery_message: notes a fresh node doesn't help")
 	testing.ok(msg.contains("changed method bodies") and msg.contains("added members"),
 			"recovery_message: covers changed bodies AND added members")
+
+	# recovery_message headless form — 4.4+ headless gets the re-instantiation wording,
+	# distinct from the < 4.4 engine-cache form; version label still named, editor.refresh
+	# is NOT offered (it doesn't help headless — re-create or relaunch).
+	var msg_headless := StaleInstanceHint.recovery_message("4.5", 5, true)
+	testing.ok(msg_headless.contains("4.5"), "recovery_message headless: names the version")
+	testing.ok(msg_headless.contains("re-instantiate"),
+			"recovery_message headless: names the re-instantiation hazard")
+	testing.ok(msg_headless.contains("script_check"), "recovery_message headless: steers to script_check")
+	testing.ok(not msg_headless.contains("editor.refresh"),
+			"recovery_message headless: does NOT offer editor.refresh")
+	# < 4.4 headless keeps the engine-cache form (the headless form is a 4.4+ regime).
+	testing.ok(not StaleInstanceHint.recovery_message("4.3", 3, true).contains("re-instantiate"),
+			"recovery_message: 4.3 headless is the < 4.4 engine-cache form, not the headless form")
+	# Defensive: 4.4+ WITHOUT headless (a display caller never reaches here) → < 4.4 form.
+	testing.ok(not StaleInstanceHint.recovery_message("4.5", 5, false).contains("re-instantiate"),
+			"recovery_message: 4.5 non-headless falls back to the < 4.4 form")
 
 	# write_hint — validation guidance FIRST, stale nudge in the recency slot
 	var wh := StaleInstanceHint.write_hint("4.2")

@@ -28,6 +28,14 @@ const _REGISTRY_POLL_INTERVAL_MS := 100
 
 
 static func cmd_game_start(parameters: Dictionary) -> Dictionary:
+	# A headless editor cannot launch the game process, so the runtime (Mode B) never
+	# comes up — the pre-guard success:true was a false-success (nothing stays playing).
+	# Fail deterministically like editor.screenshot so an LLM branches instead of polling
+	# a runtime that will never connect. Display path is byte-identical below the guard.
+	if Modules.VersionUtils.is_headless():
+		return MCPToolkitError.fail("HEADLESS_UNSUPPORTED",
+			"playtest requires a display server (the game process cannot be launched headless) — use script_check, scene/node inspection, or editor_get_console for verification.")
+
 	var target := str(parameters.get("scene_path", "current"))
 	var wait_for_runtime_raw = parameters.get("wait_for_runtime", true)
 	var wait_for_runtime := bool(wait_for_runtime_raw) \

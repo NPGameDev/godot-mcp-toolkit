@@ -1,10 +1,12 @@
 @tool
 extends RefCounted
-## Pure decision + message helpers for the stale-live-instance method-call hazard
-## (41m-bis-bis). On Godot < 4.4 a live instance already running a script does NOT
-## see edits to that script — newly-added members AND changed method bodies — until
-## the editor relaunches: editor.refresh, re-attaching the script, and even a
-## brand-new node all keep the OLD code. 4.4+ hot-reloads promptly, so no hint there.
+## Pure decision + message helpers for the stale-live-instance method-call hazard.
+## On Godot < 4.4 a live instance already running a script does NOT see edits to that
+## script — newly-added members AND changed method bodies — until the editor relaunches:
+## editor.refresh, re-attaching the script, and even a brand-new node all keep the OLD
+## code. 4.4+ hot-reloads promptly on a display editor, so no hint there — but a HEADLESS
+## 4.4+ editor never re-instantiates the live node, so the stale hint fires there too,
+## with its own headless-specific wording.
 ##
 ## Empirically characterised across 4.2.0 / 4.3.0 / 4.4.1 / 4.5.0 / 4.6.2 (boundary
 ## 4.3 -> 4.4) — see Insights/stale-live-instance-method-hazard.md and the server
@@ -13,17 +15,18 @@ extends RefCounted
 ## no 4.2-vs-4.3 split.
 ##
 ## SPLIT (mirrors unfocused_backup.gd): every function here is PURE and headless —
-## the decision predicates take the version `major`/`minor` as data, so run_unit_tests.gd
-## exercises both branches across major/minor pairs (4.2-4.6 + a 5.0 guard) without
-## an editor. The
+## the decision predicates take the version `major`/`minor` plus the `headless` flag as
+## data, so run_unit_tests.gd exercises every branch across major/minor/headless
+## combinations (4.2-4.6 + a 5.0 guard) without an editor. The
 ## editor-coupled callers read the running version / on-disk source and feed these:
 ##   - script_commands.gd  : proactive hint on script.write of an existing .gd
 ##   - node_commands.gd    : reactive hint on node.call_method -> INVALID_METHOD
 ##
-## Godot 4.x is the supported world; the gate is `major == 4 and minor < 4`, so the
-## 4.0-4.3 hot-reload hazard is matched while 4.4+ AND any future 5.x correctly skip
-## it. The editor-coupled callers feed both `major` and `minor` (not minor alone) from
-## `Engine.get_version_info()`.
+## Godot 4.x is the supported world; the gate is `major == 4 and (minor < 4 or headless)`,
+## so the 4.0-4.3 hot-reload hazard is always matched, the 4.4+ hazard is matched only
+## when headless, and any future 5.x correctly skips it. The editor-coupled callers feed
+## `major`, `minor`, and the headless flag from `Engine.get_version_info()` /
+## `DisplayServer`.
 
 const _RECOVERY := (
 	"On Godot %s, a live instance already running this script keeps the OLD code: "
@@ -31,6 +34,16 @@ const _RECOVERY := (
 	+ "editor.refresh, re-attaching the script, and even creating a fresh node do NOT "
 	+ "pick up the edit on Godot < 4.4 — relaunch the editor (or disable then re-enable "
 	+ "the plugin) before calling the changed or added members."
+)
+
+# Godot 4.4+ headless: a display editor hot-reloads live instances promptly, but a
+# headless editor never re-instantiates them — a distinct hazard from the < 4.4
+# engine-cache staleness, so it carries its own guidance (recovery is re-create or
+# relaunch, never editor.refresh).
+const _RECOVERY_HEADLESS := (
+	"On Godot %s, the live instance running this script is stale — "
+	+ "headless editors don't re-instantiate live nodes on reload — re-create the node "
+	+ "or relaunch a display editor; the edit is on disk, confirm with script_check."
 )
 
 const _WRITE_PREFIX := (
@@ -46,20 +59,30 @@ static func should_warn_on_write(existed: bool, compiled_ok: bool, extension: St
 
 
 ## Reactive trigger: node.call_method hit INVALID_METHOD (has_method false) on a
-## .gd-scripted node whose ON-DISK source DEFINES the method and COMPILES, on Godot
-## < 4.4 -> the live instance is stale (not a typo). Method absent on disk -> typo,
-## no hint. Disk doesn't compile -> the real fix is the compile error (Option B), no
-## stale hint. 4.4+ -> has_method would already be true, so this never fires.
+## .gd-scripted node whose ON-DISK source DEFINES the method and COMPILES, and the live
+## instance is stale. Two stale regimes: Godot < 4.4 in any mode (the editor never
+## hot-reloads a live instance), OR Godot 4.4+ when [param headless] (a display editor
+## hot-reloads — has_method would already be true — but a headless editor never
+## re-instantiates the reloaded node). Method absent on disk -> typo, no hint. Disk
+## doesn't compile -> the real fix is the compile error (Option B), no stale hint. 4.4+
+## with a display -> not stale, so this never fires.
 static func should_hint_on_call(
-	has_method: bool, disk_has_method: bool, disk_compiles: bool, is_gd: bool, major: int, minor: int
+	has_method: bool, disk_has_method: bool, disk_compiles: bool, is_gd: bool,
+	major: int, minor: int, headless: bool = false,
 ) -> bool:
-	return (not has_method) and disk_has_method and disk_compiles and is_gd and major == 4 and minor < 4
+	if not ((not has_method) and disk_has_method and disk_compiles and is_gd and major == 4):
+		return false
+	return minor < 4 or headless
 
 
-## The shared recovery guidance (single < 4.4 form — 4.2 and 4.3 BOTH need relaunch;
-## a fresh node helps on neither). `ver_label` is the detected "major.minor" so the
-## message names the real running version.
-static func recovery_message(ver_label: String) -> String:
+## The recovery guidance, tailored to the stale regime. [param ver_label] is the detected
+## "major.minor" so the message names the real running version. When [param headless] and
+## the engine is 4.4+ ([param minor] >= 4), returns the headless re-instantiation form;
+## otherwise the < 4.4 engine-cache form (4.2 and 4.3 BOTH need relaunch; a fresh node
+## helps on neither). The defaults keep the single-arg < 4.4 callers (write_hint) intact.
+static func recovery_message(ver_label: String, minor: int = -1, headless: bool = false) -> String:
+	if headless and minor >= 4:
+		return _RECOVERY_HEADLESS % ver_label
 	return _RECOVERY % ver_label
 
 

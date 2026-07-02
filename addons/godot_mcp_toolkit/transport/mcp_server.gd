@@ -492,15 +492,18 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 	await _router.route_request(peer, message)
 
 
-# Supplies the Mode-A auth-ack payload to the transport: the bare {authed:true}
-# plus this editor's Godot + plugin versions (the runtime sends {authed:true}
-# only). Pure — no side effects; the boost/signal happen in _on_peer_authed.
+# Supplies the Mode-A auth-ack payload to the transport: the bare {authed:true} plus
+# this editor's Godot + plugin versions and its display mode (the runtime sends
+# {authed:true} only). `headless` is the wire signal the server reads to branch its
+# headless-degraded tool assertions. Pure — no side effects; the boost/signal happen in
+# _on_peer_authed.
 func _build_auth_ack(_message: Dictionary) -> Dictionary:
 	var vi := Engine.get_version_info()
 	return {
 		"authed": true,
 		"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
 		"version": Modules.VersionUtils.read_plugin_version(),
+		"headless": Modules.VersionUtils.is_headless(),
 	}
 
 

@@ -30,7 +30,7 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
 | `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On Godot **< 4.4**, editing an existing `.gd` already attached to a **live** node carries a relaunch `hint` (the live instance keeps the old code until relaunch — see [Degraded behavior](#degraded-behavior-by-version)) |
-| `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance) carries a relaunch `hint`; a genuine typo does not. 4.4+ hot-reloads, so the call just succeeds |
+| `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance) carries a relaunch `hint`; a genuine typo does not. 4.4+ hot-reloads on a **display** editor, so the call just succeeds — but a **4.4+ headless** editor never re-instantiates the reloaded node, so the stale `hint` fires there too (headless wording: re-create the node or relaunch a display editor) |
 | `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see `docs/multi-instance.md`) |
 | `editor_get_console` | 4.2 | Captures runtime output (errors/warnings/prints) on all versions. **Editor parse errors** (from `editor_refresh` recompiling a script) surface only on **4.5+** (the Logger API hooks editor diagnostics); on **4.2–4.4** they are NOT written to `godot.log`, so neither `source="buffer"` nor `source="file"` can return them — use `script_check` or the `script_write` inline diagnostics instead. Multi-line errors that ARE captured (`SCRIPT ERROR: …` + `   at: <script>.gd:LINE`) are leveled as a unit, so a filename + `level_filter:["error"]` query finds the location line. 4.5+ uses the synchronous Logger (one entry per error, zero-latency) |
 | `animationtree_edit` | 4.2 | All ops work on 4.2+ (set_root, add/remove_node, add/remove_transition, set_property; transitions enumerate on all versions) |
@@ -77,7 +77,11 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
   `Insights/stale-live-instance-method-hazard.md`. **`.gd` only** — C# (`.cs`) live
   reload is a different (assembly-rebuild) model and is not yet characterised
   (`Plan/Ideas/PostRelease/2026-06-11-csharp-live-instance-staleness-research.md`).
-  Godot 4.4+ hot-reloads promptly, so no hint fires.
+  Godot 4.4+ hot-reloads promptly on a **display** editor, so no hint fires there — but a
+  **headless** 4.4+ editor never re-instantiates the live node (the play/reload path is
+  display-bound), so the reactive `node_call_method` hint fires headless on 4.4+ too, with
+  a headless-specific message (re-create the node or relaunch a display editor; the edit is
+  on disk, confirm with `script_check`).
 - **GDScript LSP multi-editor — root verification needs 4.5+.** The `lsp_*` tools
   work, but the server's cross-project safety check (the workspace-root mismatch
   warning) doesn't exist before 4.5. With more than one editor open the server
@@ -387,7 +391,7 @@ that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
 | `node_set_property` | ✅ | |
 | `node_get_property_list` | ✅ | |
 | `node_set_script` | ✅ | |
-| `node_call_method` | ✅ | |
+| `node_call_method` | ✅ | Works; but a **4.4+ headless** editor never re-instantiates a reloaded node, so a call to a freshly-added method returns `INVALID_METHOD` + a headless stale `hint` (re-create or relaunch). See the live-reload note above |
 | `signal_list` | ✅ | |
 | `signal_manage` | ✅ | |
 | `signal_emit` | ✅ | |
@@ -412,9 +416,9 @@ that require a viewport use this guard to return `HEADLESS_UNSUPPORTED` early.
 | `tilemap_set_cells` | ✅ | |
 | `editor_save_scene` | ✅ | |
 | `editor_refresh` | ✅ | |
-| `editor_get_console` | ✅ | |
+| `editor_get_console` | ✅ | Captures runtime output headless; but a headless editor doesn't revalidate scripts, so editor **parse** errors aren't captured — an error-capture query (`level_filter:["error"]` or a `text_filter`) attaches a `headless_hint` steering to `script_check`. See the parse-capture note above |
 | `editor_wait_for_idle` | ✅ | |
-| `game_start` | ✅ | Game process launches; no display |
+| `game_start` | ❌ | Returns `HEADLESS_UNSUPPORTED` — the game process can't launch without a display, so Mode B (runtime) never connects. Use `script_check` / scene inspection / `editor_get_console` to verify |
 | `game_stop` | ✅ | |
 | `editor_screenshot` | ❌ | Returns `HEADLESS_UNSUPPORTED`. Merged: accepts optional `node_path` for node-focused capture. |
 | `runtime_screenshot` | ❌ | Requires display in game process |

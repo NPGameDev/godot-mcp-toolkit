@@ -24,8 +24,12 @@ const MAX_SCREENSHOT_SIZE := 4096
 
 static func cmd_screenshot(parameters: Dictionary) -> Dictionary:
 	if Modules.VersionUtils.is_headless():
+		# Redirect must be headless-accurate: script_check is the reliable alternative;
+		# editor_get_console gives RUNTIME output only (its editor parse-error capture is
+		# itself headless-degraded), so it is not a substitute for visual verification.
 		return MCPToolkitError.fail("HEADLESS_UNSUPPORTED",
-			"editor.screenshot requires a display server (no viewport in headless mode)")
+			"editor.screenshot requires a display server (no viewport in headless mode)",
+			"Use script_check to verify a script's parse status; editor_get_console captures runtime output only (headless editors don't revalidate scripts, so editor parse errors aren't captured there).")
 
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)

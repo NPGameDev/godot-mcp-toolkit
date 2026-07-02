@@ -60,6 +60,16 @@ static func cmd_get_console(server: Node, parameters: Dictionary) -> Dictionary:
 		result = _read_buffer_log(limit, level_filter, since_id, text_filter, text_regex)
 	if not regex_warning.is_empty() and result.get("success", false):
 		result["warning"] = regex_warning
+	# Headless editors don't revalidate scripts, so an error-capture request returning
+	# count:0 reads like "no matches" rather than "editor parse errors aren't captured
+	# here". Steer to script_check whenever error capture is requested (level_filter has
+	# "error" OR a text_filter is set) — regardless of match count. is_headless-gated, so
+	# the display response is byte-identical; additive hint only, capture mechanics
+	# untouched.
+	if Modules.VersionUtils.is_headless() and result.get("success", false):
+		var wants_error_capture := ("error" in level_filter) or (text_filter != "")
+		if wants_error_capture:
+			result["headless_hint"] = "headless editors don't revalidate scripts, so editor parse errors aren't captured here — use script_check(path) to validate a specific script's parse status."
 	return result
 
 
