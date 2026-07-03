@@ -30,7 +30,7 @@ runs:
     # The .NET/mono editor build needs the .NET runtime/SDKs to launch.
     - name: Setup .NET SDKs (8 + 6, mono editor runtime)
       if: ${{ inputs.use-dotnet == 'true' }}
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
         dotnet-version: |
           8.0.x

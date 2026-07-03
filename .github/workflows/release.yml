@@ -54,7 +54,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Real releases fire on a tag push (github.ref_type == 'tag'); a dispatch from
       # a branch has ref_type 'branch', so this check would spuriously fail — skip it
@@ -144,7 +144,7 @@ jobs:
       # (bracket form — the property name has a hyphen) is null on a tag push -> != true.
       - name: Upload release artifact
         if: ${{ github.ref_type == 'tag' && inputs['dry-run'] != true }}
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
           files: dist-plugin/godot-mcp-toolkit-*.zip

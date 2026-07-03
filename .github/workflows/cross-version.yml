@@ -91,9 +91,9 @@ jobs:
         godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
     name: "Full smoke+flows (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v4 # toolkit (self) = the editor/dogfood project
+      - uses: actions/checkout@v7 # toolkit (self) = the editor/dogfood project
 
-      - uses: actions/checkout@v4 # server = smoke + flows harness + shared composite
+      - uses: actions/checkout@v7 # server = smoke + flows harness + shared composite
         with:
           repository: NPGameDev/godot-mcp-server
           path: server
@@ -157,11 +157,15 @@ jobs:
             tfm: "net8.0"
           - godot-version: "4.7.0"
             tfm: "net8.0"
-    name: "Full smoke+flows (.NET/mono editor · Godot ${{ matrix.godot-version }} / ${{ matrix.tfm }})"
+    # Display name: "mono editor" (not ".NET/mono editor") — the shorter label keeps
+    # the VARYING Godot version inside the Actions UI's truncation fold, matching the
+    # GDScript twin's length (user directive 2026-07-04). Prose/comments still say
+    # ".NET/mono" where they describe the editor build.
+    name: "Full smoke+flows (mono editor · Godot ${{ matrix.godot-version }} / ${{ matrix.tfm }})"
     steps:
-      - uses: actions/checkout@v4 # toolkit (self) = addon source (injected into fixture)
+      - uses: actions/checkout@v7 # toolkit (self) = addon source (injected into fixture)
 
-      - uses: actions/checkout@v4 # server = harness + C# fixture + shared composite
+      - uses: actions/checkout@v7 # server = harness + C# fixture + shared composite
         with:
           repository: NPGameDev/godot-mcp-server
           path: server
@@ -169,7 +173,7 @@ jobs:
           # SIBLING-PIN(server): pinned via env.SIBLING_PIN_SERVER (workflow-level env above).
           ref: ${{ inputs.sibling-ref || env.SIBLING_PIN_SERVER }}
 
-      - name: "Full smoke+flows (.NET/mono editor · Godot ${{ matrix.godot-version }})"
+      - name: "Full smoke+flows (mono editor · Godot ${{ matrix.godot-version }})"
         uses: ./server/.github/actions/cross-version-behavioral
         with:
           language: dotnet
@@ -212,9 +216,11 @@ jobs:
       fail-fast: false
       matrix:
         godot-version: ["4.2.0", "4.7.0"]
-    name: "Unit tests (.NET/mono editor · Godot ${{ matrix.godot-version }})"
+    # Display name: "mono editor" for the same truncation-proofing as the behavioral
+    # tier above.
+    name: "Unit tests (mono editor · Godot ${{ matrix.godot-version }})"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/godot-units
         with:
           godot-version: ${{ matrix.godot-version }}
