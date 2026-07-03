@@ -6,6 +6,18 @@ on:
   pull_request:
     branches: [main]
 
+# D7 (going-public supply-chain baseline): least privilege by default. No floor job
+# writes repo contents; the release path grants its own contents: write per-job.
+permissions:
+  contents: read
+
+# D6: cancel an in-flight floor run when a newer commit lands on the same ref — the
+# floor gates the tip, so a superseded run's result is moot. NOT on cross-version.yml:
+# those deep-tier runs are deliberate and must never be auto-cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   gdscript-check:
     runs-on: ubuntu-latest
@@ -13,16 +25,19 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 4.2 excluded from THIS static-validation matrix: its editor scan
-          # aborts on class_name cross-refs (chicken-and-egg in the GDScript
-          # module, fixed in 4.3; both standard and .NET builds share it). 4.2
-          # still gets an execution signal from the unit-tests job below (a
-          # 4.2-4.7 matrix), which warms the class cache and runs the unit
-          # suite. See CLAUDE.md and COMPATIBILITY.md.
+          # D1: trimmed 5 rows -> the 2 boundaries. Middle-version (4.4-4.6) parse
+          # regressions are near-nil, and a redundant row on a merge gate still
+          # fails for FAKE reasons (runner/download flakes); breadth lives in the
+          # deep tier, whose editor boot re-compiles the full preload graph on all
+          # six versions per opt-in run. Boundaries kept:
+          #   • 4.3.0 — the analyzer floor. 4.2 is excluded IN PRINCIPLE, not
+          #     trimmed: its pre-4.3 analyzer emits spurious cross-file class_name
+          #     errors during the scan itself (analyzer limitation, not cold
+          #     cache), so static validation cannot run there — 4.2's floor
+          #     signal is the unit-tests job below (which warms the class cache
+          #     and runs the suite). See CLAUDE.md and COMPATIBILITY.md.
+          #   • 4.7.0 — the ceiling.
           - godot-version: "4.3.0"
-          - godot-version: "4.4.0"
-          - godot-version: "4.5.0"
-          - godot-version: "4.6.0"
           - godot-version: "4.7.0"
     name: "Static validation (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
@@ -79,6 +94,9 @@ jobs:
   #   godot --headless --dump-extension-api
   #   node scripts/diff-extension-api.mjs <version>   # compare vs committed map
   #
+  # NOTE(41n-quinquies): when wiring this job, also add it to the floor-ok gate's
+  # `needs:` below so the aggregate floor gate covers it.
+  #
   # manifest-diff:
   #   runs-on: ubuntu-latest
   #   strategy: { fail-fast: false, matrix: { godot-version: ["4.3.0","4.4.0","4.5.0","4.6.0","4.7.0"] } }
@@ -90,3 +108,26 @@ jobs:
   #     - run: godot --headless --dump-extension-api
   #     - run: node scripts/diff-extension-api.mjs ${{ matrix.godot-version }}
   # ═══════════════════════════════════════════════════════════════════════════
+
+  # ── Aggregate floor gate (D8) ────────────────────────────────────────────────
+  # "Toolkit floor OK" is the SINGLE name that becomes a required check once the
+  # repo is public — never an individual matrix row. A required check pinned to a
+  # matrix leg breaks whenever the matrix is retuned (D1 just did); pinning to this
+  # one stable name never does. `if: always()` + the explicit failure/cancelled
+  # test also makes future path-filtered docs-skips safe: an `if:`-skipped upstream
+  # reports success here, whereas a `paths:`-skipped required check would deadlock
+  # as pending.
+  floor-ok:
+    name: "Toolkit floor OK"
+    needs: [gdscript-check, unit-tests]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert every floor job succeeded
+        run: |
+          result="${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}"
+          if [ "$result" = "true" ]; then
+            echo "::error::A toolkit floor job failed or was cancelled."
+            exit 1
+          fi
+          echo "All toolkit floor jobs succeeded."

@@ -16,8 +16,10 @@
 #
 # NOT a merge gate — runs only on explicit opt-in:
 #   • [run-cross-version-ci] in the push commit message  (deliberate "run it")
-#   • a v* release tag                                    (backstop: never SHIP a
-#                                                          cross-version regression)
+#   • release.yml CALLS this workflow (workflow_call) on a v* tag / dry-run
+#     dispatch, and its zip job needs: it — the D13 backstop (never SHIP a
+#     cross-version regression) is now an ENFORCED release gate, not a parallel
+#     best-effort run
 #   • workflow_dispatch                                   (manual)
 # No schedule: — versions are explicitly pinned (no drift between pushes) and a
 # nightly over-runs a sparse post-release repo (feasibility spike 41n-quater).
@@ -35,7 +37,18 @@
 # server main; bump the pin deliberately, with [run-cross-version-ci] on the bump commit.
 name: cross-version (toolkit)
 
+# D7: least privilege by default; the sibling checkout uses the read-only PAT
+# (CROSS_REPO_READ_TOKEN) while private, github.token once public.
+permissions:
+  contents: read
+
 on:
+  # D13: release.yml calls this workflow so a release GATES on the full behavioral
+  # matrix. Under workflow_call the job `if:` gates below evaluate the CALLER's
+  # context — a v* tag push satisfies startsWith(github.ref,'refs/tags/v'); a
+  # dry-run dispatch satisfies event_name=='workflow_dispatch' — so they need no
+  # change. inputs.sibling-ref resolves empty when called -> the pin fallback holds.
+  workflow_call:
   workflow_dispatch:
     inputs:
       versions:
@@ -46,8 +59,10 @@ on:
         required: false
         default: ""
   push:
+    # D13: the v* self-trigger is REMOVED — a release tag now reaches this workflow
+    # ONCE, through release.yml's workflow_call, instead of firing a second parallel
+    # run. The [run-cross-version-ci] commit-token path (push to main) is unchanged.
     branches: [main]
-    tags: ["v*"]
 
 # SIBLING-PIN(server): deterministic sibling — BOTH behavioral jobs below (gdscript +
 # dotnet) test against exactly this server revision, not floating main. This env var is
@@ -55,7 +70,7 @@ on:
 # [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
 # the sibling-ref dispatch input. See Plan/Reference/ci-test-topology.md.
 env:
-  SIBLING_PIN_SERVER: "9c441caea80dfe508fb6096c419761921555f3e1"
+  SIBLING_PIN_SERVER: "d771e11455f9b438a680453e4d8ed638d0d12263"
 
 jobs:
   gdscript-behavioral:
@@ -94,6 +109,13 @@ jobs:
           server-dir: server
           project-path: ${{ github.workspace }}
           project-name: "Godot MCP Toolkit"
+          # D11: run the 7 dispatch-integration flows on exactly ONE row per repo
+          # mirror (GDScript · 4.7.0) — dispatch semantics live in toolkit GDScript +
+          # server transport, so project language is irrelevant (GDScript avoids the
+          # mono variables) and 4.7.0 is the ceiling. Closes the last editor-required
+          # CI gap (FIFO / cancellation / peer-disconnect / scene-lease). Composite
+          # inputs are strings, hence the string-valued expression.
+          run-dispatch: ${{ matrix.godot-version == '4.7.0' }}
 
   # Opt-in .NET/mono-editor BEHAVIORAL tier — the .NET mirror hosted HERE so a
   # toolkit opt-in proves the full GDScript+.NET contract for a toolkit change (the
@@ -162,12 +184,21 @@ jobs:
   # STANDARD-editor units gate merges on the floor (ci.yml, all versions); the
   # heavier mono provisioning (a .NET SDK install) rides this opt-in tier. Same
   # run_units_cold.sh via the shared godot-units composite, use-dotnet: true.
-  # 4.2-on-mono now runs too (41n-quater-septies): run_units_cold.sh warms the cold
-  # class-cache first on EVERY version (via the godot-units composite), so 4.2.0 is
-  # handled inherently — no composite change needed. Mono pins mirror the server C#
-  # matrix exactly (initial stables — 4.6.0). Lives
-  # HERE (not in the server workflow) because the unit suite is toolkit code —
-  # a toolkit push/tag must re-run it.
+  #
+  # D10: trimmed 6 rows -> the 2 boundary FLAVORS. The unit suite is pure GDScript,
+  # so a mono row proves only build-flavor boot/scan — a middle row could only catch
+  # a three-way interaction (suite × mono flavor × that version) that escapes BOTH
+  # its shadows in the same opt-in run: the floor units ×6 (same version+suite,
+  # standard flavor) and the dotnet-behavioral tier (same mono editor boot, ×6,
+  # untouched). The kept rows are genuinely distinct:
+  #   • 4.2.0-mono — the cold-class-cache warm-up × mono interaction
+  #     (41n-quater-septies's row; run_units_cold.sh warms it inherently)
+  #   • 4.7.0-mono — the ceiling flavor
+  # The floor asymmetry (standard units gate merges ×6; mono units are opt-in ×2) is
+  # DESIGNED, not an oversight: .NET provisioning per push for a GDScript-only suite
+  # is against ecosystem practice (C# floors stay editor-free). Lives HERE (not the
+  # server workflow) because the unit suite is toolkit code — a toolkit push/tag
+  # must re-run it.
   mono-units:
     if: >
       github.event_name == 'workflow_dispatch' ||
@@ -180,7 +211,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
+        godot-version: ["4.2.0", "4.7.0"]
     name: "Unit tests (.NET/mono editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v4

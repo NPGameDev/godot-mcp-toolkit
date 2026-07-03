@@ -321,30 +321,36 @@ quick operational facts only.
 
 ## CI/CD (GitHub Actions)
 
-- **CI** (`.github/workflows/ci.yml`) — runs on push/PR to main. Installs
-  Godot headless via `chickensoft-games/setup-godot`, runs
+- **CI** (`.github/workflows/ci.yml`) — floor gates, run on push/PR to main
+  (with `concurrency` cancel-in-progress). Installs Godot headless via
+  `chickensoft-games/setup-godot`, runs
   `scripts/test_framework/validate_gdscript.sh` (editor-headless static
-  validation) on 4.3+, plus the `unit-tests` job (a 4.2-4.7 matrix via the
-  `godot-units` composite: a bounded editor-scan boot warms the cold class
-  cache, then the headless unit suite runs — the floor execution signal on
-  every version; on 4.2 it is the only signal, since static validation can't
-  run there).
+  validation) on the 4.3.0 + 4.7.0 boundaries, plus the `unit-tests` job (a
+  4.2-4.7 matrix via the `godot-units` composite: a bounded editor-scan boot
+  warms the cold class cache, then the headless unit suite runs — the floor
+  execution signal on every version; on 4.2 it is the only signal, since
+  static validation can't run there). An aggregate **`Toolkit floor OK`** gate
+  `needs:` both matrices — it is the only name that ever becomes a required
+  check (never an individual matrix row).
 - **Cross-version** (`.github/workflows/cross-version.yml`) — opt-in
-  behavioral matrix (manual dispatch, `v*` tag, or `[run-cross-version-ci]`
-  in the commit message), all against the **pinned** server sibling via the
-  shared language-parameterized composite in the server repo. Hosts BOTH
-  behavioral tiers, so a toolkit opt-in proves the full GDScript+.NET contract:
-  a **GDScript-editor** tier (dogfood project, full smoke + flows per minor,
-  4.2–4.7; the 4.2 leg warms the class cache before the editor launch) AND a
+  behavioral matrix (manual dispatch, `[run-cross-version-ci]` in the commit
+  message, or a release via `workflow_call`), all against the **pinned**
+  server sibling via the shared language-parameterized composite in the server
+  repo. Hosts BOTH behavioral tiers, so a toolkit opt-in proves the full
+  GDScript+.NET contract: a **GDScript-editor** tier (dogfood project, full
+  smoke + flows per minor, 4.2–4.7; the 4.2 leg warms the class cache before
+  the editor launch; a dispatch-integration leg rides the 4.7.0 row) AND a
   **.NET/mono-editor** tier (the server's C# fixture with this addon injected,
-  4.3–4.7; 4.2-mono → 41n-quater-septies). A companion opt-in `mono-units` leg
-  runs the unit suite on the .NET editor (4.3-4.7; 4.2-mono →
-  41n-quater-septies). The server repo runs the same two-editor matrix for its
-  own changes.
-- **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push.
-  Validates tag matches `plugin.cfg` version, builds the plugin zip via
-  `scripts/build-plugin-release.sh`, and uploads it as a GitHub Release
-  artifact.
+  4.2–4.7). A companion opt-in `mono-units` leg runs the unit suite on the
+  .NET editor's two boundary flavors (4.2.0 + 4.7.0). The server repo runs the
+  same two-editor matrix for its own changes.
+- **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push; GATES
+  on the deep behavioral tier (`behavioral: uses: cross-version.yml` +
+  `needs:`), then validates tag matches `plugin.cfg` version, builds the
+  plugin zip via `scripts/build-plugin-release.sh`, install-smokes the zip
+  (unzip into a scratch project, headless 4.7.0 boot, assert
+  `[MCPServer] listening`), and uploads it as a GitHub Release artifact.
+  `workflow_dispatch` runs the whole chain as a **dry-run** (upload skipped).
 
 ## Dogfood setup (this repo)
 

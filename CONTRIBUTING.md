@@ -6,7 +6,7 @@ need to get started.
 ## Prerequisites
 
 - **Godot 4.2+** (4.4+ recommended)
-- **Node.js >= 20** (for the companion server)
+- **Node.js >= 22** (for the companion server)
 - **Git**
 
 This project spans three repositories that live as siblings on disk:
@@ -86,6 +86,43 @@ npm run smoke:single # single pass (inherits your env vars)
 ```
 
 The Godot editor must be running with the plugin enabled for smoke tests to pass.
+
+## Continuous integration
+
+CI runs in two tiers, plus a release path. The authoritative detail (job shapes,
+the sibling-pin ritual, the 4.2 class-cache warm-up mechanics) lives in the header
+comments of each workflow under `.github/workflows/` — this is the
+contributor-facing summary.
+
+- **Floor — gates every push and PR** (`ci.yml`). **Static validation**
+  (`validate_gdscript.sh`, editor-headless) runs on the 4.3.0 + 4.7.0 boundary
+  versions, and the **unit suite** runs on all six supported versions (Godot
+  **4.2.0 through 4.7.0**, including the 4.2 cold class-cache warm-up) — a real
+  execution signal on every version, every push. A single aggregate job,
+  **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
+  required check binds to, never an individual matrix row. Green floor is a merge
+  precondition.
+- **Deep tier — opt-in** (`cross-version.yml`). The full **two-editor behavioral
+  matrix** — GDScript-editor and .NET/mono-editor, Godot **4.2 through 4.7** —
+  boots a real headless editor and round-trips the complete smoke + flows suites
+  through the WebSocket bridge, plus a **dispatch-integration** leg on one row and
+  a mono-editor unit leg on the two boundary flavors (4.2.0 + 4.7.0). It does not
+  run on a plain push. Trigger it by putting **`[run-cross-version-ci]`** in your
+  commit message, via **`workflow_dispatch`** (optionally with a `sibling-ref`
+  override), or automatically as part of a release (below).
+- **Release** (`release.yml`). A **`v*` tag push** first runs the deep behavioral
+  matrix (the zip job `needs:` it — a cross-version regression can never ship),
+  then builds the plugin zip, **install-smokes the actual artifact** (unzips it
+  into a scratch project and boots a headless editor to prove the plugin enables),
+  and uploads it as a GitHub Release. You can rehearse the whole path without
+  releasing by running `release.yml` via **`workflow_dispatch`** — it is a
+  **dry-run** by default (everything runs; the Release upload is skipped).
+
+The behavioral tier is **mirrored in both repos** (toolkit and server): each side
+runs the full two-editor matrix against a pinned SHA of the other, so an opt-in run
+in either repo proves the whole GDScript + .NET contract for that repo's change. It
+is opt-in only and driven by one shared composite action, so the mirror costs
+nothing when idle and cannot drift between the two repos.
 
 ## Dependency policy
 

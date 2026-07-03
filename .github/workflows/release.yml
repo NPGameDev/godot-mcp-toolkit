@@ -1,19 +1,67 @@
 name: Release
 
+# Release path — gated on the deep behavioral tier (D13) and dry-runnable.
+#
+# Two entry points:
+#   • v* tag push       → real release: the behavioral matrix runs first (via
+#                         workflow_call), then the zip is built, install-smoked,
+#                         and uploaded as a GitHub Release.
+#   • workflow_dispatch → DRY-RUN by default: runs EVERYTHING (the called behavioral
+#                         matrix + the zip build + the install-smoke) but skips the
+#                         GH-Release creation. Makes the whole release path testable
+#                         off a tag NOW instead of first-firing at 42b. Dispatching
+#                         ON a tag ref with dry-run: false is the manual re-run
+#                         escape hatch after a transient tag-push failure.
+#
+# ⚠ Called-workflow gate caveat (D13): the behavioral callee evaluates github.ref /
+# event_name from THIS (caller) context — a v* tag push satisfies its
+# startsWith(github.ref,'refs/tags/v') gates; a dry-run dispatch satisfies its
+# event_name=='workflow_dispatch' gates. If release.yml ever gains a NEW trigger type
+# (e.g. schedule), the callee's opt-in jobs would all-skip and the behavioral: call
+# would succeed VACUOUSLY, un-gating the release — re-verify the callee gates whenever
+# the release triggers change.
 on:
   push:
     tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Run the full gated release path (behavioral matrix + zip build + install-smoke) but skip the GH Release. Default true — a manual dispatch can never accidentally release; real releases fire via tag push (inputs empty)."
+        type: boolean
+        required: false
+        default: true
 
+# D7: least privilege at the top; the zip job re-grants contents: write for the GH
+# Release upload.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
+  # D13: gate the release on the full cross-version behavioral matrix (6 GDScript +
+  # 6 .NET/mono behavioral + 2 mono-units). secrets: inherit forwards
+  # CROSS_REPO_READ_TOKEN for the private sibling checkout (drop once public); the
+  # callee's own workflow-level SIBLING_PIN_SERVER env resolves normally under
+  # workflow_call, and inputs.sibling-ref is empty when called -> the pin holds.
+  # Bump the pin to the certified sibling revision BEFORE tagging (ritual unchanged).
+  behavioral:
+    uses: ./.github/workflows/cross-version.yml
+    secrets: inherit
+
   build-and-release:
+    needs: behavioral
     runs-on: ubuntu-latest
+    # D7: re-grant write for the GH Release upload.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
+      # Real releases fire on a tag push (github.ref_type == 'tag'); a dispatch from
+      # a branch has ref_type 'branch', so this check would spuriously fail — skip it
+      # off a tag. The Release upload below carries the same tag guard plus the
+      # dry-run guard.
       - name: Validate tag matches plugin.cfg version
+        if: github.ref_type == 'tag'
         run: |
           CFG_VERSION="v$(grep '^version=' addons/godot_mcp_toolkit/plugin.cfg | cut -d'"' -f2)"
           TAG="${GITHUB_REF#refs/tags/}"
@@ -26,7 +74,76 @@ jobs:
       - name: Build plugin zip
         run: bash scripts/build-plugin-release.sh
 
+      # D16 — zip install-smoke (runs on dry-runs too; that's the point): prove the
+      # artifact we are about to ship actually INSTALLS and BOOTS, not just that it
+      # zipped. Unzip the built artifact into a scratch project (minimal
+      # project.godot with the plugin pre-enabled — the same shape as the server's
+      # C# fixture, proven to boot fresh on CI), launch a headless 4.7.0 editor via
+      # the composite's launch/poll-6550 idiom, and assert the plugin's WS server
+      # comes up ("[MCPServer] listening" in the editor log + the port serving).
+      - name: Setup Godot 4.7.0 (zip install-smoke)
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: "4.7.0"
+          use-dotnet: false
+
+      - name: Zip install-smoke (GDScript editor · Godot 4.7.0)
+        # Step-level fuse: the poll loop is bounded (<=60s) but a wedged unzip/boot
+        # should fail the STEP (letting the always() log step below run), not hang
+        # the job.
+        timeout-minutes: 5
+        run: |
+          set -euo pipefail
+          SCRATCH="$RUNNER_TEMP/zip-install-smoke"
+          mkdir -p "$SCRATCH"
+          unzip -q dist-plugin/godot-mcp-toolkit-*.zip -d "$SCRATCH"
+          test -f "$SCRATCH/addons/godot_mcp_toolkit/plugin.cfg" || {
+            echo "::error::zip layout broken: addons/godot_mcp_toolkit/plugin.cfg missing after unzip."
+            exit 1
+          }
+          cat > "$SCRATCH/project.godot" <<'EOF'
+          config_version=5
+
+          [application]
+
+          config/name="Zip Install Smoke"
+          config/features=PackedStringArray("4.7")
+
+          [editor_plugins]
+
+          enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
+          EOF
+          godot --headless --editor --path "$SCRATCH" > zip-smoke-editor.log 2>&1 &
+          EDITOR_PID=$!
+          up=0
+          for i in $(seq 1 60); do
+            if node -e 'const n=require("net");const s=n.connect(6550,"127.0.0.1");s.on("connect",()=>{s.destroy();process.exit(0)});s.on("error",()=>process.exit(1));s.setTimeout(1000,()=>process.exit(1))'; then
+              up=1
+              break
+            fi
+            sleep 1
+          done
+          kill "$EDITOR_PID" 2>/dev/null || true
+          if [ "$up" != "1" ]; then
+            echo "::error::zip install-smoke: port 6550 never came up within 60s."
+            exit 1
+          fi
+          grep -F "[MCPServer] listening on" zip-smoke-editor.log || {
+            echo "::error::zip install-smoke: '[MCPServer] listening on' not found in the editor log."
+            exit 1
+          }
+          echo "Zip install-smoke OK: plugin enabled and WS server listening."
+
+      - name: Zip install-smoke editor log (always)
+        if: always()
+        run: cat zip-smoke-editor.log 2>/dev/null || true
+
+      # Upload only on a real tag push, and NEVER on a dry-run. Dispatching ON a tag
+      # ref with dry-run: false is the deliberate manual re-run path. inputs['dry-run']
+      # (bracket form — the property name has a hyphen) is null on a tag push -> != true.
       - name: Upload release artifact
+        if: ${{ github.ref_type == 'tag' && inputs['dry-run'] != true }}
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
