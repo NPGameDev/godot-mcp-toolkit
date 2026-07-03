@@ -351,7 +351,7 @@ func _init_transport() -> void:
 func _log_port_config() -> void:
 	var config_error := str(_port_config.get("error", ""))
 	if not config_error.is_empty():
-		push_error("[MCPServer] Invalid port config: %s — the editor MCP server did not start. Fix the environment variable and reload the plugin." % config_error)
+		push_error("[MCPServer] Invalid port config: %s — the editor MCP server did not start. Fix the environment variable and restart the editor (env is read at editor launch; re-enabling the plugin keeps the old value)." % config_error)
 		return
 	if bool(_port_config.get("band_ignored", false)):
 		print("[MCPServer] note: %s pins an exact port, so the %s/%s band is ignored." % [
@@ -407,7 +407,7 @@ func get_port_warning() -> Dictionary:
 	if not config_error.is_empty():
 		return {
 			"active": true,
-			"message": "Invalid port config: %s — the MCP editor server did not start. Fix the environment variable and reload the plugin." % config_error,
+			"message": "Invalid port config: %s — the MCP editor server did not start. Fix the environment variable and restart the editor (env is read at editor launch; re-enabling the plugin keeps the old value)." % config_error,
 			"label": "invalid port config",
 		}
 	if _transport != null and _transport.is_listen_conflict():
