@@ -157,9 +157,10 @@ func _spec_dock_overview() -> Dictionary:
 				+ ".mcp.json to restrict the toolkit to read-only tools.\n\n"
 				+ "The toolkit keeps the editor responsive while it's unfocused during\n"
 				+ "MCP sessions (ON by default; raises background CPU). Toggle it in the\n"
-				+ "dock's Server Status, or in Editor Settings → Mcp Toolkit →\n"
-				+ "Performance — note this setting lives in Editor Settings, unlike\n"
-				+ "the other mcp_toolkit/* keys in Project Settings.\n\n"
+				+ "dock's Server Status, or in Editor Settings → Mcp Toolkit → Performance.\n\n"
+				+ "The dock's limits and audit controls are shortcuts into\n"
+				+ "Project Settings → Mcp Toolkit, where all per-project options\n"
+				+ "live (including advanced ones the dock doesn't surface).\n\n"
 				+ "You're all set!"),
 		"ok_label": "Close",
 		"buttons": [
