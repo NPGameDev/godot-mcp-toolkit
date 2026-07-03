@@ -213,6 +213,26 @@ Remaining trade-off:
 cross-check — it reads diagnostics from the editor itself, which have
 accurate file paths.
 
+### Quit during a pending save — one-time console noise (all versions)
+
+Quitting the editor while a toolkit-issued save (`editor_save_scene`, or any
+tool that saves a scene as a side effect) is still mid-flight can print
+one-time errors in the shutdown console, in the shape of:
+
+- `Resumed function 'save_scene()' after await, but script is gone`
+- `Attempt to disconnect a nonexistent connection ... 'process_frame'`
+
+This is accepted engine-teardown behavior, not a defect. The save path
+deliberately yields for one frame before writing (part of the toolkit's
+crash-safe save sequencing); a quit landing on exactly that frame tears the
+scripts down before the suspended call resumes, and the engine prints the two
+messages while discarding it. It is rare (the quit must hit the one yielded
+frame), cosmetic, and harmless — nothing leaks and nothing crashes; the
+interrupted save simply did not complete, and the editor's own quit flow still
+prompts for unsaved scenes as usual. The engine exposes no queryable
+"quitting" state a script could check first, so the noise cannot be guarded
+away — it is safe to ignore.
+
 ### `editor_description` tooltip timer (Godot 4.3 engine UAF)
 
 Setting a node's `editor_description` arms a 0.5-second one-shot timer in the
