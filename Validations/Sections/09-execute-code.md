@@ -10,7 +10,7 @@
 - **Expect:** Returns 4
 
 **9.2** `execute_code` — code=`EditorInterface.get_edited_scene_root().name`
-- **Expect:** Returns "Sv2Main" (editor context)
+- **Expect:** `EXECUTE_FAILED` with an explicit hint that `EditorInterface` is a global singleton not accessible in `Expression.execute()` and to use dedicated MCP tools instead — Expression sandboxing blocks singleton access. This is the CORRECT/expected outcome, not a bug; a stale prior expectation of `"Returns Sv2Main"` assumed the sandbox let `EditorInterface` through, which it does not.
 
 **9.3** `execute_code` (singleton hint) — code=`OS.get_name()`
 - **Expect:** error OR result. If error, must include hint about Expression limitations with singletons and suggest alternatives.

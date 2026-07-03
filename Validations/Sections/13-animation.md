@@ -9,14 +9,14 @@
 **13.1** `node_call_method` — node_path=`Sv2AnimPlayer`, method=`add_animation_library`, args=`["sv2_lib", {"type":"Resource","path":"res://sv2_validation/anim_lib.tres"}]`
 - **Expect:** success or null (built-in AnimationPlayer may return null without @tool)
 
-**13.2** `animation_keyframe` — node_path=`Sv2AnimPlayer`, animation=`sv2_lib/idle`, track_property=`Sv2Sprite:position`, time=0.0, value=`{"type":"Vector2","x":100,"y":100}`
+**13.2** `animation_keyframe` — action=`add`, player_path=`Sv2AnimPlayer`, animation_name=`sv2_lib/idle`, track_path=`Sv2Sprite:position`, time=0.0, value=`{"type":"Vector2","x":100,"y":100}`
+- **Expect:** success. **Param shape:** `player_path` (not `node_path`), `animation_name` (not `animation`), `track_path` (not `track_property`), plus a required `action` (`add`/`remove`). The library/animation `sv2_lib/idle` did not pre-exist in the empty `anim_lib` library — `animation_keyframe` **auto-creates** the animation on first keyframe write; the tool does NOT require it to already exist despite older prose to the contrary.
+
+**13.3** `animation_keyframe` — action=`add`, player_path=`Sv2AnimPlayer`, animation_name=`sv2_lib/idle`, track_path=`Sv2Sprite:position`, time=1.0, value=`{"type":"Vector2","x":200,"y":200}`
 - **Expect:** success
 
-**13.3** `animation_keyframe` — node_path=`Sv2AnimPlayer`, animation=`sv2_lib/idle`, track_property=`Sv2Sprite:position`, time=1.0, value=`{"type":"Vector2","x":200,"y":200}`
-- **Expect:** success
-
-**13.4** `animation_get_keys` — node_path=`Sv2AnimPlayer`, animation=`sv2_lib/idle`
-- **Expect:** 2 keyframes on position track
+**13.4** `animation_get_keys` — player_path=`Sv2AnimPlayer`, animation_name=`sv2_lib/idle`, track_path=`Sv2Sprite:position`
+- **Expect:** 2 keyframes on the position track: t=0→(100,100), t=1→(200,200). **`track_path` is required** — it was missing from the older param list.
 
 **13.5** `animationtree_edit` (set root) — node_path=`Sv2AnimTree`, action=`set_root`, root_type=`AnimationNodeStateMachine`
 - **Expect:** success

@@ -16,7 +16,7 @@
 - **Expect:** success — non-active tab closed. Response includes `hint` about `_set_main_scene_state` engine noise.
 
 **18.4** **[4.5+]** `scene_delete` — file_path=`res://sv2_validation/probe.tscn` (active tab)
-- **Expect:** success, `tab_closed: true` — active tab auto-closed before deletion. No hint (active tab doesn't switch).
+- **Expect:** success, `tab_closed: true` — active tab auto-closed before deletion. **A `hint` DOES fire here too** (reconfirmed across multiple runs, incl. 4.7) — do not treat its presence as a failure; the earlier "no hint on active-tab delete" expectation was itself stale.
 
 **18.5** Recreate probe for further tests:
 - `scene_create` file_path=`res://sv2_validation/probe.tscn`, root_type=`Node2D`
@@ -42,8 +42,9 @@
 ```svg
 <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64"><rect width="64" height="64" fill="#478cbf"/></svg>
 ```
-2. Call `asset_import` file_path=`res://sv2_validation/icon_test.svg`
-- **Expect:** success, class=CompressedTexture2D (imported immediately)
+2. Call `asset_import` dest_path=`res://sv2_validation/icon_test.svg`, source_path=`res://sv2_validation/icon_test.svg`, if_exists=`replace`, wait_for_scan_ms=`5000`
+- **Expect:** success, status=`created` or `replaced`, class=CompressedTexture2D.
+- **Param + timing notes:** the JSON schema only marks `dest_path` as required, but **`source_path` or `base64_data` is mandatory at runtime** — a `dest_path`-only call fails with `INVALID_PARAMS`; always pass one of them. If the file was pre-indexed by the FS watcher (e.g. via a raw `Write`-tool file drop) before this call, the response may still report `class:null` until the scan settles — indexing can take longer than a short `wait_for_scan_ms`; **5000ms is a more reliable wait** than shorter values (timing-variance, not a functional bug). If it still reports `class:null`, call `editor_wait_for_idle` and retry `resource_load`.
 
 **18.11** **[4.5+]** `file_delete` on `.tscn` with open tab:
 - `scene_create` file_path=`res://sv2_validation/file_del_probe.tscn`, root_type=`Node2D`

@@ -6,16 +6,16 @@
 
 ---
 
-**11.1** `save_write` — save_path=`user://saves/sv2_save.json`, content=`{"score": 42, "level": 3}`
-- **Expect:** success
+**11.1** `save_write` — path=`user://saves/sv2_save.json`, content=`{"score": 42, "level": 3}`
+- **Expect:** success. **Param name is `path`, not `save_path`** (applies to all `save_*` tools below).
 
-**11.2** `save_read` — save_path=`user://saves/sv2_save.json`
+**11.2** `save_read` — path=`user://saves/sv2_save.json`
 - **Expect:** JSON content with score=42, level=3
 
 **11.3** `save_list`
 - **Expect:** includes sv2_save.json
 
-**11.4** `save_delete` — save_path=`user://saves/sv2_save.json`
+**11.4** `save_delete` — path=`user://saves/sv2_save.json`
 - **Expect:** success
 
 **11.5** `save_read` — path=`user://addons/godot_mcp_toolkit/anything`

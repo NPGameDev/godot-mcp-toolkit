@@ -78,14 +78,16 @@
 > regressed. Flag as **Major**. (`failed` crosses a JSON boundary → coerce with
 > `int(...)`; never assert the whole response dict by equality.)
 
-**3.14d** `node_set_property` (batch all-success — rollup keys ABSENT) — batch=`[{"node_path":"Sv2Label","property":"text","value":"AllOK"},{"node_path":"Sv2Sprite","property":"visible","value":true}]`
-- **Expect:** success, both `results` entries success=true, and **NO** top-level `failed` key and **NO** top-level `hint` key (the rollup is purely additive — an all-success batch is byte-identical to before the fix).
+**3.14d** `node_set_property` (batch all-success — rollup ABSENT) — batch=`[{"node_path":"Sv2Label","property":"text","value":"AllOK"},{"node_path":"Sv2Sprite","property":"visible","value":true}]`
+- **Expect:** success, both `results` entries success=true, and **NO** top-level `failed` key. `node_set_property` emits a generic boilerplate top-level `hint` key on **every** response regardless of outcome (has since 3.1 — a plain single-prop success carries it too), so its literal presence/absence is not the signal here. What must be ABSENT on an all-success batch is the **failure-rollup hint TEXT** — the "N of M entries failed — inspect results[] for per-entry .error." message from 3.14c. Read "no hint" as "no failure-diagnostic hint text", not "no `hint` key" (the additive rollup is purely about `failed` + that specific text).
 - Restore: `node_set_property` Sv2Label text="Hello Sweep v2"
 
 > **REGRESSION WATCH (concern 034 D, summarize_batch):** This is the additive-only
-> control — `failed`/`hint` must NOT appear when every entry succeeded. If either
-> key shows up on an all-success batch, the helper stopped gating on `failed > 0`
-> and existing clients would see a changed shape. Flag as **Major**.
+> control — the top-level `failed` key and the failure-rollup hint TEXT must NOT
+> appear when every entry succeeded. If `failed` shows up, or the boilerplate
+> `hint` key's text reads as a failure-rollup message, on an all-success batch,
+> the helper stopped gating on `failed > 0` and existing clients would see a
+> changed shape. Flag as **Major**.
 
 **3.14a** `node_set_property` (groups rejection, single) — node_path=`Sv2Sprite`, property=`groups`, value=`["enemies"]`
 - **Expect:** INVALID_PARAMS, whole call rejected, hint names `node.groups`. The node's group membership is unchanged (nothing added/stripped).
@@ -123,8 +125,8 @@
 **3.19** `node_call_method` — node_path=`Sv2Player`, method=`get_info`, args=`[]`
 - **Expect:** `result: null`, `success: true` — `Sv2Player`'s `actor.gd` is **not** `@tool`, so the editor never runs it and `callv` cannot dispatch `get_info` (editor console logs "Method not found"). Response carries a hint that **leads with the runtime path** (game.start + execute_code / runtime_get_node_state on the live node), then the editor `@tool` fix, version-gated: on **4.5+** add `@tool` then close+reopen the scene (`scene_close` + `scene_open`; editor_refresh is not sufficient); **below 4.5** add `@tool` then relaunch the editor. The hint must **not** blame "uninitialized state / _Ready() not run".
 
-**3.20** `node_set_property` (PackedVector2Array) — node_path=`Sv2Path`, property=`curve:_data:points`, value=`{"type":"PackedVector2Array","value":[{"x":0,"y":0},{"x":100,"y":50},{"x":200,"y":0}]}`
-- **Expect:** success OR acceptable error (Curve2D has specific internal format)
+**3.20** `node_set_property` (PackedVector2Array) — node_path=`Sv2Path`, property=`curve:_data:points`, value=`{"type":"PackedVector2Array","values":[{"type":"Vector2","x":0,"y":0},{"type":"Vector2","x":100,"y":50},{"type":"Vector2","x":200,"y":0}]}`
+- **Expect:** success OR acceptable error (Curve2D has specific internal format). **Payload shape:** the array key is `values` (not `value`) with Vector2-**tagged** elements (not bare `{x,y}`) — matches 3.20b's confirmed tagged round-trip shape. `Sv2Path`'s curve is null by default, so `NOT_FOUND` here is expected/acceptable and is NOT a rejection of the `PackedVector2Array` type tag (see FIX-5 below).
 
 > **REGRESSION WATCH (FIX-5, T:98c02f3):** If `PackedVector2Array` type tag is
 > rejected with "unknown type", packed array coercion has regressed. Flag as **Major**.
@@ -166,7 +168,7 @@
 - **Expect:** success
 
 **3.24** `control_set_layout` — node_path=`Sv2LayoutTest`, preset=`PRESET_FULL_RECT`
-- **Expect:** success, anchors set to full rect (0,0,1,1)
+- **Expect:** success, anchors set to full rect (0,0,1,1). **Caveat:** if the response's `final_rect` reports `(0,0)` instead of a computed size, this is expected when the control's parent (`Sv2LayoutTest`'s parent is the scene root, a `Node2D`) is not itself a `Control` — there is no reference size to compute against, and it is NOT a preset-logic bug. Verify the anchors directly via `node_get_property` (`anchor_left`/`anchor_right`/`anchor_top`/`anchor_bottom`) rather than relying on `final_rect` in this context.
 
 **3.25** `control_set_layout` — node_path=`Sv2LayoutTest`, preset=`PRESET_CENTER`, resize_mode=`keep_size`
 - **Expect:** success

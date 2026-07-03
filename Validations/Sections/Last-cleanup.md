@@ -9,8 +9,9 @@
 
 If `discover_tools(reset=true)` was run during the sweep, re-activate groups needed for cleanup:
 ```
-discover_tools groups=["asset_management", "input_map", "node_management"]
+discover_tools groups=["asset_ops", "input_map"]
 ```
+(The group is `asset_ops`, not `asset_management`. There is no `node_management` group — `node_manage`/`node_groups` are core tools, always available.)
 
 ## 25b. Stop game if running
 
@@ -37,10 +38,10 @@ discover_tools groups=["asset_management", "input_map", "node_management"]
    - `file_delete` res://sv2_validation/icon_test.svg (if exists)
 
 5. **Resources:** `resource_delete` for each .tres in sv2_validation/
-   - Use `asset_list` folder_path=res://sv2_validation/, name_glob=*.tres to find all
+   - Use `asset_list` path_prefix=res://sv2_validation/, name_glob=*.tres to find all
 
 6. **Scenes:** `scene_delete` for each .tscn in sv2_validation/
-   - Use `asset_list` folder_path=res://sv2_validation/, name_glob=*.tscn to find all
+   - Use `asset_list` path_prefix=res://sv2_validation/, name_glob=*.tscn to find all
 
 7. **Subfolders:** `folder_delete` for any subdirs
    - c12_tabs/, etc.
@@ -59,15 +60,15 @@ discover_tools groups=["asset_management", "input_map", "node_management"]
 
 ## 25g. Remove input map actions
 
-`input_map_action` name=sv2_jump, operation=remove (if Section 10 cleanup was skipped)
+`input_map_action` action=remove, name=sv2_jump (if Section 10 cleanup was skipped)
 
 ## 25h. Remove save data
 
-`save_delete` save_path=user://saves/sv2_save.json (if exists)
+`save_delete` path=user://saves/sv2_save.json (if exists)
 
 ## 25i. Verify cleanup
 
-`asset_list` folder_path=`res://sv2_validation/` → **Expect:** NOT_FOUND or empty (folder deleted)
+`asset_list` path_prefix=`res://sv2_validation/` → **Expect:** NOT_FOUND or empty (folder deleted)
 
 ---
 

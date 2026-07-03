@@ -58,11 +58,11 @@
 > **REGRESSION WATCH (FIX-B, 7e63aee):** Parameter must be `scene_path`, not
 > the old `packed_path`. If the tool rejects `scene_path`, the rename has regressed.
 
-**2.15** `scene_instantiate` (with properties) — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`, name=`Sv2SubProps`, properties=`{"position": {"type": "Vector2", "x": 50, "y": 75}}`
-- **Expect:** success, Sv2SubProps created. Verify via `node_get_property` position = (50, 75)
+**2.15** `scene_instantiate` (with transform override) — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`, name=`Sv2SubProps`, transform=`{"position": {"type": "Vector2", "x": 50, "y": 75}}`
+- **Expect:** success, Sv2SubProps created. Verify via `node_get_property` position = (50, 75). **Param name is `transform`, not `properties`** — single-mode `scene_instantiate` has no `properties` param; passing `properties` silently no-ops (success:true, position stays 0,0, no error) because `properties` is batch-only (inside `instances[]` entries — see 2.15a/C9). Use `transform` for the single-mode override.
 
-> **REGRESSION WATCH (462506b):** If `properties` param is rejected or position
-> is not applied, scene_instantiate properties support has regressed. Flag as **Major**.
+> **REGRESSION WATCH (462506b):** If `transform` param is rejected or position
+> is not applied, scene_instantiate's single-mode transform-override support has regressed. Flag as **Major**.
 
 **2.15a** `scene_instantiate` (batch all-success — rollup keys ABSENT) — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`, instances=`[{"name":"Sv2SubBatchA"},{"name":"Sv2SubBatchB"}]`
 - **Expect:** success, `instances` array with 2 created nodes (Sv2SubBatchA, Sv2SubBatchB), `count`=2, and **NO** top-level `failed` key and **NO** top-level `hint` key (the batch-rollup is purely additive — an all-success batch keeps its prior `{status, count, instances, results}` shape). The per-entry `results` rows are all success=true.

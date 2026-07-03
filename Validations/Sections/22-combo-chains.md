@@ -33,8 +33,9 @@
 
 ## C6. TileMap painting pipeline
 
-`tileset_create` (res://sv2_validation/c6_ts.tres, texture_path=res://icon.svg, tile_size={32,32}, physics=true) → `tileset_edit` (terrain: [{name:"ground", terrains:["grass"]}]) → `scene_create_node` (TileMapLayer [4.3+] or TileMap [4.2], "C6Tile") → `node_set_property` (tile_set={"type":"Resource","path":"res://sv2_validation/c6_ts.tres"}) → `tilemap_set_cells` (regions=[{x:0,y:0,width:3,height:3,source_id:0,atlas_x:0,atlas_y:0}]) → cleanup (`scene_delete_node` C6Tile, `resource_delete` c6_ts.tres)
-- **Expect:** create→configure→paint pipeline works
+`tileset_create` (res://sv2_validation/c6_ts.tres, texture_path=res://icon.svg, tile_size={32,32}, physics=true) → `tileset_setup_layers` (terrain_sets=[{mode:"match_corners_and_sides", terrains:["grass"]}]) → `scene_create_node` (TileMapLayer [4.3+] or TileMap [4.2], "C6Tile") → `node_set_property` (tile_set={"type":"Resource","path":"res://sv2_validation/c6_ts.tres"}) → `tilemap_set_cells` (tilemap_path=`C6Tile`, regions=[{x:0,y:0,width:3,height:3,source_id:0,atlas_x:0,atlas_y:0}]) → cleanup (`scene_delete_node` C6Tile, `resource_delete` c6_ts.tres)
+- **Expect:** create→configure→paint pipeline works. **The terrain-set configuration tool is `tileset_setup_layers`** (not `tileset_edit`, which does not exist as a single tool — the per-tile editing surface is the 5-way-split `tileset_edit_*` family; see Section 14).
+- **Known index-staleness caveat (Low, non-blocking):** after `resource_delete` on `c6_ts.tres`, `asset_list`/`resource_load` may keep serving a stale/in-memory-cached view of the file until a 2nd `resource_delete` + a full `editor_refresh(mode=full)` — see the Last-cleanup note. Confirm true deletion via the C6 leftover check in Last-cleanup rather than a single `resource_delete` response alone.
 
 ## C7. Script write → immediate check (targeted filesystem)
 
@@ -116,4 +117,4 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 Each chain cleans up after itself. After all chains, verify no leftover artifacts:
 `editor_refresh` (full — no `file_paths`) FIRST — `asset_list`'s EditorFileSystem-backed view lags `resource_delete`'s deindex, so a refresh is needed before the `c*` check to avoid a false "leftover".
-`asset_list` folder_path=`res://sv2_validation/`, name_glob=`c*` → **Expect:** no matches
+`asset_list` path_prefix=`res://sv2_validation/`, name_glob=`c*` → **Expect:** no matches

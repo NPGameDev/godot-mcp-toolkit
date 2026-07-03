@@ -14,8 +14,8 @@
 **16.2** `3d_create_primitive` — primitive=`sphere`, name=`Sv2Sphere`
 - **Expect:** success
 
-**16.3** `3d_setup_environment` — sky_type=`ProceduralSkyMaterial`, tonemap=`filmic`
-- **Expect:** success, WorldEnvironment created
+**16.3** `3d_setup_environment` — sky=`{"type":"ProceduralSkyMaterial"}`, tonemap=`filmic`
+- **Expect:** success, WorldEnvironment created. **Param shape:** `sky.type` is nested inside a `sky` object (`{type, sky_top_color?, sky_horizon_color?, ground_bottom_color?}`) — there is no top-level `sky_type` param.
 
 **16.4** `3d_create_light` — light_type=`directional`, shadow=`true`
 - **Expect:** success
@@ -88,11 +88,11 @@
 **16.24** `procedural_edit_gradient` — file_path=`res://sv2_validation/gradient.tres`, action=`set`, points=[{offset:0, color:{r:1,g:0,b:0}}, {offset:0.5, color:{r:0,g:1,b:0}}, {offset:1, color:{r:0,g:0,b:1}}]
 - **Expect:** success, point_count=3
 
-**16.25** `procedural_edit_gradient` — file_path=`res://sv2_validation/gradient.tres`, action=`add_point`, offset=0.75, color={r:1,g:1,b:0}
-- **Expect:** success, point_count=4
+**16.25** `procedural_edit_gradient` — file_path=`res://sv2_validation/gradient.tres`, action=`add_point`, points=[{offset:0.75, color:{r:1,g:1,b:0}}]
+- **Expect:** success, point_count=4. **Param shape:** even for a single point, `add_point` takes a nested `points` array of `{offset, color}` objects — there are no top-level `offset`/`color` params (a top-level `offset`/`color` call is rejected with `INVALID_PARAMS "requires points array"`).
 
-**16.26** `procedural_edit_curve` — file_path=`res://sv2_validation/curve.tres`, action=`set`, points=[{x:0,y:0},{x:0.5,y:1},{x:1,y:0}]
-- **Expect:** success, point_count=3
+**16.26** `procedural_edit_curve` — file_path=`res://sv2_validation/curve.tres`, action=`set`, points=[{position:{x:0,y:0}},{position:{x:0.5,y:1}},{position:{x:1,y:0}}]
+- **Expect:** success, point_count=3. **Param shape:** each point is `{position:{x,y}, left_tangent?, right_tangent?, left_mode?, right_mode?}` — a bare `{x,y}` element (no `position` wrapper) is rejected (`-32602`, "expected object, received undefined" at `points[].position`).
 
 **16.27** `procedural_edit_noise` — file_path=`res://sv2_validation/noise.tres`, noise_type=`simplex`, frequency=0.05
 - **Expect:** success

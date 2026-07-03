@@ -39,10 +39,18 @@
 > off-by-one bug in LogBuffer `pre_id` caused missed hints. Flag as **Major**.
 
 **6.6** `script_check` — file_path=`res://sv2_validation/sv2_bad_script.gd`
-- **Expect:** valid=false, diagnostics with line/column info
+- **Expect:** valid=false, diagnostics=[1 entry], severity="error". **On Godot 4.5+:** the error entry carries a `line` key with the REAL parse-error line (recovered from the 4.5+ Logger capture of the in-process reload). **On Godot 4.2–4.4:** the `line` key is OMITTED entirely (no structured line from the file-tail capture — never a fabricated `0`). **`col`/`column` is NEVER emitted** on any version (columns are `lsp_diagnostics`' domain — use that tool for precise error location). Hint-severity entries (e.g. the preload hint in 6.5) never carry `line` either — hints are about an identifier, not a source position.
 
-**6.7** `asset_list` — folder_path=`res://sv2_validation/`, name_glob=`*.gd`
+> **REGRESSION WATCH (S6.6, 41n-undecies T4):** Prior behavior hardcoded
+> `"line": 0` on every diagnostic regardless of version — a fabricated value, not
+> a real one. If a 4.5+ run's error diagnostic lacks `line`, or a <4.5 run's error
+> diagnostic carries a `line` key (fabricated or otherwise), or any diagnostic
+> ever carries `col`/`column`, the real-line emission has regressed. Flag as
+> **Major**.
+
+**6.7** `asset_list` — path_prefix=`res://sv2_validation/`, name_glob=`*.gd`
 - **Expect:** Lists actor.gd, sv2_bad_script.gd, sv2_preload_test.gd
+- **Note:** the filter param is `path_prefix`, not `folder_path`.
 
 **6.8** `asset_get_dependencies` — file_path=`res://sv2_validation/material.tres`
 - **Expect:** Dependency on shader.gdshader

@@ -139,7 +139,7 @@ All 6 LSP tools share `validateGdscriptPath()`. Tests below verify via two diffe
 - **Expect:** success=true, contents includes `take_damage` function signature or type info
 
 **26.14** `lsp_hover` — file_path=`res://sv2_validation/sv2_lsp_valid.gd`, line=1, column=0
-- **Expect:** success=true, contents=null (line 1 is empty — no symbol to hover on). No error, no crash.
+- **Expect:** success=true, contents = an EMPTY I5 envelope (line 1 is empty — no symbol to hover on) — NOT a raw `null`. This is consistent with 26.11's uniform hover-wrapping (every `lsp_hover` response wraps `contents` in the untrusted I5 envelope); a raw `null` would violate that envelope contract. No error, no crash.
 
 ---
 

@@ -1,7 +1,7 @@
 # Section 25 — Undo/Redo Verification
 
 **Dependencies:** Section 2 (nodes exist in `res://sv2_validation/Sv2Main.tscn`)
-**Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, particles.create, node.collision_from_sprite, node.set_script
+**Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, particles.create, collision_from_texture, node.set_script
 **Tests:** 48
 **Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene. Sections UR4–UR12 are regression guards for tools that previously had missing `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls, which caused `UndoRedo history mismatch` errors.
 
@@ -81,8 +81,9 @@
 - Or use current node name from UR2.
 
 **UR3.2** Add group:
-- `node.groups` — node_path=`URTarget` (or current name), action=`add`, groups=`["ur_test_group"]`
+- `node.groups` — node_path=`URTarget` (or current name), action=`add`, group=`ur_test_group`
 - **Expect:** success
+- **Param note:** single-mode `node.groups` takes `group` (singular string) — not `groups` (plural array). The plural `groups` array is not a valid param on any mode; batch mode instead uses `entries=[{node_path, group}, …]` (see UR6.5).
 
 **UR3.3** Trigger undo:
 - `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URTarget"]`
@@ -206,8 +207,10 @@
 
 ## UR9. signal.manage connect/disconnect undo/redo
 
+> **Param note:** `signal.manage`'s source-node param is `node_path` — not `source_path`.
+
 **UR9.1** Connect a signal:
-- `signal.manage` — action=`connect`, source_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
+- `signal.manage` — action=`connect`, node_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
 - **Expect:** success (status=`created`)
 
 **UR9.2** Trigger undo:
@@ -219,11 +222,11 @@
 - **Expect:** `visibility_changed` NOT connected to `URSibling.show`
 
 **UR9.4** Reconnect (for disconnect test):
-- `signal.manage` — action=`connect`, source_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
+- `signal.manage` — action=`connect`, node_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
 - **Expect:** success
 
 **UR9.5** Disconnect:
-- `signal.manage` — action=`disconnect`, source_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
+- `signal.manage` — action=`disconnect`, node_path=`URTarget`, signal_name=`visibility_changed`, target_path=`URSibling`, method_name=`show`
 - **Expect:** success
 
 **UR9.6** Trigger undo:
@@ -276,7 +279,10 @@
 
 ---
 
-## UR12. node.collision_from_sprite undo/redo
+## UR12. collision_from_texture undo/redo
+
+> **Note:** the tool is `collision_from_texture` (not `collision_from_sprite`),
+> and its param is `sprite_path` (not `node_path`).
 
 **UR12.1** Create a Sprite2D:
 - `scene.create_node` — type=`Sprite2D`, name=`URSprite`, parent=scene root
@@ -287,8 +293,8 @@
 - **Expect:** success
 
 **UR12.3** Generate collision:
-- `node.collision_from_sprite` — node_path=`URSprite`
-- **Expect:** success, collision polygon(s) created
+- `collision_from_texture` — sprite_path=`URSprite`
+- **Expect:** success, collision polygon(s) created (a sibling `CollisionPolygon2D` node, e.g. `URSprite_collision` — not nested under the sprite; see Section 19)
 
 **UR12.4** Trigger undo:
 - `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`[""]`

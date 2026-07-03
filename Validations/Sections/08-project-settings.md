@@ -1,7 +1,7 @@
 # Section 8 — Project Settings & Autoloads
 
 **Dependencies:** Section 1 (actor.gd exists for autoload test)
-**Tools tested:** project_get_settings, project_set_setting, autoload_manage, project_get_layer_names, project_set_layer_names
+**Tools tested:** project_get_settings, project_set_setting, autoload_manage, layer_names_get, layer_names_set
 **Tests:** 12
 
 ---
@@ -35,20 +35,23 @@
 
 **8.7** `autoload_manage` (list verify) — action=`list`
 - **Expect:** includes Sv2Autoload with enabled=true
+- **Note (4.7+):** `script_path` may surface as `uid://…` rather than `res://sv2_validation/actor.gd` (Godot 4.7's UID-preference). Functionality is unaffected — this is a Godot-version display detail, not a regression.
 
 **8.8** `autoload_manage` (unregister) — action=`unregister`, name=`Sv2Autoload`
 - **Expect:** success
 
-**8.9** `project_set_layer_names` — category=`2d_physics`, layers=`{"1":"Ground","2":"Player","5":"Enemies"}`
+**8.9** `layer_names_set` — category=`2d_physics`, layers=`{"1":"Ground","2":"Player","5":"Enemies"}`
 - **Expect:** success, layers_set=3
+- **Note:** the tool name is `layer_names_set`, not `project_set_layer_names`.
 
-**8.10** `project_get_layer_names` — category=`2d_physics`
+**8.10** `layer_names_get` — category=`2d_physics`
 - **Expect:** layers {1:"Ground", 2:"Player", 5:"Enemies"}
+- **Note:** the tool name is `layer_names_get`, not `project_get_layer_names`.
 
-**8.11** `project_set_layer_names` guard — category=`invalid_category`
+**8.11** `layer_names_set` guard — category=`invalid_category`
 - **Expect:** INVALID_PARAMS
 
-**8.12** `project_set_layer_names` (restore) — category=`2d_physics`, layers=`{"1":"","2":"","5":""}`
+**8.12** `layer_names_set` (restore) — category=`2d_physics`, layers=`{"1":"","2":"","5":""}`
 - **Expect:** success (clears names)
 
 ---

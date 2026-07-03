@@ -61,10 +61,10 @@ void fragment() {
 
 **1.8** `scene_create` — file_path=`res://sv2_validation/Sv2Main.tscn`, root_type=`Node2D`
 - **Expect:** success
-- **Note:** `scene_create` has NO `root_name` param (it is ignored). The root node is named by the filename STEM, so `Sv2Main.tscn` → root node `Sv2Main` (no `root_name` needed).
+- **Note:** `scene_create` HAS an optional `root_name` param — when given, it is honored and the root node is named accordingly. Omitting it (as here) falls back to the filename STEM, so `Sv2Main.tscn` → root node `Sv2Main`. See 17.1/17.1b for the honored-vs-stem-fallback round-trip.
 
 **1.9** `scene_create` — file_path=`res://sv2_validation/sub.tscn`, root_type=`Node2D`, root_name=`Sv2Sub`
-- **Expect:** success
+- **Expect:** success, root node named `Sv2Sub` (the given `root_name` is honored, not the filename stem `sub`) — verified downstream by 2.14's instantiated-root-name check.
 
 **1.10** `scene_open` — file_path=`res://sv2_validation/Sv2Main.tscn`
 - **Expect:** success

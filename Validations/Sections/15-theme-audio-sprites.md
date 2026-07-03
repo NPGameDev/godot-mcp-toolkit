@@ -13,7 +13,7 @@
 - **Expect:** Theme with Button font_color and Label font_size set
 
 **15.3** `theme_edit` guard — file_path=`res://sv2_validation/theme.tres`, edits=[{type_name:"Button", property_type:"invalid_type", property_name:"x", value:1}]
-- **Expect:** INVALID_PARAMS mentioning "invalid_type"
+- **Expect:** MCP schema-enum rejection (`-32602`) listing the 6 valid `property_type` values (color/constant/font/font_size/icon/stylebox). The rejection does NOT echo the literal invalid value `"invalid_type"` back — that is an acceptable guard form for a Zod enum (pre-plugin validation), not a plugin-level `INVALID_PARAMS` with the offending value quoted.
 
 **15.4** `audiobus_edit` — action=`add_bus`, bus_name=`"Sv2Music"`, send_to=`"Master"`
 - **Expect:** success

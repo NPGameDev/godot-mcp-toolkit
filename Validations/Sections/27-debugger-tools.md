@@ -112,19 +112,21 @@ Setup — launch a game that hits no breakpoint, then continue:
 1. `debug_list_breakpoints` — **Expect:** no *enabled* breakpoints remain for `sv2_debug_target.gd` (27.5–27.8 disabled both). If any remain, disable them via `debug_set_breakpoint` enabled=false first.
 2. `scene_create` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn`, root_type=`Node2D`
    - **Expect:** success
-3. `node_set_script` — node_path=`.`, file_path=`res://sv2_validation/sv2_debug_target.gd`
+3. `scene_open` — file_path=`res://sv2_validation/sv2_nobreak_scene.tscn`
+   - **Expect:** success. **Required step:** `scene_create` does NOT auto-open the new scene (its response hints "Open it for editing with scene_open") — without this step, `node_path='.'` in the next step targets whatever scene is currently active, not the new one.
+4. `node_set_script` — node_path=`.`, file_path=`res://sv2_validation/sv2_debug_target.gd`
    - **Expect:** success (attaches the target script; its breakpoints are disabled so `_ready` won't pause)
-4. `editor_save_scene`
+5. `editor_save_scene`
    - **Expect:** success
-5. `game_start` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn`
+6. `game_start` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn`
    - **Expect:** success. The game runs `_ready`/`_process` straight through — no enabled breakpoint, so it never pauses.
-6. `debug_state`
+7. `debug_state`
    - **Expect:** active=true, breaked=false (running, not paused)
-7. `debug_continue` — (no params)
+8. `debug_continue` — (no params)
    - **Expect:** success=false, code=`NOT_BREAKED`, error mentions "breakpoint" ← the assertion
-8. `game_stop`
+9. `game_stop`
    - **Expect:** success
-9. `scene_delete` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn` (cleanup)
+10. `scene_delete` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn` (cleanup)
 
 ---
 
@@ -134,25 +136,27 @@ Setup — launch a game that hits no breakpoint, then continue:
 
 1. `scene_create` — scene_path=`res://sv2_validation/sv2_debug_scene.tscn`, root_type=`Node2D`
    - **Expect:** success=true
-2. `node_set_script` — node_path=`.`, file_path=`res://sv2_validation/sv2_debug_target.gd`
+2. `scene_open` — file_path=`res://sv2_validation/sv2_debug_scene.tscn`
+   - **Expect:** success=true. **Required step:** `scene_create` does NOT auto-open the new scene — without this, `node_path='.'` in the next step targets the wrong (currently-active) scene.
+3. `node_set_script` — node_path=`.`, file_path=`res://sv2_validation/sv2_debug_target.gd`
    - **Expect:** success=true (attaches the script with `_ready` breakpoint target)
-3. `editor_save_scene`
+4. `editor_save_scene`
    - **Expect:** success=true
-4. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=true
+5. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=true
    - **Expect:** success=true (breakpoint on `counter = 1` inside `_ready`)
-5. `game_start` — scene_path=`res://sv2_validation/sv2_debug_scene.tscn`
+6. `game_start` — scene_path=`res://sv2_validation/sv2_debug_scene.tscn`
    - **Expect:** success=true. Game launches and pauses at the breakpoint because
      `_ready()` executes immediately and line 6 is inside it.
-6. `debug_state`
+7. `debug_state`
    - **Expect:** success=true, active=true, breaked=true, can_debug=true
-7. `debug_continue`
+8. `debug_continue`
    - **Expect:** success=true (game resumes past the breakpoint)
-8. `debug_state`
+9. `debug_state`
    - **Expect:** active=true, breaked=false (game running, no longer paused)
-9. `game_stop`
-10. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=false
+10. `game_stop`
+11. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=false
     - **Expect:** success=true (clean up breakpoint)
-11. `debug_state` — **Expect:** active=false (game stopped)
+12. `debug_state` — **Expect:** active=false (game stopped)
 
 ---
 

@@ -105,7 +105,7 @@ public partial class Sv2CsGlobal : Node
 
 ## CS8. Asset introspection
 
-**CS8.1** `asset_list` folder_path=res://sv2_validation/ → **Expect:** includes .cs files
+**CS8.1** `asset_list` path_prefix=res://sv2_validation/ → **Expect:** includes .cs files
 **CS8.2** `asset_get_dependencies` Sv2Main.tscn → **Expect:** includes Sv2CsNode.cs
 
 ## CS9. [GlobalClass] in ClassDB

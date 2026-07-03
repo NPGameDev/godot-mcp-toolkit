@@ -111,10 +111,14 @@ names the tool that owns it — it is no longer silently applied under the wrong
 
 ## tilemap group (2 tools)
 
-**14.18** `tilemap_set_cells` — node_path=`Sv2TileLayer`, cells=[{"x":0,"y":0,"source_id":0,"atlas_x":0,"atlas_y":0}]
+> **Param asymmetry (real, both correct as implemented):** `tilemap_set_cells` takes
+> `tilemap_path`; `tilemap_read_cells` (below) takes `node_path`. Don't "fix" one to
+> match the other — they are deliberately named differently at the schema level.
+
+**14.18** `tilemap_set_cells` — tilemap_path=`Sv2TileLayer`, cells=[{"x":0,"y":0,"source_id":0,"atlas_x":0,"atlas_y":0}]
 - **Expect:** success (may warn about TileSet source mismatch if TileLayer doesn't reference the atlas)
 
-**14.19** `tilemap_set_cells` (regions) — node_path=`Sv2TileLayer`, regions=[{"x":0,"y":0,"width":5,"height":5,"source_id":0,"atlas_x":0,"atlas_y":0}]
+**14.19** `tilemap_set_cells` (regions) — tilemap_path=`Sv2TileLayer`, regions=[{"x":0,"y":0,"width":5,"height":5,"source_id":0,"atlas_x":0,"atlas_y":0}]
 - **Expect:** success, cells painted
 
 > **REGRESSION WATCH (FIX-A, 7e63aee):** If `regions` param is rejected,
@@ -122,7 +126,7 @@ names the tool that owns it — it is no longer silently applied under the wrong
 
 **14.20** `tilemap_set_cells` guard (no tileset) — Create TileMapLayer with NO tileset:
 - `scene_create_node` node_type=TileMapLayer, node_name=`Sv2TileNoTS`, parent_path=`.`
-- `tilemap_set_cells` node_path=`Sv2TileNoTS`, cells=[{"x":0,"y":0,"source_id":0,"atlas_x":0,"atlas_y":0}]
+- `tilemap_set_cells` tilemap_path=`Sv2TileNoTS`, cells=[{"x":0,"y":0,"source_id":0,"atlas_x":0,"atlas_y":0}]
 - **Expect:** error mentioning no TileSet assigned
 
 > **REGRESSION WATCH (FIX-J, 7e63aee):** If cells are silently placed on a
