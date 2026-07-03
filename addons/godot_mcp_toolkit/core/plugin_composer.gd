@@ -77,12 +77,15 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	# path; we re-publish the registry entry runtime-preservingly (ensure_registered,
 	# not register) so a game running across the rename keeps Mode-B discovery.
 	server.token_rewritten.connect(func(token_path: String): _republish_on_token_rewrite(server, token_path))
+	# Register in the system-wide project registry on EVERY fresh bind, so the TS
+	# bridge can discover us by project path. Signal-driven rather than a one-shot
+	# after start(): a pinned port can be occupied at startup and bind only later
+	# (once the holder releases it), and the actual bound port must still be
+	# published then — the server's desync cross-check reads it as ground truth.
+	# Connected BEFORE start() so the normal immediate bind (inside start(),
+	# synchronous) registers exactly once, same as the old one-shot.
+	server.port_bound.connect(func(_port: int) -> void: _register_in_registry(server))
 	server.start()
-
-	# Register in the system-wide project registry so the TS bridge can
-	# discover us by project path. Must come after start() — port unknown
-	# until _scan_and_listen() runs.
-	_register_in_registry(server)
 
 	# -- Toolkit dock (bottom panel on ≤4.5, EditorDock on 4.6+; DockHost owns the seam) --
 	var dock: Control = preload("res://addons/godot_mcp_toolkit/ui/dock/dock.tscn").instantiate()
@@ -99,10 +102,13 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	return handle
 
 
-# Register this editor in the system-wide project registry. The initial register()
-# plus a jittered deferred ensure_registered() re-verify (concurrent editors may
-# clobber our entry after our initial verify passes). Re-resolve the LSP endpoint
-# at fire time so a mid-window Q4 change isn't reverted.
+# Register this editor in the system-wide project registry. Runs on every fresh
+# bind (the server's port_bound signal — once at startup normally; again if a
+# pinned port frees late after a startup conflict): the register() plus a jittered
+# deferred ensure_registered() re-verify (concurrent editors may clobber our entry
+# after our initial verify passes). Re-resolve the LSP endpoint at fire time so a
+# mid-window Q4 change isn't reverted. The port guard keeps a stray call with no
+# bound port a no-op.
 static func _register_in_registry(server: Node) -> void:
 	var bound_port: int = server.get_bound_port()
 	if bound_port > 0:

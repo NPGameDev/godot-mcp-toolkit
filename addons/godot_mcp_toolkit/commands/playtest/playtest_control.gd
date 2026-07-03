@@ -170,7 +170,7 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 			"ping_timeout":
 				response["hint"] = "Authenticated but ping/pong timed out — the runtime server may be overloaded. Use runtime_poll:true to retry without restarting the game."
 			_:
-				response["hint"] = "Runtime not ready (%s). Checklist: (1) Is the MCP Runtime autoload enabled? (2) Is port 6570 available? (3) Check editor_get_console for errors. (4) For Standard profile: call discover_tools({request: 'runtime'}) to load runtime tools." % runtime_failure
+				response["hint"] = "Runtime not ready (%s). Checklist: (1) Is the MCP Runtime autoload enabled? (2) Is the runtime port (default 6570) available? (3) Check editor_get_console for errors. (4) If runtime tools aren't loaded yet, call discover_tools({request: 'runtime'})." % runtime_failure
 	# P-006: When no poll was requested and runtime isn't ready, warn that
 	# runtime tools will block/fail. Prevents agents from calling
 	# runtime_screenshot / input_simulate on a game that didn't connect.

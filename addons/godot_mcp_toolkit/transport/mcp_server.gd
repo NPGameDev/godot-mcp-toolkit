@@ -19,6 +19,17 @@ signal lsp_status_changed
 ## runtime_port/runtime_pid — register would null them and break Mode-B discovery
 ## for a game running across the rename.
 signal token_rewritten(token_path: String)
+## Emitted when the listen state changes — a fresh bind, a listen conflict
+## (pinned port occupied / scan band exhausted / lost rebind) raised or cleared,
+## or a port-config error. The dock re-reads get_port_warning() + the listening
+## state and repaints. Immediate counterpart to the dock's own refresh pull.
+signal port_status_changed
+## Emitted on a fresh listener bind (initial, or late — e.g. a pinned port that
+## frees after a startup conflict), carrying the bound port. The composition root
+## (re)publishes the registry entry on it, so the actual bound port lands in
+## projects.json in every mode — the ground truth the server's desync cross-check
+## reads.
+signal port_bound(port: int)
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
@@ -31,9 +42,16 @@ const ServerRequestRouter := preload("res://addons/godot_mcp_toolkit/transport/d
 const DispatchLane := preload("res://addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd")
 const UnfocusedSleepController := preload("res://addons/godot_mcp_toolkit/core/unfocused_sleep_controller.gd")
 const LspPublisher := preload("res://addons/godot_mcp_toolkit/paths/lsp_publisher.gd")
+const PortConfig := preload("res://addons/godot_mcp_toolkit/transport/port_config.gd")
 
-const PORT_BASE := 6550
-const PORT_RANGE := 11  # 6550..6560 inclusive
+# Default editor scan band (inclusive). GODOT_MCP_EDITOR_PORT pins an exact port
+# (bind-exact-or-fail); GODOT_MCP_EDITOR_PORT_MIN/_MAX relocate the band. Resolved
+# by PortConfig; the two modes are mutually exclusive (a pin ignores the band).
+const PORT_MIN := 6550
+const PORT_MAX := 6560  # 6550..6560 inclusive
+const _ENV_PIN := "GODOT_MCP_EDITOR_PORT"
+const _ENV_PORT_MIN := "GODOT_MCP_EDITOR_PORT_MIN"
+const _ENV_PORT_MAX := "GODOT_MCP_EDITOR_PORT_MAX"
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # Throttle re-listen retries to avoid log spam when the port is
@@ -70,6 +88,9 @@ const _AUTH_TIMEOUT_MS := 2000
 # it via _poll_connections → transport.pump().
 var _transport: WsTransport = null
 var _poll_frame_counter := 0
+# Resolved listen-port configuration (PortConfig.resolve result). A non-empty
+# "error" is fatal — the editor server does not listen and the dock shows why.
+var _port_config: Dictionary = {}
 # Captured at start() so editor.get_console's log-file selection heuristic
 # can prefer post-boot logs over stale rotated ones.
 var _plugin_boot_time: int = 0
@@ -282,29 +303,138 @@ func start() -> void:
 	_wire_scene_lease_to_lanes()
 	_init_lsp_publisher()
 	var token := MCPAuth.generate_token()
-	_transport.set_token(token)
+	# A port-config error leaves _transport null (start() still wires the rest so the
+	# dock + LSP watch come up and can surface the error); skip the listen path.
+	if _transport != null:
+		_transport.set_token(token)
 	var write_err := MCPAuth.write_token(token)
 	if write_err != OK:
 		push_warning("[MCPServer] failed to write token (err %d); auth will still be enforced but bridge may not find the file" % write_err)
 	else:
 		var token_path := MCPAuth.get_token_path()
 		print("[MCPServer] session token written to %s" % token_path)
-	_transport.ensure_listening()
+	if _transport != null:
+		_transport.ensure_listening()
+	else:
+		port_status_changed.emit()
 	_connect_lsp_settings_watch()
 
 
 # Build the WS transport and inject the editor-side seams: the auth-vs-dispatch
 # router, the auth-ack payload (Mode A adds godot_version + version), the
-# boost-on-first-authed callback, and the lease/unfocused/signal cleanup on close.
+# boost-on-first-authed callback, the lease/unfocused/signal cleanup on close, the
+# fresh-bind announce (registry re-publish + dock repaint), and the listen
+# conflict → dock warning. Resolves the listen-port config first; a config error
+# leaves _transport null so start() skips listening (dock shows why).
 func _init_transport() -> void:
+	_port_config = PortConfig.resolve(_ENV_PIN, _ENV_PORT_MIN, _ENV_PORT_MAX, PORT_MIN, PORT_MAX)
+	_log_port_config()
+	if not str(_port_config.get("error", "")).is_empty():
+		return
 	_transport = WsTransport.new()
+	var pinned: bool = _port_config["mode"] == PortConfig.MODE_PINNED
+	var base: int = int(_port_config["port"]) if pinned else int(_port_config["port_min"])
+	var count: int = 1 if pinned else int(_port_config["port_max"]) - int(_port_config["port_min"]) + 1
 	# await_messages = true: the editor dispatches sequentially within a poll tick
 	# (its mutation serialisation depends on this).
-	_transport.configure("[MCPServer]", PORT_BASE, PORT_RANGE, BIND,
+	_transport.configure("[MCPServer]", base, count, BIND,
 		_RELISTEN_FRAME_INTERVAL, _AUTH_TIMEOUT_MS, true,
-		"no free port in %d-%d; will retry every ~1s")
+		"no free port in %d-%d; will retry every ~1s", pinned,
+		"Free the port, or change %s (or unset it to use the scanned band)." % _ENV_PIN)
 	_transport.set_handlers(_handle_message, _build_auth_ack, _on_peer_authed,
-		_on_peer_closed)
+		_on_peer_closed, _on_transport_bound, _on_listen_conflict_changed)
+
+
+# Log the resolved listen-port config at startup: the port + source (the Q4
+# dual-side observability), a one-line note when a pin makes the band moot, or a
+# loud push_error on a config error (bad pin / MIN > MAX) — never a silent default.
+func _log_port_config() -> void:
+	var config_error := str(_port_config.get("error", ""))
+	if not config_error.is_empty():
+		push_error("[MCPServer] Invalid port config: %s — the editor MCP server did not start. Fix the environment variable and reload the plugin." % config_error)
+		return
+	if bool(_port_config.get("band_ignored", false)):
+		print("[MCPServer] note: %s pins an exact port, so the %s/%s band is ignored." % [
+			_ENV_PIN, _ENV_PORT_MIN, _ENV_PORT_MAX])
+	match str(_port_config.get("source", "")):
+		"env-pin":
+			print("[MCPServer] port %d (pinned via %s)" % [int(_port_config["port"]), _ENV_PIN])
+		"env-band":
+			print("[MCPServer] port: scanning %d-%d (band via %s/%s)" % [
+				int(_port_config["port_min"]), int(_port_config["port_max"]),
+				_ENV_PORT_MIN, _ENV_PORT_MAX])
+		_:
+			print("[MCPServer] port: scanning %d-%d (default)" % [
+				int(_port_config["port_min"]), int(_port_config["port_max"])])
+
+
+# Fresh listener bind (initial or late, both modes). Announce the port so the
+# composition root (re)publishes the registry entry — this is what keeps a late
+# pinned bind discoverable — and repaint the dock's listen state.
+func _on_transport_bound(port: int) -> void:
+	port_bound.emit(port)
+	port_status_changed.emit()
+
+
+# Listen-conflict state changed in the transport (unbindable ⇄ bound). Re-emit so
+# the dock repaints; the dock also pulls the state on its own refresh, so a missed
+# emit (e.g. during start(), before the dock binds) is still caught.
+func _on_listen_conflict_changed(_port: int, _active: bool) -> void:
+	port_status_changed.emit()
+
+
+## The resolved listen-port source for the dock status label: "pinned" /
+## "band" / "default", or "" when the config failed to resolve.
+func get_port_source() -> String:
+	match str(_port_config.get("source", "")):
+		"env-pin":
+			return "pinned"
+		"env-band":
+			return "band"
+		"default":
+			return "default"
+		_:
+			return ""
+
+
+## The current not-listening warning for the dock: a fatal port-config error, a
+## pinned-port conflict, or a scan-band-exhausted conflict. Returns
+## { "active": bool, "message": String, "label": String } — message is the full
+## warning-panel text, label the concise reason for the status row; active is
+## false when the server bound normally.
+func get_port_warning() -> Dictionary:
+	var config_error := str(_port_config.get("error", ""))
+	if not config_error.is_empty():
+		return {
+			"active": true,
+			"message": "Invalid port config: %s — the MCP editor server did not start. Fix the environment variable and reload the plugin." % config_error,
+			"label": "invalid port config",
+		}
+	if _transport != null and _transport.is_listen_conflict():
+		if _port_config.get("mode", "") == PortConfig.MODE_PINNED:
+			var pinned_port: int = int(_port_config["port"])
+			return {
+				"active": true,
+				"message": "Pinned port: %d not available — the MCP editor server did not bind. Free the port, or change %s (or unset it to use the scanned band)." % [pinned_port, _ENV_PIN],
+				"label": "pinned port %d not available" % pinned_port,
+			}
+		# A lost listen socket is retried on the SAME port only (get_bound_port()
+		# stays set), so range-wide advice would be ineffective — name that port.
+		var lost_port: int = _transport.get_bound_port()
+		if lost_port > 0:
+			return {
+				"active": true,
+				"message": "Port: %d not available — the MCP editor server lost its listen socket and is retrying that port. Free port %d to recover." % [lost_port, lost_port],
+				"label": "port %d not available" % lost_port,
+			}
+		var low: int = int(_port_config.get("port_min", PORT_MIN))
+		var high: int = int(_port_config.get("port_max", PORT_MAX))
+		return {
+			"active": true,
+			"message": "Range of ports: %d-%d not available — the MCP editor server did not bind. Free a port in the range, or move it with %s/%s." % [low, high, _ENV_PORT_MIN, _ENV_PORT_MAX],
+			"label": "ports %d-%d not available" % [low, high],
+		}
+	return {"active": false, "message": "", "label": ""}
 
 
 # Build the mutation watchdog. Its force_clear recovery hook is wired by the mutation

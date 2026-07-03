@@ -274,15 +274,15 @@ after rebuild. If the extension still doesn't appear: verify file name matches
 class name, verify `[Tool]` and `[GlobalClass]` are present, and check that
 the class shows up in `.godot/global_script_class_cache.cfg`.
 
-## Tool groups and profiles
+## Tool groups
 
 Commands registered with `.with_group()` are lazily loaded — they only
 become visible to the LLM after `discover_tools` is called. Commands
 without a group are always visible from startup.
 
-**Profile behavior:**
-- **Standard profile:** grouped tools require `discover_tools` call
-- **Power User profile:** all tools (including grouped) are eagerly loaded
+**Loading behavior:**
+- **Grouped tools:** load on demand — the user (or agent) calls `discover_tools`
+- **Ungrouped tools:** eagerly loaded, visible from startup
 
 Choose whether to use a group based on how specialized the tool is. General
 purpose tools should be ungrouped (always available). Niche tools should be
@@ -484,8 +484,8 @@ nothing runs in a build.
 | C# class missing after build | `dotnet build` done but editor not scanned | Alt-tab to editor or call `extensions.refresh` |
 | "register() not overridden" warning | Wrong method signature | Use exact signature: `registry: MCPToolkitCommandRegistry, server: Node` |
 | Command rejected at load time | Using reserved namespace | Choose a custom namespace (e.g., `mytools.action`) |
-| Grouped tool not visible to LLM | Standard profile requires explicit load | User calls `discover_tools` or switch to Power User profile |
+| Grouped tool not visible to LLM | Grouped tools load on demand | User calls `discover_tools` |
 | Hot-reload not detecting changes | Editor not focused after external edit | Alt-tab to editor or call `extensions.refresh` |
 | New tool not in Claude Code list | Client caches deferred tools | Run `/mcp` reconnect in Claude Code |
-| Grouped tool uncallable after `discover_tools` | `claude -p` (pipe mode) does not process `tools/list_changed` | Use interactive `claude` or Power User profile (`GODOT_MCP_PROFILE=full`) |
+| Grouped tool uncallable after `discover_tools` | `claude -p` (pipe mode) does not process `tools/list_changed` | Use interactive `claude` |
 | Tool returns a blank image or junk data when headless | Needs a rendered viewport, running game, or native UI | Guard with `DisplayServer.get_name() == "headless"` → return `HEADLESS_UNSUPPORTED` |

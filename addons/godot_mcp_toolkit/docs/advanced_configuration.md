@@ -163,6 +163,72 @@ connections under load. Can also be overridden per-connection by the
 > **not** raise the runtime ceiling — page large runtime reads with `save_read`'s
 > `offset` instead.
 
+## Listen ports (editor & runtime)
+
+Two of the toolkit's three MCP channels bind a **dynamic** TCP port. By default
+each **scans** a small band and publishes the bound port to the machine-wide
+registry, so the MCP server discovers it with no configuration. You can instead
+**pin** an exact port or **relocate** the scan band, per channel. These are read
+from the process environment (the `.mcp.json` `env` block, or a shell `export`
+before launch) — the toolkit never writes them.
+
+| Env var | Channel | Effect | Default |
+|---|---|---|---|
+| `GODOT_MCP_EDITOR_PORT` | Editor (Mode A) | **Pin** — bind this exact port or fail | — (scan) |
+| `GODOT_MCP_EDITOR_PORT_MIN` / `_MAX` | Editor (Mode A) | **Relocate** the scan band (inclusive) | `6550` / `6560` |
+| `GODOT_MCP_RUNTIME_PORT` | Runtime (Mode B, in-game) | **Pin** — bind this exact port or fail | — (scan) |
+| `GODOT_MCP_RUNTIME_PORT_MIN` / `_MAX` | Runtime (Mode B) | **Relocate** the scan band (inclusive) | `6570` / `6585` |
+
+The same `GODOT_MCP_EDITOR_PORT` / `GODOT_MCP_RUNTIME_PORT` are **also read by the
+MCP server** to decide which port to **dial** — inherited by both processes, a pin
+makes listen and dial agree with zero discovery. The `_MIN`/`_MAX` band vars are
+**listen-side only** (the server never reads them; discovery covers the scanned
+case). The third channel — the GDScript **LSP** — is Godot's to bind, so it stays
+**connect-pin-only** via the server-side `GODOT_MCP_LSP_PORT` / `GODOT_MCP_LSP_HOST`
+(next section).
+
+### Pinned vs. Scanned — the two modes are exclusive
+
+- **Pinned** (a `*_PORT` pin is set): the listener binds that **exact** port or
+  **fails loudly** — it never scans to a different port. If the port is occupied it
+  retries the same port briefly (to ride out a previous instance still releasing
+  it), then surfaces a **dock warning** (editor) or a loud game-console error
+  (runtime) naming the port. A pin makes the `_MIN`/`_MAX` band **irrelevant** — it
+  is ignored (a one-line note is logged).
+- **Scanned** (no pin): the listener scans the band (default, or `_MIN`/`_MAX` if
+  set), binds the first free port, and publishes it for discovery. This is the
+  **low-friction** default — you don't have to manage env on both sides. If the
+  **whole band** is occupied, the editor shows the same dock warning naming the
+  range and keeps retrying.
+
+A malformed pin, an out-of-range port (valid range `1–65535`), or `MIN > MAX` is a
+**clear error** on the dock + console, never a silent fall-back to the default.
+
+### An environment variable is not a sync channel
+
+The editor process (which **listens**) and the MCP server process (which **dials**)
+read the environment **independently**. A pin only makes them agree if **both**
+processes inherit the **same** value:
+
+- **The normal `.mcp.json` case sets `env` for the server only.** If you also launch
+  the Godot editor from a **desktop shortcut**, that shortcut does **not** inherit a
+  shell's transient `export` (notably on Windows), so the pin reaches the server but
+  not the editor — the server would then dial a port nobody is listening on. It now
+  **fails fast** with a precise message instead of hanging (and the editor dock shows
+  the mismatch), but the real fix is to make both sides inherit the pin.
+- **The supported pattern (harness / parallel tests):** `export` the pin **once**,
+  then launch the editor **and** the MCP server/client as children of that same
+  environment so both inherit it:
+
+  ```bash
+  export GODOT_MCP_EDITOR_PORT=6557
+  godot --editor --path /path/to/project &   # editor inherits the pin (listens on 6557)
+  # …launch the MCP client from the same shell so its server inherits it too (dials 6557)
+  ```
+
+- **Prefer Scanned mode** if you don't want to manage env on both sides — registry
+  discovery keeps the two in agreement automatically.
+
 ## Language server (LSP)
 
 The `lsp_*` tools connect to Godot's built-in GDScript language server. The MCP

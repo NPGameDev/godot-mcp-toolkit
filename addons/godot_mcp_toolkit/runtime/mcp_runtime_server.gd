@@ -30,9 +30,17 @@ const Notifier := preload("res://addons/godot_mcp_toolkit/transport/notifier.gd"
 const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transport.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/scene/signal_pair_resolver.gd")
 const TextInputSynth := preload("res://addons/godot_mcp_toolkit/runtime/text_input_synth.gd")
+# Export-clean (core APIs only) — safe in this runtime autoload's preload closure.
+const PortConfig := preload("res://addons/godot_mcp_toolkit/transport/port_config.gd")
 
-const PORT_BASE := 6570
-const PORT_RANGE := 16  # 6570..6585 inclusive
+# Default runtime (Mode B) scan band (inclusive). GODOT_MCP_RUNTIME_PORT pins an
+# exact port (bind-exact-or-fail); GODOT_MCP_RUNTIME_PORT_MIN/_MAX relocate the
+# band. Resolved by PortConfig; the two modes are mutually exclusive.
+const PORT_MIN := 6570
+const PORT_MAX := 6585  # 6570..6585 inclusive
+const _ENV_PIN := "GODOT_MCP_RUNTIME_PORT"
+const _ENV_PORT_MIN := "GODOT_MCP_RUNTIME_PORT_MIN"
+const _ENV_PORT_MAX := "GODOT_MCP_RUNTIME_PORT_MAX"
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # Throttle re-listen retries. Mirrors mcp_server.gd's editor-side loop.
@@ -87,15 +95,31 @@ func _exit_tree() -> void:
 
 func _start_server() -> void:
 	LogBuffer.setup()
+	var config := PortConfig.resolve(_ENV_PIN, _ENV_PORT_MIN, _ENV_PORT_MAX, PORT_MIN, PORT_MAX)
+	_log_port_config(config)
+	if not str(config.get("error", "")).is_empty():
+		# Fatal config error — Mode B tools disabled this session (logged above).
+		# No transport is built, so stop the per-frame pump too: without this,
+		# _process would deref the null transport every frame.
+		set_process(false)
+		return
 	_transport = WsTransport.new()
+	var pinned: bool = config["mode"] == PortConfig.MODE_PINNED
+	var base: int = int(config["port"]) if pinned else int(config["port_min"])
+	var count: int = 1 if pinned else int(config["port_max"]) - int(config["port_min"]) + 1
 	# await_messages = false: the runtime fire-and-forgets each frame so a coroutine
 	# handler (runtime.screenshot) runs independently of the poll loop, as before.
-	_transport.configure("[MCPRuntimeServer]", PORT_BASE, PORT_RANGE, BIND,
+	# A pinned-but-occupied port is a loud push_error in the game console (captured by
+	# the console tools) — the child game process can't reach the editor dock, so the
+	# transport's push_warning/push_error is the runtime-side surface.
+	_transport.configure("[MCPRuntimeServer]", base, count, BIND,
 		_RELISTEN_FRAME_INTERVAL, _AUTH_TIMEOUT_MS, false,
-		"no free port in %d–%d; Mode B tools disabled this session")
+		"no free port in %d–%d; Mode B tools disabled this session", pinned,
+		"Free the port, or change %s (or unset it to use the scanned band). Mode B tools are disabled this session." % _ENV_PIN)
 	# Runtime seams: only the message router (its command match) and the
 	# bind-publish callback (set_runtime). No auth-ack override ({authed:true}
-	# default) and no per-authed/per-closed side-effects.
+	# default), no per-authed/per-closed side-effects, and no pin-conflict handler
+	# (the transport's own push_error is the loud runtime surface — no dock to reach).
 	_transport.set_handlers(_handle_message, Callable(), Callable(), Callable(),
 		_on_bound)
 	# Runtime uses the same token file as the editor server so the bridge can
@@ -116,6 +140,28 @@ func _start_server() -> void:
 	_transport.ensure_listening()
 
 
+# Log the resolved Mode-B listen-port config at startup (the Q4 runtime-side
+# observability): the port + source, a one-line note when a pin makes the band
+# moot, or a loud push_error on a config error — never a silent default.
+func _log_port_config(config: Dictionary) -> void:
+	var config_error := str(config.get("error", ""))
+	if not config_error.is_empty():
+		push_error("[MCPRuntimeServer] Invalid port config: %s — Mode B tools disabled this session." % config_error)
+		return
+	if bool(config.get("band_ignored", false)):
+		print("[MCPRuntimeServer] note: %s pins an exact port, so the %s/%s band is ignored." % [
+			_ENV_PIN, _ENV_PORT_MIN, _ENV_PORT_MAX])
+	match str(config.get("source", "")):
+		"env-pin":
+			print("[MCPRuntimeServer] port %d (pinned via %s)" % [int(config["port"]), _ENV_PIN])
+		"env-band":
+			print("[MCPRuntimeServer] port: scanning %d-%d (band via %s/%s)" % [
+				int(config["port_min"]), int(config["port_max"]), _ENV_PORT_MIN, _ENV_PORT_MAX])
+		_:
+			print("[MCPRuntimeServer] port: scanning %d-%d (default)" % [
+				int(config["port_min"]), int(config["port_max"])])
+
+
 func _stop_server() -> void:
 	set_process(false)
 	if _transport != null:
@@ -125,14 +171,19 @@ func _stop_server() -> void:
 	RegistryClient.clear_runtime()
 
 
-# Fired by the transport when a fresh port scan binds: publish the port so the
-# bridge can discover Mode B. (The editor server has no equivalent — it publishes
-# via the registry lifecycle in plugin.gd.)
+# Fired by the transport on a fresh bind (initial or late, both modes): publish
+# the port so the bridge can discover Mode B. The editor mirrors this — its
+# fresh-bind seam re-publishes the registry entry via the composition root.
 func _on_bound(port: int) -> void:
 	RegistryClient.set_runtime(port)
 
 
 func _process(_delta: float) -> void:
+	# A config-error start leaves no transport (set_process(false) already stops
+	# this loop); the guard keeps a stray tick a no-op instead of a null deref —
+	# the twin of the editor's null guard in _poll_connections.
+	if _transport == null:
+		return
 	LogBuffer.poll()
 	# Keep the listener up across transient socket loss. Editor / release
 	# gating from _ready prevents _process from running where it shouldn't

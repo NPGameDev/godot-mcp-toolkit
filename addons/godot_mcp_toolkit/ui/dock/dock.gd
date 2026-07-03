@@ -60,6 +60,9 @@ func bind(server: Node, audit_path: String) -> void:
 	# LSP verdict arrives via editor.set_lsp_status (a command, not a dock signal);
 	# refresh exactly when the server sets it, so the label is never stale.
 	_server.lsp_status_changed.connect(_on_lsp_status_changed)
+	# Listen state (fresh bind, pinned/band conflict, port-config error) — repaint
+	# the instant the server's state changes, in addition to the initial pull below.
+	_server.port_status_changed.connect(_on_port_status_changed)
 	_refresh_status()
 
 
@@ -249,6 +252,15 @@ func _on_command_received(method: String) -> void:
 func _on_lsp_status_changed() -> void:
 	if _status_panel != null:
 		_status_panel.refresh_lsp()
+
+
+# Listen-state signal (fresh bind / conflict raised or cleared / config error) —
+# repaint the status panel, which derives the status-row style and the
+# not-listening warning from the server in one pass. Separate handler so bind()
+# can connect before _build_ui exists.
+func _on_port_status_changed() -> void:
+	if _status_panel != null:
+		_status_panel.refresh()
 
 
 # 1s poll — one timer fans out to the runtime label (playtest port discovery /

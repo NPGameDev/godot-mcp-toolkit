@@ -110,8 +110,12 @@ set `GODOT_MCP_PROJECT_PATH` in `.mcp.json`:
 { "env": { "GODOT_MCP_PROJECT_PATH": "/absolute/path/to/godot/project" } }
 ```
 
-**Direct port override** — `GODOT_MCP_PORT` in `.mcp.json` still works and
-bypasses registry discovery entirely (backwards compat).
+**Direct port override** — `GODOT_MCP_EDITOR_PORT` (editor) / `GODOT_MCP_RUNTIME_PORT`
+(runtime) pin a channel and bypass registry discovery. Inherited by **both** the
+editor process and the MCP server, a pin makes listen and dial agree with zero
+discovery (a pinned-but-occupied port fails loudly, never scans elsewhere).
+`GODOT_MCP_EDITOR_PORT_MIN`/`_MAX` (and the `RUNTIME` pair) relocate the scan band
+instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_configuration.md`.
 
 ## Security (iter 18)
 

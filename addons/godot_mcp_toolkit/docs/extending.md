@@ -1025,11 +1025,13 @@ opts.Call("with_success_hint",
   hint parameter for that
 - Don't add hints to every tool — only where the next step isn't obvious
 
-### Profile behavior
+### Loading behavior
 
-Extensions are **profile-exempt** — they register regardless of the active
-profile (Minimal/Standard/Power User/custom). Extensions run with the same
-trust level as the plugin itself (FileGuard, audit logging
+Extensions always load — the toolkit registers them unconditionally at startup
+(and on hot-reload). Whether an extension tool is eager or on-demand for the
+LLM is decided by its group, exactly like a built-in (see *Tool groups*), and
+read-only mode filters extension tools by the same annotation rules. Extensions
+run with the same trust level as the plugin itself (FileGuard, audit logging
 all apply).
 
 ### Distributable extensions

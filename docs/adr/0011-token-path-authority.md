@@ -55,7 +55,7 @@ security gain — and a decoupling's guard must not re-add the coupling it remov
 - **`fs.realpath` symlink resolution** — contradicts 0009's lexical-only, single-user-localhost stance;
   the published path is already canonical, so it adds a syscall for no gain.
 - **Dropping `GODOT_MCP_TOKEN_PATH` server-side** — a documented operator knob in the same trusted tier
-  as `GODOT_MCP_PORT`: both are read from the `.mcp.json` server `env`, applied at launch and on
+  as `GODOT_MCP_EDITOR_PORT`: both are read from the `.mcp.json` server `env`, applied at launch and on
   config-reload. Removing it is a breaking change with no security benefit — and even at that
   reachability a redirected token is DoS-bounded (auth rejects a wrong token), never an escalation.
 

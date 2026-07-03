@@ -17,6 +17,12 @@ extends RefCounted
 
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
+# Pinned mode retries the SAME occupied port this many throttled times (a bounded
+# "grace" that rides out an old instance still releasing it on restart) before
+# logging the precise error. It keeps watching the port afterwards, so a later
+# free still recovers — the bound is only on the loud-log phase, not on recovery.
+const _PIN_GRACE_ATTEMPTS := 5
+
 # Injected by the owning server after construction. The base is mechanical; every
 # decision/side-effect that differs between the editor (Mode A) and the runtime
 # (Mode B) rides one of these seams.
@@ -40,11 +46,19 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 #   Fired the moment a fresh port scan binds (NOT on an idempotent rebind), so a
 #   server can publish the new port (runtime → RegistryClient.set_runtime; editor
 #   → noop). Mirrors where the pre-extraction runtime called set_runtime.
+# _on_listen_conflict: func(port: int, active: bool) -> void
+#   Fired on a listen-conflict STATE CHANGE — the listener tried and failed to bind
+#   anywhere it is allowed to (pinned port occupied, scan band exhausted, or a lost
+#   rebind), or that condition cleared (active=false on a successful bind). port is
+#   the pinned port / band base. The editor routes it to the dock warning + status
+#   label; the runtime leaves it empty (a child game process can't touch the dock)
+#   and relies on the transport's push_warning/push_error in the game console.
 var _on_message: Callable = Callable()
 var _build_auth_ack: Callable = Callable()
 var _on_peer_authed: Callable = Callable()
 var _on_peer_closed: Callable = Callable()
 var _on_bound: Callable = Callable()
+var _on_listen_conflict: Callable = Callable()
 
 # Tagging prefix for the listen/accept warnings, supplied by the owning server so
 # the editor and the runtime keep their distinct console labels.
@@ -72,6 +86,14 @@ var _auth_timeout_ms: int = 2000
 # frame_post_draw) runs independently and the poll loop completes its pass. This
 # matches each server's pre-extraction behaviour exactly.
 var _await_messages: bool = true
+# Pinned mode: bind the exact _port_base or fail — never scan to another port
+# (deterministic multi-instance). A pinned-but-occupied port surfaces immediately
+# and retries the SAME port for the bounded _PIN_GRACE_ATTEMPTS grace. Scanned
+# mode (the default) is unchanged.
+var _pinned: bool = false
+# Server-supplied "how to resolve" tail appended to the precise pinned-conflict
+# error, so the editor and the runtime word the fix for their own env var.
+var _pin_conflict_hint: String = ""
 
 var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
@@ -85,16 +107,29 @@ var _consecutive_failures: int = 0
 # -1 = never bound.
 var _bound_port: int = -1
 var _session_token: String = ""
+# True while the listener has tried and failed to bind anywhere it is allowed to
+# — a pinned port occupied, the scan band exhausted, or a lost rebind. Drives the
+# editor dock warning + status label (via _on_listen_conflict). Cleared on any
+# successful bind.
+var _listen_conflict: bool = false
+# Remaining bounded same-port grace attempts before the precise error is logged.
+var _pin_grace_remaining: int = 0
+# One-shot latch so the precise post-grace error logs once, not on every retry.
+var _pin_error_logged: bool = false
 
 
 ## Configure the listener parameters and the console label. Called once by the
 ## owning server right after construction, before the first pump(). await_messages
 ## selects the dispatch semantics (see the field doc): editor true, runtime false.
 ## exhausted_warning is the server's verbatim port-range-exhausted message (a
-## "%d/%d" format for the low/high port; prefix prepended).
+## "%d/%d" format for the low/high port; prefix prepended). When pinned is true,
+## port_range must be 1 and port_base is the exact pin — the listener binds it or
+## fails (bind-exact-or-fail), never scanning elsewhere; pin_conflict_hint is the
+## server's "how to resolve" tail appended to the precise conflict error.
 func configure(log_prefix: String, port_base: int, port_range: int, bind: String,
 		relisten_frame_interval: int, auth_timeout_ms: int,
-		await_messages: bool, exhausted_warning: String) -> void:
+		await_messages: bool, exhausted_warning: String,
+		pinned: bool = false, pin_conflict_hint: String = "") -> void:
 	_log_prefix = log_prefix
 	_port_base = port_base
 	_port_range = port_range
@@ -103,6 +138,10 @@ func configure(log_prefix: String, port_base: int, port_range: int, bind: String
 	_auth_timeout_ms = auth_timeout_ms
 	_await_messages = await_messages
 	_exhausted_warning = exhausted_warning
+	_pinned = pinned
+	_pin_conflict_hint = pin_conflict_hint
+	if pinned:
+		_pin_grace_remaining = _PIN_GRACE_ATTEMPTS
 
 
 ## Inject the per-server seams (see the field docs above). Called once by the
@@ -111,12 +150,14 @@ func configure(log_prefix: String, port_base: int, port_range: int, bind: String
 ## passes an empty Callable and the base falls back to its mechanical default.
 func set_handlers(on_message: Callable, build_auth_ack: Callable,
 		on_peer_authed: Callable, on_peer_closed: Callable,
-		on_bound: Callable = Callable()) -> void:
+		on_bound: Callable = Callable(),
+		on_listen_conflict: Callable = Callable()) -> void:
 	_on_message = on_message
 	_build_auth_ack = build_auth_ack
 	_on_peer_authed = on_peer_authed
 	_on_peer_closed = on_peer_closed
 	_on_bound = on_bound
+	_on_listen_conflict = on_listen_conflict
 
 
 func set_token(token: String) -> void:
@@ -135,6 +176,18 @@ func is_listening() -> bool:
 
 func get_bound_port() -> int:
 	return _bound_port
+
+
+## True while the listener has tried and failed to bind anywhere it is allowed to
+## (pinned port occupied, scan band exhausted, or a lost rebind). The editor
+## server surfaces this as a dock warning + status-label state.
+func is_listen_conflict() -> bool:
+	return _listen_conflict
+
+
+## The exact port this transport must bind in pinned mode, else -1.
+func get_pinned_port() -> int:
+	return _port_base if _pinned else -1
 
 
 func is_authed(peer: WebSocketPeer) -> bool:
@@ -181,6 +234,13 @@ func pump() -> bool:
 ## next attempt (§10.6 — a TCPServer that failed listen() latches
 ## ERR_ALREADY_IN_USE if reused).
 func ensure_listening() -> void:
+	# Already listening → nothing to ensure. Without this guard a call while live
+	# would stop + re-listen the same socket (listen() on an already-open TCPServer
+	# fails ERR_ALREADY_IN_USE), briefly dropping the listener and flapping the
+	# conflict state. pump() gates on is_listening() so it never hits this; the
+	# guard makes the method safe for ANY caller.
+	if _tcp_server != null and _tcp_server.is_listening():
+		return
 	# Throttle the retry FIRST (matches the pre-extraction _try_listen ordering),
 	# so an armed countdown gates BOTH a re-scan (no port bound yet) and a rebind.
 	# At the initial start() call the countdown is 0, so the first scan is immediate.
@@ -188,7 +248,10 @@ func ensure_listening() -> void:
 		_relisten_countdown -= 1
 		return
 	if _bound_port < 0:
-		_scan_and_listen()
+		if _pinned:
+			_pin_listen()
+		else:
+			_scan_and_listen()
 		return
 	if _tcp_server == null:
 		_tcp_server = TCPServer.new()
@@ -225,26 +288,86 @@ func _scan_and_listen() -> void:
 		_log_prefix, _exhausted_warning % [_port_base, _port_base + _port_range - 1]])
 
 
-# Records a failed listen: bumps the failure count, warns once on the first
-# failure of the streak, drops the dead server (discard-recreate per §10.6), and
-# arms the throttled retry.
+# Pinned mode: bind the exact _port_base or fail — never scans to another port.
+# The first conflict surfaces immediately (dock warning via _on_listen_conflict +
+# a push_warning); the SAME port is retried for a bounded grace — with a fresh
+# TCPServer per attempt, because an instance that failed listen() latches
+# ERR_ALREADY_IN_USE if reused — to ride out a prior instance still releasing it;
+# grace exhausted → one precise push_error; a later success clears the conflict
+# and rebinds. Loud and deterministic — never a silent fallback to a different
+# port, never a silent hang.
+func _pin_listen() -> void:
+	if _tcp_server == null:
+		_tcp_server = TCPServer.new()
+	var error := _tcp_server.listen(_port_base, _bind)
+	if error == OK:
+		_bound_port = _port_base
+		_consecutive_failures = 0
+		_relisten_countdown = 0
+		print("%s listening on %s:%d" % [_log_prefix, _bind, _bound_port])
+		if _on_bound.is_valid():
+			_on_bound.call(_bound_port)
+		if _listen_conflict:
+			print("%s pinned port %d is now free — bound after the conflict cleared" % [
+				_log_prefix, _port_base])
+			_set_listen_conflict(false)
+		_pin_grace_remaining = _PIN_GRACE_ATTEMPTS
+		_pin_error_logged = false
+		return
+	# Occupied (or another bind failure) — drop the failed server so the next
+	# attempt starts from a fresh instance (a reused one keeps failing with the
+	# latched ERR_ALREADY_IN_USE), then arm the throttled retry.
+	_tcp_server.stop()
+	_tcp_server = null
+	if not _listen_conflict:
+		push_warning("%s pinned port %d in use — retrying the same port briefly in case a prior instance is still releasing it" % [
+			_log_prefix, _port_base])
+		_set_listen_conflict(true)
+	if _pin_grace_remaining > 0:
+		_pin_grace_remaining -= 1
+		if _pin_grace_remaining == 0 and not _pin_error_logged:
+			_pin_error_logged = true
+			push_error("%s could not bind pinned port %d — it is still in use. %s" % [
+				_log_prefix, _port_base, _pin_conflict_hint])
+	_relisten_countdown = _relisten_frame_interval
+
+
+# Flip the listen-conflict flag and notify the owner on a state CHANGE only (the
+# editor surfaces/clears the dock warning + status label; the runtime passes no
+# handler). Kept idempotent so repeated failures while the state holds don't
+# re-fire the seam.
+func _set_listen_conflict(active: bool) -> void:
+	if _listen_conflict == active:
+		return
+	_listen_conflict = active
+	if _on_listen_conflict.is_valid():
+		_on_listen_conflict.call(_port_base, active)
+
+
+# Records a failed listen (scan-band exhausted, or a lost rebind): bumps the
+# failure count, warns once on the first failure of the streak, drops the dead
+# server (a TCPServer that failed listen() latches ERR_ALREADY_IN_USE — the next
+# attempt needs a fresh instance), raises the listen-conflict state for the dock,
+# and arms the throttled retry.
 func _note_listen_failure(warning: String) -> void:
 	_consecutive_failures += 1
 	if _consecutive_failures == 1:
 		push_warning(warning)
 	_tcp_server = null
+	_set_listen_conflict(true)
 	_relisten_countdown = _relisten_frame_interval
 
 
-# Records a successful listen: clears the failure streak and the retry latch.
-# When recovering from a prior failure run, logs the recovery (the fresh first-
-# boot scan passes false and skips that line).
+# Records a successful listen: clears the failure streak, the retry latch, and
+# the listen-conflict state. When recovering from a prior failure run, logs the
+# recovery (the fresh first-boot scan passes false and skips that line).
 func _note_listen_success(emit_recovery_log: bool) -> void:
 	if emit_recovery_log and _consecutive_failures > 0:
 		print("%s listening on %s:%d (recovered after %d failed attempts)" % [
 			_log_prefix, _bind, _bound_port, _consecutive_failures])
 	_consecutive_failures = 0
 	_relisten_countdown = 0
+	_set_listen_conflict(false)
 
 
 # -- Accept / poll / cleanup ---------------------------------------------------
@@ -370,3 +493,6 @@ func shutdown_listener() -> void:
 	_relisten_countdown = 0
 	_consecutive_failures = 0
 	_bound_port = -1
+	_set_listen_conflict(false)
+	_pin_grace_remaining = _PIN_GRACE_ATTEMPTS if _pinned else 0
+	_pin_error_logged = false

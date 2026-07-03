@@ -136,6 +136,42 @@ other project's results.
 
 ---
 
+## Deterministic ports for parallel runs (pinning)
+
+Pattern A relies on **auto-scan + registry discovery** to hand each editor a
+distinct port. For a fully **deterministic** parallel setup — e.g. a test harness
+that launches several editors + servers at once and must know each port up front —
+**pin a distinct triple per instance** instead, and `export` it **once** so both the
+editor *and* its MCP server inherit it. (An environment variable is per-process, not
+a sync channel: if only one side gets the pin the two desync — see
+[advanced_configuration.md](advanced_configuration.md).)
+
+Give each instance its own **editor WS**, **runtime WS**, and **LSP** port:
+
+```bash
+# Instance A — export the pins once, then launch editor + client from this shell
+export GODOT_MCP_EDITOR_PORT=6551
+export GODOT_MCP_RUNTIME_PORT=6571
+godot --editor --path ../MyGame-a --lsp-port 6005 &
+# …launch the MCP client for MyGame-a from this same shell; its .mcp.json sets
+#    GODOT_MCP_LSP_PORT=6005, and the server inherits the two WS pins from the export.
+
+# Instance B — a separate shell / environment
+export GODOT_MCP_EDITOR_PORT=6552
+export GODOT_MCP_RUNTIME_PORT=6572
+godot --editor --path ../MyGame-b --lsp-port 6006 &
+# …its .mcp.json sets GODOT_MCP_LSP_PORT=6006
+```
+
+Each instance now binds known, non-colliding ports with **zero registry dependence**
+— no file-lock contention, no discovery race. A pinned-but-occupied port **fails
+loudly** (an editor dock warning + a precise server error) instead of silently
+scanning elsewhere, so a triple collision is visible immediately rather than showing
+up as a mystery cross-talk. Keep using **Pattern A** (separate directories) for the
+project isolation; pinning only makes the ports deterministic on top of it.
+
+---
+
 ## Quick reference
 
 | Pattern | Setup | Status |

@@ -38,8 +38,8 @@ into your project root (same folder as `project.godot`) and rename it to
 `.mcp.json`.
 
 Then `cd` to your project root and run `claude`. `/mcp` should list
-`godot-mcp-toolkit` with the full tool catalogue (52 tools default; pass
-`--lite` in `.mcp.json` args for a 14-tool token-sensitive subset).
+`godot-mcp-toolkit` with the full tool catalogue — a lean set loads eagerly at
+startup and the rest load on demand when Claude Code calls `discover_tools`.
 
 **Cleanup note:** If you delete the `addons/godot_mcp_toolkit/` folder
 without disabling the plugin first, `_disable_plugin()` cannot fire.
@@ -305,8 +305,13 @@ the extension allowlist + size cap provide defence in depth.
 
 ## Port
 
-`127.0.0.1:6550` — localhost-only bind. Override by setting `GODOT_MCP_PORT`
-on the server-side env.
+`127.0.0.1:6550` — localhost-only bind, auto-scanned from the `6550–6560` band.
+To pin an exact editor port, set **`GODOT_MCP_EDITOR_PORT`** (the runtime/Mode-B
+server uses **`GODOT_MCP_RUNTIME_PORT`**); to relocate the scan band instead, set
+`GODOT_MCP_EDITOR_PORT_MIN` / `_MAX` (and the matching `RUNTIME` pair). A pin must
+be set on **both** the editor process and the MCP server env so the two agree —
+see [docs/advanced_configuration.md](docs/advanced_configuration.md) and
+[docs/multi-instance.md](docs/multi-instance.md).
 
 ## Advanced configuration
 

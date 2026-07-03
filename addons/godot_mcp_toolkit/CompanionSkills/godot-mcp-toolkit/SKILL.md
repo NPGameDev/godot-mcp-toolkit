@@ -289,12 +289,14 @@ Events use `event_type` + `event_data`. Common types:
 
 ---
 
-## 4. Profile guidance
+## 4. Tool availability
 
-### Standard (default)
+### Eager + on-demand groups
 
-Base tools are always available. Specialised tools live in on-demand groups
-activated via `discover_tools`. Common groups:
+A lean set of base tools is always available from startup. Specialised tools
+live in on-demand groups activated via `discover_tools` — this keeps the tool
+list small, because a large always-loaded tool count degrades tool-selection
+accuracy in LLM contexts. Common groups:
 
 | Group | Contains |
 |-------|----------|
@@ -308,12 +310,6 @@ activated via `discover_tools`. Common groups:
 | `navigation` | `navigation_configure`, `navigation_bake` |
 
 Call `discover_tools()` with no arguments to see the full catalogue.
-
-### Power User
-
-All tools loaded at startup. Useful when you know exactly what you need.
-**Caution:** The large tool count (~99) can degrade tool-selection accuracy
-in LLM contexts. Standard + `discover_tools` is generally more reliable.
 
 ### Read-only mode
 
@@ -383,8 +379,9 @@ the full script **before** attaching it, or relaunch after an edit.
 
 ### Env var lifecycle
 
-Changes to `GODOT_MCP_PROFILE` require a full MCP client restart.
-Reconnecting alone is not enough.
+Changes to any `GODOT_MCP_*` env var (e.g. `GODOT_MCP_READ_ONLY`,
+`GODOT_MCP_EDITOR_PORT`) require a full MCP client restart — the server reads its
+environment once at launch. Reconnecting alone is not enough.
 
 ### Never screenshot for debugging logic
 
