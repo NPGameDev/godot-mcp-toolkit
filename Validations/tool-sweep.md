@@ -128,8 +128,8 @@ So you do NOT need to split dependent operations across messages.
 | 0 | [00-environment.md](Sections/00-environment.md) | Environment Detection | 7 | project_get_settings, asset_list, discover_tools | None |
 | 1 | [01-scaffolding.md](Sections/01-scaffolding.md) | Scaffolding & Core Files | 10 | folder_create, script_write, resource_write, scene_create, scene_open | S0 |
 | 2 | [02-scene-tree.md](Sections/02-scene-tree.md) | Scene Tree & Node Creation | 19 | scene_create_node, scene_instantiate, scene_get_tree, editor_save_scene | S1 |
-| 3 | [03-node-properties.md](Sections/03-node-properties.md) | Node Properties & Methods | 34 | node_set/get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout | S2 |
-| 4 | [04-node-management.md](Sections/04-node-management.md) | Node Management | 16 | node_manage, node_groups | S2 |
+| 3 | [03-node-properties.md](Sections/03-node-properties.md) | Node Properties & Methods | 35 | node_set/get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout | S2 |
+| 4 | [04-node-management.md](Sections/04-node-management.md) | Node Management | 18 | node_manage, node_groups | S2 |
 | 5 | [05-signals.md](Sections/05-signals.md) | Signals | 7 | signal_list, signal_manage | S2 |
 | 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 8 | script_read, script_write, script_check, asset_list, asset_get_dependencies | S1 |
 | 7 | [07-editor-console.md](Sections/07-editor-console.md) | Editor Operations & Console | 15 | editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh | S2 |

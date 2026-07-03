@@ -10,6 +10,7 @@ const PluginComposer := preload("res://addons/godot_mcp_toolkit/core/plugin_comp
 const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const ToolMenu := preload("res://addons/godot_mcp_toolkit/core/tool_menu.gd")
 const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/disable_cleanup_coordinator.gd")
+const MCPJsonEnablePrompt := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_enable_prompt.gd")
 
 # Mode B — runtime autoload that hosts the game-side WS server on
 # 127.0.0.1:6570. Registered/unregistered via add_autoload_singleton /
@@ -133,6 +134,12 @@ func _enable_plugin() -> void:
 	# entry) and persists to project.godot, which is exactly what the heal needs and
 	# what the game reads at F5. See ADR 0013 / _ensure_autoloads_registered().
 	_ensure_autoloads_registered()
+
+	# Offer to (re)create a missing .mcp.json — on the enable toggle only, never
+	# on project open. The editor adds the plugin to the tree before calling
+	# _enable_plugin, so the composed graph (and its write flow) already exists.
+	if _handle != null:
+		MCPJsonEnablePrompt.show_if_needed(_handle.write_flow())
 
 
 func _disable_plugin() -> void:

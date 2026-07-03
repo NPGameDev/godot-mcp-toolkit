@@ -728,8 +728,10 @@ static func _manage_rename(
 	var new_name := str(parameters.get("new_name", ""))
 	if new_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "rename requires new_name")
-	if node == root:
-		return MCPToolkitError.fail("INVALID_PATH", "cannot rename the scene root")
+	# No root guard: renaming the scene root is valid (the root name is independent
+	# of the scene file name) and node.set_property already renames it via "name" —
+	# the two paths must agree. Reparent/reorder/duplicate keep their root guards:
+	# those ARE structurally invalid for a root.
 
 	var old_name := String(node.name)
 	node.name = new_name

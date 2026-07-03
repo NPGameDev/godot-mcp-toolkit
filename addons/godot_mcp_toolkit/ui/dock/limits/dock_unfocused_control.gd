@@ -8,6 +8,9 @@ extends HBoxContainer
 ## the setting immediately via the bound server (conflict-aware / crash-safe
 ## restore lives server-side — notify_unfocused_responsive_setting_changed());
 ## refresh() repaints the indicator from live server state without rebuilding.
+## Subscribes itself to EditorSettings.settings_changed while in the tree, so a
+## toggle made in the Editor Settings dialog repaints the checkbox + label
+## immediately instead of waiting for the next connect/disconnect.
 
 const _SETTING_KEY := "mcp_toolkit/performance/keep_editor_responsive_unfocused"
 
@@ -37,6 +40,29 @@ func _init(server: Node) -> void:
 	_state_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_state_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	add_child(_state_label)
+
+
+func _enter_tree() -> void:
+	# Live-sync with Editor Settings: an external toggle (the Editor Settings
+	# dialog) never routes through this control, so subscribe and repaint. The
+	# signal is keyless — no per-key filter exists — and refresh() is cheap and
+	# idempotent, so repainting on every settings change is fine. No feedback
+	# loop: _on_toggled writes the setting, the resulting signal re-calls
+	# refresh(), which re-reads the same value and repaints identically.
+	var es := EditorInterface.get_editor_settings()
+	if es != null and not es.settings_changed.is_connected(refresh):
+		es.settings_changed.connect(refresh)
+	# Initial paint — _init builds the label with no text, so without this the
+	# indicator stays blank (or stale) until the first connect/disconnect.
+	refresh()
+
+
+func _exit_tree() -> void:
+	# The EditorSettings singleton outlives this control — an undisconnected
+	# callback would go zombie after the dock is freed.
+	var es := EditorInterface.get_editor_settings()
+	if es != null and es.settings_changed.is_connected(refresh):
+		es.settings_changed.disconnect(refresh)
 
 
 func _on_toggled(enabled: bool) -> void:

@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in Sv2Main.tscn)
 **Tools tested:** node_manage (rename, reparent, reorder, duplicate), node_groups
-**Tests:** 16
+**Tests:** 18
 
 ---
 
@@ -78,6 +78,17 @@
 > the site-2 shape — `failed`/`hint` must NOT appear when every entry succeeded. If
 > either shows up on an all-success `node_groups` batch, the `failed > 0` gate
 > regressed. Flag as **Major**.
+
+**4.17** `node_manage` (rename the scene ROOT — relaxed guard) — action=`rename`, node_path=`.`, new_name=`Sv2MainRenamed`
+- **Expect:** success with `new_path` = `.` — the root-rename guard was relaxed (renaming the root is valid: the root name is independent of the scene file name, and `node_set_property` already renamed it via `name` — see 3.29; the two paths agree). The rename is recorded for undo like any node (Edit→Undo restores — same recording as UR2). Reparent, reorder, and duplicate on the root still reject with INVALID_PATH (structurally invalid; pinned by the headless unit suite).
+
+> **REGRESSION WATCH (41n-undecies Part H):** If this returns INVALID_PATH
+> "cannot rename the scene root", the rename root-guard relax has regressed.
+> Conversely, if reparent/reorder/duplicate on `.` ever SUCCEED, the kept
+> structural guards regressed. Flag as **Major** either way.
+
+**4.18** Verify + restore — `scene_get_tree`, then `node_manage` action=`rename`, node_path=`.`, new_name=`Sv2Main`
+- **Expect:** tree root shows `Sv2MainRenamed`, then the rename back succeeds — root restored to `Sv2Main` (later sections depend on that name).
 
 ---
 

@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in Sv2Main.tscn)
 **Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout
-**Tests:** 34
+**Tests:** 35
 
 ---
 
@@ -179,6 +179,10 @@
 
 **3.28** `control_set_layout` guard (wrong node type) — node_path=`Sv2Sprite`, preset=`PRESET_FULL_RECT`
 - **Expect:** error (INVALID_CLASS or similar — Sprite2D is not a Control)
+
+**3.29** `node_set_property` (rename the scene ROOT via the `name` property) — node_path=`.`, property=`name`, value=`"Sv2MainPropRenamed"`
+- **Expect:** success — `name` is an ordinary settable property, root included; the root can be renamed both here and via `node_manage` rename (4.17 — the two paths agree since the manage root-guard relax).
+- Restore: `node_set_property` node_path=`.`, property=`name`, value=`"Sv2Main"` (later sections depend on the root name).
 
 ---
 

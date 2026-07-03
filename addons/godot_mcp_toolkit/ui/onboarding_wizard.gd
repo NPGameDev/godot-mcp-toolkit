@@ -31,7 +31,7 @@ func _init(
 
 
 func check_and_show() -> void:
-	if FileAccess.file_exists(_ONBOARDING_FLAG):
+	if is_onboarding_complete():
 		return
 
 	# Resume from saved progress (e.g. after restart during wizard).
@@ -253,6 +253,14 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 
 
 # -- Persistence --------------------------------------------------------------
+
+
+## True once onboarding has finished (the wizard was completed or dismissed).
+## The one shared query on the completion flag: check_and_show() gates on it,
+## and the enable-time .mcp.json prompt suppresses itself while onboarding is
+## still pending (the wizard's own .mcp.json step owns the file then).
+static func is_onboarding_complete() -> bool:
+	return FileAccess.file_exists(_ONBOARDING_FLAG)
 
 
 ## Re-create the onboarding completion flag at the new user:// path after a
