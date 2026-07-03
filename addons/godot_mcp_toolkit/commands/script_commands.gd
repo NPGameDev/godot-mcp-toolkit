@@ -239,6 +239,12 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 ## DO NOT use ResourceLoader.load() with CACHE_MODE_IGNORE here:
 ## it corrupts already-loaded scripts on ALL Godot versions (P-056).
 ## Shared by script_write (inline diagnostics) and script_check.
+##
+## Diagnostics carry only real fields: the error entry gains "line" (the actual
+## parse/compile error line) when the 4.5+ Logger capture recovered it from the
+## reload error; on 4.2-4.4 (file-tail capture — no structured line) the key is
+## omitted, never a fabricated 0. "col" is never emitted — columns are
+## lsp_diagnostics' domain.
 static func _validate_gdscript(source: String) -> Dictionary:
 	# Strip class_name to prevent false-positive conflict (P-053).
 	# GDScript.new().reload() registers a second copy of the name, colliding
@@ -259,17 +265,26 @@ static func _validate_gdscript(source: String) -> Dictionary:
 
 	var diagnostics: Array = []
 	if not is_valid:
-		diagnostics.append({
-			"line": 0,
+		var error_diagnostic := {
 			"severity": "error",
 			"message": _compile_error_message(Modules.VersionUtils.get_engine_version_pair()),
-		})
+		}
+		# The real error line, recovered from the Logger capture of the reload
+		# error this call just triggered (an in-memory script reports under a
+		# synthetic "gdscript://…" path, so the latch match is ours — the
+		# snapshot-to-scan window runs synchronously on the main thread). -1
+		# (nothing recovered — 4.2-4.4, or a failed Logger hook) omits the key.
+		var real_line: int = Modules.LogBuffer.find_script_error_line_since(pre_id)
+		if real_line > 0:
+			error_diagnostic["line"] = real_line
+		diagnostics.append(error_diagnostic)
 		# Scan reload errors for unresolved identifiers that match autoloads.
+		# Hint entries carry no line — the hint is about an identifier, not a
+		# source position.
 		var hints := _check_autoload_hints(pre_id)
 		hints.append_array(_check_preload_hints(pre_id))
 		for hint in hints:
 			diagnostics.append({
-				"line": 0,
 				"severity": "hint",
 				"message": hint,
 			})

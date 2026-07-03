@@ -21,12 +21,20 @@ const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.
 
 const _CAPACITY := 500
 const _POLL_INTERVAL_MS := 200
+const _SCRIPT_ERROR_LATCH_CAPACITY := 16
 
 # -- Shared state (Mutex-protected) ------------------------------------------
 
 static var _mutex: Mutex = Mutex.new()
 static var _entries: Array = []
 static var _next_id: int = 0
+# Structured {id, file, line} locations of captured SCRIPT errors (Logger
+# error_type 2), latched beside their console entries. A separate side-channel
+# on purpose: console entries keep their {id, timestamp_unix, level, message}
+# wire shape, while script_check recovers the real parse line of a reload it
+# just ran. Only the 4.5+ Logger fills it — the 4.2-4.4 file tail has no
+# structured line data.
+static var _script_error_locations: Array = []
 
 # -- Strategy tracking --------------------------------------------------------
 
@@ -74,6 +82,48 @@ static func setup() -> void:
 ## Called by Logger callbacks (4.5+) or file tailer (4.2-4.4).
 static func push(level: String, message: String) -> void:
 	_mutex.lock()
+	_append_entry_unlocked(level, message)
+	_mutex.unlock()
+
+
+## Push a SCRIPT error (Logger error_type 2): the console entry plus its
+## structured {id, file, line} location latch, atomically — the latch id is
+## exactly the entry's id, so since-cursor correlation can never misattribute.
+## Thread-safe. The console entry shape is identical to [method push].
+static func push_script_error(level: String, message: String, file: String, line: int) -> void:
+	_mutex.lock()
+	var entry_id := _append_entry_unlocked(level, message)
+	_script_error_locations.append({"id": entry_id, "file": file, "line": line})
+	if _script_error_locations.size() > _SCRIPT_ERROR_LATCH_CAPACITY:
+		_script_error_locations.pop_front()
+	_mutex.unlock()
+
+
+## Line of the first in-memory script error captured after [param since_id],
+## or -1 when none was.
+##
+## Serves script_check's reload validation: a GDScript built from source (no
+## disk path) reports under a synthetic "gdscript://…" path ("built-in" on
+## engines predating that scheme), so matching that shape picks the caller's
+## own just-triggered reload error and never a threaded editor-scan error on a
+## res:// script that lands in the same window. Returns -1 on 4.2-4.4 (the
+## file tail latches nothing) — callers omit their line field then.
+static func find_script_error_line_since(since_id: int) -> int:
+	_mutex.lock()
+	var found := -1
+	for location in _script_error_locations:
+		if int(location["id"]) <= since_id:
+			continue
+		var file := str(location["file"])
+		if file == "built-in" or file.begins_with("gdscript://"):
+			found = int(location["line"])
+			break
+	_mutex.unlock()
+	return found
+
+
+# Appends one entry and returns its id. Caller must hold _mutex.
+static func _append_entry_unlocked(level: String, message: String) -> int:
 	var entry := {
 		"id": _next_id,
 		"timestamp_unix": int(Time.get_unix_time_from_system()),
@@ -84,7 +134,7 @@ static func push(level: String, message: String) -> void:
 	if _entries.size() >= _CAPACITY:
 		_entries.pop_front()
 	_entries.append(entry)
-	_mutex.unlock()
+	return int(entry["id"])
 
 
 ## Read entries from the buffer. Calls poll() first to ensure freshness.
@@ -138,10 +188,11 @@ static func get_cursor() -> int:
 	return cursor
 
 
-## Reset the buffer.
+## Reset the buffer (script-error location latch included — its ids reset too).
 static func clear() -> void:
 	_mutex.lock()
 	_entries.clear()
+	_script_error_locations.clear()
 	_next_id = 0
 	_mutex.unlock()
 
@@ -253,7 +304,14 @@ func _log_error(function_name: String, file_path: String, line: int,
 	# preserving. The 4.7+ flag (set at setup from the engine version) enables the location
 	# line; see compose_error_message.
 	var append_location: bool = bool(get_meta("_append_error_location", false)) and error_type == 2
-	buf.push(level, buf.compose_error_message(prefix, code, rationale, function_name, file_path, line, append_location))
+	var composed: String = buf.compose_error_message(prefix, code, rationale, function_name, file_path, line, append_location)
+	if error_type == 2:
+		# Script errors also latch their structured {file, line}: the composed
+		# message drops both for in-memory scripts, and script_check needs the
+		# real parse line of a reload it just ran.
+		buf.push_script_error(level, composed, file_path, line)
+	else:
+		buf.push(level, composed)
 '
 
 

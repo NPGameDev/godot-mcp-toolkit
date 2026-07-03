@@ -1,8 +1,9 @@
 @tool
 extends RefCounted
 ## Cross-version / paths / editor-lifecycle pure-logic unit tests: compile-error
-## message (version-aware), node.set_property groups rejection, UserPathMonitor
-## change detection, editor.refresh reload filter, unfocused-sleep backup, and the
+## message (version-aware), script_check line emission (capability-gated),
+## node.set_property groups rejection, UserPathMonitor change detection,
+## editor.refresh reload filter, unfocused-sleep backup, and the
 ## stale-live-instance hint. Exercises the versioning/ + paths/ + editor-lifecycle
 ## pure logic.
 
@@ -13,10 +14,12 @@ const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/paths/user_path
 const EditorRescan := preload("res://addons/godot_mcp_toolkit/commands/editor/editor_rescan.gd")
 const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/core/unfocused_backup.gd")
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
 
 static func run(testing) -> void:
 	_test_compile_error_message(testing)
+	_test_validate_gdscript_line_emission(testing)
 	_test_groups_property_rejection(testing)
 	_test_user_path_monitor(testing)
 	_test_editor_refresh_reload_filter(testing)
@@ -45,6 +48,54 @@ static func _test_compile_error_message(testing) -> void:
 		var msg: String = ScriptCommands._compile_error_message(ver)
 		testing.ok(msg.contains("editor_get_console") and not msg.contains("lsp_diagnostics"),
 			"%s → directs to editor_get_console, not lsp (4.5+ Logger captures parse errors)" % ver)
+
+
+# --- script_check line emission (capability-gated) -------------------------
+# _validate_gdscript emits only real fields: the error diagnostic carries "line"
+# (the actual parse-error line, recovered from the Logger capture's structured
+# script-error latch) exactly when the 4.5+ Logger capture is live; on the
+# 4.2-4.4 file tail the key is omitted — never a fabricated 0. "col" is never
+# emitted on any version (columns are lsp_diagnostics' domain). The gate is
+# asserted by capability (LogBuffer.uses_logger_api()), so the same test run on
+# the 4.2-4.7 CI floor matrix pins BOTH branches on their native engines.
+
+static func _test_validate_gdscript_line_emission(testing) -> void:
+	testing.begin("script_check line emission (capability-gated)")
+	LogBuffer.setup()
+
+	var valid_result := ScriptCommands._validate_gdscript(
+		"extends Node\nfunc fine() -> int:\n\treturn 1\n")
+	testing.ok(bool(valid_result.get("valid", false)), "valid source → valid true")
+	testing.eq((valid_result.get("diagnostics", []) as Array).size(), 0,
+			"valid source → no diagnostics")
+
+	# Garbage token at line 6; class_name on line 1 exercises the conflict
+	# blanking (the line is blanked, not removed — offsets must hold).
+	var bad_source := "class_name UnitProbeBad77\nextends Node\n\nvar x := 1\n\n!!!garbage!!!\n"
+	var bad_result := ScriptCommands._validate_gdscript(bad_source)
+	testing.ok(not bool(bad_result.get("valid", true)), "bad source → valid false")
+	var diagnostics: Array = bad_result.get("diagnostics", [])
+	testing.ok(diagnostics.size() >= 1, "bad source → error diagnostic present")
+	for diagnostic in diagnostics:
+		testing.ok(not (diagnostic as Dictionary).has("col"),
+				"no diagnostic ever carries 'col'")
+	var error_diagnostic: Dictionary = diagnostics[0]
+	testing.eq(str(error_diagnostic.get("severity", "")), "error",
+			"first diagnostic is the error entry")
+	if LogBuffer.uses_logger_api():
+		testing.ok(error_diagnostic.has("line"), "Logger capture live → real line present")
+		testing.eq(int(error_diagnostic.get("line", -1)), 6,
+				"line is the REAL parse line (class_name blanking keeps offsets)")
+	else:
+		testing.ok(not error_diagnostic.has("line"),
+				"file-tail capture → line omitted (never a fabricated 0)")
+
+	# The latch respects the since-cursor: a snapshot taken after the error
+	# resolves nothing (also the constant no-capture answer on 4.2-4.4).
+	var post_cursor: int = LogBuffer.get_cursor() - 1
+	testing.eq(LogBuffer.find_script_error_line_since(post_cursor), -1,
+			"since-cursor after the error → -1")
+	print("")
 
 
 # --- node.set_property "groups" rejection ----------------------------------
