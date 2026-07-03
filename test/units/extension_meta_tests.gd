@@ -143,8 +143,8 @@ static func _test_extension_support(testing) -> void:
 # lock the exact text-presence, ok-labels, and button (label, action) lists per
 # step — including BOTH .mcp.json variants — so the DRY refactor can't silently
 # drift the user-visible wizard. The builders are pure (no dialog, no editor):
-# constructed with null plugin/dock, the specs build without an editor and the
-# step-2 on_enter (which would touch the dock) is never invoked here.
+# constructed with null collaborators, the specs build without an editor and the
+# step-2 on_enter (which would reveal the dock) is never invoked here.
 
 static func _assert_buttons(testing, buttons: Array, expected: Array, label: String) -> void:
 	# expected is [[label, action], ...] in order. Asserts count then each entry.
@@ -160,7 +160,7 @@ static func _assert_buttons(testing, buttons: Array, expected: Array, label: Str
 
 static func _test_onboarding_wizard_specs(testing) -> void:
 	testing.begin("Onboarding wizard step specs")
-	var wizard := OnboardingWizard.new(null, null)
+	var wizard := OnboardingWizard.new(null, null, null, null)
 
 	# Step 0 — welcome: non-empty text, "Next", single Security-Doc button.
 	var welcome_spec: Dictionary = wizard._spec_welcome()

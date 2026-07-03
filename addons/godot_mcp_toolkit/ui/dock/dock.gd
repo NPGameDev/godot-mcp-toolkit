@@ -8,8 +8,8 @@ extends VBoxContainer
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const NodejsCheck = Modules.NodejsCheck
-const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog_dialog.gd")
-const InfoDialog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/info_dialog.gd")
+const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_section_card.gd")
 const DockStatusPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/status/dock_status_panel.gd")
 const DockLimitsSection := preload("res://addons/godot_mcp_toolkit/ui/dock/limits/dock_limits_section.gd")
@@ -41,19 +41,24 @@ var _audit_section: DockAuditSection = null
 # Node.js warning.
 var _nodejs_status_warning: Label = null
 
-# Info/Help dialog (populated on demand).
-var _info_dialog: InfoDialog = null
-
-# Extension catalog dialog (populated on demand).
-var _catalog_dialog: Window = null
+# Injected cross-cutting collaborators (composer-owned): the shared .mcp.json
+# write flow and the editor-global dialog presenter. The dock CONSUMES them —
+# footer buttons + the .mcp.json panel — exactly like the Tools menu and the
+# onboarding wizard do; it never owns these behaviors.
+var _write_flow: MCPJsonWriteFlow = null
+var _dialog_presenter: ToolkitDialogPresenter = null
 
 # Lightweight timer for runtime-status polling during playtests.
 var _runtime_timer: Timer = null
 
 
-func bind(server: Node, audit_path: String) -> void:
+func bind(
+		server: Node, audit_path: String,
+		write_flow: MCPJsonWriteFlow, dialog_presenter: ToolkitDialogPresenter) -> void:
 	_server = server
 	_audit_path = audit_path
+	_write_flow = write_flow
+	_dialog_presenter = dialog_presenter
 	_server.client_connected.connect(_on_client_connected)
 	_server.client_disconnected.connect(_on_client_disconnected)
 	_server.command_received.connect(_on_command_received)
@@ -79,20 +84,6 @@ func _ready() -> void:
 	_runtime_timer.timeout.connect(_on_runtime_timer_timeout)
 	add_child(_runtime_timer)
 	_runtime_timer.start()
-
-
-func _exit_tree() -> void:
-	# The audit-log viewer is owned + freed by _audit_section (its own _exit_tree).
-	# These two dialogs are base-control children the dock owns directly. Free them
-	# immediately (not queue_free) so their reference chains are released before
-	# ObjectDB's exit-time leak check runs — _exit_tree runs inside the dock's own
-	# immediate free() (plugin_composer dispose()), and a deferred free at process
-	# exit may not flush before the RenderingServer/ObjectDB leak check (§10.5).
-	for dialog in [_info_dialog, _catalog_dialog]:
-		if dialog != null and is_instance_valid(dialog):
-			dialog.free()
-	_info_dialog = null
-	_catalog_dialog = null
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +114,7 @@ func _build_ui() -> void:
 	# the runtime label) — placement is the status panel's, behavior stays here.
 	var mcp_json_btn := Button.new()
 	mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_mcp_json_panel = DockMcpJsonPanel.new(mcp_json_btn, Callable(self, "_toast"))
+	_mcp_json_panel = DockMcpJsonPanel.new(mcp_json_btn, Callable(self, "_toast"), _write_flow)
 	_status_panel.insert_warning_panel(_mcp_json_panel)
 
 	# Node.js availability — shared detection.
@@ -192,7 +183,7 @@ func _build_ui() -> void:
 	var extensions_btn := Button.new()
 	extensions_btn.text = "Extensions"
 	extensions_btn.tooltip_text = "Browse MCP Toolkit extensions"
-	extensions_btn.pressed.connect(show_extension_catalog)
+	extensions_btn.pressed.connect(_on_extensions_pressed)
 	extensions_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(extensions_btn)
 
@@ -202,7 +193,7 @@ func _build_ui() -> void:
 
 	var info_btn := Button.new()
 	info_btn.text = "Info / Help"
-	info_btn.pressed.connect(show_info_dialog)
+	info_btn.pressed.connect(_on_info_pressed)
 	info_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer_row.add_child(info_btn)
 
@@ -309,18 +300,6 @@ func _on_regen_token() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Write .mcp.json (public — also called from the Tools menu + onboarding wizard)
-# ---------------------------------------------------------------------------
-
-# Thin delegator — the write flow (overwrite-confirm + result toast + read-only
-# re-sync) lives in _mcp_json_panel. Kept public so tool_menu.gd and
-# onboarding_wizard.gd can still trigger a write via the dock.
-func write_mcp_json(force_overwrite: bool = false) -> void:
-	if _mcp_json_panel != null:
-		_mcp_json_panel.write_mcp_json(force_overwrite)
-
-
-# ---------------------------------------------------------------------------
 # Companion Skills
 # ---------------------------------------------------------------------------
 
@@ -331,26 +310,17 @@ func _open_companion_skills() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Extension Catalog
+# Footer dialogs — thin consumers of the injected dialog presenter
 # ---------------------------------------------------------------------------
 
-
-func show_extension_catalog() -> void:
-	if _catalog_dialog == null or not is_instance_valid(_catalog_dialog):
-		_catalog_dialog = ExtensionCatalogDialog.new()
-		EditorInterface.get_base_control().add_child(_catalog_dialog)
-	_catalog_dialog.show_catalog()
+func _on_extensions_pressed() -> void:
+	if _dialog_presenter != null:
+		_dialog_presenter.show_extension_catalog()
 
 
-# ---------------------------------------------------------------------------
-# Info / Help popup
-# ---------------------------------------------------------------------------
-
-func show_info_dialog() -> void:
-	if _info_dialog == null or not is_instance_valid(_info_dialog):
-		_info_dialog = InfoDialog.new()
-		EditorInterface.get_base_control().add_child(_info_dialog)
-	_info_dialog.show_info(_server)
+func _on_info_pressed() -> void:
+	if _dialog_presenter != null:
+		_dialog_presenter.show_info(_server)
 
 
 # ---------------------------------------------------------------------------

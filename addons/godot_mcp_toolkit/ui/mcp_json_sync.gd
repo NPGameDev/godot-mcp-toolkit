@@ -10,9 +10,10 @@ extends RefCounted
 ## .mcp.json").
 ##
 ## UI-free by design: the write reports its outcome through an injected
-## on_result Callable so the overwrite-confirmation dialog and the toasts
-## stay in the dock (the editor-UI owner); this repository touches only
-## the file and never reaches EditorInterface / a dialog / a toast.
+## on_result Callable so the overwrite-confirmation dialog stays in the
+## shared write flow and the feedback (toast) stays with each caller; this
+## repository touches only the file and never reaches EditorInterface /
+## a dialog / a toast.
 
 # Bundled source the plugin-initiated write copies from.
 const _TEMPLATE_PATH := "res://addons/godot_mcp_toolkit/.mcp.json.template"
@@ -99,22 +100,22 @@ static func is_malformed() -> bool:
 
 
 ## True iff a .mcp.json already exists at the project root, so a write would
-## overwrite it. The dock uses this to decide whether to show its overwrite
-## confirmation dialog before calling write_from_template().
+## overwrite it. The shared write flow uses this to decide whether to show the
+## overwrite confirmation dialog before calling write_from_template().
 static func needs_overwrite_confirm() -> bool:
 	return FileAccess.file_exists(get_mcp_json_path())
 
 
 ## Write .mcp.json from the bundled template, reporting the outcome through
-## on_result so the UI (toast) stays dock-side. on_result is called once with:
+## on_result so the UI (toast) stays caller-side. on_result is called once with:
 ##   (ok: bool, message: String, severity: int, tooltip: String)
-## — severity matches the dock's _TOAST_* scale (0 info / 1 warning / 2 error);
-## the dock forwards all four straight to its _toast(). Behaviour mirrors the
-## former dock writer exactly: missing template -> error toast; existing file
-## with force_overwrite == false -> a "needs confirm" report (defensive — the
-## dock normally pre-checks via needs_overwrite_confirm()); otherwise copy the
-## template and report success (info, with the destination as the tooltip) or
-## the open failure (error). UI-free: no dialog, no EditorInterface, no _toast.
+## — severity is the editor-toast scale (0 info / 1 warning / 2 error), which
+## callers forward straight to their toast. Missing template -> error report;
+## existing file with force_overwrite == false -> a "needs confirm" report
+## (defensive — the shared write flow pre-checks via needs_overwrite_confirm());
+## otherwise copy the template and report success (info, with the destination as
+## the tooltip) or the open failure (error). UI-free: no dialog, no
+## EditorInterface, no toast.
 static func write_from_template(force_overwrite: bool, on_result: Callable) -> void:
 	if not FileAccess.file_exists(_TEMPLATE_PATH):
 		on_result.call(false, "Template not found: " + _TEMPLATE_PATH, 2, "")

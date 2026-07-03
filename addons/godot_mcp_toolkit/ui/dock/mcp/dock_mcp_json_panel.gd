@@ -5,12 +5,13 @@ extends PanelContainer
 ##
 ## A dock sub-panel. Constructed and owned by dock.gd; this PanelContainer IS the
 ## shared warning panel and is added into the dock's status card (so the editor
-## frees it with the dock). It owns the whole .mcp.json UX cluster: the warning
+## frees it with the dock). It owns the dock's .mcp.json UX cluster: the warning
 ## panel + label (built once here), the tri-mode footer button (built by the
 ## footer and injected, so the footer owns placement while this panel owns the
-## button's meaning), the server-synced read-only cache, the write_from_template
-## flow (incl. the overwrite-confirm whose Cancel is repurposed to "Open .mcp.json"
-## and the malformed-file "Fix"), and the periodic file-validity poll.
+## button's meaning), the server-synced read-only cache, and the periodic
+## file-validity poll. Writes delegate to the injected shared write flow (which
+## owns the overwrite-confirm and its "Open .mcp.json" recovery); this panel
+## keeps only its result sink (toast + read-only re-sync).
 ##
 ## Two refresh triggers, deliberately distinct (preserves 68fb6eb's model):
 ##   * file VALIDITY/presence is a live FACT — refreshed by the dock's 1s timer
@@ -25,7 +26,7 @@ extends PanelContainer
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const MCPJsonSync = Modules.MCPJsonSync
-const DockConfirm := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_confirm.gd")
+const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 
 # Toast severity constants (match EditorToaster.Severity / the dock's _TOAST_*).
 const _TOAST_INFO := 0
@@ -39,6 +40,10 @@ var _mcp_json_btn: Button = null
 # decoupled from the editor toaster the dock owns.
 var _toast: Callable = Callable()
 
+# Shared confirm-then-write flow — injected (composer-owned) so the panel consumes
+# the same flow as the Tools menu and onboarding wizard instead of owning it.
+var _write_flow: MCPJsonWriteFlow = null
+
 # The warning label inside this panel (this PanelContainer is the warning panel).
 var _warning_label: Label = null
 
@@ -49,9 +54,10 @@ var _warning_label: Label = null
 var _read_only_active: bool = false
 
 
-func _init(mcp_json_button: Button, toast: Callable) -> void:
+func _init(mcp_json_button: Button, toast: Callable, write_flow: MCPJsonWriteFlow) -> void:
 	_mcp_json_btn = mcp_json_button
 	_toast = toast
+	_write_flow = write_flow
 
 	# This PanelContainer is the shared warning panel — style + label built once;
 	# text/visibility are mutated per-state by refresh()/sync_read_only_state().
@@ -138,64 +144,29 @@ func sync_read_only_state() -> void:
 
 
 # ---------------------------------------------------------------------------
-# Tri-mode button action + write flow
+# Tri-mode button action (writes delegate to the shared write flow)
 # ---------------------------------------------------------------------------
 
 
 # Tri-mode footer button (label set by refresh()):
 #   * present + valid   -> "Open"  : open .mcp.json in the system editor.
-#   * missing           -> "Write" : write_mcp_json() — a direct write (no file to
-#                                    overwrite, so no confirm).
-#   * present + invalid -> "Fix"   : write_mcp_json() — the file EXISTS, so the
-#                                    existing overwrite-confirm fires before
+#   * missing           -> "Write" : shared write flow — a direct write (no file
+#                                    to overwrite, so no confirm).
+#   * present + invalid -> "Fix"   : shared write flow — the file EXISTS, so the
+#                                    flow's overwrite-confirm fires before
 #                                    replacing it with a clean template; a malformed
 #                                    file is never silently clobbered (Cancel keeps
-#                                    it for a manual fix). Same tested write flow.
+#                                    it for a manual fix).
 # Re-checks state on press, so the action is always correct even if the label is
 # momentarily stale.
 func on_button_pressed() -> void:
 	if MCPJsonSync.has_mcp_json() and not MCPJsonSync.is_malformed():
 		OS.shell_open(MCPJsonSync.get_mcp_json_path())
-	else:
-		write_mcp_json()
+	elif _write_flow != null:
+		_write_flow.write(false, _on_mcp_json_write_result)
 
 
-## Write .mcp.json from the bundled template; shows the overwrite-confirm dialog
-## first if a file already exists. Public because the Tools-menu + onboarding
-## wizard call dock.write_mcp_json(), which delegates here (cross-file contract).
-func write_mcp_json(force_overwrite: bool = false) -> void:
-	# UI (the overwrite-confirm dialog + the result toast) stays here; the file
-	# I/O lives in the MCPJsonSync repository. When overwriting an existing file
-	# and not already forced, confirm first, then write on confirmation.
-	if not force_overwrite and MCPJsonSync.needs_overwrite_confirm():
-		var dest := MCPJsonSync.get_mcp_json_path()
-		# Bind the result sink to this panel HERE (in the method body, where `self`
-		# is live) and capture the local in the confirm lambda. A bare
-		# `_on_mcp_json_write_result` *inside* the lambda compiles to a `self`-based
-		# member lookup, but a lambda that references only a member FUNCTION is not
-		# marked use-self on Godot 4.2 (fixed in 4.3) — so its `self` is Nil and the
-		# lookup throws "Invalid get index … on base 'Nil'" on every confirm.
-		# Capturing a pre-bound Callable local sidesteps the unbound-`self` lookup.
-		var write_result := Callable(self, "_on_mcp_json_write_result")
-		# "Cancel" is repurposed as "Open .mcp.json": declining the overwrite opens
-		# the file so the user can edit it (fix a malformed file, or inspect a valid
-		# one) rather than lose it. Esc/✕ route through the same path — the intended
-		# "don't overwrite, let me look at it" recovery.
-		DockConfirm.confirm(
-			".mcp.json already exists",
-			"Overwrite .mcp.json with a clean template?\n\n" + dest
-				+ "\n\nThis replaces your current content — choose \"Open .mcp.json\" instead to edit the file yourself.",
-			"Overwrite",
-			func() -> void: MCPJsonSync.write_from_template(true, write_result),
-			"Open .mcp.json",
-			func() -> void: OS.shell_open(dest),
-		)
-		return
-
-	MCPJsonSync.write_from_template(force_overwrite, _on_mcp_json_write_result)
-
-
-# Result sink for MCPJsonSync.write_from_template — maps the repository's
+# Result sink this panel supplies to the shared write flow — maps the
 # (ok, message, severity, tooltip) report straight onto a toast. `severity`
 # already matches the _TOAST_* scale (0 info / 1 warning / 2 error). On success
 # (e.g. a dock write of a missing file), re-sync the read-only + button state now

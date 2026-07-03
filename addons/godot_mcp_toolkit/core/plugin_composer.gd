@@ -5,7 +5,8 @@ extends RefCounted
 ##
 ## compose() builds the whole object graph (registry, server, debug bridge,
 ## command registrar, extensions, export plugin, log buffer, user-path monitor,
-## registry registration, playtest watcher, dock) and returns the owning Handle.
+## registry registration, playtest watcher, write flow + dialog presenter, dock)
+## and returns the owning Handle.
 ## The orchestrator (plugin.gd) calls compose() once from _enter_tree, holds the
 ## Handle, drives it (poll_playtest each _process), and calls Handle.dispose()
 ## once from _exit_tree. This owns wiring, not lifecycle phases: the phase
@@ -21,6 +22,8 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const RegistryClient = Modules.RegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/transport/mcp_server.gd")
 const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
+const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/extension_loader.gd")
 const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
@@ -87,9 +90,19 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	server.port_bound.connect(func(_port: int) -> void: _register_in_registry(server))
 	server.start()
 
+	# -- Cross-cutting UI collaborators, built BEFORE the dock -------------------
+	# The shared .mcp.json confirm-then-write flow and the editor-global dialog
+	# presenter are injected into the dock, the tool menu, and the onboarding
+	# wizard alike: the dock consumes them like every other surface — it is a UI
+	# surface, not a service locator.
+	var write_flow := MCPJsonWriteFlow.new()
+	var dialog_presenter := ToolkitDialogPresenter.new()
+	handle._write_flow = write_flow
+	handle._dialog_presenter = dialog_presenter
+
 	# -- Toolkit dock (bottom panel on ≤4.5, EditorDock on 4.6+; DockHost owns the seam) --
 	var dock: Control = preload("res://addons/godot_mcp_toolkit/ui/dock/dock.tscn").instantiate()
-	dock.bind(server, Modules.Audit.get_log_path())
+	dock.bind(server, Modules.Audit.get_log_path(), write_flow, dialog_presenter)
 	handle._dock = dock
 	handle._dock_host = DockHost.add(plugin, dock, "MCP Toolkit")
 
@@ -148,9 +161,9 @@ static func _republish_on_token_rewrite(server: Node, token_path: String) -> voi
 ## Owns the collaborator graph compose() built and disposes it in reverse.
 ##
 ## The orchestrator reaches the collaborators it still needs post-compose via
-## server() (menu, watcher wiring), dock() (menu, onboarding wizard), and dock_host()
-## (the reveal façade); the other five instances stay private and are touched only by
-## dispose(). poll_playtest()
+## server() (menu, watcher wiring), dock() (menu), write_flow() + dialog_presenter()
+## (menu, onboarding wizard), and dock_host() (the reveal façade); the other five
+## instances stay private and are touched only by dispose(). poll_playtest()
 ## drives the playtest watcher each _process; dispose() tears the graph down in the
 ## exact reverse order of compose() (behavior-critical — see GodotCodeStandards §8/§10.5).
 class Handle:
@@ -159,6 +172,8 @@ class Handle:
 	const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 	const RegistryClient = Modules.RegistryClient
 	const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
+	const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+	const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 	const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_commands.gd")
 	const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
 
@@ -167,6 +182,8 @@ class Handle:
 	var _export_plugin: EditorExportPlugin = null
 	var _dock: Control = null
 	var _dock_host: Object = null  # EditorDock wrapper on 4.6+; null on ≤4.5 (control is its own handle)
+	var _write_flow: MCPJsonWriteFlow = null  # Shared .mcp.json confirm-then-write flow
+	var _dialog_presenter: ToolkitDialogPresenter = null  # Editor-global dialogs (info + catalog)
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 	var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
 	var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
@@ -176,9 +193,20 @@ class Handle:
 	func server() -> Node:
 		return _server
 
-	## The toolkit dock control (orchestrator passes it to the tool menu + onboarding wizard).
+	## The toolkit dock control (orchestrator passes it to the tool menu, whose
+	## audit action stays dock-owned).
 	func dock() -> Control:
 		return _dock
+
+	## The shared .mcp.json confirm-then-write flow (orchestrator passes it to the
+	## tool menu + onboarding wizard).
+	func write_flow() -> MCPJsonWriteFlow:
+		return _write_flow
+
+	## The editor-global dialog presenter (orchestrator passes it to the tool menu
+	## + onboarding wizard).
+	func dialog_presenter() -> ToolkitDialogPresenter:
+		return _dialog_presenter
 
 	## The dock host — the EditorDock wrapper on 4.6+, null on ≤4.5. The reveal
 	## façade (plugin.reveal_dock) passes it back to DockHost.reveal.
@@ -191,8 +219,9 @@ class Handle:
 			_playtest_end_detector.poll()
 
 	## Tear down the composed graph in reverse construction order. Behavior-critical
-	## ordering — dock → user-path monitor → playtest watcher → extension watcher →
-	## debug bridge → export plugin → server+registry.
+	## ordering — dock → dialog presenter + write flow → user-path monitor →
+	## playtest watcher → extension watcher → debug bridge → export plugin →
+	## server+registry.
 	func dispose() -> void:
 		# Dock teardown. Free the CONTROL immediately (never queue_free) so its
 		# GDScript preload chain releases before ObjectDB's exit-time leak check.
@@ -216,6 +245,16 @@ class Handle:
 				_dock.free()
 			_dock = null
 			_dock_host = null
+
+		# Editor-global dialogs (info + extension catalog) — the presenter frees
+		# them immediately, for the same leak-check reason the dock control is
+		# free()d above (they are base-control children nothing else frees).
+		if _dialog_presenter != null:
+			_dialog_presenter.dispose()
+			_dialog_presenter = null
+
+		# Write flow — RefCounted with no owned nodes; drop the reference.
+		_write_flow = null
 
 		# RefCounted subsystems — drop our references so they can be collected
 		# once the dock (which also holds them) is freed above.

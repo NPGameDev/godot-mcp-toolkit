@@ -261,6 +261,18 @@ The cross-version facts module (the `is_at_least` / `is_at_most` / `is_version_i
 as the preload alias `Modules.VersionUtils` — it is **not** a `class_name`: there is no
 `MCPVersionUtils` class, and the public `MCPToolkit*` class_name set does not include it.
 
+**Dock section** vs **editor-global dialog** (the dock boundary)
+A **dock section** is a UI surface owned by and rendered inside the dock (status panel, `.mcp.json`
+health panel, unfocused control, audit section, limits section); it may lazily create its own viewer
+window, but its home, lifecycle, and API are the dock's — the audit log is a dock section, so
+`show_audit_dialog()` stays a dock method. An **editor-global dialog** parents to
+`EditorInterface.get_base_control()` — not to the dock — and is reachable from non-dock surfaces
+(Tools menu, onboarding wizard); it is owned by the **dialog presenter**
+(`ui/toolkit_dialog_presenter.gd`), never by the dock. The dock is a **UI surface, not a service
+locator**: cross-cutting behaviors (the shared `.mcp.json` write flow, the editor-global dialogs)
+live in composer-built, injected collaborators that every consumer — dock included — calls directly
+(ADR 0016).
+
 **Bridge** — *server-owned term; defined in the server repo's `docs/dev/glossary.md`.*
 The **Bridge** is the server (the TypeScript MCP bridge process). The editor (toolkit) side has **no**
 bridge: the `transport/debug_bridge.gd` `EditorDebuggerPlugin` session-tracker is **not** the Bridge

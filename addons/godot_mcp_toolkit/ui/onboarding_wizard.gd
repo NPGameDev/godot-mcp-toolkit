@@ -4,22 +4,30 @@ extends RefCounted
 ## Self-contained state machine managing a multi-step AcceptDialog.
 
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
+const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 
 const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_shown_v001"
 const _ONBOARDING_PROGRESS := "user://addons/godot_mcp_toolkit/mcp_onboarding_progress"
 const _STEP_COUNT := 3
 
 var _plugin: EditorPlugin
-var _dock: Control
+var _server: Node  # Passed to the dialog presenter's Info / Help dialog.
+var _write_flow: MCPJsonWriteFlow
+var _dialog_presenter: ToolkitDialogPresenter
 var _dialog: AcceptDialog = null
 var _step: int = 0
 var _mcp_exists: bool = false  # Tracks .mcp.json state for step-1 variants.
 var _buttons: Array = []  # Tracked custom buttons for per-step cleanup.
 
 
-func _init(plugin: EditorPlugin, dock: Control) -> void:
+func _init(
+		plugin: EditorPlugin, server: Node,
+		write_flow: MCPJsonWriteFlow, dialog_presenter: ToolkitDialogPresenter) -> void:
 	_plugin = plugin
-	_dock = dock
+	_server = server
+	_write_flow = write_flow
+	_dialog_presenter = dialog_presenter
 
 
 func check_and_show() -> void:
@@ -142,7 +150,7 @@ func _spec_dock_overview() -> Dictionary:
 	# being baked into the (otherwise pure) spec. Assigned as a separate statement
 	# (not an inline dict value) to keep the multi-line lambda unambiguous to parse.
 	var reveal_dock := func() -> void:
-		if _dock != null:
+		if _plugin != null:
 			_plugin.call("reveal_dock")  # dynamic dispatch: base EditorPlugin lacks reveal_dock
 	var spec := {
 		"text": (
@@ -204,9 +212,11 @@ func _show_step(dialog: AcceptDialog) -> void:
 
 func _on_confirmed(dialog: AcceptDialog) -> void:
 	if _step == 1 and not _mcp_exists:
-		# Step 1 OK = "Create .mcp.json" — write the file now.
-		if _dock != null:
-			_dock.write_mcp_json()
+		# Step 1 OK = "Create .mcp.json" — write the file now. Fire-and-forget:
+		# the wizard advances regardless, and a failed write keeps the dock's
+		# "NO .mcp.json" warning visible as the durable signal.
+		if _write_flow != null:
+			_write_flow.write()
 	if _step >= _STEP_COUNT - 1:
 		# Final step — finish.
 		_write_flag()
@@ -226,16 +236,16 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 				_step -= 1
 				_show_step(dialog)
 		"overwrite_mcp":
-			if _dock != null:
-				_dock.write_mcp_json(true)
+			if _write_flow != null:
+				_write_flow.write(true)
 			_step += 1
 			_save_progress()
 			_show_step(dialog)
 		"open_info":
 			_write_flag()
 			free_if_open()
-			if _dock != null:
-				_dock.show_info_dialog()
+			if _dialog_presenter != null:
+				_dialog_presenter.show_info(_server)
 		"open_security":
 			var doc_path := "res://addons/godot_mcp_toolkit/docs/security-recommendations.md"
 			var global_path := ProjectSettings.globalize_path(doc_path)

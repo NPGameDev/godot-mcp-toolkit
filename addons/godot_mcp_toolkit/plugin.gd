@@ -53,13 +53,15 @@ func _enter_tree() -> void:
 
 	# Construct + wire the whole collaborator graph (registry, server, debug
 	# bridge, command registrar, extensions, export plugin, log buffer, user-path
-	# monitor, registry registration, playtest watcher, dock) and register in the
-	# system-wide registry.
+	# monitor, registry registration, playtest watcher, write flow + dialog
+	# presenter, dock) and register in the system-wide registry.
 	_handle = PluginComposer.compose(self, _on_user_path_changed)
 
-	# Tools > MCP Toolkit submenu + command palette (needs the server + dock the
-	# composer just built).
-	_tool_menu = ToolMenu.new(self, _handle.server(), _handle.dock())
+	# Tools > MCP Toolkit submenu + command palette (needs the server, dock, and
+	# shared UI collaborators the composer just built).
+	_tool_menu = ToolMenu.new(
+			self, _handle.server(), _handle.dock(),
+			_handle.write_flow(), _handle.dialog_presenter())
 	_tool_menu.install()
 
 	# -- Per-user EditorSettings --
@@ -73,7 +75,8 @@ func _enter_tree() -> void:
 			+ "Please report issues at https://github.com/NPGameDev/godot-mcp-toolkit/issues")
 			% [_engine_ver, Modules.VersionUtils.GODOT_TESTED_MAX_VERSION])
 
-	_wizard = OnboardingWizard.new(self, _handle.dock())
+	_wizard = OnboardingWizard.new(
+			self, _handle.server(), _handle.write_flow(), _handle.dialog_presenter())
 	call_deferred("_check_onboarding")
 
 
