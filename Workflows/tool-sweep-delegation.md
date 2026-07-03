@@ -142,6 +142,19 @@ console clean (mismatch y/n); deviations flagged for 41n-ter-bis.
 - **S23 (C#) → SKIP. S24 (Extensions) → no editor restart on 4.5** (4.2-only).
 - post-#3 CQS tools to confirm: `animationtree_list` (S13, GREEN), `audiobus_list` (S15).
 - **S24 dynamic extension-tool calls — the recipe (agents WILL falsely report BLOCKED without it).** After `extensions_refresh` registers an extension's commands, the runtime tools do NOT auto-surface as deferred tools, and guessing/keyword-searching the name fails. To CALL one: (1) `discover_tools(request:["<ext_group>"], include_schemas:true)` → returns the EXACT exposed name (dots→underscores, e.g. `sv2_ext.hello` → `sv2_ext_hello`) + schema; (2) `ToolSearch select:mcp__godot-mcp-toolkit__<exact_name>` → loads the schema AND surfaces it as a callable deferred tool; (3) call it. Bake this into the S24 brief. Verified 41n-ter: E3 + E10a–d all callable this way (the first S24 run mis-reported them BLOCKED after guessing names).
+  **41n-octies UPDATE — the recipe FAILS from a background subagent.** A subagent's
+  ToolSearch deferred-index is frozen at spawn and never absorbs the mid-session
+  `tools/list_changed` from `extensions_refresh`/`discover_tools`, so a delegated
+  S24 agent genuinely CANNOT call `sv2_ext_*` (control: `select` of a base tool
+  like `script_check` loads, but `select` of the ext tool returns "No matching
+  deferred tools"). Same gap hit **S28**: `placeholders` activated by 28.8 →
+  `texture_generate`/`sound_generate` uncallable from the subagent. FIX: the
+  **interactive orchestrator session DOES absorb** them, so the orchestrator runs
+  the call-path tests inline and edits the row (recovered S24 E3/E10a-d + S28
+  28.9-28.19 this run). Corollary for on-demand GROUPS whose tools the subagent
+  must CALL (not dynamically-registered): **orchestrator PRE-ACTIVATES the group
+  BEFORE spawning** so it's in the subagent's spawn-time index (a section test that
+  re-activates then just sees `already_loaded`).
 
 ## Final steps (end of sweep — after S28 + Last-cleanup)
 1. Run `Sections/Last-cleanup.md` to delete all `res://sv2_validation/` artifacts.
