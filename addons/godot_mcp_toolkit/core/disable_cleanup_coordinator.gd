@@ -69,16 +69,36 @@ func _prompt_mcp_json_orphan() -> void:
 	dialog.confirmed.connect(func() -> void:
 		DirAccess.remove_absolute(_mcp_json_path)
 		print("[MCP] Deleted .mcp.json at %s" % _mcp_json_path)
-		dialog.queue_free()
-		_prompt_editor_settings_cleanup()
+		_advance_to_editor_settings_prompt.call_deferred(dialog)
 	)
 	dialog.canceled.connect(func() -> void:
 		print("[MCP] .mcp.json kept at %s" % _mcp_json_path)
-		dialog.queue_free()
-		_prompt_editor_settings_cleanup()
+		_advance_to_editor_settings_prompt.call_deferred(dialog)
 	)
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
+
+
+# Chain continuation between the two prompts — deferred close-then-show, never
+# inline from the first prompt's signal callbacks. The prompts are non-exclusive
+# (the Project Settings window, still open during a plugin toggle, holds the
+# editor root's single exclusive-child slot), and a non-exclusive dialog gets no
+# OS-level owner — nothing structurally keeps it above the editor window, so its
+# z-order is decided purely by activation order. Showing prompt 2 inline left
+# prompt 1's engine-deferred hide still pending; when that hide destroyed
+# prompt 1's native window, the OS re-activated the editor OVER the just-shown
+# prompt 2. Since Godot 4.6 that re-activation is processed synchronously
+# (pre-4.6 it was timer-deferred and superseded before taking effect), which is
+# why the buried prompt only manifests on 4.6+. Deferring this continuation
+# queues it AFTER the engine's queued hide: prompt 1 is fully closed and the
+# editor's re-activation has settled before prompt 2 pops — front and focused on
+# every supported version (on <=4.5 the only delta is prompt 2 appearing one
+# message-queue flush later). free() is safe here: running deferred means we are
+# outside prompt 1's signal emission.
+func _advance_to_editor_settings_prompt(finished_dialog: ConfirmationDialog) -> void:
+	if is_instance_valid(finished_dialog):
+		finished_dialog.free()
+	_prompt_editor_settings_cleanup()
 
 
 # Confirm-then-erase the machine-wide EditorSettings keys this plugin registers.
@@ -113,6 +133,10 @@ func _prompt_editor_settings_cleanup() -> void:
 	)
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
+	# Explicit raise-and-focus: with no OS owner (non-exclusive, see the chain
+	# continuation above) a stray late activation of the editor window could still
+	# bury this prompt; a no-op when the prompt is already foreground.
+	dialog.grab_focus()
 
 
 # Release the self-reference now the sequence is complete. With no other refs

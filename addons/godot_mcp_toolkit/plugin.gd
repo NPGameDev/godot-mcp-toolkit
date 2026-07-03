@@ -7,6 +7,7 @@ const FileGuard = Modules.FileGuard
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const PluginComposer := preload("res://addons/godot_mcp_toolkit/core/plugin_composer.gd")
+const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const ToolMenu := preload("res://addons/godot_mcp_toolkit/core/tool_menu.gd")
 const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/disable_cleanup_coordinator.gd")
 
@@ -78,6 +79,14 @@ func _enter_tree() -> void:
 
 func _check_onboarding() -> void:
 	_wizard.check_and_show()
+
+
+# Reveal the toolkit dock (select its tab + expand the bottom panel). The
+# onboarding wizard's final step calls this; delegating through DockHost keeps the
+# editor↔version dock seam in one adapter instead of leaking make_visible here.
+func reveal_dock() -> void:
+	if _handle != null:
+		DockHost.reveal(self, _handle.dock(), _handle.dock_host())
 
 
 func _process(_delta: float) -> void:

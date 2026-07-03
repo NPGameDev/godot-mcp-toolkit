@@ -8,7 +8,7 @@ extends RefCounted
 ## own plugin.cfg.
 
 ## Latest version tested. Versions above this still run but log a notice.
-const GODOT_TESTED_MAX_VERSION := "4.6"
+const GODOT_TESTED_MAX_VERSION := "4.7.0"
 
 
 ## True when running under `godot --headless` (no display server).

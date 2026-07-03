@@ -179,6 +179,29 @@ static func poll() -> void:
 # =============================================================================
 
 
+## Compose the console message for a structured engine error (the Logger `_log_error`
+## callback). Mirrors the engine StdLogger's two-line
+## "PREFIX: <detail>\n   at: <function> (<file>:<line>)" shape.
+##
+## When [param append_location] is true the "   at:" line is appended so the source path
+## lives inside the entry. Editors up to 4.6 emit a separate path-bearing "Failed to load
+## script" error during script scans, so the caller passes false there and the path is not
+## duplicated; Godot 4.7 dropped that separate message from the scan path, leaving the path
+## only in this callback's file arg, so the caller passes true to keep the filename
+## captured (text/console filters match on it). A fileless / "built-in" source has no
+## useful path, so the location is skipped. Pure — no editor symbols — so it is unit-tested
+## headless.
+static func compose_error_message(prefix: String, code: String, rationale: String,
+		function_name: String, file_path: String, line: int, append_location: bool) -> String:
+	var detail := code
+	if rationale != "":
+		detail = code + ": " + rationale
+	var full := prefix + ": " + detail
+	if append_location and file_path != "" and file_path != "built-in":
+		full += "\n   at: " + function_name + " (" + file_path + ":" + str(line) + ")"
+	return full
+
+
 static func _setup_logger() -> void:
 	_use_logger = true
 	# Compile the Logger subclass at runtime so no file on disk contains
@@ -192,8 +215,17 @@ static func _setup_logger() -> void:
 		_setup_file_tail()
 		return
 	_logger_ref = script.new()
-	# Pass a reference to this script so the logger can call push().
+	# Pass a reference to this script so the logger can call push() / compose_error_message().
 	_logger_ref.set_meta("_log_buffer", load("res://addons/godot_mcp_toolkit/logging/log_buffer.gd"))
+	# Godot 4.7 stopped surfacing the separate path-bearing "Failed to load script" error
+	# during editor script scans, leaving the script path only in the structured _log_error
+	# callback's file arg. Flag 4.7+ so the logger appends the engine-style "   at:" location
+	# line to script errors and the filename stays captured; 4.5/4.6 keep prior byte-for-byte
+	# output (their separate load error already carries the path).
+	var version := Engine.get_version_info()
+	var major := int(version.get("major", 0))
+	var minor := int(version.get("minor", 0))
+	_logger_ref.set_meta("_append_error_location", major > 4 or (major == 4 and minor >= 7))
 	# Dynamic call — OS.add_logger() only exists in 4.5+; static reference
 	# causes a parse error on 4.2-4.4 even inside a guarded branch.
 	OS.call("add_logger", _logger_ref)
@@ -209,7 +241,7 @@ func _log_message(message: String, error: bool) -> void:
 	var level: String = "error" if error else "info"
 	buf.push(level, message.strip_edges())
 
-func _log_error(_function: String, _file: String, _line: int,
+func _log_error(function_name: String, file_path: String, line: int,
 		code: String, rationale: String, _editor_notify: bool,
 		error_type: int, _script_backtraces) -> void:
 	var buf = get_meta("_log_buffer")
@@ -217,10 +249,11 @@ func _log_error(_function: String, _file: String, _line: int,
 		return
 	var level: String = "warning" if error_type == 1 else "error"
 	var prefix: String = "WARNING" if error_type == 1 else "ERROR"
-	var msg: String = code
-	if rationale != "":
-		msg = code + ": " + rationale
-	buf.push(level, prefix + ": " + msg)
+	# error_type 2 == Logger.ERR_SCRIPT: only script errors carry a .gd source path worth
+	# preserving. The 4.7+ flag (set at setup from the engine version) enables the location
+	# line; see compose_error_message.
+	var append_location: bool = bool(get_meta("_append_error_location", false)) and error_type == 2
+	buf.push(level, buf.compose_error_message(prefix, code, rationale, function_name, file_path, line, append_location))
 '
 
 

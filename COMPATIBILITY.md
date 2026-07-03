@@ -3,9 +3,9 @@
 **Minimum supported:** Godot 4.2  
 **Full functionality:** Godot 4.5+  
 **Recommended:** Godot 4.5+  
-**Tested up to:** Godot 4.6.2
+**Tested up to:** Godot 4.7.0
 
-Future Godot versions (4.7+) are not blocked. The plugin runs normally on
+Future Godot versions (4.8+) are not blocked. The plugin runs normally on
 untested versions and logs a startup warning.
 
 ## Version tiers
@@ -17,7 +17,7 @@ untested versions and logs a startup warning.
 | **4.3**       | Core          | TileMapLayer support added (tilemap tool auto-detects) |
 | **4.4**       | Full UI       | Toast notifications added (`EditorInterface.get_editor_toaster()` is 4.4+) |
 | **4.5+**      | Full          | All tools and UI features available |
-| 4.7+ (future) | Expected      | `has_method()` guards are forward-compatible; startup warning only |
+| 4.8+ (future) | Expected      | `has_method()` guards are forward-compatible; startup warning only |
 
 ## Tool compatibility matrix
 
@@ -254,7 +254,7 @@ before the set (a no-op off Godot 4.3) so it can't reintroduce the crash — see
 
 | UI surface | 4.3 | 4.4 | 4.5+ | Fallback on older |
 |------------|-----|-----|------|-------------------|
-| Bottom-panel dock | OK | OK | OK | `add_control_to_bottom_panel()` stable across all versions |
+| Bottom-panel dock | OK | OK | OK | 4.2–4.5: `add_control_to_bottom_panel()`. 4.6+: `add_dock()` (`EditorDock`) — capability gate flips at 4.6 |
 | Server status, audit log | OK | OK | OK | Standard Control nodes |
 | Guided onboarding wizard (3-step) | OK | OK | OK | `AcceptDialog` + `add_button()` stable since 4.0 |
 | Toast notifications | Degraded | OK | OK | Silently skipped; `push_warning()` to Output panel |
@@ -356,7 +356,7 @@ use (hiding version-incompatible tools from `tools/list`).
 
 ## Headless mode (`--headless`)
 
-**Tested:** Godot 4.2.0, 4.2.2, 4.3.0, 4.4.1, 4.5.0, 4.5.2, 4.6.2 on Windows.
+**Tested:** Godot 4.2.0, 4.2.2, 4.3.0, 4.4.1, 4.5.0, 4.5.2, 4.6.2, 4.7.0 on Windows.
 
 When Godot runs with `--headless --editor`, the plugin loads, the WebSocket
 server starts, and the vast majority of tools function identically to GUI mode.
@@ -448,10 +448,10 @@ tool chain functions from there.
 ## Forward compatibility
 
 The `has_method()` + `call()` pattern is inherently forward-compatible.
-When Godot 4.7 (or later) adds new methods, `has_method()` returns `true`
+When Godot 4.8 (or later) adds new methods, `has_method()` returns `true`
 and the call succeeds — no plugin update needed for the guarded code paths.
 
-A `GODOT_TESTED_MAX_VERSION` constant (currently `"4.6"`) controls the startup
+A `GODOT_TESTED_MAX_VERSION` constant (currently `"4.7.0"`) controls the startup
 warning threshold. Versions above this emit a `push_warning()` but do not
 restrict any functionality.
 
@@ -499,8 +499,13 @@ medium ones).
   4.2, this syntax must not appear in any `.gd` file.
 - **`@export_tool_button`** requires Godot 4.4+. Same constraint.
 - **`@abstract`** requires Godot 4.5+. Same constraint.
-- **`EditorDock`** (4.6) is experimental. The plugin uses the deprecated
-  `add_control_to_bottom_panel()` which has a compatibility shim on 4.6.
+- **`EditorDock`** (new in 4.6) hosts the toolkit dock on 4.6+ via
+  `EditorPlugin.add_dock()` (`core/dock_host.gd`, capability-gated on
+  `ClassDB.class_exists("EditorDock")` — never referenced statically, which
+  would parse-error on 4.2–4.5). On 4.2–4.5 the plugin uses the legacy
+  `add_control_to_bottom_panel()`; that path is deprecated from 4.6 and
+  renders a collapsed (invisible) panel on 4.7, which is why the gate adopts
+  `add_dock` from 4.6.
 
 ## Data format notes
 

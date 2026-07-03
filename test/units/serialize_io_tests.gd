@@ -13,6 +13,7 @@ const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_
 const ClassDbCommands := preload("res://addons/godot_mcp_toolkit/commands/classdb_commands.gd")
 const ExportStrip := preload("res://addons/godot_mcp_toolkit/core/export_strip.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
 
 
@@ -26,6 +27,7 @@ static func run(testing) -> void:
 	_test_classdb_pagination(testing)
 	_test_export_strip(testing)
 	_test_log_level_continuation(testing)
+	_test_compose_error_message(testing)
 	_test_settings_collect_names(testing)
 
 
@@ -618,6 +620,40 @@ static func _test_log_level_continuation(testing) -> void:
 		"warning + at: both → warning")
 	testing.eq(_level_sequence(["a plain info line", "   at: stray (x:1)"]), ["info", "info"],
 		"info + at: → info (no spurious error inherit)")
+
+
+# --- compose_error_message: 4.7 script-error location capture --------------
+# Godot 4.7 dropped the separate path-bearing "Failed to load script" error during editor
+# script scans, so a parse error's script path survives only in the _log_error callback's
+# file arg. compose_error_message re-attaches the engine-style "   at:" line when the 4.7+
+# flag is on, so a filename text_filter (e.g. "smoke_txtflt_hit") still matches the parse
+# entry on 4.7. Editors up to 4.6 pass append_location=false → byte-identical prior output.
+static func _test_compose_error_message(testing) -> void:
+	testing.begin("compose_error_message location capture")
+
+	# append_location=false → prior byte-for-byte output (prefix + detail, no location).
+	testing.eq(LogBuffer.compose_error_message("ERROR", "boom", "", "fn", "res://x.gd", 3, false),
+		"ERROR: boom", "no location when flag off")
+	testing.eq(LogBuffer.compose_error_message("ERROR", "code", "why", "fn", "res://x.gd", 3, false),
+		"ERROR: code: why", "rationale appended as 'code: rationale' (flag off)")
+	testing.eq(LogBuffer.compose_error_message("WARNING", "heads up", "", "fn", "res://x.gd", 3, false),
+		"WARNING: heads up", "warning prefix preserved (flag off)")
+
+	# append_location=true → engine-style "   at: fn (file:line)" line appended.
+	var parse_msg: String = LogBuffer.compose_error_message(
+		"ERROR", 'Parse Error: Could not find base class "BogusHitClass".', "",
+		"GDScript::reload", "res://smoke_txtflt_hit.gd", 1, true)
+	var expected_parse := 'ERROR: Parse Error: Could not find base class "BogusHitClass".' \
+		+ "\n   at: GDScript::reload (res://smoke_txtflt_hit.gd:1)"
+	testing.eq(parse_msg, expected_parse, "4.7 script error: location line appended")
+	# The regression the smoke text_filter guards: the filename marker is now matchable.
+	testing.ok(parse_msg.contains("smoke_txtflt_hit"), "filename marker present for text_filter")
+
+	# No location for a fileless / "built-in" source even when the flag is on.
+	testing.eq(LogBuffer.compose_error_message("ERROR", "generic", "", "", "", 0, true),
+		"ERROR: generic", "empty file → no location")
+	testing.eq(LogBuffer.compose_error_message("ERROR", "generic", "", "@GDScript", "built-in", 0, true),
+		"ERROR: generic", "'built-in' file → no location")
 
 
 # --- SettingsRegistration mcp_toolkit/* prefix collector ------------------

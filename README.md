@@ -160,7 +160,7 @@ When Claude Code runs in pipe mode (`claude -p "..."`), it does not process `too
 
 ### Headless mode compatibility
 
-When Godot runs with `--headless`, the plugin loads and the WebSocket server starts normally. The vast majority of tools work without a display server — verified across Godot 4.2 through 4.6.
+When Godot runs with `--headless`, the plugin loads and the WebSocket server starts normally. The vast majority of tools work without a display server — verified across Godot 4.2 through 4.7.
 
 | Domain | Headless | Notes |
 |--------|----------|-------|
@@ -184,7 +184,7 @@ When Godot runs with `--headless`, the plugin loads and the WebSocket server sta
 
 ✅ works &nbsp; ❌ requires display server
 
-> **Tested:** Godot 4.2.0, 4.2.2, 4.3.0, 4.4.1, 4.5.0, 4.5.2, 4.6.2 on Windows. Screenshot tools detect headless mode and return a clear `HEADLESS_UNSUPPORTED` error code. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full per-tool matrix.
+> **Tested:** Godot 4.2.0, 4.2.2, 4.3.0, 4.4.1, 4.5.0, 4.5.2, 4.6.2, 4.7.0 on Windows. Screenshot tools detect headless mode and return a clear `HEADLESS_UNSUPPORTED` error code. See [COMPATIBILITY.md](COMPATIBILITY.md) for the full per-tool matrix.
 
 ## Read-only mode
 
@@ -200,7 +200,7 @@ For supervised environments (classrooms, CI, demos), set `GODOT_MCP_READ_ONLY=1`
 | 4.4 | Full UI | Toast notifications added; `scene_close` unavailable |
 | 4.5+ | Full | All tools and UI features |
 
-Future Godot versions (4.7+) are not blocked — the plugin uses runtime capability checks.
+Future Godot versions (4.8+) are not blocked — the plugin uses runtime capability checks.
 
 Full version matrix: [COMPATIBILITY.md](COMPATIBILITY.md)
 

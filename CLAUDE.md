@@ -39,7 +39,7 @@ runs in debug builds for live-game introspection (Mode B).
 
 ## Godot version compatibility (iter 37)
 
-**Minimum:** 4.2 &nbsp; **Full:** 4.5+ &nbsp; **Tested up to:** 4.6
+**Minimum:** 4.2 &nbsp; **Full:** 4.5+ &nbsp; **Tested up to:** 4.7.0
 
 All version-dependent API calls use `has_method()` + `call()` (dynamic
 dispatch) — never direct static calls behind an `if` version check.
@@ -64,7 +64,7 @@ except `scene_close`. **On 4.5+:** full functionality.
 `UNSUPPORTED` on < 4.5). The server-side version-check hook enforces
 this before the call reaches the plugin.
 
-**Future versions (4.7+, 5.x):** not blocked. `GODOT_TESTED_MAX_VERSION = "4.6"`
+**Future versions (4.8+, 5.x):** not blocked. `GODOT_TESTED_MAX_VERSION = "4.7.0"`
 controls the startup warning threshold only — no functionality restricted.
 
 **Constraint for contributors:** `Dictionary[K, V]` (typed dictionaries),

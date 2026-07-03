@@ -20,6 +20,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const RegistryClient = Modules.RegistryClient
 const MCPServer := preload("res://addons/godot_mcp_toolkit/transport/mcp_server.gd")
+const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/extension_loader.gd")
 const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
@@ -83,14 +84,14 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	# until _scan_and_listen() runs.
 	_register_in_registry(server)
 
-	# -- Bottom-panel dock --
+	# -- Toolkit dock (bottom panel on ≤4.5, EditorDock on 4.6+; DockHost owns the seam) --
 	var dock: Control = preload("res://addons/godot_mcp_toolkit/ui/dock/dock.tscn").instantiate()
 	dock.bind(server, Modules.Audit.get_log_path())
-	plugin.add_control_to_bottom_panel(dock, "MCP Toolkit")
+	handle._dock = dock
+	handle._dock_host = DockHost.add(plugin, dock, "MCP Toolkit")
 
 	handle._server = server
 	handle._export_plugin = export_plugin
-	handle._dock = dock
 	handle._extension_watcher = extension_watcher
 	handle._debug_bridge = debug_bridge
 	handle._user_path_monitor = user_path_monitor
@@ -140,9 +141,10 @@ static func _republish_on_token_rewrite(server: Node, token_path: String) -> voi
 
 ## Owns the collaborator graph compose() built and disposes it in reverse.
 ##
-## The orchestrator reaches the two collaborators it still needs post-compose via
-## server() (menu, watcher wiring) and dock() (menu, onboarding wizard); the
-## other five instances stay private and are touched only by dispose(). poll_playtest()
+## The orchestrator reaches the collaborators it still needs post-compose via
+## server() (menu, watcher wiring), dock() (menu, onboarding wizard), and dock_host()
+## (the reveal façade); the other five instances stay private and are touched only by
+## dispose(). poll_playtest()
 ## drives the playtest watcher each _process; dispose() tears the graph down in the
 ## exact reverse order of compose() (behavior-critical — see GodotCodeStandards §8/§10.5).
 class Handle:
@@ -150,6 +152,7 @@ class Handle:
 
 	const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 	const RegistryClient = Modules.RegistryClient
+	const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 	const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_commands.gd")
 	const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
 
@@ -157,6 +160,7 @@ class Handle:
 	var _server: Node = null
 	var _export_plugin: EditorExportPlugin = null
 	var _dock: Control = null
+	var _dock_host: Object = null  # EditorDock wrapper on 4.6+; null on ≤4.5 (control is its own handle)
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 	var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
 	var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
@@ -166,9 +170,14 @@ class Handle:
 	func server() -> Node:
 		return _server
 
-	## The bottom-panel dock (orchestrator passes it to the tool menu + onboarding wizard).
+	## The toolkit dock control (orchestrator passes it to the tool menu + onboarding wizard).
 	func dock() -> Control:
 		return _dock
+
+	## The dock host — the EditorDock wrapper on 4.6+, null on ≤4.5. The reveal
+	## façade (plugin.reveal_dock) passes it back to DockHost.reveal.
+	func dock_host() -> Object:
+		return _dock_host
 
 	## Edge-detect the playtest end. Called by the orchestrator's _process.
 	func poll_playtest() -> void:
@@ -179,13 +188,28 @@ class Handle:
 	## ordering — dock → user-path monitor → playtest watcher → extension watcher →
 	## debug bridge → export plugin → server+registry.
 	func dispose() -> void:
-		# Dock — remove from panel, then free() immediately (not queue_free())
-		# so its script preload chain is released before ObjectDB's exit-time
-		# leak check runs.
+		# Dock teardown. Free the CONTROL immediately (never queue_free) so its
+		# GDScript preload chain releases before ObjectDB's exit-time leak check.
+		# On ≤4.5 the control is the whole handle. On 4.6+ it is a child of the
+		# EditorDock wrapper: free the control first (it self-detaches), then
+		# queue_free the wrapper — NOT free(). remove_dock() unregisters the wrapper
+		# but leaves it in the dock manager's dirty_docks set (remove_dock erases
+		# all_docks only), where a still-pending deferred _update_dirty_dock_tabs
+		# dereferences every entry unguarded — so an immediate free() is a
+		# use-after-free that corrupts the editor in the same frame a base-control
+		# popup is shown (the disable-cleanup prompts never render). The engine's own
+		# EditorDock teardown queue_frees the wrapper for this reason. The wrapper
+		# holds no GDScript, so deferring it does not reintroduce the leak-check
+		# hazard the control's immediate free() avoids.
 		if _dock != null:
-			_plugin.remove_control_from_bottom_panel(_dock)
-			_dock.free()
+			DockHost.remove(_plugin, _dock, _dock_host)
+			if _dock_host != null:
+				_dock.free()
+				_dock_host.call("queue_free")
+			else:
+				_dock.free()
 			_dock = null
+			_dock_host = null
 
 		# RefCounted subsystems — drop our references so they can be collected
 		# once the dock (which also holds them) is freed above.

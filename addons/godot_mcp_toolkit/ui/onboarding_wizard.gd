@@ -143,7 +143,7 @@ func _spec_dock_overview() -> Dictionary:
 	# (not an inline dict value) to keep the multi-line lambda unambiguous to parse.
 	var reveal_dock := func() -> void:
 		if _dock != null:
-			_plugin.make_bottom_panel_item_visible(_dock)
+			_plugin.call("reveal_dock")  # dynamic dispatch: base EditorPlugin lacks reveal_dock
 	var spec := {
 		"text": (
 				"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
