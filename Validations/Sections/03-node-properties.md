@@ -121,7 +121,7 @@
 - **Expect:** Full property list including engine + script properties
 
 **3.19** `node_call_method` — node_path=`Sv2Player`, method=`get_info`, args=`[]`
-- **Expect:** Returns "Sv2Actor v1"
+- **Expect:** `result: null`, `success: true` — `Sv2Player`'s `actor.gd` is **not** `@tool`, so the editor never runs it and `callv` cannot dispatch `get_info` (editor console logs "Method not found"). Response carries a hint that **leads with the runtime path** (game.start + execute_code / runtime_get_node_state on the live node), then the editor `@tool` fix, version-gated: on **4.5+** add `@tool` then close+reopen the scene (`scene_close` + `scene_open`; editor_refresh is not sufficient); **below 4.5** add `@tool` then relaunch the editor. The hint must **not** blame "uninitialized state / _Ready() not run".
 
 **3.20** `node_set_property` (PackedVector2Array) — node_path=`Sv2Path`, property=`curve:_data:points`, value=`{"type":"PackedVector2Array","value":[{"x":0,"y":0},{"x":100,"y":50},{"x":200,"y":0}]}`
 - **Expect:** success OR acceptable error (Curve2D has specific internal format)

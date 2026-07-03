@@ -18,8 +18,8 @@
 **7.4** `editor_get_console` — (default params)
 - **Expect:** success, returns console output
 
-**7.5** Seed console — `execute_code` code=`push_warning("SV2_SEED_Alpha42 test_line(parens)")`
-- **Expect:** success
+**7.5** Seed console — `execute_code` code=`push_warning("SV2_SEED_Alpha42 test_line(parens)")`, context=`"editor"`
+- **Expect:** success — `context:"editor"` runs the snippet in the editor process (no running game needed), so the warning lands in the editor console for 7.6+ to read. Without `context:"editor"`, `execute_code` defaults to `context:"game"` and returns `GAME_NOT_RUNNING` when no game is running.
 
 **7.6** `editor_get_console` — text_filter=`SV2_SEED`, is_regex=`false`
 - **Expect:** count >= 1

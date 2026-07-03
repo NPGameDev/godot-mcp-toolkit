@@ -22,6 +22,7 @@ static func run(testing) -> void:
 	_test_editor_refresh_reload_filter(testing)
 	_test_unfocused_backup(testing)
 	_test_stale_instance_hint(testing)
+	_test_call_method_null_hint(testing)
 	_test_tooltip_uaf_disarm_decision(testing)
 
 
@@ -351,6 +352,55 @@ static func _test_stale_instance_hint(testing) -> void:
 	testing.ok(wh.find("Validate") < wh.find("relaunch"),
 			"write_hint: validation before stale nudge (recency ordering)")
 	testing.ok(wh.contains("4.2"), "write_hint: carries the version label")
+
+	print("")
+
+
+# --- node.call_method null-result hint (version-gated) ---------------------
+# A non-@tool GDScript never runs in the editor, so callv() returns null. The hint
+# leads with the runtime path, then the editor @tool fix; the @tool tail is gated at
+# 4.5 — scene reopen (scene_close + scene_open) on 4.5+, editor relaunch below (no
+# MCP-actionable scene reopen exists there). C# always also needs a rebuild, no gate.
+# Pins the accurate cause (the old hint blamed "uninitialized state / _Ready not run",
+# wrong for a constant method) and the version discriminator.
+
+static func _test_call_method_null_hint(testing) -> void:
+	testing.begin("call_method null-result hint (version-gated)")
+
+	# GDScript, 4.5+ (and 5.x by monotonicity) → scene reopen; editor_refresh insufficient.
+	for ver in ["4.5", "4.6", "4.7", "5.0"]:
+		var gd: String = NodeCommands._call_method_null_hint(false, ver)
+		testing.ok(gd.contains("scene_close") and gd.contains("scene_open"),
+				"%s GDScript → close and reopen the scene" % ver)
+		testing.ok(gd.contains("editor_refresh is not sufficient"),
+				"%s GDScript → editor_refresh called out as insufficient" % ver)
+		testing.ok(not gd.contains("relaunch"),
+				"%s GDScript → no relaunch (scene reopen is the MCP-actionable fix)" % ver)
+
+	# GDScript, < 4.5 → relaunch (no MCP-actionable scene reopen below 4.5).
+	for ver in ["4.2", "4.3", "4.4"]:
+		var gd: String = NodeCommands._call_method_null_hint(false, ver)
+		testing.ok(gd.contains("relaunch the editor"),
+				"%s GDScript → relaunch the editor" % ver)
+		testing.ok(not gd.contains("scene_close"),
+				"%s GDScript → no scene-reopen advice below 4.5" % ver)
+
+	# Shared, accurate cause + runtime-first path; the false _Ready/uninitialized cause is gone.
+	var g45: String = NodeCommands._call_method_null_hint(false, "4.5")
+	testing.ok(g45.contains("non-@tool") and g45.contains("never runs in the editor"),
+			"GDScript hint names the real cause (non-@tool never runs)")
+	testing.ok(g45.contains("game.start") and g45.contains("runtime_get_node_state"),
+			"GDScript hint leads with the runtime path")
+	testing.ok(not g45.contains("uninitialized") and not g45.contains("_Ready"),
+			"GDScript hint drops the false uninitialized-state / _Ready cause")
+
+	# C# → keeps the [Tool] explanation and always appends rebuild + relaunch, no version gate.
+	for ver in ["4.2", "4.7"]:
+		var cs: String = NodeCommands._call_method_null_hint(true, ver)
+		testing.ok(cs.contains("[Tool]"), "%s C# → names the [Tool] attribute" % ver)
+		testing.ok(cs.contains("rebuild") and cs.contains("relaunch"),
+				"%s C# → always append rebuild + relaunch (no version gate)" % ver)
+		testing.ok(cs.contains("game.start"), "%s C# → runtime path present" % ver)
 
 	print("")
 

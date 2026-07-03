@@ -538,6 +538,34 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 	return Modules.StaleInstanceHint.recovery_message("%d.%d" % [int(vi["major"]), minor], minor, headless)
 
 
+## Builds the node.call_method hint for a null callv() result, version-gated.
+##
+## A non-@tool GDScript never runs in the editor, so callv() cannot dispatch its
+## method and returns null (the editor logs "Method not found"). The hint leads with
+## the reliable runtime path, then the editor @tool fix. That fix is gated at 4.5:
+## on 4.5+ an attached instance's method table is rebuilt only by fully reopening the
+## scene (scene_close + scene_open) — editor_refresh does not suffice — while below
+## 4.5 no MCP-actionable scene reopen exists, so the editor must be relaunched. C#
+## additionally needs a project rebuild, on every version.
+## [param ver_pair] the running engine "major.minor" (drives the 4.5 gate).
+static func _call_method_null_hint(is_csharp: bool, ver_pair: String) -> String:
+	if is_csharp:
+		return ("Return value was null. C# methods cannot execute in editor mode without "
+			+ "the [Tool] attribute — Godot registers the method signature but does not "
+			+ "instantiate the managed .NET object. Properties and signals work normally. Use "
+			+ "game.start + execute_code to call C# methods at runtime, or set state via "
+			+ "node.set_property (most C# logic runs in _Ready() at startup). To call it in the "
+			+ "editor, add [Tool], then rebuild the C# project and relaunch the editor.")
+	var editor_tail := ("add @tool, then close and reopen the scene (scene_close + scene_open); "
+		+ "editor_refresh is not sufficient")
+	if not Modules.VersionUtils.is_at_least(ver_pair, "4.5"):
+		editor_tail = "add @tool, then relaunch the editor"
+	return ("Return value was null. A non-@tool GDScript never runs in the editor, so callv() "
+		+ "cannot find the method (the editor logs 'Method not found'). To call it: (1) runtime, "
+		+ "reliable — game.start, then execute_code or runtime_get_node_state on the live node; "
+		+ "(2) editor — " + editor_tail + ".")
+
+
 static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
@@ -590,10 +618,8 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	}
 	if result == null:
 		var script = node.get_script()
-		if script != null and script.resource_path.ends_with(".cs"):
-			response["hint"] = "Return value was null. C# methods cannot execute in editor mode without the [Tool] attribute — Godot registers the method signature but does not instantiate the managed .NET object. Properties and signals work normally. Use game.start + execute_code to call C# methods at runtime, or set state via node.set_property (most C# logic runs in _Ready() at startup)."
-		else:
-			response["hint"] = "Return value was null. Editor-side callv() on non-@tool scripts may return null if the method relies on uninitialized state (_Ready() has not run). Use game.start + runtime tools (runtime_get_node_state, execute_code) to drive and observe runtime state."
+		var is_csharp := script != null and str(script.resource_path).ends_with(".cs")
+		response["hint"] = _call_method_null_hint(is_csharp, Modules.VersionUtils.get_engine_version_pair())
 	return MCPToolkitSuccess.ok(response)
 
 
