@@ -465,6 +465,26 @@ and project settings all work without any display. Scene tree operations also
 work — `scene_open` loads scenes programmatically and the full node/signal
 tool chain functions from there.
 
+## macOS GUI-launch (Node / PATH)
+
+macOS apps launched from **Finder / Dock / Spotlight** run under `launchd` with a
+minimal `PATH` and do not source shell startup files, so a **GUI-launched MCP
+client** (Claude Desktop, Cursor.app, VS Code.app) can't find a version-manager or
+Homebrew Node (`spawn npx ENOENT`) and silently fails to connect. A client launched
+from a terminal inherits the shell `PATH` and is unaffected.
+
+The toolkit handles this on the **write** side: on macOS the dock's *Write
+.mcp.json* resolves the user's real absolute `node`/`npx` path (via a login shell)
+and emits it as the `command`, plus a resolved `PATH` in `env`, so the client
+spawns Node by absolute path — no `launchd`-`PATH` lookup. It re-writes on editor
+start to keep the path current, and when the toolkit is listening but no client has
+connected after a grace period (with a valid `.mcp.json` present), the dock shows a
+one-time macOS nudge steering to the fix. Full setup + fallbacks (nvm in
+`~/.zprofile`, the nodejs.org installer, `GODOT_MCP_DEV_SERVER_PATH`) are in the
+shipped `addons/godot_mcp_toolkit/docs/advanced_configuration.md` (*macOS* section).
+Windows and Linux emit the standard `cmd /c npx` / `npx` commands (no `launchd`
+issue).
+
 ## Forward compatibility
 
 The `has_method()` + `call()` pattern is inherently forward-compatible.

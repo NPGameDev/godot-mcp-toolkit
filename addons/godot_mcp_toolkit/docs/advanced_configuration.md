@@ -229,6 +229,47 @@ processes inherit the **same** value:
 - **Prefer Scanned mode** if you don't want to manage env on both sides — registry
   discovery keeps the two in agreement automatically.
 
+## macOS: launching your MCP client (Node / PATH)
+
+On macOS, an app started from **Finder, the Dock, or Spotlight** runs under
+`launchd` with a **minimal `PATH`** (`/usr/bin:/bin:/usr/sbin:/sbin`) and does
+**not** source your shell startup files (`~/.zshrc`, `~/.zprofile`, …). So if you
+installed Node with a version manager (**nvm, fnm, volta**) or **Apple-Silicon
+Homebrew** (`/opt/homebrew/bin`), a **GUI-launched MCP client** (Claude Desktop,
+Cursor.app, VS Code.app) can't find `node`/`npx` and fails to start the server
+(`spawn npx ENOENT`) — it silently never connects. A client launched from a
+**terminal** inherits your shell `PATH` and is unaffected.
+
+**The fix (default): click "Write .mcp.json" in the MCP Toolkit dock.** On macOS
+the toolkit resolves your **real absolute `node`/`npx` path** (via a login shell,
+where your version manager is visible) and writes it straight into `.mcp.json` as
+the `command`, plus a resolved `PATH` in the `env` block. Your GUI client then
+spawns Node by absolute path and never has to search `launchd`'s `PATH`. The dock
+**re-writes on editor start**, so the path stays current; if it can't resolve Node
+(e.g. Node is only exported from an interactive `~/.zshrc`), it writes a plain
+`npx` command and the dock shows a one-time hint.
+
+**If a client still doesn't connect on macOS:**
+
+- **Re-write after changing your Node version.** nvm/fnm/volta embed the version
+  in the path (`~/.nvm/versions/node/v22.11.0/bin/node`), so switching or upgrading
+  Node invalidates the old absolute path — click **Write .mcp.json** again to
+  re-resolve it.
+- **Launch the client from a terminal** (`open` won't help — start the app's binary
+  from a shell) to confirm it's a PATH issue: from a terminal it inherits your
+  `PATH` and should connect.
+- **Move your version-manager init into `~/.zprofile`.** A login shell (what the
+  toolkit uses to resolve Node) sources `~/.zprofile`, not `~/.zshrc`. If your nvm
+  block lives only in `~/.zshrc`, the resolver can't see it — add it to
+  `~/.zprofile` too, then Write again.
+- **Zero-config alternative:** install Node from the **official nodejs.org
+  installer**. It lands in `/usr/local/bin`, which is on the default `PATH`, so no
+  resolution is needed.
+
+**Point a Mac at a local server build** (development) by setting
+`GODOT_MCP_DEV_SERVER_PATH` in the environment to your built `dist/index.js` — the
+toolkit then emits a `node <that path>` command instead of the released `npx` form.
+
 ## Language server (LSP)
 
 The `lsp_*` tools connect to Godot's built-in GDScript language server. The MCP

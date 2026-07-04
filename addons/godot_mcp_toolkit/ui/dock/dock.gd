@@ -8,6 +8,8 @@ extends VBoxContainer
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const NodejsCheck = Modules.NodejsCheck
+const MCPJsonSync = Modules.MCPJsonSync
+const MacosLaunchHint := preload("res://addons/godot_mcp_toolkit/ui/dock/status/macos_launch_hint.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_section_card.gd")
@@ -50,6 +52,15 @@ var _dialog_presenter: ToolkitDialogPresenter = null
 
 # Lightweight timer for runtime-status polling during playtests.
 var _runtime_timer: Timer = null
+
+# macOS GUI-launch nudge — session state the pure MacosLaunchHint predicate
+# reads. _ever_connected latches true on the first client connect, so a peer that
+# connects then drops never re-arms the hint; _macos_hint_shown makes the nudge a
+# one-shot; _listening_seen_ms times the connect grace (mirrors the status panel's
+# runtime-reach grace). All reset only by a fresh editor session.
+var _ever_connected: bool = false
+var _macos_hint_shown: bool = false
+var _listening_seen_ms: int = -1
 
 
 func bind(
@@ -124,6 +135,13 @@ func _build_ui() -> void:
 		var _path_hint := ""
 		if OS.get_name() == "Windows":
 			_path_hint = "\nIf Node.js is installed, ensure it is on your system PATH."
+		elif OS.get_name() == "macOS":
+			# Apps launched from Finder/Dock run under launchd with a minimal PATH and
+			# never source shell rc files, so a version-manager Node is invisible here.
+			_path_hint = ("\nOn macOS, apps launched from Finder/Dock run with a minimal "
+				+ "PATH and may not find a version-manager Node (nvm/fnm/Homebrew). Click "
+				+ "\"Write .mcp.json\" — the toolkit embeds your resolved absolute Node path "
+				+ "— or launch the editor/client from a terminal.")
 		nodejs_msg = ("Node.js not found — the MCP server bridge requires "
 			+ "Node.js 20+. Download it from https://nodejs.org" + _path_hint)
 	elif not node_check["meets_minimum"]:
@@ -204,6 +222,10 @@ func _build_ui() -> void:
 # ---------------------------------------------------------------------------
 
 func _on_client_connected(peer_count: int) -> void:
+	# A client connected — the macOS launch nudge no longer applies this session,
+	# even if this peer later drops (a connected-then-dropped peer is a different
+	# state than never-connected).
+	_ever_connected = true
 	# Status labels live in the status panel; the dock keeps the toast + the
 	# fan-out to the other sub-panels (it knows which panel reacts to which event).
 	if _status_panel != null:
@@ -263,6 +285,40 @@ func _on_runtime_timer_timeout() -> void:
 		_status_panel.refresh_runtime()
 	if _mcp_json_panel != null:
 		_mcp_json_panel.refresh()
+	_maybe_show_macos_launch_hint()
+
+
+# macOS GUI-launch nudge: when the toolkit is listening but no client has
+# connected after a grace period AND a valid .mcp.json exists (a client IS
+# configured), a GUI-launched client likely can't find Node (launchd minimal PATH).
+# Surface a calm one-shot toast steering to the fix. The pure MacosLaunchHint
+# predicate owns the decision; the dock owns the session state + timing here.
+func _maybe_show_macos_launch_hint() -> void:
+	# Terminal early-outs: once shown, or once any peer connected this session, the
+	# hint never applies again. Off macOS it never applies — skip before the file
+	# probe (the pure predicate still gates on os_name; this is only a perf guard).
+	if _macos_hint_shown or _ever_connected or _server == null:
+		return
+	if OS.get_name() != "macOS":
+		return
+	var listening: bool = _server.is_listening()
+	# First tick of continuous listening — mirrors the status panel's runtime-reach
+	# seen-timestamp grace; reset if listening drops so the grace measures continuity.
+	if listening:
+		if _listening_seen_ms < 0:
+			_listening_seen_ms = Time.get_ticks_msec()
+	else:
+		_listening_seen_ms = -1
+		return
+	var grace_elapsed := Time.get_ticks_msec() - _listening_seen_ms > MacosLaunchHint.NO_PEER_GRACE_MS
+	# A valid (exists + parseable) .mcp.json means a client IS configured — the
+	# anti-nag gate. Probed only after the cheaper gates pass.
+	var mcp_json_valid := MCPJsonSync.has_mcp_json() and not MCPJsonSync.is_malformed()
+	if MacosLaunchHint.should_show(
+			OS.get_name(), listening, mcp_json_valid,
+			_ever_connected, grace_elapsed, _macos_hint_shown):
+		_macos_hint_shown = true
+		_toast(MacosLaunchHint.message(), _TOAST_WARNING)
 
 
 # ---------------------------------------------------------------------------
