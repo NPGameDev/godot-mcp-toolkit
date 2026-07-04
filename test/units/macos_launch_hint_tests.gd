@@ -1,9 +1,9 @@
 @tool
 extends RefCounted
 ## Unit tests for the pure macOS launch-hint predicate
-## (MacosLaunchHint.should_show): the Q4 all-AND gate — macOS ∧ listening ∧ a valid
+## (MacosLaunchHint.should_show): the all-AND gate — macOS ∧ listening ∧ a valid
 ## .mcp.json exists ∧ no peer ever connected this session ∧ grace elapsed ∧ not
-## already shown — so any single false keeps the dock silent (the anti-nag
+## dismissed — so any single false keeps the dock panel hidden (the anti-nag
 ## property), plus that the message carries the launchd cause + recovery actions.
 
 const MacosLaunchHint := preload("res://addons/godot_mcp_toolkit/ui/dock/status/macos_launch_hint.gd")
@@ -47,7 +47,7 @@ static func _test_each_missing_condition_silent(testing) -> void:
 		"grace not elapsed → silent")
 	testing.ok(
 		not MacosLaunchHint.should_show("macOS", true, true, false, true, true),
-		"already shown → silent (one-shot)")
+		"dismissed this session → silent")
 	print("")
 
 

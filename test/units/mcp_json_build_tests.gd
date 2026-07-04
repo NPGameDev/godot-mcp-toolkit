@@ -30,6 +30,12 @@ static func run(testing) -> void:
 	_test_refresh_preserves_user_env(testing)
 	_test_env_first_create_uses_template(testing)
 	_test_env_merge_is_pure(testing)
+	_test_needs_refresh_command_differs(testing)
+	_test_needs_refresh_args_differ(testing)
+	_test_needs_refresh_path_differs(testing)
+	_test_needs_refresh_matching_fields_no_churn(testing)
+	_test_needs_refresh_missing_entry(testing)
+	_test_refresh_existing_config_noop_off_macos(testing)
 
 
 # macOS release with a resolved node: absolute npx derived beside node, resolved
@@ -200,4 +206,76 @@ static func _test_env_merge_is_pure(testing) -> void:
 	testing.eq(base.size(), 1, "base env not mutated")
 	testing.eq(existing.size(), 1, "existing env not mutated")
 	testing.ok(not builder.has("GODOT_MCP_CONFIG_VERSION"), "builder env not mutated")
+	print("")
+
+
+# A different command flags a refresh (a Node-manager path change on macOS).
+static func _test_needs_refresh_command_differs(testing) -> void:
+	testing.begin("needs_refresh — differing command → true")
+	var existing := {"command": "/old/bin/npx", "args": ["-y", _PKG], "env": {}}
+	var built := {"command": "/new/bin/npx", "args": ["-y", _PKG], "env": {}}
+	testing.ok(MCPJsonSync.needs_refresh(existing, built), "command change → refresh")
+	print("")
+
+
+# Differing args flag a refresh (e.g. release ↔ dev shape).
+static func _test_needs_refresh_args_differ(testing) -> void:
+	testing.begin("needs_refresh — differing args → true")
+	var existing := {"command": "node", "args": ["/old/dist/index.js"], "env": {}}
+	var built := {"command": "node", "args": ["/new/dist/index.js"], "env": {}}
+	testing.ok(MCPJsonSync.needs_refresh(existing, built), "args change → refresh")
+	print("")
+
+
+# A differing env.PATH backstop flags a refresh (the resolved login-shell PATH).
+static func _test_needs_refresh_path_differs(testing) -> void:
+	testing.begin("needs_refresh — differing env.PATH → true")
+	var existing := {"command": "npx", "args": ["-y", _PKG], "env": {"PATH": "/old/bin"}}
+	var built := {"command": "npx", "args": ["-y", _PKG], "env": {"PATH": "/new/bin"}}
+	testing.ok(MCPJsonSync.needs_refresh(existing, built), "PATH change → refresh")
+	print("")
+
+
+# Matching command/args/PATH → no churn, even when the existing file carries extra
+# user env keys the refresh must NOT rewrite over (a port pin here).
+static func _test_needs_refresh_matching_fields_no_churn(testing) -> void:
+	testing.begin("needs_refresh — matching command/args/PATH → false (preserves user keys)")
+	var existing := {
+		"command": "/opt/homebrew/bin/npx",
+		"args": ["-y", _PKG],
+		"env": {"PATH": "/opt/homebrew/bin", "GODOT_MCP_EDITOR_PORT": "6560"},
+	}
+	var built := {
+		"command": "/opt/homebrew/bin/npx",
+		"args": ["-y", _PKG],
+		"env": {"PATH": "/opt/homebrew/bin"},
+	}
+	testing.ok(
+		not MCPJsonSync.needs_refresh(existing, built),
+		"only a user env key differs → no rewrite")
+	print("")
+
+
+# A missing/empty existing entry (no server key) differs from any real build → true.
+static func _test_needs_refresh_missing_entry(testing) -> void:
+	testing.begin("needs_refresh — empty existing entry → true")
+	var built := {"command": "npx", "args": ["-y", _PKG], "env": {}}
+	testing.ok(MCPJsonSync.needs_refresh({}, built), "empty existing entry → refresh")
+	print("")
+
+
+# The startup refresh is macOS-only: on every other host it early-returns before any
+# file I/O, so a Windows/Linux editor start never rewrites .mcp.json. Asserted on the
+# current (non-macOS) host; documented-skip on macOS where the gate is inactive.
+static func _test_refresh_existing_config_noop_off_macos(testing) -> void:
+	testing.begin("refresh_existing_config — no-op off macOS (no .mcp.json churn)")
+	if OS.get_name() == "macOS":
+		testing.ok(true, "skipped on macOS (the macOS gate is inactive here)")
+		print("")
+		return
+	var path := MCPJsonSync.get_mcp_json_path()
+	var before := FileAccess.get_file_as_string(path) if FileAccess.file_exists(path) else ""
+	MCPJsonSync.refresh_existing_config()
+	var after := FileAccess.get_file_as_string(path) if FileAccess.file_exists(path) else ""
+	testing.eq(after, before, "off macOS the startup refresh leaves .mcp.json untouched")
 	print("")

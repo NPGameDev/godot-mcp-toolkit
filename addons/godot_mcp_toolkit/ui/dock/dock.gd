@@ -18,6 +18,7 @@ const DockLimitsSection := preload("res://addons/godot_mcp_toolkit/ui/dock/limit
 const DockUnfocusedControl := preload("res://addons/godot_mcp_toolkit/ui/dock/limits/dock_unfocused_control.gd")
 const DockAuditSection := preload("res://addons/godot_mcp_toolkit/ui/dock/security/dock_audit_section.gd")
 const DockMcpJsonPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/mcp/dock_mcp_json_panel.gd")
+const DockMacosLaunchPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/status/dock_macos_launch_panel.gd")
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -40,6 +41,10 @@ var _unfocused_control: DockUnfocusedControl = null
 # Audit Log section — settings + view/clear + the lazy log viewer (own sub-panel).
 var _audit_section: DockAuditSection = null
 
+# macOS launchd minimal-PATH guidance — persistent, all-version warning panel,
+# driven by the connection-state gate below (replaces the 4.4+-only toast).
+var _macos_launch_panel: DockMacosLaunchPanel = null
+
 # Node.js warning.
 var _nodejs_status_warning: Label = null
 
@@ -53,13 +58,13 @@ var _dialog_presenter: ToolkitDialogPresenter = null
 # Lightweight timer for runtime-status polling during playtests.
 var _runtime_timer: Timer = null
 
-# macOS GUI-launch nudge — session state the pure MacosLaunchHint predicate
+# macOS GUI-launch guidance — session state the pure MacosLaunchHint predicate
 # reads. _ever_connected latches true on the first client connect, so a peer that
-# connects then drops never re-arms the hint; _macos_hint_shown makes the nudge a
-# one-shot; _listening_seen_ms times the connect grace (mirrors the status panel's
-# runtime-reach grace). All reset only by a fresh editor session.
+# connects then drops never re-arms the guidance; _macos_hint_dismissed latches when
+# the user closes the panel this session; _listening_seen_ms times the connect grace
+# (mirrors the status panel's runtime-reach grace). All reset only by a fresh session.
 var _ever_connected: bool = false
-var _macos_hint_shown: bool = false
+var _macos_hint_dismissed: bool = false
 var _listening_seen_ms: int = -1
 
 
@@ -127,6 +132,14 @@ func _build_ui() -> void:
 	mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_mcp_json_panel = DockMcpJsonPanel.new(mcp_json_btn, Callable(self, "_toast"), _write_flow)
 	_status_panel.insert_warning_panel(_mcp_json_panel)
+
+	# macOS launchd minimal-PATH guidance — a persistent, all-version warning panel
+	# (a toast is 4.4+ only and transient). The dock drives its visibility from the
+	# connection-state gate in _refresh_macos_launch_hint; the panel renders the
+	# message + a session dismiss control.
+	_macos_launch_panel = DockMacosLaunchPanel.new(MacosLaunchHint.message())
+	_macos_launch_panel.dismissed.connect(_on_macos_hint_dismissed)
+	sc.add_child(_macos_launch_panel)
 
 	# Node.js availability — shared detection.
 	var node_check := NodejsCheck.check()
@@ -243,6 +256,9 @@ func _on_client_connected(peer_count: int) -> void:
 		_mcp_json_panel.sync_read_only_state()
 	if _unfocused_control != null:
 		_unfocused_control.refresh()
+	# A peer connected — the macOS guidance no longer applies; clear it at once
+	# rather than waiting for the next timer tick.
+	_refresh_macos_launch_hint()
 
 
 func _on_client_disconnected(peer_count: int) -> void:
@@ -285,21 +301,23 @@ func _on_runtime_timer_timeout() -> void:
 		_status_panel.refresh_runtime()
 	if _mcp_json_panel != null:
 		_mcp_json_panel.refresh()
-	_maybe_show_macos_launch_hint()
+	_refresh_macos_launch_hint()
 
 
-# macOS GUI-launch nudge: when the toolkit is listening but no client has
+# macOS GUI-launch guidance: when the toolkit is listening but no client has
 # connected after a grace period AND a valid .mcp.json exists (a client IS
 # configured), a GUI-launched client likely can't find Node (launchd minimal PATH).
-# Surface a calm one-shot toast steering to the fix. The pure MacosLaunchHint
-# predicate owns the decision; the dock owns the session state + timing here.
-func _maybe_show_macos_launch_hint() -> void:
-	# Terminal early-outs: once shown, or once any peer connected this session, the
-	# hint never applies again. Off macOS it never applies — skip before the file
-	# probe (the pure predicate still gates on os_name; this is only a perf guard).
-	if _macos_hint_shown or _ever_connected or _server == null:
+# Drive the persistent panel from that state every tick, so it appears after the
+# grace, self-clears the moment a client connects or the config is fixed, and stays
+# hidden once the user dismisses it. The pure MacosLaunchHint predicate owns the
+# decision; the dock owns the session state + timing here.
+func _refresh_macos_launch_hint() -> void:
+	if _macos_launch_panel == null or _server == null:
 		return
-	if OS.get_name() != "macOS":
+	# Off macOS, dismissed, or a peer already connected → never show (and hide the
+	# panel if it is currently up). Cheaper gates first: skip the file probe below.
+	if OS.get_name() != "macOS" or _macos_hint_dismissed or _ever_connected:
+		_macos_launch_panel.set_shown(false)
 		return
 	var listening: bool = _server.is_listening()
 	# First tick of continuous listening — mirrors the status panel's runtime-reach
@@ -309,16 +327,23 @@ func _maybe_show_macos_launch_hint() -> void:
 			_listening_seen_ms = Time.get_ticks_msec()
 	else:
 		_listening_seen_ms = -1
+		_macos_launch_panel.set_shown(false)
 		return
 	var grace_elapsed := Time.get_ticks_msec() - _listening_seen_ms > MacosLaunchHint.NO_PEER_GRACE_MS
 	# A valid (exists + parseable) .mcp.json means a client IS configured — the
 	# anti-nag gate. Probed only after the cheaper gates pass.
 	var mcp_json_valid := MCPJsonSync.has_mcp_json() and not MCPJsonSync.is_malformed()
-	if MacosLaunchHint.should_show(
+	_macos_launch_panel.set_shown(MacosLaunchHint.should_show(
 			OS.get_name(), listening, mcp_json_valid,
-			_ever_connected, grace_elapsed, _macos_hint_shown):
-		_macos_hint_shown = true
-		_toast(MacosLaunchHint.message(), _TOAST_WARNING)
+			_ever_connected, grace_elapsed, _macos_hint_dismissed))
+
+
+# The user closed the guidance panel — latch the session dismiss so it stays hidden
+# until the next editor session, and hide it now.
+func _on_macos_hint_dismissed() -> void:
+	_macos_hint_dismissed = true
+	if _macos_launch_panel != null:
+		_macos_launch_panel.set_shown(false)
 
 
 # ---------------------------------------------------------------------------
