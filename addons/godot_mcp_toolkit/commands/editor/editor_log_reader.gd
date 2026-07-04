@@ -252,6 +252,27 @@ static func _read_console_log(
 				chosen_mtime = best_mtime
 				warnings.append("fallback to stale log — no post-boot log found")
 
+	# Windows: the engine's logger holds the live session log open for the whole
+	# editor session with a share mode that denies other opens (write open,
+	# drivers/windows/file_access_windows.cpp:217 — _SH_SECURE through 4.4,
+	# _SH_DENYRW on 4.5+; both exclusive vs readers). On Godot 4.4 the mtime
+	# probes above then fail on that locked file: 4.4's get_modified_time opens a
+	# CreateFileW(GENERIC_READ, FILE_SHARE_READ) handle -> sharing violation ->
+	# returns 0 (4.5 switched to FILE_READ_ATTRIBUTES with full sharing). Every
+	# mtime reads 0, so no candidate got chosen even though the directory
+	# enumeration (FindFirstFile — attribute-level, lock-immune) just listed real
+	# .log files. Fall through with the live-log candidate (godot.log when
+	# present) and let the open decide: readable -> entries; still locked -> the
+	# LOG_BUSY branch below (the enumeration is the existence proof). On 4.2/4.3
+	# get_modified_time is _wstat-based and succeeds on locked files, so those
+	# versions choose normally via the loops above — their failure mode is the
+	# open-based file_exists in the open-failed branch below. Unreachable on
+	# POSIX (stat succeeds; advisory locks never fail these probes), so
+	# Linux/macOS behavior is untouched.
+	if chosen_file == "" and not log_files.is_empty():
+		var live_name := "godot.log" if log_files.has("godot.log") else log_files[0]
+		chosen_file = logs_dir + "/" + live_name
+
 	if chosen_file == "":
 		return _log_unavailable_for_file(
 			"no readable log file under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging; playtest may have rotated the editor's log mid-session")
@@ -259,8 +280,13 @@ static func _read_console_log(
 	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
 	if file_handle == null:
 		var open_err := FileAccess.get_open_error()
-		if FileAccess.file_exists(chosen_file):
-			var _busy_hint := "log file exists but cannot be read right now (%s) — transient lock during file flush, retry in 1-2 seconds" % _godot_error_name(open_err)
+		# file_exists is open-based on Windows 4.2/4.3 (_wfsopen "rb"; fixed in
+		# 4.4 via GetFileAttributesW) and lies FALSE for the engine's own
+		# write-locked live log; the directory enumeration above listed the
+		# file a moment ago, so treat that listing as the existence proof — a
+		# locked-but-present log is LOG_BUSY, never LOG_UNAVAILABLE.
+		if FileAccess.file_exists(chosen_file) or log_files.has(chosen_file.get_file()):
+			var _busy_hint := "log file exists but cannot be read right now (%s) — the editor holds the live log locked (on Windows the lock can persist for the whole editor session; elsewhere it is a transient flush lock — retry in 1-2 seconds)" % _godot_error_name(open_err)
 			if Modules.LogBuffer.uses_logger_api():
 				_busy_hint += "; consider using source=\"buffer\" instead"
 			return MCPToolkitError.fail("LOG_BUSY", _busy_hint)
