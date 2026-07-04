@@ -104,8 +104,10 @@ wait "$WARMUP_PID" 2>/dev/null || true
 # only (the POSIX flow above is byte-identical on Linux/macOS):
 #   1. taskkill the recorded WinPID tree (harmless no-op if already dead);
 #   2. if 6550/6005 still LISTEN after a bounded settle — GitHub Actions only
-#      — taskkill the exact image this script launched (basename of
-#      GODOT_BIN), loudly;
+#      — taskkill the PID(s) that OWN those LISTENING sockets (parsed from
+#      netstat -ano), image-agnostic so it targets the orphaned holder the
+#      shim's own PID tree misses (validated locally; CI-pending vs the live
+#      zombie), loudly;
 #   3. GitHub Actions only: assert the ports are free; a zombie that survived force-kill
 #      fails HERE, fast, with tasklist/netstat evidence (exit 2, the script's
 #      setup-error class) — the subsequent editor boot is already doomed, and
@@ -128,6 +130,17 @@ case "$(uname -s)" in
     ports_listening() {
       netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" 2>/dev/null | grep -c "LISTENING" 2>/dev/null || true
     }
+    # The owning PID(s) of the LISTENING sockets on 6550/6005 — the last
+    # whitespace field of each LISTENING netstat -ano row. This is what roots
+    # the reliable kill: setup-godot puts a SHIM on PATH (GODOT_BIN =
+    # .../bin/godot, extensionless), so $! and the WinPID tree can be the
+    # shim's, and the orphaned real editor holds the port under a different PID
+    # whose image name is not "godot" (observed: PID 7880 held 6005, tasklist
+    # grep -i godot empty). Killing the port-OWNER PID is image-agnostic and
+    # reaches it regardless of the shim-orphan.
+    port_owner_pids() {
+      netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" 2>/dev/null | grep "LISTENING" 2>/dev/null | awk '{print $NF}' | sort -u || true
+    }
     if [ -n "$WARMUP_WINPID" ]; then
       taskkill //F //T //PID "$WARMUP_WINPID" >/dev/null 2>&1 || true
     fi
@@ -139,19 +152,29 @@ case "$(uname -s)" in
         [ "$HELD" = "0" ] && break
       done
     fi
+    # Reliable fallback (GitHub Actions only): kill whatever process OWNS the
+    # ports. REPLACES the former //IM image-name kill, which was proven
+    # ineffective in CI — the shim basename 'godot' matched no running image
+    # while the orphaned editor (PID 7880) kept 6005. On the runner nothing but
+    # a warm-up zombie can hold these ports at this point, so killing the owner
+    # (and its tree) is safe; the GITHUB_ACTIONS gate keeps it off dev machines.
     if [ "$HELD" != "0" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-      GODOT_IMAGE="$(basename "$GODOT_BIN")"
-      echo "warm-up teardown: ports 6550/6005 still held after kill — force-killing image '$GODOT_IMAGE' (last resort)"
-      taskkill //F //T //IM "$GODOT_IMAGE" >/dev/null 2>&1 || true
-      taskkill //F //T //IM "${GODOT_IMAGE%.exe}.exe" >/dev/null 2>&1 || true
+      for pid in $(port_owner_pids); do
+        { [ -n "$pid" ] && [ "$pid" != "0" ]; } || continue
+        echo "warm-up teardown: ports 6550/6005 still held — force-killing port-owner PID $pid"
+        taskkill //F //T //PID "$pid" >/dev/null 2>&1 || true
+      done
       sleep 2
       HELD="$(ports_listening)"
     fi
     if [ "$HELD" != "0" ]; then
       if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
         echo "ERROR: warm-up editor ZOMBIE survived force-kill — 6550/6005 still LISTENING; the next editor boot is doomed (LSP bind loss is permanent on 4.2-4.4)." >&2
-        echo "--- tasklist (godot) ---"
-        tasklist 2>/dev/null | grep -i godot || true
+        echo "--- port-owner processes (by PID) ---"
+        for pid in $(port_owner_pids); do
+          { [ -n "$pid" ] && [ "$pid" != "0" ]; } || continue
+          tasklist //FI "PID eq $pid" 2>/dev/null | grep -viE "No tasks|^$|Image Name|^=" || true
+        done
         echo "--- netstat (6550/6005) ---"
         netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" || true
         echo "--- warm-up log tail (may explain the zombie) ---"
