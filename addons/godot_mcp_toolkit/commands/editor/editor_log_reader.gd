@@ -163,13 +163,15 @@ static func _detect_log_level(line: String) -> String:
 	return LogHelpers.detect_log_level(line)
 
 
-## Builds a source="file" LOG_UNAVAILABLE failure, attaching a `headless_hint` when
-## running headless. A headless `--editor` never writes `user://logs/godot.log` — file
-## logging is hard-disabled in editor mode on every version (the engine's `!editor` guard
-## term, main.cpp) — so the missing file is expected, not a misconfiguration; steer the
-## caller to source="buffer". is_headless-gated, so the display response is byte-identical.
+## Builds a source="file" LOG_UNAVAILABLE failure with the version-gated recovery hint
+## (buffer-steer only on Godot 4.5+), attaching a `headless_hint` when running headless.
+## A headless `--editor` never writes `user://logs/godot.log` — file logging is
+## hard-disabled in editor mode on every version (the engine's `!editor` guard term,
+## main.cpp) — so the missing file is expected, not a misconfiguration; steer the caller
+## to source="buffer". is_headless-gated, so the display response is byte-identical.
 static func _log_unavailable_for_file(message: String) -> Dictionary:
-	var result := MCPToolkitError.fail("LOG_UNAVAILABLE", message)
+	var result := MCPToolkitError.fail("LOG_UNAVAILABLE", message,
+			MCPToolkitError.log_unavailable_hint(Modules.LogBuffer.uses_logger_api()))
 	if Modules.VersionUtils.is_headless():
 		result["headless_hint"] = "editor log file is unavailable — headless editors don't write one (file logging is disabled in editor mode) — use source=\"buffer\" (the default; in-memory, works headless on Godot 4.5+)."
 	return result
@@ -252,23 +254,18 @@ static func _read_console_log(
 				chosen_mtime = best_mtime
 				warnings.append("fallback to stale log — no post-boot log found")
 
-	# Windows: the engine's logger holds the live session log open for the whole
-	# editor session with a share mode that denies other opens (write open,
-	# drivers/windows/file_access_windows.cpp:217 — _SH_SECURE through 4.4,
-	# _SH_DENYRW on 4.5+; both exclusive vs readers). On Godot 4.4 the mtime
-	# probes above then fail on that locked file: 4.4's get_modified_time opens a
-	# CreateFileW(GENERIC_READ, FILE_SHARE_READ) handle -> sharing violation ->
-	# returns 0 (4.5 switched to FILE_READ_ATTRIBUTES with full sharing). Every
-	# mtime reads 0, so no candidate got chosen even though the directory
-	# enumeration (FindFirstFile — attribute-level, lock-immune) just listed real
-	# .log files. Fall through with the live-log candidate (godot.log when
-	# present) and let the open decide: readable -> entries; still locked -> the
-	# LOG_BUSY branch below (the enumeration is the existence proof). On 4.2/4.3
-	# get_modified_time is _wstat-based and succeeds on locked files, so those
-	# versions choose normally via the loops above — their failure mode is the
-	# open-based file_exists in the open-failed branch below. Unreachable on
-	# POSIX (stat succeeds; advisory locks never fail these probes), so
-	# Linux/macOS behavior is untouched.
+	# Windows 4.4.0 get_modified_time self-collision. The engine's logger opens the
+	# live session log GENERIC_WRITE with a deny-nothing share (FileAccess WRITE never
+	# sets backup_save -> _SH_DENYNO on every version), so a reader's open always
+	# succeeds and the log is never truly locked. But on 4.4.0 get_modified_time makes
+	# its own CreateFileW(GENERIC_READ, FILE_SHARE_READ) probe, which denies the live
+	# writer -> sharing violation -> mtime reads 0. So the mtime>best_mtime loops above
+	# never pick the live log even though the directory enumeration (attribute-level,
+	# lock-immune) just listed it. Fall through with the live-log candidate (godot.log
+	# when present) and let the open decide. Scoped to 4.4.0 (relaxed in 4.4.1; 4.5
+	# switched to FILE_READ_ATTRIBUTES with full sharing); 4.2/4.3 use a handle-less
+	# _wstat that reads the live file fine, so they choose normally via the loops.
+	# Unreachable on POSIX (stat succeeds against the deny-nothing writer).
 	if chosen_file == "" and not log_files.is_empty():
 		var live_name := "godot.log" if log_files.has("godot.log") else log_files[0]
 		chosen_file = logs_dir + "/" + live_name
@@ -280,18 +277,19 @@ static func _read_console_log(
 	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
 	if file_handle == null:
 		var open_err := FileAccess.get_open_error()
-		# file_exists is open-based on Windows 4.2/4.3 (_wfsopen "rb"; fixed in
-		# 4.4 via GetFileAttributesW) and lies FALSE for the engine's own
-		# write-locked live log; the directory enumeration above listed the
-		# file a moment ago, so treat that listing as the existence proof — a
-		# locked-but-present log is LOG_BUSY, never LOG_UNAVAILABLE.
+		# A reader open failing here means an external, read-denying holder (antivirus
+		# scan, file-sync, a backup tool) — never the engine: the logger holds the log
+		# deny-nothing, so file_exists returns TRUE and our own open normally succeeds on
+		# every version. The directory enumeration above already listed the file, so treat
+		# a present-but-unreadable log as LOG_BUSY; only a genuinely absent file is
+		# LOG_UNAVAILABLE. Unreachable on POSIX (no such share collision).
 		if FileAccess.file_exists(chosen_file) or log_files.has(chosen_file.get_file()):
-			var _busy_hint := "log file exists but cannot be read right now (%s) — the editor holds the live log locked (on Windows the lock can persist for the whole editor session; elsewhere it is a transient flush lock — retry in 1-2 seconds)" % _godot_error_name(open_err)
-			if Modules.LogBuffer.uses_logger_api():
-				_busy_hint += "; consider using source=\"buffer\" instead"
-			return MCPToolkitError.fail("LOG_BUSY", _busy_hint)
+			return MCPToolkitError.fail("LOG_BUSY",
+				"log file exists but could not be read (%s)" % _godot_error_name(open_err),
+				MCPToolkitError.log_busy_hint(Modules.LogBuffer.uses_logger_api()))
 		return MCPToolkitError.fail("LOG_UNAVAILABLE",
-			"cannot open %s (%s)" % [chosen_file, _godot_error_name(open_err)])
+			"cannot open %s (%s)" % [chosen_file, _godot_error_name(open_err)],
+			MCPToolkitError.log_unavailable_hint(Modules.LogBuffer.uses_logger_api()))
 	var content := file_handle.get_as_text()
 	file_handle.close()
 

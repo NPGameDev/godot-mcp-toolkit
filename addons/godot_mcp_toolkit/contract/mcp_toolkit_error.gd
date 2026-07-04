@@ -92,12 +92,15 @@ const HINT_CLASS_NAME := "Use classdb.search to find valid class names."
 ## given an empty hint but the code has an entry here, that hint is auto-attached —
 ## so codes whose recovery advice never depends on call-site context carry it
 ## automatically. An explicit [param hint] passed to [method fail] wins over this.
+##
+## [code]LOG_BUSY[/code] / [code]LOG_UNAVAILABLE[/code] are deliberately absent: their
+## recovery advice is version-gated ([code]source="buffer"[/code] is a real fallback only
+## on Godot 4.5+), so every emit site passes [method log_busy_hint] /
+## [method log_unavailable_hint] explicitly rather than relying on a default here.
 const DEFAULT_HINTS := {
 	"TIMEOUT": "The editor may be busy. Try editor.wait_for_idle before retrying.",
 	"UNSUPPORTED": "Check COMPATIBILITY.md for version requirements.",
 	"PATH_DENIED": "Paths must use res:// format. Example: res://scenes/main.tscn",
-	"LOG_BUSY": "Log file is temporarily locked by the engine's flush. Retry in 1-2 seconds, or use source=\"buffer\" instead.",
-	"LOG_UNAVAILABLE": "Log file could not be read. Enable file logging in ProjectSettings → Debug → File Logging → Enable File Logging (debug/file_logging/enable_file_logging). If the editor just started, the log may not exist yet. Use source=\"buffer\" for real-time output.",
 	"PARENT_NOT_FOUND": "Parent directory does not exist. Use folder.create to create it first.",
 	"COMPILATION_FAILED": "The game failed to start due to script errors. Fix the errors shown above, then call game_start again. If no errors are shown, call editor_refresh to retrigger them, then editor_get_console for the full log.",
 	"GAME_NOT_RUNNING": "No running game detected. Use game.start first. If the MCP Runtime autoload is missing, re-enable the plugin in Project Settings.",
@@ -150,6 +153,38 @@ static func fail(code: String, message: String, hint: String = "") -> Dictionary
 	elif DEFAULT_HINTS.has(code):
 		result["hint"] = DEFAULT_HINTS[code]
 	return result
+
+
+## Recovery hint for a [code]LOG_BUSY[/code] failure — the log file exists but a read
+## open failed.
+##
+## Pass the caller's [code]LogBuffer.uses_logger_api()[/code] as [param can_use_buffer]
+## ([code]true[/code] on Godot 4.5+): only there is [code]source="buffer"[/code] a real
+## file-independent fallback, so it is steered to only then; on 4.2–4.4 the buffer tails
+## the same log and would fail identically, so the hint stays retry-only. A read open only
+## fails against an external, read-denying holder (antivirus, file-sync, backup) — never
+## the engine, which holds the log deny-nothing. Returns the string to pass as
+## [method fail]'s [param hint].
+static func log_busy_hint(can_use_buffer: bool) -> String:
+	var hint := "log file exists but could not be read — an external process (antivirus, file-sync, or a backup tool) may be holding it open. Retry shortly"
+	if can_use_buffer:
+		return hint + ", or use source=\"buffer\" (in-memory, no file I/O)."
+	return hint + "."
+
+
+## Recovery hint for a [code]LOG_UNAVAILABLE[/code] failure — the log file could not be
+## found or read.
+##
+## Pass the caller's [code]LogBuffer.uses_logger_api()[/code] as [param can_use_buffer]
+## ([code]true[/code] on Godot 4.5+): only there does [code]source="buffer"[/code] work
+## independently of file logging, so it is offered only then; on 4.2–4.4 the buffer reads
+## the same file and depends on the same setting. Returns the string to pass as
+## [method fail]'s [param hint].
+static func log_unavailable_hint(can_use_buffer: bool) -> String:
+	var hint := "log file could not be read — enable file logging in ProjectSettings → Debug → File Logging → Enable File Logging (debug/file_logging/enable_file_logging), then restart the editor"
+	if can_use_buffer:
+		return hint + ". Or use source=\"buffer\" (in-memory, real-time — no file needed)."
+	return hint + "."
 
 
 ## Headroom reserved below max_bytes when guarding a response, in bytes.

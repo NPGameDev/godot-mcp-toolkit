@@ -1,6 +1,6 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-06-22 (41n concern 034 D — batch partial-failure rollup sweep coverage)
+**Last updated:** 2026-07-05 (41n-undecies-bis-bis — version-gated LOG_BUSY/LOG_UNAVAILABLE hint SSOT; §07 REGRESSION WATCH note)
 **Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
 **Total tools:** 122 (100 editor-side + 6 LSP + 4 debugger + 12 runtime)
 **Sweep test count:** ~295 numbered test cases + 28 combo chains + C# phase + extension phase (Section 28 adds 22) — concern 034 D added 5 batch-rollup cases (3.14c/3.14d, 4.15/4.16, 2.15a); 41n-sexies added 7 send_text cases (20.17a–20.17g)
@@ -69,7 +69,7 @@
 | editor.save_scene | 55, 64 | — | C3, C5, C7, C8, C9 | — | — | |
 | editor.screenshot | 56, 57 | — | — | — | — | |
 | editor.refresh | 61 | — | C15, C16 | — | 5f96b62 | Renamed from reload_scripts |
-| editor.get_console | 58, 58a–58h | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #9: total_lines/next_id/truncated |
+| editor.get_console | 58, 58a–58h | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #9: total_lines/next_id/truncated. LOG_BUSY/LOG_UNAVAILABLE hints version-gated (4.5+ buffer-steer only) — §07 REGRESSION WATCH note + server smoke §14 own the truth-table (41n-undecies-bis-bis) |
 | editor.wait_for_idle | 60 | — | — | — | — | |
 | execute.code | 58a_seed, 77 | — | — | — | FIX-4, FIX-H, 279efed | **GAP:** load() hint, singleton hint |
 
@@ -149,7 +149,7 @@
 |---|---|---|---|---|---|---|
 | game.start | 71 | — | C8 | — | 4be3454, a28d17b | **GAP:** compilation failure guard, wait_for_runtime hint |
 | game.stop | 81 | — | C8 | — | — | |
-| debugger.get_log | 75, 75a–75f, 80, 80a–80f, 20.15a | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis). ledger #9: total_lines/truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a — supersedes the file-path capped-tail `truncated=start>0`) |
+| debugger.get_log | 75, 75a–75f, 80, 80a–80f, 20.15a | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis). ledger #9: total_lines/truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a — supersedes the file-path capped-tail `truncated=start>0`); LOG_BUSY hint version-gated via shared MCPToolkitError.log_busy_hint (41n-undecies-bis-bis) |
 
 ### Animation (4 tools)
 
@@ -292,7 +292,7 @@
 | runtime.get_node_state | 73 | — | C8 | — | — | |
 | runtime.get_script_vars | 74 | — | — | — | — | |
 | runtime.set_property | — | — | — | — | c6d5f40 | **GAP:** no test + autoload warning |
-| debugger.get_log | 75, 75a–75f, 80a–80f, 20.15a | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state; ledger #9: runtime total→total_lines + truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a) |
+| debugger.get_log | 75, 75a–75f, 80a–80f, 20.15a | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state; ledger #9: runtime total→total_lines + truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a); LOG_BUSY/LOG_UNAVAILABLE hints version-gated via shared MCPToolkitError.log_busy_hint/log_unavailable_hint (41n-undecies-bis-bis) |
 | signal.list | (via editor 44–48) | — | — | — | — | Runtime uses same handler |
 | signal.connect | (via editor 45) | — | — | — | — | Runtime uses same handler |
 | signal.disconnect | (via editor 47) | — | — | — | — | Runtime uses same handler |

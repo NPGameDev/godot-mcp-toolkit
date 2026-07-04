@@ -462,8 +462,8 @@ enemies kill the player before events process).
 | `PARENT_NOT_FOUND` | Parent dir doesn't exist | `scene_create` and `script_write` auto-create dirs; others may not |
 | `ALREADY_PLAYING` | Game already running | `game_stop` first, or use `if_running: "return"` |
 | `COMPILATION_FAILED` | Script errors | `editor_refresh` then `editor_get_console` for details |
-| `LOG_UNAVAILABLE` | No log file | Use `source: "buffer"` (default) for in-memory capture |
-| `LOG_BUSY` | Transient file lock | Retry in 1-2s, or use `source: "buffer"` |
+| `LOG_UNAVAILABLE` | Log file couldn't be read or found | Enable file logging (ProjectSettings → Debug → File Logging) + restart; on Godot 4.5+ `source: "buffer"` works without a file (in-memory). On 4.2-4.4 buffer needs the same setting |
+| `LOG_BUSY` | Log file exists but a read open failed; an external process (antivirus/file-sync/backup) may be holding it open (never the engine) | Retry shortly; on Godot 4.5+ use `source: "buffer"` (in-memory, no file I/O). On 4.2-4.4 buffer tails the same file, so retry only |
 
 ---
 

@@ -562,7 +562,8 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 				_hint += "; alternatively use source=\"buffer\" (default) which captures all output in real-time"
 			else:
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
-			_send_result(peer, id, MCPToolkitError.fail("LOG_UNAVAILABLE", _hint))
+			_send_result(peer, id, MCPToolkitError.fail("LOG_UNAVAILABLE", _hint,
+				MCPToolkitError.log_unavailable_hint(LogBuffer.uses_logger_api())))
 		else:
 			_send_result(peer, id, {
 				"lines": [],
@@ -579,15 +580,15 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 	if file == null:
 		var open_err := FileAccess.get_open_error()
 		if FileAccess.file_exists(log_path):
-			var _busy_hint := "log file exists but cannot be read right now (err %d) — transient lock during flush, retry in 1-2s" % open_err
-			if LogBuffer.uses_logger_api():
-				_busy_hint += "; consider source=\"buffer\" instead"
-			_send_result(peer, id, MCPToolkitError.fail("LOG_BUSY", _busy_hint))
+			_send_result(peer, id, MCPToolkitError.fail("LOG_BUSY",
+				"log file exists but could not be read (err %d)" % open_err,
+				MCPToolkitError.log_busy_hint(LogBuffer.uses_logger_api())))
 		else:
 			var _gone_hint := "log file disappeared at %s — possible log rotation; retry" % log_path
 			if LogBuffer.uses_logger_api():
 				_gone_hint += " or use source=\"buffer\""
-			_send_result(peer, id, MCPToolkitError.fail("LOG_UNAVAILABLE", _gone_hint))
+			_send_result(peer, id, MCPToolkitError.fail("LOG_UNAVAILABLE", _gone_hint,
+				MCPToolkitError.log_unavailable_hint(LogBuffer.uses_logger_api())))
 		return
 	var text := file.get_as_text()
 	file.close()

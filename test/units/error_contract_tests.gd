@@ -12,6 +12,7 @@ const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/play
 static func run(testing) -> void:
 	_test_error_api(testing)
 	_test_error_codes_vocabulary(testing)
+	_test_log_hints(testing)
 	_test_make_error_entry(testing)
 	_test_response_size_guard(testing)
 	# Tail position + INSTANCE handlers (see _Handlers) mirror the proven M3
@@ -117,6 +118,46 @@ static func _test_error_codes_vocabulary(testing) -> void:
 			dupes += 1
 		seen[entry_str] = true
 	testing.eq(dupes, 0, "CODES has no duplicate entries")
+
+	print("")
+
+
+# --- Version-gated log hints (LOG_BUSY / LOG_UNAVAILABLE) -------------------
+# The two hint builders replace the removed DEFAULT_HINTS entries: their
+# buffer-steer is gated on LogBuffer.uses_logger_api() (true on Godot 4.5+),
+# because on 4.2-4.4 source="buffer" tails the same file and can't be a real
+# fallback. Pure bool->String, so both branches are exercised version-
+# independently by passing the flag explicitly.
+
+static func _test_log_hints(testing) -> void:
+	testing.begin("Version-gated log hints")
+
+	# 4.5+ (can_use_buffer = true) → steers to source="buffer".
+	var busy_buffer := MCPToolkitError.log_busy_hint(true)
+	testing.ok(busy_buffer.contains("source=\"buffer\""),
+			"log_busy_hint(true) → steers to source=buffer")
+	var unavailable_buffer := MCPToolkitError.log_unavailable_hint(true)
+	testing.ok(unavailable_buffer.contains("source=\"buffer\""),
+			"log_unavailable_hint(true) → steers to source=buffer")
+
+	# 4.2-4.4 (can_use_buffer = false) → no buffer steer (it reads the same file).
+	var busy_retry := MCPToolkitError.log_busy_hint(false)
+	testing.ok(not busy_retry.contains("buffer"),
+			"log_busy_hint(false) → omits buffer steer")
+	testing.ok(busy_retry.findn("retry") >= 0,
+			"log_busy_hint(false) → retry guidance present")
+	var unavailable_no_buffer := MCPToolkitError.log_unavailable_hint(false)
+	testing.ok(not unavailable_no_buffer.contains("buffer"),
+			"log_unavailable_hint(false) → omits buffer steer")
+	testing.ok(unavailable_no_buffer.findn("file logging") >= 0,
+			"log_unavailable_hint(false) → enable-file-logging guidance present")
+
+	# The moved SSOT: neither code carries a DEFAULT_HINTS entry any more (the
+	# gated helper is the sole source, passed explicitly at every emit site).
+	testing.ok(not MCPToolkitError.DEFAULT_HINTS.has("LOG_BUSY"),
+			"LOG_BUSY absent from DEFAULT_HINTS (moved to log_busy_hint)")
+	testing.ok(not MCPToolkitError.DEFAULT_HINTS.has("LOG_UNAVAILABLE"),
+			"LOG_UNAVAILABLE absent from DEFAULT_HINTS (moved to log_unavailable_hint)")
 
 	print("")
 

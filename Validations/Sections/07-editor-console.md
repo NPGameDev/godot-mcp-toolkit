@@ -60,6 +60,34 @@
 
 ---
 
+## Version-gated `LOG_BUSY` / `LOG_UNAVAILABLE` hints (`source="file"`)
+
+> **REGRESSION WATCH (41n-undecies-bis-bis):** `editor_get_console` with
+> `source="file"` (and the shared `debugger.get_log` readers) attach a
+> **version-gated** recovery hint via `MCPToolkitError.log_busy_hint` /
+> `log_unavailable_hint` — not the old unconditional `DEFAULT_HINTS` string:
+> - **Godot 4.5+** — the hint steers to `source="buffer"` (in-memory Logger API,
+>   file-independent).
+> - **Godot 4.2–4.4** — the hint does **NOT** mention `source="buffer"` (the buffer
+>   tails the *same* log file, so it can't be a fallback); it gives retry (`LOG_BUSY`)
+>   / enable-file-logging (`LOG_UNAVAILABLE`) guidance only.
+>
+> If a `source="buffer"` steer appears on a 4.2–4.4 editor, the version gate has
+> regressed — flag as **Major**.
+
+**`LOG_BUSY` is not deterministically triggerable from the sweep.** Per the Phase 0
+engine model, the logger holds `godot.log` **deny-nothing**, so our own read open
+always succeeds — there is no engine/self lock to exercise. A real `LOG_BUSY` needs an
+**external read-denying holder** (antivirus scan, file-sync, backup tool) the sweep
+can't provision. The deterministic truth-table (POSIX never `LOG_BUSY`; 4.5+ never
+engine-`LOG_BUSY`; genuine absence → `LOG_UNAVAILABLE`; 4.4 self-held `--log-file` →
+entries) is owned by **server smoke §14** (`14_asset_discovery_and_console.ts`). To
+eyeball the `LOG_UNAVAILABLE` gate here, disable file logging (ProjectSettings → Debug →
+File Logging), then `editor_get_console` `source="file"` → expect `LOG_UNAVAILABLE` with
+the version-appropriate hint.
+
+---
+
 ## Console error check
 
 Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.

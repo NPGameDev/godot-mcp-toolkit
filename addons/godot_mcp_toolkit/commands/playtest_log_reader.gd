@@ -102,7 +102,8 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 	var file := FileAccess.open(log_path, FileAccess.READ)
 	if file == null:
 		return MCPToolkitError.fail("LOG_BUSY",
-			"Log file exists but cannot be read (err %d) — retry in 1-2s" % FileAccess.get_open_error())
+			"log file exists but could not be read (err %d)" % FileAccess.get_open_error(),
+			MCPToolkitError.log_busy_hint(Modules.LogBuffer.uses_logger_api()))
 
 	var file_len: int = file.get_length()
 	if file_len <= _game_session_file_offset:
