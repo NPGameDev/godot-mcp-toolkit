@@ -241,7 +241,10 @@ func _spec_macos_setup() -> Dictionary:
 				+ "your PATH.\n\n"
 				+ "Open the setup guide for step-by-step details."),
 		"ok_label": "Finish",
-		"buttons": [{"label": "Open setup guide", "action": "open_macos_guide"}],
+		"buttons": [
+			{"label": "Back", "action": "back"},
+			{"label": "Open setup guide", "action": "open_macos_guide"},
+		],
 	}
 
 
@@ -312,6 +315,7 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 		"back":
 			if _step > 0:
 				_step -= 1
+				_save_progress()
 				_show_step(dialog)
 		"overwrite_mcp":
 			if _write_flow != null:
