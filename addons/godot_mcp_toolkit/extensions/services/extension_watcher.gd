@@ -282,7 +282,7 @@ func _compute_delta() -> Dictionary:
 				continue
 			if _Support.hash_extension_source(current[cn]) != _class_source_fingerprint[cn]:
 				if cn not in _pending_restart_modifies:
-					push_warning("[MCPExtensions] '%s' was edited but in-session changes can't be applied on Godot 4.2 — restart the editor to load the updated version (Godot 4.3+ applies edits live)." % cn)
+					push_warning("[MCPExtensions] '%s' was edited but in-session changes can't be applied on Godot 4.2 - restart the editor to load the updated version (Godot 4.3+ applies edits live)." % cn)
 				_pending_restart_modifies[cn] = current[cn]
 			else:
 				# Fingerprint matches the loaded version again (e.g. the edit was reverted).

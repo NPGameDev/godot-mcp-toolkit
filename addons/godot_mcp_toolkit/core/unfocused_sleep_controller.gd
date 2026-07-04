@@ -122,7 +122,7 @@ func lower() -> void:
 	RegistryClient.release_lock()
 	es.set_setting(_UNFOCUSED_SLEEP_KEY, boosted)
 	_original_unfocused_sleep_usec = live
-	print("[MCPServer] unfocused-responsive mode ON: %s %d → %d (~%d fps while unfocused)" % [
+	print("[MCPServer] unfocused-responsive mode ON: %s %d -> %d (~%d fps while unfocused)" % [
 		_UNFOCUSED_SLEEP_KEY, live, boosted, get_unfocused_responsive_fps()])
 
 

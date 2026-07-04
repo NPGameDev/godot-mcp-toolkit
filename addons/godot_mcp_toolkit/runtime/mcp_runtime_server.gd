@@ -114,7 +114,7 @@ func _start_server() -> void:
 	# transport's push_warning/push_error is the runtime-side surface.
 	_transport.configure("[MCPRuntimeServer]", base, count, BIND,
 		_RELISTEN_FRAME_INTERVAL, _AUTH_TIMEOUT_MS, false,
-		"no free port in %d–%d; Mode B tools disabled this session", pinned,
+		"no free port in %d-%d; Mode B tools disabled this session", pinned,
 		"Free the port, or change %s (or unset it to use the scanned band). Mode B tools are disabled this session." % _ENV_PIN)
 	# Runtime seams: only the message router (its command match) and the
 	# bind-publish callback (set_runtime). No auth-ack override ({authed:true}
@@ -146,7 +146,7 @@ func _start_server() -> void:
 func _log_port_config(config: Dictionary) -> void:
 	var config_error := str(config.get("error", ""))
 	if not config_error.is_empty():
-		push_error("[MCPRuntimeServer] Invalid port config: %s — Mode B tools disabled this session." % config_error)
+		push_error("[MCPRuntimeServer] Invalid port config: %s - Mode B tools disabled this session." % config_error)
 		return
 	if bool(config.get("band_ignored", false)):
 		print("[MCPRuntimeServer] note: %s pins an exact port, so the %s/%s band is ignored." % [

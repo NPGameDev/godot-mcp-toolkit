@@ -132,7 +132,7 @@ func undo_reference(ref: Object) -> MCPToolkitUndoRedoAction:
 ## [method commit_recorded], the recommended default.
 func commit() -> void:
 	if _committed:
-		push_warning("[MCPToolkitUndoRedoAction] Action already committed — ignoring duplicate commit() call")
+		push_warning("[MCPToolkitUndoRedoAction] Action already committed - ignoring duplicate commit() call")
 		return
 	_committed = true
 	if _active:
@@ -147,7 +147,7 @@ func commit() -> void:
 ## ignored.
 func commit_recorded() -> void:
 	if _committed:
-		push_warning("[MCPToolkitUndoRedoAction] Action already committed — ignoring duplicate commit_recorded() call")
+		push_warning("[MCPToolkitUndoRedoAction] Action already committed - ignoring duplicate commit_recorded() call")
 		return
 	_committed = true
 	if _active:

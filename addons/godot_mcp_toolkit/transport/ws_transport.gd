@@ -308,7 +308,7 @@ func _pin_listen() -> void:
 		if _on_bound.is_valid():
 			_on_bound.call(_bound_port)
 		if _listen_conflict:
-			print("%s pinned port %d is now free — bound after the conflict cleared" % [
+			print("%s pinned port %d is now free - bound after the conflict cleared" % [
 				_log_prefix, _port_base])
 			_set_listen_conflict(false)
 		_pin_grace_remaining = _PIN_GRACE_ATTEMPTS
@@ -320,14 +320,14 @@ func _pin_listen() -> void:
 	_tcp_server.stop()
 	_tcp_server = null
 	if not _listen_conflict:
-		push_warning("%s pinned port %d in use — retrying the same port briefly in case a prior instance is still releasing it" % [
+		push_warning("%s pinned port %d in use - retrying the same port briefly in case a prior instance is still releasing it" % [
 			_log_prefix, _port_base])
 		_set_listen_conflict(true)
 	if _pin_grace_remaining > 0:
 		_pin_grace_remaining -= 1
 		if _pin_grace_remaining == 0 and not _pin_error_logged:
 			_pin_error_logged = true
-			push_error("%s could not bind pinned port %d — it is still in use. %s" % [
+			push_error("%s could not bind pinned port %d - it is still in use. %s" % [
 				_log_prefix, _port_base, _pin_conflict_hint])
 	_relisten_countdown = _relisten_frame_interval
 

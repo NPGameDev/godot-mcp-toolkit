@@ -108,7 +108,7 @@ func tick() -> void:
 	if Time.get_ticks_msec() <= _deadline_ms:
 		return
 	push_warning(("[MCPToolkit] mutation watchdog: '%s' (id %s) exceeded its "
-		+ "deadline (%d ms in flight) — force-clearing the dispatch lock. If this "
+		+ "deadline (%d ms in flight) - force-clearing the dispatch lock. If this "
 		+ "recurs, the save-reentrancy guard (C1) is not holding.") % [
 			_method, str(_id), Time.get_ticks_msec() - _started_ms])
 	if _peer != null and _peer.get_ready_state() == WebSocketPeer.STATE_OPEN:

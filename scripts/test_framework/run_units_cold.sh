@@ -47,9 +47,13 @@ set -euo pipefail
 
 GODOT_BIN="${GODOT_BIN:-${1:-godot}}"
 
-# Teardown leak-at-exit warnings must not fail the job (standard GUT/GdUnit4 CI
-# convention). Set before any Godot run so it covers the unit teardown.
-export GODOT_DISABLE_LEAK_CHECKS=1
+# Headless teardown emits benign leak-at-exit reports (dummy-renderer RIDs +
+# a few ObjectDB instances). They are NOT a failure signal - the unit runner's
+# exit code (below) is the sole gate. Godot exposes no env/CLI switch to silence
+# them (leak reporting is the internal CoreGlobals::leak_reporting_enabled, always
+# on in editor/debug builds), so they simply print. (A prior
+# GODOT_DISABLE_LEAK_CHECKS=1 export here was a no-op - no such engine variable
+# exists - and was removed.)
 
 # Must be run from the project root (where project.godot lives).
 if [ ! -f "project.godot" ]; then

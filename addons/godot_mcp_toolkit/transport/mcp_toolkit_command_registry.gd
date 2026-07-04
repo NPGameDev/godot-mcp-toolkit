@@ -124,7 +124,7 @@ func add(method: String, handler: Callable,
 
 	# Exclusivity validation: read-only + destructive is a contradiction.
 	if is_read_only and is_destructive:
-		push_warning("[MCPExtensions] '%s': is_read_only and is_destructive are mutually exclusive — forcing is_destructive to false" % method)
+		push_warning("[MCPExtensions] '%s': is_read_only and is_destructive are mutually exclusive - forcing is_destructive to false" % method)
 		is_destructive = false
 
 	# Map friendly names to MCP annotations.
@@ -139,7 +139,7 @@ func add(method: String, handler: Callable,
 	var timeout_ms: int = _DEFAULT_TIMEOUT_MS
 	if raw_timeout > 0:
 		if raw_timeout > _MAX_TIMEOUT_MS:
-			push_warning("[MCPExtensions] '%s': timeout_ms %d exceeds maximum %d — clamped. Consider restructuring the tool to use a start-work-and-poll pattern." % [method, raw_timeout, _MAX_TIMEOUT_MS])
+			push_warning("[MCPExtensions] '%s': timeout_ms %d exceeds maximum %d - clamped. Consider restructuring the tool to use a start-work-and-poll pattern." % [method, raw_timeout, _MAX_TIMEOUT_MS])
 		timeout_ms = clampi(raw_timeout, _MIN_TIMEOUT_MS, _MAX_TIMEOUT_MS)
 
 	var cmd_entry := {

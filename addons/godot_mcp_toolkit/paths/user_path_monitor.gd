@@ -53,7 +53,7 @@ func _on_settings_changed() -> void:
 	_cached_name = name
 	_cached_use_custom_dir = use_custom
 	_cached_custom_dir_name = custom_name
-	push_warning("[MCP] user:// path-deriving setting changed — user:// path shifted. Re-creating addon state.")
+	push_warning("[MCP] user:// path-deriving setting changed - user:// path shifted. Re-creating addon state.")
 	# Ensure addon dirs exist at the new user:// path before notifying
 	# consumers — they can write immediately without calling ensure_dirs().
 	ProjectPaths.ensure_dirs()

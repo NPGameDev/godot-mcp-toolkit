@@ -25,7 +25,7 @@ static func send_result(peer: WebSocketPeer, id, result, log_prefix: String) -> 
 	response = MCPToolkitError.guard_response_size(response, peer.outbound_buffer_size)
 	var send_err := peer.send_text(JSON.stringify(response))
 	if send_err != OK:
-		push_warning("%s send_text failed for id %s (err %d) — response not delivered" % [log_prefix, str(id), send_err])
+		push_warning("%s send_text failed for id %s (err %d) - response not delivered" % [log_prefix, str(id), send_err])
 
 
 ## Sends a JSON-RPC error frame. Not size-guarded: error frames are compact by

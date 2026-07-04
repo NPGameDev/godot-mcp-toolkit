@@ -143,12 +143,12 @@ static func load_extension(class_name_str: String, script_path: String, registry
 	if is_csharp:
 		# C# cannot extend GDScript classes — use duck typing.
 		if not instance.has_method("Register") and not instance.has_method("register"):
-			push_warning("[MCPExtensions] '%s': C# class missing Register() method — skipped" % class_name_str)
+			push_warning("[MCPExtensions] '%s': C# class missing Register() method - skipped" % class_name_str)
 			return null
 	else:
 		# GDScript must extend MCPToolkitExtension.
 		if not (instance is MCPToolkitExtension):
-			push_warning("[MCPExtensions] '%s': GDScript class does not extend MCPToolkitExtension — skipped" % class_name_str)
+			push_warning("[MCPExtensions] '%s': GDScript class does not extend MCPToolkitExtension - skipped" % class_name_str)
 			return null
 
 	# Record methods before registration to detect new ones.
@@ -186,7 +186,7 @@ static func load_extension(class_name_str: String, script_path: String, registry
 		for prefix: String in RESERVED_PREFIXES:
 			if method.begins_with(prefix):
 				registry.remove(method)
-				push_warning("[MCPExtensions] '%s': '%s' uses reserved namespace '%s*' — rejected" % [class_name_str, method, prefix])
+				push_warning("[MCPExtensions] '%s': '%s' uses reserved namespace '%s*' - rejected" % [class_name_str, method, prefix])
 				rejected = true
 				break
 		if not rejected:
@@ -208,7 +208,7 @@ static func load_extension(class_name_str: String, script_path: String, registry
 		if refused.is_empty():
 			push_warning("[MCPExtensions] '%s': registered zero new commands" % class_name_str)
 		else:
-			push_warning("[MCPExtensions] '%s': registered zero new commands — all %d add(s) collided with already-registered commands" % [class_name_str, refused.size()])
+			push_warning("[MCPExtensions] '%s': registered zero new commands - all %d add(s) collided with already-registered commands" % [class_name_str, refused.size()])
 		return null
 
 	# Return the instance so the caller can retain it (critical for C# —
@@ -225,7 +225,7 @@ static func load_extension(class_name_str: String, script_path: String, registry
 static func _report_collision(class_name_str: String, method: String) -> void:
 	var msg := (
 		"MCP Toolkit: extension '%s' tried to register '%s', " % [class_name_str, method]
-		+ "but that command is already registered — keeping the existing one. "
+		+ "but that command is already registered - keeping the existing one. "
 		+ "Rename the extension's command to a unique <namespace>.<action>.")
 	push_error("[MCPExtensions] " + msg)
 	# EditorToaster is 4.4+ — get_toaster() returns null below that, so degrade

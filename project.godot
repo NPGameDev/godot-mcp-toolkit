@@ -23,6 +23,10 @@ MCPRuntimeServer="*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
 
 enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg")
 
+[filesystem]
+
+import/blender/enabled=false
+
 [mcp_toolkit]
 
 internal/bootstrap_complete=true

@@ -58,7 +58,7 @@ class _LaneBase:
 	## per lane. By here the dispatcher has handled parse / _cancel / echo / registry-miss,
 	## so the method exists and params is a Dictionary.
 	func drive(_peer: WebSocketPeer, _id, _method: String, _params: Dictionary) -> void:
-		push_error("[MCPToolkit] _LaneBase.drive() called directly — a lane subclass must override it")
+		push_error("[MCPToolkit] _LaneBase.drive() called directly - a lane subclass must override it")
 
 	## Release the registry + active-context references during plugin teardown, breaking
 	## the Callable chains (command handlers, the command re-emit) before node free.
