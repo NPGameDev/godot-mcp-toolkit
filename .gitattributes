@@ -1,0 +1,7 @@
+# Force LF on shell scripts so they stay executable under Git Bash on the
+# Windows CI runners (windows-latest has core.autocrlf=true, which would
+# otherwise CRLF-convert them on checkout -> `\r: command not found`). The
+# cross-version Windows behavioral legs (41n-quater-sexies) invoke
+# scripts/test_framework/run_units_cold.sh for the 4.2 class-cache warm-up,
+# including when this repo is checked out as a sibling of the server repo.
+*.sh text eol=lf

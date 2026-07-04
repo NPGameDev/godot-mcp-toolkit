@@ -15,12 +15,25 @@
 # GDScript+.NET contract for that repo's change.
 #
 # NOT a merge gate — runs only on explicit opt-in:
-#   • [run-cross-version-ci] in the push commit message  (deliberate "run it")
+#   • [run-cross-version-ci] in the push commit message  (deliberate "run it" — LINUX)
 #   • release.yml CALLS this workflow (workflow_call) on a v* tag / dry-run
 #     dispatch, and its zip job needs: it — the D13 backstop (never SHIP a
 #     cross-version regression) is now an ENFORCED release gate, not a parallel
 #     best-effort run
 #   • workflow_dispatch                                   (manual)
+#
+# Cross-platform legs (41n-quater-sexies) — additive, each behind its OWN token so a
+# toolkit change is validated on 3 OS × 6 versions × 2 languages = 36 combos:
+#   • [run-macos-ci]         -> macOS behavioral (gdscript+dotnet, 4.2-4.7)
+#   • [run-windows-ci]       -> Windows behavioral (gdscript+dotnet, 4.2-4.7)
+#   • [run-all-platforms-ci] -> the full 36: Linux (above) + macOS + Windows
+# The macOS/Windows matrix is computed by the platform-setup job (commit tokens, or the
+# workflow_dispatch platforms/versions/languages debug-probe inputs), reusing the SAME
+# server-hosted composite via the sibling checkout. A bare/tag/release trigger yields an
+# EMPTY non-Linux matrix, so the release gate stays LINUX-ONLY until 42b (macOS 10× /
+# Windows 2× billing while private). The "Platform matrix OK" aggregate gate wraps all
+# combos — the single name a merge-queue required check binds to at 42b. The editor-free
+# install-smoke + Windows unit legs live in the SERVER workflow only (server code).
 # No schedule: — versions are explicitly pinned (no drift between pushes) and a
 # nightly over-runs a sparse post-release repo (feasibility spike 41n-quater).
 # The mono-editor UNIT leg lives HERE (not the server) because the unit suite is
@@ -51,11 +64,27 @@ on:
   workflow_call:
   workflow_dispatch:
     inputs:
-      versions:
-        description: "Space-separated Godot versions (informational; matrix is fixed)"
-        required: false
       sibling-ref:
         description: "Override the pinned server sibling ref (ad-hoc cross-testing / spike trials)"
+        required: false
+        default: ""
+      # 41n-quater-sexies D7e — debug-probe targeting for the EXPENSIVE non-Linux
+      # matrix. Empty platforms => Linux static legs only (release-dry-run shape). A
+      # single {platform,version,language} triple runs one cheap combo instead of the
+      # full non-Linux grid (~$0.80 vs ~$9.60). The FINAL confirm is always the full
+      # matrix via the commit tokens — a version-gated fix can regress a neighbour.
+      # Linux legs run in full on ANY dispatch (cheap; keeps the release gate exact).
+      # (`versions` was formerly informational-only; it now filters the non-Linux matrix.)
+      platforms:
+        description: "Non-Linux legs to run: space/comma list of macos, windows (empty = none)"
+        required: false
+        default: ""
+      versions:
+        description: "Godot versions for the non-Linux legs (space/comma; empty = all 4.2.0-4.7.0)"
+        required: false
+        default: ""
+      languages:
+        description: "Editor languages for the non-Linux legs: gdscript, dotnet (empty = both)"
         required: false
         default: ""
   push:
@@ -70,17 +99,19 @@ on:
 # [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
 # the sibling-ref dispatch input. See Plan/Reference/ci-test-topology.md.
 env:
-  SIBLING_PIN_SERVER: "d19c71f65eaa5602dbee0e672283cd08990661a7"
+  SIBLING_PIN_SERVER: "e204e7b7b372c94db2397981afae682bea0fbd7b"
 
 jobs:
   gdscript-behavioral:
     # Opt-in only: manual dispatch, a v* tag, or the token in the commit message.
     # A plain main push (no token) evaluates this to false → the job shows as
-    # "skipped" with zero runner cost.
+    # "skipped" with zero runner cost. [run-all-platforms-ci] runs it as part of the
+    # full 36-combo grid (41n-quater-sexies).
     if: >
       github.event_name == 'workflow_dispatch' ||
       startsWith(github.ref, 'refs/tags/v') ||
-      contains(github.event.head_commit.message, '[run-cross-version-ci]')
+      contains(github.event.head_commit.message, '[run-cross-version-ci]') ||
+      contains(github.event.head_commit.message, '[run-all-platforms-ci]')
     runs-on: ubuntu-latest
     # Fuse: observed legs finish in ~7 min (full smoke+flows) — a leg still running
     # at 30 min is hung (e.g. an editor boot that never serves the port), not slow.
@@ -130,10 +161,12 @@ jobs:
   # TFM tracks the net6->net8 boundary at 4.4 so the editor's on-open build produces
   # an assembly its bundled runtime can load.
   dotnet-behavioral:
+    # [run-all-platforms-ci] runs it as part of the full 36-combo grid (41n-quater-sexies).
     if: >
       github.event_name == 'workflow_dispatch' ||
       startsWith(github.ref, 'refs/tags/v') ||
-      contains(github.event.head_commit.message, '[run-cross-version-ci]')
+      contains(github.event.head_commit.message, '[run-cross-version-ci]') ||
+      contains(github.event.head_commit.message, '[run-all-platforms-ci]')
     runs-on: ubuntu-latest
     # Fuse: observed legs finish in ~7 min (full smoke+flows on mono) — a leg still
     # running at 30 min is hung (e.g. an editor boot that never serves the port).
@@ -225,3 +258,137 @@ jobs:
         with:
           godot-version: ${{ matrix.godot-version }}
           use-dotnet: true
+
+  # ═══════════════════════════════════════════════════════════════════════════
+  # macOS + Windows platform legs (41n-quater-sexies) — additive, token-gated.
+  # The static Linux legs above are the release backstop + [run-cross-version-ci] path.
+  # These add the OTHER two desktop OSes so a toolkit change is validated on 3 OS × 6
+  # versions × 2 languages = 36 combos, via the SAME shared server-hosted composite
+  # (reached through the server sibling checkout; os branch). Opt-in only; an EMPTY
+  # matrix on a bare/tag/release trigger keeps the release gate Linux-only until 42b.
+  # (mono-units is NOT part of this platform matrix — it stays on [run-cross-version-ci].)
+  # ═══════════════════════════════════════════════════════════════════════════
+
+  # Compute the macOS+Windows behavioral matrix from the trigger (commit tokens on a
+  # branch push, or the dispatch platforms/versions/languages inputs). Cheap ubuntu job.
+  # Repo-agnostic: identical to the server workflow's platform-setup.
+  platform-setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.compute.outputs.matrix }}
+      platforms: ${{ steps.compute.outputs.platforms }}
+    steps:
+      - id: compute
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          GITHUB_REF: ${{ github.ref }}
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+          IN_PLATFORMS: ${{ inputs.platforms }}
+          IN_VERSIONS: ${{ inputs.versions }}
+          IN_LANGUAGES: ${{ inputs.languages }}
+        run: |
+          set -euo pipefail
+          ALL_VERSIONS="4.2.0 4.3.0 4.4.0 4.5.0 4.6.0 4.7.0"
+          ALL_LANGUAGES="gdscript dotnet"
+          platforms=""; versions="$ALL_VERSIONS"; languages="$ALL_LANGUAGES"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            platforms="${IN_PLATFORMS:-}"
+            [ -n "${IN_VERSIONS:-}" ] && versions="$IN_VERSIONS"
+            [ -n "${IN_LANGUAGES:-}" ] && languages="$IN_LANGUAGES"
+          elif [ "$EVENT_NAME" = "push" ] && [[ "$GITHUB_REF" == refs/heads/* ]]; then
+            case "$COMMIT_MSG" in *"[run-all-platforms-ci]"*) platforms="macos windows" ;; esac
+            case "$COMMIT_MSG" in *"[run-macos-ci]"*)   platforms="$platforms macos"   ;; esac
+            case "$COMMIT_MSG" in *"[run-windows-ci]"*) platforms="$platforms windows" ;; esac
+          fi
+
+          norm() { echo "$1" | tr ',' ' ' | tr 'A-Z' 'a-z' | xargs -n1 2>/dev/null | sort -u | xargs || true; }
+          platforms="$(norm "$platforms")"; versions="$(norm "$versions")"; languages="$(norm "$languages")"
+
+          entries=""
+          for os_key in $platforms; do
+            case "$os_key" in
+              macos)   runner="macos-latest";   os_label="macOS" ;;
+              windows) runner="windows-latest"; os_label="Windows" ;;
+              *)       continue ;;
+            esac
+            for version in $versions; do
+              case "$version" in 4.2*|4.3*) tfm="net6.0" ;; *) tfm="net8.0" ;; esac
+              for language in $languages; do
+                case "$language" in
+                  gdscript) editor_label="GDScript editor"; project_name="Godot MCP Toolkit" ;;
+                  dotnet)   editor_label="mono editor";     project_name="MCP CSharp Fixture" ;;
+                  *)        continue ;;
+                esac
+                run_dispatch="false"
+                if [ "$language" = "gdscript" ] && [ "$version" = "4.7.0" ]; then run_dispatch="true"; fi
+                entry="{\"os\":\"$runner\",\"os_key\":\"$os_key\",\"os_label\":\"$os_label\",\"version\":\"$version\",\"language\":\"$language\",\"editor_label\":\"$editor_label\",\"tfm\":\"$tfm\",\"project_name\":\"$project_name\",\"run_dispatch\":$run_dispatch}"
+                if [ -z "$entries" ]; then entries="$entry"; else entries="$entries,$entry"; fi
+              done
+            done
+          done
+          matrix="[$entries]"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "platforms=$platforms" >> "$GITHUB_OUTPUT"
+          echo "computed platforms=[$platforms] matrix=$matrix"
+
+  # One job def; os/version/language from platform-setup. runs-on the matrix OS; the
+  # shared composite (server sibling) branches on os_key. Skipped (empty matrix) on
+  # bare/tag/release. Job timeout is a LAST-RESORT backstop only — the composite's
+  # per-step $TIMEOUT_BIN fuses (<=15m) trip first so the always() log dump survives.
+  platform-behavioral:
+    needs: platform-setup
+    if: ${{ needs.platform-setup.outputs.matrix != '' && needs.platform-setup.outputs.matrix != '[]' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.platform-setup.outputs.matrix) }}
+    name: "Full smoke+flows (${{ matrix.os_label }} ${{ matrix.version }} · ${{ matrix.editor_label }})"
+    steps:
+      - uses: actions/checkout@v7 # toolkit (self) = editor/dogfood project + addon source
+
+      - uses: actions/checkout@v7 # server = harness + C# fixture + shared composite
+        with:
+          repository: NPGameDev/godot-mcp-server
+          path: server
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+          ref: ${{ inputs.sibling-ref || env.SIBLING_PIN_SERVER }}
+
+      - name: "Full smoke+flows (${{ matrix.os_label }} ${{ matrix.version }} · ${{ matrix.editor_label }})"
+        uses: ./server/.github/actions/cross-version-behavioral
+        with:
+          os: ${{ matrix.os_key }}
+          language: ${{ matrix.language }}
+          godot-version: ${{ matrix.version }}
+          tfm: ${{ matrix.tfm }}
+          server-dir: server
+          project-path: ${{ matrix.language == 'dotnet' && format('{0}/server/test/fixtures/csharp-project', github.workspace) || github.workspace }}
+          project-name: ${{ matrix.project_name }}
+          toolkit-addon-src: ${{ matrix.language == 'dotnet' && format('{0}/addons/godot_mcp_toolkit', github.workspace) || '' }}
+          run-dispatch: ${{ matrix.run_dispatch }}
+
+  # ── Aggregate platform gate (41n-quater-sexies D7b/7c) ───────────────────────
+  # "Platform matrix OK" is the SINGLE stable name intended to become the SECOND
+  # required-check tier (merge-queue-scoped) at 42b — never an individual matrix row.
+  # Wraps the toolkit's platform combos: the static Linux behavioral legs + the
+  # macOS/Windows behavioral matrix. (The editor-free install-smoke / Windows unit jobs
+  # live in the SERVER workflow only; mono-units is not a platform leg.) if: always() +
+  # the failure/cancelled test makes a partial run or a bare push report success.
+  platform-matrix-ok:
+    name: "Platform matrix OK"
+    needs:
+      [gdscript-behavioral, dotnet-behavioral, platform-setup, platform-behavioral]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert every platform job succeeded (or skipped)
+        run: |
+          result="${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}"
+          if [ "$result" = "true" ]; then
+            echo "::error::A platform matrix job failed or was cancelled."
+            exit 1
+          fi
+          echo "All platform matrix jobs succeeded (or skipped)."
