@@ -22,6 +22,51 @@ static func check(min_major: int = 20) -> Dictionary:
 	return result
 
 
+## Resolve the user's real absolute node path and the login-shell PATH on macOS.
+##
+## GUI-launched MCP clients on macOS run under launchd with a minimal PATH and
+## never source the user's shell rc files, so a version-manager Node
+## (nvm/fnm/volta/Apple-Silicon Homebrew) is invisible to them ([code]spawn
+## ENOENT[/code]). Reusing the same login-shell probe [method check] uses, this
+## resolves the absolute [code]node[/code] binary plus the resolved PATH so the
+## editor can emit a launchd-proof .mcp.json (absolute command + PATH backstop).
+## The probe fences each value behind a unique prefix so a noisy login shell
+## (p10k / nvm banners printed while rc files are sourced) can't corrupt parsing.
+##
+## Returns [code]{ "node": String, "path": String }[/code] — both absolute; both
+## [code]""[/code] when resolution fails (node absent, or the manager only exports
+## it from an interactive rc file a login shell skips) or the platform is not
+## macOS. A caller derives the sibling [code]npx[/code] from [code]node[/code]'s
+## directory and falls back to a bare [code]npx[/code] command when this yields "".
+static func resolve_launch_paths() -> Dictionary:
+	var empty := {"node": "", "path": ""}
+	# Only macOS has the launchd-minimal-PATH problem; every other platform lets
+	# the client find node/npx directly, so resolution is unnecessary there.
+	if OS.get_name() != "macOS":
+		return empty
+	# printf with unique prefixes: we read only the fenced lines and ignore any
+	# banner a login shell prints while sourcing rc files. Read stdout only (no
+	# stderr) so rc-file stderr chatter cannot interleave into the parsed values.
+	var probe := "printf 'MCPNODEPATH=%s\\n' \"$PATH\"; printf 'MCPNODEBIN=%s\\n' \"$(command -v node)\""
+	var output := []
+	var exit_code := OS.execute(_login_shell(), ["-l", "-c", probe], output, false)
+	if exit_code != 0 or output.is_empty():
+		return empty
+	var node_path := ""
+	var resolved_path := ""
+	for raw_line in str(output[0]).split("\n"):
+		var line: String = raw_line.strip_edges()
+		if line.begins_with("MCPNODEBIN="):
+			node_path = line.substr("MCPNODEBIN=".length())
+		elif line.begins_with("MCPNODEPATH="):
+			resolved_path = line.substr("MCPNODEPATH=".length())
+	# No node ⇒ report nothing so the caller emits the bare-npx fallback (recovered
+	# by the dock nudge + docs), rather than a half-resolved command.
+	if node_path.is_empty():
+		return empty
+	return {"node": node_path, "path": resolved_path}
+
+
 static func _try_direct(min_major: int) -> Dictionary:
 	var output := []
 	var exit_code := OS.execute("node", ["--version"], output, true)
@@ -31,14 +76,18 @@ static func _try_direct(min_major: int) -> Dictionary:
 
 
 static func _try_login_shell(min_major: int) -> Dictionary:
-	var shell: String = OS.get_environment("SHELL")
-	if shell.is_empty():
-		shell = "/bin/bash"
 	var output := []
-	var exit_code := OS.execute(shell, ["-l", "-c", "node --version"], output, true)
+	var exit_code := OS.execute(_login_shell(), ["-l", "-c", "node --version"], output, true)
 	if exit_code != 0 or output.is_empty():
 		return {"found": false, "version": "", "meets_minimum": false}
 	return _parse_version(output[0], min_major)
+
+
+# The user's login shell from $SHELL (default /bin/bash when unset) — the seam that
+# lets a version-manager Node resolve, shared by the version and path probes.
+static func _login_shell() -> String:
+	var shell: String = OS.get_environment("SHELL")
+	return shell if not shell.is_empty() else "/bin/bash"
 
 
 static func _parse_version(raw_output: String, min_major: int) -> Dictionary:

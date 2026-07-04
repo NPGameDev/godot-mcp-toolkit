@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "godot-mcp-toolkit": {
-      "command": "node",
-      "args": ["C:/Users/nicol/OneDrive/Desktop/Personal/AIWithGodot/godot-mcp-server/dist/index.js"],
+      "command": "npx",
+      "args": ["-y", "@npgamedev/godot-mcp-server"],
       "env": {
         "GODOT_MCP_CONFIG_VERSION": "1"
       }

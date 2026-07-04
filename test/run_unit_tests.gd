@@ -26,6 +26,7 @@ const TextInputTests := preload("res://test/units/text_input_tests.gd")
 const SerializeIoTests := preload("res://test/units/serialize_io_tests.gd")
 const AutoloadHealTests := preload("res://test/units/autoload_heal_tests.gd")
 const PortConfigTests := preload("res://test/units/port_config_tests.gd")
+const McpJsonBuildTests := preload("res://test/units/mcp_json_build_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -56,6 +57,7 @@ func _init() -> void:
 	SerializeIoTests.run(testing)
 	AutoloadHealTests.run(testing)
 	PortConfigTests.run(testing)
+	McpJsonBuildTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()

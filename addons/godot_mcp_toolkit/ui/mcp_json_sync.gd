@@ -3,11 +3,14 @@ extends RefCounted
 ## Repository for the project-root .mcp.json file.
 ##
 ## Owns all plugin access to .mcp.json: it reads (path resolution, the
-## godot-mcp-toolkit server entry's env vars, read-only detection) AND
-## performs the plugin-initiated template write. The file remains
-## user-owned for edits; the plugin only ever writes it from the bundled
-## template on explicit user action (the dock's / Tools-menu's "Write
-## .mcp.json").
+## godot-mcp-toolkit server entry's env vars, read-only detection) AND builds
+## the plugin-initiated write. The write is OS-aware — it emits a per-OS
+## mcpServers command/args and, on macOS, resolves the user's real absolute
+## node/npx path (plus a login-shell PATH backstop) so a Finder/Dock-launched
+## MCP client finds Node despite launchd's minimal PATH (ADR 0017). The file
+## stays user-owned for edits; the plugin writes it on explicit user action (the
+## dock's / Tools-menu's "Write .mcp.json") and refreshes an already-existing one
+## on editor start to shrink the stale-after-node-switch window.
 ##
 ## UI-free by design: the write reports its outcome through an injected
 ## on_result Callable so the overwrite-confirmation dialog stays in the
@@ -15,8 +18,27 @@ extends RefCounted
 ## repository touches only the file and never reaches EditorInterface /
 ## a dialog / a toast.
 
-# Bundled source the plugin-initiated write copies from.
+# Direct preload (not via core/modules.gd): mcp_json_sync is itself aggregated by
+# modules.gd, so reaching NodejsCheck through the aggregator would be a preload
+# cycle (code-standards §6.5). NodejsCheck owns the macOS login-shell probe used
+# to resolve the real node path for the OS-aware emission.
+const NodejsCheck := preload("res://addons/godot_mcp_toolkit/versioning/nodejs_check.gd")
+
+# Bundled env/shape skeleton: the write reads its env block for the base env
+# (GODOT_MCP_CONFIG_VERSION) and the per-OS builder overlays command/args/PATH.
 const _TEMPLATE_PATH := "res://addons/godot_mcp_toolkit/.mcp.json.template"
+
+# The mcpServers key the toolkit owns in .mcp.json.
+const _SERVER_KEY := "godot-mcp-toolkit"
+
+# Released npm package the client launches — the default (release) command base.
+const _RELEASE_PACKAGE := "@npgamedev/godot-mcp-server"
+
+# Optional env override: set to a local dist/index.js and the builder emits the
+# dev form ([code]node <that path>[/code]) instead of the released npx form — one
+# path serving Windows dogfooding and pointing a Mac at a local build. The path is
+# read from the environment at build time; no machine path is ever hardcoded here.
+const _DEV_SERVER_PATH_ENV := "GODOT_MCP_DEV_SERVER_PATH"
 
 # Reused JSON parser — avoids allocating a JSON on every poll (the dock re-checks
 # .mcp.json validity ~1s). Editor-only + main-thread, so one shared instance is
@@ -62,6 +84,13 @@ static func _read_server_env() -> Dictionary:
 	var parsed = _parse_mcp_json()
 	if parsed == null:
 		return {}
+	return _extract_server_env(parsed)
+
+
+## Navigate a parsed .mcp.json / template object to the toolkit server entry's env
+## dict. Returns {} when there is no matching server entry or no env dict. Shared
+## by the live-file read and the template-base read so the shape-walk lives once.
+static func _extract_server_env(parsed: Dictionary) -> Dictionary:
 	var servers: Dictionary = parsed.get("mcpServers", {})
 	var server_key := _find_server_key(servers)
 	if server_key.is_empty():
@@ -74,8 +103,8 @@ static func _read_server_env() -> Dictionary:
 
 
 static func _find_server_key(servers: Dictionary) -> String:
-	if servers.has("godot-mcp-toolkit"):
-		return "godot-mcp-toolkit"
+	if servers.has(_SERVER_KEY):
+		return _SERVER_KEY
 	for key in servers:
 		if "godot-mcp" in str(key).to_lower():
 			return str(key)
@@ -106,31 +135,77 @@ static func needs_overwrite_confirm() -> bool:
 	return FileAccess.file_exists(get_mcp_json_path())
 
 
-## Write .mcp.json from the bundled template, reporting the outcome through
-## on_result so the UI (toast) stays caller-side. on_result is called once with:
+## Build the mcpServers server entry ({command, args, env}) for [param os_name] —
+## the pure core of the OS-aware write. macOS emits option-d, an absolute node/npx
+## path so a GUI-launched client bypasses launchd's PATH lookup (ADR 0017):
+## release pairs the absolute npx (derived beside [param resolved_node]) with the
+## resolved PATH backstop; the dev form (when [param dev_server_path] is set) runs
+## the absolute node against that dist entry — the strongest shape. When
+## resolution failed ([param resolved_node] empty) it degrades to a bare npx/node
+## command, recovered by the dock nudge + docs. Windows uses cmd /c npx (no
+## launchd bug); Linux and any unknown OS use a bare npx/node. [param
+## resolved_path] is the login-shell PATH (macOS only); the returned env carries
+## only that builder-owned PATH backstop — the caller merges the template's base
+## env (GODOT_MCP_CONFIG_VERSION).
+static func build_server_entry(
+	os_name: String, resolved_node: String, resolved_path: String, dev_server_path: String
+) -> Dictionary:
+	var is_dev := not dev_server_path.is_empty()
+	var command := ""
+	var args: Array = []
+	match os_name:
+		"macOS":
+			if is_dev:
+				# Absolute node dodges npx shebang re-resolution; bare node if unresolved.
+				command = resolved_node if not resolved_node.is_empty() else "node"
+				args = [dev_server_path]
+			elif not resolved_node.is_empty():
+				# Absolute npx sits beside the resolved node binary.
+				command = resolved_node.get_base_dir() + "/npx"
+				args = ["-y", _RELEASE_PACKAGE]
+			else:
+				command = "npx"
+				args = ["-y", _RELEASE_PACKAGE]
+		"Windows":
+			# node is a real exe on PATH; npx is a .cmd shim that needs cmd /c.
+			command = "node" if is_dev else "cmd"
+			args = [dev_server_path] if is_dev else ["/c", "npx", "-y", _RELEASE_PACKAGE]
+		_:
+			# Linux and any unknown OS: no launchd bug, no shim — a bare command.
+			command = "node" if is_dev else "npx"
+			args = [dev_server_path] if is_dev else ["-y", _RELEASE_PACKAGE]
+	var env: Dictionary = {}
+	# macOS backstop for the npx-shebang gap: even an absolute npx can re-resolve
+	# node from the (minimal launchd) PATH, so pass the real login-shell PATH.
+	if os_name == "macOS" and not resolved_path.is_empty():
+		env["PATH"] = resolved_path
+	return {"command": command, "args": args, "env": env}
+
+
+## Write .mcp.json for the current OS, reporting the outcome through on_result so
+## the UI (toast) stays caller-side. on_result is called once with:
 ##   (ok: bool, message: String, severity: int, tooltip: String)
 ## — severity is the editor-toast scale (0 info / 1 warning / 2 error), which
 ## callers forward straight to their toast. Missing template -> error report;
 ## existing file with force_overwrite == false -> a "needs confirm" report
 ## (defensive — the shared write flow pre-checks via needs_overwrite_confirm());
-## otherwise copy the template and report success (info, with the destination as
-## the tooltip) or the open failure (error). UI-free: no dialog, no
-## EditorInterface, no toast.
+## otherwise build the OS-aware content (see build_server_entry) and report
+## success (info, with the destination as the tooltip) or the open failure
+## (error). UI-free: no dialog, no EditorInterface, no toast.
 static func write_from_template(force_overwrite: bool, on_result: Callable) -> void:
 	if not FileAccess.file_exists(_TEMPLATE_PATH):
 		on_result.call(false, "Template not found: " + _TEMPLATE_PATH, 2, "")
 		return
-	var content := FileAccess.get_file_as_string(_TEMPLATE_PATH)
 	var dest := get_mcp_json_path()
 	if not force_overwrite and needs_overwrite_confirm():
 		# Defensive: the dock should have shown its confirm dialog first. Report
 		# without writing so no overwrite happens unconfirmed.
 		on_result.call(false, ".mcp.json already exists — overwrite not confirmed", 1, dest)
 		return
-	_do_write(dest, content, on_result)
+	_do_write(dest, _build_content(), on_result)
 
 
-## Performs the actual copy of `content` to `dest` and reports via on_result.
+## Performs the actual write of `content` to `dest` and reports via on_result.
 ## Private to the repository — the public entry point is write_from_template().
 static func _do_write(dest: String, content: String, on_result: Callable) -> void:
 	var file := FileAccess.open(dest, FileAccess.WRITE)
@@ -141,4 +216,74 @@ static func _do_write(dest: String, content: String, on_result: Callable) -> voi
 		return
 	file.store_string(content)
 	file.close()
-	on_result.call(true, "MCP: .mcp.json created from template", 0, "Wrote to " + dest)
+	on_result.call(true, "MCP: .mcp.json written", 0, "Wrote to " + dest)
+
+
+## Layer the emitted server env, most-general first: the template's base env
+## (GODOT_MCP_CONFIG_VERSION), then an EXISTING file's env so a user's own
+## GODOT_MCP_* keys (port pins, read-only, token/project paths) survive a rewrite,
+## then the builder's own keys (the macOS PATH backstop) last. Pure — the three
+## inputs are never mutated; [param existing_env] is {} for a first-time create.
+## Returns the merged env for the server entry.
+static func merge_server_env(
+	base_env: Dictionary, existing_env: Dictionary, builder_env: Dictionary
+) -> Dictionary:
+	var env: Dictionary = base_env.duplicate()
+	env.merge(existing_env, true)
+	env.merge(builder_env, true)
+	return env
+
+
+## Build the OS-aware .mcp.json content: resolve the real node/PATH on macOS, read
+## the dev-server override, build the per-OS server entry, and layer its env so an
+## existing file's user keys are preserved (see merge_server_env).
+static func _build_content() -> String:
+	var resolved := NodejsCheck.resolve_launch_paths()
+	var resolved_node: String = str(resolved.get("node", ""))
+	var resolved_path: String = str(resolved.get("path", ""))
+	var dev_server_path := OS.get_environment(_DEV_SERVER_PATH_ENV)
+	var entry := build_server_entry(OS.get_name(), resolved_node, resolved_path, dev_server_path)
+	# Materialize each env read with duplicate() BEFORE the next read — the reads
+	# share one JSON parser, so a later parse would invalidate an earlier returned
+	# slice. The template base guarantees GODOT_MCP_CONFIG_VERSION; an existing
+	# file's env is preserved so an automatic refresh never strips a user's
+	# GODOT_MCP_* keys; the builder's PATH backstop overlays last.
+	var base_env := _read_template_env().duplicate()
+	var existing_env: Dictionary = {}
+	if has_mcp_json():
+		existing_env = _read_server_env().duplicate()
+	var built_env: Dictionary = entry["env"]
+	entry["env"] = merge_server_env(base_env, existing_env, built_env)
+	var document := {"mcpServers": {_SERVER_KEY: entry}}
+	return JSON.stringify(document, "\t") + "\n"
+
+
+## The bundled template's server-entry env dict (the write's base env), or {} when
+## the template is missing / not valid JSON.
+static func _read_template_env() -> Dictionary:
+	var text := FileAccess.get_file_as_string(_TEMPLATE_PATH)
+	if _json.parse(text) != OK or not _json.data is Dictionary:
+		return {}
+	return _extract_server_env(_json.data)
+
+
+## Refresh an already-configured .mcp.json in place at editor start so a macOS
+## absolute node/npx path that went stale after a Node-version switch is re-resolved
+## without the user clicking "Write". No-ops — never creates, never nags — when no
+## file exists (a client isn't configured), the file is read-only (a deliberate
+## security setting we must not silently strip) or malformed (mid-edit), or the
+## freshly-built content is byte-identical (no churn). Fire-and-forget.
+static func refresh_existing_config() -> void:
+	if not has_mcp_json():
+		return
+	if is_read_only() or is_malformed():
+		return
+	if not FileAccess.file_exists(_TEMPLATE_PATH):
+		return
+	var dest := get_mcp_json_path()
+	var content := _build_content()
+	if content == FileAccess.get_file_as_string(dest):
+		return
+	var discard_result := func(_ok: bool, _msg: String, _sev: int, _tip: String) -> void:
+		pass
+	_do_write(dest, content, discard_result)
