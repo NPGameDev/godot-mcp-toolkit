@@ -1,0 +1,29 @@
+<!--
+  reflect-tool : (c) reflection-only dump of a GodotSharp API assembly surface.
+
+  A tiny console app that reflects GodotSharp.dll + GodotSharpEditor.dll from a local
+  .NET/mono editor via System.Reflection.MetadataLoadContext (reflection ONLY: no
+  JIT, no execution, no Godot host) and writes the public Godot.* type/method/
+  property surface as JSON for cross_diff_dotnet.py.
+
+  Why a C# tool (not the PowerShell path the spec suggested): Windows PowerShell
+  5.1 stack-overflows when accessing RoMethodInfo members across the full GodotSharp
+  surface (a PS-pipeline interaction with MetadataLoadContext lazy metadata). A plain
+  C# loop reflects the whole surface cleanly. MetadataLoadContext is still the
+  reflection-only mechanism the spec calls for, just hosted in C# instead of PS.
+  Invoked by cross_diff_dotnet.py (see that script for the dotnet run command).
+-->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AssemblyName>reflect-tool</AssemblyName>
+    <RootNamespace>ReflectTool</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Reflection.MetadataLoadContext" Version="8.0.0" />
+  </ItemGroup>
+</Project>
