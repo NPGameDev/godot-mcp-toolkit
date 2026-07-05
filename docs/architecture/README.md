@@ -6,14 +6,19 @@ nav_order: 2
 
 # Godot MCP Toolkit — Architecture
 
-> **Architecture as of `0d461c2`** — 41n-ter cross-repo contract alignment: token-path
-> authority ([ADR 0011](#14-key-decisions-adrs); the toolkit now publishes the
-> globalized-absolute token path), uniform pagination (`total_<unit>` / `truncated` /
-> `next_<cursor>`), the audiobus / animationtree command-query (CQS) split, and the
-> extension-collision guard. Structural baseline unchanged from the 41n cohesion refactor
-> (thin orchestrators over single-responsibility children; DDD domain folders such as
-> `commands/`, `contract/`, `transport/`, `registry/`, `extensions/`; the `Modules` preload
-> registry + the `EditorAccess` facade).
+> **Architecture as of `eb4c9fa`** — 41n-series finalization: the runtime-autoload
+> identity/registration was split out of the plugin orchestrator into a pure-const leaf
+> (`core/autoload_identity.gd`) plus a behaviour module (`core/autoload_registration.gd`),
+> shared with the export-strip domain ([ADR 0013](#14-key-decisions-adrs)); listen ports gained
+> deterministic env-driven pin/band config (`transport/port_config.gd`, bind-exact-or-fail;
+> [ADR 0015](#14-key-decisions-adrs)); `.mcp.json` emission became OS-aware with a macOS
+> GUI-launch node path ([ADR 0016](#14-key-decisions-adrs) / [0017](#14-key-decisions-adrs));
+> the Mode-A handshake added a `headless` field ([ADR 0014](#14-key-decisions-adrs)); dispatch
+> cancellation keys were peer-scoped; and the support ceiling reached Godot 4.7. Structural
+> baseline unchanged from the 41n cohesion refactor (thin orchestrators over
+> single-responsibility children; DDD domain folders such as `commands/`, `contract/`,
+> `transport/`, `registry/`, `extensions/`; the `Modules` preload registry + the `EditorAccess`
+> facade).
 
 This document explains how the toolkit is built, for users and contributors who want to
 understand it without reading all 113 GDScript files. It covers the major subsystems and
@@ -59,8 +64,7 @@ The rules that keep it honest:
    depicted files moved since their `data-verified` SHA. It over-flags by design — a false
    re-check costs a glance; a missed drift ships a lying diagram.
 
-Diagrams below are verified against `b552824` (the 41n refactor), except those on the seams
-the 41n-ter contract alignment touched, which are re-verified to `0d461c2` — each diagram's own
+Diagrams below are verified against `eb4c9fa` (the 41n-series finalization) — each diagram's own
 `data-verified` comment is authoritative.
 
 ---
@@ -73,7 +77,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 inspection) — and publishes a small **registry file** so the bridge can discover every live
 instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -92,7 +96,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified b552824*
+*Figure 1 — system context · verified eb4c9fa*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -105,7 +109,7 @@ below:
 | `transport/` + `transport/dispatch/` | editor server, WebSocket framing, request routing, concurrency lanes | [§3](#3-transport--connection), [§4](#4-dispatch--concurrency) |
 | `runtime/` | the in-game (Mode B) server | [§2](#2-the-editorruntime-split), [§3](#3-transport--connection) |
 | `contract/` | response envelope, error codes, type coercion, the command registry | [§5](#5-the-response-contract), [§6](#6-command-registry--catalogue) |
-| `commands/` | the ~101 built-in tool handlers | [§6](#6-command-registry--catalogue) |
+| `commands/` | the ~100 built-in tool handlers | [§6](#6-command-registry--catalogue) |
 | `core/` | plugin composition root, tool menu, the `Modules` preload registry, `EditorAccess` | [§7](#7-plugin-lifecycle) |
 | `extensions/` | third-party extension discovery, loading, hot-reload | [§8](#8-extension-system) |
 | `registry/` + `registry/store/` | multi-instance discovery (`projects.json`) | [§9](#9-multi-project-registry) |
@@ -132,7 +136,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`, Mode A) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>Mode B — ships in the game"]
@@ -146,6 +150,7 @@ flowchart TB
       C5["registry_client.gd<br/>+ registry/store/*"]
       C6["notifier.gd · ws_transport.gd"]
       C7["signal_pair_resolver.gd"]
+      C8["port_config.gd<br/>(env pin/band resolve)"]
     end
     subgraph tainted["Editor-only — names EditorInterface / EditorPlugin / EditorSettings"]
       direction LR
@@ -160,13 +165,15 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified b552824*
+*Figure 2 — the editor↔runtime taint boundary · verified eb4c9fa*
 
 Consequences that shape the rest of the architecture:
 
 - **Shared infrastructure lives in the clean set.** `ws_transport.gd` (TCP/WebSocket
   lifecycle + framing) and `notifier.gd` (JSON-RPC send/broadcast) are used by **both**
-  servers, so they name no editor type. `registry_client.gd` is `@tool` but editor-clean —
+  servers, so they name no editor type. `port_config.gd` (env-driven listen-port resolution,
+  [§3](#3-transport--connection)) is likewise preloaded by both, so it reads only `OS`
+  environment and names no editor type. `registry_client.gd` is `@tool` but editor-clean —
   it takes the LSP host/port as *parameters* rather than reading `EditorSettings`, precisely
   so the runtime can preload it ([ADR 0008](#14-key-decisions-adrs)).
 - **Mode B is deliberately smaller.** It has no mutation queue, no scene lease, and no
@@ -193,7 +200,7 @@ first-frame auth handshake. The shared mechanics live in `ws_transport.gd` (list
 poll / auth framing) and `notifier.gd` (result / error / notification / broadcast). The two
 servers differ only in what they inject into that base and how they pump it.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="0d461c2" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="eb4c9fa" -->
 ```mermaid
 sequenceDiagram
     participant C as Bridge (client)
@@ -203,7 +210,7 @@ sequenceDiagram
     C->>T: TCP connect, WebSocket upgrade
     C->>T: first frame — auth token (plus optional version)
     T->>S: build_auth_ack
-    S-->>C: authed = true (plus godot_version, plugin version)
+    S-->>C: authed = true (plus godot_version, plugin version, headless)
     Note over C,S: no auth within 2000 ms closes the socket (1008)
     C->>T: JSON-RPC request (e.g. scene.create)
     T->>S: _handle_message (peer authed)
@@ -211,27 +218,35 @@ sequenceDiagram
     R->>R: select lane, call handler
     R-->>C: JSON-RPC result (success + status)
 ```
-*Figure 3 — connect → auth handshake → dispatch · verified b552824*
+*Figure 3 — connect → auth handshake → dispatch · verified eb4c9fa*
 
-**Ports & framing.** Mode A scans `6550–6560`; Mode B scans `6570–6585`; both bind
-`127.0.0.1`. The editor peer buffer is sized from the `mcp_toolkit/limits/ws_buffer_kb`
-ProjectSetting (default 1024 KiB). A response frame larger than the peer buffer is **dropped
-wholesale by the engine** (no chunking), which is why oversized reads are guarded centrally
-and `save.read` / `script.read` paginate.
+**Ports & framing.** By default Mode A scans `6550–6560` and Mode B scans `6570–6585`; both
+bind `127.0.0.1`. The listen configuration is resolved from the environment by the shared,
+export-clean `transport/port_config.gd`: a per-channel env var pins an exact port
+(`GODOT_MCP_EDITOR_PORT` / `GODOT_MCP_RUNTIME_PORT`, **bind-exact-or-fail** with a bounded
+same-port grace — never a silent scan-fallback), or a `*_PORT_MIN` / `*_PORT_MAX` pair relocates
+the scan band; pin and band are mutually exclusive per channel, and a malformed or out-of-range
+value is a fatal config error, never a silent clamp ([ADR 0015](#14-key-decisions-adrs)). The
+registry always publishes the *actually bound* port, including a pinned port that frees and binds
+late. The editor peer buffer is sized from the `mcp_toolkit/limits/ws_buffer_kb` ProjectSetting
+(default 1024 KiB). A response frame larger than the peer buffer is **dropped wholesale by the
+engine** (no chunking), which is why oversized reads are guarded centrally and `save.read` /
+`script.read` paginate.
 
 **Auth.** The token is a 256-bit CSPRNG value (`auth.gd`), written to a per-instance file; its
 **globalized absolute path** is published in the registry entry (`get_published_token_path()` —
 `ProjectSettings.globalize_path` of the `user://` token file) so the bridge can read **and
 structurally validate** it without re-deriving the path ([ADR 0011](#14-key-decisions-adrs)).
 In-engine readers keep the `user://` form. The handshake reply differs by mode: Mode A returns
-`godot_version` + plugin `version` (the server's version-gating input), Mode B returns
+`godot_version` + plugin `version` + a `headless` flag (the server's version-gating and
+headless-degradation inputs; [ADR 0014](#14-key-decisions-adrs)), Mode B returns
 `{"authed":true}` only.
 
 **The editor poll loop is deliberately indirect.** Editor mutations must not run re-entrantly
 inside `_process` (a scene save pumps the main loop, which could resume a coroutine mid-pump).
 So Mode A defers its poll and throttles it to every 4th frame:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     proc["_process(delta)"] --> skip{"4th frame?"}
@@ -243,7 +258,7 @@ flowchart TD
     pump --> drain["poll_peers → await _on_message per frame"]
     pump --> clean["cleanup closed peers"]
 ```
-*Figure 4 — the deferred, frame-skipped editor poll · verified b552824*
+*Figure 4 — the deferred, frame-skipped editor poll · verified eb4c9fa*
 
 The mutation **watchdog** ([§4](#4-dispatch--concurrency)) ticks every frame *unconditionally*
 — independent of this poll cadence — so a wedged mutation is always recovered on time. Mode B,
@@ -258,7 +273,7 @@ Once a request is authed and parsed, `server_request_router.gd` routes it. A few
 handled inline (`_cancel`, `echo`); an unknown method is a `-32601`. Everything else is
 classified into one of **three execution lanes** by flags the command registry exposes.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     msg["authed JSON-RPC request"] --> router["ServerRequestRouter.route_request"]
@@ -275,7 +290,7 @@ flowchart TD
     L3 -.->|"affinity matches → fall through"| L2
     L3 -.-> L1
 ```
-*Figure 5 — the three dispatch lanes · verified b552824*
+*Figure 5 — the three dispatch lanes · verified eb4c9fa*
 
 - **ReadOnlyLane** — read-only commands bypass all locking and run immediately. They are
   marked `read_only`, which is *also* the value the server publishes as the tool's
@@ -294,7 +309,7 @@ generation counter; if a mutation overruns, it emits a `-32000` timeout to the c
 cooperatively cancels the handler's `MCPToolkitToolContext`, bumps the generation (so the
 wedged coroutine's tail bails), and force-clears the lock.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd addons/godot_mcp_toolkit/transport/dispatch/mutation_watchdog.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd addons/godot_mcp_toolkit/transport/dispatch/mutation_watchdog.gd" data-verified="eb4c9fa" -->
 ```mermaid
 stateDiagram-v2
     [*] --> Idle
@@ -305,12 +320,12 @@ stateDiagram-v2
     Executing --> ForceCleared: deadline exceeded — -32000 — ctx.cancel — generation++
     ForceCleared --> Idle: drain
 ```
-*Figure 6 — mutation lane single-flight + watchdog recovery · verified b552824*
+*Figure 6 — mutation lane single-flight + watchdog recovery · verified eb4c9fa*
 
 The scene lease coordinates multiple connected peers against Godot's single active-scene-tab
 model:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/scene/scene_lease.gd addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/scene/scene_lease.gd addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     req["command requiring the active scene"] --> open{"method == scene.open?"}
@@ -321,7 +336,7 @@ flowchart TD
     grant --> drainq["drain queued commands for that scene"]
     drainq --> through
 ```
-*Figure 7 — scene-lease lifecycle · verified b552824*
+*Figure 7 — scene-lease lifecycle · verified eb4c9fa*
 
 ---
 
@@ -337,11 +352,13 @@ omits `success` is converted to an `INTERNAL` error rather than reaching the LLM
   `{"success": false, "error": <message>, "code": <code>}`, plus `"hint"` when one is passed
   or when `code` is in `DEFAULT_HINTS`. Error payloads never carry `status`.
 
-**Error-code vocabulary.** `MCPToolkitError.CODES` is the closed set of **52** codes;
-`DEFAULT_HINTS` auto-attaches a recovery hint for **9** of them (e.g. `TIMEOUT`,
-`PATH_DENIED`, `GAME_NOT_RUNNING`, `RESPONSE_TOO_LARGE`). `fail()` asserts `code ∈ CODES` in
-debug builds, so a typo'd or off-vocabulary code is caught at the source instead of drifting
-into the contract.
+**Error-code vocabulary.** `MCPToolkitError.CODES` is the closed set of **53** codes;
+`DEFAULT_HINTS` auto-attaches a recovery hint for **7** of them (e.g. `TIMEOUT`,
+`PATH_DENIED`, `GAME_NOT_RUNNING`, `RESPONSE_TOO_LARGE`). `LOG_BUSY` / `LOG_UNAVAILABLE` are
+deliberately **not** in `DEFAULT_HINTS` — their recovery advice is version-gated (a
+`source:"buffer"` fallback exists only on Godot 4.5+), so each emit site passes an explicit
+version-gated hint instead. `fail()` asserts `code ∈ CODES` in debug builds, so a typo'd or
+off-vocabulary code is caught at the source instead of drifting into the contract.
 
 **Type coercion.** Godot's complex types cross JSON as **tagged dicts** and `coerce.gd`
 translates them bidirectionally (`coerce_value` ⟷ `serialize_value`). There are **18 tags**:
@@ -353,7 +370,7 @@ contract.
 **Idempotency** ([§contract C6](#13-contract-surface)). Create-style commands return a
 `status` discriminator and accept `if_exists`, so a blind retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     create["create / write command"] --> exists{"target exists?"}
@@ -363,7 +380,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified b552824*
+*Figure 8 — the idempotent create / if_exists decision · verified eb4c9fa*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -373,7 +390,7 @@ contract is one implementation, not three ([ADR 0010](#14-key-decisions-adrs)).
 
 ## 6. Command registry & catalogue
 
-`MCPToolkitCommandRegistry` (`contract/mcp_toolkit_command_registry.gd`) is the central
+`MCPToolkitCommandRegistry` (`transport/mcp_toolkit_command_registry.gd`) is the central
 dispatch table and the single seam the rest of the system routes through. Registration
 (`add()`) version-gates the command, maps the friendly annotations to MCP hints, and clamps
 the timeout to `[1s, 300s]`. Dispatch (`call_command()`) writes the audit entry, runs any
@@ -396,7 +413,7 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
     # … more verbs
 ```
 
-There are **~101 built-in handlers across 31 modules**; the server projects these to **110 MCP
+There are **~100 built-in handlers across 30 modules**; the server projects these to **110 MCP
 tool definitions** (plus 2 meta tools registered separately), owns the tool **groups** and
 on-demand activation, and the `domain.verb` ⟷ tool-name mapping stays in lockstep across the two
 repos.
@@ -420,7 +437,7 @@ repos.
 large files into a **thin orchestrator over single-responsibility children**. The registry's
 own multi-instance store is the clearest example:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_paths.gd addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_paths.gd addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     rc["registry_client.gd<br/>thin orchestrator — façade + sequencing"]
@@ -430,7 +447,7 @@ flowchart TD
     rc --> proj["registry_projection.gd<br/>fan-in → projects.json"]
     rc --> lock["file_lock.gd<br/>PID-aware machine-wide lock"]
 ```
-*Figure 9 — orchestrator + SRP-children (registry, concern 039) · verified b552824*
+*Figure 9 — orchestrator + SRP-children (registry, concern 039) · verified eb4c9fa*
 
 The same shape recurs across the codebase: `mcp_server.gd` over its transport/dispatch
 children, `plugin.gd` over `PluginComposer` ([§7](#7-plugin-lifecycle)), `dock.gd` over its
@@ -442,18 +459,21 @@ former `tileset` / `editor` / `playtest` god-files over the leaves now under
 
 ## 7. Plugin lifecycle
 
-`plugin.gd` is a thin `EditorPlugin` (~222 lines). `_enter_tree` first **self-heals the runtime
-autoload** — re-asserting `MCPRuntimeServer` before the graph is wired if the project was enabled
-out-of-band with the `[autoload]` entry missing (ADR 0013) — then delegates the whole collaborator
-graph to `PluginComposer.compose()`, which returns a `Handle`; `_exit_tree` calls
-`Handle.dispose()`, which tears the graph down in **exact reverse order** — the add/remove
-symmetry (invariant I12) that keeps plugin reload clean.
+`plugin.gd` is a thin `EditorPlugin` (~172 lines). `_enter_tree` first **self-heals the runtime
+autoload** via `AutoloadRegistration.ensure_registered()` — re-asserting `MCPRuntimeServer` before
+the graph is wired if the project was enabled out-of-band with the `[autoload]` entry missing (ADR
+0013) — then delegates the whole collaborator graph to `PluginComposer.compose()`, which returns a
+`Handle`; `_exit_tree` calls `Handle.dispose()`, which tears the graph down in **exact reverse
+order** — the add/remove symmetry (invariant I12) that keeps plugin reload clean. The autoload's
+identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives in a pure-const
+leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
+preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="a366d58" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
-    plugin -->|"_self_heal_autoloads() — pre-compose"| heal["re-assert runtime autoload<br/>(enabled-out-of-band gap · ADR 0013)"]
+    plugin -->|"AutoloadRegistration.ensure_registered() — pre-compose"| heal["re-assert runtime autoload<br/>(identity leaf + registration module ·<br/>enabled-out-of-band gap · ADR 0013)"]
     plugin -->|"compose()"| composer["PluginComposer → Handle"]
     composer --> reg["registry + mcp_server"]
     composer --> bridge["debug bridge"]
@@ -463,19 +483,26 @@ flowchart TD
     composer --> mon["user_path_monitor"]
     composer --> detect["PlaytestEndDetector"]
     composer --> start["server.start() + register in registry"]
+    composer --> ui["write flow + dialog presenter<br/>(shared UI · ADR 0016)"]
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order (I12)"| composer
 ```
-*Figure 10 — plugin composition root (concern 001) · verified a366d58*
+*Figure 10 — plugin composition root (concern 001) · verified eb4c9fa*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
 export-strip plugin, the user-path monitor (which re-homes `user://` paths when the project is
-renamed), the playtest-end detector, the server start + registry registration, and finally the
-dock. `dispose()` reverses it precisely, including the I12-symmetric
-`PlaytestCommands.clear_debug_bridge()` and immediate (not deferred) `free()` of the dock and
-server. The tool menu, per-user EditorSettings, the Godot-version warning, and the onboarding
-wizard are wired by `plugin.gd` itself after compose returns.
+renamed), the playtest-end detector, the server start + registry registration, then the shared
+`.mcp.json` write-flow + dialog presenter, and finally the dock. The write-flow and dialog
+presenter are **injected** into the dock, the tool menu, and the onboarding wizard alike — the
+dock consumes them like any other UI surface rather than acting as a service locator for them
+([ADR 0016](#14-key-decisions-adrs)). `dispose()` reverses the graph precisely, including the
+I12-symmetric `PlaytestCommands.clear_debug_bridge()`; teardown uses **immediate (not deferred)
+`free()`** throughout — for the dock control, the dialog presenter's dialogs, and the server, and
+(in `plugin.gd`'s own `_exit_tree`) for the tool menu and the onboarding wizard — so nothing
+outlives ObjectDB's exit-time leak check. The tool menu, per-user EditorSettings, the
+Godot-version warning, and the onboarding wizard are wired by `plugin.gd` itself after compose
+returns.
 
 ---
 
@@ -489,7 +516,7 @@ guarded lifecycle. `extension_loader.gd` is a 36-line orchestrator over four ser
 (the shared load/validate/probe leaf), `extension_watcher` (live hot-reload), and
 `extension_meta_commands` (the `extensions.list` surface).
 
-<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     scan["scan ProjectSettings.get_global_class_list()"] --> cand{"candidate?<br/>GDScript base == MCPToolkitExtension<br/>or C# MCPToolkit*.cs"}
@@ -506,7 +533,7 @@ flowchart TD
     reserved --> mark["registry.mark_extension(method)"]
     mark --> retain["retain instance (C# GC safety)"]
 ```
-*Figure 11 — extension discovery → validate → guarded register (concern 047) · verified b552824*
+*Figure 11 — extension discovery → validate → guarded register (concern 047) · verified eb4c9fa*
 
 Two guards protect the built-in surface: a **collision guard** window (opened by
 `begin_extension_load`, drained by `end_extension_load`) rejects an extension that tries to
@@ -543,7 +570,7 @@ The bridge has to find every editor and every running game on the machine. The t
 this **lock-light**: each instance writes its **own** entry file, and a locked rebuild fans
 them into the single `projects.json` the bridge reads.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     subgraph writers["each instance writes ONE unique file"]
@@ -560,7 +587,7 @@ flowchart TD
     lock --> rebuild --> pj
     pj --> bridge["server bridge — discovers all instances"]
 ```
-*Figure 12 — registry fan-in (concern 039) · verified b552824*
+*Figure 12 — registry fan-in (concern 039) · verified eb4c9fa*
 
 The registry directory is **machine-wide**, not `user://` — `%APPDATA%\godot-mcp-toolkit` on
 Windows, `~/Library/Application Support/godot-mcp-toolkit` on macOS, `$XDG_DATA_HOME` on Linux —
@@ -581,7 +608,7 @@ The toolkit assumes a **single local user with a human at the editor**; the boun
 localhost + token, not a defence against an adversary who can already write project files.
 Within that model, several layers keep an LLM's requests honest.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="b552824" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="eb4c9fa" -->
 ```mermaid
 flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
@@ -593,7 +620,7 @@ flowchart TD
     audit --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
 ```
-*Figure 13 — request trust boundaries · verified b552824*
+*Figure 13 — request trust boundaries · verified eb4c9fa*
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
@@ -617,9 +644,9 @@ flowchart TD
 
 ## 11. Cross-version compatibility
 
-The toolkit supports **Godot 4.2 (floor) through 4.6**, on the same parse-time principle as the
-editor↔runtime split: a version-specific API that doesn't exist in an older engine **must not
-appear as an identifier**, or the script won't parse there. So version-specific features are
+The toolkit supports **Godot 4.2 (floor) through 4.7** (`GODOT_TESTED_MAX_VERSION`), on the same
+parse-time principle as the editor↔runtime split: a version-specific API that doesn't exist in an
+older engine **must not appear as an identifier**, or the script won't parse there. So version-specific features are
 reached by **dynamic dispatch** — `has_method()` + `call()`, `has_signal()`,
 `ClassDB.class_exists()`, `is_class()` — never by naming the new symbol directly.
 
@@ -663,7 +690,7 @@ contract-surface document; the headline rows:
 | C1 | WebSocket transport & framing (ports, bind, buffer) | public |
 | C2 | Auth handshake (first-frame token; mode-divergent reply) | public |
 | C3 | Response envelope (`success` / `error` shape) | public |
-| C4 | Error-code vocabulary (`CODES`, 52) | public |
+| C4 | Error-code vocabulary (`CODES`, 53) | public |
 | C5 | Dispatch + concurrency notifications (`_queued` / `_executing` / `_cancel`; id coercion; JSON-RPC codes) | public |
 | C6 | Idempotency (`status` + `if_exists`) | public |
 | C7 | Type-tag coercion vocabulary (18 tags, bidirectional) | public |
@@ -699,6 +726,11 @@ ones most relevant to this document:
 | [0009](../adr/0009-fs-content-trust-boundary.md) | Filesystem-content trust boundary; extensions are full-trust | [§8](#8-extension-system), [§10](#10-security--trust-boundaries) |
 | [0010](../adr/0010-generated-assets-report-constructed-class.md) | Generated assets report their constructed class & skip import-settle | [§5](#5-the-response-contract) |
 | [0011](../adr/0011-token-path-authority.md) | Token-path authority — the toolkit publishes the globalized-absolute path; the server reads & structurally validates it | [§3](#3-transport--connection), [§10](#10-security--trust-boundaries) |
+| [0013](../adr/0013-runtime-autoload-self-heal.md) | Self-heal the runtime autoload on load when enabled out-of-band | [§7](#7-plugin-lifecycle) |
+| [0014](../adr/0014-headless-dx-response-shape.md) | Headless-DX response shape (`headless` handshake field + degraded-tool guidance) | [§3](#3-transport--connection) |
+| [0015](../adr/0015-deterministic-port-config.md) | Deterministic env-driven listen-port config (pin/band, bind-exact-or-fail) | [§3](#3-transport--connection) |
+| [0016](../adr/0016-dock-not-a-service-locator.md) | The dock is a UI surface, not a service locator (shared write-flow + dialog presenter injected) | [§7](#7-plugin-lifecycle) |
+| [0017](../adr/0017-macos-gui-launch-path.md) | OS-aware `.mcp.json` emission — resolve a macOS GUI-launch absolute node path | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
 
 ---
 
