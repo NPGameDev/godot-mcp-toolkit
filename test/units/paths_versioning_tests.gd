@@ -15,6 +15,7 @@ const EditorRescan := preload("res://addons/godot_mcp_toolkit/commands/editor/ed
 const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/core/unfocused_backup.gd")
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
 
 static func run(testing) -> void:
@@ -27,6 +28,7 @@ static func run(testing) -> void:
 	_test_stale_instance_hint(testing)
 	_test_call_method_null_hint(testing)
 	_test_tooltip_uaf_disarm_decision(testing)
+	_test_is_engine_version_pair(testing)
 
 
 # --- Compile-error diagnostic message (version-aware) (~10 assertions) -----
@@ -479,4 +481,25 @@ static func _test_tooltip_uaf_disarm_decision(testing) -> void:
 			"4.6 → no disarm")
 	testing.ok(not Helpers.should_disarm_tooltip_uaf("4.7"),
 			"4.7 → no disarm (gate is exact 4.3, not >=4.3)")
+	print("")
+
+
+# --- Exact-minor engine-version match ---------------------------------------
+# is_engine_version_pair(target): the exact-one-minor gate (ranges use
+# is_at_least/is_at_most). Compares against the LIVE engine, so the assertions are
+# engine-agnostic — derived from get_engine_version_pair() — and pin both branches
+# on every engine of the CI floor matrix: the running pair matches, and any
+# non-pair form (different minor, patch-suffixed, empty) does not.
+
+static func _test_is_engine_version_pair(testing) -> void:
+	testing.begin("Exact-minor engine-version match")
+	var live_pair := VersionUtils.get_engine_version_pair()
+	testing.ok(VersionUtils.is_engine_version_pair(live_pair),
+			"the running engine's own major.minor pair → true")
+	testing.ok(not VersionUtils.is_engine_version_pair("3.0"),
+			"a different major.minor → false")
+	testing.ok(not VersionUtils.is_engine_version_pair(live_pair + ".0"),
+			"patch-suffixed form → false (the match is the bare pair, not a prefix)")
+	testing.ok(not VersionUtils.is_engine_version_pair(""),
+			"empty target → false")
 	print("")

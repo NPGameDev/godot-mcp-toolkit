@@ -62,7 +62,7 @@ static func is_addon_enabled(script_path: String) -> bool:
 ## is explicit major.minor equality so a future 5.2 is NOT caught and all 4.2.x patch
 ## releases ARE.
 static func is_godot_42() -> bool:
-	return Modules.VersionUtils.get_engine_version_pair() == "4.2"
+	return Modules.VersionUtils.is_engine_version_pair("4.2")
 
 
 ## Cache mode for loading extension scripts. 4.2 uses CACHE_MODE_REUSE, which returns

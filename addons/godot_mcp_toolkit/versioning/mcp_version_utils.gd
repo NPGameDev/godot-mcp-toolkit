@@ -22,6 +22,14 @@ static func get_engine_version_pair() -> String:
 	return "%d.%d" % [info["major"], info["minor"]]
 
 
+## True when the running engine's "major.minor" pair equals [param target]
+## (e.g. "4.2" — matched exactly, so every 4.2.x patch release is caught and a
+## future 5.2 is not). For the exact-one-minor case only; version ranges use
+## [method is_at_least] / [method is_at_most].
+static func is_engine_version_pair(target: String) -> bool:
+	return get_engine_version_pair() == target
+
+
 ## The toolkit's own version string, read from its plugin.cfg.
 ## Returns "unknown" if the config can't be loaded.
 static func read_plugin_version() -> String:
