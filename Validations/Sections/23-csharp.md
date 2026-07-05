@@ -44,7 +44,7 @@ public partial class Sv2CsGlobal : Node
 - **Expect:** success
 
 **CS-S1c.** Build .NET solution — run `dotnet build` in project root (Bash tool).
-- **Expect:** `Build succeeded`. If fails, check .NET SDK version (4.2=net6.0, 4.3+=net8.0).
+- **Expect:** `Build succeeded`. If fails, check .NET SDK version (4.2–4.3=net6.0, 4.4+=net8.0).
 
 **CS-S2.** `editor_refresh` — pick up rebuilt assembly
 - **Expect:** success
