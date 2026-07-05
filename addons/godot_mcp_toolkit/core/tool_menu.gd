@@ -83,11 +83,15 @@ func uninstall() -> void:
 		if palette != null:
 			for action in _ACTIONS:
 				palette.remove_command(action["key"])
-	# Submenu.
+	# Submenu — immediate free(), not queue_free(): uninstall runs on the plugin's
+	# _exit_tree teardown path, and a deferred delete would hold the submenu's
+	# id_pressed connection (and this instance's preload chain) past ObjectDB's
+	# exit-time leak check → spurious "resources still in use at exit". The submenu
+	# was removed from the menu above, so nothing is iterating it.
 	_plugin.remove_tool_menu_item("MCP Toolkit")
-	if _tool_submenu != null:
-		_tool_submenu.queue_free()
-		_tool_submenu = null
+	if _tool_submenu != null and is_instance_valid(_tool_submenu):
+		_tool_submenu.free()
+	_tool_submenu = null
 
 
 # -- Submenu router ------------------------------------------------------------

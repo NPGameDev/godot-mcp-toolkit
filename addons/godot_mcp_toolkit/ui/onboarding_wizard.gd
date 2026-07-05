@@ -70,10 +70,26 @@ func check_and_show() -> void:
 	dialog.popup_centered()
 
 
+# Mid-session dismissal — every in-wizard caller runs inside one of the dialog's OWN
+# signal callbacks (confirmed / custom_action / canceled), where an immediate free()
+# would delete the emitter mid-emission; queue_free() is the legal form there. Plugin
+# teardown uses teardown() instead (immediate free — see below).
 func free_if_open() -> void:
 	_buttons.clear()
 	if _dialog != null and is_instance_valid(_dialog):
 		_dialog.queue_free()
+	_dialog = null
+
+
+# Plugin-teardown counterpart of free_if_open(): immediate free(), not queue_free().
+# This runs on the plugin's _exit_tree path, outside any dialog signal emission, and a
+# deferred delete would hold the dialog's button/confirm connections (and this wizard
+# instance) past ObjectDB's exit-time leak check → spurious "resources still in use
+# at exit". The dialog may be an open popup — free() closes and deletes it in one step.
+func teardown() -> void:
+	_buttons.clear()
+	if _dialog != null and is_instance_valid(_dialog):
+		_dialog.free()
 	_dialog = null
 
 

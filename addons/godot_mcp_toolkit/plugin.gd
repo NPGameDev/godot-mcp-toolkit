@@ -93,9 +93,10 @@ func _on_user_path_changed() -> void:
 
 func _exit_tree() -> void:
 	# Teardown symmetry — reverse order of _enter_tree's phases.
-	# Onboarding wizard (if still open).
+	# Onboarding wizard (if still open) — teardown() frees the dialog immediately so
+	# it can't outlive ObjectDB's exit-time leak check.
 	if _wizard != null:
-		_wizard.free_if_open()
+		_wizard.teardown()
 		_wizard = null
 
 	# Menus + command palette.
