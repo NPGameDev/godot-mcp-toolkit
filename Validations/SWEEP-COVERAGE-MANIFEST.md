@@ -214,7 +214,7 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| navigation.edit_polygon | 85a–85f | ✓ (85e: INVALID_CLASS) | — | — | — | |
+| navigation.edit_polygon | 85a–85f, §25 UR13 | ✓ (85e: INVALID_CLASS) | — | — | — | Undo/redo regression watch in §25 UR13 (polygon mutations register undo; bake stays direct) |
 
 ### Particle System (1 tool)
 

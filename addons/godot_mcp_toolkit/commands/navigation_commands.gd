@@ -43,13 +43,13 @@ static func _cmd_edit_polygon(parameters: Dictionary) -> Dictionary:
 
 	match action:
 		"set":
-			return _action_set(parameters, nav_poly)
+			return _action_set(region, parameters, nav_poly)
 		"add_outline":
-			return _action_add_outline(parameters, nav_poly)
+			return _action_add_outline(region, parameters, nav_poly)
 		"remove_outline":
-			return _action_remove_outline(parameters, nav_poly)
+			return _action_remove_outline(region, parameters, nav_poly)
 		"clear":
-			return _action_clear(nav_poly)
+			return _action_clear(region, nav_poly)
 		"bake":
 			return _action_bake(region, nav_poly)
 		_:
@@ -57,12 +57,14 @@ static func _cmd_edit_polygon(parameters: Dictionary) -> Dictionary:
 				"Unknown action '%s'; valid actions: set, add_outline, remove_outline, clear, bake" % action)
 
 
-static func _action_set(parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
+static func _action_set(region: NavigationRegion2D, parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
 	var outlines = parameters.get("outlines", null)
 	if outlines == null or typeof(outlines) != TYPE_ARRAY or outlines.size() == 0:
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"'outlines' must be a non-empty Array of outline arrays")
 
+	# Capture old state for undo.
+	var old_poly := nav_poly.duplicate() as NavigationPolygon
 	nav_poly.clear_outlines()
 	for outline_data in outlines:
 		if typeof(outline_data) != TYPE_ARRAY:
@@ -74,10 +76,11 @@ static func _action_set(parameters: Dictionary, nav_poly: NavigationPolygon) -> 
 		if packed.size() >= 3:
 			nav_poly.add_outline(packed)
 
+	_wrap_undo_redo(region, nav_poly, old_poly, "navigation.edit_polygon set")
 	return _make_result(nav_poly)
 
 
-static func _action_add_outline(parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
+static func _action_add_outline(region: NavigationRegion2D, parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
 	var outline_data = parameters.get("outline", null)
 	if outline_data == null or typeof(outline_data) != TYPE_ARRAY:
 		return MCPToolkitError.fail("INVALID_PARAMS", "'outline' must be an Array of {x, y} points")
@@ -90,11 +93,14 @@ static func _action_add_outline(parameters: Dictionary, nav_poly: NavigationPoly
 	if packed.size() < 3:
 		return MCPToolkitError.fail("INVALID_PARAMS", "Outline must have at least 3 points")
 
+	var old_poly := nav_poly.duplicate() as NavigationPolygon
 	nav_poly.add_outline(packed)
+
+	_wrap_undo_redo(region, nav_poly, old_poly, "navigation.edit_polygon add_outline")
 	return _make_result(nav_poly)
 
 
-static func _action_remove_outline(parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
+static func _action_remove_outline(region: NavigationRegion2D, parameters: Dictionary, nav_poly: NavigationPolygon) -> Dictionary:
 	var index = parameters.get("index", null)
 	if index == null:
 		return MCPToolkitError.fail("INVALID_PARAMS", "'index' is required for remove_outline")
@@ -104,13 +110,19 @@ static func _action_remove_outline(parameters: Dictionary, nav_poly: NavigationP
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"Outline index %d out of range (0..%d)" % [idx, nav_poly.get_outline_count() - 1])
 
+	var old_poly := nav_poly.duplicate() as NavigationPolygon
 	nav_poly.remove_outline(idx)
+
+	_wrap_undo_redo(region, nav_poly, old_poly, "navigation.edit_polygon remove_outline")
 	return _make_result(nav_poly)
 
 
-static func _action_clear(nav_poly: NavigationPolygon) -> Dictionary:
+static func _action_clear(region: NavigationRegion2D, nav_poly: NavigationPolygon) -> Dictionary:
+	var old_poly := nav_poly.duplicate() as NavigationPolygon
 	nav_poly.clear_outlines()
 	nav_poly.clear_polygons()
+
+	_wrap_undo_redo(region, nav_poly, old_poly, "navigation.edit_polygon clear")
 	return MCPToolkitSuccess.ok({"outline_count": 0, "vertex_count": 0})
 
 
@@ -137,6 +149,24 @@ static func _action_bake(region: NavigationRegion2D, nav_poly: NavigationPolygon
 		"polygon_count": nav_poly.get_polygon_count(),
 		"vertex_count": vertex_count,
 	})
+
+
+# -- Undo/Redo ---------------------------------------------------------------
+
+
+# Register the already-applied polygon mutation with the editor's UndoRedo (same
+# node-hosted-resource shape as path2d.edit_curve): redo re-assigns the mutated
+# polygon, undo restores the pre-mutation duplicate; both resources are reference-
+# pinned so neither can be collected while the history entry lives. bake is
+# deliberately NOT wrapped — baked polygons are derivative of the outlines.
+static func _wrap_undo_redo(region: NavigationRegion2D, nav_poly: NavigationPolygon,
+		old_poly: NavigationPolygon, action_name: String) -> void:
+	MCPToolkitUndoRedoAction.begin(action_name, region) \
+		.do_property(region, &"navigation_polygon", nav_poly) \
+		.undo_property(region, &"navigation_polygon", old_poly) \
+		.do_reference(nav_poly) \
+		.undo_reference(old_poly) \
+		.commit_recorded()
 
 
 static func _make_result(nav_poly: NavigationPolygon) -> Dictionary:

@@ -1,9 +1,9 @@
 # Section 25 — Undo/Redo Verification
 
 **Dependencies:** Section 2 (nodes exist in `res://sv2_validation/Sv2Main.tscn`)
-**Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, particles.create, collision_from_texture, node.set_script
-**Tests:** 48
-**Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene. Sections UR4–UR12 are regression guards for tools that previously had missing `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls, which caused `UndoRedo history mismatch` errors.
+**Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, navigation.edit_polygon, particles.create, collision_from_texture, node.set_script
+**Tests:** 53
+**Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene. Sections UR4–UR12 are regression guards for tools that previously had missing `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls, which caused `UndoRedo history mismatch` errors; UR13 watches navigation's UndoRedo adoption.
 
 ---
 
@@ -306,6 +306,30 @@
 
 ---
 
+## UR13. navigation.edit_polygon undo/redo
+
+> **Note:** regression watch for navigation's UndoRedo adoption — its polygon
+> mutations (set/add_outline/remove_outline/clear) register undo entries exactly
+> like path2d.edit_curve; `bake` stays direct (derivative of the outlines).
+
+**UR13.1** Create a NavigationRegion2D:
+- `scene.create_node` — type=`NavigationRegion2D`, name=`URNavRegion`, parent=scene root
+- **Expect:** success
+
+**UR13.2** Set outlines:
+- `navigation_edit` — node_path=`URNavRegion`, action=`set`, outlines=`[[{x:0,y:0},{x:100,y:0},{x:100,y:100},{x:0,y:100}]]`
+- **Expect:** success, outline_count=1
+
+**UR13.3** Trigger undo:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_undo`, args=`["URNavRegion"]`
+- **Expect:** status=`ok`
+
+**UR13.4** Verify outlines reverted:
+- `node.get_property` — node_path=`URNavRegion`, property=`navigation_polygon`
+- **Expect:** the polygon has no outlines (pre-edit state restored by undo)
+
+---
+
 ## UR-Console: History mismatch error check
 
 **UR-CON.1** Read editor console:
@@ -328,6 +352,10 @@
 
 **UR-C2.** Delete `URPath`:
 - `scene.delete_node` — node_path=`URPath`
+- **Expect:** success
+
+**UR-C2b.** Delete `URNavRegion`:
+- `scene.delete_node` — node_path=`URNavRegion`
 - **Expect:** success
 
 **UR-C3.** Delete `URControl`:
