@@ -118,13 +118,14 @@ static func _action_bake(region: NavigationRegion2D, nav_poly: NavigationPolygon
 	if nav_poly.get_outline_count() == 0:
 		return MCPToolkitError.fail("INVALID_PARAMS", "Cannot bake: no outlines defined")
 
-	# Use NavigationServer2D baking (4.3+) if available, else deprecated fallback
+	# NavigationServer2D baking (parse/bake_from_source_geometry_data) is present on
+	# all supported versions (4.2-4.7); has_method() guards it defensively.
 	if NavigationServer2D.has_method("bake_from_source_geometry_data"):
 		var source := NavigationMeshSourceGeometryData2D.new()
 		NavigationServer2D.parse_source_geometry_data(nav_poly, source, region)
 		NavigationServer2D.bake_from_source_geometry_data(nav_poly, source)
 	else:
-		# Deprecated 4.2 fallback
+		# Deprecated fallback — unreachable on 4.2-4.7 (bake API present since 4.2)
 		nav_poly.make_polygons_from_outlines()
 
 	var vertex_count := 0
