@@ -79,35 +79,69 @@ jobs:
           godot-version: ${{ matrix.godot-version }}
           use-dotnet: false
 
-  # ═══════════════════════════════════════════════════════════════════════════
-  # INSERTION SITE — manifest-diff regression gate (FILLED BY 41n-quinquies)
-  # ───────────────────────────────────────────────────────────────────────────
-  # 41n-quinquies wires a lightweight, EDITOR-FREE static check here: dump each
-  # matrix version's surface via `godot --headless --dump-extension-api` and diff
-  # it against the committed distilled compat map. Because it is headless +
-  # editor-free it belongs in this floor (ci.yml), NOT the spike-gated behavioral
-  # cross-version.yml — it must exist regardless of the spike outcome.
-  #
-  # 41n-quater leaves ONLY this labeled placeholder (no logic). Suggested shape
-  # for 41n-quinquies: a matrix job over 4.3/4.4/4.5/4.6/4.7 using
-  # chickensoft-games/setup-godot (as gdscript-check does), then:
-  #   godot --headless --dump-extension-api
-  #   node scripts/diff-extension-api.mjs <version>   # compare vs committed map
-  #
-  # NOTE(41n-quinquies): when wiring this job, also add it to the floor-ok gate's
-  # `needs:` below so the aggregate floor gate covers it.
-  #
-  # manifest-diff:
-  #   runs-on: ubuntu-latest
-  #   strategy: { fail-fast: false, matrix: { godot-version: ["4.3.0","4.4.0","4.5.0","4.6.0","4.7.0"] } }
-  #   name: manifest-diff (Godot ${{ matrix.godot-version }})
-  #   steps:
-  #     - uses: actions/checkout@v7
-  #     - uses: chickensoft-games/setup-godot@v2.4.1
-  #       with: { version: ${{ matrix.godot-version }}, use-dotnet: false }
-  #     - run: godot --headless --dump-extension-api
-  #     - run: node scripts/diff-extension-api.mjs ${{ matrix.godot-version }}
-  # ═══════════════════════════════════════════════════════════════════════════
+  # ── Manifest-diff regression (41n-quinquies) ─────────────────────────────────
+  # Lightweight, editor-free drift gate: per supported version, dump the REAL
+  # engine surface (`godot --headless --dump-extension-api`) and assert the
+  # committed distilled compat map's CLASS column for that version still matches
+  # it — failing if the engine surface drifts (a class added/removed) without a
+  # compat-map regen. The map is the harness's committed SSOT
+  # (Validations/cross-version-audit/compat-map.json, built by scripts/run_all.sh);
+  # this floor job only re-checks its class backbone. The deep member/signature
+  # diff logic is NOT reinvented here — it stays in the local harness
+  # (build_compat_map.py + `FORCE=1 bash run_all.sh`), the remediation path a red
+  # leg points at. Editor-free (a pure C++ ClassDB dump, no editor scan / no WS
+  # round-trip), so it belongs in this floor rather than the spike-gated behavioral
+  # cross-version.yml. Class presence is patch-invariant (Godot patch releases do
+  # not change ClassDB), so the repo-standard X.Y.0 matrix is safe even though the
+  # map's 4.4/4.6 columns were distilled from 4.4.1/4.6.2 (compat-map meta.editor_builds).
+  manifest-diff:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
+    name: "Manifest diff (extension_api · Godot ${{ matrix.godot-version }})"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Godot
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: ${{ matrix.godot-version }}
+          use-dotnet: false
+
+      # `--dump-extension-api` serializes ClassDB to ./extension_api.json. It is
+      # analyzer-free (a pure C++ dump — no GDScript scan), so 4.2 is INCLUDED here
+      # even though the editor-scan floor (gdscript-check) excludes it.
+      - name: Dump extension_api.json (headless)
+        run: godot --headless --dump-extension-api
+
+      # Reuse the committed compat map as SSOT; compare its version-N class column
+      # to the freshly dumped surface (pure set equality — not a diff-logic reimpl).
+      - name: Verify compat-map class column matches the real surface
+        shell: bash
+        env:
+          MATRIX_VERSION: ${{ matrix.godot-version }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          VERSIONS = ["4.2", "4.3", "4.4", "4.5", "4.6", "4.7"]
+          mm = ".".join(os.environ["MATRIX_VERSION"].split(".")[:2])
+          vi = VERSIONS.index(mm)
+          cmap = json.load(open("Validations/cross-version-audit/compat-map.json", encoding="utf-8"))
+          dump = json.load(open("extension_api.json", encoding="utf-8"))
+          expected = {n for n, r in cmap["classes"].items() if r["present"][vi] == "Y"}
+          actual = {c["name"] for c in dump.get("classes", [])}
+          missing = sorted(expected - actual)
+          extra = sorted(actual - expected)
+          for sym in missing: print("  MAP-claims-present ENGINE-missing: " + sym)
+          for sym in extra: print("  ENGINE-exposes MAP-not-present: " + sym)
+          if missing or extra:
+              print("::error::compat-map class drift for Godot %s: %d in map-not-engine, %d in engine-not-map. Regenerate: cd Validations/cross-version-audit/scripts && FORCE=1 bash run_all.sh" % (mm, len(missing), len(extra)))
+              sys.exit(1)
+          print("OK: Godot %s class surface matches the compat-map column (%d classes)." % (mm, len(expected)))
+          PY
 
   # ── Aggregate floor gate (D8) ────────────────────────────────────────────────
   # "Toolkit floor OK" is the SINGLE name that becomes a required check once the
@@ -119,7 +153,7 @@ jobs:
   # as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [gdscript-check, unit-tests]
+    needs: [gdscript-check, unit-tests, manifest-diff]
     if: always()
     runs-on: ubuntu-latest
     steps:
