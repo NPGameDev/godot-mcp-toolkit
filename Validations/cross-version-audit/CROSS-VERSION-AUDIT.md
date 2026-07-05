@@ -95,6 +95,49 @@ writes through `ResourceSaver`/`PackedScene`, so portability is engine-owned.
 - **`global_deltas`** --- `@util:` / `@genum:` / `@singleton:` symbols that vary across versions.
 - **Convention:** to check an arbitrary `Class.member`: if the class is present in vN and the member is **not** in `member_deltas`, it is present-and-stable in vN. Use `lookup.py Class.member --version N` to cross-check against the raw dump.
 
+## Known map-presentation caveats
+
+Two artifacts of how the map is *projected* (**not** toolkit bugs, and **not** real
+version breaks) can mislead a reader of the raw presence/drift strings. Each was
+corroborated by multiple per-version audit seats. Neither is a code risk --- the
+callable surface is compat-preserved by construction (breaking-callable = 0 at every
+boundary, per *Durable facts* above).
+
+### (a) Reparenting false-absence
+
+The map's per-symbol `presence` is scoped to the symbol's **declaring class** and
+does **not** follow a method that moved to a new base class. At **4.6**, Godot
+relocated several socket/dialog methods onto new base classes:
+
+- `TCPServer.stop` / `.is_listening` / `.is_connection_available` --- now on **`SocketServer`** (`TCPServer inherits SocketServer`, a base new in 4.6).
+- `StreamPeerTCP.poll` --- now on **`StreamPeerSocket`** (`StreamPeerTCP inherits StreamPeerSocket`, new in 4.6).
+- `EditorFileDialog.*` --- now on the shared **`FileDialog`** base.
+
+Because each member row stays keyed to the *derived* class, the map shows those
+members as `YYYY--` ("removed after 4.5") even though they remain **inherited,
+callable, and hash-identical** on 4.6/4.7 --- the derived class is present all six
+versions and GDScript dynamic dispatch is unaffected. **When auditing, resolve the
+symbol against the new base / inheritance chain, not just the map string.**
+(Suggested harness fix: an inherited-member resolution pass; hash-identity keeps
+manual resolution cheap meanwhile.)
+
+### (b) Virtual-drift hash artifact
+
+Godot **4.2 and 4.3**'s `--dump-extension-api` omit per-virtual-method hashes
+(`hash=None`); **4.4+** emit them (raw-dump verified: 4.2 = 0/1236 virtuals hashed,
+4.3 = 0/1285, 4.4 = 1344/1344). The map keys signature-identity on the hash, so it
+flags **every overridden virtual as "drifted" at the 4.3->4.4 boundary only** ---
+the ~**1284**-row virtual-"drift" spike in `delta-report.md` is this `None -> value`
+**representation** change, **not** real signature drift. (The 4.2->4.3 boundary
+reports virtual drift = 0, confirming 4.3 carries no hashes either --- the spike is
+4.3->4.4, not 4.2->4.3.)
+
+Ground truth: across 4.2--4.7, **zero callable (regular) methods lost their
+binding**, and every overridden virtual's **arg-list is byte-identical** --- only
+the hash *representation* changed. **Treat virtual-"drift" rows as arg-list-equal
+unless the arg-lists actually differ.** (Suggested harness fix: compare virtuals by
+arg-list, not hash.)
+
 ## Running the harness
 
 ```bash
