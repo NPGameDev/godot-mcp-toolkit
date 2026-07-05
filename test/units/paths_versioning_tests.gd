@@ -502,4 +502,14 @@ static func _test_is_engine_version_pair(testing) -> void:
 			"patch-suffixed form → false (the match is the bare pair, not a prefix)")
 	testing.ok(not VersionUtils.is_engine_version_pair(""),
 			"empty target → false")
+
+	# get_engine_version_ints — the same live pair as plain ints (x=major, y=minor):
+	# must agree with Engine.get_version_info() and re-join to get_engine_version_pair(),
+	# so the int and string forms of the version can never drift apart.
+	var ints := VersionUtils.get_engine_version_ints()
+	var info := Engine.get_version_info()
+	testing.eq(ints.x, int(info["major"]), "ints.x == Engine major")
+	testing.eq(ints.y, int(info["minor"]), "ints.y == Engine minor")
+	testing.eq("%d.%d" % [ints.x, ints.y], live_pair,
+			"ints re-join to get_engine_version_pair() (int and string forms agree)")
 	print("")

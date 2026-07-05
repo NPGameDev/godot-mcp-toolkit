@@ -30,6 +30,15 @@ static func is_engine_version_pair(target: String) -> bool:
 	return get_engine_version_pair() == target
 
 
+## The running engine's major/minor as an int pair — [code]Vector2i(major, minor)[/code]
+## ([code].x[/code] = major, [code].y[/code] = minor). For decision predicates that take
+## the version as plain data (e.g. the stale-live-instance hint feed); the same pair as a
+## string is [method get_engine_version_pair].
+static func get_engine_version_ints() -> Vector2i:
+	var info := Engine.get_version_info()
+	return Vector2i(int(info["major"]), int(info["minor"]))
+
+
 ## The toolkit's own version string, read from its plugin.cfg.
 ## Returns "unknown" if the config can't be loaded.
 static func read_plugin_version() -> String:

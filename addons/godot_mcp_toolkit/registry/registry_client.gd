@@ -20,7 +20,7 @@ extends RefCounted
 ## autoload to parse in an export (godot#91713).
 
 const _VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
-const FileLock := preload("res://addons/godot_mcp_toolkit/registry/store/file_lock.gd")
+const _FileLock := preload("res://addons/godot_mcp_toolkit/registry/store/file_lock.gd")
 # Direct preload (NOT via core/modules.gd): this file is in the runtime autoload's
 # preload closure (mcp_runtime_server.gd), so it must stay editor-clean — core/modules.gd
 # names EditorInterface and would taint the autoload in exports (godot#91713).
@@ -72,11 +72,11 @@ static func _runtime_entry_file_path() -> String:
 ## premature. If a 2nd non-registry lock client appears, extract a dedicated
 ## RegistryLock role (rule-of-three / ISP) and point both clients at it.
 static func acquire_lock() -> bool:
-	return FileLock.acquire(_RegistryPaths.lock_path())
+	return _FileLock.acquire(_RegistryPaths.lock_path())
 
 
 static func release_lock() -> void:
-	FileLock.release(_RegistryPaths.lock_path())
+	_FileLock.release(_RegistryPaths.lock_path())
 
 
 # -- Entry-file I/O (delegates to RegistryEntryFile — the I/O leaf) ------------

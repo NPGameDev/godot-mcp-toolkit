@@ -18,6 +18,9 @@ extends RefCounted
 ## All buffer access is Mutex-protected.
 
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
+# Export-clean (core APIs only) — safe in the runtime autoload's preload closure,
+# which pulls this file in.
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
 const _CAPACITY := 500
 const _POLL_INTERVAL_MS := 200
@@ -273,10 +276,8 @@ static func _setup_logger() -> void:
 	# callback's file arg. Flag 4.7+ so the logger appends the engine-style "   at:" location
 	# line to script errors and the filename stays captured; 4.5/4.6 keep prior byte-for-byte
 	# output (their separate load error already carries the path).
-	var version := Engine.get_version_info()
-	var major := int(version.get("major", 0))
-	var minor := int(version.get("minor", 0))
-	_logger_ref.set_meta("_append_error_location", major > 4 or (major == 4 and minor >= 7))
+	_logger_ref.set_meta("_append_error_location",
+		VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.7"))
 	# Dynamic call — OS.add_logger() only exists in 4.5+; static reference
 	# causes a parse error on 4.2-4.4 even inside a guarded branch.
 	OS.call("add_logger", _logger_ref)

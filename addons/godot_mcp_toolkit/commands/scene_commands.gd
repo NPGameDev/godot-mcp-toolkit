@@ -91,14 +91,6 @@ static func _walk_tree(
 	return result
 
 
-static func _class_descends_from(type_name: String, base: String) -> bool:
-	return Helpers.class_descends_from(type_name, base)
-
-
-static func _class_base_chain(type_name: String) -> String:
-	return Helpers.class_base_chain(type_name)
-
-
 # -- Commands -----------------------------------------------------------------
 
 
@@ -143,9 +135,9 @@ static func _cmd_scene_create(parameters: Dictionary) -> Dictionary:
 	if resolved_kind.is_empty():
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % root_type, MCPToolkitError.HINT_CLASS_NAME)
-	if not _class_descends_from(root_type, "Node"):
+	if not Helpers.class_descends_from(root_type, "Node"):
 		return MCPToolkitError.fail("INVALID_CLASS",
-			"%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [root_type, _class_base_chain(root_type)])
+			"%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [root_type, Helpers.class_base_chain(root_type)])
 	var collision := Helpers.resolve_create_collision(file_path, if_exists)
 	if not collision["valid"]:
 		return MCPToolkitError.fail("INVALID_PARAMS",
@@ -335,10 +327,10 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 	if resolved_kind.is_empty():
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"unknown class %s; checked ClassDB (engine classes) and ProjectSettings.get_global_class_list() (GDScript class_name + C# [GlobalClass])" % class_name_param, MCPToolkitError.HINT_CLASS_NAME)
-	if not _class_descends_from(class_name_param, "Node"):
+	if not Helpers.class_descends_from(class_name_param, "Node"):
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"%s is not a Node subclass (resolved base chain: %s); scene roots must descend from Node" % [
-				class_name_param, _class_base_chain(class_name_param)])
+				class_name_param, Helpers.class_base_chain(class_name_param)])
 
 	var parent_node := root.get_node_or_null(parent_path) if not parent_path.is_empty() else root
 	if parent_node == null:

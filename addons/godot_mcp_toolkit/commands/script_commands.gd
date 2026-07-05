@@ -178,10 +178,9 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		# (added members AND changed bodies; a fresh node doesn't help either —
 		# empirically characterised, boundary 4.3->4.4). Append to the response hint
 		# (validation guidance first, stale nudge in the recency slot).
-		var vi := Engine.get_version_info()
-		var minor := int(vi["minor"])
-		if Modules.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], write_extension, int(vi["major"]), minor):
-			result["hint"] = Modules.StaleInstanceHint.write_hint("%d.%d" % [int(vi["major"]), minor])
+		var version := Modules.VersionUtils.get_engine_version_ints()
+		if Modules.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], write_extension, version.x, version.y):
+			result["hint"] = Modules.StaleInstanceHint.write_hint(Modules.VersionUtils.get_engine_version_pair())
 
 	return result
 
@@ -288,7 +287,7 @@ static func _validate_gdscript(source: String) -> Dictionary:
 				"severity": "hint",
 				"message": hint,
 			})
-	return {"success": true, "valid": is_valid, "diagnostics": diagnostics}
+	return MCPToolkitSuccess.ok({"valid": is_valid, "diagnostics": diagnostics})
 
 
 ## Version-aware compile-error diagnostic message. editor_get_console surfaces editor

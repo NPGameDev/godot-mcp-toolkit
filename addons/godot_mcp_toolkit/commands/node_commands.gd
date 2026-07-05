@@ -528,14 +528,14 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 	if not scr_path.to_lower().ends_with(".gd") or not FileAccess.file_exists(scr_path):
 		return ""
 	var disk_source := FileAccess.get_file_as_string(scr_path)
-	var vi := Engine.get_version_info()
-	var minor := int(vi["minor"])
+	var version := Modules.VersionUtils.get_engine_version_ints()
 	var headless := Modules.VersionUtils.is_headless()
 	var disk_has := Modules.StaleInstanceHint.source_has_method(disk_source, method_name)
 	var disk_ok := Modules.StaleInstanceHint.source_compiles(disk_source)
-	if not Modules.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, int(vi["major"]), minor, headless):
+	if not Modules.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, version.x, version.y, headless):
 		return ""
-	return Modules.StaleInstanceHint.recovery_message("%d.%d" % [int(vi["major"]), minor], minor, headless)
+	return Modules.StaleInstanceHint.recovery_message(
+			Modules.VersionUtils.get_engine_version_pair(), version.y, headless)
 
 
 ## Builds the node.call_method hint for a null callv() result, version-gated.

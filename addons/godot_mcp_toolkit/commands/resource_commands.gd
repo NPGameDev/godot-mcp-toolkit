@@ -28,14 +28,6 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 # -- Helpers ------------------------------------------------------------------
 
 
-static func _class_descends_from(type_name: String, base: String) -> bool:
-	return Helpers.class_descends_from(type_name, base)
-
-
-static func _class_base_chain(type_name: String) -> String:
-	return Helpers.class_base_chain(type_name)
-
-
 static func _property_names_of(object: Object) -> Dictionary:
 	var names := {}
 	for property in object.get_property_list():
@@ -171,10 +163,10 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 	if resolved_kind.is_empty():
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"unknown class %s; check ClassDB or ProjectSettings global class list" % resource_class, MCPToolkitError.HINT_CLASS_NAME)
-	if not _class_descends_from(resource_class, "Resource"):
+	if not Helpers.class_descends_from(resource_class, "Resource"):
 		return MCPToolkitError.fail("NOT_A_RESOURCE",
 			"%s is not a Resource subclass (base chain: %s)" % [
-				resource_class, _class_base_chain(resource_class)])
+				resource_class, Helpers.class_base_chain(resource_class)])
 	var resource: Resource = null
 	if resolved_kind == "native":
 		resource = ClassDB.instantiate(resource_class)
