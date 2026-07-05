@@ -29,18 +29,36 @@ extends RefCounted
 const Notifier := preload("res://addons/godot_mcp_toolkit/transport/notifier.gd")
 
 
+## The peer-scoped key an in-flight request is tracked under in the shared
+## active-contexts map — public re-export of [code]_LaneBase.context_key[/code]
+## for the dispatcher's _cancel lookup (an inner class can't be named cross-file;
+## the lanes reach the same implementation by inheritance, so the shape has one home).
+static func context_key(peer: WebSocketPeer, id) -> String:
+	return _LaneBase.context_key(peer, id)
+
+
 # -- Shared lane base ----------------------------------------------------------
 # Holds the collaborators every lane needs and the read-execute core two lanes share.
 # Not instantiated directly — ReadOnlyLane / MutationLane / SceneLeaseLane extend it.
 class _LaneBase:
 	extends RefCounted
 
+	## The peer-scoped key an in-flight request is tracked under in the shared
+	## active-contexts map. JSON-RPC ids are per-client counters, so two peers can
+	## legitimately carry the same id concurrently — a bare str(id) key would let one
+	## peer's registration overwrite (or its cancel target) the other's. Scoping by
+	## the peer instance id makes the key unique per (peer, request). Every lane
+	## inherits this; the dispatcher reaches it via the script-level re-export.
+	static func context_key(peer: WebSocketPeer, id) -> String:
+		return "%d:%s" % [peer.get_instance_id(), str(id)]
+
 	# Command dispatch table — call_command + the per-command flags.
 	var _registry: MCPToolkitCommandRegistry = null
-	# In-flight cancellable-request contexts keyed by str(id). OWNED by the dispatcher
-	# and shared (Dictionary is a reference type) so the dispatcher's _cancel handler,
-	# both execute paths, and the mutation watchdog's recovery hook all see one map. A
-	# lane populates/erases only its own request's entry; it never reads another's.
+	# In-flight cancellable-request contexts keyed by context_key(peer, id) — peer-scoped
+	# because JSON-RPC ids are only unique per client. OWNED by the dispatcher and shared
+	# (Dictionary is a reference type) so the dispatcher's _cancel handler, both execute
+	# paths, and the mutation watchdog's recovery hook all see one map. A lane
+	# populates/erases only its own request's entry; it never reads another's.
 	var _active_contexts: Dictionary = {}
 	# Re-emit the server's command_received signal. func(method: String) -> void.
 	var _on_command: Callable = Callable()
@@ -65,18 +83,19 @@ class _LaneBase:
 		_on_command = Callable()
 
 	# Read-execute core: create a cancellable context if the command declares one, track
-	# it under the request id for the duration of the call, re-emit command_received, and
-	# return the handler's result. Shared by ReadOnlyLane.drive and SceneLeaseLane's
-	# queued-read path (injected as run_read), so the context bookkeeping lives in one
-	# place and _active_contexts stays consistent across both read entry points.
-	func _execute_read(method: String, params: Dictionary, id) -> Dictionary:
+	# it under the peer-scoped request key for the duration of the call, re-emit
+	# command_received, and return the handler's result. Shared by ReadOnlyLane.drive and
+	# SceneLeaseLane's queued-read path (injected as run_read), so the context bookkeeping
+	# lives in one place and _active_contexts stays consistent across both read entry points.
+	func _execute_read(peer: WebSocketPeer, method: String, params: Dictionary, id) -> Dictionary:
+		var ctx_key := context_key(peer, id)
 		var ctx: MCPToolkitToolContext = null
 		if _registry.is_cancellable(method):
 			ctx = MCPToolkitToolContext.new()
-			_active_contexts[str(id)] = ctx
+			_active_contexts[ctx_key] = ctx
 		_on_command.call(method)
 		var result: Dictionary = await _registry.call_command(method, params, ctx)
-		_active_contexts.erase(str(id))
+		_active_contexts.erase(ctx_key)
 		return result
 
 
@@ -91,15 +110,15 @@ class ReadOnlyLane:
 		_wire_base(registry, active_contexts, on_command)
 
 	func drive(peer: WebSocketPeer, id, method: String, params: Dictionary) -> void:
-		var result: Dictionary = await _execute_read(method, params, id)
+		var result: Dictionary = await _execute_read(peer, method, params, id)
 		Notifier.send_result(peer, id, result, "[MCPServer]")
 
 	## Run the read core and RETURN the result without sending it. The seam the
 	## scene-lease lane's queued-read path needs: it injects concurrency metadata into the
 	## result before sending, so it can't use drive() (which sends immediately). Same
 	## context bookkeeping as drive(), so _active_contexts stays consistent across both.
-	func run_returning(method: String, params: Dictionary, id) -> Dictionary:
-		return await _execute_read(method, params, id)
+	func run_returning(peer: WebSocketPeer, method: String, params: Dictionary, id) -> Dictionary:
+		return await _execute_read(peer, method, params, id)
 
 
 # -- MutationLane --------------------------------------------------------------
@@ -187,10 +206,12 @@ class MutationLane:
 
 	## Flag a queued (not-yet-executing) mutation for skip-on-drain — the queue-side
 	## fallback of cancellation, for targets not found among the in-flight contexts.
+	## Matches on the requesting [param peer] AND the id (ids are only unique per
+	## client, so an id-only match could cancel another peer's queued mutation).
 	## Returns true if a matching entry was found.
-	func cancel_queued(target_id: String) -> bool:
+	func cancel_queued(peer: WebSocketPeer, target_id: String) -> bool:
 		for entry in _queue:
-			if str(entry.id) == target_id:
+			if entry.peer == peer and str(entry.id) == target_id:
 				entry.cancelled = true
 				return true
 		return false
@@ -224,21 +245,29 @@ class MutationLane:
 		# the deadline is stamped at execution-start.
 		var deadline_ms := started_ms + _registry.get_watchdog_timeout_ms(method) + grace_ms
 		Notifier.send_notification(peer, "_executing", {"request_id": id}, "[MCPServer]")
+		var ctx_key := context_key(peer, id)
 		var ctx: MCPToolkitToolContext = null
 		if _registry.is_cancellable(method):
 			ctx = MCPToolkitToolContext.new()
-			_active_contexts[str(id)] = ctx
+			_active_contexts[ctx_key] = ctx
 		# Arm: hands the watchdog the in-flight identity + deadline + ctx (so it can
 		# cooperatively cancel a slow-but-alive handler) and returns the generation.
 		var my_generation: int = _watchdog.arm(peer, id, method, started_ms, deadline_ms, ctx)
 		_on_command.call(method)
 		var result: Dictionary = await _registry.call_command(method, params, ctx)
-		_active_contexts.erase(str(id))
-		# C5 generation guard: if the watchdog force-cleared us mid-await (generation
+		# Teardown guard: clear() nulls the watchdog and empties the seam Callables while
+		# a handler is suspended here (plugin disable / editor exit mid-mutation).
+		# Everything is already torn down — abandon the tail instead of null-calling.
+		if _watchdog == null:
+			return
+		# Generation guard: if the watchdog force-cleared us mid-await (generation
 		# bumped), a successor mutation now owns the lock. Abandon the ENTIRE tail — the
-		# watchdog already responded; touching the flag/queue would corrupt the successor.
+		# watchdog already responded AND already erased this request's active context
+		# (its force_clear hook); erasing here could delete a successor's live ctx if
+		# the same peer re-used the id.
 		if _watchdog.current_generation() != my_generation:
 			return
+		_active_contexts.erase(ctx_key)
 		if scene_queued_ms > 0:
 			_inject_concurrency_metadata.call(result, scene_queued_ms)
 		Notifier.send_result(peer, id, result, "[MCPServer]")
@@ -276,9 +305,11 @@ class MutationLane:
 	# The watchdog's recovery hook (wired in set_handlers). Runs LAST in a trip, after the
 	# watchdog bumped the generation and cleared its own identity, so the drain's
 	# synchronous re-arm of a successor is not clobbered: erase the trapped request's
-	# active context, clear the single-flight flag, and drain.
-	func _force_clear(trapped_id) -> void:
-		_active_contexts.erase(str(trapped_id))
+	# active context (peer-scoped key — the watchdog hands back the trapped peer + id),
+	# clear the single-flight flag, and drain.
+	func _force_clear(trapped_peer: WebSocketPeer, trapped_id) -> void:
+		if trapped_peer != null:
+			_active_contexts.erase(context_key(trapped_peer, trapped_id))
 		_in_flight = false
 		drain()
 

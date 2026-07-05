@@ -22,7 +22,8 @@ const DispatchLane := preload("res://addons/godot_mcp_toolkit/transport/dispatch
 
 # Command dispatch table — has_command + the flags that pick a lane.
 var _registry: MCPToolkitCommandRegistry = null
-# In-flight cancellable-request contexts keyed by str(id). OWNED here and shared (by
+# In-flight cancellable-request contexts keyed by DispatchLane.context_key(peer, id)
+# (peer-scoped — ids are only unique per client). OWNED here and shared (by
 # reference) with the lanes + the mutation watchdog so _cancel can cancel an in-flight
 # request while the lanes populate/erase their own entries. See dispatch_lane.gd.
 var _active_contexts: Dictionary = {}
@@ -37,7 +38,8 @@ var _mutation_lane = null  # DispatchLane.MutationLane
 var _scene_lease_lane = null  # DispatchLane.SceneLeaseLane
 
 # Cancel a queued (not-yet-executing) scene-queue command. Injected (the scene queue
-# lives in the editor-tainted lease child): func(target_id: String) -> bool.
+# lives in the editor-tainted lease child): func(peer, target_id: String) -> bool —
+# peer-scoped like the other two cancel scans (ids are only unique per client).
 var _cancel_scene_queued: Callable = Callable()
 
 
@@ -115,9 +117,10 @@ func route_request(peer: WebSocketPeer, message: Dictionary) -> void:
 	# _cancel is a fire-and-forget notification from the bridge — no response. Triggers
 	# cooperative cancellation on the MCPToolkitToolContext for the target request. Scans
 	# both the mutation and scene queues for queued (not-yet-executing) commands and flags
-	# them for skip-on-drain.
+	# them for skip-on-drain. Scoped to the REQUESTING peer — ids are only unique per
+	# client, so a global id match could cancel another peer's request.
 	if method == "_cancel":
-		_handle_cancel(parameters)
+		_handle_cancel(peer, parameters)
 		return
 
 	# echo is a transport-level diagnostic, not a domain command.
@@ -171,16 +174,19 @@ func _select_lane(method: String):
 
 # _cancel routing: in-flight → cancel via the tracked context; else flag a queued entry
 # in the mutation queue, then the scene queue. Fire-and-forget — no response either way.
-func _handle_cancel(parameters) -> void:
+# The in-flight lookup and the mutation-queue scan are scoped to the requesting peer
+# (the context map keys on context_key(peer, id) — ids are only unique per client).
+func _handle_cancel(peer: WebSocketPeer, parameters) -> void:
 	var safe_params: Dictionary = parameters \
 		if typeof(parameters) == TYPE_DICTIONARY else {}
 	var target_id := str(safe_params.get("request_id", ""))
-	# In-flight: cancel via context.
-	if _active_contexts.has(target_id):
-		_active_contexts[target_id].cancel()
+	# In-flight: cancel via context (this peer's registration of that id only).
+	var target_key := DispatchLane.context_key(peer, target_id)
+	if _active_contexts.has(target_key):
+		_active_contexts[target_key].cancel()
 		return
-	# Queued in the mutation queue:
-	if _mutation_lane.cancel_queued(target_id):
+	# Queued in the mutation queue (peer-scoped match):
+	if _mutation_lane.cancel_queued(peer, target_id):
 		return
-	# Queued in the scene queue (lease child owns it):
-	_cancel_scene_queued.call(target_id)
+	# Queued in the scene queue (lease child owns it; peer-scoped match):
+	_cancel_scene_queued.call(peer, target_id)

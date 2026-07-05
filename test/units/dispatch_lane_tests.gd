@@ -7,6 +7,7 @@ extends RefCounted
 const MutationWatchdog := preload("res://addons/godot_mcp_toolkit/transport/dispatch/mutation_watchdog.gd")
 const SceneLease := preload("res://addons/godot_mcp_toolkit/scene/scene_lease.gd")
 const ServerRequestRouter := preload("res://addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd")
+const DispatchLane := preload("res://addons/godot_mcp_toolkit/transport/dispatch/dispatch_lane.gd")
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 
 
@@ -16,6 +17,7 @@ static func run(testing) -> void:
 	_test_mutation_watchdog(testing)
 	_test_lane_selection(testing)
 	_test_summarize_batch(testing)
+	_test_context_key(testing)
 
 
 # --- Mutation-watchdog deadline basis --------------------------------------
@@ -110,8 +112,10 @@ static func _test_mutation_watchdog(testing) -> void:
 	testing.begin("MutationWatchdog timer + generation recovery")
 
 	# Recorder the fake force_clear writes into (Dictionary → mutable from the lambda).
+	# Signature mirrors the lane hook: func(trapped_peer, trapped_id) — the peer half
+	# of the peer-scoped context key rides along with the id.
 	var recorder := {"calls": 0, "last_id": null}
-	var force_clear := func(trapped_id) -> void:
+	var force_clear := func(_trapped_peer, trapped_id) -> void:
 		recorder["calls"] += 1
 		recorder["last_id"] = trapped_id
 
@@ -291,5 +295,30 @@ static func _test_summarize_batch(testing) -> void:
 	var mixed := {"results": [42, {"success": false, "error": "x"}]}
 	var r_mixed := Helpers.summarize_batch(mixed, "results")
 	testing.eq(r_mixed.get("failed"), 1, "non-dict entry skipped; success:false counted")
+
+	print("")
+
+
+# --- Peer-scoped context key -------------------------------------------------
+# context_key(peer, id) is the shape every active-contexts registration, erase, and
+# the dispatcher's _cancel lookup share. JSON-RPC ids are only unique per client, so
+# the key must differ for two peers carrying the same id (else one peer's cancel
+# could hit — or its finish could erase — the other peer's in-flight context), and
+# must be stable for the same (peer, id) so register/erase/cancel all agree.
+static func _test_context_key(testing) -> void:
+	testing.begin("Peer-scoped dispatch context key")
+	var peer_a := WebSocketPeer.new()
+	var peer_b := WebSocketPeer.new()
+
+	testing.ok(DispatchLane.context_key(peer_a, 7) != DispatchLane.context_key(peer_b, 7),
+			"same id on two peers → distinct keys (no cross-peer collision)")
+	testing.eq(DispatchLane.context_key(peer_a, 7), DispatchLane.context_key(peer_a, 7),
+			"same (peer, id) → stable key (register/erase/cancel agree)")
+	testing.ok(DispatchLane.context_key(peer_a, 7).ends_with(":7"),
+			"key carries the request id (int form)")
+	testing.eq(DispatchLane.context_key(peer_a, 7), DispatchLane.context_key(peer_a, "7"),
+			"int id and its string form derive the same key (cancel passes the string)")
+	testing.ok(DispatchLane.context_key(peer_a, 7) != DispatchLane.context_key(peer_a, 8),
+			"different ids on one peer → distinct keys")
 
 	print("")

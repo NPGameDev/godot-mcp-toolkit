@@ -50,9 +50,10 @@ var _registry: MCPToolkitCommandRegistry = null
 var _root_resolver: Callable = Callable()
 # _on_command: func(method: String) -> void — re-emit the server's command_received.
 var _on_command: Callable = Callable()
-# _run_read: func(method: String, params: Dictionary, id) -> Dictionary (await) —
-#   the dispatcher's read-only execute core (context bookkeeping + call_command);
-#   stays in the dispatcher so _active_contexts is not shared across the seam.
+# _run_read: func(peer, method: String, params: Dictionary, id) -> Dictionary (await)
+#   — the dispatcher's read-only execute core (peer-scoped context bookkeeping +
+#   call_command); stays in the dispatcher so _active_contexts is not shared across
+#   the seam.
 var _run_read: Callable = Callable()
 # _enqueue_mutation_if_busy: func(peer, id, method, params, queued_ms) -> bool —
 #   if a mutation is in flight, append to the mutation FIFO + send _queued and return
@@ -178,12 +179,14 @@ func try_queue_for_lease(peer: WebSocketPeer, id, method: String,
 	return false
 
 
-## Flag a queued (not-yet-executing) scene-queue command for skip-on-drain. Called
-## by the dispatcher's _cancel handler after it misses the in-flight + mutation
-## queues. Returns true if a matching entry was found.
-func cancel_queued(target_id: String) -> bool:
+## Flag a queued (not-yet-executing) scene-queue command for skip-on-drain — the
+## scene-queue fallback of cancellation, for targets not found among the in-flight
+## contexts or the mutation queue. Matches on the requesting [param peer] AND the id
+## (ids are only unique per client, so an id-only match could cancel another peer's
+## queued command). Returns true if a matching entry was found.
+func cancel_queued(peer: WebSocketPeer, target_id: String) -> bool:
 	for entry in _scene_queue:
-		if str(entry.id) == target_id:
+		if entry.peer == peer and str(entry.id) == target_id:
 			entry.cancelled = true
 			return true
 	return false
@@ -356,7 +359,7 @@ func _execute_scene_queued_read(entry: _SceneQueueEntry,
 	# Activate the peer's affinity scene (guarded) before the read.
 	if not await _switch_to_affinity_scene(entry.peer, entry.id):
 		return
-	var result: Dictionary = await _run_read.call(entry.method, entry.params, entry.id)
+	var result: Dictionary = await _run_read.call(entry.peer, entry.method, entry.params, entry.id)
 	if queued_ms > 0:
 		inject_concurrency_metadata(result, queued_ms)
 	Notifier.send_result(entry.peer, entry.id, result, "[MCPServer]")

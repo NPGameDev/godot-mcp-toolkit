@@ -26,12 +26,13 @@ extends RefCounted
 
 const Notifier := preload("res://addons/godot_mcp_toolkit/transport/notifier.gd")
 
-# Injected recovery hook: func(trapped_id) -> void. Invoked LAST on a trip, after
-# this child has bumped the generation and cleared its own identity, to recover the
-# lane: erase the trapped request's active context, clear the single-flight flag,
-# and drain the mutation queue. Draining re-arms a successor synchronously, so it
-# MUST run after this child has nulled its own identity (else the drain's fresh
-# arm() would be clobbered).
+# Injected recovery hook: func(trapped_peer, trapped_id) -> void. Invoked LAST on a
+# trip, after this child has bumped the generation and cleared its own identity, to
+# recover the lane: erase the trapped request's active context (the peer-scoped key
+# needs both halves of the identity), clear the single-flight flag, and drain the
+# mutation queue. Draining re-arms a successor synchronously, so it MUST run after
+# this child has nulled its own identity (else the drain's fresh arm() would be
+# clobbered).
 var _force_clear: Callable = Callable()
 
 # True while a mutation is in flight (mirrors the lane's _mutation_in_flight exactly:
@@ -122,8 +123,9 @@ func tick() -> void:
 	# Bump generation FIRST so the wedged coroutine, if it ever resumes, skips its
 	# whole tail (the lane's generation guard in _execute_mutation).
 	_generation += 1
-	# Capture the id BEFORE nulling identity — force_clear needs it to erase the
-	# trapped request's active context.
+	# Capture the identity BEFORE nulling it — force_clear needs peer + id to erase
+	# the trapped request's peer-scoped active context.
+	var trapped_peer := _peer
 	var trapped_id = _id
 	# Null our OWN identity before force_clear: force_clear drains the queue, which
 	# re-arms a successor synchronously; clearing here first means that fresh arm()
@@ -133,4 +135,4 @@ func tick() -> void:
 	_ctx = null
 	# Recover the lane LAST (erase active context + clear single-flight flag + drain).
 	if _force_clear.is_valid():
-		_force_clear.call(trapped_id)
+		_force_clear.call(trapped_peer, trapped_id)
