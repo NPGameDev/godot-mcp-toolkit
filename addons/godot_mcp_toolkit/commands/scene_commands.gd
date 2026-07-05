@@ -509,7 +509,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 
 	var parent_path := str(parameters.get("parent_path", ""))
 	parent_path = Helpers.normalize_editor_path(parent_path)
-	var packed_path := str(parameters.get("scene_path", parameters.get("packed_path", "")))
+	var packed_path := str(parameters.get("scene_path", ""))
 
 	if parent_path.is_empty() or packed_path.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing parent_path or scene_path")
