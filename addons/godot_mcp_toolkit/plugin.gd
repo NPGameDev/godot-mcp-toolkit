@@ -151,7 +151,7 @@ func _register_editor_settings() -> void:
 	# [type, default, hint_string]. These live in EDITOR Settings (per-user,
 	# machine-wide), NOT Project Settings: the unfocused-responsive keys control a
 	# machine-global editor effect and are a personal battery/CPU preference, so
-	# they must never be committed to project.godot / VCS. See ADR 0007.
+	# they must never be committed to project.godot / VCS.
 	var settings := {
 		"mcp_toolkit/personal/dock_default_visible": [TYPE_BOOL, true, ""],
 		"mcp_toolkit/performance/keep_editor_responsive_unfocused": [TYPE_BOOL, true,

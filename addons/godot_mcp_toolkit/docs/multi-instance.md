@@ -182,6 +182,4 @@ project isolation; pinning only makes the ports deterministic on top of it.
 
 ## See also
 
-- [Multi-project support](../CLAUDE.md#multi-project-support-iter-23) in the
-  toolkit CLAUDE.md
 - `GODOT_MCP_PROJECT_PATH` env var for decoupled CWD setups

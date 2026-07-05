@@ -127,8 +127,8 @@ func cmd_refresh(_params: Dictionary) -> Dictionary:
 		# thread at the END of the FS walk — BEFORE the main thread flushes the global
 		# class list (store_global_class_list, inside _update_script_classes) and emits
 		# script_classes_updated. A rescan gated only on is_scanning() therefore diffs a
-		# STALE ProjectSettings.get_global_class_list() and misses NEW class_names — the
-		# extensions_refresh "commands:[]" regression (41l-tricies-ter).
+		# STALE ProjectSettings.get_global_class_list() and misses NEW class_names —
+		# observed as extensions_refresh returning "commands:[]" for a just-added extension.
 		var classes_flushed := [false]
 		var on_flush := func() -> void:
 			classes_flushed[0] = true

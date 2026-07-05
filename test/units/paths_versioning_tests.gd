@@ -280,8 +280,8 @@ static func _test_unfocused_backup(testing) -> void:
 # stale-live-instance method-call hazard. Models the pure decision that the
 # proactive script-write path and the reactive INVALID-METHOD path both consume
 # (each reads the running version + on-disk source and feeds these).
-# Boundary: STALE on Godot < 4.4 (minor 2,3), live on 4.4+ (boundary 4.3→4.4); see
-# Insights/stale-live-instance-method-hazard.md + test/flows/02_*.
+# Boundary: STALE on Godot < 4.4 (minor 2,3), live on 4.4+ (boundary 4.3→4.4),
+# empirically characterised across 4.2.0–4.6.2 (see stale_instance_hint.gd).
 
 static func _test_stale_instance_hint(testing) -> void:
 	testing.begin("Stale-instance hint")

@@ -173,7 +173,7 @@ static func coerce_value(value: Variant) -> Variant:
 			var lm_category := str(value.get("category", "2d_physics"))
 			return layers_to_mask(value.get("layers", []), lm_category)
 		_:
-			# FIX-5: Reject unknown type tags instead of silently passing through.
+			# Reject unknown type tags instead of silently passing through.
 			var type_tag := str(value.get("type", ""))
 			if not type_tag.is_empty():
 				return {"_coerce_error":

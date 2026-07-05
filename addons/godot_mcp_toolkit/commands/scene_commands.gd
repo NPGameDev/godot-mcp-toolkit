@@ -558,7 +558,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 				"path": _path_in_scene(root, existing_node),
 				"class_name": existing_node.get_class(),
 			})
-		# FIX-K: Auto-rename on collision (Player, Player2, Player3...) —
+		# Auto-rename on collision (Player, Player2, Player3...) —
 		# matches Godot editor's own drag-drop naming convention.
 		var suffix := 2
 		while parent_node.has_node(NodePath(target_name + str(suffix))):
@@ -582,7 +582,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 				return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
 			instance.set(str(key), coerced)
 
-	# FIX-9: Only set owner on instance root — child nodes keep their internal
+	# Only set owner on instance root — child nodes keep their internal
 	# ownership from PackedScene. _set_owner_recursive caused full property
 	# expansion, breaking Godot's scene inheritance model.
 	parent_node.add_child(instance)
@@ -606,7 +606,7 @@ static func _batch_instantiate(
 	packed_path: String, parent_path: String, instances: Array,
 ) -> Dictionary:
 	var node_refs: Array = []
-	# Per-entry outcome record (concern 034 D): every entry — success OR failure —
+	# Per-entry outcome record: every entry — success OR failure —
 	# gets a dict so a partial batch no longer hides its failures. Built parallel
 	# to `node_refs`; success entries are backfilled with their post-commit path
 	# below. `results[i]` lines up with `instances[i]`. `_result_slots` maps each
@@ -663,7 +663,7 @@ static func _batch_instantiate(
 						continue
 					instance.set(prop_name, coerced)
 
-		# FIX-9: Only set owner on instance root (same as single-instance path).
+		# Only set owner on instance root (same as single-instance path).
 		parent_node.add_child(instance)
 		instance.set_owner(root)
 		_undo.do_method(parent_node.add_child.bind(instance)) \

@@ -19,7 +19,7 @@ extends RefCounted
 ## per-frame polling is the pragmatic norm.  A coarse Timer is rejected: it would
 ## delay the runtime-clear + game_stopped broadcast past the stop edge; the poll
 ## body is O(1) (one bound bool call + a cached-flag compare).
-## (Verified against Godot 4.2–4.7 engine source — arch review 41n concern 003.)
+## (Verified against Godot 4.2–4.7 engine source.)
 
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
 

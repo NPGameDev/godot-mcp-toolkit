@@ -7,12 +7,9 @@ extends RefCounted
 ## command's registry flags and calls lane.drive(...). The lanes (dispatch_lane.gd) own
 ## the per-class concurrency discipline; this file owns only the routing.
 ##
-## This is a behaviour-preserving re-expression of mcp_server._dispatch_rpc (concern 007
-## C7): the parse + cancel/echo + registry-miss + the read-bypass / single-flight-FIFO /
-## lease-queue routing are byte-for-byte the pre-extraction control flow — only the inline
-## branches became named lanes. The wire contract is frozen: the notification methods
-## _queued / _executing / _cancel / echo, the JSON-RPC error codes, and the envelope keys
-## are unchanged.
+## The wire contract is frozen: the notification methods _queued / _executing /
+## _cancel / echo, the JSON-RPC error codes, and the envelope keys are the contract
+## the TS bridge speaks — do not rename or reshape them here.
 ##
 ## EDITOR-CLEAN by design: names zero Editor* symbols and preloads only the shared-clean
 ## Notifier + the (clean) dispatch lanes. Everything editor-only (the scene-tab switch,

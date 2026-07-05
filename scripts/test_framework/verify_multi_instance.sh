@@ -12,8 +12,8 @@
 #        assert the MCP server discovers + connects to the CORRECT editor via
 #        registry lookup (ProjectKey hash -> projects.json -> port), not a
 #        hardcoded port.
-#   This is the Pass-3 live confirmation that complements the unit tests + the
-#   static behavior-equivalence review (41n concern 039).
+#   This is the live confirmation that complements the unit tests + the
+#   static behavior-equivalence review.
 #
 # AGENT-AGNOSTIC BY DESIGN
 #   The agent invocation is a TEMPLATE (AGENT_CMD) with placeholders the script

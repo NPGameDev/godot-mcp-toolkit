@@ -5,16 +5,15 @@ extends RefCounted
 ## from blocking ALL mutations permanently. It owns the in-flight identity
 ## (peer/id/method/ctx), the adaptive deadline, and the generation counter that
 ## lets a wedged coroutine's tail bail when it eventually resumes; the mutation
-## lane (mcp_server.gd) owns the single-flight flag + FIFO queue. The two talk
+## lane (dispatch_lane.gd) owns the single-flight flag + FIFO queue. The two talk
 ## through this tiny surface: arm() at execution-start, disarm() on normal
 ## completion, tick() every frame, current_generation() for the lane's tail guard,
 ## and an injected force_clear Callable the trip invokes to recover the lane lock.
 ##
 ## Why split from the lane: the watchdog is the one piece that must tick EVERY
 ## _process frame unconditionally, independent of poll cadence and lane state — a
-## different lifecycle cadence than the lane's queue/in-flight bookkeeping (the
-## §12.3(b) "the banner separates distinct concerns" smell). Splitting it gives a
-## clean, headless-unit-testable timer+generation child.
+## different lifecycle cadence than the lane's queue/in-flight bookkeeping.
+## Splitting it gives a clean, headless-unit-testable timer+generation child.
 ##
 ## Editor-side only (the runtime autoload has no mutation lane → it never preloads
 ## this), so #91713 does not apply here — but it is kept a CLEAN pure-logic child

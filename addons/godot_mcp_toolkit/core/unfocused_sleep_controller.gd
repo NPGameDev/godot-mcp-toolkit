@@ -18,9 +18,7 @@ extends RefCounted
 ## guard against that with a machine-wide, version-keyed, first-writer-wins backup
 ## of the TRUE original (in the registry dir, under the registry lock) plus a
 ## conflict-aware restore and a startup self-heal. Opt-in + tunable rate live in
-## EditorSettings (registered in plugin.gd::_register_editor_settings). See iter
-## 41l-duotricies / docs/adr/0007-unfocused-responsive-mode.md /
-## Insights/unfocused-throttle-analysis.md.
+## EditorSettings (registered in plugin.gd::_register_editor_settings).
 ##
 ## Editor-side ONLY — and TAINTED by design: it drives EditorSettings (via the
 ## injected accessor) and the registry lock. That is allowed because the Mode-B

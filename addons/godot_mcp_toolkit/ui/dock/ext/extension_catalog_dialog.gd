@@ -38,7 +38,7 @@ func _exit_tree() -> void:
 	# The trust dialog is a base-control child (not in this dialog's subtree), so
 	# it is not freed with this dialog. Free it immediately (not queue_free) if it
 	# is still open, so its reference chain is released before ObjectDB's exit-time
-	# leak check runs — same teardown convention as the dock/server (§10.5).
+	# leak check runs — same teardown convention as the dock/server.
 	if _trust_dialog != null and is_instance_valid(_trust_dialog):
 		_trust_dialog.free()
 	_trust_dialog = null

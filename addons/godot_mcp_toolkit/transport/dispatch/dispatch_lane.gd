@@ -15,10 +15,7 @@ extends RefCounted
 ## only delegates — so a single driver would drag the mutation-queue fields through the
 ## read path (low cohesion) and grow an if/elif chain a fourth lane would have to edit
 ## (OCP). Polymorphic drive() keeps each lane's state local and lets the dispatcher add a
-## lane without touching its routing. This is a behaviour-preserving re-expression of
-## mcp_server._dispatch_rpc's three inlined routes — the read-bypass / single-flight-FIFO
-## / lease-queue semantics are byte-for-byte the pre-extraction ones (concern 007 C7); the
-## lanes just name and separate what was inlined.
+## lane without touching its routing.
 ##
 ## EDITOR-CLEAN by design: this file names zero Editor* symbols and preloads only the
 ## shared-clean Notifier. Every editor-only step — the edited-scene-tab switch before a
@@ -188,9 +185,9 @@ class MutationLane:
 			scene_queued_ms: int) -> void:
 		await _execute(peer, id, method, params, scene_queued_ms)
 
-	## Flag a queued (not-yet-executing) mutation for skip-on-drain. Called by the
-	## dispatcher's _cancel handler after it misses the in-flight contexts. Returns true
-	## if a matching entry was found.
+	## Flag a queued (not-yet-executing) mutation for skip-on-drain — the queue-side
+	## fallback of cancellation, for targets not found among the in-flight contexts.
+	## Returns true if a matching entry was found.
 	func cancel_queued(target_id: String) -> bool:
 		for entry in _queue:
 			if str(entry.id) == target_id:
@@ -211,7 +208,7 @@ class MutationLane:
 
 	func _execute(peer: WebSocketPeer, id, method: String, params: Dictionary,
 			scene_queued_ms: int = 0) -> void:
-		# C5: take the single-flight lock, then arm the watchdog synchronously BEFORE any
+		# Take the single-flight lock, then arm the watchdog synchronously BEFORE any
 		# await — so its deadline tracks only in-flight time (never the queued wait) and
 		# can't race. We compute the deadline here (we own the registry + grace setting)
 		# and hand the value to the watchdog; arm() returns the generation we capture for

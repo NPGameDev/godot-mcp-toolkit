@@ -74,7 +74,7 @@ func _exit_tree() -> void:
 	# The log viewer is a base-control child, not in this panel's subtree, so the
 	# editor does NOT free it with the panel. Free it immediately (not queue_free)
 	# so its reference chain is released before ObjectDB's exit-time leak check
-	# runs (§10.5 — same reason the dock/server free() at teardown).
+	# runs (same reason the dock/server free() at teardown).
 	if _audit_dialog != null and is_instance_valid(_audit_dialog):
 		_audit_dialog.free()
 	_audit_dialog = null

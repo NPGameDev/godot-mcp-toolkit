@@ -231,7 +231,7 @@ func pump() -> bool:
 ## First-time port scan OR idempotent re-listen, matching the pre-extraction
 ## split: with no bound port yet, scan the range; with a known port, retry it
 ## (throttled). On a failed retry, discard the latched TCPServer and recreate it
-## next attempt (§10.6 — a TCPServer that failed listen() latches
+## next attempt (a TCPServer that failed listen() latches
 ## ERR_ALREADY_IN_USE if reused).
 func ensure_listening() -> void:
 	# Already listening → nothing to ensure. Without this guard a call while live
@@ -484,8 +484,8 @@ func close_all(code: int, reason: String) -> void:
 	_peer_connect_ms.clear()
 
 
-## Stop and discard the TCPServer and reset the listen bookkeeping. Called by the
-## server's stop() after close_all().
+## Stop and discard the TCPServer and reset the listen bookkeeping — the final
+## teardown step, for after every peer has been closed via close_all().
 func shutdown_listener() -> void:
 	if _tcp_server != null:
 		_tcp_server.stop()

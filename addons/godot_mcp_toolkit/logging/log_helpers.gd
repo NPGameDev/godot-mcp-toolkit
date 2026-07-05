@@ -3,8 +3,9 @@ extends RefCounted
 ## Export-clean log helpers — ANSI stripping, log-level detection, and file-logging
 ## detection. Pure static utilities (RegEx + string ops + ProjectSettings/OS reads)
 ## with NO editor-only symbols, so this module is safe to preload from the runtime
-## autoload's dependency closure (the "runtime dependency closure" invariant — see
-## Insights/runtime-autoload-editor-taint-analysis.md). @tool is REQUIRED so the `_ansi_re` static-var initializer
+## autoload's dependency closure (an editor-only name anywhere in that closure would
+## parse-fail the autoload in an export — godotengine/godot#91713).
+## @tool is REQUIRED so the `_ansi_re` static-var initializer
 ## runs in the editor: editor-side log tools call strip_ansi, and non-@tool scripts skip
 ## static initialization in the editor (the regex would be null → "Cannot call method
 ## 'sub' on a null value"). @tool names no editor symbols, so this stays export-clean —

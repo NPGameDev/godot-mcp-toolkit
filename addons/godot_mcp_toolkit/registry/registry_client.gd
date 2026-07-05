@@ -206,7 +206,7 @@ static func ensure_registered(port: int, token_path: String, lsp_host: String, l
 	var my_pid := OS.get_process_id()
 	var entry := _read_entry()
 	if not entry.is_empty() and int(entry.get("pid", 0)) == my_pid:
-		# Entry file present with our PID — refresh the LSP endpoint (Q4 live
+		# Entry file present with our PID — refresh the LSP endpoint (a live
 		# re-publish may pass a changed port/host) and rebuild projects.json.
 		entry["lsp_host"] = lsp_host
 		entry["lsp_port"] = lsp_port
@@ -241,7 +241,7 @@ static func get_runtime_port() -> int:
 
 
 ## Read-only: this editor's published LSP endpoint as {host, port}, or {} when
-## not yet published / unavailable. Backs the dock indicator (Fix 3). Pure.
+## not yet published / unavailable. Backs the dock indicator. Pure.
 static func get_lsp_endpoint() -> Dictionary:
 	var entry := _read_entry()
 	if entry.is_empty() or entry.get("lsp_port", null) == null:

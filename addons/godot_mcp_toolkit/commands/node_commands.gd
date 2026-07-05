@@ -163,7 +163,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 	if root == null:
 		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
 
-	# FIX-7: Batch mode — set multiple properties in a single UndoRedo action.
+	# Batch mode — set multiple properties in a single UndoRedo action.
 	var batch_raw = parameters.get("batch", null)
 	if batch_raw != null and typeof(batch_raw) == TYPE_ARRAY and (batch_raw as Array).size() > 0:
 		return _batch_set_properties(server, root, batch_raw as Array)
@@ -204,7 +204,7 @@ static func _cmd_node_set_property(server: Node, parameters: Dictionary) -> Dict
 ## shader_parameter/ dedicated setter, value coercion, and readback; it returns
 ## _undo info we register here via commit_recorded(). Leaf mechanics of
 ## node.set_property's compound branch, lifted out of the handler so the latter
-## reads as a top-down orchestrator (GodotCodeStandards §12 SRP/extract-method).
+## reads as a top-down orchestrator.
 ## Reads only `make_unique` from parameters. Returns the response dict directly.
 static func _set_property_compound_single(
 	server: Node, node: Node, node_path: String, property_name: String,
@@ -254,11 +254,11 @@ static func _set_property_compound_single(
 
 
 ## Set one scalar (non-compound) property: coerce → set → register UndoRedo,
-## then the FIX-F bare-res:// readback guard (a bare "res://…" string assigned
+## then the bare-res:// readback guard (a bare "res://…" string assigned
 ## to a Resource-typed property silently fails to load — detect it and steer the
 ## caller to the tagged {type:"Resource", path:…} form). Leaf mechanics of
-## node.set_property's scalar branch, lifted out of the handler for SRP
-## (GodotCodeStandards §12). Needs no `server` — scalar undo uses do/undo_property.
+## node.set_property's scalar branch, lifted out of the handler for SRP.
+## Needs no `server` — scalar undo uses do/undo_property.
 static func _set_property_scalar_single(
 	node: Node, node_path: String, property_name: String, raw_value: Variant,
 ) -> Dictionary:
@@ -285,7 +285,7 @@ static func _set_property_scalar_single(
 	if old_value is Resource:
 		action.undo_reference(old_value)
 	action.commit_recorded()
-	# FIX-F: Detect bare res:// strings silently failing on Resource-typed properties.
+	# Detect bare res:// strings silently failing on Resource-typed properties.
 	if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
 			and not (coerced is Resource):
 		var readback = node.get(property_name)
@@ -296,7 +296,7 @@ static func _set_property_scalar_single(
 	return MCPToolkitSuccess.ok()
 
 
-## FIX-7: Batch set multiple properties in one UndoRedo action.
+## Batch set multiple properties in one UndoRedo action.
 ## Compound paths (: or /) use set_property_compound() and add their undo
 ## info to the same batch action when possible (property-type paths only).
 static func _batch_set_properties(server: Node, root: Node, entries: Array) -> Dictionary:

@@ -17,8 +17,8 @@ extends Node
 
 # Runtime dependency closure — direct preloads of export-clean scripts only.
 # Deliberately NOT core/modules.gd: it statically names EditorInterface/EditorPlugin, which
-# would parse-fail this autoload in an export template (godot#91713). See
-# Insights/runtime-autoload-editor-taint-analysis.md (the "silent-if-shipped" norm).
+# would parse-fail this autoload in an export template (godot#91713) — GDScript
+# resolves identifiers at parse time, before any runtime guard can help.
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
@@ -49,6 +49,10 @@ const JSONRPC_VERSION := "2.0"
 # yet — usually clears in 1-2 frames.
 const _RELISTEN_FRAME_INTERVAL := 60
 const _AUTH_TIMEOUT_MS := 2000
+# debugger.get_log default entry count when the caller passes no limit.
+const _DEFAULT_LOG_LIMIT := 200
+# execute.code console-echo cap — long snippets are truncated in the game log.
+const _EXECUTE_CODE_LOG_CAP := 256
 
 # Owns the TCP listener + WS peers + auth-handshake framing + the bound port +
 # the session token. The runtime injects only the message router (its command
@@ -140,9 +144,9 @@ func _start_server() -> void:
 	_transport.ensure_listening()
 
 
-# Log the resolved Mode-B listen-port config at startup (the Q4 runtime-side
-# observability): the port + source, a one-line note when a pin makes the band
-# moot, or a loud push_error on a config error — never a silent default.
+# Log the resolved Mode-B listen-port config at startup (so the game console
+# tells WHY this port was chosen): the port + source, a one-line note when a pin
+# makes the band moot, or a loud push_error on a config error — never a silent default.
 func _log_port_config(config: Dictionary) -> void:
 	var config_error := str(config.get("error", ""))
 	if not config_error.is_empty():
@@ -399,7 +403,7 @@ func _cmd_runtime_get_script_vars(peer: WebSocketPeer, id, params) -> void:
 	})
 
 
-## FIX-6: Walk path segments and report where resolution failed + list siblings.
+## Walk path segments and report where resolution failed + list siblings.
 func _build_not_found_hint(root: Node, path: String) -> String:
 	var segments := path.split("/")
 	var current := root
@@ -442,7 +446,7 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 
 	var node := tree.root.get_node_or_null(node_path)
 	if node == null:
-		# FIX-6: Walk path segments and list siblings at the failing level.
+		# Walk path segments and list siblings at the failing level.
 		var hint := _build_not_found_hint(tree.root, node_path)
 		_send_result(peer, id, MCPToolkitError.fail("NOT_FOUND",
 			"node not found: %s%s" % [node_path, hint]))
@@ -492,9 +496,6 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 			"unless the game explicitly resets '%s'." % property)
 
 	_send_result(peer, id, result)
-
-
-const _DEFAULT_LOG_LIMIT := 200
 
 
 func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
@@ -1169,8 +1170,6 @@ func _cmd_animation_player_control(peer: WebSocketPeer, id, params) -> void:
 # execute.code: evaluates GDScript via Expression in the running game's context.
 # Risk communicated via MCP annotations (destructiveHint: true) and
 # security-recommendations.md; agent-side tool filtering is the enforcement layer.
-const _EXECUTE_CODE_LOG_CAP := 256
-
 func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) != TYPE_DICTIONARY:
 		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS", "params must be an object"))

@@ -4,8 +4,8 @@ extends RefCounted
 ## Success-response builder — symmetric with [method MCPToolkitError.fail].
 ##
 ## [method ok] stamps every success response with [code]"success": true[/code], so
-## a handler cannot accidentally omit the key the dispatch contract requires
-## (ADR 0004). Use it for every successful return, just as [MCPToolkitError] is
+## a handler cannot accidentally omit the key the dispatch contract requires.
+## Use it for every successful return, just as [MCPToolkitError] is
 ## used for every failure.
 
 

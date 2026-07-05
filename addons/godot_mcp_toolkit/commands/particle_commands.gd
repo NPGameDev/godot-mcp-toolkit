@@ -53,24 +53,23 @@ enum { _COERCE_INT, _COERCE_FLOAT, _COERCE_BOOL, _COERCE_RAW, _COERCE_VEC3, _COE
 enum { _TARGET_NODE, _TARGET_MATERIAL }
 
 # Data-driven map of the uniform "if eff.has(k): target.set(prop, cast(eff[k]));
-# properties_set += 1" rows of pass 7 (GodotCodeStandards §12.4 within-file DRY).
-# Each row is [eff_key, target, coerce] and contributes weight 1. Transcribed
-# row-by-row from the old apply ladder; the original eff_key == the target
-# property name in every case, so a single `key` field doubles as both. Rows
-# stay in the original apply ORDER (node group, then material group); the genuine
+# properties_set += 1" apply rows.
+# Each row is [eff_key, target, coerce] and contributes weight 1. The eff_key ==
+# the target property name in every case, so a single `key` field doubles as both.
+# Rows stay in apply ORDER (node group, then material group); the genuine
 # specials — range pairs (weight 2), the emission-shape name→enum lookup,
 # sub-resources, version-gated props, the 2D/3D forks — are NOT in this table and
 # remain explicit. Property writes here are mutually independent, so the integer
 # count and the final object state are invariant under their relative order.
 const _PROP_SPEC := [
-	# Node group (was :437-448).
+	# Node group.
 	["amount", _TARGET_NODE, _COERCE_INT],
 	["lifetime", _TARGET_NODE, _COERCE_FLOAT],
 	["explosiveness", _TARGET_NODE, _COERCE_FLOAT],
 	["speed_scale", _TARGET_NODE, _COERCE_FLOAT],
 	["one_shot", _TARGET_NODE, _COERCE_BOOL],
 	["local_coords", _TARGET_NODE, _COERCE_BOOL],
-	# Material group (was :451-495, minus the range loop + emission-shape arm).
+	# Material group (the range pairs + emission-shape arm stay explicit below).
 	["direction", _TARGET_MATERIAL, _COERCE_RAW],
 	["spread", _TARGET_MATERIAL, _COERCE_FLOAT],
 	["gravity", _TARGET_MATERIAL, _COERCE_RAW],
@@ -82,18 +81,17 @@ const _PROP_SPEC := [
 	["turbulence_noise_strength", _TARGET_MATERIAL, _COERCE_FLOAT],
 ]
 
-# Data-driven map of the uniform simple-override rows of pass 6 (the merge that
-# layers user params onto the preset-seeded eff dict; GodotCodeStandards §12.4).
+# Data-driven map of the uniform simple-override rows of the merge that layers
+# user params onto the preset-seeded eff dict.
 # Each row is [param_key, coerce] and writes eff[param_key] = coerce(parameters[key]).
-# Rows stay in the EXACT order of the old merge key-list (:464-483 pre-refactor),
-# because every shadow append into overrides_applied happens in this order and the
-# array's element order is part of the particles.create response contract — so this
-# loop's iteration order is load-bearing (unlike _PROP_SPEC, whose writes are
-# independent and order-invariant). The coercion column uses the merge modes
-# (VEC3/COLOR convert the request dict), NOT the apply modes. The genuine specials —
-# range pairs and the emission-shape override — are NOT in this table; they keep
-# their dedicated blocks in _merge_overrides (different shape: a _min/_max pair, and
-# a name-validated string) and append AFTER this table, preserving the old order.
+# Row order is load-bearing: every shadow append into overrides_applied happens in
+# this order and the array's element order is part of the particles.create response
+# contract — so keep the rows in exactly this sequence (unlike _PROP_SPEC, whose
+# writes are independent and order-invariant). The coercion column uses the merge
+# modes (VEC3/COLOR convert the request dict), NOT the apply modes. The genuine
+# specials — range pairs and the emission-shape override — are NOT in this table;
+# they keep their dedicated blocks in _merge_overrides (different shape: a _min/_max
+# pair, and a name-validated string) and append AFTER this table.
 const _OVERRIDE_SPEC := [
 	["amount", _COERCE_INT],
 	["lifetime", _COERCE_FLOAT],

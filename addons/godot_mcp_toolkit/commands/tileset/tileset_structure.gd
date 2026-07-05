@@ -240,7 +240,7 @@ static func _apply_layers(ts: TileSet, layers: Dictionary) -> Dictionary:
 			var type_str := str(cd_def.get("type", "int")).to_lower()
 			ts.set_custom_data_layer_type(li, _variant_type_from_string(type_str))
 
-	# Navigation layers (FIX-2: safe coercion via str() for non-int input)
+	# Navigation layers (safe coercion via str() for non-int input)
 	if layers.has("navigation_layers"):
 		var want := int(str(layers["navigation_layers"]))
 		while ts.get_navigation_layers_count() < want:

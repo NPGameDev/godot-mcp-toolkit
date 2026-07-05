@@ -78,7 +78,7 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		if result_bytes > cap_kb * 1024:
 			return MCPToolkitError.fail("FILE_TOO_LARGE",
 				"slice exceeds %d KB response cap; narrow the line range" % cap_kb)
-		# Uniform pagination contract (concern 054): mirror save.read's SHAPE in
+		# Uniform pagination contract: mirror save.read's SHAPE in
 		# line units. truncated = the last returned line precedes EOF; when so, add
 		# next_start_line (1-based resume line = clamped_end + 1) + a prose loop hint.
 		var range_truncated := clamped_end < total_lines
@@ -167,13 +167,13 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 	if dirs_created:
 		result["dirs_created"] = true
 
-	# Inline GDScript diagnostics — same validation as script_check (FIX-1).
+	# Inline GDScript diagnostics — same validation as script_check.
 	if write_extension == "gd":
 		var validation := _validate_gdscript(content)
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
 
-		# 41m-bis-bis: proactive stale-live-instance hint. Editing an EXISTING .gd
+		# Proactive stale-live-instance hint. Editing an EXISTING .gd
 		# that compiled OK on Godot < 4.4 won't reach a live instance until relaunch
 		# (added members AND changed bodies; a fresh node doesn't help either —
 		# empirically characterised, boundary 4.3->4.4). Append to the response hint
@@ -295,8 +295,7 @@ static func _validate_gdscript(source: String) -> Dictionary:
 ## PARSE errors only on Godot 4.5+ (the Logger API hooks the editor's error stream); on
 ## 4.2-4.4 file logging captures running-game output, not editor parse errors, so steering
 ## the LLM to editor_get_console there is a dead end — point to lsp_diagnostics (works 4.2+)
-## instead. engine_ver is Modules.VersionUtils.get_engine_version_pair() (e.g. "4.5"). See
-## 41m-ter + COMPATIBILITY.md ("editor parse-error capture needs 4.5+").
+## instead. engine_ver is Modules.VersionUtils.get_engine_version_pair() (e.g. "4.5").
 static func _compile_error_message(engine_ver: String) -> String:
 	const CONSOLE := "GDScript compile error. Call editor_get_console for detailed messages with line numbers."
 	const LSP := "GDScript compile error. On Godot <4.5 editor parse errors are not surfaced by editor_get_console — call lsp_diagnostics for line-level detail (or read the script)."

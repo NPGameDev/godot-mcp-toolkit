@@ -78,7 +78,7 @@ func _on_toggled(enabled: bool) -> void:
 
 ## Always-honest 3-state indicator: Off / On (idle) / On · active · {fps} fps.
 ## Repaints the existing label + keeps the checkbox in sync; mutates only — never
-## rebuilds. Called by the dock's refresh fan-out and connect/disconnect routing.
+## rebuilds, so it is safe on every refresh trigger and connection edge.
 func refresh() -> void:
 	if _state_label == null or _check == null:
 		return

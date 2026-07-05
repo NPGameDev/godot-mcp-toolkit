@@ -103,7 +103,7 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 	var next_offset := offset + buffer.size()
 	# Truncated means there is more file beyond what this window returned.
 	var truncated := next_offset < total_bytes
-	# Uniform pagination contract (concern 054): on a truncated read, hand the LLM
+	# Uniform pagination contract: on a truncated read, hand the LLM
 	# a prose loop instruction — re-call with offset = next_offset until truncated
 	# is false. Present ONLY when truncated; the field is absent on a complete read.
 	var page_hint := "more bytes remain — re-call save.read with offset = next_offset (%d) until truncated is false" % next_offset

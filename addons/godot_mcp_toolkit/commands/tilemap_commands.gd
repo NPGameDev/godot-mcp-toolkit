@@ -168,7 +168,7 @@ static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
 	return MCPToolkitSuccess.ok(result)
 
 
-## Expand region descriptors into flat cell array (FIX-A).
+## Expand region descriptors into flat cell array.
 static func _expand_regions_to_cells(regions: Array) -> Array:
 	var expanded := []
 	for region in regions:
@@ -205,7 +205,7 @@ static func _cmd_tilemap_set_cells(
 	if tilemap_path.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing tilemap_path")
 
-	# FIX-A: expand regions into cells.
+	# Expand regions into cells.
 	if regions_raw != null and typeof(regions_raw) == TYPE_ARRAY:
 		var expanded := _expand_regions_to_cells(regions_raw)
 		if cells_raw != null and typeof(cells_raw) == TYPE_ARRAY:
@@ -228,7 +228,7 @@ static func _cmd_tilemap_set_cells(
 			"node at %s is not a TileMap or TileMapLayer (got %s); tilemap.set_cells only accepts tilemap-family nodes" % [
 				tilemap_path, node.get_class()])
 
-	# FIX-J: Validate that a tileset is assigned — placing cells without one
+	# Validate that a tileset is assigned — placing cells without one
 	# silently produces invisible tiles.
 	var has_tileset: bool
 	if is_layer:

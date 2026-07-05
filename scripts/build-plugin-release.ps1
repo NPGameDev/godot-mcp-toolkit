@@ -35,11 +35,11 @@ Copy-Item -Recurse -Force `
 # Ship .uid sidecars (Godot 4.4+): they are project state that must travel WITH
 # the addon, or `uid://` references to addon files break on update. We must NOT
 # strip them — keep the staged tree identical to the git tree and the AssetLib
-# archive. Regression guard for concern 051: a future re-introduction of any
+# archive. Regression guard: a future re-introduction of any
 # `.uid` strip would empty the staged tree and must break the build loudly.
 $StagedUid = @(Get-ChildItem -Path (Join-Path $Stage "addons\godot_mcp_toolkit") -Recurse -Filter *.uid)
 if ($StagedUid.Count -eq 0) {
-    Write-Error "concern 051: .uid sidecars must ship — none found in staged tree ($Stage). Do not strip *.uid from the addon."
+    Write-Error ".uid sidecars must ship — none found in staged tree ($Stage). Do not strip *.uid from the addon."
     exit 1
 }
 

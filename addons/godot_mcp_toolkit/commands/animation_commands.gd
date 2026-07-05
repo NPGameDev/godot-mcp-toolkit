@@ -321,7 +321,7 @@ static func _sm_summary(sm: AnimationNodeStateMachine) -> Dictionary:
 	# get_node_list() is a 4.5+ script API (engine: bound to get_node_list_as_typed_array
 	# in 4.5; absent on 4.2-4.4 → calling it errors and corrupts the return). Guard it so
 	# the summary stays well-formed on older versions: node enumeration is unavailable
-	# there, but transitions are (get_transition_count is 4.2+). See 41m-ter A4/A5.
+	# there, but transitions are (get_transition_count is 4.2+).
 	var node_count := 0
 	if sm.has_method(&"get_node_list"):
 		node_count = sm.get_node_list().size()
@@ -636,7 +636,7 @@ static func _at_list(tree: AnimationTree) -> Dictionary:
 	var nodes: Array = []
 	# get_node_list() is a 4.5+ script API (absent on 4.2-4.4 → errors); guard it so list
 	# stays well-formed on older versions. Node enumeration is unavailable there (nodes:[]),
-	# but transitions below still enumerate (get_transition_* are 4.2+). See 41m-ter A4/A5.
+	# but transitions below still enumerate (get_transition_* are 4.2+).
 	if sm.has_method(&"get_node_list"):
 		for sn_name in sm.get_node_list():
 			var anim_node: AnimationNode = sm.get_node(sn_name)
@@ -661,7 +661,7 @@ static func _at_list(tree: AnimationTree) -> Dictionary:
 			"to": str(sm.get_transition_to(i)),
 		}
 		# Robustness: on some engine versions get_transition(i) can return null even
-		# for an in-range index (Godot 4.2 runtime divergence — 41m-ter). Emit the
+		# for an in-range index (Godot 4.2 runtime divergence). Emit the
 		# endpoints we have and skip the transition-object fields rather than
 		# dereferencing null (which would yield a malformed return → INTERNAL).
 		if tr != null:

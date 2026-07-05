@@ -22,7 +22,7 @@ const LogHelpers = Modules.LogHelpers
 
 
 static func cmd_get_console(server: Node, parameters: Dictionary) -> Dictionary:
-	# FIX-8: clear_buffer flushes stale log entries before reading.
+	# clear_buffer flushes stale log entries before reading.
 	var clear_buffer: bool = parameters.get("clear_buffer", false) == true
 	if clear_buffer:
 		Modules.LogBuffer.clear()

@@ -102,11 +102,11 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 
 	# Refresh an already-configured .mcp.json on editor start so a macOS absolute
 	# node/npx path that went stale after a Node-version switch is re-resolved
-	# without the user clicking "Write" (ADR 0017). The refresh self-guards to only
+	# without the user clicking "Write". The refresh self-guards to only
 	# ever touch an existing, writable, well-formed file — never creates one, never
 	# nags. Deferred off the _enter_tree frame so the macOS login-shell probe can't
 	# block editor startup; the lambda (not a bare static-method Callable) avoids the
-	# 4.2 NIL-self bind (code-standards §8.3).
+	# 4.2 NIL-self bind.
 	var refresh_config := func() -> void: Modules.MCPJsonSync.refresh_existing_config()
 	refresh_config.call_deferred()
 
@@ -129,9 +129,9 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 # bind (the server's port_bound signal — once at startup normally; again if a
 # pinned port frees late after a startup conflict): the register() plus a jittered
 # deferred ensure_registered() re-verify (concurrent editors may clobber our entry
-# after our initial verify passes). Re-resolve the LSP endpoint at fire time so a
-# mid-window Q4 change isn't reverted. The port guard keeps a stray call with no
-# bound port a no-op.
+# after our initial verify passes). Both resolves re-read the LSP endpoint at fire
+# time so a mid-window LSP-setting change isn't reverted. The port guard keeps a
+# stray call with no bound port a no-op.
 static func _register_in_registry(server: Node) -> void:
 	var bound_port: int = server.get_bound_port()
 	if bound_port > 0:
@@ -139,8 +139,7 @@ static func _register_in_registry(server: Node) -> void:
 		RegistryClient.register(bound_port, MCPAuth.get_published_token_path(), lsp["host"], lsp["port"])
 		# Deferred re-verify: concurrent editors may clobber our entry after
 		# our initial verify passes. Jittered delay ensures all editors have
-		# finished their initial registration before we re-check. Re-resolve the
-		# LSP endpoint at fire time so a mid-window Q4 change isn't reverted.
+		# finished their initial registration before we re-check.
 		var _jitter := randf_range(5.0, 10.0)
 		server.get_tree().create_timer(_jitter).timeout.connect(
 			func():
@@ -175,7 +174,7 @@ static func _republish_on_token_rewrite(server: Node, token_path: String) -> voi
 ## (menu, onboarding wizard), and dock_host() (the reveal façade); the other five
 ## instances stay private and are touched only by dispose(). poll_playtest()
 ## drives the playtest watcher each _process; dispose() tears the graph down in the
-## exact reverse order of compose() (behavior-critical — see GodotCodeStandards §8/§10.5).
+## exact reverse order of compose() (behavior-critical ordering).
 class Handle:
 	extends RefCounted
 

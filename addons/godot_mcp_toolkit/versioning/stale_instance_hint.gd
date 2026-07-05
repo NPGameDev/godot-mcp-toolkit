@@ -9,8 +9,7 @@ extends RefCounted
 ## with its own headless-specific wording.
 ##
 ## Empirically characterised across 4.2.0 / 4.3.0 / 4.4.1 / 4.5.0 / 4.6.2 (boundary
-## 4.3 -> 4.4) — see Insights/stale-live-instance-method-hazard.md and the server
-## flow test/flows/02_hot_reload_reachability.ts. Scenario D proved a fresh node is
+## 4.3 -> 4.4). The characterisation also proved a fresh node is
 ## ALSO stale on 4.2 AND 4.3, so both collapse to one recovery (relaunch) — there is
 ## no 4.2-vs-4.3 split.
 ##
@@ -86,8 +85,8 @@ static func recovery_message(ver_label: String, minor: int = -1, headless: bool 
 	return _RECOVERY % ver_label
 
 
-## Composed hint for a successful script.write (Q3 ordering: validation guidance
-## leads, the situational stale nudge takes the recency slot).
+## Composed hint for a successful script.write (deliberate ordering: validation
+## guidance leads, the situational stale nudge takes the recency slot).
 static func write_hint(ver_label: String) -> String:
 	return _WRITE_PREFIX + recovery_message(ver_label)
 

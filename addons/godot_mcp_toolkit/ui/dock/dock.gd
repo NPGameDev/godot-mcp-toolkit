@@ -169,7 +169,8 @@ func _build_ui() -> void:
 	sc.add_child(_nodejs_status_warning)
 
 	# Unfocused-responsive mode — opt-in toggle + 3-state indicator sub-panel.
-	# (Lives in Editor Settings, not Project Settings; see ADR 0007.) The panel
+	# (Lives in Editor Settings, not Project Settings — a per-user, machine-wide
+	# preference that must never land in project.godot / VCS.) The panel
 	# owns the setting I/O + indicator; the dock routes refreshes to it. Applying
 	# the setting (conflict-aware/crash-safe restore) is server-side; the panel
 	# calls the bound server directly, so no signal back to the dock is needed.

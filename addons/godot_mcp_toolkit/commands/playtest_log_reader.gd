@@ -28,8 +28,8 @@ const LogHelpers = Modules.LogHelpers
 # game output even though the Logger API is process-local (4.5+).
 static var _game_session_file_offset: int = -1
 
-# Debug bridge reference — injected at register() time.
-# Used by debugger.get_log to include error_buffer + debug_state.
+# Debug bridge reference — injected at register() time. Supplies the
+# error_buffer + debug_state fields of the debugger log payload.
 static var _debug_bridge: RefCounted = null
 
 

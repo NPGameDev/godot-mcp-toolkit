@@ -46,7 +46,7 @@ var _version_blocked: Dictionary = {}  # method -> {min, max, engine}
 # Scope: guard is window-scoped — only active during register(). An extension that
 # stashes the registry reference and calls add() after register() returns (via a
 # signal, timer, or deferred call) still lands as last-writer-wins. That path is out
-# of scope by design (ADR 0009 — installed extensions are full-trust in-process code;
+# of scope by design (installed extensions are full-trust in-process code;
 # the guard protects against accidental collision, not deliberate post-load adds).
 # The loader drains _ext_load_refused after register() and surfaces the error to the
 # editor only — never into the MCP response stream. See extension_loader.gd and
@@ -392,7 +392,7 @@ func call_command(method: String, parameters: Dictionary,
 	# BEFORE the handler runs. Built-ins declare none (they self-guard via FileGuard
 	# inside the handler), so this loop is a no-op for them. Absent/empty values
 	# defer to the handler (an unprovided optional path is not a rejection).
-	# Toolkit-side only; the server does not see these. See docs/adr/0009.
+	# Toolkit-side only; the server does not see these.
 	var guards: Dictionary = _commands[method].get("path_guards", {})
 	for param in guards:
 		var raw = parameters.get(param, "")

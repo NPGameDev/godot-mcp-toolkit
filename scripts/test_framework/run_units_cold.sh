@@ -98,13 +98,13 @@ done
 kill -9 "$WARMUP_PID" 2>/dev/null || true
 wait "$WARMUP_PID" 2>/dev/null || true
 
-# Windows-proof teardown (41n-quater-sexies C3). The POSIX kills above target
+# Windows-proof teardown. The POSIX kills above target
 # the MSYS pid and do not always reach the native Windows process. A surviving
 # warm-up editor is a PORT THIEF for the real editor boot that follows: it
 # keeps the editor WS port (6550) and the LSP port (6005), the next editor
 # silently re-registers its WS on 6551+ while its LSP bind fails for the whole
-# session (Godot 4.2-4.4 never retries a failed LSP bind) — the leading
-# hypothesis for the Win-4.2 CI LSP-initialize mute. Escalation, Windows-branch
+# session (Godot 4.2-4.4 never retries a failed LSP bind) — the confirmed
+# cause of the Win-4.2 CI LSP-initialize mute. Escalation, Windows-branch
 # only (the POSIX flow above is byte-identical on Linux/macOS):
 #   1. taskkill the recorded WinPID tree (harmless no-op if already dead);
 #   2. if 6550/6005 still LISTEN after a bounded settle — GitHub Actions only
@@ -123,7 +123,7 @@ wait "$WARMUP_PID" 2>/dev/null || true
 # 6550 for a different project must be neither killed nor treated as a
 # failure — locally this only warns.
 #
-# Taxonomy (H1/H2, 41n-quater-sexies): this teardown exists to kill H1 — the
+# Taxonomy (H1/H2): this teardown exists to kill H1 — the
 # zombie warm-up editor holding 6550/6005 (only the 4.2 legs boot a warm-up
 # editor, hence the 4.2-only CI exposure). A ports-free failure HERE is H1
 # caught red-handed. The H2 signature (exactly one godot PID, 6005 owned by

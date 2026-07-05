@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """cross_diff_dotnet.py --- (c) reflect-vs-manifest .NET cross-diff.
 
-The .NET dimension check (c) from the iteration's methodology: GodotSharp is a
+The .NET dimension check (c) of the audit pipeline (see run_all.sh): GodotSharp is a
 PascalCase projection of the same ClassDB reflection that produces
 extension_api.json, so the C# surface is *covered* by the class-2 (signature)
 check on the manifest. This script is the belt-and-suspenders confirmation that

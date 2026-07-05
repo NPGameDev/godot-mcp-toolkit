@@ -9,10 +9,10 @@ extends RefCounted
 ## points at (network/language_server/remote_host/port, default 127.0.0.1:6005) and
 ## publish lsp_host/lsp_port into the registry entry; EditorSettings.settings_changed
 ## fires globally, so the watch debounces by comparing the re-resolved endpoint
-## against the last published one (Q4 live re-publish). (2) INBOUND: the MCP server
-## reports the authoritative verdict via set_reported_lsp_status (it can do reliable
-## cross-process liveness the editor cannot); the dock renders whatever was last
-## reported and refreshes exactly on change. See ADR 0008.
+## against the last published one (live re-publish on change). (2) INBOUND: the MCP
+## server reports the authoritative verdict via set_reported_lsp_status (it can do
+## reliable cross-process liveness the editor cannot); the dock renders whatever was
+## last reported and refreshes exactly on change.
 ##
 ## Editor-side ONLY — and TAINTED by design: resolve_lsp_endpoint() and the watch
 ## name EditorInterface directly (they read network/language_server/* and connect to
@@ -41,13 +41,13 @@ extends RefCounted
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
-# Last LSP endpoint published to the registry — the Q4 re-publish baseline. The watch
+# Last LSP endpoint published to the registry — the re-publish baseline. The watch
 # compares the re-resolved endpoint against these to debounce unrelated setting churn.
 var _last_lsp_host: String = ""
 var _last_lsp_port: int = -1
 # Authoritative LSP verdict the MCP server last reported (editor.set_lsp_status). The
 # editor can't read its own LSP bind status, so the server tells us and the dock
-# renders it. {} until a server connects. See ADR 0008.
+# renders it. {} until a server connects.
 var _reported_lsp_status: Dictionary = {}
 
 # Injected seams (wired once by mcp_server._init_lsp_publisher). Keep the
@@ -109,7 +109,7 @@ func get_reported_lsp_status() -> Dictionary:
 	return _reported_lsp_status
 
 
-## Q4 — re-publish the registry entry when the editor's GDScript LSP port/host
+## Re-publish the registry entry when the editor's GDScript LSP port/host
 ## setting changes mid-session, so the published endpoint never goes stale.
 ## EditorSettings.settings_changed fires globally; we debounce by comparing the
 ## re-resolved endpoint against the last published one. Connected from start(),

@@ -424,7 +424,7 @@ static func resolve_class_kind(type_name: String) -> Dictionary:
 ## collisions (godotengine/godot#75669). Yields one frame so the editor
 ## fully settles before the next MCP command executes.
 static func open_scene_deferred(file_path: String) -> bool:
-	# C2: never open into an active EditorFileSystem scan (the load reads
+	# Never open into an active EditorFileSystem scan (the load reads
 	# inconsistent state and can crash). Returns false on scan-idle timeout so
 	# callers can abort rather than collide with the scan.
 	if not await MCPToolkitSafeSceneOps.wait_for_scan_idle():
@@ -633,7 +633,7 @@ static func should_disarm_tooltip_uaf(engine_ver: String) -> bool:
 ## would let tree churn re-add and re-arm a slot. A later human undo/redo replays the set
 ## outside this guard, exposing it exactly like any inspector edit — out of scope here
 ## (cured upstream in 4.4). Any new tool or extension that writes editor_description MUST
-## call this (see COMPATIBILITY.md and docs/extending.md).
+## call this (see docs/extending.md).
 static func disarm_tooltip_uaf(node: Object, property: String) -> void:
 	if property != "editor_description":
 		return
@@ -657,7 +657,7 @@ static func disarm_tooltip_uaf(node: Object, property: String) -> void:
 ## (not the payloads) keeps each creator's emitted bytes — which legitimately
 ## differ (extra keys, replace side-effects, message wording) — under the
 ## caller's control while killing the duplicated validate->exists->branch logic.
-## (§12.4 DRY, §12.5 CQS — this returns data, changes nothing.)
+## (Pure query — this returns data, changes nothing.)
 ##
 ##   dest_path   res:// destination (NOT path-guarded here — callers guard first)
 ##   if_exists   "return" | "fail" | "replace"
@@ -704,8 +704,7 @@ static func resolve_create_collision(dest_path: String, if_exists: String) -> Di
 ## {status?, error?} shape with no success field (node.groups batch).
 ##
 ## Pure (no engine state) → a headless unit test pins it with hand-built dicts.
-## (GodotCodeStandards §12 DRY/extract-method, §5 — shared response shaper beside
-## the other pure response/decision helpers here.)
+## (Shared response shaper, beside the other pure response/decision helpers here.)
 static func summarize_batch(response: Dictionary, results_key := "results") -> Dictionary:
 	var entries: Array = response.get(results_key, [])
 	var total := entries.size()
@@ -744,7 +743,7 @@ static func summarize_batch(response: Dictionary, results_key := "results") -> D
 ##                    blocking import-settle poll is skipped (a single
 ##                    non-blocking update_file() still runs so the FS dock catches
 ##                    up). asset.import passes "" because the imported type is
-##                    unknown until the editor runs the import. See ADR 0010.
+##                    unknown until the editor runs the import.
 ##
 ## Returns the core success payload
 ## {status, path, class, warnings, elapsed_ms, success:true} (status is
@@ -808,7 +807,7 @@ static func write_asset_with_settle(
 		# Generator default path: the class is known by construction, so skip the
 		# blocking import-settle poll entirely. Fire one non-blocking update_file()
 		# so the FS dock catches up; the asset is usable regardless (resource_load
-		# imports on demand). No "did not index" warning — we never waited. ADR 0010.
+		# imports on demand). No "did not index" warning — we never waited.
 		var fs := EditorInterface.get_resource_filesystem()
 		if fs != null:
 			fs.update_file(dest_path)

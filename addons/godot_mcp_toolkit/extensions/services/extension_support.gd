@@ -160,7 +160,8 @@ static func load_extension(class_name_str: String, script_path: String, registry
 	# accidental-reuse footgun that registry.add() would otherwise allow (it is
 	# last-writer-wins outside this window). First-loaded wins within the window;
 	# the loser is reported below. Note: the guard is window-scoped — it does NOT
-	# prevent a full-trust extension from deferring an add() past register() (ADR 0009).
+	# prevent a full-trust extension from deferring an add() past register()
+	# (installed extensions are full-trust in-process code; that is out of scope).
 	registry.begin_extension_load()
 
 	# Call register — handle both GDScript (snake_case) and C# (PascalCase).

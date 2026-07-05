@@ -24,8 +24,7 @@ extends RefCounted
 ##
 ## File name: `unfocused_sleep_backup_<major.minor>.json` — version-keyed so two
 ## Godot editor versions running at once never conflate their separate
-## EditorSettings. See iter 41l-duotricies and
-## docs/adr/0007-unfocused-responsive-mode.md.
+## EditorSettings.
 
 const _FILENAME_PREFIX := "unfocused_sleep_backup_"
 

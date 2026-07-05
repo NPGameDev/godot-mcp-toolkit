@@ -1,10 +1,14 @@
 @tool
 extends Node
-## WebSocket JSON-RPC framing and peer lifecycle.
+## The editor-side MCP server — the transport orchestration facade.
 ##
-## All command logic lives in per-domain modules under commands/.
-## This file handles: TCP listener, WS peer accept/poll, JSON-RPC parse,
-## and dispatch via MCPToolkitCommandRegistry.
+## Constructs, wires, and drives the transport subsystems, keeping only the
+## lifecycle and the cross-subsystem seams: ws_transport owns the TCP listener +
+## WS peer accept/poll + auth-handshake framing, notifier owns notification
+## framing/sends, server_request_router + dispatch_lane own request routing and
+## lane dispatch, and scene_lease / mutation_watchdog / unfocused_sleep_controller
+## / lsp_publisher own their domains. All command logic lives in per-domain
+## modules under commands/.
 
 signal client_connected(peer_count: int)
 signal client_disconnected(peer_count: int)
@@ -65,7 +69,7 @@ const _RELISTEN_FRAME_INTERVAL := 60
 # Main::iteration — see godotengine/godot#46893, #54864, #110891).
 # Two mitigations stack:
 #   1. Frame-skip: poll at ~15Hz (4 frames) instead of 60Hz, shrinking
-#      the collision window ~4x. Original F3 fix from iter 13c.
+#      the collision window ~4x.
 #   2. Deferred dispatch: _process schedules the poll body via
 #      call_deferred instead of running it inline, moving our I/O out
 #      of the _process call stack where reentrancy is most dangerous.
@@ -74,8 +78,8 @@ const _RELISTEN_FRAME_INTERVAL := 60
 # progress_dialog.cpp errors. This is acceptable — the alternative
 # (inline _process poll) causes reproducible editor crashes.
 # No upstream structural fix exists as of Godot 4.5/4.6-dev.
-# Cold/hot sleep mode (set_process(false) with no client) was assessed in iter 41m
-# and rejected: no TCPServer accept signal exists to wake on, and gating the loop
+# Cold/hot sleep mode (set_process(false) with no client) was considered and
+# rejected: no TCPServer accept signal exists to wake on, and gating the loop
 # fights this deferral + the always-run _mutation_watchdog.tick() for a tiny gain.
 const _POLL_FRAME_INTERVAL := 4
 # Auth timeout. Peers that don't send a valid auth message within this
@@ -95,13 +99,13 @@ var _port_config: Dictionary = {}
 # can prefer post-boot logs over stale rotated ones.
 var _plugin_boot_time: int = 0
 var _registry: MCPToolkitCommandRegistry = null
-# C7: routes a parsed JSON-RPC request to the lane its registry policy selects (read /
+# Routes a parsed JSON-RPC request to the lane its registry policy selects (read /
 # mutation / scene-lease) and drives it. Owns the in-flight cancellable-context map + the
 # three lanes; this file keeps only the lifecycle wiring + the cross-subsystem seams the
 # lanes need injected (the scene-lease handlers, the watchdog, command_received). Built in
 # start(); _handle_message hands it each authed frame. See server_request_router.gd / dispatch_lane.gd.
 var _router: ServerRequestRouter = null
-# C9: the LSP endpoint publisher (resolve THIS editor's GDScript-LSP endpoint,
+# The LSP endpoint publisher (resolve THIS editor's GDScript-LSP endpoint,
 # publish it to the registry, re-publish on a debounced settings change) + the
 # server-reported LSP liveness mirror live in lsp_publisher.gd. This file keeps only
 # the cross-subsystem TRIGGER points (start() → connect the watch; stop() → disconnect
@@ -109,15 +113,15 @@ var _router: ServerRequestRouter = null
 # dock + commands reach (delegated to this child), and the lsp_status_changed SIGNAL
 # (re-emitted here when the child reports a change — the dock binds it on the server).
 # Constructed in start() with the bound-port source + the status-changed re-emit
-# injected. See lsp_publisher.gd / docs/adr/0008-lsp-port-registry-authoritative.md.
+# injected. See lsp_publisher.gd.
 var _lsp: LspPublisher = null
-# C8: the unfocused-responsive mechanism (lower/restore/self-heal the machine-wide
+# The unfocused-responsive mechanism (lower/restore/self-heal the machine-wide
 # unfocused-sleep EditorSetting + its first-writer-wins backup) lives in
 # unfocused_sleep_controller.gd. This file keeps only the cross-subsystem TRIGGER
 # points (first authed connect → lower; last disconnect → restore; start() →
 # self-heal first) and the public getters the dock reads, delegating each to this
 # child. Constructed in start() with the EditorSettings accessor injected. See
-# unfocused_sleep_controller.gd / docs/adr/0007-unfocused-responsive-mode.md.
+# unfocused_sleep_controller.gd.
 var _unfocused: UnfocusedSleepController = null
 ## Set by plugin.gd so domain commands can call EditorPlugin API
 ## (e.g. add_autoload_singleton for immediate editor cache refresh).
@@ -132,14 +136,14 @@ var undo_helpers: Node = null
 # When multiple WebSocket peers are connected, mutation commands must not
 # interleave at await boundaries. A single-flight flag + FIFO queue ensures
 # that at most one mutation executes at any time. Read-only commands bypass
-# the lock entirely. See iter 41l-decies for the full design.
+# the lock entirely.
 #
-# C7: the single-flight flag + FIFO queue + the mutation execute/drain now live in
+# The single-flight flag + FIFO queue + the mutation execute/drain live in
 # dispatch_lane.gd's MutationLane (constructed by the dispatcher). This file keeps only
-# the watchdog INSTANCE (it must tick every _process frame, independent of lane state —
-# C5/R4) and hands it to the dispatcher to wire into the mutation lane's recovery hook.
+# the watchdog INSTANCE (it must tick every _process frame, independent of lane state)
+# and hands it to the dispatcher to wire into the mutation lane's recovery hook.
 
-# C5 mutation watchdog — recovers the lock if an in-flight mutation's coroutine
+# Mutation watchdog — recovers the lock if an in-flight mutation's coroutine
 # aborts or never resolves (it would otherwise wedge ALL mutations permanently).
 # It owns the in-flight identity + the adaptive deadline + the generation counter.
 # Constructed in start() and handed to the dispatcher, which wires its force_clear hook
@@ -150,11 +154,11 @@ var _mutation_watchdog: MutationWatchdog = null
 # -- Scene lease ---------------------------------------------------------------
 # When multiple peers target different scenes, a time-bounded lease prevents
 # cross-scene contamination. Tab-dependent commands queue until the peer's
-# affinity scene matches the active tab. See iter 41l-decies-bis for design.
+# affinity scene matches the active tab.
 #
-# C6: the lease mechanism (state + acquire/renew/release/steal/drain + the
-# scene-affinity queue + scene.open contention) lives in scene_lease.gd. C7: the dispatch
-# ROUTING into it now lives in the scene-lease lane (dispatch_lane.gd), reached through
+# The lease mechanism (state + acquire/renew/release/steal/drain + the
+# scene-affinity queue + scene.open contention) lives in scene_lease.gd; the dispatch
+# ROUTING into it lives in the scene-lease lane (dispatch_lane.gd), reached through
 # the dispatcher. Constructed in start() with the editor's root-resolver + the lane seams
 # injected; the scene-lease lane routes via _scene_lease.try_queue_for_lease /
 # handle_scene_open, and _process ticks _scene_lease.check_expiry. See scene_lease.gd.
@@ -213,7 +217,7 @@ static func resolve_lsp_endpoint() -> Dictionary:
 ## The MCP server reports the authoritative LSP verdict here (editor.set_lsp_status);
 ## delegates to the LSP publisher, which stores it and re-emits lsp_status_changed via
 ## the injected handler so the dock refreshes. The signal stays on this object (the
-## dock binds it here). See lsp_publisher.gd / ADR 0008.
+## dock binds it here). See lsp_publisher.gd.
 func set_reported_lsp_status(status: Dictionary) -> void:
 	if _lsp != null:
 		_lsp.set_reported_lsp_status(status)
@@ -345,8 +349,9 @@ func _init_transport() -> void:
 		_on_peer_closed, _on_transport_bound, _on_listen_conflict_changed)
 
 
-# Log the resolved listen-port config at startup: the port + source (the Q4
-# dual-side observability), a one-line note when a pin makes the band moot, or a
+# Log the resolved listen-port config at startup: the port + source (so both the
+# editor console and the dock can tell WHY this port was chosen — pin, band, or
+# default), a one-line note when a pin makes the band moot, or a
 # loud push_error on a config error (bad pin / MIN > MAX) — never a silent default.
 func _log_port_config() -> void:
 	var config_error := str(_port_config.get("error", ""))
@@ -439,8 +444,8 @@ func get_port_warning() -> Dictionary:
 
 # Build the mutation watchdog. Its force_clear recovery hook is wired by the mutation
 # lane (in the dispatcher) — the lane owns the single-flight flag the hook clears, so the
-# hook belongs with the lane (C7). This file only constructs the watchdog and ticks() it
-# every _process frame (it must run regardless of lane state — C5/R4).
+# hook belongs with the lane. This file only constructs the watchdog and ticks() it
+# every _process frame (it must run regardless of lane state).
 func _init_mutation_watchdog() -> void:
 	_mutation_watchdog = MutationWatchdog.new()
 
@@ -548,7 +553,7 @@ func _disconnect_lsp_settings_watch() -> void:
 
 
 func _process(_delta: float) -> void:
-	# C5: the mutation watchdog must always run, independent of the poll cadence
+	# The mutation watchdog must always run, independent of the poll cadence
 	# and lease state — it is the sole recovery for a wedged mutation lock. (The
 	# null guard mirrors _poll_connections: start() builds it synchronously in
 	# _enter_tree before any _process, but a stray pre-start tick stays a no-op.)
@@ -574,7 +579,7 @@ func _poll_connections() -> void:
 	# null listener the same way).
 	if _transport == null:
 		return
-	# C1: skip this re-entrant tick while a save's Main::iteration() re-entry is
+	# Skip this re-entrant tick while a save's Main::iteration() re-entry is
 	# in flight — no command may dispatch mid-save.
 	if MCPToolkitSafeSceneOps.is_dispatching():
 		return
@@ -668,11 +673,10 @@ func _check_version_mismatch(local: String, remote: String) -> void:
 		push_warning("[MCPServer] Version mismatch - plugin %s, server %s. Consider updating." % [local, remote])
 
 
-# Dispatch routing (_dispatch_rpc), the mutation lane (_execute_mutation /
-# _drain_mutation_queue), and the read/scene-lease routes moved to server_request_router.gd +
-# dispatch_lane.gd in concern 007 C7. _handle_message now hands each authed frame to
-# _router.route_request. The framing helper below stays — the orchestrator itself
-# sends the pre-dispatch parse errors (-32700 / -32600) in _handle_message.
+# Dispatch routing, the mutation lane, and the read/scene-lease routes live in
+# server_request_router.gd + dispatch_lane.gd; _handle_message hands each authed
+# frame to _router.route_request. The framing helper below stays — the orchestrator
+# itself sends the pre-dispatch parse errors (-32700 / -32600) in _handle_message.
 
 
 func _send_error(peer: WebSocketPeer, id, code: int, error_message: String) -> void:
@@ -680,8 +684,8 @@ func _send_error(peer: WebSocketPeer, id, code: int, error_message: String) -> v
 
 
 # -- Unfocused sleep management -----------------------------------------------
-# The lower/restore/self-heal mechanism + the first-writer-wins backup moved to
-# unfocused_sleep_controller.gd in concern 007 C8. This file keeps the public
+# The lower/restore/self-heal mechanism + the first-writer-wins backup live in
+# unfocused_sleep_controller.gd. This file keeps the public
 # getters the dock reads and delegates each to _unfocused; the cross-subsystem
 # trigger points (boost on first authed connect, restore on last disconnect,
 # self-heal at start) live in _on_peer_authed / _poll_connections / start(). The
@@ -690,7 +694,7 @@ func _send_error(peer: WebSocketPeer, id, code: int, error_message: String) -> v
 
 
 ## True when the user has opted in (default true). Missing/unavailable settings
-## fall back to the default so behaviour is unchanged from before this iter.
+## fall back to the default so the opt-in never blocks on settings availability.
 func is_unfocused_responsive_enabled() -> bool:
 	return _unfocused.is_unfocused_responsive_enabled() if _unfocused != null else true
 
@@ -700,8 +704,8 @@ func get_unfocused_responsive_fps() -> int:
 	return _unfocused.get_unfocused_responsive_fps() if _unfocused != null else 60
 
 
-## True while THIS instance holds the boost active (best-effort; the backup file
-## is authoritative for restore). Used by the dock's 3-state indicator.
+## True while THIS instance holds the boost active — delegated; semantics in
+## unfocused_sleep_controller.gd's is_unfocused_boost_active.
 func is_unfocused_boost_active() -> bool:
 	return _unfocused.is_unfocused_boost_active() if _unfocused != null else false
 

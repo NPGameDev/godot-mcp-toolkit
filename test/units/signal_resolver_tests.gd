@@ -112,7 +112,7 @@ static func _test_signal_pair_resolver(testing) -> void:
 	print("")
 
 
-# --- Regression guard: 4.2 static-Callable indirection (41n-ter-bis Item 13) ---
+# --- Regression guard: 4.2 static-Callable indirection ---
 # resolve_pair / resolve_node take the scene-tree root as a Node passed directly, NOT
 # a root-resolver Callable. The earlier Callable form regressed signal.manage on Godot
 # 4.2 ONLY: signal_commands.gd resolved the pair from a `static` function and passed a

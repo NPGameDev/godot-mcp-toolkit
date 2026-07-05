@@ -79,7 +79,7 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("INVALID_PATH",
 			"refusing to write editor/* ProjectSettings from project.set_setting (editor-session state, not project config); got key=%s" % key)
 	# Autoload guard — registration/unregistration must go through autoload_manage
-	# so the editor's singleton cache refreshes immediately (FIX-D).
+	# so the editor's singleton cache refreshes immediately.
 	if key.begins_with("autoload/"):
 		var _al_raw = parameters.get("value", null)
 		var _al_str := str(_al_raw) if _al_raw != null else ""
@@ -139,7 +139,7 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 					"script not found: %s; create it with script_write first" % script_path)
 			var enabled := bool(parameters.get("enabled", true))
 			var value := ("*" if enabled else "") + script_path
-			# FIX-D: Use EditorPlugin API for immediate editor cache refresh.
+			# Use EditorPlugin API for immediate editor cache refresh.
 			var plugin: EditorPlugin = server.get("editor_plugin") if server != null else null
 			if plugin != null and enabled:
 				plugin.add_autoload_singleton(aname, script_path)
@@ -168,7 +168,7 @@ static func _cmd_autoload_manage(parameters: Dictionary, server: Node = null) ->
 			if not ProjectSettings.has_setting(key):
 				return MCPToolkitError.fail("NOT_FOUND",
 					"no autoload named '%s' in project settings" % aname)
-			# FIX-D: Use EditorPlugin API for immediate editor cache refresh.
+			# Use EditorPlugin API for immediate editor cache refresh.
 			var plugin: EditorPlugin = server.get("editor_plugin") if server != null else null
 			if plugin != null:
 				plugin.remove_autoload_singleton(aname)

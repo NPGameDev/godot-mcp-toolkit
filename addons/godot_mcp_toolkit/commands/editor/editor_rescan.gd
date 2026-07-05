@@ -55,8 +55,8 @@ static func cmd_refresh(parameters: Dictionary) -> Dictionary:
 	# (captured via the resources_reload signal — present in all of 4.2-4.6), and
 	# only if they're open. NEVER reload an unchanged script: reload(true) cancels
 	# any suspended coroutine in it, which would break the user's @tool plugins and
-	# (for the toolkit's own scripts) leak the mutation dispatch lock (C3 root cause;
-	# 41l-tricies). The toolkit's own scripts are skipped even when changed.
+	# (for the toolkit's own scripts) leak the mutation dispatch lock.
+	# The toolkit's own scripts are skipped even when changed.
 	var changed := {}
 	var collector := func(resources: PackedStringArray) -> void:
 		for r in resources:
@@ -110,7 +110,7 @@ static func cmd_wait_for_idle(parameters: Dictionary) -> Dictionary:
 
 ## Whether an open script should be reloaded after a full editor.refresh scan:
 ## only scripts the scan actually changed, and NEVER the toolkit's own (reloading
-## an unchanged or toolkit-own script would cancel a suspended coroutine — the
-## C1/C3 crash class; 41l-tricies). Pure logic so it can be unit-tested.
+## an unchanged or toolkit-own script would cancel a suspended coroutine —
+## a wedged-dispatch-lock / editor-crash class). Pure logic so it can be unit-tested.
 static func should_reload_open_script(resource_path: String, changed: Dictionary) -> bool:
 	return changed.has(resource_path) and not resource_path.begins_with("res://addons/godot_mcp_toolkit/")

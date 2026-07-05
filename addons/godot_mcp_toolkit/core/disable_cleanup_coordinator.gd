@@ -20,7 +20,7 @@ extends RefCounted
 
 # Machine-wide EditorSettings keys this plugin registers (mirror of the keys in
 # plugin.gd::_register_editor_settings). These are PER-USER, MACHINE-WIDE prefs
-# shared across every project that uses the toolkit (ADR 0007), so — unlike the
+# shared across every project that uses the toolkit, so — unlike the
 # project-local ProjectSettings — they are NEVER scrubbed silently: removing them
 # affects the user's other projects, which is why their removal is confirmed.
 const _EDITOR_SETTING_KEYS := [

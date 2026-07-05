@@ -6,9 +6,8 @@ extends RefCounted
 ## per-peer scene affinity, and the FIFO of tab-dependent commands waiting on the
 ## lease — plus the full mechanism over them: acquire / renew / release / steal
 ## (TTL expiry) / drain, scene.open contention handling, and the queued-command
-## execution path. The dispatcher (mcp_server.gd) ROUTES into this child's public
-## API; the routing itself stays in the dispatcher (concern 007 C7 extracts that —
-## NOT this commit).
+## execution path. The dispatch layer ROUTES into this child's public API; the
+## routing itself lives in the scene-lease lane (dispatch_lane.gd), not here.
 ##
 ## Editor-side ONLY — and TAINTED by design: it names EditorInterface (via the
 ## injected root-resolver) and reaches Modules.CommandHelpers.open_scene_deferred. That is
@@ -228,8 +227,8 @@ func _build_contention_hint() -> String:
 
 
 ## Acquire (or renew) the lease for this peer's affinity scene. Pure bookkeeping —
-## the raw open_scene_from_path was removed in Fix 4 (it violated the #75669
-## deferred-open rule and was unguarded against scans); tab activation now happens in
+## deliberately NO raw open_scene_from_path here (a raw open violates the #75669
+## deferred-open rule and is unguarded against scans); tab activation happens in
 ## the guarded _execute_scene_queued_* paths via _switch_to_affinity_scene. Returns
 ## true on acquire/renew, false when another peer holds it (or the scene was deleted).
 func try_acquire(peer: WebSocketPeer, scene: String) -> bool:
@@ -241,10 +240,10 @@ func try_acquire(peer: WebSocketPeer, scene: String) -> bool:
 		_lease_holder = peer
 		_lease_scene = scene
 		_lease_renewed_ms = Time.get_ticks_msec()
-		# Fix 4: lease acquisition is now pure bookkeeping — the raw
-		# open_scene_from_path was removed (it violated the #75669 deferred-open
-		# rule and was unguarded against scans). Tab activation moves to the
-		# guarded _execute_scene_queued_* paths via _switch_to_affinity_scene.
+		# Lease acquisition stays pure bookkeeping — no raw open_scene_from_path
+		# (it would violate the #75669 deferred-open rule, unguarded against
+		# scans). Tab activation belongs to the guarded _execute_scene_queued_*
+		# paths via _switch_to_affinity_scene.
 		return true
 	if _lease_holder == peer:
 		# Same peer — renew.
@@ -265,7 +264,7 @@ func release() -> void:
 ## TTL steal: if a waiter is queued and the holder has exceeded the lease TTL, release
 ## so the next waiter can acquire. Runs every poll tick from the server's _process.
 func check_expiry() -> void:
-	# C1: don't steal/drain during a save's re-entry (a lease-steal would drain a
+	# Don't steal/drain during a save's re-entry (a lease-steal would drain a
 	# scene-queued command mid-save).
 	if MCPToolkitSafeSceneOps.is_dispatching():
 		return
@@ -323,8 +322,8 @@ func drain() -> void:
 	# Scene queue fully drained — nothing left.
 
 
-# Fix 4: switch the editor to the peer's affinity scene before executing a
-# scene-queued command (the raw open was removed from try_acquire). Guarded against
+# Switch the editor to the peer's affinity scene before executing a
+# scene-queued command (try_acquire deliberately does no open). Guarded against
 # an active EditorFileSystem scan. Returns false — and sends the peer a TIMEOUT — if
 # it can't switch, so the caller aborts this one entry (the rest of the queue stays
 # for the next drain trigger).
@@ -346,7 +345,7 @@ func _execute_scene_queued_mutation(entry: _SceneQueueEntry,
 	if _enqueue_mutation_if_busy.call(entry.peer, entry.id, entry.method,
 			entry.params, queued_ms):
 		return
-	# Fix 4: activate the peer's affinity scene here, guarded against a scan.
+	# Activate the peer's affinity scene here, guarded against a scan.
 	if not await _switch_to_affinity_scene(entry.peer, entry.id):
 		return
 	_execute_mutation.call(entry.peer, entry.id, entry.method, entry.params, queued_ms)
@@ -354,7 +353,7 @@ func _execute_scene_queued_mutation(entry: _SceneQueueEntry,
 
 func _execute_scene_queued_read(entry: _SceneQueueEntry,
 		queued_ms: int) -> void:
-	# Fix 4: activate the peer's affinity scene (guarded) before the read.
+	# Activate the peer's affinity scene (guarded) before the read.
 	if not await _switch_to_affinity_scene(entry.peer, entry.id):
 		return
 	var result: Dictionary = await _run_read.call(entry.method, entry.params, entry.id)

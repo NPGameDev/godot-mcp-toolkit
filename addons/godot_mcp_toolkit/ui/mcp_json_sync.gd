@@ -7,7 +7,7 @@ extends RefCounted
 ## the plugin-initiated write. The write is OS-aware — it emits a per-OS
 ## mcpServers command/args and, on macOS, resolves the user's real absolute
 ## node/npx path (plus a login-shell PATH backstop) so a Finder/Dock-launched
-## MCP client finds Node despite launchd's minimal PATH (ADR 0017). The file
+## MCP client finds Node despite launchd's minimal PATH. The file
 ## stays user-owned for edits; the plugin writes it on explicit user action (the
 ## dock's / Tools-menu's "Write .mcp.json") and refreshes an already-existing one
 ## on editor start to shrink the stale-after-node-switch window.
@@ -20,7 +20,7 @@ extends RefCounted
 
 # Direct preload (not via core/modules.gd): mcp_json_sync is itself aggregated by
 # modules.gd, so reaching NodejsCheck through the aggregator would be a preload
-# cycle (code-standards §6.5). NodejsCheck owns the macOS login-shell probe used
+# cycle. NodejsCheck owns the macOS login-shell probe used
 # to resolve the real node path for the OS-aware emission.
 const NodejsCheck := preload("res://addons/godot_mcp_toolkit/versioning/nodejs_check.gd")
 
@@ -152,7 +152,7 @@ static func needs_overwrite_confirm() -> bool:
 
 ## Build the mcpServers server entry ({command, args, env}) for [param os_name] —
 ## the pure core of the OS-aware write. macOS emits option-d, an absolute node/npx
-## path so a GUI-launched client bypasses launchd's PATH lookup (ADR 0017):
+## path so a GUI-launched client bypasses launchd's PATH lookup:
 ## release pairs the absolute npx (derived beside [param resolved_node]) with the
 ## resolved PATH backstop; the dev form (when [param dev_server_path] is set) runs
 ## the absolute node against that dist entry — the strongest shape. When

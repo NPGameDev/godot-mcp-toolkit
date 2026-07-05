@@ -184,7 +184,7 @@ func with_success_hint(hint: String) -> MCPToolkitCommandOptions:
 ## path an extension command reads or writes; built-in tools self-guard, so this is
 ## the declarative equivalent for extension commands. An absent or empty value at
 ## call time is left for the handler (it is not a rejection). See
-## [method guard_user_path] for the [code]user://[/code] variant, and ADR 0009.
+## [method guard_user_path] for the [code]user://[/code] variant.
 ## Returns [code]self[/code] for chaining.
 func guard_project_path(param: String) -> MCPToolkitCommandOptions:
 	_path_guards[param] = "project"

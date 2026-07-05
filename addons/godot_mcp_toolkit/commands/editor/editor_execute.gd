@@ -58,7 +58,7 @@ static func cmd_execute_code(parameters: Dictionary) -> Dictionary:
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
 		var err_text := expr.get_error_text()
-		# FIX-4: Detect known singletons in error and append recovery hints.
+		# Detect known singletons in error and append recovery hints.
 		var singletons := ["EditorInterface", "Engine", "OS", "Input",
 			"DisplayServer", "ProjectSettings", "ResourceLoader", "ResourceSaver",
 			"RenderingServer", "PhysicsServer2D", "PhysicsServer3D"]
@@ -69,7 +69,7 @@ static func cmd_execute_code(parameters: Dictionary) -> Dictionary:
 		# Detect chained property access failure on returned objects.
 		if "Invalid named index" in err_text and "base type Object" in err_text:
 			err_text += "\n\nHint: Expression.execute() cannot chain property access on returned objects. Use runtime_get_node_state or node_call_method for multi-step property access."
-		# FIX-H: Detect load() call failures — Expression cannot call load().
+		# Detect load() call failures — Expression cannot call load().
 		if "call to 'load'" in err_text.to_lower():
 			err_text += _make_load_hint(code)
 		return MCPToolkitError.fail("EXECUTE_FAILED", err_text)

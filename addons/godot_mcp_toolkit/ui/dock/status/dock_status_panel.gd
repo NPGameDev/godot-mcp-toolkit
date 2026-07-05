@@ -86,7 +86,7 @@ func _init(server: Node) -> void:
 	add_child(_runtime_label)
 
 	# GDScript LSP endpoint the server discovers for this editor (best-effort;
-	# the server is authoritative for conflicts). See Fix 3, 41l-tertricies.
+	# the server is authoritative for conflicts).
 	_lsp_label = Label.new()
 	_lsp_label.text = "LSP: —"
 	_lsp_label.add_theme_font_size_override("font_size", 12)
@@ -116,7 +116,7 @@ func insert_warning_panel(panel: Control) -> void:
 ## Repaint every status label from current server/registry state — including the
 ## listening-vs-not style of the main status row and the not-listening warning
 ## (both derived from the server's live listen state, so any unbound phase shows).
-## Called by the dock's _refresh_status fan-out and on every port_status_changed.
+## Idempotent repaint — cheap enough to run on every refresh trigger.
 ## Safe to call before the panel is in the tree — exits early on null.
 func refresh() -> void:
 	if _server == null or _status_label == null:

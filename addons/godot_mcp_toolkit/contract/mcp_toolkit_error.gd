@@ -99,7 +99,7 @@ const HINT_CLASS_NAME := "Use classdb.search to find valid class names."
 ## [method log_unavailable_hint] explicitly rather than relying on a default here.
 const DEFAULT_HINTS := {
 	"TIMEOUT": "The editor may be busy. Try editor.wait_for_idle before retrying.",
-	"UNSUPPORTED": "Check COMPATIBILITY.md for version requirements.",
+	"UNSUPPORTED": "Check COMPATIBILITY.md in the godot-mcp-toolkit repository for version requirements.",
 	"PATH_DENIED": "Paths must use res:// format. Example: res://scenes/main.tscn",
 	"PARENT_NOT_FOUND": "Parent directory does not exist. Use folder.create to create it first.",
 	"COMPILATION_FAILED": "The game failed to start due to script errors. Fix the errors shown above, then call game_start again. If no errors are shown, call editor_refresh to retrigger them, then editor_get_console for the full log.",
