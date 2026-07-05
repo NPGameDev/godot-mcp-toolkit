@@ -9,7 +9,12 @@ extends EditorExportPlugin
 ## .gd to .gdc in the built-in EditorExportGDScript plugin BEFORE this strip runs,
 ## so those scripts ship as inert, orphaned .gdc. There is no safe in-addon strip
 ## (set_exclude_filter is unbound through 4.6 — godotengine/godot#4054); the leak
-## is cosmetic (never loaded at runtime). We WARN, we do not strip. See ADR 0006.
+## is cosmetic (never loaded at runtime). We WARN, we do not strip.
+
+# The runtime-autoload identity (name/path + key/value derivation) is owned by this
+# shared leaf, so the null-for-bake here and the plugin's registration path can never
+# drift — one home for the pair the export must null and restore.
+const AutoloadIdentity := preload("res://addons/godot_mcp_toolkit/core/autoload_identity.gd")
 
 const _ADDON_PREFIX := "res://addons/godot_mcp_toolkit/"
 const _MCP_JSON_PATH := "res://.mcp.json"
@@ -21,24 +26,18 @@ const _MCP_JSON_PATH := "res://.mcp.json"
 # the strip is deliberately single-level too.
 const _EXTENSION_BASE := "MCPToolkitExtension"
 
-# COUPLING: Must match plugin.gd's _REQUIRED_AUTOLOADS registration set (consumed
-# by _enable_plugin() and the on-load _ensure_autoloads_registered() heal). A
-# headless unit asserts this set equality so drift = the autoload ships in builds.
-const _AUTOLOAD_KEY := "autoload/MCPRuntimeServer"
-const _AUTOLOAD_VAL := "*res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
-
 # EditorExportPlatform.ExportMessageType.EXPORT_MESSAGE_WARNING. Hard-coded as the
 # integer ordinal (stable across 4.2–4.6, verified in engine source) because the
 # enum + add_message() are GDScript-bound only on 4.4+ — a static reference would
-# parse-error on 4.2/4.3 even inside a dead branch (see COMPATIBILITY.md "Version
-# guard implementation"). Delivery uses has_method()+call() for the same reason.
+# parse-error on 4.2/4.3 even inside a dead branch. Delivery uses has_method()+call()
+# for the same reason.
 const _EXPORT_MESSAGE_WARNING := 2
 
 # Built in _export_begin() from the global class list. Keys = res:// paths of
 # GDScript extension files (direct subclasses of MCPToolkitExtension).
 var _extension_strip_paths: Dictionary = {}
 
-# Leak detection (Q6): observe which addon/extension files actually reach our
+# Leak detection: observe which addon/extension files actually reach our
 # _export_file. In a binary-token script mode the built-in EditorExportGDScript
 # plugin consumes every .gd before our strip runs, so addon/extension SCRIPTS
 # never reach us while addon NON-script files (plugin.cfg, .uid, icons) still do.
@@ -58,8 +57,12 @@ func _export_begin(_features: PackedStringArray, _is_debug: bool, _path: String,
 	_saw_addon_script = false
 	_saw_addon_nonscript = false
 	_seen_ext = {}
-	if ProjectSettings.has_setting(_AUTOLOAD_KEY):
-		ProjectSettings.set_setting(_AUTOLOAD_KEY, null)
+	# Null each required autoload for the bake so it doesn't ship in the PCK; restored
+	# in _export_end. Derived per-pair from the shared identity leaf.
+	for entry in AutoloadIdentity.REQUIRED_AUTOLOADS:
+		var key := AutoloadIdentity.settings_key(str(entry[0]))
+		if ProjectSettings.has_setting(key):
+			ProjectSettings.set_setting(key, null)
 
 
 func _export_file(path: String, _type: String, _features: PackedStringArray) -> void:
@@ -83,9 +86,12 @@ func _export_file(path: String, _type: String, _features: PackedStringArray) -> 
 
 func _export_end() -> void:
 	# Unconditional restore — self-heals if a prior export crashed mid-bake.
-	ProjectSettings.set_setting(_AUTOLOAD_KEY, _AUTOLOAD_VAL)
+	for entry in AutoloadIdentity.REQUIRED_AUTOLOADS:
+		ProjectSettings.set_setting(
+				AutoloadIdentity.settings_key(str(entry[0])),
+				AutoloadIdentity.settings_value(str(entry[1])))
 	# Warn (don't strip) if a binary-token script mode shipped addon/extension .gd
-	# as orphaned .gdc. No safe in-addon strip exists (ADR 0006); leak is cosmetic.
+	# as orphaned .gdc. No safe in-addon strip exists; the leak is cosmetic.
 	var decision := _decide_warning(_saw_addon_script, _saw_addon_nonscript, _extension_strip_paths, _seen_ext)
 	if decision["warn"]:
 		_emit_warning(str(decision["message"]))
@@ -131,7 +137,7 @@ static func _compute_strip_paths(classes: Array) -> Dictionary:
 # leaked addon/extension scripts as orphaned .gdc, and compose the warning.
 #   addon leaked  ⟺  addon non-script files were exported but no addon .gd was
 #                    (a binary mode swallowed them). The non-script signal is the
-#                    Q6 false-positive guard: if the user already excluded the
+#                    false-positive guard: if the user already excluded the
 #                    addon, NO addon file reaches us → saw_addon_nonscript=false
 #                    → no warning (excluding the addon is exactly what we advise).
 #   ext leaked    =  extension paths computed in _export_begin that never reached

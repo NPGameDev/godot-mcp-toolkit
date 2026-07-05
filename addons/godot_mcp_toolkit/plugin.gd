@@ -11,22 +11,7 @@ const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const ToolMenu := preload("res://addons/godot_mcp_toolkit/core/tool_menu.gd")
 const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/disable_cleanup_coordinator.gd")
 const MCPJsonEnablePrompt := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_enable_prompt.gd")
-
-# Mode B — runtime autoload that hosts the game-side WS server on
-# 127.0.0.1:6570. Registered/unregistered via add_autoload_singleton /
-# remove_autoload_singleton so end-user installs pick it up when they
-# tick the plugin. Idempotent: if project.godot already carries the entry
-# (e.g., dogfood), Godot keeps the existing value rather than duplicating.
-const RUNTIME_AUTOLOAD_NAME := "MCPRuntimeServer"
-const RUNTIME_AUTOLOAD_PATH := "res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd"
-
-# The autoloads the enabled plugin must guarantee, as [name, res:// path] pairs.
-# One entry today (the runtime server); the list shape future-proofs a second.
-# Drives both _enable_plugin() (first-enable registration) and the on-load
-# _self_heal_autoloads() re-assertion so the two paths can never diverge.
-# COUPLING: the derived "autoload/<name>" = "*<path>" set must equal
-# export_strip.gd's _AUTOLOAD_KEY / _AUTOLOAD_VAL (a headless unit asserts this).
-const _REQUIRED_AUTOLOADS := [[RUNTIME_AUTOLOAD_NAME, RUNTIME_AUTOLOAD_PATH]]
+const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autoload_registration.gd")
 
 # The composed collaborator graph (server, dock, export plugin, watchers, debug
 # bridge, user-path monitor, playtest watcher). PluginComposer.compose() builds
@@ -47,10 +32,10 @@ func _enter_tree() -> void:
 	# wired. _enable_plugin() only fires on the disabled→enabled toggle, so a project
 	# opened already-enabled with the autoload missing (out-of-band project.godot edit,
 	# VCS-propagated enabled flag, template) would silently run Mode A only. Placed
-	# early — pre-compose() — so the heal's emit_signal("settings_changed") fires with
-	# zero listeners (the extension watcher and the other settings_changed consumers are
-	# wired inside compose() below). See ADR 0013.
-	_self_heal_autoloads()
+	# early — pre-compose() — so the heal's settings_changed emit fires with zero
+	# listeners (the extension watcher and the other settings_changed consumers are
+	# wired inside compose() below).
+	AutoloadRegistration.ensure_registered()
 
 	# Construct + wire the whole collaborator graph (registry, server, debug
 	# bridge, command registrar, extensions, export plugin, log buffer, user-path
@@ -129,11 +114,10 @@ func _exit_tree() -> void:
 
 
 func _enable_plugin() -> void:
-	# Share the on-load heal's registration path instead of add_autoload_singleton:
-	# the direct set_setting + save is undo-free by construction (no startup undo
-	# entry) and persists to project.godot, which is exactly what the heal needs and
-	# what the game reads at F5. See ADR 0013 / _ensure_autoloads_registered().
-	_ensure_autoloads_registered()
+	# First-enable registration shares the on-load self-heal path so the two can never
+	# diverge — an undo-free set_setting + save that persists to project.godot, which
+	# is what the game reads at F5 (rationale lives in AutoloadRegistration).
+	AutoloadRegistration.ensure_registered()
 
 	# Offer to (re)create a missing .mcp.json — on the enable toggle only, never
 	# on project open. The editor adds the plugin to the tree before calling
@@ -143,7 +127,7 @@ func _enable_plugin() -> void:
 
 
 func _disable_plugin() -> void:
-	remove_autoload_singleton(RUNTIME_AUTOLOAD_NAME)
+	AutoloadRegistration.unregister(self)
 
 	# Scrub the project-local mcp_toolkit/* ProjectSettings unconditionally —
 	# they belong to project.godot and are meaningless once the plugin is gone.
@@ -157,61 +141,6 @@ func _disable_plugin() -> void:
 	# (they would fire into a freed object and silently no-op). Hand it to a
 	# detached coordinator that outlives the plugin and owns the dialog flow.
 	DisableCleanupCoordinator.new().start()
-
-
-# -- Runtime-autoload registration + on-load self-heal ------------------------
-
-
-# Intent-revealing wrapper for the _enter_tree() on-load re-assertion: an
-# already-enabled project whose autoload was lost out-of-band gets it back before
-# any F5. Delegates to the shared registration path so heal and first-enable can
-# never diverge. See ADR 0013.
-func _self_heal_autoloads() -> void:
-	_ensure_autoloads_registered()
-
-
-# Guarantee every _REQUIRED_AUTOLOADS entry is present in ProjectSettings, writing
-# only what is missing. Shared by _enable_plugin() and _self_heal_autoloads().
-#
-# Uses set_setting + save instead of add_autoload_singleton on purpose (ADR 0013):
-# the API leaves no disk write (the game reads project.godot at F5) and adds a
-# startup undo entry, whereas this path is undo-free and persists. The has_setting
-# guard means a present value is never clobbered — a healthy project gets no write
-# (no project.godot diff). save() + emit_signal run once after the loop, only when
-# something changed: save() persists for the next F5; the emit refreshes the
-# editor's in-memory view of the autoload list (cache-correct, per
-# project_commands.gd FIX-D).
-func _ensure_autoloads_registered() -> void:
-	var present: PackedStringArray = PackedStringArray()
-	for entry in _REQUIRED_AUTOLOADS:
-		var name: String = entry[0]
-		if ProjectSettings.has_setting("autoload/" + name):
-			present.append("autoload/" + name)
-
-	var missing: Array = _compute_missing_autoloads(present, _REQUIRED_AUTOLOADS)
-	for entry in missing:
-		var name: String = entry[0]
-		var path: String = entry[1]
-		ProjectSettings.set_setting("autoload/" + name, "*" + path)
-
-	if not missing.is_empty():
-		ProjectSettings.save()
-		ProjectSettings.emit_signal("settings_changed")
-
-
-# Pure decision: of [name, path] pairs in [param required], return those whose
-# "autoload/<name>" key is absent from [param present] (the already-probed set of
-# present autoload keys). Plain-data-in — the side-effecting shell does the
-# ProjectSettings probing and writing. Kept pure (no Callable, mirroring
-# export_strip._compute_strip_paths) so it is unit-testable headless and avoids the
-# 4.2 bare-static-method-Callable NIL-self trap (see code-standards §8.3).
-static func _compute_missing_autoloads(present: PackedStringArray, required: Array) -> Array:
-	var missing: Array = []
-	for entry in required:
-		var name: String = entry[0]
-		if not present.has("autoload/" + name):
-			missing.append(entry)
-	return missing
 
 
 # -- EditorSettings registration (per-user, not committed to VCS) -------------

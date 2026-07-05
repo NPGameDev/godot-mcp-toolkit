@@ -90,3 +90,9 @@ autoload in the exported PCK, so the unit fails the build instead.
 - **`add_autoload_singleton` for the heal.** Adds a startup undo entry (a stray Ctrl+Z undoes the heal)
   and does not persist to `project.godot` (the game reads disk at F5), which is exactly what the heal
   needs. See the Decision rationale above.
+
+> Update (2026-07-05): the registration mechanism now lives in `core/autoload_registration.gd`
+> (`ensure_registered` / `unregister` / the pure `compute_missing`), with the required-autoload identity
+> — the `[name, path]` pairs plus the `settings_key`/`settings_value` derivation — extracted to the
+> shared pure-const leaf `core/autoload_identity.gd`, which `export_strip.gd` also reads for its
+> null-for-bake/restore, so the two sides share one home instead of a pinned const pair.
