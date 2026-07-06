@@ -33,7 +33,8 @@ editor-start refresh.**
   file. Existing `GODOT_MCP_*` user keys are still preserved on a rewrite.
 - **Layer C nudge kept, reworded** — the dock's macOS "listening, no peer" panel
   stays, but as a **generic** "no MCP client has connected — how to diagnose" nudge
-  with no `launchd`/PATH causal claim.
+  with no `launchd`/PATH causal claim. **(Superseded 2026-07-06 — see the Update
+  below: Layer C was removed entirely.)**
 - **Docs rewritten honestly** — advanced-configuration, the server README, and the
   compatibility notes describe the standard `npx` config working from Finder/Dock or
   a terminal, with a terminal-launch diagnostic if a client won't connect.
@@ -52,3 +53,21 @@ editor-start refresh.**
 
 Iteration: `Plan/ExecutionPlan/41n-undecies-quinquies-macos-launch-minimize.md`;
 premise-flip finding `Plan/ExecutionPlan/41n-undecies-bis-mac-gate-real-mac-validation.md`.
+
+## Update — 2026-07-06: Layer C removed
+
+The "Layer C nudge kept, reworded" decision above is **superseded**: the dock's
+macOS "listening, but no client connected after a grace period" panel was
+**removed entirely**, along with its predicate, ~20 s no-peer grace timer, and
+session-dismiss latch.
+
+Rationale: the panel **false-alarmed a normal workflow** — opening the editor
+before wiring up an MCP client is routine, so the panel would nag after its grace
+even when nothing was wrong. The dock's **peer-count status row** already signals
+whether a client is connected, and a genuine connection failure surfaces its own
+error, so the nudge added noise without adding signal.
+
+The honest terminal-launch diagnostic guidance (check the client is running,
+confirm `.mcp.json` is present, launch from a terminal to see the startup error)
+stays in `COMPATIBILITY.md` and the shipped `advanced_configuration.md`; only the
+dock panel is gone.

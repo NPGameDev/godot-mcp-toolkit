@@ -476,9 +476,7 @@ resolution.
 
 If a macOS client won't connect, launch it from a terminal to see its startup error,
 confirm `.mcp.json` is present at the project root, and confirm Node 20+ is
-installed. When the toolkit is listening but no client has connected after a grace
-period (with a valid `.mcp.json` present), the dock shows a calm macOS nudge naming
-what to check. Full diagnosis + fallbacks (nvm in `~/.zprofile`, the nodejs.org
+installed. Full diagnosis + fallbacks (nvm in `~/.zprofile`, the nodejs.org
 installer, `GODOT_MCP_DEV_SERVER_PATH`) are in the shipped
 `addons/godot_mcp_toolkit/docs/advanced_configuration.md` (*macOS* section).
 

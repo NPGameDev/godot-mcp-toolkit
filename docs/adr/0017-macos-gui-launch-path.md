@@ -94,7 +94,7 @@ if the server ever gains PATH-dependent work).
 
 Graceful degradation: when resolution fails (node absent, nvm-only-in-`~/.zshrc`,
 Fish/Nushell) the builder emits the bare `npx`/`node` form and recovery leans on the
-dock's macOS "listening, no peer" nudge (layer C) and the server README guidance
+dock's macOS "listening, no peer" nudge (layer C — removed 2026-07-06; see [ADR 0018](0018-macos-launch-minimize.md)) and the server README guidance
 (layer B) — the write is never blocked.
 
 Iteration: `Plan/ExecutionPlan/41n-undecies-bis-macos-node-launch-ux.md`; grill log
