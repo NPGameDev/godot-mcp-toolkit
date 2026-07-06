@@ -100,16 +100,6 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	handle._write_flow = write_flow
 	handle._dialog_presenter = dialog_presenter
 
-	# Refresh an already-configured .mcp.json on editor start so a macOS absolute
-	# node/npx path that went stale after a Node-version switch is re-resolved
-	# without the user clicking "Write". The refresh self-guards to only
-	# ever touch an existing, writable, well-formed file — never creates one, never
-	# nags. Deferred off the _enter_tree frame so the macOS login-shell probe can't
-	# block editor startup; the lambda (not a bare static-method Callable) avoids the
-	# 4.2 NIL-self bind.
-	var refresh_config := func() -> void: Modules.MCPJsonSync.refresh_existing_config()
-	refresh_config.call_deferred()
-
 	# -- Toolkit dock (bottom panel on ≤4.5, EditorDock on 4.6+; DockHost owns the seam) --
 	var dock: Control = preload("res://addons/godot_mcp_toolkit/ui/dock/dock.tscn").instantiate()
 	dock.bind(server, Modules.Audit.get_log_path(), write_flow, dialog_presenter)

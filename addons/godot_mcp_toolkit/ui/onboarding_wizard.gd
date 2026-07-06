@@ -3,14 +3,13 @@ extends RefCounted
 ## Guided onboarding wizard shown on first plugin activation.
 ## Self-contained state machine managing a multi-step AcceptDialog.
 
-const NodejsCheck := preload("res://addons/godot_mcp_toolkit/versioning/nodejs_check.gd")
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 
 const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_shown_v001"
 const _ONBOARDING_PROGRESS := "user://addons/godot_mcp_toolkit/mcp_onboarding_progress"
-const _STEP_COUNT := 4
+const _STEP_COUNT := 3
 
 var _plugin: EditorPlugin
 var _server: Node  # Passed to the dialog presenter's Info / Help dialog.
@@ -19,10 +18,6 @@ var _dialog_presenter: ToolkitDialogPresenter
 var _dialog: AcceptDialog = null
 var _step: int = 0
 var _mcp_exists: bool = false  # Tracks .mcp.json state for step-1 variants.
-# Tracks whether the final macOS-setup step is relevant for this host (macOS with
-# an unresolved login-shell Node). Set when step 2's spec is built and read by
-# navigation to skip the step when it doesn't apply.
-var _macos_help_needed: bool = false
 var _buttons: Array = []  # Tracked custom buttons for per-step cleanup.
 
 
@@ -39,17 +34,12 @@ func check_and_show() -> void:
 	if is_onboarding_complete():
 		return
 
-	# Decide up front whether the final macOS-setup step applies, so every render
-	# (from step 0 and on a resumed session) can show the EFFECTIVE step total and
-	# the resume clamp targets the effective last index.
-	_probe_macos_help_needed()
-
 	# Resume from saved progress (e.g. after restart during wizard).
 	_step = 0
 	if FileAccess.file_exists(_ONBOARDING_PROGRESS):
 		var f := FileAccess.open(_ONBOARDING_PROGRESS, FileAccess.READ)
 		if f != null:
-			_step = clampi(f.get_line().to_int(), 0, _effective_step_count() - 1)
+			_step = clampi(f.get_line().to_int(), 0, _STEP_COUNT - 1)
 			f.close()
 	_buttons.clear()
 	var dialog := AcceptDialog.new()
@@ -124,38 +114,8 @@ func _spec_for_step() -> Dictionary:
 				ProjectSettings.globalize_path("res://") + ".mcp.json")
 			return _spec_mcp_json(_mcp_exists)
 		2:
-			# The overview spec is unchanged; only its OK caption flips to "Next" when
-			# a further macOS page follows (_macos_help_needed is set at wizard start).
-			var overview_spec := _spec_dock_overview()
-			if _macos_help_needed:
-				overview_spec["ok_label"] = "Next"
-			return overview_spec
-		3:
-			return _spec_macos_setup()
+			return _spec_dock_overview()
 	return {}
-
-
-# Pure: the final macOS-setup step is relevant only when the host is macOS AND Node
-# couldn't be resolved from a login shell ([param resolved_node] empty) — i.e. a
-# GUI-launched client won't find Node (launchd's minimal PATH). Every other case
-# skips the step so the wizard finishes without an irrelevant page.
-static func _macos_setup_needs_help(os_name: String, resolved_node: String) -> bool:
-	return os_name == "macOS" and resolved_node.is_empty()
-
-
-# Resolve whether the final macOS-setup step applies for this host and cache it in
-# _macos_help_needed. Run once at wizard start (the login-shell probe is a subprocess
-# on macOS and a no-op elsewhere), so every render and the resume clamp can rely on it.
-func _probe_macos_help_needed() -> void:
-	var resolved := NodejsCheck.resolve_launch_paths()
-	_macos_help_needed = _macos_setup_needs_help(OS.get_name(), str(resolved.get("node", "")))
-
-
-# The number of steps the wizard will actually show: the full count only when the
-# macOS-setup step applies, else one fewer (that step is skipped). Drives both the
-# "Step X of N" title and the resume clamp so a good-setup host never sees "of 4".
-func _effective_step_count() -> int:
-	return _STEP_COUNT if _macos_help_needed else _STEP_COUNT - 1
 
 
 func _spec_welcome() -> Dictionary:
@@ -236,41 +196,13 @@ func _spec_dock_overview() -> Dictionary:
 	return spec
 
 
-# The opt-in macOS-setup page (final step) — shown only when _macos_setup_needs_help
-# holds. Calm and non-forcing: it names the launchd minimal-PATH cause and the fix
-# options, with an "Open setup guide" button; nothing is done automatically.
-func _spec_macos_setup() -> Dictionary:
-	return {
-		"text": (
-				"Almost done — one macOS setup note.\n\n"
-				+ "The toolkit couldn't resolve your Node.js from a login shell. On macOS, "
-				+ "an app launched from Finder, the Dock, or Spotlight runs with a minimal "
-				+ "PATH and doesn't source your shell startup files, so a version-manager "
-				+ "Node (nvm/fnm/volta) stays invisible — your MCP client won't be able to "
-				+ "start the server.\n\n"
-				+ "To fix it, pick whichever fits your setup:\n\n"
-				+ "  • Move your version-manager init into ~/.zprofile — a login shell "
-				+ "sources it, so the toolkit can resolve Node.\n"
-				+ "  • Or install Node from the official nodejs.org installer — it lands "
-				+ "on the default PATH, so no shell setup is needed.\n"
-				+ "  • Or launch the editor and client from a terminal, which inherits "
-				+ "your PATH.\n\n"
-				+ "Open the setup guide for step-by-step details."),
-		"ok_label": "Finish",
-		"buttons": [
-			{"label": "Back", "action": "back"},
-			{"label": "Open setup guide", "action": "open_macos_guide"},
-		],
-	}
-
-
 # Render the current step's spec onto the dialog. Owns the boilerplate every step
 # shares: title, previous-button cleanup, text + ok-label, and add+track of each
 # custom button (tracking happens here, so a button can never leak from the
 # per-step cleanup loop). on_enter, if present, fires before the caller pops up.
 func _show_step(dialog: AcceptDialog) -> void:
 	dialog.title = "MCP Toolkit — Setup Wizard (%d of %d)" % [
-		_step + 1, _effective_step_count()]
+		_step + 1, _STEP_COUNT]
 
 	# Free all tracked custom buttons from the previous step.
 	for btn in _buttons:
@@ -302,8 +234,7 @@ func _on_confirmed(dialog: AcceptDialog) -> void:
 		if _write_flow != null:
 			_write_flow.write()
 	if _is_last_relevant_step():
-		# Final relevant step — finish (the macOS-setup page is skipped when it
-		# doesn't apply, so the dock-overview step is the last one for most hosts).
+		# Final step — finish the wizard (write the completion flag) instead of advancing.
 		_write_flag()
 		free_if_open()
 		return
@@ -314,16 +245,10 @@ func _on_confirmed(dialog: AcceptDialog) -> void:
 	dialog.popup_centered()
 
 
-# True when the current step is the last one the wizard will show. The macOS-setup
-# page (the final _STEP_COUNT step) is conditional: on a host where it doesn't apply
-# (_macos_help_needed false — set when the dock-overview step's spec was built), the
-# dock-overview step before it is the effective last page, so confirming it finishes.
+# True when the current step is the last one the wizard will show — confirming it
+# finishes the wizard (writes the completion flag) instead of advancing.
 func _is_last_relevant_step() -> bool:
-	if _step >= _STEP_COUNT - 1:
-		return true
-	if _step == _STEP_COUNT - 2:
-		return not _macos_help_needed
-	return false
+	return _step >= _STEP_COUNT - 1
 
 
 func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
@@ -348,12 +273,6 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 			var doc_path := "res://addons/godot_mcp_toolkit/docs/security-recommendations.md"
 			var global_path := ProjectSettings.globalize_path(doc_path)
 			OS.shell_open(global_path)
-		# Opt-in: open the macOS setup guide (advanced_configuration.md carries the
-		# launchd/PATH section) and leave the wizard open so the user can still
-		# Finish. Mirrors "open_security" — nothing forced.
-		"open_macos_guide":
-			var guide_path := "res://addons/godot_mcp_toolkit/docs/advanced_configuration.md"
-			OS.shell_open(ProjectSettings.globalize_path(guide_path))
 
 
 # -- Persistence --------------------------------------------------------------

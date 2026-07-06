@@ -1,5 +1,9 @@
 # macOS GUI-launch Node/PATH — OS-aware `.mcp.json` emission
 
+> **Superseded by [ADR 0018](0018-macos-launch-minimize.md) — 2026-07-05.** The
+> mac-gate real-Mac validation refuted the launchd-PATH premise for current GUI
+> clients.
+
 On macOS, an app launched from Finder / Dock / Spotlight runs under `launchd`
 with a minimal `PATH` (`/usr/bin:/bin:/usr/sbin:/sbin`) and **never sources the
 user's shell rc files**. Node installed via nvm / fnm / volta / Apple-Silicon
