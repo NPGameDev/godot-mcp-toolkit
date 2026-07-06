@@ -64,129 +64,203 @@ fi
 WARMUP_LOG="$(mktemp)"
 CACHE_FILE=".godot/global_script_class_cache.cfg"
 
-echo "=== Warm-up: editor scan (poll for global_script_class_cache.cfg) ==="
-"$GODOT_BIN" --headless --editor --path . > "$WARMUP_LOG" 2>&1 &
-WARMUP_PID=$!
-
-# Windows (Git Bash/MSYS) only: record the warm-up's REAL Windows PID while it
-# is alive. $WARMUP_PID is an MSYS-space pid (and may even be a launcher shim),
-# so the POSIX kills below don't always reach the native process — the mapping
-# must be captured up front for the taskkill escalation in the teardown.
+# Bounded boot retry: an editor can die at boot (a one-off engine crash) or hang
+# without ever writing the class cache. Rather than burn the whole poll window on
+# a single doomed boot, try up to MAX_BOOT_ATTEMPTS fresh boots — each = launch →
+# poll for the cache ARTIFACT (never a frame-count/time quit, which races the
+# threaded scan) with a process-death short-circuit → on death or timeout, warn,
+# dump the log tail, kill the remnant, and retry with a fresh log.
+# INVARIANT: MAX_BOOT_ATTEMPTS x BOOT_POLL_SECS + teardown overhead must stay
+# under the CI caller's 300s warm-up-step fuse (3 x 80s = 240s today), so an
+# all-attempts-fail still exits cleanly with forensics rather than being
+# fuse-killed — retune both together, never one alone.
+MAX_BOOT_ATTEMPTS=3
+BOOT_POLL_SECS=80
+WARMUP_PID=""
 WARMUP_WINPID=""
-case "$(uname -s)" in
-  MINGW*|MSYS*|CYGWIN*)
-    WARMUP_WINPID="$(cat "/proc/$WARMUP_PID/winpid" 2>/dev/null || true)"
-    ;;
-esac
 
+# Kill the current warm-up editor as thoroughly as the platform allows: the POSIX
+# signal (escalating to -9), plus — on Windows — a taskkill of the recorded REAL
+# Windows PID tree, because $WARMUP_PID is an MSYS-space pid (possibly a launcher
+# shim) that the POSIX kill does not always reach. A no-op when nothing is running.
+kill_warmup_editor() {
+  [ -n "$WARMUP_PID" ] || return 0
+  kill "$WARMUP_PID" 2>/dev/null || true
+  for _ in 1 2 3 4 5; do
+    kill -0 "$WARMUP_PID" 2>/dev/null || break
+    sleep 1
+  done
+  kill -9 "$WARMUP_PID" 2>/dev/null || true
+  wait "$WARMUP_PID" 2>/dev/null || true
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      [ -n "$WARMUP_WINPID" ] && taskkill //F //T //PID "$WARMUP_WINPID" >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+
+echo "=== Warm-up: editor scan (poll for global_script_class_cache.cfg, up to ${MAX_BOOT_ATTEMPTS} boots) ==="
 WAITED=0
-while [ ! -f "$CACHE_FILE" ] && [ "$WAITED" -lt 120 ]; do
-  sleep 1
-  WAITED=$((WAITED + 1))
+for attempt in $(seq 1 "$MAX_BOOT_ATTEMPTS"); do
+  : > "$WARMUP_LOG"  # fresh log per attempt
+  "$GODOT_BIN" --headless --editor --path . > "$WARMUP_LOG" 2>&1 &
+  WARMUP_PID=$!
+  # Windows (Git Bash/MSYS) only: record the warm-up's REAL Windows PID while it
+  # is alive. $WARMUP_PID is an MSYS-space pid (and may even be a launcher shim),
+  # so the POSIX kills don't always reach the native process — the mapping must be
+  # captured up front for the taskkill escalation (kill_warmup_editor + teardown).
+  WARMUP_WINPID=""
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+      WARMUP_WINPID="$(cat "/proc/$WARMUP_PID/winpid" 2>/dev/null || true)"
+      ;;
+  esac
+
+  WAITED=0
+  BOOT_REASON=""
+  while [ ! -f "$CACHE_FILE" ] && [ "$WAITED" -lt "$BOOT_POLL_SECS" ]; do
+    if ! kill -0 "$WARMUP_PID" 2>/dev/null; then
+      BOOT_REASON="editor process died during scan"
+      break
+    fi
+    sleep 1
+    WAITED=$((WAITED + 1))
+  done
+
+  [ -f "$CACHE_FILE" ] && break  # cache written — success; the editor is killed once in the teardown below
+
+  [ -n "$BOOT_REASON" ] || BOOT_REASON="cache not written after ${BOOT_POLL_SECS}s"
+  echo "::warning::warm-up boot attempt ${attempt}/${MAX_BOOT_ATTEMPTS} failed (${BOOT_REASON})"
+  echo "warm-up boot attempt ${attempt}/${MAX_BOOT_ATTEMPTS} failed (${BOOT_REASON}); log tail:"
+  tail -40 "$WARMUP_LOG" 2>/dev/null || true
+  kill_warmup_editor  # never leave a failed attempt holding the project or the ports
+  WARMUP_PID=""
+  WARMUP_WINPID=""
 done
 
 if [ -f "$CACHE_FILE" ]; then
   # Settle: the file exists; give the writer a beat to finish before the kill.
   sleep 1
 fi
+kill_warmup_editor
 
-kill "$WARMUP_PID" 2>/dev/null || true
-for _ in 1 2 3 4 5; do
-  kill -0 "$WARMUP_PID" 2>/dev/null || break
-  sleep 1
-done
-kill -9 "$WARMUP_PID" 2>/dev/null || true
-wait "$WARMUP_PID" 2>/dev/null || true
-
-# Windows-proof teardown. The POSIX kills above target
-# the MSYS pid and do not always reach the native Windows process. A surviving
-# warm-up editor is a PORT THIEF for the real editor boot that follows: it
-# keeps the editor WS port (6550) and the LSP port (6005), the next editor
-# silently re-registers its WS on 6551+ while its LSP bind fails for the whole
-# session (Godot 4.2-4.4 never retries a failed LSP bind) — the confirmed
-# cause of the Win-4.2 CI LSP-initialize mute. Escalation, Windows-branch
-# only (the POSIX flow above is byte-identical on Linux/macOS):
-#   1. taskkill the recorded WinPID tree (harmless no-op if already dead);
-#   2. if 6550/6005 still LISTEN after a bounded settle — GitHub Actions only
-#      — taskkill the PID(s) that OWN those LISTENING sockets (parsed from
-#      netstat -ano), image-agnostic so it targets the orphaned holder the
-#      shim's own PID tree misses (validated locally; CI-pending vs the live
-#      zombie), loudly;
-#   3. GitHub Actions only: assert the ports are free; a zombie that survived force-kill
-#      fails HERE, fast, with tasklist/netstat evidence (exit 2, the script's
-#      setup-error class) — the subsequent editor boot is already doomed, and
-#      failing here names the cause instead of a downstream LSP mute.
-# The destructive image-kill and the hard-fail are gated on
-# GITHUB_ACTIONS=true (set only by GitHub runners — deliberately NOT the
-# ambient CI=true, which other CI systems set and developers export to repro
-# CI behavior): on a developer machine another editor legitimately holding
-# 6550 for a different project must be neither killed nor treated as a
-# failure — locally this only warns.
+# Windows-proof teardown. The POSIX kills above target the MSYS pid and do not
+# always reach the native Windows process. A surviving warm-up editor is a PORT
+# THIEF for the real editor boot that follows: it keeps the editor WS port (6550)
+# and the LSP port (6005); the next editor silently re-registers its WS on 6551+
+# while its LSP bind fails for the whole session (Godot 4.2-4.4 never retries a
+# failed LSP bind) — the confirmed cause of the Win-4.2 CI LSP-initialize mute.
+# Escalation, Windows-branch only (the POSIX flow above is byte-identical on
+# Linux/macOS), destructive steps GitHub Actions only:
+#   1. Kill-verify loop: re-sample netstat in a BOUNDED loop (every 2s, up to
+#      ~10s), re-resolving the port OWNER each pass and re-killing it. This
+#      replaces a single post-taskkill sample, which raced the OS socket teardown
+#      and could FALSE-POSITIVE "survived" on an already-exiting process. Survival
+#      is declared only if a port is still held after the whole window; a NEW
+#      owner PID is not the old zombie, which is why the owner is re-resolved (not
+#      cached). Killing the port-OWNER PID is image-agnostic and reaches the
+#      shim-orphaned editor the WinPID tree misses (observed: a PID held 6005
+#      while `tasklist | grep -i godot` was empty).
+#   2. WS port (6550) still held → PORT-AGILITY, not failure: 6550 is fully
+#      env-configurable (GODOT_MCP_EDITOR_PORT pins the toolkit's exact bind and
+#      the server smoke/flows read the same var), so pin the next editor boot to
+#      the first free port in 6551-6560 and export it (GITHUB_ENV) for the
+#      downstream steps. Loud, but the run continues.
+#   3. LSP port (6005) still held → retry-then-FAIL, but only with a downstream
+#      consumer: 6005 is Godot's network/language_server/remote_port editor
+#      setting, bound by the editor and NOT relocatable from this wrapper. The
+#      behavioral smoke §41 (LSP tools) CONSUMES it and can fail on an
+#      accepted-but-mute socket, so a zombie still holding 6005 ahead of a
+#      behavioral suite (GODOT_WARM_ONLY set) is a hard stop (exit 2, the
+#      setup-error class) with full forensics — the kill-verify loop above WAS
+#      the retry. Without a downstream suite (the unit-runner path binds no
+#      ports), nothing consumes 6005, so warn only.
+# The destructive kills and the hard-fail are gated on GITHUB_ACTIONS=true (set
+# only by GitHub runners — deliberately NOT the ambient CI=true, which other CI
+# systems set and developers export to repro CI behavior): on a developer machine
+# another editor legitimately holding 6550 for a different project must be neither
+# killed nor treated as a failure — locally this only warns.
 #
-# Taxonomy (H1/H2): this teardown exists to kill H1 — the
-# zombie warm-up editor holding 6550/6005 (only the 4.2 legs boot a warm-up
-# editor, hence the 4.2-only CI exposure). A ports-free failure HERE is H1
-# caught red-handed. The H2 signature (exactly one godot PID, 6005 owned by
-# the main editor, initialize still mute) never reaches this script — see the
-# behavioral composite's "forensics key" in the server repo for the decoder.
+# Taxonomy (H1/H2): this teardown exists to kill H1 — the zombie warm-up editor
+# holding 6550/6005 (only the 4.2 legs boot a warm-up editor, hence the 4.2-only
+# CI exposure). A ports-free failure HERE is H1 caught red-handed. The H2
+# signature (exactly one godot PID, 6005 owned by the main editor, initialize
+# still mute) never reaches this script — see the behavioral composite's
+# "forensics key" in the server repo for the decoder.
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*)
-    ports_listening() {
-      netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" 2>/dev/null | grep -c "LISTENING" 2>/dev/null || true
+    # LISTENING socket count on a single port (arg 1). "0" == free.
+    port_listening() {
+      netstat -ano 2>/dev/null | grep -E ":$1[^0-9]" 2>/dev/null | grep -c "LISTENING" 2>/dev/null || true
     }
     # The owning PID(s) of the LISTENING sockets on 6550/6005 — the last
-    # whitespace field of each LISTENING netstat -ano row. This is what roots
-    # the reliable kill: setup-godot puts a SHIM on PATH (GODOT_BIN =
-    # .../bin/godot, extensionless), so $! and the WinPID tree can be the
-    # shim's, and the orphaned real editor holds the port under a different PID
-    # whose image name is not "godot" (observed: PID 7880 held 6005, tasklist
-    # grep -i godot empty). Killing the port-OWNER PID is image-agnostic and
-    # reaches it regardless of the shim-orphan.
+    # whitespace field of each LISTENING netstat -ano row. Re-resolved on every
+    # sample because a socket's owner can change between passes.
     port_owner_pids() {
       netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" 2>/dev/null | grep "LISTENING" 2>/dev/null | awk '{print $NF}' | sort -u || true
     }
-    if [ -n "$WARMUP_WINPID" ]; then
-      taskkill //F //T //PID "$WARMUP_WINPID" >/dev/null 2>&1 || true
-    fi
-    HELD="$(ports_listening)"
-    if [ "$HELD" != "0" ]; then
+    if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+      # Kill-verify: check-then-kill, bounded. The healthy path (the WinPID
+      # taskkill in kill_warmup_editor already freed the ports) breaks on the
+      # first check WITHOUT printing — silent when nothing lingers.
       for _ in 1 2 3 4 5; do
-        sleep 1
-        HELD="$(ports_listening)"
-        [ "$HELD" = "0" ] && break
-      done
-    fi
-    # Reliable fallback (GitHub Actions only): kill whatever process OWNS the
-    # ports. REPLACES the former //IM image-name kill, which was proven
-    # ineffective in CI — the shim basename 'godot' matched no running image
-    # while the orphaned editor (PID 7880) kept 6005. On the runner nothing but
-    # a warm-up zombie can hold these ports at this point, so killing the owner
-    # (and its tree) is safe; the GITHUB_ACTIONS gate keeps it off dev machines.
-    if [ "$HELD" != "0" ] && [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-      for pid in $(port_owner_pids); do
-        { [ -n "$pid" ] && [ "$pid" != "0" ]; } || continue
-        echo "warm-up teardown: ports 6550/6005 still held — force-killing port-owner PID $pid"
-        taskkill //F //T //PID "$pid" >/dev/null 2>&1 || true
-      done
-      sleep 2
-      HELD="$(ports_listening)"
-    fi
-    if [ "$HELD" != "0" ]; then
-      if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
-        echo "ERROR: warm-up editor ZOMBIE survived force-kill — 6550/6005 still LISTENING; the next editor boot is doomed (LSP bind loss is permanent on 4.2-4.4)." >&2
-        echo "--- port-owner processes (by PID) ---"
+        [ "$(port_listening 6550)" = "0" ] && [ "$(port_listening 6005)" = "0" ] && break
         for pid in $(port_owner_pids); do
           { [ -n "$pid" ] && [ "$pid" != "0" ]; } || continue
-          tasklist //FI "PID eq $pid" 2>/dev/null | grep -viE "No tasks|^$|Image Name|^=" || true
+          echo "warm-up teardown: ports 6550/6005 still held — force-killing port-owner PID $pid"
+          taskkill //F //T //PID "$pid" >/dev/null 2>&1 || true
         done
-        echo "--- netstat (6550/6005) ---"
-        netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" || true
-        echo "--- warm-up log tail (may explain the zombie) ---"
-        tail -40 "$WARMUP_LOG" 2>/dev/null || true
-        rm -f "$WARMUP_LOG"
-        exit 2
+        sleep 2
+      done
+    else
+      # Non-CI: bounded settle only, no destructive image-agnostic kill (another
+      # editor may legitimately hold 6550 for a different project on a dev box).
+      for _ in 1 2 3 4 5; do
+        [ "$(port_listening 6550)" = "0" ] && [ "$(port_listening 6005)" = "0" ] && break
+        sleep 1
+      done
+    fi
+
+    HELD_6550="$(port_listening 6550)"
+    HELD_6005="$(port_listening 6005)"
+    if [ "$HELD_6550" != "0" ] || [ "$HELD_6005" != "0" ]; then
+      if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+        # WS port agility — relocate, do not fail.
+        if [ "$HELD_6550" != "0" ]; then
+          SPARE=""
+          for p in 6551 6552 6553 6554 6555 6556 6557 6558 6559 6560; do
+            if [ "$(port_listening "$p")" = "0" ]; then SPARE="$p"; break; fi
+          done
+          if [ -n "$SPARE" ] && [ -n "${GITHUB_ENV:-}" ]; then
+            echo "GODOT_MCP_EDITOR_PORT=$SPARE" >> "$GITHUB_ENV"
+            echo "::warning::warm-up teardown: WS port 6550 still held after force-kill — pinning the next editor boot to spare port $SPARE (exported as GODOT_MCP_EDITOR_PORT for smoke/flows)."
+            echo "warm-up teardown: WS port 6550 relocated to $SPARE"
+          else
+            echo "::warning::warm-up teardown: WS port 6550 still held and no free spare in 6551-6560 (or GITHUB_ENV unset) — the next editor boot may collide."
+          fi
+        fi
+        # LSP port (6005) — hard stop only when a downstream behavioral suite
+        # will consume it (GODOT_WARM_ONLY); the LSP bind is not relocatable.
+        if [ "$HELD_6005" != "0" ] && [ "${GODOT_WARM_ONLY:-0}" = "1" ]; then
+          echo "ERROR: warm-up editor ZOMBIE survived force-kill — 6005 (GDScript LSP) still LISTENING; the behavioral leg's LSP checks are doomed (LSP bind loss is permanent on 4.2-4.4, and the LSP port is not relocatable from this wrapper)." >&2
+          echo "--- port-owner processes (by PID) ---"
+          for pid in $(port_owner_pids); do
+            { [ -n "$pid" ] && [ "$pid" != "0" ]; } || continue
+            tasklist //FI "PID eq $pid" 2>/dev/null | grep -viE "No tasks|^$|Image Name|^=" || true
+          done
+          echo "--- netstat (6550/6005) ---"
+          netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" || true
+          echo "--- warm-up log tail (may explain the zombie) ---"
+          tail -40 "$WARMUP_LOG" 2>/dev/null || true
+          rm -f "$WARMUP_LOG"
+          exit 2
+        fi
+        if [ "$HELD_6005" != "0" ]; then
+          echo "::warning::warm-up teardown: LSP port 6005 still held after force-kill, but no downstream LSP consumer (unit-runner path) — continuing."
+        fi
+      else
+        echo "WARNING: ports 6550/6005 still LISTENING after the warm-up teardown (another editor running locally?) — continuing (non-CI)."
       fi
-      echo "WARNING: ports 6550/6005 still LISTENING after the warm-up teardown (another editor running locally?) — continuing (non-CI)."
     fi
     ;;
 esac
