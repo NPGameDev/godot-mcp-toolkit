@@ -231,40 +231,26 @@ processes inherit the **same** value:
 
 ## macOS: launching your MCP client (Node / PATH)
 
-On macOS, an app started from **Finder, the Dock, or Spotlight** runs under
-`launchd` with a **minimal `PATH`** (`/usr/bin:/bin:/usr/sbin:/sbin`) and does
-**not** source your shell startup files (`~/.zshrc`, `~/.zprofile`, …). So if you
-installed Node with a version manager (**nvm, fnm, volta**) or **Apple-Silicon
-Homebrew** (`/opt/homebrew/bin`), a **GUI-launched MCP client** (Claude Desktop,
-Cursor.app, VS Code.app) can't find `node`/`npx` and fails to start the server
-(`spawn npx ENOENT`) — it silently never connects. A client launched from a
-**terminal** inherits your shell `PATH` and is unaffected.
+Modern GUI-launched MCP clients — Claude Desktop, VS Code, and Cursor — capture
+your login shell's environment and resolve a bare `npx` to a version-manager Node
+on their own, so the standard `npx -y @npgamedev/godot-mcp-server` config connects
+whether you launch the client from Finder/Dock or a terminal. The toolkit writes
+that standard command; there is nothing macOS-specific to configure.
 
-**The fix (default): click "Write .mcp.json" in the MCP Toolkit dock.** On macOS
-the toolkit resolves your **real absolute `node`/`npx` path** (via a login shell,
-where your version manager is visible) and writes it straight into `.mcp.json` as
-the `command`, plus a resolved `PATH` in the `env` block. Your GUI client then
-spawns Node by absolute path and never has to search `launchd`'s `PATH`. The dock
-**re-writes on editor start**, so the path stays current; if it can't resolve Node
-(e.g. Node is only exported from an interactive `~/.zshrc`), it writes a plain
-`npx` command and the dock shows a one-time hint.
+**If a client won't connect on macOS**, work through these:
 
-**If a client still doesn't connect on macOS:**
-
-- **Re-write after changing your Node version.** nvm/fnm/volta embed the version
-  in the path (`~/.nvm/versions/node/v22.11.0/bin/node`), so switching or upgrading
-  Node invalidates the old absolute path — click **Write .mcp.json** again to
-  re-resolve it.
-- **Launch the client from a terminal** (`open` won't help — start the app's binary
-  from a shell) to confirm it's a PATH issue: from a terminal it inherits your
-  `PATH` and should connect.
-- **Move your version-manager init into `~/.zprofile`.** A login shell (what the
-  toolkit uses to resolve Node) sources `~/.zprofile`, not `~/.zshrc`. If your nvm
-  block lives only in `~/.zshrc`, the resolver can't see it — add it to
-  `~/.zprofile` too, then Write again.
+- **Launch the client from a terminal to see its error.** `open` won't help — start
+  the app's binary from a shell. A terminal launch inherits your `PATH` and prints
+  the client's real startup error, which tells you what to fix.
+- **Confirm `.mcp.json` is present at your project root** and Node 20+ is installed
+  (`node --version`). If `.mcp.json` is missing, click **Write .mcp.json** in the
+  MCP Toolkit dock.
+- **Move your version-manager init into `~/.zprofile`.** If your Node lives behind a
+  version manager (nvm/fnm/volta) whose init is only in `~/.zshrc`, a login-shell
+  launch won't see it — add it to `~/.zprofile` too so Finder/Dock launches resolve
+  Node as well.
 - **Zero-config alternative:** install Node from the **official nodejs.org
-  installer**. It lands in `/usr/local/bin`, which is on the default `PATH`, so no
-  resolution is needed.
+  installer**. It lands on the default `PATH`, so no shell setup is needed.
 
 **Point a Mac at a local server build** (development) by setting
 `GODOT_MCP_DEV_SERVER_PATH` in the environment to your built `dist/index.js` — the

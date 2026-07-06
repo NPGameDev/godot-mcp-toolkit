@@ -6,19 +6,22 @@ nav_order: 2
 
 # Godot MCP Toolkit — Architecture
 
-> **Architecture as of `eb4c9fa`** — 41n-series finalization: the runtime-autoload
+> **Architecture as of `8a1496e`** — 41n-series finalization: the runtime-autoload
 > identity/registration was split out of the plugin orchestrator into a pure-const leaf
 > (`core/autoload_identity.gd`) plus a behaviour module (`core/autoload_registration.gd`),
 > shared with the export-strip domain ([ADR 0013](#14-key-decisions-adrs)); listen ports gained
 > deterministic env-driven pin/band config (`transport/port_config.gd`, bind-exact-or-fail;
-> [ADR 0015](#14-key-decisions-adrs)); `.mcp.json` emission became OS-aware with a macOS
-> GUI-launch node path ([ADR 0016](#14-key-decisions-adrs) / [0017](#14-key-decisions-adrs));
+> [ADR 0015](#14-key-decisions-adrs)); `.mcp.json` emission became OS-aware
+> ([ADR 0016](#14-key-decisions-adrs)), and its macOS absolute-node auto-emit
+> ([ADR 0017](#14-key-decisions-adrs)) was reverted to a plain per-OS `npx` command by
+> [ADR 0018](#14-key-decisions-adrs) after a real-Mac finding;
 > the Mode-A handshake added a `headless` field ([ADR 0014](#14-key-decisions-adrs)); dispatch
 > cancellation keys were peer-scoped; and the support ceiling reached Godot 4.7. Structural
 > baseline unchanged from the 41n cohesion refactor (thin orchestrators over
 > single-responsibility children; DDD domain folders such as `commands/`, `contract/`,
 > `transport/`, `registry/`, `extensions/`; the `Modules` preload registry + the `EditorAccess`
-> facade).
+> facade). Latest change — macOS `.mcp.json` emission reverted to bare npx (ADR 0018
+> supersedes 0017).
 
 This document explains how the toolkit is built, for users and contributors who want to
 understand it without reading all 113 GDScript files. It covers the major subsystems and
@@ -469,7 +472,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="8a1496e" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -487,7 +490,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order (I12)"| composer
 ```
-*Figure 10 — plugin composition root (concern 001) · verified eb4c9fa*
+*Figure 10 — plugin composition root (concern 001) · verified 8a1496e*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
@@ -730,7 +733,8 @@ ones most relevant to this document:
 | [0014](../adr/0014-headless-dx-response-shape.md) | Headless-DX response shape (`headless` handshake field + degraded-tool guidance) | [§3](#3-transport--connection) |
 | [0015](../adr/0015-deterministic-port-config.md) | Deterministic env-driven listen-port config (pin/band, bind-exact-or-fail) | [§3](#3-transport--connection) |
 | [0016](../adr/0016-dock-not-a-service-locator.md) | The dock is a UI surface, not a service locator (shared write-flow + dialog presenter injected) | [§7](#7-plugin-lifecycle) |
-| [0017](../adr/0017-macos-gui-launch-path.md) | OS-aware `.mcp.json` emission — resolve a macOS GUI-launch absolute node path | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
+| [0017](../adr/0017-macos-gui-launch-path.md) | OS-aware `.mcp.json` emission — resolve a macOS GUI-launch absolute node path (superseded by 0018) | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
+| [0018](../adr/0018-macos-launch-minimize.md) | Minimize the macOS `.mcp.json` emission — revert to bare npx (supersedes 0017) | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
 
 ---
 

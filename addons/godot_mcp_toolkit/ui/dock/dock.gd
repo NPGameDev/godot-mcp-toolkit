@@ -41,7 +41,7 @@ var _unfocused_control: DockUnfocusedControl = null
 # Audit Log section — settings + view/clear + the lazy log viewer (own sub-panel).
 var _audit_section: DockAuditSection = null
 
-# macOS launchd minimal-PATH guidance — persistent, all-version warning panel,
+# macOS "listening, no client connected" guidance — persistent, all-version panel,
 # driven by the connection-state gate below (replaces the 4.4+-only toast).
 var _macos_launch_panel: DockMacosLaunchPanel = null
 
@@ -133,9 +133,9 @@ func _build_ui() -> void:
 	_mcp_json_panel = DockMcpJsonPanel.new(mcp_json_btn, Callable(self, "_toast"), _write_flow)
 	_status_panel.insert_warning_panel(_mcp_json_panel)
 
-	# macOS launchd minimal-PATH guidance — a persistent, all-version warning panel
-	# (a toast is 4.4+ only and transient). The dock drives its visibility from the
-	# connection-state gate in _refresh_macos_launch_hint; the panel renders the
+	# macOS "listening, no client connected" guidance — a persistent, all-version
+	# panel (a toast is 4.4+ only and transient). The dock drives its visibility from
+	# the connection-state gate in _refresh_macos_launch_hint; the panel renders the
 	# message + a session dismiss control.
 	_macos_launch_panel = DockMacosLaunchPanel.new(MacosLaunchHint.message())
 	_macos_launch_panel.dismissed.connect(_on_macos_hint_dismissed)
@@ -149,12 +149,12 @@ func _build_ui() -> void:
 		if OS.get_name() == "Windows":
 			_path_hint = "\nIf Node.js is installed, ensure it is on your system PATH."
 		elif OS.get_name() == "macOS":
-			# Apps launched from Finder/Dock run under launchd with a minimal PATH and
-			# never source shell rc files, so a version-manager Node is invisible here.
-			_path_hint = ("\nOn macOS, apps launched from Finder/Dock run with a minimal "
-				+ "PATH and may not find a version-manager Node (nvm/fnm/Homebrew). Click "
-				+ "\"Write .mcp.json\" — the toolkit embeds your resolved absolute Node path "
-				+ "— or launch the editor/client from a terminal.")
+			# A version-manager Node may not be on PATH for an app launched from
+			# Finder/Dock; launching from a terminal inherits your shell PATH.
+			_path_hint = ("\nIf Node.js is installed, ensure it is on your PATH. A "
+				+ "version-manager Node (nvm/fnm/Homebrew) may need you to launch the "
+				+ "editor and MCP client from a terminal, or install Node from "
+				+ "https://nodejs.org so it lands on the default PATH.")
 		nodejs_msg = ("Node.js not found — the MCP server bridge requires "
 			+ "Node.js 20+. Download it from https://nodejs.org" + _path_hint)
 	elif not node_check["meets_minimum"]:
@@ -307,11 +307,11 @@ func _on_runtime_timer_timeout() -> void:
 
 # macOS GUI-launch guidance: when the toolkit is listening but no client has
 # connected after a grace period AND a valid .mcp.json exists (a client IS
-# configured), a GUI-launched client likely can't find Node (launchd minimal PATH).
-# Drive the persistent panel from that state every tick, so it appears after the
-# grace, self-clears the moment a client connects or the config is fixed, and stays
-# hidden once the user dismisses it. The pure MacosLaunchHint predicate owns the
-# decision; the dock owns the session state + timing here.
+# configured), surface a calm nudge with what to check. Drive the persistent panel
+# from that state every tick, so it appears after the grace, self-clears the moment
+# a client connects or the config is fixed, and stays hidden once the user dismisses
+# it. The pure MacosLaunchHint predicate owns the decision; the dock owns the session
+# state + timing here.
 func _refresh_macos_launch_hint() -> void:
 	if _macos_launch_panel == null or _server == null:
 		return

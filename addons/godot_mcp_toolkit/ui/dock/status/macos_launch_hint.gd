@@ -2,15 +2,13 @@
 extends RefCounted
 ## Pure guidance for the dock's macOS "listening, but no client connected" surface.
 ##
-## macOS apps launched from Finder/Dock/Spotlight run under launchd with a minimal
-## PATH and never source the user's shell rc files, so a version-manager Node
-## (nvm/fnm/volta/Homebrew) is invisible to a GUI-launched MCP client — it can't
-## spawn the server and silently fails to connect. This module owns WHEN the dock
-## surfaces the guidance and its message text; the dock owns the session state
-## (ever-connected, dismissed) and the persistent warning panel. Deliberately NOT
-## coupled to NodejsCheck: that check reads green via its own login-shell fallback
-## while a GUI client still can't find Node, so the trigger is no-peer-after-grace,
-## never node-not-found.
+## When the toolkit is listening and a valid .mcp.json is present but no MCP client
+## has connected after a grace period, the dock surfaces a calm macOS nudge naming
+## the things to check — a diagnosis prompt, not a diagnosis. This module owns WHEN
+## the dock surfaces the guidance and its message text; the dock owns the session
+## state (ever-connected, dismissed) and the persistent warning panel. Deliberately
+## NOT coupled to NodejsCheck: the trigger is a connection fact (no peer after the
+## grace), never a node-not-found result.
 
 # Grace a client is given to connect before the no-peer guidance shows (~20s) —
 # covers a normal client launch + WebSocket handshake. Distinct from the status
@@ -45,13 +43,12 @@ static func should_show(
 	)
 
 
-## The guidance text: the launchd minimal-PATH cause plus the three recovery
-## actions (write the config, re-write after a Node-version change, launch the
-## client from a terminal to diagnose).
+## The guidance text: a calm "no client connected" nudge naming the three things to
+## check — the client is running, .mcp.json is present at the project root, and a
+## terminal launch surfaces the client's real startup error. No cause is asserted.
 static func message() -> String:
 	return (
-		"MCP client hasn't connected. On macOS, apps launched from Finder/Dock run "
-		+ "with a minimal PATH and may not find Node — click \"Write .mcp.json\" to "
-		+ "embed your resolved Node path, re-write it after changing your Node "
-		+ "version, or launch the client from a terminal to diagnose."
+		"MCP client hasn't connected. Check that your MCP client is running, that "
+		+ ".mcp.json is present at your project root, then launch the client from a "
+		+ "terminal to see its startup error."
 	)

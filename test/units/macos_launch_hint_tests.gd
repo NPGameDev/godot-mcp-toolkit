@@ -4,7 +4,7 @@ extends RefCounted
 ## (MacosLaunchHint.should_show): the all-AND gate — macOS ∧ listening ∧ a valid
 ## .mcp.json exists ∧ no peer ever connected this session ∧ grace elapsed ∧ not
 ## dismissed — so any single false keeps the dock panel hidden (the anti-nag
-## property), plus that the message carries the launchd cause + recovery actions.
+## property), plus that the message is a cause-free nudge naming the recovery actions.
 
 const MacosLaunchHint := preload("res://addons/godot_mcp_toolkit/ui/dock/status/macos_launch_hint.gd")
 
@@ -12,7 +12,7 @@ const MacosLaunchHint := preload("res://addons/godot_mcp_toolkit/ui/dock/status/
 static func run(testing) -> void:
 	_test_all_conditions_show(testing)
 	_test_each_missing_condition_silent(testing)
-	_test_message_carries_cause_and_actions(testing)
+	_test_message_carries_actions(testing)
 
 
 # All six conditions met → show the hint.
@@ -51,11 +51,13 @@ static func _test_each_missing_condition_silent(testing) -> void:
 	print("")
 
 
-# The hint text names the PATH cause and the recovery actions (write + terminal).
-static func _test_message_carries_cause_and_actions(testing) -> void:
-	testing.begin("MacosLaunchHint — message carries cause + actions")
+# The hint text is a cause-free nudge naming the recovery actions (client running,
+# .mcp.json present, terminal launch) — and makes NO PATH-cause claim.
+static func _test_message_carries_actions(testing) -> void:
+	testing.begin("MacosLaunchHint — message names actions, asserts no false cause")
 	var msg := MacosLaunchHint.message()
-	testing.ok(msg.contains("PATH"), "names the PATH cause")
-	testing.ok(msg.to_lower().contains("write"), "action: write .mcp.json")
+	testing.ok(msg.to_lower().contains("running"), "action: check the client is running")
+	testing.ok(msg.contains(".mcp.json"), "action: confirm .mcp.json is present")
 	testing.ok(msg.to_lower().contains("terminal"), "action: launch from a terminal")
+	testing.ok(not msg.to_lower().contains("path"), "makes no false PATH-cause claim")
 	print("")

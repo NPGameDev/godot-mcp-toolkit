@@ -2,12 +2,13 @@
 extends PanelContainer
 ## Dock macOS "listening, but no client connected" guidance panel.
 ##
-## A persistent, all-version (4.2-4.7) warning surface for the macOS launchd
-## minimal-PATH problem: a GUI-launched MCP client can't find a version-manager
-## Node, so it never connects. Unlike a toast (4.4+ only, transient), this is a
-## pure PanelContainer/Label that renders on every supported editor. The dock owns
-## the connection-state gate (MacosLaunchHint.should_show) and drives visibility via
-## set_shown(); this panel only renders the message and a session dismiss control.
+## A persistent, all-version (4.2-4.7) warning surface shown when the toolkit is
+## listening and a valid .mcp.json is present but no MCP client has connected after
+## a grace period — a calm nudge naming what to check. Unlike a toast (4.4+ only,
+## transient), this is a pure PanelContainer/Label that renders on every supported
+## editor. The dock owns the connection-state gate (MacosLaunchHint.should_show) and
+## drives visibility via set_shown(); this panel only renders the message and a
+## session dismiss control.
 ##
 ## State-driven: the dock re-evaluates the gate on its 1s timer and on client
 ## connect, so the panel reflects the current state no matter what changed it (a

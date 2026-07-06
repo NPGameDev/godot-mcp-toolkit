@@ -467,23 +467,20 @@ tool chain functions from there.
 
 ## macOS GUI-launch (Node / PATH)
 
-macOS apps launched from **Finder / Dock / Spotlight** run under `launchd` with a
-minimal `PATH` and do not source shell startup files, so a **GUI-launched MCP
-client** (Claude Desktop, Cursor.app, VS Code.app) can't find a version-manager or
-Homebrew Node (`spawn npx ENOENT`) and silently fails to connect. A client launched
-from a terminal inherits the shell `PATH` and is unaffected.
+Modern GUI-launched MCP clients (Claude Desktop, Cursor.app, VS Code.app) capture
+your login shell's environment and resolve a bare `npx` to a version-manager Node
+themselves, so the standard config connects whether you launch the client from
+Finder/Dock or a terminal. The toolkit emits the **standard `npx`** command on macOS
+— the same shape as Linux (Windows uses `cmd /c npx`); there is no macOS-specific
+resolution.
 
-The toolkit handles this on the **write** side: on macOS the dock's *Write
-.mcp.json* resolves the user's real absolute `node`/`npx` path (via a login shell)
-and emits it as the `command`, plus a resolved `PATH` in `env`, so the client
-spawns Node by absolute path — no `launchd`-`PATH` lookup. It re-writes on editor
-start to keep the path current, and when the toolkit is listening but no client has
-connected after a grace period (with a valid `.mcp.json` present), the dock shows a
-one-time macOS nudge steering to the fix. Full setup + fallbacks (nvm in
-`~/.zprofile`, the nodejs.org installer, `GODOT_MCP_DEV_SERVER_PATH`) are in the
-shipped `addons/godot_mcp_toolkit/docs/advanced_configuration.md` (*macOS* section).
-Windows and Linux emit the standard `cmd /c npx` / `npx` commands (no `launchd`
-issue).
+If a macOS client won't connect, launch it from a terminal to see its startup error,
+confirm `.mcp.json` is present at the project root, and confirm Node 20+ is
+installed. When the toolkit is listening but no client has connected after a grace
+period (with a valid `.mcp.json` present), the dock shows a calm macOS nudge naming
+what to check. Full diagnosis + fallbacks (nvm in `~/.zprofile`, the nodejs.org
+installer, `GODOT_MCP_DEV_SERVER_PATH`) are in the shipped
+`addons/godot_mcp_toolkit/docs/advanced_configuration.md` (*macOS* section).
 
 ## Forward compatibility
 
