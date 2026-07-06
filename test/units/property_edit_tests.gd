@@ -96,7 +96,7 @@ static func _test_set_property_compound(testing) -> void:
 	print("")
 
 
-# --- Wrong-type set rejection (41o C1 silent-drop guard) ------------------
+# --- Wrong-type set rejection (silent-drop guard) ------------------------
 # Godot's Object.set() silently discards a wrong-type Variant, which used to be
 # reported as a false success against the unchanged property. These pin, end to
 # end through set_property_compound's scalar (no-colon) path: a wrong-type write
@@ -178,7 +178,7 @@ static func _test_wrong_type_set_rejection(testing) -> void:
 # Pins the detector's decision table directly with hand-built before/after/coerced
 # triples — no engine set() involved. Locks the tri-state: clean OK, accepted-but-
 # ADJUSTED (engine reshaped the value → success + warning), and silent DROPPED
-# (cross-family wrong type → SET_FAILED), incl. the D1 truncate/sanitize FPs and the
+# (cross-family wrong type → SET_FAILED), incl. the truncate/sanitize FPs and the
 # restored wrong-subtype-Resource drop.
 static func _test_set_drop_logic(testing) -> void:
 	testing.begin("describe_set_drop tri-state")
@@ -198,7 +198,7 @@ static func _test_set_drop_logic(testing) -> void:
 		"stringy cross-type stored request → ok")
 
 	# --- ADJUSTED: accepted but engine reshaped the value (success + warning) ---
-	# D1 repro: fractional float truncates onto the CURRENT int value (7 + 7.9 → 7).
+	# Fractional float truncates onto the CURRENT int value (7 + 7.9 → 7).
 	var trunc_same: Dictionary = Helpers.describe_set_drop(7, 7, 7.9, "hframes")
 	testing.eq(_status(trunc_same), "adjusted", "float 7.9 → int 7 (onto current) → adjusted")
 	testing.ok(str(trunc_same.get("warning", "")).find("hframes") >= 0,
@@ -247,7 +247,7 @@ static func _status(outcome: Dictionary) -> String:
 	return str(outcome.get("status", ""))
 
 
-# --- runtime.set_property wrong-type pipeline (41o C1, runtime autoload) ----
+# --- runtime.set_property wrong-type pipeline (runtime autoload) ----
 # The runtime autoload's _cmd_runtime_set_property applies the SAME shared leaf
 # detector as the editor path: coerce → get(before) → set → get(after) →
 # PropertySetCheck.describe_set_drop. Exercise that exact pure pipeline headlessly

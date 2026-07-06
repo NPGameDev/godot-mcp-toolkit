@@ -4,7 +4,7 @@ extends RefCounted
 ## (runtime/text_input_synth.gd) — per-codepoint InputEventKey synthesis (incl.
 ## non-ASCII via String.unicode_at), the submit-Enter keycode pair, text_after
 ## truncate/redact (secret precedence), the actionable focus/diagnostic hint — plus
-## the InputMap.has_action predicate the action-event guard depends on (41o C6).
+## the InputMap.has_action predicate the action-event guard depends on.
 ## Pure logic — no editor, no viewport.
 
 const TextInputSynth := preload("res://addons/godot_mcp_toolkit/runtime/text_input_synth.gd")
@@ -18,7 +18,7 @@ static func run(testing) -> void:
 	_test_action_guard_predicate(testing)
 
 
-# --- input_simulate action guard: InputMap.has_action predicate (41o C6) ----
+# --- input_simulate action guard: InputMap.has_action predicate ----
 # The runtime input_simulate "action" branch rejects an action not registered in
 # the InputMap (else it dispatches a silent no-op). The guard is InputMap.has_action;
 # pin that predicate — registered → true (guard passes), unknown → false (guard

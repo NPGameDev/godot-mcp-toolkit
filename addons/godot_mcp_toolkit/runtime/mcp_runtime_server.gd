@@ -860,7 +860,7 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			# transition tracking that is_action_just_pressed() needs (jump).
 			var action_name := StringName(str(ed.get("action", "")))
 			# Reject an action not registered in the InputMap: dispatching it matches
-			# nothing (a silent no-op that used to report success:true, dispatched:true).
+			# nothing (a silent no-op that would otherwise report success:true, dispatched:true).
 			# Aborts the batch like a malformed event, naming the unknown action. Only
 			# the action path uses the InputMap — key/text/send_text modes don't.
 			if not InputMap.has_action(action_name):
