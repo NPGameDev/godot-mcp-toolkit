@@ -40,6 +40,18 @@
 > **REGRESSION WATCH (a28d17b):** If wait_for_runtime=false produces no hint text,
 > the gated hint has regressed. Flag as **Minor**.
 
+> **REGRESSION WATCH (41o `target:"main"` no-main-scene pre-guard — INTERACTIVE-ONLY).**
+> `game_start` with `target:"main"` (a.k.a. `scene_path:"main"`) when
+> `application/run/main_scene` is UNSET must return **`NO_SCENE`** with an actionable
+> message — NOT a false `success:true` (the engine otherwise pops an undismissable
+> "No main scene has ever been defined" modal and returns silently, which a later
+> `runtime_poll` misreads as `COMPILATION_FAILED`). The dogfood always has a main
+> scene, so this can't be exercised in the routine sweep; to check manually,
+> temporarily clear the setting (`project_set_setting application/run/main_scene=""`),
+> call `game_start target:"main"`, assert `NO_SCENE`, then restore. The predicate
+> `_main_scene_missing()` is headless-unit-pinned (`game.start main-scene pre-guard`).
+> The happy path (a main scene IS set → `play_main_scene()`) is unchanged.
+
 > **Note — runtime port scan range.** The runtime WebSocket server allocates
 > `runtime_port` from the range **6570–6585** (`runtime/mcp_runtime_server.gd`:
 > `PORT_BASE = 6570` + `PORT_RANGE = 16` → 6570..6585 inclusive). A connect

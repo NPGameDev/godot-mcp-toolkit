@@ -147,7 +147,7 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| game.start | 71 | — | C8 | — | 4be3454, a28d17b | **GAP:** compilation failure guard, wait_for_runtime hint |
+| game.start | 71 | ✓ (`target:"main"` NO_SCENE pre-guard, 41o — unit `game.start main-scene pre-guard`; interactive-only: needs `application/run/main_scene` UNSET, which the dogfood never is) | C8 | — | 4be3454, a28d17b, 41o | `target:"main"` with no main scene set returns `NO_SCENE` (not a false success + engine modal); predicate `_main_scene_missing()` is headless-unit-pinned. **GAP:** compilation failure guard, wait_for_runtime hint |
 | game.stop | 81 | — | C8 | — | — | |
 | debugger.get_log | 75, 75a–75f, 80, 80a–80f, 20.15a | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis). ledger #9: total_lines/truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a — supersedes the file-path capped-tail `truncated=start>0`); LOG_BUSY hint version-gated via shared MCPToolkitError.log_busy_hint (41n-undecies-bis-bis) |
 

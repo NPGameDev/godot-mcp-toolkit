@@ -75,6 +75,16 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 
 		match target:
 			"main":
+				# Pre-guard: play_main_scene() with no main scene defined pops an
+				# undismissable "No main scene has ever been defined" modal and returns,
+				# leaving the plugin to falsely report success (a later runtime_poll then
+				# misreads it as COMPILATION_FAILED). Fail deterministically instead —
+				# mirrors the "current" branch's NO_SCENE guard.
+				if _main_scene_missing():
+					return MCPToolkitError.fail("NO_SCENE",
+						"no main scene set — set one in Project Settings > Application > Run > Main Scene "
+						+ "(or project_set_setting application/run/main_scene='res://YourScene.tscn'), "
+						+ "or use target:'current' or a res:// scene path.")
 				EditorInterface.play_main_scene()
 			"current":
 				if Helpers.get_edited_root() == null:
@@ -183,6 +193,15 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 			+ "Check debugger_get_log or editor_get_console for startup errors."
 		)
 	return response
+
+
+## True when no main scene is configured (application/run/main_scene unset or blank).
+## Read FRESH from ProjectSettings — not a cached value — so a just-written setting is
+## honored. Backs the game.start "main" pre-guard: fail deterministically rather than
+## let play_main_scene() pop the engine's undismissable "No main scene has ever been
+## defined" modal (which returns silently → a false success). Pure query; unit-tested.
+static func _main_scene_missing() -> bool:
+	return str(ProjectSettings.get_setting("application/run/main_scene", "")).strip_edges().is_empty()
 
 
 static func cmd_game_stop(_parameters: Dictionary) -> Dictionary:
