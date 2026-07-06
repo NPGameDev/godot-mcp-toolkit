@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in Sv2Main.tscn)
 **Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout
-**Tests:** 35
+**Tests:** 37
 
 ---
 
@@ -11,6 +11,29 @@
 
 **3.2** `node_get_property` — node_path=`Sv2Sprite`, property=`position`
 - **Expect:** Vector2(100, 100)
+
+**3.2b** `node_set_property` (wrong-type REJECTED, NON-DESTRUCTIVE — 41o C1 + destructive-zero regression) — node_path=`Sv2Sprite`, property=`position`, value=`"not a vector"` (prior is the **non-zero** (100,100) from 3.1)
+- **Expect:** error `SET_FAILED` (NOT a `success:true` and NOT an "adjusted" success+`warning`). `position` is an engine **bound setter**: it Variant-converts the wrong type to a **ZERO** and briefly stores it, so the readback moves off (100,100) — this is the case that regressed to a false "adjusted" success. The message names `position` + expected/received type. Second probe: `{"type":"Color","r":1,"g":0,"b":0,"a":1}` (Color on a Vector2 prop) must ALSO return `SET_FAILED`. Finally `node_get_property` Sv2Sprite `position` = **Vector2(100, 100)** — the toolkit **RESTORES** the prior on a drop, so the failed writes are non-destructive (NOT (0,0)).
+
+> **REGRESSION WATCH (41o C1 + destructive-zero):** two failure modes. (1) A cross-type
+> value must return `SET_FAILED`, never a false success. (2) **The destructive-zero
+> regression:** for a bound setter (`position`/`modulate`) from a NON-ZERO prior, the
+> engine stores a ZERO (readback ≠ prior). If that path returns **`success` + a
+> `warning`** ("adjusted"), the family-gate classification has regressed — flag
+> **Major**. And the value MUST read back as the **prior** (100,100), not (0,0): if it
+> reads (0,0), the non-destructive **restore** regressed. (An in-family reshape like
+> 3.2c legitimately returns success+warning; a cross-family destroy must not.)
+
+**3.2c** `node_set_property` (convertible value ADJUSTED → success + warning — 41o D1) — node_path=`Sv2Sprite`, property=`z_index`, value=`2.9`
+- **Expect:** **success** (NOT `SET_FAILED`). `z_index` is an `int`; the engine truncates `2.9` → `2` and ACCEPTS the write, so the response carries a `warning` naming the property + stored-vs-requested delta (e.g. "note: 'z_index' stored 2 but you requested 2.9 — the engine adjusted the value to fit int."). Verify `node_get_property` Sv2Sprite `z_index` = 2.
+- Restore: `node_set_property` Sv2Sprite `z_index` = 0.
+
+> **REGRESSION WATCH (41o D1):** An accepted-but-adjusted write (in-family
+> truncate/sanitize/normalize — `float→int`, `"Foo/"→"Foo"`, a normalized vector)
+> must return **success WITH a warning**, NOT `SET_FAILED` and NOT a silent success.
+> If `z_index=2.9` returns `SET_FAILED`, the D1 false-positive has regressed (the
+> same-family trust broke); if it succeeds with NO warning, the caller can't see the
+> value was reshaped. Only CROSS-family mismatches (3.2b) return `SET_FAILED`.
 
 **3.3** `node_set_property` — node_path=`Sv2Label`, property=`text`, value=`"Hello Sweep v2"`
 - **Expect:** success

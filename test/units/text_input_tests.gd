@@ -1,9 +1,11 @@
 @tool
 extends RefCounted
-## Unit tests for the send_text input-simulation helper (runtime/text_input_synth.gd):
-## per-codepoint InputEventKey synthesis (incl. non-ASCII via String.unicode_at),
-## the submit-Enter keycode pair, text_after truncate/redact (secret precedence),
-## and the actionable focus/diagnostic hint. Pure logic — no editor, no viewport.
+## Unit tests for the input_simulate helpers: the send_text synthesis leaf
+## (runtime/text_input_synth.gd) — per-codepoint InputEventKey synthesis (incl.
+## non-ASCII via String.unicode_at), the submit-Enter keycode pair, text_after
+## truncate/redact (secret precedence), the actionable focus/diagnostic hint — plus
+## the InputMap.has_action predicate the action-event guard depends on (41o C6).
+## Pure logic — no editor, no viewport.
 
 const TextInputSynth := preload("res://addons/godot_mcp_toolkit/runtime/text_input_synth.gd")
 
@@ -13,6 +15,29 @@ static func run(testing) -> void:
 	_test_enter_synthesis(testing)
 	_test_text_after_redact_truncate(testing)
 	_test_hint_selection(testing)
+	_test_action_guard_predicate(testing)
+
+
+# --- input_simulate action guard: InputMap.has_action predicate (41o C6) ----
+# The runtime input_simulate "action" branch rejects an action not registered in
+# the InputMap (else it dispatches a silent no-op). The guard is InputMap.has_action;
+# pin that predicate — registered → true (guard passes), unknown → false (guard
+# rejects) — so the contract the guard relies on is locked headless across versions.
+# (The WS handler itself needs a live peer, so this pins its decision, not the send.)
+static func _test_action_guard_predicate(testing) -> void:
+	testing.begin("input_simulate action guard predicate")
+
+	var probe := &"sv2_unit_probe_action_xyz"
+	# Unknown action → false (the guard rejects with INVALID_PARAMS).
+	testing.ok(not InputMap.has_action(probe), "unregistered action → has_action false")
+	# Registered action → true (the guard lets it dispatch).
+	InputMap.add_action(probe)
+	testing.ok(InputMap.has_action(probe), "registered action → has_action true")
+	# Clean up the global singleton so no other test sees the probe action.
+	InputMap.erase_action(probe)
+	testing.ok(not InputMap.has_action(probe), "erased action → has_action false again")
+
+	print("")
 
 
 # --- per-codepoint key synthesis (ASCII + non-ASCII + empty) ----------------

@@ -44,7 +44,7 @@
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | node.get_property | 28, 31, 33, 36, 43b, 43i, 64g, 3.20b | — | C3, C6, C20 | — | concern 053 | 3.20b: Packed read-back is the TAGGED dict (not var_to_str) + read==write (concern 053, T:8856546) |
-| node.set_property | 27, 29, 30, 32, 34, 35, 3.20b, 3.14c, 3.14d, 3.29 | ✓ (3.14a: groups single-reject, 3.14b: groups batch per-entry reject) | C3, C6 | ✓ (3.14a/3.14b: hint → node.groups) | FIX-5, FIX-7, FIX-E, FIX-F, concern 032, concern 053, concern 034 | groups property steered to node.groups (single whole-reject + batch per-entry); 3.20b sets a top-level PackedVector2Array (Line2D.points) for the 053 read-back round-trip. 3.14c/3.14d: batch partial-failure rollup — 3.14c asserts top-level `failed`(int, `int(...)`-coerced)+`hint` on a one-bad-entry batch; 3.14d asserts both ABSENT on all-success (summarize_batch, additive). 3.29: root rename via `name` (agrees with node.manage 4.17). **GAP:** LayerMask coercion, bare res:// guard |
+| node.set_property | 27, 29, 30, 32, 34, 35, 3.2b, 3.2c, 3.20b, 3.14c, 3.14d, 3.29 | ✓ (3.14a: groups single-reject, 3.14b: groups batch per-entry reject; **3.2b: cross-family wrong-type → SET_FAILED; 3.2c: convertible value → ADJUSTED success+warning, 41o C1/D1**) | C3, C6 | ✓ (3.14a/3.14b: hint → node.groups; 3.2c: adjusted `warning`) | FIX-5, FIX-7, FIX-E, FIX-F, concern 032, concern 053, concern 034, 41o C1/D1 | groups property steered to node.groups (single whole-reject + batch per-entry); 3.2b/3.2c: tri-state set outcome — a CROSS-family wrong-type (String/Color on Vector2) returns SET_FAILED, while an in-family convertible value (float→int z_index 2.9→2) is ACCEPTED with a `warning` naming the reshape, not a false success (headless units `wrong-type set rejection` + `describe_set_drop tri-state` pin the same `contract/property_set_check.gd` detector). 3.20b sets a top-level PackedVector2Array (Line2D.points) for the 053 read-back round-trip. 3.14c/3.14d: batch partial-failure rollup — 3.14c asserts top-level `failed`(int, `int(...)`-coerced)+`hint` on a one-bad-entry batch; 3.14d asserts both ABSENT on all-success (summarize_batch, additive). 3.29: root rename via `name` (agrees with node.manage 4.17). **GAP:** LayerMask coercion, bare res:// guard |
 | node.get_property_list | 38–40 | — | C5 | — | — | |
 | node.call_method | 49, 50 | — | C9 | ✓ (CS3: C# hint) | — | |
 | node.set_script | 37 | — | C5, C8 | — | — | |
@@ -291,13 +291,13 @@
 | runtime.screenshot | 72 | — | — | — | — | |
 | runtime.get_node_state | 73 | — | C8 | — | — | |
 | runtime.get_script_vars | 74 | — | — | — | — | |
-| runtime.set_property | — | — | — | — | c6d5f40 | **GAP:** no test + autoload warning |
+| runtime.set_property | 20.8, 20.8b, 20.8c, 20.10 | ✓ (20.8b: cross-family wrong-type → SET_FAILED; 20.8c: convertible → ADJUSTED success+warning, 41o C1/D1) | — | ✓ (20.8c: adjusted `warning`) | c6d5f40, 41o C1/D1 | 20.8: happy (speed); 20.10: autoload-persistence warning; 20.8b/20.8c: tri-state via the shared `contract/property_set_check.gd` detector (runtime twins of editor 3.2b/3.2c). Headless unit `runtime.set_property tri-state pipeline` pins the coerce→set→describe_set_drop pipeline (dropped/ok/adjusted) |
 | debugger.get_log | 75, 75a–75f, 80a–80f, 20.15a | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state; ledger #9: runtime total→total_lines + truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a); LOG_BUSY/LOG_UNAVAILABLE hints version-gated via shared MCPToolkitError.log_busy_hint/log_unavailable_hint (41n-undecies-bis-bis) |
 | signal.list | (via editor 44–48) | — | — | — | — | Runtime uses same handler |
 | signal.connect | (via editor 45) | — | — | — | — | Runtime uses same handler |
 | signal.disconnect | (via editor 47) | — | — | — | — | Runtime uses same handler |
 | signal.emit | 79 | — | — | — | — | |
-| input.simulate | 20.17, 20.17a–20.17g | — | — | ✓ (20.17c no-focus, 20.17f non-editable) | — | send_text event (41n-sexies): node_path focus + text_changed (20.17a), current-focus (20.17b), no-focus→hint (20.17c), submit→text_submitted via observer (20.17d), secret→redacted (20.17e), non-editable→text_changed:false+hint (20.17f), multiline newline-on-submit (20.17g). FLAG-5: reconciled stale flat `76`→20.x section-local numbering |
+| input.simulate | 20.17, 20.17a–20.17g, 20.17h | ✓ (20.17h: unknown action → INVALID_PARAMS, 41o C6) | — | ✓ (20.17c no-focus, 20.17f non-editable) | — | send_text event (41n-sexies): node_path focus + text_changed (20.17a), current-focus (20.17b), no-focus→hint (20.17c), submit→text_submitted via observer (20.17d), secret→redacted (20.17e), non-editable→text_changed:false+hint (20.17f), multiline newline-on-submit (20.17g). 20.17h: action-mode InputMap guard — an unregistered action is rejected (INVALID_PARAMS naming it), not a silent no-op (key/text/click modes unaffected). FLAG-5: reconciled stale flat `76`→20.x section-local numbering |
 | animation_player.control | 78 | — | — | — | — | |
 | execute.code | 77 | — | — | — | FIX-4, 279efed | Runtime context |
 
@@ -305,9 +305,8 @@
 
 ## Gap Summary
 
-**Tools with NO dedicated test:** 2
+**Tools with NO dedicated test:** 1
 - `meta.set_limits` — no test at all
-- `runtime.set_property` — no test at all
 
 **Tools with incomplete coverage (missing new params/guards):** 12
 - `scene.create_node` — unique_name param

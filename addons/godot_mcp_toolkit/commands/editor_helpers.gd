@@ -10,6 +10,7 @@ extends RefCounted
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
 
 
 # -- Property coercion ---------------------------------------------------------
@@ -118,9 +119,13 @@ static func set_property_compound(
 	if ":" not in property_name:
 		var _undo_old = node.get(property_name)
 		node.set(property_name, coerced)
-		var result := _check_set_readback(node, property_name, coerced, property_name)
+		var result := _check_set_readback(node, property_name, _undo_old, coerced, property_name)
 		if result.get("ok", false):
 			result["_undo"] = {"type": "property", "path": property_name, "old": _undo_old}
+		else:
+			# Dropped: a bound setter (position/modulate) may have zeroed the value;
+			# restore the prior value so the failure is non-destructive.
+			node.set(property_name, _undo_old)
 		return result
 
 	var parts := property_name.split(":")
@@ -167,7 +172,7 @@ static func set_property_compound(
 		node.set(slash_path, coerced)
 		var readback = node.get(slash_path)
 		if readback != null:
-			var result := _check_set_readback_value(readback, coerced, property_name)
+			var result := _check_set_readback_value(_undo_old_slash, readback, coerced, property_name)
 			if not made_unique.is_empty():
 				result["made_unique"] = made_unique
 			if result.get("ok", false):
@@ -185,7 +190,7 @@ static func set_property_compound(
 	var _undo_old_sub = _read_sub_property(target, final_prop)
 	_write_sub_property(target, final_prop, coerced)
 	var readback = _read_sub_property(target, final_prop)
-	var result := _check_set_readback_value(readback, coerced, property_name)
+	var result := _check_set_readback_value(_undo_old_sub, readback, coerced, property_name)
 	if not made_unique.is_empty():
 		result["made_unique"] = made_unique
 	if result.get("ok", false):
@@ -281,30 +286,43 @@ static func _is_external_resource(res: Resource) -> bool:
 
 
 ## Verify a SET succeeded by reading back from the target and comparing.
-## target_obj + readback_prop define WHERE to read; original_path is for errors.
+## target + readback_prop define WHERE to read the post-set value; before is the
+## pre-set value (the property's type oracle); original_path is for errors.
 static func _check_set_readback(
-	target: Object, readback_prop: String, coerced: Variant, original_path: String,
+	target: Object, readback_prop: String, before: Variant,
+	coerced: Variant, original_path: String,
 ) -> Dictionary:
-	var readback = _read_sub_property(target, readback_prop)
-	return _check_set_readback_value(readback, coerced, original_path)
+	var after = _read_sub_property(target, readback_prop)
+	return _check_set_readback_value(before, after, coerced, original_path)
 
 
-## Compare a readback value against the expected coerced value.
+## Map the [method describe_set_drop] tri-state onto the {ok:…} result shape the
+## compound-path callers expect. A clean write keeps the historical
+## {"ok": true, "value": coerced}; an ADJUSTED write adds a "warning" (the compound
+## callers already propagate result["warning"]); a DROPPED write is SET_FAILED.
 static func _check_set_readback_value(
-	readback: Variant, coerced: Variant, original_path: String,
+	before: Variant, after: Variant, coerced: Variant, original_path: String,
 ) -> Dictionary:
-	if readback == null and coerced != null:
-		return {"ok": false, "code": "SET_FAILED",
-			"error": "set() on '%s' reported no error but readback is null. "
-			% original_path
-			+ "The property may require a dedicated API (e.g. set_shader_parameter, "
-			+ "add_animation_library)."}
-	if typeof(readback) == typeof(coerced) and readback != coerced:
-		return {"ok": false, "code": "SET_FAILED",
-			"error": "set '%s' to %s but readback is %s — value did not persist. "
-			% [original_path, str(coerced), str(readback)]
-			+ "The property may need a dedicated API or the resource may be read-only."}
-	return {"ok": true, "value": coerced}
+	var outcome := describe_set_drop(before, after, coerced, original_path)
+	match str(outcome.get("status", "")):
+		"dropped":
+			return {"ok": false, "code": "SET_FAILED", "error": str(outcome.get("error", ""))}
+		"adjusted":
+			return {"ok": true, "value": coerced, "warning": str(outcome.get("warning", ""))}
+		_:
+			return {"ok": true, "value": coerced}
+
+
+## Property-set-outcome classifier — delegates to the runtime-safe pure leaf
+## [code]contract/property_set_check.gd[/code] (the SSOT shared with the runtime
+## autoload's [code]runtime.set_property[/code]). Kept here as
+## [code]Helpers.describe_set_drop[/code] so the editor node/scene property-set
+## paths reach it through their existing helper facade with no call-site churn.
+## Returns the tri-state {"status": "ok" | "adjusted" (+warning) | "dropped" (+error)}.
+static func describe_set_drop(
+	before: Variant, after: Variant, coerced: Variant, path: String,
+) -> Dictionary:
+	return PropertySetCheck.describe_set_drop(before, after, coerced, path)
 
 
 ## Check whether a property name exists on an object instance.

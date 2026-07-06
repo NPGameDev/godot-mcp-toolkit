@@ -277,6 +277,27 @@ static func _set_property_scalar_single(
 	# the set outside this guard — out of scope, cured in 4.4. See disarm_tooltip_uaf.
 	Helpers.disarm_tooltip_uaf(node, property_name)
 	node.set(property_name, coerced)
+	# Bare res:// string on a Resource-typed property: give the specific
+	# tagged-form hint (a bare path silently fails to load) BEFORE the generic
+	# drop guard below, which would otherwise fire first with a vaguer message.
+	# Signature: raw String + non-Resource coercion + non-String readback.
+	if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
+			and not (coerced is Resource) and not (node.get(property_name) is String):
+		return MCPToolkitError.fail("INVALID_VALUE",
+			"property '%s' expects a Resource, not a bare string path. " % property_name +
+			"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw_value))
+	# Classify the write. DROPPED (silent wrong-type) fails before undo — nothing
+	# landed, so there is no state to roll back. ADJUSTED (engine reshaped the value,
+	# e.g. truncation 7.9→7 or a normalize) DID commit, so it records undo like a
+	# clean write and returns success WITH a warning naming the stored-vs-requested
+	# delta. OK is a clean success.
+	var outcome := Helpers.describe_set_drop(old_value, node.get(property_name), coerced, property_name)
+	if outcome.get("status", "") == "dropped":
+		# A bound setter (position/modulate) may have Variant-converted the wrong type
+		# to a ZERO and stored it; restore the prior value so a SET_FAILED is truly
+		# non-destructive. Done before undo registration — nothing to roll back.
+		node.set(property_name, old_value)
+		return MCPToolkitError.fail("SET_FAILED", str(outcome.get("error", "")))
 	var action = MCPToolkitUndoRedoAction.begin("set %s.%s" % [node_path, property_name], node)
 	action.do_property(node, property_name, coerced)
 	action.undo_property(node, property_name, old_value)
@@ -285,14 +306,8 @@ static func _set_property_scalar_single(
 	if old_value is Resource:
 		action.undo_reference(old_value)
 	action.commit_recorded()
-	# Detect bare res:// strings silently failing on Resource-typed properties.
-	if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
-			and not (coerced is Resource):
-		var readback = node.get(property_name)
-		if not (readback is String):
-			return MCPToolkitError.fail("INVALID_VALUE",
-				"property '%s' expects a Resource, not a bare string path. " % property_name +
-				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw_value))
+	if outcome.get("status", "") == "adjusted":
+		return MCPToolkitSuccess.ok({"warning": str(outcome.get("warning", ""))})
 	return MCPToolkitSuccess.ok()
 
 
@@ -391,13 +406,27 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		# tooltip-timer UAF first when prop is editor_description (no-op otherwise).
 		Helpers.disarm_tooltip_uaf(node, prop)
 		node.set(prop, coerced)
+		# Classify: DROPPED → per-entry failure (skip undo; the rest of the batch
+		# still applies, summarize_batch rolls it up). ADJUSTED/OK committed → register
+		# undo; ADJUSTED adds a per-entry warning naming the engine's value reshape.
+		var outcome := Helpers.describe_set_drop(old_value, node.get(prop), coerced, prop)
+		if outcome.get("status", "") == "dropped":
+			# Restore the prior value (a bound setter may have zeroed it) so this
+			# failed entry is non-destructive; skip its undo, rest of batch applies.
+			node.set(prop, old_value)
+			results.append({"node_path": np, "property": prop,
+				"success": false, "error": str(outcome.get("error", ""))})
+			continue
 		action.do_method(server.undo_helpers.compound_set.bind(node, prop, coerced))
 		action.undo_method(server.undo_helpers.compound_set.bind(node, prop, old_value))
 		if coerced is Resource:
 			action.do_reference(coerced)
 		if old_value is Resource:
 			action.undo_reference(old_value)
-		results.append({"node_path": np, "property": prop, "success": true})
+		var scalar_entry := {"node_path": np, "property": prop, "success": true}
+		if outcome.get("status", "") == "adjusted":
+			scalar_entry["warning"] = str(outcome.get("warning", ""))
+		results.append(scalar_entry)
 
 	action.commit_recorded()
 

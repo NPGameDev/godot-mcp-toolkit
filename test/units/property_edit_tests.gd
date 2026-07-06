@@ -6,11 +6,16 @@ extends RefCounted
 
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
+const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
 
 
 static func run(testing) -> void:
 	_test_compile_text_filter(testing)
 	_test_set_property_compound(testing)
+	_test_wrong_type_set_rejection(testing)
+	_test_set_drop_logic(testing)
+	_test_runtime_set_property_pipeline(testing)
 	_test_compound_set_helper(testing)
 	_test_undo_info(testing)
 
@@ -88,6 +93,211 @@ static func _test_set_property_compound(testing) -> void:
 	testing.eq(missing_sub_resource_result.get("code", ""), "NOT_FOUND", "error code = NOT_FOUND")
 	node.free()
 
+	print("")
+
+
+# --- Wrong-type set rejection (41o C1 silent-drop guard) ------------------
+# Godot's Object.set() silently discards a wrong-type Variant, which used to be
+# reported as a false success against the unchanged property. These pin, end to
+# end through set_property_compound's scalar (no-colon) path: a wrong-type write
+# → clean SET_FAILED error + unchanged property; and every valid write (exact,
+# int→float, set-to-same, transform-backed) → success.
+static func _test_wrong_type_set_rejection(testing) -> void:
+	testing.begin("wrong-type set rejection")
+
+	var sprite := Sprite2D.new()
+	# NON-ZERO prior so the destructive-zero path is exercised: Node2D.position is a
+	# bound setter that Variant-converts a wrong type to ZERO and stores it, so the
+	# readback moves off (50,50) — the exact case that regressed to a false "adjusted"
+	# success. set_property_compound restores the prior on a drop (non-destructive).
+	sprite.position = Vector2(50, 50)
+
+	# 1. String → Vector2 (non-zero prior → zeroed): dropped → SET_FAILED, RESTORED.
+	var s_to_vec: Dictionary = Helpers.set_property_compound(
+		sprite, "position", "not a vector")
+	testing.ok(not s_to_vec.get("ok", false), "String→Vector2 (non-zero prior): rejected (not ok)")
+	testing.eq(s_to_vec.get("code", ""), "SET_FAILED", "String→Vector2: code SET_FAILED")
+	testing.ok(not s_to_vec.has("warning"), "String→Vector2: NOT adjusted (carries no warning)")
+	testing.ok(str(s_to_vec.get("error", "")).find("position") >= 0,
+		"String→Vector2: error names the property")
+	testing.eq(sprite.position, Vector2(50, 50), "String→Vector2: prior RESTORED, not zeroed")
+
+	# 2. Color → Vector2 (non-zero prior → zeroed): dropped → SET_FAILED, RESTORED.
+	var c_to_vec: Dictionary = Helpers.set_property_compound(
+		sprite, "position", {"type": "Color", "r": 1, "g": 0, "b": 0, "a": 1})
+	testing.ok(not c_to_vec.get("ok", false), "Color→Vector2 (non-zero prior): rejected (not ok)")
+	testing.eq(c_to_vec.get("code", ""), "SET_FAILED", "Color→Vector2: code SET_FAILED")
+	testing.ok(not c_to_vec.has("warning"), "Color→Vector2: NOT adjusted (carries no warning)")
+	testing.eq(sprite.position, Vector2(50, 50), "Color→Vector2: prior RESTORED, not zeroed")
+
+	# 3. Exact-type set still succeeds.
+	var exact: Dictionary = Helpers.set_property_compound(
+		sprite, "position", {"type": "Vector2", "x": 100, "y": 100})
+	testing.ok(exact.get("ok", false), "exact Vector2: ok")
+	testing.eq(sprite.position, Vector2(100, 100), "exact Vector2: value applied")
+
+	# 4. int→float coercion still succeeds (JSON ints arrive as floats). z_index
+	#    is a native int property; 5.0 must land as 5, not be flagged a drop.
+	var int_prop: Dictionary = Helpers.set_property_compound(sprite, "z_index", 5.0)
+	testing.ok(int_prop.get("ok", false), "float→int property: ok")
+	testing.eq(sprite.z_index, 5, "float→int property: stored as 5")
+
+	# 5. Set-to-same value succeeds (property already equals the request).
+	var same: Dictionary = Helpers.set_property_compound(
+		sprite, "position", {"type": "Vector2", "x": 100, "y": 100})
+	testing.ok(same.get("ok", false), "set-to-same Vector2: ok")
+	testing.eq(sprite.position, Vector2(100, 100), "set-to-same Vector2: value held")
+
+	sprite.free()
+
+	# 6. Transform-backed setter: the engine stores a different backing value
+	#    (rotation, radians) than the input (rotation_degrees), yet the write is
+	#    accepted — a same-type write is trusted. Guards against false-failing
+	#    normalizing/transforming properties.
+	var node := Node2D.new()
+	var xform: Dictionary = Helpers.set_property_compound(node, "rotation_degrees", 90.0)
+	testing.ok(xform.get("ok", false), "rotation_degrees set: ok (transform-backed)")
+	testing.ok(absf(node.rotation - deg_to_rad(90.0)) < 0.001,
+		"rotation_degrees: rotation stored in radians")
+	node.free()
+
+	# 7. Accepted-but-ADJUSTED: a fractional float on an int property truncates
+	#    (hframes 2.9 → 2). The write IS accepted → ok, and set_property_compound
+	#    propagates the tri-state "warning" naming the stored-vs-requested delta.
+	var sprite2 := Sprite2D.new()
+	var adj: Dictionary = Helpers.set_property_compound(sprite2, "hframes", 2.9)
+	testing.ok(adj.get("ok", false), "float→int truncation: ok (accepted)")
+	testing.ok(adj.has("warning"), "float→int truncation: carries the adjusted warning")
+	testing.eq(sprite2.hframes, 2, "float→int truncation: stored 2")
+	sprite2.free()
+
+	print("")
+
+
+# --- describe_set_drop tri-state logic (ok / adjusted / dropped) -----------
+# Pins the detector's decision table directly with hand-built before/after/coerced
+# triples — no engine set() involved. Locks the tri-state: clean OK, accepted-but-
+# ADJUSTED (engine reshaped the value → success + warning), and silent DROPPED
+# (cross-family wrong type → SET_FAILED), incl. the D1 truncate/sanitize FPs and the
+# restored wrong-subtype-Resource drop.
+static func _test_set_drop_logic(testing) -> void:
+	testing.begin("describe_set_drop tri-state")
+
+	# --- OK (clean): stored ≈ requested ---
+	# int→float where 5.0 == 5 → clean, NOT adjusted.
+	testing.eq(_status(Helpers.describe_set_drop(0, 5, 5.0, "z_index")), "ok",
+		"int→float 5.0==5 → ok (clean)")
+	# Cross-type set-to-same (property already holds the request) → ok.
+	testing.eq(_status(Helpers.describe_set_drop(5, 5, 5.0, "z_index")), "ok",
+		"cross-type set-to-same → ok")
+	# Same-type write that stored the request exactly → ok.
+	testing.eq(_status(Helpers.describe_set_drop(Vector2.ZERO, Vector2(1, 0), Vector2(1, 0), "p")), "ok",
+		"same-type exact store → ok")
+	# Stringy cross-type stored the request (StringName &"b" ≈ "b") → ok.
+	testing.eq(_status(Helpers.describe_set_drop(&"a", &"b", "b", "name")), "ok",
+		"stringy cross-type stored request → ok")
+
+	# --- ADJUSTED: accepted but engine reshaped the value (success + warning) ---
+	# D1 repro: fractional float truncates onto the CURRENT int value (7 + 7.9 → 7).
+	var trunc_same: Dictionary = Helpers.describe_set_drop(7, 7, 7.9, "hframes")
+	testing.eq(_status(trunc_same), "adjusted", "float 7.9 → int 7 (onto current) → adjusted")
+	testing.ok(str(trunc_same.get("warning", "")).find("hframes") >= 0,
+		"truncate-onto-current warning names the property")
+	# Truncation that MOVED the value (before 5, requested 7.9, stored 7) → adjusted.
+	testing.eq(_status(Helpers.describe_set_drop(5, 7, 7.9, "hframes")), "adjusted",
+		"float 7.9 → int 7 (moved) → adjusted")
+	# Stringy sanitize onto the current value ("Foo/" → "Foo", already "Foo") → adjusted.
+	var sanitize: Dictionary = Helpers.describe_set_drop(&"Foo", &"Foo", "Foo/", "name")
+	testing.eq(_status(sanitize), "adjusted", "stringy sanitize-to-current → adjusted")
+	testing.ok(str(sanitize.get("warning", "")) != "", "sanitize adjusted carries a warning")
+	# Same-type normalize-to-same-as-before ((2,0) → (1,0), already (1,0)) → adjusted.
+	testing.eq(_status(Helpers.describe_set_drop(Vector2(1, 0), Vector2(1, 0), Vector2(2, 0), "dir")), "adjusted",
+		"normalize-to-same (same type) → adjusted (not a false drop)")
+
+	# --- DROPPED: cross-family write the engine did not store as a real value ---
+	# Lock BOTH original-bug directions from a ZERO prior (kept-old, after == before).
+	testing.eq(_status(Helpers.describe_set_drop(Vector2.ZERO, Vector2.ZERO, "nope", "position")), "dropped",
+		"String → Vector2, zero prior (kept-old) → dropped")
+	testing.eq(_status(Helpers.describe_set_drop(Vector2.ZERO, Vector2.ZERO, Color(1, 0, 0, 1), "position")), "dropped",
+		"Color → Vector2, zero prior (kept-old) → dropped")
+	# REGRESSION (destructive-zero): a bound setter (position/modulate) converts the
+	# wrong type to a ZERO and STORES it, so after ≠ before. This is the case that hit
+	# the old "adjusted" branch and returned a false success — it MUST be dropped.
+	testing.eq(_status(Helpers.describe_set_drop(Vector2(50, 50), Vector2.ZERO, "not a vector", "position")), "dropped",
+		"String → Vector2, NON-ZERO prior zeroed (after≠before) → dropped")
+	testing.eq(_status(Helpers.describe_set_drop(Color(0, 1, 0, 1), Color(0, 0, 0, 1), "green", "modulate")), "dropped",
+		"String → Color, modulate green→black (after≠before) → dropped")
+	# Null readback with a non-null request (dedicated-API) → dropped.
+	testing.eq(_status(Helpers.describe_set_drop("old", null, "new", "p")), "dropped",
+		"null readback → dropped")
+	# Restored: wrong-subtype Resource that kept its old object (both OBJECT) → dropped.
+	var res_a := Resource.new()
+	var res_b := Resource.new()
+	testing.eq(_status(Helpers.describe_set_drop(res_a, res_a, res_b, "texture")), "dropped",
+		"wrong-subtype Resource (kept old object) → dropped")
+	# Valid Resource set-to-same object → ok (identity backstop, no false drop).
+	testing.eq(_status(Helpers.describe_set_drop(res_a, res_a, res_a, "texture")), "ok",
+		"Resource set-to-same object → ok")
+
+	print("")
+
+
+## The "status" field of a describe_set_drop tri-state result (test accessor).
+static func _status(outcome: Dictionary) -> String:
+	return str(outcome.get("status", ""))
+
+
+# --- runtime.set_property wrong-type pipeline (41o C1, runtime autoload) ----
+# The runtime autoload's _cmd_runtime_set_property applies the SAME shared leaf
+# detector as the editor path: coerce → get(before) → set → get(after) →
+# PropertySetCheck.describe_set_drop. Exercise that exact pure pipeline headlessly
+# (no editor, no WebSocket) so the runtime path's wrong-type rejection is pinned.
+static func _test_runtime_set_property_pipeline(testing) -> void:
+	testing.begin("runtime.set_property wrong-type pipeline")
+
+	var sprite := Sprite2D.new()
+	# NON-ZERO prior so the bound-setter destructive-zero path is exercised (the
+	# regression): position (50,50) → a String stores ZERO, so after ≠ before.
+	sprite.position = Vector2(50, 50)
+
+	# DROPPED: a String on the Vector2 bound setter zeroes the value (after ≠ before)
+	# — still classified "dropped", NOT "adjusted". The full runtime handler returns
+	# SET_FAILED and restores the prior; this pure pipeline pins the classification.
+	var bad_coerced: Variant = Coerce.coerce_value("not a vector")
+	var bad_before: Variant = sprite.get("position")
+	sprite.set("position", bad_coerced)
+	var bad_after: Variant = sprite.get("position")
+	var bad_outcome: Dictionary = PropertySetCheck.describe_set_drop(
+		bad_before, bad_after, bad_coerced, "position")
+	testing.eq(_status(bad_outcome), "dropped", "runtime non-zero-prior destructive → dropped")
+	testing.ok(not bad_outcome.has("warning"), "runtime destructive drop: NOT adjusted (no warning)")
+	testing.ok(str(bad_outcome.get("error", "")).find("position") >= 0,
+		"runtime wrong-type: error names the property")
+	testing.eq(bad_after, Vector2.ZERO, "runtime raw set zeroed the value (handler restores it)")
+
+	# OK: a tagged Vector2 lands exactly → clean (the runtime returns plain success).
+	var ok_coerced: Variant = Coerce.coerce_value({"type": "Vector2", "x": 7, "y": 8})
+	var ok_before: Variant = sprite.get("position")
+	sprite.set("position", ok_coerced)
+	var ok_after: Variant = sprite.get("position")
+	testing.eq(
+		_status(PropertySetCheck.describe_set_drop(ok_before, ok_after, ok_coerced, "position")),
+		"ok", "runtime valid set → ok")
+	testing.eq(sprite.position, Vector2(7, 8), "runtime valid set: value applied")
+
+	# ADJUSTED: a fractional float onto an int property truncates (hframes 2.9 → 2) —
+	# accepted, so the runtime returns success WITH a warning naming the delta.
+	var adj_coerced: Variant = Coerce.coerce_value(2.9)
+	var adj_before: Variant = sprite.get("hframes")
+	sprite.set("hframes", adj_coerced)
+	var adj_after: Variant = sprite.get("hframes")
+	var adj_outcome: Dictionary = PropertySetCheck.describe_set_drop(
+		adj_before, adj_after, adj_coerced, "hframes")
+	testing.eq(_status(adj_outcome), "adjusted", "runtime float→int truncation → adjusted")
+	testing.ok(str(adj_outcome.get("warning", "")) != "", "runtime adjusted carries a warning")
+	testing.eq(sprite.hframes, 2, "runtime truncation: stored 2")
+
+	sprite.free()
 	print("")
 
 

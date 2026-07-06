@@ -20,6 +20,7 @@ extends Node
 # would parse-fail this autoload in an export template (godot#91713) — GDScript
 # resolves identifiers at parse time, before any runtime guard can help.
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const Scrubber := preload("res://addons/godot_mcp_toolkit/security/scrubber.gd")
@@ -479,6 +480,23 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 
 	# Read back to confirm
 	var new_value = node.get(property)
+	# Classify the write on scalar (non-colon) paths: DROPPED (silent wrong-type,
+	# Godot's set() discards an unassignable Variant) → SET_FAILED; ADJUSTED (engine
+	# reshaped the value, e.g. truncation 7.9→7) → success with a warning appended
+	# below. A colon sub-path (e.g. "position:x") isn't read back through node.get()
+	# (before/after both null), so it stays best-effort — mirrors the editor split.
+	var adjusted_warning := ""
+	if ":" not in property:
+		var outcome := PropertySetCheck.describe_set_drop(current, new_value, coerced, property)
+		if outcome.get("status", "") == "dropped":
+			# A bound setter (position/modulate) may have Variant-converted the wrong
+			# type to a ZERO and stored it; restore the prior value so SET_FAILED is
+			# non-destructive on the live node.
+			node.set(property, current)
+			_send_result(peer, id, MCPToolkitError.fail("SET_FAILED", str(outcome.get("error", ""))))
+			return
+		if outcome.get("status", "") == "adjusted":
+			adjusted_warning = str(outcome.get("warning", ""))
 	var result := {
 		"node_path": node_path,
 		"property": property,
@@ -494,6 +512,14 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 			"'%s' is an autoload — it persists across scene transitions. " % node.name +
 			"This change will carry forward through restarts/level changes " +
 			"unless the game explicitly resets '%s'." % property)
+
+	# Accepted-but-adjusted note (engine reshaped the value). Combine with the
+	# autoload warning if both apply so neither caveat is lost.
+	if adjusted_warning != "":
+		if result.has("warning"):
+			result["warning"] = str(result["warning"]) + " " + adjusted_warning
+		else:
+			result["warning"] = adjusted_warning
 
 	_send_result(peer, id, result)
 
@@ -833,6 +859,20 @@ func _cmd_input_simulate(peer: WebSocketPeer, id, params) -> void:
 			# parse_input_event(InputEventAction) to set the frame-
 			# transition tracking that is_action_just_pressed() needs (jump).
 			var action_name := StringName(str(ed.get("action", "")))
+			# Reject an action not registered in the InputMap: dispatching it matches
+			# nothing (a silent no-op that used to report success:true, dispatched:true).
+			# Aborts the batch like a malformed event, naming the unknown action. Only
+			# the action path uses the InputMap — key/text/send_text modes don't.
+			if not InputMap.has_action(action_name):
+				var action_err := MCPToolkitError.fail("INVALID_PARAMS",
+					"input action '%s' is not registered in the InputMap" % str(action_name),
+					"Register it in Project Settings → Input Map (or check the name — "
+					+ "action strings are case-sensitive). List actions with InputMap.get_actions().")
+				action_err["events_processed"] = processed
+				if not summary_mode:
+					action_err["results"] = results
+				_send_result(peer, id, action_err)
+				return
 			var is_pressed := bool(ed.get("pressed", true))
 			var strength := float(ed.get("strength", 1.0))
 			if is_pressed:

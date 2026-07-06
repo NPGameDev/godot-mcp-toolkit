@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (Sv2Main.tscn with nodes, script attached to Sv2Player)
 **Tools tested:** game_start, game_stop, runtime_screenshot, runtime_get_node_state, runtime_get_script_vars, runtime_set_property, debugger_get_log, input_simulate, execute_code (runtime), animation_player_control, signal_emit, autoload_manage (20.10 setup)
-**Tests:** 29
+**Tests:** 32
 
 ---
 
@@ -59,6 +59,25 @@
 **20.8** `runtime_set_property` — node_path=`/root/Sv2Main/Sv2Player`, property=`speed`, value=200.0
 - **Expect:** success
 
+**20.8b** `runtime_set_property` (wrong-type REJECTED, NON-DESTRUCTIVE — 41o C1 + destructive-zero regression) — first set a **non-zero prior**: `runtime_set_property` node_path=`/root/Sv2Main/Sv2Player`, property=`position`, value=`{"type":"Vector2","x":50,"y":50}` (success). Then node_path=`/root/Sv2Main/Sv2Player`, property=`position`, value=`"not a vector"`
+- **Expect:** error `SET_FAILED` (NOT `success:true`, NOT an "adjusted" success+`warning`). `position` is a bound setter: it Variant-converts the String to a **ZERO** and briefly stores it (readback ≠ the (50,50) prior) — the regression case. Then `runtime_get_node_state` `/root/Sv2Main/Sv2Player` confirms `position` = **(50,50)** — the runtime **RESTORES** the prior on a drop (non-destructive), NOT (0,0). Runtime twin of editor 3.2b; both route through the shared `contract/property_set_check.gd` detector.
+
+> **REGRESSION WATCH (41o C1 + destructive-zero):** from a NON-ZERO prior a bound-setter
+> wrong-type write stores a ZERO (readback ≠ prior). If it returns `success` + a
+> `warning` ("adjusted"), the family-gate classification regressed. If `position`
+> reads back (0,0) instead of the (50,50) prior, the non-destructive restore regressed.
+> Both **Major**. (Scalar/non-colon only — colon sub-paths stay best-effort. An
+> in-family reshape like 20.8c legitimately returns success+warning.)
+
+**20.8c** `runtime_set_property` (convertible value ADJUSTED → success + warning — 41o D1) — node_path=`/root/Sv2Main/Sv2Player`, property=`z_index`, value=`2.9`
+- **Expect:** **success** (NOT `SET_FAILED`). `z_index` is `int`; the engine truncates `2.9` → `2` and ACCEPTS the write, so the response carries a `warning` naming the stored-vs-requested delta. `runtime_get_node_state` confirms `z_index` = 2. Same tri-state detector as the editor path (3.2c is its editor twin).
+- Restore: `runtime_set_property` z_index=0.
+
+> **REGRESSION WATCH (41o D1):** An accepted-but-adjusted runtime write (in-family
+> truncate/sanitize/normalize) must return **success WITH a warning**, not
+> `SET_FAILED` (that would be the D1 false-positive) and not a silent success. Only
+> CROSS-family mismatches (20.8b) return `SET_FAILED`.
+
 **20.9** `runtime_get_script_vars` — node_path=`/root/Sv2Main/Sv2Player` (verify change)
 - **Expect:** speed=200.0
 
@@ -113,6 +132,14 @@
 
 **20.17g** `input_simulate` send_text + submit into a multiline `TextEdit` → newline (not submit) — events=[{"event_type":"send_text","event_data":{"text":"line1","node_path":"/root/Sv2Main/Sv2MultilineEdit","submit":true}}]
 - **Expect:** success, `text_changed`=true; the Enter inserts a newline in the multiline `TextEdit` (no `text_submitted`), so `text_after` contains `line1` plus a trailing newline.
+
+**20.17h** `input_simulate` action guard (unknown action REJECTED — 41o C6) — events=[{"event_type":"action","event_data":{"action":"sv2_no_such_action_xyz"}}]
+- **Expect:** error `INVALID_PARAMS` (NOT `success:true, dispatched:true`). The message names the unknown action `sv2_no_such_action_xyz` and the hint points at Project Settings → Input Map. The batch aborts at this event (`events_processed` reflects prior events). This guards ONLY the `action` event mode — `key`/`send_text`/`click` modes don't consult the InputMap and are unaffected.
+
+> **REGRESSION WATCH (41o C6):** An action not registered in the InputMap used to
+> dispatch as a silent no-op (`success:true`), matching nothing. `input_simulate`
+> now rejects an unknown action with `INVALID_PARAMS` naming it. If an unregistered
+> action returns success, the action guard has regressed. Flag as **Major**.
 
 **20.18** `execute_code` (runtime) — code=`get_tree().current_scene.name`
 - **Expect:** "Sv2Main"
