@@ -80,7 +80,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 inspection) — and publishes a small **registry file** so the bridge can discover every live
 instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="9089615" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -99,7 +99,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified eb4c9fa*
+*Figure 1 — system context · verified 9089615*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -139,14 +139,14 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`, Mode A) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="9089615" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>Mode B — ships in the game"]
     ModeA["mcp_server.gd<br/>Mode A — editor only"]
     subgraph clean["Export-clean closure — names no Editor* type (runtime-safe)"]
       direction LR
-      C1["coerce.gd"]
+      C1["coerce.gd · property_set_check.gd"]
       C2["untrusted.gd · scrubber.gd"]
       C3["auth.gd"]
       C4["log_helpers.gd · log_buffer.gd"]
@@ -168,7 +168,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified eb4c9fa*
+*Figure 2 — the editor↔runtime taint boundary · verified 9089615*
 
 Consequences that shape the rest of the architecture:
 
