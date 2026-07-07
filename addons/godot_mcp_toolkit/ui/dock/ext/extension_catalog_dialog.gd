@@ -4,6 +4,7 @@ extends Window
 ## MCP Toolkit extensions from a public GitHub Gist. Discovery only.
 
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog.gd")
+const EditorPopup := preload("res://addons/godot_mcp_toolkit/ui/editor_popup.gd")
 
 var _http: HTTPRequest = null
 var _list_vbox: VBoxContainer = null
@@ -46,7 +47,9 @@ func _exit_tree() -> void:
 
 ## Public entry point — called from dock or submenu.
 func show_catalog() -> void:
-	popup_centered(Vector2i(640, 520))
+	# Open centered and raised — a non-exclusive dialog otherwise sinks behind the
+	# viewport, leaving the "Extensions" button feeling dead on the next click.
+	EditorPopup.present(self, Vector2i(640, 520))
 	_fetch_catalog()
 
 

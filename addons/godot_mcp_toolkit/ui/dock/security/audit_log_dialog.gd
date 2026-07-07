@@ -7,6 +7,7 @@ extends AcceptDialog
 ## fully rebuilds the content, so a reused instance shows the latest log.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const EditorPopup := preload("res://addons/godot_mcp_toolkit/ui/editor_popup.gd")
 
 # One-time dialog chrome (title/buttons/handlers) is installed on first show;
 # the scrollable content is cleared and rebuilt on every call.
@@ -64,8 +65,10 @@ func show_log(audit_path: String) -> void:
 	text_label.add_theme_font_size_override("normal_font_size", 11)
 	scroll.add_child(text_label)
 
-	# Scroll to bottom after layout pass.
-	popup_centered()
+	# Open centered and raised (see EditorPopup), then scroll to bottom after a
+	# layout pass. Raising keeps the "View Audit Log" button responsive when the
+	# viewport is clicked and the dialog sinks behind it.
+	EditorPopup.present(self)
 	await get_tree().process_frame
 	scroll.scroll_vertical = scroll.get_v_scroll_bar().max_value
 
