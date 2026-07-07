@@ -24,9 +24,9 @@ checklist).
 ## Prerequisites
 
 - A **Mac** (Intel or Apple Silicon).
-- **Node 20+.** The published server declares `engines.node >= 22`, so use **Node 22+** to
-  match the shipped artifact. Any install method is fine (nvm, fnm, volta, Homebrew,
-  nodejs.org installer) — the manager matters for the gotchas below.
+- **Node 22+**, matching the published server's `engines.node >= 22`. Any install method is
+  fine (nvm, fnm, volta, Homebrew, nodejs.org installer) — the manager matters for the
+  gotchas below.
 - A **Godot editor build** for the version under test (4.2–4.7). Use a .NET/mono build only
   if the project under test is C#.
 - A **GUI MCP client**. **Claude Desktop** is the primary, most-representative client; VS Code

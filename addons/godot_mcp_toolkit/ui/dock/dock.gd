@@ -132,9 +132,9 @@ func _build_ui() -> void:
 				+ "editor and MCP client from a terminal, or install Node from "
 				+ "https://nodejs.org so it lands on the default PATH.")
 		nodejs_msg = ("Node.js not found — the MCP server bridge requires "
-			+ "Node.js 20+. Download it from https://nodejs.org" + _path_hint)
+			+ "Node.js 22+. Download it from https://nodejs.org" + _path_hint)
 	elif not node_check["meets_minimum"]:
-		nodejs_msg = ("Node.js %s found but 20+ is required. "
+		nodejs_msg = ("Node.js %s found but 22+ is required. "
 			+ "Update from https://nodejs.org") % str(node_check["version"])
 	_nodejs_status_warning = Label.new()
 	_nodejs_status_warning.text = nodejs_msg

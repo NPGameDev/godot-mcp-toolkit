@@ -5,14 +5,14 @@ extends RefCounted
 ## macOS/Linux login-shell fallback (for version managers like nvm).
 
 
-## Check if Node.js is installed and meets the minimum version (20+).
+## Check if Node.js is installed and meets the minimum version (22+).
 ## Returns { "found": bool, "version": String, "meets_minimum": bool }.
 ## On macOS/Linux, if the direct "node" command fails, falls back to a login
 ## shell check — GUI apps (e.g. Godot opened from Finder) don't inherit the
 ## shell PATH where version managers (nvm, fnm, volta) install Node.
 ## The MCP client runs from a terminal and will find Node regardless, so a
 ## login-shell hit is treated as "found" with no warning needed.
-static func check(min_major: int = 20) -> Dictionary:
+static func check(min_major: int = 22) -> Dictionary:
 	var result := _try_direct(min_major)
 	if result["found"]:
 		return result

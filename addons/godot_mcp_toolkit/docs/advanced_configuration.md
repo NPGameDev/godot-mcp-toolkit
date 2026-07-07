@@ -242,7 +242,7 @@ that standard command; there is nothing macOS-specific to configure.
 - **Launch the client from a terminal to see its error.** `open` won't help — start
   the app's binary from a shell. A terminal launch inherits your `PATH` and prints
   the client's real startup error, which tells you what to fix.
-- **Confirm `.mcp.json` is present at your project root** and Node 20+ is installed
+- **Confirm `.mcp.json` is present at your project root** and Node 22+ is installed
   (`node --version`). If `.mcp.json` is missing, click **Write .mcp.json** in the
   MCP Toolkit dock.
 - **Move your version-manager init into `~/.zprofile`.** If your Node lives behind a

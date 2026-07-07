@@ -27,10 +27,10 @@ const _MCP_JSON_MISSING_TEXT := (
 	"No .mcp.json found — use Project > Tools > MCP Toolkit > "
 	+ "Write .mcp.json to create one.")
 const _NODEJS_NOT_FOUND_TEXT := (
-	"NODE.JS NOT FOUND — The MCP server bridge requires Node.js 20+. "
+	"NODE.JS NOT FOUND — The MCP server bridge requires Node.js 22+. "
 	+ "Download it from https://nodejs.org")
 const _NODEJS_OLD_VERSION_TEXT := (
-	"NODE.JS %s FOUND BUT 20+ REQUIRED — "
+	"NODE.JS %s FOUND BUT 22+ REQUIRED — "
 	+ "Update from https://nodejs.org")
 
 

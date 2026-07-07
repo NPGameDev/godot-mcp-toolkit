@@ -24,7 +24,7 @@ pipes stdio (Claude Code) to the plugin's WebSocket:
 npm install -g @npgamedev/godot-mcp-server
 ```
 
-Requires Node.js ≥ 20. Source + README:
+Requires Node.js ≥ 22. Source + README:
 <https://github.com/NPGameDev/godot-mcp-server>
 
 ## Connect Claude Code

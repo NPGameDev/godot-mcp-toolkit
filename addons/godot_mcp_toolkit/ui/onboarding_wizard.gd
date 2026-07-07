@@ -141,7 +141,7 @@ func _spec_mcp_json(mcp_exists: bool) -> Dictionary:
 	var intro := (
 		"Your MCP client reads .mcp.json from the project root "
 		+ "to locate and configure the server.\n\n"
-		+ "The MCP server bridge requires Node.js 20+ to run. "
+		+ "The MCP server bridge requires Node.js 22+ to run. "
 		+ "Download it from https://nodejs.org if not installed.\n\n")
 	if mcp_exists:
 		return {
