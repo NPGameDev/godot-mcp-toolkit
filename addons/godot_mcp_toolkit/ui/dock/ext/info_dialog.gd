@@ -11,6 +11,7 @@ extends AcceptDialog
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const MCPJsonSync = Modules.MCPJsonSync
 const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_section_card.gd")
+const EditorPopup := preload("res://addons/godot_mcp_toolkit/ui/editor_popup.gd")
 
 # One-time dialog chrome (title/buttons) is installed on first show; the
 # content is cleared and rebuilt on every call.
@@ -23,8 +24,12 @@ var _content_root: VBoxContainer = null
 func show_info(server: Node) -> void:
 	_ensure_built()
 
-	# Clear any prior content so a reused dialog never stacks old renders.
+	# Clear prior content immediately — remove_child (not just queue_free) so the
+	# rebuilt dialog's contents-minimum-size reflects only the new content.
+	# queue_free alone leaves the old subtree in the tree for the current frame,
+	# inflating popup_centered's size on every reopen (the window is grow-only).
 	for child in _content_root.get_children():
+		_content_root.remove_child(child)
 		child.queue_free()
 
 	# Fixed header — Connection + plugin/engine versions, always visible above
@@ -141,13 +146,10 @@ func show_info(server: Node) -> void:
 		btn.pressed.connect(func(): OS.shell_open(url))
 		links_row.add_child(btn)
 
-	popup_centered()
-	# Raise to the foreground on every open: a non-exclusive dialog sinks behind
-	# the editor when the viewport is clicked, and the next "Info / Help" click
-	# would otherwise re-render this hidden window and feel dead. grab_focus both
-	# raises and focuses, and — unlike move_to_foreground, deprecated in 4.6+ — is
-	# non-deprecated across every supported engine.
-	grab_focus()
+	# Open at an explicit size and raised (see EditorPopup). The explicit size is
+	# load-bearing: a no-arg popup_centered on a reused dialog reuses the window's
+	# current size and only grows, so sizing drifts across reopens.
+	EditorPopup.present(self, Vector2i(520, 460))
 
 
 # Installs the dialog chrome once: title, Close button, and the content

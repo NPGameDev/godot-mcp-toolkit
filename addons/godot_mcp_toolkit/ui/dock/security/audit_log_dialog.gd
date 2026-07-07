@@ -45,8 +45,12 @@ func show_log(audit_path: String) -> void:
 
 	_ensure_built()
 
-	# Clear any prior content so a reused dialog never stacks old renders.
+	# Clear prior content immediately — remove_child (not just queue_free) so the
+	# rebuilt dialog's contents-minimum-size reflects only the new content.
+	# queue_free alone leaves the old subtree in the tree for the current frame,
+	# inflating popup_centered's size on every reopen (the window is grow-only).
 	for child in _content_root.get_children():
+		_content_root.remove_child(child)
 		child.queue_free()
 
 	var scroll := ScrollContainer.new()
@@ -65,10 +69,11 @@ func show_log(audit_path: String) -> void:
 	text_label.add_theme_font_size_override("normal_font_size", 11)
 	scroll.add_child(text_label)
 
-	# Open centered and raised (see EditorPopup), then scroll to bottom after a
-	# layout pass. Raising keeps the "View Audit Log" button responsive when the
-	# viewport is clicked and the dialog sinks behind it.
-	EditorPopup.present(self)
+	# Open at an explicit size and raised (see EditorPopup), then scroll to bottom
+	# after a layout pass. The explicit size stops a reused dialog from drifting (a
+	# no-arg popup reuses the window's current size); raising keeps the "View Audit
+	# Log" button responsive when the dialog sinks behind the viewport.
+	EditorPopup.present(self, Vector2i(620, 480))
 	await get_tree().process_frame
 	scroll.scroll_vertical = scroll.get_v_scroll_bar().max_value
 
