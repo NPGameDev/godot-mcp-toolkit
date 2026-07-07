@@ -303,6 +303,18 @@ The `source_path` parameter accepts an **absolute OS filesystem path**
 on Linux). `FileGuard` provides a source-path allowlist;
 the extension allowlist + size cap provide defence in depth.
 
+## Concurrent human + MCP editing
+
+You can keep working in the editor while MCP tool calls run. Concurrent editing
+is validated for: creating nodes during scene-tree edits, undo interleaving
+(Ctrl+Z undoes the most recent action — MCP or manual — first), acting on a node
+while its Inspector is open, and mid-drag reparenting — no crashes.
+
+**Caveat — unsaved script buffers.** If you have a script open in the built-in
+editor with **unsaved changes** and an MCP tool writes the same file, the
+editor's in-memory buffer wins on your next save and can overwrite the tool's
+write. For same-file edits, save or close the script first (or take turns).
+
 ## Port
 
 `127.0.0.1:6550` — localhost-only bind, auto-scanned from the `6550–6560` band.
