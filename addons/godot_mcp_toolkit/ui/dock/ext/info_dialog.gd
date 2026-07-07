@@ -10,9 +10,10 @@ extends AcceptDialog
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const MCPJsonSync = Modules.MCPJsonSync
+const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_section_card.gd")
 
 # One-time dialog chrome (title/buttons) is installed on first show; the
-# scrollable content is cleared and rebuilt on every call.
+# content is cleared and rebuilt on every call.
 var _built: bool = false
 var _content_root: VBoxContainer = null
 
@@ -26,37 +27,36 @@ func show_info(server: Node) -> void:
 	for child in _content_root.get_children():
 		child.queue_free()
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.custom_minimum_size = Vector2(500, 400)
-	_content_root.add_child(scroll)
-
-	var vbox := VBoxContainer.new()
-	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(vbox)
-
-	# -- Connection info --
-	_add_info_header(vbox, "Connection")
+	# Fixed header — Connection + plugin/engine versions, always visible above
+	# the collapsible middle.
+	var connection := DockSectionCard.make_section("Connection")
+	# Pin the header at a fixed height — make_section returns SIZE_EXPAND_FILL,
+	# which would let the header expand and swallow the collapsible middle.
+	connection.size_flags_vertical = 0
+	_content_root.add_child(connection)
+	var conn: VBoxContainer = connection.get_meta("content")
 	if server != null and server.is_listening():
 		var port: int = server.get_bound_port()
 		var peers: int = server.get_authed_peer_count()
-		_add_info_row(vbox, "Address", "127.0.0.1:%d" % port)
-		_add_info_row(vbox, "Peers", "%d connected" % peers)
+		_add_info_row(conn, "Address", "127.0.0.1:%d" % port)
+		_add_info_row(conn, "Peers", "%d connected" % peers)
 	else:
-		_add_info_row(vbox, "Address", "not listening")
+		_add_info_row(conn, "Address", "not listening")
 	if MCPJsonSync.is_read_only():
-		_add_info_row(vbox, "Mode", "Read-only (GODOT_MCP_READ_ONLY=1)")
-
-	# -- Version --
+		_add_info_row(conn, "Mode", "Read-only (GODOT_MCP_READ_ONLY=1)")
 	var plugin_ver := Modules.VersionUtils.read_plugin_version()
 	var vi := Engine.get_version_info()
 	var godot_ver := "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]]
-	_add_info_row(vbox, "Plugin", "v%s" % plugin_ver)
-	_add_info_row(vbox, "Godot", godot_ver)
+	_add_info_row(conn, "Plugin", "v%s" % plugin_ver)
+	_add_info_row(conn, "Godot", godot_ver)
 
-	# -- Registered tools --
-	_add_info_header(vbox, "Registered Tools")
+	# Collapsible middle — each section owns its own scroll; all start collapsed
+	# (the fixed header already shows the primary state), so no outer scroll.
+	var mid := VBoxContainer.new()
+	mid.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_content_root.add_child(mid)
+
+	var tools_content := DockSectionCard.make_collapsible(mid, "Registered Tools", false)
 	if server != null and server.has_method("get_command_methods"):
 		var methods: Array = server.get_command_methods()
 		methods.sort()
@@ -69,46 +69,30 @@ func show_info(server: Node) -> void:
 			groups[domain].append(str(method))
 		var domain_keys: Array = groups.keys()
 		domain_keys.sort()
-		_add_info_row(vbox, "Total", "%d+ tools (plugin-side)" % methods.size())
-		var extra_note := Label.new()
-		extra_note.text = (
+		_add_info_row(tools_content, "Total", "%d+ tools (plugin-side)" % methods.size())
+		_add_note_label(tools_content, (
 			"Additional tools (LSP, discover_tools, extensions) live in "
-			+ "the MCP server and are not listed here.")
-		extra_note.add_theme_font_size_override("font_size", 11)
-		extra_note.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
-		extra_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		vbox.add_child(extra_note)
+			+ "the MCP server and are not listed here."), true)
 		for domain in domain_keys:
 			var tools: Array = groups[domain]
-			var lbl := Label.new()
-			lbl.text = "  %s (%d): %s" % [
+			_add_note_label(tools_content, "  %s (%d): %s" % [
 				str(domain).capitalize(), tools.size(),
-				", ".join(PackedStringArray(tools))]
-			lbl.add_theme_font_size_override("font_size", 11)
-			lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			vbox.add_child(lbl)
+				", ".join(PackedStringArray(tools))])
 	else:
-		_add_info_row(vbox, "Status", "server not ready")
+		_add_info_row(tools_content, "Status", "server not ready")
 
-	# -- Multi-instance support --
-	_add_info_header(vbox, "Multi-Instance Multiplayer")
-	var multi := Label.new()
-	multi.text = (
+	var multi_content := DockSectionCard.make_collapsible(mid, "Multi-Instance Multiplayer", false)
+	_add_note_label(multi_content, (
 		"A:  Two copies via git worktree — FULLY SUPPORTED\n"
 		+ "     Each editor gets its own project root, registry entry, and port.\n\n"
 		+ "B:  Built-in multi-instance run (F5 + multiple windows) — MOSTLY SUPPORTED\n"
 		+ "     Runtime server available; editor MCP commands limited to the host.\n\n"
 		+ "C:  Same directory, two editors — NOT SUPPORTED\n"
 		+ "     Port collision and registry overwrite; use Pattern A instead.\n\n"
-		+ "See addons/godot_mcp_toolkit/docs/multi-instance.md for full details.")
-	multi.add_theme_font_size_override("font_size", 11)
-	multi.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(multi)
+		+ "See addons/godot_mcp_toolkit/docs/multi-instance.md for full details."))
 
-	# -- Read-only mode --
-	_add_info_header(vbox, "Read-Only Mode")
-	var readonly_note := Label.new()
-	readonly_note.text = (
+	var readonly_content := DockSectionCard.make_collapsible(mid, "Read-Only Mode", false)
+	_add_note_label(readonly_content, (
 		"For supervised environments (classrooms, CI, demos).\n"
 		+ "Set GODOT_MCP_READ_ONLY=1 in your .mcp.json env to restrict\n"
 		+ "the toolkit to read-only tools only. All mutating tools\n"
@@ -117,29 +101,36 @@ func show_info(server: Node) -> void:
 		+ "MCP client to restore full access.\n"
 		+ "Read-only is applied when the MCP server launches, so changing\n"
 		+ "it requires reconnecting the MCP client — existing connections\n"
-		+ "keep their current setting until then.")
-	readonly_note.add_theme_font_size_override("font_size", 11)
-	readonly_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(readonly_note)
+		+ "keep their current setting until then."))
 
-	# -- Companion Skills --
-	_add_info_header(vbox, "Companion Skills")
-	var skills_note := Label.new()
-	skills_note.text = (
-		"Claude Code skills for common toolkit workflows are bundled\n"
-		+ "with the plugin. Click the 'Companion Skills' button in the\n"
-		+ "dock to browse them, then copy any skill you want into your\n"
-		+ "project's .claude/skills/ directory.")
-	skills_note.add_theme_font_size_override("font_size", 11)
-	skills_note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	vbox.add_child(skills_note)
+	var skills_content := DockSectionCard.make_collapsible(mid, "Companion Skills", false)
+	_add_note_label(skills_content, (
+		"Companion Skills are SKILL.md 'Agent Skills' — an open standard\n"
+		+ "supported by Claude Code, OpenAI Codex, Cursor, and Gemini CLI.\n"
+		+ "The plugin bundles skills for common toolkit workflows. Copy a\n"
+		+ "skill folder into your client's skills directory:\n"
+		+ "    Claude Code: .claude/skills/\n"
+		+ "    OpenAI Codex: ~/.agents/skills/\n"
+		+ "    Cursor: .cursor/skills/\n"
+		+ "    Gemini CLI: .gemini/skills/  (or .agents/skills/)\n"
+		+ "Paths follow each client's own docs and can change over time.\n"
+		+ "The dock's 'Companion Skills' button opens this same folder."))
+	var open_skills_btn := Button.new()
+	open_skills_btn.text = "Open Skills Folder"
+	var skills_dir := "res://addons/godot_mcp_toolkit/CompanionSkills"
+	open_skills_btn.pressed.connect(func(): OS.shell_open(ProjectSettings.globalize_path(skills_dir)))
+	skills_content.add_child(open_skills_btn)
 
-	# -- Links --
-	_add_info_header(vbox, "Links")
+	# Fixed footer — reference links, always visible below the middle regardless
+	# of scroll position (mirrors the dock footer).
+	var footer := PanelContainer.new()
+	footer.add_theme_stylebox_override("panel", DockSectionCard.make_section_style())
+	footer.size_flags_vertical = Control.SIZE_SHRINK_END
+	_content_root.add_child(footer)
 	var links_row := HBoxContainer.new()
-	vbox.add_child(links_row)
+	footer.add_child(links_row)
 	for pair in [
-		["GitHub", "https://github.com/NPGameDev/godot-mcp-toolkit"],
+		["Toolkit Repo", "https://github.com/NPGameDev/godot-mcp-toolkit"],
 		["Issues", "https://github.com/NPGameDev/godot-mcp-toolkit/issues"],
 		["Server Repo", "https://github.com/NPGameDev/godot-mcp-server"],
 		["Contributing", "https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/CONTRIBUTING.md"],
@@ -151,10 +142,16 @@ func show_info(server: Node) -> void:
 		links_row.add_child(btn)
 
 	popup_centered()
+	# Raise to the foreground on every open: a non-exclusive dialog sinks behind
+	# the editor when the viewport is clicked, and the next "Info / Help" click
+	# would otherwise re-render this hidden window and feel dead. grab_focus both
+	# raises and focuses, and — unlike move_to_foreground, deprecated in 4.6+ — is
+	# non-deprecated across every supported engine.
+	grab_focus()
 
 
-# Installs the dialog chrome once: title, Close button, and the scrollable
-# content root that show_info() repopulates on every call.
+# Installs the dialog chrome once: title, Close button, and the content
+# root that show_info() repopulates on every call.
 func _ensure_built() -> void:
 	if _built:
 		return
@@ -171,11 +168,15 @@ func _ensure_built() -> void:
 	_built = true
 
 
-func _add_info_header(parent: VBoxContainer, title: String) -> void:
-	parent.add_child(HSeparator.new())
+# Adds a small wrapped note label. `dim` renders it at half alpha for a
+# secondary aside beneath a primary line.
+func _add_note_label(parent: VBoxContainer, text: String, dim := false) -> void:
 	var lbl := Label.new()
-	lbl.text = title
-	lbl.add_theme_font_size_override("font_size", 13)
+	lbl.text = text
+	lbl.add_theme_font_size_override("font_size", 11)
+	if dim:
+		lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	parent.add_child(lbl)
 
 
