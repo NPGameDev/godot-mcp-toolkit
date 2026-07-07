@@ -109,6 +109,24 @@ func _build_ui() -> void:
 	_list_vbox.add_theme_constant_override("separation", 12)
 	scroll.add_child(_list_vbox)
 
+	# Build-your-own section — extend the toolkit, don't just browse the catalog.
+	outer.add_child(HSeparator.new())
+	var extend_label := Label.new()
+	extend_label.text = (
+		"Want more than the catalog? You can build your own extensions — "
+		+ "addons that add custom MCP tools. Read the Extending guide, or use the "
+		+ "'mcp-extension-creator' Companion Skill to scaffold one with your AI "
+		+ "assistant.")
+	extend_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	extend_label.add_theme_font_size_override("font_size", 11)
+	outer.add_child(extend_label)
+
+	var extend_btn := Button.new()
+	extend_btn.text = "Open Extending Guide"
+	var guide_path := "res://addons/godot_mcp_toolkit/docs/extending.md"
+	extend_btn.pressed.connect(func(): OS.shell_open(ProjectSettings.globalize_path(guide_path)))
+	outer.add_child(extend_btn)
+
 	# Footer — cache status + refresh button
 	var footer := HBoxContainer.new()
 	outer.add_child(footer)
