@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (sv2_validation/ folder exists)
 **Tools tested:** theme_edit, audiobus_edit, audiobus_list, spriteframes_create, spriteframes_edit, spriteframes_from_spritesheet
-**Tests:** 12
+**Tests:** 14
 
 ---
 
@@ -45,6 +45,12 @@
 
 **15.12** `spriteframes_from_spritesheet` — texture_path=`res://icon.svg`, frame_size=`{"x":32,"y":32}`, file_path=`res://sv2_validation/spritesheet_frames.tres`, animations=[{name:"walk", row:0, frame_count:2}]
 - **Expect:** success
+
+**15.13** `spriteframes_create` guard — file_path=`res://sv2_validation/sf_guard.tres`, animations=[{name:"idle", frames:[{texture:"res://nonexistent_frame.png"}]}]
+- **Expect:** NOT_FOUND naming the missing texture (no .tres written — guard fires before save)
+
+**15.14** `spriteframes_create` guard — file_path=`res://sv2_validation/sf_guard.png`, animations=[{name:"idle", frames:[{texture:"res://icon.svg"}]}]
+- **Expect:** INVALID_PATH mentioning `.tres` (writes .tres files — no file written)
 
 ---
 

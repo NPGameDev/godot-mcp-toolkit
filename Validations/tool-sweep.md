@@ -73,6 +73,27 @@ Every section ends with a `## Console error check` block. The full procedure is 
 
 In Claude Code, `ToolSearch` may not return newly-activated tools due to the deferred-tools cache. **This does NOT mean the tools can't be called.** The MCP tools are available on the server side immediately after `discover_tools` activates them — just call them directly by name. Do not treat a missing ToolSearch result as a failure. Only record FAIL if the actual tool call returns "method not found" from the MCP server.
 
+### Tool-Name Resolution & Mismatch Handling
+
+**Authoring rule (naming SSOT).** Every tool reference in this index, the section files, and
+`SWEEP-COVERAGE-MANIFEST.md` MUST use the **agent-facing MCP tool name** (as returned by
+`tools/list` / `discover_tools`), never the toolkit's internal dotted *method* name. For most
+tools the two differ only by `.`↔`_` (`node.set_property` → `node_set_property`); where the
+**stem** diverges, the tool name wins — `collision_from_texture` (not
+`node.collision_from_sprite`), `navigation_edit` (not `navigation_edit_polygon`). A test that
+names a tool the agent can't call is a manifest defect, not a missing capability.
+
+**Robustness rule (not-found tool).** If a step calls a tool name the MCP server rejects with
+"method not found" *after its group is active* (distinct from the deferred-tools-cache case
+above, which is not a failure):
+1. **Do not** mark the behavior PASS, and **do not** abort the section.
+2. **Flag** it in `RESULTS.md` → *Pitfalls Discovered* (the stale name + "section/manifest
+   names an unregistered tool").
+3. **Work around it to still test the behavior:** run `discover_tools`, match the intended tool
+   by stem/purpose (a "navigation polygon edit" step → `navigation_edit`), and run the intended
+   check against the real tool — recording that PASS/FAIL separately from the doc defect.
+4. If nothing matches, record BLOCKED (doc defect), never PASS.
+
 ### Batching & Efficiency (learned 2026-06-07 full run)
 
 The biggest speed-up: **the Godot editor processes MCP commands serially on its
@@ -140,8 +161,8 @@ So you do NOT need to split dependent operations across messages.
 | 12 | [12-classdb.md](Sections/12-classdb.md) | ClassDB Introspection | 7 | classdb_search, classdb_get_info | None |
 | 13 | [13-animation.md](Sections/13-animation.md) | Animation & AnimationTree | 12 | animation_keyframe, animation_get_keys, animationtree_edit, animationtree_list | S2 |
 | 14 | [14-tileset-tilemap.md](Sections/14-tileset-tilemap.md) | TileSet & TileMap | 19 | tileset_create, tileset_edit, tilemap_set_cells, tilemap_read_cells | S2 |
-| 15 | [15-theme-audio-sprites.md](Sections/15-theme-audio-sprites.md) | Theme, Audio, SpriteFrames | 12 | theme_edit, audiobus_edit, audiobus_list, spriteframes_create/edit/from_spritesheet | S1 |
-| 16 | [16-domain-tools.md](Sections/16-domain-tools.md) | 3D, Path2D, Navigation, Particles, Procedural | 28 | 3d_*, path2d_edit_curve, navigation_edit_polygon, particles_create, procedural_edit_* | S2 |
+| 15 | [15-theme-audio-sprites.md](Sections/15-theme-audio-sprites.md) | Theme, Audio, SpriteFrames | 14 | theme_edit, audiobus_edit, audiobus_list, spriteframes_create/edit/from_spritesheet | S1 |
+| 16 | [16-domain-tools.md](Sections/16-domain-tools.md) | 3D, Path2D, Navigation, Particles, Procedural | 28 | 3d_*, path2d_edit_curve, navigation_edit, particles_create, procedural_edit_* | S2 |
 | 17 | [17-scene-query-inherit.md](Sections/17-scene-query-inherit.md) | Scene Inheritance & Query | 10 | scene_create_inherited, scene_query | S1 |
 | 18 | [18-file-operations.md](Sections/18-file-operations.md) | Phantom Tab Cleanup & File Operations | 16 | scene_close, scene_delete, file_delete, folder_delete, asset_import | S1 |
 | 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_texture | 3 | collision_from_texture | S2 |

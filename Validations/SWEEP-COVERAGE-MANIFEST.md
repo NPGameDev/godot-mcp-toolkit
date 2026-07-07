@@ -50,7 +50,7 @@
 | node.set_script | 37 | — | C5, C8 | — | — | |
 | node.manage | 43a–43j, 4.17–4.18 | ✓ (43h2: properties; 4.17: root reparent/reorder/duplicate stay INVALID_PATH) | C19 | — | FIX-K | 4.17–4.18: root RENAME allowed (guard relaxed, 41n-undecies H — agrees with node.set_property `name`, 3.29); headless units pin root rename + kept structural guards |
 | node.groups | 43k–43l, 4.12–4.16 | — | C19 | — | 462506b, concern 034 | 4.12/4.14: batch add/remove happy path; 4.15/4.16: batch partial-failure rollup — 4.15 asserts top-level `failed`(int)+`hint` via the shape-tolerant predicate on site-2's `{status?, error?}` (no-`success`) entries; 4.16 asserts both ABSENT on all-success (summarize_batch, additive) |
-| node.collision_from_sprite | 78a–78d | ✓ (INVALID_CLASS) | — | — | — | |
+| collision_from_texture | 19.1, 19.2, §25 UR12 | ✓ (19.3: INVALID_CLASS) | — | — | — | |
 | control.set_layout | 3.24–3.26 | ✓ (3.27: invalid preset, 3.28: wrong class) | C28 | — | 4d7e432 | W1 Lane 2 |
 
 ### Script Management (4 tools)
@@ -214,13 +214,13 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| navigation.edit_polygon | 85a–85f, §25 UR13 | ✓ (85e: INVALID_CLASS) | — | — | — | Undo/redo regression watch in §25 UR13 (polygon mutations register undo; bake stays direct) |
+| navigation_edit | 16.12–16.15, §25 UR13 | ✓ (16.16: INVALID_CLASS) | — | — | — | Undo/redo regression watch in §25 UR13 (polygon mutations register undo; bake stays direct) |
 
 ### Particle System (1 tool)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| particles.create | 84a–84n | ✓ (84i–84m: guards) | — | — | — | |
+| particles.create | 16.17–16.20 | ✓ (16.21–16.23: guards) | — | — | — | |
 
 ### Path2D Curve (1 tool)
 
@@ -240,9 +240,9 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| spriteframes.create | 82a, 82b, 82h–82j | ✓ (82h: empty, 82i: NOT_FOUND) | — | — | — | |
-| spriteframes.edit | 82c–82f | — | — | — | — | |
-| spriteframes.from_spritesheet | 82g | — | — | — | — | |
+| spriteframes.create | 15.9 | ✓ (15.13: NOT_FOUND texture, 15.14: INVALID_PATH) | — | — | — | |
+| spriteframes.edit | 15.10, 15.11 | — | — | — | — | |
+| spriteframes.from_spritesheet | 15.12 | — | — | — | — | |
 
 ### Meta / Transport (3 tools)
 
