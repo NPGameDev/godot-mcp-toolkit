@@ -74,10 +74,11 @@ func show_info(server: Node) -> void:
 			groups[domain].append(str(method))
 		var domain_keys: Array = groups.keys()
 		domain_keys.sort()
-		_add_info_row(tools_content, "Total", "%d+ tools (plugin-side)" % methods.size())
+		_add_info_row(tools_content, "Total", "%d plugin-side commands" % methods.size())
 		_add_note_label(tools_content, (
-			"Additional tools (LSP, discover_tools, extensions) live in "
-			+ "the MCP server and are not listed here."), true)
+			"These are the plugin-side commands. The agent-facing tool count is "
+			+ "larger and lives in the MCP server (which adds LSP, discover_tools, "
+			+ "and extension tools)."), true)
 		for domain in domain_keys:
 			var tools: Array = groups[domain]
 			_add_note_label(tools_content, "  %s (%d): %s" % [
@@ -137,11 +138,12 @@ func show_info(server: Node) -> void:
 	for pair in [
 		["Toolkit Repo", "https://github.com/NPGameDev/godot-mcp-toolkit"],
 		["Issues", "https://github.com/NPGameDev/godot-mcp-toolkit/issues"],
-		["Server Repo", "https://github.com/NPGameDev/godot-mcp-server"],
 		["Contributing", "https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/CONTRIBUTING.md"],
+		["Server Repo", "https://github.com/NPGameDev/godot-mcp-server"],
 	]:
 		var btn := Button.new()
 		btn.text = pair[0]
+		btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		var url: String = pair[1]
 		btn.pressed.connect(func(): OS.shell_open(url))
 		links_row.add_child(btn)
