@@ -34,7 +34,7 @@ C24–C26 in §§26–27).
 |---|---|---|---|---|---|---|
 | scene.create | 7, 8, 17.1, 17.1b | — | C3, C5, C8 | — | — | 17.1/17.1b: root_name override + stem default |
 | scene.open | 18, 64a, 64d, 64f | — | C3, C7, C8 | — | — | |
-| scene.close | 18.3, 18.14, 64b, 64f | ✓ (non-active, last tab) | C3, C7, C27 | ✓ (_set_main_scene_state hint) | — | 4.5+ only (version-gated via min_godot_version) |
+| scene.close | 18.3, 18.14, 64b, 64f | ✓ (non-active, last tab) | C3, C7, C27 | ✓ (_set_main_scene_state hint) | — | 4.5+ only (version-gated via min_godot_version). Response discloses `unsaved_changes_discarded: <bool>` on 4.7+ (omitted below 4.7) |
 | scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3 | ✓ (tab_closed, phantom warning) | — | |
 | scene.create_node | 20–26, 64h | ✓ (2.12: CLASS_MISMATCH) | C5, C8, C10 | ✓ (preload, unique_name) | FIX-G (P6), cb4e162 | **GAP:** unique_name param untested |
 | scene.delete_node | 43j, 43s, 64i | — | — | — | — | |
@@ -55,7 +55,7 @@ C24–C26 in §§26–27).
 | node.set_script | 37 | — | C5, C8 | — | — | |
 | node.manage | 43a–43j, 4.17–4.18 | ✓ (43h2: properties; 4.17: root reparent/reorder/duplicate stay INVALID_PATH) | — | — | FIX-K | 4.17–4.18: root RENAME allowed (guard relaxed, 41n-undecies H — agrees with node.set_property `name`, 3.29); headless units pin root rename + kept structural guards |
 | node.groups | 43k–43l, 4.12–4.16 | — | — | — | 462506b, concern 034 | 4.12/4.14: batch add/remove happy path; 4.15/4.16: batch partial-failure rollup — 4.15 asserts top-level `failed`(int)+`hint` via the shape-tolerant predicate on site-2's `{status?, error?}` (no-`success`) entries; 4.16 asserts both ABSENT on all-success (summarize_batch, additive) |
-| collision_from_texture | 19.1, 19.2, §25 UR12 | ✓ (19.3: INVALID_CLASS) | — | — | — | |
+| collision_from_texture | 19.1, 19.2, §25 UR12 | ✓ (19.3: INVALID_CLASS) | — | — | — | `parent_path` param (renamed from `target_parent`) |
 | control.set_layout | 3.24–3.26 | ✓ (3.27: invalid preset, 3.28: wrong class) | C28 | — | 4d7e432 | W1 Lane 2 |
 
 ### Script Management (4 tools)
