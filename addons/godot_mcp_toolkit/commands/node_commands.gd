@@ -1161,7 +1161,7 @@ static func _cmd_collision_from_sprite(parameters: Dictionary) -> Dictionary:
 
 	# Resolve target parent
 	var target_parent: Node
-	var target_parent_path := str(parameters.get("target_parent", ""))
+	var target_parent_path := str(parameters.get("parent_path", ""))
 	if target_parent_path.is_empty():
 		target_parent = node.get_parent()
 	else:

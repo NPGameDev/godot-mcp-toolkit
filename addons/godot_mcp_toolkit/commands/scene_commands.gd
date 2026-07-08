@@ -98,7 +98,7 @@ static func _cmd_scene_get_tree(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
 		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
-	var depth_raw = parameters.get("depth", 2)
+	var depth_raw = parameters.get("max_depth", 2)
 	var depth: int = int(depth_raw) \
 		if (typeof(depth_raw) == TYPE_INT or typeof(depth_raw) == TYPE_FLOAT) else 2
 	var include_properties: bool = bool(parameters.get("include_properties", false))

@@ -333,7 +333,7 @@ static func _load_frame(frame_raw) -> Dictionary:
 	if typeof(frame_raw) != TYPE_DICTIONARY:
 		return MCPToolkitError.fail("INVALID_PARAMS", "each frame must be a Dictionary")
 
-	var texture_path := str(frame_raw.get("texture", ""))
+	var texture_path := str(frame_raw.get("texture_path", ""))
 	if texture_path.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "frame texture path is required")
 

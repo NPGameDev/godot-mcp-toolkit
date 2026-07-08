@@ -80,7 +80,7 @@ fresh-Control sizing — and Vector2 values use the typed form
   substring matches are pruned because `placeholders` dominates the score.
 
 **28.9** Every shape — for each of `solid`, `circle`, `triangle`, `diamond`, `arrow`, `checkerboard`, `grid`:
-- `texture_generate` path=`res://sv2_validation/placeholders/shape_<shape>.png`, shape=`<shape>`, width=`32`, height=`32`, fill_color=`"#3366ff"`, outline_color=`"#000000"`, if_exists=`replace`
+- `texture_generate` file_path=`res://sv2_validation/placeholders/shape_<shape>.png`, shape=`<shape>`, width=`32`, height=`32`, fill_color=`"#3366ff"`, outline_color=`"#000000"`, if_exists=`replace`
 - **Expect:** success; `class` is **`Texture2D`** — always populated (Item B derives it by construction), **no** "did not index within 5000ms" warning, and `elapsed_ms` ≈ 0; `status:"created"`.
 
 **28.10** Colour formats — generate four solids with fill_color = `"#ff8800"` / `"red"` / `[0.1,0.2,0.9]` / `[255,128,0]`
@@ -99,15 +99,15 @@ fresh-Control sizing — and Vector2 values use the typed form
 - **Expect:** second call `status:"returned"` (idempotent no-op). A third call with if_exists=`fail` → **ALREADY_EXISTS**.
 
 **28.15** texture guards:
-- path=`.../x.jpg` → **INVALID_PATH** mentioning `png`
-- path=`res://../escape.png` → **PATH_DENIED**
+- file_path=`.../x.jpg` → **INVALID_PATH** mentioning `png`
+- file_path=`res://../escape.png` → **PATH_DENIED**
 - fill+outline+background all `[0,0,0,0]` → **INVALID_PARAMS** mentioning `transparent`
 - shape=`hexagon` → **JSON-RPC -32602** naming `shape` (enum, server-side; the plugin's `INVALID_PARAMS` is defense-in-depth on the direct-dispatch path)
 
 ## sound_generate (placeholders group)
 
 **28.16** Every waveform — for each of `sine`, `square`, `triangle`, `sawtooth`, `noise`:
-- `sound_generate` path=`res://sv2_validation/placeholders/wave_<waveform>.wav`, waveform=`<waveform>`, frequency=`440`, duration=`0.1`, if_exists=`replace`
+- `sound_generate` file_path=`res://sv2_validation/placeholders/wave_<waveform>.wav`, waveform=`<waveform>`, frequency=`440`, duration=`0.1`, if_exists=`replace`
 - **Expect:** success; `class` is **`AudioStreamWAV`** — always populated (Item B), **no** index warning, `elapsed_ms` ≈ 0.
 
 **28.17** Pitch sweep + decay — `sound_generate` waveform=`square`, frequency=`200`, end_frequency=`900`, duration=`0.2`, decay=`0.1`
@@ -117,9 +117,9 @@ fresh-Control sizing — and Vector2 values use the typed form
 - **Expect:** success; response echoes `duration<=5` (clamped).
 
 **28.19** sound guards:
-- path=`.../x.mp3` → **INVALID_PATH** mentioning `wav`
+- file_path=`.../x.mp3` → **INVALID_PATH** mentioning `wav`
 - waveform=`fmsynth` → **JSON-RPC -32602** naming `waveform` (enum, server-side)
-- path=`res://../escape.wav` → **PATH_DENIED**
+- file_path=`res://../escape.wav` → **PATH_DENIED**
 
 ---
 

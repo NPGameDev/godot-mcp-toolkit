@@ -80,7 +80,7 @@
 > `_test_summarize_batch` (site-3 `{success:false}` shape) rather than this sweep —
 > see `test/run_unit_tests.gd`.
 
-**2.16** `scene_get_tree` — depth=2
+**2.16** `scene_get_tree` — max_depth=2
 - **Expect:** Tree shows all created nodes: Sv2Sprite, Sv2Label, Sv2AnimPlayer, Sv2AnimTree, Sv2TileLayer, Sv2Player/Sv2Collider, Sv2Path, Sv2NavRegion, Sv2Unique, Sv2Sub, Sv2SubProps
 
 **2.17** `editor_save_scene`

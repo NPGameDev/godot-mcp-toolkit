@@ -95,14 +95,14 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 	var extension_filter: Array = parameters.get("extension_filter", [])
 	if typeof(extension_filter) != TYPE_ARRAY:
 		extension_filter = []
-	var max_results: int = int(parameters.get("max_results", 500))
+	var max_results: int = int(parameters.get("limit", 500))
 
 	var guard := FileGuard.resolve_safe(path_prefix)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if max_results < 1 or max_results > 2000:
 		return MCPToolkitError.fail("INVALID_PARAMS",
-			"max_results must be in [1, 2000] (got %d)" % max_results)
+			"limit must be in [1, 2000] (got %d)" % max_results)
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if filesystem.is_scanning():
 		return MCPToolkitError.fail("FILESYSTEM_NOT_READY",
@@ -150,7 +150,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 	var truncated := total_assets > entries.size()
 
 	# total_assets: the full match count (count-past-cap). Cursor-less — the depth-first
-	# FS walk is not linearly resumable, so the hint advises narrowing filters / raising max_results.
+	# FS walk is not linearly resumable, so the hint advises narrowing filters / raising limit.
 	var response: Dictionary = {
 		"entries": entries,
 		"count": entries.size(),
@@ -164,7 +164,7 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 		},
 	}
 	if truncated:
-		response["hint"] = "%d of %d assets returned (capped at max_results) — narrow with path_prefix/name_glob/class_filter/extension_filter, or raise max_results (<= 2000)." % [entries.size(), total_assets]
+		response["hint"] = "%d of %d assets returned (capped at limit) — narrow with path_prefix/name_glob/class_filter/extension_filter, or raise limit (<= 2000)." % [entries.size(), total_assets]
 	return MCPToolkitSuccess.ok(response)
 
 
@@ -174,7 +174,7 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 		return err
 	var file_path: String = str(parameters.get("file_path", ""))
 	var include_transitive: bool = bool(parameters.get("include_transitive", false))
-	var max_results: int = int(parameters.get("max_results", 200))
+	var max_results: int = int(parameters.get("limit", 200))
 
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
@@ -196,7 +196,7 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 	const MAX_TRANSITIVE_DEPTH := 50
 
 	# Count every unique dependency for total_dependencies, but stop COLLECTING rows
-	# once the cap is hit (count-past-cap, still bounded by MAX_TRANSITIVE_DEPTH). The first max_results
+	# once the cap is hit (count-past-cap, still bounded by MAX_TRANSITIVE_DEPTH). The first limit
 	# collected rows are byte-identical to before — only counting continues past it.
 	while queue.size() > 0:
 		var current := queue.pop_front() as String
@@ -254,7 +254,7 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 		"warnings": warnings,
 	}
 	if truncated:
-		response["hint"] = "%d of %d dependencies returned (capped at max_results) — raise max_results (no cursor), or set include_transitive=false to reduce the set." % [dependencies.size(), total_dependencies]
+		response["hint"] = "%d of %d dependencies returned (capped at limit) — raise limit (no cursor), or set include_transitive=false to reduce the set." % [dependencies.size(), total_dependencies]
 	return MCPToolkitSuccess.ok(response)
 
 

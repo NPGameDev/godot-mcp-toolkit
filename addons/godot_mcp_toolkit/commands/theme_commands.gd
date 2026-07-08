@@ -58,14 +58,14 @@ static func _cmd_theme_edit(parameters: Dictionary) -> Dictionary:
 				"edits[%d] must be a dictionary" % i)
 
 		# Validate required keys per edit.
-		for key in ["type_name", "property_type", "property_name", "value"]:
+		for key in ["type_name", "property_type", "property", "value"]:
 			if not edit.has(key):
 				return MCPToolkitError.fail("INVALID_PARAMS",
 					"edits[%d] missing required key '%s'" % [i, key])
 
 		var type_name := str(edit["type_name"])
 		var property_type := str(edit["property_type"])
-		var property_name := str(edit["property_name"])
+		var property_name := str(edit["property"])
 		var value = edit["value"]
 
 		if property_type not in _VALID_PROPERTY_TYPES:

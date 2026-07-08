@@ -617,8 +617,8 @@ static func _cmd_particles_create(parameters: Dictionary) -> Dictionary:
 		properties_set += 1
 
 	# --- 2D texture ---
-	if not is_3d and parameters.has("texture"):
-		var tex_path := str(parameters["texture"])
+	if not is_3d and parameters.has("texture_path"):
+		var tex_path := str(parameters["texture_path"])
 		if ResourceLoader.exists(tex_path):
 			(node as GPUParticles2D).texture = ResourceLoader.load(tex_path)
 			properties_set += 1

@@ -39,7 +39,7 @@ does zero lookups.
    | S11 save_* | `save_path` | `path` |
    | S13 animation_keyframe | `node_path`/`animation`/`track_property` | `player_path`/`animation_name`/`track_path` (+ required `action`) |
    | S13 animationtree_* | — | `node_path` |
-   | S14 tilemap_set_cells | `node_path` | **`tilemap_path`** |
+   | S14 tilemap_set_cells | — | `node_path` |
    | S14 tilemap_read_cells | — | `node_path` |
    | S14 tileset_*/edit_* | — | `file_path` (+ `source_id`, `tiles[]`) |
    **Caveat — schema desc ≠ enforced schema:** discover_tools *descriptions* can

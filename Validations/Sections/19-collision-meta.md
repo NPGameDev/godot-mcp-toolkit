@@ -29,4 +29,4 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 ## Cleanup
 
 - `scene_delete_node` node_path=`Sv2CollSprite`
-- `scene_delete_node` node_path=`Sv2CollSprite_collision` (the generated CollisionPolygon2D is a **sibling** of the sprite at the scene root — `collision_from_texture`'s `target_parent` defaults to the sprite's *parent*, not the sprite — so delete it separately; it is NOT a child of the sprite)
+- `scene_delete_node` node_path=`Sv2CollSprite_collision` (the generated CollisionPolygon2D is a **sibling** of the sprite at the scene root — `collision_from_texture`'s `parent_path` defaults to the sprite's *parent*, not the sprite — so delete it separately; it is NOT a child of the sprite)

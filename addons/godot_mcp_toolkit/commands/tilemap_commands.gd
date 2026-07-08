@@ -197,13 +197,13 @@ static func _expand_regions_to_cells(regions: Array) -> Array:
 static func _cmd_tilemap_set_cells(
 	server: Node, parameters: Dictionary,
 ) -> Dictionary:
-	var tilemap_path := str(parameters.get("tilemap_path", ""))
-	tilemap_path = Helpers.normalize_editor_path(tilemap_path)
+	var node_path := str(parameters.get("node_path", ""))
+	node_path = Helpers.normalize_editor_path(node_path)
 	var layer := int(parameters.get("layer", 0))
 	var cells_raw = parameters.get("cells", null)
 	var regions_raw = parameters.get("regions", null)
-	if tilemap_path.is_empty():
-		return MCPToolkitError.fail("INVALID_PARAMS", "missing tilemap_path")
+	if node_path.is_empty():
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path")
 
 	# Expand regions into cells.
 	if regions_raw != null and typeof(regions_raw) == TYPE_ARRAY:
@@ -218,15 +218,15 @@ static func _cmd_tilemap_set_cells(
 			"cells or regions must be provided. cells: Array of {x,y,source_id,atlas_x,atlas_y,alternative_tile?}. " +
 			"regions: Array of {x,y,width,height,source_id,atlas_x,atlas_y,alternative_tile?} for bulk rectangular fills.")
 	var cells: Array = cells_raw
-	var node = _resolve_scene_node(tilemap_path)
+	var node = _resolve_scene_node(node_path)
 	if node == null:
-		return MCPToolkitError.fail("NOT_FOUND", "no node at %s" % tilemap_path, MCPToolkitError.HINT_NODE_PATH)
+		return MCPToolkitError.fail("NOT_FOUND", "no node at %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 	var is_layer: bool = node.is_class("TileMapLayer")  # dynamic — avoids parse error on < 4.3
 	var is_map := node is TileMap
 	if not (is_layer or is_map):
 		return MCPToolkitError.fail("INVALID_CLASS",
 			"node at %s is not a TileMap or TileMapLayer (got %s); tilemap.set_cells only accepts tilemap-family nodes" % [
-				tilemap_path, node.get_class()])
+				node_path, node.get_class()])
 
 	# Validate that a tileset is assigned — placing cells without one
 	# silently produces invisible tiles.
@@ -237,7 +237,7 @@ static func _cmd_tilemap_set_cells(
 		has_tileset = (node as TileMap).tile_set != null
 	if not has_tileset:
 		return MCPToolkitError.fail("INVALID_STATE",
-			"no tileset assigned to %s — cells would be invisible. " % tilemap_path +
+			"no tileset assigned to %s — cells would be invisible. " % node_path +
 			"Use node_set_property with {\"type\": \"Resource\", \"path\": \"res://path/to/tileset.tres\"} to set tile_set first.")
 
 	var required_keys := ["x", "y", "source_id", "atlas_x", "atlas_y"]
@@ -257,7 +257,7 @@ static func _cmd_tilemap_set_cells(
 		if layer < 0 or layer >= layer_count:
 			return MCPToolkitError.fail("INVALID_PARAMS",
 				"layer %d out of range [0, %d) for TileMap %s" % [
-					layer, layer_count, tilemap_path])
+					layer, layer_count, node_path])
 
 	var before_state: Array = []
 	for cell_index in range(cells.size()):
@@ -299,13 +299,13 @@ static func _cmd_tilemap_set_cells(
 
 	server.undo_helpers._tilemap_apply_batch(node, layer, cells)
 	MCPToolkitUndoRedoAction.begin(
-			"tilemap.set_cells %s (%d cells)" % [tilemap_path, cells.size()], node) \
+			"tilemap.set_cells %s (%d cells)" % [node_path, cells.size()], node) \
 		.do_method(server.undo_helpers._tilemap_apply_batch.bind(node, layer, cells)) \
 		.undo_method(server.undo_helpers._tilemap_restore_batch.bind(node, layer, before_state)) \
 		.do_reference(node) \
 		.commit_recorded()
 	var set_result := {
-		"tilemap_path": tilemap_path,
+		"node_path": node_path,
 		"layer": layer,
 		"cells_written": cells_written,
 		"cells_unchanged": cells_unchanged,

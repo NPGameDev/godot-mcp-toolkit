@@ -23,7 +23,7 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 		return await _cmd_generate(parameters)
 	, MCPToolkitCommandOptions.new()
 		.mark_scene_independent()
-		.guard_project_path("path")
+		.guard_project_path("file_path")
 		.with_timeout_ms(40000)
 		.with_success_hint(
 			"Assign the texture: node_set_property on Sprite2D.texture / "
@@ -31,10 +31,10 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _cmd_generate(parameters: Dictionary) -> Dictionary:
-	var path := str(parameters.get("path", ""))
-	if path == "":
+	var file_path := str(parameters.get("file_path", ""))
+	if file_path == "":
 		return MCPToolkitError.fail("INVALID_PARAMS",
-			"path is required (res:// destination ending in .png)", MCPToolkitError.HINT_FILE_PATH)
+			"file_path is required (res:// destination ending in .png)", MCPToolkitError.HINT_FILE_PATH)
 
 	var shape := str(parameters.get("shape", "solid")).to_lower()
 	if shape not in SHAPES:
@@ -93,7 +93,7 @@ static func _cmd_generate(parameters: Dictionary) -> Dictionary:
 	# explicit wait_for_scan_ms > 0 to force a settle.
 	var wait_for_scan_ms := int(parameters.get("wait_for_scan_ms", 0))
 	var result := await Helpers.write_asset_with_settle(
-		path, PackedStringArray(ALLOWED_EXTS), if_exists, wait_for_scan_ms, "texture.generate", write_fn, "Texture2D")
+		file_path, PackedStringArray(ALLOWED_EXTS), if_exists, wait_for_scan_ms, "texture.generate", write_fn, "Texture2D")
 	if not result.get("success", false):
 		return result
 

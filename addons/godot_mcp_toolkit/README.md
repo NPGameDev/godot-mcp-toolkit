@@ -245,7 +245,7 @@ runtime sees the new bindings (Godot loads `InputMap` from
   index (no full-load). Filters: `path_prefix`, `name_glob` (case-insensitive
   `matchn`), `class_filter` (ancestry-aware via `ClassDB.is_parent_class`),
   `extension_filter`. Returns `[{ path, class, modified_unix }]`. Cap
-  `max_results` at 2000 (default 500). `FILESYSTEM_NOT_READY` if mid-scan.
+  `limit` at 2000 (default 500). `FILESYSTEM_NOT_READY` if mid-scan.
 - `asset_get_dependencies` — forward dependencies of a `res://` resource or
   scene. Uses `ResourceLoader.get_dependencies` (O(1) cached after scan).
   `include_transitive: true` does a breadth-first walk with cycle-safe
