@@ -55,6 +55,20 @@ static func _get_edited_root() -> Node:
 	return Helpers.get_edited_root()
 
 
+## Returns the subset of [param candidate_keys] that [param parameters] actually
+## carries, preserving the given order.
+##
+## An idempotent-return branch parses caller args it will not apply when the node
+## already exists; this names only the args the caller truly passed, so the
+## disclosure stays actionable and never fires on args nobody sent.
+static func _passed_keys(parameters: Dictionary, candidate_keys: Array[String]) -> Array[String]:
+	var passed: Array[String] = []
+	for key in candidate_keys:
+		if parameters.has(key):
+			passed.append(key)
+	return passed
+
+
 static func _path_in_scene(scene_root: Node, node: Node) -> String:
 	return str(scene_root.get_path_to(node))
 
@@ -365,7 +379,14 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		elif existing_script != null:
 			class_match = existing_global_name == class_name_param
 		if class_match:
-			return MCPToolkitSuccess.ok({"status": "returned", "path": _path_in_scene(root, existing)})
+			var returned := {"status": "returned", "path": _path_in_scene(root, existing)}
+			# The existing node is handed back untouched: properties/layout_mode/
+			# unique_name only apply while creating. Name any the caller passed so a
+			# silent no-op doesn't read as "applied".
+			var ignored := _passed_keys(parameters, ["properties", "layout_mode", "unique_name"])
+			if not ignored.is_empty():
+				returned["warning"] = "node already existed; ignored %s (only applied when a node is created, not returned)" % ", ".join(ignored)
+			return MCPToolkitSuccess.ok(returned)
 		var actual := existing_global_name if existing_global_name != "" else existing.get_class()
 		return MCPToolkitError.fail("CLASS_MISMATCH",
 			"node '%s' already exists under '%s' as %s, not %s; rename or remove it first" % [
@@ -549,11 +570,17 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		if as_name != "":
 			# Explicit name — idempotent return.
 			var existing_node := parent_node.get_node(NodePath(target_name))
-			return MCPToolkitSuccess.ok({
+			var returned := {
 				"status": "returned",
 				"path": _path_in_scene(root, existing_node),
 				"class_name": existing_node.get_class(),
-			})
+			}
+			# transform applies only to a freshly-instantiated node; the existing
+			# one is returned as-is. Disclose a passed transform so it doesn't read
+			# as silently applied.
+			if not transform.is_empty():
+				returned["warning"] = "node already existed; ignored transform (only applied to a newly-instantiated node)"
+			return MCPToolkitSuccess.ok(returned)
 		# Auto-rename on collision (Player, Player2, Player3...) —
 		# matches Godot editor's own drag-drop naming convention.
 		var suffix := 2

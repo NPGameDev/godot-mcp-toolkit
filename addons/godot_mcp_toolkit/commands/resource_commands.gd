@@ -136,6 +136,10 @@ static func _cmd_resource_write(parameters: Dictionary) -> Dictionary:
 				"file at %s is not a readable Resource" % file_path)
 		var resource_class := resource.get_class()
 		var warnings := _apply_resource_properties(resource, properties, resource_class)
+		# type only selects the class when creating; an existing file keeps its own
+		# class. Disclose a passed type so it doesn't read as a silent retype.
+		if parameters.has("type"):
+			warnings.append("ignored type '%s' — resource already exists; type only applies when creating" % str(parameters.get("type", "")))
 		var save_error := ResourceSaver.save(resource, file_path)
 		if save_error != OK:
 			return MCPToolkitError.fail("SAVE_FAILED",
