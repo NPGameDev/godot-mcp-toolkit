@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in `res://sv2_validation/Sv2Main.tscn`)
 **Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, navigation.edit_polygon, particles.create, collision_from_texture, node.set_script
-**Tests:** 53
+**Tests:** 60 (numbered UR sub-cases UR1.x–UR13.x; scaffolding UR-Setup/UR-Console/UR-Cleanup excluded)
 **Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene. Sections UR4–UR12 are regression guards for tools that previously had missing `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls, which caused `UndoRedo history mismatch` errors; UR13 watches navigation's UndoRedo adoption.
 
 ---

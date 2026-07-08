@@ -1,6 +1,14 @@
 # Universal MCP Tool Sweep v2
 
-A comprehensive, modular validation sweep for the Godot MCP Toolkit covering all 122 MCP tools (100 editor-side + 6 LSP + 4 debugger + 12 runtime).
+A comprehensive, modular validation sweep for the Godot MCP Toolkit.
+
+**Total tools (agent-facing):** 110 + 2 meta — canonical count in server
+`src/registration/catalogue.ts` (`--tools-count`).
+**Toolkit surfaces (non-disjoint — do not sum):** 100 editor-registered (incl. the 4 `debug.*`) ·
+12 runtime (4 names overlap the editor 100) · 6 LSP (server-side only).
+**Sweep scale:** per-section defined-case counts in the Section Map below; last full-run tally in
+`RESULTS.md` (479 tests · 2026-07-03 · Godot 4.7). **Combo chains: 17** (C1–C12 & C27–C28 in §22;
+C24–C26 in §§26–27).
 
 ## How to Use
 
@@ -168,10 +176,10 @@ So you do NOT need to split dependent operations across messages.
 | 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_texture | 3 | collision_from_texture | S2 |
 | 20 | [20-runtime.md](Sections/20-runtime.md) | Game Start, Runtime & Debugging | 29 | game_start/stop, runtime_*, debugger_get_log, input_simulate (send_text), execute_code, animation_player_control, signal_emit | S2 |
 | 21 | [21-game-guards.md](Sections/21-game-guards.md) | game_start Guards & Crash Recovery | 13 | game_start, debugger_get_log (debug_state, error_buffer, log_scan) | S1 |
-| 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 14 chains | Multi-tool workflows | S1 |
+| 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 14 chains (+3 in §§26–27 = 17 total) | Multi-tool workflows | S1 |
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 9+ | discover_tools, extensions.refresh | Extensions present |
-| 25 | [25-undo-redo.md](Sections/25-undo-redo.md) | Undo/Redo Verification | 14 | node.set_property, scene.create_node, node.manage, node.groups, node.call_method | S2 |
+| 25 | [25-undo-redo.md](Sections/25-undo-redo.md) | Undo/Redo Verification | 60 | node.set_property, scene.create_node, node.manage, node.groups, node.call_method | S2 |
 | 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 23+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references | S1, LSP on port 6005 |
 | 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 16+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
 | 28 | [28-placeholders-spatial.md](Sections/28-placeholders-spatial.md) | Spatial Map & Placeholder Generators | 22 | scene_spatial_map, texture_generate, sound_generate | S2 |
@@ -191,7 +199,7 @@ So you do NOT need to split dependent operations across messages.
 
 ## Regression Watch Summary
 
-The sweep includes **37 REGRESSION WATCH** annotations covering DX fixes, bug fixes, and parameter renames from the 41k + 41l validation clusters. These appear inline in the relevant section files. If a test marked with REGRESSION WATCH fails, it indicates a previously-fixed behavior has regressed — flag prominently.
+The sweep includes **57 REGRESSION WATCH** annotations covering DX fixes, bug fixes, and parameter renames from the 41k + 41l validation clusters. These appear inline in the relevant section files. If a test marked with REGRESSION WATCH fails, it indicates a previously-fixed behavior has regressed — flag prominently.
 
 | Category | Count | Sections |
 |----------|-------|----------|

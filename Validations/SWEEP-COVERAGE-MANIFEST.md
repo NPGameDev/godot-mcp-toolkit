@@ -2,8 +2,13 @@
 
 **Last updated:** 2026-07-05 (41n-undecies-bis-bis — version-gated LOG_BUSY/LOG_UNAVAILABLE hint SSOT; §07 REGRESSION WATCH note)
 **Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
-**Total tools:** 122 (100 editor-side + 6 LSP + 4 debugger + 12 runtime)
-**Sweep test count:** ~295 numbered test cases + 28 combo chains + C# phase + extension phase (Section 28 adds 22) — concern 034 D added 5 batch-rollup cases (3.14c/3.14d, 4.15/4.16, 2.15a); 41n-sexies added 7 send_text cases (20.17a–20.17g)
+**Total tools (agent-facing):** 110 + 2 meta — canonical count in server
+`src/registration/catalogue.ts` (`--tools-count`).
+**Toolkit surfaces (non-disjoint — do not sum):** 100 editor-registered (incl. the 4 `debug.*`) ·
+12 runtime (4 names overlap the editor 100) · 6 LSP (server-side only).
+**Sweep scale:** per-section defined-case counts in the `tool-sweep.md` index; last full-run tally in
+`RESULTS.md` (479 tests · 2026-07-03 · Godot 4.7). **Combo chains: 17** (C1–C12 & C27–C28 in §22;
+C24–C26 in §§26–27).
 
 ---
 
@@ -27,29 +32,29 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| scene.create | 7, 8, 17.1, 17.1b | — | C3, C5, C8, C13, C18, C19 | — | — | 17.1/17.1b: root_name override + stem default |
+| scene.create | 7, 8, 17.1, 17.1b | — | C3, C5, C8 | — | — | 17.1/17.1b: root_name override + stem default |
 | scene.open | 18, 64a, 64d, 64f | — | C3, C7, C8 | — | — | |
 | scene.close | 18.3, 18.14, 64b, 64f | ✓ (non-active, last tab) | C3, C7, C27 | ✓ (_set_main_scene_state hint) | — | 4.5+ only (version-gated via min_godot_version) |
-| scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3, C18 | ✓ (tab_closed, phantom warning) | — | |
-| scene.create_node | 20–26, 64h | ✓ (C22: CLASS_MISMATCH) | C5, C8, C10, C19 | ✓ (preload, unique_name) | FIX-G (P6), cb4e162 | **GAP:** unique_name param untested |
-| scene.delete_node | 43j, 43s, 64i | — | C19 | — | — | |
-| scene.instantiate | 41, 43q–43s, 2.15a | — | C20 | — | FIX-B, FIX-9, FIX-K, concern 034 | 2.15a: all-success batch → `failed`/`hint` ABSENT (additive rollup, summarize_batch). Partial-failure path (`instantiate()==null`) is unit-pinned (`_test_summarize_batch`) — not selectively triggerable from a valid .tscn. **GAP:** properties param, auto-rename |
+| scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3 | ✓ (tab_closed, phantom warning) | — | |
+| scene.create_node | 20–26, 64h | ✓ (2.12: CLASS_MISMATCH) | C5, C8, C10 | ✓ (preload, unique_name) | FIX-G (P6), cb4e162 | **GAP:** unique_name param untested |
+| scene.delete_node | 43j, 43s, 64i | — | — | — | — | |
+| scene.instantiate | 41, 43q–43s, 2.15a | — | — | — | FIX-B, FIX-9, FIX-K, concern 034 | 2.15a: all-success batch → `failed`/`hint` ABSENT (additive rollup, summarize_batch). Partial-failure path (`instantiate()==null`) is unit-pinned (`_test_summarize_batch`) — not selectively triggerable from a valid .tscn. **GAP:** properties param, auto-rename |
 | scene.diff | 63 | — | — | — | — | |
 | scene.create_inherited | 80a–80d | ✓ (NOT_FOUND) | — | — | — | |
 | scene.query | 83a–83j | ✓ (no filters, NOT_FOUND) | — | — | — | |
-| scene.get_tree | 19, 43, 43e, 43r | — | C8, C19, C20 | — | — | |
+| scene.get_tree | 19, 43, 43e, 43r | — | C8 | — | — | |
 
 ### Node Property & Method (9 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| node.get_property | 28, 31, 33, 36, 43b, 43i, 64g, 3.20b | — | C3, C6, C20 | — | concern 053 | 3.20b: Packed read-back is the TAGGED dict (not var_to_str) + read==write (concern 053, T:8856546) |
+| node.get_property | 28, 31, 33, 36, 43b, 43i, 64g, 3.20b | — | C3, C6 | — | concern 053 | 3.20b: Packed read-back is the TAGGED dict (not var_to_str) + read==write (concern 053, T:8856546) |
 | node.set_property | 27, 29, 30, 32, 34, 35, 3.2b, 3.2c, 3.20b, 3.14c, 3.14d, 3.29 | ✓ (3.14a: groups single-reject, 3.14b: groups batch per-entry reject; **3.2b: cross-family wrong-type → SET_FAILED; 3.2c: convertible value → ADJUSTED success+warning, 41o C1/D1**) | C3, C6 | ✓ (3.14a/3.14b: hint → node.groups; 3.2c: adjusted `warning`) | FIX-5, FIX-7, FIX-E, FIX-F, concern 032, concern 053, concern 034, 41o C1/D1 | groups property steered to node.groups (single whole-reject + batch per-entry); 3.2b/3.2c: tri-state set outcome — a CROSS-family wrong-type (String/Color on Vector2) returns SET_FAILED, while an in-family convertible value (float→int z_index 2.9→2) is ACCEPTED with a `warning` naming the reshape, not a false success (headless units `wrong-type set rejection` + `describe_set_drop tri-state` pin the same `contract/property_set_check.gd` detector). 3.20b sets a top-level PackedVector2Array (Line2D.points) for the 053 read-back round-trip. 3.14c/3.14d: batch partial-failure rollup — 3.14c asserts top-level `failed`(int, `int(...)`-coerced)+`hint` on a one-bad-entry batch; 3.14d asserts both ABSENT on all-success (summarize_batch, additive). 3.29: root rename via `name` (agrees with node.manage 4.17). **GAP:** LayerMask coercion, bare res:// guard |
 | node.get_property_list | 38–40 | — | C5 | — | — | |
 | node.call_method | 49, 50 | — | C9 | ✓ (CS3: C# hint) | — | |
 | node.set_script | 37 | — | C5, C8 | — | — | |
-| node.manage | 43a–43j, 4.17–4.18 | ✓ (43h2: properties; 4.17: root reparent/reorder/duplicate stay INVALID_PATH) | C19 | — | FIX-K | 4.17–4.18: root RENAME allowed (guard relaxed, 41n-undecies H — agrees with node.set_property `name`, 3.29); headless units pin root rename + kept structural guards |
-| node.groups | 43k–43l, 4.12–4.16 | — | C19 | — | 462506b, concern 034 | 4.12/4.14: batch add/remove happy path; 4.15/4.16: batch partial-failure rollup — 4.15 asserts top-level `failed`(int)+`hint` via the shape-tolerant predicate on site-2's `{status?, error?}` (no-`success`) entries; 4.16 asserts both ABSENT on all-success (summarize_batch, additive) |
+| node.manage | 43a–43j, 4.17–4.18 | ✓ (43h2: properties; 4.17: root reparent/reorder/duplicate stay INVALID_PATH) | — | — | FIX-K | 4.17–4.18: root RENAME allowed (guard relaxed, 41n-undecies H — agrees with node.set_property `name`, 3.29); headless units pin root rename + kept structural guards |
+| node.groups | 43k–43l, 4.12–4.16 | — | — | — | 462506b, concern 034 | 4.12/4.14: batch add/remove happy path; 4.15/4.16: batch partial-failure rollup — 4.15 asserts top-level `failed`(int)+`hint` via the shape-tolerant predicate on site-2's `{status?, error?}` (no-`success`) entries; 4.16 asserts both ABSENT on all-success (summarize_batch, additive) |
 | collision_from_texture | 19.1, 19.2, §25 UR12 | ✓ (19.3: INVALID_CLASS) | — | — | — | |
 | control.set_layout | 3.24–3.26 | ✓ (3.27: invalid preset, 3.28: wrong class) | C28 | — | 4d7e432 | W1 Lane 2 |
 
@@ -58,20 +63,21 @@
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | script.read | 15, 16, 6.2, 6.2b | — | — | ✓ (6.2 truncated `hint`) | concern 054 | 6.2/6.2b: uniform pagination contract — every success carries `truncated`+`total_lines`; a windowed read before EOF adds `next_start_line` (1-based = end_line+1) + a prose `hint`; full read / window-at-EOF = `truncated:false`, no hint. Mirrors save.read SHAPE in line units. |
-| script.write | 2, 3 | — | C2, C5, C11, C23 | ✓ (C23: preload hint) | FIX-1 | **GAP:** diagnostics fields in response |
-| script.delete | — | — | C2, C14 | — | — | Only in combos |
+| script.write | 2, 3 | — | C2, C5, C11 | ✓ (6.5: preload hint) | FIX-1 | **GAP:** diagnostics fields in response |
+| script.delete | — | — | C2 | — | — | Only in combos |
 | script.check | 17 | — | C2, C11 | — | — | |
 
-### Editor Core (6 tools)
+### Editor Core (7 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | editor.save_scene | 55, 64 | — | C3, C5, C7, C8, C9 | — | — | |
 | editor.screenshot | 56, 57 | — | — | — | — | |
-| editor.refresh | 61 | — | C15, C16 | — | 5f96b62 | Renamed from reload_scripts |
+| editor.refresh | 61 | — | — | — | 5f96b62 | Renamed from reload_scripts |
 | editor.get_console | 58, 58a–58h | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #9: total_lines/next_id/truncated. LOG_BUSY/LOG_UNAVAILABLE hints version-gated (4.5+ buffer-steer only) — §07 REGRESSION WATCH note + server smoke §14 own the truth-table (41n-undecies-bis-bis) |
 | editor.wait_for_idle | 60 | — | — | — | — | |
 | execute.code | 58a_seed, 77 | — | — | — | FIX-4, FIX-H, 279efed | **GAP:** load() hint, singleton hint |
+| editor.set_lsp_status | — | — | — | — | — | Internal (MCP server → plugin LSP-status push; dock-only publisher); not agent-facing — 7th registration in `commands/editor/editor_commands.gd` |
 
 ### Project Settings (5 tools)
 
@@ -87,7 +93,7 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| asset.list | 12 | — | C14, C18 | — | — | ledger #9: total_assets/truncated (cursor-less) |
+| asset.list | 12 | — | — | — | — | ledger #9: total_assets/truncated (cursor-less) |
 | asset.get_dependencies | 13 | — | — | — | — | ledger #9: total_dependencies/truncated (cursor-less) |
 | asset.import | 42, 42b | — | — | — | — | |
 
@@ -97,20 +103,20 @@
 |---|---|---|---|---|---|---|
 | resource.load | 14, 54a-verify, 54k-verify | — | C1, C12 | — | — | |
 | resource.write | 4, 5, 6 | — | C1, C12 | — | — | |
-| resource.delete | — | — | C1, C12, C14 | — | — | Only in combos |
+| resource.delete | — | — | C1, C12 | — | — | Only in combos |
 
 ### File Operations (1 tool)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| file.delete | 18.7, 18.11 | — | C14 | ✓ (tab_closed for .tscn) | — | 18.11: .tscn tab close |
+| file.delete | 18.7, 18.11 | — | — | ✓ (tab_closed for .tscn) | — | 18.11: .tscn tab close |
 
 ### Folder Management (2 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| folder.create | 1 | — | C17, C18 | — | — | |
-| folder.delete | 18.12, 18.13 | — | C17, C18 | ✓ (tab_closed, stale_tabs) | — | 18.12: 1 scene, 18.13: 2 scenes + follow-up |
+| folder.create | 1 | — | — | — | — | |
+| folder.delete | 18.12, 18.13 | — | — | ✓ (tab_closed, stale_tabs) | — | 18.12: 1 scene, 18.13: 2 scenes + follow-up |
 
 ### ClassDB Introspection (2 tools)
 
@@ -131,8 +137,8 @@
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| input_map.action | 65 | — | C4 | — | 09a6392 | Param renamed: action_name → name |
-| input_map.event | 66 | — | C4 | — | — | |
+| input_map.action | 65 | — | — | — | 09a6392 | Param renamed: action_name → name |
+| input_map.event | 66 | — | — | — | — | |
 
 ### Save System (4 tools)
 
@@ -275,12 +281,28 @@
 
 ### Undo/Redo Verification (cross-cutting, Section 25)
 
+> **60** numbered UR sub-cases (UR1.x–UR13.x) — scaffolding (UR-Setup/UR-S1–S3,
+> UR-Console, UR-Cleanup/UR-C1–C7) excluded. Matches the `tool-sweep.md` index and
+> the `Sections/25-undo-redo.md` header. UR4–UR12 are `context_object` regression
+> guards (missing-context → `UndoRedo history mismatch`); UR13 watches navigation's
+> UndoRedo adoption.
+
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | MCPToolkitUndoRedoAction (builder) | UR-S3 | — | — | — | — | Self-contained integration tests via run_undo_redo_tests() |
 | node.set_property | UR1.1–UR1.6 | — | — | — | — | Property undo/redo via trigger_undo/trigger_redo |
 | node.manage (rename) | UR2.1–UR2.4 | — | — | — | — | Rename undo/redo |
 | node.groups (add) | UR3.1–UR3.4 | — | — | — | — | Group add undo/redo |
+| node.manage (reorder) | UR4.1–UR4.5 | — | — | — | — | Reorder undo/redo (context_object regression guard) |
+| node.manage (duplicate) | UR5.1–UR5.3 | — | — | — | — | Duplicate undo/redo (context_object regression guard) |
+| node.groups (remove + batch) | UR6.1–UR6.7 | — | — | — | — | Group remove + batch undo/redo (context_object regression guard) |
+| scene.delete_node | UR7.1–UR7.3 | — | — | — | — | Node deletion undo/redo (context_object regression guard) |
+| control.set_layout | UR8.1–UR8.4 | — | — | — | — | Layout preset undo/redo (context_object regression guard) |
+| signal.manage (connect/disconnect) | UR9.1–UR9.7 | — | — | — | — | Signal connect/disconnect undo/redo (context_object regression guard) |
+| path2d.edit_curve | UR10.1–UR10.4 | — | — | — | — | Curve edit undo/redo (context_object regression guard) |
+| particles.create | UR11.1–UR11.4 | — | — | — | — | Particles create undo/redo (context_object regression guard) |
+| collision_from_texture | UR12.1–UR12.5 | — | — | — | — | Collision-from-texture undo/redo (context_object regression guard) |
+| navigation_edit | UR13.1–UR13.4 | — | — | — | — | Navigation polygon undo/redo (UndoRedo adoption watch; bake stays direct) |
 
 ---
 
@@ -305,8 +327,9 @@
 
 ## Gap Summary
 
-**Tools with NO dedicated test:** 1
-- `meta.set_limits` — no test at all
+**Tools with NO dedicated sweep test:** 2
+- `meta.set_limits` — sweep-side untested by design (internal); wire contract owned by smoke §21 (`21_response_caps.ts` hard-asserts override + floor-clamp + restore)
+- `editor.set_lsp_status` — untested by design (internal): MCP server → plugin LSP-status push, dock-only publisher; not agent-facing (7th registration in `commands/editor/editor_commands.gd`)
 
 **Tools with incomplete coverage (missing new params/guards):** 12
 - `scene.create_node` — unique_name param
