@@ -246,6 +246,10 @@ static func _cmd_scene_close(parameters: Dictionary) -> Dictionary:
 		var response := MCPToolkitSuccess.ok({"path": file_path})
 		if result.get("switched", false):
 			response["hint"] = _TAB_CLOSE_NOISE_HINT
+		# Disclose discarded unsaved edits where the editor can report them (4.7+);
+		# the helper omits the key below 4.7, so absence here means "not detectable".
+		if result.has("unsaved_changes_discarded"):
+			response["unsaved_changes_discarded"] = result["unsaved_changes_discarded"]
 		return response
 	var reason := str(result.get("reason", ""))
 	if reason == "not_open":

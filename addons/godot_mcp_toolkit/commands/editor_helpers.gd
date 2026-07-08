@@ -453,7 +453,12 @@ static func open_scene_deferred(file_path: String) -> bool:
 
 
 ## Attempt to close the editor tab for `file_path`.
-## Returns {closed: true} or {closed: false, reason: String}.
+## Returns {closed: true, switched: bool} or {closed: false, reason: String}.
+##
+## On success, [code]unsaved_changes_discarded: bool[/code] is included only on
+## Godot 4.7+ (where a dirty query is bound); it reports whether the closed tab
+## had unsaved edits that closing threw away. The key is absent on 4.5/4.6 —
+## absence means "not determinable", distinct from a detected-clean [code]false[/code].
 ##
 ## Reason codes:
 ##   "not_open" — file has no open editor tab
@@ -484,6 +489,19 @@ static func close_scene_tab_safe(file_path: String) -> Dictionary:
 
 	var tree := Engine.get_main_loop() as SceneTree
 
+	# Best-effort dirty disclosure: capture whether the tab has unsaved edits
+	# BEFORE the switch/close mutate editor state, so the caller can warn that
+	# closing discards them. get_unsaved_scenes() is only bound in Godot 4.7;
+	# older editors expose no dirty query, so this stays absent below 4.7 and
+	# the field is simply omitted rather than reported as a false "clean".
+	var disclose_unsaved := EditorInterface.has_method("get_unsaved_scenes")
+	var unsaved_discarded := false
+	if disclose_unsaved:
+		# Call via has_method + call: the method is unbound below 4.7, so a direct
+		# static reference would parse-fail on older editors.
+		var unsaved: PackedStringArray = EditorInterface.call("get_unsaved_scenes")
+		unsaved_discarded = file_path in unsaved
+
 	# If the target is not the active tab, activate it first.
 	# Use call_deferred to avoid deferred-queue collisions
 	# (godotengine/godot#75669 — direct calls from plugin code can crash).
@@ -498,7 +516,12 @@ static func close_scene_tab_safe(file_path: String) -> Dictionary:
 	EditorInterface.call_deferred("close_scene")
 	await tree.process_frame
 
-	return {"closed": true, "switched": switched}
+	var result := {"closed": true, "switched": switched}
+	# Only surface the field where it is actually detectable (4.7+); absence
+	# signals "not determinable here", distinct from a detected clean tab.
+	if disclose_unsaved:
+		result["unsaved_changes_discarded"] = unsaved_discarded
+	return result
 
 
 # -- File operations -----------------------------------------------------------
