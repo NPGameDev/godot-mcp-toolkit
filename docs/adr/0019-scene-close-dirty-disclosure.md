@@ -61,4 +61,5 @@ shortcut without seeing the version-divergence trap.
 - A stricter refuse-to-close guard remains open, gated on the deferred hash-based
   detection, not on the 4.7-only query.
 
-Iteration: `41o-nonies`.
+Iteration: `Plan/ExecutionPlan/archive/41o-nonies-pre-1.0-tool-polish.md`; grill log
+`Plan/Reference/GrillingSessions/2026-07-08-41o-nonies-tool-polish.md`.
