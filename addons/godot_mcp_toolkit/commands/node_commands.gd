@@ -913,7 +913,9 @@ static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:
 	var node_path := str(parameters.get("node_path", ""))
 	node_path = Helpers.normalize_editor_path(node_path)
 	if node_path.is_empty():
-		return MCPToolkitError.fail("INVALID_PARAMS", "missing node_path")
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"missing node_path: required for single-node group operations (add/remove/list); omit it only in batch mode, where each item in entries carries its own node_path.",
+			MCPToolkitError.HINT_NODE_PATH)
 
 	var node := root.get_node_or_null(node_path)
 	if node == null:
