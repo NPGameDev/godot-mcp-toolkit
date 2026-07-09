@@ -11,6 +11,10 @@ const Helpers = Modules.CommandHelpers
 
 const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _set_main_scene_state error in the editor console. This is benign Godot engine noise — safe to ignore."
 
+# Max scene.query page size. Caps a single page so it can't exceed the transport
+# frame budget; a larger requested limit is clamped and disclosed in-band.
+const _QUERY_MAX_LIMIT := 200
+
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("scene.get_tree", func(parameters: Dictionary) -> Dictionary:
@@ -834,7 +838,13 @@ static func _cmd_scene_query(parameters: Dictionary) -> Dictionary:
 	var root_path = parameters.get("root_path", null)
 	var max_depth: int = int(parameters.get("max_depth", -1))
 	var include_properties = parameters.get("include_properties", null)
-	var limit: int = int(parameters.get("limit", 50))
+	# Never trust the caller's window bounds: floor offset at 0 and cap limit so a
+	# single page can't exceed the transport frame budget (a huge include_properties
+	# page is the residual bloat vector). The clamp is disclosed in-band below.
+	var requested_limit: int = int(parameters.get("limit", 50))
+	var limit: int = mini(requested_limit, _QUERY_MAX_LIMIT)
+	var limit_clamped := limit < requested_limit
+	var offset: int = maxi(0, int(parameters.get("offset", 0)))
 
 	# At least one filter must be provided
 	if class_filter == null and group_filter == null and name_pattern == null \
@@ -856,19 +866,58 @@ static func _cmd_scene_query(parameters: Dictionary) -> Dictionary:
 		if root == null:
 			return MCPToolkitError.fail("NOT_FOUND", "Root node not found: " + rp)
 
+	# Single ordered DFS pre-order pass counts every match and materializes only the
+	# [offset, offset+limit) window (see _query_recursive). total_ref[0] is the
+	# running match count threaded by reference.
 	var results: Array[Dictionary] = []
+	var total_ref: Array[int] = [0]
 	_query_recursive(root, edited_scene, class_filter, group_filter, name_pattern,
-		property_filters, include_properties, max_depth, 0, limit, results)
+		property_filters, include_properties, max_depth, 0, offset, limit, total_ref, results)
+	var total_matches := total_ref[0]
 
-	return MCPToolkitSuccess.ok({"count": results.size(), "nodes": results})
+	return _build_query_page(results, offset, limit, total_matches, limit_clamped)
+
+
+## Assembles the self-describing pagination envelope for scene.query.
+##
+## [param limit] is the effective (already-clamped) page size; [param limit_clamped]
+## records that the caller's request was capped, so this adds the disclosure flag and
+## a hint clause.
+# MCP pagination contract (internal): self-describing offset envelope — echo offset/limit,
+# returned (page size), total_matches (exact walk-all count), has_more, next_offset + prose
+# hint when has_more; limit_clamped + a clamp clause when the page size was capped. Copy this
+# shape for any new paginating tool.
+static func _build_query_page(results: Array[Dictionary], offset: int, limit: int,
+		total_matches: int, limit_clamped: bool) -> Dictionary:
+	var returned := results.size()
+	var has_more := offset + returned < total_matches
+	var page: Dictionary = {
+		"nodes": results,
+		"offset": offset,
+		"limit": limit,
+		"returned": returned,
+		"total_matches": total_matches,
+		"has_more": has_more,
+	}
+	var hint := ""
+	if has_more:
+		var next_offset := offset + returned
+		page["next_offset"] = next_offset
+		hint = "more matches remain — re-call scene_query with offset = next_offset (%d) until has_more is false" % next_offset
+	if limit_clamped:
+		page["limit_clamped"] = true
+		var clamp_clause := "requested limit exceeds max %d; returned %d — page with next_offset, or add filters to narrow" % [
+			_QUERY_MAX_LIMIT, limit]
+		hint = clamp_clause if hint.is_empty() else "%s. %s" % [hint, clamp_clause]
+	if not hint.is_empty():
+		page["hint"] = hint
+	return MCPToolkitSuccess.ok(page)
 
 
 static func _query_recursive(node: Node, scene_root: Node, class_filter, group_filter,
 		name_pattern, property_filters, include_properties, max_depth: int,
-		current_depth: int, limit: int, results: Array[Dictionary]) -> void:
-	if results.size() >= limit:
-		return
-
+		current_depth: int, offset: int, limit: int, total_ref: Array[int],
+		results: Array[Dictionary]) -> void:
 	var matches := true
 
 	# Class filter (inheritance-aware)
@@ -901,24 +950,30 @@ static func _query_recursive(node: Node, scene_root: Node, class_filter, group_f
 				break
 
 	if matches:
-		var entry: Dictionary = {
-			"path": str(scene_root.get_path_to(node)),
-			"class": node.get_class(),
-			"name": str(node.name),
-		}
-		if include_properties != null and typeof(include_properties) == TYPE_ARRAY:
-			for prop_name in include_properties:
-				entry[str(prop_name)] = Coerce.serialize_value(
-					node.get(StringName(str(prop_name))))
-		results.append(entry)
+		# Count every match for total_matches; serialize the entry only when this
+		# match's 0-based index falls in the requested window. The count and the
+		# window both derive from this one ordered pass, so paging stays coherent.
+		var match_index := total_ref[0]
+		total_ref[0] = match_index + 1
+		if match_index >= offset and results.size() < limit:
+			var entry: Dictionary = {
+				"path": str(scene_root.get_path_to(node)),
+				"class": node.get_class(),
+				"name": str(node.name),
+			}
+			if include_properties != null and typeof(include_properties) == TYPE_ARRAY:
+				for prop_name in include_properties:
+					entry[str(prop_name)] = Coerce.serialize_value(
+						node.get(StringName(str(prop_name))))
+			results.append(entry)
 
-	# Recurse children
+	# Recurse children in child-index order — the only ordering; no early-stop, so
+	# every match past the window is still counted into total_matches.
 	if max_depth < 0 or current_depth < max_depth:
 		for child in node.get_children():
-			if results.size() >= limit:
-				return
 			_query_recursive(child, scene_root, class_filter, group_filter, name_pattern,
-				property_filters, include_properties, max_depth, current_depth + 1, limit, results)
+				property_filters, include_properties, max_depth, current_depth + 1,
+				offset, limit, total_ref, results)
 
 
 static func _compare_values(actual, expected, op: String) -> bool:

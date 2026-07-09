@@ -41,7 +41,7 @@ C24–C26 in §§26–27).
 | scene.instantiate | 41, 43q–43s, 2.15a | — | — | — | FIX-B, FIX-9, FIX-K, concern 034 | 2.15a: all-success batch → `failed`/`hint` ABSENT (additive rollup, summarize_batch). Partial-failure path (`instantiate()==null`) is unit-pinned (`_test_summarize_batch`) — not selectively triggerable from a valid .tscn. **GAP:** properties param, auto-rename |
 | scene.diff | 63 | — | — | — | — | |
 | scene.create_inherited | 80a–80d | ✓ (NOT_FOUND) | — | — | — | |
-| scene.query | 83a–83j | ✓ (no filters, NOT_FOUND) | — | — | — | |
+| scene.query | 17.5–17.8, 17.11–17.18 | ✓ (17.9 no filters, 17.10 NOT_FOUND) | — | ✓ (17.11 paging hint, 17.17 clamp hint) | — | 17.11–17.18: self-describing pagination envelope — `returned` (was `count`), `has_more` (was `truncated`), always-present `total_matches`, `next_offset`+`hint` only while `has_more`. Invariants: `total_matches` constant across pages · Σ`returned` == `total_matches` · pages disjoint · union == full match set · determinism (two identical calls → byte-identical page). Plus past-end (17.15 empty/`has_more:false`), offset floor (17.16 `maxi(0,·)`), `MAX_LIMIT=200` clamp+disclose (17.17 `limit_clamped`), no-match (17.18 `total_matches:0`) | |
 | scene.get_tree | 19, 43, 43e, 43r | — | C8 | — | — | |
 
 ### Node Property & Method (9 tools)

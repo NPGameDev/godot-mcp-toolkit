@@ -171,7 +171,7 @@ So you do NOT need to split dependent operations across messages.
 | 14 | [14-tileset-tilemap.md](Sections/14-tileset-tilemap.md) | TileSet & TileMap | 19 | tileset_create, tileset_edit, tilemap_set_cells, tilemap_read_cells | S2 |
 | 15 | [15-theme-audio-sprites.md](Sections/15-theme-audio-sprites.md) | Theme, Audio, SpriteFrames | 14 | theme_edit, audiobus_edit, audiobus_list, spriteframes_create/edit/from_spritesheet | S1 |
 | 16 | [16-domain-tools.md](Sections/16-domain-tools.md) | 3D, Path2D, Navigation, Particles, Procedural | 28 | 3d_*, path2d_edit_curve, navigation_edit, particles_create, procedural_edit_* | S2 |
-| 17 | [17-scene-query-inherit.md](Sections/17-scene-query-inherit.md) | Scene Inheritance & Query | 10 | scene_create_inherited, scene_query | S1 |
+| 17 | [17-scene-query-inherit.md](Sections/17-scene-query-inherit.md) | Scene Inheritance & Query | 19 | scene_create_inherited, scene_query | S1 |
 | 18 | [18-file-operations.md](Sections/18-file-operations.md) | Phantom Tab Cleanup & File Operations | 16 | scene_close, scene_delete, file_delete, folder_delete, asset_import | S1 |
 | 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_texture | 3 | collision_from_texture | S2 |
 | 20 | [20-runtime.md](Sections/20-runtime.md) | Game Start, Runtime & Debugging | 29 | game_start/stop, runtime_*, debugger_get_log, input_simulate (send_text), execute_code, animation_player_control, signal_emit | S2 |
