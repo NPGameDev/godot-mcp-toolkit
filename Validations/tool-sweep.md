@@ -37,6 +37,81 @@ decision. Within each requested section, all tests are still mandatory.
 
 ## Execution Protocol
 
+### Version Preflight
+
+**MANDATORY — run once, before Section 0.**
+
+The running **editor** version changes behavior — which tools are gated (`scene_close`
+is 4.5+), which classes exist (`TileMapLayer` is 4.3+), and which degraded results are
+legitimate on the floor. **Getting it wrong turns real regressions into "expected on
+this version" excuses — silent false negatives.** So establish it **empirically, once,
+before any section runs.**
+
+**Do NOT infer the version from any of these — none report the running binary:**
+- **`application/config/features`** (the value S0.1 reads via `project_get_settings`) —
+  the project's *declared floor*, written to `project.godot` at save time by whatever
+  editor last saved it. A 4.7 editor opens a `"4.2"`-tagged project and still reports
+  `features:["4.2"]`. It describes the *project*, not the *engine*.
+- **The boot banner / `editor_get_console source:"file"`** — 4.2/4.3 editors write no
+  session log, so this silently returns a **stale** file (in the 41n-nonies run, a prior
+  `--headless` log — the source of the bogus "headless / RendererDummy" conclusion).
+- **Catalogue membership** in a `discover_tools` listing — the catalogue is static and
+  lists version-gated tools on *every* version.
+
+**Authoritative probe.** `execute_code` **cannot** read the version — its `Expression`
+sandbox resolves no engine singletons (`Engine`, `OS`, `ProjectSettings` all fail). But
+`node_call_method` dispatches a real `@tool` method via `callv()`, which reaches
+`Engine`. Create a one-method probe scene and call it:
+
+| # | Call | Args |
+|---|------|------|
+| P.1 | `folder_create` | `folder_path=res://sv2_validation/`  *(idempotent — S1 reuses it)* |
+| P.2 | `script_write` | `file_path=res://sv2_validation/sv2_env_probe.gd`, `content=` ↓ |
+| P.3 | `scene_create` | `file_path=res://sv2_validation/Sv2EnvProbe.tscn`, `root_type=Node`, `root_name=Sv2EnvProbe` |
+| P.4 | `scene_open` | `file_path=res://sv2_validation/Sv2EnvProbe.tscn` |
+| P.5 | `node_set_script` | `node_path=.`, `script_path=res://sv2_validation/sv2_env_probe.gd` |
+| P.6 | `node_call_method` | `node_path=.`, `method_name=get_engine_version` |
+
+```gdscript
+# P.2 content — MUST be @tool, or callv() returns null in the editor
+@tool
+extends Node
+func get_engine_version() -> Dictionary:
+	return Engine.get_version_info()
+```
+
+P.6 returns `result: {major, minor, patch, string, …}` — the running editor reporting
+its **own** version. Record `Godot <major>.<minor>` as the DEFINITIVE version. The probe
+artifacts live under `sv2_validation/` and are swept by Global Cleanup with everything
+else (the probe script is never opened in the editor, so no phantom tab).
+
+**Cross-checks (independent — must agree with P.6):**
+- **`classdb_get_info(class_name="TileMapLayer")`** → success ⟹ engine ≥ 4.3;
+  `NOT_FOUND` ⟹ 4.2 (legacy `TileMap` only). **This distinguishes only 4.2 vs ≥4.3 —
+  NOT 4.3 vs 4.4 vs 4.5.** "TileMapLayer present" does **not** mean modern/4.5 features
+  are available.
+- **`scene_close` in the live tools/list** (not the catalogue) is present **iff**
+  engine ≥ 4.5. So on **4.3 or 4.4** — where `TileMapLayer` *is* present — `scene_close`
+  is **legitimately absent, and that absence means "engine < 4.5," not a broken/missing
+  tool.** Present ⟹ ≥4.5. (Absence alone is `<4.5` *or* version-not-yet-resolved — which
+  is exactly why P.6 is authoritative and this is only a cross-check.)
+
+**Gate:**
+1. State the **TARGET** version the run is validating (e.g. "4.2 floor").
+2. Establish the **ACTUAL** version from P.6 (cross-checked above).
+3. **HALT the sweep if ACTUAL ≠ TARGET** — do not run a single section; re-point the
+   editor/port and re-probe. A wrong version silently poisons every degradation judgment.
+4. RESULTS header: `Godot X.Y — via node_call_method Engine.get_version_info() (P.6);
+   TileMapLayer=<y/n>, scene_close visible=<y/n>; features PSA / boot-banner NOT used.`
+5. **Every "excused as <ver> degradation" call downstream MUST cite this
+   empirically-established version** — never a version inferred from a string or a log.
+
+> **Temporary workaround.** This probe scene exists only because no MCP tool yet
+> surfaces the running version — the server already has it (editor auth-ack →
+> `Engine.get_version_info()`) but doesn't expose it. To be replaced by a first-class
+> version field/tool and reverted then. Tracked: PostRelease idea, tag
+> `authoritative-engine-version`.
+
 ### Progress Logging
 
 After completing each section, **immediately** append results to `Validations/RESULTS.md` before moving to the next section. Format:
