@@ -373,7 +373,7 @@ contract.
 **Idempotency** ([§contract C6](#13-contract-surface)). Create-style commands return a
 `status` discriminator and accept `if_exists`, so a blind retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd" data-verified="3eeb924" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd" data-verified="25fcf46" -->
 ```mermaid
 flowchart TD
     create["create / write command"] --> exists{"target exists?"}
