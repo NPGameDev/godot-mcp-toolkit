@@ -17,6 +17,14 @@ const FileGuard = Modules.FileGuard
 const Helpers = Modules.CommandHelpers
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
+const MIN_USABLE_DIMENSION := 16
+# A collapsed editor viewport reports Godot's hard 2x2 viewport floor — the window
+# is minimized / not compositing a frame, or no 2D/3D viewport is the active main
+# screen. The capture still succeeds but is unusable, so warn with a remediation
+# path. This branch is never headless (headless short-circuits with
+# HEADLESS_UNSUPPORTED before any capture), so the message must not name headless
+# as a possibility — doing so only sends the caller chasing a non-cause.
+const COLLAPSED_VIEWPORT_WARNING := "Screenshot captured from a collapsed editor viewport (%dx%d) — the editor window is likely minimized or not compositing a frame, or no 2D/3D viewport is the active main screen. Restore and foreground the editor on a 2D or 3D main screen, then retry; otherwise use script_check for non-visual verification. This is not headless — a headless editor returns HEADLESS_UNSUPPORTED instead of an image."
 
 
 # -- Commands -----------------------------------------------------------------
@@ -75,6 +83,12 @@ static func cmd_screenshot(parameters: Dictionary) -> Dictionary:
 		if image == null:
 			return MCPToolkitError.fail("INTERNAL",
 				"viewport texture unavailable (nothing rendered yet?)")
+		# Snapshot the pre-resize dimensions: a collapsed viewport reports the 2x2
+		# floor, and the resize below would upscale that blank frame to the
+		# requested size with no signal left to the caller. Keep the source dims so
+		# the response can warn instead of silently returning an empty capture.
+		var source_width := image.get_width()
+		var source_height := image.get_height()
 		if image.get_width() != width or image.get_height() != height:
 			image.resize(width, height, Image.INTERPOLATE_LANCZOS)
 
@@ -87,14 +101,17 @@ static func cmd_screenshot(parameters: Dictionary) -> Dictionary:
 		if png_bytes.is_empty():
 			return MCPToolkitError.fail("EMPTY_CONTENT",
 				"node '%s' produced no visible image. Node may lack visual content (no texture, no mesh). Use editor_screenshot without node_path for a full viewport capture instead." % node_path)
-		return MCPToolkitSuccess.ok({
+		var response := {
 			"image_base64": Marshalls.raw_to_base64(png_bytes),
 			"mime_type": "image/png",
 			"width": image.get_width(),
 			"height": image.get_height(),
 			"bytes": png_bytes.size(),
 			"path": node_path,
-		})
+		}
+		if source_width < MIN_USABLE_DIMENSION or source_height < MIN_USABLE_DIMENSION:
+			response["warning"] = COLLAPSED_VIEWPORT_WARNING % [source_width, source_height]
+		return MCPToolkitSuccess.ok(response)
 
 	# Standard viewport screenshot.
 	var save_path := str(parameters.get("save_path", ""))
@@ -140,8 +157,8 @@ static func cmd_screenshot(parameters: Dictionary) -> Dictionary:
 		"height": image.get_height(),
 		"bytes": png_bytes.size(),
 	}
-	if image.get_width() < 16 or image.get_height() < 16:
-		response["warning"] = "Screenshot captured only %dx%d — editor may be minimized or running headless. Use script_check and editor_get_console for non-visual verification." % [image.get_width(), image.get_height()]
+	if image.get_width() < MIN_USABLE_DIMENSION or image.get_height() < MIN_USABLE_DIMENSION:
+		response["warning"] = COLLAPSED_VIEWPORT_WARNING % [image.get_width(), image.get_height()]
 	if not persisted_path.is_empty():
 		response["path"] = persisted_path
 	return MCPToolkitSuccess.ok(response)

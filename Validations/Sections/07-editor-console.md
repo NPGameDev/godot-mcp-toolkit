@@ -4,16 +4,28 @@
 **Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
 **Tests:** 15
 
+> **Precondition — `editor_screenshot` (7.2 / 7.3) needs a live, rendering editor viewport.**
+> Both tests capture the editor viewport, so the editor window must be **restored
+> (not minimized) and foregrounded on a 2D or 3D main screen** — not the
+> Script / AssetLib / Output screen. A capture that returns `2x2` / ~81 bytes
+> (or, for the node-focused 7.3, a solid-black frame upscaled to the requested
+> size) is a **collapsed viewport** from a minimized / non-compositing window — a
+> run-environment condition, **not** a tool failure and **not headless**: a
+> headless editor returns `HEADLESS_UNSUPPORTED` instead of an image, so any PNG
+> at all rules headless out. The tool now attaches a `warning` field on such
+> captures. Restore + foreground the editor and re-run; do **not** diagnose it as
+> headless or mark 7.2 / 7.3 FAIL on this basis.
+
 ---
 
 **7.1** `editor_save_scene`
 - **Expect:** success
 
 **7.2** `editor_screenshot`
-- **Expect:** Returns inline PNG
+- **Expect:** Returns inline PNG at real viewport dimensions (hundreds of px, KB-scale bytes). A `2x2` / ~81-byte result is a collapsed viewport (see precondition) — restore/foreground the editor and retry, do not pass it.
 
 **7.3** Set texture then screenshot node — `node_set_property` Sv2Sprite texture=`{"type":"Resource","path":"res://icon.svg"}`, then `editor_screenshot` node_path=`Sv2Sprite`
-- **Expect:** PNG focused on Sv2Sprite (now has visible texture)
+- **Expect:** PNG focused on Sv2Sprite (now has visible texture). A solid-black frame (upscaled from a 2x2 source, flagged by the response `warning`) is a collapsed viewport (see precondition), not a pass.
 
 **7.4** `editor_get_console` — (default params)
 - **Expect:** success, returns console output
