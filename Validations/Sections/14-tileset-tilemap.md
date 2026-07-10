@@ -134,10 +134,14 @@ names the tool that owns it — it is no longer silently applied under the wrong
 > Flag as **Critical**.
 
 **14.21** `tilemap_read_cells` — node_path=`Sv2TileLayer`
-- **Expect:** success, returns array of cell data. Each cell has coords, source_id, atlas_coords fields.
+- **Expect:** success, returns array of cell data. Each cell has coords, source_id, atlas_coords fields. Envelope (ledger #20): `returned` (was `cell_count`) = cells this page, `total_cells` = full count, `has_more` (was `truncated`) = false for a small layer under the 500-cell cap. `bounds` present as the spatial nav aid.
+
+> **REGRESSION WATCH (ledger #20):** `tilemap_read_cells` emits the uniform envelope —
+> `returned` (was `cell_count`), `total_cells`, `has_more` (was `truncated`), plus `bounds`.
+> If a response still carries `cell_count` or `truncated`, the rename has regressed. Flag as **Major**.
 
 **14.22** `tilemap_read_cells` round-trip — node_path=`Sv2TileLayer` (after 14.18/14.19 painted cells)
-- **Expect:** success, cells array includes at least one entry with source_id=0, atlas_x=0, atlas_y=0. Confirms set_cells → read_cells round-trip.
+- **Expect:** success, cells array includes at least one entry with source_id=0, atlas_x=0, atlas_y=0. Confirms set_cells → read_cells round-trip. `returned` matches the cells array length.
 
 **14.23** `tilemap_read_cells` guard (invalid node) — node_path=`NonExistentNode999`
 - **Expect:** NOT_FOUND

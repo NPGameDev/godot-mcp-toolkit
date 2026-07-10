@@ -57,7 +57,7 @@ fresh-Control sizing — and Vector2 values use the typed form
 - **Expect:** success; `./Sv2SpatC` absent (beyond radius).
 
 **28.6** `scene_spatial_map` class=`Sprite2D`, max_nodes=`1`
-- **Expect:** success; `returned:1`, `truncated:true`, `total_nodes` = full match count, plus a hint to narrow/raise the cap.
+- **Expect:** success; `returned:1`, `has_more:true` (ledger #20: was `truncated`), `total_nodes` = full match count, plus a hint to narrow/raise the cap. If a response still carries `truncated`, the rename has regressed.
 
 **28.7** `scene_spatial_map` guards (dual error contract — see the intro note):
 - detail=`verbose` → **JSON-RPC -32602** naming `detail` (enum rejected server-side by Zod)

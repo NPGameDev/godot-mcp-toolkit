@@ -62,7 +62,7 @@ C24–C26 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| script.read | 15, 16, 6.2, 6.2b | — | — | ✓ (6.2 truncated `hint`) | concern 054 | 6.2/6.2b: uniform pagination contract — every success carries `truncated`+`total_lines`; a windowed read before EOF adds `next_start_line` (1-based = end_line+1) + a prose `hint`; full read / window-at-EOF = `truncated:false`, no hint. Mirrors save.read SHAPE in line units. |
+| script.read | 15, 16, 6.2, 6.2b | — | — | ✓ (6.2 has_more `hint`) | concern 054; ledger #20 | 6.2/6.2b: uniform pagination contract — every success carries `has_more`+`total_lines`+`returned` (this window's line count, added ledger #20); a windowed read before EOF adds `next_start_line` (1-based = end_line+1) + a prose `hint`; full read / window-at-EOF = `has_more:false`, no hint. Mirrors save.read SHAPE in line units. ledger #20 renamed `truncated`→`has_more` + added `returned`. |
 | script.write | 2, 3 | — | C2, C5, C11 | ✓ (6.5: preload hint) | FIX-1 | **GAP:** diagnostics fields in response |
 | script.delete | — | — | C2 | — | — | Only in combos |
 | script.check | 17 | — | C2, C11 | — | — | |
@@ -74,7 +74,7 @@ C24–C26 in §§26–27).
 | editor.save_scene | 55, 64 | — | C3, C5, C7, C8, C9 | — | — | |
 | editor.screenshot | 56, 57 | — | — | — | — | |
 | editor.refresh | 61 | — | — | — | 5f96b62 | Renamed from reload_scripts |
-| editor.get_console | 58, 58a–58h | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #9: total_lines/next_id/truncated. LOG_BUSY/LOG_UNAVAILABLE hints version-gated (4.5+ buffer-steer only) — §07 REGRESSION WATCH note + server smoke §14 own the truth-table (41n-undecies-bis-bis) |
+| editor.get_console | 58, 58a–58h, 7.6–7.8, 7.10, 7.12 | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #20 (supersedes #9): total_lines/next_id/has_more (was truncated) + returned (was count) — §07 7.6–7.12 assert `returned` as the matching-line count. LOG_BUSY/LOG_UNAVAILABLE hints version-gated (4.5+ buffer-steer only) — §07 REGRESSION WATCH note + server smoke §14 own the truth-table (41n-undecies-bis-bis) |
 | editor.wait_for_idle | 60 | — | — | — | — | |
 | execute.code | 58a_seed, 77 | — | — | — | FIX-4, FIX-H, 279efed | **GAP:** load() hint, singleton hint |
 | editor.set_lsp_status | — | — | — | — | — | Internal (MCP server → plugin LSP-status push; dock-only publisher); not agent-facing — 7th registration in `commands/editor/editor_commands.gd` |
@@ -93,8 +93,8 @@ C24–C26 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| asset.list | 12 | — | — | — | — | ledger #9: total_assets/truncated (cursor-less) |
-| asset.get_dependencies | 13 | — | — | — | — | ledger #9: total_dependencies/truncated (cursor-less) |
+| asset.list | 12, 6.7, 6.9 | ✓ (6.9 over-max limit clamp; ≤0 reject) | — | ✓ (6.9 limit_clamped clamp clause) | ledger #20 | ledger #20 (supersedes #9): total_assets/has_more (was truncated) + returned (was count), cursor-less. 6.9: over-max `limit` (>2000) CLAMPs + `limit_clamped` (was INVALID_PARAMS — D8 flagged behavior change); ≤0 still rejects. |
+| asset.get_dependencies | 13, 6.8 | — | — | — | ledger #20 | ledger #20 (supersedes #9): total_dependencies/has_more (was truncated) + returned (was count), cursor-less. |
 | asset.import | 42, 42b | — | — | — | — | |
 
 ### Resource Management (3 tools)
@@ -122,8 +122,8 @@ C24–C26 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| classdb.get_info | 10, 12.5, 12.6 | — | — | ✓ (truncation hint) | 45975fc | Offset pagination (W1); ledger #9: total_<section> (was *_total)/truncated/next_offset |
-| classdb.search | 9, 12.7 | — | — | ✓ (pagination hint) | 45975fc | Offset pagination (W1); ledger #9: total_classes (was total)/next_offset |
+| classdb.get_info | 10, 12.5, 12.6, 12.11 | ✓ (12.11 limit=0 → INVALID_PARAMS) | — | ✓ (has_more hint; limit clamp clause) | 45975fc; ledger #20 | Offset pagination (W1); ledger #20 (supersedes #9): total_<section> (was *_total)/has_more (was truncated)/next_offset + returned (was count). **D11 caller `limit`** (default 200, per-section; clamp>200+`limit_clamped`; <1 reject) — 12.11. |
+| classdb.search | 9, 12.7, 12.8, 12.9, 12.10 | ✓ (12.10 limit=0 → INVALID_PARAMS) | — | ✓ (has_more hint; limit clamp clause) | 45975fc; ledger #20 | Offset pagination (W1); ledger #20 (supersedes #9): total_classes (was total)/next_offset/has_more (was truncated)/returned (was count). **D11 caller `limit`** (default 200; sub-max shrinks page [12.8]; clamp>200+`limit_clamped` [12.9]; <1 reject [12.10]). |
 
 ### Signal Management (3 tools)
 
@@ -145,7 +145,7 @@ C24–C26 in §§26–27).
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | save.write | 67 | — | — | — | — | |
-| save.read | 68, 11.7 | ✓ (11.5 PATH_DENIED, 11.7.6 cap exceeded) | — | ✓ (11.7 truncated `hint`) | concern 025, 054 | 11.7: byte `offset` paging (`offset`/`next_offset`/`total_bytes`/`truncated`) + configurable `save_read_cap_kb` (default 256, min 64) + FILE_TOO_LARGE frame guard (base64 1.33× vs `ws_buffer_kb`). Concern 054: truncated window carries a prose `hint` naming `next_offset`; absent once `truncated` is false (uniform pagination contract, shared SHAPE with script.read). |
+| save.read | 68, 11.7 | ✓ (11.5 PATH_DENIED, 11.7.6 cap exceeded) | — | ✓ (11.7 has_more `hint`) | concern 025, 054; ledger #20 | 11.7: byte `offset` paging (`offset`/`next_offset`/`total_bytes`/`has_more`/`returned`) + configurable `save_read_cap_kb` (default 256, min 64) + FILE_TOO_LARGE frame guard (base64 1.33× vs `ws_buffer_kb`). ledger #20 renamed `truncated`→`has_more` + `bytes_returned`→`returned`: a `has_more` window carries a prose `hint` naming `next_offset`; absent once `has_more` is false (uniform pagination contract, shared SHAPE with script.read). |
 | save.list | 69 | — | — | — | — | |
 | save.delete | 70 | — | — | — | — | |
 
@@ -155,7 +155,7 @@ C24–C26 in §§26–27).
 |---|---|---|---|---|---|---|
 | game.start | 71 | ✓ (`target:"main"` NO_SCENE pre-guard, 41o — unit `game.start main-scene pre-guard`; interactive-only: needs `application/run/main_scene` UNSET, which the dogfood never is) | C8 | — | 4be3454, a28d17b, 41o | `target:"main"` with no main scene set returns `NO_SCENE` (not a false success + engine modal); predicate `_main_scene_missing()` is headless-unit-pinned. **GAP:** compilation failure guard, wait_for_runtime hint |
 | game.stop | 81 | — | C8 | — | — | |
-| debugger.get_log | 75, 75a–75f, 80, 80a–80f, 20.15a | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis). ledger #9: total_lines/truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a — supersedes the file-path capped-tail `truncated=start>0`); LOG_BUSY hint version-gated via shared MCPToolkitError.log_busy_hint (41n-undecies-bis-bis) |
+| debugger.get_log | 75, 75a–75f, 80, 80a–80f, 20.13–20.15a | ✓ (75d: invalid regex) | — | — | dec5b24, a828cb1; ledger #20 | **GAP:** double-escape warning. 80a–80f: debug_state + error_buffer (41l-quater-bis). ledger #20 (supersedes #9): total_lines/has_more (was truncated) + returned (was count), capped tail; 20.13–20.15 assert `returned` as the matching-line count; 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a — supersedes the file-path capped-tail `has_more=start>0`); LOG_BUSY hint version-gated via shared MCPToolkitError.log_busy_hint (41n-undecies-bis-bis) |
 
 ### Animation (4 tools)
 
@@ -171,7 +171,7 @@ C24–C26 in §§26–27).
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | tilemap.set_cells | 14.18–14.19 | ✓ (14.20: no-tileset) | C10 | — | FIX-A, FIX-J | |
-| tilemap.read_cells | 14.21–14.22 | ✓ (14.23: NOT_FOUND, 14.24: wrong class, 14.25: missing param) | — | — | c7f56c8 | read-only; ledger #9: total_cells (was cells_total)/truncated |
+| tilemap.read_cells | 14.21–14.22 | ✓ (14.23: NOT_FOUND, 14.24: wrong class, 14.25: missing param) | — | — | c7f56c8; ledger #20 | read-only; ledger #20 (supersedes #9): total_cells (was cells_total)/has_more (was truncated) + returned (was cell_count); cursor-less (bounds nav aid) |
 
 ### TileSet — structural (6 tools)
 
@@ -314,7 +314,7 @@ C24–C26 in §§26–27).
 | runtime.get_node_state | 73 | — | C8 | — | — | |
 | runtime.get_script_vars | 74 | — | — | — | — | |
 | runtime.set_property | 20.8, 20.8b, 20.8c, 20.10 | ✓ (20.8b: cross-family wrong-type → SET_FAILED; 20.8c: convertible → ADJUSTED success+warning, 41o C1/D1) | — | ✓ (20.8c: adjusted `warning`) | c6d5f40, 41o C1/D1 | 20.8: happy (speed); 20.10: autoload-persistence warning; 20.8b/20.8c: tri-state via the shared `contract/property_set_check.gd` detector (runtime twins of editor 3.2b/3.2c). Headless unit `runtime.set_property tri-state pipeline` pins the coerce→set→describe_set_drop pipeline (dropped/ok/adjusted) |
-| debugger.get_log | 75, 75a–75f, 80a–80f, 20.15a | ✓ (75d) | — | — | dec5b24 | Shared with editor; 80a–80f: bridge error_buffer + debug_state; ledger #9: runtime total→total_lines + truncated (capped tail); 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a); LOG_BUSY/LOG_UNAVAILABLE hints version-gated via shared MCPToolkitError.log_busy_hint/log_unavailable_hint (41n-undecies-bis-bis) |
+| debugger.get_log | 75, 75a–75f, 80a–80f, 20.13–20.15a | ✓ (75d) | — | — | dec5b24; ledger #20 | Shared with editor; 80a–80f: bridge error_buffer + debug_state; ledger #20 (supersedes #9): runtime total→total_lines + has_more (was truncated) + returned (was count), capped tail; 20.13–20.15 assert `returned`; 20.15a: file source under a `text_filter` filters-then-slices, uniform with buffer (41n-ter-bis #7a); LOG_BUSY/LOG_UNAVAILABLE hints version-gated via shared MCPToolkitError.log_busy_hint/log_unavailable_hint (41n-undecies-bis-bis) |
 | signal.list | (via editor 44–48) | — | — | — | — | Runtime uses same handler |
 | signal.connect | (via editor 45) | — | — | — | — | Runtime uses same handler |
 | signal.disconnect | (via editor 47) | — | — | — | — | Runtime uses same handler |
@@ -357,7 +357,7 @@ C24–C26 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| scene_spatial_map | 28.1–28.7b | ✓ (28.7: **-32602** detail [enum, server-side] + INVALID_PARAMS region size) | — | ✓ (truncation hint, successHint → node_set_property) | — | eager; read-only; 2D + 3D dispatch; ledger #9: total_nodes (was node_count)/truncated |
+| scene_spatial_map | 28.1–28.7b | ✓ (28.7: **-32602** detail [enum, server-side] + INVALID_PARAMS region size) | — | ✓ (has_more hint, successHint → node_set_property) | ledger #20 | eager; read-only; 2D + 3D dispatch; ledger #20 (supersedes #9): total_nodes (was node_count)/has_more (was truncated) + returned (kept); cursor-less (bounds nav aid) |
 | texture_generate | 28.8–28.15 | ✓ (28.15: INVALID_PATH png, PATH_DENIED, INVALID_PARAMS transparent, **-32602** shape [enum], ALREADY_EXISTS) | — | ✓ (successHint → Sprite2D.texture / spriteframes_create) | — | `placeholders` group; all 7 shapes, colour formats, hollow, label, dim cap; **class always Texture2D, no settle wait (Item B, 41m-sexies)** |
 | sound_generate | 28.16–28.19 | ✓ (28.19: INVALID_PATH wav, PATH_DENIED, **-32602** waveform [enum]) | — | ✓ (successHint → AudioStreamPlayer.stream) | — | `placeholders` group; all 5 waveforms, sweep, decay, duration cap; **class always AudioStreamWAV (Item B)** |
 

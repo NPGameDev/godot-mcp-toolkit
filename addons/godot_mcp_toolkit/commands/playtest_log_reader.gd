@@ -74,28 +74,16 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 	var regex_warning: String = tf[2]
 
 	if _game_session_file_offset < 0:
-		var response := MCPToolkitSuccess.ok({
-			"lines": [],
-			"count": 0,
-			"truncated": false,
-			"total_lines": 0,
-			"source": "cache",
-			"note": "No game session recorded yet (game_start was never called this editor session)",
-		})
+		var response := MCPToolkitSuccess.ok(_empty_log_page(
+			"No game session recorded yet (game_start was never called this editor session)"))
 		_merge_debug_bridge_data(response)
 		return response
 
 	# Read the log file from the offset where the game session started.
 	var log_path: String = _resolve_log_path()
 	if not FileAccess.file_exists(log_path):
-		var response := MCPToolkitSuccess.ok({
-			"lines": [],
-			"count": 0,
-			"truncated": false,
-			"total_lines": 0,
-			"source": "cache",
-			"note": "Log file not found. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart.",
-		})
+		var response := MCPToolkitSuccess.ok(_empty_log_page(
+			"Log file not found. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart."))
 		_merge_debug_bridge_data(response)
 		return response
 
@@ -108,14 +96,8 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 	var file_len: int = file.get_length()
 	if file_len <= _game_session_file_offset:
 		file.close()
-		var response := MCPToolkitSuccess.ok({
-			"lines": [],
-			"count": 0,
-			"truncated": false,
-			"total_lines": 0,
-			"source": "cache",
-			"note": "No new output since game_start (log file unchanged).",
-		})
+		var response := MCPToolkitSuccess.ok(_empty_log_page(
+			"No new output since game_start (log file unchanged)."))
 		_merge_debug_bridge_data(response)
 		return response
 
@@ -154,17 +136,14 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 	if truncated:
 		filtered = filtered.slice(filtered.size() - limit)
 
-	var response := MCPToolkitSuccess.ok({
-		"lines": filtered,
-		"count": filtered.size(),
-		"truncated": truncated,
-		"total_lines": total_lines,
-		"source": "cache",
-	})
 	# Capped-tail pagination (oldest lines drop first, no cursor) — advise raising
 	# limit / text_filter rather than a cursor.
+	var hint := ""
 	if truncated:
-		response["hint"] = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
+		hint = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
+	var response := MCPToolkitSuccess.ok(Modules.Pagination.build(
+		{"lines": filtered}, "lines", total_lines, filtered.size(), truncated,
+		"", 0, hint, {"source": "cache"}))
 	# Pass unfiltered lines so error scan always has full context.
 	_merge_debug_bridge_data(response, stripped_lines)
 	if not regex_warning.is_empty():
@@ -173,6 +152,15 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 
 
 # -- Helpers ------------------------------------------------------------------
+
+
+## The empty cached-log page returned when no session output is available.
+## [param note] explains which of the no-output conditions applies. Stamps the
+## standard pagination invariants (empty, nothing more) so the shape matches a
+## populated read.
+static func _empty_log_page(note: String) -> Dictionary:
+	return Modules.Pagination.build({"lines": []}, "lines", 0, 0, false, "", 0, "",
+		{"source": "cache", "note": note})
 
 
 ## Shared error-entry shape for debug_state/error_buffer responses.

@@ -887,6 +887,40 @@ checked at `:52-58`.
 
 ---
 
+## B5. Paginating tools — the shared `Pagination` envelope
+
+Any tool that caps or pages its result **builds the response through
+`Modules.Pagination`** (`contract/pagination.gd`) — never a hand-rolled envelope.
+The class owns the contract so every consumer shares it (ADR 0020).
+
+**Invariants — always present:** `has_more` (bool), `total_<unit>` (exact,
+walk-all), `returned` (this page's size). Never `truncated` (→ `has_more`) or a
+returned-size `count` (→ `returned`); a non-paginating `count` beside no total is
+fine and stays.
+
+**Resume mechanism — pick one:**
+- *Resumable* → a linear resume field (`next_offset` for index/byte, `next_start_line`
+  for line), emitted only when `has_more`, plus a `hint`.
+- *Cursor-less* (walk not linearly resumable) → **no** resume field; document the
+  in-tool navigation axis (`path_prefix`+filters, or `region`+`bounds`) in the
+  `hint`. The integer resume field is a "resume field", not a "cursor".
+
+**Families → builder method:** `list_page` (LIST), `byte_page` (CONTENT-byte),
+`line_page` (CONTENT-line); spatial tools are LIST-shaped with `bounds` in `extras`
+and no resume field. The generic `build()` is for a one-off shape — a third repeat
+graduates into a family method.
+
+**Clamp, don't reject:** a caller window param over the tool's per-tool max is
+clamped and disclosed (`limit_clamped: true` in `extras` + a clamp clause the class
+appends to `hint`); `≤ 0`/non-int is rejected. `hint` is present iff `has_more`
+**or** a clamp occurred.
+
+**No per-emitter marker comment.** The `Modules.Pagination.<family>()` call is the
+discoverable contract (greppable); a comment pointing at this doc from a shipped
+`addons/` file violates §8.12. The class's own header docstring is self-contained.
+
+---
+
 ## Appendix — condensed review checklist
 
 Run over **any changed `.gd` file**. The **general** rows apply to every file (addon, `test/`,

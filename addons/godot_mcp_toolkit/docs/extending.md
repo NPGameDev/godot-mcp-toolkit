@@ -207,7 +207,7 @@ LLM fills in, validate it so a traversal/escape path (`res://../../secret`,
   const FileGuard = preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
   var guard := FileGuard.resolve_safe(params.get("file_path", ""))   # res://, path-boundary checked
   if guard["error"] != null:
-      return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
+	  return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
   # user:// paths: FileGuard.resolve_safe_user(path) → {ok, error_code, error_message}
   ```
 
@@ -268,32 +268,33 @@ Match these field names exactly (they are the built-in contract):
 
 | Field | Type | When present | Meaning |
 |-------|------|--------------|---------|
-| `truncated` | bool | **always** (on success) | `true` if more data remains beyond this window; `false` if this window reached the end. |
+| `has_more` | bool | **always** (on success) | `true` if more data remains beyond this window; `false` if this window reached the end. |
 | `total_<unit>` | int | **always** | The full size of the source — e.g. `total_bytes`, `total_lines`, `total_entries`. Lets the agent see how much is left. |
-| `next_<cursor>` | (matches request) | only when `truncated` is `true` | The value to pass back to resume — e.g. `next_offset` (bytes), `next_start_line` (lines). |
-| `hint` | string | only when `truncated` is `true` | One prose line telling the agent to re-call with that cursor until `truncated` is `false`. |
+| `returned` | int | **always** | The size of this window — this page's row/byte/line count. |
+| `next_<cursor>` | (matches request) | only when `has_more` is `true` | The value to pass back to resume — e.g. `next_offset` (bytes), `next_start_line` (lines). |
+| `hint` | string | only when `has_more` is `true` | One prose line telling the agent to re-call with that cursor until `has_more` is `false`. |
 
-The loop the agent runs is always: *call → if `truncated`, pass `next_<cursor>`
-back as the matching request parameter → call again → stop when `truncated` is
+The loop the agent runs is always: *call → if `has_more`, pass `next_<cursor>`
+back as the matching request parameter → call again → stop when `has_more` is
 `false`.*
 
 **Copy a built-in.** Two built-ins already implement this — read them and follow
 the same shape:
 
 - **`save.read`** pages a `user://` file by **bytes**: request `offset` (default
-  `0`) + `max_bytes`; response carries `next_offset`, `total_bytes`, `truncated`,
-  and (when truncated) a `hint` to re-call with `offset = next_offset`.
+  `0`) + `max_bytes`; response carries `next_offset`, `total_bytes`, `returned`,
+  `has_more`, and (when there's more) a `hint` to re-call with `offset = next_offset`.
 - **`script.read`** pages a project script by **lines**: request
   `start_line`/`end_line` (1-based); response carries `next_start_line`,
-  `total_lines`, `truncated`, and (when truncated) a `hint`.
+  `total_lines`, `returned`, `has_more`, and (when there's more) a `hint`.
 
 **Keep the request parameters unit-appropriate** — only the *response* shape is
 uniform. Page bytes with a byte `offset`; page lines with a line cursor; don't
 force a byte offset onto a tool whose natural unit is something else. A tool that
 reads a region or set rather than a linear stream may legitimately be
-**cursor-less**: return `truncated` + a count and let the agent narrow by filter
-or re-query (e.g. a tighter region), instead of inventing a meaningless
-`next_offset`. The contract still holds — `truncated` and a total are always
+**cursor-less**: return `has_more` + `returned` + a total and let the agent narrow
+by filter or re-query (e.g. a tighter region), instead of inventing a meaningless
+`next_offset`. The contract still holds — `has_more` and a total are always
 there; the resumable `next_<cursor>` is simply omitted when there is nothing
 linear to resume.
 
@@ -309,47 +310,47 @@ will silently drop:
 const CAP_BYTES := 256 * 1024   # better: read a live ProjectSettings limit here
 
 func _read_blob(params: Dictionary) -> Dictionary:
-    var offset: int = max(0, int(params.get("offset", 0)))
-    var total := _blob_size(params)                       # full source size
-    var want: int = clampi(int(params.get("max_bytes", CAP_BYTES)), 1, CAP_BYTES)
-    if want > CAP_BYTES:                                   # window exceeds the cap
-        return MCPToolkitError.fail("FILE_TOO_LARGE",
-            "Requested window exceeds the %d-byte cap." % CAP_BYTES,
-            "Lower max_bytes (cap %d) or page with offset." % CAP_BYTES)
+	var offset: int = max(0, int(params.get("offset", 0)))
+	var total := _blob_size(params)                       # full source size
+	var want: int = clampi(int(params.get("max_bytes", CAP_BYTES)), 1, CAP_BYTES)
+	if want > CAP_BYTES:                                   # window exceeds the cap
+		return MCPToolkitError.fail("FILE_TOO_LARGE",
+			"Requested window exceeds the %d-byte cap." % CAP_BYTES,
+			"Lower max_bytes (cap %d) or page with offset." % CAP_BYTES)
 
-    var chunk := _read_range(params, offset, want)        # at most `want` bytes
-    var end := offset + chunk.size()
-    var more := end < total
-    var out := {
-        "success": true,
-        "bytes_returned": chunk.size(),
-        "offset": offset,
-        "total_bytes": total,        # total_<unit> — always present
-        "truncated": more,           # truncated — always present
-        "content": Untrusted.wrap("blob", str(params.get("path", "")), chunk),
-    }
-    if more:
-        out["next_offset"] = end     # next_<cursor> — only when truncated
-        out["hint"] = "more bytes remain — re-call with offset = next_offset (%d) until truncated is false" % end
-    return out
+	var chunk := _read_range(params, offset, want)        # at most `want` bytes
+	var end := offset + chunk.size()
+	var more := end < total
+	var out := {
+		"success": true,
+		"returned": chunk.size(),
+		"offset": offset,
+		"total_bytes": total,        # total_<unit> — always present
+		"has_more": more,            # has_more — always present
+		"content": Untrusted.wrap("blob", str(params.get("path", "")), chunk),
+	}
+	if more:
+		out["next_offset"] = end     # next_<cursor> — only when has_more
+		out["hint"] = "more bytes remain — re-call with offset = next_offset (%d) until has_more is false" % end
+	return out
 ```
 
 This is the only safe way to expose data larger than the frame buffer: the agent
 reads it across several capped calls. (A capped read also keeps any *single*
 response cheap — see token economics above.) The same idea applies on the
 **line** axis for a script-style tool: cap the line window, set
-`total_lines` / `truncated` / `next_start_line`, and reject an over-cap full read
-with `FILE_TOO_LARGE` and a "use a line range" hint.
+`total_lines` / `returned` / `has_more` / `next_start_line`, and reject an
+over-cap full read with `FILE_TOO_LARGE` and a "use a line range" hint.
 
 The user-facing **`advanced_configuration.md`** documents this contract from the
 *caller's* side (the loop an agent follows, with worked `save_read` / `script_read`
 examples) — your tool returning these same fields lets an agent that already knows
 the built-in loop page your tool with zero new learning.
 
-> **Future convenience.** A shared helper for capped/paginated reads (cap +
-> `truncated` + `next_<cursor>` bookkeeping) is a plausible addition — but it does
-> **not** exist today. Hand-roll the pattern above; it is small and entirely under
-> your control.
+> **Use the shared helper.** `contract/pagination.gd` (reached as
+> `Modules.Pagination`) centralizes the cap + `has_more` + `next_<cursor>`
+> bookkeeping shown above — call its family methods (`list_page`, `byte_page`,
+> `line_page`) or its generic `build()` instead of hand-rolling the pattern.
 
 **Saving a scene from a handler — choose by your scripting language.**
 Handlers run inside a `call_deferred` dispatch. Calling
@@ -530,17 +531,17 @@ no-op behavior.
 
 ```gdscript
 func _set_custom_prop(params: Dictionary) -> Dictionary:
-    var node = get_tree().edited_scene_root.get_node(params.node_path)
-    var old_val = node.get(params.property)
-    node.set(params.property, params.value)
+	var node = get_tree().edited_scene_root.get_node(params.node_path)
+	var old_val = node.get(params.property)
+	node.set(params.property, params.value)
 
-    MCPToolkitUndoRedoAction.begin(
-        "set %s.%s" % [params.node_path, params.property], node) \
-        .do_property(node, params.property, params.value) \
-        .undo_property(node, params.property, old_val) \
-        .commit_recorded()
+	MCPToolkitUndoRedoAction.begin(
+		"set %s.%s" % [params.node_path, params.property], node) \
+		.do_property(node, params.property, params.value) \
+		.undo_property(node, params.property, old_val) \
+		.commit_recorded()
 
-    return MCPToolkitSuccess.ok()
+	return MCPToolkitSuccess.ok()
 ```
 
 The mutation executes first (`node.set(...)`), then the builder records it for
@@ -551,21 +552,21 @@ just record it." This is the standard pattern for all MCP tools.
 
 ```gdscript
 func _create_marker(params: Dictionary) -> Dictionary:
-    var parent = get_tree().edited_scene_root.get_node(params.parent_path)
-    var root = get_tree().edited_scene_root
-    var marker = Marker2D.new()
-    marker.name = params.get("name", "Marker")
-    parent.add_child(marker)
-    marker.set_owner(root)
+	var parent = get_tree().edited_scene_root.get_node(params.parent_path)
+	var root = get_tree().edited_scene_root
+	var marker = Marker2D.new()
+	marker.name = params.get("name", "Marker")
+	parent.add_child(marker)
+	marker.set_owner(root)
 
-    MCPToolkitUndoRedoAction.begin("create %s" % marker.name, parent) \
-        .do_method(parent.add_child.bind(marker)) \
-        .do_method(marker.set_owner.bind(root)) \
-        .do_reference(marker) \
-        .undo_method(parent.remove_child.bind(marker)) \
-        .commit_recorded()
+	MCPToolkitUndoRedoAction.begin("create %s" % marker.name, parent) \
+		.do_method(parent.add_child.bind(marker)) \
+		.do_method(marker.set_owner.bind(root)) \
+		.do_reference(marker) \
+		.undo_method(parent.remove_child.bind(marker)) \
+		.commit_recorded()
 
-    return MCPToolkitSuccess.ok({"data": {"node_path": str(marker.get_path())}})
+	return MCPToolkitSuccess.ok({"data": {"node_path": str(marker.get_path())}})
 ```
 
 Use `do_reference()` to keep newly created objects alive for redo (they'd
@@ -584,12 +585,12 @@ old objects alive for undo (e.g., a resource being replaced).
 ```gdscript
 var action = MCPToolkitUndoRedoAction.begin("expensive op", node)
 if action.is_active():
-    var snapshot = _capture_expensive_state()
-    action.undo_method(Callable(self, "_restore_state").bind(snapshot))
+	var snapshot = _capture_expensive_state()
+	action.undo_method(Callable(self, "_restore_state").bind(snapshot))
 _apply_mutation(params)
 if action.is_active():
-    action.do_method(Callable(self, "_apply_mutation").bind(params))
-    action.commit_recorded()
+	action.do_method(Callable(self, "_apply_mutation").bind(params))
+	action.commit_recorded()
 ```
 
 `is_active()` returns `false` in headless mode (no editor plugin). Use it to
@@ -612,13 +613,13 @@ scene nodes:
 ```gdscript
 # WRONG — missing context, routes to global history:
 MCPToolkitUndoRedoAction.begin("add to group") \
-    .do_method(node.add_to_group.bind("enemies")) \
-    ...
+	.do_method(node.add_to_group.bind("enemies")) \
+	...
 
 # CORRECT — node is in the scene tree, routes to scene history:
 MCPToolkitUndoRedoAction.begin("add to group", node) \
-    .do_method(node.add_to_group.bind("enemies")) \
-    ...
+	.do_method(node.add_to_group.bind("enemies")) \
+	...
 ```
 
 The only time `null` context is correct is for **global operations** that don't
@@ -649,28 +650,28 @@ private GodotObject _registry;
 
 public void Register(GodotObject registry, Node server)
 {
-    _registry = registry;
-    var opts = registry.Call("create_extension_options",
-        "Set custom property on a node").AsGodotObject();
-    registry.Call("add", "custom.set_prop",
-        new Callable(this, MethodName.SetCustomProp), opts);
+	_registry = registry;
+	var opts = registry.Call("create_extension_options",
+		"Set custom property on a node").AsGodotObject();
+	registry.Call("add", "custom.set_prop",
+		new Callable(this, MethodName.SetCustomProp), opts);
 }
 
 public Dictionary SetCustomProp(Dictionary parameters)
 {
-    var nodePath = (string)parameters["node_path"];
-    var prop = (string)parameters["property"];
-    var node = GetTree().EditedSceneRoot.GetNode(nodePath);
-    var oldVal = node.Get(prop);
-    node.Set(prop, parameters["value"]);
+	var nodePath = (string)parameters["node_path"];
+	var prop = (string)parameters["property"];
+	var node = GetTree().EditedSceneRoot.GetNode(nodePath);
+	var oldVal = node.Get(prop);
+	node.Set(prop, parameters["value"]);
 
-    var action = _registry.Call("create_undo_action",
-        $"set {nodePath}.{prop}", node).AsGodotObject();
-    action.Call("do_property", node, prop, parameters["value"]);
-    action.Call("undo_property", node, prop, oldVal);
-    action.Call("commit_recorded");
+	var action = _registry.Call("create_undo_action",
+		$"set {nodePath}.{prop}", node).AsGodotObject();
+	action.Call("do_property", node, prop, parameters["value"]);
+	action.Call("undo_property", node, prop, oldVal);
+	action.Call("commit_recorded");
 
-    return new Dictionary { { "success", true } };
+	return new Dictionary { { "success", true } };
 }
 ```
 
@@ -785,11 +786,11 @@ handler waits:
 ```gdscript
 # BAD — freezes the editor:
 while some_condition():
-    OS.delay_msec(100)
+	OS.delay_msec(100)
 
 # GOOD — editor stays responsive:
 while some_condition():
-    await Engine.get_main_loop().create_timer(0.1).timeout
+	await Engine.get_main_loop().create_timer(0.1).timeout
 ```
 
 `Engine.get_main_loop()` returns the `SceneTree` and works in both instance
@@ -898,7 +899,7 @@ symmetric with `MCPToolkitError.fail()` for errors.
 
 ```gdscript
 return MCPToolkitError.fail("NOT_FOUND", "Node not found",
-    "Use scene.get_tree to list valid node paths.")
+	"Use scene.get_tree to list valid node paths.")
 # Returns: {"success": false, "error": "Node not found", "code": "NOT_FOUND", "hint": "..."}
 ```
 
@@ -922,9 +923,9 @@ payload fields:
 
 ```gdscript
 return MCPToolkitSuccess.ok({
-    "files_removed": 8,
-    "files_failed": 2,
-    "errors": ["res://locked.cfg: permission denied", "res://other.cfg: in use"]
+	"files_removed": 8,
+	"files_failed": 2,
+	"errors": ["res://locked.cfg: permission denied", "res://other.cfg: in use"]
 })
 ```
 
@@ -938,7 +939,7 @@ provides the canonical error contract. Use it for all error responses:
 ```gdscript
 # Structured error with explicit hint:
 return MCPToolkitError.fail("NOT_FOUND", "Node not found",
-    "Use scene.get_tree to list valid node paths.")
+	"Use scene.get_tree to list valid node paths.")
 
 # Auto-hint — TIMEOUT gets its default hint automatically:
 return MCPToolkitError.fail("TIMEOUT", "Editor busy")
@@ -947,7 +948,7 @@ return MCPToolkitError.fail("TIMEOUT", "Editor busy")
 # Parameter validation with auto-contextual hints:
 var err = MCPToolkitError.require(params, ["node_path", "file_path"])
 if err != null:
-    return err  # hint auto-attached based on parameter name
+	return err  # hint auto-attached based on parameter name
 ```
 
 **C# usage** (via registry factories — C# cannot call GDScript statics):
@@ -955,11 +956,11 @@ if err != null:
 ```csharp
 // Structured error:
 var err = _registry.Call("fail", "NOT_FOUND", "Node missing",
-    "Use scene.get_tree to find valid paths").AsGodotDictionary();
+	"Use scene.get_tree to find valid paths").AsGodotDictionary();
 
 // Parameter validation:
 var reqErr = _registry.Call("require", parameters,
-    new Godot.Collections.Array { "node_path" });
+	new Godot.Collections.Array { "node_path" });
 if (reqErr.Obj != null) return reqErr.AsGodotDictionary();
 ```
 
@@ -984,8 +985,8 @@ injects the hint automatically into successful responses:
 
 ```gdscript
 registry.add("physics.simulate", _simulate,
-    MCPToolkitExtensionOptions.new("Run physics simulation step")
-        .with_success_hint("Call physics.get_results to see the simulation output."))
+	MCPToolkitExtensionOptions.new("Run physics simulation step")
+		.with_success_hint("Call physics.get_results to see the simulation output."))
 ```
 
 When `_simulate` returns `MCPToolkitSuccess.ok({...})`, the framework adds
@@ -997,21 +998,21 @@ handler. Handler-set hints take precedence over the registered default:
 
 ```gdscript
 func _simulate(params: Dictionary) -> Dictionary:
-    var result = _run_simulation(params)
-    if result.collisions > 0:
-        return MCPToolkitSuccess.ok({"data": result,
-            "hint": "%d collisions detected. Call physics.get_collisions for details." % result.collisions})
-    return MCPToolkitSuccess.ok({"data": result})
-    # ↑ Falls back to the registered with_success_hint() text
+	var result = _run_simulation(params)
+	if result.collisions > 0:
+		return MCPToolkitSuccess.ok({"data": result,
+			"hint": "%d collisions detected. Call physics.get_collisions for details." % result.collisions})
+	return MCPToolkitSuccess.ok({"data": result})
+	# ↑ Falls back to the registered with_success_hint() text
 ```
 
 **C# — static hint:**
 
 ```csharp
 var opts = registry.Call("create_extension_options",
-    "Run physics simulation step").AsGodotObject();
+	"Run physics simulation step").AsGodotObject();
 opts.Call("with_success_hint",
-    "Call physics.get_results to see the simulation output.");
+	"Call physics.get_results to see the simulation output.");
 ```
 
 **When to use hints:**
@@ -1230,8 +1231,8 @@ editor-only work so it cannot run in a build:
 ```csharp
 public void Register(GodotObject registry, Node server)
 {
-    if (!Engine.IsEditorHint()) return; // defence-in-depth
-    // ...
+	if (!Engine.IsEditorHint()) return; // defence-in-depth
+	// ...
 }
 ```
 

@@ -65,32 +65,34 @@ so the loop you learn for one applies to the other.
 
 On a capped read you always get:
 
-- **`truncated`** (bool) — `true` when more data remains beyond this window,
+- **`has_more`** (bool) — `true` when more data remains beyond this window,
   `false` when this window reached the end. Always present on a successful read.
 - **`total_<unit>`** — the full size of the source (`total_bytes` for `save_read`,
   `total_lines` for `script_read`), so you know how much is left.
-- **`next_<cursor>`** — the value to pass back to resume, present **only when
-  `truncated` is `true`** (`next_offset` for `save_read`, `next_start_line` for
+- **`returned`** — the size of this window (bytes for `save_read`, lines for
   `script_read`).
-- **`hint`** — a one-line prose instruction, present **only when `truncated` is
+- **`next_<cursor>`** — the value to pass back to resume, present **only when
+  `has_more` is `true`** (`next_offset` for `save_read`, `next_start_line` for
+  `script_read`).
+- **`hint`** — a one-line prose instruction, present **only when `has_more` is
   `true`**, telling you exactly which cursor to feed back.
 
-**The loop is always the same:** call the tool; if `truncated` is `true`, pass the
+**The loop is always the same:** call the tool; if `has_more` is `true`, pass the
 returned `next_<cursor>` back as the matching request parameter and call again;
-stop when `truncated` is `false`.
+stop when `has_more` is `false`.
 
 **Worked example — `save_read` (bytes).** Request `offset` (default `0`) +
 `max_bytes`; resume with `next_offset`:
 
 ```
 save_read  path=user://saves/big.dat  max_bytes=400
-  → { bytes_returned: 400, offset: 0, next_offset: 400,
-      total_bytes: 1000, truncated: true,
-      hint: "more bytes remain — re-call save.read with offset = next_offset (400) until truncated is false" }
+  → { returned: 400, offset: 0, next_offset: 400,
+      total_bytes: 1000, has_more: true,
+      hint: "more bytes remain — re-call save.read with offset = next_offset (400) until has_more is false" }
 save_read  path=user://saves/big.dat  offset=400  max_bytes=400
-  → { bytes_returned: 400, next_offset: 800, total_bytes: 1000, truncated: true, hint: … }
+  → { returned: 400, next_offset: 800, total_bytes: 1000, has_more: true, hint: … }
 save_read  path=user://saves/big.dat  offset=800  max_bytes=400
-  → { bytes_returned: 200, next_offset: 1000, total_bytes: 1000, truncated: false }   # done — no hint
+  → { returned: 200, next_offset: 1000, total_bytes: 1000, has_more: false }   # done — no hint
 ```
 
 **Worked example — `script_read` (lines).** Request `start_line`/`end_line`
@@ -98,17 +100,17 @@ save_read  path=user://saves/big.dat  offset=800  max_bytes=400
 
 ```
 script_read  file_path=res://big.gd  start_line=1  end_line=200
-  → { start_line: 1, end_line: 200, total_lines: 520, truncated: true,
+  → { start_line: 1, end_line: 200, total_lines: 520, returned: 200, has_more: true,
       next_start_line: 201,
-      hint: "more lines remain — re-call script.read with start_line = next_start_line (201) until truncated is false" }
+      hint: "more lines remain — re-call script.read with start_line = next_start_line (201) until has_more is false" }
 script_read  file_path=res://big.gd  start_line=201  end_line=400
-  → { start_line: 201, end_line: 400, total_lines: 520, truncated: true, next_start_line: 401, hint: … }
+  → { start_line: 201, end_line: 400, total_lines: 520, returned: 200, has_more: true, next_start_line: 401, hint: … }
 script_read  file_path=res://big.gd  start_line=401  end_line=600
-  → { start_line: 401, end_line: 520, total_lines: 520, truncated: false }   # clamped to EOF, done — no hint
+  → { start_line: 401, end_line: 520, total_lines: 520, returned: 120, has_more: false }   # clamped to EOF, done — no hint
 ```
 
 A **full** `script_read` (no `start_line`) that fits under the cap returns
-`truncated: false` and `total_lines` as well, so both read shapes carry the same
+`has_more: false` and `total_lines` as well, so both read shapes carry the same
 fields. The request-parameter names stay unit-appropriate (`offset`/`max_bytes`
 for bytes, `start_line`/`end_line` for lines) — only the response *shape* is
 uniform.

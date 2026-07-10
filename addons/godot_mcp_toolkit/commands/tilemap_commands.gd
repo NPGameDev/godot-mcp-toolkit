@@ -144,20 +144,17 @@ static func _cmd_tilemap_read_cells(parameters: Dictionary) -> Dictionary:
 
 	# total_cells: full match count (counted past the cap); cursor-less — use
 	# 'region' to query spatial subsets.
-	var result := {
-		"cells": cells,
-		"cell_count": cells.size(),
-		"total_cells": cells_total,
-		"truncated": truncated,
-		"bounds": bounds,
-		"node_class": node.get_class(),
-	}
-
+	var paging_hint := ""
 	if truncated:
-		result["hint"] = (
+		paging_hint = (
 			"%d of %d cells returned (capped at %d) — " % [cells.size(), cells_total, _MAX_CELLS] +
 			"use the 'region' parameter {x, y, width, height} to query spatial subsets (cursor-less).")
+	var result := Modules.Pagination.build(
+		{"cells": cells}, "cells", cells_total, cells.size(), truncated, "", 0,
+		paging_hint, {"bounds": bounds, "node_class": node.get_class()})
 
+	# The version hint is a compatibility note, not a paging cue — surface it even on
+	# a complete read, appending to any paging hint the envelope already carries.
 	var version_hint := _tilemap_version_hint(is_map)
 	if not version_hint.is_empty():
 		if result.has("hint"):

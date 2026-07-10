@@ -36,7 +36,7 @@
 > Do not re-add a cap step here.
 
 > **Fixture size — keep tiny on purpose.** A 10-byte file exercises the exact
-> same multi-window pagination contract (truncated → truncated → final, hint
+> same multi-window pagination contract (has_more → has_more → final, hint
 > presence/absence, clean EOF) as a megabyte file. Use a small `max_bytes` so a
 > few bytes page across 3 windows. Do NOT inflate the fixture to hundreds or
 > thousands of bytes — large inline content bloats agent context and slows the
@@ -44,13 +44,13 @@
 
 1. `save_write` — path=`user://saves/sv2_page.txt`, content = a 10-char string (`AAAAAAAAAA`, 10× `A`)
 2. `save_read` — path=`user://saves/sv2_page.txt`, `max_bytes`=4
-   - **Expect:** `bytes_returned`=4, `offset`=0, `next_offset`=4, `total_bytes`=10, `truncated`=true. Uniform pagination contract (concern 054): because `truncated` is true, a `hint` field is present naming `next_offset`.
+   - **Expect:** `returned`=4, `offset`=0, `next_offset`=4, `total_bytes`=10, `has_more`=true. Uniform pagination contract (ledger #20): because `has_more` is true, a `hint` field is present naming `next_offset`.
 3. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=4, `max_bytes`=4
-   - **Expect:** `bytes_returned`=4, `next_offset`=8, `truncated`=true, `hint` present (truncated).
+   - **Expect:** `returned`=4, `next_offset`=8, `has_more`=true, `hint` present (has_more).
 4. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=8, `max_bytes`=4
-   - **Expect:** `bytes_returned`=2, `next_offset`=10, `truncated`=false, **no `hint`** (final window — the hint is omitted once `truncated` is false; page until then). Same contract shape as `script_read` (see Section 6.2), in byte units.
+   - **Expect:** `returned`=2, `next_offset`=10, `has_more`=false, **no `hint`** (final window — the hint is omitted once `has_more` is false; page until then). Same contract shape as `script_read` (see Section 6.2), in byte units.
 5. `save_read` — path=`user://saves/sv2_page.txt`, `offset`=10 (at EOF)
-   - **Expect:** success, `bytes_returned`=0, `next_offset`=10, `truncated`=false (no error past EOF)
+   - **Expect:** success, `returned`=0, `next_offset`=10, `has_more`=false (no error past EOF)
 6. `save_delete` — path=`user://saves/sv2_page.txt` (cleanup)
 
 ---

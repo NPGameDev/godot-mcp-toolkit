@@ -110,18 +110,17 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, tex
 	for entry in entries:
 		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
-	var response := {
-		"entries": Untrusted.wrap(
-			"console", "buffer", JSON.stringify(entries)),
-		"count": buf_result["count"],
-		"next_id": buf_result["next_id"],
-		"truncated": buf_result["truncated"],
-		"total_lines": buf_result["total_lines"],
-		"source": "buffer",
-	}
-	# On a truncated read, page via since_id = next_id.
-	if buf_result["truncated"]:
-		response["hint"] = "more lines remain — re-call editor.get_console with since_id = next_id (%d) until truncated is false" % int(buf_result["next_id"])
+	var has_more: bool = buf_result["has_more"]
+	# Capped-tail line paging: the resume cursor is next_id (fed back via since_id),
+	# not a next_offset, so this is cursor-less as far as the shared builder is concerned.
+	var next_id: int = int(buf_result["next_id"])
+	var hint := ""
+	if has_more:
+		hint = "more lines remain — re-call editor.get_console with since_id = next_id (%d) until has_more is false" % next_id
+	var response := Modules.Pagination.build(
+		{"entries": Untrusted.wrap("console", "buffer", JSON.stringify(entries))},
+		"lines", int(buf_result["total_lines"]), int(buf_result["returned"]), has_more,
+		"", 0, hint, {"next_id": next_id, "source": "buffer"})
 	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off
 	# or the log file couldn't be read (locked by OS on Windows).
 	if entries.is_empty() and not Modules.LogBuffer.uses_logger_api():
@@ -349,8 +348,8 @@ static func _read_console_log(
 	# Capture the pre-slice entry count for total_lines before the slice
 	# below reassigns `entries` to the capped tail.
 	var total_lines := entries.size()
-	var truncated := entries.size() > limit
-	if truncated:
+	var has_more := entries.size() > limit
+	if has_more:
 		entries = entries.slice(entries.size() - limit)
 
 	var next_id: int = -1
@@ -361,17 +360,17 @@ static func _read_console_log(
 		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
 		entry["message"] = scrubbed["text"]
 
-	var response := {
-		"entries": Untrusted.wrap(
-			"console", str(chosen_file), JSON.stringify(entries)),
-		"count": entries.size(),
-		"next_id": next_id,
-		"truncated": truncated,
-		"total_lines": total_lines,
-		"log_file": chosen_file,
-		"log_mtime": chosen_mtime,
-		"warnings": warnings,
-	}
-	if truncated:
-		response["hint"] = "more lines remain — re-call editor.get_console with since_id = next_id (%d) until truncated is false" % next_id
+	# Capped-tail line paging (resume via next_id → since_id, cursor-less for the builder).
+	var hint := ""
+	if has_more:
+		hint = "more lines remain — re-call editor.get_console with since_id = next_id (%d) until has_more is false" % next_id
+	var response := Modules.Pagination.build(
+		{"entries": Untrusted.wrap("console", str(chosen_file), JSON.stringify(entries))},
+		"lines", total_lines, entries.size(), has_more, "", 0, hint,
+		{
+			"next_id": next_id,
+			"log_file": chosen_file,
+			"log_mtime": chosen_mtime,
+			"warnings": warnings,
+		})
 	return MCPToolkitSuccess.ok(response)

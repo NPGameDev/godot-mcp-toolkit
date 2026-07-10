@@ -107,16 +107,16 @@
 - **Expect:** success
 
 **20.13** `debugger_get_log` — text_filter=`SV2_RUNTIME_SEED`, is_regex=`false`
-- **Expect:** count >= 1
+- **Expect:** `returned` >= 1 (ledger #20: the matching-line count field is `returned`, was `count`)
 
 **20.14** `debugger_get_log` — text_filter=`SV2_RUNTIME_SEED_Beta\\d+`, is_regex=`true`
-- **Expect:** count >= 1
+- **Expect:** `returned` >= 1
 
 **20.15** `debugger_get_log` — text_filter=`check(braces)`, is_regex=`false`
-- **Expect:** count >= 1 (parens literal in plain mode)
+- **Expect:** `returned` >= 1 (parens literal in plain mode)
 
 **20.15a** `debugger_get_log` file source under filter — source=`file`, text_filter=`SV2_RUNTIME_SEED`, is_regex=`false`
-- **Expect:** the `file` source filters-then-slices, uniform with the `buffer` source. Either (a) file logging enabled → success, count ≥ 1, returned lines are the last `limit` **matching** lines, `total_lines` = matching-line count, `truncated` = matches exceeded `limit` (same as 20.13 from the buffer); or (b) file logging disabled → `LOG_UNAVAILABLE` with an enable-file-logging hint.
+- **Expect:** the `file` source filters-then-slices, uniform with the `buffer` source. Either (a) file logging enabled → success, `returned` ≥ 1, returned lines are the last `limit` **matching** lines, `total_lines` = matching-line count, `has_more` (was `truncated`) = matches exceeded `limit` (same as 20.13 from the buffer); or (b) file logging disabled → `LOG_UNAVAILABLE` with an enable-file-logging hint.
 
 **20.16** `debugger_get_log` guard — text_filter=`(unclosed`, is_regex=`true`
 - **Expect:** INVALID_PARAMS with actionable hint

@@ -20,6 +20,7 @@ extends Node
 # would parse-fail this autoload in an export template (godot#91713) — GDScript
 # resolves identifiers at parse time, before any runtime guard can help.
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const Pagination := preload("res://addons/godot_mcp_toolkit/contract/pagination.gd")
 const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
@@ -559,17 +560,15 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		for entry in entries:
 			var scrubbed := Scrubber.scrub(str(entry["message"]), "debugger.get_log")
 			entry["message"] = scrubbed["text"]
-		var response := {
-			"lines": Untrusted.wrap("game_log", "buffer", JSON.stringify(entries)),
-			"count": buf_result["count"],
-			"next_id": buf_result["next_id"],
-			"truncated": buf_result["truncated"],
-			"total_lines": buf_result["total_lines"],
-			"source": "buffer",
-		}
-		# Capped-tail pagination (oldest lines drop first, no cursor): on truncation, guide the caller to raise limit / narrow text_filter.
-		if buf_result["truncated"]:
-			response["hint"] = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
+		var has_more: bool = buf_result["has_more"]
+		# Capped-tail pagination (oldest lines drop first, no cursor): on more, guide the caller to raise limit / narrow text_filter.
+		var hint := ""
+		if has_more:
+			hint = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
+		var response := Pagination.build(
+			{"lines": Untrusted.wrap("game_log", "buffer", JSON.stringify(entries))},
+			"lines", int(buf_result["total_lines"]), int(buf_result["returned"]), has_more,
+			"", 0, hint, {"next_id": buf_result["next_id"], "source": "buffer"})
 		# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off.
 		if entries.is_empty() and not LogBuffer.uses_logger_api():
 			if not LogHelpers.is_file_logging_enabled():
@@ -592,15 +591,13 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 			_send_result(peer, id, MCPToolkitError.fail("LOG_UNAVAILABLE", _hint,
 				MCPToolkitError.log_unavailable_hint(LogBuffer.uses_logger_api())))
 		else:
-			_send_result(peer, id, {
-				"lines": [],
-				"count": 0,
-				"total_lines": 0,
-				"truncated": false,
-				"path": log_path,
-				"source": "file",
-				"note": "log file not yet written — new game with no prints, or file flush pending",
-			})
+			_send_result(peer, id, Pagination.build(
+				{"lines": []}, "lines", 0, 0, false, "", 0, "",
+				{
+					"path": log_path,
+					"source": "file",
+					"note": "log file not yet written — new game with no prints, or file flush pending",
+				}))
 		return
 
 	var file := FileAccess.open(log_path, FileAccess.READ)
@@ -645,16 +642,14 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 
 	var json_slice := JSON.stringify(slice)
 	var scrubbed := Scrubber.scrub(json_slice, "debugger.get_log")
-	var file_response := {
-		"lines": Untrusted.wrap("game_log", "godot", scrubbed["text"]),
-		"count": slice.size(),
-		"total_lines": total,
-		"truncated": file_truncated,
-		"path": log_path,
-		"source": "file",
-	}
+	# Capped-tail pagination (oldest lines drop first, no cursor).
+	var file_hint := ""
 	if file_truncated:
-		file_response["hint"] = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
+		file_hint = "more lines remain — raise limit or narrow with text_filter (capped tail: the oldest lines drop first, no cursor)."
+	var file_response := Pagination.build(
+		{"lines": Untrusted.wrap("game_log", "godot", scrubbed["text"])},
+		"lines", total, slice.size(), file_truncated, "", 0, file_hint,
+		{"path": log_path, "source": "file"})
 	if not regex_warning.is_empty():
 		file_response["warning"] = regex_warning
 	_send_result(peer, id, file_response)

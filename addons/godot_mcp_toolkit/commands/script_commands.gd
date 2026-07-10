@@ -78,22 +78,20 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		if result_bytes > cap_kb * 1024:
 			return MCPToolkitError.fail("FILE_TOO_LARGE",
 				"slice exceeds %d KB response cap; narrow the line range" % cap_kb)
-		# Uniform pagination contract: mirror save.read's SHAPE in
-		# line units. truncated = the last returned line precedes EOF; when so, add
-		# next_start_line (1-based resume line = clamped_end + 1) + a prose loop hint.
-		var range_truncated := clamped_end < total_lines
-		var range_result := MCPToolkitSuccess.ok({
-			"content": Untrusted.wrap("script", file_path, result_text),
-			"start_line": clamped_start,
-			"end_line": clamped_end,
-			"total_lines": total_lines,
-			"truncated": range_truncated,
-		})
-		if range_truncated:
-			var next_start_line := clamped_end + 1
-			range_result["next_start_line"] = next_start_line
-			range_result["hint"] = "more lines remain — re-call script.read with start_line = next_start_line (%d) until truncated is false" % next_start_line
-		return range_result
+		# Uniform pagination contract in line units: has_more = the last returned line
+		# precedes EOF; when so, the builder adds next_start_line (1-based resume line =
+		# clamped_end + 1) beside the prose loop hint composed here.
+		var range_has_more := clamped_end < total_lines
+		var range_hint := ""
+		if range_has_more:
+			range_hint = "more lines remain — re-call script.read with start_line = next_start_line (%d) until has_more is false" % (clamped_end + 1)
+		return MCPToolkitSuccess.ok(Modules.Pagination.line_page(
+			{
+				"content": Untrusted.wrap("script", file_path, result_text),
+				"start_line": clamped_start,
+				"end_line": clamped_end,
+			},
+			clamped_end, slice.size(), total_lines, range_hint))
 
 	# Full read with size cap.
 	var content_bytes := content.to_utf8_buffer().size()
@@ -104,14 +102,12 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		size_err["total_bytes"] = content_bytes
 		size_err["hint"] = "re-call script_read with start_line / end_line"
 		return size_err
-	# Full file returned ⇒ never truncated. total_lines + truncated:false complete
-	# the uniform pagination contract so both read shapes carry the same fields.
+	# Full file returned ⇒ never has_more. returned == total_lines and has_more:false
+	# complete the uniform pagination contract so both read shapes carry the same fields.
 	var full_lines := content.split("\n")
-	return MCPToolkitSuccess.ok({
-		"content": Untrusted.wrap("script", file_path, content),
-		"total_lines": full_lines.size(),
-		"truncated": false,
-	})
+	return MCPToolkitSuccess.ok(Modules.Pagination.build(
+		{"content": Untrusted.wrap("script", file_path, content)},
+		"lines", full_lines.size(), full_lines.size(), false, "", 0, ""))
 
 
 

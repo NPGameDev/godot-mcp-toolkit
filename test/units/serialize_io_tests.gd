@@ -245,48 +245,48 @@ static func _test_save_read_paging(testing) -> void:
 	ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
 
 	# 1. First window: offset 0, max_bytes 400 → 400 bytes, next_offset 400,
-	#    truncated true (600 remain), total_bytes 1000.
+	#    has_more true (600 remain), total_bytes 1000.
 	var first_window: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "max_bytes": 400})
 	testing.ok(first_window.get("success", false), "window 1 → success")
-	testing.eq(first_window.get("bytes_returned", -1), 400, "window 1 → 400 bytes returned")
+	testing.eq(first_window.get("returned", -1), 400, "window 1 → 400 bytes returned")
 	testing.eq(first_window.get("offset", -1), 0, "window 1 → offset 0 echoed")
 	testing.eq(first_window.get("next_offset", -1), 400, "window 1 → next_offset 400")
 	testing.eq(first_window.get("total_bytes", -1), 1000, "window 1 → total_bytes 1000")
-	testing.eq(first_window.get("truncated", null), true, "window 1 → truncated true (more remains)")
-	# Uniform pagination contract: truncated window carries a prose hint naming
-	# next_offset; not-truncated windows omit it (asserted below).
-	testing.ok(first_window.has("hint"), "window 1 → hint present (truncated)")
+	testing.eq(first_window.get("has_more", null), true, "window 1 → has_more true (more remains)")
+	# Uniform pagination contract: a has_more window carries a prose hint naming
+	# next_offset; a final window omits it (asserted below).
+	testing.ok(first_window.has("hint"), "window 1 → hint present (has_more)")
 	testing.ok(str(first_window.get("hint", "")).contains("next_offset"), "window 1 → hint names next_offset")
 
 	# 2. Middle window: seek correctness — offset 400, max_bytes 400 → next_offset
-	#    800, still truncated.
+	#    800, still has_more.
 	var middle_window: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 400, "max_bytes": 400})
-	testing.eq(middle_window.get("bytes_returned", -1), 400, "window 2 → 400 bytes returned")
+	testing.eq(middle_window.get("returned", -1), 400, "window 2 → 400 bytes returned")
 	testing.eq(middle_window.get("offset", -1), 400, "window 2 → offset 400 echoed")
 	testing.eq(middle_window.get("next_offset", -1), 800, "window 2 → next_offset 800")
-	testing.eq(middle_window.get("truncated", null), true, "window 2 → still truncated")
+	testing.eq(middle_window.get("has_more", null), true, "window 2 → still has_more")
 
 	# 3. Final window: offset 800 → only 200 bytes left; next_offset reaches EOF,
-	#    truncated false. Pins next_offset arithmetic = offset + bytes_returned.
+	#    has_more false. Pins next_offset arithmetic = offset + returned.
 	var final_window: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 800, "max_bytes": 400})
-	testing.eq(final_window.get("bytes_returned", -1), 200, "window 3 → 200 bytes (clamped to remaining)")
+	testing.eq(final_window.get("returned", -1), 200, "window 3 → 200 bytes (clamped to remaining)")
 	testing.eq(final_window.get("next_offset", -1), 1000, "window 3 → next_offset 1000 (== total)")
-	testing.eq(final_window.get("truncated", null), false, "window 3 → truncated false (reached EOF)")
-	testing.ok(not final_window.has("hint"), "window 3 → no hint (not truncated)")
+	testing.eq(final_window.get("has_more", null), false, "window 3 → has_more false (reached EOF)")
+	testing.ok(not final_window.has("hint"), "window 3 → no hint (no more)")
 
 	# 4. Offset exactly AT EOF → 0 bytes, not an error; next_offset == total,
-	#    truncated false (graceful completion sentinel for a paging caller).
+	#    has_more false (graceful completion sentinel for a paging caller).
 	var p_eof: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 1000})
 	testing.ok(p_eof.get("success", false), "offset == EOF → success (not an error)")
-	testing.eq(p_eof.get("bytes_returned", -1), 0, "offset == EOF → 0 bytes")
+	testing.eq(p_eof.get("returned", -1), 0, "offset == EOF → 0 bytes")
 	testing.eq(p_eof.get("next_offset", -1), 1000, "offset == EOF → next_offset == total")
-	testing.eq(p_eof.get("truncated", null), false, "offset == EOF → truncated false")
+	testing.eq(p_eof.get("has_more", null), false, "offset == EOF → has_more false")
 
 	# 5. Offset PAST EOF → still graceful: 0 bytes, no error.
 	var p_past: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": 99999})
 	testing.ok(p_past.get("success", false), "offset past EOF → success (not an error)")
-	testing.eq(p_past.get("bytes_returned", -1), 0, "offset past EOF → 0 bytes")
-	testing.eq(p_past.get("truncated", null), false, "offset past EOF → truncated false")
+	testing.eq(p_past.get("returned", -1), 0, "offset past EOF → 0 bytes")
+	testing.eq(p_past.get("has_more", null), false, "offset past EOF → has_more false")
 
 	# 6. Negative offset → INVALID_PARAMS.
 	var p_neg: Dictionary = SaveCommands._cmd_save_read({"path": rel_path, "offset": -1})
@@ -351,10 +351,11 @@ static func _test_save_read_paging(testing) -> void:
 
 # --- script.read uniform pagination contract ------------------------------
 # script.read mirrors save.read's SHAPE in LINE units: every success carries
-# truncated + total_lines; a windowed read whose end precedes EOF also carries
-# next_start_line (1-based resume = clamped end_line + 1) + a prose hint; a full
-# read (and a window reaching EOF) returns truncated:false with no hint. ADD-ONLY
-# — existing start_line/end_line/total_lines/content are unchanged.
+# has_more + total_lines + returned (this window's line count); a windowed read
+# whose end precedes EOF also carries next_start_line (1-based resume = clamped
+# end_line + 1) + a prose hint; a full read (and a window reaching EOF) returns
+# has_more:false with no hint. ADD-ONLY — existing start_line/end_line/
+# total_lines/content are unchanged.
 # Drives the real handler against a res:// temp fixture; removes it afterward.
 
 static func _test_script_read_paging(testing) -> void:
@@ -368,32 +369,36 @@ static func _test_script_read_paging(testing) -> void:
 		sf.store_string("line1\nline2\nline3\nline4\nline5")
 		sf.close()
 
-	# 1. Windowed read that ENDS BEFORE EOF (lines 1..2 of 5) → truncated true,
-	#    next_start_line 3, hint naming next_start_line. total_lines preserved.
+	# 1. Windowed read that ENDS BEFORE EOF (lines 1..2 of 5) → has_more true,
+	#    returned 2 (window line count), next_start_line 3, hint naming
+	#    next_start_line. total_lines preserved.
 	var window: Dictionary = ScriptCommands._cmd_script_read({"file_path": fixture, "start_line": 1, "end_line": 2})
 	testing.ok(window.get("success", false), "window 1..2 → success")
 	testing.eq(window.get("start_line", -1), 1, "window → start_line 1 preserved")
 	testing.eq(window.get("end_line", -1), 2, "window → end_line 2 preserved")
 	testing.eq(window.get("total_lines", -1), 5, "window → total_lines 5 preserved")
-	testing.eq(window.get("truncated", null), true, "window 1..2 → truncated true (2 < 5)")
+	testing.eq(window.get("returned", -1), 2, "window 1..2 → returned 2 (window line count)")
+	testing.eq(window.get("has_more", null), true, "window 1..2 → has_more true (2 < 5)")
 	testing.eq(window.get("next_start_line", -1), 3, "window → next_start_line = end_line + 1 = 3 (1-based)")
 	testing.ok(str(window.get("hint", "")).contains("next_start_line"), "window → hint names next_start_line")
 
-	# 2. Windowed read that REACHES EOF (lines 3..5; end clamps to 5) → truncated
-	#    false, no next_start_line, no hint.
+	# 2. Windowed read that REACHES EOF (lines 3..5; end clamps to 5) → has_more
+	#    false, returned 3 (lines 3..5), no next_start_line, no hint.
 	var eofw: Dictionary = ScriptCommands._cmd_script_read({"file_path": fixture, "start_line": 3, "end_line": 999})
 	testing.eq(eofw.get("end_line", -1), 5, "window 3..999 → end_line clamped to 5")
-	testing.eq(eofw.get("truncated", null), false, "window reaching EOF → truncated false")
+	testing.eq(eofw.get("returned", -1), 3, "window 3..5 → returned 3 (lines in window)")
+	testing.eq(eofw.get("has_more", null), false, "window reaching EOF → has_more false")
 	testing.ok(not eofw.has("next_start_line"), "window at EOF → no next_start_line")
 	testing.ok(not eofw.has("hint"), "window at EOF → no hint")
 
-	# 3. FULL read (no start_line) → truncated false + total_lines, contract-complete.
-	#    Existing 'content' field is still present (additive change).
+	# 3. FULL read (no start_line) → has_more false + total_lines + returned == all
+	#    lines, contract-complete. Existing 'content' field is still present.
 	var full: Dictionary = ScriptCommands._cmd_script_read({"file_path": fixture})
 	testing.ok(full.get("success", false), "full read → success")
 	testing.ok(full.has("content"), "full read → content preserved")
 	testing.eq(full.get("total_lines", -1), 5, "full read → total_lines 5 (added for uniformity)")
-	testing.eq(full.get("truncated", null), false, "full read → truncated false")
+	testing.eq(full.get("returned", -1), 5, "full read → returned 5 (all lines this window)")
+	testing.eq(full.get("has_more", null), false, "full read → has_more false")
 	testing.ok(not full.has("next_start_line"), "full read → no next_start_line")
 	testing.ok(not full.has("hint"), "full read → no hint")
 
@@ -401,12 +406,13 @@ static func _test_script_read_paging(testing) -> void:
 	print("")
 
 
-# --- classdb pagination: truncated flag + resume cursor are offset-aware -----
-# classdb.get_info / classdb.search report `truncated` plus a forward `next_offset`
-# cursor with the same "items remain past offset + returned" rule as save.read /
-# script.read. The decisive cases are the page boundaries: an offset landing AT or
-# PAST the last page must report truncated:false with NO cursor — a cursor equal to
-# the input offset would loop a "page until truncated is false" caller forever.
+# --- classdb pagination: has_more flag + resume field are offset-aware -------
+# classdb.get_info / classdb.search report `has_more` plus a forward `next_offset`
+# resume field with the same "items remain past offset + returned" rule as
+# save.read / script.read. The decisive cases are the page boundaries: an offset
+# landing AT or PAST the last page must report has_more:false with NO resume field
+# — a resume field equal to the input offset would loop a "page until has_more is
+# false" caller forever.
 # Drives the real static handlers directly; ClassDB is the fixture, so totals are
 # read back from the first call and the edge offsets need no hardcoded engine counts.
 
@@ -421,49 +427,76 @@ static func _test_classdb_pagination(testing) -> void:
 	testing.ok(total_methods >= 5, "Control exposes enough inherited methods to page")
 
 	# Partial final page reaching the EXACT end (offset + returned == total) →
-	# truncated false, no cursor. The core regression: an offset-blind returned<total
-	# wrongly flagged truncated here.
+	# has_more false, no resume field. The core regression: an offset-blind
+	# returned<total wrongly flagged has_more here.
 	var info_at_end: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "offset": total_methods - 5})
-	testing.eq(info_at_end.get("truncated", null), false, "get_info offset at exact end → truncated false")
-	testing.ok(not info_at_end.has("next_offset"), "get_info offset at exact end → no next_offset cursor")
+	testing.eq(info_at_end.get("has_more", null), false, "get_info offset at exact end → has_more false")
+	testing.ok(not info_at_end.has("next_offset"), "get_info offset at exact end → no next_offset resume field")
 
-	# Offset exactly AT the total → empty page, graceful completion, no cursor.
+	# Offset exactly AT the total → empty page, graceful completion, no resume field.
 	var info_on_end: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "offset": total_methods})
-	testing.eq(info_on_end.get("truncated", null), false, "get_info offset == total → truncated false")
-	testing.ok(not info_on_end.has("next_offset"), "get_info offset == total → no next_offset cursor")
+	testing.eq(info_on_end.get("has_more", null), false, "get_info offset == total → has_more false")
+	testing.ok(not info_on_end.has("next_offset"), "get_info offset == total → no next_offset resume field")
 
-	# Offset PAST the end → still graceful: truncated false, no self-looping cursor.
+	# Offset PAST the end → still graceful: has_more false, no self-looping resume field.
 	var info_past: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "offset": total_methods + 100})
-	testing.eq(info_past.get("truncated", null), false, "get_info offset past end → truncated false")
-	testing.ok(not info_past.has("next_offset"), "get_info offset past end → no next_offset cursor")
+	testing.eq(info_past.get("has_more", null), false, "get_info offset past end → has_more false")
+	testing.ok(not info_past.has("next_offset"), "get_info offset past end → no next_offset resume field")
 
-	# offset 0 on a section over the 200-item page cap → genuinely truncated, with a
-	# forward cursor at the cap boundary. Guarded: only a >200 section can truncate.
+	# offset 0 on a section over the 200-item page cap → genuinely has_more, with a
+	# forward resume field at the cap boundary. Guarded: only a >200 section can page.
 	if total_methods > 200:
-		testing.eq(info0.get("truncated", null), true, "get_info offset 0 over cap → truncated true")
-		testing.eq(int(info0.get("next_offset", -1)), 200, "get_info truncated → next_offset at cap boundary")
+		testing.eq(info0.get("has_more", null), true, "get_info offset 0 over cap → has_more true")
+		testing.eq(int(info0.get("next_offset", -1)), 200, "get_info has_more → next_offset at cap boundary")
 
 	# search: base_class Object + instantiable_only false matches every class (>200),
-	# a deterministic over-cap truncation carrying a forward cursor.
+	# a deterministic over-cap page carrying a forward resume field.
 	var search0: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false})
 	testing.ok(search0.get("success", false), "search Object → success")
 	var total_classes: int = int(search0.get("total_classes", 0))
-	testing.ok(total_classes > 200, "Object matches exceed the page cap (truncation reachable)")
-	testing.eq(search0.get("truncated", null), true, "search offset 0 over cap → truncated true")
-	testing.eq(int(search0.get("next_offset", -1)), 200, "search truncated → next_offset at cap boundary")
-	testing.eq(int(search0.get("count", -1)), 200, "search truncated → 200 returned (page cap)")
+	testing.ok(total_classes > 200, "Object matches exceed the page cap (has_more reachable)")
+	testing.eq(search0.get("has_more", null), true, "search offset 0 over cap → has_more true")
+	testing.eq(int(search0.get("next_offset", -1)), 200, "search has_more → next_offset at cap boundary")
+	testing.eq(int(search0.get("returned", -1)), 200, "search has_more → 200 returned (page cap)")
 
-	# Partial final page reaching the EXACT end → truncated false and, crucially, NO
+	# Partial final page reaching the EXACT end → has_more false and, crucially, NO
 	# next_offset equal to the input offset (the page-until-false loop must terminate).
 	var search_at_end: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false, "offset": total_classes - 5})
-	testing.eq(search_at_end.get("truncated", null), false, "search offset at exact end → truncated false")
-	testing.ok(not search_at_end.has("next_offset"), "search offset at exact end → no self-loop cursor")
+	testing.eq(search_at_end.get("has_more", null), false, "search offset at exact end → has_more false")
+	testing.ok(not search_at_end.has("next_offset"), "search offset at exact end → no self-loop resume field")
 
-	# Offset PAST the end → truncated false, no cursor, zero matches.
+	# Offset PAST the end → has_more false, no resume field, zero matches.
 	var search_past: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false, "offset": total_classes + 100})
-	testing.eq(search_past.get("truncated", null), false, "search offset past end → truncated false")
-	testing.ok(not search_past.has("next_offset"), "search offset past end → no self-loop cursor")
-	testing.eq(int(search_past.get("count", -1)), 0, "search offset past end → 0 matches")
+	testing.eq(search_past.get("has_more", null), false, "search offset past end → has_more false")
+	testing.ok(not search_past.has("next_offset"), "search offset past end → no self-loop resume field")
+	testing.eq(int(search_past.get("returned", -1)), 0, "search offset past end → 0 matches")
+
+	# Caller `limit` param: default 200 is behaviour-preserving (the over-cap page
+	# above returned 200), an explicit sub-cap limit shrinks the page, a limit above
+	# the 200 max clamps + discloses limit_clamped, and a limit < 1 is rejected.
+	# search: a below-cap limit caps the page to that limit (still has_more).
+	var search_lim: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false, "limit": 10})
+	testing.eq(int(search_lim.get("returned", -1)), 10, "search limit 10 → 10 returned (page shrinks to limit)")
+	testing.eq(search_lim.get("has_more", null), true, "search limit 10 → has_more true (>10 total)")
+	testing.ok(not search_lim.has("limit_clamped"), "search sub-max limit → no limit_clamped")
+	# search: a limit above the 200 max clamps to 200 and discloses limit_clamped.
+	var search_over: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false, "limit": 500})
+	testing.eq(int(search_over.get("returned", -1)), 200, "search limit 500 → clamped to 200")
+	testing.eq(search_over.get("limit_clamped", null), true, "search over-max limit → limit_clamped true")
+	# search: a limit < 1 is rejected (INVALID_PARAMS), not clamped up.
+	var search_zero: Dictionary = ClassDbCommands._cmd_classdb_search({"base_class": "Object", "instantiable_only": false, "limit": 0})
+	testing.eq(search_zero.get("success", null), false, "search limit 0 → rejected")
+	testing.eq(str(search_zero.get("code", "")), "INVALID_PARAMS", "search limit 0 → INVALID_PARAMS")
+	# get_info: the limit caps each section — a sub-max limit forces has_more even on
+	# a section that fit under the fixed cap, and discloses limit_clamped when over-max.
+	var info_lim: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "limit": 3})
+	testing.eq(info_lim.get("has_more", null), true, "get_info limit 3 → has_more true (per-section cap)")
+	testing.eq(int(info_lim.get("next_offset", -1)), 3, "get_info limit 3 → next_offset at the limit boundary")
+	var info_over: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "limit": 500})
+	testing.eq(info_over.get("limit_clamped", null), true, "get_info over-max limit → limit_clamped true")
+	var info_zero: Dictionary = ClassDbCommands._cmd_classdb_get_info({"class_name": "Control", "include_inherited": true, "sections": ["methods"], "limit": 0})
+	testing.eq(info_zero.get("success", null), false, "get_info limit 0 → rejected")
+	testing.eq(str(info_zero.get("code", "")), "INVALID_PARAMS", "get_info limit 0 → INVALID_PARAMS")
 
 	print("")
 

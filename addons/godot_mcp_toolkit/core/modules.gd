@@ -6,6 +6,7 @@ extends RefCounted
 ## MCPToolkitError has class_name and needs no preload.
 
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const Pagination := preload("res://addons/godot_mcp_toolkit/contract/pagination.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 const Scrubber := preload("res://addons/godot_mcp_toolkit/security/scrubber.gd")

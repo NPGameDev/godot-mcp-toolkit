@@ -160,13 +160,13 @@ So you do NOT need to split dependent operations across messages.
 | 3 | [03-node-properties.md](Sections/03-node-properties.md) | Node Properties & Methods | 35 | node_set/get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout | S2 |
 | 4 | [04-node-management.md](Sections/04-node-management.md) | Node Management | 18 | node_manage, node_groups | S2 |
 | 5 | [05-signals.md](Sections/05-signals.md) | Signals | 7 | signal_list, signal_manage | S2 |
-| 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 8 | script_read, script_write, script_check, asset_list, asset_get_dependencies | S1 |
+| 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 9 | script_read, script_write, script_check, asset_list, asset_get_dependencies | S1 |
 | 7 | [07-editor-console.md](Sections/07-editor-console.md) | Editor Operations & Console | 15 | editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh | S2 |
 | 8 | [08-project-settings.md](Sections/08-project-settings.md) | Project Settings & Autoloads | 12 | project_get/set_settings, autoload_manage, layer_names_get/set | S1 |
 | 9 | [09-execute-code.md](Sections/09-execute-code.md) | execute_code & Hints | 8 | execute_code | S2 |
 | 10 | [10-input-map.md](Sections/10-input-map.md) | Input Map | 4 | input_map_action, input_map_event | None |
 | 11 | [11-save-system.md](Sections/11-save-system.md) | Save System | 6 | save_write, save_read, save_list, save_delete | None |
-| 12 | [12-classdb.md](Sections/12-classdb.md) | ClassDB Introspection | 7 | classdb_search, classdb_get_info | None |
+| 12 | [12-classdb.md](Sections/12-classdb.md) | ClassDB Introspection | 11 | classdb_search, classdb_get_info | None |
 | 13 | [13-animation.md](Sections/13-animation.md) | Animation & AnimationTree | 12 | animation_keyframe, animation_get_keys, animationtree_edit, animationtree_list | S2 |
 | 14 | [14-tileset-tilemap.md](Sections/14-tileset-tilemap.md) | TileSet & TileMap | 19 | tileset_create, tileset_edit, tilemap_set_cells, tilemap_read_cells | S2 |
 | 15 | [15-theme-audio-sprites.md](Sections/15-theme-audio-sprites.md) | Theme, Audio, SpriteFrames | 14 | theme_edit, audiobus_edit, audiobus_list, spriteframes_create/edit/from_spritesheet | S1 |

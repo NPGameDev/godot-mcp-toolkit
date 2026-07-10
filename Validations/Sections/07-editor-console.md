@@ -22,23 +22,23 @@
 - **Expect:** success — `context:"editor"` runs the snippet in the editor process (no running game needed), so the warning lands in the editor console for 7.6+ to read. Without `context:"editor"`, `execute_code` defaults to `context:"game"` and returns `GAME_NOT_RUNNING` when no game is running.
 
 **7.6** `editor_get_console` — text_filter=`SV2_SEED`, is_regex=`false`
-- **Expect:** count >= 1
+- **Expect:** `returned` >= 1 (ledger #20: the matching-line count field is `returned`, was `count`)
 
 **7.7** `editor_get_console` — text_filter=`SV2_SEED_Alpha\\d+`, is_regex=`true`
-- **Expect:** count >= 1
+- **Expect:** `returned` >= 1
 
 > **REGRESSION WATCH (a828cb1):** If `\\d+` (double-escaped in JSON) matches but
 > the tool does NOT warn about potential double-escaping, the double-escape
 > metacharacter warning has regressed. Check response hints for escaping note.
 
 **7.8** `editor_get_console` — text_filter=`test_line(parens)`, is_regex=`false`
-- **Expect:** count >= 1 ��� metacharacters treated as literal in plain mode
+- **Expect:** `returned` >= 1 — metacharacters treated as literal in plain mode
 
 **7.9** `editor_get_console` — text_filter=`(unclosed`, is_regex=`true`
 - **Expect:** INVALID_PARAMS with regex hint
 
 **7.10** `editor_get_console` — text_filter=`SV2_SEED`, level_filter=`["warning"]`
-- **Expect:** count >= 1, both filters compose (AND)
+- **Expect:** `returned` >= 1, both filters compose (AND)
 
 **7.11** `editor_get_console` — clear_buffer=`true`
 - **Expect:** success, buffer cleared
@@ -47,7 +47,7 @@
 > the buffer-clear feature has regressed. Flag as **Major**.
 
 **7.12** `editor_get_console` — text_filter=`SV2_SEED`
-- **Expect:** count=0 (buffer was cleared in 7.11)
+- **Expect:** `returned`=0 (buffer was cleared in 7.11)
 
 **7.13** `editor_wait_for_idle`
 - **Expect:** success

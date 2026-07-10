@@ -21,6 +21,25 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 # -- Command -----------------------------------------------------------------
 
 
+## Resolves the optional caller `limit` for a classdb page against [param hard_max].
+## A missing limit defaults to [param hard_max] (behavior-preserving); a value above it
+## clamps to [param hard_max] and flags the clamp; a non-positive value is rejected.
+## Returns {"limit": <effective cap>, "clamped": <bool>, "error": null} on success, or
+## {"error": <MCPToolkitError dict>} when the limit is out of range.
+static func _resolve_limit(parameters: Dictionary, hard_max: int) -> Dictionary:
+	if not parameters.has("limit"):
+		return {"limit": hard_max, "clamped": false, "error": null}
+	var requested := int(parameters.get("limit", hard_max))
+	if requested < 1:
+		return {"error": MCPToolkitError.fail("INVALID_PARAMS",
+			"limit must be >= 1 (got %d)" % requested)}
+	return {
+		"limit": mini(requested, hard_max),
+		"clamped": requested > hard_max,
+		"error": null,
+	}
+
+
 static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 	var cls: String = str(parameters.get("class_name", ""))
 	if cls == "":
@@ -28,6 +47,10 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 
 	var include_inherited: bool = bool(parameters.get("include_inherited", false))
 	var offset: int = maxi(int(parameters.get("offset", 0)), 0)
+	var limit_res := _resolve_limit(parameters, _MAX_ENTRIES_PER_SECTION)
+	if limit_res["error"] != null:
+		return limit_res["error"]
+	var section_cap: int = limit_res["limit"]
 	var sections: Array = parameters.get("sections", [])
 	if typeof(sections) != TYPE_ARRAY:
 		sections = []
@@ -62,7 +85,7 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 			"class not found in ClassDB or global class list: %s" % cls, MCPToolkitError.HINT_CLASS_NAME)
 
 	var result: Dictionary = {"class_name": cls}
-	var truncated := false
+	var has_more := false
 
 	if is_native:
 		result["source"] = "native"
@@ -70,13 +93,13 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 		result["inheritance_chain"] = _build_chain(cls)
 		var no_inheritance := not include_inherited
 		if want_properties:
-			truncated = _add_property_section(result, ClassDB.class_get_property_list(cls, no_inheritance), offset) or truncated
+			has_more = _add_property_section(result, ClassDB.class_get_property_list(cls, no_inheritance), offset, section_cap) or has_more
 		if want_methods:
-			truncated = _add_method_section(result, ClassDB.class_get_method_list(cls, no_inheritance), offset) or truncated
+			has_more = _add_method_section(result, ClassDB.class_get_method_list(cls, no_inheritance), offset, section_cap) or has_more
 		if want_signals:
-			truncated = _add_signal_section(result, ClassDB.class_get_signal_list(cls, no_inheritance), offset) or truncated
+			has_more = _add_signal_section(result, ClassDB.class_get_signal_list(cls, no_inheritance), offset, section_cap) or has_more
 		if want_constants:
-			truncated = _add_constants_native(result, cls, no_inheritance, offset) or truncated
+			has_more = _add_constants_native(result, cls, no_inheritance, offset, section_cap) or has_more
 	else:
 		result["source"] = "global"
 		result["script_path"] = script_path
@@ -87,21 +110,23 @@ static func _cmd_classdb_get_info(parameters: Dictionary) -> Dictionary:
 			return MCPToolkitError.fail("LOAD_FAILED",
 				"could not load script at %s for class %s" % [script_path, cls])
 		if want_properties:
-			truncated = _add_property_section(result, script.get_script_property_list(), offset) or truncated
+			has_more = _add_property_section(result, script.get_script_property_list(), offset, section_cap) or has_more
 		if want_methods:
-			truncated = _add_method_section(result, script.get_script_method_list(), offset) or truncated
+			has_more = _add_method_section(result, script.get_script_method_list(), offset, section_cap) or has_more
 		if want_signals:
-			truncated = _add_signal_section(result, script.get_script_signal_list(), offset) or truncated
+			has_more = _add_signal_section(result, script.get_script_signal_list(), offset, section_cap) or has_more
 		if want_constants:
 			result["constants"] = {}
 			result["total_constants"] = 0
 			result["enums"] = {}
 			result["total_enums"] = 0
 
-	# truncated is ALWAYS present (false on a complete read). On a single-section
-	# truncation the hint builder also adds a structured next_offset resume cursor.
-	result["truncated"] = truncated
-	if truncated:
+	# has_more is ALWAYS present (false on a complete read). On a single-section
+	# overflow the hint builder also adds a structured next_offset resume field.
+	result["has_more"] = has_more
+	if limit_res["clamped"]:
+		result["limit_clamped"] = true
+	if has_more:
 		var hint := _build_truncation_hint(result, offset)
 		if hint != "":
 			result["hint"] = hint
@@ -114,6 +139,10 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 	var instantiable_only: bool = bool(parameters.get("instantiable_only", true))
 	var include_global: bool = bool(parameters.get("include_global", true))
 	var offset: int = maxi(int(parameters.get("offset", 0)), 0)
+	var limit_res := _resolve_limit(parameters, _MAX_SEARCH_RESULTS)
+	if limit_res["error"] != null:
+		return limit_res["error"]
+	var page_cap: int = limit_res["limit"]
 
 	if base_class != "":
 		var base_exists := ClassDB.class_exists(base_class)
@@ -140,7 +169,7 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 		if instantiable_only and not ClassDB.can_instantiate(cls):
 			continue
 		total += 1
-		if total > offset and matches.size() < _MAX_SEARCH_RESULTS:
+		if total > offset and matches.size() < page_cap:
 			matches.append({
 				"name": cls,
 				"parent": ClassDB.get_parent_class(cls),
@@ -179,7 +208,7 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 			if pattern_lower != "" and cls.to_lower().find(pattern_lower) == -1:
 				continue
 			total += 1
-			if total > offset and matches.size() < _MAX_SEARCH_RESULTS:
+			if total > offset and matches.size() < page_cap:
 				matches.append({
 					"name": cls,
 					"parent": base,
@@ -196,29 +225,28 @@ static func _cmd_classdb_search(parameters: Dictionary) -> Dictionary:
 			if m["parent"] == "Object" or m["parent"] == "":
 				top_level.append(m)
 		top_level.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
-		return MCPToolkitSuccess.ok({
-			"count": top_level.size(),
-			"total_classes": top_level.size(),
-			"classes": top_level,
-			"truncated": false,
-			"hint": "No filter provided; showing direct children of Object only. Use base_class or pattern to search.",
-		})
+		var top_page := Modules.Pagination.build(
+			{"classes": top_level}, "classes", top_level.size(), top_level.size(),
+			false, "", 0, "")
+		# Informational nudge — shown regardless of paging, so it is set after the
+		# envelope rather than through the builder's has_more-gated hint.
+		top_page["hint"] = "No filter provided; showing direct children of Object only. Use base_class or pattern to search."
+		return MCPToolkitSuccess.ok(top_page)
 
 	matches.sort_custom(func(a, b): return str(a["name"]) < str(b["name"]))
-	# Canonical fields: total_classes + truncated ALWAYS present; on truncation add
-	# the next_offset resume cursor + prose hint.
-	var truncated := offset + matches.size() < total
-	var result: Dictionary = {
-		"count": matches.size(),
-		"total_classes": total,
-		"classes": matches,
-		"truncated": truncated,
-	}
-	if truncated:
-		var next_offset := offset + matches.size()
-		result["next_offset"] = next_offset
-		result["hint"] = "more classes remain — re-call classdb.search with offset = next_offset (%d) until truncated is false" % next_offset
-	return MCPToolkitSuccess.ok(result)
+	# Canonical fields: total_classes + has_more ALWAYS present; on more, the builder
+	# adds the next_offset resume field beside the prose hint composed here.
+	var has_more := offset + matches.size() < total
+	var hint := ""
+	if has_more:
+		hint = "more classes remain — re-call classdb.search with offset = next_offset (%d) until has_more is false" % (offset + matches.size())
+	var extras: Dictionary = {}
+	if limit_res["clamped"]:
+		extras["limit_clamped"] = true
+		var clamp_clause := "requested limit exceeds max %d — page with next_offset to see the rest" % _MAX_SEARCH_RESULTS
+		hint = clamp_clause if hint.is_empty() else "%s. %s" % [hint, clamp_clause]
+	return MCPToolkitSuccess.ok(Modules.Pagination.list_page(
+		{"classes": matches}, matches, offset, "classes", total, hint, extras))
 
 
 # -- Inheritance chain -------------------------------------------------------
@@ -260,7 +288,7 @@ static func _build_chain_global(cls: String, entry: Dictionary) -> Array[String]
 # depend only on the rows, not on how they were fetched.
 
 
-static func _add_property_section(result: Dictionary, raw: Array, offset: int) -> bool:
+static func _add_property_section(result: Dictionary, raw: Array, offset: int, cap: int) -> bool:
 	var total := raw.size()
 	result["total_properties"] = total
 	var out: Array = []
@@ -269,7 +297,7 @@ static func _add_property_section(result: Dictionary, raw: Array, offset: int) -
 		if skipped < offset:
 			skipped += 1
 			continue
-		if out.size() >= _MAX_ENTRIES_PER_SECTION:
+		if out.size() >= cap:
 			break
 		out.append({
 			"name": p.get("name", ""),
@@ -281,7 +309,7 @@ static func _add_property_section(result: Dictionary, raw: Array, offset: int) -
 	return offset + out.size() < total
 
 
-static func _add_method_section(result: Dictionary, raw: Array, offset: int) -> bool:
+static func _add_method_section(result: Dictionary, raw: Array, offset: int, cap: int) -> bool:
 	var total := raw.size()
 	result["total_methods"] = total
 	var out: Array = []
@@ -290,7 +318,7 @@ static func _add_method_section(result: Dictionary, raw: Array, offset: int) -> 
 		if skipped < offset:
 			skipped += 1
 			continue
-		if out.size() >= _MAX_ENTRIES_PER_SECTION:
+		if out.size() >= cap:
 			break
 		out.append({
 			"name": m.get("name", ""),
@@ -302,7 +330,7 @@ static func _add_method_section(result: Dictionary, raw: Array, offset: int) -> 
 	return offset + out.size() < total
 
 
-static func _add_signal_section(result: Dictionary, raw: Array, offset: int) -> bool:
+static func _add_signal_section(result: Dictionary, raw: Array, offset: int, cap: int) -> bool:
 	var total := raw.size()
 	result["total_signals"] = total
 	var out: Array = []
@@ -311,7 +339,7 @@ static func _add_signal_section(result: Dictionary, raw: Array, offset: int) -> 
 		if skipped < offset:
 			skipped += 1
 			continue
-		if out.size() >= _MAX_ENTRIES_PER_SECTION:
+		if out.size() >= cap:
 			break
 		out.append({
 			"name": s.get("name", ""),
@@ -325,7 +353,7 @@ static func _add_signal_section(result: Dictionary, raw: Array, offset: int) -> 
 
 
 static func _add_constants_native(
-	result: Dictionary, cls: String, no_inheritance: bool, offset: int,
+	result: Dictionary, cls: String, no_inheritance: bool, offset: int, cap: int,
 ) -> bool:
 	var const_list := ClassDB.class_get_integer_constant_list(cls, no_inheritance)
 	var const_total := const_list.size()
@@ -336,7 +364,7 @@ static func _add_constants_native(
 		if skipped < offset:
 			skipped += 1
 			continue
-		if constants.size() >= _MAX_ENTRIES_PER_SECTION:
+		if constants.size() >= cap:
 			break
 		constants[c_name] = ClassDB.class_get_integer_constant(cls, c_name)
 	result["constants"] = constants
@@ -350,7 +378,7 @@ static func _add_constants_native(
 		if enum_skipped < offset:
 			enum_skipped += 1
 			continue
-		if enums.size() >= _MAX_ENTRIES_PER_SECTION:
+		if enums.size() >= cap:
 			break
 		var members: Array[String] = []
 		for ec in ClassDB.class_get_enum_constants(cls, enum_name, no_inheritance):
@@ -387,11 +415,11 @@ static func _build_truncation_hint(result: Dictionary, offset: int) -> String:
 	if parts.is_empty():
 		return ""
 	if parts.size() == 1:
-		# Surface the resume cursor as a structured next_offset alongside the prose loop hint.
+		# Surface the resume field as a structured next_offset alongside the prose loop hint.
 		result["next_offset"] = single_next_offset
-		return "more %s remain — re-call classdb.get_info with offset = next_offset (%d) until truncated is false" % [
+		return "more %s remain — re-call classdb.get_info with offset = next_offset (%d) until has_more is false" % [
 			single_section, single_next_offset]
-	return "%s truncated. Page each section with sections + offset until truncated is false." % " + ".join(parts)
+	return "%s has more entries — page each section with sections + offset until has_more is false." % " + ".join(parts)
 
 
 # -- Shared formatting helpers -----------------------------------------------

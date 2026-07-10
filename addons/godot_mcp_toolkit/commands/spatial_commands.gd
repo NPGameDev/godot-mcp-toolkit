@@ -129,18 +129,15 @@ static func _cmd_spatial_map(parameters: Dictionary) -> Dictionary:
 
 	# total_nodes: full match count (counted past the cap); cursor-less — narrow
 	# with filters or raise max_nodes to resume.
-	var result := {
-		"space": space,
-		"detail": detail,
-		"total_nodes": total_spatial,
-		"returned": nodes_out.size(),
-		"truncated": total_spatial > nodes_out.size(),
-		"nodes": nodes_out,
-	}
-	if result["truncated"]:
-		result["hint"] = ("%d of %d spatial nodes returned (capped at max_nodes) — narrow with "
+	var has_more := total_spatial > nodes_out.size()
+	var hint := ""
+	if has_more:
+		hint = ("%d of %d spatial nodes returned (capped at max_nodes) — narrow with "
 			+ "subtree / class / region / radius, or raise max_nodes (<= %d).") % [
 				nodes_out.size(), total_spatial, HARD_MAX_NODES]
+	var result := Modules.Pagination.build(
+		{"space": space, "detail": detail, "nodes": nodes_out},
+		"nodes", total_spatial, nodes_out.size(), has_more, "", 0, hint)
 	return MCPToolkitSuccess.ok(result)
 
 

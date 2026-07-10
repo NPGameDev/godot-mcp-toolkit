@@ -101,42 +101,34 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 	var buffer := f.get_buffer(bytes_to_read)
 	f.close()
 	var next_offset := offset + buffer.size()
-	# Truncated means there is more file beyond what this window returned.
-	var truncated := next_offset < total_bytes
-	# Uniform pagination contract: on a truncated read, hand the LLM
-	# a prose loop instruction — re-call with offset = next_offset until truncated
-	# is false. Present ONLY when truncated; the field is absent on a complete read.
-	var page_hint := "more bytes remain — re-call save.read with offset = next_offset (%d) until truncated is false" % next_offset
+	# has_more means there is more file beyond what this window returned.
+	var has_more := next_offset < total_bytes
+	# Uniform pagination contract: on a read with more remaining, hand the LLM a prose
+	# loop instruction — re-call with offset = next_offset until has_more is false.
+	# Present ONLY when has_more; the field is absent on a complete read.
+	var page_hint := ""
+	if has_more:
+		page_hint = "more bytes remain — re-call save.read with offset = next_offset (%d) until has_more is false" % next_offset
 	# Binary-safe: try UTF-8 decode; fall back to base64.
 	var text := buffer.get_string_from_utf8()
 	if text.is_empty() and buffer.size() > 0:
-		var b64_result := MCPToolkitSuccess.ok({
-			"path": path,
-			"content_base64": Marshalls.raw_to_base64(buffer),
-			"encoding": "base64",
-			"truncated": truncated,
-			"total_bytes": total_bytes,
-			"bytes_returned": buffer.size(),
-			"offset": offset,
-			"next_offset": next_offset,
-		})
-		if truncated:
-			b64_result["hint"] = page_hint
-		return b64_result
+		return MCPToolkitSuccess.ok(Modules.Pagination.byte_page(
+			{
+				"path": path,
+				"content_base64": Marshalls.raw_to_base64(buffer),
+				"encoding": "base64",
+				"offset": offset,
+			},
+			offset, buffer.size(), total_bytes, page_hint))
 	var scrubbed := Scrubber.scrub(text, "save.read")
 	var wrapped := Untrusted.wrap("user-file", path, scrubbed["text"])
-	var utf8_result := MCPToolkitSuccess.ok({
-		"path": path,
-		"content": wrapped,
-		"truncated": truncated,
-		"total_bytes": total_bytes,
-		"bytes_returned": buffer.size(),
-		"offset": offset,
-		"next_offset": next_offset,
-	})
-	if truncated:
-		utf8_result["hint"] = page_hint
-	return utf8_result
+	return MCPToolkitSuccess.ok(Modules.Pagination.byte_page(
+		{
+			"path": path,
+			"content": wrapped,
+			"offset": offset,
+		},
+		offset, buffer.size(), total_bytes, page_hint))
 
 
 static func _cmd_save_delete(parameters: Dictionary) -> Dictionary:

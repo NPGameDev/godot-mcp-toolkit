@@ -95,14 +95,19 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 	var extension_filter: Array = parameters.get("extension_filter", [])
 	if typeof(extension_filter) != TYPE_ARRAY:
 		extension_filter = []
-	var max_results: int = int(parameters.get("limit", 500))
+	var requested_limit: int = int(parameters.get("limit", 500))
 
 	var guard := FileGuard.resolve_safe(path_prefix)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
-	if max_results < 1 or max_results > 2000:
+	# Validation split: a non-positive limit is a caller error (reject); an over-max
+	# limit is clamped and disclosed, so a caller that asks for "everything" gets the
+	# capped page plus limit_clamped rather than a hard failure.
+	if requested_limit < 1:
 		return MCPToolkitError.fail("INVALID_PARAMS",
-			"limit must be in [1, 2000] (got %d)" % max_results)
+			"limit must be >= 1 (got %d)" % requested_limit)
+	var max_results: int = mini(requested_limit, 2000)
+	var limit_clamped := requested_limit > 2000
 	var filesystem := EditorInterface.get_resource_filesystem()
 	if filesystem.is_scanning():
 		return MCPToolkitError.fail("FILESYSTEM_NOT_READY",
@@ -147,15 +152,14 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 	var total_assets := _walk_filesystem_directory(
 		root_directory, name_glob, class_filter,
 		normalized_extension_filter, entries, max_results)
-	var truncated := total_assets > entries.size()
+	var has_more := total_assets > entries.size()
 
 	# total_assets: the full match count (count-past-cap). Cursor-less — the depth-first
 	# FS walk is not linearly resumable, so the hint advises narrowing filters / raising limit.
-	var response: Dictionary = {
-		"entries": entries,
-		"count": entries.size(),
-		"total_assets": total_assets,
-		"truncated": truncated,
+	var hint := ""
+	if has_more:
+		hint = "%d of %d assets returned (capped at limit) — narrow with path_prefix/name_glob/class_filter/extension_filter, or raise limit (<= 2000)." % [entries.size(), total_assets]
+	var extras: Dictionary = {
 		"path_prefix": path_prefix,
 		"filters_applied": {
 			"name_glob": name_glob,
@@ -163,9 +167,13 @@ static func _cmd_asset_list(parameters: Dictionary) -> Dictionary:
 			"extension_filter": normalized_extension_filter,
 		},
 	}
-	if truncated:
-		response["hint"] = "%d of %d assets returned (capped at limit) — narrow with path_prefix/name_glob/class_filter/extension_filter, or raise limit (<= 2000)." % [entries.size(), total_assets]
-	return MCPToolkitSuccess.ok(response)
+	if limit_clamped:
+		extras["limit_clamped"] = true
+		var clamp_clause := "requested limit exceeds max 2000; clamped to 2000 — narrow filters to see the rest"
+		hint = clamp_clause if hint.is_empty() else "%s %s" % [hint, clamp_clause]
+	return MCPToolkitSuccess.ok(Modules.Pagination.build(
+		{"entries": entries}, "assets", total_assets, entries.size(), has_more,
+		"", 0, hint, extras))
 
 
 static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
@@ -244,18 +252,13 @@ static func _cmd_asset_get_dependencies(parameters: Dictionary) -> Dictionary:
 		warnings.append(
 			"transitive walk exceeded 50 levels — truncated to prevent unbounded recursion")
 
-	var response: Dictionary = {
-		"path": file_path,
-		"dependencies": dependencies,
-		"count": dependencies.size(),
-		"total_dependencies": total_dependencies,
-		"truncated": truncated,
-		"include_transitive": include_transitive,
-		"warnings": warnings,
-	}
+	var hint := ""
 	if truncated:
-		response["hint"] = "%d of %d dependencies returned (capped at limit) — raise limit (no cursor), or set include_transitive=false to reduce the set." % [dependencies.size(), total_dependencies]
-	return MCPToolkitSuccess.ok(response)
+		hint = "%d of %d dependencies returned (capped at limit) — raise limit (no cursor), or set include_transitive=false to reduce the set." % [dependencies.size(), total_dependencies]
+	return MCPToolkitSuccess.ok(Modules.Pagination.build(
+		{"path": file_path, "dependencies": dependencies},
+		"dependencies", total_dependencies, dependencies.size(), truncated,
+		"", 0, hint, {"include_transitive": include_transitive, "warnings": warnings}))
 
 
 static func _cmd_asset_import(parameters: Dictionary) -> Dictionary:

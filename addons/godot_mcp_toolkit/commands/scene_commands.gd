@@ -881,36 +881,26 @@ static func _cmd_scene_query(parameters: Dictionary) -> Dictionary:
 ## Assembles the self-describing pagination envelope for scene.query.
 ##
 ## [param limit] is the effective (already-clamped) page size; [param limit_clamped]
-## records that the caller's request was capped, so this adds the disclosure flag and
-## a hint clause.
-# MCP pagination contract (internal): self-describing offset envelope — echo offset/limit,
-# returned (page size), total_matches (exact walk-all count), has_more, next_offset + prose
-# hint when has_more; limit_clamped + a clamp clause when the page size was capped. Copy this
-# shape for any new paginating tool.
+## records that the caller's request was capped, so this discloses the flag and appends a
+## clamp clause to the resume hint. Routes through the shared [code]Pagination[/code]
+## builder so the invariants and the [code]next_offset[/code] resume field match every
+## other paginating tool; the hint wording is scene.query's own.
 static func _build_query_page(results: Array[Dictionary], offset: int, limit: int,
 		total_matches: int, limit_clamped: bool) -> Dictionary:
 	var returned := results.size()
 	var has_more := offset + returned < total_matches
-	var page: Dictionary = {
-		"nodes": results,
-		"offset": offset,
-		"limit": limit,
-		"returned": returned,
-		"total_matches": total_matches,
-		"has_more": has_more,
-	}
 	var hint := ""
 	if has_more:
-		var next_offset := offset + returned
-		page["next_offset"] = next_offset
-		hint = "more matches remain — re-call scene_query with offset = next_offset (%d) until has_more is false" % next_offset
+		hint = "more matches remain — re-call scene_query with offset = next_offset (%d) until has_more is false" % (offset + returned)
+	var extras: Dictionary = {}
 	if limit_clamped:
-		page["limit_clamped"] = true
+		extras["limit_clamped"] = true
 		var clamp_clause := "requested limit exceeds max %d; returned %d — page with next_offset, or add filters to narrow" % [
 			_QUERY_MAX_LIMIT, limit]
 		hint = clamp_clause if hint.is_empty() else "%s. %s" % [hint, clamp_clause]
-	if not hint.is_empty():
-		page["hint"] = hint
+	var page := Modules.Pagination.list_page(
+		{"nodes": results, "offset": offset, "limit": limit},
+		results, offset, "matches", total_matches, hint, extras)
 	return MCPToolkitSuccess.ok(page)
 
 

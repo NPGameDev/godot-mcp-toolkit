@@ -141,6 +141,11 @@ static func _append_entry_unlocked(level: String, message: String) -> int:
 
 
 ## Read entries from the buffer. Calls poll() first to ensure freshness.
+##
+## Returns the capped tail of the filtered entries plus the pagination fields both
+## log readers stamp onto the wire envelope: {entries, returned, next_id, has_more,
+## total_lines}. [param since_id] is a resume cursor (entries with id <= it are
+## dropped); the returned next_id is the last entry's id for the next call.
 static func get_entries(limit: int, level_filter: Array = [], since_id: int = -1, text_filter: String = "", text_regex: RegEx = null) -> Dictionary:
 	poll()
 
@@ -165,19 +170,22 @@ static func get_entries(limit: int, level_filter: Array = [], since_id: int = -1
 	# Capture the pre-slice filtered count for total_lines before the
 	# slice below reassigns `filtered` to the capped tail.
 	var total_lines := filtered.size()
-	var truncated := filtered.size() > limit
-	if truncated:
+	var has_more := filtered.size() > limit
+	if has_more:
 		filtered = filtered.slice(filtered.size() - limit)
 
 	var next_id: int = -1
 	if filtered.size() > 0:
 		next_id = int(filtered[-1]["id"])
 
+	# Shared source for the log-paging envelope: both the editor console reader and
+	# the runtime debugger.get_log read these keys and stamp the final wire envelope,
+	# so the field names here follow the standard pagination vocabulary.
 	return {
 		"entries": filtered,
-		"count": filtered.size(),
+		"returned": filtered.size(),
 		"next_id": next_id,
-		"truncated": truncated,
+		"has_more": has_more,
 		"total_lines": total_lines,
 	}
 
