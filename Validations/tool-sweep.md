@@ -61,29 +61,31 @@ before any section runs.**
 **Authoritative probe.** `execute_code` **cannot** read the version — its `Expression`
 sandbox resolves no engine singletons (`Engine`, `OS`, `ProjectSettings` all fail). But
 `node_call_method` dispatches a real `@tool` method via `callv()`, which reaches
-`Engine`. Create a one-method probe scene and call it:
+`Engine`. A **committed probe fixture** is ready in the repo — **open it and call one
+method, no setup:**
 
 | # | Call | Args |
 |---|------|------|
-| P.1 | `folder_create` | `folder_path=res://sv2_validation/`  *(idempotent — S1 reuses it)* |
-| P.2 | `script_write` | `file_path=res://sv2_validation/sv2_env_probe.gd`, `content=` ↓ |
-| P.3 | `scene_create` | `file_path=res://sv2_validation/Sv2EnvProbe.tscn`, `root_type=Node`, `root_name=Sv2EnvProbe` |
-| P.4 | `scene_open` | `file_path=res://sv2_validation/Sv2EnvProbe.tscn` |
-| P.5 | `node_set_script` | `node_path=.`, `script_path=res://sv2_validation/sv2_env_probe.gd` |
-| P.6 | `node_call_method` | `node_path=.`, `method_name=get_engine_version` |
+| P.1 | `scene_open` | `file_path=res://Validations/fixtures/EnvProbe.tscn` |
+| P.2 | `node_call_method` | `node_path=.`, `method_name=get_engine_version` |
+
+P.2 returns `result: {major, minor, patch, string, …}` — the running editor reporting
+its **own** version. Record `Godot <major>.<minor>` as the DEFINITIVE version.
+
+The fixture (`Validations/fixtures/EnvProbe.tscn` + `env_probe.gd`, a one-method `@tool`
+`Node`) is committed to the toolkit repo, so it is ready the moment the sweep starts — no
+per-run scaffolding. **If a non-dogfood target lacks it** (e.g. the C# dogfood, minigames,
+or a fresh cross-version copy where `Validations/` isn't present), create it inline
+instead — `script_write` the `@tool` body below → `scene_create` a `Node` root →
+`node_set_script` → `node_call_method` — or fall back to the ClassDB cross-check:
 
 ```gdscript
-# P.2 content — MUST be @tool, or callv() returns null in the editor
+# env_probe.gd — MUST be @tool, or callv() returns null in the editor
 @tool
 extends Node
 func get_engine_version() -> Dictionary:
 	return Engine.get_version_info()
 ```
-
-P.6 returns `result: {major, minor, patch, string, …}` — the running editor reporting
-its **own** version. Record `Godot <major>.<minor>` as the DEFINITIVE version. The probe
-artifacts live under `sv2_validation/` and are swept by Global Cleanup with everything
-else (the probe script is never opened in the editor, so no phantom tab).
 
 **Cross-checks (independent — must agree with P.6):**
 - **`classdb_get_info(class_name="TileMapLayer")`** → success ⟹ engine ≥ 4.3;
@@ -101,7 +103,7 @@ else (the probe script is never opened in the editor, so no phantom tab).
 2. Establish the **ACTUAL** version from P.6 (cross-checked above).
 3. **HALT the sweep if ACTUAL ≠ TARGET** — do not run a single section; re-point the
    editor/port and re-probe. A wrong version silently poisons every degradation judgment.
-4. RESULTS header: `Godot X.Y — via node_call_method Engine.get_version_info() (P.6);
+4. RESULTS header: `Godot X.Y — via node_call_method Engine.get_version_info() (P.2);
    TileMapLayer=<y/n>, scene_close visible=<y/n>; features PSA / boot-banner NOT used.`
 5. **Every "excused as <ver> degradation" call downstream MUST cite this
    empirically-established version** — never a version inferred from a string or a log.
