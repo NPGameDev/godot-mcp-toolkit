@@ -77,3 +77,28 @@ static func is_file_logging_enabled() -> bool:
 					and ProjectSettings.get_setting(override_key, false):
 				return true
 	return false
+
+
+# -- Log file path resolution --------------------------------------------------
+
+
+## The configured engine log file, raw (un-globalized): the value of the
+## debug/file_logging/log_path project setting, or the engine default
+## user://logs/godot.log. Callers that dir-scan (the console file source) or
+## surface the path in a response (the runtime debugger.get_log reader) use this
+## so they stay in user:// space and their default-case output is byte-unchanged;
+## callers that open the file and want a stable absolute path use resolve_log_path().
+static func configured_log_path() -> String:
+	return ProjectSettings.get_setting(
+		"debug/file_logging/log_path", "user://logs/godot.log") as String
+
+
+## The configured engine log file as an absolute OS path: configured_log_path()
+## with user://res:// globalized (absolute paths pass through). Used by the direct
+## readers that want a stable absolute path immune to a mid-session user:// remap —
+## the 4.2-4.4 buffer tail and the editor-side debugger.get_log reader.
+static func resolve_log_path() -> String:
+	var configured := configured_log_path()
+	if configured.begins_with("user://") or configured.begins_with("res://"):
+		return ProjectSettings.globalize_path(configured)
+	return configured

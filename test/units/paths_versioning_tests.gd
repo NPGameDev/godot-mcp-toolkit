@@ -15,6 +15,7 @@ const EditorRescan := preload("res://addons/godot_mcp_toolkit/commands/editor/ed
 const UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/core/unfocused_backup.gd")
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
+const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
 
@@ -29,6 +30,7 @@ static func run(testing) -> void:
 	_test_call_method_null_hint(testing)
 	_test_tooltip_uaf_disarm_decision(testing)
 	_test_is_engine_version_pair(testing)
+	_test_log_path_resolution(testing)
 
 
 # --- Compile-error diagnostic message (version-aware) (~10 assertions) -----
@@ -512,4 +514,84 @@ static func _test_is_engine_version_pair(testing) -> void:
 	testing.eq(ints.y, int(info["minor"]), "ints.y == Engine minor")
 	testing.eq("%d.%d" % [ints.x, ints.y], live_pair,
 			"ints re-join to get_engine_version_pair() (int and string forms agree)")
+	print("")
+
+
+# --- LogHelpers log-path resolution ----------------------------------------
+# The single resolver every engine-log reader routes through: configured_log_path()
+# returns the RAW debug/file_logging/log_path (or the engine default when unset),
+# resolve_log_path() globalizes user://res:// and passes absolutes through. The
+# default-case byte-identity is load-bearing — the runtime debugger.get_log path
+# metadata and the console dir-scan derive from these, and their default output
+# must not shift. get_base_dir()/get_file() are the console dir-scan's derivation
+# of (logs_dir, preferred_name) from the configured path. Each case sets the
+# setting in-memory and restores the original absent/present state at the end
+# (never ProjectSettings.save() — GDScript has no try/finally, but the assert
+# object records rather than throws, so the restore always runs).
+
+static func _test_log_path_resolution(testing) -> void:
+	testing.begin("LogHelpers path resolution")
+	const KEY := "debug/file_logging/log_path"
+	const DEFAULT := "user://logs/godot.log"
+	# Variant source (ProjectSettings.get_setting) → explicit coercion, not inference.
+	var had: bool = ProjectSettings.has_setting(KEY)
+	var orig: String = str(ProjectSettings.get_setting(KEY, DEFAULT))
+
+	# 1. Default (unset) — the engine default, byte-identical to the literal the
+	#    old hardcodes used. This locks the whole "default-case byte-identical"
+	#    guarantee for the runtime metadata and the console dir-scan.
+	if had:
+		ProjectSettings.set_setting(KEY, null)  # erase → genuine unset state
+	testing.eq(LogHelpers.configured_log_path(), DEFAULT,
+			"unset → exactly the engine default user://logs/godot.log")
+	testing.eq(LogHelpers.resolve_log_path(), ProjectSettings.globalize_path(DEFAULT),
+			"unset → resolve globalizes the default")
+	testing.eq(LogHelpers.configured_log_path().get_base_dir(), "user://logs",
+			"unset → base_dir is user://logs (console dir-scan default)")
+	testing.eq(LogHelpers.configured_log_path().get_file(), "godot.log",
+			"unset → filename is godot.log (console preferred_name default)")
+
+	# 2. Custom user:// dir — configured echoes it, resolve globalizes it, and the
+	#    dir-scan derivation yields the relocated directory + filename.
+	ProjectSettings.set_setting(KEY, "user://mylogs/game.log")
+	testing.eq(LogHelpers.configured_log_path(), "user://mylogs/game.log",
+			"custom user:// → configured echoes the setting")
+	testing.eq(LogHelpers.resolve_log_path(),
+			ProjectSettings.globalize_path("user://mylogs/game.log"),
+			"custom user:// → resolve globalizes it")
+	testing.eq(LogHelpers.configured_log_path().get_base_dir(), "user://mylogs",
+			"custom user:// → base_dir is the relocated dir")
+	testing.eq(LogHelpers.configured_log_path().get_file(), "game.log",
+			"custom user:// → filename is the relocated name")
+
+	# 2b. A second relocated name — pins the (logs_dir, preferred_name)
+	#     derivation the console dir-scan now depends on.
+	ProjectSettings.set_setting(KEY, "user://mylogs/session.log")
+	testing.eq(LogHelpers.configured_log_path().get_base_dir(), "user://mylogs",
+			"relocated session.log → base_dir user://mylogs")
+	testing.eq(LogHelpers.configured_log_path().get_file(), "session.log",
+			"relocated session.log → preferred_name session.log")
+
+	# 3. res:// path — configured echoes, resolve globalizes (res:// is globalizable).
+	ProjectSettings.set_setting(KEY, "res://logs/x.log")
+	testing.eq(LogHelpers.configured_log_path(), "res://logs/x.log",
+			"res:// → configured echoes the setting")
+	testing.eq(LogHelpers.resolve_log_path(),
+			ProjectSettings.globalize_path("res://logs/x.log"),
+			"res:// → resolve globalizes it")
+
+	# 4. Absolute passthrough — configured echoes; resolve returns it UNCHANGED
+	#    (the passthrough branch does not re-globalize an already-absolute path).
+	ProjectSettings.set_setting(KEY, "C:/tmp/x.log")
+	testing.eq(LogHelpers.configured_log_path(), "C:/tmp/x.log",
+			"absolute → configured echoes the setting")
+	testing.eq(LogHelpers.resolve_log_path(), "C:/tmp/x.log",
+			"absolute → resolve returns it unchanged (no double-globalize)")
+
+	# Restore the original absent/present state so later tests + the project see
+	# pristine settings.
+	if had:
+		ProjectSettings.set_setting(KEY, orig)
+	else:
+		ProjectSettings.set_setting(KEY, null)
 	print("")

@@ -2,10 +2,11 @@
 extends RefCounted
 ## Debug-log retrieval (editor side): the cached debugger.get_log reader.
 ##
-## Reads the most-recent play session's output from the shared log FILE
-## (user://logs/godot.log, written by both editor + game processes) starting at
-## the byte offset snapshotted when game.start launched the session — bytes
-## after that offset belong to the current/most-recent session. ANSI-strips,
+## Reads the most-recent play session's output from the engine log FILE
+## (user://logs/godot.log, written by the game/play process — the editor process
+## does not write it, engine !editor guard) starting at the byte offset
+## snapshotted when game.start launched the session — bytes after that offset
+## belong to the current/most-recent session. ANSI-strips,
 ## text-filters, and limits the lines; when an EditorDebuggerPlugin bridge is
 ## present, merges its debug_state + error_buffer (falling back to a log-line
 ## error scan) into one crash-context response.
@@ -23,9 +24,10 @@ const Helpers = Modules.CommandHelpers
 const LogHelpers = Modules.LogHelpers
 
 # Log-file offset snapshot at game_start — bytes after this offset belong to
-# the current/most-recent game session. The log file (user://logs/godot.log)
-# is shared by editor + game processes, so reading from this offset gives us
-# game output even though the Logger API is process-local (4.5+).
+# the current/most-recent game session. The log file (user://logs/godot.log) is
+# written by the game/play process (the editor does not write it — engine
+# !editor guard), so reading from this offset gives us game output even though
+# the Logger API is process-local (4.5+).
 static var _game_session_file_offset: int = -1
 
 # Debug bridge reference — injected at register() time. Supplies the
@@ -39,7 +41,8 @@ static var _debug_bridge: RefCounted = null
 ## Snapshot the current log-file size as the session-start offset — the
 ## debugger.get_log cache then returns only output written after this point.
 ## Called by Play-control (game.start) the moment a play session launches; the
-## log file is shared by editor + game, so bytes after this offset = game output.
+## log file is written by the game/play process (not the editor), so bytes after
+## this offset = game output.
 static func snapshot_session_offset() -> void:
 	_game_session_file_offset = _get_log_file_size()
 
@@ -59,9 +62,9 @@ static func clear_debug_bridge() -> void:
 
 
 ## Editor-side debugger.get_log — returns cached log entries from the most
-## recent game session. Reads from the LOG FILE (shared by editor + game
-## processes) rather than the in-memory LogBuffer (which is process-local
-## and only captures editor output on 4.5+).
+## recent game session. Reads from the LOG FILE (written by the game/play
+## process — the editor does not write it) rather than the in-memory LogBuffer
+## (which is process-local and only captures editor output on 4.5+).
 ## When a debug bridge is available, merges the error buffer and debug state
 ## into the response — gives the server a single call for full crash context.
 static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
@@ -80,7 +83,7 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 		return response
 
 	# Read the log file from the offset where the game session started.
-	var log_path: String = _resolve_log_path()
+	var log_path: String = LogHelpers.resolve_log_path()
 	if not FileAccess.file_exists(log_path):
 		var response := MCPToolkitSuccess.ok(_empty_log_page(
 			"Log file not found. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart."))
@@ -240,18 +243,9 @@ static func _scan_lines_for_errors(lines: Array) -> Array:
 	return errors
 
 
-## Resolve the log file path (same logic as LogBuffer).
-static func _resolve_log_path() -> String:
-	var configured := ProjectSettings.get_setting(
-		"debug/file_logging/log_path", "user://logs/godot.log") as String
-	if configured.begins_with("user://") or configured.begins_with("res://"):
-		return ProjectSettings.globalize_path(configured)
-	return configured
-
-
 ## Get the current log file size (for offset snapshot at game_start).
 static func _get_log_file_size() -> int:
-	var log_path := _resolve_log_path()
+	var log_path := LogHelpers.resolve_log_path()
 	if not FileAccess.file_exists(log_path):
 		return 0
 	var file := FileAccess.open(log_path, FileAccess.READ)

@@ -182,7 +182,13 @@ static func _read_console_log(
 ) -> Dictionary:
 	# user://logs/ read is a narrow read-only exception to the res://-only rule.
 	# Path is internally constructed (not user-supplied), so no FileGuard gate.
-	var logs_dir := "user://logs"
+	# Honor a relocated debug/file_logging/log_path: dir-scan the configured log's
+	# directory for its rotation siblings, preferring the configured filename. Uses
+	# the RAW (un-globalized) configured path so the default stays user://logs and
+	# the response's log_file metadata is byte-unchanged for the common case.
+	var configured_log := LogHelpers.configured_log_path()
+	var logs_dir := configured_log.get_base_dir()
+	var preferred_name := configured_log.get_file()
 	var file_logging_enabled: bool = LogHelpers.is_file_logging_enabled()
 	if not DirAccess.dir_exists_absolute(logs_dir):
 		if not file_logging_enabled:
@@ -193,7 +199,7 @@ static func _read_console_log(
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
 			return _log_unavailable_for_file(_hint)
 		return _log_unavailable_for_file(
-			"no log directory at user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
+			"no log directory at %s/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging" % logs_dir)
 
 	var all_files := DirAccess.get_files_at(logs_dir)
 	var log_files: Array[String] = []
@@ -209,7 +215,7 @@ static func _read_console_log(
 				_hint += ". On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources require this setting"
 			return _log_unavailable_for_file(_hint)
 		return _log_unavailable_for_file(
-			"no .log files under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging")
+			"no .log files under %s/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging" % logs_dir)
 
 	var plugin_boot_time: int = server.get_plugin_boot_time()
 
@@ -222,13 +228,13 @@ static func _read_console_log(
 		else:
 			warnings.append("file logging is disabled — data may be stale from a previous session. On Godot 4.2-4.4 source=\"buffer\" also depends on file logging, so both sources may be stale")
 
-	var godot_log := logs_dir + "/godot.log"
-	var godot_log_mtime: int = 0
-	if FileAccess.file_exists(godot_log):
-		godot_log_mtime = FileAccess.get_modified_time(godot_log)
-	if godot_log_mtime > 0 and godot_log_mtime >= plugin_boot_time:
-		chosen_file = godot_log
-		chosen_mtime = godot_log_mtime
+	var preferred_log := logs_dir + "/" + preferred_name
+	var preferred_log_mtime: int = 0
+	if FileAccess.file_exists(preferred_log):
+		preferred_log_mtime = FileAccess.get_modified_time(preferred_log)
+	if preferred_log_mtime > 0 and preferred_log_mtime >= plugin_boot_time:
+		chosen_file = preferred_log
+		chosen_mtime = preferred_log_mtime
 	else:
 		var best_file := ""
 		var best_mtime: int = 0
@@ -260,18 +266,18 @@ static func _read_console_log(
 	# its own CreateFileW(GENERIC_READ, FILE_SHARE_READ) probe, which denies the live
 	# writer -> sharing violation -> mtime reads 0. So the mtime>best_mtime loops above
 	# never pick the live log even though the directory enumeration (attribute-level,
-	# lock-immune) just listed it. Fall through with the live-log candidate (godot.log
-	# when present) and let the open decide. Scoped to 4.4.0 (relaxed in 4.4.1; 4.5
-	# switched to FILE_READ_ATTRIBUTES with full sharing); 4.2/4.3 use a handle-less
-	# _wstat that reads the live file fine, so they choose normally via the loops.
-	# Unreachable on POSIX (stat succeeds against the deny-nothing writer).
+	# lock-immune) just listed it. Fall through with the live-log candidate (the
+	# configured filename when present) and let the open decide. Scoped to 4.4.0
+	# (relaxed in 4.4.1; 4.5 switched to FILE_READ_ATTRIBUTES with full sharing);
+	# 4.2/4.3 use a handle-less _wstat that reads the live file fine, so they choose
+	# normally via the loops. Unreachable on POSIX (stat succeeds against the deny-nothing writer).
 	if chosen_file == "" and not log_files.is_empty():
-		var live_name := "godot.log" if log_files.has("godot.log") else log_files[0]
+		var live_name := preferred_name if log_files.has(preferred_name) else log_files[0]
 		chosen_file = logs_dir + "/" + live_name
 
 	if chosen_file == "":
 		return _log_unavailable_for_file(
-			"no readable log file under user://logs/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging; playtest may have rotated the editor's log mid-session")
+			"no readable log file under %s/ — verify file logging is enabled in ProjectSettings → Debug → File Logging → Enable File Logging; playtest may have rotated the editor's log mid-session" % logs_dir)
 
 	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
 	if file_handle == null:

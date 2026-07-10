@@ -579,7 +579,10 @@ func _cmd_debugger_get_log(peer: WebSocketPeer, id, params) -> void:
 		return
 
 	# source == "file" — original log-file reader.
-	var log_path := "user://logs/godot.log"
+	# Raw (un-globalized) configured path: honors a relocated
+	# debug/file_logging/log_path while keeping the response's path metadata
+	# byte-identical in the default case (FileAccess accepts a user:// path).
+	var log_path := LogHelpers.configured_log_path()
 	if not FileAccess.file_exists(log_path):
 		var file_logging_enabled: bool = LogHelpers.is_file_logging_enabled()
 		if not file_logging_enabled:

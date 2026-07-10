@@ -334,26 +334,18 @@ func _log_error(function_name: String, file_path: String, line: int,
 static func reset_tail_path() -> void:
 	if _use_logger:
 		return
-	_tail_path = _resolve_log_path()
+	_tail_path = LogHelpers.resolve_log_path()
 	# Don't reset offset — if the engine kept writing to the same file
 	# (and the absolute path didn't change), we keep our position.
 	# If it's a genuinely new file, _tail_log_file() handles the
 	# file_len < _tail_offset case by resetting automatically.
 
 
-static func _resolve_log_path() -> String:
-	var configured := ProjectSettings.get_setting(
-		"debug/file_logging/log_path", "user://logs/godot.log") as String
-	if configured.begins_with("user://") or configured.begins_with("res://"):
-		return ProjectSettings.globalize_path(configured)
-	return configured
-
-
 static func _setup_file_tail() -> void:
 	# Resolve to an absolute OS path so casual user:// resolution shifts
 	# (e.g. from config/name changes) don't silently break tailing.
 	# UserPathMonitor calls reset_tail_path() on rename to re-resolve.
-	_tail_path = _resolve_log_path()
+	_tail_path = LogHelpers.resolve_log_path()
 	# Start from beginning so the buffer captures the full current-session log.
 	# On Windows, Godot holds the log file open with buffered writes — new
 	# content written after plugin load may not be visible to our read handle
