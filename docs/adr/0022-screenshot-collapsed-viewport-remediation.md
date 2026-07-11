@@ -75,3 +75,46 @@ classifier only decides from dimensions.
   `WINDOW_MODE_MINIMIZED` / `window_move_to_foreground`, `Window.grab_focus`,
   `RenderingServer.frame_post_draw`) all exist on the 4.2 floor through 4.7,
   source-verified on the 4.2 and 4.7 worktrees.
+
+## Amendment — embedded playtests and the runtime path
+
+The original premise above ("the running game's window never collapses — it is a
+real OS window") does not hold for an **embedded** playtest. Since Godot 4.4 the
+editor's Game view runs the game embedded (default on desktop: Windows and X11 in
+4.4, macOS added in 4.5); an embedded game is an **owner-linked top-level popup
+that the engine hard-gates to WINDOWED mode** and whose z-order the editor
+re-asserts every frame. Two consequences for the runtime screenshot:
+
+- **`window_get_mode(0)` never reports `WINDOW_MODE_MINIMIZED` for an embedded
+  game** — minimizing the *editor* hides the owned popup without setting its
+  minimize flag. So the up-front mode-based short-circuit and the
+  `force_foreground_game` lever were both structurally blind to the embedded case.
+  The lever is additionally **inert** there: `window_set_mode` rejects any
+  non-WINDOWED mode when embedded, and `window_move_to_foreground` can't win
+  against the editor's per-frame z-order control.
+- **The runtime handler is now capability-based, not mode-based.** It attempts a
+  bounded `frame_post_draw` capture first and returns the fresh frame whenever the
+  window still composites (the embedded case — it keeps rendering into the Game
+  dock even while the editor is minimized). It signals `RUNTIME_WINDOW_MINIMIZED`
+  only when the bounded await lapses **and** `DisplayServer.window_can_draw(0)` is
+  false — the genuine render-suspended case (a top-level game minimized, or fully
+  occluded on macOS, which suspends on occlusion rather than minimize-mode).
+  `window_can_draw` is preferred over `window_get_mode == MINIMIZED` because it is
+  the occlusion-aware superset. `RUNTIME_WINDOW_MINIMIZED` stays emittable
+  (top-level minimized / macOS-occluded), so **the wire contract is unchanged** —
+  this is a behavioral correction, not a code repurpose.
+- **`force_foreground_game` now honors the request regardless of the mode read,
+  but discloses truthfully.** Embedding is detected with
+  `Engine.is_embedded_in_editor()` (4.4+; `Engine.has_method`-guarded, since the
+  method and the embed feature landed together in 4.4 and embedding is impossible
+  on 4.2/4.3). Embedded → the lever can't work, so it emits **no**
+  `foregrounded_game` remediation and instead returns a `hint` explaining the game
+  is already composited in the Game dock. Top-level → it does the real
+  un-minimize + foreground and claims `foregrounded_game` for both an un-minimize
+  and a raise-from-background. (`Window.is_embedded()` is a false friend — it means
+  subwindow-embedded-within-a-Viewport, not game-embedded-in-editor — and is not
+  used.)
+
+Restoring a prior non-windowed mode after un-minimizing a top-level game
+(maximized → windowed) is a separate, still-open nit shared with the editor path;
+it is not addressed here.

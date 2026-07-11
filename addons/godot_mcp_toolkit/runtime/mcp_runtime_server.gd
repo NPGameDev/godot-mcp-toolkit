@@ -287,31 +287,32 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 		force_foreground = bool(params.get("force_foreground_game", false))
 
 	var remediation: Array[String] = []
+	var foreground_hint := ""
 
-	# Minimized suspends rendering, so frame_post_draw never fires. Detect it up
-	# front — before any await — so the handler returns a diagnostic signal
-	# instead of parking until the server's call timeout (which reads as a dead
-	# editor, the exact dead-end this guards against).
-	if _window_is_minimized():
-		if not force_foreground:
-			_send_result(peer, id, MCPToolkitError.fail("RUNTIME_WINDOW_MINIMIZED",
-				"the running game window is minimized, so rendering is suspended",
-				"The running game window is minimized, so rendering is suspended — not a crash or timeout. Retry with force_foreground_game:true to un-minimize and capture, or restore the game window yourself."))
-			return
-		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, 0)
-		_ensure_game_focus()
-		# Un-minimizing + raising the window is a visible side effect — disclose it,
-		# symmetric with the editor path's "foregrounded_editor".
-		remediation.append("foregrounded_game")
-		# A real composite frame after un-minimizing — the window is rendering
-		# again, so frame_post_draw fires promptly.
-		await RenderingServer.frame_post_draw
-	else:
-		# Not minimized: bound the wait for a fresh frame. A frame arrives on a
-		# continuously-rendering game; the bound lapses on an idle
-		# redraw-on-demand window, where the last-drawn frame IS the current
-		# state — so fall back to it rather than false-signalling minimized.
-		await _await_frame_or_timeout()
+	# Honor force_foreground_game on request, regardless of the minimized read: an
+	# embedded game (the editor's Game view) is an owner-linked top-level window
+	# hard-gated to WINDOWED, never reported minimized even when the editor is, so
+	# gating the lever on _window_is_minimized() would silently skip it.
+	if force_foreground:
+		foreground_hint = _foreground_game_if_requested(remediation)
+
+	# Try to capture rather than short-circuit on window state: a window that still
+	# composites (an embedded game, or a floating game merely unfocused) yields a
+	# fresh frame. Bound the wait so a suspended window — or an idle redraw-on-demand
+	# game that never fires frame_post_draw — does not park until the server's call
+	# timeout.
+	var frame_arrived := await _await_frame_or_timeout()
+
+	# The wait lapsed AND the window cannot draw: rendering is genuinely suspended
+	# (a floating/top-level game minimized, or fully occluded on macOS), so no frame
+	# can be produced — return the diagnostic signal instead of a stale last-drawn
+	# frame. A lapse while the window CAN draw means an idle redraw-on-demand game,
+	# where the last-drawn frame IS the current state — fall through and return it.
+	if _should_signal_minimized(frame_arrived, not DisplayServer.window_can_draw(0)):
+		_send_result(peer, id, MCPToolkitError.fail("RUNTIME_WINDOW_MINIMIZED",
+			"the running game window can't render — it is minimized or fully occluded, so rendering is suspended",
+			"The running game window can't render (minimized or fully occluded), so no frame is produced — not a crash or timeout. Retry with force_foreground_game:true to raise and capture the game window, or restore/reveal it yourself."))
+		return
 
 	var image := viewport.get_texture().get_image()
 	if image == null:
@@ -332,7 +333,51 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 	}
 	if not remediation.is_empty():
 		response["remediation"] = remediation
+	# An embedded game can't be foregrounded (owner-linked, editor-controlled), so a
+	# force_foreground_game request there took no effect — disclose why the window
+	# didn't move rather than leaving the caller with a silent no-op.
+	if not foreground_hint.is_empty():
+		response["hint"] = foreground_hint
 	_send_result(peer, id, response)
+
+
+# Raise the game window at the caller's explicit request. An embedded game (the
+# editor's Game view) is owner-linked and editor-controlled: the engine hard-gates
+# it to WINDOWED and re-asserts its z-order every frame, so window_set_mode /
+# window_move_to_foreground are inert there — the lever can't work, so DON'T claim
+# it. A top-level game DOES respond: un-minimize (only when actually minimized, so
+# a windowed game isn't needlessly re-set) + move-to-foreground + focus is a real,
+# visible side effect — claim "foregrounded_game" for both an un-minimize AND a
+# raise-from-background. Returns a hint (empty when none) explaining an embedded
+# no-op so the caller isn't left with a silent non-effect.
+func _foreground_game_if_requested(remediation: Array[String]) -> String:
+	if _is_embedded_in_editor():
+		return ("The game runs embedded in the editor's Game view and can't be independently "
+			+ "foregrounded — it is already composited in the Game dock. Raise or restore the "
+			+ "editor window to view it.")
+	if _window_is_minimized():
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, 0)
+	_ensure_game_focus()
+	remediation.append("foregrounded_game")
+	return ""
+
+
+# True when the game was launched embedded in the editor's Game view. The API is
+# 4.4+ (the release the embed feature landed); on the 4.2/4.3 floor the method is
+# absent and embedding is impossible, so its absence correctly reads as top-level.
+func _is_embedded_in_editor() -> bool:
+	return Engine.has_method("is_embedded_in_editor") and bool(Engine.call("is_embedded_in_editor"))
+
+
+# Decide whether to return the render-suspended signal after the bounded frame-wait.
+# Signals ONLY when a fresh frame could not be produced AND the window cannot draw —
+# the genuine suspended case (a top-level game minimized, or fully occluded on
+# macOS, where the compositor stops presenting). A frame that arrived, or a lapse
+# while the window can still draw (idle redraw-on-demand, last frame is current),
+# both proceed to capture instead. Pure decision, extracted so it is unit-testable
+# without a live game window.
+static func _should_signal_minimized(frame_arrived: bool, window_suspended: bool) -> bool:
+	return not frame_arrived and window_suspended
 
 
 # True when the game's main window is minimized (render suspended).
@@ -342,10 +387,11 @@ func _window_is_minimized() -> bool:
 
 # Await the next frame_post_draw, but give up after _RUNTIME_FRAME_WAIT_SECONDS so
 # an idle redraw-on-demand window (which never fires it) does not hang the
-# handler. Returns as soon as a frame draws, otherwise at the deadline. Polls the
-# frame flag each process frame, which itself ticks even on an idle window, so the
-# deadline is always reachable.
-func _await_frame_or_timeout() -> void:
+# handler. Returns true as soon as a frame draws, false if the deadline lapses
+# first — the caller uses that to tell a fresh capture from a suspended window.
+# Polls the frame flag each process frame, which itself ticks even on an idle
+# window, so the deadline is always reachable.
+func _await_frame_or_timeout() -> bool:
 	var got_frame := [false]
 	var on_frame := func() -> void:
 		got_frame[0] = true
@@ -355,6 +401,7 @@ func _await_frame_or_timeout() -> void:
 		await get_tree().process_frame
 	if not got_frame[0] and RenderingServer.frame_post_draw.is_connected(on_frame):
 		RenderingServer.frame_post_draw.disconnect(on_frame)
+	return got_frame[0]
 
 
 func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
