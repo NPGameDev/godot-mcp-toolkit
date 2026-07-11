@@ -28,9 +28,14 @@ file** whose path comes from `debug/file_logging/log_path`. Concretely:
   `debug/file_logging/log_path` through the export-clean `LogHelpers`
   (`configured_log_path()` raw / `resolve_log_path()` globalized) rather than
   hardcoding the default, so a relocated log path is honored uniformly.
-- **Treat a shrunken file as rotation.** A reader whose byte offset now exceeds
-  the file length must recognize a fresh-truncated file and reset its offset to 0
-  (the consequence for the Mode-A session-offset reader is implemented separately).
+- **Treat a shrunken file as rotation — but distinguish the two reader kinds.** A
+  *tail* reader whose byte offset is a genuine high-water read cursor
+  (`log_buffer.gd`) recognizes a fresh-truncated file when its offset exceeds the
+  file length and resets that cursor to 0. The Mode-A `debugger.get_log` reader has
+  **no** such cursor: after truncation the whole `godot.log` *is* the current
+  session, so it reads unconditionally from **byte 0** and keeps only a boolean
+  "a session has started" flag (the prior snapshotted byte offset was a vestige of
+  the discredited shared-append model, removed in 41o-undecies-bis).
 - **Do not** re-introduce the editor+game shared-append assumption. The editor
   never writes the file; the buffer/file readers populate only from a running or
   already-run game (a core reason the 4.5 Logger API — real-time in-memory capture
@@ -48,6 +53,7 @@ greps): `Insights/engine-log-file-writer-and-rotation.md` in the plan repo.
 - A future engineer reading the readers sees the corrected model at the source and
   in this record, and will not re-hardcode the default or re-assume a shared
   append.
-- Because `godot.log` is truncated per launch, any reader that snapshots a byte
-  offset across a game launch must guard the rotation case; the session-offset
-  reader's fix is tracked and implemented on its own.
+- Because `godot.log` is truncated per launch, a *tail* reader that carries a
+  high-water offset across a game launch must guard the rotation case, while the
+  Mode-A session reader drops its byte offset entirely and reads from byte 0
+  (implemented in 41o-undecies-bis).

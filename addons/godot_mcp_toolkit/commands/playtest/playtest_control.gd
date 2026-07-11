@@ -7,8 +7,8 @@ extends RefCounted
 ## via EditorInterface.play_*/stop_playing_scene), the runtime-readiness probe
 ## (a WebSocket connect→auth→ping health-check over the live game's Mode-B
 ## server), and start-failure diagnosis (a LogBuffer scan that explains why the
-## game never started). game.start snapshots the debug-log session offset by
-## calling the log-reader's public snapshot_session_offset() — the one-datum
+## game never started). game.start marks the debug-log session as started by
+## calling the log-reader's public mark_session_started() — the one-datum
 ## handoff to the Debug-Log Retrieval child.
 ## An extracted submodule of the playtest-command group, reached via a `preload` alias.
 
@@ -68,10 +68,10 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 			return MCPToolkitError.fail("ALREADY_PLAYING",
 				"a game is already running; call game.stop first, or use runtime_poll:true to re-probe the runtime connection")
 
-		# Snapshot the log file size so the editor-side debugger.get_log
-		# cache only returns output from THIS game session. The log file
-		# is shared by editor + game, so bytes after this offset = game output.
-		_LogReader.snapshot_session_offset()
+		# Mark that a play session has started so the editor-side debugger.get_log
+		# cache reads the game's log. The engine truncates godot.log fresh on every
+		# launch, so the whole file is this session (the reader reads from byte 0).
+		_LogReader.mark_session_started()
 
 		match target:
 			"main":

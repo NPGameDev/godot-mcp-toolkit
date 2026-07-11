@@ -3,18 +3,19 @@ extends RefCounted
 ## Debug-log retrieval (editor side): the cached debugger.get_log reader.
 ##
 ## Reads the most-recent play session's output from the engine log FILE
-## (user://logs/godot.log, written by the game/play process — the editor process
-## does not write it, engine !editor guard) starting at the byte offset
-## snapshotted when game.start launched the session — bytes after that offset
-## belong to the current/most-recent session. ANSI-strips,
-## text-filters, and limits the lines; when an EditorDebuggerPlugin bridge is
-## present, merges its debug_state + error_buffer (falling back to a log-line
-## error scan) into one crash-context response.
+## (user://logs/godot.log — written by the game/play process; the editor process
+## does not write it, engine !editor guard). The engine truncates that file fresh
+## on every launch (RotatedFileLogger rotates the prior log to a timestamped backup
+## and reopens the base path with FileAccess::WRITE), so the file is always exactly
+## the current session starting at byte 0 — this reader reads the whole file.
+## ANSI-strips, text-filters, and limits the lines; when an EditorDebuggerPlugin
+## bridge is present, merges its debug_state + error_buffer (falling back to a
+## log-line error scan) into one crash-context response.
 ##
 ## Owns the two pieces of state this subdomain depends on:
-##   - the session-offset static (the log-read cursor) + the public
-##     snapshot_session_offset() setter the Play-control side calls at
-##     game.start to mark "read only output after here";
+##   - the session-started flag + the public mark_session_started() setter the
+##     Play-control side calls at game.start (so a read before any game.start
+##     returns "no session yet" rather than a prior editor session's stale log);
 ##   - the injected _debug_bridge (the EditorDebuggerPlugin, shared upstream with
 ##     debug_commands.gd) + set_debug_bridge()/clear_debug_bridge().
 ## An extracted submodule of the playtest-command group, reached via a `preload` alias.
@@ -23,28 +24,30 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Helpers = Modules.CommandHelpers
 const LogHelpers = Modules.LogHelpers
 
-# Log-file offset snapshot at game_start — bytes after this offset belong to
-# the current/most-recent game session. The log file (user://logs/godot.log) is
-# written by the game/play process (the editor does not write it — engine
-# !editor guard), so reading from this offset gives us game output even though
-# the Logger API is process-local (4.5+).
-static var _game_session_file_offset: int = -1
+# True once game.start has launched a play session this editor session. The engine
+# truncates user://logs/godot.log fresh on every launch (RotatedFileLogger ctor →
+# rotate_file → FileAccess::WRITE; source-verified 4.2–4.7), so once a session has
+# started the whole file IS the current session and the reader reads from byte 0.
+# Before the first game.start it stays false, so debugger.get_log reports "no
+# session yet" rather than a prior editor session's stale log. The file is written
+# by the game/play process (the editor does not write it — engine !editor guard),
+# so reading it gives game output even though the Logger API is process-local (4.5+).
+static var _game_session_started: bool = false
 
 # Debug bridge reference — injected at register() time. Supplies the
 # error_buffer + debug_state fields of the debugger log payload.
 static var _debug_bridge: RefCounted = null
 
 
-# -- Session-offset handoff ---------------------------------------------------
+# -- Session-start handoff ---------------------------------------------------
 
 
-## Snapshot the current log-file size as the session-start offset — the
-## debugger.get_log cache then returns only output written after this point.
-## Called by Play-control (game.start) the moment a play session launches; the
-## log file is written by the game/play process (not the editor), so bytes after
-## this offset = game output.
-static func snapshot_session_offset() -> void:
-	_game_session_file_offset = _get_log_file_size()
+## Mark that a play session has started — debugger.get_log then reads the whole
+## godot.log. The engine truncates that file fresh on every launch, so the file is
+## exactly the current session (read from byte 0). Called by Play-control
+## (game.start) the moment a play session launches.
+static func mark_session_started() -> void:
+	_game_session_started = true
 
 
 # -- Debug-bridge injection ---------------------------------------------------
@@ -76,13 +79,13 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 		return tf[1]
 	var regex_warning: String = tf[2]
 
-	if _game_session_file_offset < 0:
+	if not _game_session_started:
 		var response := MCPToolkitSuccess.ok(_empty_log_page(
 			"No game session recorded yet (game_start was never called this editor session)"))
 		_merge_debug_bridge_data(response)
 		return response
 
-	# Read the log file from the offset where the game session started.
+	# Read the current session's log file (the engine truncated it fresh at launch).
 	var log_path: String = LogHelpers.resolve_log_path()
 	if not FileAccess.file_exists(log_path):
 		var response := MCPToolkitSuccess.ok(_empty_log_page(
@@ -97,16 +100,16 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 			MCPToolkitError.log_busy_hint(Modules.LogBuffer.uses_logger_api()))
 
 	var file_len: int = file.get_length()
-	if file_len <= _game_session_file_offset:
+	if file_len <= 0:
 		file.close()
 		var response := MCPToolkitSuccess.ok(_empty_log_page(
-			"No new output since game_start (log file unchanged)."))
+			"No game output yet (log file is empty)."))
 		_merge_debug_bridge_data(response)
 		return response
 
-	# Read only the bytes written since game_start.
-	file.seek(_game_session_file_offset)
-	var new_bytes := file.get_buffer(file_len - _game_session_file_offset)
+	# The engine truncates godot.log fresh on every launch (see mark_session_started),
+	# so the whole file is this session — read it all from byte 0.
+	var new_bytes := file.get_buffer(file_len)
 	file.close()
 
 	var new_text := new_bytes.get_string_from_utf8()
@@ -241,16 +244,3 @@ static func _scan_lines_for_errors(lines: Array) -> Array:
 				0, msg, source, func_name, source_line, "log_scan"))
 		i += 1
 	return errors
-
-
-## Get the current log file size (for offset snapshot at game_start).
-static func _get_log_file_size() -> int:
-	var log_path := LogHelpers.resolve_log_path()
-	if not FileAccess.file_exists(log_path):
-		return 0
-	var file := FileAccess.open(log_path, FileAccess.READ)
-	if file == null:
-		return 0
-	var size: int = file.get_length()
-	file.close()
-	return size
