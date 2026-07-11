@@ -1,14 +1,14 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-07-11 (41o-duodecies — editor/runtime screenshot collapsed-viewport remediation: `editor.screenshot` §07 auto-heal + minimized signal + foreground lever; `runtime.screenshot` §20 minimized signal + foreground lever)
+**Last updated:** 2026-07-11 (41o-duodecies-bis — lsp_project_diagnostics coverage completion: §26 C29 project-scope freshness combo + 26.24 hint check; header total-count 110→111 / 6→7 LSP reconciliation)
 **Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
-**Total tools (agent-facing):** 110 + 2 meta — canonical count in server
+**Total tools (agent-facing):** 111 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
 **Toolkit surfaces (non-disjoint — do not sum):** 100 editor-registered (incl. the 4 `debug.*`) ·
-12 runtime (4 names overlap the editor 100) · 6 LSP (server-side only).
+12 runtime (4 names overlap the editor 100) · 7 LSP (server-side only).
 **Sweep scale:** per-section defined-case counts in the `tool-sweep.md` index; last full-run tally in
-`RESULTS.md` (479 tests · 2026-07-03 · Godot 4.7). **Combo chains: 17** (C1–C12 & C27–C28 in §22;
-C24–C26 in §§26–27).
+`RESULTS.md` (479 tests · 2026-07-03 · Godot 4.7). **Combo chains: 18** (C1–C12 & C27–C28 in §22;
+C24–C26 & C29 in §§26–27).
 
 ---
 
@@ -269,7 +269,7 @@ C24–C26 in §§26–27).
 | lsp_completion | 26.15–26.16 | (shared) | — | — | — | |
 | lsp_definition | 26.17–26.19 | (shared) | C25 | — | — | |
 | lsp_references | 26.20–26.21 | (shared) | — | — | — | |
-| lsp_project_diagnostics | 26.24–26.26 | (shared 26.4–26.7 guards) | — | — | — | New project-wide compile scan (server LSP fan-out); include_addons (26.25) + include_warnings (26.26); accounting invariant `scanned == clean + files_with_diagnostics + timed_out + read_failed` |
+| lsp_project_diagnostics | 26.24–26.26 | (shared 26.4–26.7 guards) | C29 | 26.24 (hint → lsp_diagnostics + debugger_get_log) | — | Project-wide compile scan (server LSP fan-out); include_addons (26.25) + include_warnings (26.26); accounting invariant `scanned == clean + files_with_diagnostics + timed_out + read_failed`. C29 = single-file check → project scan → fix → re-scan freshness (project-scope C24). Sweep drives via the MCP server so the successHint IS present (unlike smoke §48's direct-handler path) |
 
 ### Debugger Tools (4 tools)
 

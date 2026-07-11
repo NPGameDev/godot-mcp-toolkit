@@ -253,11 +253,11 @@ So you do NOT need to split dependent operations across messages.
 | 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_texture | 3 | collision_from_texture | S2 |
 | 20 | [20-runtime.md](Sections/20-runtime.md) | Game Start, Runtime & Debugging | 32 | game_start/stop, runtime_*, debugger_get_log, input_simulate (send_text), execute_code, animation_player_control, signal_emit | S2 |
 | 21 | [21-game-guards.md](Sections/21-game-guards.md) | game_start Guards & Crash Recovery | 13 | game_start, debugger_get_log (debug_state, error_buffer, log_scan) | S1 |
-| 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 14 chains (+3 in §§26–27 = 17 total) | Multi-tool workflows | S1 |
+| 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 14 chains (+4 in §§26–27 = 18 total) | Multi-tool workflows | S1 |
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 9+ | discover_tools, extensions.refresh | Extensions present |
 | 25 | [25-undo-redo.md](Sections/25-undo-redo.md) | Undo/Redo Verification | 60 | node.set_property, scene.create_node, node.manage, node.groups, node.call_method | S2 |
-| 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 26+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references, lsp_project_diagnostics | S1, LSP on port 6005 |
+| 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 26+3 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references, lsp_project_diagnostics | S1, LSP on port 6005 |
 | 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 16+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
 | 28 | [28-placeholders-spatial.md](Sections/28-placeholders-spatial.md) | Spatial Map & Placeholder Generators | 22 | scene_spatial_map, texture_generate, sound_generate | S2 |
 

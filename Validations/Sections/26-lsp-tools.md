@@ -4,7 +4,7 @@
 **Tools tested:** lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references, lsp_project_diagnostics
 **Groups to activate:** lsp_code_analysis, lsp_code_navigation
 **Prerequisite:** Godot editor running with plugin enabled, LSP active on port 6005
-**Tests:** 26 + 2 combo chains
+**Tests:** 26 + 3 combo chains (C24, C25, C29)
 
 ---
 
@@ -99,6 +99,13 @@ Whole-project compile scan (server-side LSP fan-out over every project `.gd`). T
 
 **26.24** `lsp_project_diagnostics` (defaults) — no params
 - **Expect:** success=true. `sv2_lsp_bad.gd` appears in `files_with_diagnostics` with an entry carrying a 1-based `line` and `severity:"Error"`. The accounting invariant holds: `scanned == clean + files_with_diagnostics.length + timed_out.length + read_failed.length` (read each integer field back over the JSON boundary via `int(...)` — a whole-dict `_eq` would float the counts). `timed_out` omitted or empty on the small dogfood scan.
+
+> **HINT CHECK:** the success response carries a `hint` steering to the per-file
+> tool for a single file and to the runtime log for runtime errors — assert the
+> `hint` string mentions `lsp_diagnostics` (single-file) and `debugger_get_log`
+> (runtime). Unlike server smoke §48 (which calls the handler directly and never
+> sees the registry-injected hint), the sweep drives the tool through the MCP
+> server, so the `successHint` IS present here — this is the layer that locks it.
 
 **26.25** `lsp_project_diagnostics` — include_addons=`true`
 - **Expect:** success=true. `scanned` (int-coerced) ≥ the 26.24 default run — addon `.gd` are now included. On the toolkit-root dogfood this pulls in `addons/godot_mcp_toolkit/**`, so the scan set (and `scanned`) grows substantially; do not assert an exact count, only the `≥` relation.
@@ -246,6 +253,41 @@ All 6 LSP tools share `validateGdscriptPath()`. Tests below verify via two diffe
 2. `lsp_definition` — file_path=`res://sv2_validation/sv2_lsp_valid.gd`, line=8, column=1
    - **Expect:** definition.line matches `take_damage`'s start_line from step 1. Confirms the two groups compose naturally.
 
+### C29. Single-file check → whole-project scan → fix → re-scan (project-scope freshness)
+
+The project-scope analogue of C24: a broken script must show up in the *whole-project* scan, and re-scanning after the fix must return it to `clean`. Also confirms the `script_check` → `lsp_project_diagnostics` steering (the single-file compile check points the agent at the project-wide scan for "did I break another script").
+
+1. `script_write` — file_path=`res://sv2_validation/sv2_lsp_c29.gd`, content (broken — unclosed dict):
+   ```gdscript
+   extends Node2D
+
+   func _ready() -> void:
+   	var x = {
+   ```
+2. `editor_refresh` — file_paths=`["res://sv2_validation/sv2_lsp_c29.gd"]`
+3. `script_check` — file_path=`res://sv2_validation/sv2_lsp_c29.gd`
+   - **Expect:** success=true, `valid`=false, at least one Error diagnostic. The response `hint` steers toward the project-wide compile check (`lsp_project_diagnostics`) for cross-file impact — confirms the single-file → project-scope steering.
+4. `lsp_project_diagnostics` (defaults)
+   - **Expect:** success=true. `sv2_lsp_c29.gd` appears in `files_with_diagnostics` with a 1-based `line` and `severity:"Error"`. The accounting invariant holds: `scanned == clean + files_with_diagnostics.length + timed_out.length + read_failed.length` (int-coerce each field over the JSON boundary — a whole-dict `_eq` would float the counts).
+5. `script_write` — same path, content (fixed):
+   ```gdscript
+   extends Node2D
+
+   func _ready() -> void:
+   	var x = 42
+   	print(x)
+   ```
+6. `editor_refresh` — file_paths=`["res://sv2_validation/sv2_lsp_c29.gd"]`
+7. `lsp_project_diagnostics` (defaults)
+   - **Expect:** success=true. `sv2_lsp_c29.gd` is NO LONGER in `files_with_diagnostics` (it counts toward `clean` now). The invariant still holds.
+8. `script_delete` — res://sv2_validation/sv2_lsp_c29.gd
+
+> **REGRESSION WATCH:** the project scan must reflect the *current* on-disk text on
+> every call — a stale-cache hit that keeps reporting the broken version after the
+> fix (step 7 still shows `sv2_lsp_c29.gd` dirty) is a fan-out freshness bug. The
+> scan reads didOpen'd text each call, so the fix must land without a forced
+> didClose/didOpen. Mirrors C24's freshness watch at project scope.
+
 ---
 
 ## Edge Cases
@@ -291,5 +333,6 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 - `script_delete` res://sv2_validation/sv2_lsp_fresh2.gd (if exists)
 - `script_delete` res://sv2_validation/sv2_lsp_warn.gd (if exists)
 - `script_delete` res://sv2_validation/sv2_lsp_c24.gd (if exists)
+- `script_delete` res://sv2_validation/sv2_lsp_c29.gd (if exists)
 - `file_delete` res://sv2_validation/sv2_lsp_test.gdshader (if created)
 - `discover_tools` with reset=`["lsp_code_analysis", "lsp_code_navigation"]`
