@@ -22,6 +22,7 @@ extends Node
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const Pagination := preload("res://addons/godot_mcp_toolkit/contract/pagination.gd")
 const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
+const ScreenshotResponse := preload("res://addons/godot_mcp_toolkit/contract/screenshot_response.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const Scrubber := preload("res://addons/godot_mcp_toolkit/security/scrubber.gd")
@@ -282,9 +283,8 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "no viewport available"))
 		return
 
-	var force_foreground := false
-	if typeof(params) == TYPE_DICTIONARY:
-		force_foreground = bool(params.get("force_foreground_game", false))
+	var params_dict: Dictionary = params if typeof(params) == TYPE_DICTIONARY else {}
+	var force_foreground := bool(params_dict.get("force_foreground_game", false))
 
 	var remediation: Array[String] = []
 	var foreground_hint := ""
@@ -324,13 +324,14 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "save_png_to_buffer returned empty"))
 		return
 
-	var response := {
-		"image_base64": Marshalls.raw_to_base64(png_bytes),
-		"mime_type": "image/png",
-		"width": image.get_width(),
-		"height": image.get_height(),
-		"bytes": png_bytes.size(),
-	}
+	# Runtime save-path allowlist is user://screenshots/ only — a shipped game has no
+	# res:// write access, and the editor server owns the res:// destination.
+	var response := ScreenshotResponse.build(
+		params_dict, png_bytes, image.get_width(), image.get_height(),
+		["user://screenshots/"])
+	if response.get("success") == false:
+		_send_result(peer, id, response)
+		return
 	if not remediation.is_empty():
 		response["remediation"] = remediation
 	# An embedded game can't be foregrounded (owner-linked, editor-controlled), so a

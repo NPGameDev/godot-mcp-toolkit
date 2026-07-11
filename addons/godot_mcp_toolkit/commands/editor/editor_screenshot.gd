@@ -5,17 +5,17 @@ extends RefCounted
 ## selection). Validates the requested size, handles headless (no viewport), and
 ## self-diagnoses a collapsed viewport: a minimized window returns
 ## EDITOR_VIEWPORT_UNAVAILABLE, and a wrong (non-2D/3D) main screen is auto-healed
-## by switching to a 2D/3D screen and re-capturing. Optionally persists to a
-## save_path under res:// or user://screenshots/.
+## by switching to a 2D/3D screen and re-capturing. The image_response_mode /
+## save_path handling — inline vs disk vs both, and the res:// or user://screenshots/
+## save-path guard — is shaped by the shared ScreenshotResponse builder.
 ##
 ## Stateless — the handler takes (parameters) and returns the response Dictionary.
 ## Reaches the viewport / RenderingServer / EditorInterface / DisplayServer
 ## directly; the headless check, path normalization/edited-root lookup, and
-## save-path guard are reached via the Modules aliases. An extracted submodule of
+## response shaping are reached via the Modules aliases. An extracted submodule of
 ## the editor-command group, reached via a `preload` alias.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const FileGuard = Modules.FileGuard
 const Helpers = Modules.CommandHelpers
 const MIN_SCREENSHOT_SIZE := 64
 const MAX_SCREENSHOT_SIZE := 4096
@@ -151,14 +151,15 @@ static func _capture_node(parameters: Dictionary, node_path: String, remediation
 	if png_bytes.is_empty():
 		return MCPToolkitError.fail("EMPTY_CONTENT",
 			"node '%s' produced no visible image. Node may lack visual content (no texture, no mesh). Use editor_screenshot without node_path for a full viewport capture instead." % node_path)
-	var response := {
-		"image_base64": Marshalls.raw_to_base64(png_bytes),
-		"mime_type": "image/png",
-		"width": image.get_width(),
-		"height": image.get_height(),
-		"bytes": png_bytes.size(),
-		"path": node_path,
-	}
+	var response := Modules.ScreenshotResponse.build(
+		parameters, png_bytes, image.get_width(), image.get_height(),
+		["res://", "user://screenshots/"])
+	if response.get("success") == false:
+		return response
+	# Inline mode echoes the requested node path; a disk/both response already carries
+	# the FILE path in "path" (which supersedes the echo — the caller knows its input).
+	if not response.has("path"):
+		response["path"] = node_path
 	if not remediation.is_empty():
 		response["remediation"] = remediation
 	return MCPToolkitSuccess.ok(response)
@@ -166,8 +167,6 @@ static func _capture_node(parameters: Dictionary, node_path: String, remediation
 
 # Standard viewport screenshot. Defaults the heal target to the 2D viewport.
 static func _capture_standard(parameters: Dictionary, remediation: Array[String]) -> Dictionary:
-	var save_path := str(parameters.get("save_path", ""))
-
 	# Freshness await before the first read: a throttled unfocused editor can
 	# otherwise hand back a slightly stale frame. Safe now that minimized is
 	# short-circuited up front — this only runs while the editor is compositing.
@@ -182,38 +181,13 @@ static func _capture_standard(parameters: Dictionary, remediation: Array[String]
 	if png_bytes.is_empty():
 		return MCPToolkitError.fail("INTERNAL", "save_png_to_buffer returned empty")
 
-	var persisted_path := ""
-	if not save_path.is_empty():
-		var guard := FileGuard.resolve_safe(
-			save_path, ["res://", "user://screenshots/"])
-		if guard["error"] != null:
-			return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
-		if not save_path.ends_with(".png"):
-			return MCPToolkitError.fail("INVALID_PARAMS",
-				"save_path must end with .png: %s" % save_path)
-		var directory_path := save_path.get_base_dir()
-		if not directory_path.is_empty():
-			var mkdir_error := DirAccess.make_dir_recursive_absolute(directory_path)
-			if mkdir_error != OK and mkdir_error != ERR_ALREADY_EXISTS:
-				return MCPToolkitError.fail("INTERNAL",
-					"could not create %s (err %d)" % [directory_path, mkdir_error])
-		var save_error := image.save_png(save_path)
-		if save_error != OK:
-			return MCPToolkitError.fail("INTERNAL",
-				"save_png failed (err %d) for %s" % [save_error, save_path])
-		persisted_path = save_path
-
-	var response := {
-		"image_base64": Marshalls.raw_to_base64(png_bytes),
-		"mime_type": "image/png",
-		"width": image.get_width(),
-		"height": image.get_height(),
-		"bytes": png_bytes.size(),
-	}
+	var response := Modules.ScreenshotResponse.build(
+		parameters, png_bytes, image.get_width(), image.get_height(),
+		["res://", "user://screenshots/"])
+	if response.get("success") == false:
+		return response
 	if not remediation.is_empty():
 		response["remediation"] = remediation
-	if not persisted_path.is_empty():
-		response["path"] = persisted_path
 	return MCPToolkitSuccess.ok(response)
 
 

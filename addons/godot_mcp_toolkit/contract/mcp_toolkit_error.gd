@@ -192,6 +192,14 @@ static func log_unavailable_hint(can_use_buffer: bool) -> String:
 	return hint + "."
 
 
+## Tailored RESPONSE_TOO_LARGE hint for an oversized screenshot payload. A capture
+## that overflows the buffer has a mode-specific escape hatch the generic hint lacks:
+## re-request with [code]image_response_mode:"disk"[/code] to persist the PNG and
+## receive only its path, or ask for a smaller size — so the guard swaps this in when
+## the over-budget result carries an [code]image_base64[/code].
+const _IMAGE_RESPONSE_TOO_LARGE_HINT := "The captured image exceeded the WebSocket transport buffer. Retry with image_response_mode:\"disk\" to save the PNG to disk and receive only its file path, or request a smaller size. Raising mcp_toolkit/limits/ws_buffer_kb in Project Settings also works but requires a reconnect."
+
+
 ## Headroom reserved below max_bytes when guarding a response, in bytes.
 ##
 ## The native WS send rejects a frame WHOLESALE — never chunks — when
@@ -233,7 +241,14 @@ static func guard_response_size(response: Dictionary, max_bytes: int) -> Diction
 	if response.has("jsonrpc"):
 		safe["jsonrpc"] = response["jsonrpc"]
 	safe["id"] = response.get("id", null)
+	# An oversized screenshot payload gets the mode-specific escape hatch (persist to
+	# disk / smaller size); any other over-budget result keeps the generic narrow/
+	# paginate advice.
+	var hint := DEFAULT_HINTS["RESPONSE_TOO_LARGE"]
+	var result_payload = response.get("result")
+	if typeof(result_payload) == TYPE_DICTIONARY and (result_payload as Dictionary).has("image_base64"):
+		hint = _IMAGE_RESPONSE_TOO_LARGE_HINT
 	safe["result"] = fail("RESPONSE_TOO_LARGE",
 		"response too large for the transport buffer (limit ~%d KB)" % int(max_bytes / 1024),
-		DEFAULT_HINTS["RESPONSE_TOO_LARGE"])
+		hint)
 	return safe

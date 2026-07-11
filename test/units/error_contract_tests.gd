@@ -15,6 +15,7 @@ static func run(testing) -> void:
 	_test_log_hints(testing)
 	_test_make_error_entry(testing)
 	_test_response_size_guard(testing)
+	_test_image_response_too_large_hint(testing)
 	# Tail position + INSTANCE handlers (see _Handlers) mirror the proven M3
 	# (extension_meta) pattern. On Godot 4.2 a bare static-func Callable stored in the
 	# registry and dispatched via `await handler.call()` throws "Invalid get index on
@@ -320,5 +321,45 @@ static func _test_response_size_guard(testing) -> void:
 	var guarded_over := MCPToolkitError.guard_response_size(over_threshold, max_bytes)
 	testing.eq(guarded_over["result"].get("code", ""), "RESPONSE_TOO_LARGE",
 			"boundary over-margin/under-cap → tripped (margin is load-bearing)")
+
+	print("")
+
+
+# --- Tailored screenshot RESPONSE_TOO_LARGE hint ----------------------------
+# An over-budget capture (a result carrying image_base64) gets a mode-specific hint
+# that names the image_response_mode:"disk" escape hatch; any other over-budget
+# result keeps the generic narrow/paginate hint. Both are exercised through the same
+# pure guard, so no editor or live peer is needed.
+
+static func _test_image_response_too_large_hint(testing) -> void:
+	testing.begin("Screenshot RESPONSE_TOO_LARGE hint")
+
+	var max_bytes := 8192
+	var oversized_base64 := "A".repeat(max_bytes + 4096)  # comfortably over the guard threshold
+
+	# An oversized image payload → the hint steers to image_response_mode:"disk".
+	var image_response := {
+		"jsonrpc": "2.0", "id": 5,
+		"result": {"image_base64": oversized_base64, "mime_type": "image/png"},
+	}
+	var guarded_image := MCPToolkitError.guard_response_size(image_response, max_bytes)
+	testing.eq(guarded_image["result"]["code"], "RESPONSE_TOO_LARGE",
+			"oversized image → RESPONSE_TOO_LARGE")
+	var image_hint := str(guarded_image["result"].get("hint", ""))
+	testing.ok(image_hint.contains("image_response_mode"),
+			"image hint names image_response_mode")
+	testing.ok(image_hint.contains("disk"), "image hint names the disk escape hatch")
+
+	# An oversized non-image payload → the generic hint is byte-identical to the default.
+	var text_response := {
+		"jsonrpc": "2.0", "id": 6,
+		"result": {"success": true, "blob": "z".repeat(max_bytes + 4096)},
+	}
+	var guarded_text := MCPToolkitError.guard_response_size(text_response, max_bytes)
+	testing.eq(str(guarded_text["result"].get("hint", "")),
+			MCPToolkitError.DEFAULT_HINTS["RESPONSE_TOO_LARGE"],
+			"non-image over-budget → generic hint unchanged")
+	testing.ok(not str(guarded_text["result"].get("hint", "")).contains("image_response_mode"),
+			"non-image hint does not mention image_response_mode")
 
 	print("")

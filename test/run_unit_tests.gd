@@ -30,6 +30,7 @@ const PortConfigTests := preload("res://test/units/port_config_tests.gd")
 const McpJsonBuildTests := preload("res://test/units/mcp_json_build_tests.gd")
 const LspStatusTests := preload("res://test/units/lsp_status_tests.gd")
 const ScreenshotClassifyTests := preload("res://test/units/screenshot_classify_tests.gd")
+const ScreenshotResponseTests := preload("res://test/units/screenshot_response_tests.gd")
 const RuntimeScreenshotTests := preload("res://test/units/runtime_screenshot_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
@@ -65,6 +66,7 @@ func _init() -> void:
 	McpJsonBuildTests.run(testing)
 	LspStatusTests.run(testing)
 	ScreenshotClassifyTests.run(testing)
+	ScreenshotResponseTests.run(testing)
 	RuntimeScreenshotTests.run(testing)
 	_test_published_token_path(testing)
 
