@@ -298,8 +298,14 @@ static func _test_scene_create_node_inline_drop(testing) -> void:
 	testing.eq(sprite.scale, scale_old, "bare-array scale: prior restored (non-destructive)")
 
 	# Valid tagged equivalents land cleanly (no drop). Contrast with the two above.
+	# Point at a committed PlaceholderTexture2D .tres, NOT an imported asset (icon.svg):
+	# the tagged-Resource branch calls ResourceLoader.load, and imported files
+	# (.svg/.png) have no import artifact in the cold `--headless --script` unit runner
+	# (.godot/imported/ is gitignored and only rebuilt by the CI warm-up editor scan,
+	# which the runner races). A .tres is parsed directly with no import pipeline, so it
+	# loads deterministically whether the cache is cold (CI) or warm (local editor open).
 	var tex_ok: Dictionary = Helpers.coerce_for_property(
-		sprite, "texture", {"type": "Resource", "path": "res://icon.svg"})
+		sprite, "texture", {"type": "Resource", "path": "res://test/fixtures/placeholder_texture.tres"})
 	testing.ok(tex_ok.get("ok", false), "tagged Resource texture: coercion ok")
 	var tex_ok_old = sprite.get("texture")
 	var tex_ok_value = tex_ok["value"]
