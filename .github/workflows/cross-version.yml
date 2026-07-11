@@ -99,7 +99,7 @@ on:
 # [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
 # the sibling-ref dispatch input. See Plan/Reference/ci-test-topology.md.
 env:
-  SIBLING_PIN_SERVER: "bbdeb13e389cd9e68ac9bc2f21942fb0bbcde777"
+  SIBLING_PIN_SERVER: "4076bf0a1cc003730b00d28ccc1cac930606e71d"
 
 jobs:
   gdscript-behavioral:
