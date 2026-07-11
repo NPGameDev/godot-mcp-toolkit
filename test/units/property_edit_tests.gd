@@ -15,6 +15,7 @@ static func run(testing) -> void:
 	_test_set_property_compound(testing)
 	_test_wrong_type_set_rejection(testing)
 	_test_set_drop_logic(testing)
+	_test_scene_create_node_inline_drop(testing)
 	_test_runtime_set_property_pipeline(testing)
 	_test_compound_set_helper(testing)
 	_test_undo_info(testing)
@@ -245,6 +246,82 @@ static func _test_set_drop_logic(testing) -> void:
 ## The "status" field of a describe_set_drop tri-state result (test accessor).
 static func _status(outcome: Dictionary) -> String:
 	return str(outcome.get("status", ""))
+
+
+# --- scene.create_node inline-property drop reporting --------------------------
+# scene.create_node applies a `properties` dict at create time. Coercion only proves
+# a value is well-formed; Object.set() is void and silently discards a wrong-type
+# Variant (a value node.set_property rejects outright), so each write must be
+# readback-verified or a discarded value would count as set. This pins the per-prop
+# classification the handler runs — coerce → set → readback → the bare-res:// guard →
+# describe_set_drop — on a real Sprite2D against the two known bad-form values
+# (bare-string texture, bare-array scale) plus their valid tagged equivalents. The
+# editor-bound handler wrapper (needs an edited scene) is exercised end to end by
+# server smoke §02; this locks the pure classification headlessly.
+static func _test_scene_create_node_inline_drop(testing) -> void:
+	testing.begin("scene.create_node inline-property drop")
+
+	# texture as a bare "res://…" string → coercion passes it through (well-formed
+	# string), but set() can't assign a String to a Texture2D slot, so the readback
+	# stays null. The bare-res:// guard fires and steers to the tagged form → DROPPED.
+	var sprite := Sprite2D.new()
+	var tex_coerce: Dictionary = Helpers.coerce_for_property(
+		sprite, "texture", "res://icon.svg")
+	testing.ok(tex_coerce.get("ok", false),
+		"bare-string texture: coercion passes it through (well-formed string)")
+	var tex_old = sprite.get("texture")
+	var tex_value = tex_coerce["value"]
+	sprite.set("texture", tex_value)
+	var tex_after = sprite.get("texture")
+	var tex_bare_res := typeof(tex_value) == TYPE_STRING \
+		and str(tex_value).begins_with("res://") \
+		and not (tex_value is Resource) and not (tex_after is String)
+	testing.ok(tex_bare_res, "bare-string texture: bare-res:// guard fires (would report INVALID_VALUE)")
+
+	# scale as a bare Array [4,4] → coercion recurses to a float Array, but set()
+	# can't assign an Array to a Vector2 slot (cross-family), so describe_set_drop
+	# classifies it DROPPED with the SET_FAILED-style message.
+	var scale_coerce: Dictionary = Helpers.coerce_for_property(sprite, "scale", [4, 4])
+	testing.ok(scale_coerce.get("ok", false),
+		"bare-array scale: coercion passes it through (recurses to float Array)")
+	var scale_old = sprite.get("scale")
+	var scale_value = scale_coerce["value"]
+	sprite.set("scale", scale_value)
+	var scale_after = sprite.get("scale")
+	var scale_outcome: Dictionary = Helpers.describe_set_drop(
+		scale_old, scale_after, scale_value, "scale")
+	testing.eq(_status(scale_outcome), "dropped", "bare-array scale → dropped")
+	testing.ok(str(scale_outcome.get("error", "")).find("scale") >= 0,
+		"bare-array scale: drop error names the property")
+	# Handler restores the prior on a drop → scale is untouched by the failed write.
+	sprite.set("scale", scale_old)
+	testing.eq(sprite.scale, scale_old, "bare-array scale: prior restored (non-destructive)")
+
+	# Valid tagged equivalents land cleanly (no drop). Contrast with the two above.
+	var tex_ok: Dictionary = Helpers.coerce_for_property(
+		sprite, "texture", {"type": "Resource", "path": "res://icon.svg"})
+	testing.ok(tex_ok.get("ok", false), "tagged Resource texture: coercion ok")
+	var tex_ok_old = sprite.get("texture")
+	var tex_ok_value = tex_ok["value"]
+	testing.ok(tex_ok_value is Resource, "tagged Resource texture: coerces to a real Resource")
+	sprite.set("texture", tex_ok_value)
+	testing.eq(_status(Helpers.describe_set_drop(
+		tex_ok_old, sprite.get("texture"), tex_ok_value, "texture")), "ok",
+		"tagged Resource texture → ok (stored)")
+
+	var scale_ok: Dictionary = Helpers.coerce_for_property(
+		sprite, "scale", {"type": "Vector2", "x": 4, "y": 4})
+	testing.ok(scale_ok.get("ok", false), "tagged Vector2 scale: coercion ok")
+	var scale_ok_old = sprite.get("scale")
+	var scale_ok_value = scale_ok["value"]
+	sprite.set("scale", scale_ok_value)
+	testing.eq(_status(Helpers.describe_set_drop(
+		scale_ok_old, sprite.get("scale"), scale_ok_value, "scale")), "ok",
+		"tagged Vector2 scale → ok (stored)")
+	testing.eq(sprite.scale, Vector2(4, 4), "tagged Vector2 scale: value applied")
+
+	sprite.free()
+	print("")
 
 
 # --- runtime.set_property wrong-type pipeline (runtime autoload) ----

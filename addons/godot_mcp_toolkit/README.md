@@ -331,6 +331,24 @@ Optional fine-tuning knobs (concurrency timeouts, buffer limits) live under
 `mcp_toolkit/` in Project Settings — most users never need them. See
 [docs/advanced_configuration.md](docs/advanced_configuration.md).
 
+## Known limitations
+
+- **Screenshot capture size.** A full-size viewport capture (a 3D viewport
+  especially) can exceed the WebSocket transport buffer and fail with
+  `RESPONSE_TOO_LARGE`. Pass `image_response_mode: "disk"` on `editor_screenshot` /
+  `runtime_screenshot` to save the PNG to disk and receive only its file path, or
+  request a smaller `size`. (Raising `mcp_toolkit/limits/ws_buffer_kb` in Project
+  Settings and reconnecting also works.)
+- **`force_foreground_*` un-minimizes to a windowed state.** The
+  `force_foreground_editor` / `force_foreground_game` levers un-minimize and raise a
+  minimized window before capturing, but the window comes back **windowed**, not to a
+  previous maximized state — Godot exposes no API to restore the prior window mode.
+- **Node-focus does not reframe a 2D node.** `editor_screenshot` with a `node_path`
+  selects the node but, for a **2D** node, does not pan/zoom the viewport to frame
+  it — it captures the current 2D view, so a node far from the view origin may sit
+  off-centre or out of frame. A **3D** node-focus capture does get camera framing;
+  2D has no equivalent.
+
 ## Minimum Godot version
 
 Godot 4.2+. See the [repo-root README](../../README.md) for the full stack

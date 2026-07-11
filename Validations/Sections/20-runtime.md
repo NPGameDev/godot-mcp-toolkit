@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (Sv2Main.tscn with nodes, script attached to Sv2Player)
 **Tools tested:** game_start, game_stop, runtime_screenshot, runtime_get_node_state, runtime_get_script_vars, runtime_set_property, debugger_get_log, input_simulate, execute_code (runtime), animation_player_control, signal_emit, autoload_manage (20.10 setup)
-**Tests:** 35
+**Tests:** 37
 
 ---
 
@@ -71,6 +71,13 @@
 
 **20.5d** Foreground lever — while the game is still minimized, `runtime_screenshot` force_foreground_game=`true`
 - **Expect:** The game window un-minimizes and a **fresh** PNG returns. (Default-off is mandatory — `_ensure_game_focus` fights for OS focus across parallel game instances; only opt in when driving a single game.)
+
+**20.5e** Disk mode — with the game window visible, `runtime_screenshot` image_response_mode=`disk`
+- **Expect:** A **lean** response — `path`, `width`, `height`, `bytes`, `mime_type` and **NO** `image_base64`. `path` is an absolute file path ending `.png` (auto-named under the game's `user://screenshots/`); the file exists on disk. Cleanup: delete the written PNG.
+
+**20.5f** Save-path guard — `runtime_screenshot` image_response_mode=`disk`, save_path=`res://sv2_rt_shot.png`
+- **Expect:** `PATH_DENIED` — the runtime save allowlist is `user://screenshots/` only (the game process has no `res://` write surface), so a `res://` target is rejected. No file is written.
+> **REGRESSION WATCH (41o-duodecies-ter):** `runtime_screenshot`'s `save_path` must reject anything outside `user://screenshots/`. If a `res://` target succeeds (or writes a file), the runtime save allowlist regressed. Flag as **Major**.
 
 **20.6** `runtime_get_node_state` — node_path=`/root/Sv2Main/Sv2Player`
 - **Expect:** class, path, properties including position

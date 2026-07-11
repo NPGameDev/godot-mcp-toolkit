@@ -115,6 +115,58 @@ re-asserts every frame. Two consequences for the runtime screenshot:
   subwindow-embedded-within-a-Viewport, not game-embedded-in-editor — and is not
   used.)
 
-Restoring a prior non-windowed mode after un-minimizing a top-level game
-(maximized → windowed) is a separate, still-open nit shared with the editor path;
-it is not addressed here.
+## Amendment — image_response_mode and the disk-persist lean response
+
+Both capture tools now take an optional **`image_response_mode: "inline" | "disk"
+| "both"`** (default `"inline"`) that selects how the PNG comes back:
+
+- **inline** (default) embeds the base64 PNG in the response, byte-identical to the
+  prior shape (`{image_base64, mime_type, width, height, bytes}`).
+- **disk** persists the PNG and returns only a **lean envelope** — `{path, width,
+  height, bytes, mime_type}`, no `image_base64` — where `path` is the globalized
+  absolute file path. This is the escape hatch for a capture too large for the
+  WebSocket buffer (a full-size 3D viewport routinely exceeds it) and for conserving
+  the agent's context tokens.
+- **both** returns the inline shape plus `path`.
+
+An optional **`save_path`** (`.png`) names the destination; when omitted, disk/both
+auto-name under `user://screenshots/`. The save-path allowlist differs by context:
+`editor.screenshot` accepts `res://` or `user://screenshots/`; `runtime.screenshot`
+(which also gains `save_path`) accepts `user://screenshots/` only, because the game
+process has no `res://` write surface. A `save_path` supplied in **inline** mode is
+validated but **not** persisted, so the guard is deterministic across modes and the
+response stays byte-identical.
+
+Design points:
+
+- **No auto-fallback to disk on oversize.** An over-buffer inline capture returns
+  `RESPONSE_TOO_LARGE` (C4) with a **tailored** hint that names
+  `image_response_mode:"disk"` as the fix (alongside a smaller size, or raising
+  `mcp_toolkit/limits/ws_buffer_kb`). The caller chooses the mode; the tool never
+  silently changes what it returns. There is no `allow_large` / `max_bytes` bypass —
+  the buffer ceiling stays a hard, disclosed limit.
+- **Shaping lives in a runtime-safe helper.** `contract/screenshot_response.gd`
+  (`RefCounted`, no `class_name`, preloads only `security/file_guard.gd`) owns the
+  mode parse, save-path validation via `FileGuard`, the persist, and the inline /
+  disk / both shaping. Both editor handlers reach it via the `Modules` aggregator;
+  the runtime autoload preloads it directly. It names **no** `Editor*` symbol, so it
+  stays in the runtime autoload's export-clean static graph (`godotengine/godot#91713`).
+
+## Known limitations
+
+- **The `force_foreground_*` levers un-minimize to a *windowed* state, not a prior
+  maximized one.** Restoring the exact pre-minimize window mode after un-minimizing
+  is **not fixable via the public API** (source-verified 4.5 + 4.7): there is no
+  getter for a "was maximized before minimize" flag, `window_set_mode(WINDOWED)`
+  maps to `SW_NORMAL` + `maximized=false` (it un-maximizes), and no `SW_RESTORE`
+  equivalent is exposed. This holds for **both** the editor (`force_foreground_editor`)
+  and the top-level game (`force_foreground_game`) paths. By design there is **no
+  agent-facing hint** about it — a foregrounded capture succeeds; the window simply
+  lands windowed. Documented so a future reader does not treat it as a bug or try to
+  "fix" the mode restore.
+- **Node-focus does not reframe a 2D node.** `editor_screenshot node_path:<node>`
+  **selects** the target node but cannot pan/zoom the 2D viewport camera around it —
+  it captures the current 2D view, so a node away from the view origin renders
+  off-centre or out of frame. A **3D** node-focused capture gets the engine's
+  internal camera framing; **2D has no equivalent public reframe**. Framing a
+  specific 2D node is out of reach of the public editor API today.

@@ -1,6 +1,6 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-07-11 (41o-duodecies-bis — lsp_project_diagnostics coverage completion: §26 C29 project-scope freshness combo + 26.24 hint check; header total-count 110→111 / 6→7 LSP reconciliation)
+**Last updated:** 2026-07-12 (41o-duodecies-ter — screenshot `image_response_mode`/`save_path` disk-mode cases: §07 7.2g/7.2h/7.2i, §20 20.5e/20.5f; `scene.create_node` inline-property drop reporting §02 2.13a)
 **Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
 **Total tools (agent-facing):** 111 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
@@ -36,7 +36,7 @@ C24–C26 & C29 in §§26–27).
 | scene.open | 18, 64a, 64d, 64f | — | C3, C7, C8 | — | — | |
 | scene.close | 18.3, 18.14, 64b, 64f | ✓ (non-active, last tab) | C3, C7, C27 | ✓ (_set_main_scene_state hint) | — | 4.5+ only (version-gated via min_godot_version). Response discloses `unsaved_changes_discarded: <bool>` on 4.7+ (omitted below 4.7) |
 | scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3 | ✓ (tab_closed, phantom warning) | — | |
-| scene.create_node | 20–26, 64h | ✓ (2.12: CLASS_MISMATCH) | C5, C8, C10 | ✓ (preload, unique_name) | FIX-G (P6), cb4e162 | **GAP:** unique_name param untested |
+| scene.create_node | 20–26, 2.13a, 64h | ✓ (2.12: CLASS_MISMATCH; 2.13a: bad-form inline props → `properties_set:0` + `properties_failed` names texture+scale) | C5, C8, C10 | ✓ (preload, unique_name; 2.13a: drop `error` mirrors node.set_property incl. bare-res:// steer) | FIX-G (P6), cb4e162, 41o-duodecies-ter F2 | 2.13a: inline `properties` are readback-verified per key — a silently-dropped `Object.set()` write (bare-string texture, bare-array scale) is reported in `properties_failed` and excluded from `properties_set` (parity with node.set_property; adjusted writes surface in `warnings[]`). Headless unit `scene.create_node inline-property drop` pins the same classifier. **GAP:** unique_name param untested |
 | scene.delete_node | 43j, 43s, 64i | — | — | — | — | |
 | scene.instantiate | 41, 43q–43s, 2.15a | — | — | — | FIX-B, FIX-9, FIX-K, concern 034 | 2.15a: all-success batch → `failed`/`hint` ABSENT (additive rollup, summarize_batch). Partial-failure path (`instantiate()==null`) is unit-pinned (`_test_summarize_batch`) — not selectively triggerable from a valid .tscn. **GAP:** properties param, auto-rename |
 | scene.diff | 63 | — | — | — | — | |
@@ -72,7 +72,7 @@ C24–C26 & C29 in §§26–27).
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | editor.save_scene | 55, 64 | — | C3, C5, C7, C8, C9 | — | — | |
-| editor.screenshot | 7.2, 7.2b, 7.2c, 7.2d, 7.2e, 7.2f | ✓ (7.2d: EDITOR_VIEWPORT_UNAVAILABLE minimized) | — | ✓ (7.2d minimized hint; 7.2e foregrounded_editor) | — | 7.2b: wrong-screen auto-heal → `remediation:["switched_main_screen"]`; 7.2c: node-focused heal (Node2D→2D, Node3D→3D); 7.2e: `force_foreground_editor:true` un-minimizes + `remediation` foregrounded_editor; 7.2f: unfocused-but-visible → fresh frame (cause-C regression) |
+| editor.screenshot | 7.2, 7.2b, 7.2c, 7.2d, 7.2e, 7.2f, 7.2g, 7.2h, 7.2i | ✓ (7.2d: EDITOR_VIEWPORT_UNAVAILABLE minimized) | — | ✓ (7.2d minimized hint; 7.2e foregrounded_editor; 7.2i oversize→disk hint) | — | 7.2b: wrong-screen auto-heal → `remediation:["switched_main_screen"]`; 7.2c: node-focused heal (Node2D→2D, Node3D→3D); 7.2e: `force_foreground_editor:true` un-minimizes + `remediation` foregrounded_editor; 7.2f: unfocused-but-visible → fresh frame (cause-C regression); 7.2g: `image_response_mode:"disk"` → lean envelope (no `image_base64`, file on disk); 7.2h: `"both"` → image + globalized `path`; 7.2i: oversize 3D-node inline → `RESPONSE_TOO_LARGE` whose hint names `image_response_mode:"disk"` → disk retry succeeds (the F1 escape-hatch proof) |
 | editor.refresh | 61 | — | — | — | 5f96b62 | Renamed from reload_scripts |
 | editor.get_console | 58, 58a–58h, 7.6–7.8, 7.10, 7.12 | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #20 (supersedes #9): total_lines/next_id/has_more (was truncated) + returned (was count) — §07 7.6–7.12 assert `returned` as the matching-line count. LOG_BUSY/LOG_UNAVAILABLE hints version-gated (4.5+ buffer-steer only) — §07 REGRESSION WATCH note + server smoke §14 own the truth-table (41n-undecies-bis-bis) |
 | editor.wait_for_idle | 60 | — | — | — | — | |
@@ -311,7 +311,7 @@ C24–C26 & C29 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| runtime.screenshot | 20.5, 20.5b, 20.5c, 20.5d | ✓ (20.5c: RUNTIME_WINDOW_MINIMIZED) | — | ✓ (20.5c minimized hint) | — | 20.5b: unfocused-but-visible → fresh frame; 20.5c: minimized → RUNTIME_WINDOW_MINIMIZED (not TIMEOUT/stale); 20.5d: `force_foreground_game:true` un-minimizes + fresh frame |
+| runtime.screenshot | 20.5, 20.5b, 20.5c, 20.5d, 20.5e, 20.5f | ✓ (20.5c: RUNTIME_WINDOW_MINIMIZED; 20.5f: save_path res:// → PATH_DENIED) | — | ✓ (20.5c minimized hint) | — | 20.5b: unfocused-but-visible → fresh frame; 20.5c: minimized → RUNTIME_WINDOW_MINIMIZED (not TIMEOUT/stale); 20.5d: `force_foreground_game:true` un-minimizes + fresh frame; 20.5e: `image_response_mode:"disk"` → lean envelope (no `image_base64`, file on disk); 20.5f: `save_path:"res://…"` → PATH_DENIED (runtime allowlist is `user://screenshots/` only) |
 | runtime.get_node_state | 73 | — | C8 | — | — | |
 | runtime.get_script_vars | 74 | — | — | — | — | |
 | runtime.set_property | 20.8, 20.8b, 20.8c, 20.10 | ✓ (20.8b: cross-family wrong-type → SET_FAILED; 20.8c: convertible → ADJUSTED success+warning, 41o C1/D1) | — | ✓ (20.8c: adjusted `warning`) | c6d5f40, 41o C1/D1 | 20.8: happy (speed); 20.10: autoload-persistence warning; 20.8b/20.8c: tri-state via the shared `contract/property_set_check.gd` detector (runtime twins of editor 3.2b/3.2c). Headless unit `runtime.set_property tri-state pipeline` pins the coerce→set→describe_set_drop pipeline (dropped/ok/adjusted) |

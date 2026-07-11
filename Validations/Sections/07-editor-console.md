@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes in Sv2Main.tscn)
 **Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
-**Tests:** 19
+**Tests:** 22
 
 > **Precondition — `editor_screenshot` self-diagnoses a collapsed viewport.**
 > The tool no longer returns a blank `2x2` / ~81-byte PNG for a viewport that
@@ -40,6 +40,16 @@
 
 **7.2f** Cause-C freshness — put the editor **unfocused behind the terminal** (visible, not minimized), then `editor_screenshot`
 - **Expect:** A **fresh full-size** frame — not stale, not collapsed. The editor viewport is a SubViewport that renders regardless of OS focus, so an unfocused-but-visible editor is not a failure.
+
+**7.2g** Disk mode (standard capture) — with the editor restored on a 2D/3D screen, `editor_screenshot` image_response_mode=`disk`
+- **Expect:** A **lean** response — `path`, `width`, `height`, `bytes`, `mime_type` and **NO** `image_base64`. `path` is an absolute file path ending `.png` (auto-named under `user://screenshots/`); the file exists on disk. Cleanup: delete the written PNG.
+
+**7.2h** Both mode — `editor_screenshot` image_response_mode=`both`, save_path=`res://sv2_shot.png`
+- **Expect:** The inline shape (`image_base64`, `mime_type`, `width`, `height`, `bytes`) **plus** `path` = the globalized absolute path of the saved `res://sv2_shot.png`; the file exists. Cleanup: `file_delete` (or `resource_delete`) `res://sv2_shot.png`.
+
+**7.2i** Oversize escape hatch — create a `Node3D` (`scene_create_node` node_type=`Node3D`, node_name=`Sv2ShotProbe3D`, parent_path=`.`), then `editor_screenshot` node_path=`Sv2ShotProbe3D` at default size (no size params)
+- **Expect:** `RESPONSE_TOO_LARGE` whose `hint` names `image_response_mode:"disk"` as the fix (a full-size 3D capture exceeds the WS buffer). Then re-call `editor_screenshot` node_path=`Sv2ShotProbe3D` image_response_mode=`disk` → lean envelope + `path` on disk (no `image_base64`). Cleanup: `scene_delete_node` `Sv2ShotProbe3D`; delete the written PNG.
+> **REGRESSION WATCH (41o-duodecies-ter):** the oversize inline hint must name `image_response_mode:"disk"` (the tailored escape hatch), not the old generic "narrow the query / paginate" boilerplate. If the disk retry still returns `image_base64` or omits `path`, the disk-mode lean envelope regressed. Flag as **Major**.
 
 **7.4** `editor_get_console` — (default params)
 - **Expect:** success, returns console output

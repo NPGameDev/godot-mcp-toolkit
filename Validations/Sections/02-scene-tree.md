@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (Sv2Main.tscn exists and is open)
 **Tools tested:** scene_create_node, scene_instantiate, scene_get_tree, editor_save_scene
-**Tests:** 19
+**Tests:** 20
 
 ---
 
@@ -51,6 +51,10 @@
 
 **2.13** `scene_create_node` (idempotent) — node_type=`Label`, node_name=`Sv2Label`, parent_path=`.`
 - **Expect:** status=`returned` (idempotent, same class + same name)
+
+**2.13a** `scene_create_node` (bad-form inline properties reported, NOT silently counted — 41o-duodecies-ter F2) — node_type=`Sprite2D`, node_name=`Sv2DropProbe`, parent_path=`.`, properties=`{"texture":"res://icon.svg","scale":[4,4]}`
+- **Expect:** the node **is created** (`status:"created"`, partial-set truthfulness), but **`properties_set` = 0** and **`properties_failed`** has **2** entries naming `texture` and `scale`. Both are wire-form values `Object.set()` silently drops (a bare string on a Texture2D, a bare array on a Vector2) — the same values `node_set_property` rejects (3.2b/GAP). The `texture` entry's `error` steers to the tagged `{"type":"Resource","path":...}` form; the `scale` entry's `error` names the expected `Vector2` type. A `properties_set:2` with no `properties_failed` here is the pre-fix bug. Cleanup: `scene_delete_node` node_path=`Sv2DropProbe`.
+> **REGRESSION WATCH (41o-duodecies-ter F2):** `scene_create_node` used to count every well-formed-looking inline value as set, even ones `set()` discarded. It now readback-verifies each and reports drops in `properties_failed` (parity with `node_set_property`). If both bad-form values land in `properties_set` with no failure reported, the drop reporting regressed. Flag as **Major**.
 
 **2.14** `scene_instantiate` — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`
 - **Expect:** success, Sv2Sub node added

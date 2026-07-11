@@ -411,9 +411,11 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	instance.name = requested_name
 
-	# Pre-coerce inline properties before UndoRedo (validation only).
+	# Pre-coerce inline properties before UndoRedo (validation only). The raw wire
+	# value rides along so the post-set readback guard can give the bare-res://-string
+	# tagged-form hint (parity with node.set_property).
 	var properties_raw = parameters.get("properties", null)
-	var prop_coerced: Array = []  # [{name, value, old_value}] — simple props (UndoRedo-able)
+	var prop_coerced: Array = []  # [{name, value, old_value, raw}] — simple props (candidate for UndoRedo)
 	var prop_compound: Array = []  # [{name, raw_value}] — compound paths (direct set)
 	var prop_failed: Array = []
 	if properties_raw != null and typeof(properties_raw) == TYPE_DICTIONARY:
@@ -431,6 +433,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 						"name": prop_name,
 						"value": result["value"],
 						"old_value": instance.get(prop_name),
+						"raw": properties_raw[key],
 					})
 				else:
 					prop_failed.append({
@@ -440,17 +443,51 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	parent_node.add_child(instance)
 	instance.set_owner(root)
+	# Set each simple prop, then read it back and classify the write. Coercion says a
+	# value is well-formed; it does NOT prove Object.set() stored it — set() is void and
+	# silently discards a wrong-type Variant. A DROPPED write is restored, reported in
+	# properties_failed, and excluded from both the UndoRedo rows and properties_set, so
+	# the response reflects only the writes that stored. Only landed props are undoable.
+	var landed: Array = []  # coerced props that stored (clean or engine-adjusted)
+	var warnings: Array[String] = []
 	for prop in prop_coerced:
+		var prop_name: String = str(prop["name"])
 		# Disarm the Godot 4.3 tooltip-timer UAF before an editor_description write
 		# (no-op otherwise). Usually a no-op here — the new row is (re)built deferred —
 		# but it keeps every built-in editor_description write behind one guard.
-		Helpers.disarm_tooltip_uaf(instance, str(prop["name"]))
-		instance.set(prop["name"], prop["value"])
+		Helpers.disarm_tooltip_uaf(instance, prop_name)
+		instance.set(prop_name, prop["value"])
+		var after = instance.get(prop_name)
+		# Bare res:// string on a Resource-typed property: a bare path silently fails to
+		# load, so steer to the tagged {type:"Resource", path:…} form BEFORE the generic
+		# drop guard (which would fire first with a vaguer message). Message mirrors
+		# node.set_property's scalar path so both tools report the same mistake identically.
+		var raw = prop["raw"]
+		if typeof(raw) == TYPE_STRING and str(raw).begins_with("res://") \
+				and not (prop["value"] is Resource) and not (after is String):
+			instance.set(prop_name, prop["old_value"])
+			prop_failed.append({"name": prop_name, "error":
+				"property '%s' expects a Resource, not a bare string path. " % prop_name +
+				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw)})
+			continue
+		var outcome := Helpers.describe_set_drop(
+			prop["old_value"], after, prop["value"], prop_name)
+		match str(outcome.get("status", "")):
+			"dropped":
+				# A bound setter may have Variant-converted the wrong type to a ZERO and
+				# stored it; restore the prior so the drop is truly non-destructive.
+				instance.set(prop_name, prop["old_value"])
+				prop_failed.append({"name": prop_name, "error": str(outcome.get("error", ""))})
+			"adjusted":
+				warnings.append(str(outcome.get("warning", "")))
+				landed.append(prop)
+			_:
+				landed.append(prop)
 	var _undo := MCPToolkitUndoRedoAction.begin("create %s" % requested_name, parent_node) \
 		.do_method(parent_node.add_child.bind(instance)) \
 		.do_method(instance.set_owner.bind(root)) \
 		.do_reference(instance)
-	for prop in prop_coerced:
+	for prop in landed:
 		_undo.do_property(instance, prop["name"], prop["value"])
 		_undo.undo_property(instance, prop["name"], prop["old_value"])
 	_undo.undo_method(parent_node.remove_child.bind(instance)) \
@@ -475,14 +512,19 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 	var unique_param = parameters.get("unique_name", null)
 	var response := MCPToolkitSuccess.ok({"status": "created", "path": _path_in_scene(root, instance)})
 
-	# Report inline property results
-	if not prop_coerced.is_empty() or not prop_failed.is_empty():
-		response["properties_set"] = prop_coerced.size()
+	# Report inline property results. properties_set counts only props that actually
+	# landed (a dropped write is excluded); properties_failed lists both coercion
+	# rejections and post-set drops; adjusted writes stored, so they count as set and
+	# surface their delta in warnings.
+	if not landed.is_empty() or not prop_failed.is_empty():
+		response["properties_set"] = landed.size()
 		if not prop_failed.is_empty():
 			response["properties_failed"] = prop_failed
 			response["hint"] = "%d propert%s failed. Use node_set_property to retry." % [
 				prop_failed.size(),
 				"y" if prop_failed.size() == 1 else "ies"]
+	if not warnings.is_empty():
+		response["warnings"] = warnings
 
 	if unique_param != null and (unique_param == true or str(unique_param).to_lower() == "true"):
 		var existing_unique := root.get_node_or_null("%" + str(instance.name))
