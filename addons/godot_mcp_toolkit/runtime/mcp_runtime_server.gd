@@ -286,6 +286,8 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 	if typeof(params) == TYPE_DICTIONARY:
 		force_foreground = bool(params.get("force_foreground_game", false))
 
+	var remediation: Array[String] = []
+
 	# Minimized suspends rendering, so frame_post_draw never fires. Detect it up
 	# front — before any await — so the handler returns a diagnostic signal
 	# instead of parking until the server's call timeout (which reads as a dead
@@ -298,6 +300,9 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 			return
 		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, 0)
 		_ensure_game_focus()
+		# Un-minimizing + raising the window is a visible side effect — disclose it,
+		# symmetric with the editor path's "foregrounded_editor".
+		remediation.append("foregrounded_game")
 		# A real composite frame after un-minimizing — the window is rendering
 		# again, so frame_post_draw fires promptly.
 		await RenderingServer.frame_post_draw
@@ -318,13 +323,16 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "save_png_to_buffer returned empty"))
 		return
 
-	_send_result(peer, id, {
+	var response := {
 		"image_base64": Marshalls.raw_to_base64(png_bytes),
 		"mime_type": "image/png",
 		"width": image.get_width(),
 		"height": image.get_height(),
 		"bytes": png_bytes.size(),
-	})
+	}
+	if not remediation.is_empty():
+		response["remediation"] = remediation
+	_send_result(peer, id, response)
 
 
 # True when the game's main window is minimized (render suspended).
