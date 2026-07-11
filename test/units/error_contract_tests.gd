@@ -124,9 +124,12 @@ static func _test_error_codes_vocabulary(testing) -> void:
 
 # --- Version-gated log hints (LOG_BUSY / LOG_UNAVAILABLE) -------------------
 # The two hint builders replace the removed DEFAULT_HINTS entries: their
-# buffer-steer is gated on LogBuffer.uses_logger_api() (true on Godot 4.5+),
+# buffer-STEER is gated on LogBuffer.uses_logger_api() (true on Godot 4.5+),
 # because on 4.2-4.4 source="buffer" tails the same file and can't be a real
-# fallback. Pure bool->String, so both branches are exercised version-
+# fallback. On 4.2-4.4 the two hints then differ: log_unavailable_hint omits
+# buffer entirely, while log_busy_hint NAMES buffer only to WARN it won't bypass
+# the lock (a live game holds the same file it tails) — named-to-warn, never
+# steered-to. Pure bool->String, so both branches are exercised version-
 # independently by passing the flag explicitly.
 
 static func _test_log_hints(testing) -> void:
@@ -140,10 +143,18 @@ static func _test_log_hints(testing) -> void:
 	testing.ok(unavailable_buffer.contains("source=\"buffer\""),
 			"log_unavailable_hint(true) → steers to source=buffer")
 
-	# 4.2-4.4 (can_use_buffer = false) → no buffer steer (it reads the same file).
+	# 4.2-4.4 (can_use_buffer = false): the hint may NAME source="buffer" only to
+	# WARN it can't help (the buffer tails the same locked file), never to present
+	# it as a working fallback. Guard the intent, not the mere word: require the
+	# warning framing so a reword that actually steers to buffer as a solution (and
+	# would drop "won't bypass") still fails.
 	var busy_retry := MCPToolkitError.log_busy_hint(false)
-	testing.ok(not busy_retry.contains("buffer"),
-			"log_busy_hint(false) → omits buffer steer")
+	testing.ok(busy_retry.contains("won't bypass") and busy_retry.contains("tails the same file"),
+			"log_busy_hint(false) → buffer named only to warn (won't bypass the lock), not steered to")
+	# Negative guard: buffer may be NAMED (to warn) but never imperatively RECOMMENDED — catches a
+	# reword that keeps the warning yet also adds a false "use/try source=buffer" steer for 4.2-4.4.
+	testing.ok(busy_retry.findn("use source=\"buffer\"") < 0 and busy_retry.findn("try source=\"buffer\"") < 0,
+			"log_busy_hint(false) → buffer never imperatively steered to (name-to-warn only)")
 	testing.ok(busy_retry.findn("retry") >= 0,
 			"log_busy_hint(false) → retry guidance present")
 	var unavailable_no_buffer := MCPToolkitError.log_unavailable_hint(false)

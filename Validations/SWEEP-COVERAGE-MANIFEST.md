@@ -259,7 +259,7 @@ C24–C26 in §§26–27).
 | extensions.refresh | E5 | — | — | — | — | Extension phase |
 | *(extension API)* | E10a–E10d | E10c (guard) | — | E10a, E10b (hints) | — | success_hint + MCPToolkitError (41l-vicies-ter) |
 
-### LSP Tools (6 tools)
+### LSP Tools (7 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
@@ -269,6 +269,7 @@ C24–C26 in §§26–27).
 | lsp_completion | 26.15–26.16 | (shared) | — | — | — | |
 | lsp_definition | 26.17–26.19 | (shared) | C25 | — | — | |
 | lsp_references | 26.20–26.21 | (shared) | — | — | — | |
+| lsp_project_diagnostics | 26.24–26.26 | (shared 26.4–26.7 guards) | — | — | — | New project-wide compile scan (server LSP fan-out); include_addons (26.25) + include_warnings (26.26); accounting invariant `scanned == clean + files_with_diagnostics + timed_out + read_failed` |
 
 ### Debugger Tools (4 tools)
 

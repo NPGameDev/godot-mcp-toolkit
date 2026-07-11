@@ -290,10 +290,15 @@ static func _validate_gdscript(source: String) -> Dictionary:
 ## PARSE errors only on Godot 4.5+ (the Logger API hooks the editor's error stream); on
 ## 4.2-4.4 file logging captures running-game output, not editor parse errors, so steering
 ## the LLM to editor_get_console there is a dead end — point to lsp_diagnostics (works 4.2+)
-## instead. engine_ver is Modules.VersionUtils.get_engine_version_pair() (e.g. "4.5").
+## instead. Both strings also steer the "did this change break ANOTHER script" case: on 4.5+
+## editor_refresh→console is a cheaper best-effort first pass (it reloads only changed+open
+## scripts, so an unopened broken dependent can read falsely clean) and lsp_project_diagnostics
+## is the guaranteed whole-project scan; on 4.2-4.4 lsp_project_diagnostics is the only
+## project-wide compile signal (the console cannot surface project-wide parse errors pre-4.5).
+## engine_ver is Modules.VersionUtils.get_engine_version_pair() (e.g. "4.5").
 static func _compile_error_message(engine_ver: String) -> String:
-	const CONSOLE := "GDScript compile error. Call editor_get_console for detailed messages with line numbers."
-	const LSP := "GDScript compile error. On Godot <4.5 editor parse errors are not surfaced by editor_get_console — call lsp_diagnostics for line-level detail (or read the script)."
+	const CONSOLE := "GDScript compile error. Call editor_get_console for detailed messages with line numbers. To check whether the change broke another script, editor_refresh then editor_get_console(error) is a cheaper first pass (best-effort — misses unopened dependents); lsp_project_diagnostics is the guaranteed whole-project scan."
+	const LSP := "GDScript compile error. On Godot <4.5 editor parse errors are not surfaced by editor_get_console — call lsp_diagnostics for line-level detail (or read the script). To check whether the change broke another script, use lsp_project_diagnostics (the only project-wide compile signal on 4.2-4.4)."
 	return CONSOLE if Modules.VersionUtils.is_at_least(engine_ver, "4.5") else LSP
 
 

@@ -2,10 +2,10 @@
 
 A comprehensive, modular validation sweep for the Godot MCP Toolkit.
 
-**Total tools (agent-facing):** 110 + 2 meta — canonical count in server
+**Total tools (agent-facing):** 111 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
 **Toolkit surfaces (non-disjoint — do not sum):** 100 editor-registered (incl. the 4 `debug.*`) ·
-12 runtime (4 names overlap the editor 100) · 6 LSP (server-side only).
+12 runtime (4 names overlap the editor 100) · 7 LSP (server-side only).
 **Sweep scale:** per-section defined-case counts in the Section Map below; last full-run tally in
 `RESULTS.md` (479 tests · 2026-07-03 · Godot 4.7). **Combo chains: 17** (C1–C12 & C27–C28 in §22;
 C24–C26 in §§26–27).
@@ -257,7 +257,7 @@ So you do NOT need to split dependent operations across messages.
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 9+ | discover_tools, extensions.refresh | Extensions present |
 | 25 | [25-undo-redo.md](Sections/25-undo-redo.md) | Undo/Redo Verification | 60 | node.set_property, scene.create_node, node.manage, node.groups, node.call_method | S2 |
-| 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 23+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references | S1, LSP on port 6005 |
+| 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 26+2 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references, lsp_project_diagnostics | S1, LSP on port 6005 |
 | 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 16+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
 | 28 | [28-placeholders-spatial.md](Sections/28-placeholders-spatial.md) | Spatial Map & Placeholder Generators | 22 | scene_spatial_map, texture_generate, sound_generate | S2 |
 

@@ -1,10 +1,10 @@
 # Section 26 — LSP Tools (GDScript Language Intelligence)
 
 **Dependencies:** Section 1 (`res://sv2_validation/` exists)
-**Tools tested:** lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references
+**Tools tested:** lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references, lsp_project_diagnostics
 **Groups to activate:** lsp_code_analysis, lsp_code_navigation
 **Prerequisite:** Godot editor running with plugin enabled, LSP active on port 6005
-**Tests:** 23 + 2 combo chains
+**Tests:** 26 + 2 combo chains
 
 ---
 
@@ -73,7 +73,7 @@ return {"created": true}
 - **Expect:** success. Ensures LSP indexes the new files.
 
 **26-S6.** `discover_tools` — groups=`["lsp_code_analysis", "lsp_code_navigation"]`
-- **Expect:** Both groups activated, 6 LSP tools available.
+- **Expect:** Both groups activated, 7 LSP tools available (`lsp_code_analysis` = 4: diagnostics/symbols/hover/project_diagnostics; `lsp_code_navigation` = 3: completion/definition/references).
 
 ---
 
@@ -90,6 +90,35 @@ return {"created": true}
 
 **26.3** `lsp_diagnostics` — file_path=`res://sv2_validation/sv2_lsp_test.gdshader`
 - **Expect:** success=true, diagnostics `[]` (empty) + a `note` field — the server short-circuits `.gdshader`/`.gdshaderinc` (Godot's LSP analyzes GDScript only, so any shader "diagnostic" would be a bogus GDScript parse). Uniform across 4.2–4.7. SKIP if shader wasn't created in S4.
+
+---
+
+## lsp_project_diagnostics (lsp_code_analysis group)
+
+Whole-project compile scan (server-side LSP fan-out over every project `.gd`). The 4.2+ project-wide compile signal — the "did my change break another script" check. Steered to by `script_write`/`script_check`'s compile-error hint. With `sv2_lsp_valid.gd` + `sv2_lsp_bad.gd` from Setup S1/S2 present.
+
+**26.24** `lsp_project_diagnostics` (defaults) — no params
+- **Expect:** success=true. `sv2_lsp_bad.gd` appears in `files_with_diagnostics` with an entry carrying a 1-based `line` and `severity:"Error"`. The accounting invariant holds: `scanned == clean + files_with_diagnostics.length + timed_out.length + read_failed.length` (read each integer field back over the JSON boundary via `int(...)` — a whole-dict `_eq` would float the counts). `timed_out` omitted or empty on the small dogfood scan.
+
+**26.25** `lsp_project_diagnostics` — include_addons=`true`
+- **Expect:** success=true. `scanned` (int-coerced) ≥ the 26.24 default run — addon `.gd` are now included. On the toolkit-root dogfood this pulls in `addons/godot_mcp_toolkit/**`, so the scan set (and `scanned`) grows substantially; do not assert an exact count, only the `≥` relation.
+
+**26.26** `lsp_project_diagnostics` — `include_warnings` on a warnings-only file
+1. `script_write` — file_path=`res://sv2_validation/sv2_lsp_warn.gd`, content (a lint warning, not a parse error — e.g. an unused variable / shadowed name):
+   ```gdscript
+   extends Node
+
+   func _ready() -> void:
+   	var unused_local := 42
+   ```
+2. `editor_refresh` — file_paths=`["res://sv2_validation/sv2_lsp_warn.gd"]`
+3. `lsp_project_diagnostics` — include_warnings=`false`
+   - **Expect:** success=true; `sv2_lsp_warn.gd` is NOT in `files_with_diagnostics` (warnings suppressed) — it counts toward `clean`.
+4. `lsp_project_diagnostics` — include_warnings=`true`
+   - **Expect:** success=true; `sv2_lsp_warn.gd` now appears in `files_with_diagnostics` with a `severity:"Warning"` entry (warnings surfaced). The 26.24 invariant still holds.
+5. `script_delete` — res://sv2_validation/sv2_lsp_warn.gd
+
+> **WATCH:** the accounting invariant (`scanned == clean + files_with_diagnostics + timed_out + read_failed`) is the load-bearing contract of the fan-out — it must hold on every run regardless of `include_addons`/`include_warnings`. A drift there means a file was scanned but dropped from every bucket (a fan-out accounting bug).
 
 ---
 
@@ -260,6 +289,7 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 - `script_delete` res://sv2_validation/sv2_lsp_minimal.gd
 - `script_delete` res://sv2_validation/sv2_lsp_fresh.gd (if exists)
 - `script_delete` res://sv2_validation/sv2_lsp_fresh2.gd (if exists)
+- `script_delete` res://sv2_validation/sv2_lsp_warn.gd (if exists)
 - `script_delete` res://sv2_validation/sv2_lsp_c24.gd (if exists)
 - `file_delete` res://sv2_validation/sv2_lsp_test.gdshader (if created)
 - `discover_tools` with reset=`["lsp_code_analysis", "lsp_code_navigation"]`

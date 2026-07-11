@@ -161,15 +161,18 @@ static func fail(code: String, message: String, hint: String = "") -> Dictionary
 ## Pass the caller's [code]LogBuffer.uses_logger_api()[/code] as [param can_use_buffer]
 ## ([code]true[/code] on Godot 4.5+): only there is [code]source="buffer"[/code] a real
 ## file-independent fallback, so it is steered to only then; on 4.2–4.4 the buffer tails
-## the same log and would fail identically, so the hint stays retry-only. A read open only
-## fails against an external, read-denying holder (antivirus, file-sync, backup) — never
-## the engine, which holds the log deny-nothing. Returns the string to pass as
-## [method fail]'s [param hint].
+## the same log and would fail identically, so the hint stays stop-game / retry.
+## On Windows the dominant cause is a running game: the editor enables safe-save, so its
+## READ open requests [code]_SH_DENYWR[/code] (deny-write), which the OS refuses while the
+## play process holds the log open for writing — so the file source clears on game exit,
+## while [code]source="buffer"[/code] (4.5+) and the in-game runtime reader are unaffected.
+## With no game running, the rarer cause is an external holder (antivirus, file-sync,
+## backup) briefly locking the file. Unreachable on POSIX (no mandatory share locking).
+## Returns the string to pass as [method fail]'s [param hint].
 static func log_busy_hint(can_use_buffer: bool) -> String:
-	var hint := "log file exists but could not be read — an external process (antivirus, file-sync, or a backup tool) may be holding it open. Retry shortly"
 	if can_use_buffer:
-		return hint + ", or use source=\"buffer\" (in-memory, no file I/O)."
-	return hint + "."
+		return "Use source=\"buffer\" (in-memory, no file I/O — reads even while a game runs). For the file source: on Windows a running game holds the log open, so game_stop then retry; with no game running, a backup/AV/sync tool may briefly hold it — retry shortly."
+	return "On Windows a running game holds the log file open — game_stop then read (source=\"buffer\" tails the same file here, so it won't bypass the lock). With no game running, retry shortly (a backup/AV/sync tool may briefly hold it)."
 
 
 ## Recovery hint for a [code]LOG_UNAVAILABLE[/code] failure — the log file could not be

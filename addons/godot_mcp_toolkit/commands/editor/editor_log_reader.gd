@@ -122,10 +122,12 @@ static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, tex
 		"lines", int(buf_result["total_lines"]), int(buf_result["returned"]), has_more,
 		"", 0, hint, {"next_id": next_id, "source": "buffer"})
 	# On 4.2-4.4, buffer uses file tailing — warn if empty and file logging is off
-	# or the log file couldn't be read (locked by OS on Windows).
+	# or the log file couldn't be read (locked by OS on Windows). Pre-4.5 the console
+	# only captures a running game's output (no editor-side capture), so an empty read
+	# here can mean the output simply isn't reachable — steer to the compile-status tools.
 	if entries.is_empty() and not Modules.LogBuffer.uses_logger_api():
 		if not LogHelpers.is_file_logging_enabled():
-			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work."
+			response["warning"] = "On Godot 4.2-4.4 the log buffer captures output by tailing the log file. Enable debug/file_logging/enable_file_logging in ProjectSettings and restart the editor for output capture to work. Editor-only output isn't captured pre-4.5 without a running game — to check compile status use script_check (one file) or lsp_project_diagnostics (whole project)."
 		elif Modules.LogBuffer._tail_open_failures > 0:
 			response["warning"] = "Log file could not be opened for reading (%d failed attempts) — the OS may be locking it. Use source=\"file\" as a fallback." % Modules.LogBuffer._tail_open_failures
 	# Autoload hint — scan error entries for unresolved identifiers matching autoloads.
@@ -282,12 +284,13 @@ static func _read_console_log(
 	var file_handle := FileAccess.open(chosen_file, FileAccess.READ)
 	if file_handle == null:
 		var open_err := FileAccess.get_open_error()
-		# A reader open failing here means an external, read-denying holder (antivirus
-		# scan, file-sync, a backup tool) — never the engine: the logger holds the log
-		# deny-nothing, so file_exists returns TRUE and our own open normally succeeds on
-		# every version. The directory enumeration above already listed the file, so treat
-		# a present-but-unreadable log as LOG_BUSY; only a genuinely absent file is
-		# LOG_UNAVAILABLE. Unreachable on POSIX (no such share collision).
+		# Present-but-unreadable -> LOG_BUSY; a genuinely absent file -> LOG_UNAVAILABLE.
+		# On Windows this happens while a game runs: the editor enables safe-save
+		# (FileAccess::backup_save), so our READ open requests _SH_DENYWR (deny-write),
+		# which the OS refuses while the play process holds the log open for writing — the
+		# game's own runtime reader (shared) and source=buffer are unaffected, and it clears
+		# when the game exits. Rarer: an external holder (AV/file-sync/backup) with no game
+		# running. POSIX has no mandatory share locking, so this path is unreachable there.
 		if FileAccess.file_exists(chosen_file) or log_files.has(chosen_file.get_file()):
 			return MCPToolkitError.fail("LOG_BUSY",
 				"log file exists but could not be read (%s)" % _godot_error_name(open_err),
