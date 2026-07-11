@@ -1,7 +1,7 @@
 # Sweep Coverage Manifest
 
 **Last updated:** 2026-07-12 (41o-duodecies-ter — screenshot `image_response_mode`/`save_path` disk-mode cases: §07 7.2g/7.2h/7.2i, §20 20.5e/20.5f; `scene.create_node` inline-property drop reporting §02 2.13a)
-**Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
+**Toolkit commit:** T:2e2e6d9
 **Total tools (agent-facing):** 111 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
 **Toolkit surfaces (non-disjoint — do not sum):** 100 editor-registered (incl. the 4 `debug.*`) ·
