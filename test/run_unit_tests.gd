@@ -18,6 +18,7 @@ const SignalResolverTests := preload("res://test/units/signal_resolver_tests.gd"
 const SceneOpsTests := preload("res://test/units/scene_ops_tests.gd")
 const PropertyEditTests := preload("res://test/units/property_edit_tests.gd")
 const PlaytestTests := preload("res://test/units/playtest_tests.gd")
+const PlaytestDiagnosisTests := preload("res://test/units/playtest_diagnosis_tests.gd")
 const NodeManageTests := preload("res://test/units/node_manage_tests.gd")
 const UndoRedoTests := preload("res://test/units/undo_redo_tests.gd")
 const ErrorContractTests := preload("res://test/units/error_contract_tests.gd")
@@ -54,6 +55,7 @@ func _init() -> void:
 	SceneOpsTests.run(testing)
 	PropertyEditTests.run(testing)
 	PlaytestTests.run(testing)
+	PlaytestDiagnosisTests.run(testing)
 	NodeManageTests.run(testing)
 	UndoRedoTests.run(testing)
 	await ErrorContractTests.run(testing)  # M10 holds group 40 (response-validation) await → coroutine

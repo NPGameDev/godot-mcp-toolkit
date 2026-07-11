@@ -51,14 +51,12 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 
 	if runtime_poll:
 		if not EditorInterface.is_playing_scene():
+			# runtime_poll never launches the game (probe-only), so reaching here means
+			# nothing was running to probe. An empty buffer can't prove a compile failure,
+			# so diagnose by captured evidence rather than asserting a cause.
 			var comp := _scan_compilation_errors()
-			if comp["found"]:
-				return MCPToolkitError.fail("COMPILATION_FAILED",
-					"Game failed to start — likely a compilation error. Recent errors:\n" + "\n".join(comp["errors"]))
-			return MCPToolkitError.fail("COMPILATION_FAILED",
-				"Game is not running — it likely failed to compile or crashed on startup. "
-				+ ("No errors captured in log buffer (file-tail mode on Godot 4.2-4.4 may miss errors). " if not Modules.LogBuffer.uses_logger_api() else "No errors in log buffer. ")
-				+ "Call editor_refresh to retrigger compilation errors, then editor_get_console for details.")
+			var diag := _diagnose_startup(comp, false, Modules.VersionUtils.get_engine_version_pair())
+			return MCPToolkitError.fail(diag["code"], diag["message"], diag["hint"])
 	else:
 		if EditorInterface.is_playing_scene():
 			if if_running == "return":
@@ -159,16 +157,15 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 		match runtime_failure:
 			"registry_timeout":
 				if not EditorInterface.is_playing_scene():
+					# The game was playing when the poll began but has stopped — a
+					# ran-then-died soft path, framed as a runtime crash (it began
+					# running, so a compile error is unlikely). runtime_ready:false +
+					# runtime_failure:"registry_timeout" are the honest structured signals.
 					var comp := _scan_compilation_errors()
-					if comp["found"]:
-						response["compilation_failed"] = true
-						response["compilation_errors"] = comp["errors"]
-						response["hint"] = "Game failed to start (compilation error). Errors:\n" + "\n".join(comp["errors"])
-					else:
-						response["compilation_failed"] = true
-						response["hint"] = "Game never started — likely a compilation error. " \
-							+ ("No errors in log buffer (file-tail mode may miss errors). " if not Modules.LogBuffer.uses_logger_api() else "") \
-							+ "Call editor_refresh to retrigger compilation errors, then editor_get_console for details."
+					var diag := _diagnose_startup(comp, true, Modules.VersionUtils.get_engine_version_pair())
+					response["hint"] = diag["hint"]
+					if not (diag["errors"] as Array).is_empty():
+						response["compilation_errors"] = diag["errors"]
 				else:
 					response["hint"] = "Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors."
 			"token_read_failed":
@@ -298,4 +295,71 @@ static func _scan_compilation_errors() -> Dictionary:
 		"found": errors.size() > 0,
 		"errors": errors,
 		"source": "logger" if Modules.LogBuffer.uses_logger_api() else "file_tail",
+	}
+
+
+## Phase-aware diagnosis of why a runtime probe found no live game, given the
+## log-scan result and whether the game was observed running.
+##
+## Pure over its inputs so the whole decision is headless-unit-testable. Takes the
+## [param comp] scan dict from [method _scan_compilation_errors]
+## ([code]{"found", "errors", "source"}[/code]), [param was_running] (true when the
+## game was seen playing this call — the soft "ran-then-died" path, false when
+## nothing was ever confirmed running — the hard "never-started" path), and the
+## running-engine [param version_pair] (e.g. [code]"4.5"[/code]) for the file-tail
+## caveat. Returns [code]{"code", "message", "hint", "errors"}[/code].[br]
+## [br]
+## The framing only claims a compile failure when errors are actually in hand
+## ([code]found[/code]) AND the game never ran: an empty buffer proves nothing about
+## compilation (a cold-start parse error may not have landed, and 4.2–4.4 file-tail
+## mode can miss parse errors entirely), so an empty buffer states the
+## [code]GAME_NOT_RUNNING[/code] fact and offers both hypotheses rather than asserting
+## a cause. A game that ran then stopped is framed as a runtime crash, not a compile
+## error (it began running).
+static func _diagnose_startup(
+	comp: Dictionary, was_running: bool, version_pair: String,
+) -> Dictionary:
+	# comp[...] is Variant at the JSON-shaped scan boundary → coerce, never infer.
+	var found := bool(comp.get("found", false))
+	var errors: Array = comp.get("errors", [])
+	var is_file_tail := str(comp.get("source", "")) == "file_tail"
+	# The file-tail signal is version-gated (4.2–4.4); name the version only there so
+	# the agent knows the empty buffer may be a capture limit, not a clean startup.
+	var file_tail_caveat := (
+		" (Godot %s tails the log file and can miss compile errors.)" % version_pair
+		if is_file_tail else ""
+	)
+
+	if found:
+		var joined := "\n".join(errors)
+		if was_running:
+			return {
+				"code": "GAME_NOT_RUNNING",
+				"message": "Game stopped mid-probe with errors captured — likely a runtime crash:\n" + joined,
+				"hint": "The game began running, so a compile error is unlikely. Check debugger_get_log or editor_get_console for the crash." + file_tail_caveat,
+				"errors": errors,
+			}
+		return {
+			"code": "COMPILATION_FAILED",
+			"message": "Game failed to start — likely a startup or parse error. Recent errors:\n" + joined,
+			"hint": "Fix the errors shown, then call game_start again." + file_tail_caveat,
+			"errors": errors,
+		}
+
+	if was_running:
+		return {
+			"code": "GAME_NOT_RUNNING",
+			"message": "Game started then stopped before the probe completed.",
+			"hint": "Likely a runtime crash or early exit (it began running, so a compile error is unlikely). Check debugger_get_log or editor_get_console." + file_tail_caveat,
+			"errors": errors,
+		}
+	return {
+		"code": "GAME_NOT_RUNNING",
+		"message": "No running game to probe.",
+		"hint": (
+			"Either (a) nothing launched yet / still cold-starting — call game_start (without runtime_poll), "
+			+ "or retry runtime_poll:true shortly; or (b) it failed to compile. To surface a compile error not "
+			+ "in the buffer, editor_refresh then editor_get_console." + file_tail_caveat
+		),
+		"errors": errors,
 	}
