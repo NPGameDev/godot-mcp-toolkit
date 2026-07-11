@@ -2,30 +2,44 @@
 
 **Dependencies:** Section 2 (nodes in Sv2Main.tscn)
 **Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
-**Tests:** 15
+**Tests:** 19
 
-> **Precondition — `editor_screenshot` (7.2 / 7.3) needs a live, rendering editor viewport.**
-> Both tests capture the editor viewport, so the editor window must be **restored
-> (not minimized) and foregrounded on a 2D or 3D main screen** — not the
-> Script / AssetLib / Output screen. A capture that returns `2x2` / ~81 bytes
-> (or, for the node-focused 7.3, a solid-black frame upscaled to the requested
-> size) is a **collapsed viewport** from a minimized / non-compositing window — a
-> run-environment condition, **not** a tool failure and **not headless**: a
-> headless editor returns `HEADLESS_UNSUPPORTED` instead of an image, so any PNG
-> at all rules headless out. The tool now attaches a `warning` field on such
-> captures. Restore + foreground the editor and re-run; do **not** diagnose it as
-> headless or mark 7.2 / 7.3 FAIL on this basis.
+> **Precondition — `editor_screenshot` self-diagnoses a collapsed viewport.**
+> The tool no longer returns a blank `2x2` / ~81-byte PNG for a viewport that
+> cannot composite. A **wrong main screen** (Script / AssetLib / Output active,
+> not minimized) is **auto-healed** — the tool switches to a 2D/3D main screen,
+> re-captures, and discloses via a success-side `remediation:["switched_main_screen"]`
+> field (the switch is one-way; the editor is left on 2D/3D — expected, not a
+> failure). A **minimized** editor cannot composite at all, so it returns the
+> `EDITOR_VIEWPORT_UNAVAILABLE` error (**not** a 2x2 PNG, **not** headless — a
+> headless editor returns `HEADLESS_UNSUPPORTED`, so any PNG rules headless out);
+> pass `force_foreground_editor:true` to have the tool un-minimize + raise the
+> window and capture. For 7.2 (baseline) the editor should already be restored on
+> a 2D/3D screen so no remediation is needed.
 
 ---
 
 **7.1** `editor_save_scene`
 - **Expect:** success
 
-**7.2** `editor_screenshot`
-- **Expect:** Returns inline PNG at real viewport dimensions (hundreds of px, KB-scale bytes). A `2x2` / ~81-byte result is a collapsed viewport (see precondition) — restore/foreground the editor and retry, do not pass it.
+**7.2** `editor_screenshot` — editor restored + foregrounded on the **2D** main screen
+- **Expect:** Returns inline PNG at real viewport dimensions (hundreds of px, KB-scale bytes), and **no** `remediation` field (nothing had to be healed). A `2x2` / ~81-byte result on a genuinely-2D-foregrounded editor is a regression — flag it.
 
-**7.3** Set texture then screenshot node — `node_set_property` Sv2Sprite texture=`{"type":"Resource","path":"res://icon.svg"}`, then `editor_screenshot` node_path=`Sv2Sprite`
-- **Expect:** PNG focused on Sv2Sprite (now has visible texture). A solid-black frame (upscaled from a 2x2 source, flagged by the response `warning`) is a collapsed viewport (see precondition), not a pass.
+**7.2b** Auto-heal (standard path) — switch to the **Script** main-screen tab, then `editor_screenshot`
+- **Expect:** A healed **usable** frame (real dimensions) plus `remediation:["switched_main_screen"]`. The editor is left on the 2D screen afterward (no restore) — expected. A blank/2x2 frame or a missing `remediation` is a FAIL.
+
+**7.2c** Auto-heal (node-focused path) — on the Script tab, `editor_screenshot` node_path=`Sv2Sprite` (a Node2D), then (separately) node_path of any **Node3D** in the scene
+- **Expect:** Each returns a healed usable frame with `remediation` including `switched_main_screen` — the Node3D routes to the 3D viewport, the Node2D to the 2D viewport. First set the sprite texture if needed: `node_set_property` Sv2Sprite texture=`{"type":"Resource","path":"res://icon.svg"}`.
+
+**7.2d** Minimized signal — **minimize** the editor window, then `editor_screenshot`
+- **Expect:** `EDITOR_VIEWPORT_UNAVAILABLE` (**not** a 2x2 PNG, **not** `HEADLESS_UNSUPPORTED`). The `hint` names the minimized cause and points to `force_foreground_editor` / `script_check`.
+> **REGRESSION WATCH (41o-duodecies):** a minimized editor must return `EDITOR_VIEWPORT_UNAVAILABLE`, never a tiny/blank PNG and never `HEADLESS_UNSUPPORTED`. If it returns an image or hangs to a 30 s TIMEOUT, the upfront `window_get_mode` guard regressed.
+
+**7.2e** Foreground lever — while the editor is still minimized, `editor_screenshot` force_foreground_editor=`true`
+- **Expect:** The editor un-minimizes and a **usable** frame returns, with `remediation` including `foregrounded_editor` (and `switched_main_screen` too if it was also on a non-2D/3D screen).
+
+**7.2f** Cause-C freshness — put the editor **unfocused behind the terminal** (visible, not minimized), then `editor_screenshot`
+- **Expect:** A **fresh full-size** frame — not stale, not collapsed. The editor viewport is a SubViewport that renders regardless of OS focus, so an unfocused-but-visible editor is not a failure.
 
 **7.4** `editor_get_console` — (default params)
 - **Expect:** success, returns console output

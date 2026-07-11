@@ -55,6 +55,11 @@ const _AUTH_TIMEOUT_MS := 2000
 const _DEFAULT_LOG_LIMIT := 200
 # execute.code console-echo cap — long snippets are truncated in the game log.
 const _EXECUTE_CODE_LOG_CAP := 256
+# Bound the wait for a fresh frame before falling back to the last-drawn one, in
+# seconds. Non-critical and well under the server's 30 s call timeout — a
+# redraw-on-demand game that is idle (not minimized) simply never fires
+# frame_post_draw, so the wait must lapse rather than hang.
+const _RUNTIME_FRAME_WAIT_SECONDS := 1.0
 
 # Owns the TCP listener + WS peers + auth-handshake framing + the bound port +
 # the session token. The runtime injects only the message router (its command
@@ -232,7 +237,7 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 		"ping":
 			_send_result(peer, id, {"success": true})
 		"runtime.screenshot":
-			_cmd_runtime_screenshot(peer, id)
+			_cmd_runtime_screenshot(peer, id, params)
 		"runtime.get_node_state":
 			_cmd_runtime_get_node_state(peer, id, params)
 		"runtime.set_property":
@@ -271,16 +276,37 @@ func _send_error(peer: WebSocketPeer, id, code: int, message: String) -> void:
 # ---- Runtime command helpers ------------------------------------------------
 
 
-func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
+func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 	var viewport := get_viewport()
 	if viewport == null:
 		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "no viewport available"))
 		return
 
-	# Wait for any queued draw calls to complete. Without this, get_image
-	# can return an uninitialised texture on the first call after game
-	# launch. Pattern matches godot-mcp-pro's frame capture setup.
-	await RenderingServer.frame_post_draw
+	var force_foreground := false
+	if typeof(params) == TYPE_DICTIONARY:
+		force_foreground = bool(params.get("force_foreground_game", false))
+
+	# Minimized suspends rendering, so frame_post_draw never fires. Detect it up
+	# front — before any await — so the handler returns a diagnostic signal
+	# instead of parking until the server's call timeout (which reads as a dead
+	# editor, the exact dead-end this guards against).
+	if _window_is_minimized():
+		if not force_foreground:
+			_send_result(peer, id, MCPToolkitError.fail("RUNTIME_WINDOW_MINIMIZED",
+				"the running game window is minimized, so rendering is suspended",
+				"The running game window is minimized, so rendering is suspended — not a crash or timeout. Retry with force_foreground_game:true to un-minimize and capture, or restore the game window yourself."))
+			return
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED, 0)
+		_ensure_game_focus()
+		# A real composite frame after un-minimizing — the window is rendering
+		# again, so frame_post_draw fires promptly.
+		await RenderingServer.frame_post_draw
+	else:
+		# Not minimized: bound the wait for a fresh frame. A frame arrives on a
+		# continuously-rendering game; the bound lapses on an idle
+		# redraw-on-demand window, where the last-drawn frame IS the current
+		# state — so fall back to it rather than false-signalling minimized.
+		await _await_frame_or_timeout()
 
 	var image := viewport.get_texture().get_image()
 	if image == null:
@@ -299,6 +325,28 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id) -> void:
 		"height": image.get_height(),
 		"bytes": png_bytes.size(),
 	})
+
+
+# True when the game's main window is minimized (render suspended).
+func _window_is_minimized() -> bool:
+	return DisplayServer.window_get_mode(0) == DisplayServer.WINDOW_MODE_MINIMIZED
+
+
+# Await the next frame_post_draw, but give up after _RUNTIME_FRAME_WAIT_SECONDS so
+# an idle redraw-on-demand window (which never fires it) does not hang the
+# handler. Returns as soon as a frame draws, otherwise at the deadline. Polls the
+# frame flag each process frame, which itself ticks even on an idle window, so the
+# deadline is always reachable.
+func _await_frame_or_timeout() -> void:
+	var got_frame := [false]
+	var on_frame := func() -> void:
+		got_frame[0] = true
+	RenderingServer.frame_post_draw.connect(on_frame, CONNECT_ONE_SHOT)
+	var deadline := Time.get_ticks_msec() + int(_RUNTIME_FRAME_WAIT_SECONDS * 1000.0)
+	while not got_frame[0] and Time.get_ticks_msec() < deadline:
+		await get_tree().process_frame
+	if not got_frame[0] and RenderingServer.frame_post_draw.is_connected(on_frame):
+		RenderingServer.frame_post_draw.disconnect(on_frame)
 
 
 func _cmd_runtime_get_node_state(peer: WebSocketPeer, id, params) -> void:
@@ -1020,11 +1068,11 @@ func _parse_mouse_position(event_data: Dictionary) -> Vector2:
 	return Vector2.ZERO
 
 
-## NOTE: Not called automatically — push_input() with correct position +
-## global_position is sufficient for Godot's viewport hit-testing without
-## OS-level focus. Kept available for explicit use if needed.
-## Calling this during parallel multi-instance runs would cause sessions
-## to fight over the OS mouse and window focus.
+## Raise + focus the game's OS window. Only for an explicit opt-in
+## (force_foreground_game): input synthesis does NOT need it — push_input() with
+## correct position + global_position is enough for viewport hit-testing without
+## OS focus. Hazard: during parallel multi-instance runs this makes sessions
+## fight over the OS mouse and window focus, so it must stay opt-in.
 func _ensure_game_focus() -> void:
 	DisplayServer.window_move_to_foreground()
 	var win := get_window()

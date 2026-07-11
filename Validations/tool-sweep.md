@@ -238,7 +238,7 @@ So you do NOT need to split dependent operations across messages.
 | 4 | [04-node-management.md](Sections/04-node-management.md) | Node Management | 18 | node_manage, node_groups | S2 |
 | 5 | [05-signals.md](Sections/05-signals.md) | Signals | 7 | signal_list, signal_manage | S2 |
 | 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 9 | script_read, script_write, script_check, asset_list, asset_get_dependencies | S1 |
-| 7 | [07-editor-console.md](Sections/07-editor-console.md) | Editor Operations & Console | 15 | editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh | S2 |
+| 7 | [07-editor-console.md](Sections/07-editor-console.md) | Editor Operations & Console | 19 | editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh | S2 |
 | 8 | [08-project-settings.md](Sections/08-project-settings.md) | Project Settings & Autoloads | 12 | project_get/set_settings, autoload_manage, layer_names_get/set | S1 |
 | 9 | [09-execute-code.md](Sections/09-execute-code.md) | execute_code & Hints | 8 | execute_code | S2 |
 | 10 | [10-input-map.md](Sections/10-input-map.md) | Input Map | 4 | input_map_action, input_map_event | None |
@@ -251,7 +251,7 @@ So you do NOT need to split dependent operations across messages.
 | 17 | [17-scene-query-inherit.md](Sections/17-scene-query-inherit.md) | Scene Inheritance & Query | 19 | scene_create_inherited, scene_query | S1 |
 | 18 | [18-file-operations.md](Sections/18-file-operations.md) | Phantom Tab Cleanup & File Operations | 16 | scene_close, scene_delete, file_delete, folder_delete, asset_import | S1 |
 | 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_texture | 3 | collision_from_texture | S2 |
-| 20 | [20-runtime.md](Sections/20-runtime.md) | Game Start, Runtime & Debugging | 29 | game_start/stop, runtime_*, debugger_get_log, input_simulate (send_text), execute_code, animation_player_control, signal_emit | S2 |
+| 20 | [20-runtime.md](Sections/20-runtime.md) | Game Start, Runtime & Debugging | 32 | game_start/stop, runtime_*, debugger_get_log, input_simulate (send_text), execute_code, animation_player_control, signal_emit | S2 |
 | 21 | [21-game-guards.md](Sections/21-game-guards.md) | game_start Guards & Crash Recovery | 13 | game_start, debugger_get_log (debug_state, error_buffer, log_scan) | S1 |
 | 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 14 chains (+3 in §§26–27 = 17 total) | Multi-tool workflows | S1 |
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |

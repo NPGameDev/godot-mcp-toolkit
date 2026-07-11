@@ -1,6 +1,6 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-07-05 (41n-undecies-bis-bis — version-gated LOG_BUSY/LOG_UNAVAILABLE hint SSOT; §07 REGRESSION WATCH note)
+**Last updated:** 2026-07-11 (41o-duodecies — editor/runtime screenshot collapsed-viewport remediation: `editor.screenshot` §07 auto-heal + minimized signal + foreground lever; `runtime.screenshot` §20 minimized signal + foreground lever)
 **Toolkit commit:** T:ffe7a13 + 41m-quinquies + 41n-034-D (final SHA recorded at bookkeeping)
 **Total tools (agent-facing):** 110 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
@@ -72,7 +72,7 @@ C24–C26 in §§26–27).
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | editor.save_scene | 55, 64 | — | C3, C5, C7, C8, C9 | — | — | |
-| editor.screenshot | 56, 57 | — | — | — | — | |
+| editor.screenshot | 7.2, 7.2b, 7.2c, 7.2d, 7.2e, 7.2f | ✓ (7.2d: EDITOR_VIEWPORT_UNAVAILABLE minimized) | — | ✓ (7.2d minimized hint; 7.2e foregrounded_editor) | — | 7.2b: wrong-screen auto-heal → `remediation:["switched_main_screen"]`; 7.2c: node-focused heal (Node2D→2D, Node3D→3D); 7.2e: `force_foreground_editor:true` un-minimizes + `remediation` foregrounded_editor; 7.2f: unfocused-but-visible → fresh frame (cause-C regression) |
 | editor.refresh | 61 | — | — | — | 5f96b62 | Renamed from reload_scripts |
 | editor.get_console | 58, 58a–58h, 7.6–7.8, 7.10, 7.12 | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #20 (supersedes #9): total_lines/next_id/has_more (was truncated) + returned (was count) — §07 7.6–7.12 assert `returned` as the matching-line count. LOG_BUSY/LOG_UNAVAILABLE hints version-gated (4.5+ buffer-steer only) — §07 REGRESSION WATCH note + server smoke §14 own the truth-table (41n-undecies-bis-bis) |
 | editor.wait_for_idle | 60 | — | — | — | — | |
@@ -311,7 +311,7 @@ C24–C26 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| runtime.screenshot | 72 | — | — | — | — | |
+| runtime.screenshot | 20.5, 20.5b, 20.5c, 20.5d | ✓ (20.5c: RUNTIME_WINDOW_MINIMIZED) | — | ✓ (20.5c minimized hint) | — | 20.5b: unfocused-but-visible → fresh frame; 20.5c: minimized → RUNTIME_WINDOW_MINIMIZED (not TIMEOUT/stale); 20.5d: `force_foreground_game:true` un-minimizes + fresh frame |
 | runtime.get_node_state | 73 | — | C8 | — | — | |
 | runtime.get_script_vars | 74 | — | — | — | — | |
 | runtime.set_property | 20.8, 20.8b, 20.8c, 20.10 | ✓ (20.8b: cross-family wrong-type → SET_FAILED; 20.8c: convertible → ADJUSTED success+warning, 41o C1/D1) | — | ✓ (20.8c: adjusted `warning`) | c6d5f40, 41o C1/D1 | 20.8: happy (speed); 20.10: autoload-persistence warning; 20.8b/20.8c: tri-state via the shared `contract/property_set_check.gd` detector (runtime twins of editor 3.2b/3.2c). Headless unit `runtime.set_property tri-state pipeline` pins the coerce→set→describe_set_drop pipeline (dropped/ok/adjusted) |

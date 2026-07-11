@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (Sv2Main.tscn with nodes, script attached to Sv2Player)
 **Tools tested:** game_start, game_stop, runtime_screenshot, runtime_get_node_state, runtime_get_script_vars, runtime_set_property, debugger_get_log, input_simulate, execute_code (runtime), animation_player_control, signal_emit, autoload_manage (20.10 setup)
-**Tests:** 32
+**Tests:** 35
 
 ---
 
@@ -59,8 +59,18 @@
 > not a drift**; do not flag it. (Some older docs cite a stale, lower range;
 > `6570–6585` is authoritative and code-confirmed.)
 
-**20.5** Wait 2-3 seconds for runtime, then: `runtime_screenshot`
-- **Expect:** PNG of running game
+**20.5** Wait 2-3 seconds for runtime, then: `runtime_screenshot` — game window **visible + focused**
+- **Expect:** Fresh PNG of the running game at real dimensions.
+
+**20.5b** Unfocused-but-visible — click the terminal/editor so the game window loses focus (still visible), then `runtime_screenshot`
+- **Expect:** A **fresh** PNG (not stale) — the game window is a real OS window that keeps compositing while unfocused, so only the ADR-0007 throttle applies. Not a failure.
+
+**20.5c** Minimized signal — **minimize** the running game window, then `runtime_screenshot`
+- **Expect:** `RUNTIME_WINDOW_MINIMIZED` (**not** a 30 s `TIMEOUT`, **not** a stale PNG). The `hint` names the minimized cause and points to `force_foreground_game`.
+> **REGRESSION WATCH (41o-duodecies):** a minimized game window suspends rendering, so `frame_post_draw` never fires. The tool must detect minimized upfront (`window_get_mode`) and return `RUNTIME_WINDOW_MINIMIZED` immediately. If it instead hangs to a 30 s server `TIMEOUT`, the upfront guard regressed (the exact non-diagnostic dead-end this fix removed).
+
+**20.5d** Foreground lever — while the game is still minimized, `runtime_screenshot` force_foreground_game=`true`
+- **Expect:** The game window un-minimizes and a **fresh** PNG returns. (Default-off is mandatory — `_ensure_game_focus` fights for OS focus across parallel game instances; only opt in when driving a single game.)
 
 **20.6** `runtime_get_node_state` — node_path=`/root/Sv2Main/Sv2Player`
 - **Expect:** class, path, properties including position

@@ -32,6 +32,7 @@ const CODES: Array[String] = [
 	"DIR_NOT_EMPTY",
 	"DISCONNECTED",  # Reserved — transport/peer drop; not currently emitted.
 	"EDITED_SCENE",
+	"EDITOR_VIEWPORT_UNAVAILABLE",
 	"EMPTY_CONTENT",
 	"EXECUTE_FAILED",
 	"FAILED",
@@ -64,6 +65,7 @@ const CODES: Array[String] = [
 	"PROPERTY_NOT_FOUND",
 	"READ_FAILED",
 	"RESPONSE_TOO_LARGE",
+	"RUNTIME_WINDOW_MINIMIZED",
 	"SAVE_DELETE_FAILED",
 	"SAVE_FAILED",
 	"SAVE_READ_FAILED",
