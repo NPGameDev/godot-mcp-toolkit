@@ -9,6 +9,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
 const Helpers = Modules.CommandHelpers
+const Untrusted = Modules.Untrusted
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -216,7 +217,10 @@ static func _action_list() -> Dictionary:
 			"mute": AudioServer.is_bus_mute(i),
 			"effects": effects,
 		})
-	return MCPToolkitSuccess.ok({"bus_count": AudioServer.bus_count, "buses": buses})
+	return MCPToolkitSuccess.ok({
+		"bus_count": AudioServer.bus_count,
+		"buses": Untrusted.wrap("audiobus", "project-audio", JSON.stringify(buses)),
+	})
 
 
 # -- Helpers ------------------------------------------------------------------

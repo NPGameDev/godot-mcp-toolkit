@@ -25,7 +25,11 @@
 - **Expect:** success
 
 **15.7** `audiobus_list` — (no params)
-- **Expect:** buses include Master + Sv2Music with Reverb effect
+- **Expect:** `buses` is an untrusted-envelope string (`<untrusted-{8hex} kind="audiobus" source="project-audio">…`), not a raw array — parity with `resource_load`/`save_read`. Parse the wrapper; the decoded JSON includes Master + Sv2Music with the Reverb effect. `bus_count` stays an unwrapped scalar top-level key.
+
+> **REGRESSION WATCH (audiobus envelope):** `buses` must be enveloped. A raw
+> (unwrapped) array is a regression — project-authored bus content must carry the
+> untrusted envelope like every other structured read.
 
 **15.8** `audiobus_edit` guard — action=`remove_bus`, bus_name=`"Master"`
 - **Expect:** INVALID_PARAMS — cannot remove Master bus

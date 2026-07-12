@@ -49,8 +49,18 @@
 
 ## C9. Batch instantiate with transforms
 
-`scene_instantiate` batch — scene_path=res://sv2_validation/sub.tscn, instances=[{name:"C9A",position:{x:0,y:0}},{name:"C9B",position:{x:100,y:0},rotation:1.57},{name:"C9C",position:{x:200,y:0},scale:{x:0.5,y:0.5}}] → `scene_get_tree` (verify all 3) → `node_get_property` C9B rotation (verify ≈1.57) → cleanup (`scene_delete_node` C9A, C9B, C9C)
-- **Expect:** batch with distinct transforms applied correctly
+`scene_instantiate` batch — scene_path=res://sv2_validation/sub.tscn, instances=[{name:"C9A",position:{type:"Vector2",x:0,y:0}},{name:"C9B",position:{type:"Vector2",x:100,y:0},rotation:1.57},{name:"C9C",position:{type:"Vector2",x:200,y:0},scale:{type:"Vector2",x:0.5,y:0.5}}] → `scene_get_tree` (verify all 3) → `node_get_property` C9B position (verify 100,0) → `node_get_property` C9B rotation (verify ≈1.57) → `node_get_property` C9C scale (verify ≈0.5,0.5) → cleanup (`scene_delete_node` C9A, C9B, C9C)
+- **Expect:** batch with distinct **tagged-Vector2** transforms applied correctly — position and scale actually read back (a bare `{x,y}` would not; see C9b).
+
+## C9b. Batch instantiate rejects a bare (untagged) transform dict
+
+`scene_instantiate` batch — scene_path=res://sv2_validation/sub.tscn, instances=[{name:"C9D",position:{x:100,y:80}}] → `scene_get_tree` (confirm C9D exists) → cleanup (`scene_delete_node` C9D)
+- **Expect:** the entry still succeeds (node C9D is created) but carries a `property_errors` array naming `position` with a hint to tag it (`{type:'Vector2', x, y}`) — the bare `{x,y}` is no longer silently dropped. Top-level `failed` does **not** increment (per-key coerce errors attach to a succeeding entry).
+
+> **REGRESSION WATCH (bare-dict transform rejection):** A bare untagged
+> `{x,y}`/`{x,y,z}` `position`/`scale` must surface in `property_errors` with the
+> tag-it hint — never a silent no-op reporting plain `success`. Single-mode
+> `scene_instantiate` rejects the same shape with `INVALID_PARAMS` + the same hint.
 
 ## C10. discover_tools & keyword search (standard mode)
 

@@ -63,8 +63,15 @@ static func _apply_resource_properties(
 			resource.set(key_string, coerced)
 			var after = resource.get(key_string)
 			if typeof(after) == typeof(before) and after == before:
-				warnings.append(
-					"property '%s' on %s: set() had no effect (may need a different API)" % [key_string, resource_class])
+				if resource_class == "ShaderMaterial" and key_string.begins_with("shader_parameter/"):
+					# shader_parameter/<name> is an inspector-only projection; Object.set()
+					# on it does not reliably route to set_shader_parameter, and no-ops when
+					# the uniform isn't declared or no shader is assigned.
+					warnings.append(
+						"property '%s' on ShaderMaterial: set() had no effect. Set shader uniforms via set_shader_parameter(name, value); ensure the ShaderMaterial has a shader assigned and the uniform is declared. The shader_parameter/<name> path is inspector-only." % key_string)
+				else:
+					warnings.append(
+						"property '%s' on %s: set() had no effect (may need a different API)" % [key_string, resource_class])
 		elif not valid.has(key_string):
 			warnings.append(
 				"property '%s' unknown on %s; value ignored" % [key_string, resource_class])

@@ -67,6 +67,12 @@
 
 > **REGRESSION WATCH (462506b):** If `transform` param is rejected or position
 > is not applied, scene_instantiate's single-mode transform-override support has regressed. Flag as **Major**.
+>
+> **Bare-dict transforms are rejected, not dropped.** A single-mode `transform`
+> with a bare untagged `{"x":.,"y":.}` `position`/`scale` (no `type` tag) is
+> rejected `INVALID_PARAMS` with a hint to tag it as `{type:'Vector2', x, y}` — it
+> no longer silently no-ops to (0,0). The batch analogue surfaces the same in
+> `property_errors` (see C9b). Always tag transform vectors.
 
 **2.15a** `scene_instantiate` (batch all-success — rollup keys ABSENT) — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`, instances=`[{"name":"Sv2SubBatchA"},{"name":"Sv2SubBatchB"}]`
 - **Expect:** success, `instances` array with 2 created nodes (Sv2SubBatchA, Sv2SubBatchB), `count`=2, and **NO** top-level `failed` key and **NO** top-level `hint` key (the batch-rollup is purely additive — an all-success batch keeps its prior `{status, count, instances, results}` shape). The per-entry `results` rows are all success=true.
@@ -76,13 +82,15 @@
 > batch is wired to `Helpers.summarize_batch` over its `results[]`. On all-success,
 > `failed`/`hint` must be ABSENT. If either key appears here, the `failed > 0` gate
 > regressed. Flag as **Major**.
-> **Partial-failure note:** the failing-entry path (a per-entry `{index, success:false,
-> error}` row) only fires when `PackedScene.instantiate()` returns null for an entry,
-> which cannot be selectively triggered from a valid `.tscn` via the MCP surface (a
-> corrupt/missing scene fails the whole call at `LOAD_FAILED`/`NOT_FOUND` before the
-> batch loop). That partial-failure rollup is therefore pinned by the headless unit
-> `_test_summarize_batch` (site-3 `{success:false}` shape) rather than this sweep —
-> see `test/run_unit_tests.gd`.
+> **Partial-failure note:** the whole-entry failing path (a per-entry `{index,
+> success:false, error}` row) only fires when `PackedScene.instantiate()` returns null
+> for an entry, which cannot be selectively triggered from a valid `.tscn` via the MCP
+> surface (a corrupt/missing scene fails the whole call at `LOAD_FAILED`/`NOT_FOUND`
+> before the batch loop). That whole-entry rollup is therefore pinned by the headless
+> unit `_test_summarize_batch` (site-3 `{success:false}` shape) rather than this sweep —
+> see `test/run_unit_tests.gd`. A **per-key** transform error (bare-dict `position`/
+> `scale`) IS reachable and attaches to a *succeeding* entry as `property_errors`
+> without bumping top-level `failed` — covered by C9b.
 
 **2.16** `scene_get_tree` — max_depth=2
 - **Expect:** Tree shows all created nodes: Sv2Sprite, Sv2Label, Sv2AnimPlayer, Sv2AnimTree, Sv2TileLayer, Sv2Player/Sv2Collider, Sv2Path, Sv2NavRegion, Sv2Unique, Sv2Sub, Sv2SubProps

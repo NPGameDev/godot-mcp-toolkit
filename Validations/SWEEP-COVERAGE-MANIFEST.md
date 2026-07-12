@@ -38,7 +38,7 @@ C24–C26 & C29 in §§26–27).
 | scene.delete | 18.4, 18.6, 64c, 64e | ✓ (active tab, non-active tab) | C3 | ✓ (tab_closed, phantom warning) | — | |
 | scene.create_node | 20–26, 2.13a, 64h | ✓ (2.12: CLASS_MISMATCH; 2.13a: bad-form inline props → `properties_set:0` + `properties_failed` names texture+scale) | C5, C8, C10 | ✓ (preload, unique_name; 2.13a: drop `error` mirrors node.set_property incl. bare-res:// steer) | FIX-G (P6), cb4e162, 41o-duodecies-ter F2 | 2.13a: inline `properties` are readback-verified per key — a silently-dropped `Object.set()` write (bare-string texture, bare-array scale) is reported in `properties_failed` and excluded from `properties_set` (parity with node.set_property; adjusted writes surface in `warnings[]`). Headless unit `scene.create_node inline-property drop` pins the same classifier. **GAP:** unique_name param untested |
 | scene.delete_node | 43j, 43s, 64i | — | — | — | — | |
-| scene.instantiate | 41, 43q–43s, 2.15a | — | — | — | FIX-B, FIX-9, FIX-K, concern 034 | 2.15a: all-success batch → `failed`/`hint` ABSENT (additive rollup, summarize_batch). Partial-failure path (`instantiate()==null`) is unit-pinned (`_test_summarize_batch`) — not selectively triggerable from a valid .tscn. **GAP:** properties param, auto-rename |
+| scene.instantiate | 41, 43q–43s, 2.15, 2.15a | — | C9, C9b | — | FIX-B, FIX-9, FIX-K, concern 034 | 2.15a: all-success batch → `failed`/`hint` ABSENT (additive rollup, summarize_batch). Whole-entry failure (`instantiate()==null`) is unit-pinned (`_test_summarize_batch`) — not selectively triggerable from a valid .tscn. C9: tagged-Vector2 batch transforms apply. C9b: bare untagged `{x,y}` transform → `property_errors` (not a silent drop); single-mode rejects the same with `INVALID_PARAMS` (2.15 note). **GAP:** properties param, auto-rename |
 | scene.diff | 63 | — | — | — | — | |
 | scene.create_inherited | 80a–80d | ✓ (NOT_FOUND) | — | — | — | |
 | scene.query | 17.5–17.8, 17.11–17.18 | ✓ (17.9 no filters, 17.10 NOT_FOUND) | — | ✓ (17.11 paging hint, 17.17 clamp hint) | — | 17.11–17.18: self-describing pagination envelope — `returned` (was `count`), `has_more` (was `truncated`), always-present `total_matches`, `next_offset`+`hint` only while `has_more`. Invariants: `total_matches` constant across pages · Σ`returned` == `total_matches` · pages disjoint · union == full match set · determinism (two identical calls → byte-identical page). Plus past-end (17.15 empty/`has_more:false`), offset floor (17.16 `maxi(0,·)`), `MAX_LIMIT=200` clamp+disclose (17.17 `limit_clamped`), no-match (17.18 `total_matches:0`) | |
@@ -130,7 +130,7 @@ C24–C26 & C29 in §§26–27).
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | signal.list | 44, 46, 48 | — | C7 | — | — | |
-| signal.manage | 45, 47 | — | C7 | ✓ (method hint) | FIX-G, 5f96b62 | **GAP:** 3-case method hint validation |
+| signal.manage | 45, 47, 5.2, 5.5 | — | C7 | ✓ (method hint) | FIX-G, 5f96b62 | Success payload key `source_path`→`node_path` (connect + disconnect), aligning output with the FIX-G input rename — asserted at 5.2/5.5. **GAP:** 3-case method hint validation |
 | signal.emit | 79 | — | — | — | — | Runtime only |
 
 ### Input Map (2 tools)
@@ -214,7 +214,7 @@ C24–C26 & C29 in §§26–27).
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | audiobus.edit | 15.4–15.6, 15.8 | ✓ (15.8: Master removal) | — | — | — | Mutating sub-ops; `list` extracted to `audiobus.list` (ledger #3 CQS split). _Test IDs reconciled to current `Sections/15` scheme (were stale `81a–81g`)._ |
-| audiobus.list | 15.7 | — | — | — | — | Read-only bus-layout snapshot (extracted from `audiobus.edit`, ledger #3) |
+| audiobus.list | 15.7 | — | — | ✓ (envelope) | — | Read-only bus-layout snapshot (extracted from `audiobus.edit`, ledger #3). `buses` wrapped in the untrusted envelope (`kind="audiobus"`), parity with `resource.load`/`save.read`; `bus_count` stays an unwrapped scalar |
 
 ### Navigation (1 tool)
 

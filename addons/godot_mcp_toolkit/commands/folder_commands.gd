@@ -87,8 +87,11 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	var stale_tabs: Array[String] = []
 	var warnings: Array[String] = []
 	var single_closed := false
+	# close_scene is 4.5+; on 4.2–4.4 there is no API to close scene tabs, so the
+	# stale-tab follow-up hint must not steer to the (absent) scene_close tool.
+	var can_close := EditorInterface.has_method("close_scene")
 
-	if inside_scenes.size() == 1 and EditorInterface.has_method("close_scene"):
+	if inside_scenes.size() == 1 and can_close:
 		# Single scene — safe to close via helper (handles active or not).
 		var tab_result := await Helpers.close_scene_tab_safe(inside_scenes[0])
 		single_closed = tab_result.get("closed", false)
@@ -105,7 +108,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 				return MCPToolkitError.fail("TIMEOUT",
 					"could not switch active scene away from %s — filesystem scanning; retry shortly" % folder_path)
 		stale_tabs = inside_scenes
-		if not EditorInterface.has_method("close_scene"):
+		if not can_close:
 			warnings.append(
 				"phantom tabs: Godot 4.2-4.4 has no API to close scene tabs — %d tab(s) inside %s will remain as phantoms until editor restart" % [inside_scenes.size(), folder_path])
 
@@ -173,7 +176,10 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		result["tab_closed"] = inside_scenes[0]
 	if not stale_tabs.is_empty():
 		result["stale_tabs"] = stale_tabs
-		result["hint"] = "Phantom scene tabs remain for %d file(s) inside the deleted folder. Close them one at a time via scene_close. Note: each scene_close may produce a _set_main_scene_state error in the editor console — this is benign Godot engine noise, safe to ignore." % stale_tabs.size()
+		if can_close:
+			result["hint"] = "Phantom scene tabs remain for %d file(s) inside the deleted folder. Close them one at a time via scene_close. Note: each scene_close may produce a _set_main_scene_state error in the editor console — this is benign Godot engine noise, safe to ignore." % stale_tabs.size()
+		else:
+			result["hint"] = "Phantom scene tabs remain for %d file(s) inside the deleted folder. Godot 4.2–4.4 has no API to close scene tabs — restart the editor to clear them." % stale_tabs.size()
 	if active_inside and not single_closed:
 		result["switched_to"] = outside_scenes[0]
 	if not warnings.is_empty():

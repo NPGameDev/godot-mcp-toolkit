@@ -213,7 +213,7 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 		if source.is_connected(signal_name, callable):
 			return MCPToolkitSuccess.ok({
 				"status": "returned",
-				"source_path": source_path,
+				"node_path": source_path,
 				"signal": signal_name,
 				"target_path": target_path,
 				"method": method_name,
@@ -226,7 +226,7 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 			.commit_recorded()
 		var response := MCPToolkitSuccess.ok({
 			"status": "created",
-			"source_path": source_path,
+			"node_path": source_path,
 			"signal": signal_name,
 			"target_path": target_path,
 			"method": method_name,
@@ -249,7 +249,7 @@ static func _cmd_signal_manage(parameters: Dictionary) -> Dictionary:
 			.undo_method(source.connect.bind(signal_name, callable, Object.CONNECT_PERSIST)) \
 			.commit_recorded()
 		return MCPToolkitSuccess.ok({
-			"source_path": source_path,
+			"node_path": source_path,
 			"signal": signal_name,
 			"target_path": target_path,
 			"method": method_name,

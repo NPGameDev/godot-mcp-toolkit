@@ -643,13 +643,13 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 
 	if not transform.is_empty():
 		for key in transform.keys():
-			var coerced = Coerce.coerce_value(transform[key])
-			if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
+			var outcome := _coerce_transform_value(transform[key])
+			if not outcome["ok"]:
 				# instance is instantiated but not yet in the tree — free the
 				# orphan before bailing so a malformed transform can't leak a node.
 				instance.queue_free()
-				return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
-			instance.set(str(key), coerced)
+				return MCPToolkitError.fail("INVALID_PARAMS", str(outcome["error"]))
+			instance.set(str(key), outcome["value"])
 
 	# Only set owner on instance root — child nodes keep their internal
 	# ownership from PackedScene. _set_owner_recursive caused full property
@@ -668,6 +668,24 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		"path": _path_in_scene(root, instance),
 		"class_name": instance.get_class(),
 	})
+
+
+## Coerce one transform value (position/rotation/scale) for an instantiate call.
+## Returns {"ok": true, "value": <coerced>} on success, else
+## {"ok": false, "error": <message>}.
+##
+## A bare {x, y} / {x, y, z} dict carries no "type" tag, so [method Coerce.coerce_value]
+## returns it as a plain dict (not a typed Vector). set()-ing that dict onto a Vector
+## property is a silent no-op, so it is rejected here with a hint to tag it — an honest
+## failure in place of a dropped transform.
+static func _coerce_transform_value(raw: Variant) -> Dictionary:
+	var coerced = Coerce.coerce_value(raw)
+	if typeof(coerced) == TYPE_DICTIONARY:
+		if (coerced as Dictionary).has("_coerce_error"):
+			return {"ok": false, "error": str(coerced["_coerce_error"])}
+		return {"ok": false, "error":
+			"position/scale expect a tagged Vector2 {type:'Vector2', x, y} (or Vector3 {type:'Vector3', x, y, z} for 3D) — a bare {x, y} is not coerced"}
+	return {"ok": true, "value": coerced}
 
 
 static func _batch_instantiate(
@@ -711,11 +729,11 @@ static func _batch_instantiate(
 		# Apply transform properties (position, rotation, scale).
 		for key in ["position", "rotation", "scale"]:
 			if inst_dict.has(key):
-				var coerced = Coerce.coerce_value(inst_dict[key])
-				if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
-					property_errors.append({"property": key, "error": str(coerced["_coerce_error"])})
+				var outcome := _coerce_transform_value(inst_dict[key])
+				if not outcome["ok"]:
+					property_errors.append({"property": key, "error": str(outcome["error"])})
 					continue
-				instance.set(key, coerced)
+				instance.set(key, outcome["value"])
 
 		# Apply arbitrary property overrides (e.g. exports like key_type).
 		# Compound paths (: or /) use the centralized handler.

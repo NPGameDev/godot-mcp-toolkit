@@ -70,6 +70,14 @@
 - Call `scene_close` on each stale tab path
 - **Expect:** both close successfully
 
+> **4.2–4.4 hint variant (version-aware).** The stale-tabs `hint` is keyed on
+> `EditorInterface.has_method("close_scene")` (4.5+). On **4.2–4.4** (no close API)
+> the hint does NOT name `scene_close` (that tool is 4.5+-only) — it instead says
+> Godot 4.2–4.4 has no API to close scene tabs and to restart the editor to clear
+> them. A 4.2 run of this flow should see that variant, not the `_set_main_scene_state`
+> wording. (This whole case is `[4.5+]` because the `scene_close` follow-up is 4.5+;
+> the hint-variant note documents the 4.2–4.4 behavior for the routine 4.2 sweep.)
+
 **18.14** **[4.5+]** `scene_close` on last tab:
 - Close all tabs except one: close Sv2Main.tscn if other tabs exist
 - Close the final remaining tab
