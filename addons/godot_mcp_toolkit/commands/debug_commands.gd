@@ -110,6 +110,21 @@ static func _cmd_debug_set_breakpoint(params: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("LOAD_FAILED",
 			"could not load %s as Script" % file_path)
 
+	# A breakpoint lives on the built-in script editor's CodeEdit. With an external
+	# editor active, edit_script opens the file in that editor instead, the built-in
+	# tab never becomes current, and the identity-bind below would fail with an opaque
+	# INTERNAL. Detect the setting up front and return a distinct, steering error so
+	# the caller can ask the user to switch back to Godot's built-in editor.
+	var editor_settings := EditorInterface.get_editor_settings()
+	if editor_settings.has_setting("text_editor/external/use_external_editor") \
+			and bool(editor_settings.get_setting("text_editor/external/use_external_editor")):
+		return MCPToolkitError.fail("EXTERNAL_EDITOR_ACTIVE",
+			"breakpoints require Godot's built-in script editor, but this project is set to "
+			+ "an external editor",
+			"Ask the user to disable Editor Settings → Text Editor → External → 'Use External "
+			+ "Editor', then retry. Breakpoints are set on the built-in CodeEdit, which an "
+			+ "external editor bypasses.")
+
 	EditorInterface.edit_script(script, line)
 
 	var script_editor := EditorInterface.get_script_editor()

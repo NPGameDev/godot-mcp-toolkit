@@ -36,7 +36,26 @@ All 55+ MCP tools work on Godot 4.2+ unless noted below.
 | `animationtree_edit` | 4.2 | All ops work on 4.2+ (set_root, add/remove_node, add/remove_transition, set_property; transitions enumerate on all versions) |
 | `animationtree_list` | 4.2 | Listing works on 4.2+, but **node enumeration is 4.5+:** `AnimationNodeStateMachine.get_node_list()` is a 4.5 script API (absent 4.2-4.4), so on 4.2-4.4 `animationtree_list` returns `nodes: []` and `nodes_count` reads 0 (node *operations* via `animationtree_edit` add/remove/has still work; only listing existing nodes is unavailable). 4.5+ enumerates nodes fully |
 | `input_simulate` (`send_text` event) | 4.2 | `send_text` synthesizes one `InputEventKey.unicode` per codepoint and delivers it via `Viewport.push_input` (engine-level APIs, all ≥4.0) — identical on every supported version, ungated. Non-ASCII via `String.unicode_at`; a `secret` `LineEdit`'s `text_after` is redacted |
+| `debug_set_breakpoint` | 4.2 | Works on all versions **only with Godot's built-in script editor**. If the editor is configured for an **external editor** (Editor Settings → Text Editor → External, e.g. VS Code), returns `EXTERNAL_EDITOR_ACTIVE` with a steering hint — a **100% engine limitation**, not version-specific (see [External script editor](#external-script-editor-engine-limitation)) |
 | All other tools | 4.2 | Fully functional. Mutating ops register UndoRedo history (undo via Edit > Undo) on all supported versions — the toolkit reaches `EditorUndoRedoManager` through `EditorPlugin.get_undo_redo()`, which is 4.0+ stable |
+
+### External script editor (engine limitation)
+
+**Breakpoint tools require Godot's built-in script editor — on every supported version.** Godot sets
+and stores editor breakpoints on the built-in `CodeEdit` (the script editor's code widget). When the
+editor is configured to use an **external editor** (Editor Settings → *Text Editor* → *External* →
+"Use External Editor" enabled, pointing at e.g. VS Code), `EditorInterface.edit_script()` opens the
+file in that external editor and the built-in script editor is bypassed — so there is **no `CodeEdit`
+to set a breakpoint on**. `debug_set_breakpoint` detects this and returns `EXTERNAL_EDITOR_ACTIVE` with
+a hint to disable the external-editor setting and retry.
+
+**This is 100% an engine limitation, not a toolkit one** — the engine exposes no API to place a
+built-in-editor breakpoint on a script it is not displaying in the built-in editor. It is **not
+version-specific**: it behaves identically on Godot 4.2 through 4.7+. The remedy is to use Godot's
+built-in script editor for breakpoint workflows (external editors provide their own, separate
+breakpoint mechanism). Verified empirically on 4.2: with the built-in editor the breakpoint binds by
+script identity (even across stale/phantom tabs); with an external editor the tool returns the clear
+`EXTERNAL_EDITOR_ACTIVE` signal.
 
 ### Degraded behavior by version
 

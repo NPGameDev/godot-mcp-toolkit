@@ -35,6 +35,7 @@ const CODES: Array[String] = [
 	"EDITOR_VIEWPORT_UNAVAILABLE",
 	"EMPTY_CONTENT",
 	"EXECUTE_FAILED",
+	"EXTERNAL_EDITOR_ACTIVE",
 	"FAILED",
 	"FEATURE_DISABLED",  # Reserved — read-only/profile gating; not currently emitted.
 	"FILE_TOO_LARGE",
