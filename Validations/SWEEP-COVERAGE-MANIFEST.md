@@ -1,6 +1,6 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-07-12 (41o-duodecies-ter — screenshot `image_response_mode`/`save_path` disk-mode cases: §07 7.2g/7.2h/7.2i, §20 20.5e/20.5f; `scene.create_node` inline-property drop reporting §02 2.13a)
+**Last updated:** 2026-07-12 (41o-terdecies close-out — animationtree_edit add_node `nodes_count` version-gated omission + `note` on 4.2-4.4 (§13 13.6/13.7); debug_set_breakpoint identity-bind + verified-path echo (§27 27.2); execute_code load()-hint both-remedies + parse-error framing (§09 9.4/9.7); scene_instantiate bare-untagged transform wording position/rotation/scale)
 **Toolkit commit:** T:2e2e6d9
 **Total tools (agent-facing):** 111 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
@@ -76,7 +76,7 @@ C24–C26 & C29 in §§26–27).
 | editor.refresh | 61 | — | — | — | 5f96b62 | Renamed from reload_scripts |
 | editor.get_console | 58, 58a–58h, 7.6–7.8, 7.10, 7.12 | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #20 (supersedes #9): total_lines/next_id/has_more (was truncated) + returned (was count) — §07 7.6–7.12 assert `returned` as the matching-line count. LOG_BUSY/LOG_UNAVAILABLE hints version-gated (4.5+ buffer-steer only) — §07 REGRESSION WATCH note + server smoke §14 own the truth-table (41n-undecies-bis-bis) |
 | editor.wait_for_idle | 60 | — | — | — | — | |
-| execute.code | 58a_seed, 77 | — | — | — | FIX-4, FIX-H, 279efed | **GAP:** load() hint, singleton hint |
+| execute.code | 58a_seed, 77, 9.4, 9.7 | — | — | ✓ (9.4 load() hint; 9.7 parse framing) | FIX-4, FIX-H, 279efed | 9.4: load()-failure hint now offers BOTH remedies (node_set_property for resource assignment AND the @tool-script workflow) regardless of target type; the `.gd` suffix only orders which leads. 9.7: PARSE_ERROR reframed to carry the raw parser text + the expression-only constraint + a steer. **GAP:** singleton hint |
 | editor.set_lsp_status | — | — | — | — | — | Internal (MCP server → plugin LSP-status push; dock-only publisher); not agent-facing — 7th registration in `commands/editor/editor_commands.gd` |
 
 ### Project Settings (5 tools)
@@ -163,7 +163,7 @@ C24–C26 & C29 in §§26–27).
 |---|---|---|---|---|---|---|
 | animation.keyframe | 51, 52 | — | C9 | — | — | |
 | animation.get_keys | 53 | — | C9 | — | — | |
-| animationtree.edit | 13.5–13.9 | — | — | — | — | 5 mutating sub-ops; `list` extracted to `animationtree.list` (ledger #3 CQS split). _Test IDs reconciled to current `Sections/13` scheme (were stale `54m–54s`)._ |
+| animationtree.edit | 13.5–13.9 | — | — | ✓ (13.6/13.7 version-aware `nodes_count`) | — | 5 mutating sub-ops; `list` extracted to `animationtree.list` (ledger #3 CQS split). 13.6/13.7 add_node: `nodes_count` present + accurate on 4.5+; **omitted on 4.2-4.4** (no `get_node_list`) with a `note` — never a fabricated 0 that would read as a failed add. _Test IDs reconciled to current `Sections/13` scheme (were stale `54m–54s`)._ |
 | animationtree.list | 13.10 | ✓ (13.11: INVALID_CLASS) | — | — | — | Read-only structure list (extracted from `animationtree.edit`, ledger #3) |
 
 ### TileMap (2 tools)
@@ -277,7 +277,7 @@ C24–C26 & C29 in §§26–27).
 |---|---|---|---|---|---|---|
 | debug.state | 27.1 | — | C26 | — | — | |
 | debug.list_breakpoints | 27.4, 27.6, 27.8 | — | — | — | — | GDScript only |
-| debug.set_breakpoint | 27.2, 27.3, 27.5, 27.7 | 27.9–27.14 | C26 | — | — | GDScript only |
+| debug.set_breakpoint | 27.2, 27.3, 27.5, 27.7 | 27.9–27.14 | C26 | — | — | GDScript only. 27.2: breakpoint bound by script **identity** (not "current editor"), set is verified via `is_line_breakpointed`, and the echoed `file_path` is the **verified** path — a stale/phantom tab (4.2-4.4, no auto-close) that blocks foregrounding now yields `INTERNAL` rather than a misrouted set with a false echo. |
 | debug.continue | 27.15 | 27.16 | C26 | — | — | |
 
 ### Undo/Redo Verification (cross-cutting, Section 25)
@@ -339,7 +339,7 @@ C24–C26 & C29 in §§26–27).
 - `node.groups` — _batch mode covered (4.12/4.14 happy path + 4.15/4.16 partial-failure rollup, concern 034 D)._
 - `script.write` — diagnostics response fields (FIX-1)
 - `editor.get_console` — clear_buffer param (FIX-8)
-- `execute.code` — singleton hints (FIX-4), load() hint (FIX-H, 279efed)
+- `execute.code` — singleton hints (FIX-4). _load() hint (both remedies) + parse-error framing now covered by 9.4/9.7._
 - `project.set_setting` — autoload key guard (23d69f9)
 - `game.start` — compilation failure detection (4be3454), wait_for_runtime hint (a28d17b)
 - `debugger.get_log` — double-escape warning (a828cb1). Cached-log-after-crash gap closed by 21.5b/21.10 (41l-quater-bis)

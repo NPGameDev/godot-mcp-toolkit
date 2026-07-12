@@ -112,10 +112,21 @@ static func _cmd_debug_set_breakpoint(params: Dictionary) -> Dictionary:
 
 	EditorInterface.edit_script(script, line)
 
-	# Get the CodeEdit from the now-current editor.
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor == null:
 		return MCPToolkitError.fail("INTERNAL", "ScriptEditor not available")
+
+	# Bind by IDENTITY, not by "current editor". edit_script() should foreground
+	# the target's tab, but stale/phantom tabs (deleted-file scripts stay open on
+	# 4.2-4.4, which has no auto-close) can leave a different tab current — setting
+	# the breakpoint there would land it on the wrong file while echoing the
+	# requested path. Confirm the current editor actually holds file_path before
+	# touching any line.
+	var current_script := script_editor.get_current_script()
+	if current_script == null or current_script.resource_path != file_path:
+		return MCPToolkitError.fail("INTERNAL",
+			"could not open %s in the script editor to set the breakpoint" % file_path)
+
 	var editor := script_editor.get_current_editor()
 	if editor == null:
 		return MCPToolkitError.fail("INTERNAL",
@@ -130,10 +141,16 @@ static func _cmd_debug_set_breakpoint(params: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"line %d exceeds file length (%d lines)" % [line, line_count])
 
-	# Set or clear the breakpoint (0-based internally).
+	# Set or clear the breakpoint (0-based internally), then verify it took.
 	code_edit.set_line_as_breakpoint(line - 1, enabled)
+	if code_edit.is_line_breakpointed(line - 1) != enabled:
+		return MCPToolkitError.fail("INTERNAL",
+			"breakpoint state did not apply on %s:%d" % [file_path, line])
 
-	return MCPToolkitSuccess.ok({"file_path": file_path, "line": line, "enabled": enabled})
+	# Echo the VERIFIED path (the one the breakpoint actually landed on), never the
+	# unchecked request.
+	return MCPToolkitSuccess.ok(
+		{"file_path": current_script.resource_path, "line": line, "enabled": enabled})
 
 
 static func _cmd_debug_continue(debug_bridge: RefCounted) -> Dictionary:

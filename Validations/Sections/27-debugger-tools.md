@@ -44,7 +44,7 @@ func _process(delta: float) -> void:
 ## debug_set_breakpoint
 
 **27.2** `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=true
-- **Expect:** success=true, file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=true
+- **Expect:** success=true, file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=true. The echoed `file_path` is the **verified** path the breakpoint actually landed on (bound by script identity, not by "current editor"), so it equals the target here; it would not echo an unverified request. On 4.2-4.4 a stale/phantom tab that prevents the target from being foregrounded now yields `INTERNAL` (could not open <path>) rather than a misrouted breakpoint with a false echo.
 
 **27.3** `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=9, enabled=true
 - **Expect:** success=true, line=9, enabled=true (second breakpoint on different line)

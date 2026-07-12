@@ -319,16 +319,16 @@ static func _advance_mode_to_string(mode_int: int) -> String:
 
 static func _sm_summary(sm: AnimationNodeStateMachine) -> Dictionary:
 	# get_node_list() is a 4.5+ script API (engine: bound to get_node_list_as_typed_array
-	# in 4.5; absent on 4.2-4.4 → calling it errors and corrupts the return). Guard it so
-	# the summary stays well-formed on older versions: node enumeration is unavailable
-	# there, but transitions are (get_transition_count is 4.2+).
-	var node_count := 0
+	# in 4.5; absent on 4.2-4.4 → calling it errors and corrupts the return). Transitions
+	# are countable on every version (get_transition_count is 4.2+).
+	var summary := {"transitions_count": sm.get_transition_count()}
 	if sm.has_method(&"get_node_list"):
-		node_count = sm.get_node_list().size()
-	return {
-		"nodes_count": node_count,
-		"transitions_count": sm.get_transition_count(),
-	}
+		summary["nodes_count"] = sm.get_node_list().size()
+	else:
+		# On 4.2-4.4 node enumeration is unavailable, so omit nodes_count rather
+		# than report a fabricated 0 that would read as a failed add.
+		summary["note"] = "node enumeration unavailable on Godot 4.2-4.4 (get_node_list is 4.5+); nodes_count is omitted — verify the node via animationtree_list or the AnimationTree panel"
+	return summary
 
 
 static func _cmd_animationtree_list(parameters: Dictionary) -> Dictionary:

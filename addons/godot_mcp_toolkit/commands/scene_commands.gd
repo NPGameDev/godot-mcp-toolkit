@@ -684,7 +684,7 @@ static func _coerce_transform_value(raw: Variant) -> Dictionary:
 		if (coerced as Dictionary).has("_coerce_error"):
 			return {"ok": false, "error": str(coerced["_coerce_error"])}
 		return {"ok": false, "error":
-			"position/scale expect a tagged Vector2 {type:'Vector2', x, y} (or Vector3 {type:'Vector3', x, y, z} for 3D) — a bare {x, y} is not coerced"}
+			"position/rotation/scale expect a tagged Vector2 {type:'Vector2', x, y} (or Vector3 {type:'Vector3', x, y, z} for 3D) — a bare {x, y} is not coerced"}
 	return {"ok": true, "value": coerced}
 
 

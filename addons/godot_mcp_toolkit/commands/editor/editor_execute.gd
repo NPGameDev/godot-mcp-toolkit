@@ -54,7 +54,11 @@ static func cmd_execute_code(parameters: Dictionary) -> Dictionary:
 	var expr := Expression.new()
 	var parse_err := expr.parse(code, PackedStringArray())
 	if parse_err != OK:
-		return MCPToolkitError.fail("PARSE_ERROR", expr.get_error_text())
+		# Frame the raw Expression parser message so the failure is actionable:
+		# execute_code parses a single GDScript EXPRESSION (no statements,
+		# assignments, or blocks), which is the usual cause of a parse failure.
+		return MCPToolkitError.fail("PARSE_ERROR",
+			"could not parse the expression: %s. execute_code evaluates a single GDScript expression — no assignments, statements, or multi-line blocks. Use a method call, property access, or arithmetic." % expr.get_error_text())
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
 		var err_text := expr.get_error_text()
@@ -69,31 +73,41 @@ static func cmd_execute_code(parameters: Dictionary) -> Dictionary:
 		# Detect chained property access failure on returned objects.
 		if "Invalid named index" in err_text and "base type Object" in err_text:
 			err_text += "\n\nHint: Expression.execute() cannot chain property access on returned objects. Use runtime_get_node_state or node_call_method for multi-step property access."
-		# Detect load() call failures — Expression cannot call load().
-		if "call to 'load'" in err_text.to_lower():
+		# Detect load() call failures — Expression cannot call load(). The engine's
+		# phrasing varies by version ("call to 'load'" vs a "function 'load'"
+		# not-found), so match either rather than a single literal.
+		var lower_err := err_text.to_lower()
+		if "'load'" in lower_err and ("call to" in lower_err or "function" in lower_err):
 			err_text += _make_load_hint(code)
 		return MCPToolkitError.fail("EXECUTE_FAILED", err_text)
 	return MCPToolkitSuccess.ok({"result": Coerce.serialize_value(result)})
 
 
 ## Build a context-aware hint when Expression.execute() fails on load().
-## If the load() target is a .gd script, suggest the editor-side tool workflow;
-## otherwise, suggest node_set_property with Resource type tags.
+## Expression cannot call load() for any target, so both recovery paths apply —
+## assigning a resource and running script logic. The detected target type only
+## orders which remedy leads; both are always offered so whichever the caller
+## actually wanted is present.
 static func _make_load_hint(code: String) -> String:
 	var re := RegEx.new()
 	re.compile("load\\s*\\(\\s*[\"']([^\"']+)[\"']\\s*\\)")
 	var m := re.search(code)
-	if m != null and m.get_string(1).ends_with(".gd"):
-		return (
-			"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
-			+ "To run GDScript logic in the editor: "
-			+ "(1) write a @tool script with script_write, "
-			+ "(2) create a temporary node with scene_create_node, "
-			+ "(3) attach the script with node_set_script, "
-			+ "(4) call the method with node_call_method, "
-			+ "(5) delete the temp node with node_manage(action:'delete')."
-		)
+	var script_first := m != null and m.get_string(1).ends_with(".gd")
+	var assign_remedy := (
+		"To assign the resource, use node_set_property with "
+		+ "{\"type\": \"Resource\", \"path\": \"res://...\"}."
+	)
+	var script_remedy := (
+		"To run GDScript logic in the editor: "
+		+ "(1) write a @tool script with script_write, "
+		+ "(2) create a temporary node with scene_create_node, "
+		+ "(3) attach the script with node_set_script, "
+		+ "(4) call the method with node_call_method, "
+		+ "(5) delete the temp node with node_manage(action:'delete')."
+	)
+	var lead := script_remedy if script_first else assign_remedy
+	var follow := assign_remedy if script_first else script_remedy
 	return (
 		"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
-		+ "Assign resources via node_set_property with {\"type\": \"Resource\", \"path\": \"res://...\"}."
+		+ lead + " " + follow
 	)

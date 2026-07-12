@@ -21,12 +21,12 @@
 > that's fine too. Flag as **Major** only if it fails without hint.
 
 **9.4** `execute_code` (load() hint) — code=`load("res://icon.svg")`
-- **Expect:** error with context-aware hint distinguishing "load a resource for assignment" vs "execute script logic"
+- **Expect:** error (`EXECUTE_FAILED`) whose hint offers **both** recovery paths — assign the resource via `node_set_property` **and** run script logic via the @tool-script workflow (`script_write` → `scene_create_node` → `node_set_script` → `node_call_method` → `node_manage(delete)`). The detected target type only orders which remedy leads; both are always present so the caller's actual intent is covered.
 
 > **REGRESSION WATCH (FIX-H + 279efed):** If load() fails with only a generic
 > "method not found" error without the expanded context-aware hint, the load()
-> hint has regressed. The hint should mention node_set_property for resource
-> assignment or suggest runtime context for script execution. Flag as **Major**.
+> hint has regressed. The hint should mention BOTH node_set_property for resource
+> assignment AND the @tool-script workflow for script execution. Flag as **Major**.
 
 **9.5** `execute_code` — code=`get_tree().get_nodes_in_group("sv2_test")`
 - **Expect:** Returns empty array `[]`
@@ -35,7 +35,7 @@
 - **Expect:** Returns 4 (or error with hint if Expression can't access Engine)
 
 **9.7** `execute_code` — code=`invalid syntax here @@@`
-- **Expect:** error with diagnostic info (parse failure)
+- **Expect:** `PARSE_ERROR` framed actionably — the message carries the raw Expression parser text AND states the expression-only constraint (execute_code evaluates a single GDScript expression — no assignments, statements, or multi-line blocks) with a steer to use a method call, property access, or arithmetic.
 
 **9.8** `execute_code` — code=`ProjectSettings.get_setting("application/config/name")`
 - **Expect:** error OR success depending on Expression sandbox. If error, should have hint.

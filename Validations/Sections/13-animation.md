@@ -22,10 +22,10 @@
 - **Expect:** success
 
 **13.6** `animationtree_edit` (add node) — node_path=`Sv2AnimTree`, action=`add_node`, node_name=`idle`, node_type=`AnimationNodeAnimation`, animation_name=`idle`
-- **Expect:** success
+- **Expect:** success=true, status=`created`. **Version-aware count:** on 4.5+ the response carries an accurate `nodes_count`; on 4.2-4.4 (no `get_node_list`) `nodes_count` is **omitted** and a `note` explains node enumeration is unavailable there (never a fabricated `0` that would read as a failed add).
 
 **13.7** `animationtree_edit` (add node) — node_path=`Sv2AnimTree`, action=`add_node`, node_name=`run`, node_type=`AnimationNodeAnimation`, animation_name=`run`
-- **Expect:** success
+- **Expect:** success=true, status=`created`. Same version-aware `nodes_count`/`note` rule as 13.6.
 
 **13.8** `animationtree_edit` (add transition) — node_path=`Sv2AnimTree`, action=`add_transition`, from=`idle`, to=`run`, advance_condition=`is_running`
 - **Expect:** success
