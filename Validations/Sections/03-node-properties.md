@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in Sv2Main.tscn)
 **Tools tested:** node_set_property, node_get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout
-**Tests:** 37
+**Tests:** 38
 
 ---
 
@@ -34,6 +34,17 @@
 > If `z_index=2.9` returns `SET_FAILED`, the D1 false-positive has regressed (the
 > same-family trust broke); if it succeeds with NO warning, the caller can't see the
 > value was reshaped. Only CROSS-family mismatches (3.2b) return `SET_FAILED`.
+
+**3.2d** `node_set_property` (readback-null: a script-defined property set BEFORE its script is attached — 41o-quater run-1 slip) — node_path=`Sv2Sprite`, property=`max_hp`, value=`15`
+- **Expect:** error `SET_FAILED`. `Sv2Sprite` is a plain `Sprite2D` with no script defining `max_hp`, so `set()` no-ops and the readback stays null → the drop is classified via the readback-null branch (`describe_set_drop`, `after == null`). The error names `max_hp`, and its hint must **lead with the most common build-flow cause — a script-defined property whose script is not attached to the node yet (attach the script first)** — then the mistyped-name and dedicated-API cases.
+
+> **REGRESSION WATCH (41o-quater run-1, node_set_property sequencing):** setting a
+> script-defined property before its `node_set_script` hits the readback-null drop
+> (`after == null`). The hint must **lead with the unattached-script cause** — steering
+> the caller to attach the script first — not name ONLY the dedicated-API remedy. If
+> the hint reverts to the dedicated-API case alone, the run-1 hint sharpening has
+> regressed. Flag as **Minor**. (Headless unit `describe_set_drop tri-state` pins the
+> same hint on the pure detector.)
 
 **3.3** `node_set_property` — node_path=`Sv2Label`, property=`text`, value=`"Hello Sweep v2"`
 - **Expect:** success

@@ -42,12 +42,16 @@ extends RefCounted
 static func describe_set_drop(
 	before: Variant, after: Variant, coerced: Variant, path: String,
 ) -> Dictionary:
-	# Reported no error but nothing is there — usually a dedicated-API property.
+	# Reported no error but nothing is there: the property is not on this object. The
+	# hint leads with the most common build-flow cause — a script-defined property set
+	# before its script is attached — then the mistyped-name and dedicated-API cases.
 	if after == null and coerced != null:
 		return {"status": "dropped", "error":
 			"set() on '%s' reported no error but readback is null. " % path
-			+ "The property may require a dedicated API (e.g. set_shader_parameter, "
-			+ "add_animation_library)."}
+			+ "The property is not present on this object — most often it is defined "
+			+ "by a script not attached to this node yet (attach the script first, "
+			+ "then set its properties), a mistyped property name, or a property that "
+			+ "needs a dedicated API (e.g. set_shader_parameter, add_animation_library)."}
 	# Stored value equals the request → clean success (exact, int→float 5.0==5, set-to-same).
 	if _values_loosely_equal(after, coerced):
 		return {"status": "ok"}

@@ -228,9 +228,15 @@ static func _test_set_drop_logic(testing) -> void:
 		"String → Vector2, NON-ZERO prior zeroed (after≠before) → dropped")
 	testing.eq(_status(Helpers.describe_set_drop(Color(0, 1, 0, 1), Color(0, 0, 0, 1), "green", "modulate")), "dropped",
 		"String → Color, modulate green→black (after≠before) → dropped")
-	# Null readback with a non-null request (dedicated-API) → dropped.
-	testing.eq(_status(Helpers.describe_set_drop("old", null, "new", "p")), "dropped",
-		"null readback → dropped")
+	# Null readback with a non-null request → dropped. The most common build-flow cause
+	# is a script-defined property set before its script is attached, so the hint must
+	# name the unattached-script case (not only the dedicated-API one) plus the property.
+	var null_readback: Dictionary = Helpers.describe_set_drop(null, null, 15, "max_hp")
+	testing.eq(_status(null_readback), "dropped", "null readback → dropped")
+	testing.ok(str(null_readback.get("error", "")).find("script") >= 0,
+		"null readback hint names the unattached-script cause")
+	testing.ok(str(null_readback.get("error", "")).find("max_hp") >= 0,
+		"null readback error names the property")
 	# Restored: wrong-subtype Resource that kept its old object (both OBJECT) → dropped.
 	var res_a := Resource.new()
 	var res_b := Resource.new()
