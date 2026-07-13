@@ -46,7 +46,7 @@ discover_tools groups=["asset_ops", "input_map"]
 7. **Subfolders:** `folder_delete` for any subdirs
    - c12_tabs/, etc.
 
-8. **Root folder:** `folder_delete` folder_path=`res://sv2_validation/`, recursive=true
+8. **Root folder:** `folder_delete` path=`res://sv2_validation/`, recursive=true
    - **Fallback (PATH_IN_USE):** if this fails with `PATH_IN_USE` due to an orphaned script-editor TAB (a script deleted by `script_delete` whose editor tab stayed open, e.g. `c5_script.gd` — there is NO programmatic script-tab close API), the individual file deletes in 25d.1–7 already removed every artifact (the folder is then empty; git does not track empty dirs, so the repo state is clean). The empty folder + orphaned tab clear only on a manual script-tab close / editor restart.
 
 ## 25e. Restore project settings

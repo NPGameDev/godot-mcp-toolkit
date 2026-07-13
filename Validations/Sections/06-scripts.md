@@ -51,7 +51,7 @@
 
 **6.7** `asset_list` — path_prefix=`res://sv2_validation/`, name_glob=`*.gd`
 - **Expect:** Lists actor.gd, sv2_bad_script.gd, sv2_preload_test.gd. Envelope (ledger #20): `returned` (was `count`) = entries this page, `total_assets` = full count, `has_more` (was `truncated`) — cursor-less (navigate by `path_prefix`+filters, no `next_offset`).
-- **Note:** the filter param is `path_prefix`, not `folder_path`.
+- **Note:** the filter param is `path_prefix`, not `path`.
 
 **6.8** `asset_get_dependencies` — file_path=`res://sv2_validation/material.tres`
 - **Expect:** Dependency on shader.gdshader. Envelope (ledger #20): `returned` (was `count`), `total_dependencies`, `has_more` (was `truncated`) — cursor-less.

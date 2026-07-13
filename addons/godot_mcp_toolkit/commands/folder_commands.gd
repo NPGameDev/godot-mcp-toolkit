@@ -20,44 +20,44 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 
 
 static func _cmd_folder_create(parameters: Dictionary) -> Dictionary:
-	var err = MCPToolkitError.require(parameters, ["folder_path"])
+	var err = MCPToolkitError.require(parameters, ["path"])
 	if err != null:
 		return err
-	var folder_path := str(parameters.get("folder_path", ""))
-	var guard := FileGuard.resolve_safe(folder_path)
+	var path := str(parameters.get("path", ""))
+	var guard := FileGuard.resolve_safe(path)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
-	var pre_existed := DirAccess.dir_exists_absolute(folder_path)
-	var error := DirAccess.make_dir_recursive_absolute(folder_path)
+	var pre_existed := DirAccess.dir_exists_absolute(path)
+	var error := DirAccess.make_dir_recursive_absolute(path)
 	if error != OK:
 		return MCPToolkitError.fail("CREATE_DIR_FAILED",
-			"DirAccess.make_dir_recursive_absolute returned %d (path=%s)" % [error, folder_path])
+			"DirAccess.make_dir_recursive_absolute returned %d (path=%s)" % [error, path])
 	var status := "returned" if pre_existed else "created"
-	return MCPToolkitSuccess.ok({"status": status, "path": folder_path})
+	return MCPToolkitSuccess.ok({"status": status, "path": path})
 
 
 static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
-	var err = MCPToolkitError.require(parameters, ["folder_path"])
+	var err = MCPToolkitError.require(parameters, ["path"])
 	if err != null:
 		return err
-	var folder_path := str(parameters.get("folder_path", ""))
+	var path := str(parameters.get("path", ""))
 	var recursive := bool(parameters.get("recursive", false))
-	var guard := FileGuard.resolve_safe(folder_path)
+	var guard := FileGuard.resolve_safe(path)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 
-	if folder_path == "res://" or folder_path == "res:///" or folder_path.get_base_dir() == "":
+	if path == "res://" or path == "res:///" or path.get_base_dir() == "":
 		return MCPToolkitError.fail("FOLDER_PROTECTED",
 			"cannot delete the project root res://; narrow the path")
 
-	var normalized := folder_path
+	var normalized := path
 	if normalized.ends_with("/"):
 		normalized = normalized.substr(0, normalized.length() - 1)
 	if normalized == "res://addons" or normalized == "res://addons/godot_mcp_toolkit":
 		return MCPToolkitError.fail("FOLDER_PROTECTED",
 			"cannot delete res://addons or the toolkit plugin directory (%s); agent cannot remove its own host" % normalized)
-	if not DirAccess.dir_exists_absolute(folder_path):
-		return MCPToolkitError.fail("NOT_FOUND", "no folder at %s" % folder_path)
+	if not DirAccess.dir_exists_absolute(path):
+		return MCPToolkitError.fail("NOT_FOUND", "no folder at %s" % path)
 	var normalized_with_slash := normalized + "/"
 
 	# Collect open scene tabs inside vs outside the target folder.
@@ -103,14 +103,14 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		if active_inside:
 			if outside_scenes.is_empty():
 				return MCPToolkitError.fail("PATH_IN_USE",
-					"all open scene tabs are inside %s; open a scene outside the folder first via scene_open, then retry folder_delete" % folder_path)
+					"all open scene tabs are inside %s; open a scene outside the folder first via scene_open, then retry folder_delete" % path)
 			if not await Helpers.open_scene_deferred(outside_scenes[0]):
 				return MCPToolkitError.fail("TIMEOUT",
-					"could not switch active scene away from %s — filesystem scanning; retry shortly" % folder_path)
+					"could not switch active scene away from %s — filesystem scanning; retry shortly" % path)
 		stale_tabs = inside_scenes
 		if not can_close:
 			warnings.append(
-				"phantom tabs: Godot 4.2-4.4 has no API to close scene tabs — %d tab(s) inside %s will remain as phantoms until editor restart" % [inside_scenes.size(), folder_path])
+				"phantom tabs: Godot 4.2-4.4 has no API to close scene tabs — %d tab(s) inside %s will remain as phantoms until editor restart" % [inside_scenes.size(), path])
 
 	var script_editor := EditorInterface.get_script_editor()
 	if script_editor != null:
@@ -123,40 +123,40 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 			if resource_path == normalized or resource_path.begins_with(normalized_with_slash):
 				return MCPToolkitError.fail("PATH_IN_USE",
 					"folder %s contains open script %s; close the script editor tab manually (no programmatic close API for script tabs), then retry folder_delete" % [
-						folder_path, resource_path])
+						path, resource_path])
 
-	var directory := DirAccess.open(folder_path)
+	var directory := DirAccess.open(path)
 	if directory == null:
 		return MCPToolkitError.fail("INTERNAL",
-			"DirAccess.open(%s) returned null" % folder_path)
+			"DirAccess.open(%s) returned null" % path)
 	var file_count := directory.get_files().size()
 	var subdir_count := directory.get_directories().size()
 	if (file_count + subdir_count) > 0 and not recursive:
 		return MCPToolkitError.fail("DIR_NOT_EMPTY",
 			"folder %s is not empty (contains %d files, %d subdirs); pass recursive:true to delete contents" % [
-				folder_path, file_count, subdir_count])
+				path, file_count, subdir_count])
 
 	var files_deleted := 0
 	var dirs_deleted := 0
 	if recursive and (file_count + subdir_count) > 0:
-		var result := _folder_delete_recursive(folder_path)
+		var result := _folder_delete_recursive(path)
 		files_deleted = int(result.get("files", 0))
 		dirs_deleted = int(result.get("dirs", 0))
 		if not bool(result.get("success", false)):
 			return MCPToolkitError.fail("DELETE_FAILED", str(result.get("error", "unknown")))
 
-	var parent_path := folder_path.get_base_dir()
+	var parent_path := path.get_base_dir()
 	var parent_dir := DirAccess.open(parent_path)
 	if parent_dir == null:
 		return MCPToolkitError.fail("INTERNAL",
 			"DirAccess.open(%s) returned null" % parent_path)
-	var top_remove := parent_dir.remove(folder_path.get_file())
+	var top_remove := parent_dir.remove(path.get_file())
 	if top_remove != OK:
 		return MCPToolkitError.fail("DELETE_FAILED",
-			"DirAccess.remove returned %d (path=%s)" % [top_remove, folder_path])
+			"DirAccess.remove returned %d (path=%s)" % [top_remove, path])
 	if recursive and (file_count + subdir_count) > 0:
 		push_warning("[MCPTools] folder.delete recursive %s (%d files, %d subdirs)" % [
-			folder_path, files_deleted, dirs_deleted])
+			path, files_deleted, dirs_deleted])
 	# The target folder itself was just removed above — count it alongside any
 	# nested subdirectories the recursive pass deleted. Previously omitted, so a
 	# flat folder reported directories_deleted:0 despite the folder being gone.
@@ -164,9 +164,9 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	# Targeted deindex: update_file() on a directory path is a no-op in most
 	# Godot versions, so fall back to scan() for folder removal. Folder deletes
 	# are rare and the scan cost is acceptable.
-	var removal := await Helpers.ensure_file_removed(folder_path)
+	var removal := await Helpers.ensure_file_removed(path)
 	var result := {
-		"path": folder_path,
+		"path": path,
 		"recursive": recursive,
 		"files_deleted": files_deleted,
 		"directories_deleted": dirs_deleted,
@@ -190,22 +190,22 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 # -- Recursive delete helper --------------------------------------------------
 
 
-static func _folder_delete_recursive(folder_path: String) -> Dictionary:
-	var directory := DirAccess.open(folder_path)
+static func _folder_delete_recursive(path: String) -> Dictionary:
+	var directory := DirAccess.open(path)
 	if directory == null:
 		return {"files": 0, "dirs": 0, "success": false,
-			"error": "DirAccess.open(%s) returned null" % folder_path}
+			"error": "DirAccess.open(%s) returned null" % path}
 	var files_removed := 0
 	var dirs_removed := 0
 	for file_name in directory.get_files():
 		if file_name.ends_with(".uid"):
 			continue
-		var full_res_path := folder_path + "/" + file_name
+		var full_res_path := path + "/" + file_name
 		var uid: int = ResourceLoader.get_resource_uid(full_res_path)
 		var remove_error := directory.remove(file_name)
 		if remove_error != OK:
 			return {"files": files_removed, "dirs": dirs_removed, "success": false,
-				"error": "DirAccess.remove %s/%s returned %d" % [folder_path, file_name, remove_error]}
+				"error": "DirAccess.remove %s/%s returned %d" % [path, file_name, remove_error]}
 		files_removed += 1
 		var uid_companion := file_name + ".uid"
 		if directory.file_exists(uid_companion):
@@ -216,7 +216,7 @@ static func _folder_delete_recursive(folder_path: String) -> Dictionary:
 		if file_name.ends_with(".uid"):
 			directory.remove(file_name)
 	for sub_name in directory.get_directories():
-		var sub_path := folder_path + "/" + sub_name
+		var sub_path := path + "/" + sub_name
 		var sub_result := _folder_delete_recursive(sub_path)
 		files_removed += int(sub_result.get("files", 0))
 		dirs_removed += int(sub_result.get("dirs", 0))

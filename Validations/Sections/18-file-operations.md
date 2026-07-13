@@ -54,18 +54,18 @@
 - **Expect:** success, `tab_closed: true`, hint about `_set_main_scene_state`
 
 **18.12** **[4.5+]** `folder_delete` with 1 scene inside:
-- `folder_create` folder_path=`res://sv2_validation/del_folder`
+- `folder_create` path=`res://sv2_validation/del_folder`
 - `scene_create` file_path=`res://sv2_validation/del_folder/inner.tscn`, root_type=`Node2D`
 - `scene_open` file_path=`res://sv2_validation/del_folder/inner.tscn`
-- `folder_delete` folder_path=`res://sv2_validation/del_folder`, recursive=true
+- `folder_delete` path=`res://sv2_validation/del_folder`, recursive=true
 - **Expect:** success, `tab_closed` = `res://sv2_validation/del_folder/inner.tscn`, no `stale_tabs`
 
 **18.13** **[4.5+]** `folder_delete` with 2 scenes → stale_tabs follow-up:
-- `folder_create` folder_path=`res://sv2_validation/del_folder`
+- `folder_create` path=`res://sv2_validation/del_folder`
 - `scene_create` 2 scenes inside (`inner1.tscn`, `inner2.tscn`)
 - `scene_open` both + ensure Sv2Main.tscn is also open
 - `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn` (main active)
-- `folder_delete` folder_path=`res://sv2_validation/del_folder`, recursive=true
+- `folder_delete` path=`res://sv2_validation/del_folder`, recursive=true
 - **Expect:** success, `stale_tabs` array has 2 entries, hint mentions `_set_main_scene_state`
 - Call `scene_close` on each stale tab path
 - **Expect:** both close successfully

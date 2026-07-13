@@ -131,4 +131,4 @@ expected noise: PNG/WAV reimport messages for the freshly written placeholder fi
 ## Cleanup
 
 - `scene_delete_node` for `Sv2SpatA`, `Sv2SpatB`, `Sv2SpatC`, `Sv2SpatMesh`
-- `folder_delete` folder_path=`res://sv2_validation/placeholders` (recursive — removes all generated PNG/WAV)
+- `folder_delete` path=`res://sv2_validation/placeholders` (recursive — removes all generated PNG/WAV)

@@ -127,7 +127,7 @@ static func require(parameters: Dictionary, required: Array) -> Variant:
 					hint = HINT_FILE_PATH
 				"node_path":
 					hint = HINT_NODE_PATH
-				"folder_path":
+				"path":
 					hint = "Provide a res:// folder path. Example: res://scenes/"
 				"class_name":
 					hint = HINT_CLASS_NAME

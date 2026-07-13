@@ -8,7 +8,7 @@ Creates all shared test artifacts used by later sections.
 
 ---
 
-**1.1** `folder_create` — folder_path=`res://sv2_validation/`
+**1.1** `folder_create` — path=`res://sv2_validation/`
 - **Expect:** success
 
 **1.2** `script_write` — file_path=`res://sv2_validation/actor.gd`, content:
