@@ -2,12 +2,13 @@
 extends RefCounted
 ## editor.screenshot: capture the editor viewport to a PNG envelope — either the
 ## full main viewport, or focused on one node (select + edit + restore the prior
-## selection). Validates the requested size, handles headless (no viewport), and
-## self-diagnoses a collapsed viewport: a minimized window returns
-## EDITOR_VIEWPORT_UNAVAILABLE, and a wrong (non-2D/3D) main screen is auto-healed
-## by switching to a 2D/3D screen and re-capturing. The image_response_mode /
-## save_path handling — inline vs disk vs both, and the res:// or user://screenshots/
-## save-path guard — is shaped by the shared ScreenshotResponse builder.
+## selection). Caps the inline image to the requested image_detail level, handles
+## headless (no viewport), and self-diagnoses a collapsed viewport: a minimized
+## window returns EDITOR_VIEWPORT_UNAVAILABLE, and a wrong (non-2D/3D) main screen
+## is auto-healed by switching to a 2D/3D screen and re-capturing. The
+## image_response_mode / image_detail / save_path handling — inline vs disk vs both,
+## the inline-resolution cap, and the res:// or user://screenshots/ save-path guard —
+## is shaped by the shared ScreenshotResponse builder.
 ##
 ## Stateless — the handler takes (parameters) and returns the response Dictionary.
 ## Reaches the viewport / RenderingServer / EditorInterface / DisplayServer
@@ -17,8 +18,6 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Helpers = Modules.CommandHelpers
-const MIN_SCREENSHOT_SIZE := 64
-const MAX_SCREENSHOT_SIZE := 4096
 
 ## Below this pixel size a viewport frame is treated as collapsed rather than
 ## usable: Godot clamps every viewport to a hard 2x2 floor, so a zero-size
@@ -78,6 +77,14 @@ static func cmd_screenshot(parameters: Dictionary) -> Dictionary:
 			"editor.screenshot requires a display server (no viewport in headless mode)",
 			"Use script_check to verify a script's parse status; editor_get_console captures runtime output only (headless editors don't revalidate scripts, so editor parse errors aren't captured there).")
 
+	# Reject a bad image_detail before any capture so a typo can't slip through as
+	# full-res (the pure dims calculator treats an unknown value as native — the guard
+	# lives here, once, so both capture paths reject uniformly).
+	if Modules.ScreenshotResponse.detail_of(parameters).is_empty():
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"image_detail must be one of [full, mid, low] (got %s)"
+			% str(parameters.get("image_detail", "")))
+
 	var force_foreground := bool(parameters.get("force_foreground_editor", false))
 	var remediation: Array[String] = []
 
@@ -106,13 +113,6 @@ static func cmd_screenshot(parameters: Dictionary) -> Dictionary:
 # the prior selection. A wrong main screen is healed against the node's own
 # viewport kind (3D for a Node3D, else 2D).
 static func _capture_node(parameters: Dictionary, node_path: String, remediation: Array[String]) -> Dictionary:
-	var size_dict: Dictionary = parameters.get("size", {}) if typeof(parameters.get("size", {})) == TYPE_DICTIONARY else {}
-	var width := int(size_dict.get("width", 1280))
-	var height := int(size_dict.get("height", 720))
-	if width < MIN_SCREENSHOT_SIZE or width > MAX_SCREENSHOT_SIZE \
-			or height < MIN_SCREENSHOT_SIZE or height > MAX_SCREENSHOT_SIZE:
-		return MCPToolkitError.fail("INVALID_PARAMS",
-			"size.width and size.height must be in [64, 4096] (got %dx%d)" % [width, height])
 	var root := Helpers.get_edited_root()
 	if root == null:
 		return MCPToolkitError.fail("NO_SCENE", "no edited scene")
@@ -142,18 +142,17 @@ static func _capture_node(parameters: Dictionary, node_path: String, remediation
 		return MCPToolkitError.fail("EDITOR_VIEWPORT_UNAVAILABLE",
 			"editor viewport unavailable: no 2D/3D viewport composited a usable frame", _HINT_POST_HEAL)
 
-	if image.get_width() != width or image.get_height() != height:
-		image.resize(width, height, Image.INTERPOLATE_LANCZOS)
-
 	_restore_selection(selection, prior_selection)
 
 	var png_bytes := image.save_png_to_buffer()
 	if png_bytes.is_empty():
 		return MCPToolkitError.fail("EMPTY_CONTENT",
 			"node '%s' produced no visible image. Node may lack visual content (no texture, no mesh). Use editor_screenshot without node_path for a full viewport capture instead." % node_path)
+	var inline := _downscale_inline_png(image, parameters)
 	var response := Modules.ScreenshotResponse.build(
 		parameters, png_bytes, image.get_width(), image.get_height(),
-		["res://", "user://screenshots/"])
+		["res://", "user://screenshots/"],
+		inline["png_bytes"], int(inline["width"]), int(inline["height"]))
 	if response.get("success") == false:
 		return response
 	# Inline mode echoes the requested node path; a disk/both response already carries
@@ -181,14 +180,41 @@ static func _capture_standard(parameters: Dictionary, remediation: Array[String]
 	if png_bytes.is_empty():
 		return MCPToolkitError.fail("INTERNAL", "save_png_to_buffer returned empty")
 
+	var inline := _downscale_inline_png(image, parameters)
 	var response := Modules.ScreenshotResponse.build(
 		parameters, png_bytes, image.get_width(), image.get_height(),
-		["res://", "user://screenshots/"])
+		["res://", "user://screenshots/"],
+		inline["png_bytes"], int(inline["width"]), int(inline["height"]))
 	if response.get("success") == false:
 		return response
 	if not remediation.is_empty():
 		response["remediation"] = remediation
 	return MCPToolkitSuccess.ok(response)
+
+
+# Encode the downscaled inline PNG for the requested image_detail cap, but only when
+# an inline image is actually returned (inline/both mode) and the level shrinks the
+# frame — disk-only returns the full-res file, so it needs no inline buffer. Returns
+# {png_bytes, width, height}; png_bytes is empty (and dims -1) when no downscale
+# applies, which ScreenshotResponse.build reads as "use the full-res buffer inline".
+static func _downscale_inline_png(image: Image, parameters: Dictionary) -> Dictionary:
+	var empty := {"png_bytes": PackedByteArray(), "width": -1, "height": -1}
+	if Modules.ScreenshotResponse.mode_of(parameters) == "disk":
+		return empty
+	var detail := Modules.ScreenshotResponse.detail_of(parameters)
+	var target := Modules.ScreenshotResponse.image_detail_dims(
+		image.get_width(), image.get_height(), detail)
+	if target.x == image.get_width() and target.y == image.get_height():
+		return empty
+	# duplicate() is typed Ref<Resource>; the explicit Image local coerces (loud on a
+	# mismatch, unlike `as`). Resize the copy so the full-res buffer stays intact for disk.
+	var inline_image: Image = image.duplicate()
+	inline_image.resize(target.x, target.y, Image.INTERPOLATE_LANCZOS)
+	return {
+		"png_bytes": inline_image.save_png_to_buffer(),
+		"width": inline_image.get_width(),
+		"height": inline_image.get_height(),
+	}
 
 
 # -- Viewport heal + foreground ----------------------------------------------

@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (Sv2Main.tscn with nodes, script attached to Sv2Player)
 **Tools tested:** game_start, game_stop, runtime_screenshot, runtime_get_node_state, runtime_get_script_vars, runtime_set_property, debugger_get_log, input_simulate, execute_code (runtime), animation_player_control, signal_emit, autoload_manage (20.10 setup)
-**Tests:** 37
+**Tests:** 40
 
 ---
 
@@ -78,6 +78,20 @@
 **20.5f** Save-path guard — `runtime_screenshot` image_response_mode=`disk`, save_path=`res://sv2_rt_shot.png`
 - **Expect:** `PATH_DENIED` — the runtime save allowlist is `user://screenshots/` only (the game process has no `res://` write surface), so a `res://` target is rejected. No file is written.
 > **REGRESSION WATCH (41o-duodecies-ter):** `runtime_screenshot`'s `save_path` must reject anything outside `user://screenshots/`. If a `res://` target succeeds (or writes a file), the runtime save allowlist regressed. Flag as **Major**.
+
+**20.5g** `image_detail` inline cap — with the game window visible, capture at each level and compare the returned dims:
+- `runtime_screenshot` (default) → note the native `returned` "WxH" and `image_detail:"full"`.
+- `runtime_screenshot` image_detail=`mid` → `image_detail:"mid"`; `returned`'s long edge capped to **1024** (or unchanged if native long edge ≤ 1024 — shrink-only), aspect preserved.
+- `runtime_screenshot` image_detail=`low` → `image_detail:"low"`; `returned`'s long edge capped to **512** (same shrink-only caveat).
+- **Expect:** every response echoes the applied `image_detail` and a `returned` "WxH"; `mid`/`low` never exceed their long-edge cap and never upscale a small window. Missing `image_detail`/`returned`, or a `mid`/`low` long edge above its cap, is a FAIL.
+> **REGRESSION WATCH (41o-quater-ter):** the inline cap is proportional + aspect-preserving + shrink-only, and disk/both stay full-res (20.5i). If `mid`/`low` distorts aspect, upscales, or omits the `image_detail`/`returned` disclosure, the downscale regressed. Flag as **Major**.
+
+**20.5h** `image_detail` bad-value guard — `runtime_screenshot` image_detail=`huge`
+- **Expect:** `INVALID_PARAMS` naming the offending value and the valid set `[full, mid, low]` — NOT a silent full-res capture.
+
+**20.5i** Disk × detail orthogonality (disk stays full-res) — `runtime_screenshot` image_response_mode=`both`, image_detail=`low`
+- **Expect:** the **inline** `image_base64` is the downscaled frame (`returned` long edge ≤ 512, `image_detail:"low"`) BUT the disk `path` file is **full resolution** (its pixel dimensions match a native `full` capture, larger than the inline), AND the response `hint` states the saved file is "full-res" and invites a Read for detail. This proves `image_detail` caps the inline image only — disk/both persistence is never downscaled. Cleanup: delete the written PNG.
+> **REGRESSION WATCH (41o-quater-ter):** disk/both persistence must stay full-res regardless of `image_detail`. If the saved file is downscaled to the inline dims (or the full-res `hint` is missing), the disk-full-res guarantee regressed. Flag as **Major**.
 
 **20.6** `runtime_get_node_state` — node_path=`/root/Sv2Main/Sv2Player`
 - **Expect:** class, path, properties including position

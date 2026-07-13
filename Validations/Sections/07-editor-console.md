@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes in Sv2Main.tscn)
 **Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
-**Tests:** 22
+**Tests:** 24
 
 > **Precondition — `editor_screenshot` self-diagnoses a collapsed viewport.**
 > The tool no longer returns a blank `2x2` / ~81-byte PNG for a viewport that
@@ -47,9 +47,19 @@
 **7.2h** Both mode — `editor_screenshot` image_response_mode=`both`, save_path=`res://sv2_shot.png`
 - **Expect:** The inline shape (`image_base64`, `mime_type`, `width`, `height`, `bytes`) **plus** `path` = the globalized absolute path of the saved `res://sv2_shot.png`; the file exists. Cleanup: `file_delete` (or `resource_delete`) `res://sv2_shot.png`.
 
-**7.2i** Oversize escape hatch — create a `Node3D` (`scene_create_node` node_type=`Node3D`, node_name=`Sv2ShotProbe3D`, parent_path=`.`), then `editor_screenshot` node_path=`Sv2ShotProbe3D` at default size (no size params)
+**7.2i** Oversize escape hatch — create a `Node3D` (`scene_create_node` node_type=`Node3D`, node_name=`Sv2ShotProbe3D`, parent_path=`.`), then `editor_screenshot` node_path=`Sv2ShotProbe3D` (default `image_detail`, i.e. `full`)
 - **Expect:** `RESPONSE_TOO_LARGE` whose `hint` names `image_response_mode:"disk"` as the fix (a full-size 3D capture exceeds the WS buffer). Then re-call `editor_screenshot` node_path=`Sv2ShotProbe3D` image_response_mode=`disk` → lean envelope + `path` on disk (no `image_base64`). Cleanup: `scene_delete_node` `Sv2ShotProbe3D`; delete the written PNG.
 > **REGRESSION WATCH (41o-duodecies-ter):** the oversize inline hint must name `image_response_mode:"disk"` (the tailored escape hatch), not the old generic "narrow the query / paginate" boilerplate. If the disk retry still returns `image_base64` or omits `path`, the disk-mode lean envelope regressed. Flag as **Major**.
+
+**7.2j** `image_detail` inline cap — with the editor restored on a 2D/3D screen, capture at each level and compare the returned dims:
+- `editor_screenshot` (default) → note the native `returned` "WxH" and `image_detail:"full"`.
+- `editor_screenshot` image_detail=`mid` → `image_detail:"mid"`; `returned`'s long edge is capped to **1024** (or unchanged if the native long edge was already ≤ 1024 — shrink-only), aspect preserved.
+- `editor_screenshot` image_detail=`low` → `image_detail:"low"`; `returned`'s long edge is capped to **512** (same shrink-only caveat).
+- **Expect:** every response echoes the applied `image_detail` and a `returned` "WxH"; `mid`/`low` never exceed their long-edge cap and never upscale a small frame. A missing `image_detail`/`returned` field, or a `mid`/`low` long edge above its cap, is a FAIL.
+> **REGRESSION WATCH (41o-quater-ter):** the inline cap is proportional + aspect-preserving + shrink-only. If `mid`/`low` distorts the aspect ratio, upscales a small viewport, or omits the `image_detail`/`returned` disclosure, the `image_detail` downscale regressed. Flag as **Major**.
+
+**7.2k** `image_detail` bad-value guard — `editor_screenshot` image_detail=`huge`
+- **Expect:** `INVALID_PARAMS` naming the offending value and the valid set `[full, mid, low]` — NOT a silent full-res capture. (The old `size` param is gone: `editor_screenshot` no longer accepts a `size` `{width,height}`; framing a node stays `node_path`'s job.)
 
 **7.4** `editor_get_console` — (default params)
 - **Expect:** success, returns console output

@@ -152,6 +152,45 @@ Design points:
   the runtime autoload preloads it directly. It names **no** `Editor*` symbol, so it
   stays in the runtime autoload's export-clean static graph (`godotengine/godot#91713`).
 
+## Amendment — image_detail proportional inline downscale (supersedes size)
+
+Both capture tools now take an optional **`image_detail: "full" | "mid" | "low"`**
+(default `"full"`, toolkit-owned) — the single universal inline-resolution control,
+replacing `editor.screenshot`'s node-focus-only `size` param.
+
+- **What it does.** `image_detail` caps the **inline** returned image's long edge —
+  `full` = native, `mid` ≈ 1024 px, `low` ≈ 512 px — proportional, aspect-preserving,
+  and **shrink-only** (never upscales; a frame already within the cap is returned
+  untouched). It applies to **both** `editor.screenshot` and `runtime.screenshot`, on
+  the standard and node-focused paths alike.
+- **Why `size` is retired.** `size` was `_capture_node`-only (a standard capture never
+  read it), forced an **exact WxH** that could distort the aspect ratio or upscale a
+  frame (a latent footgun), and duplicated no equivalent on the runtime tool.
+  `image_detail`'s proportional, aspect-preserving, shrink-only long-edge cap is
+  strictly better and uniform across both tools and both paths. Pre-1.0 ⇒ no
+  back-compat shim. Node framing stays `node_path`'s job — the "Node-focus does not
+  reframe a 2D node" limitation below is unchanged.
+- **Inline-only + mandatory disclosure.** The cap applies to the inline image only;
+  `image_response_mode:"disk"/"both"` **always** persists the full-res PNG regardless
+  of `image_detail`. Every response echoes the applied `image_detail` plus a
+  `returned` `"WxH"` (the returned inline image's dims for inline/both, the full-res
+  saved-file dims for disk) so a size reduction is never silent, and disk/both add a
+  `hint` disclosing the saved file is full resolution (so an agent can read it for
+  pixel detail instead of re-capturing).
+- **Mechanics.** The capture handler encodes a full-res buffer (for the disk write)
+  and, when the level shrinks an inline-bearing capture, a separately-downscaled
+  buffer (for the inline base64) via `Image.resize(..., INTERPOLATE_LANCZOS)` (present
+  4.2→4.7; sharpest for text). `both` mode therefore carries a downscaled inline over
+  a full-res disk copy. Classification (`classify_capture` / `window_can_draw`) runs
+  on the **native** dims before the resize; the send-path `guard_response_size` sees
+  the final inline buffer, so the `RESPONSE_TOO_LARGE` check is automatic. The pure
+  `contract/screenshot_response.gd` shaper owns the `image_detail_dims` calculator +
+  the disclosure threading (it never mutates an `Image`). A bad `image_detail` value →
+  `INVALID_PARAMS`.
+- **Provisional caps.** `mid` 1024 px / `low` 512 px are tuned targets — `mid` for
+  readable HUD text, `low` for gross layout/motion only ("not for reading text") —
+  ratified by a live fidelity spot-check.
+
 ## Known limitations
 
 - **The `force_foreground_*` levers un-minimize to a *windowed* state, not a prior

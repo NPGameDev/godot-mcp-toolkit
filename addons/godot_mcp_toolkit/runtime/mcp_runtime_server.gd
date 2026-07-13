@@ -285,6 +285,16 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 		return
 
 	var params_dict: Dictionary = params if typeof(params) == TYPE_DICTIONARY else {}
+
+	# Reject a bad image_detail up front so a typo can't slip through as full-res (the
+	# pure dims calculator treats an unknown value as native, so the guard is here).
+	var detail := ScreenshotResponse.detail_of(params_dict)
+	if detail.is_empty():
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_PARAMS",
+			"image_detail must be one of [full, mid, low] (got %s)"
+			% str(params_dict.get("image_detail", ""))))
+		return
+
 	var force_foreground := bool(params_dict.get("force_foreground_game", false))
 
 	var remediation: Array[String] = []
@@ -320,16 +330,22 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "viewport texture unavailable"))
 		return
 
+	# Full-res encode always — this is what a disk copy persists, unaffected by
+	# image_detail (the cap is inline-only).
 	var png_bytes := image.save_png_to_buffer()
 	if png_bytes.is_empty():
 		_send_result(peer, id, MCPToolkitError.fail("INTERNAL", "save_png_to_buffer returned empty"))
 		return
 
+	var inline := _downscale_inline_png(image, params_dict, detail)
+
 	# Runtime save-path allowlist is user://screenshots/ only — a shipped game has no
-	# res:// write access, and the editor server owns the res:// destination.
+	# res:// write access, and the editor server owns the res:// destination. The
+	# send-path size guard sees the final (inline) buffer, so no byte check here.
 	var response := ScreenshotResponse.build(
 		params_dict, png_bytes, image.get_width(), image.get_height(),
-		["user://screenshots/"])
+		["user://screenshots/"],
+		inline["png_bytes"], int(inline["width"]), int(inline["height"]))
 	if response.get("success") == false:
 		_send_result(peer, id, response)
 		return
@@ -337,10 +353,37 @@ func _cmd_runtime_screenshot(peer: WebSocketPeer, id, params) -> void:
 		response["remediation"] = remediation
 	# An embedded game can't be foregrounded (owner-linked, editor-controlled), so a
 	# force_foreground_game request there took no effect — disclose why the window
-	# didn't move rather than leaving the caller with a silent no-op.
+	# didn't move rather than leaving the caller with a silent no-op. Append rather
+	# than clobber a disk full-res hint the shaper may already have set.
 	if not foreground_hint.is_empty():
-		response["hint"] = foreground_hint
+		if response.has("hint"):
+			response["hint"] = "%s %s" % [response["hint"], foreground_hint]
+		else:
+			response["hint"] = foreground_hint
 	_send_result(peer, id, response)
+
+
+# Encode the downscaled inline PNG for an image_detail cap, but only when an inline
+# image is actually returned (inline/both mode) and the level shrinks the frame —
+# disk-only returns the full-res file, so it needs no inline buffer. Returns
+# {png_bytes, width, height}; png_bytes is empty (and dims -1) when no downscale
+# applies, which ScreenshotResponse.build reads as "use the full-res buffer inline".
+func _downscale_inline_png(image: Image, params_dict: Dictionary, detail: String) -> Dictionary:
+	var empty := {"png_bytes": PackedByteArray(), "width": -1, "height": -1}
+	if ScreenshotResponse.mode_of(params_dict) == "disk":
+		return empty
+	var target := ScreenshotResponse.image_detail_dims(image.get_width(), image.get_height(), detail)
+	if target.x == image.get_width() and target.y == image.get_height():
+		return empty
+	# duplicate() is typed Ref<Resource>; the explicit Image local coerces (loud on a
+	# mismatch, unlike `as`). Resize the copy so the full-res buffer stays intact for disk.
+	var inline_image: Image = image.duplicate()
+	inline_image.resize(target.x, target.y, Image.INTERPOLATE_LANCZOS)
+	return {
+		"png_bytes": inline_image.save_png_to_buffer(),
+		"width": inline_image.get_width(),
+		"height": inline_image.get_height(),
+	}
 
 
 # Raise the game window at the caller's explicit request. An embedded game (the
