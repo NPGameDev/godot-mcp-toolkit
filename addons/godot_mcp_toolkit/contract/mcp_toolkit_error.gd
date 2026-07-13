@@ -58,6 +58,7 @@ const CODES: Array[String] = [
 	"NOT_A_RESOURCE",
 	"NOT_BREAKED",
 	"NOT_FOUND",
+	"NOT_UNIQUE",
 	"PACK_FAILED",
 	"PARENT_NOT_FOUND",
 	"PARSE_ERROR",

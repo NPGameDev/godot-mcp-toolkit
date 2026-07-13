@@ -2,10 +2,10 @@
 
 A comprehensive, modular validation sweep for the Godot MCP Toolkit.
 
-**Total tools (agent-facing):** 111 + 2 meta — canonical count in server
+**Total tools (agent-facing):** 112 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
-**Toolkit surfaces (non-disjoint — do not sum):** 100 editor-registered (incl. the 4 `debug.*`) ·
-12 runtime (4 names overlap the editor 100) · 7 LSP (server-side only).
+**Toolkit surfaces (non-disjoint — do not sum):** 101 editor-registered (incl. the 4 `debug.*`) ·
+12 runtime (4 names overlap the editor 101) · 7 LSP (server-side only).
 **Sweep scale:** per-section defined-case counts in the Section Map below; last full-run tally in
 `RESULTS.md` (479 tests · 2026-07-03 · Godot 4.7). **Combo chains: 17** (C1–C12 & C27–C28 in §22;
 C24–C26 in §§26–27).
@@ -237,7 +237,7 @@ So you do NOT need to split dependent operations across messages.
 | 3 | [03-node-properties.md](Sections/03-node-properties.md) | Node Properties & Methods | 35 | node_set/get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout | S2 |
 | 4 | [04-node-management.md](Sections/04-node-management.md) | Node Management | 18 | node_manage, node_groups | S2 |
 | 5 | [05-signals.md](Sections/05-signals.md) | Signals | 7 | signal_list, signal_manage | S2 |
-| 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 9 | script_read, script_write, script_check, asset_list, asset_get_dependencies | S1 |
+| 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 17 | script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies | S1 |
 | 7 | [07-editor-console.md](Sections/07-editor-console.md) | Editor Operations & Console | 22 | editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh | S2 |
 | 8 | [08-project-settings.md](Sections/08-project-settings.md) | Project Settings & Autoloads | 12 | project_get/set_settings, autoload_manage, layer_names_get/set | S1 |
 | 9 | [09-execute-code.md](Sections/09-execute-code.md) | execute_code & Hints | 8 | execute_code | S2 |

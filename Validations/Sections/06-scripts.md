@@ -1,8 +1,8 @@
 # Section 6 — Script Operations
 
 **Dependencies:** Section 1 (actor.gd exists)
-**Tools tested:** script_read, script_write, script_check, asset_list, asset_get_dependencies
-**Tests:** 10
+**Tools tested:** script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies
+**Tests:** 17
 
 ---
 
@@ -66,6 +66,47 @@
 
 ---
 
+## script_edit — surgical span replacement
+
+> `script_edit` is the MCP analogue of the native Edit tool: it replaces an exact
+> `old_string` span in an existing script with `new_string`, routing through the
+> same write/undo/index/diagnose pipeline as `script_write` (so an edit keeps the
+> UndoRedo entry, reindex, and inline `.gd` diagnostics) and adds a `replacements`
+> count. Set-up writes a dedicated fixture so these cases don't disturb `actor.gd`.
+
+**6.10** `script_write` (edit fixture) — file_path=`res://sv2_validation/sv2_edit_target.gd`, content=`extends Node\n\nfunc _ready() -> void:\n\tprint("alpha")\n`
+- **Expect:** success write, `valid: true`. Seeds the file the following edits mutate.
+
+**6.11** `script_edit` (happy path — single unique match) — file_path=`res://sv2_validation/sv2_edit_target.gd`, old_string=`print("alpha")`, new_string=`print("beta")`
+- **Expect:** success, `replacements`=1, plus the `script_write` envelope fields (`bytes`, `undoable`=true, `indexed`, and for a `.gd` file `valid`=true + `diagnostics`). A follow-up `script_read` shows the body now prints `"beta"` and every other byte is unchanged.
+
+**6.12** `script_edit` (old_string not found) — file_path=`res://sv2_validation/sv2_edit_target.gd`, old_string=`print("never_present")`, new_string=`x`
+- **Expect:** `NOT_FOUND` with a hint telling the agent to re-read the file and match `old_string` byte-for-byte (whitespace/indent exact). The file is untouched.
+
+**6.13** `script_edit` (ambiguous — multiple matches, no replace_all) — first `script_edit` the fixture to `extends Node\n# mark\nvar a := 1\n# mark\nvar b := 2\n` (a whole-file-shaped surgical replace of the beta body), then old_string=`# mark`, new_string=`# done`
+- **Expect:** `NOT_UNIQUE`, message reports the match count (2), hint offers "add surrounding context, or set replace_all:true". The file is untouched.
+- **Note:** to reshape the fixture for this case, replace the single unique body line (e.g. old_string=`func _ready() -> void:\n\tprint("beta")`, new_string=`# mark\nvar a := 1\n# mark\nvar b := 2`).
+
+**6.14** `script_edit` (replace_all — every occurrence) — file_path=`res://sv2_validation/sv2_edit_target.gd`, old_string=`# mark`, new_string=`# done`, replace_all=`true`
+- **Expect:** success, `replacements`=2. A `script_read` confirms BOTH `# mark` lines became `# done` and the surrounding newlines are intact (no adjacent-newline collapse — the two lines stay on their own lines).
+
+**6.15** `script_edit` (empty new_string deletes the span) — file_path=`res://sv2_validation/sv2_edit_target.gd`, old_string=`\nvar b := 2`, new_string=`` (empty)
+- **Expect:** success, `replacements`=1; the `var b := 2` line (and its leading newline) is removed. Empty `new_string` is a valid delete, NOT an INVALID_PARAMS.
+
+**6.16** `script_edit` guards (no-op + empty old_string) — two calls on `res://sv2_validation/sv2_edit_target.gd`:
+- (a) old_string=`# done`, new_string=`# done` (identical) → **Expect** `INVALID_PARAMS` ("would change nothing"); no-op rejected before the file is touched.
+- (b) old_string=`` (empty), new_string=`x` → **Expect** `INVALID_PARAMS` (empty `old_string` is malformed).
+
+> **REGRESSION WATCH (script_edit):** `script_edit` must NOT be lossy vs `script_write` —
+> a successful edit carries `undoable`=true (UndoRedo entry), `indexed` (reindex), and for
+> a `.gd` file inline `diagnostics`. If a successful edit lacks any of those, the shared
+> pipeline reuse has regressed. If `replace_all` collapses adjacent newlines, or a no-op /
+> empty-`old_string` edit is accepted instead of `INVALID_PARAMS`, or an absent span returns
+> anything but `NOT_FOUND`, or an ambiguous span without `replace_all` returns anything but
+> `NOT_UNIQUE`, flag as **Major**.
+
+---
+
 ## Console error check
 
 Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
@@ -74,3 +115,4 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 - `script_delete` file_path=`res://sv2_validation/sv2_bad_script.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_preload_test.gd`
+- `script_delete` file_path=`res://sv2_validation/sv2_edit_target.gd`

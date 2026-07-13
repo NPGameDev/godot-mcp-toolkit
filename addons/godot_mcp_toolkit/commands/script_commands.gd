@@ -1,6 +1,7 @@
 @tool
 extends RefCounted
-## script.* command handlers — read, write, delete for .gd/.cs/.gdshader/.gdshaderinc.
+## script.* command handlers — read, write, surgical edit, delete, and offline
+## check for .gd/.cs/.gdshader/.gdshaderinc.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
@@ -29,6 +30,9 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("script.write", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_script_write(server, parameters)
+	, MCPToolkitCommandOptions.new().mark_scene_independent())
+	registry.add("script.edit", func(parameters: Dictionary) -> Dictionary:
+		return await _cmd_script_edit(server, parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("script.delete", func(parameters: Dictionary) -> Dictionary:
 		return await _cmd_script_delete(parameters)
@@ -141,6 +145,90 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 			return MCPToolkitError.fail("READ_FAILED",
 				"could not read prior content of %s (err %d)" % [file_path, read_error])
 
+	var result := await _commit_content(server, file_path, content, prior_content, existed, write_extension)
+	if result.has("error"):
+		return result
+	if dirs_created:
+		result["dirs_created"] = true
+	return result
+
+
+static func _cmd_script_edit(server: Node, parameters: Dictionary) -> Dictionary:
+	var err = MCPToolkitError.require(parameters, ["file_path", "old_string"])
+	if err != null:
+		return err
+	var file_path := str(parameters.get("file_path", ""))
+	var guard := FileGuard.resolve_safe(file_path)
+	if guard["error"] != null:
+		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
+	var edit_extension := file_path.get_extension().to_lower()
+	if not (edit_extension in ALLOWED_EXTENSIONS):
+		return MCPToolkitError.fail("INVALID_PATH",
+			"script.edit only edits .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.create for .tscn, resource.write for .tres/.res, or a different tool for other file types" % file_path)
+	# new_string is required-present but "" is valid (an empty replacement deletes the
+	# span) — so it can't go through require(), which rejects an empty string. Check
+	# presence directly.
+	if not parameters.has("new_string"):
+		return MCPToolkitError.fail("INVALID_PARAMS", "missing new_string")
+	var old_string := str(parameters.get("old_string", ""))
+	var new_string := str(parameters.get("new_string", ""))
+	# Fail fast on a no-op / malformed edit before touching the file: a substitution
+	# that changes nothing would still churn undo/index/diagnostics for no effect.
+	if old_string == new_string:
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"old_string and new_string are identical — the edit would change nothing")
+	var replace_all := bool(parameters.get("replace_all", false))
+
+	if not FileAccess.file_exists(file_path):
+		return MCPToolkitError.fail("NOT_FOUND", "no file at %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
+	var prior_content := FileAccess.get_file_as_string(file_path)
+	var read_error := FileAccess.get_open_error()
+	if read_error != OK:
+		return MCPToolkitError.fail("READ_FAILED",
+			"FileAccess error %d reading %s" % [read_error, file_path])
+
+	var match_count := prior_content.count(old_string)
+	if match_count == 0:
+		return MCPToolkitError.fail("NOT_FOUND",
+			"old_string not found in %s" % file_path,
+			"Re-read the file (script.read) and copy old_string byte-for-byte; whitespace and indentation must match exactly.")
+	if match_count > 1 and not replace_all:
+		return MCPToolkitError.fail("NOT_UNIQUE",
+			"old_string matches %d times in %s" % [match_count, file_path],
+			"Add surrounding context so old_string identifies one location, or set replace_all:true to replace all %d." % match_count)
+
+	var new_content: String
+	var replacements: int
+	if replace_all:
+		new_content = prior_content.replace(old_string, new_string)
+		replacements = match_count
+	else:
+		# Exactly one match: splice at the found offset rather than String.replace (which
+		# would substitute every occurrence), leaving every other byte untouched.
+		var at := prior_content.find(old_string)
+		new_content = prior_content.substr(0, at) + new_string + prior_content.substr(at + old_string.length())
+		replacements = 1
+
+	# The file existed (checked above), so the undo restores prior_content.
+	var result := await _commit_content(server, file_path, new_content, prior_content, true, edit_extension)
+	if result.has("error"):
+		return result
+	result["replacements"] = replacements
+	return result
+
+
+## Writes [param content] to [param file_path], wrapping it in an editor UndoRedo
+## action, reindexing the file, and — for a .gd file — attaching inline
+## diagnostics plus the stale-live-instance hint. Shared by [method _cmd_script_write]
+## (whole-file) and [method _cmd_script_edit] (surgical) so both take the identical
+## write/undo/index/diagnose pipeline. [param prior_content] is the file's content
+## before this write (empty when [param existed] is false) — the undo restores it,
+## or deletes the file when it did not exist. [param extension] is the lowercased
+## file extension, used to gate the .gd-only diagnostics.
+## Returns the success envelope [code]{bytes, undoable, indexed, valid?, diagnostics?, hint?}[/code],
+## or a [method MCPToolkitError.fail] envelope on a write failure.
+static func _commit_content(server: Node, file_path: String, content: String,
+		prior_content: String, existed: bool, extension: String) -> Dictionary:
 	var write_error := _write_file_raw(file_path, content)
 	if write_error != OK:
 		return MCPToolkitError.fail("WRITE_FAILED",
@@ -160,11 +248,9 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 	var bytes_written := content.to_utf8_buffer().size()
 	var result := MCPToolkitSuccess.ok({"bytes": bytes_written, "undoable": undoable,
 		"indexed": index_result["indexed"]})
-	if dirs_created:
-		result["dirs_created"] = true
 
 	# Inline GDScript diagnostics — same validation as script_check.
-	if write_extension == "gd":
+	if extension == "gd":
 		var validation := _validate_gdscript(content)
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
@@ -175,7 +261,7 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 		# empirically characterised, boundary 4.3->4.4). Append to the response hint
 		# (validation guidance first, stale nudge in the recency slot).
 		var version := Modules.VersionUtils.get_engine_version_ints()
-		if Modules.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], write_extension, version.x, version.y):
+		if Modules.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], extension, version.x, version.y):
 			result["hint"] = Modules.StaleInstanceHint.write_hint(Modules.VersionUtils.get_engine_version_pair())
 
 	return result

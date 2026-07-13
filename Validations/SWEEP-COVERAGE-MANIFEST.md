@@ -1,11 +1,11 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-07-12 (41o-terdecies close-out — animationtree_edit add_node `nodes_count` version-gated omission + `note` on 4.2-4.4 (§13 13.6/13.7); debug_set_breakpoint identity-bind + verified-path echo (§27 27.2); execute_code load()-hint both-remedies + parse-error framing (§09 9.4/9.7); scene_instantiate bare-untagged transform wording position/rotation/scale)
+**Last updated:** 2026-07-13 (41o-quater-bis — surgical `script.edit` handler added (§6 6.10–6.16): happy-path single replace, NOT_FOUND, NOT_UNIQUE, replace_all newline-adjacency, empty-`new_string` span delete, no-op / empty-`old_string` INVALID_PARAMS. Prior (41o-terdecies close-out): animationtree_edit add_node `nodes_count` version-gated omission + `note` on 4.2-4.4 (§13 13.6/13.7); execute_code load()-hint both-remedies + parse-error framing (§09 9.4/9.7))
 **Toolkit commit:** T:2e2e6d9
-**Total tools (agent-facing):** 111 + 2 meta — canonical count in server
+**Total tools (agent-facing):** 112 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
-**Toolkit surfaces (non-disjoint — do not sum):** 100 editor-registered (incl. the 4 `debug.*`) ·
-12 runtime (4 names overlap the editor 100) · 7 LSP (server-side only).
+**Toolkit surfaces (non-disjoint — do not sum):** 101 editor-registered (incl. the 4 `debug.*`) ·
+12 runtime (4 names overlap the editor 101) · 7 LSP (server-side only).
 **Sweep scale:** per-section defined-case counts in the `tool-sweep.md` index; last full-run tally in
 `RESULTS.md` (479 tests · 2026-07-03 · Godot 4.7). **Combo chains: 18** (C1–C12 & C27–C28 in §22;
 C24–C26 & C29 in §§26–27).
@@ -58,12 +58,13 @@ C24–C26 & C29 in §§26–27).
 | collision_from_texture | 19.1, 19.2, §25 UR12 | ✓ (19.3: INVALID_CLASS) | — | — | — | `parent_path` param (renamed from `target_parent`) |
 | control.set_layout | 3.24–3.26 | ✓ (3.27: invalid preset, 3.28: wrong class) | C28 | — | 4d7e432 | W1 Lane 2 |
 
-### Script Management (4 tools)
+### Script Management (5 tools)
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | script.read | 15, 16, 6.2, 6.2b | — | — | ✓ (6.2 has_more `hint`) | concern 054; ledger #20 | 6.2/6.2b: uniform pagination contract — every success carries `has_more`+`total_lines`+`returned` (this window's line count, added ledger #20); a windowed read before EOF adds `next_start_line` (1-based = end_line+1) + a prose `hint`; full read / window-at-EOF = `has_more:false`, no hint. Mirrors save.read SHAPE in line units. ledger #20 renamed `truncated`→`has_more` + added `returned`. |
 | script.write | 2, 3 | — | C2, C5, C11 | ✓ (6.5: preload hint) | FIX-1 | **GAP:** diagnostics fields in response |
+| script.edit | 6.11 (happy: replacements=1 + undoable/indexed/valid), 6.14 (replace_all replacements=2 newline-adjacency), 6.15 (empty new_string span delete) | 6.12 (NOT_FOUND absent), 6.13 (NOT_UNIQUE ambiguous), 6.16a (INVALID_PARAMS no-op), 6.16b (INVALID_PARAMS empty old_string) | — | ✓ (6.12 NOT_FOUND re-read hint; 6.13 NOT_UNIQUE context/replace_all hint) | 41o-quater-bis | eager; surgical MCP analogue of native Edit. Reuses `script.write`'s write/undo/index/diagnose pipeline (`_commit_content`) → identical envelope + `replacements`. `NOT_UNIQUE` is new to `MCPToolkitError.CODES` (57 total). |
 | script.delete | — | — | C2 | — | — | Only in combos |
 | script.check | 17 | — | C2, C11 | — | — | |
 
