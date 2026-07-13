@@ -3,8 +3,9 @@ extends RefCounted
 ## execute.code: evaluate a single GDScript expression (not statements) via the
 ## engine Expression class, against an editor-side scope node (the edited scene
 ## root, an explicit scope_path under it, or the editor base control as a
-## fallback). Guards statement keywords, and on an execution failure enriches the
-## error with singleton, chained-property-access, and load() recovery hints.
+## fallback). Guards statement keywords, and on an execution failure appends a
+## recovery hint (inaccessible global, load(), or chained-property access) built
+## by the shared ExecuteHints helper — the same one the runtime handler uses.
 ##
 ## Stateless — the handler takes (parameters) and returns the response Dictionary.
 ## Reaches the Expression evaluator / EditorInterface directly; scope-path
@@ -14,6 +15,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Helpers = Modules.CommandHelpers
 const Coerce = Modules.Coerce
+const ExecuteHints = Modules.ExecuteHints
 
 
 # -- Commands -----------------------------------------------------------------
@@ -62,52 +64,6 @@ static func cmd_execute_code(parameters: Dictionary) -> Dictionary:
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
 		var err_text := expr.get_error_text()
-		# Detect known singletons in error and append recovery hints.
-		var singletons := ["EditorInterface", "Engine", "OS", "Input",
-			"DisplayServer", "ProjectSettings", "ResourceLoader", "ResourceSaver",
-			"RenderingServer", "PhysicsServer2D", "PhysicsServer3D"]
-		for singleton in singletons:
-			if singleton in err_text:
-				err_text += "\n\nHint: '%s' is a global singleton not accessible in Expression.execute(). Use dedicated MCP tools instead (e.g., editor_refresh, project_get_settings, node_call_method)." % singleton
-				break
-		# Detect chained property access failure on returned objects.
-		if "Invalid named index" in err_text and "base type Object" in err_text:
-			err_text += "\n\nHint: Expression.execute() cannot chain property access on returned objects. Use runtime_get_node_state or node_call_method for multi-step property access."
-		# Detect load() call failures — Expression cannot call load(). The engine's
-		# phrasing varies by version ("call to 'load'" vs a "function 'load'"
-		# not-found), so match either rather than a single literal.
-		var lower_err := err_text.to_lower()
-		if "'load'" in lower_err and ("call to" in lower_err or "function" in lower_err):
-			err_text += _make_load_hint(code)
+		err_text += ExecuteHints.build_hint(err_text, code)
 		return MCPToolkitError.fail("EXECUTE_FAILED", err_text)
 	return MCPToolkitSuccess.ok({"result": Coerce.serialize_value(result)})
-
-
-## Build a context-aware hint when Expression.execute() fails on load().
-## Expression cannot call load() for any target, so both recovery paths apply —
-## assigning a resource and running script logic. The detected target type only
-## orders which remedy leads; both are always offered so whichever the caller
-## actually wanted is present.
-static func _make_load_hint(code: String) -> String:
-	var re := RegEx.new()
-	re.compile("load\\s*\\(\\s*[\"']([^\"']+)[\"']\\s*\\)")
-	var m := re.search(code)
-	var script_first := m != null and m.get_string(1).ends_with(".gd")
-	var assign_remedy := (
-		"To assign the resource, use node_set_property with "
-		+ "{\"type\": \"Resource\", \"path\": \"res://...\"}."
-	)
-	var script_remedy := (
-		"To run GDScript logic in the editor: "
-		+ "(1) write a @tool script with script_write, "
-		+ "(2) create a temporary node with scene_create_node, "
-		+ "(3) attach the script with node_set_script, "
-		+ "(4) call the method with node_call_method, "
-		+ "(5) delete the temp node with node_manage(action:'delete')."
-	)
-	var lead := script_remedy if script_first else assign_remedy
-	var follow := assign_remedy if script_first else script_remedy
-	return (
-		"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
-		+ lead + " " + follow
-	)

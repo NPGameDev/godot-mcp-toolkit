@@ -20,6 +20,7 @@ extends Node
 # would parse-fail this autoload in an export template (godot#91713) — GDScript
 # resolves identifiers at parse time, before any runtime guard can help.
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const ExecuteHints := preload("res://addons/godot_mcp_toolkit/contract/execute_hints.gd")
 const Pagination := preload("res://addons/godot_mcp_toolkit/contract/pagination.gd")
 const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
 const ScreenshotResponse := preload("res://addons/godot_mcp_toolkit/contract/screenshot_response.gd")
@@ -1359,29 +1360,8 @@ func _cmd_execute_code(peer: WebSocketPeer, id, params) -> void:
 	var result = expr.execute([], scope_node, false)
 	if expr.has_execute_failed():
 		var err_text := expr.get_error_text()
-		# Hint enrichment — mirror editor-side patterns.
-		if "call to 'load'" in err_text.to_lower():
-			err_text += _make_load_hint(code)
+		# Enrich via the shared helper so editor and runtime give identical guidance.
+		err_text += ExecuteHints.build_hint(err_text, code)
 		_send_result(peer, id, MCPToolkitError.fail("EXECUTE_FAILED", err_text))
 		return
 	_send_result(peer, id, {"result": Coerce.serialize_value(result)})
-
-
-static func _make_load_hint(code: String) -> String:
-	var re := RegEx.new()
-	re.compile("load\\s*\\(\\s*[\"']([^\"']+)[\"']\\s*\\)")
-	var m := re.search(code)
-	if m != null and m.get_string(1).ends_with(".gd"):
-		return (
-			"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
-			+ "To run GDScript logic in the editor: "
-			+ "(1) write a @tool script with script_write, "
-			+ "(2) create a temporary node with scene_create_node, "
-			+ "(3) attach the script with node_set_script, "
-			+ "(4) call the method with node_call_method, "
-			+ "(5) delete the temp node with node_manage(action:'delete')."
-		)
-	return (
-		"\n\nHint: Expression.execute() cannot call load() in any context (editor or runtime). "
-		+ "Assign resources via node_set_property with {\"type\": \"Resource\", \"path\": \"res://...\"}."
-	)

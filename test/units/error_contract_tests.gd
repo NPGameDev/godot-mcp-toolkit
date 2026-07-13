@@ -7,12 +7,14 @@ extends RefCounted
 ## run() is a coroutine — the response-validation group awaits registry.call_command().
 
 const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
+const ExecuteHints := preload("res://addons/godot_mcp_toolkit/contract/execute_hints.gd")
 
 
 static func run(testing) -> void:
 	_test_error_api(testing)
 	_test_error_codes_vocabulary(testing)
 	_test_log_hints(testing)
+	_test_execute_hints(testing)
 	_test_make_error_entry(testing)
 	_test_response_size_guard(testing)
 	_test_image_response_too_large_hint(testing)
@@ -170,6 +172,53 @@ static func _test_log_hints(testing) -> void:
 			"LOG_BUSY absent from DEFAULT_HINTS (moved to log_busy_hint)")
 	testing.ok(not MCPToolkitError.DEFAULT_HINTS.has("LOG_UNAVAILABLE"),
 			"LOG_UNAVAILABLE absent from DEFAULT_HINTS (moved to log_unavailable_hint)")
+
+	print("")
+
+
+# --- execute_code failure-hint enrichment (ExecuteHints.build_hint) --------
+# build_hint turns an opaque Expression.execute() error into an actionable next
+# step, shared by the editor and runtime handlers. The eval context is the load-
+# bearing fact: a bare identifier resolves as a property of the scope node, so
+# no engine singleton, project autoload, or global class_name is reachable — all
+# three surface as "Invalid named index '<Name>' for base type Object". Pins that
+# a known singleton is named as such, an autoload gets the generic-global steer
+# (not the wrong chained-access hint), load() is caught, genuine chaining still
+# gets the chaining hint, and a clean identity error yields no hint.
+static func _test_execute_hints(testing) -> void:
+	testing.begin("execute_code failure-hint enrichment")
+
+	# Engine singleton at the head of a call chain (the reported Input case) →
+	# named as a singleton, with the property-of-scope explanation.
+	var input_err := "Invalid named index 'Input' for base type Object"
+	var input_hint := ExecuteHints.build_hint(input_err, "Input.is_action_pressed(\"fire\")")
+	testing.ok(input_hint.contains("'Input' is a global singleton"), "Input → named as a singleton")
+	testing.ok(input_hint.contains("property of the scope node"), "Input → explains the eval context")
+	testing.ok(not input_hint.contains("chain property access"), "Input → not the chained-access hint")
+
+	# A project autoload fails identically but isn't a known singleton → generic
+	# global steer, NOT the (inaccurate) chained-property-access hint.
+	var autoload_err := "Invalid named index 'GameState' for base type Object"
+	var autoload_hint := ExecuteHints.build_hint(autoload_err, "GameState.score")
+	testing.ok(autoload_hint.contains("autoload or global class"), "autoload → generic-global steer")
+	testing.ok(not autoload_hint.contains("chain property access"), "autoload → not the chained hint")
+
+	# Genuine chaining on a returned object (the failed name is reached through a
+	# '.', not the leading token) → the chained-property hint, not a global steer.
+	var chain_err := "Invalid named index 'missing' for base type Object"
+	var chain_hint := ExecuteHints.build_hint(chain_err, "get_parent().missing")
+	testing.ok(chain_hint.contains("chain property access"), "chained access → chaining hint")
+	testing.ok(not chain_hint.contains("global singleton"), "chained access → not a global steer")
+
+	# load() cannot be called in any context → both recovery paths offered.
+	var load_hint := ExecuteHints.build_hint("On call to 'load' function", "load(\"res://icon.svg\")")
+	testing.ok(load_hint.contains("cannot call load()"), "load() → load hint")
+	testing.ok(load_hint.contains("node_set_property") and load_hint.contains("script_write"),
+			"load() → both remedies present")
+
+	# A resolvable expression error unrelated to the known shapes → no hint noise.
+	testing.eq(ExecuteHints.build_hint("Some unrelated error", "1 + 1"), "",
+			"unrecognised error → empty hint")
 
 	print("")
 
