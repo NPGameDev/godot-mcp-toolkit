@@ -176,10 +176,10 @@ before launch) — the toolkit never writes them.
 
 | Env var | Channel | Effect | Default |
 |---|---|---|---|
-| `GODOT_MCP_EDITOR_PORT` | Editor (Mode A) | **Pin** — bind this exact port or fail | — (scan) |
-| `GODOT_MCP_EDITOR_PORT_MIN` / `_MAX` | Editor (Mode A) | **Relocate** the scan band (inclusive) | `6550` / `6560` |
-| `GODOT_MCP_RUNTIME_PORT` | Runtime (Mode B, in-game) | **Pin** — bind this exact port or fail | — (scan) |
-| `GODOT_MCP_RUNTIME_PORT_MIN` / `_MAX` | Runtime (Mode B) | **Relocate** the scan band (inclusive) | `6570` / `6585` |
+| `GODOT_MCP_EDITOR_PORT` | Editor channel | **Pin** — bind this exact port or fail | — (scan) |
+| `GODOT_MCP_EDITOR_PORT_MIN` / `_MAX` | Editor channel | **Relocate** the scan band (inclusive) | `6550` / `6560` |
+| `GODOT_MCP_RUNTIME_PORT` | Runtime channel (the running game) | **Pin** — bind this exact port or fail | — (scan) |
+| `GODOT_MCP_RUNTIME_PORT_MIN` / `_MAX` | Runtime channel | **Relocate** the scan band (inclusive) | `6570` / `6585` |
 
 The same `GODOT_MCP_EDITOR_PORT` / `GODOT_MCP_RUNTIME_PORT` are **also read by the
 MCP server** to decide which port to **dial** — inherited by both processes, a pin

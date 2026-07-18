@@ -2,7 +2,7 @@
 extends AcceptDialog
 ## In-editor Info / Help dialog — read-only presentation of connection state,
 ## plugin/engine versions, the registered-tool summary, multi-instance support,
-## read-only mode, Companion Skills, and reference links.
+## read-only mode, version compatibility, Companion Skills, and reference links.
 ##
 ## Lazy-created and owned by the dock. Each show_info() re-reads live server
 ## state and fully rebuilds the content, so a reused instance always reflects
@@ -109,6 +109,19 @@ func show_info(server: Node) -> void:
 		+ "it requires reconnecting the MCP client — existing connections\n"
 		+ "keep their current setting until then."))
 
+	var compat_content := DockSectionCard.make_collapsible(mid, "Compatibility", false)
+	_add_note_label(compat_content, (
+		"Supports Godot 4.2 through 4.7 (untested newer versions run\n"
+		+ "with a startup warning). Some tools are version-gated, so\n"
+		+ "older versions expose fewer. The shipped guide covers\n"
+		+ "per-version behavior, headless mode, C# (.NET) requirements,\n"
+		+ "and export stripping."))
+	var open_compat_btn := Button.new()
+	open_compat_btn.text = "Open Compatibility Guide"
+	var compat_doc := "res://addons/godot_mcp_toolkit/docs/compatibility.md"
+	open_compat_btn.pressed.connect(func(): OS.shell_open(ProjectSettings.globalize_path(compat_doc)))
+	compat_content.add_child(open_compat_btn)
+
 	var skills_content := DockSectionCard.make_collapsible(mid, "Companion Skills", false)
 	_add_note_label(skills_content, (
 		"Companion Skills are SKILL.md 'Agent Skills' — an open standard\n"
@@ -138,6 +151,7 @@ func show_info(server: Node) -> void:
 	for pair in [
 		["Toolkit Repo", "https://github.com/NPGameDev/godot-mcp-toolkit"],
 		["Issues", "https://github.com/NPGameDev/godot-mcp-toolkit/issues"],
+		["Troubleshooting", "https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/docs/troubleshooting.md"],
 		["Contributing", "https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/CONTRIBUTING.md"],
 		["Server Repo", "https://github.com/NPGameDev/godot-mcp-server"],
 	]:

@@ -49,15 +49,16 @@ the worktree copy only.
 Single editor, multiple game processes (Project Settings > Run > Run Multiple
 Instances).
 
-- **Editor MCP (Mode A):** unaffected -- single editor, single Mode A port.
-- **Runtime MCP (Mode B):** dynamic port allocation works -- each game process
-  binds a distinct port from the 6570-6585 range. However, the registry's
-  single `runtime_port` field per entry means only the last-started game
-  process is bridge-discoverable.
+- **Editor connection:** unaffected -- single editor, single editor-channel
+  port.
+- **Runtime connection (the running game):** dynamic port allocation works --
+  each game process binds a distinct port from the 6570-6585 range. However,
+  the registry's single `runtime_port` field per entry means only the
+  last-started game process is bridge-discoverable.
 
 This is a minor limitation. MCP usage during multiplayer testing is
-predominantly Mode A (editor introspection), not Mode B (runtime
-introspection).
+predominantly editor tools (introspection), not runtime tools (the running
+game).
 
 The editor's debug bridge has the same single-session limit: it tracks only
 the most-recently-launched game process, so `debug_state`, `debug_continue`,

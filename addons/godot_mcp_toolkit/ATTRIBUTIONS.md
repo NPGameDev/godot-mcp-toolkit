@@ -1,13 +1,13 @@
 # Attributions (godot-mcp-toolkit)
 
-This repo's GDScript source under `addons/godot_mcp_toolkit/` was independently
-written. No code from any reference repository has been copied verbatim or
-near-verbatim into `plugin.gd` or `mcp_server.gd`. The entries below document
-the architectural patterns we studied while designing the plugin, in
-compliance with the project's attribution hygiene rule (I10).
+This addon's GDScript source was independently written. No code from any
+reference repository has been copied verbatim or near-verbatim into this addon.
+The entries below document the architectural patterns we studied while
+designing the plugin.
 
-If future iterations import or adapt code from any of the sources below, append
-a "Copied into: …" line with the file path(s) to keep this file accurate.
+If a future version imports or adapts code from any of the sources below, a
+"Copied into: …" line with the file path(s) will be appended to keep this file
+accurate.
 
 ---
 
@@ -33,9 +33,9 @@ License: MIT
 Copyright (c) 2025 Tugcan Topaloglu
 Copyright (c) 2025 Solomon Elias
 
-Contributed (architecture reference only — no code copied): code-execution pattern
-(arbitrary GDScript execution with return values and `await` support), signal
-management system concepts (connect/disconnect/emit/await with timeout),
+Contributed (architecture reference only — no code copied): code-execution
+pattern (arbitrary GDScript execution with return values and `await` support),
+signal management system concepts (connect/disconnect/emit/await with timeout),
 generic node property inspection via `get_property_list()`, reentrancy-guard
 pattern for concurrent command prevention.
 
@@ -53,8 +53,7 @@ parser architecture (raw → resolved → indexed), spatial intelligence tool
 concepts (`scene_map`, placement, spatial audit), token-optimisation approach
 (brief / normal / full detail levels), `EngineDebugger` IPC pattern for
 runtime access, **the UndoRedo + `add_undo_reference` pattern for editor-safe
-node deletion** (confirmed via the reference-repo audit on 2026-04-14 and
-standardised in our `scene.delete_node` handler during iter 07 hardening —
+node deletion** (our scene-delete handler standardises on the same pattern —
 the code itself was independently written).
 
 ---
@@ -73,8 +72,8 @@ architecture (Godot editor plugin ↔ external Node.js process), JSON-RPC 2.0
 over WebSocket protocol design, UndoRedo integration approach (see
 salvo10f/godotiq entry — both projects converge on the same pattern), port
 `6505` as the standard MCP port for this style of plugin, **returning screenshot
-bytes inline via base64 + mime_type** (also standardised in our
-`editor.screenshot` handler during iter 07 hardening).
+bytes inline via base64 + mime_type** (our screenshot handler standardises on
+the same shape — independently written).
 
 ---
 
@@ -130,9 +129,9 @@ Contributed (architecture reference only — no code copied): Godot 4
 ## Notes
 
 MIT only requires preserving notices for code that is directly copied or
-substantially reproduced. None of the above are copied into this repository —
+substantially reproduced. None of the above are copied into this addon —
 the entries document the architectural study we credit by courtesy.
 
-The companion TypeScript-side repository (`godot-mcp-server`) carries its own
+The companion npm package (`@npgamedev/godot-mcp-server`) carries its own
 `ATTRIBUTIONS.md` with the subset of references relevant to the bridge /
 Node.js side.

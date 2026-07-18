@@ -162,6 +162,117 @@ should look and behave. New to the codebase? Read these in order:
 5. [`docs/adr/`](docs/adr/) — architecture decision records: the rationale
    behind the larger design choices.
 
+## Compatibility engineering
+
+The end-user compatibility reference (version tiers, per-tool matrices, degraded
+behavior) ships with the addon at
+[`addons/godot_mcp_toolkit/docs/compatibility.md`](addons/godot_mcp_toolkit/docs/compatibility.md).
+This section covers the contributor side: how the cross-version support is
+implemented and what constraints it puts on new code.
+
+### Version guard implementation
+
+All version-dependent API calls use **dynamic dispatch** to avoid GDScript
+static-resolution parse errors:
+
+```gdscript
+# Safe — has_method() + call() bypasses static resolution
+if EditorInterface.has_method("close_scene"):
+    EditorInterface.call("close_scene")
+
+# UNSAFE — direct call causes parse error on older Godot even inside dead branch
+if Engine.get_version_info().minor >= 5:
+    EditorInterface.close_scene()  # ERROR on 4.4: method not found at parse time
+```
+
+Centralized version helpers in `core/modules.gd`:
+- `Modules.VersionUtils.is_at_least(ver, min)` / `is_at_most(ver, max)` — single-bound version checks
+- `Modules.VersionUtils.is_version_in_range(ver, min, max)` — range version check (used by command registry)
+- `Modules.get_undo_redo()` — returns the editor `EditorUndoRedoManager` via the
+  stored `EditorPlugin` (4.0+ stable; works on all supported versions). Returns
+  `null` only in headless mode or before the plugin is set. Operations registered
+  through it create Edit > Undo history; direct property mutations bypass history.
+- `Modules.get_toaster()` — returns `EditorToaster` or `null` on < 4.4
+  (`EditorInterface.get_editor_toaster()` is 4.4+)
+- `Modules.get_editor_theme()` — returns the editor theme. Uses
+  `EditorInterface.get_editor_theme()`, which is bound on all supported versions
+  (4.2+); the `get_base_control().get_theme()` fallback only mattered on the
+  unsupported 4.0/4.1 and never triggers on 4.2+
+
+**Bare static-method `Callable` — 4.2 NIL-self abort.** Don't form a `Callable` from a bare
+static-method reference. On Godot **4.2 only**, the compiler binds a bare member-function
+reference to `SELF`; inside a `static` function `SELF` is `NIL`, so the call silently aborts
+(`Invalid get index '<method>' (on base: 'Nil')`) and returns a typed-default value **with no
+error propagated** — a silent wrong result on 4.2, correct on 4.3+. Fixed upstream between 4.2
+and 4.5 (`gdscript_compiler.cpp` SELF→CLASS for static members). **Instead:** pass the resolved
+value directly (e.g. the `Node`), or inject an instance method. Guarded by a headless 4.2 unit
+test (`test/units/signal_resolver_tests.gd`).
+
+### Server-side version awareness
+
+The plugin sends its Godot version in the WebSocket auth handshake. The
+companion `@npgamedev/godot-mcp-server` uses this to:
+
+1. **Runtime gating** — tools with a `godotMinVersion` requirement (e.g.
+   `scene_close` requires 4.5+) return an `UNSUPPORTED` error before the
+   call reaches the plugin. Defence-in-depth: the plugin also checks.
+2. **Startup logging** — the server logs the connected Godot version.
+
+Environment variable `GODOT_MCP_HIDE_UNAVAILABLE=1` is reserved for future
+use (hiding version-incompatible tools from `tools/list`).
+
+### CI limitations
+
+CI runs `scripts/test_framework/validate_gdscript.sh` (editor-headless +
+per-file script runner) on Godot 4.3+. **Godot 4.2 is excluded from this
+static-validation matrix** because its editor scan aborts on `class_name`
+cross-references before completing — all detected errors are false
+positives, not real script problems. This is a chicken-and-egg bug in
+Godot 4.2's GDScript module (fixed in 4.3): the scanner needs the class
+cache to resolve `class_name` identifiers, but the class cache is built
+by the scan. Both standard and .NET editor builds have the same issue.
+
+**Godot 4.2 unit tests DO run in CI**, via the floor `unit-tests` job
+(`.github/workflows/ci.yml`, a 4.2-4.7 matrix using the `godot-units` composite
+action). On the 4.2 leg it warms the global class
+cache with a background editor-scan boot gated on the cache artifact itself
+(a frame-count quit races the threaded scan, and `--import` cannot warm
+4.2.0 — it hangs without writing the cache, an engine bug fixed by 4.2.2),
+tolerating the transient `class_name` errors, then runs the headless unit
+suite and gates on the unit runner's exit code, so 4.2 gets a real execution
+signal on every push/PR. A clean cross-file `class_name` *static* validation
+still cannot run on 4.2 (that is the 4.3 analyzer fix) — the 4.2 CI signals
+are unit execution (floor) and the behavioral run below.
+
+**Godot 4.2 also runs the behavioral CI tier**: the cross-version workflow's
+smoke + flows matrix (`.github/workflows/cross-version.yml`) includes 4.2
+alongside 4.3–4.7, with a 4.2-only class-cache warm-up step before the editor
+launch (same editor-scan warm-up as the unit job). The interactive
+tool sweep stays local (mandatory on large toolkit iterations, optional on
+medium ones).
+
+> **Validation vocabulary.** **SWEEP** = the toolkit's interactive, GDScript
+> tool-exercise suite (`Validations/`, not run in CI). **SMOKE** = the server's
+> automated, WS-behavioral suite (`godot-mcp-server` `test/sections/`, the CI
+> cross-version tier). Both exercise the tools; only SMOKE runs in CI.
+
+### Future development constraints
+
+- **Typed for loops** (`for x: Type in arr:`) require Godot 4.2+. Used in
+  `extension_loader.gd`. Safe at current minimum.
+- **Typed dictionaries** (`Dictionary[K, V]`) require Godot 4.4+. Not
+  currently used in the codebase. If the minimum supported version remains
+  4.2, this syntax must not appear in any `.gd` file.
+- **`@export_tool_button`** requires Godot 4.4+. Same constraint.
+- **`@abstract`** requires Godot 4.5+. Same constraint.
+- **`EditorDock`** (new in 4.6) hosts the toolkit dock on 4.6+ via
+  `EditorPlugin.add_dock()` (`core/dock_host.gd`, capability-gated on
+  `ClassDB.class_exists("EditorDock")` — never referenced statically, which
+  would parse-error on 4.2–4.5). On 4.2–4.5 the plugin uses the legacy
+  `add_control_to_bottom_panel()`; that path is deprecated from 4.6 and
+  renders a collapsed (invisible) panel on 4.7, which is why the gate adopts
+  `add_dock` from 4.6.
+
 ## Documentation
 
 Documentation is part of the product, so a change to behavior is not done until

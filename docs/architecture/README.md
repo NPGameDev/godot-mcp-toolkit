@@ -15,7 +15,7 @@ nav_order: 2
 > ([ADR 0016](#14-key-decisions-adrs)), and its macOS absolute-node auto-emit
 > ([ADR 0017](#14-key-decisions-adrs)) was reverted to a plain per-OS `npx` command by
 > [ADR 0018](#14-key-decisions-adrs) after a real-Mac finding;
-> the Mode-A handshake added a `headless` field ([ADR 0014](#14-key-decisions-adrs)); dispatch
+> the editor-channel handshake added a `headless` field ([ADR 0014](#14-key-decisions-adrs)); dispatch
 > cancellation keys were peer-scoped; and the support ceiling reached Godot 4.7. Structural
 > baseline unchanged from the 41n cohesion refactor (thin orchestrators over
 > single-responsibility children; DDD domain folders such as `commands/`, `contract/`,
@@ -76,11 +76,12 @@ Diagrams below are verified against `eb4c9fa` (the 41n-series finalization) — 
 
 An AI assistant talks **MCP** to the npm bridge; the bridge talks **JSON-RPC over a
 localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one inside the
-**editor** (Mode A, for authoring) and one inside a **running game** (Mode B, for runtime
-inspection) — and publishes a small **registry file** so the bridge can discover every live
-instance on the machine.
+**editor** (the **Editor channel**, for authoring) and one inside a **running game** (the
+**Runtime channel**, for runtime inspection; code comments label these two hosts *Mode A*
+and *Mode B* internally) — and publishes a small **registry file** so the bridge can
+discover every live instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="75fc307" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="1ca3bf4" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -88,8 +89,8 @@ flowchart LR
       Bridge["MCP bridge<br/>tools/list · tools/call"]
     end
     subgraph toolkit["godot-mcp-toolkit · addon · GDScript"]
-      ModeA["Mode A — editor server<br/>mcp_server.gd · ports 6550-6560"]
-      ModeB["Mode B — runtime server<br/>mcp_runtime_server.gd · ports 6570-6585"]
+      ModeA["Editor channel<br/>mcp_server.gd · ports 6550-6560"]
+      ModeB["Runtime channel<br/>mcp_runtime_server.gd · ports 6570-6585"]
     end
     Registry[("projects.json<br/>machine-wide registry")]
     AI -->|"MCP / stdio"| Bridge
@@ -99,7 +100,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified 75fc307*
+*Figure 1 — system context · verified 1ca3bf4*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -110,7 +111,7 @@ below:
 | Folder | Responsibility | Section |
 |--------|----------------|---------|
 | `transport/` + `transport/dispatch/` | editor server, WebSocket framing, request routing, concurrency lanes | [§3](#3-transport--connection), [§4](#4-dispatch--concurrency) |
-| `runtime/` | the in-game (Mode B) server | [§2](#2-the-editorruntime-split), [§3](#3-transport--connection) |
+| `runtime/` | the in-game (Runtime channel) server | [§2](#2-the-editorruntime-split), [§3](#3-transport--connection) |
 | `contract/` | response envelope, error codes, type coercion, the command registry | [§5](#5-the-response-contract), [§6](#6-command-registry--catalogue) |
 | `commands/` | the ~100 built-in tool handlers | [§6](#6-command-registry--catalogue) |
 | `core/` | plugin composition root, tool menu, the `Modules` preload registry, `EditorAccess` | [§7](#7-plugin-lifecycle) |
@@ -134,25 +135,25 @@ to *load* with a parse error in any export where it ships unstripped
 Runtime guards gate **behaviour**; they cannot gate **parsing**. Therefore the split must be by
 the **static dependency graph**.
 
-The **runtime server** (`runtime/mcp_runtime_server.gd`, Mode B) ships inside the player's
+The **runtime server** (`runtime/mcp_runtime_server.gd`) ships inside the player's
 exported game, so its entire `preload` closure must be **export-clean** — name no editor type,
-transitively. The **editor server** (`transport/mcp_server.gd`, Mode A) has no such constraint
+transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="75fc307" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="1ca3bf4" -->
 ```mermaid
 flowchart TB
-    ModeB["mcp_runtime_server.gd<br/>Mode B — ships in the game"]
-    ModeA["mcp_server.gd<br/>Mode A — editor only"]
+    ModeB["mcp_runtime_server.gd<br/>ships in the game"]
+    ModeA["mcp_server.gd<br/>editor only"]
     subgraph clean["Export-clean closure — names no Editor* type (runtime-safe)"]
       direction LR
-      C1["coerce.gd · property_set_check.gd"]
+      C1["coerce.gd · property_set_check.gd<br/>pagination.gd · execute_hints.gd<br/>screenshot_response.gd"]
       C2["untrusted.gd · scrubber.gd"]
       C3["auth.gd"]
       C4["log_helpers.gd · log_buffer.gd"]
       C5["registry_client.gd<br/>+ registry/store/*"]
       C6["notifier.gd · ws_transport.gd"]
-      C7["signal_pair_resolver.gd"]
+      C7["signal_pair_resolver.gd · text_input_synth.gd"]
       C8["port_config.gd<br/>(env pin/band resolve)"]
     end
     subgraph tainted["Editor-only — names EditorInterface / EditorPlugin / EditorSettings"]
@@ -168,7 +169,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified 75fc307*
+*Figure 2 — the editor↔runtime taint boundary · verified 1ca3bf4*
 
 Consequences that shape the rest of the architecture:
 
@@ -179,10 +180,10 @@ Consequences that shape the rest of the architecture:
   environment and names no editor type. `registry_client.gd` is `@tool` but editor-clean —
   it takes the LSP host/port as *parameters* rather than reading `EditorSettings`, precisely
   so the runtime can preload it ([ADR 0008](#14-key-decisions-adrs)).
-- **Mode B is deliberately smaller.** It has no mutation queue, no scene lease, and no
-  dispatcher lanes; it dispatches a fixed handful of `runtime.*` / `signal.*` / `input.*` /
-  `execute.*` handlers inline. Anything needing the editor (saving scenes, undo/redo,
-  filesystem scans) is Mode-A-only by construction.
+- **The runtime server is deliberately smaller.** It has no mutation queue, no scene lease,
+  and no dispatcher lanes; it dispatches a fixed handful of `runtime.*` / `signal.*` /
+  `input.*` / `execute.*` handlers inline. Anything needing the editor (saving scenes,
+  undo/redo, filesystem scans) stays on the editor side by construction.
 - **The runtime autoload self-disables three ways** in `_ready()`: it returns inert if
   `Engine.is_editor_hint()`, if `--check-only` is on the command line, or — the security-load-bearing
   one — if `not OS.has_feature("editor")`, which is **false in every export template**. A
@@ -203,12 +204,12 @@ first-frame auth handshake. The shared mechanics live in `ws_transport.gd` (list
 poll / auth framing) and `notifier.gd` (result / error / notification / broadcast). The two
 servers differ only in what they inject into that base and how they pump it.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="1ca3bf4" -->
 ```mermaid
 sequenceDiagram
     participant C as Bridge (client)
     participant T as WsTransport
-    participant S as mcp_server (Mode A)
+    participant S as mcp_server (editor)
     participant R as ServerRequestRouter
     C->>T: TCP connect, WebSocket upgrade
     C->>T: first frame — auth token (plus optional version)
@@ -221,10 +222,10 @@ sequenceDiagram
     R->>R: select lane, call handler
     R-->>C: JSON-RPC result (success + status)
 ```
-*Figure 3 — connect → auth handshake → dispatch · verified eb4c9fa*
+*Figure 3 — connect → auth handshake → dispatch · verified 1ca3bf4*
 
-**Ports & framing.** By default Mode A scans `6550–6560` and Mode B scans `6570–6585`; both
-bind `127.0.0.1`. The listen configuration is resolved from the environment by the shared,
+**Ports & framing.** By default the Editor channel scans `6550–6560` and the Runtime channel
+scans `6570–6585`; both bind `127.0.0.1`. The listen configuration is resolved from the environment by the shared,
 export-clean `transport/port_config.gd`: a per-channel env var pins an exact port
 (`GODOT_MCP_EDITOR_PORT` / `GODOT_MCP_RUNTIME_PORT`, **bind-exact-or-fail** with a bounded
 same-port grace — never a silent scan-fallback), or a `*_PORT_MIN` / `*_PORT_MAX` pair relocates
@@ -240,14 +241,14 @@ engine** (no chunking), which is why oversized reads are guarded centrally and `
 **globalized absolute path** is published in the registry entry (`get_published_token_path()` —
 `ProjectSettings.globalize_path` of the `user://` token file) so the bridge can read **and
 structurally validate** it without re-deriving the path ([ADR 0011](#14-key-decisions-adrs)).
-In-engine readers keep the `user://` form. The handshake reply differs by mode: Mode A returns
-`godot_version` + plugin `version` + a `headless` flag (the server's version-gating and
-headless-degradation inputs; [ADR 0014](#14-key-decisions-adrs)), Mode B returns
-`{"authed":true}` only.
+In-engine readers keep the `user://` form. The handshake reply differs by server: the editor
+server returns `godot_version` + plugin `version` + a `headless` flag (the server's
+version-gating and headless-degradation inputs; [ADR 0014](#14-key-decisions-adrs)), the
+runtime server returns `{"authed":true}` only.
 
 **The editor poll loop is deliberately indirect.** Editor mutations must not run re-entrantly
 inside `_process` (a scene save pumps the main loop, which could resume a coroutine mid-pump).
-So Mode A defers its poll and throttles it to every 4th frame:
+So the editor server defers its poll and throttles it to every 4th frame:
 
 <!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="eb4c9fa" -->
 ```mermaid
@@ -264,9 +265,9 @@ flowchart TD
 *Figure 4 — the deferred, frame-skipped editor poll · verified eb4c9fa*
 
 The mutation **watchdog** ([§4](#4-dispatch--concurrency)) ticks every frame *unconditionally*
-— independent of this poll cadence — so a wedged mutation is always recovered on time. Mode B,
-running in a game with no `EditorFileSystem` re-entrancy to dodge, pumps **inline** every frame
-with no `call_deferred` and no `await`.
+— independent of this poll cadence — so a wedged mutation is always recovered on time. The
+runtime server, running in a game with no `EditorFileSystem` re-entrancy to dodge, pumps
+**inline** every frame with no `call_deferred` and no `await`.
 
 ---
 
@@ -373,7 +374,7 @@ contract.
 **Idempotency** ([§contract C6](#13-contract-surface)). Create-style commands return a
 `status` discriminator and accept `if_exists`, so a blind retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd" data-verified="2e2e6d9" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd" data-verified="1ca3bf4" -->
 ```mermaid
 flowchart TD
     create["create / write command"] --> exists{"target exists?"}
@@ -383,7 +384,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified 3eeb924*
+*Figure 8 — the idempotent create / if_exists decision · verified 1ca3bf4*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -416,10 +417,11 @@ static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
     # … more verbs
 ```
 
-There are **~100 built-in handlers across 30 modules**; the server projects these to **110 MCP
-tool definitions** (plus 2 meta tools registered separately), owns the tool **groups** and
-on-demand activation, and the `domain.verb` ⟷ tool-name mapping stays in lockstep across the two
-repos.
+There are **~100 built-in handlers across 30 modules**; the server projects these into the MCP
+tool surface (the authoritative, generated per-tool list is the server's
+[tool reference](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/tool-reference/README.md)),
+owns the tool **groups** and on-demand activation, and the `domain.verb` ⟷ tool-name mapping
+stays in lockstep across the two repos.
 
 | Domain area | Modules (selected) |
 |-------------|--------------------|

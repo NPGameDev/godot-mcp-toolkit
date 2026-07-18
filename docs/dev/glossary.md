@@ -135,9 +135,10 @@ shares the `test/integration` helpers but runs as its own command, not folded in
 deterministic counterpart to the LLM **sweep**.
 
 **Sweep**
-The **LLM-driven**, non-deterministic interactive validation (`Validations/tool-sweep.md`, `sv2_`
-GDScript driver) — hint/UX quality judgment, exploratory edge-discovery, and confirming **flow
-suite** failures (stale script vs real regression). The word "sweep" is reserved for this layer.
+The **LLM-driven**, non-deterministic interactive validation (driven from the
+`Validations/tool-sweep.md` content-maps) — hint/UX quality judgment, exploratory edge-discovery,
+and confirming **flow suite** failures (stale script vs real regression). The word "sweep" is
+reserved for this layer.
 
 ### Relationships
 
