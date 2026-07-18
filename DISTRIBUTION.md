@@ -69,7 +69,7 @@ swap rationale and iter 20's verification for the swap-back.
 
 ## End-user server install (pairs with either install route above)
 
-1. `npm install -g @npgamedev/godot-mcp-server` (requires Node ≥ 20).
+1. `npm install -g @npgamedev/godot-mcp-server` (requires Node ≥ 22).
 2. Copy `addons/godot_mcp_toolkit/.mcp.json.template` up one level into your
    Godot project's root and rename to `.mcp.json`.
 3. From the project root, run `claude` — `/mcp` lists

@@ -58,15 +58,22 @@ enabled.
 
 ## Running checks
 
+For the full local workflow — every test layer, when to run it, the environment
+each layer needs, and the common failure modes — see
+[`docs/testing-locally.md`](docs/testing-locally.md). The essentials:
+
 ### GDScript validation
 
 After editing any `.gd` file, run:
 
 ```bash
-godot --headless --check-only --path <toolkit-repo-root>
+bash scripts/test_framework/validate_gdscript.sh
 ```
 
-This catches syntax errors without launching the full editor.
+Pass the Godot editor binary as the `GODOT_BIN` environment variable or as the
+first argument — `godot` is not assumed to be on `PATH`. The script loads the
+full editor headless and compiles every project script, so it catches cross-file
+`class_name` errors a per-file check would miss. Run one instance at a time.
 
 ### Server-side linting and formatting
 
@@ -155,6 +162,74 @@ should look and behave. New to the codebase? Read these in order:
 5. [`docs/adr/`](docs/adr/) — architecture decision records: the rationale
    behind the larger design choices.
 
+## Documentation
+
+Documentation is part of the product, so a change to behavior is not done until
+the docs match. A few rules keep the docs accurate and consistent.
+
+### Where a doc goes
+
+Godot's Asset Library installs only `addons/godot_mcp_toolkit/**` into a user's
+project, so most of the repo never reaches an end user. Decide placement by
+*where the doc is consulted*, not by who reads it:
+
+- Ship a doc into `addons/godot_mcp_toolkit/docs/` **only if** the in-editor UI
+  opens it through a `res://` path (it is read while working inside a project) or
+  it must legally travel with the addon (the attributions file). Shipped docs
+  must be self-contained — no links to repo-root files, the plan, or internal
+  paths, because those do not travel.
+- Everything else — the front door and anything that evolves between releases —
+  is a repo doc under `docs/` on GitHub, linked by URL from the Info panel, error
+  hints, or the READMEs.
+
+### Files you never hand-edit
+
+Some documentation is generated from the code and will be overwritten:
+
+- The server repo's `docs/tool-reference/` and `docs/api/` are generated from the
+  server's tool catalogue and its TSDoc. Link to them; never copy their contents
+  into another doc, and never edit them by hand. They regenerate with the
+  server's own prompt-free scripts (`npm run docs:tools`, `npm run docs:api`, and
+  `npm run measure:tokens` for the token figures) — never a bare `npx`.
+- The architecture document's diagrams carry a `data-verified` provenance comment
+  recording the commit they were last checked against. If you change a subsystem a
+  diagram depicts, update the diagram and bump its `data-verified` stamp.
+- Screenshots carry a provenance comment above the embed (the version, Godot
+  build, and date they were captured). Keep it current when you replace an image.
+
+### When you add a doc
+
+Add it to the documentation map in `docs/README.md` and to the "Read these first"
+list in `AGENTS.md` so agents and contributors can find it. A doc that nothing
+points at is a doc nobody reads.
+
+### Numbers
+
+A number appears in prose only if a generator emits it or CI asserts it. Counts
+that are copied by hand drift; the counts that never drift are the ones a check
+fails the build over. When you need to cite the tool count, the operation count,
+or the token figures, take them from the generated tool reference or the
+`--tools-count` output rather than typing a literal.
+
+### Entry-point writing
+
+The README, the shipped addon README, and the AssetLib and npm copy are the first
+thing a prospective user sees, and in 2026 a README that reads as machine-written
+reads as low-effort. Keep the register human:
+
+- Plain section headers, not walls of emoji headers.
+- No hype adjectives ("powerful", "seamless", "comprehensive") and no fragment or
+  arrow-chain bullets — state what a thing does, in complete sentences, and show
+  evidence.
+- Vary the rhythm; not every section is three bullets. Let an important section
+  run long and a minor one be a single line.
+- No unfilled promises — no "docs coming soon", no placeholder for media that
+  does not exist yet.
+- Put a limitation beside the claim it qualifies, cite concrete numbers with their
+  source, and prefer one real screenshot over stock art.
+- Write sparingly with dashes and avoid invented hyphenated compounds; they are a
+  tell of machine-written prose.
+
 ## Submitting changes
 
 ### Branch naming
@@ -182,7 +257,7 @@ per logical change.
 
 ### Pull request checklist
 
-- [ ] `godot --headless --check-only` passes (if GDScript changed)
+- [ ] `validate_gdscript.sh` passes (if GDScript changed)
 - [ ] Smoke test passes (`npm run smoke` in server repo)
 - [ ] Code follows the [coding standards](docs/dev/code-standards.md)
 - [ ] Contract changes (dispatch, command results, transport) are reflected in [`docs/dev/contract.md`](docs/dev/contract.md)
