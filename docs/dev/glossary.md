@@ -212,6 +212,78 @@ operations.
 
 ---
 
+## Channel vocabulary
+
+The **user-facing** names for the two live WebSocket connections the toolkit exposes. Distinct from
+the editor/runtime *split* (which code may parse inside a shipped game — `code-standards.md` §8.2):
+this is about the two connections a client can hold. Ports shown are defaults — the live scan bands
+are 6550–6560 (editor) and 6570–6585 (runtime).
+
+**Editor channel**
+The connection to the WebSocket server inside the Godot **editor** (default port 6550). Carries all
+edit-time tools, operating on the edited scene via `EditorInterface`. The default path; most tools
+use it. Internal host label: *Mode A* — code comments, ADRs, and the contract doc only; it never
+appears in user-facing docs.
+_Avoid_: Mode A (user-facing); "editor server" (collides with **Bridge** — the server); "editor
+mode" (collides with **Read-only mode**); "editor context" (overloaded — MCP context, context
+window, `ToolContext`).
+
+**Runtime channel**
+The connection to the WebSocket server inside the **running game** (default port 6570), live only
+during a playtest — debug builds only; it self-disables in release exports. Carries the runtime
+tools operating on the live `SceneTree`. Plain-English gloss in prose: **the running game**.
+Internal host label: *Mode B* — same rule as Mode A.
+_Avoid_: Mode B (user-facing); "runtime server" (collides with **Bridge**); "runtime mode" /
+"runtime context" (see above). Note that `game` IS a live tool enum value
+(`execute_code.context: "game"`, its default) — use "the running game" as the prose gloss; never
+claim that no tool says "game".
+
+### Relationships
+
+- The two channels are two separate WebSocket servers on distinct ports; a client holds the
+  **Editor channel** whenever the editor is open and the **Runtime channel** only during a
+  playtest.
+- **Noun-light rule:** user-facing prose prefers bare adjectives ("editor tools", "the running
+  game"); the "channel" noun appears only where the transport itself is the subject (the design
+  philosophy, the architecture doc, the runtime-port configuration note).
+- Two tools carry a **channel selector**, with inconsistent vocabularies (a known inconsistency,
+  kept until deliberately unified): `signal_emit.mode: "editor" | "runtime"` (default `editor`)
+  and `execute_code.context: "game" | "editor"` (default `game` — the running game). The Runtime
+  channel is therefore named both `runtime` and `game` by different tools, which is exactly why
+  "the running game" is the safe prose gloss. `node_call_method` is editor-only; its runtime
+  counterpart is `execute_code`.
+
+---
+
+## Surface vocabulary
+
+How this project names **which tools a connected client sees**. Two orthogonal axes: how much of
+the catalogue is loaded (startup vs full) and whether mutating tools are visible (read-only mode).
+
+**Startup surface**
+The tools exposed immediately on connect — the always-on core plus the meta tools; what
+`tools/list` returns before any group is activated.
+
+**Full surface**
+The startup surface plus every on-demand group activated via `discover_tools`. A ceiling ("up
+to") — some tools and operations are Godot-version-gated, so older supported versions expose
+fewer.
+
+**Read-only mode**
+The orthogonal switch (`GODOT_MCP_READ_ONLY=1`, with a matching dock toggle) that hides every
+mutating tool. A filter on whichever surface is active — not a mode of its own, and not a
+profile.
+
+### Relationships
+
+- **Read-only mode** filters whichever surface is active — the **startup surface** and the **full
+  surface** alike.
+- Retired vocabulary — never present these as user-facing modes: "Standard", "Power User",
+  "Minimal", "Custom", "Full profile", `GODOT_MCP_PROFILE`, `GODOT_MCP_CUSTOM_TOOLS`,
+  `enable_tool_group`.
+
+---
+
 ## Internal module naming
 
 The canonical names for internal toolkit modules and the architectural roles they occupy. These are

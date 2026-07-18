@@ -1,0 +1,35 @@
+# Godot MCP Toolkit
+
+> A Godot 4.2+ editor plugin (GDScript) that exposes the editor and the running
+> game to AI assistants over the Model Context Protocol. It pairs with a
+> companion npm package, `@npgamedev/godot-mcp-server`, which is the MCP bridge
+> the assistant actually talks to: the plugin hosts localhost WebSocket servers
+> inside the editor and the running game; the server translates MCP tool calls
+> into those channels.
+
+This repository ships the editor plugin (`addons/godot_mcp_toolkit/`) via the
+Godot Asset Library. The repository root is also the development Godot project.
+The server lives in its own repository and installs from npm.
+
+## Docs
+
+- [Documentation map](docs/README.md): every docs surface, organized by what
+  you want to do (use, extend, contribute).
+- [Architecture](docs/architecture/README.md): subsystems, the editor/runtime
+  split, transport and contract surface, key decisions, with diagrams.
+- [Compatibility](addons/godot_mcp_toolkit/docs/compatibility.md): supported
+  Godot versions, per-version tool behavior, headless mode, C# requirements,
+  export stripping.
+- [Troubleshooting](docs/troubleshooting.md): the 60-second checklist,
+  connectivity probe, and symptom-to-fix entries.
+- [Security policy](SECURITY.md): how to report a vulnerability, the security
+  model, and hardening guidance.
+- [Contributing](CONTRIBUTING.md): environment setup, checks, commit format,
+  and the documentation rules.
+
+## Companion server (godot-mcp-server)
+
+- [Tool reference](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/tool-reference/README.md):
+  generated reference of every tool and operation — the canonical list.
+- [Token efficiency](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/token-efficiency.md):
+  measured context-window cost of the tool surface.
