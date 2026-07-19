@@ -7,8 +7,14 @@ Please report suspected vulnerabilities privately through
 open the repository's **Security** tab and choose **Report a vulnerability**.
 Do not open a public issue for a suspected vulnerability.
 
-We aim to acknowledge every report within 7 days, and we will keep you informed
-as we investigate and fix the problem.
+This project is maintained on a reasonable-effort, volunteer basis, so we do
+not promise response timelines. Security reports are taken seriously and are
+prioritized ahead of regular development: we will endeavor to acknowledge your
+report, keep you informed as the investigation progresses, and credit you in
+the fix's release notes if you wish. If you have not heard back, a follow-up
+on the advisory is welcome. Please practice coordinated disclosure — allow us
+a reasonable window to investigate and ship a fix before discussing the issue
+publicly.
 
 If the issue lives in the companion MCP server rather than the editor plugin,
 report it in the
