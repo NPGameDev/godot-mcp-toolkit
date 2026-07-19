@@ -33,6 +33,7 @@ const LspStatusTests := preload("res://test/units/lsp_status_tests.gd")
 const ScreenshotClassifyTests := preload("res://test/units/screenshot_classify_tests.gd")
 const ScreenshotResponseTests := preload("res://test/units/screenshot_response_tests.gd")
 const RuntimeScreenshotTests := preload("res://test/units/runtime_screenshot_tests.gd")
+const RuntimeLifecycleTests := preload("res://test/units/runtime_lifecycle_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -70,6 +71,7 @@ func _init() -> void:
 	ScreenshotClassifyTests.run(testing)
 	ScreenshotResponseTests.run(testing)
 	RuntimeScreenshotTests.run(testing)
+	RuntimeLifecycleTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()

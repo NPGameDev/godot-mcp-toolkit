@@ -72,6 +72,15 @@ const _RUNTIME_FRAME_WAIT_SECONDS := 1.0
 var _transport: WsTransport = null
 
 
+func _init() -> void:
+	# Keep the Mode-B poll loop alive while the game tree is paused (a pause
+	# menu, or a gameplay-pausing quit-confirm dialog). The default
+	# PROCESS_MODE_PAUSABLE would halt _process -> pump() the moment the game
+	# sets get_tree().paused = true, freezing every runtime tool until the game
+	# unpaused. Pure Node API -- no editor dependency.
+	process_mode = Node.PROCESS_MODE_ALWAYS
+
+
 func _ready() -> void:
 	# Do not run in the editor process.
 	#
