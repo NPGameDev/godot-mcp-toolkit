@@ -56,6 +56,12 @@ jobs:
       - name: GDScript validation
         run: bash scripts/test_framework/validate_gdscript.sh
 
+      # Docs-drift gate: README headline numbers match the pinned tool-surface
+      # counts and no retired vocabulary appears in user-facing docs
+      # (grep-only, no Godot).
+      - name: Docs count check
+        run: bash scripts/check_docs_counts.sh
+
   # Unit-execution leg — a real execution signal across ALL supported versions
   # (standard editor, gating). Generalized from the former 4.2-only job
   # (41n-quater-ter): the godot-units composite runs run_units_cold.sh, whose

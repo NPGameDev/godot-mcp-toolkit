@@ -112,6 +112,21 @@ shipped
 (`"command": "cmd"` with `/c npx …` in the args). If you hand-wrote your
 `.mcp.json`, mirror that shape, or let the dock regenerate the file.
 
+### npm says "could not determine executable to run", or an old version starts
+
+**Symptom:** the server entry fails to launch with npm's
+`could not determine executable to run`, or it launches but behaves like a
+version you already upgraded away from.
+
+**Cause:** `npx` keeps its own cache of downloaded packages. A stale cached
+copy can shadow the version you just installed or upgraded — including a copy
+cached before the package was fully published, which has no executable at all.
+
+**Fix:** reinstall the current version globally —
+`npm install -g @npgamedev/godot-mcp-server@latest` — and retry. If `npx`
+still resolves the stale copy, delete the `_npx` folder inside your npm cache
+directory (`npm config get cache` prints its location) and try again.
+
 ### Log tools return `LOG_BUSY`
 
 **Symptom:** `editor_get_console` or `debugger_get_log` with `source="file"`

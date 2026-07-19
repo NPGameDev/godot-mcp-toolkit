@@ -27,6 +27,18 @@ Full dev-doc map, in read order:
 4. [`docs/dev/glossary.md`](docs/dev/glossary.md) — the project's ubiquitous language (cross-repo SSOT for shared terms).
 5. [`docs/adr/`](docs/adr/) — architecture decision records (rationale trail).
 
+The tool-agnostic doc map is [`AGENTS.md`](AGENTS.md); this file is the
+Claude-specific layer on top of it. User-facing docs (indexed in
+[`docs/README.md`](docs/README.md)): [`docs/troubleshooting.md`](docs/troubleshooting.md)
+(canonical symptom→fix), [`docs/testing-locally.md`](docs/testing-locally.md)
+(test workflow), [`SECURITY.md`](SECURITY.md) (reporting + security model),
+the **shipped**
+[`addons/godot_mcp_toolkit/docs/compatibility.md`](addons/godot_mcp_toolkit/docs/compatibility.md)
+(end-user version/headless matrices — root `COMPATIBILITY.md` is just a
+pointer to it), and [`llms.txt`](llms.txt) (agent-load-first summary). When
+adding a doc, update `docs/README.md` + `AGENTS.md` per CONTRIBUTING's
+Documentation section.
+
 ---
 
 ## What this plugin does
@@ -71,7 +83,9 @@ controls the startup warning threshold only — no functionality restricted.
 `@export_tool_button`, and `@abstract` are 4.4+/4.5+ syntax that causes
 parse errors on older Godot. Do not use while minimum remains 4.2.
 
-See [COMPATIBILITY.md](COMPATIBILITY.md) for the full matrix.
+See the shipped
+[`addons/godot_mcp_toolkit/docs/compatibility.md`](addons/godot_mcp_toolkit/docs/compatibility.md)
+for the full matrix (root `COMPATIBILITY.md` is a pointer to it).
 
 ## Tool catalogue
 
