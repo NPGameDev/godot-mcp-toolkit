@@ -45,6 +45,24 @@ func _list_bodies(params: Dictionary) -> Dictionary:
 	return MCPToolkitSuccess.ok({"data": bodies})
 ```
 
+**Start from the bundled example.** A complete, ready-to-copy single-tool
+extension ships at
+`addons/godot_mcp_toolkit/CompanionSkills/mcp-extension-creator/references/example-extension.gd`
+— copy it into your own project and adapt it as a starting point.
+
+**Declaring the class is all it takes.** The toolkit auto-discovers any script
+that declares `class_name` **and** `extends MCPToolkitExtension` anywhere in your
+project (unless it lives inside a *disabled* addon). Just declaring the class in
+your enabled project registers its tools — you never call a manual registration
+step yourself.
+
+**Why the bundled example is inert where it ships.** `CompanionSkills/` holds
+skills and docs, not project code, so it carries a `.gdignore` and the editor
+never scans it — that deliberately keeps the example from auto-registering its
+`notes.write` tool inside the toolkit itself. To use it, copy the file into your
+**own** project (outside `addons/godot_mcp_toolkit/`); it's discovered on the next
+filesystem scan or when you call `extensions_refresh`.
+
 ### Quick start (C#)
 
 C# extensions cannot inherit GDScript classes (hard Godot limitation). Instead,
@@ -835,8 +853,9 @@ returning the error with `registry.Call("fail", "HEADLESS_UNSUPPORTED", ...)`.
 **Rule of thumb:** add this guard only when the tool would otherwise return
 *silent* junk. Tools that already fail loudly headless — e.g. a handler that
 depends on a game process that can't launch — don't need it; the natural error
-is clear enough. This mirrors the built-in tools, where only the
-viewport-dependent screenshot tools carry an explicit headless guard.
+is clear enough. This mirrors the built-in tools, where the headless-divergent
+ones (viewport screenshots, texture generation, game start, console capture,
+hot-reload) each return a self-explaining headless response instead of silent junk.
 
 ### Discovery rules
 
@@ -869,11 +888,14 @@ registrations of the same method name are rejected with a logged warning.
 ### Naming rules
 
 - Commands must use `<namespace>.<action>` naming (e.g., `physics.list_bodies`)
+- The **MCP tool name** the client sees replaces the dots with underscores
+  (`physics.list_bodies` → `physics_list_bodies`). Register with the dotted wire name;
+  the LLM calls the underscore form.
 - The following namespaces are reserved and rejected at load time:
   `scene.*`, `script.*`, `editor.*`, `node.*`, `runtime.*`, `server.*`,
   `resource.*`, `folder.*`, `file.*`, `signal.*`, `playtest.*`, `project.*`,
   `input_map.*`, `animation.*`, `tilemap.*`, `asset.*`, `save.*`, `meta.*`,
-  `game.*`, `diff.*`, `extensions.*`
+  `game.*`, `diff.*`, `autoload.*`, `extensions.*`
 - GDScript extensions: extend `MCPToolkitExtension` **directly** (multi-level
   inheritance is not supported); `class_name` can be anything (discovery is by
   base class, not prefix)
@@ -1052,6 +1074,33 @@ Requirements for distribution:
 directory, so AssetLib updates to `godot-mcp-toolkit` never touch your
 extension files.
 
+### Getting listed in the extension catalog
+
+The toolkit's dock offers a discoverable **extension catalog** — a
+maintainer-curated list the toolkit fetches so users can find and install
+community extensions. A catalog entry lives in that curated list, **not** in
+your extension's own code: there is no author-supplied catalog metadata beyond
+your tool's `with_group(...)` — the catalog reads only the curated entry.
+
+To get your extension listed, a maintainer needs these fields:
+
+- **Name** — the name shown in the catalog
+- **Description** — a one-line summary
+- **Repository URL** — must start with `https://`
+- **Minimum toolkit version** (optional) — the earliest `godot-mcp-toolkit`
+  your extension supports
+- **Maximum toolkit version** (optional)
+- **Minimum Godot version** (optional)
+- **Maximum Godot version** (optional)
+
+**How to get listed:** file a **Catalog Listing Request** issue on the toolkit
+repository (use the `catalog_listing_request` issue template). This is a
+**request for inclusion**, not a bug report.
+
+**If an existing catalog entry is wrong or broken** (bad URL, incorrect version
+range), report it through the normal **Bug Report** (`bug_report.md`) template
+instead.
+
 ### Graceful dependency handling
 
 Extensions depend on the MCP Toolkit addon. Users may install your extension
@@ -1161,7 +1210,7 @@ unregistered and the extension is re-loaded fresh.
 > still reimporting it natively crashes the editor (a `CACHE_MODE_IGNORE`
 > reimport reentrancy — see `COMPATIBILITY.md`). To stay crash-safe, the 4.2
 > loader reads through the editor cache, so an in-session **edit** to an existing
-> extension is **not** applied until you restart the editor. `extensions.refresh`
+> extension is **not** applied until you restart the editor. `extensions_refresh`
 > returns a `hint` naming the changed extension, and a `push_warning` appears in
 > the editor's Output panel. **Adding** and **removing** extensions still apply
 > live on 4.2. Godot 4.3+ applies all changes (add / edit / remove) live.
@@ -1173,7 +1222,7 @@ alt-tab back to the Godot editor to trigger the hot-reload. Files changed
 from within Godot's script editor are detected immediately.
 
 **Programmatic refresh:** As an alternative to editor focus, call the
-`extensions.refresh` MCP command to force a filesystem scan and immediate
+`extensions_refresh` MCP command to force a filesystem scan and immediate
 re-discovery. This is useful in headless/automated workflows where the LLM
 creates extension files and needs them registered without user interaction.
 
@@ -1264,7 +1313,7 @@ non-blocking; each has a practical workaround:
 | No persistent configuration API | Extensions store settings ad-hoc | Use `ProjectSettings.set_setting()` for project-level or `ConfigFile` for user-level config |
 | No progress/streaming for long operations | Long-running operations can't report intermediate status | Use a polling pattern: register a companion `_status` tool the LLM calls to check progress |
 | No inter-extension communication | Extension A can't directly call Extension B's tools | Call `registry.call_command("other_ext.tool", params)` directly (works, but undocumented contract) |
-| In-session **edit** of an existing extension not applied (**Godot 4.2 only**) | A `@tool`-script edit isn't reflected until restart — engine reimport-crash avoidance (`CACHE_MODE_REUSE`). Adding/removing extensions still apply live | Restart the editor to load the edit (4.3+ applies edits live); `extensions.refresh` returns a restart `hint` |
+| In-session **edit** of an existing extension not applied (**Godot 4.2 only**) | A `@tool`-script edit isn't reflected until restart — engine reimport-crash avoidance (`CACHE_MODE_REUSE`). Adding/removing extensions still apply live | Restart the editor to load the edit (4.3+ applies edits live); `extensions_refresh` returns a restart `hint` |
 
 Each gap is tracked as a post-1.0 improvement candidate. None prevent an
 extension from being built and shipped — they affect convenience, not

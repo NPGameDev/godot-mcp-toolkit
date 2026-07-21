@@ -1,0 +1,8 @@
+# CompanionSkills holds installable companion skills and their reference files
+# (documentation), not Godot project code. This .gdignore keeps the editor from
+# scanning the folder, so a reference such as
+# mcp-extension-creator/references/example-extension.gd — a class_name'd
+# MCPToolkitExtension shown as a copy-paste template — is never registered as a
+# global class or auto-discovered as a live extension in this project (or in an
+# end user's project once the addon is installed). Copy the template into your
+# own extension location to activate it.
