@@ -235,9 +235,10 @@ during a playtest — debug builds only; it self-disables in release exports. Ca
 tools operating on the live `SceneTree`. Plain-English gloss in prose: **the running game**.
 Internal host label: *Mode B* — same rule as Mode A.
 _Avoid_: Mode B (user-facing); "runtime server" (collides with **Bridge**); "runtime mode" /
-"runtime context" (see above). Note that `game` IS a live tool enum value
-(`execute_code.context: "game"`, its default) — use "the running game" as the prose gloss; never
-claim that no tool says "game".
+"runtime context" (see above). Note that `game` is still a live tool enum value — it is accepted as
+a **hidden alias** for `runtime` on both channel-selecting tools (mapped in, not advertised in
+`tools/list`) — so use "the running game" as the prose gloss; never claim that no tool accepts
+"game".
 
 ### Relationships
 
@@ -247,12 +248,12 @@ claim that no tool says "game".
 - **Noun-light rule:** user-facing prose prefers bare adjectives ("editor tools", "the running
   game"); the "channel" noun appears only where the transport itself is the subject (the design
   philosophy, the architecture doc, the runtime-port configuration note).
-- Two tools carry a **channel selector**, with inconsistent vocabularies (a known inconsistency,
-  kept until deliberately unified): `signal_emit.mode: "editor" | "runtime"` (default `editor`)
-  and `execute_code.context: "game" | "editor"` (default `game` — the running game). The Runtime
-  channel is therefore named both `runtime` and `game` by different tools, which is exactly why
-  "the running game" is the safe prose gloss. `node_call_method` is editor-only; its runtime
-  counterpart is `execute_code`.
+- Two tools carry a **channel selector** on a unified vocabulary: both advertise
+  `channel: "editor" | "runtime"` — `signal_emit.channel` (default `editor`, edit-first) and
+  `execute_code.channel` (default `runtime`, runtime-first). The legacy value `game` is accepted as
+  a hidden alias for `runtime` on both (mapped by a field-level value alias, not advertised), which
+  is why "the running game" stays the safe prose gloss for the Runtime channel. `node_call_method`
+  is editor-only; its runtime counterpart is `execute_code`.
 
 ---
 

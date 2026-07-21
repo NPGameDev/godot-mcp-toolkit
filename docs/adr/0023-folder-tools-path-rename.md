@@ -76,3 +76,39 @@ now what the model reaches for anyway.
   per-tool params (they live in the generated tool-reference), and a param
   rename is not an architectural change — the blast radius is the two folder
   tools plus their tests.
+
+## Amendment — enum-value aliases are feasible (the channel selector)
+
+The infeasibility finding above is specific to a **parameter-*name*** alias: an
+object-level key-rename (`folder_path` → `path`) needs a top-level `z.preprocess`
+pipe, which loses its object shape in the SDK's `tools/list` conversion and
+advertises an **empty** schema. That failure is about renaming the *key*.
+
+An enum-**value** alias is a different, feasible shape: when several accepted
+*values* denote the same concept and should route to one flow, a **field-level**
+`z.preprocess` on that field maps the legacy value to the canonical one —
+
+```ts
+channel: z
+  .preprocess((v) => (v === "game" ? "runtime" : v), z.enum(["editor", "runtime"]))
+  .optional()
+```
+
+Here `z.toJSONSchema` advertises only the inner `enum(["editor", "runtime"])`, so
+`tools/list` shows the canonical values while the runtime read still accepts the
+legacy `game`. Because the preprocess sits **on one field** (not wrapping the
+whole object), the object shape survives conversion — the empty-schema failure
+does not apply.
+
+This is what the **channel selector** now uses to unify the two channel-selecting
+tools onto one vocabulary:
+
+- `signal_emit.mode` → **`channel`** (`editor | runtime`, default `editor`).
+- `execute_code.context` → **`channel`** (`editor | runtime`, default `runtime`).
+- On both tools, the legacy value **`game`** is accepted as a hidden alias for
+  `runtime` — mapped by the field-level preprocess, not advertised in `tools/list`.
+
+The distinction stands: a **key** rename with no advertised divergence gets a full
+rename (the decision above); an **enum-value** consolidation, where the names mean
+the same thing, gets a field-level value alias so the wire keeps accepting the
+legacy value while advertising only the canonical one.
