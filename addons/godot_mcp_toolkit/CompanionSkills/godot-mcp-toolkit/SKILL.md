@@ -193,6 +193,10 @@ group).
 - **Prefer `script_edit` for changes to an existing script** — a surgical
   `old_string` -> `new_string` swap that keeps undo history and returns inline
   diagnostics. Use `script_write` for new files.
+- **Use `script_write` / `script_edit` for EVERY script file** — including scratch
+  drafts, experiments, and throwaway managers, never a native file-write tool. The
+  MCP tools compile-check the code and register it with the running editor; a raw
+  filesystem write does neither, so it is never the better choice in a live project.
 
 **Placeholder art.** Use Godot primitives (ColorRect, Polygon2D, simple shapes)
 for placeholder visuals. For quick placeholder assets, `texture_generate` /
