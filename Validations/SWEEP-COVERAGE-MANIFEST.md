@@ -77,7 +77,7 @@ C24–C26 & C29 in §§26–27).
 | editor.refresh | 61 | — | — | — | 5f96b62 | Renamed from reload_scripts |
 | editor.get_console | 58, 58a–58h, 7.6–7.8, 7.10, 7.12 | ✓ (58d: invalid regex) | — | — | FIX-8 | **GAP:** clear_buffer param; ledger #20 (supersedes #9): total_lines/next_id/has_more (was truncated) + returned (was count) — §07 7.6–7.12 assert `returned` as the matching-line count. LOG_BUSY/LOG_UNAVAILABLE hints version-gated (4.5+ buffer-steer only) — §07 REGRESSION WATCH note + server smoke §14 own the truth-table (41n-undecies-bis-bis) |
 | editor.wait_for_idle | 60 | — | — | — | — | |
-| execute.code | 58a_seed, 77, 9.4, 9.7 | — | — | ✓ (9.4 load() hint; 9.7 parse framing) | FIX-4, FIX-H, 279efed | 9.4: load()-failure hint now offers BOTH remedies (node_set_property for resource assignment AND the @tool-script workflow) regardless of target type; the `.gd` suffix only orders which leads. 9.7: PARSE_ERROR reframed to carry the raw parser text + the expression-only constraint + a steer. **GAP:** singleton hint |
+| execute.code | 58a_seed, 77, 7.5, 7.5a, 9.4, 9.7 | — | ✓ (7.5a: legacy `channel:"game"` alias → runtime) | ✓ (9.4 load() hint; 9.7 parse framing) | FIX-4, FIX-H, 279efed | 7.5/7.5a: `channel` selector (renamed from `context`) — `channel:"editor"` seeds the editor console; `channel:"game"` is the accepted-not-advertised legacy alias for `runtime`. 9.4: load()-failure hint now offers BOTH remedies (node_set_property for resource assignment AND the @tool-script workflow) regardless of target type; the `.gd` suffix only orders which leads. 9.7: PARSE_ERROR reframed to carry the raw parser text + the expression-only constraint + a steer. **GAP:** singleton hint |
 | editor.set_lsp_status | — | — | — | — | — | Internal (MCP server → plugin LSP-status push; dock-only publisher); not agent-facing — 7th registration in `commands/editor/editor_commands.gd` |
 
 ### Project Settings (5 tools)
@@ -323,7 +323,7 @@ C24–C26 & C29 in §§26–27).
 | signal.emit | 79 | — | — | — | — | |
 | input.simulate | 20.17, 20.17a–20.17g, 20.17h | ✓ (20.17h: unknown action → INVALID_PARAMS, 41o C6) | — | ✓ (20.17c no-focus, 20.17f non-editable) | — | send_text event (41n-sexies): node_path focus + text_changed (20.17a), current-focus (20.17b), no-focus→hint (20.17c), submit→text_submitted via observer (20.17d), secret→redacted (20.17e), non-editable→text_changed:false+hint (20.17f), multiline newline-on-submit (20.17g). 20.17h: action-mode InputMap guard — an unregistered action is rejected (INVALID_PARAMS naming it), not a silent no-op (key/text/click modes unaffected). FLAG-5: reconciled stale flat `76`→20.x section-local numbering |
 | animation_player.control | 78 | — | — | — | — | |
-| execute.code | 77 | — | — | — | FIX-4, 279efed | Runtime context |
+| execute.code | 77 | — | — | — | FIX-4, 279efed | Runtime channel |
 
 ---
 

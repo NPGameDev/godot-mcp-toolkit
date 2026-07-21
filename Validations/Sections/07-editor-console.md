@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes in Sv2Main.tscn)
 **Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
-**Tests:** 24
+**Tests:** 25
 
 > **Precondition — `editor_screenshot` self-diagnoses a collapsed viewport.**
 > The tool no longer returns a blank `2x2` / ~81-byte PNG for a viewport that
@@ -64,8 +64,15 @@
 **7.4** `editor_get_console` — (default params)
 - **Expect:** success, returns console output
 
-**7.5** Seed console — `execute_code` code=`push_warning("SV2_SEED_Alpha42 test_line(parens)")`, context=`"editor"`
-- **Expect:** success — `context:"editor"` runs the snippet in the editor process (no running game needed), so the warning lands in the editor console for 7.6+ to read. Without `context:"editor"`, `execute_code` defaults to `context:"game"` and returns `GAME_NOT_RUNNING` when no game is running.
+**7.5** Seed console — `execute_code` code=`push_warning("SV2_SEED_Alpha42 test_line(parens)")`, channel=`"editor"`
+- **Expect:** success — `channel:"editor"` runs the snippet in the editor process (no running game needed), so the warning lands in the editor console for 7.6+ to read. Without `channel:"editor"`, `execute_code` defaults to `channel:"runtime"` and returns `GAME_NOT_RUNNING` when no game is running.
+
+**7.5a** Legacy channel alias — `execute_code` code=`2 + 2`, channel=`"game"` (no game running)
+- **Expect:** `GAME_NOT_RUNNING` — the legacy value `"game"` is accepted as a hidden alias for `"runtime"` and routes to the runtime channel, identical to omitting the param. Advertised `tools/list` shows only `channel: "editor" | "runtime"`; `"game"` is accepted but not advertised.
+
+> **REGRESSION WATCH (channel alias):** If `channel:"game"` is REJECTED (e.g. an
+> "invalid enum value" error) instead of routing to the runtime channel, the
+> hidden legacy alias has regressed. It must still map `game`→`runtime`.
 
 **7.6** `editor_get_console` — text_filter=`SV2_SEED`, is_regex=`false`
 - **Expect:** `returned` >= 1 (ledger #20: the matching-line count field is `returned`, was `count`)
