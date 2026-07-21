@@ -54,7 +54,7 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 
 	BuiltinCommandRegistration.register_all(registry, server, debug_bridge)
 
-	# Third-party extensions — profile-exempt, always loaded.
+	# Third-party extensions — always loaded.
 	ExtensionLoader.load_all(registry, server)
 	# Live hot-reload: watch EditorFileSystem for extension additions/removals.
 	var extension_watcher := ExtensionLoader.start_watcher(registry, server)

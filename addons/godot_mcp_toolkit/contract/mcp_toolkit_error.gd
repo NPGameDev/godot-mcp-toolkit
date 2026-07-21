@@ -37,7 +37,6 @@ const CODES: Array[String] = [
 	"EXECUTE_FAILED",
 	"EXTERNAL_EDITOR_ACTIVE",
 	"FAILED",
-	"FEATURE_DISABLED",  # Reserved — read-only/profile gating; not currently emitted.
 	"FILE_TOO_LARGE",
 	"FILESYSTEM_NOT_READY",
 	"FOLDER_PROTECTED",

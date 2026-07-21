@@ -235,7 +235,8 @@ func get_command_methods() -> Array:
 
 ## Send a notification to all authenticated WebSocket peers.
 ## Triggers a server-side tool-list reload without a restart
-## (e.g. after a config change such as a profile update).
+## (e.g. after the tool surface changes, such as a group activation
+## or an extension being added).
 func broadcast_notification(notification_type: String, params: Dictionary = {}) -> void:
 	var authed: Array = _transport.get_authed_peers() if _transport != null else []
 	var count := Notifier.broadcast(authed, notification_type, params, "[MCPServer]")

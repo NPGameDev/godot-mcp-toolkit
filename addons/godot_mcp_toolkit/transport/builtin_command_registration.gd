@@ -5,8 +5,8 @@ extends RefCounted
 ## Runs every commands/*.register(...) call against the command registry — the
 ## one place the full plugin-side command set is named. The composer hands it the
 ## registry, the server, and the debug bridge; it owns no state of its own.
-## Third-party extensions are loaded elsewhere (the composer) — they are dynamic
-## and profile-exempt, not part of this fixed surface.
+## Third-party extensions are loaded elsewhere (the composer) — they are dynamic,
+## not part of this fixed surface.
 
 const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")

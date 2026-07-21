@@ -2,8 +2,7 @@
 extends RefCounted
 ## Shared helpers used across multiple command handlers.
 ## Eliminates duplication of scene-node resolution, class hierarchy
-## checks, file deletion, directory creation, log-level detection,
-## and profile string conversion.
+## checks, file deletion, directory creation, and log-level detection.
 
 ## NOTE: This file is preloaded by core/modules.gd, so it CANNOT import core/modules.gd
 ## (circular dependency). Use direct preloads for dependencies instead.
@@ -883,22 +882,3 @@ static func _file_class_or_null(file_path: String) -> Variant:
 		return null
 	var file_type := filesystem.get_file_type(file_path)
 	return file_type if file_type != "" else null
-
-
-# -- Profile conversion --------------------------------------------------------
-
-
-static func profile_to_string(profile: int) -> String:
-	match profile:
-		0: return "minimal"
-		1: return "standard"
-		2: return "power_user"
-		_: return "standard"
-
-
-static func string_to_profile(s: String) -> int:
-	match s.to_lower():
-		"minimal": return 0
-		"standard": return 1
-		"power_user", "full": return 2
-		_: return 1
