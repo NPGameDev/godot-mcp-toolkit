@@ -96,9 +96,11 @@ audio, navigation, LSP, debugger, and more are loaded on demand — call
 `discover_tools()` with no parameters to browse the full catalog.
 `GODOT_MCP_READ_ONLY=1` in `.mcp.json` env hides all mutating tools.
 
-When activating tool groups via `discover_tools`, always pass
-`include_schemas: true` to receive full parameter schemas in the response.
-This avoids a separate tool lookup for each activated tool.
+When activating tool groups via `discover_tools` in pipe-mode (`claude -p`)
+sessions, pass `include_schemas: true` — pipe mode drops `tools/list_changed`,
+so schemas must ride in the activation response. In interactive sessions leave
+it at the default (false): the refreshed tool list already carries the schemas,
+and `include_schemas: true` only duplicates them into the response.
 
 ## Multi-project support (iter 23)
 
