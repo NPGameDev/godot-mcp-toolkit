@@ -973,6 +973,17 @@ if err != null:
 	return err  # hint auto-attached based on parameter name
 ```
 
+**Gotcha — type your `Variant` reads; never `:=` from a `Variant`.** GDScript can't infer a
+concrete type from a `Variant` source, so `:=` (inferred typing) on one is flagged
+`INFERENCE_ON_VARIANT` and, under strict checking (warnings-as-errors — as the toolkit's own
+validation runs), fails to compile. This covers a raw parameter (`params["file_path"]`), a
+`Variant`-returning call like `MCPToolkitError.require()` (see the return-type table above), and an
+element of an untyped `Array`. Type the local explicitly instead —
+`var name: String = params["name"]`, `var missing: Variant = MCPToolkitError.require(params, [...])`
+— or use a plain untyped `var err = …` as in the example above.
+`var missing := MCPToolkitError.require(…)` is the classic first-compile stumble when hand-authoring
+an extension.
+
 **C# usage** (via registry factories — C# cannot call GDScript statics):
 
 ```csharp
