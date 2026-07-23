@@ -68,9 +68,10 @@ Shipped with this addon, in `addons/godot_mcp_toolkit/docs/`:
 - [advanced_configuration.md](docs/advanced_configuration.md) — ports,
   limits, environment variables, macOS specifics.
 
-The addon also bundles agent skills in
-`addons/godot_mcp_toolkit/CompanionSkills/` — copy a skill folder into your
-client's skills directory for tool-selection and workflow guidance.
+The addon also bundles [agent skills](docs/companion-skills.md) — a workflow
+skill and an extension-authoring skill — in
+`addons/godot_mcp_toolkit/CompanionSkills/`; copy a skill folder into your
+client's skills directory to use them.
 
 On the web:
 

@@ -160,7 +160,7 @@ A few deliberate choices shape the tool surface:
 
 ## Extending it
 
-Register your own MCP tools in GDScript — project-specific helpers the agent calls like built-ins, with hot-reload, per-tool timeouts, and cancellation. C# projects are supported. Start with the shipped [extending guide](addons/godot_mcp_toolkit/docs/extending.md). The addon also bundles companion agent skills (`addons/godot_mcp_toolkit/CompanionSkills/`) — including one that walks an agent through building an extension — copy a skill folder into your client's skills directory to use them.
+Register your own MCP tools in GDScript — project-specific helpers the agent calls like built-ins, with hot-reload, per-tool timeouts, and cancellation. C# projects are supported. Start with the shipped [extending guide](addons/godot_mcp_toolkit/docs/extending.md). The addon also bundles [agent skills](addons/godot_mcp_toolkit/docs/companion-skills.md) — a workflow skill and an extension-authoring skill — that make an AI agent better at driving the toolkit; copy a skill folder into your client's skills directory to use them.
 
 ## How we know it works
 
@@ -279,8 +279,9 @@ Nothing — runs fully locally, no telemetry, no cloud services, no account.
 - [Documentation map](docs/README.md) — every doc, organized by what you want to do.
 - [Troubleshooting](docs/troubleshooting.md) — 60-second checklist, connectivity probe, symptom-to-fix entries.
 - [Tool reference](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/tool-reference/README.md) (server repo, generated) and [token efficiency](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/token-efficiency.md) — the measured context cost of the tool surface.
+- [Companion-skill efficiency](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/companion-skill-efficiency.md) (server repo) — the measured build-time savings from the bundled workflow skill.
 - [Client setup](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/mcp-clients.md) — per-client configuration beyond Claude Code.
-- Shipped with the addon: [compatibility](addons/godot_mcp_toolkit/docs/compatibility.md), [security recommendations](addons/godot_mcp_toolkit/docs/security-recommendations.md), [extending](addons/godot_mcp_toolkit/docs/extending.md), [multi-instance](addons/godot_mcp_toolkit/docs/multi-instance.md), [advanced configuration](addons/godot_mcp_toolkit/docs/advanced_configuration.md).
+- Shipped with the addon: [compatibility](addons/godot_mcp_toolkit/docs/compatibility.md), [security recommendations](addons/godot_mcp_toolkit/docs/security-recommendations.md), [extending](addons/godot_mcp_toolkit/docs/extending.md), [bundled agent skills](addons/godot_mcp_toolkit/docs/companion-skills.md), [multi-instance](addons/godot_mcp_toolkit/docs/multi-instance.md), [advanced configuration](addons/godot_mcp_toolkit/docs/advanced_configuration.md).
 
 ## Contributing
 
