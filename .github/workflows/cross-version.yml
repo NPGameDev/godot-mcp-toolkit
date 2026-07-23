@@ -392,3 +392,27 @@ jobs:
             exit 1
           fi
           echo "All platform matrix jobs succeeded (or skipped)."
+
+  # Anti-vacuous release-gate assertion. platform-matrix-ok above correctly treats
+  # all-skipped as success (the platform legs are opt-in). But on a v* tag / dry-run
+  # dispatch the two Linux BEHAVIORAL jobs are the gate before the release — an
+  # all-SKIP there (e.g. a new trigger type that slips past their if: gates) would
+  # sail through platform-matrix-ok vacuously. This job runs ONLY when the behavioral
+  # gate is meant to run, and requires those jobs to REPORT success (not merely "not
+  # failed") — an all-skip goes RED.
+  behavioral-gate-ok:
+    name: "Behavioral gate OK"
+    needs: [gdscript-behavioral, dotnet-behavioral]
+    if: ${{ always() && (startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assert both Linux behavioral jobs succeeded (not skipped)
+        run: |
+          gd="${{ needs.gdscript-behavioral.result }}"
+          dn="${{ needs.dotnet-behavioral.result }}"
+          echo "gdscript-behavioral=$gd  dotnet-behavioral=$dn"
+          if [ "$gd" != "success" ] || [ "$dn" != "success" ]; then
+            echo "::error::Release behavioral gate not satisfied — both Linux behavioral jobs must succeed (got gdscript=$gd dotnet=$dn). An all-skip is a vacuous gate."
+            exit 1
+          fi
+          echo "Behavioral gate satisfied."

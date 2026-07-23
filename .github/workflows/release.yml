@@ -31,6 +31,12 @@ on:
         required: false
         default: true
 
+# A re-dispatch must never race a still-running tag run, and a release job must
+# never be killed mid-release — so cancel-in-progress is false.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 # D7: least privilege at the top; the zip job re-grants contents: write for the GH
 # Release upload.
 permissions:
@@ -69,7 +75,48 @@ jobs:
             echo "::error::Tag $TAG does not match plugin.cfg version $CFG_VERSION"
             exit 1
           fi
+          VER="${TAG#v}"
+          # CHANGELOG must carry a section for the tagged version.
+          if ! grep -qF "## [$VER]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$VER]' section for the tagged release."
+            exit 1
+          fi
           echo "Version validated: $TAG"
+
+      # Check out the pinned server sibling so its DECLARED version can be asserted
+      # against the tag. Mirrors the sibling-checkout idiom cross-version.yml uses
+      # (CROSS_REPO_READ_TOKEN while private, github.token once public). Reads the pin
+      # from cross-version.yml so there is one source of truth for SIBLING_PIN_SERVER.
+      - name: Check out pinned server sibling
+        if: github.ref_type == 'tag'
+        run: |
+          PIN="$(grep 'SIBLING_PIN_SERVER:' .github/workflows/cross-version.yml | sed -E 's/.*"([0-9a-f]+)".*/\1/')"
+          echo "SIBLING_PIN_SERVER=$PIN" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v7
+        if: github.ref_type == 'tag'
+        with:
+          repository: NPGameDev/godot-mcp-server
+          path: server-pin
+          ref: ${{ env.SIBLING_PIN_SERVER }}
+          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+
+      # The pinned server sibling's DECLARED version must equal the tag — makes the
+      # bump-before-tag pin ritual machine-checked (a stale pin = green tests of the
+      # WRONG pairing).
+      - name: Pinned sibling declared version matches the tag
+        if: github.ref_type == 'tag'
+        run: |
+          VER="${GITHUB_REF#refs/tags/v}"
+          SV_PKG="$(node -p "require('./server-pin/package.json').version")"
+          if [ -z "$SV_PKG" ]; then
+            echo "::error::Could not read the pinned server package.json version at $SIBLING_PIN_SERVER."
+            exit 1
+          fi
+          if [ "$SV_PKG" != "$VER" ]; then
+            echo "::error::Pinned server ($SIBLING_PIN_SERVER) declares version $SV_PKG, tag is $VER — bump SIBLING_PIN_SERVER before tagging."
+            exit 1
+          fi
+          echo "Pinned server declared version matches: $VER"
 
       - name: Build plugin zip
         run: bash scripts/build-plugin-release.sh

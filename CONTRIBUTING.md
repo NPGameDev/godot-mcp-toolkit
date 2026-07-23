@@ -382,6 +382,17 @@ per logical change.
 - **Tested.** Describe how you verified the change works.
 - **Documented.** Update CLAUDE.md or inline comments if behavior changes.
 
+## Versioning
+
+We follow semver — see [RELEASING.md](RELEASING.md) for what constitutes
+major/minor/patch. The toolkit and server are versioned **independently** (each
+its own version and cadence), so a bump lands on whichever repo actually
+changed. You do NOT need to bump versions in your PR — the maintainer handles
+that at release time. However, please flag in your PR description if your change
+is **breaking** (removes/renames a tool, changes a parameter schema) or if it
+introduces a **cross-repo dependency** (a server change that needs a newer
+toolkit, or vice versa), so it's versioned and floor-bumped correctly.
+
 ## Architecture overview
 
 For an in-depth, up-to-date explanation of the toolkit's subsystems, the

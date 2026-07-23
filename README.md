@@ -287,6 +287,20 @@ Nothing — runs fully locally, no telemetry, no cloud services, no account.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) — environment setup, the test layers, and the documentation rules.
 
+## Releases
+
+This project follows [Semantic Versioning](https://semver.org/). The toolkit
+plugin and the MCP server bridge are versioned independently; install the
+latest of each and they negotiate compatibility at connect (see
+[RELEASING.md](RELEASING.md) → Compatibility).
+
+- **npm:** `npm install -g @npgamedev/godot-mcp-server@latest`
+- **Godot Asset Store / AssetLib:** search "Godot MCP Toolkit" in the editor's
+  AssetLib tab
+- **GitHub Releases:** download from either repo's Releases page for manual installation
+
+See [RELEASING.md](RELEASING.md) for maintainer release process and version policy.
+
 ## License
 
 MIT — see [LICENSE](LICENSE). Upstream notices in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
