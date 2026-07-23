@@ -40,7 +40,7 @@ func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 ## with the written path, or a failure envelope on a missing parameter or an I/O
 ## error.
 func _write(params: Dictionary) -> Dictionary:
-	var missing := MCPToolkitError.require(params, ["file_path", "content"])
+	var missing: Variant = MCPToolkitError.require(params, ["file_path", "content"])
 	if missing != null:
 		return missing
 

@@ -5,9 +5,9 @@ description: Guide the user through creating MCP toolkit extensions — distribu
 
 You are a Godot MCP Toolkit extension authoring assistant. Help the user create
 third-party extensions that add custom MCP tools to the toolkit. Default to
-GDScript examples unless the user explicitly asks for C#. When the user just asks
-you to build an extension, build it — the interactive "guided authoring" flow at
-the end is opt-in only.
+GDScript examples unless the user explicitly asks for C#. When the user asks you to
+build an extension, open with a one-line offer of guided design (see "Guided
+authoring mode"), then build it — the full guided flow is opt-in and never blocks.
 
 ## Quick start — a complete working extension
 
@@ -33,14 +33,16 @@ func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 
 ## Writes [param content] to [param file_path]. Returns the written path.
 func _write(params: Dictionary) -> Dictionary:
-    var missing := MCPToolkitError.require(params, ["file_path", "content"])
+    var missing: Variant = MCPToolkitError.require(params, ["file_path", "content"])
     if missing != null:
         return missing
-    var file := FileAccess.open(params["file_path"], FileAccess.WRITE)
+    var file_path: String = params["file_path"]
+    var content: String = params["content"]
+    var file := FileAccess.open(file_path, FileAccess.WRITE)
     if file == null:
-        return MCPToolkitError.fail("WRITE_FAILED", "could not write " + params["file_path"])
-    file.store_string(params["content"])
-    return MCPToolkitSuccess.ok({"path": params["file_path"]})
+        return MCPToolkitError.fail("WRITE_FAILED", "could not write " + file_path)
+    file.store_string(content)
+    return MCPToolkitSuccess.ok({"path": file_path})
 ```
 
 You register the **wire** name `notes.write` (with a dot); the client sees the
@@ -74,10 +76,10 @@ func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 
 ## <Brief of what the handler does — see "Doc comments" below.>
 func _handler(params: Dictionary) -> Dictionary:
-    var missing := MCPToolkitError.require(params, ["param_name"])
+    var missing: Variant = MCPToolkitError.require(params, ["param_name"])
     if missing != null:
         return missing
-    return MCPToolkitSuccess.ok({"data": result})
+    return MCPToolkitSuccess.ok({"data": params["param_name"]})
 ```
 
 Every `mark_*` / `with_*` builder call and when to use it is in the decision table
@@ -205,7 +207,7 @@ default hint automatically. `require()` is the shared required-parameter check:
 
 ```gdscript
 # Returns an INVALID_PARAMS error dict, or null if all keys are present:
-var missing := MCPToolkitError.require(params, ["file_path"])
+var missing: Variant = MCPToolkitError.require(params, ["file_path"])
 if missing != null:
     return missing
 ```
@@ -451,9 +453,8 @@ Three checks confirm a new extension works end-to-end:
 - `required`: array of parameter names the caller must supply.
 - `enum`: restricts a value to a fixed set. `default`: the value assumed when omitted.
 
-The schema is advertised to the client but **not runtime-validated** — declare
-every parameter your tool reads, and still validate inside the handler
-(`MCPToolkitError.require` for required params; type reads explicitly per the pitfall below).
+The schema is advertised to the client but **not runtime-validated** — declare every
+parameter your tool reads, and validate inside the handler (`MCPToolkitError.require` for required params; type reads explicitly per the pitfall below).
 
 ## Guided authoring mode (opt-in)
 
@@ -489,7 +490,7 @@ autonomous run on a human interview.
 | Extension not discovered | Missing `@tool` (GDScript) or `[Tool]` (C#) | Add the annotation and save/rebuild |
 | GDScript extension not found | Not extending `MCPToolkitExtension` | Add `extends MCPToolkitExtension` |
 | "register() not overridden" warning | Wrong method signature | Use exact signature: `registry: MCPToolkitCommandRegistry, server: Node` |
-| Compile error inferring a type from `params[...]` | `params[...]` is a `Variant`; `:=` can't infer a type from it | Type the local explicitly: `var content: String = params["content"]`, not `var content := params["content"]` |
+| Compile error / "inferred as Variant" on a `:=` | `:=` can't infer from **any** Variant source — `params[...]`, a Variant-returning call like `MCPToolkitError.require`, an untyped-Array element | Type the local: `var x: String = params["x"]`, `var missing: Variant = MCPToolkitError.require(...)`. Never `:=` from a Variant. |
 | Command rejected at load time | Using a reserved namespace | Choose a custom namespace (e.g., `mytools.action`) |
 | Registered `notes.write` but the tool list shows `notes_write` | The server maps the wire name `a.b` to the MCP tool name `a_b` | Expected — register with the dot, call with the underscore |
 | Grouped tool not visible to LLM | Grouped tools load on demand | User (or agent) calls `discover_tools` |
