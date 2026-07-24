@@ -125,17 +125,17 @@ If a step does not produce its "you should see", head to the [troubleshooting gu
 
 ## Try asking…
 
-1. *"Add a CharacterBody2D named Player to the main scene, with a Sprite2D and a CollisionShape2D under it."*
-2. *"Create a main menu scene with a Start button that switches to the game scene when clicked."*
-3. *"Run the game, then tell me the Player's position and velocity while it's running."*
-4. *"Build a small brick-breaker: paddle, ball, a wall of bricks, a score label, and a game-over screen, then playtest it."*
+1. *"Build a small brick-breaker: paddle, ball, a wall of bricks, a score label, and a game-over screen, then playtest it."*
+2. *"Add a CharacterBody2D named Player to the main scene, with a Sprite2D and a CollisionShape2D under it."*
+3. *"Create a main menu scene with a Start button that switches to the game scene when clicked."*
+4. *"Run the game, then tell me the Player's position and velocity while it's running."*
 
-The first three run in seconds. The last one is a real project, the same kind of small game we build end-to-end when validating a release, in a single agent session. Larger games span multiple sessions, with or without MCP.
+The last three run in seconds. The first one is a real project, the same kind of small game we build end-to-end when validating a release, in a single agent session. Larger games span multiple sessions, with or without MCP.
 
 <!-- captured: pre-1.0, Godot 4.5, 2026-07-24, via runtime_screenshot of the running brick-breaker (mid-flight). -->
 ![The agent-built brick-breaker running: a full wall of red, orange, yellow, green, and blue bricks on a dark background, the ball mid-flight, a paddle at the bottom, and a Score and Lives readout](docs/media/breakout-running.png)
 
-*The brick-breaker from prompt 4 above.*
+*The brick-breaker from prompt 1 above.*
 
 ## What the tools cover
 
