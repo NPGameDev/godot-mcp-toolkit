@@ -1,13 +1,25 @@
 # GDScript LSP port discovery is registry-authoritative
 
+> **Amended by [ADR 0025](0025-lsp-claimant-liveness-corroboration.md) —
+> 2026-07-25.** The registry stays authoritative and the detection stays
+> server-side; the `process.kill(pid, 0)` liveness test below is now corroborated
+> against the claimant's own WebSocket port, because a recycled PID resurrected a
+> dead editor as a live claimant.
+
 Godot's GDScript Language Server binds a **single machine-wide** TCP port
 (default `6005`) taken from the editor setting
 `network/language_server/remote_port` or the per-launch `--lsp-port` flag — there
 is no per-project LSP port, and no engine API to read the bound port/host or
-whether the bind even succeeded (verified against engine source 4.2–4.6;
+whether the bind even succeeded (verified against engine source 4.2–4.7;
 `Insights/lsp-multi-instance-port-analysis.md`). When a second editor opens it
-cannot bind 6005 and its LSP **fails silently** (`gdscript_language_server.cpp` —
-no `else` on the `listen()` path). The `lsp_*` tools live in the server and
+cannot bind 6005, and on **4.2–4.6** its LSP **fails silently**
+(`gdscript_language_server.cpp` — no `else` on the `listen()` path). **Godot 4.7**
+added a failure branch (`--- Failed to start GDScript language server on port N:
+<error> ---`), so a human watching the Output dock does see it — but we still
+cannot: `EditorLog::add_message` never routes through `print_line` or the logger
+chain, so that line reaches neither stdout nor `user://logs/*.log`. On every
+supported version the bind failure is unreadable from GDScript, which is why the
+registry stays authoritative. The `lsp_*` tools live in the server and
 previously connected to a fixed `127.0.0.1:6005`, so they always reached the
 **first** editor — returning wrong-project results for any second editor (a
 worktree *or* a different project) with no error: the cardinal failure (silently

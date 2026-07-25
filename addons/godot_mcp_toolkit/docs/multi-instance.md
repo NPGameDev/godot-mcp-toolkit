@@ -100,30 +100,44 @@ single **machine-wide** TCP port (default **6005**) — *not* per project. This 
 independent of the per-project WebSocket above: **any two editors collide on it —
 same-project worktrees (Pattern A) *or* two unrelated projects alike** — because
 they share the one 6005. When the second editor can't bind 6005 its LSP fails
-silently, so without the setup below the second project's `lsp_*` tools would
-reach the *first* editor.
+silently on Godot 4.2–4.6 (4.7 does log the failure to the Output dock, but not
+anywhere the plugin can read it), so without the setup below the second project's
+`lsp_*` tools would reach the *first* editor.
 
 The toolkit publishes each editor's LSP endpoint to the registry and the server
 discovers it per project, but the engine consumes `--lsp-port` before the plugin
-can observe it — so a second editor needs **both** a distinct launch port and a
+can observe it — so each editor needs **both** a distinct launch port and a
 matching env var:
 
-> **Recipe.** Give each extra editor its own LSP port (`--lsp-port`; note the
-> **space**, not `=`; Godot ≥ 4.2) **and** tell that editor's MCP server the
-> matching port via `GODOT_MCP_LSP_PORT`:
+> **Recipe.** Give each editor its own LSP port, including the first
+> (`--lsp-port`; note the **space**, not `=`; Godot ≥ 4.2) **and** tell that
+> editor's MCP server the matching port via `GODOT_MCP_LSP_PORT`:
 >
 > ```bash
-> godot --editor --path /path/to/projectB --lsp-port 6006
+> godot --editor --path /path/to/projectA --lsp-port 6005
+> godot --editor --path /path/to/projectB --lsp-port 6015
 > ```
 > ```json
+> // projectA/.mcp.json — env block
+> "env": { "GODOT_MCP_CONFIG_VERSION": "1", "GODOT_MCP_LSP_PORT": "6005" }
+>
 > // projectB/.mcp.json — env block
-> "env": { "GODOT_MCP_CONFIG_VERSION": "1", "GODOT_MCP_LSP_PORT": "6006" }
+> "env": { "GODOT_MCP_CONFIG_VERSION": "1", "GODOT_MCP_LSP_PORT": "6015" }
 > ```
 >
-> The default editor (A) needs nothing — it keeps 6005 and the server discovers
-> it. `GODOT_MCP_LSP_HOST` overrides the host the same way (rarely needed — the
-> LSP is localhost). These mirror the familiar `lsp.serverPort` / `lsp.serverHost`
-> client settings.
+> Editor A could run on the default 6005 with no flag at all, but pin it too. The
+> plugin publishes the editor **setting** (6005 unless you changed it), not the
+> `--lsp-port` you passed on the command line, so every pinned editor still
+> registers 6005 — which can leave an *unpinned* editor that genuinely holds 6005
+> reported as conflicting with the pinned ones. A's own `GODOT_MCP_LSP_PORT` above
+> keeps it out of that comparison entirely. `GODOT_MCP_LSP_HOST` overrides the host
+> the same way (rarely needed — the LSP is localhost). These mirror the familiar
+> `lsp.serverPort` / `lsp.serverHost` client settings.
+
+**Avoid 6006.** The editor also starts Godot's Debug Adapter Protocol server,
+which defaults to `127.0.0.1:6006`, so every open editor is already holding that
+port — an LSP pinned there fails to bind, silently on 4.2–4.6. Stepping in tens
+from the LSP default (6005, 6015, 6025, …) stays clear of both.
 
 **Without** a distinct `--lsp-port`, the second editor's server reports a visible
 `LSP_PORT_CONFLICT` and refuses to answer — it will **not** silently return the
@@ -160,8 +174,8 @@ godot --editor --path ../MyGame-a --lsp-port 6005 &
 # Instance B — a separate shell / environment
 export GODOT_MCP_EDITOR_PORT=6552
 export GODOT_MCP_RUNTIME_PORT=6572
-godot --editor --path ../MyGame-b --lsp-port 6006 &
-# …its .mcp.json sets GODOT_MCP_LSP_PORT=6006
+godot --editor --path ../MyGame-b --lsp-port 6015 &
+# …its .mcp.json sets GODOT_MCP_LSP_PORT=6015
 ```
 
 Each instance now binds known, non-colliding ports with **zero registry dependence**
