@@ -2,12 +2,25 @@
 
 This addon's GDScript source was independently written. No code from any
 reference repository has been copied verbatim or near-verbatim into this addon.
-The entries below document the architectural patterns we studied while
-designing the plugin.
+The entries below cover the original artwork made for this project and the
+architectural patterns we studied while designing the plugin.
 
 If a future version imports or adapts code from any of the sources below, a
 "Copied into: …" line with the file path(s) will be appended to keep this file
 accurate.
+
+---
+
+## Artwork
+
+The project logo and hero banner were created by **Jessica Mariana Aisen** for the
+Godot MCP Toolkit.
+
+Commissioned for this project; the copyright is held by NPGameDev.
+
+The MIT licence covers the source code. It does not cover the project logo,
+banner or name, which are the project's brand identity and are not licensed
+for reuse.
 
 ---
 
@@ -129,8 +142,9 @@ Contributed (architecture reference only — no code copied): Godot 4
 ## Notes
 
 MIT only requires preserving notices for code that is directly copied or
-substantially reproduced. None of the above are copied into this addon —
-the entries document the architectural study we credit by courtesy.
+substantially reproduced. No code from the repositories listed above was
+copied into this addon — those entries document the architectural study we
+credit by courtesy.
 
 The companion npm package (`@npgamedev/godot-mcp-server`) carries its own
 `ATTRIBUTIONS.md` with the subset of references relevant to the bridge /

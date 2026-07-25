@@ -1,3 +1,6 @@
+<!-- Brand banner, 1280×640, commissioned art; provenance in docs/media/README.md. Absolute raw URL because docs/ is export-ignored from the AssetLib archive. -->
+![Godot MCP Toolkit: an amber toolbox with a cream wrench and a blue gear, beside the wordmark "Godot · MCP · Toolkit" on a dark navy field](https://raw.githubusercontent.com/NPGameDev/godot-mcp-toolkit/main/docs/media/hero-banner.png)
+
 # Godot MCP Toolkit
 
 [![CI](https://github.com/NPGameDev/godot-mcp-toolkit/actions/workflows/ci.yml/badge.svg)](https://github.com/NPGameDev/godot-mcp-toolkit/actions/workflows/ci.yml)
@@ -9,6 +12,8 @@ AI-assisted Godot development through the [Model Context Protocol](https://model
 > Runs fully locally. No telemetry, no cloud services, no account. Nothing leaves your machine.
 >
 > This is an independent community project, not affiliated with or endorsed by the Godot Foundation or Anthropic.
+>
+> Desktop only: Windows, macOS, and Linux. The bridge needs Node.js 22 or newer.
 
 <details>
 <summary>New to MCP?</summary>
@@ -49,15 +54,13 @@ You should see: the MCP dock appears in the bottom panel, and the Output log pri
 [MCPServer] listening on 127.0.0.1:6550
 ```
 
-(the port may land anywhere from 6550 to 6560; the dock's status section names the live one).
+(the port may land anywhere from 6550 to 6560; the dock's status section names the live one). That line is the plugin's own WebSocket server inside the editor. The npm bridge is a separate process your MCP client starts later, and it dials this port.
 
-### 3. Install the bridge and write the config
+### 3. Write the client config
 
-```bash
-npm install -g @npgamedev/godot-mcp-server
-```
+Let the plugin write it: **Project → Tools → MCP Toolkit → Write .mcp.json**.
 
-(Requires Node.js 22 or newer. Run `node --version` to check.) Then let the plugin write the client config: **Project → Tools → MCP Toolkit → Write .mcp.json**.
+The config runs the bridge through `npx -y @npgamedev/godot-mcp-server`, which fetches it on first connect, so there is no install step. (Requires Node.js 22 or newer. Run `node --version` to check.) If you would rather keep a fixed copy on the machine, `npm install -g @npgamedev/godot-mcp-server` works too.
 
 You should see: `.mcp.json` at your project root, and the dock's `.mcp.json` section showing it healthy.
 
@@ -97,16 +100,18 @@ Paste this into Claude Code from your project directory. It was tested end-to-en
 
 ```text
 Set up the Godot MCP Toolkit for this project:
-1. Install the bridge: npm install -g @npgamedev/godot-mcp-server (check Node >= 22 first).
-2. If this project has no .mcp.json, create one with a "godot-mcp-toolkit" server entry
-   running "npx -y @npgamedev/godot-mcp-server" (on Windows, wrap with cmd /c).
-3. Fresh setup only: if addons/godot_mcp_toolkit exists but project.godot has no
+1. Write the client config (check Node >= 22 first). If this project has no .mcp.json,
+   create one with a "godot-mcp-toolkit" server entry running
+   "npx -y @npgamedev/godot-mcp-server" (on Windows, wrap with cmd /c). npx fetches the
+   bridge on first connect, so no global install is needed; "npm install -g
+   @npgamedev/godot-mcp-server" is only for pinning a fixed copy or working offline.
+2. Fresh setup only: if addons/godot_mcp_toolkit exists but project.godot has no
    [editor_plugins] entry enabling it, add the enable line so the plugin loads on first launch.
    If this project is already open in Godot, tell me to enable it via Project Settings > Plugins instead,
    do not edit project.godot under a running editor.
-4. Then STOP and tell me to: open the project in Godot, confirm the dock shows
+3. Then STOP and tell me to: open the project in Godot, confirm the dock shows
    "[MCPServer] listening", and reconnect you (the MCP client) so the new config loads.
-5. After I confirm, run one read-only probe (list the scene tree or read project settings)
+4. After I confirm, run one read-only probe (list the scene tree or read project settings)
    and report what you see.
 ```
 
@@ -119,7 +124,7 @@ Launch your MCP client from the project root. It discovers the plugin and authen
 Then try the first prompt below. This is the kind of result it produces:
 
 <!-- captured: pre-1.0, Godot 4.7, 2026-07-24, human-recorded (editor + MCP dock, 1 peer connected, game running); UI-chrome shots are hand-recorded per docs/media/README.md. -->
-![The Godot 4.7 editor driving the toolkit: the brick-breaker scene open in the viewport, the game running in a debug window with a full wall of colored bricks, and the MCP dock reporting "Listening on 127.0.0.1:6550" with 1 connected peer](docs/media/editor-dock-breakout.png)
+![The Godot 4.7 editor driving the toolkit: the brick-breaker scene open in the viewport, the game running in a debug window with a full wall of colored bricks, and the MCP dock reporting "Listening on 127.0.0.1:6550" with 1 connected peer](https://raw.githubusercontent.com/NPGameDev/godot-mcp-toolkit/main/docs/media/editor-dock-breakout.png)
 
 If a step does not produce its "you should see", head to the [troubleshooting guide](docs/troubleshooting.md). It starts with a 60-second checklist and a connectivity probe.
 
@@ -133,7 +138,7 @@ If a step does not produce its "you should see", head to the [troubleshooting gu
 The last three run in seconds. The first one is a real project, the same kind of small game we build end-to-end when validating a release, in a single agent session. Larger games span multiple sessions, with or without MCP.
 
 <!-- captured: pre-1.0, Godot 4.5, 2026-07-24, via runtime_screenshot of the running brick-breaker (mid-flight). -->
-![The agent-built brick-breaker running: a full wall of red, orange, yellow, green, and blue bricks on a dark background, the ball mid-flight, a paddle at the bottom, and a Score and Lives readout](docs/media/breakout-running.png)
+![The agent-built brick-breaker running: a full wall of red, orange, yellow, green, and blue bricks on a dark background, the ball mid-flight, a paddle at the bottom, and a Score and Lives readout](https://raw.githubusercontent.com/NPGameDev/godot-mcp-toolkit/main/docs/media/breakout-running.png)
 
 *The brick-breaker from prompt 1 above.*
 
@@ -305,6 +310,19 @@ latest of each and they negotiate compatibility at connect (see
 - **GitHub Releases:** download from either repo's Releases page for manual installation
 
 See [RELEASING.md](RELEASING.md) for maintainer release process and version policy.
+
+## Author
+
+**NPGameDev** · [npgamedev.com](https://npgamedev.com) · [GitHub](https://github.com/NPGameDev)
+
+For inquiries and requests: [np@npgamedev.com](mailto:np@npgamedev.com)
+
+## Trademarks
+
+Godot and the Godot logo are trademarks of the Godot Foundation. This add-on is
+an independent community project with no affiliation with or endorsement from the
+Foundation, and it is not an official Godot product. The name describes what the
+add-on runs on: the Godot Engine.
 
 ## License
 

@@ -23,6 +23,9 @@ var _wizard: OnboardingWizard = null
 
 
 func _enter_tree() -> void:
+	# Brand line, not a log line: printed first so the version is stamped even if startup fails.
+	print("Godot MCP Toolkit v%s — by NPGameDev · npgamedev.com" % get_plugin_version())
+
 	# Lifecycle phase sequence. The "why this order" narrative lives here; the
 	# composer owns the internal construction order of the graph it builds.
 	Modules.EditorAccess.set_plugin(self)

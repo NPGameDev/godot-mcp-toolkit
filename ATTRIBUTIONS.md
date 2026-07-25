@@ -2,12 +2,25 @@
 
 This repo's GDScript source under `addons/godot_mcp_toolkit/` was independently
 written. No code from any reference repository has been copied verbatim or
-near-verbatim into `plugin.gd` or `mcp_server.gd`. The entries below document
-the architectural patterns we studied while designing the plugin, in
-compliance with the project's attribution hygiene rule (I10).
+near-verbatim into `plugin.gd` or `mcp_server.gd`. The entries below cover the
+original artwork made for this project and the architectural patterns we
+studied while designing the plugin.
 
 If future iterations import or adapt code from any of the sources below, append
 a "Copied into: …" line with the file path(s) to keep this file accurate.
+
+---
+
+## Artwork
+
+The project logo and hero banner were created by **Jessica Mariana Aisen** for the
+Godot MCP Toolkit.
+
+Commissioned for this project; the copyright is held by NPGameDev.
+
+The MIT licence covers the source code. It does not cover the project logo,
+banner or name, which are the project's brand identity and are not licensed
+for reuse.
 
 ---
 
@@ -130,8 +143,9 @@ Contributed (architecture reference only — no code copied): Godot 4
 ## Notes
 
 MIT only requires preserving notices for code that is directly copied or
-substantially reproduced. None of the above are copied into this repository —
-the entries document the architectural study we credit by courtesy.
+substantially reproduced. No code from the repositories listed above was
+copied into this repository — those entries document the architectural study
+we credit by courtesy.
 
 The companion TypeScript-side repository (`godot-mcp-server`) carries its own
 `ATTRIBUTIONS.md` with the subset of references relevant to the bridge /

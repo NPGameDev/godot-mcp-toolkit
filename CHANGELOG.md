@@ -70,6 +70,8 @@ first public version.
 - The companion Claude Code skill `godot-mcp-toolkit` ships inside the addon
   (`addons/godot_mcp_toolkit/CompanionSkills/godot-mcp-toolkit/`) for guidance on
   tool selection, workflow patterns, and error recovery.
+- A startup line in the Output panel naming the plugin version and author when
+  the plugin loads.
 
 ### Changed
 

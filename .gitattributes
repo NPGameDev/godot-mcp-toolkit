@@ -5,3 +5,11 @@
 # scripts/test_framework/run_units_cold.sh for the 4.2 class-cache warm-up,
 # including when this repo is checked out as a sibling of the server repo.
 *.sh text eol=lf
+
+# Source archives (Asset Library installs, GitHub "Download ZIP") carry the
+# addon and nothing else. Exclude every path, then re-admit the addons tree.
+# Denying by default means anything added outside addons/ stays out of the
+# archive without an edit here.
+/**        export-ignore
+/addons    !export-ignore
+/addons/** !export-ignore

@@ -21,7 +21,8 @@ dist-plugin/
 /eval_*
 /mcp_smoke_*
 
-# Tool sweep validation artifacts (Validations/tool-sweep.md S1-S25)
+# Scratch project the interactive tool sweep creates and tears down. Ignored so
+# a sweep that aborts partway leaves nothing tracked behind.
 /sv2_validation/
 
 # Engine-generated audio bus layout (recreated from ProjectSettings on load)

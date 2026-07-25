@@ -43,7 +43,7 @@ Lockstep also forces *dishonest* bumps: the unchanged repo inflates its version
 just to stay level, and the two cadences are coupled for no functional reason.
 
 Full grill decision log and blast radius:
-[`Plan/Reference/GrillingSessions/2026-07-21-independent-versioning-compat-floor.md`](../../../godot-mcp-creation/Plan/Reference/GrillingSessions/2026-07-21-independent-versioning-compat-floor.md).
+`Plan/Reference/GrillingSessions/2026-07-21-independent-versioning-compat-floor.md`.
 
 ## Decision
 
@@ -105,7 +105,7 @@ changes, and leaves them independent otherwise.** That is the honest version of
   `min_toolkit` / `min_server` constants and the floor-aware comparison must land
   **with or before the first release that breaks the `1.0.0` symmetry**. That
   work is tracked as `version-mismatch-ux`
-  ([`Plan/Ideas/PostRelease/2026-07-21-version-mismatch-ux-hardening.md`](../../../godot-mcp-creation/Plan/Ideas/PostRelease/2026-07-21-version-mismatch-ux-hardening.md)),
+  (`Plan/Ideas/PostRelease/2026-07-21-version-mismatch-ux-hardening.md`),
   now load-bearing under this model.
 - **Every MAJOR is a fleet-wide day-one skew event** for unpinned-`npx` users —
   a reason to keep floor raises (and therefore MAJORs) deliberate and rare.

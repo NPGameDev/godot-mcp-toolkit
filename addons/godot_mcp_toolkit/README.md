@@ -13,18 +13,18 @@ Everything runs locally. Nothing leaves your machine.
 1. **Enable the plugin:** Project Settings → Plugins → **Godot MCP Toolkit** →
    check **Active**. The MCP dock appears in the bottom panel and the Output
    log prints `[MCPServer] listening on 127.0.0.1:6550` (the port may land
-   anywhere in 6550–6560; the dock names the live one).
-2. **Install the bridge** (requires Node.js 22 or newer):
-
-   ```
-   npm install -g @npgamedev/godot-mcp-server
-   ```
-
-3. **Write the client config:** **Project → Tools → MCP Toolkit →
-   Write .mcp.json** creates the config at your project root. (Manual
+   anywhere in 6550–6560; the dock names the live one). That line is the
+   plugin's own WebSocket server inside the editor. The npm bridge is a
+   separate process your MCP client starts later, and it dials this port.
+2. **Write the client config:** **Project → Tools → MCP Toolkit →
+   Write .mcp.json** creates the config at your project root. It runs the
+   bridge through `npx -y @npgamedev/godot-mcp-server`, which fetches it on
+   first connect, so there is no install step (Node.js 22 or newer required).
+   If you would rather keep a fixed copy on the machine,
+   `npm install -g @npgamedev/godot-mcp-server` works too. (Manual
    alternative: copy `addons/godot_mcp_toolkit/.mcp.json.template` to your
    project root and rename it `.mcp.json`.)
-4. **Connect:** launch your MCP client from the project root. It discovers
+3. **Connect:** launch your MCP client from the project root. It discovers
    the plugin and authenticates automatically; the dock's peer count
    increments on connection.
 
@@ -90,6 +90,12 @@ you should not disable the plugin by hand-editing `project.godot`.
 
 ## License
 
-MIT. Third-party attributions travel with the addon in
-[ATTRIBUTIONS.md](ATTRIBUTIONS.md); the license text is at
-<https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/LICENSE>.
+MIT: the full text travels with the addon in [LICENSE](LICENSE). Third-party
+attributions are in [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
+
+## Trademarks
+
+Godot and the Godot logo are trademarks of the Godot Foundation. This add-on is
+an independent community project with no affiliation with or endorsement from the
+Foundation, and it is not an official Godot product. The name describes what the
+add-on runs on: the Godot Engine.

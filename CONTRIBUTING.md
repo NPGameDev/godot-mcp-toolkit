@@ -9,20 +9,20 @@ need to get started.
 - **Node.js >= 22** (for the companion server)
 - **Git**
 
-This project spans three repositories that live as siblings on disk:
+This project spans two public repositories that live as siblings on disk, plus a
+private planning repo:
 
 | Repo | What it is |
 |------|-----------|
 | [`godot-mcp-toolkit`](https://github.com/NPGameDev/godot-mcp-toolkit) (this repo) | Godot editor plugin (GDScript) |
 | [`godot-mcp-server`](https://github.com/NPGameDev/godot-mcp-server) | TypeScript MCP bridge (npm package) |
-| [`godot-mcp-creation`](https://github.com/NPGameDev/godot-mcp-creation) | Execution plan and design docs |
+| `godot-mcp-creation` (private, maintainer's planning repo) | Execution plan and design docs |
 
-Clone all three as siblings:
+Clone both as siblings:
 
 ```bash
 git clone https://github.com/NPGameDev/godot-mcp-toolkit.git
 git clone https://github.com/NPGameDev/godot-mcp-server.git
-git clone https://github.com/NPGameDev/godot-mcp-creation.git  # optional, for plan context
 ```
 
 ## Dev environment setup
@@ -411,5 +411,5 @@ Please read it before participating.
 
 ## Questions?
 
-Open a [discussion](https://github.com/NPGameDev/godot-mcp-toolkit/issues) or
-file an issue. We're happy to help.
+[File an issue](https://github.com/NPGameDev/godot-mcp-toolkit/issues), or mail
+np@npgamedev.com for anything that does not fit one. We're happy to help.
