@@ -1,5 +1,5 @@
 <!-- Brand banner, 1280×640, commissioned art; provenance in docs/media/README.md. Absolute raw URL because docs/ is export-ignored from the AssetLib archive. -->
-![Godot MCP Toolkit: an amber toolbox with a cream wrench and a blue gear, beside the wordmark "Godot · MCP · Toolkit" on a dark navy field](https://raw.githubusercontent.com/NPGameDev/godot-mcp-toolkit/main/docs/media/hero-banner.png)
+![Godot MCP Toolkit: an amber toolbox with a cream wrench and a blue gear, beside the wordmark "Godot · MCP · Toolkit" on a dark navy field](docs/media/hero-banner.png)
 
 # Godot MCP Toolkit
 
@@ -124,7 +124,7 @@ Launch your MCP client from the project root. It discovers the plugin and authen
 Then try the first prompt below. This is the kind of result it produces:
 
 <!-- captured: pre-1.0, Godot 4.7, 2026-07-24, human-recorded (editor + MCP dock, 1 peer connected, game running); UI-chrome shots are hand-recorded per docs/media/README.md. -->
-![The Godot 4.7 editor driving the toolkit: the brick-breaker scene open in the viewport, the game running in a debug window with a full wall of colored bricks, and the MCP dock reporting "Listening on 127.0.0.1:6550" with 1 connected peer](https://raw.githubusercontent.com/NPGameDev/godot-mcp-toolkit/main/docs/media/editor-dock-breakout.png)
+![The Godot 4.7 editor driving the toolkit: the brick-breaker scene open in the viewport, the game running in a debug window with a full wall of colored bricks, and the MCP dock reporting "Listening on 127.0.0.1:6550" with 1 connected peer](docs/media/editor-dock-breakout.png)
 
 If a step does not produce its "you should see", head to the [troubleshooting guide](docs/troubleshooting.md). It starts with a 60-second checklist and a connectivity probe.
 
@@ -138,7 +138,7 @@ If a step does not produce its "you should see", head to the [troubleshooting gu
 The last three run in seconds. The first one is a real project, the same kind of small game we build end-to-end when validating a release, in a single agent session. Larger games span multiple sessions, with or without MCP.
 
 <!-- captured: pre-1.0, Godot 4.5, 2026-07-24, via runtime_screenshot of the running brick-breaker (mid-flight). -->
-![The agent-built brick-breaker running: a full wall of red, orange, yellow, green, and blue bricks on a dark background, the ball mid-flight, a paddle at the bottom, and a Score and Lives readout](https://raw.githubusercontent.com/NPGameDev/godot-mcp-toolkit/main/docs/media/breakout-running.png)
+![The agent-built brick-breaker running: a full wall of red, orange, yellow, green, and blue bricks on a dark background, the ball mid-flight, a paddle at the bottom, and a Score and Lives readout](docs/media/breakout-running.png)
 
 *The brick-breaker from prompt 1 above.*
 
