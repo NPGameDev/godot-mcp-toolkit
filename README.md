@@ -220,9 +220,11 @@ Most tools work under `godot --headless --editor`: file, scene, node, script, Cl
 
 | Godot | Level | Notes |
 |-------|-------|-------|
-| 4.2 to 4.3 | Core | All tools work (undo history included); toast notifications fall back to the Output panel |
-| 4.4 | Full UI | Toast notifications added; `scene_close` unavailable |
+| 4.2 to 4.3 | Core | Every tool except `scene_close` works (undo history included); toast notifications fall back to the Output panel |
+| 4.4 | Full UI | Toast notifications added; `scene_close` still needs 4.5+ |
 | 4.5+ | Full | All tools and UI features |
+
+On 4.2 to 4.4 a few tools adapt rather than break: where the engine lacks an API, the tool falls back to a simpler path or replies with the exact version it needs. On 4.5+ the full toolset runs without fallbacks.
 
 Future Godot versions (4.8+) are not blocked; the plugin uses runtime capability checks. Full per-version behavior, including degraded-mode details and the C# (.NET editor) requirement, is in the shipped [compatibility guide](addons/godot_mcp_toolkit/docs/compatibility.md).
 
