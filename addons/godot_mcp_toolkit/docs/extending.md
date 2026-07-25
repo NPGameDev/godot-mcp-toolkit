@@ -66,16 +66,18 @@ filesystem scan or when you call `extensions_refresh`.
 ### Quick start (C#)
 
 C# extensions cannot inherit GDScript classes (hard Godot limitation). Instead,
-extend `RefCounted` directly with `[Tool]` and `[GlobalClass]` attributes.
-The loader discovers them via duck typing (`has_method("Register")`).
+extend `RefCounted` directly with `[Tool]` and `[GlobalClass]` attributes, and
+name the class with the `MCPToolkit` prefix — because C# cannot extend the
+GDScript base class, that prefix is the discovery marker. The loader then
+verifies each candidate via duck typing (`has_method("Register")`).
 
 ```
 addons/my_dialogue_tools/
-└── DialogueExtension.cs   ← [GlobalClass] MCPToolkitDialogueTools
+└── MCPToolkitDialogueTools.cs   ← [GlobalClass] MCPToolkitDialogueTools (file name matches class name)
 ```
 
 ```csharp
-// addons/my_dialogue_tools/DialogueExtension.cs
+// addons/my_dialogue_tools/MCPToolkitDialogueTools.cs
 using Godot;
 using Godot.Collections;
 
@@ -107,6 +109,9 @@ is valid and recommended for C#. Alternatively, you can call the GDScript
 but the raw Dictionary is simpler. Both produce the same result.
 
 **C# requirements:**
+- **Class name must start with `MCPToolkit`** (e.g., `MCPToolkitMyTools`) —
+  this prefix is the loader's discovery filter for C#; a class without it is
+  never found, regardless of its attributes or methods
 - `[Tool]` attribute mandatory (without it, the .NET object is not
   instantiated in editor — method calls return null)
 - `[GlobalClass]` attribute mandatory (makes the class visible to
