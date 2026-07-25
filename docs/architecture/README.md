@@ -674,7 +674,9 @@ The two repos ship through **different channels** so users never fetch what they
   built by `scripts/build-plugin-release.{ps1,sh}`. The package contains **only** the
   `addons/godot_mcp_toolkit/` subtree — which is why this `docs/` folder, the ADRs, and the dev
   docs never reach end users. `plugin.cfg` declares the version and the `plugin.gd` entry point;
-  `icon.png` / `icon.svg` at the repo root are for the Asset Library listing.
+  `icon.png` at the repo root is the Asset Library listing icon, and the repo-root `icon.svg` is the
+  dogfood project's own icon (`project.godot` `config/icon`). The addon carries a separate
+  `addons/godot_mcp_toolkit/icon.svg`, which is the one that ships inside the package.
 - **Server** → **npm** (`@npgamedev/godot-mcp-server`).
 
 The export-strip plugin ([ADR 0006](#14-key-decisions-adrs)) is a *separate* concern: it protects

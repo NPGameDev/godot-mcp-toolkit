@@ -19,8 +19,8 @@ Godot MCP Toolkit.
 Commissioned for this project; the copyright is held by NPGameDev.
 
 The MIT licence covers the source code. It does not cover the project logo,
-banner or name, which are the project's brand identity and are not licensed
-for reuse.
+icons, banner or name, which are the project's brand identity and are not
+licensed for reuse.
 
 ---
 
