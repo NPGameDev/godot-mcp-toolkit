@@ -5,6 +5,15 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Merge queue: GitHub fires merge_group against the temporary
+  # refs/heads/gh-readonly-queue/... branch once a PR is enqueued, and blocks the merge
+  # on the required checks that report there — so the floor MUST run on this event, or a
+  # required check bound to "Toolkit floor OK" stays pending forever and stalls the
+  # queue. Nothing else needs changing: no floor job below is gated on an event name or
+  # a commit-message token, so all of them run here exactly as they do on a PR, and the
+  # aggregate therefore cannot pass vacuously. The gh-readonly-queue ref does not match
+  # the push filter above, so a queued PR produces ONE floor run, not two.
+  merge_group:
 
 # D7 (going-public supply-chain baseline): least privilege by default. No floor job
 # writes repo contents; the release path grants its own contents: write per-job.
@@ -13,7 +22,10 @@ permissions:
 
 # D6: cancel an in-flight floor run when a newer commit lands on the same ref — the
 # floor gates the tip, so a superseded run's result is moot. NOT on cross-version.yml:
-# those deep-tier runs are deliberate and must never be auto-cancelled.
+# those deep-tier runs are deliberate and must never be auto-cancelled. Keying the group
+# on github.ref is what keeps this safe for the merge queue: every queue entry gets its
+# own gh-readonly-queue ref, so a merge-queue run lands in a group of its own and a PR
+# (or main) run can never cancel the required check out from under the queue.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -150,13 +162,15 @@ jobs:
           PY
 
   # ── Aggregate floor gate (D8) ────────────────────────────────────────────────
-  # "Toolkit floor OK" is the SINGLE name that becomes a required check once the
-  # repo is public — never an individual matrix row. A required check pinned to a
-  # matrix leg breaks whenever the matrix is retuned (D1 just did); pinning to this
-  # one stable name never does. `if: always()` + the explicit failure/cancelled
-  # test also makes future path-filtered docs-skips safe: an `if:`-skipped upstream
-  # reports success here, whereas a `paths:`-skipped required check would deadlock
-  # as pending.
+  # "Toolkit floor OK" is the SINGLE name bound as a required check — on the protected
+  # branch and in the merge queue alike — never an individual matrix row. A required
+  # check pinned to a matrix leg breaks whenever the matrix is retuned (D1 just did);
+  # pinning to this one stable name never does. Every job in needs: runs
+  # unconditionally on every trigger this workflow accepts, merge_group included, so
+  # the gate is always substantive: an all-skip, which WOULD pass vacuously here, is
+  # structurally impossible. `if: always()` + the explicit failure/cancelled test also
+  # makes future path-filtered docs-skips safe: an `if:`-skipped upstream reports
+  # success here, whereas a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
     needs: [gdscript-check, unit-tests, manifest-diff]
