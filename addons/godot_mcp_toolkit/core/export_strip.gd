@@ -155,7 +155,7 @@ static func _decide_warning(saw_addon_script: bool, saw_addon_nonscript: bool, e
 		return {"warn": false, "addon_leaked": false, "leaked_ext_count": 0, "leaked_ext_paths": [], "message": ""}
 	var subject := ""
 	if addon_leaked:
-		subject = "the Godot MCP Toolkit addon"
+		subject = "the Godot MCP Toolkit addon's scripts"
 	if leaked_ext > 0:
 		if subject != "":
 			subject += " and "

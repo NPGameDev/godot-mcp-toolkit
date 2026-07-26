@@ -564,7 +564,7 @@ static func _test_export_strip(testing) -> void:
 	var d_both: Dictionary = ExportStrip._decide_warning(false, true, {"res://x/ext.gd": true}, {})
 	testing.ok(d_both["warn"], "addon + unseen extension → warn")
 	testing.ok(int(d_both["leaked_ext_count"]) == 1, "1 unseen extension counted")
-	testing.ok(str(d_both["message"]).find("addon and 1 extension script(s)") >= 0, "message joins addon + 1 extension")
+	testing.ok(str(d_both["message"]).find("addon's scripts and 1 extension script(s)") >= 0, "message joins addon + 1 extension")
 	# The recipe must list the addon glob AND the explicit extension path.
 	testing.ok(str(d_both["message"]).find("res://addons/godot_mcp_toolkit/*") >= 0, "message includes the addon exclude glob")
 	testing.ok(str(d_both["message"]).find("res://x/ext.gd") >= 0, "message lists the leaked extension path explicitly")
