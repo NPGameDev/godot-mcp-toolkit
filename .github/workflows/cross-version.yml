@@ -43,15 +43,13 @@
 # runner keeps the editor alive and serves the WS round-trip (standard 29/0; mono
 # §25 15/0). The smoke/flows harness, the C# fixture, AND the shared composite all
 # live in the SERVER repo, so this workflow checks the server out as a sibling and
-# invokes the composite from that path (both behavioral tiers). While the repos are
-# private the sibling checkout needs a read-only PAT (CROSS_REPO_READ_TOKEN); once
-# public the || github.token fallback makes it tokenless. The server checkout is
+# invokes the composite from that path (both behavioral tiers). The sibling checkout
+# uses the default github.token (both repos are public). The server checkout is
 # PINNED to a recorded revision (env.SIBLING_PIN_SERVER, see below) — no race with
 # server main; bump the pin deliberately, with [run-cross-version-ci] on the bump commit.
 name: cross-version (toolkit)
 
-# D7: least privilege by default; the sibling checkout uses the read-only PAT
-# (CROSS_REPO_READ_TOKEN) while private, github.token once public.
+# D7: least privilege by default; the sibling checkout uses the default github.token.
 permissions:
   contents: read
 
@@ -97,7 +95,7 @@ on:
 # dotnet) test against exactly this server revision, not floating main. This env var is
 # the SINGLE bump point: bump it deliberately in a dedicated commit carrying
 # [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
-# the sibling-ref dispatch input. See Plan/Reference/ci-test-topology.md.
+# the sibling-ref dispatch input.
 env:
   SIBLING_PIN_SERVER: "f67aeb3031a2d4a3e99dd1b3bbad3cbf333fef1f"
 
@@ -128,7 +126,7 @@ jobs:
         with:
           repository: NPGameDev/godot-mcp-server
           path: server
-          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+          token: ${{ github.token }}
           # SIBLING-PIN(server): pinned via env.SIBLING_PIN_SERVER (workflow-level env above).
           ref: ${{ inputs.sibling-ref || env.SIBLING_PIN_SERVER }}
 
@@ -202,7 +200,7 @@ jobs:
         with:
           repository: NPGameDev/godot-mcp-server
           path: server
-          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+          token: ${{ github.token }}
           # SIBLING-PIN(server): pinned via env.SIBLING_PIN_SERVER (workflow-level env above).
           ref: ${{ inputs.sibling-ref || env.SIBLING_PIN_SERVER }}
 
@@ -354,7 +352,7 @@ jobs:
         with:
           repository: NPGameDev/godot-mcp-server
           path: server
-          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+          token: ${{ github.token }}
           ref: ${{ inputs.sibling-ref || env.SIBLING_PIN_SERVER }}
 
       - name: "Full smoke+flows (${{ matrix.os_label }} ${{ matrix.version }} · ${{ matrix.editor_label }})"

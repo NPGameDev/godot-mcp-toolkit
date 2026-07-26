@@ -44,14 +44,12 @@ permissions:
 
 jobs:
   # D13: gate the release on the full cross-version behavioral matrix (6 GDScript +
-  # 6 .NET/mono behavioral + 2 mono-units). secrets: inherit forwards
-  # CROSS_REPO_READ_TOKEN for the private sibling checkout (drop once public); the
-  # callee's own workflow-level SIBLING_PIN_SERVER env resolves normally under
-  # workflow_call, and inputs.sibling-ref is empty when called -> the pin holds.
+  # 6 .NET/mono behavioral + 2 mono-units). The callee's own workflow-level
+  # SIBLING_PIN_SERVER env resolves normally under workflow_call, and
+  # inputs.sibling-ref is empty when called -> the pin holds.
   # Bump the pin to the certified sibling revision BEFORE tagging (ritual unchanged).
   behavioral:
     uses: ./.github/workflows/cross-version.yml
-    secrets: inherit
 
   build-and-release:
     needs: behavioral
@@ -84,9 +82,9 @@ jobs:
           echo "Version validated: $TAG"
 
       # Check out the pinned server sibling so its DECLARED version can be asserted
-      # against the tag. Mirrors the sibling-checkout idiom cross-version.yml uses
-      # (CROSS_REPO_READ_TOKEN while private, github.token once public). Reads the pin
-      # from cross-version.yml so there is one source of truth for SIBLING_PIN_SERVER.
+      # against the tag. Mirrors the sibling-checkout idiom cross-version.yml uses.
+      # Reads the pin from cross-version.yml so there is one source of truth for
+      # SIBLING_PIN_SERVER.
       - name: Check out pinned server sibling
         if: github.ref_type == 'tag'
         run: |
@@ -98,7 +96,7 @@ jobs:
           repository: NPGameDev/godot-mcp-server
           path: server-pin
           ref: ${{ env.SIBLING_PIN_SERVER }}
-          token: ${{ secrets.CROSS_REPO_READ_TOKEN || github.token }}
+          token: ${{ github.token }}
 
       # The pinned server sibling's DECLARED version must equal the tag — makes the
       # bump-before-tag pin ritual machine-checked (a stale pin = green tests of the
