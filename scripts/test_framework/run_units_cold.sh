@@ -73,7 +73,12 @@ CACHE_FILE=".godot/global_script_class_cache.cfg"
 # INVARIANT: MAX_BOOT_ATTEMPTS x BOOT_POLL_SECS + teardown overhead must stay
 # under the CI caller's 300s warm-up-step fuse (3 x 80s = 240s today), so an
 # all-attempts-fail still exits cleanly with forensics rather than being
-# fuse-killed — retune both together, never one alone.
+# fuse-killed — retune both together, never one alone. Teardown overhead is not
+# free and is part of THIS budget: the per-attempt kill_warmup_editor rounds
+# plus, on Windows, the kill-verify loop and the dead-owner grace window
+# (LINGER_GRACE_SECS) below each spend real seconds against the same fuse. The
+# fuse kills the step outright, so overrunning it costs the run's verdict, not
+# just its forensics — count all of them whenever any one is retuned.
 MAX_BOOT_ATTEMPTS=3
 BOOT_POLL_SECS=80
 WARMUP_PID=""
@@ -155,18 +160,28 @@ kill_warmup_editor
 #   1. Kill-verify loop: re-sample netstat in a BOUNDED loop (every 2s, up to
 #      ~10s), re-resolving the port OWNER each pass and re-killing it. This
 #      replaces a single post-taskkill sample, which raced the OS socket teardown
-#      and could FALSE-POSITIVE "survived" on an already-exiting process. Survival
-#      is declared only if a port is still held after the whole window; a NEW
+#      and could FALSE-POSITIVE "survived" on an already-exiting process. A NEW
 #      owner PID is not the old zombie, which is why the owner is re-resolved (not
-#      cached). Killing the port-OWNER PID is image-agnostic and reaches the
-#      shim-orphaned editor the WinPID tree misses (observed: a PID held 6005
-#      while `tasklist | grep -i godot` was empty).
-#   2. WS port (6550) still held → PORT-AGILITY, not failure: 6550 is fully
+#      cached). Killing the port-OWNER PID resolves the target from the SOCKET,
+#      so it needs neither an image name (a renamed or shim-wrapped binary is
+#      still reached) nor membership in the recorded WinPID tree (an editor
+#      orphaned from that tree is reached too) — both of which a name- or
+#      tree-based kill depends on.
+#   2. Liveness gate: a held port is a ZOMBIE only if its owner is ALIVE. Windows
+#      keeps the LISTENING row for a beat after the owning process is gone, so
+#      occupancy alone reads a clean exit as a survivor — that is the case where a
+#      PID still owns 6005 while `tasklist` no longer lists it and the row is gone
+#      by itself moments later. So the owner is corroborated with tasklist: a LIVE
+#      owner is a real zombie and escalates below, while NO live owner (or no
+#      owner at all) is a socket still closing, waited out in a kill-free grace
+#      window — there is nothing left to kill. Survival is declared only for a
+#      LIVE owner, or for a dead-owner row that outlives the grace window.
+#   3. WS port (6550) still held → PORT-AGILITY, not failure: 6550 is fully
 #      env-configurable (GODOT_MCP_EDITOR_PORT pins the toolkit's exact bind and
 #      the server smoke/flows read the same var), so pin the next editor boot to
 #      the first free port in 6551-6560 and export it (GITHUB_ENV) for the
 #      downstream steps. Loud, but the run continues.
-#   3. LSP port (6005) still held → retry-then-FAIL, but only with a downstream
+#   4. LSP port (6005) still held → retry-then-FAIL, but only with a downstream
 #      consumer: 6005 is Godot's network/language_server/remote_port editor
 #      setting, bound by the editor and NOT relocatable from this wrapper. The
 #      behavioral smoke §41 (LSP tools) CONSUMES it and can fail on an
@@ -195,9 +210,25 @@ case "$(uname -s)" in
     }
     # The owning PID(s) of the LISTENING sockets on 6550/6005 — the last
     # whitespace field of each LISTENING netstat -ano row. Re-resolved on every
-    # sample because a socket's owner can change between passes.
+    # sample because a socket's owner can change between passes. CRs are stripped
+    # first: netstat is a .cmd-family tool, and a PID carrying a trailing CR is
+    # rejected by every consumer below (tasklist errors out, taskkill no-ops), so
+    # a LIVE owner would read as dead.
     port_owner_pids() {
-      netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" 2>/dev/null | grep "LISTENING" 2>/dev/null | awk '{print $NF}' | sort -u || true
+      netstat -ano 2>/dev/null | tr -d '\r' | grep -E ":(6550|6005)[^0-9]" 2>/dev/null | grep "LISTENING" 2>/dev/null | awk '{print $NF}' | sort -u || true
+    }
+    # True iff PID $1 still exists — the image-agnostic liveness probe that tells
+    # a live zombie from a socket outliving its dead owner. tasklist prints an
+    # "INFO: No tasks…" line (not an error) when nothing matches and pads its
+    # output with a banner and CRs, so all of that is filtered out and only the
+    # surviving data rows are counted.
+    pid_alive() {
+      { [ -n "${1:-}" ] && [ "$1" != "0" ]; } || return 1
+      local rows
+      rows="$(tasklist //FI "PID eq $1" 2>/dev/null \
+        | tr -d '\r' \
+        | grep -cviE "No tasks|^$|Image Name|^=" 2>/dev/null || true)"
+      [ -n "$rows" ] && [ "$rows" != "0" ]
     }
     if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
       # Kill-verify: check-then-kill, bounded. The healthy path (the WinPID
@@ -212,6 +243,37 @@ case "$(uname -s)" in
         done
         sleep 2
       done
+      # Liveness gate + dead-owner grace. A port still LISTENING with a LIVE
+      # owner is the real zombie and drops straight through to the escalation
+      # below, unchanged. A port whose owner is already gone (or that reports no
+      # owner at all) is the kernel finishing a socket teardown: more kills are
+      # pointless and it clears itself, so it is polled out in a bounded,
+      # kill-free window instead of being blamed on the editor. Only a row that
+      # outlives that window is treated as survival.
+      DEAD_OWNER_LINGER=0
+      LINGER_WAITED=0
+      LINGER_GRACE_SECS=10
+      if [ "$(port_listening 6550)" != "0" ] || [ "$(port_listening 6005)" != "0" ]; then
+        OWNER_ALIVE=0
+        for pid in $(port_owner_pids); do
+          { [ -n "$pid" ] && [ "$pid" != "0" ]; } || continue
+          if pid_alive "$pid"; then
+            OWNER_ALIVE=1
+            break
+          fi
+        done
+        if [ "$OWNER_ALIVE" = "0" ]; then
+          DEAD_OWNER_LINGER=1
+          while [ "$LINGER_WAITED" -lt "$LINGER_GRACE_SECS" ]; do
+            [ "$(port_listening 6550)" = "0" ] && [ "$(port_listening 6005)" = "0" ] && break
+            sleep 2
+            LINGER_WAITED=$((LINGER_WAITED + 2))
+          done
+          if [ "$(port_listening 6550)" = "0" ] && [ "$(port_listening 6005)" = "0" ]; then
+            echo "warm-up teardown: port owner already gone — the LISTENING row was a socket still closing, cleared after ${LINGER_WAITED}s; continuing."
+          fi
+        fi
+      fi
     else
       # Non-CI: bounded settle only, no destructive image-agnostic kill (another
       # editor may legitimately hold 6550 for a different project on a dev box).
@@ -243,6 +305,9 @@ case "$(uname -s)" in
         # will consume it (GODOT_WARM_ONLY); the LSP bind is not relocatable.
         if [ "$HELD_6005" != "0" ] && [ "${GODOT_WARM_ONLY:-0}" = "1" ]; then
           echo "ERROR: warm-up editor ZOMBIE survived force-kill — 6005 (GDScript LSP) still LISTENING; the behavioral leg's LSP checks are doomed (LSP bind loss is permanent on 4.2-4.4, and the LSP port is not relocatable from this wrapper)." >&2
+          if [ "$DEAD_OWNER_LINGER" = "1" ]; then
+            echo "NOTE: no LIVE owner was found when the grace window opened, and the row was STILL LISTENING ${LINGER_GRACE_SECS}s later — a socket that never closed rather than a running process, so the port-owner dump below is expected to be empty." >&2
+          fi
           echo "--- port-owner processes (by PID) ---"
           for pid in $(port_owner_pids); do
             { [ -n "$pid" ] && [ "$pid" != "0" ]; } || continue
