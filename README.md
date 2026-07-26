@@ -180,7 +180,7 @@ CI fails the build if any of these numbers drift: **112 tools** (34 always-on + 
 - Every tool is also exercised end-to-end from GDScript in the interactive sweep, mapped in the [sweep coverage manifest](Validations/SWEEP-COVERAGE-MANIFEST.md). Last full pass: 479 cases on Godot 4.7 (2026-07-03); see [the sweep index](Validations/tool-sweep.md).
 - CI exercises Godot **4.2 through 4.7**, on **Windows, macOS, and Linux**, in both **GDScript and C# (mono)** editors. The floor (static validation plus unit execution on every supported version) gates every push; the full behavioral matrix is an opt-in deep tier, and headless-incompatible sections (screenshots, display-bound input) are skipped there and validated locally.
 - Five small games (a clicker, a brick-breaker, chess, a platformer, and a tower defense) were each built end-to-end in a single agent session as release validation.
-- Concurrent human + AI editing is validated for specific scenarios: creating nodes during manual scene-tree edits, undo interleaving, editing a node while its Inspector is open, and mid-drag reparenting. Complex viewport interactions may benefit from taking turns. If you have unsaved changes in the built-in script editor and a tool writes the same file, your buffer wins on save, so save or close first.
+- Concurrent human + AI editing is validated for specific scenarios: creating nodes during manual scene-tree edits, undo interleaving, editing a node while its Inspector is open, and mid-drag reparenting. Most overlap is safe; the two cases that need turn-taking are under [Known limitations](#known-limitations).
 
 ## Security
 
@@ -234,6 +234,7 @@ Future Godot versions (4.8+) are not blocked; the plugin uses runtime capability
 - **Screenshot capture size.** A full-size viewport capture (a 3D viewport especially) can exceed the WebSocket transport buffer and fail with `RESPONSE_TOO_LARGE`. Pass `image_response_mode: "disk"` to save the PNG and receive its path, or request a lower `image_detail`.
 - **Node-focus does not reframe a 2D node.** `editor_screenshot` with a `node_path` selects the node but, for a 2D node, does not pan or zoom the viewport to frame it. A 3D node-focus capture does get camera framing; 2D has no equivalent.
 - **Un-minimizing restores a windowed state.** The `force_foreground_*` options un-minimize and raise a minimized window before capturing, but the window comes back windowed, not maximized. Godot exposes no API to restore the prior window mode.
+- **Two concurrent-editing cases need turn-taking.** The editor stays usable while an agent works, and most overlap is safe: tree edits land cleanly during a manual drag, deleting an inspected node clears the Inspector, and Ctrl+Z reverts the most recent change first whether it was yours or the agent's. Two cases do not merge. If you have **unsaved** edits to a script open in the built-in editor and the agent writes that same file, the disk write wins and your buffer edits are lost, so save before letting an agent edit a file you are working in. And if the agent reparents or deletes the node you are mid-drag in the viewport, the structural change wins and your drag ends as a harmless no-op (a benign `Node not found` message may appear in the Output panel).
 
 ## FAQ
 

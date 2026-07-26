@@ -200,6 +200,39 @@ See the C# section of the shipped
 [`compatibility.md`](../addons/godot_mcp_toolkit/docs/compatibility.md) for
 version requirements and details.
 
+### Windows: a headless CLI export never returns
+
+**Symptom:** `godot --headless … --export-release` (or `--export-debug`) writes
+the build successfully, but the command never exits — the console window sits
+there until you kill it. Godot 4.4.x and older only.
+
+**Cause:** `Godot_v*_console.exe` is a wrapper that waits for **every**
+descendant process to exit. On 4.4.x and older, a CLI export restores the
+previous editor session *after* the export finishes, re-opening the scenes and
+scripts you last had open. If **Editor Settings → Text Editor → External → Use
+External Editor** is enabled, that restore launches your external editor, and
+the wrapper keeps waiting on it — while the export itself already succeeded.
+
+> [!IMPORTANT]
+> Editor settings are stored **per minor version**
+> (`%APPDATA%\Godot\editor_settings-4.<minor>.tres`), so an older Godot you
+> export with can still have the external-editor setting enabled even when your
+> current version does not.
+
+**Fix:** on 4.4.x and older, any one of these clears it — disable the
+external-editor setting for the Godot version you export with, invoke the
+non-console executable instead of the `_console` one, or export from a clean
+checkout that carries no `.godot/editor/` session state. Godot **4.5 fixed the
+restore** (engine commit `5d868a66c0`), so the hang cannot happen on 4.5+ even
+with the setting enabled.
+
+This is not specific to this addon — it reproduces with the addon disabled.
+Related upstream reports:
+[godotengine/godot#110101](https://github.com/godotengine/godot/issues/110101)
+(same wrapper mechanism, a different child process) and
+[godotengine/godot#103305](https://github.com/godotengine/godot/issues/103305)
+(a headless run still loads the editor layout).
+
 ## Still stuck?
 
 Open an issue on

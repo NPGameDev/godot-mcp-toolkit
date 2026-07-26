@@ -342,6 +342,25 @@ cosmetic fingerprint with **no secrets** (the auth token and registry live in
 ProjectSettings during the bake would add a crash-window risk for a cosmetic-only
 gain).
 
+A headless **CLI** export on Godot 4.4 and older can also appear to hang after the
+export succeeds — an editor-session restore, not the strip plugin. Cause and
+remedies:
+<https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/docs/troubleshooting.md>
+
+### Import sidecars remain in exports (Godot 4.2 only)
+
+On Godot 4.2, `.import` sidecars for the addon's assets and their compiled
+artifacts ship in exports despite the strip plugin — in practice
+`addons/godot_mcp_toolkit/icon.svg.import` plus its baked `.ctex`, about 8 KB.
+Godot 4.2 never offers import sidecars to `EditorExportPlugin._export_file`, so
+**no** addon can strip them on that version; 4.3+ does offer them and they strip
+normally.
+
+The residue is harmless: an orphaned texture that nothing references and nothing
+loads, so the shipped build stays inert. To remove it on 4.2, add
+`res://addons/godot_mcp_toolkit/*` to the export preset's exclude filter — the
+same recipe the export warning suggests.
+
 ## Disabling the plugin safely
 
 Disable the toolkit through **Project Settings → Plugins** (untick *Active*), or
