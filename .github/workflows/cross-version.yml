@@ -14,11 +14,16 @@
 # changes against the pinned toolkit — so an opt-in on EITHER repo proves the full
 # GDScript+.NET contract for that repo's change.
 #
-# Triggers — a merge-queue gate, plus explicit opt-ins:
-#   • merge_group — a PR enqueued in the merge queue runs the FULL platform matrix
-#     (both Linux behavioral tiers + the macOS/Windows grid). "Platform matrix OK" is
-#     the required check the queue binds to, so a queued PR proves every combo before
-#     it lands.
+# Triggers — a pull-request gate, plus explicit opt-ins:
+#   • pull_request (against the default branch) — the FULL platform matrix: both Linux
+#     behavioral tiers + the macOS/Windows grid. "Platform matrix OK" is the required
+#     check bound to a PR, so every combo is proven before anything merges. Runner
+#     minutes are free on a public repo, so the grid's cost is no longer a reason to
+#     hold it back to release time.
+#   • merge_group — the same full matrix. RETAINED but inert today: GitHub merge queues
+#     require an ORGANIZATION-owned repository and this one is user-owned, so the event
+#     never fires. It costs nothing to keep and works as written the day the repo moves
+#     to an org — at which point the queue, not the PR, becomes the binding gate.
 #   • [run-cross-version-ci] in the push commit message  (deliberate "run it" — LINUX)
 #   • release.yml CALLS this workflow (workflow_call) on a v* tag / dry-run
 #     dispatch, and its zip job needs: it — the D13 backstop (never SHIP a
@@ -32,15 +37,16 @@
 #   • [run-macos-ci]         -> macOS behavioral (gdscript+dotnet, 4.2-4.7)
 #   • [run-windows-ci]       -> Windows behavioral (gdscript+dotnet, 4.2-4.7)
 #   • [run-all-platforms-ci] -> the full 36: Linux (above) + macOS + Windows
-#   • a merge_group run      -> the same full 36, keyed off the EVENT (a queued PR has
-#                               no commit token to carry, so the token path can't apply)
-# The macOS/Windows matrix is computed by the platform-setup job (the merge_group event,
-# commit tokens, or the workflow_dispatch platforms/versions/languages debug-probe
-# inputs), reusing the SAME server-hosted composite via the sibling checkout. A
-# bare/tag/release trigger yields an EMPTY non-Linux matrix, so the RELEASE gate stays
-# LINUX-ONLY (macOS 10× / Windows 2× billing) — the full grid is proven at merge time
-# instead. The "Platform matrix OK" aggregate gate wraps all combos — the single stable
-# name the merge-queue required check binds to. The editor-free install-smoke + Windows
+#   • a pull_request run     -> the same full 36, keyed off the EVENT (a PR carries no
+#                               commit token, so the token path can never match)
+#   • a merge_group run      -> likewise event-keyed (inert until org-owned, see above)
+# The macOS/Windows matrix is computed by the platform-setup job (the pull_request or
+# merge_group event, commit tokens, or the workflow_dispatch platforms/versions/languages
+# debug-probe inputs), reusing the SAME server-hosted composite via the sibling checkout.
+# A bare/tag/release trigger yields an EMPTY non-Linux matrix, so the RELEASE path stays
+# LINUX-ONLY — not to save cost, but because the full grid already ran on the PR that
+# introduced the change. The "Platform matrix OK" aggregate gate wraps all combos — the
+# single stable name the required check binds to. The editor-free install-smoke + Windows
 # unit legs live in the SERVER workflow only (server code).
 # No schedule: — versions are explicitly pinned (no drift between pushes) and a
 # nightly over-runs a sparse post-release repo (feasibility spike 41n-quater).
@@ -68,15 +74,22 @@ on:
   # dry-run dispatch satisfies event_name=='workflow_dispatch' — so they need no
   # change. inputs.sibling-ref resolves empty when called -> the pin fallback holds.
   workflow_call:
+  # The binding gate: every PR against main runs the FULL platform matrix, and
+  # "Platform matrix OK" is the required check. Like merge_group below, a PR event
+  # carries NO head_commit, so every gate (job `if:` AND the platform-setup matrix
+  # logic) must key off github.event_name; a token-only path would compute an empty
+  # matrix and let the required check pass vacuously. github.ref is refs/pull/N/merge
+  # — not refs/tags/v* — so the release-only paths are unaffected, and inputs.* resolve
+  # empty so the sibling pin holds.
+  pull_request:
+    branches: [main]
   # Merge queue: GitHub fires merge_group against the temporary
-  # refs/heads/gh-readonly-queue/... branch once a PR is enqueued, and blocks the
-  # merge on the required checks that run there. This is the FULL-platform run — the
-  # gates below treat merge_group exactly like a [run-all-platforms-ci] push. Note the
-  # event carries NO head_commit, so every gate (job `if:` AND the platform-setup
-  # matrix logic) must key off github.event_name; a token-only path would compute an
-  # empty matrix and let "Platform matrix OK" pass vacuously. The ref is a branch, not
-  # refs/tags/v*, so the release-only paths are unaffected, and inputs.* resolve empty
-  # -> the sibling pin holds.
+  # refs/heads/gh-readonly-queue/... branch once a PR is enqueued. RETAINED but INERT —
+  # merge queues require an ORGANIZATION-owned repository and this one is user-owned, so
+  # the event never fires here. Kept because it costs nothing and is exactly right if the
+  # repo ever moves to an org: the gates below already treat merge_group like a PR (both
+  # are full-platform, both event-keyed), so the queue would take over as the binding
+  # gate with no further edits.
   merge_group:
   workflow_dispatch:
     inputs:
@@ -109,6 +122,18 @@ on:
     # run. The [run-cross-version-ci] commit-token path (push to main) is unchanged.
     branches: [main]
 
+# Supersede stale PR runs; never touch anything else. A PR gets a shared group keyed on
+# its ref, so pushing a fixup cancels the previous 36-leg grid — only the tip's result
+# can satisfy the required check, and the old run is wasted work. EVERY OTHER trigger
+# (tag, dispatch, workflow_call, push token, merge_group) gets a group of its OWN via
+# github.run_id, which is the point of the ternary: setting cancel-in-progress false on a
+# SHARED group would not preserve today's behavior, it would serialize those runs behind
+# each other. A unique group means no cancellation AND no queueing — identical to having
+# no concurrency block at all, which is what these deliberate deep-tier runs had.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 # SIBLING-PIN(server): deterministic sibling — BOTH behavioral jobs below (gdscript +
 # dotnet) test against exactly this server revision, not floating main. This env var is
 # the SINGLE bump point: bump it deliberately in a dedicated commit carrying
@@ -119,12 +144,14 @@ env:
 
 jobs:
   gdscript-behavioral:
-    # Opt-in (manual dispatch, a v* tag, or the token in the commit message) OR a
-    # merge-queue run. A plain main push (no token) evaluates this to false → the job
-    # shows as "skipped" with zero runner cost. [run-all-platforms-ci] runs it as part
-    # of the full 36-combo grid (41n-quater-sexies); merge_group reaches the same grid
-    # via the event name, having no head_commit to carry a token.
+    # A pull request (the binding gate) or a merge-queue run, or an opt-in (manual
+    # dispatch, a v* tag, or the token in the commit message). A plain main push (no
+    # token) evaluates this to false → the job shows as "skipped" with zero runner cost.
+    # [run-all-platforms-ci] runs it as part of the full 36-combo grid
+    # (41n-quater-sexies); pull_request and merge_group reach the same grid via the
+    # event name, neither having a head_commit to carry a token.
     if: >
+      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'merge_group' ||
       startsWith(github.ref, 'refs/tags/v') ||
@@ -180,8 +207,10 @@ jobs:
   # an assembly its bundled runtime can load.
   dotnet-behavioral:
     # [run-all-platforms-ci] runs it as part of the full 36-combo grid (41n-quater-sexies);
-    # a merge-queue run reaches the same grid, event-keyed (no commit message exists).
+    # a pull request or merge-queue run reaches the same grid, event-keyed (neither has
+    # a commit message).
     if: >
+      github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'merge_group' ||
       startsWith(github.ref, 'refs/tags/v') ||
@@ -284,15 +313,16 @@ jobs:
   # The static Linux legs above are the release backstop + [run-cross-version-ci] path.
   # These add the OTHER two desktop OSes so a toolkit change is validated on 3 OS × 6
   # versions × 2 languages = 36 combos, via the SAME shared server-hosted composite
-  # (reached through the server sibling checkout; os branch). Opt-in or merge-queue; an
-  # EMPTY matrix on a bare/tag/release trigger keeps the release gate Linux-only.
-  # (mono-units is NOT part of this platform matrix — it stays on [run-cross-version-ci],
-  # so a merge-queue run does not provision the .NET SDK for a GDScript-only suite.)
+  # (reached through the server sibling checkout; os branch). Pull request, merge-queue,
+  # or opt-in; an EMPTY matrix on a bare/tag/release trigger keeps the release path
+  # Linux-only. (mono-units is NOT part of this platform matrix — it stays on
+  # [run-cross-version-ci], so a PR does not provision the .NET SDK for a GDScript-only
+  # suite; it is not in the required check's needs either.)
   # ═══════════════════════════════════════════════════════════════════════════
 
-  # Compute the macOS+Windows behavioral matrix from the trigger (a merge-queue run,
-  # commit tokens on a branch push, or the dispatch platforms/versions/languages
-  # inputs). Cheap ubuntu job.
+  # Compute the macOS+Windows behavioral matrix from the trigger (a pull request or
+  # merge-queue run, commit tokens on a branch push, or the dispatch
+  # platforms/versions/languages inputs). Cheap ubuntu job.
   # Repo-agnostic: identical to the server workflow's platform-setup.
   platform-setup:
     runs-on: ubuntu-latest
@@ -319,11 +349,12 @@ jobs:
             platforms="${IN_PLATFORMS:-}"
             [ -n "${IN_VERSIONS:-}" ] && versions="$IN_VERSIONS"
             [ -n "${IN_LANGUAGES:-}" ] && languages="$IN_LANGUAGES"
-          elif [ "$EVENT_NAME" = "merge_group" ]; then
-            # Merge queue -> the FULL grid, same shape as [run-all-platforms-ci]. The
-            # event name IS the opt-in: a queued PR has no head_commit, so the token
-            # path below can never match and falling through would compute an EMPTY
-            # matrix — letting "Platform matrix OK" pass without testing anything.
+          elif [ "$EVENT_NAME" = "pull_request" ] || [ "$EVENT_NAME" = "merge_group" ]; then
+            # Pull request (or a merge-queue run) -> the FULL grid, same shape as
+            # [run-all-platforms-ci]. The event name IS the opt-in: neither event has a
+            # head_commit, so the token path below can never match and falling through
+            # would compute an EMPTY matrix — letting "Platform matrix OK" pass without
+            # testing anything.
             platforms="macos windows"
           elif [ "$EVENT_NAME" = "push" ] && [[ "$GITHUB_REF" == refs/heads/* ]]; then
             case "$COMMIT_MSG" in *"[run-all-platforms-ci]"*) platforms="macos windows" ;; esac
@@ -399,14 +430,14 @@ jobs:
           run-dispatch: ${{ matrix.run_dispatch }}
 
   # ── Aggregate platform gate (41n-quater-sexies D7b/7c) ───────────────────────
-  # "Platform matrix OK" is the SINGLE stable name the merge-queue required check binds
-  # to (the SECOND required-check tier, merge-queue-scoped) — never an individual matrix
+  # "Platform matrix OK" is the SINGLE stable name the required check binds to (the
+  # SECOND required-check tier, scoped to pull requests) — never an individual matrix
   # row. Wraps the toolkit's platform combos: the static Linux behavioral legs + the
   # macOS/Windows behavioral matrix. (The editor-free install-smoke / Windows unit jobs
-  # live in the SERVER workflow only; mono-units is not a platform leg.) On a merge_group
-  # run all of the wrapped jobs are live, so the check is substantive, not vacuous.
-  # if: always() + the failure/cancelled test makes a partial run or a bare push report
-  # success.
+  # live in the SERVER workflow only; mono-units is not a platform leg.) On a
+  # pull_request (or merge_group) run all of the wrapped jobs are live, so the check is
+  # substantive, not vacuous. if: always() + the failure/cancelled test makes a partial
+  # run or a bare push report success.
   platform-matrix-ok:
     name: "Platform matrix OK"
     needs:
