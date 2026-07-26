@@ -1,4 +1,4 @@
-<!-- Brand banner, 1280×640, commissioned art; provenance in docs/media/README.md. Absolute raw URL because docs/ is export-ignored from the AssetLib archive. -->
+<!-- Brand banner, 1280×640, commissioned art; provenance in docs/media/README.md. Relative path so it resolves on github.com; this README is not in the AssetLib archive either way, since .gitattributes export-ignores every path outside addons/. -->
 ![Godot MCP Toolkit: an amber toolbox with a cream wrench and a blue gear, beside the wordmark "Godot · MCP · Toolkit" on a dark navy field](docs/media/hero-banner.png)
 
 # Godot MCP Toolkit

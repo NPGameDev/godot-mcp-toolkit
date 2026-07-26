@@ -307,6 +307,10 @@ that latency. The `release.sh` script prints the three form values (version,
 Download Commit SHA, zip name `godot-mcp-toolkit-<ver>.zip`) at tag time so the
 submission is transcription, not archaeology.
 
+Both listing descriptions quote tool counts, and nothing in CI checks them — the
+catalogue gate guards the code, not store copy. Re-run `godot-mcp-server
+--tools-count` and confirm the figures before you edit either description.
+
 The server has no equivalent manual step — its release publishes to npm from CI.
 
 ## Post-publish follow-ups
