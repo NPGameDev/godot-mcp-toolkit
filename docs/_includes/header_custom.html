@@ -4,6 +4,10 @@
   Ships hidden and is revealed by the script below, so it never appears to a
   visitor whose browser could not run it. The bootstrap in head_custom.html owns
   the scheme state; this only flips and persists it.
+
+  Every comment inside the script below has to be a /* block */ comment. The
+  theme's layout chain compresses each rendered page onto a single line, so a
+  `//` comment would swallow the rest of the script and none of it would run.
 {%- endcomment -%}
 <div class="color-scheme-toggle">
   <button type="button" class="btn btn-outline" id="color-scheme-toggle" hidden>Dark mode</button>
@@ -14,7 +18,7 @@
     var button = document.getElementById('color-scheme-toggle');
     if (!scheme || !button) return;
 
-    // The button names the scheme it switches TO, not the one in effect.
+    /* The button names the scheme it switches TO, not the one in effect. */
     function label() {
       var next = scheme.current() === 'dark' ? 'Light' : 'Dark';
       button.textContent = next + ' mode';

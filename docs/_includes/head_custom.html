@@ -8,14 +8,18 @@
   Precedence: a choice saved by the header toggle wins; otherwise the operating
   system's prefers-color-scheme decides, and keeps deciding while the visitor has
   made no explicit choice.
+
+  Every comment inside the script below has to be a /* block */ comment. The
+  theme's layout chain compresses each rendered page onto a single line, so a
+  `//` comment would swallow the rest of the script and none of it would run.
 {%- endcomment -%}
 <script>
   (function (w) {
     var KEY = 'just-the-docs-color-scheme';
     var DARK_QUERY = '(prefers-color-scheme: dark)';
 
-    // The scheme baked into just-the-docs-default.css, per color_scheme in
-    // _config.yml. Tracking it lets us skip a redundant stylesheet swap.
+    /* The scheme baked into just-the-docs-default.css, per color_scheme in
+       _config.yml. Tracking it lets us skip a redundant stylesheet swap. */
     var applied = 'light';
 
     function stored() {
@@ -23,7 +27,8 @@
         var saved = w.localStorage.getItem(KEY);
         return saved === 'light' || saved === 'dark' ? saved : null;
       } catch (e) {
-        return null; // Storage can be unavailable: private mode, blocked cookies.
+        /* Storage can be unavailable: private mode, blocked cookies. */
+        return null;
       }
     }
 
@@ -32,7 +37,7 @@
     }
 
     function apply(scheme) {
-      // Keeps browser-drawn surfaces (scrollbars, form controls) in step.
+      /* Keeps browser-drawn surfaces (scrollbars, form controls) in step. */
       document.documentElement.style.colorScheme = scheme;
       if (scheme === applied) return;
       applied = scheme;
@@ -47,7 +52,7 @@
         try {
           w.localStorage.setItem(KEY, scheme);
         } catch (e) {
-          // A scheme that cannot be persisted still applies for this page.
+          /* A scheme that cannot be persisted still applies for this page. */
         }
         apply(scheme);
       },

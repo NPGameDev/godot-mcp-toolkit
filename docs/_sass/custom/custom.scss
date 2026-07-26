@@ -6,4 +6,12 @@
   margin-left: auto;
   padding: 0.5rem 0.75rem;
   white-space: nowrap;
+
+  // The toggle ships with the `hidden` attribute and is revealed by script, but
+  // `.btn` sets `display: inline-block` and an author rule outranks the browser's
+  // own `[hidden]` rule. Restate it so a toggle that was never wired stays out of
+  // sight instead of sitting there doing nothing.
+  .btn[hidden] {
+    display: none;
+  }
 }
