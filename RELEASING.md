@@ -7,6 +7,13 @@ This document is the maintainer's guide to cutting a release. It is kept
 coordinated whole, and a contributor who only ever sees one repo still gets the
 full picture. If you edit it in one repo, copy the change to the other.
 
+> **Doing a release right now?** Follow
+> [`docs/dev/release-runbook.md`](docs/dev/release-runbook.md) instead. It is the
+> ordered walk distilled from the 1.0.0 release: the same steps in the order they
+> actually happen across both repos, with the checks to run at each point and the
+> traps that have already cost a cycle. This document stays the reference for what
+> each mechanism is and why; the runbook is what you work through on the day.
+
 ## Release day (TL;DR)
 
 The at-a-glance sequence. Each step links to its detailed section below.
