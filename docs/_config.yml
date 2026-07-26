@@ -8,6 +8,12 @@ title: Godot MCP Toolkit
 description: Localhost MCP bridge so an AI coding assistant can drive the Godot 4.2+ editor.
 remote_theme: just-the-docs/just-the-docs
 
+# Baseline scheme served to everyone, including visitors without JavaScript.
+# _includes/head_custom.html switches to the theme's "dark" scheme before first
+# paint when the visitor prefers or has chosen it; keep this and the `applied`
+# value in that file in step.
+color_scheme: light
+
 # Native Mermaid rendering for the architecture diagrams (fenced ```mermaid blocks).
 # Pinned so the Pages render matches what was authored; bump deliberately.
 mermaid:

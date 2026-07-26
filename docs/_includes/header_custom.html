@@ -1,0 +1,32 @@
+{%- comment -%}
+  Light/dark toggle for the header bar.
+
+  Ships hidden and is revealed by the script below, so it never appears to a
+  visitor whose browser could not run it. The bootstrap in head_custom.html owns
+  the scheme state; this only flips and persists it.
+{%- endcomment -%}
+<div class="color-scheme-toggle">
+  <button type="button" class="btn btn-outline" id="color-scheme-toggle" hidden>Dark mode</button>
+</div>
+<script>
+  (function (w) {
+    var scheme = w.docsColorScheme;
+    var button = document.getElementById('color-scheme-toggle');
+    if (!scheme || !button) return;
+
+    // The button names the scheme it switches TO, not the one in effect.
+    function label() {
+      var next = scheme.current() === 'dark' ? 'Light' : 'Dark';
+      button.textContent = next + ' mode';
+      button.title = 'Switch to the ' + next.toLowerCase() + ' color scheme';
+    }
+
+    label();
+    button.hidden = false;
+
+    button.addEventListener('click', function () {
+      scheme.save(scheme.current() === 'dark' ? 'light' : 'dark');
+      label();
+    });
+  })(window);
+</script>

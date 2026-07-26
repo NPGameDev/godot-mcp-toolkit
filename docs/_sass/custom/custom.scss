@@ -1,0 +1,9 @@
+// Seats the color-scheme toggle at the right of the header bar, beside the
+// auxiliary links. The header is a flex row on wide screens and a plain block
+// once the mobile nav expands, so this has to read sensibly under both.
+.color-scheme-toggle {
+  align-self: center;
+  margin-left: auto;
+  padding: 0.5rem 0.75rem;
+  white-space: nowrap;
+}
