@@ -84,6 +84,30 @@ BOOT_POLL_SECS=80
 WARMUP_PID=""
 WARMUP_WINPID=""
 
+# Windows CI only: move the WARM-UP editor's GDScript LSP off the default 6005 so
+# it can never collide with the real editor that boots after it. Godot's Windows
+# sockets are created INHERITABLE, so a child process can inherit the warm-up
+# editor's LSP listen handle and keep the socket alive after the editor itself is
+# gone — netstat then reports the dead creator PID, there is no process by that
+# PID to kill, and the next editor's 6005 bind fails outright (Windows has no
+# usable address reuse, and the 4.2-4.4 LSP never retries a failed bind). Not
+# binding 6005 in the first place removes the collision at the source; the
+# teardown gate below stays as the generic net for any other holder.
+# Triple-gated to the exact failing combination — Windows, GitHub Actions, and a
+# downstream behavioral consumer — so every other invocation (POSIX CI, local
+# dev, the unit-runner path) boots the byte-identical command line it always did.
+# --lsp-port exists in every supported 4.2+ build and is applied before editor
+# settings are read. Deliberately unquoted at the call site: an empty value must
+# expand to NO argv entry, and a set one must split into two.
+WARMUP_LSP_ARGS=""
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    if [ "${GITHUB_ACTIONS:-}" = "true" ] && [ "${GODOT_WARM_ONLY:-0}" = "1" ]; then
+      WARMUP_LSP_ARGS="--lsp-port 6105"
+    fi
+    ;;
+esac
+
 # Kill the current warm-up editor as thoroughly as the platform allows: the POSIX
 # signal (escalating to -9), plus — on Windows — a taskkill of the recorded REAL
 # Windows PID tree, because $WARMUP_PID is an MSYS-space pid (possibly a launcher
@@ -108,7 +132,7 @@ echo "=== Warm-up: editor scan (poll for global_script_class_cache.cfg, up to ${
 WAITED=0
 for attempt in $(seq 1 "$MAX_BOOT_ATTEMPTS"); do
   : > "$WARMUP_LOG"  # fresh log per attempt
-  "$GODOT_BIN" --headless --editor --path . > "$WARMUP_LOG" 2>&1 &
+  "$GODOT_BIN" --headless --editor $WARMUP_LSP_ARGS --path . > "$WARMUP_LOG" 2>&1 &
   WARMUP_PID=$!
   # Windows (Git Bash/MSYS) only: record the warm-up's REAL Windows PID while it
   # is alive. $WARMUP_PID is an MSYS-space pid (and may even be a launcher shim),
@@ -167,15 +191,19 @@ kill_warmup_editor
 #      still reached) nor membership in the recorded WinPID tree (an editor
 #      orphaned from that tree is reached too) — both of which a name- or
 #      tree-based kill depends on.
-#   2. Liveness gate: a held port is a ZOMBIE only if its owner is ALIVE. Windows
-#      keeps the LISTENING row for a beat after the owning process is gone, so
-#      occupancy alone reads a clean exit as a survivor — that is the case where a
-#      PID still owns 6005 while `tasklist` no longer lists it and the row is gone
-#      by itself moments later. So the owner is corroborated with tasklist: a LIVE
-#      owner is a real zombie and escalates below, while NO live owner (or no
-#      owner at all) is a socket still closing, waited out in a kill-free grace
-#      window — there is nothing left to kill. Survival is declared only for a
-#      LIVE owner, or for a dead-owner row that outlives the grace window.
+#   2. Liveness gate: a held port is a ZOMBIE only if its owner is ALIVE. On
+#      Windows a LISTENING row can NAME a PID that no longer exists — the engine
+#      creates its sockets inheritable and spawns children with handle
+#      inheritance on, so a child can inherit the LSP listen handle and keep the
+#      socket open long after its creator is gone, with netstat still reporting
+#      that dead creator. Occupancy alone reads that as a survivor, yet there is
+#      no process by that PID to kill. So the owner is corroborated with
+#      tasklist: a LIVE owner is a real zombie and escalates below, while NO live
+#      owner (or no owner at all) is a socket outliving its creator and is waited
+#      out in a kill-free grace window instead. Survival is declared only for a
+#      LIVE owner, or for a dead-owner row that outlives that window. The warm-up
+#      no longer binds 6005 at all on this platform (see WARMUP_LSP_ARGS), so
+#      this gate is the net for any OTHER holder, not the primary defence.
 #   3. WS port (6550) still held → PORT-AGILITY, not failure: 6550 is fully
 #      env-configurable (GODOT_MCP_EDITOR_PORT pins the toolkit's exact bind and
 #      the server smoke/flows read the same var), so pin the next editor boot to
@@ -218,10 +246,10 @@ case "$(uname -s)" in
       netstat -ano 2>/dev/null | tr -d '\r' | grep -E ":(6550|6005)[^0-9]" 2>/dev/null | grep "LISTENING" 2>/dev/null | awk '{print $NF}' | sort -u || true
     }
     # True iff PID $1 still exists — the image-agnostic liveness probe that tells
-    # a live zombie from a socket outliving its dead owner. tasklist prints an
-    # "INFO: No tasks…" line (not an error) when nothing matches and pads its
-    # output with a banner and CRs, so all of that is filtered out and only the
-    # surviving data rows are counted.
+    # a live zombie from a socket outliving the PID netstat names for it. tasklist
+    # prints an "INFO: No tasks…" line (not an error) when nothing matches and
+    # pads its output with a banner and CRs, so all of that is filtered out and
+    # only the surviving data rows are counted.
     pid_alive() {
       { [ -n "${1:-}" ] && [ "$1" != "0" ]; } || return 1
       local rows
@@ -245,11 +273,12 @@ case "$(uname -s)" in
       done
       # Liveness gate + dead-owner grace. A port still LISTENING with a LIVE
       # owner is the real zombie and drops straight through to the escalation
-      # below, unchanged. A port whose owner is already gone (or that reports no
-      # owner at all) is the kernel finishing a socket teardown: more kills are
-      # pointless and it clears itself, so it is polled out in a bounded,
-      # kill-free window instead of being blamed on the editor. Only a row that
-      # outlives that window is treated as survival.
+      # below, unchanged. A row naming a PID that is already gone (or naming no
+      # owner at all) is not a process to begin with: the socket outlived its
+      # creator, held open by a child that inherited the handle. Nothing by that
+      # PID remains to kill, so the row is polled out in a bounded, kill-free
+      # window rather than blamed on the editor. Only a row that outlives that
+      # window is treated as survival.
       DEAD_OWNER_LINGER=0
       LINGER_WAITED=0
       LINGER_GRACE_SECS=10
@@ -270,7 +299,7 @@ case "$(uname -s)" in
             LINGER_WAITED=$((LINGER_WAITED + 2))
           done
           if [ "$(port_listening 6550)" = "0" ] && [ "$(port_listening 6005)" = "0" ]; then
-            echo "warm-up teardown: port owner already gone — the LISTENING row was a socket still closing, cleared after ${LINGER_WAITED}s; continuing."
+            echo "warm-up teardown: the LISTENING row named a PID that no longer exists (a socket outliving its creator, not a live process) and cleared after ${LINGER_WAITED}s; continuing."
           fi
         fi
       fi
@@ -306,7 +335,7 @@ case "$(uname -s)" in
         if [ "$HELD_6005" != "0" ] && [ "${GODOT_WARM_ONLY:-0}" = "1" ]; then
           echo "ERROR: warm-up editor ZOMBIE survived force-kill — 6005 (GDScript LSP) still LISTENING; the behavioral leg's LSP checks are doomed (LSP bind loss is permanent on 4.2-4.4, and the LSP port is not relocatable from this wrapper)." >&2
           if [ "$DEAD_OWNER_LINGER" = "1" ]; then
-            echo "NOTE: no LIVE owner was found when the grace window opened, and the row was STILL LISTENING ${LINGER_GRACE_SECS}s later — a socket that never closed rather than a running process, so the port-owner dump below is expected to be empty." >&2
+            echo "NOTE: no LIVE owner was found when the grace window opened, and the row was STILL LISTENING ${LINGER_GRACE_SECS}s later — the socket has outlived the PID netstat names for it (a surviving child holding an inherited handle), so there is nothing by that PID to kill and the port-owner dump below is expected to be empty." >&2
           fi
           echo "--- port-owner processes (by PID) ---"
           for pid in $(port_owner_pids); do
