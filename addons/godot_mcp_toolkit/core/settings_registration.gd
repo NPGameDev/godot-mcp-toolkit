@@ -6,8 +6,6 @@ extends RefCounted
 ## in the Project Settings inspector with correct types and defaults.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const MCPJsonSync = Modules.MCPJsonSync
-const NodejsCheck = Modules.NodejsCheck
 
 const _BOOTSTRAP_KEY := "mcp_toolkit/internal/bootstrap_complete"
 
@@ -17,32 +15,23 @@ const _LIMITS_NOTE_TEXT := (
 	+ "GODOT_MCP_WS_BUFFER_LIMIT env vars in .mcp.json. "
 	+ "When set, the env var values take priority on connect.")
 
-const _STATUS_KEY := "mcp_toolkit/status"
-const _READ_ONLY_WARNING_TEXT := (
-	"READ-ONLY MODE ACTIVE (GODOT_MCP_READ_ONLY=1) — "
-	+ "Only read-only tools are available. Mutating tools are hidden. "
-	+ "Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect "
-	+ "the MCP client to restore full access.")
-const _MCP_JSON_MISSING_TEXT := (
-	"No .mcp.json found — use Project > Tools > MCP Toolkit > "
-	+ "Write .mcp.json to create one.")
-const _NODEJS_NOT_FOUND_TEXT := (
-	"NODE.JS NOT FOUND — The MCP server bridge requires Node.js 22+. "
-	+ "Download it from https://nodejs.org")
-const _NODEJS_OLD_VERSION_TEXT := (
-	"NODE.JS %s FOUND BUT 22+ REQUIRED — "
-	+ "Update from https://nodejs.org")
-
 
 static func register_all() -> void:
 	_register_limits()
 	_register_concurrency()
 	_register_audit()
 	_register_bootstrap_flag()
-	_register_status_field()
-	# Clean up old status key location (was under feature_gates/).
+	# Clean up old status key locations. This diagnostic (Node.js
+	# found/version, .mcp.json presence, read-only mode) used to be persisted
+	# into ProjectSettings under mcp_toolkit/status (and mcp_toolkit/feature_gates/status
+	# before that) — which serializes into project.godot. Since the check result
+	# differs per machine, that made project.godot churn in git depending on who
+	# last opened the project in the editor. Status is now shown live in the
+	# dock only (ui/dock/dock.gd), never written to disk.
 	if ProjectSettings.has_setting("mcp_toolkit/feature_gates/status"):
 		ProjectSettings.set_setting("mcp_toolkit/feature_gates/status", null)
+	if ProjectSettings.has_setting("mcp_toolkit/status"):
+		ProjectSettings.set_setting("mcp_toolkit/status", null)
 
 
 ## Mirror of register_all — scrub every mcp_toolkit/* ProjectSettings key on
@@ -99,40 +88,6 @@ static func _register_bootstrap_flag() -> void:
 	if not ProjectSettings.has_setting(_BOOTSTRAP_KEY):
 		ProjectSettings.set_setting(_BOOTSTRAP_KEY, false)
 	ProjectSettings.set_initial_value(_BOOTSTRAP_KEY, false)
-
-
-static func _register_status_field() -> void:
-	var text := _compute_status_text()
-	if not ProjectSettings.has_setting(_STATUS_KEY):
-		ProjectSettings.set_setting(_STATUS_KEY, text)
-	else:
-		ProjectSettings.set_setting(_STATUS_KEY, text)
-	ProjectSettings.set_initial_value(_STATUS_KEY, "")
-	ProjectSettings.set_as_basic(_STATUS_KEY, true)
-	ProjectSettings.set_order(_STATUS_KEY, 1000)
-	ProjectSettings.add_property_info({
-		"name": _STATUS_KEY, "type": TYPE_STRING,
-		"hint": PROPERTY_HINT_MULTILINE_TEXT,
-		"hint_string": "Read-only status display — value is managed by the plugin.",
-	})
-
-
-static func _compute_status_text() -> String:
-	var parts := PackedStringArray()
-	# Read-only mode check.
-	var env := MCPJsonSync.get_all_env_vars()
-	if env.get("GODOT_MCP_READ_ONLY", "") == "1":
-		parts.append(_READ_ONLY_WARNING_TEXT)
-	# .mcp.json presence.
-	if not MCPJsonSync.has_mcp_json():
-		parts.append(_MCP_JSON_MISSING_TEXT)
-	# Node.js availability.
-	var node_check := NodejsCheck.check()
-	if not node_check["found"]:
-		parts.append(_NODEJS_NOT_FOUND_TEXT)
-	elif not node_check["meets_minimum"]:
-		parts.append(_NODEJS_OLD_VERSION_TEXT % str(node_check["version"]))
-	return "\n\n".join(parts)
 
 
 static func _register_limits_note() -> void:

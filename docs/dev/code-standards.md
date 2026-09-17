@@ -882,8 +882,8 @@ RefCounted subsystems after `remove_*` (`:220`).
 checked at `:52-58`.
 
 **Custom settings ([§8.10](#810-custom-projectsettings--editorsettings)).**
-`core/settings_registration.gd` — `has_setting` guards at `:99`/`:106`, `set_as_basic(...)` at
-`:111`/`:141`, `add_property_info` at `:113`.
+`core/settings_registration.gd` — `has_setting` guards at `:88`/`:105`, `set_as_basic(...)` at
+`:96`/`:108`, `add_property_info` at `:97`.
 
 ---
 
