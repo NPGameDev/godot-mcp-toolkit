@@ -66,6 +66,18 @@ editor:
 The release script asks you to confirm this walk happened, and aborts if you decline. It is the only
 gate between a broken interactive path and a published release, so do not confirm it from memory.
 
+### Patch releases
+
+A patch (x.y.Z) runs every automated gate in full — smoke, flows, dispatch integration, both
+unit suites, `smoke:ci`, the supply-chain audit — but walks only the checklist sections its
+change touches, and records the skipped sections with the reason in the scratch tracker before
+answering the script's confirmation. Escalate to the full walk when the change touches something
+the automated flows cannot observe: transport or process lifecycle (§1), security boundaries
+(§2), the export path, editor lifecycle, or anything human-facing in the editor. Where a section
+needs hardware you do not have, take its own documented-gap path rather than skipping it silently,
+and give the gap an owner. First applied: 1.0.1 (server §1 incl. B9 and §5; the toolkit's macOS
+GUI-launch smoke recorded as a documented coverage gap — no Mac available).
+
 ## Phase 3. Bump the pins, serialized
 
 Each repo pins the sibling revision it was tested against (`SIBLING_PIN_TOOLKIT` in the server's
