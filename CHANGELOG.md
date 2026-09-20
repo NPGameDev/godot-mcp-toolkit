@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-21
+
 Companion release for **server 1.0.1**, which fixes the MCP server process outliving its
 client and spinning a CPU core at 100% after the client exits without a signal — reported
 and first fixed by @nickkurkan
