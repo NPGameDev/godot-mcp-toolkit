@@ -668,7 +668,7 @@ func _check_version_mismatch(local: String, remote: String) -> void:
 		"minor":
 			push_warning("[MCPServer] Version mismatch - plugin %s, server %s. Consider updating." % [local, remote])
 		_:
-			pass  # ok / patch: compatible by construction; unknown: non-semver, skipped as before
+			pass  # ok / patch: compatible by construction; unknown: non-semver, not comparable
 
 
 # Dispatch routing, the mutation lane, and the read/scene-lease routes live in

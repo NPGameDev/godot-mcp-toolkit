@@ -50,13 +50,16 @@ static func read_plugin_version() -> String:
 	return cfg.get_value("plugin", "version", "unknown")
 
 
-## Classifies how two semver strings differ: "ok", "patch", "minor", "major", or
-## "unknown" when either side is not exactly three dot-separated integers. Pure;
-## the caller decides what to print. A patch difference is compatible by
-## construction — compatibility floors are declared at major.minor (ADR 0024), so
-## the patch segment carries no compatibility meaning. The returned names match the
-## server's VersionSeverity (src/shared/version.ts) so both halves of the handshake
-## speak one vocabulary.
+## Classifies how the plugin's version differs from the connected server's.
+##
+## Compares [param local] with [param remote]. Pure — the caller decides what, if
+## anything, to print. A patch difference is compatible by construction: compatibility
+## floors are declared at major.minor (ADR 0024), so the patch segment carries no
+## compatibility meaning. The returned names match the MCP server's own severity
+## vocabulary, so both halves of the handshake speak one language.
+## [br]
+## Returns "ok", "patch", "minor" or "major", or "unknown" when either side is not
+## exactly three dot-separated integers.
 static func version_skew(local: String, remote: String) -> String:
 	var a := _parse_strict(local)
 	var b := _parse_strict(remote)
@@ -71,8 +74,9 @@ static func version_skew(local: String, remote: String) -> String:
 	return "ok"
 
 
-## Exactly three integer segments → [major, minor, patch]; [] otherwise. Distinct from
-## _parse, which pads a major.minor engine version.
+## Returns [param v]'s segments as [major, minor, patch], or an empty array when it is
+## not exactly three integers. Distinct from _parse, which pads a two-segment engine
+## version and is therefore too lenient for a plugin-versus-server comparison.
 static func _parse_strict(v: String) -> Array[int]:
 	var parts := v.strip_edges().split(".")
 	if parts.size() != 3:
