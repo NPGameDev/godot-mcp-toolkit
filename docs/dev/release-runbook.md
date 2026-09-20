@@ -30,6 +30,11 @@ Work through the phases in order. Each one ends in a state the next phase assume
   production-only audit at high severity before it publishes.
 - Decide the version for each repo independently. They version separately by design, so a release
   can move one and not the other.
+- Run the `humanizer` skill over the `[Unreleased]` entries in each repo's `CHANGELOG.md`, and edit
+  them before anything is tagged. Release notes are the most-read text either project ships, and the
+  annotated tag embeds the rolled section permanently, so a tell caught afterwards cannot be fixed
+  without the file disagreeing with the tag. Em dashes are the usual finding. Applies to new entries
+  only: entries already shipped in a tag stay as they are.
 
 ## Phase 1. Rehearse
 
