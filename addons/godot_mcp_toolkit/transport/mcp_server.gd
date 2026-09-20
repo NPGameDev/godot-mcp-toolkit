@@ -662,16 +662,13 @@ func _on_peer_closed(peer: WebSocketPeer, _was_authed: bool) -> void:
 
 
 func _check_version_mismatch(local: String, remote: String) -> void:
-	var local_parts := local.split(".")
-	var remote_parts := remote.split(".")
-	if local_parts.size() != 3 or remote_parts.size() != 3:
-		return  # Non-semver — skip comparison.
-	if not local_parts[0].is_valid_int() or not remote_parts[0].is_valid_int():
-		return
-	if int(local_parts[0]) != int(remote_parts[0]):
-		push_error("[MCPServer] Major version mismatch - plugin %s, server %s. Update both to the same major version." % [local, remote])
-	elif local != remote:
-		push_warning("[MCPServer] Version mismatch - plugin %s, server %s. Consider updating." % [local, remote])
+	match Modules.VersionUtils.version_skew(local, remote):
+		"major":
+			push_error("[MCPServer] Major version mismatch - plugin %s, server %s. Update both to the same major version." % [local, remote])
+		"minor":
+			push_warning("[MCPServer] Version mismatch - plugin %s, server %s. Consider updating." % [local, remote])
+		_:
+			pass  # ok / patch: compatible by construction; unknown: non-semver, skipped as before
 
 
 # Dispatch routing, the mutation lane, and the read/scene-lease routes live in

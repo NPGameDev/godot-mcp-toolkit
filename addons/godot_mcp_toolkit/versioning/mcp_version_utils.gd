@@ -4,8 +4,9 @@ extends RefCounted
 ##
 ## Provides is_at_least / is_at_most / is_version_in_range checks against
 ## the running engine version, used to gate commands by their min/max Godot
-## version requirements, plus read_plugin_version() which reads the toolkit's
-## own plugin.cfg.
+## version requirements, read_plugin_version() which reads the toolkit's
+## own plugin.cfg, and version_skew() which classifies how the plugin's version
+## differs from the connected server's.
 
 ## Latest version tested. Versions above this still run but log a notice.
 const GODOT_TESTED_MAX_VERSION := "4.7.0"
@@ -47,6 +48,41 @@ static func read_plugin_version() -> String:
 	if err != OK:
 		return "unknown"
 	return cfg.get_value("plugin", "version", "unknown")
+
+
+## Classifies how two semver strings differ: "ok", "patch", "minor", "major", or
+## "unknown" when either side is not exactly three dot-separated integers. Pure;
+## the caller decides what to print. A patch difference is compatible by
+## construction — compatibility floors are declared at major.minor (ADR 0024), so
+## the patch segment carries no compatibility meaning. The returned names match the
+## server's VersionSeverity (src/shared/version.ts) so both halves of the handshake
+## speak one vocabulary.
+static func version_skew(local: String, remote: String) -> String:
+	var a := _parse_strict(local)
+	var b := _parse_strict(remote)
+	if a.is_empty() or b.is_empty():
+		return "unknown"
+	if a[0] != b[0]:
+		return "major"
+	if a[1] != b[1]:
+		return "minor"
+	if a[2] != b[2]:
+		return "patch"
+	return "ok"
+
+
+## Exactly three integer segments → [major, minor, patch]; [] otherwise. Distinct from
+## _parse, which pads a major.minor engine version.
+static func _parse_strict(v: String) -> Array[int]:
+	var parts := v.strip_edges().split(".")
+	if parts.size() != 3:
+		return []
+	var out: Array[int] = []
+	for part in parts:
+		if not part.is_valid_int():
+			return []
+		out.append(int(part))
+	return out
 
 
 static func is_at_least(engine_ver: String, min_ver: String) -> bool:

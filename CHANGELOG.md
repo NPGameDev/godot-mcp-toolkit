@@ -7,10 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Companion release for **server 1.0.1**, which fixes the MCP server process outliving its
+client and spinning a CPU core at 100% after the client exits without a signal — reported
+and first fixed by @nickkurkan
+([server issue #2](https://github.com/NPGameDev/godot-mcp-server/issues/2); details in the
+server's own changelog). Projects whose `.mcp.json` launches the server unpinned pick it
+up the next time your MCP client starts and npx resolves the package. If you ran server
+1.0.0, check once for leftover `node` processes running `godot-mcp-server` and end them
+(`pgrep -fl godot-mcp-server` on macOS/Linux, Task Manager on Windows).
+
+### Changed
+
+- The connect-time version check no longer warns when the plugin and the server differ
+  only by a patch version (for example plugin 1.0.0 with server 1.0.1). A minor-version
+  difference still warns; a major-version difference still errors.
+
 ## [1.0.0] - 2026-07-27
 
-Nothing has been released yet. This section collects everything headed for the
-first public version.
+The first public release of the Godot MCP Toolkit.
 
 ### Added
 

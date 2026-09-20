@@ -30,6 +30,7 @@ static func run(testing) -> void:
 	_test_call_method_null_hint(testing)
 	_test_tooltip_uaf_disarm_decision(testing)
 	_test_is_engine_version_pair(testing)
+	_test_version_skew(testing)
 	_test_log_path_resolution(testing)
 
 
@@ -514,6 +515,25 @@ static func _test_is_engine_version_pair(testing) -> void:
 	testing.eq(ints.y, int(info["minor"]), "ints.y == Engine minor")
 	testing.eq("%d.%d" % [ints.x, ints.y], live_pair,
 			"ints re-join to get_engine_version_pair() (int and string forms agree)")
+	print("")
+
+
+# --- version_skew — patch-level differences are compatible (8 assertions) ------
+# Compatibility floors are declared at major.minor (ADR 0024), so a patch difference
+# carries no compatibility meaning and must classify as its own severity — the
+# connect-time check stays silent on it. The names match the server's VersionSeverity
+# so both halves of the handshake speak one vocabulary.
+
+static func _test_version_skew(testing) -> void:
+	testing.begin("version_skew classification")
+	testing.ok(VersionUtils.version_skew("1.0.1", "1.0.1") == "ok", "identical → ok")
+	testing.ok(VersionUtils.version_skew("1.0.0", "1.0.1") == "patch", "patch behind → patch")
+	testing.ok(VersionUtils.version_skew("1.0.1", "1.0.0") == "patch", "patch ahead → patch")
+	testing.ok(VersionUtils.version_skew("1.0.1", "1.1.0") == "minor", "minor differs → minor")
+	testing.ok(VersionUtils.version_skew("1.9.9", "2.0.0") == "major", "major differs → major")
+	testing.ok(VersionUtils.version_skew("", "1.0.0") == "unknown", "empty → unknown")
+	testing.ok(VersionUtils.version_skew("1.0", "1.0.0") == "unknown", "two segments → unknown")
+	testing.ok(VersionUtils.version_skew("1.0.x", "1.0.0") == "unknown", "non-numeric → unknown")
 	print("")
 
 
