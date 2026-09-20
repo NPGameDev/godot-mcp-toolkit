@@ -229,6 +229,15 @@ derivatives live in the art repo under `godot-mcp-toolkit-art/AssetStore/`.
 - **Run the full local gate set before committing**, not a subset. Format is the one most often
   skipped, and it is a CI gate.
 - **Never build a release zip from a dev working tree.**
+- **`release.sh` refuses a dirty tree at entry, so its curation pause cannot be used to write a
+  changelog entry that is not already committed.** Anything the rolled section needs has to be in
+  `[Unreleased]` before the script starts. This bites hardest in a non-interactive session, where
+  the pause cannot be answered by hand at all.
+- **A changelog tell cannot be fixed after the tag.** The annotated tag embeds the rolled section,
+  so a later edit leaves the file disagreeing with its own tag. Humanize before Phase 1.
+- **Generated docs drift silently and the tag run is where you find out.** `release.yml` checks
+  freshness at publish time, so a merge that changed a documented symbol without regenerating turns
+  the release red. Regenerate during pre-flight, not at the gate.
 
 ## One-time steps that will not repeat
 
