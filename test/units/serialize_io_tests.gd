@@ -714,7 +714,13 @@ static func _test_settings_collect_names(testing) -> void:
 			"collector includes save_read_cap_kb (the key the stale list missed)")
 	testing.ok(names.has("mcp_toolkit/limits/script_read_cap_kb"),
 			"collector includes script_read_cap_kb")
-	testing.ok(names.has("mcp_toolkit/status"), "collector includes status")
+	testing.ok(names.has("mcp_toolkit/audit/enabled"), "collector includes audit/enabled")
+	# mcp_toolkit/status is intentionally NOT registered — it used to persist a
+	# machine-specific diagnostic into ProjectSettings/project.godot, which
+	# caused per-machine diffs in the committed project file. That status is
+	# now shown live in the dock only (ui/dock/dock.gd), never written to disk.
+	testing.ok(not names.has("mcp_toolkit/status"),
+			"collector excludes status (no longer persisted to ProjectSettings)")
 	testing.ok(names.has("mcp_toolkit/internal/bootstrap_complete"),
 			"collector includes internal/bootstrap_complete")
 	# An unrelated engine key is NOT swept by the mcp_toolkit/ prefix.
