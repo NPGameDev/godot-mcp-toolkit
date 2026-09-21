@@ -715,10 +715,9 @@ static func _test_settings_collect_names(testing) -> void:
 	testing.ok(names.has("mcp_toolkit/limits/script_read_cap_kb"),
 			"collector includes script_read_cap_kb")
 	testing.ok(names.has("mcp_toolkit/audit/enabled"), "collector includes audit/enabled")
-	# mcp_toolkit/status is intentionally NOT registered — it used to persist a
-	# machine-specific diagnostic into ProjectSettings/project.godot, which
-	# caused per-machine diffs in the committed project file. That status is
-	# now shown live in the dock only (ui/dock/dock.gd), never written to disk.
+	# Negative pin, not an oversight: register_all() must never re-register
+	# mcp_toolkit/status. The value describes the machine the editor runs on, so
+	# persisting it writes per-developer state into the committed project.godot.
 	testing.ok(not names.has("mcp_toolkit/status"),
 			"collector excludes status (no longer persisted to ProjectSettings)")
 	testing.ok(names.has("mcp_toolkit/internal/bootstrap_complete"),

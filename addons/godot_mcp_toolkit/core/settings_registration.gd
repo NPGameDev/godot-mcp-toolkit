@@ -19,14 +19,12 @@ static func register_all() -> void:
 	_register_concurrency()
 	_register_audit()
 	_register_bootstrap_flag()
-	# Clean up the old status key. This diagnostic (Node.js found/version,
-	# .mcp.json presence, read-only mode) used to be persisted into
-	# ProjectSettings under mcp_toolkit/status, which serializes into
-	# project.godot. Since the check result differs per machine, that made
-	# project.godot churn in git depending on who last opened the project in
-	# the editor. Status is now shown live in the dock only (ui/dock/dock.gd),
-	# never written to disk.
-	# Removable at 2.0.0: only 1.0.0 and 1.0.1 ever wrote the key.
+	# One-way migration: mcp_toolkit/status was persisted by earlier versions and
+	# is no longer written, so erase whatever a project still carries — the value
+	# describes the machine the editor runs on and has no place in project.godot.
+	# The erase is in-memory only: register_all() deliberately never saves, so the
+	# key leaves project.godot at the next save something else performs.
+	# Removable at 2.0.0 — only 1.0.0 and 1.0.1 ever wrote the key.
 	if ProjectSettings.has_setting("mcp_toolkit/status"):
 		ProjectSettings.set_setting("mcp_toolkit/status", null)
 
