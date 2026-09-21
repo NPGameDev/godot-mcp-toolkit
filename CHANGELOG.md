@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-21
+
 ### Fixed
 
 - The plugin no longer writes its status readout (Node.js version, `.mcp.json`
