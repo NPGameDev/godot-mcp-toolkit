@@ -12,9 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The plugin no longer writes its status readout (Node.js version, `.mcp.json`
   presence, read-only mode) into `ProjectSettings`. That readout describes the
   machine the editor runs on, so storing it put a per-developer value into
-  `project.godot` and made the file churn in version control depending on who
-  last opened the project. The status is still shown live in the editor dock, as
-  it always was. Reported and fixed by @bclarksoftware
+  `project.godot`, and the committed file kept changing depending on who opened
+  the project last. The dock still shows the same status live. Reported and
+  fixed by @bclarksoftware
   ([#2](https://github.com/NPGameDev/godot-mcp-toolkit/pull/2)).
 - If an earlier version already stored `mcp_toolkit/status` in your
   `project.godot`, 1.0.2 clears it in memory when the plugin loads, so the key is

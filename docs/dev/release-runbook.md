@@ -193,7 +193,10 @@ Both listing surfaces carry copy that no CI check guards.
 2. Update the legacy AssetLib entry: version, download commit, and the description if it changed. An
    edit re-enters moderation and can take days.
 3. Update the Asset Store listing: upload the new zip under Versions with its changelog, mark it
-   stable, and revise the description if the surface changed.
+   stable, and revise the description if the surface changed. Paste the repo's rolled section as the
+   Version Changelog rather than rewriting it here. *Before you start* already humanized that text,
+   so wanting to edit it at this point means the humanizer step was skipped, and the fix belongs in
+   the next release rather than in a store-only rewrite. 1.0.1 diverged from its own tag this way.
 4. Leave the maximum compatible Godot version empty. A hard cap goes stale when the next minor ships.
 
 The copy as published lives in the plan repo under `Plan/ExecutionPlan/listing-copy/`. The form
