@@ -5,8 +5,6 @@ extends RefCounted
 ## Called once at plugin startup to ensure mcp_toolkit/* keys appear
 ## in the Project Settings inspector with correct types and defaults.
 
-const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-
 const _BOOTSTRAP_KEY := "mcp_toolkit/internal/bootstrap_complete"
 
 const _LIMITS_NOTE_KEY := "mcp_toolkit/limits/env_override_note"
@@ -21,24 +19,23 @@ static func register_all() -> void:
 	_register_concurrency()
 	_register_audit()
 	_register_bootstrap_flag()
-	# Clean up old status key locations. This diagnostic (Node.js
-	# found/version, .mcp.json presence, read-only mode) used to be persisted
-	# into ProjectSettings under mcp_toolkit/status (and mcp_toolkit/feature_gates/status
-	# before that) — which serializes into project.godot. Since the check result
-	# differs per machine, that made project.godot churn in git depending on who
-	# last opened the project in the editor. Status is now shown live in the
-	# dock only (ui/dock/dock.gd), never written to disk.
-	if ProjectSettings.has_setting("mcp_toolkit/feature_gates/status"):
-		ProjectSettings.set_setting("mcp_toolkit/feature_gates/status", null)
+	# Clean up the old status key. This diagnostic (Node.js found/version,
+	# .mcp.json presence, read-only mode) used to be persisted into
+	# ProjectSettings under mcp_toolkit/status, which serializes into
+	# project.godot. Since the check result differs per machine, that made
+	# project.godot churn in git depending on who last opened the project in
+	# the editor. Status is now shown live in the dock only (ui/dock/dock.gd),
+	# never written to disk.
+	# Removable at 2.0.0: only 1.0.0 and 1.0.1 ever wrote the key.
 	if ProjectSettings.has_setting("mcp_toolkit/status"):
 		ProjectSettings.set_setting("mcp_toolkit/status", null)
 
 
 ## Mirror of register_all — scrub every mcp_toolkit/* ProjectSettings key on
 ## uninstall (_disable_plugin only). Prefix-scans the live property list so it
-## covers all current + future mcp_toolkit/* keys (incl. the legacy
-## feature_gates/ one) with no hardcoded list to go stale, then persists
-## project.godot. Never call on _exit_tree (that fires every reload).
+## covers all current + future mcp_toolkit/* keys with no hardcoded list to go
+## stale, then persists project.godot. Never call on _exit_tree (that fires
+## every reload).
 static func unregister_all() -> void:
 	# Two-pass: collect first (read-only), then null — never mutate the property
 	# list while iterating it.
