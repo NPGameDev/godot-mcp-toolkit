@@ -23,7 +23,7 @@ static func register_all() -> void:
 	# is no longer written, so erase whatever a project still carries — the value
 	# describes the machine the editor runs on and has no place in project.godot.
 	# The erase is in-memory only: register_all() deliberately never saves, so the
-	# key leaves project.godot at the next save something else performs.
+	# key leaves project.godot at the next ProjectSettings save, from whatever source.
 	# Removable at 2.0.0 — only 1.0.0 and 1.0.1 ever wrote the key.
 	if ProjectSettings.has_setting("mcp_toolkit/status"):
 		ProjectSettings.set_setting("mcp_toolkit/status", null)
