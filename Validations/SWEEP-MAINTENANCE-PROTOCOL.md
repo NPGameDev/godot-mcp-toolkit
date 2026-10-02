@@ -23,7 +23,7 @@ keeps the non-deterministic work **and confirms flow-suite failures** — when
 one flow to classify **stale script** (update the test) vs **real regression**
 (fix the code). The word "sweep" is reserved for this LLM layer; the
 deterministic `.ts` layer is the **flow suite** (see the server repo's
-`test/SMOKE-COVERAGE-MANIFEST.md` → "Flow Suite", and plan-repo `CONTEXT.md` →
+`test/SMOKE-COVERAGE-MANIFEST.md` → "Flow Suite", and `docs/dev/glossary.md` →
 "Validation vocabulary"). New tools/params → update **sweep + smoke + flows**.
 
 ## Agent-drivability principle
