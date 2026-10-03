@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- On Windows, opening the editor without Node.js installed no longer prints a
+  red "Could not create child process" error in the Output panel (on Godot 4.5
+  and later, the console also showed a script backtrace). The dock's "Node.js
+  not found" warning still appears.
+
 ## [1.0.2] - 2026-09-21
 
 ### Fixed
