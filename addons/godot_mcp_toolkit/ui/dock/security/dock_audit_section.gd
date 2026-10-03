@@ -8,6 +8,10 @@ extends VBoxContainer
 ## its ProjectSetting on change), the View/Clear buttons (clear uses the shared
 ## self-freeing confirm factory), and the lazy AuditLogDialog. Toasts go through
 ## an injected Callable so the panel never touches the dock's private toaster.
+## While in the tree the two settings controls follow
+## ProjectSettings.settings_changed, so an edit made in the Project Settings
+## inspector shows here at once, and an adjustment made here starts from the
+## current value instead of a stale one.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const AuditLogDialog := preload("res://addons/godot_mcp_toolkit/ui/dock/security/audit_log_dialog.gd")
@@ -18,6 +22,10 @@ var _audit_path: String = ""
 # Dock-supplied toast sink (msg, severity, tooltip) — injected so the panel stays
 # decoupled from the editor toaster the dock owns.
 var _toast: Callable = Callable()
+
+# The two settings controls, held so refresh() can repaint them.
+var _enabled_checkbox: CheckBox = null
+var _max_size_spinbox: SpinBox = null
 
 # Lazy log viewer. Parented to the editor base control (NOT this panel) so its
 # popup_centered() centers on the editor, not the dock — so it is NOT freed with
@@ -32,27 +40,23 @@ func _init(audit_path: String, toast: Callable) -> void:
 	var audit_settings_row := HBoxContainer.new()
 	add_child(audit_settings_row)
 
-	var audit_enabled_check := CheckBox.new()
-	audit_enabled_check.text = "Enabled"
-	audit_enabled_check.button_pressed = ProjectSettings.get_setting(
-		"mcp_toolkit/audit/enabled", true)
-	audit_enabled_check.toggled.connect(_on_audit_enabled_toggled)
-	audit_settings_row.add_child(audit_enabled_check)
+	_enabled_checkbox = CheckBox.new()
+	_enabled_checkbox.text = "Enabled"
+	_enabled_checkbox.toggled.connect(_on_audit_enabled_toggled)
+	audit_settings_row.add_child(_enabled_checkbox)
 
 	var audit_size_label := Label.new()
 	audit_size_label.text = "  Max KB:"
 	audit_size_label.add_theme_font_size_override("font_size", 11)
 	audit_settings_row.add_child(audit_size_label)
 
-	var audit_size_spin := SpinBox.new()
-	audit_size_spin.min_value = 0
-	audit_size_spin.max_value = 10240
-	audit_size_spin.step = 128
-	audit_size_spin.value = ProjectSettings.get_setting(
-		"mcp_toolkit/audit/max_size_kb", 1024)
-	audit_size_spin.tooltip_text = "0 = unlimited"
-	audit_size_spin.value_changed.connect(_on_audit_max_size_changed)
-	audit_settings_row.add_child(audit_size_spin)
+	_max_size_spinbox = SpinBox.new()
+	_max_size_spinbox.min_value = 0
+	_max_size_spinbox.max_value = 10240
+	_max_size_spinbox.step = 128
+	_max_size_spinbox.tooltip_text = "0 = unlimited"
+	_max_size_spinbox.value_changed.connect(_on_audit_max_size_changed)
+	audit_settings_row.add_child(_max_size_spinbox)
 
 	var audit_btns := HBoxContainer.new()
 	add_child(audit_btns)
@@ -69,6 +73,20 @@ func _init(audit_path: String, toast: Callable) -> void:
 	clear_log_btn.pressed.connect(_on_clear_audit_log)
 	audit_btns.add_child(clear_log_btn)
 
+	refresh()
+
+
+func _enter_tree() -> void:
+	# An edit made in the Project Settings inspector never passes through these
+	# controls, so follow ProjectSettings while in the tree. The signal names no
+	# key, so each emission re-reads both settings. No feedback loop: refresh()
+	# writes no setting and fires no write handler, so the signal a dock save
+	# queues changes nothing.
+	if not ProjectSettings.settings_changed.is_connected(refresh):
+		ProjectSettings.settings_changed.connect(refresh)
+	# Catch anything that changed between _init and entering the tree.
+	refresh()
+
 
 func _exit_tree() -> void:
 	# The log viewer is a base-control child, not in this panel's subtree, so the
@@ -78,6 +96,10 @@ func _exit_tree() -> void:
 	if _audit_dialog != null and is_instance_valid(_audit_dialog):
 		_audit_dialog.free()
 	_audit_dialog = null
+	# ProjectSettings outlives this panel; a callback left connected would keep
+	# repainting a panel that has left the dock.
+	if ProjectSettings.settings_changed.is_connected(refresh):
+		ProjectSettings.settings_changed.disconnect(refresh)
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +136,23 @@ func _on_clear_audit_log() -> void:
 # ---------------------------------------------------------------------------
 # Settings handlers
 # ---------------------------------------------------------------------------
+
+## Repaints the Enabled checkbox and the Max KB spin box from their
+## ProjectSettings.
+##
+## Assigns only where a stored value differs from its control, and through the
+## no-signal setters, so a refresh never fires a write handler (each one saves
+## project.godot), and a refresh with nothing new leaves a value the user is still
+## typing alone. A stored size outside the spin box's range or step shows clamped
+## or snapped.
+func refresh() -> void:
+	var enabled := bool(ProjectSettings.get_setting("mcp_toolkit/audit/enabled", true))
+	if _enabled_checkbox.button_pressed != enabled:
+		_enabled_checkbox.set_pressed_no_signal(enabled)
+	var max_size_kb := float(ProjectSettings.get_setting("mcp_toolkit/audit/max_size_kb", 1024))
+	if _max_size_spinbox.value != max_size_kb:
+		_max_size_spinbox.set_value_no_signal(max_size_kb)
+
 
 func _on_audit_enabled_toggled(enabled: bool) -> void:
 	ProjectSettings.set_setting("mcp_toolkit/audit/enabled", enabled)
