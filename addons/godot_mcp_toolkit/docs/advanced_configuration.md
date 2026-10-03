@@ -5,9 +5,10 @@ the defaults are chosen to work well out of the box. They live under
 **Project → Project Settings → `mcp_toolkit/`** (enable *Advanced Settings* to
 see them) and can also be set with `ProjectSettings`.
 
-None of these values are clamped in code: the recommended ranges below are
-guidance, not enforced limits. An extreme value is allowed and is your
-responsibility.
+Apart from the response limits under **Limits**, whose ranges the dock and the
+Project Settings inspector both enforce, none of these values are clamped in
+code: the recommended ranges below are guidance, not enforced limits. An extreme
+value is allowed and is your responsibility.
 
 ## Concurrency
 
@@ -117,9 +118,11 @@ uniform.
 
 ### When a cap change takes effect (no restart)
 
-The limit settings below are read by the handler **on every call**, so a change —
-via the dock's spinbox, the Settings UI, or `meta_set_limits` — applies to the
-**very next call**. There is no restart and no reconnect.
+The read caps below (`save_read_cap_kb`, `script_read_cap_kb`) are read by the
+handler **on every call**, so a change made in the dock, in Project Settings, or by
+an `.mcp.json` override applies to the **very next call**, with no restart and no
+reconnect. `ws_buffer_kb` is the exception: the editor sizes a connection's buffer
+when it accepts the connection, so a change applies from the next connection.
 
 **The server is not pushed the value.** The MCP server advertises a *static*
 `max_bytes` schema bound as a sanity ceiling; the **toolkit enforces the real,
@@ -131,13 +134,19 @@ still be rejected: the live cap is authoritative.)
 
 ## Limits
 
+The dock and the Project Settings inspector keep their own edits inside each
+limit's range and step. A value set another way, such as an `.mcp.json` override
+(given in bytes) or a hand edit of `project.godot`, is used as set (the save cap
+still never drops below 64). Both surfaces then show it clamped to the range and
+rounded to the nearest step.
+
 ### `mcp_toolkit/limits/save_read_cap_kb` — default `256`
 
-The largest window `save_read` returns in a single call, in KB (minimum 64). A
-`user://` file bigger than this cap can still be read in full by paging — see
-**Reading large data** above for the `offset` / `next_offset` loop. This is the
-only way to read a file larger than the WebSocket frame ceiling (see `ws_buffer_kb`
-below), because responses are sent whole.
+The largest window `save_read` returns in a single call, in KB (64–4096, in steps
+of 64). A `user://` file bigger than this cap can still be read in full by
+paging — see **Reading large data** above for the `offset` / `next_offset` loop.
+This is the only way to read a file larger than the WebSocket frame ceiling (see
+`ws_buffer_kb` below), because responses are sent whole.
 
 Raising this above `ws_buffer_kb` is a footgun: a window that would not fit the
 WebSocket buffer is rejected with `FILE_TOO_LARGE` before it is sent, rather than
@@ -146,18 +155,29 @@ the runtime caveat below).
 
 ### `mcp_toolkit/limits/script_read_cap_kb` — default `256`
 
-The largest payload `script_read` returns in a single call, in KB. A project
-script bigger than this cap is read in full by paging on **lines** — see **Reading
-large data** above for the `start_line` / `next_start_line` loop. A full read that
-would exceed the cap is rejected with `FILE_TOO_LARGE` and a hint to use a line
-range.
+The largest payload `script_read` returns in a single call, in KB (64–4096, in
+steps of 64). A project script bigger than this cap is read in full by paging on
+**lines** — see **Reading large data** above for the `start_line` /
+`next_start_line` loop. A full read that would exceed the cap is rejected with
+`FILE_TOO_LARGE` and a hint to use a line range.
+
+If `GODOT_MCP_SCRIPT_READ_LIMIT` is set in `.mcp.json`, it overrides this value:
+the MCP server sends it to the editor when it connects, and the dock then shows
+it, clamped and rounded to the dock's range and step. The editor keeps it until it
+restarts or the value is changed, and the next time project settings are saved, it
+is written to `project.godot`.
 
 ### `mcp_toolkit/limits/ws_buffer_kb` — default `1024`
 
-WebSocket per-peer buffer size, in KB (minimum 256). Raise it if you send very
-large payloads (e.g. big `script_write` bodies) and see truncated or dropped
-connections under load. Can also be overridden per-connection by the
-`GODOT_MCP_WS_BUFFER_LIMIT` env var in `.mcp.json`.
+WebSocket per-peer buffer size, in KB (256–8192, in steps of 256). Raise it if you
+send very large payloads (e.g. big `script_write` bodies) and see truncated or
+dropped connections under load.
+
+If `GODOT_MCP_WS_BUFFER_LIMIT` is set in `.mcp.json`, it overrides this value in
+the same way, and the dock then shows it, clamped and rounded to the dock's range
+and step. The editor sizes a connection's buffer when it accepts the connection,
+so the override applies to connections accepted after the server sends it, not to
+the connection that sent it.
 
 > **Runtime (exported game) caveat.** This setting tunes the **editor** server
 > only. The runtime server that runs inside an exported game uses a **fixed 1 MB

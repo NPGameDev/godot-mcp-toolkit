@@ -3,7 +3,8 @@ extends RefCounted
 ## ProjectSettings registration for limits, audit, and bootstrap keys.
 ##
 ## Called once at plugin startup to ensure mcp_toolkit/* keys appear
-## in the Project Settings inspector with correct types and defaults.
+## in the Project Settings inspector with correct types and defaults, and the
+## keys the dock also edits with the same ranges as the dock's spin boxes.
 
 const _BOOTSTRAP_KEY := "mcp_toolkit/internal/bootstrap_complete"
 
@@ -56,12 +57,12 @@ static func _collect_mcp_setting_names() -> PackedStringArray:
 
 
 static func _register_limits() -> void:
-	_register_basic_int("mcp_toolkit/limits/script_read_cap_kb", 256,
-		"Max script content returned by script.read, in KB. Minimum 64.")
-	_register_basic_int("mcp_toolkit/limits/save_read_cap_kb", 256,
-		"Max user-file content returned per save.read window, in KB. Minimum 64.")
-	_register_basic_int("mcp_toolkit/limits/ws_buffer_kb", 1024,
-		"WebSocket per-peer buffer size, in KB. Minimum 256.")
+	# Max script content returned by script.read, in KB.
+	_register_basic_ranged_int("mcp_toolkit/limits/script_read_cap_kb", 256, "64,4096,64")
+	# Max user-file content returned per save.read window, in KB.
+	_register_basic_ranged_int("mcp_toolkit/limits/save_read_cap_kb", 256, "64,4096,64")
+	# WebSocket per-peer buffer size, in KB.
+	_register_basic_ranged_int("mcp_toolkit/limits/ws_buffer_kb", 1024, "256,8192,256")
 	_register_limits_note()
 
 
@@ -75,8 +76,8 @@ static func _register_concurrency() -> void:
 static func _register_audit() -> void:
 	_register_basic_bool("mcp_toolkit/audit/enabled", true,
 		"Enable MCP audit log at user://addons/godot_mcp_toolkit/project_instance_<hash>/mcp_audit.log.")
-	_register_basic_int("mcp_toolkit/audit/max_size_kb", 1024,
-		"Max audit log size in KB. 0 = unlimited. Log truncates to 50% when exceeded.")
+	# Max audit log size in KB. 0 = unlimited. Log truncates to 50% when exceeded.
+	_register_basic_ranged_int("mcp_toolkit/audit/max_size_kb", 1024, "0,10240,128")
 
 
 static func _register_bootstrap_flag() -> void:
@@ -96,23 +97,39 @@ static func _register_limits_note() -> void:
 	})
 
 
-static func _register_basic_bool(key: String, default_value: bool, hint: String) -> void:
+static func _register_basic_bool(key: String, default_value: bool, description: String) -> void:
+	_register_basic(key, TYPE_BOOL, default_value, PROPERTY_HINT_NONE, description)
+
+
+static func _register_basic_int(key: String, default_value: int, description: String) -> void:
+	_register_basic(key, TYPE_INT, default_value, PROPERTY_HINT_NONE, description)
+
+
+## Registers an int whose Project Settings inspector editor is bounded by
+## [param range_hint] ("min,max,step"). Keep each range equal to the dock spin box
+## that edits the same key, so the two surfaces accept the same values; the unit
+## suite asserts that they match.
+##
+## The hint bounds inspector edits only and never rewrites a stored value. A value
+## already stored out of range or off step (5000, or 100 on a 64-step cap) keeps
+## working as stored, while the inspector and the dock show it clamped or snapped
+## until someone edits it.
+static func _register_basic_ranged_int(
+		key: String, default_value: int, range_hint: String) -> void:
+	_register_basic(key, TYPE_INT, default_value, PROPERTY_HINT_RANGE, range_hint)
+
+
+# Creates the key with its default only when it is absent, so a value the project
+# already stores is never clobbered, then registers it as a basic setting with its
+# inspector hint.
+static func _register_basic(
+		key: String, variant_type: int, default_value: Variant,
+		hint: int, hint_string: String) -> void:
 	if not ProjectSettings.has_setting(key):
 		ProjectSettings.set_setting(key, default_value)
 	ProjectSettings.set_initial_value(key, default_value)
 	ProjectSettings.set_as_basic(key, true)
 	ProjectSettings.add_property_info({
-		"name": key, "type": TYPE_BOOL,
-		"hint": PROPERTY_HINT_NONE, "hint_string": hint,
-	})
-
-
-static func _register_basic_int(key: String, default_value: int, hint: String) -> void:
-	if not ProjectSettings.has_setting(key):
-		ProjectSettings.set_setting(key, default_value)
-	ProjectSettings.set_initial_value(key, default_value)
-	ProjectSettings.set_as_basic(key, true)
-	ProjectSettings.add_property_info({
-		"name": key, "type": TYPE_INT,
-		"hint": PROPERTY_HINT_NONE, "hint_string": hint,
+		"name": key, "type": variant_type,
+		"hint": hint, "hint_string": hint_string,
 	})

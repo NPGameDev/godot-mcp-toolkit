@@ -3,8 +3,8 @@
 The manual, interactive gate CI can't cover. **Copy this file per release** (e.g. into the
 release notes or a scratch tracker) and tick each box as you run it. CI covers static
 validation, unit execution, and the cross-version behavioral matrix; this sheet covers the
-export-safety regressions, concurrent human+MCP editing, and the macOS GUI-launch smoke that
-need a real editor, a real export, or a real Mac.
+export-safety regressions, concurrent human+MCP editing, the macOS GUI-launch smoke, and the
+dock ↔ Project Settings round-trip that need a real editor, a real export, or a real Mac.
 
 Each item is runnable from a clone of this repo. Use `$GODOT_BIN` for the console editor of
 the version under test (e.g. `Godot_v<ver>-stable_win64_console.exe`), and install that
@@ -111,3 +111,28 @@ a GUI-launched client resolves the bare-`npx` config and connects.
 - [ ] **No third-party runtime deps — verify no vendored code ships.** The addon under
       `addons/` is GDScript only; confirm no bundled third-party runtime code is present.
 - [ ] **If no Mac:** documented coverage gap recorded for this release (not skipped silently).
+
+---
+
+## 4. Dock ↔ Project Settings round-trip — BEST-EFFORT
+
+The dock's *Security & Response Limits* and *Audit Log* sections edit five Project Settings: the
+script cap, save cap and WS buffer (`mcp_toolkit/limits/script_read_cap_kb`,
+`save_read_cap_kb`, `ws_buffer_kb`) and the audit log's Enabled and Max KB
+(`mcp_toolkit/audit/enabled`, `max_size_kb`). An edit in either surface must show in the
+other, and neither may undo the other. Run with the plugin active, both dock sections
+expanded, and **Project → Project Settings** open on the `mcp_toolkit/` keys. The checks
+write `project.godot`; restore it afterwards with `git restore project.godot`.
+
+- [ ] **DS1 — Inspector → dock.** Change each of the five values in Project Settings.
+      **Expected:** the dock shows each new value without reopening anything.
+- [ ] **DS2 — Dock → inspector.** Change each of the five values in the dock.
+      **Expected:** the inspector shows each new value, and `project.godot` carries it.
+- [ ] **DS3 — No revert.** After DS1, change a *different* dock control.
+      **Expected:** the inspector edits from DS1 survive.
+- [ ] **DS4 — Connect keeps the caps.** Set a non-default script cap, then connect an MCP
+      client with neither `GODOT_MCP_SCRIPT_READ_LIMIT` nor `GODOT_MCP_WS_BUFFER_LIMIT` set.
+      **Expected:** the dock and the inspector still show the cap, and after any further
+      settings save `project.godot` still has it.
+- [ ] **DS5 — Same ranges.** In the inspector, type an out-of-range value: script cap `10`,
+      WS buffer `100000`. **Expected:** each is clamped to the dock's range (`64` and `8192`).

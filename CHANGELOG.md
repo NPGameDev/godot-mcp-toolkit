@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The dock's response-limit and audit-log controls now follow edits made in
+  Project Settings. Before, they kept showing the old value until the plugin
+  reloaded, so adjusting one of them in the dock started from that stale value and
+  could overwrite your edit. Project Settings also now accepts the same ranges for
+  these values as the dock.
+
 ## [1.0.2] - 2026-09-21
 
 ### Fixed
