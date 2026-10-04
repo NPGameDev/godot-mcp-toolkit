@@ -178,7 +178,7 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
 - **MCP dock** — bottom-panel tab ("MCP"). Signal-driven server status (no
   polling), polled audit log tail (visibility-gated, 500ms Timer). Action
   buttons: Regenerate Token, Open Full Log, Clear View. Response limit settings
-  (script read cap, WS buffer size) stored in ProjectSettings `mcp/limits/`.
+  (script read cap, WS buffer size) stored in ProjectSettings `mcp_toolkit/limits/`.
   Collapsible Info/Help panel with connection status, tool list grouped by
   domain, version info, multi-instance guidance, read-only mode info, and
   quick-link buttons.
@@ -189,14 +189,15 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
   the dock displays a yellow badge.
 - **Response limits** — configurable in the dock's "Response Limits" section.
   Script read cap (default 256 KB, min 64 KB) and WebSocket buffer (default
-  1024 KB, min 256 KB). Stored in ProjectSettings `mcp/limits/`.
+  1024 KB, min 256 KB). Stored in ProjectSettings `mcp_toolkit/limits/`.
 - **.mcp.json sync** — the dock shows a warning when `.mcp.json` is missing.
 - **Plugin disable cleanup** — disabling the plugin via Project Settings →
   Plugins prompts to delete the orphaned `.mcp.json` at project root.
 - **Export stripping** — `EditorExportPlugin` auto-strips all
   `addons/godot_mcp_toolkit/` files from exported PCKs (iter 20 `export_strip.gd`).
-- **EditorSettings** (per-user, not committed) — `mcp/personal/dock_default_visible`,
-  `mcp/personal/audit_log_tail_lines`.
+- **EditorSettings** (per-user, not committed) — `mcp_toolkit/personal/dock_default_visible`,
+  `mcp_toolkit/performance/keep_editor_responsive_unfocused`,
+  `mcp_toolkit/performance/unfocused_responsive_sleep_usec`.
 
 ## Breaking changes vs pre-iter-22
 

@@ -62,10 +62,13 @@ The rules that keep it honest:
 3. **When the architecture changes**, edit the affected diagram's Mermaid source, bump its
    `data-verified`, and update the **document-level stamp** at the top (the SHA + one-line
    definition of the last major architectural change).
-4. **Find what to re-check** by grepping `data-depicts` for a file you changed; an advisory,
-   non-blocking freshness check (`scripts/check_arch_freshness.sh`) lists diagrams whose
+4. **Find what to re-check** by grepping `data-depicts` for a file you changed; an advisory
+   freshness check (`scripts/check_arch_freshness.sh`) lists diagrams whose
    depicted files moved since their `data-verified` SHA. It over-flags by design — a false
-   re-check costs a glance; a missed drift ships a lying diagram.
+   re-check costs a glance; a missed drift ships a lying diagram. The script never fails a build,
+   but whoever moves a depicted file must follow that change with a commit that re-attests the
+   affected diagram; the release rule is in the
+   [release runbook](../dev/release-runbook.md#architecture-and-contract-freshness).
 
 Diagrams below are verified against `eb4c9fa` (the 41n-series finalization) — each diagram's own
 `data-verified` comment is authoritative.
@@ -81,7 +84,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 and *Mode B* internally) — and publishes a small **registry file** so the bridge can
 discover every live instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="1ca3bf4" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="a676b1d" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -100,7 +103,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified 1ca3bf4*
+*Figure 1 — system context · verified a676b1d*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -140,7 +143,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="1ca3bf4" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="a676b1d" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>ships in the game"]
@@ -169,7 +172,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified 1ca3bf4*
+*Figure 2 — the editor↔runtime taint boundary · verified a676b1d*
 
 Consequences that shape the rest of the architecture:
 
@@ -204,7 +207,7 @@ first-frame auth handshake. The shared mechanics live in `ws_transport.gd` (list
 poll / auth framing) and `notifier.gd` (result / error / notification / broadcast). The two
 servers differ only in what they inject into that base and how they pump it.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="1ca3bf4" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="a676b1d" -->
 ```mermaid
 sequenceDiagram
     participant C as Bridge (client)
@@ -222,7 +225,7 @@ sequenceDiagram
     R->>R: select lane, call handler
     R-->>C: JSON-RPC result (success + status)
 ```
-*Figure 3 — connect → auth handshake → dispatch · verified 1ca3bf4*
+*Figure 3 — connect → auth handshake → dispatch · verified a676b1d*
 
 **Ports & framing.** By default the Editor channel scans `6550–6560` and the Runtime channel
 scans `6570–6585`; both bind `127.0.0.1`. The listen configuration is resolved from the environment by the shared,
@@ -244,13 +247,16 @@ structurally validate** it without re-deriving the path ([ADR 0011](#14-key-deci
 In-engine readers keep the `user://` form. The handshake reply differs by server: the editor
 server returns `godot_version` + plugin `version` + a `headless` flag (the server's
 version-gating and headless-degradation inputs; [ADR 0014](#14-key-decisions-adrs)), the
-runtime server returns `{"authed":true}` only.
+runtime server returns `{"authed":true}` only. The editor server also compares the `version` in
+the MCP server's auth frame with the plugin's own (`version_skew` in
+`versioning/mcp_version_utils.gd`): a major difference logs an error to the editor console, a
+minor one a warning, and a patch difference nothing.
 
 **The editor poll loop is deliberately indirect.** Editor mutations must not run re-entrantly
 inside `_process` (a scene save pumps the main loop, which could resume a coroutine mid-pump).
 So the editor server defers its poll and throttles it to every 4th frame:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="a676b1d" -->
 ```mermaid
 flowchart TD
     proc["_process(delta)"] --> skip{"4th frame?"}
@@ -262,12 +268,13 @@ flowchart TD
     pump --> drain["poll_peers → await _on_message per frame"]
     pump --> clean["cleanup closed peers"]
 ```
-*Figure 4 — the deferred, frame-skipped editor poll · verified eb4c9fa*
+*Figure 4 — the deferred, frame-skipped editor poll · verified a676b1d*
 
 The mutation **watchdog** ([§4](#4-dispatch--concurrency)) ticks every frame *unconditionally*
 — independent of this poll cadence — so a wedged mutation is always recovered on time. The
 runtime server, running in a game with no `EditorFileSystem` re-entrancy to dodge, pumps
-**inline** every frame with no `call_deferred` and no `await`.
+**inline** every frame with no `call_deferred` and no `await`. It sets `PROCESS_MODE_ALWAYS`, so
+that pump keeps running while the game tree is paused (a pause menu, for example).
 
 ---
 
@@ -464,8 +471,9 @@ former `tileset` / `editor` / `playtest` god-files over the leaves now under
 
 ## 7. Plugin lifecycle
 
-`plugin.gd` is a thin `EditorPlugin` (~172 lines). `_enter_tree` first **self-heals the runtime
-autoload** via `AutoloadRegistration.ensure_registered()` — re-asserting `MCPRuntimeServer` before
+`plugin.gd` is a thin `EditorPlugin` (~175 lines). `_enter_tree` prints a one-line startup banner
+with the plugin version, wires `EditorAccess` and registers the ProjectSettings, then
+**self-heals the runtime autoload** via `AutoloadRegistration.ensure_registered()` — re-asserting `MCPRuntimeServer` before
 the graph is wired if the project was enabled out-of-band with the `[autoload]` entry missing (ADR
 0013) — then delegates the whole collaborator graph to `PluginComposer.compose()`, which returns a
 `Handle`; `_exit_tree` calls `Handle.dispose()`, which tears the graph down in **exact reverse
@@ -474,7 +482,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="8a1496e" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="a676b1d" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -492,7 +500,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order (I12)"| composer
 ```
-*Figure 10 — plugin composition root (concern 001) · verified 8a1496e*
+*Figure 10 — plugin composition root (concern 001) · verified a676b1d*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the

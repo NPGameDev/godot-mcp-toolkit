@@ -96,6 +96,19 @@ not have, take its own documented-gap path rather than skipping it silently, and
 owner. First applied: 1.0.1 (server §1 incl. B9 and §5; the toolkit's macOS GUI-launch smoke
 recorded as a documented coverage gap, since no Mac was available).
 
+### Architecture and contract freshness
+
+Before you write the gate dispositions, run both freshness checks:
+`bash scripts/check_arch_freshness.sh` in the toolkit repo, which covers
+`docs/architecture/README.md` and `docs/dev/contract.md`, and `npm run check:arch` in the server
+repo. Record each repo's stale count in the dispositions.
+Staleness the release inherits is advisory: record it and carry on. Staleness the release
+introduces blocks it. An entry is the release's own when a commit since the previous release tag
+moved one of its depicted files. Before this walk, whoever made that change must re-read the
+affected diagram or contract section against the code and set its `data-verified` to that commit or
+a later one. The re-attestation is always a separate commit, because a commit cannot name its own
+SHA.
+
 ## Phase 3. Bump the pins, serialized
 
 Each repo pins the sibling revision it was tested against (`SIBLING_PIN_TOOLKIT` in the server's
