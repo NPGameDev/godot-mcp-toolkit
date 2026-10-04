@@ -63,9 +63,14 @@ TAG="v${VERSION}"
 PRE_RUN_SHA="$(git rev-parse HEAD)"
 COMMIT_MADE=0
 TAG_MADE=0
+# The tag-message temp file; set once the mutation path creates it.
+SECTION_FILE=""
 
 on_exit() {
   local code=$?
+  if [[ -n "${SECTION_FILE}" ]]; then
+    rm -f "${SECTION_FILE}"
+  fi
   if [[ ${code} -ne 0 && ( ${COMMIT_MADE} -eq 1 || ${TAG_MADE} -eq 1 ) ]]; then
     echo ""
     echo "── Aborted after a mutation. Undo with: ──────────────────────────────"
@@ -179,13 +184,17 @@ fi
 check_ci_green() {
   local repo_slug="$1" sha="$2"
   local json conclusion
-  json="$(gh api "repos/${repo_slug}/commits/${sha}/check-runs" 2>/dev/null || echo '')"
+  # Read every page: a commit can carry more check runs than one page holds, and
+  # a red run on a later page must still fail the gate. --slurp wraps the pages
+  # in one JSON array so a single parse sees them all.
+  json="$(gh api --paginate --slurp "repos/${repo_slug}/commits/${sha}/check-runs?per_page=100" 2>/dev/null || echo '')"
   [[ -z "${json}" ]] && return 2
   # Any non-success (or a still-running) conclusion => not green.
   conclusion="$(echo "${json}" | node -e '
     let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
       try{
-        const runs=(JSON.parse(s).check_runs)||[];
+        const pages=JSON.parse(s);
+        const runs=(Array.isArray(pages)?pages:[pages]).flatMap(p=>(p&&p.check_runs)||[]);
         if(runs.length===0){process.stdout.write("empty");return;}
         for(const r of runs){
           if(r.status!=="completed"){process.stdout.write("pending");return;}
@@ -279,8 +288,7 @@ if ! grep -qF "## [Unreleased]" "${CHANGELOG}"; then
 fi
 
 RELEASE_DATE="$(date +%F)"
-SECTION_FILE="${TMPDIR:-C:/Users/nicol/OneDrive/Desktop/Personal/AIWithGodot/_TempForClaude}/release-changelog-${VERSION}.$$.md"
-mkdir -p "$(dirname "${SECTION_FILE}")"
+SECTION_FILE="$(mktemp "${TMPDIR:-/tmp}/release-changelog.XXXXXX")"
 
 TMP_CL="${CHANGELOG}.tmp.$$"
 awk -v ver="${VERSION}" -v date="${RELEASE_DATE}" '
