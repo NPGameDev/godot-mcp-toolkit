@@ -58,6 +58,12 @@ other's floor, the bridge emits a clear, actionable warning (and update
 guidance) — it **never refuses** the connection. A newer sibling is always
 allowed. See [Compatibility](#compatibility) below.
 
+**For now, releases are lockstep.** Each repo's tag-fired release workflow
+requires the pinned sibling to declare the exact version being tagged. Until the
+tag gates check the declared floor instead, that forces a lockstep release: both
+repos bump to the same version and release together, server first. Versioning
+is still independent by design; the gates have not caught up with it yet.
+
 The version components describe each artifact's **own** public surface:
 
 ### MAJOR (breaking)
@@ -222,7 +228,9 @@ stability, security, human + MCP concurrent editing):
 **See [`docs/dev/release-checklist.md`](docs/dev/release-checklist.md).**
 
 Work through it and confirm it green before you create the tag. The release
-script prints a reminder and requires an explicit confirmation.
+script prints a reminder and requires an explicit confirmation. In a
+non-interactive run, the gate dispositions file answers it instead (see
+[Non-interactive runs](#non-interactive-runs)).
 
 ## The release script
 
@@ -254,7 +262,9 @@ What it does:
 - Runs the pre-flights: the target version is available (untagged locally + on
   `origin`, and — server — not on npm), the sibling pin is code-identical to the
   sibling's `main`, CI is green on both HEADs, and — server — the generated docs
-  are fresh.
+  are fresh. The script checks CI itself through `gh`, reading every page of
+  check runs. It asks you only when `gh` is missing, and a non-interactive run
+  refuses instead.
 - Bumps the manifest (server: `package.json` + `package-lock.json` via
   `npm version`; toolkit: `plugin.cfg`).
 - Rolls the CHANGELOG `## [Unreleased]` section into `## [X.Y.Z] - YYYY-MM-DD`,
@@ -269,6 +279,46 @@ example a floor-raising wire-contract change). It **delegates the toolkit half t
 the toolkit's own `release.sh`** and then releases the server — two *independent*
 versioned releases in one run. The `--verify` mode is a read-only post-push check
 that confirms the tag reached both origins and the server package resolved on npm.
+Its exit code tells you what to do next:
+
+| Exit | Meaning | Next step |
+| --- | --- | --- |
+| 0 | Both origin tags exist and npm serves the version. | Done. |
+| 1 | A tag is missing, or the toolkit repo could not be found to check. | Act: push the tag or fix the path. |
+| 2 | Both tags exist, but npm does not serve the version yet. | Poll again; the registry can lag by minutes. |
+
+### Non-interactive runs
+
+An agent driving a release has no keyboard to answer the script's two questions:
+the manual gate and the curation pause. Pass `--non-interactive` and answer each
+one with a flag:
+
+- `--gate-dispositions <file>` answers the manual gate. Write this file before
+  the run. It holds a gate disposition for every checklist section: walked,
+  skipped with a reason, or a documented gap with an owner. It must exist, be
+  non-empty, and name the version being released. The script records its
+  SHA-256 in the release commit as a `Manual-Gate-Dispositions: sha256:<hash>`
+  trailer. Only the hash goes in, so the record can stay private. CR bytes are
+  removed before hashing, so CRLF and LF copies of one record match.
+- `--changelog-curated` answers the curation pause. It states that
+  `[Unreleased]` was curated and committed before the run. The script refuses an
+  empty section, since it cannot stop for you to fill it in.
+
+In this mode, a question with no answer stops the run with an error naming the
+flag it needed, and a missing `gh` is an error rather than a prompt. Before the
+pre-flights, the run prints each prompt and how it will be answered. Rehearse
+with `--dry-run` first. A dry run never reaches the curation pause, so it needs
+only `--gate-dispositions`:
+
+```bash
+./scripts/release.sh 1.1.0 --dry-run --non-interactive --gate-dispositions gate.md
+./scripts/release.sh 1.1.0 --non-interactive --gate-dispositions gate.md --changelog-curated
+```
+
+The two answer flags are a usage error without `--non-interactive`, so an
+interactive run behaves exactly as before. `--with-sibling` cannot be combined
+with `--non-interactive`, because the delegated toolkit run would prompt.
+`--verify` never prompts and ignores `--non-interactive`.
 
 ## Rollback (if a release goes bad)
 
@@ -294,7 +344,9 @@ the previous or fixed SHA.
 **Independent-versioning consequence.** A botched release patches **only its own
 repo** — each side versions independently. The sibling is dragged in **only** if
 the bad release had raised a floor, or the fix changes the wire contract;
-otherwise the other repo is untouched.
+otherwise the other repo is untouched. While the tag gates force a lockstep
+release (see [Version scheme](#version-scheme)), the patch release moves both
+repos anyway.
 
 ## Asset distribution
 

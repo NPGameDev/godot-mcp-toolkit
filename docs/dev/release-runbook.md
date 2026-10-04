@@ -19,8 +19,9 @@ Work through the phases in order. Each one ends in a state the next phase assume
 
 ## Before you start
 
-- Both repos on `main`, clean, pushed, with CI green on both HEADs. The release script asks you to
-  confirm this and will not proceed without it.
+- Both repos on `main`, clean, pushed, with CI green on both HEADs. The release script checks CI
+  itself through `gh`, reading every page of check runs, and stops on anything not green. It asks
+  you to confirm only when `gh` is missing, and a non-interactive run refuses instead of asking.
 - Each repo's sibling pin postdates every cross-repo contract change since the last release. A pin
   taken before a contract change certifies the wrong pairing, and every behavioral leg then fails
   identically, which reads like a code fault.
@@ -28,8 +29,9 @@ Work through the phases in order. Each one ends in a state the next phase assume
   and `release.yml` both check this; running it early keeps the fix cheap.
 - `npm audit` clean, or every remaining advisory understood and recorded. `release.yml` re-runs a
   production-only audit at high severity before it publishes.
-- Decide the version for each repo independently. They version separately by design, so a release
-  can move one and not the other.
+- Release both repos at the same version, server first. They version separately by design, but each
+  repo's tag gate requires the pinned sibling to declare the exact version being tagged. Until the
+  tag gates check the declared floor instead, that forces a lockstep release.
 - Run the `humanizer` skill over the `[Unreleased]` entries in each repo's `CHANGELOG.md`, and edit
   them before anything is tagged. Release notes are the most-read text either project ships, and the
   annotated tag embeds the rolled section permanently, so a tell caught afterwards cannot be fixed
@@ -50,7 +52,8 @@ identically, suspect a stale pin before suspecting the code.
 Work through `docs/dev/release-checklist.md` in both repos. This is the half CI cannot reach. The
 server side covers connection stability, security boundaries, cross-subsystem flows, dispatch
 integration, and the supply-chain audit. The toolkit side covers the export-safety regression,
-concurrent human and MCP editing, and the macOS GUI-launch smoke.
+concurrent human and MCP editing, the macOS GUI-launch smoke, and the dock and Project Settings
+round-trip.
 
 The macOS section is blocking if a Mac is available and a documented coverage gap if not. Never
 record it as a silent skip.
@@ -68,20 +71,29 @@ editor:
 
 `test/probes/README.md` says what each one establishes and how to invoke it.
 
-The release script asks you to confirm this walk happened, and aborts if you decline. It is the only
-gate between a broken interactive path and a published release, so do not confirm it from memory.
+The release script asks you to confirm this walk happened, and aborts if you decline. In a
+non-interactive run the gate dispositions file answers it instead. It is the only gate between a
+broken interactive path and a published release, so do not confirm it from memory.
 
 ### Patch releases
 
-A patch (x.y.Z) runs every automated gate in full — smoke, flows, dispatch integration, both
-unit suites, `smoke:ci`, the supply-chain audit — but walks only the checklist sections its
-change touches, and records the skipped sections with the reason in the scratch tracker before
-answering the script's confirmation. Escalate to the full walk when the change touches something
-the automated flows cannot observe: transport or process lifecycle (§1), security boundaries
-(§2), the export path, editor lifecycle, or anything human-facing in the editor. Where a section
-needs hardware you do not have, take its own documented-gap path rather than skipping it silently,
-and give the gap an owner. First applied: 1.0.1 (server §1 incl. B9 and §5; the toolkit's macOS
-GUI-launch smoke recorded as a documented coverage gap — no Mac available).
+A patch (x.y.Z) runs every automated gate in full: smoke, flows, dispatch integration, both unit
+suites, `smoke:ci`, and the supply-chain audit. It walks only the checklist sections its change
+touches. Before you answer the script's gate, write the **gate dispositions**: every section
+walked, skipped with a reason, or a documented gap with an owner.
+
+Escalation goes by trigger:
+
+- transport or process lifecycle → server §1;
+- security boundaries → server §2;
+- the export path → toolkit §1;
+- editor lifecycle, or anything human-facing in the editor → a hand walk of the affected surface,
+  written for the change.
+
+The full gate (all of them) is for minor and major releases. Where a section needs hardware you do
+not have, take its own documented-gap path rather than skipping it silently, and give the gap an
+owner. First applied: 1.0.1 (server §1 incl. B9 and §5; the toolkit's macOS GUI-launch smoke
+recorded as a documented coverage gap, since no Mac was available).
 
 ## Phase 3. Bump the pins, serialized
 
@@ -116,6 +128,16 @@ Rehearse the script first, then run it for real:
 ./scripts/release.sh <version>
 ```
 
+An agent-driven release writes the gate dispositions first, then answers the prompts with flags:
+
+```bash
+./scripts/release.sh <version> --dry-run --non-interactive --gate-dispositions <file>
+./scripts/release.sh <version> --non-interactive --gate-dispositions <file> --changelog-curated
+```
+
+There is no pause to curate in, so `[Unreleased]` must be final and committed before the run.
+`RELEASING.md` describes the flags.
+
 For a change that genuinely spans both repos, `./scripts/release.sh <server-version> --with-sibling
 <toolkit-version>` delegates the toolkit half to the toolkit's own script and then releases the
 server, as two independent versioned releases in one run. That path replaces Phase 6.
@@ -124,7 +146,8 @@ The script runs its pre-flights, rolls the CHANGELOG, then **pauses**. Use the p
 section and the printed `npm pack --dry-run` listing. The listing must be `dist/`, `README.md`,
 `LICENSE`, `ATTRIBUTIONS.md`, and `package.json`, and nothing else. Edit the CHANGELOG here if it
 needs editing. On resume the script re-checks the tree and aborts unless the only changes are
-`package.json`, `package-lock.json`, `CHANGELOG.md`, and regenerated `docs/`.
+`package.json`, `package-lock.json`, `CHANGELOG.md`, and regenerated `docs/`. A non-interactive
+run does not pause but still prints the listing, so read it in the log before you push.
 
 For a **first release of a package**, the changelog describes what ships. For every release after,
 it describes the delta.
@@ -172,9 +195,10 @@ that the CI artifact never contains.
 ## Phase 6. Release the toolkit
 
 Same ritual: `./scripts/release.sh <version>`, curate at the pause, verify the tag content, push main
-and the tag. The toolkit script takes only a version and `--dry-run`; `--verify` and `--with-sibling`
-are server-side. The gated workflow builds the zip, install-smokes it into a scratch project, and
-attaches it to the GH Release.
+and the tag. An agent-driven release runs the same two non-interactive commands as Phase 4, with
+the gate dispositions file. The toolkit script takes a version, `--dry-run` and the three
+non-interactive flags; `--verify` and `--with-sibling` are server-side. The gated workflow builds
+the zip, install-smokes it into a scratch project, and attaches it to the GH Release.
 
 The script prints the asset submission values at tag time (version, download commit SHA, zip name).
 Keep them on screen.
@@ -207,7 +231,9 @@ derivatives live in the art repo under `godot-mcp-toolkit-art/AssetStore/`.
 ## Phase 8. Close out
 
 - Confirm both origins carry the tag and the registry resolves the version:
-  `./scripts/release.sh --verify <version>` (server, read-only).
+  `./scripts/release.sh --verify <version>` (server, read-only). Exit 0 means both tags and the
+  npm version have converged. Exit 1 means a tag is missing or the toolkit repo cannot be found, so
+  act on it. Exit 2 means only npm is still catching up, so poll again.
 - Check both GH Release bodies. The workflow auto-generates notes from the commit range rather than
   the changelog, so paste the rolled CHANGELOG section in as the body if you want readers to see
   what changed.

@@ -1,7 +1,8 @@
 # Release checklist — Toolkit
 
-The manual, interactive gate CI can't cover. **Copy this file per release** (e.g. into the
-release notes or a scratch tracker) and tick each box as you run it. CI covers static
+The manual, interactive gate CI can't cover. **Copy this file per release**, tick each box as
+you run it, and record each section's **gate disposition**: walked, skipped with a reason, or a
+documented gap with an owner. CI covers static
 validation, unit execution, and the cross-version behavioral matrix; this sheet covers the
 export-safety regressions, concurrent human+MCP editing, the macOS GUI-launch smoke, and the
 dock ↔ Project Settings round-trip that need a real editor, a real export, or a real Mac.
