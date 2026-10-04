@@ -20,8 +20,9 @@ Work through the phases in order. Each one ends in a state the next phase assume
 ## Before you start
 
 - Both repos on `main`, clean, pushed, with CI green on both HEADs. The release script checks CI
-  itself through `gh`, reading every page of check runs, and stops on anything not green. It asks
-  you to confirm only when `gh` is missing, and a non-interactive run refuses instead of asking.
+  itself through `gh` (2.48 or later), reading every page of check runs, and stops on anything not
+  green. It asks you to confirm only when `gh` is missing, and a non-interactive run refuses
+  instead of asking.
 - Each repo's sibling pin postdates every cross-repo contract change since the last release. A pin
   taken before a contract change certifies the wrong pairing, and every behavioral leg then fails
   identically, which reads like a code fault.
@@ -140,7 +141,8 @@ There is no pause to curate in, so `[Unreleased]` must be final and committed be
 
 For a change that genuinely spans both repos, `./scripts/release.sh <server-version> --with-sibling
 <toolkit-version>` delegates the toolkit half to the toolkit's own script and then releases the
-server, as two independent versioned releases in one run. That path replaces Phase 6.
+server, as two independent versioned releases in one run. While the tag gates force a lockstep
+release, the two versions must be the same. That path replaces Phase 6.
 
 The script runs its pre-flights, rolls the CHANGELOG, then **pauses**. Use the pause: read the rolled
 section and the printed `npm pack --dry-run` listing. The listing must be `dist/`, `README.md`,

@@ -240,14 +240,15 @@ CHANGELOG, pauses for you to curate, then commits and creates an **annotated**
 tag. It does **not** push.
 
 ```bash
-# Common case — release one repo (run from that repo's root):
+# Common case: release one repo's half, from that repo's root. Both repos
+# release together at the same version for now; see Version scheme.
 ./scripts/release.sh 1.1.0
 
 # Rehearse first — validate + report, write nothing:
 ./scripts/release.sh 1.1.0 --dry-run
 
 # A change that spans BOTH repos (rare) — from the server repo:
-./scripts/release.sh 1.1.0 --with-sibling 1.2.0   # two independent versions
+./scripts/release.sh 1.1.0 --with-sibling 1.1.0   # versions match while releases are lockstep
 
 # After pushing — confirm the release converged (read-only):
 ./scripts/release.sh --verify 1.1.0
@@ -263,8 +264,8 @@ What it does:
   `origin`, and — server — not on npm), the sibling pin is code-identical to the
   sibling's `main`, CI is green on both HEADs, and — server — the generated docs
   are fresh. The script checks CI itself through `gh`, reading every page of
-  check runs. It asks you only when `gh` is missing, and a non-interactive run
-  refuses instead.
+  check runs, which needs gh 2.48 or later (for `--paginate --slurp`). It asks
+  you only when `gh` is missing, and a non-interactive run refuses instead.
 - Bumps the manifest (server: `package.json` + `package-lock.json` via
   `npm version`; toolkit: `plugin.cfg`).
 - Rolls the CHANGELOG `## [Unreleased]` section into `## [X.Y.Z] - YYYY-MM-DD`,
@@ -277,7 +278,8 @@ What it does:
 The `--with-sibling` mode is for a change that genuinely spans both repos (for
 example a floor-raising wire-contract change). It **delegates the toolkit half to
 the toolkit's own `release.sh`** and then releases the server — two *independent*
-versioned releases in one run. The `--verify` mode is a read-only post-push check
+versioned releases in one run. While the tag gates force a lockstep release, the
+two versions must be the same. The `--verify` mode is a read-only post-push check
 that confirms the tag reached both origins and the server package resolved on npm.
 Its exit code tells you what to do next:
 
