@@ -198,7 +198,8 @@ if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
     fail "gate dispositions file '${GATE_DISPOSITIONS}' is empty."
   dispositions_name_version "${GATE_DISPOSITIONS}" || \
     fail "gate dispositions file '${GATE_DISPOSITIONS}' does not name version ${VERSION} as a whole token."
-  DISPOSITIONS_SHA256="$(dispositions_sha256 "${GATE_DISPOSITIONS}")"
+  DISPOSITIONS_SHA256="$(dispositions_sha256 "${GATE_DISPOSITIONS}")" || \
+    fail "could not hash gate dispositions file '${GATE_DISPOSITIONS}' (is node on PATH?)."
   [[ "${DISPOSITIONS_SHA256}" =~ ^[0-9a-f]{64}$ ]] || \
     fail "could not hash gate dispositions file '${GATE_DISPOSITIONS}'."
 
@@ -320,15 +321,19 @@ check_ci_green() {
   local json conclusion
   # Read every page: a commit can carry more check runs than one page holds, and
   # a red run on a later page must still fail the gate. --slurp wraps the pages
-  # in one JSON array so a single parse sees them all.
-  json="$(gh api --paginate --slurp "repos/${repo_slug}/commits/${sha}/check-runs?per_page=100" 2>/dev/null || echo '')"
+  # in one JSON array so a single parse sees them all. A failed request still
+  # prints an error body, so gh's exit status decides, and any page without a
+  # check_runs array is an error rather than a page to skip.
+  json="$(gh api --paginate --slurp "repos/${repo_slug}/commits/${sha}/check-runs?per_page=100" 2>/dev/null)" || return 2
   [[ -z "${json}" ]] && return 2
   # Any non-success (or a still-running) conclusion => not green.
   conclusion="$(echo "${json}" | node -e '
     let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
       try{
-        const pages=JSON.parse(s);
-        const runs=(Array.isArray(pages)?pages:[pages]).flatMap(p=>(p&&p.check_runs)||[]);
+        const parsed=JSON.parse(s);
+        const pages=Array.isArray(parsed)?parsed:[parsed];
+        if(!pages.every(p=>p&&Array.isArray(p.check_runs))){process.stdout.write("error");return;}
+        const runs=pages.flatMap(p=>p.check_runs);
         if(runs.length===0){process.stdout.write("empty");return;}
         for(const r of runs){
           if(r.status!=="completed"){process.stdout.write("pending");return;}
