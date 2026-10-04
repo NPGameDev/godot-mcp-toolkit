@@ -6,15 +6,24 @@
 # CHANGELOG, pauses for you to curate, then commits and creates an ANNOTATED tag.
 # It does NOT push. See RELEASING.md for the full release process.
 #
-# The toolkit and the server version INDEPENDENTLY (each its own tags + cadence),
-# so this script releases only the toolkit — releasing the toolkit alone is
-# correct, not an edge case. There is no coordination warning.
+# The model is independent versioning: the toolkit and the server each carry
+# their own semver, tags and cadence (docs/adr/0024), and this script releases
+# only the toolkit. For now, though, the tag-fired release workflow requires the
+# pinned server to declare the version being tagged, so both repos release
+# together at the same version (a lockstep release) until that gate checks the
+# declared compatibility floor instead.
+#
+# With --non-interactive the script never reads stdin: every prompt is answered
+# by a named flag, or the run stops with an error naming the flag it needed.
 #
 # Runs under Git Bash / POSIX sh on Windows: quote every path (working trees live
 # under OneDrive paths with spaces) and CR-strip any capture from a Windows shim.
 set -euo pipefail
 
 # ── Location ────────────────────────────────────────────────────────────────
+# Remember the caller's directory: a relative --gate-dispositions path is
+# relative to it, not to the repo root this script moves into.
+INVOKED_FROM="$(pwd)"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
 
@@ -26,33 +35,95 @@ CROSS_VERSION_YML=".github/workflows/cross-version.yml"
 usage() {
   cat <<'EOF'
 Usage: ./scripts/release.sh <toolkit-version> [--dry-run]
+       ./scripts/release.sh <toolkit-version> [--dry-run] --non-interactive
+                            --gate-dispositions <file> [--changelog-curated]
+
+Options:
+  --dry-run                   Validate and report; write nothing.
+  --non-interactive           Never read stdin. Every prompt must be answered by
+                              one of the flags below; a prompt with no answer
+                              stops the run with an error naming the flag. A
+                              missing gh is an error, not a question.
+  --gate-dispositions <file>  Answers the manual pre-release gate. The file must
+                              exist, be non-empty and name <toolkit-version>.
+                              Its sha256 (CR bytes removed) is recorded in the
+                              release commit as a Manual-Gate-Dispositions
+                              trailer. Requires --non-interactive.
+  --changelog-curated         Answers the CHANGELOG curation pause: you curated
+                              [Unreleased] before the run, and it must not be
+                              empty. Requires --non-interactive; not needed with
+                              --dry-run, which never reaches the pause.
+  -h, --help                  Show this help.
 
 Examples:
   ./scripts/release.sh 1.1.0            # release the toolkit
   ./scripts/release.sh 1.1.0 --dry-run  # validate + report; write nothing
+
+  # Agent-driven: write the gate dispositions first, dry-run, then release.
+  ./scripts/release.sh 1.1.0 --dry-run --non-interactive --gate-dispositions gate.md
+  ./scripts/release.sh 1.1.0 --non-interactive --gate-dispositions gate.md --changelog-curated
 EOF
 }
 
 VERSION=""
 DRY_RUN=0
-for arg in "$@"; do
-  case "${arg}" in
+NON_INTERACTIVE=0
+GATE_DISPOSITIONS=""
+CHANGELOG_CURATED=0
+# Parse: the first bare positional is the toolkit version; --gate-dispositions
+# consumes the next argument as its file path.
+while [[ $# -gt 0 ]]; do
+  case "$1" in
     --dry-run) DRY_RUN=1 ;;
+    --non-interactive) NON_INTERACTIVE=1 ;;
+    --gate-dispositions)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --gate-dispositions requires a file path." >&2; usage; exit 1; }
+      GATE_DISPOSITIONS="$1"
+      ;;
+    --changelog-curated) CHANGELOG_CURATED=1 ;;
     -h|--help) usage; exit 0 ;;
-    -*) echo "error: unknown flag '${arg}'." >&2; usage; exit 1 ;;
+    -*) echo "error: unknown flag '$1'." >&2; usage; exit 1 ;;
     *)
       if [[ -n "${VERSION}" ]]; then
-        echo "error: unexpected extra argument '${arg}'." >&2; usage; exit 1
+        echo "error: unexpected extra argument '$1'." >&2; usage; exit 1
       fi
-      VERSION="${arg}"
+      VERSION="$1"
       ;;
   esac
+  shift
 done
 
 if [[ -z "${VERSION}" ]]; then
   echo "error: a target version is required." >&2
   usage
   exit 1
+fi
+
+# ── Non-interactive argument rules (before any fetch or network call) ───────
+# The answer flags exist only for non-interactive runs, so an interactive run
+# behaves exactly as it always has.
+if [[ ${NON_INTERACTIVE} -eq 0 ]]; then
+  if [[ -n "${GATE_DISPOSITIONS}" || ${CHANGELOG_CURATED} -eq 1 ]]; then
+    echo "error: --gate-dispositions and --changelog-curated require --non-interactive." >&2
+    usage
+    exit 1
+  fi
+else
+  if [[ -z "${GATE_DISPOSITIONS}" ]]; then
+    echo "error: --non-interactive requires --gate-dispositions <file>: the manual pre-release gate is asked on every run, dry or not." >&2
+    usage
+    exit 1
+  fi
+  if [[ ${CHANGELOG_CURATED} -eq 0 && ${DRY_RUN} -eq 0 ]]; then
+    echo "error: --non-interactive requires --changelog-curated: a real run pauses for CHANGELOG curation (only --dry-run skips it)." >&2
+    usage
+    exit 1
+  fi
+  case "${GATE_DISPOSITIONS}" in
+    /*|[A-Za-z]:[\\/]*) ;;
+    *) GATE_DISPOSITIONS="${INVOKED_FROM}/${GATE_DISPOSITIONS}" ;;
+  esac
 fi
 
 TAG="v${VERSION}"
@@ -88,6 +159,69 @@ fail() { echo "::error::$*" >&2; echo "error: $*" >&2; exit 1; }
 # ── Version-format validation ───────────────────────────────────────────────
 if ! [[ "${VERSION}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
   fail "version '${VERSION}' is not a well-formed semver (expected X.Y.Z)."
+fi
+
+# ── Non-interactive helpers ─────────────────────────────────────────────────
+# Does the file name VERSION as a whole token? "1.0.3" matches "v1.0.3" and a
+# sentence-final "1.0.3.", but not "11.0.3" or "1.0.30".
+dispositions_name_version() {
+  local file="$1" ver_re="${VERSION//./[.]}"
+  grep -qE "(^|[^0-9.])${ver_re}([^0-9.]|[.]([^0-9]|$)|$)" "${file}"
+}
+
+# sha256 of the file with every CR byte removed, so CRLF and LF checkouts of the
+# same record hash alike. node rather than sha256sum: stock macOS lacks
+# sha256sum, and the CI check already needs node.
+dispositions_sha256() {
+  node -e '
+    const data=require("fs").readFileSync(process.argv[1]).filter(b=>b!==13);
+    process.stdout.write(require("crypto").createHash("sha256").update(data).digest("hex"));
+  ' "$1"
+}
+
+# The non-blank lines of the [Unreleased] section. A non-interactive run cannot
+# curate, so it refuses to roll an empty section.
+unreleased_body() {
+  awk '
+    index($0, "## [Unreleased]") == 1 { grab=1; next }
+    grab && index($0, "## ") == 1 { exit }
+    grab { print }
+  ' "${CHANGELOG}" | grep -v '^[[:space:]]*$' || true
+}
+
+# ── Non-interactive — the gate dispositions record and the prompt plan ──────
+DISPOSITIONS_SHA256=""
+if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+  [[ -f "${GATE_DISPOSITIONS}" ]] || \
+    fail "gate dispositions file '${GATE_DISPOSITIONS}' does not exist."
+  [[ -s "${GATE_DISPOSITIONS}" ]] || \
+    fail "gate dispositions file '${GATE_DISPOSITIONS}' is empty."
+  dispositions_name_version "${GATE_DISPOSITIONS}" || \
+    fail "gate dispositions file '${GATE_DISPOSITIONS}' does not name version ${VERSION} as a whole token."
+  DISPOSITIONS_SHA256="$(dispositions_sha256 "${GATE_DISPOSITIONS}")"
+  [[ "${DISPOSITIONS_SHA256}" =~ ^[0-9a-f]{64}$ ]] || \
+    fail "could not hash gate dispositions file '${GATE_DISPOSITIONS}'."
+
+  if command -v gh >/dev/null 2>&1; then
+    CI_PLAN="not asked (gh found; checked automatically)"
+  else
+    CI_PLAN="cannot be answered (gh not found); the CI pre-flight stops the run"
+  fi
+  if [[ ${DRY_RUN} -eq 1 ]]; then
+    CURATION_PLAN="not reached (--dry-run)"
+  else
+    CURATION_PLAN="answered by --changelog-curated"
+  fi
+  cat <<EOF
+
+── Non-interactive prompt plan ───────────────────────────────────────────────
+  CI-green confirmation    — ${CI_PLAN}
+  Manual pre-release gate  — answered by --gate-dispositions ${GATE_DISPOSITIONS}
+                             (sha256 ${DISPOSITIONS_SHA256})
+  CHANGELOG curation pause — ${CURATION_PLAN}
+──────────────────────────────────────────────────────────────────────────────
+
+EOF
 fi
 
 # ── Current version from plugin.cfg (the toolkit's single version surface) ───
@@ -219,6 +353,9 @@ if command -v gh >/dev/null 2>&1; then
   fi
   echo "  CI green on both HEADs."
 else
+  if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    fail "gh CLI not available, so CI cannot be checked, and --non-interactive cannot ask instead. Install gh or run interactively."
+  fi
   echo "⚠ gh CLI not available — cannot verify CI is green on both HEADs."
   read -r -p "Confirm CI is green on toolkit ${LOCAL_HEAD} and server ${SERVER_HEAD}? [y/N] " reply
   [[ "${reply}" == "y" || "${reply}" == "Y" ]] || fail "CI-green confirmation declined."
@@ -236,8 +373,18 @@ Before tagging, the interactive checks CI cannot reach must be green:
 See docs/dev/release-checklist.md and work through it.
 ──────────────────────────────────────────────────────────────────────────────
 EOF
-read -r -p "Has the manual pre-release gate passed? [y/N] " reply
-[[ "${reply}" == "y" || "${reply}" == "Y" ]] || fail "manual pre-release gate not confirmed."
+if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+  echo "Manual pre-release gate — answered by --gate-dispositions ${GATE_DISPOSITIONS} (sha256 ${DISPOSITIONS_SHA256})"
+else
+  read -r -p "Has the manual pre-release gate passed? [y/N] " reply
+  [[ "${reply}" == "y" || "${reply}" == "Y" ]] || fail "manual pre-release gate not confirmed."
+fi
+
+# ── Pre-flight — [Unreleased] has content (non-interactive only) ────────────
+# Checked here so a dry run fails on an empty section just as the real run would.
+if [[ ${NON_INTERACTIVE} -eq 1 && -z "$(unreleased_body)" ]]; then
+  fail "the '## [Unreleased]' section of ${CHANGELOG} is empty, and a --non-interactive run cannot curate it. Add the entries, then re-run."
+fi
 
 # ── --dry-run short-circuit ─────────────────────────────────────────────────
 TAGGED_COMMIT_PREVIEW="(the release commit — created after the CHANGELOG pause)"
@@ -248,6 +395,11 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
 Would bump ${PLUGIN_CFG}: ${CURRENT_VERSION} → ${VERSION}
 Would roll ${CHANGELOG}: '## [Unreleased]' → '## [${VERSION}] - $(date +%F)'
 Would commit (chore(release): ${TAG}) staging only ${PLUGIN_CFG} + ${CHANGELOG}
+EOF
+  if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+    echo "  with the trailer  Manual-Gate-Dispositions: sha256:${DISPOSITIONS_SHA256}"
+  fi
+  cat <<EOF
 Would create ANNOTATED tag ${TAG} carrying the rolled CHANGELOG section
 
 Asset submission values (transcribe into the web form; RELEASING.md → Asset distribution):
@@ -319,8 +471,12 @@ fi
 
 # ── 3. PAUSE for curation ────────────────────────────────────────────────────
 echo ""
-read -r -p "Review/curate the rolled CHANGELOG section now. Continue? [y/N] " reply
-[[ "${reply}" == "y" || "${reply}" == "Y" ]] || fail "release paused — curation not confirmed."
+if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+  echo "CHANGELOG curation pause — answered by --changelog-curated"
+else
+  read -r -p "Review/curate the rolled CHANGELOG section now. Continue? [y/N] " reply
+  [[ "${reply}" == "y" || "${reply}" == "Y" ]] || fail "release paused — curation not confirmed."
+fi
 
 # On resume, re-verify only the expected files changed (the pause breaks the
 # clean-tree assumption).
@@ -333,10 +489,19 @@ fi
 
 # ── 4. Commit (stage ONLY the expected paths) ───────────────────────────────
 git add "${PLUGIN_CFG}" "${CHANGELOG}"
-git commit -m "chore(release): ${TAG}"
+# A non-interactive release ties the commit to the gate record it was given. Only
+# the hash goes in: the record itself may live somewhere private.
+if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+  git commit -m "chore(release): ${TAG}" -m "Manual-Gate-Dispositions: sha256:${DISPOSITIONS_SHA256}"
+else
+  git commit -m "chore(release): ${TAG}"
+fi
 COMMIT_MADE=1
 TAGGED_COMMIT="$(git rev-parse HEAD)"
 echo "✓ Commit created: ${TAGGED_COMMIT}"
+if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
+  echo "  with the trailer  Manual-Gate-Dispositions: sha256:${DISPOSITIONS_SHA256}"
+fi
 
 # ── 5. Annotated tag (carrying the rolled section) — never amend after ──────
 awk -v ver="${VERSION}" '
@@ -356,7 +521,8 @@ rm -f "${SECTION_FILE}"
 cat <<EOF
 
 ✓ toolkit bumped to ${TAG} (CHANGELOG curated and committed)
-✓ Commit created, annotated tag applied  (server untouched — independent versioning)
+✓ Commit created, annotated tag applied  (server untouched; the tag gate
+  expects the pinned server to declare ${VERSION} too — a lockstep release)
 
 Next steps:
   1. Push toolkit: cd "${REPO_ROOT}" && git push origin main ${TAG}
