@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-10-05
+
 ### Fixed
 
 - The dock's response-limit and audit-log controls now follow edits made in
