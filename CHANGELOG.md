@@ -12,12 +12,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dock's response-limit and audit-log controls now follow edits made in
   Project Settings. Before, they kept showing the old value until the plugin
   reloaded, so adjusting one of them in the dock started from that stale value and
-  could overwrite your edit. Project Settings also now accepts the same ranges for
-  these values as the dock.
-- On Windows, opening the editor without Node.js installed no longer prints a
-  red "Could not create child process" error in the Output panel (on Godot 4.5
-  and later, the console also showed a script backtrace). The dock's "Node.js
-  not found" warning still appears.
+  could overwrite your edit. Project Settings now also limits these values to the
+  same ranges the dock uses.
+- On Windows, opening the editor without Node.js installed no longer prints a red
+  "Could not create child process" error in the Output panel, or, on Godot 4.5 and
+  later, a script backtrace in the console. The dock's "Node.js not found" warning
+  still appears.
 
 ## [1.0.2] - 2026-09-21
 
