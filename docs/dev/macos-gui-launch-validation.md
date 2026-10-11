@@ -65,8 +65,18 @@ checklist).
    - `discover_tools` loads a group, and a read-only tool round-trips (e.g. list the scene
      tree or query a ClassDB class) with a valid response.
    - The dock's **peer-count status row shows 1 connected peer**.
-5. **Confirm `.mcp.json` is stable.** Close and reopen the Godot editor. `.mcp.json` must be
-   **unchanged** — the editor no longer rewrites it on start.
+5. **Confirm `.mcp.json` is stable.** Copy it aside, close and reopen the Godot editor, and
+   compare. `.mcp.json` must be **unchanged** — the editor does not rewrite it on start:
+   ```bash
+   cp .mcp.json /tmp/mcp.before.json
+   git status --porcelain -- .mcp.json    # note the output
+   # close and reopen the editor
+   cmp .mcp.json /tmp/mcp.before.json     # prints nothing
+   git status --porcelain -- .mcp.json    # prints the same as before the reopen
+   ```
+   Scope the tree check to `.mcp.json`, so editor noise in other files cannot fail it. Compare
+   against the copy, not a clean tree: in a clone of this repo, step 2's write already shows
+   `.mcp.json` modified, since the committed file is the Windows form.
 
 The `claude` CLI from the project root (a terminal launch, dev-form or bare-`npx` `.mcp.json`)
 is a valid complementary E2E check, but the **Finder/Dock client launch in step 3 is the

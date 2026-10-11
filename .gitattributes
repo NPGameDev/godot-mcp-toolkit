@@ -7,6 +7,8 @@
 *.sh text eol=lf
 # The dock writes .mcp.json with LF, so a dock write matches a checkout on every OS.
 .mcp.json text eol=lf
+# Godot writes project.godot with LF, so an editor save matches a checkout on every OS.
+project.godot text eol=lf
 
 # Source archives (Asset Library installs, GitHub "Download ZIP") carry the
 # addon and nothing else. Exclude every path, then re-admit the addons tree.
