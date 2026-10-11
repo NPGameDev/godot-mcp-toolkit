@@ -146,16 +146,16 @@ other files cannot fail a check. Afterwards restore only that file with
 - [ ] **DS4 — Connect keeps the caps.** First make sure no other MCP client is attached,
       since an older client left open undoes the cap on its own: a 1.0.2 or older server
       pushes its default caps on connect, and DS4 would fail falsely.
-      - After the editor launches, the dock shows **0 peers**, and `netstat -an` shows no
-        `ESTABLISHED` connection on the editor's port (6550 unless the dock says otherwise).
-      - Any other Claude session at the project root disables `godot-mcp-toolkit` through
-        `/mcp` first.
-      - That Disable persists per project (`disabledMcpServers` in `~/.claude.json`), so
-        DS4's own client may start with the server off: enable it through `/mcp` → Enable.
+  - After the editor launches, the dock shows **0 peers**, and `netstat -an` shows no
+    `ESTABLISHED` connection on the editor's port (6550 unless the dock says otherwise).
+  - Any other Claude session at the project root disables `godot-mcp-toolkit` through
+    `/mcp` first.
+  - That Disable persists per project, so DS4's own client may start with the server
+    off: enable it through `/mcp` → Enable.
 
-      Then set a non-default script cap, and connect an MCP client with neither
-      `GODOT_MCP_SCRIPT_READ_LIMIT` nor `GODOT_MCP_WS_BUFFER_LIMIT` set.
-      **Expected:** the dock and the inspector still show the cap, and after any further
-      settings save `git diff -- project.godot` still shows it.
+  Then set a non-default script cap, and connect an MCP client with neither
+  `GODOT_MCP_SCRIPT_READ_LIMIT` nor `GODOT_MCP_WS_BUFFER_LIMIT` set.
+  **Expected:** the dock and the inspector still show the cap, and after any further
+  settings save `git diff -- project.godot` still shows it.
 - [ ] **DS5 — Same ranges.** In the inspector, type an out-of-range value: script cap `10`,
       WS buffer `100000`. **Expected:** each is clamped to the dock's range (`64` and `8192`).

@@ -66,7 +66,7 @@ checklist).
      tree or query a ClassDB class) with a valid response.
    - The dock's **peer-count status row shows 1 connected peer**.
 5. **Confirm `.mcp.json` is stable.** Copy it aside, close and reopen the Godot editor, and
-   compare. `.mcp.json` must be **unchanged** — the editor no longer rewrites it on start:
+   compare. `.mcp.json` must be **unchanged** — the editor does not rewrite it on start:
    ```bash
    cp .mcp.json /tmp/mcp.before.json
    git status --porcelain -- .mcp.json    # note the output
