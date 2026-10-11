@@ -12,8 +12,10 @@ extends RefCounted
 ## so naming ANY editor-only class — or preloading a script that does — would
 ## parse-fail the autoload in an export template (godotengine/godot#91713, unfixed
 ## 4.2–4.6). The entire identifier set here is TCPServer / WebSocketPeer / JSON /
-## Time / ProjectSettings / MCPAuth, and it preloads only export-clean files. Keep
-## it that way: a grep for "Editor" must return zero non-comment hits.
+## Time / MCPAuth, and it preloads only export-clean files. Keep it that way: a
+## grep for "Editor" must return zero non-comment hits. The per-peer buffer size
+## comes from the owning server for the same reason: the editor resolves it through
+## an editor-side file this base must never preload.
 
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
@@ -22,6 +24,8 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 # logging the precise error. It keeps watching the port afterwards, so a later
 # free still recovers — the bound is only on the loud-log phase, not on recovery.
 const _PIN_GRACE_ATTEMPTS := 5
+# Per-peer buffer size, in KB, when the owning server supplies no source.
+const _DEFAULT_BUFFER_KB := 1024
 
 # Injected by the owning server after construction. The base is mechanical; every
 # decision/side-effect that differs between the editor (Mode A) and the runtime
@@ -53,12 +57,18 @@ const _PIN_GRACE_ATTEMPTS := 5
 #   the pinned port / band base. The editor routes it to the dock warning + status
 #   label; the runtime leaves it empty (a child game process can't touch the dock)
 #   and relies on the transport's push_warning/push_error in the game console.
+# _buffer_kb_source: func() -> int
+#   The per-peer inbound/outbound buffer size in KB, read once per accepted peer
+#   (the engine fixes a connection's buffers at its handshake). Editor → the
+#   effective ws_buffer_kb, so a pushed env override reaches the next accepted
+#   connection; runtime → the project value. Empty → _DEFAULT_BUFFER_KB.
 var _on_message: Callable = Callable()
 var _build_auth_ack: Callable = Callable()
 var _on_peer_authed: Callable = Callable()
 var _on_peer_closed: Callable = Callable()
 var _on_bound: Callable = Callable()
 var _on_listen_conflict: Callable = Callable()
+var _buffer_kb_source: Callable = Callable()
 
 # Tagging prefix for the listen/accept warnings, supplied by the owning server so
 # the editor and the runtime keep their distinct console labels.
@@ -158,6 +168,13 @@ func set_handlers(on_message: Callable, build_auth_ack: Callable,
 	_on_peer_closed = on_peer_closed
 	_on_bound = on_bound
 	_on_listen_conflict = on_listen_conflict
+
+
+## Inject the per-peer buffer-size seam (see the field docs above). Called once by
+## the owning server before the first pump(). Pass an instance method or a lambda,
+## never a bare static-method reference (Godot 4.2 binds one to a null self).
+func set_buffer_kb_source(buffer_kb_source: Callable) -> void:
+	_buffer_kb_source = buffer_kb_source
 
 
 func set_token(token: String) -> void:
@@ -374,23 +391,30 @@ func _note_listen_success(emit_recovery_log: bool) -> void:
 
 
 ## Accept every pending connection: take the stream, wrap it in a WebSocketPeer
-## with its inbound/outbound buffer sized from ws_buffer_kb (read ONCE here —
-## this is the single home for that ProjectSetting read), track the peer and its
-## connect time. ProjectSettings is a core singleton (present at runtime), so
-## reading it keeps the base export-clean.
+## with its inbound/outbound buffer sized from the owning server's buffer-size
+## seam (asked once per peer), track the peer and its connect time.
 func accept_pending() -> void:
 	while _tcp_server.is_connection_available():
 		var stream := _tcp_server.take_connection()
-		var peer := WebSocketPeer.new()
-		var buffer_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
-		peer.inbound_buffer_size = buffer_kb * 1024
-		peer.outbound_buffer_size = buffer_kb * 1024
+		var peer := _new_sized_peer()
 		var accept_error := peer.accept_stream(stream)
 		if accept_error != OK:
 			push_warning("%s accept_stream failed (%d)" % [_log_prefix, accept_error])
 			continue
 		_peers.append(peer)
 		_peer_connect_ms[peer] = Time.get_ticks_msec()
+
+
+# A fresh peer with both buffers sized from _buffer_kb_source, asked now so a size
+# that changed since the last accept applies to this peer.
+func _new_sized_peer() -> WebSocketPeer:
+	var buffer_kb := _DEFAULT_BUFFER_KB
+	if _buffer_kb_source.is_valid():
+		buffer_kb = int(_buffer_kb_source.call())
+	var peer := WebSocketPeer.new()
+	peer.inbound_buffer_size = buffer_kb * 1024
+	peer.outbound_buffer_size = buffer_kb * 1024
+	return peer
 
 
 ## Poll each peer; enforce the auth timeout (close 1008 if a peer hasn't authed in

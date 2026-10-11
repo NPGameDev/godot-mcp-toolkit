@@ -29,6 +29,7 @@ const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/exte
 const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
 const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
 const DebugBridge := preload("res://addons/godot_mcp_toolkit/transport/debug_bridge.gd")
+const ResponseLimits = Modules.ResponseLimits
 # Teardown counterpart of PlaytestCommands.register(..., debug_bridge): dispose()
 # calls PlaytestCommands.clear_debug_bridge() as the I12 reverse of that register.
 const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_commands.gd")
@@ -220,7 +221,7 @@ class Handle:
 	## Tear down the composed graph in reverse construction order. Behavior-critical
 	## ordering — dock → dialog presenter + write flow → user-path monitor →
 	## playtest watcher → extension watcher → debug bridge → export plugin →
-	## server+registry.
+	## server+registry → env overrides.
 	func dispose() -> void:
 		# Dock teardown. Free the CONTROL immediately (never queue_free) so its
 		# GDScript preload chain releases before ObjectDB's exit-time leak check.
@@ -298,3 +299,8 @@ class Handle:
 			RegistryClient.deregister()
 			_server.free()
 			_server = null
+
+		# Env overrides are static state that outlives a plugin reload. With the
+		# server gone nothing pushes them any more, so drop them; the server pushes
+		# its set again once a client authenticates to the next server.
+		ResponseLimits.clear_env_overrides()

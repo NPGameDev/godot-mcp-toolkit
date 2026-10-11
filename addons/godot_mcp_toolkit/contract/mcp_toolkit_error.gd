@@ -230,9 +230,10 @@ static func response_byte_size(dict: Dictionary) -> int:
 ## caller can send it without re-checking.[br]
 ## [br]
 ## [param max_bytes] is the peer's outbound_buffer_size (captured at accept), so
-## the guard works identically for the editor server
-## ([code]mcp_toolkit/limits/ws_buffer_kb[/code]) and the runtime server
-## (fixed 1 MB) with no ProjectSetting re-read here.
+## the guard works identically for the editor server (the effective
+## [code]mcp_toolkit/limits/ws_buffer_kb[/code], env override included) and the
+## runtime server (the project's [code]ws_buffer_kb[/code]) with no setting
+## re-read here.
 static func guard_response_size(response: Dictionary, max_bytes: int) -> Dictionary:
 	if max_bytes <= 0:
 		return response  # No buffer cap configured — nothing to guard against.

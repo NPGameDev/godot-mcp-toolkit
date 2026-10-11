@@ -330,7 +330,7 @@ C24–C26 & C29 in §§26–27).
 ## Gap Summary
 
 **Tools with NO dedicated sweep test:** 2
-- `meta.set_limits` — sweep-side untested by design (internal); wire contract owned by smoke §21 (`21_response_caps.ts` hard-asserts override + floor-clamp + restore)
+- `meta.set_limits` — sweep-side untested by design (internal); wire contract owned by smoke §21 (`21_response_caps.ts` hard-asserts override + floor-clamp + restore); the toolkit unit test `test/units/response_limits_tests.gd` pins the env-override layer (never written to ProjectSettings, each push replaces the set, floors, effective values, the dock's override lines)
 - `editor.set_lsp_status` — untested by design (internal): MCP server → plugin LSP-status push, dock-only publisher; not agent-facing (7th registration in `commands/editor/editor_commands.gd`)
 
 **Tools with incomplete coverage (missing new params/guards):** 12

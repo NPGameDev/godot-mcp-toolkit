@@ -144,6 +144,7 @@ func _start_server() -> void:
 	# (the transport's own push_error is the loud runtime surface — no dock to reach).
 	_transport.set_handlers(_handle_message, Callable(), Callable(), Callable(),
 		_on_bound)
+	_transport.set_buffer_kb_source(_project_ws_buffer_kb)
 	# Runtime uses the same token file as the editor server so the bridge can
 	# authenticate against both with one read. The editor server writes first
 	# (plugin enable runs before game launch). If the file doesn't exist yet
@@ -198,6 +199,12 @@ func _stop_server() -> void:
 # fresh-bind seam re-publishes the registry entry via the composition root.
 func _on_bound(port: int) -> void:
 	RegistryClient.set_runtime(port)
+
+
+# The runtime sizes each accepted peer from the project's ws_buffer_kb. An env
+# override lives in the editor process only, so it never reaches the game.
+func _project_ws_buffer_kb() -> int:
+	return int(ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024))
 
 
 func _process(_delta: float) -> void:

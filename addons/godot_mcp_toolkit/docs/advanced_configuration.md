@@ -134,11 +134,30 @@ still be rejected: the live cap is authoritative.)
 
 ## Limits
 
-The dock and the Project Settings inspector keep their own edits inside each
-limit's range and step. A value set another way, such as an `.mcp.json` override
-(given in bytes) or a hand edit of `project.godot`, is used as set (the save cap
-still never drops below 64). Both surfaces then show it clamped to the range and
-rounded to the nearest step.
+Each limit has a project value: the one stored in `project.godot`, which you edit
+in the dock or the Project Settings inspector. Both keep their own edits inside
+the limit's range and step. A value set by hand in `project.godot` is used as set,
+except that no limit goes below its floor (64 KB for the two read caps, 256 KB for
+the WebSocket buffer). The dock and the inspector show such a value clamped to the
+range and rounded to the nearest step.
+
+**Overrides from `.mcp.json`.** Two limits can also be overridden on one machine
+by an environment variable in the `env` block of `.mcp.json`, given in bytes (see
+each limit below). The MCP server sends the override to the editor every time it
+connects. The editor uses it while it runs but never saves it to `project.godot`,
+so the rest of your team keeps the project value. The dock keeps showing the
+project value in the field and adds a line under the fields, for example:
+
+> Script cap in use: 1024 KB from GODOT_MCP_SCRIPT_READ_LIMIT (MCP client env).
+> This field applies once you remove the variable.
+
+The line shows the exact value in use. To drop an override, remove the variable
+from `.mcp.json` and restart your MCP client: the server connects again without
+it, and the line goes away.
+
+Version 1.0.3 and earlier saved an override into `project.godot` whenever the
+project settings were saved. If your `project.godot` holds a limit you never set
+there, it now counts as the project value: reset it in Project Settings.
 
 ### `mcp_toolkit/limits/save_read_cap_kb` — default `256`
 
@@ -153,6 +172,8 @@ WebSocket buffer is rejected with `FILE_TOO_LARGE` before it is sent, rather tha
 silently dropped. If you raise the cap, raise `ws_buffer_kb` to match (and note
 the runtime caveat below).
 
+No environment variable overrides this cap.
+
 ### `mcp_toolkit/limits/script_read_cap_kb` — default `256`
 
 The largest payload `script_read` returns in a single call, in KB (64–4096, in
@@ -161,11 +182,9 @@ steps of 64). A project script bigger than this cap is read in full by paging on
 `next_start_line` loop. A full read that would exceed the cap is rejected with
 `FILE_TOO_LARGE` and a hint to use a line range.
 
-If `GODOT_MCP_SCRIPT_READ_LIMIT` is set in `.mcp.json`, it overrides this value:
-the MCP server sends it to the editor when it connects, and the dock then shows
-it, clamped and rounded to the dock's range and step. The editor keeps it until it
-restarts or the value is changed, and the next time project settings are saved, it
-is written to `project.godot`.
+`GODOT_MCP_SCRIPT_READ_LIMIT` in `.mcp.json` (in bytes) overrides this value on
+that machine, as described under **Overrides from `.mcp.json`** above. The dock
+names it in the script cap's line, and `project.godot` keeps the project value.
 
 ### `mcp_toolkit/limits/ws_buffer_kb` — default `1024`
 
@@ -173,17 +192,17 @@ WebSocket per-peer buffer size, in KB (256–8192, in steps of 256). Raise it if
 send very large payloads (e.g. big `script_write` bodies) and see truncated or
 dropped connections under load.
 
-If `GODOT_MCP_WS_BUFFER_LIMIT` is set in `.mcp.json`, it overrides this value in
-the same way, and the dock then shows it, clamped and rounded to the dock's range
-and step. The editor sizes a connection's buffer when it accepts the connection,
-so the override applies to connections accepted after the server sends it, not to
-the connection that sent it.
+`GODOT_MCP_WS_BUFFER_LIMIT` in `.mcp.json` (in bytes) overrides this value in the
+same way, and the dock names it in the WS buffer's line. The editor sizes a
+connection's buffer when it accepts the connection, so the override applies to
+connections accepted after the server sends it, not to the connection that sent
+it.
 
-> **Runtime (exported game) caveat.** This setting tunes the **editor** server
-> only. The runtime server that runs inside an exported game uses a **fixed 1 MB
-> per-peer buffer** and ignores `ws_buffer_kb`, so raising `ws_buffer_kb` does
-> **not** raise the runtime ceiling — page large runtime reads with `save_read`'s
-> `offset` instead.
+> **Runtime (running game) caveat.** The runtime server inside the game sizes its
+> buffers from the project's own `ws_buffer_kb` (default 1 MB). An override from
+> `GODOT_MCP_WS_BUFFER_LIMIT` reaches only the editor, never the game. To raise
+> the runtime ceiling, raise the project value; otherwise page large runtime reads
+> with `save_read`'s `offset`.
 
 ## Listen ports (editor & runtime)
 
