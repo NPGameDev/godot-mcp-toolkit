@@ -108,7 +108,8 @@ a GUI-launched client resolves the bare-`npx` config and connects.
       [`macos-gui-launch-validation.md`](macos-gui-launch-validation.md): enable the plugin,
       GUI-launch an MCP client (Claude Desktop primary) from Finder/Dock, verify a clean
       connect (no `spawn npx ENOENT`), `discover_tools` + a read tool round-trip, and that
-      opening the editor does not mutate `.mcp.json`.
+      opening the editor does not mutate `.mcp.json` (its step 5: the file matches a copy
+      taken before the reopen, and `git status --porcelain -- .mcp.json` prints the same).
 - [ ] **No third-party runtime deps — verify no vendored code ships.** The addon under
       `addons/` is GDScript only; confirm no bundled third-party runtime code is present.
 - [ ] **If no Mac:** documented coverage gap recorded for this release (not skipped silently).
@@ -121,19 +122,40 @@ The dock's *Security & Response Limits* and *Audit Log* sections edit five Proje
 script cap, save cap and WS buffer (`mcp_toolkit/limits/script_read_cap_kb`,
 `save_read_cap_kb`, `ws_buffer_kb`) and the audit log's Enabled and Max KB
 (`mcp_toolkit/audit/enabled`, `max_size_kb`). An edit in either surface must show in the
-other, and neither may undo the other. Run with the plugin active, both dock sections
-expanded, and **Project → Project Settings** open on the `mcp_toolkit/` keys. The checks
-write `project.godot`; restore it afterwards with `git restore project.godot`.
+other, and neither may undo the other. Run with the plugin active and both dock sections
+expanded. **Project → Project Settings** (the inspector below) is a modal dialog: while it
+is open, no dock control can be clicked. DS1 edits in the dialog and watches the dock
+behind it; DS2 and DS3 close the dialog, change the dock, then reopen the dialog on the
+`mcp_toolkit/` keys to check.
 
-- [ ] **DS1 — Inspector → dock.** Change each of the five values in Project Settings.
-      **Expected:** the dock shows each new value without reopening anything.
-- [ ] **DS2 — Dock → inspector.** Change each of the five values in the dock.
-      **Expected:** the inspector shows each new value, and `project.godot` carries it.
-- [ ] **DS3 — No revert.** After DS1, change a *different* dock control.
+The checks write `project.godot`. Check the tree for that file only, with
+`git status --porcelain -- project.godot` and `git diff -- project.godot`, so editor noise in
+other files cannot fail a check. Afterwards restore only that file with
+`git restore project.godot`; never restore the whole tree.
+
+- [ ] **DS1 — Inspector → dock.** Open **Project → Project Settings** on the `mcp_toolkit/`
+      keys and change each of the five values there.
+      **Expected:** the dock behind the dialog shows each new value without reopening anything.
+- [ ] **DS2 — Dock → inspector.** Close Project Settings, change each of the five values in
+      the dock, then reopen **Project → Project Settings**.
+      **Expected:** the inspector shows each new value, and `git diff -- project.godot`
+      shows each one written.
+- [ ] **DS3 — No revert.** After DS1, close Project Settings, change a *different* dock
+      control, then reopen **Project → Project Settings**.
       **Expected:** the inspector edits from DS1 survive.
-- [ ] **DS4 — Connect keeps the caps.** Set a non-default script cap, then connect an MCP
-      client with neither `GODOT_MCP_SCRIPT_READ_LIMIT` nor `GODOT_MCP_WS_BUFFER_LIMIT` set.
+- [ ] **DS4 — Connect keeps the caps.** First make sure no other MCP client is attached,
+      since an older client left open undoes the cap on its own: a 1.0.2 or older server
+      pushes its default caps on connect, and DS4 would fail falsely.
+      - After the editor launches, the dock shows **0 peers**, and `netstat -an` shows no
+        `ESTABLISHED` connection on the editor's port (6550 unless the dock says otherwise).
+      - Any other Claude session at the project root disables `godot-mcp-toolkit` through
+        `/mcp` first.
+      - That Disable persists per project (`disabledMcpServers` in `~/.claude.json`), so
+        DS4's own client may start with the server off: enable it through `/mcp` → Enable.
+
+      Then set a non-default script cap, and connect an MCP client with neither
+      `GODOT_MCP_SCRIPT_READ_LIMIT` nor `GODOT_MCP_WS_BUFFER_LIMIT` set.
       **Expected:** the dock and the inspector still show the cap, and after any further
-      settings save `project.godot` still has it.
+      settings save `git diff -- project.godot` still shows it.
 - [ ] **DS5 — Same ranges.** In the inspector, type an out-of-range value: script cap `10`,
       WS buffer `100000`. **Expected:** each is clamped to the dock's range (`64` and `8192`).
