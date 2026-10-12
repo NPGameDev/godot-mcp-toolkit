@@ -116,6 +116,11 @@ func _build_ui() -> void:
 	mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_mcp_json_panel = DockMcpJsonPanel.new(mcp_json_btn, Callable(self, "_toast"), _write_flow)
 	_status_panel.insert_warning_panel(_mcp_json_panel)
+	# The Info dialog reads the badge's cached read-only state through the
+	# presenter, so the two agree. Set here, not in bind(): the panel exists only
+	# once the UI is built.
+	if _dialog_presenter != null:
+		_dialog_presenter.set_read_only_source(_mcp_json_panel.is_read_only_active)
 
 	# Node.js availability — shared detection.
 	var node_check := NodejsCheck.check()
