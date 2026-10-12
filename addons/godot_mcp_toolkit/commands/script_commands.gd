@@ -252,7 +252,7 @@ static func _commit_content(server: Node, file_path: String, content: String,
 
 	# Inline GDScript diagnostics — same validation as script_check.
 	if extension == "gd":
-		var validation := _validate_gdscript(content)
+		var validation := _validate_gdscript(content, file_path)
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
 
@@ -309,7 +309,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("READ_FAILED",
 			"FileAccess error %d reading %s" % [read_error, file_path])
 
-	var validation := _validate_gdscript(content)
+	var validation := _validate_gdscript(content, file_path)
 	return MCPToolkitSuccess.ok({
 		"file_path": file_path,
 		"valid": validation["valid"],
@@ -327,22 +327,33 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 ## reload error; on 4.2-4.4 (file-tail capture — no structured line) the key is
 ## omitted, never a fabricated 0. "col" is never emitted — columns are
 ## lsp_diagnostics' domain.
-static func _validate_gdscript(source: String) -> Dictionary:
-	# Strip class_name to prevent false-positive conflict (P-053).
+static func _validate_gdscript(source: String, file_path: String = "") -> Dictionary:
+	# On 4.6+, when the file's script is already loaded, compile the probe under
+	# the file's own path: GDScript.set_path_cache() sets it without touching the
+	# resource cache, so class_name is the registered global class and `self` has
+	# its type (a pathless probe is an anonymous class, so passing `self` to a
+	# parameter typed as its own class_name failed). The loaded script keeps the
+	# GDScriptCache entry; an unloaded path would let the probe into that cache.
+	var use_path := file_path != "" and ResourceLoader.has_cached(file_path) \
+		and Modules.VersionUtils.is_at_least(Modules.VersionUtils.get_engine_version_pair(), "4.6")
+	# Otherwise strip class_name to prevent false-positive conflict (P-053).
 	# GDScript.new().reload() registers a second copy of the name, colliding
 	# with the already-registered global class. Blanking the line preserves
 	# line numbers so any real errors still report correct positions.
 	var lines := source.split("\n")
-	for i in lines.size():
-		if lines[i].strip_edges().begins_with("class_name "):
-			lines[i] = ""
-			break
+	if not use_path:
+		for i in lines.size():
+			if lines[i].strip_edges().begins_with("class_name "):
+				lines[i] = ""
+				break
 	# Snapshot LogBuffer position so we can scan errors produced by reload().
 	# _next_id is the ID the next pushed entry will receive; since_id uses
 	# "entries with id > since_id", so subtract 1 to include that first entry.
 	var pre_id: int = Modules.LogBuffer._next_id - 1
 	var script := GDScript.new()
 	script.source_code = "\n".join(lines)
+	if use_path:
+		script.call("set_path_cache", file_path)
 	var is_valid := script.reload(false) == OK
 
 	var diagnostics: Array = []
@@ -356,7 +367,8 @@ static func _validate_gdscript(source: String) -> Dictionary:
 		# synthetic "gdscript://…" path, so the latch match is ours — the
 		# snapshot-to-scan window runs synchronously on the main thread). -1
 		# (nothing recovered — 4.2-4.4, or a failed Logger hook) omits the key.
-		var real_line: int = Modules.LogBuffer.find_script_error_line_since(pre_id)
+		var real_line: int = Modules.LogBuffer.find_script_error_line_since(
+			pre_id, file_path if use_path else "")
 		if real_line > 0:
 			error_diagnostic["line"] = real_line
 		diagnostics.append(error_diagnostic)

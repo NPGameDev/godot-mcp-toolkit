@@ -50,6 +50,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `input_map_action` now refuses to remove any built-in action, such as
   `ui_select`. Before, it checked a fixed list of names that missed some built-in
   actions on every supported Godot version.
+- On Godot 4.6 and later, `script_check`, `script_write` and `script_edit` no
+  longer report false compile errors in an already-loaded script that uses its own
+  type, for example by passing `self` to a parameter typed as its own
+  `class_name`, or that declares `class_name A extends Node` on one line. The check
+  now compiles the script under its own path instead of as an anonymous copy with
+  its `class_name` line removed.
 
 ### Removed
 

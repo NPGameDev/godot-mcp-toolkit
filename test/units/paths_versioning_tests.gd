@@ -18,10 +18,13 @@ const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
+const SELF_TYPED_FIXTURE := "res://test/fixtures/self_typed_fixture.gd"
+
 
 static func run(testing) -> void:
 	_test_compile_error_message(testing)
 	_test_validate_gdscript_line_emission(testing)
+	_test_validate_gdscript_own_path(testing)
 	_test_groups_property_rejection(testing)
 	_test_user_path_monitor(testing)
 	_test_editor_refresh_reload_filter(testing)
@@ -100,6 +103,36 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	var post_cursor: int = LogBuffer.get_cursor() - 1
 	testing.eq(LogBuffer.find_script_error_line_since(post_cursor), -1,
 			"since-cursor after the error → -1")
+	print("")
+
+
+# --- script_check compiles a loaded script under its own path (4.6+) --------
+# A pathless probe is an anonymous class, so a script that passes `self` to a
+# parameter typed as its own class_name failed validation. On 4.6+ the probe of
+# an already-loaded script takes the file's path (GDScript.set_path_cache), so
+# the check passes, and a real error still reports its line under that path.
+# Older engines keep the class_name strip; only the 4.6+ branch is asserted.
+
+static func _test_validate_gdscript_own_path(testing) -> void:
+	testing.begin("script_check compiles a loaded script under its own path")
+	LogBuffer.setup()
+	if not VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.6"):
+		print("  (Godot < 4.6: no GDScript.set_path_cache override, strip kept; not asserted)")
+		print("")
+		return
+	var loaded := load(SELF_TYPED_FIXTURE)  # as the editor holds it once loaded
+	testing.ok(loaded != null, "fixture loads")
+	var source := FileAccess.get_file_as_string(SELF_TYPED_FIXTURE)
+	var result := ScriptCommands._validate_gdscript(source, SELF_TYPED_FIXTURE)
+	testing.ok(bool(result.get("valid", false)), "`self` passed as its own class_name → valid")
+	testing.eq((result.get("diagnostics", []) as Array).size(), 0, "no diagnostics")
+
+	# Garbage at line 13, after the fixture's 12 lines.
+	var bad_result := ScriptCommands._validate_gdscript(source + "!!!garbage!!!\n", SELF_TYPED_FIXTURE)
+	testing.ok(not bool(bad_result.get("valid", true)), "real error → valid false")
+	var diagnostics: Array = bad_result.get("diagnostics", [])
+	testing.eq(int((diagnostics[0] as Dictionary).get("line", -1)) if diagnostics.size() > 0 else -1, 13,
+			"real error line found under the file's own path")
 	print("")
 
 
