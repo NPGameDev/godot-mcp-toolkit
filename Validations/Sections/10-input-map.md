@@ -13,7 +13,7 @@
 > If tool rejects `name` param, the rename has regressed.
 
 **10.1b** An action saved in `project.godot`, then a built-in action ([#14](https://github.com/NPGameDev/godot-mcp-toolkit/issues/14)). The editor loads only the built-in actions into its input map, so a project action exists there only as its `input/<name>` setting. `project_set_setting` seeds that state: it writes the setting and leaves the editor's input map alone. Run in order:
-1. `project_set_setting` — key=`input/sv2_saved`, value=`{"deadzone":0.3,"events":[{"type":"NewResource","class":"InputEventKey","properties":{"physical_keycode":81}}]}` (81 is the Q key)
+1. `project_set_setting` — setting=`input/sv2_saved`, value=`{"deadzone":0.3,"events":[{"type":"NewResource","class":"InputEventKey","properties":{"physical_keycode":81}}]}` (81 is the Q key)
 2. `input_map_event` — action=`bind`, name=`sv2_saved`, event=`{"type":"key","keycode":"E"}`
 3. `input_map_action` — action=`add`, name=`sv2_saved`
 4. `input_map_event` — action=`bind`, name=`sv2_saved`, event=`{"type":"key","keycode":"Q"}`
