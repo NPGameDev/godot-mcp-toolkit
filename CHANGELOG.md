@@ -39,11 +39,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reported and fixed by @benfeather
   ([#12](https://github.com/NPGameDev/godot-mcp-toolkit/issues/12),
   [#13](https://github.com/NPGameDev/godot-mcp-toolkit/pull/13)).
-- `input_map_action` and `input_map_event` now find actions already saved in
-  `project.godot`. The editor's own input map holds only the built-in `ui_*`
-  actions, so before, `remove`, `bind` and `unbind` answered `NOT_FOUND` for them,
-  and `add` answered `created` and saved the action with no events, wiping its
-  bindings.
+- `input_map_action` and `input_map_event` now see the input actions your project
+  adds in `project.godot`. Before, `bind`, `unbind` and `remove` answered
+  `NOT_FOUND` for them, and `add` answered `created` and saved the action again
+  with no events, which wiped its bindings. Each call reads the saved action
+  again, so a change you make to it in Project Settings survives the next call.
+  Reported and fixed by @benfeather
+  ([#14](https://github.com/NPGameDev/godot-mcp-toolkit/issues/14),
+  [#15](https://github.com/NPGameDev/godot-mcp-toolkit/pull/15)).
+- `input_map_action` now refuses to remove any built-in action, such as
+  `ui_select`. Before, it checked a fixed list of names that missed some built-in
+  actions on every supported Godot version.
 
 ### Removed
 

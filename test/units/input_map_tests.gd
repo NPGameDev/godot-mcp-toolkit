@@ -1,74 +1,173 @@
 @tool
 extends RefCounted
-## input_map.* handler tests for actions saved in project.godot. The editor's
-## InputMap holds only the built-in ui_* actions (main.cpp calls load_default()
-## in the editor), so there a project action exists only as its input/<name>
-## setting. Each case sets one up that way: the setting, and no InputMap action.
-##
-## The handlers call ProjectSettings.save(), which would also write whatever else
-## this process holds in memory (the engine's own upgrades, settings other tests
-## set). So the file's bytes are saved first and written back BEFORE any check
-## runs (GDScript has no try/finally): a failure can never leave it dirty.
+## Input-map unit tests: how the input_map.* handlers see project actions and
+## built-in actions. The editor loads only the built-in actions into its InputMap,
+## so there a project action exists only as its input/<name> setting; each
+## project-action case sets up that state (the setting, and no InputMap action) and
+## calls the loader the handlers share. Settings change in memory only and are
+## restored; nothing calls ProjectSettings.save(). The handlers' add, bind and
+## remove paths save project.godot, so the sweep covers them (Validations step
+## 10.1b), and no case here calls remove on a built-in action.
 
 const InputMapCommands := preload("res://addons/godot_mcp_toolkit/commands/input_map_commands.gd")
 
-const ACTION := "mcp_test_project_action"
+const _ACTION := "mcp_test_project_action"
+## A project action whose name looks like a built-in one.
+const _UI_PREFIXED_ACTION := "ui_inventory"
+const _BUILTIN_ACTION := "ui_accept"
 
 
 static func run(testing) -> void:
-	_test_project_action(testing)
+	_test_load_project_action(testing)
+	_test_load_without_setting(testing)
+	_test_load_leaves_builtin_alone(testing)
+	_test_load_follows_setting_edit(testing)
+	_test_builtin_rule_matches_engine(testing)
+	_test_ui_prefixed_project_action(testing)
 
 
-static func _test_project_action(testing) -> void:
-	testing.begin("input_map.* on an action saved in project.godot")
-	var project_file := FileAccess.get_file_as_bytes("res://project.godot")
+# --- The loader --------------------------------------------------------------
 
-	_seed_project_action()
-	var added := InputMapCommands._cmd_input_map_action({"action": "add", "name": ACTION})
-	var events_after_add := _saved_event_count()
-
-	_seed_project_action()
-	var bound := InputMapCommands._cmd_input_map_event({
-		"action": "bind", "name": ACTION, "event": {"type": "key", "keycode": "F8"}})
-	var events_after_bind := _saved_event_count()
-
-	_seed_project_action()
-	var removed := InputMapCommands._cmd_input_map_action({"action": "remove", "name": ACTION})
-	var setting_after_remove := ProjectSettings.has_setting("input/" + ACTION)
-
+static func _test_load_project_action(testing) -> void:
+	testing.begin("input_map loader: a project action loads from its setting")
+	_seed_project_action(0.3, [_key_event(KEY_F7)])
+	InputMapCommands._load_project_action(_ACTION)
+	var loaded := InputMap.has_action(_ACTION)
+	var keycodes := _loaded_keycodes()
+	var deadzone := InputMap.action_get_deadzone(_ACTION) if loaded else -1.0
 	_clear_project_action()
-	var restore := FileAccess.open("res://project.godot", FileAccess.WRITE)
-	restore.store_buffer(project_file)
-	restore.close()
 
-	testing.eq(added.get("status"), "returned", "add on a saved action → status returned")
-	testing.eq(events_after_add, 1, "add keeps the saved event")
-	testing.ok(bound.get("success", false), "bind on a saved action → success")
-	testing.eq(events_after_bind, 2, "bind appends to the saved event")
-	testing.ok(removed.get("success", false), "remove on a saved action → success")
-	testing.ok(not setting_after_remove, "remove clears the saved setting")
+	testing.ok(loaded, "the action is in InputMap")
+	testing.eq(keycodes, [KEY_F7], "with its one saved event")
+	testing.ok(absf(deadzone - 0.3) < 0.001, "and its saved deadzone 0.3 (got %f)" % deadzone)
 	print("")
 
 
-## The editor's view of a project action: its setting, with one F7 event, and
-## no InputMap action.
-static func _seed_project_action() -> void:
-	if InputMap.has_action(ACTION):
-		InputMap.erase_action(ACTION)
-	var event := InputEventKey.new()
-	event.physical_keycode = KEY_F7
-	ProjectSettings.set_setting("input/" + ACTION, {"deadzone": 0.5, "events": [event]})
+static func _test_load_without_setting(testing) -> void:
+	testing.begin("input_map loader: no setting, no action")
+	_clear_project_action()
+	InputMapCommands._load_project_action(_ACTION)
+	var created := InputMap.has_action(_ACTION)
+	_clear_project_action()
+
+	testing.ok(not created, "an action with no input/<name> setting stays out of InputMap")
+	print("")
 
 
-static func _saved_event_count() -> int:
-	var setting = ProjectSettings.get_setting("input/" + ACTION)
-	if typeof(setting) != TYPE_DICTIONARY:
-		return -1
-	return (setting.get("events", []) as Array).size()
+# A rebuild from input/ui_accept would reset this deadzone to the setting's 0.5. The
+# marker lives in this process's InputMap only and is restored before the checks.
+static func _test_load_leaves_builtin_alone(testing) -> void:
+	testing.begin("input_map loader: a built-in action is left alone")
+	var original_deadzone := InputMap.action_get_deadzone(_BUILTIN_ACTION)
+	InputMap.action_set_deadzone(_BUILTIN_ACTION, 0.123)
+	InputMapCommands._load_project_action(_BUILTIN_ACTION)
+	var deadzone_after := InputMap.action_get_deadzone(_BUILTIN_ACTION)
+	InputMap.action_set_deadzone(_BUILTIN_ACTION, original_deadzone)
+
+	testing.ok(absf(deadzone_after - 0.123) < 0.001,
+		"ui_accept keeps its InputMap state (deadzone %f)" % deadzone_after)
+	print("")
+
+
+# An edit in Project Settings changes only the setting. If the loader kept the
+# InputMap action it loaded earlier, the next bind would save that stale copy over
+# the edit.
+static func _test_load_follows_setting_edit(testing) -> void:
+	testing.begin("input_map loader: a later edit to the setting reaches InputMap")
+	_seed_project_action(0.3, [_key_event(KEY_F7)])
+	InputMapCommands._load_project_action(_ACTION)
+	ProjectSettings.set_setting("input/" + _ACTION, {
+		"deadzone": 0.7,
+		"events": [_key_event(KEY_F8), _key_event(KEY_F9)],
+	})
+	InputMapCommands._load_project_action(_ACTION)
+	var keycodes := _loaded_keycodes()
+	var deadzone := InputMap.action_get_deadzone(_ACTION) if InputMap.has_action(_ACTION) else -1.0
+	_clear_project_action()
+
+	testing.eq(keycodes, [KEY_F8, KEY_F9], "the action holds the edited events")
+	testing.ok(absf(deadzone - 0.7) < 0.001, "and the edited deadzone 0.7 (got %f)" % deadzone)
+	print("")
+
+
+# --- The built-in rule -------------------------------------------------------
+# The oracle: the engine keeps an initial value (the revert value) only for the
+# settings it registers itself, so property_get_revert returns a Dictionary for a
+# built-in action and null for a project action. The rule reads the registration
+# order instead, so the two are independent.
+
+static func _test_builtin_rule_matches_engine(testing) -> void:
+	testing.begin("input_map built-in rule: agrees with the engine on every input/ setting")
+	# Seeded so the scan meets project actions as well as the engine's own.
+	_seed_project_action(0.5, [])
+	ProjectSettings.set_setting("input/" + _UI_PREFIXED_ACTION, {"deadzone": 0.5, "events": []})
+	var builtin_count := 0
+	var project_count := 0
+	var disagreements: Array[String] = []
+	for property in ProjectSettings.get_property_list():
+		var setting_name := str(property["name"])
+		if not setting_name.begins_with("input/"):
+			continue
+		var action := setting_name.trim_prefix("input/")
+		var engine_builtin := typeof(ProjectSettings.property_get_revert(setting_name)) == TYPE_DICTIONARY
+		if engine_builtin:
+			builtin_count += 1
+		else:
+			project_count += 1
+		if InputMapCommands._is_builtin_action(action) != engine_builtin:
+			disagreements.append(action)
+	_clear_project_action()
+	ProjectSettings.clear("input/" + _UI_PREFIXED_ACTION)
+
+	testing.ok(builtin_count > 0, "the scan found built-in actions (%d)" % builtin_count)
+	testing.ok(project_count >= 2, "the scan found the seeded project actions (%d)" % project_count)
+	testing.ok(disagreements.is_empty(), "the rule and the engine agree (differ on: %s)" % str(disagreements))
+	print("")
+
+
+static func _test_ui_prefixed_project_action(testing) -> void:
+	testing.begin("input_map built-in rule: a project action named ui_* is not built-in")
+	var setting_name := "input/" + _UI_PREFIXED_ACTION
+	ProjectSettings.set_setting(setting_name, {"deadzone": 0.5, "events": []})
+	var rule_builtin := InputMapCommands._is_builtin_action(_UI_PREFIXED_ACTION)
+	var engine_revert: Variant = ProjectSettings.property_get_revert(setting_name)
+	ProjectSettings.clear(setting_name)
+
+	testing.ok(not rule_builtin, "ui_inventory is a project action")
+	testing.eq(typeof(engine_revert), TYPE_NIL, "the engine keeps no initial value for it")
+	print("")
+
+
+# --- Helpers -----------------------------------------------------------------
+
+## Sets up the editor's view of a project action: its setting holds [param deadzone]
+## and [param events], and InputMap does not hold it.
+static func _seed_project_action(deadzone: float, events: Array) -> void:
+	if InputMap.has_action(_ACTION):
+		InputMap.erase_action(_ACTION)
+	ProjectSettings.set_setting("input/" + _ACTION, {"deadzone": deadzone, "events": events})
 
 
 static func _clear_project_action() -> void:
-	if InputMap.has_action(ACTION):
-		InputMap.erase_action(ACTION)
-	if ProjectSettings.has_setting("input/" + ACTION):
-		ProjectSettings.clear("input/" + ACTION)
+	if InputMap.has_action(_ACTION):
+		InputMap.erase_action(_ACTION)
+	if ProjectSettings.has_setting("input/" + _ACTION):
+		ProjectSettings.clear("input/" + _ACTION)
+
+
+static func _key_event(keycode: Key) -> InputEventKey:
+	var event := InputEventKey.new()
+	event.physical_keycode = keycode
+	return event
+
+
+## Returns the physical keycodes of the test action's InputMap events, in order;
+## empty when InputMap does not hold the action.
+static func _loaded_keycodes() -> Array:
+	var keycodes: Array = []
+	if not InputMap.has_action(_ACTION):
+		return keycodes
+	for event in InputMap.action_get_events(_ACTION):
+		if event is InputEventKey:
+			keycodes.append((event as InputEventKey).physical_keycode)
+	return keycodes

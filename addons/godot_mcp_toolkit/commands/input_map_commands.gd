@@ -4,35 +4,11 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
-const BUILTIN_UI_ACTIONS: Array[String] = [
-	"ui_accept", "ui_cancel", "ui_focus_next", "ui_focus_prev",
-	"ui_up", "ui_down", "ui_left", "ui_right",
-	"ui_page_up", "ui_page_down", "ui_home", "ui_end",
-	"ui_cut", "ui_copy", "ui_paste", "ui_undo", "ui_redo",
-	"ui_text_completion_query", "ui_text_completion_accept",
-	"ui_text_completion_replace",
-	"ui_text_newline", "ui_text_newline_blank", "ui_text_newline_above",
-	"ui_text_backspace", "ui_text_backspace_word",
-	"ui_text_backspace_all_to_left",
-	"ui_text_delete", "ui_text_delete_word",
-	"ui_text_delete_all_to_right",
-	"ui_text_caret_left", "ui_text_caret_word_left",
-	"ui_text_caret_right", "ui_text_caret_word_right",
-	"ui_text_caret_up", "ui_text_caret_down",
-	"ui_text_caret_line_start", "ui_text_caret_line_end",
-	"ui_text_caret_page_up", "ui_text_caret_page_down",
-	"ui_text_caret_document_start", "ui_text_caret_document_end",
-	"ui_text_caret_add_below", "ui_text_caret_add_above",
-	"ui_text_scroll_up", "ui_text_scroll_down",
-	"ui_text_select_all", "ui_text_select_word_under_caret",
-	"ui_text_add_selection_for_next_occurrence",
-	"ui_text_clear_carets_and_selection",
-	"ui_text_toggle_insert_mode", "ui_menu", "ui_text_submit",
-	"ui_graph_duplicate", "ui_graph_delete",
-	"ui_filedialog_up_one_level", "ui_filedialog_refresh",
-	"ui_filedialog_show_hidden",
-	"ui_swap_input_direction",
-]
+## The engine's [code]ProjectSettings::NO_BUILTIN_ORDER_BASE[/code] ([code]1 << 16[/code] on
+## 4.2–4.7): the engine orders each setting it registers itself below this value and each
+## setting a project adds above it. Its [code]is_builtin_setting()[/code] makes the same
+## comparison, but scripts cannot call it.
+const NO_BUILTIN_ORDER_BASE := 1 << 16
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -179,17 +155,36 @@ static func _persist_input_action(action: String, deadzone: float) -> void:
 				error, action])
 
 
-## The editor's InputMap holds only the built-in ui_* actions (main.cpp calls
-## load_default() in the editor), so load a project action from its setting
-## before the handlers check InputMap for it.
+## Returns whether [param action] is a built-in action: one the engine registers for every
+## project, rather than a project action saved in project.godot. It asks the engine's
+## registration order instead of matching a name list, so it stays exact on every engine
+## version and never mistakes a project action named [code]ui_*[/code] for a built-in one.
+static func _is_builtin_action(action: String) -> bool:
+	var setting_name := "input/" + action
+	# get_order() logs an error for a setting that does not exist.
+	return ProjectSettings.has_setting(setting_name) \
+		and ProjectSettings.get_order(setting_name) < NO_BUILTIN_ORDER_BASE
+
+
+## Rebuilds the project action [param action] in the editor's InputMap from its
+## [code]input/<name>[/code] setting. The editor loads only the built-in actions into its
+## InputMap (the engine calls [code]InputMap::load_default()[/code] when it runs the editor),
+## so a project action exists there only as its setting. The rebuild runs on every call, so
+## an edit made in Project Settings since the previous call is not overwritten by the next
+## save. A built-in action is left alone: the editor's own controls respond to it.
 static func _load_project_action(action: String) -> void:
-	if InputMap.has_action(action):
+	if _is_builtin_action(action):
 		return
-	var setting = ProjectSettings.get_setting("input/" + action)
+	var setting: Variant = ProjectSettings.get_setting("input/" + action)
 	if typeof(setting) != TYPE_DICTIONARY:
 		return
+	if InputMap.has_action(action):
+		InputMap.erase_action(action)
 	InputMap.add_action(action, float(setting.get("deadzone", 0.5)))
-	for event in setting.get("events", []):
+	var events: Variant = setting.get("events", [])
+	if typeof(events) != TYPE_ARRAY:
+		return
+	for event in events:
 		if event is InputEvent:
 			InputMap.action_add_event(action, event)
 
@@ -205,7 +200,6 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
-	_load_project_action(action_name)
 	if action == "add":
 		var deadzone_raw = parameters.get("deadzone", 0.5)
 		var deadzone := float(deadzone_raw) \
@@ -213,6 +207,7 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 		if deadzone < 0.0 or deadzone > 1.0:
 			return MCPToolkitError.fail("INVALID_PARAMS",
 				"deadzone must be in [0.0, 1.0] (got %f)" % deadzone)
+		_load_project_action(action_name)
 		if InputMap.has_action(action_name):
 			return MCPToolkitSuccess.ok({
 				"status": "returned",
@@ -227,9 +222,10 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 			"deadzone": deadzone,
 		})
 	else:
+		_load_project_action(action_name)
 		if not InputMap.has_action(action_name):
 			return MCPToolkitError.fail("NOT_FOUND", "no action '%s'" % action_name)
-		if action_name in BUILTIN_UI_ACTIONS:
+		if _is_builtin_action(action_name):
 			return MCPToolkitError.fail("INVALID_PARAMS",
 				"refusing to remove built-in UI action '%s'; use input_map.event to unbind its events instead" % action_name)
 		InputMap.erase_action(action_name)
@@ -251,14 +247,14 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
-	_load_project_action(action_name)
-	if not InputMap.has_action(action_name):
-		return MCPToolkitError.fail("NOT_FOUND",
-			"no action '%s'; call input_map.action with action='add' first" % action_name)
 	var built: Variant = _build_input_event(parameters.get("event", null))
 	if typeof(built) == TYPE_DICTIONARY and built.has("error"):
 		return MCPToolkitError.fail(str(built["code"]), str(built["error"]))
 	var event: InputEvent = built
+	_load_project_action(action_name)
+	if not InputMap.has_action(action_name):
+		return MCPToolkitError.fail("NOT_FOUND",
+			"no action '%s'; call input_map.action with action='add' first" % action_name)
 	if action == "bind":
 		for existing in InputMap.action_get_events(action_name):
 			if _input_events_equivalent(existing, event):
