@@ -16,12 +16,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use. If an earlier version already saved an environment value into
   `project.godot`, it now counts as the project value: reset it in Project
   Settings.
+- `mcp_toolkit/concurrency/scene_lease_ttl_ms` now appears in Project Settings,
+  as the docs said.
+- The dock's LSP line now follows a change to the LSP host or port in Editor
+  Settings.
+- The Info dialog and the dock's read-only badge now agree.
+- The dock's collapsible sections no longer pad themselves with empty space; the
+  spare height sits below the last section.
 
 ### Removed
 
 - The `mcp_toolkit/limits/env_override_note` setting. The dock now shows which
   limits an environment variable overrides. A copy stored in `project.godot` is
   dropped the next time project settings are saved.
+- Two settings that never had an effect: the
+  `mcp_toolkit/personal/dock_default_visible` editor setting and the
+  `mcp_toolkit/internal/bootstrap_complete` project setting. Disabling the plugin
+  still offers to erase an old copy of the editor setting.
 
 ## [1.0.3] - 2026-10-05
 

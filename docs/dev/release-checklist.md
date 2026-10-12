@@ -126,7 +126,7 @@ other, and neither may undo the other. Run with the plugin active and both dock 
 expanded. **Project → Project Settings** (the inspector below) is a modal dialog: while it
 is open, no dock control can be clicked. DS1 edits in the dialog and watches the dock
 behind it; DS2 and DS3 close the dialog, change the dock, then reopen the dialog on the
-`mcp_toolkit/` keys to check.
+`mcp_toolkit/` keys to check. DS8 checks the dock's layout, not settings.
 
 The checks write `project.godot`. Check the tree for that file only, with
 `git status --porcelain -- project.godot` and `git diff -- project.godot`, so editor noise in
@@ -172,3 +172,6 @@ other files cannot fail a check. Afterwards restore only that file with
       `.mcp.json` (`git diff -- .mcp.json` shows nothing) and restart the MCP client.
       **Expected:** once the client connects again, the script cap's line is gone and the
       field's project value is the one in use.
+- [ ] **DS8 — Layout.** Collapse both collapsible sections, then expand one, then both.
+      **Expected:** each open section is as tall as its content, the spare height sits below
+      the last section, and no section has a scrollbar of its own.

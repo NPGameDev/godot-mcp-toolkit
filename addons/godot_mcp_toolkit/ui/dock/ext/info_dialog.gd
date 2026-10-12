@@ -4,9 +4,10 @@ extends AcceptDialog
 ## plugin/engine versions, the registered-tool summary, multi-instance support,
 ## read-only mode, version compatibility, Companion Skills, and reference links.
 ##
-## Lazy-created and owned by the dock. Each show_info() re-reads live server
-## state and fully rebuilds the content, so a reused instance always reflects
-## the current connection.
+## Lazy-created and owned by the dialog presenter. Each show_info() re-reads live
+## server state and fully rebuilds the content, so a reused instance always
+## reflects the current connection. The read-only Mode row shows the state the
+## caller passes (the dock badge's), so the dialog and the badge agree.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const MCPJsonSync = Modules.MCPJsonSync
@@ -20,8 +21,10 @@ var _content_root: VBoxContainer = null
 
 
 ## Re-reads live state from the passed server and renders the info panel, then
-## pops the dialog centered. Pass the dock's bound MCP server node.
-func show_info(server: Node) -> void:
+## pops the dialog centered. Pass the dock's bound MCP server node, and in
+## [param read_only_applied] whether the running MCP server applies read-only
+## mode (the state the dock's badge shows).
+func show_info(server: Node, read_only_applied: bool) -> void:
 	_ensure_built()
 
 	# Clear prior content immediately — remove_child (not just queue_free) so the
@@ -35,9 +38,6 @@ func show_info(server: Node) -> void:
 	# Fixed header — Connection + plugin/engine versions, always visible above
 	# the collapsible middle.
 	var connection := DockSectionCard.make_section("Connection")
-	# Pin the header at a fixed height — make_section returns SIZE_EXPAND_FILL,
-	# which would let the header expand and swallow the collapsible middle.
-	connection.size_flags_vertical = 0
 	_content_root.add_child(connection)
 	var conn: VBoxContainer = connection.get_meta("content")
 	if server != null and server.is_listening():
@@ -47,19 +47,23 @@ func show_info(server: Node) -> void:
 		_add_info_row(conn, "Peers", "%d connected" % peers)
 	else:
 		_add_info_row(conn, "Address", "not listening")
-	if MCPJsonSync.is_read_only():
-		_add_info_row(conn, "Mode", "Read-only (GODOT_MCP_READ_ONLY=1)")
+	var read_only_lines := describe_read_only_mode(read_only_applied, MCPJsonSync.is_read_only())
+	var mode_text := str(read_only_lines["mode"])
+	var pending_text := str(read_only_lines["pending"])
+	if not mode_text.is_empty():
+		_add_info_row(conn, "Mode", mode_text)
+	if not pending_text.is_empty():
+		_add_note_label(conn, pending_text)
 	var plugin_ver := Modules.VersionUtils.read_plugin_version()
 	var vi := Engine.get_version_info()
 	var godot_ver := "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]]
 	_add_info_row(conn, "Plugin", "v%s" % plugin_ver)
 	_add_info_row(conn, "Godot", godot_ver)
 
-	# Collapsible middle — each section owns its own scroll; all start collapsed
-	# (the fixed header already shows the primary state), so no outer scroll.
-	var mid := VBoxContainer.new()
-	mid.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_content_root.add_child(mid)
+	# Collapsible middle — one scroll area between the header and the footer, so
+	# an open section is as tall as its content and a long one (Registered Tools)
+	# scrolls with the rest. All start collapsed: the header shows the primary state.
+	var mid := DockSectionCard.make_scroll_area(_content_root)
 
 	var tools_content := DockSectionCard.make_collapsible(mid, "Registered Tools", false)
 	if server != null and server.has_method("get_command_methods"):
@@ -166,6 +170,26 @@ func show_info(server: Node) -> void:
 	# load-bearing: a no-arg popup_centered on a reused dialog reuses the window's
 	# current size and only grows, so sizing drifts across reopens.
 	EditorPopup.present(self, Vector2i(520, 460))
+
+
+## The Connection section's read-only lines, from [param applied] (whether the
+## running MCP server applies read-only mode, as the dock's badge shows) and
+## [param in_file] (whether [code].mcp.json[/code] sets it now). Returns
+## [code]{"mode": String, "pending": String}[/code]: the Mode row's text, empty
+## for the plain full-access case so the row is left out, and, when the two
+## differ, the line saying which way the file changed and when it applies.
+## The server reads the setting only at launch, so the file can lead the badge.
+static func describe_read_only_mode(applied: bool, in_file: bool) -> Dictionary:
+	var mode := ""
+	if applied:
+		mode = "Read-only (GODOT_MCP_READ_ONLY=1)"
+	elif in_file:
+		mode = "Full access"
+	var pending := ""
+	if applied != in_file:
+		pending = ".mcp.json now turns read-only mode %s. It takes effect when the MCP client restarts." % (
+				"on" if in_file else "off")
+	return {"mode": mode, "pending": pending}
 
 
 # Installs the dialog chrome once: title, Close button, and the content

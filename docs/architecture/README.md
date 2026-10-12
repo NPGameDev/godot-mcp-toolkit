@@ -487,7 +487,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="84bdde3" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="3f369f1" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -505,7 +505,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order (I12)"| composer
 ```
-*Figure 10 — plugin composition root (concern 001) · verified 84bdde3*
+*Figure 10 — plugin composition root (concern 001) · verified 3f369f1*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
@@ -514,7 +514,9 @@ renamed), the playtest-end detector, the server start + registry registration, t
 `.mcp.json` write-flow + dialog presenter, and finally the dock. The write-flow and dialog
 presenter are **injected** into the dock, the tool menu, and the onboarding wizard alike — the
 dock consumes them like any other UI surface rather than acting as a service locator for them
-([ADR 0016](#14-key-decisions-adrs)). `dispose()` reverses the graph precisely, including the
+([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
+presenter its read-only badge's cached state, so the Info dialog shows what the badge shows (with no
+dock, the presenter reads `.mcp.json` the way the badge does). `dispose()` reverses the graph precisely, including the
 I12-symmetric `PlaytestCommands.clear_debug_bridge()`, and last clears the response limits' env
 overrides (`core/response_limits.gd`), static state that would otherwise outlive a plugin reload;
 teardown uses **immediate (not deferred)

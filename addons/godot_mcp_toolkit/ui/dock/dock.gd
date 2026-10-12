@@ -97,7 +97,6 @@ func _build_ui() -> void:
 
 	# == Status section (compact, pinned at top) ==============================
 	var status_section := DockSectionCard.make_section("Server Status")
-	status_section.size_flags_vertical = 0  # fixed height
 	add_child(status_section)
 	var sc: VBoxContainer = status_section.get_meta("content")
 
@@ -116,6 +115,11 @@ func _build_ui() -> void:
 	mcp_json_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_mcp_json_panel = DockMcpJsonPanel.new(mcp_json_btn, Callable(self, "_toast"), _write_flow)
 	_status_panel.insert_warning_panel(_mcp_json_panel)
+	# The Info dialog reads the badge's cached read-only state through the
+	# presenter, so the two agree. Set here, not in bind(): the panel exists only
+	# once the UI is built.
+	if _dialog_presenter != null:
+		_dialog_presenter.set_read_only_source(_mcp_json_panel.is_read_only_active)
 
 	# Node.js availability — shared detection.
 	var node_check := NodejsCheck.check()
@@ -153,11 +157,9 @@ func _build_ui() -> void:
 	_unfocused_control = DockUnfocusedControl.new(_server)
 	sc.add_child(_unfocused_control)
 
-	# == Collapsible sections (titles always visible) =========================
-	var sections_vbox := VBoxContainer.new()
-	sections_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# == Collapsible sections (one scroll area, spare height below) ===========
+	var sections_vbox := DockSectionCard.make_scroll_area(self)
 	sections_vbox.add_theme_constant_override("separation", int(2 * scale))
-	add_child(sections_vbox)
 
 	# -- Audit Log section (collapsed by default) -----------------------------
 	# The panel owns the audit settings + view/clear buttons + the lazy log

@@ -157,7 +157,6 @@ func _register_editor_settings() -> void:
 	# machine-global editor effect and are a personal battery/CPU preference, so
 	# they must never be committed to project.godot / VCS.
 	var settings := {
-		"mcp_toolkit/personal/dock_default_visible": [TYPE_BOOL, true, ""],
 		"mcp_toolkit/performance/keep_editor_responsive_unfocused": [TYPE_BOOL, true,
 			"Keep the editor responsive (raise its unfocused frame rate) while an MCP client is connected, so commands stay snappy when the editor is unfocused. Off uses Godot's default low-power unfocused throttle. Raises background CPU. A toggle is also in the MCP Toolkit dock."],
 		"mcp_toolkit/performance/unfocused_responsive_sleep_usec": [TYPE_INT, 16666,

@@ -143,6 +143,13 @@ func sync_read_only_state() -> void:
 	refresh()
 
 
+## The cached read-only state the badge shows (synced by
+## [method sync_read_only_state]), not what [code].mcp.json[/code] says now. The
+## Info dialog reads it through the dialog presenter so the two always agree.
+func is_read_only_active() -> bool:
+	return _read_only_active
+
+
 # ---------------------------------------------------------------------------
 # Tri-mode button action (writes delegate to the shared write flow)
 # ---------------------------------------------------------------------------

@@ -682,7 +682,7 @@ transport failure to diagnose.*
 - **Register with `add_property_info` + `set_initial_value`** for a typed, inspector-friendly
   entry; guard creation with `has_setting` so re-runs don't clobber user values.
 - **Machine-personal preferences go in `EditorSettings`, not `ProjectSettings`.** A per-user /
-  per-machine choice (battery, CPU, dock visibility) must never be committed to `project.godot` /
+  per-machine choice (battery, CPU) must never be committed to `project.godot` /
   VCS — register it under `EditorInterface.get_editor_settings()`.
 - **Watch `config/name` for `user://` path shifts.** If the addon stores state under `user://`,
   a project rename orphans it and can flood the console; re-derive paths on change.
