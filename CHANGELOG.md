@@ -43,8 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adds in `project.godot`. Before, `bind`, `unbind` and `remove` answered
   `NOT_FOUND` for them, and `add` answered `created` and saved the action again
   with no events, which wiped its bindings. Each call reads the saved action
-  again, so a change you make to it in Project Settings survives the next call.
-  Reported and fixed by @benfeather
+  again, so the next call keeps a change you make to it in Project Settings,
+  including a rename or a delete. Reported and fixed by @benfeather
   ([#14](https://github.com/NPGameDev/godot-mcp-toolkit/issues/14),
   [#15](https://github.com/NPGameDev/godot-mcp-toolkit/pull/15)).
 - `input_map_action` now refuses to remove any built-in action, such as

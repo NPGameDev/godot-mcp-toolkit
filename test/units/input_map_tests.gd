@@ -22,6 +22,7 @@ static func run(testing) -> void:
 	_test_load_without_setting(testing)
 	_test_load_leaves_builtin_alone(testing)
 	_test_load_follows_setting_edit(testing)
+	_test_load_drops_deleted_action(testing)
 	_test_builtin_rule_matches_engine(testing)
 	_test_ui_prefixed_project_action(testing)
 
@@ -87,6 +88,23 @@ static func _test_load_follows_setting_edit(testing) -> void:
 
 	testing.eq(keycodes, [KEY_F8, KEY_F9], "the action holds the edited events")
 	testing.ok(absf(deadzone - 0.7) < 0.001, "and the edited deadzone 0.7 (got %f)" % deadzone)
+	print("")
+
+
+# Project Settings deletes an action with ProjectSettings.clear() and renames one
+# with clear() plus a new setting, neither of which touches InputMap. If the loader
+# kept the InputMap action it loaded earlier, the next bind would save the deleted
+# action back.
+static func _test_load_drops_deleted_action(testing) -> void:
+	testing.begin("input_map loader: an action whose setting is gone leaves InputMap")
+	_seed_project_action(0.3, [_key_event(KEY_F7)])
+	InputMapCommands._load_project_action(_ACTION)
+	ProjectSettings.clear("input/" + _ACTION)
+	InputMapCommands._load_project_action(_ACTION)
+	var still_loaded := InputMap.has_action(_ACTION)
+	_clear_project_action()
+
+	testing.ok(not still_loaded, "the deleted action is no longer in InputMap")
 	print("")
 
 

@@ -138,7 +138,7 @@ C24–C26 & C29 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| input_map.action | 65, 10.1b | ✓ (10.1b `remove ui_select` → INVALID_PARAMS) | — | — | 09a6392, #14 | Param renamed: action_name → name. 10.1b: on an action saved in `project.godot`, `add` → `returned` with its saved event and deadzone, `remove` → gone; a built-in action is never removed. Headless units pin the loader (rebuilt from `input/<name>` on every call, built-ins left alone) and the built-in rule against the engine's revert values |
+| input_map.action | 65, 10.1b | ✓ (10.1b `remove ui_select` → INVALID_PARAMS) | — | — | 09a6392, #14 | Param renamed: action_name → name. 10.1b: on an action saved in `project.godot`, `add` → `returned` with its saved event and deadzone, `remove` → gone; a built-in action is never removed. Headless units pin the loader (rebuilt from `input/<name>` on every call, dropped from InputMap once that setting is gone, built-ins left alone) and the built-in rule against the engine's revert values |
 | input_map.event | 66, 10.1b | — | — | — | #14 | 10.1b: `bind` on an action saved in `project.godot` → `created` |
 
 ### Save System (4 tools)

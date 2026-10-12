@@ -167,19 +167,21 @@ static func _is_builtin_action(action: String) -> bool:
 
 
 ## Rebuilds the project action [param action] in the editor's InputMap from its
-## [code]input/<name>[/code] setting. The editor loads only the built-in actions into its
-## InputMap (the engine calls [code]InputMap::load_default()[/code] when it runs the editor),
-## so a project action exists there only as its setting. The rebuild runs on every call, so
-## an edit made in Project Settings since the previous call is not overwritten by the next
-## save. A built-in action is left alone: the editor's own controls respond to it.
+## [code]input/<name>[/code] setting, or drops it from InputMap when that setting is gone.
+## The editor loads only the built-in actions into its InputMap (the engine calls
+## [code]InputMap::load_default()[/code] when it runs the editor), so a project action exists
+## there only as its setting. Project Settings edits, renames and deletes an action through
+## that setting alone, so running this on every call keeps the next save from undoing a
+## change made there since the previous call. A built-in action is left alone: the editor's
+## own controls respond to it.
 static func _load_project_action(action: String) -> void:
 	if _is_builtin_action(action):
 		return
+	if InputMap.has_action(action):
+		InputMap.erase_action(action)
 	var setting: Variant = ProjectSettings.get_setting("input/" + action)
 	if typeof(setting) != TYPE_DICTIONARY:
 		return
-	if InputMap.has_action(action):
-		InputMap.erase_action(action)
 	InputMap.add_action(action, float(setting.get("deadzone", 0.5)))
 	var events: Variant = setting.get("events", [])
 	if typeof(events) != TYPE_ARRAY:
