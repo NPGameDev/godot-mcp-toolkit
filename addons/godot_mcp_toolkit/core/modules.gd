@@ -8,6 +8,7 @@ extends RefCounted
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const ExecuteHints := preload("res://addons/godot_mcp_toolkit/contract/execute_hints.gd")
 const Pagination := preload("res://addons/godot_mcp_toolkit/contract/pagination.gd")
+const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
 const ScreenshotResponse := preload("res://addons/godot_mcp_toolkit/contract/screenshot_response.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")

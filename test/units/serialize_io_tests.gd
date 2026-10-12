@@ -3,8 +3,9 @@ extends RefCounted
 ## Serialization + I/O + content-boundary unit tests: Coerce/serialize round-trip,
 ## color_from_dict (white + black defaults), node-sourced Packed property serialize,
 ## save.read / script.read / classdb paging, export-strip warning set, log-level continuation,
-## and the SettingsRegistration mcp_toolkit/* collector. Exercises the
-## serialize/IO/content subsystems' pure logic headless.
+## the SettingsRegistration mcp_toolkit/* collector, and resource.write's int properties
+## (in memory and through a saved file). Exercises the serialize/IO/content
+## subsystems' pure logic headless.
 
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
@@ -16,6 +17,7 @@ const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
 const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resource_commands.gd")
+const PlaceholderLikeResource := preload("res://test/fixtures/placeholder_like_resource.gd")
 
 
 static func run(testing) -> void:
@@ -31,6 +33,7 @@ static func run(testing) -> void:
 	_test_compose_error_message(testing)
 	_test_settings_collect_names(testing)
 	_test_resource_write_int_property(testing)
+	_test_resource_write_int_on_update(testing)
 
 
 # --- Coerce/serialize round-trip symmetry ---------------------------------
@@ -741,9 +744,85 @@ static func _test_settings_collect_names(testing) -> void:
 
 # --- resource.write: JSON numbers on int properties -----------------------
 # JSON numbers arrive as floats. In the editor a non-@tool script resource has a
-# placeholder script instance, whose set() stores the Variant as given, so a float
-# reached the file as `price = 4.0`. _PlaceholderLike stores raw Variants the
-# same way (the headless runner gives scripts a live instance, which converts).
+# placeholder script instance, whose set() stores the Variant as given, so an
+# unconverted float reaches the file as `price = 4.0`. _PlaceholderLike stores
+# raw Variants the same way (the headless runner gives scripts a live instance,
+# which converts).
+
+static func _test_resource_write_int_property(testing) -> void:
+	testing.begin("resource.write int properties from JSON numbers")
+	var resource := _PlaceholderLike.new()
+	var warnings := ResourceCommands._apply_resource_properties(
+			resource, {"price": 4.0, "weight": 4.0}, "Resource")
+	testing.eq(warnings.size(), 0, "no warnings")
+	testing.eq(typeof(resource.get("price")), TYPE_INT, "whole float on int property → int")
+	testing.eq(resource.get("price"), 4, "int value kept")
+	testing.eq(typeof(resource.get("weight")), TYPE_FLOAT, "float property stays float")
+	print("")
+
+
+# The same symptom on a resource loaded from a file that already exists (the
+# update path) and saved back, with the file's own line as the oracle. The file's
+# script is the placeholder_like_resource.gd fixture, which stores raw Variants as
+# the editor's placeholder does. The resource.write handler cannot run to the end
+# in the headless runner (after saving, it indexes the file through the editor
+# filesystem), so this drives the property writer its update path calls. Each step
+# expects a line the previous step did not leave. Writes a user:// temp file and
+# removes it afterward.
+static func _test_resource_write_int_on_update(testing) -> void:
+	testing.begin("resource.write update path saves int properties as ints")
+	var fixture := "user://resource_write_int_fixture.tres"
+	var existing: Resource = PlaceholderLikeResource.new()
+	existing.set("price", 1)
+	testing.eq(ResourceSaver.save(existing, fixture), OK, "existing resource file saved")
+
+	var whole_warnings := _update_resource_file(testing, fixture, {"price": 4.0})
+	testing.eq(_saved_property_line(fixture, "price"), "price = 4",
+			"whole float 4.0 on an int property → the file stores price = 4")
+	testing.eq(whole_warnings.size(), 0, "whole float → no warning")
+
+	var int_warnings := _update_resource_file(testing, fixture, {"price": 7})
+	testing.eq(_saved_property_line(fixture, "price"), "price = 7",
+			"an int on an int property passes through")
+	testing.eq(int_warnings.size(), 0, "an int → no warning")
+
+	var fraction_warnings := _update_resource_file(testing, fixture, {"price": 4.5})
+	testing.eq(_saved_property_line(fixture, "price"), "price = 4",
+			"4.5 on an int property → the file stores the truncated price = 4")
+	testing.eq(fraction_warnings.size(), 1, "4.5 → exactly one warning")
+	var truncation_warning: String = "" if fraction_warnings.is_empty() else fraction_warnings[0]
+	testing.ok(truncation_warning.contains("'price'"), "the warning names the property")
+	testing.ok(truncation_warning.contains("4.5"), "the warning names the requested 4.5")
+	testing.ok(truncation_warning.contains("stored 4 "), "the warning names the stored 4")
+
+	var untyped_warnings := _update_resource_file(testing, fixture, {"note": 4.5})
+	testing.eq(_saved_property_line(fixture, "note"), "note = 4.5",
+			"a float on an untyped property is left alone")
+	testing.eq(untyped_warnings.size(), 0, "untyped property → no warning")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+	print("")
+
+
+## Loads the resource at [param path] from disk, applies [param properties] through
+## resource.write's property writer and saves it back. Returns the writer's warnings.
+static func _update_resource_file(
+		testing, path: String, properties: Dictionary) -> Array[String]:
+	var resource := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var warnings := ResourceCommands._apply_resource_properties(
+			resource, properties, resource.get_class())
+	testing.eq(ResourceSaver.save(resource, path), OK, "saved back after %s" % properties)
+	return warnings
+
+
+## The "<name> = <value>" line a text resource file stores for [param property_name],
+## or "" when the file has no such line.
+static func _saved_property_line(path: String, property_name: String) -> String:
+	for line in FileAccess.get_file_as_string(path).split("\n"):
+		if line.begins_with(property_name + " = "):
+			return line
+	return ""
+
 
 class _PlaceholderLike extends Resource:
 	var _values := {}
@@ -762,15 +841,3 @@ class _PlaceholderLike extends Resource:
 
 	func _get(property: StringName) -> Variant:
 		return _values.get(property)
-
-
-static func _test_resource_write_int_property(testing) -> void:
-	testing.begin("resource.write int properties from JSON numbers")
-	var resource := _PlaceholderLike.new()
-	var warnings := ResourceCommands._apply_resource_properties(
-			resource, {"price": 4.0, "weight": 4.0}, "Resource")
-	testing.eq(warnings.size(), 0, "no warnings")
-	testing.eq(typeof(resource.get("price")), TYPE_INT, "whole float on int property → int")
-	testing.eq(resource.get("price"), 4, "int value kept")
-	testing.eq(typeof(resource.get("weight")), TYPE_FLOAT, "float property stays float")
-	print("")

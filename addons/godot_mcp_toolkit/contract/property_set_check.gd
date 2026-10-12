@@ -66,7 +66,7 @@ static func describe_set_drop(
 	#     Gating on the family (not on after == before) is what catches this
 	#     destructive-zero case that a non-zero prior exposes.
 	if before != null and _same_convertible_family(typeof(coerced), typeof(before)):
-		return {"status": "adjusted", "warning": _adjusted_warning(after, coerced, path)}
+		return {"status": "adjusted", "warning": adjusted_warning(after, coerced, path)}
 	# Cross-family → the write did not land as a real value (kept-old or zeroed).
 	return {"status": "dropped", "error":
 		"property '%s' rejected the value: expected type %s, got %s (%s). "
@@ -77,9 +77,12 @@ static func describe_set_drop(
 		+ "(e.g. {\"type\":\"Vector2\",\"x\":0,\"y\":0})."}
 
 
-## Warning text for an accepted-but-adjusted write, naming what was stored vs asked.
-static func _adjusted_warning(after: Variant, coerced: Variant, path: String) -> String:
-	return ("note: '%s' stored %s but you requested %s — the engine adjusted the value to fit %s."
+## Returns the warning for an accepted-but-adjusted write: it names the property
+## [param path], the stored value [param after] and the requested value
+## [param coerced]. A writer that adjusts a value itself before the set reports it
+## with this same text.
+static func adjusted_warning(after: Variant, coerced: Variant, path: String) -> String:
+	return ("note: '%s' stored %s but you requested %s — the value was adjusted to fit %s."
 		% [path, _brief_set_value(after), _brief_set_value(coerced), type_string(typeof(after))])
 
 
