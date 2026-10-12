@@ -19,8 +19,8 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 static func make_section_style() -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
 	# Read the editor's scale and sample its Panel stylebox for a theme-adaptive
-	# base colour only inside the editor. Outside it, as in a headless run, the
-	# scale call is a script error and the theme lookup crashes the engine, so the
+	# base colour only inside the editor. Outside it, as in a headless run,
+	# EditorInterface is unavailable and both calls fail as script errors, so the
 	# card keeps scale 1 and the fallback colour.
 	var scale := 1.0
 	var base := Color(0.22, 0.22, 0.22)

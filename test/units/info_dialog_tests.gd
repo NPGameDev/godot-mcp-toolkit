@@ -2,8 +2,8 @@
 extends RefCounted
 ## Unit tests for the Info dialog's read-only lines: the Mode row follows the state the
 ## running MCP server applies (the dock badge's), and a second line appears only when
-## .mcp.json now says otherwise. Only the static helper runs here; show_info builds
-## styled sections that sample the editor theme, which the headless runner lacks.
+## .mcp.json now says otherwise. Only the static helper runs here: show_info reads the live
+## server node and .mcp.json, then pops the dialog, which must be in the scene tree.
 
 const InfoDialog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/info_dialog.gd")
 

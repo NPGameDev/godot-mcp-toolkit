@@ -189,7 +189,7 @@ static func describe_read_only_mode(applied: bool, in_file: bool) -> Dictionary:
 	if applied != in_file:
 		pending = ".mcp.json now turns read-only mode %s. It takes effect when the MCP client restarts." % (
 				"on" if in_file else "off")
-	return { "mode": mode, "pending": pending }
+	return {"mode": mode, "pending": pending}
 
 
 # Installs the dialog chrome once: title, Close button, and the content
