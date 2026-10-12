@@ -28,12 +28,13 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 # -- Helpers ------------------------------------------------------------------
 
 
+## Maps each property name to its declared Variant type.
 static func _property_names_of(object: Object) -> Dictionary:
 	var names := {}
 	for property in object.get_property_list():
 		var property_name := str(property.get("name", ""))
 		if not property_name.is_empty():
-			names[property_name] = true
+			names[property_name] = int(property.get("type", TYPE_NIL))
 	return names
 
 
@@ -76,6 +77,11 @@ static func _apply_resource_properties(
 			warnings.append(
 				"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
 		else:
+			# JSON numbers arrive as floats. A non-@tool script's properties live in a
+			# placeholder instance in the editor, which stores the Variant unconverted,
+			# so convert here or an int property saves as 4.0.
+			if valid[key_string] == TYPE_INT and typeof(coerced) == TYPE_FLOAT:
+				coerced = int(coerced)
 			resource.set(key_string, coerced)
 	return warnings
 

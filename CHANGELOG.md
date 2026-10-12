@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Info dialog and the dock's read-only badge now agree.
 - The dock's collapsible sections no longer pad themselves with empty space; the
   spare height sits below the last section.
+- `resource_write` now saves a number given for an `int` property of a script
+  resource as an int. Before, JSON numbers reached the property as floats, and on
+  a resource whose script isn't `@tool` the file read `price = 4.0`.
 
 ### Removed
 
