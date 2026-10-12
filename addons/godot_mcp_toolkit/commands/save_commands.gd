@@ -6,6 +6,7 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
 const Scrubber = Modules.Scrubber
+const ResponseLimits = Modules.ResponseLimits
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
@@ -49,11 +50,10 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 	var path := str(parameters.get("path", ""))
 	if path.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing path")
-	# Cap is configurable (mcp_toolkit/limits/save_read_cap_kb, default 256, min
-	# 64) — mirrors script_read_cap_kb. Default 256 KB ⇒ 262144 ⇒ the former
-	# hardcoded ceiling, so the default behaviour is unchanged.
-	var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/save_read_cap_kb", 256)
-	var cap_bytes := maxi(64, cap_kb) * 1024
+	# The cap is the response limit save_read_cap_kb (default 256 KB, floor 64 KB),
+	# configured like script_read_cap_kb.
+	var cap_kb: int = ResponseLimits.effective_value(ResponseLimits.SAVE_READ_CAP_KB)
+	var cap_bytes := cap_kb * 1024
 	var max_bytes := int(parameters.get("max_bytes", 65536))
 	if max_bytes <= 0 or max_bytes > cap_bytes:
 		return MCPToolkitError.fail("INVALID_PARAMS",
@@ -86,7 +86,7 @@ static func _cmd_save_read(parameters: Dictionary) -> Dictionary:
 	# fallback path inflates the payload by ~33%. At defaults this never fires
 	# (256 KB × 1.33 ≈ 340 KB < 1 MB); it guards the footgun of raising
 	# save_read_cap_kb above ws_buffer_kb.
-	var ws_buffer_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/ws_buffer_kb", 1024)
+	var ws_buffer_kb: int = ResponseLimits.effective_value(ResponseLimits.WS_BUFFER_KB)
 	var projected_bytes := int(ceil(bytes_to_read * 1.33))
 	if projected_bytes > ws_buffer_kb * 1024:
 		f.close()

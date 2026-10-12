@@ -66,9 +66,9 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	var key := str(parameters.get("setting", ""))
 	if key.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "setting must be a non-empty string")
-	# The `mcp_toolkit/limits/*` slice has a dedicated writer — meta.set_limits —
-	# which applies floor clamps. Refusing the whole prefix here keeps that the
-	# single sanctioned path for toolkit settings (rest go through the dock UI).
+	# The toolkit's own settings are the user's to edit, in the dock or the Project
+	# Settings inspector, so an agent never rewrites them. The response limits are
+	# no exception: meta.set_limits sets env overrides, never a project value.
 	if key.begins_with("mcp_toolkit/"):
 		return MCPToolkitError.fail("INVALID_PATH",
 			"refusing to write mcp_toolkit/* from project.set_setting (those are the toolkit's own settings — use the dock UI); got key=%s" % key)

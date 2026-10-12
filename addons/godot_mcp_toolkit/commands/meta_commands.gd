@@ -1,6 +1,9 @@
 @tool
 extends RefCounted
-## meta.* transport-level commands — server-side limit overrides.
+## meta.* transport-level commands — the server's env overrides of the response limits.
+
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const ResponseLimits = Modules.ResponseLimits
 
 
 static func register(registry: MCPToolkitCommandRegistry) -> void:
@@ -9,27 +12,15 @@ static func register(registry: MCPToolkitCommandRegistry) -> void:
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 
 
-## The sanctioned writer for `mcp_toolkit/limits/*` — `project.set_setting`
-## deliberately refuses that prefix, routing limit changes here so the floor
-## clamps are always applied (script/save read caps >= 64 KB, ws_buffer >= 256 KB).
+## Sets the server's env overrides of the response limits: each limit present and
+## not null becomes an env override, held for this editor session and never saved
+## to project.godot. The push replaces the whole previous set, so a limit left out
+## falls back to its project value and an empty push clears them all. With several
+## MCP clients connected, the last push wins: the handler cannot tell which peer
+## sent it. Replies with the three effective values, floors applied.
 static func _cmd_set_limits(parameters: Dictionary) -> Dictionary:
-	var script_cap = parameters.get("script_read_cap_kb", null)
-	var save_cap = parameters.get("save_read_cap_kb", null)
-	var ws_buf = parameters.get("ws_buffer_kb", null)
-	if script_cap != null:
-		ProjectSettings.set_setting("mcp_toolkit/limits/script_read_cap_kb",
-			maxi(int(script_cap), 64))
-	if save_cap != null:
-		ProjectSettings.set_setting("mcp_toolkit/limits/save_read_cap_kb",
-			maxi(int(save_cap), 64))
-	if ws_buf != null:
-		ProjectSettings.set_setting("mcp_toolkit/limits/ws_buffer_kb",
-			maxi(int(ws_buf), 256))
-	return MCPToolkitSuccess.ok({
-		"script_read_cap_kb": int(ProjectSettings.get_setting(
-			"mcp_toolkit/limits/script_read_cap_kb", 256)),
-		"save_read_cap_kb": int(ProjectSettings.get_setting(
-			"mcp_toolkit/limits/save_read_cap_kb", 256)),
-		"ws_buffer_kb": int(ProjectSettings.get_setting(
-			"mcp_toolkit/limits/ws_buffer_kb", 1024)),
-	})
+	ResponseLimits.replace_env_overrides(parameters)
+	var effective := {}
+	for key in ResponseLimits.KEYS:
+		effective[key] = ResponseLimits.effective_value(key)
+	return MCPToolkitSuccess.ok(effective)

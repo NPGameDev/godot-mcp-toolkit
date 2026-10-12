@@ -6,13 +6,20 @@ extends RefCounted
 ## in the Project Settings inspector with correct types and defaults, and the
 ## keys the dock also edits with the same ranges as the dock's spin boxes.
 
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const ResponseLimits = Modules.ResponseLimits
+
 const _BOOTSTRAP_KEY := "mcp_toolkit/internal/bootstrap_complete"
 
-const _LIMITS_NOTE_KEY := "mcp_toolkit/limits/env_override_note"
-const _LIMITS_NOTE_TEXT := (
-	"These values can be overridden by GODOT_MCP_SCRIPT_READ_LIMIT and "
-	+ "GODOT_MCP_WS_BUFFER_LIMIT env vars in .mcp.json. "
-	+ "When set, the env var values take priority on connect.")
+# Keys earlier versions stored and this one no longer writes. Each entry is
+# removable at 2.0.0.
+const _RETIRED_KEYS: Array[String] = [
+	# Described the machine the editor runs on; only 1.0.0 and 1.0.1 wrote it.
+	"mcp_toolkit/status",
+	# A free-text note on env overrides, rewritten at every start up to 1.0.3. The
+	# dock now names each limit an env override controls.
+	"mcp_toolkit/limits/env_override_note",
+]
 
 
 static func register_all() -> void:
@@ -20,14 +27,12 @@ static func register_all() -> void:
 	_register_concurrency()
 	_register_audit()
 	_register_bootstrap_flag()
-	# One-way migration: mcp_toolkit/status was persisted by earlier versions and
-	# is no longer written, so erase whatever a project still carries — the value
-	# describes the machine the editor runs on and has no place in project.godot.
-	# The erase is in-memory only: register_all() deliberately never saves, so the
-	# key leaves project.godot at the next ProjectSettings save, from whatever source.
-	# Removable at 2.0.0 — only 1.0.0 and 1.0.1 ever wrote the key.
-	if ProjectSettings.has_setting("mcp_toolkit/status"):
-		ProjectSettings.set_setting("mcp_toolkit/status", null)
+	# One-way migration: erase whatever retired key a project still carries. The
+	# erase is in-memory only: register_all() deliberately never saves, so the key
+	# leaves project.godot at the next ProjectSettings save, from whatever source.
+	for retired_key in _RETIRED_KEYS:
+		if ProjectSettings.has_setting(retired_key):
+			ProjectSettings.set_setting(retired_key, null)
 
 
 ## Mirror of register_all — scrub every mcp_toolkit/* ProjectSettings key on
@@ -56,14 +61,11 @@ static func _collect_mcp_setting_names() -> PackedStringArray:
 	return out
 
 
+# The response limits, from the table the dock's spin boxes also read.
 static func _register_limits() -> void:
-	# Max script content returned by script.read, in KB.
-	_register_basic_ranged_int("mcp_toolkit/limits/script_read_cap_kb", 256, "64,4096,64")
-	# Max user-file content returned per save.read window, in KB.
-	_register_basic_ranged_int("mcp_toolkit/limits/save_read_cap_kb", 256, "64,4096,64")
-	# WebSocket per-peer buffer size, in KB.
-	_register_basic_ranged_int("mcp_toolkit/limits/ws_buffer_kb", 1024, "256,8192,256")
-	_register_limits_note()
+	for key in ResponseLimits.KEYS:
+		_register_basic_ranged_int(ResponseLimits.setting_path(key),
+				ResponseLimits.default_kb(key), ResponseLimits.range_hint(key))
 
 
 static func _register_concurrency() -> void:
@@ -84,17 +86,6 @@ static func _register_bootstrap_flag() -> void:
 	if not ProjectSettings.has_setting(_BOOTSTRAP_KEY):
 		ProjectSettings.set_setting(_BOOTSTRAP_KEY, false)
 	ProjectSettings.set_initial_value(_BOOTSTRAP_KEY, false)
-
-
-static func _register_limits_note() -> void:
-	ProjectSettings.set_setting(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
-	ProjectSettings.set_initial_value(_LIMITS_NOTE_KEY, _LIMITS_NOTE_TEXT)
-	ProjectSettings.set_as_basic(_LIMITS_NOTE_KEY, true)
-	ProjectSettings.add_property_info({
-		"name": _LIMITS_NOTE_KEY, "type": TYPE_STRING,
-		"hint": PROPERTY_HINT_MULTILINE_TEXT,
-		"hint_string": "Read-only — env var override information.",
-	})
 
 
 static func _register_basic_bool(key: String, default_value: bool, description: String) -> void:

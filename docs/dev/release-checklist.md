@@ -159,3 +159,16 @@ other files cannot fail a check. Afterwards restore only that file with
   settings save `git diff -- project.godot` still shows it.
 - [ ] **DS5 — Same ranges.** In the inspector, type an out-of-range value: script cap `10`,
       WS buffer `100000`. **Expected:** each is clamped to the dock's range (`64` and `8192`).
+- [ ] **DS6 — An env override stays out of `project.godot`.** Note what
+      `grep -n script_read_cap_kb project.godot` prints (often nothing). Add
+      `"GODOT_MCP_SCRIPT_READ_LIMIT": "1048576"` to the `env` block of `.mcp.json`, restart
+      the MCP client and let it connect. Then save the settings once from the dock (change
+      the audit log's Max KB) and once from the inspector (change any non-limit key).
+      **Expected:** under the dock's fields, the script cap's line reads
+      `Script cap in use: 1024 KB from GODOT_MCP_SCRIPT_READ_LIMIT (MCP client env).`, the
+      field itself still shows the project value, and after both saves
+      `grep -n script_read_cap_kb project.godot` prints what it printed before.
+- [ ] **DS7 — Removing the variable removes the line.** Take the variable back out of
+      `.mcp.json` (`git diff -- .mcp.json` shows nothing) and restart the MCP client.
+      **Expected:** once the client connects again, the script cap's line is gone and the
+      field's project value is the one in use.

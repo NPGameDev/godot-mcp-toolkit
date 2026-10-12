@@ -7,6 +7,7 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
 const Helpers = Modules.CommandHelpers
+const ResponseLimits = Modules.ResponseLimits
 
 const ALLOWED_EXTENSIONS: Array[String] = ["gd", "cs", "gdshader", "gdshaderinc"]
 
@@ -78,7 +79,7 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 		var slice := lines.slice(clamped_start - 1, clamped_end)
 		var result_text := "\n".join(slice)
 		var result_bytes := result_text.to_utf8_buffer().size()
-		var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/script_read_cap_kb", 256)
+		var cap_kb: int = ResponseLimits.effective_value(ResponseLimits.SCRIPT_READ_CAP_KB)
 		if result_bytes > cap_kb * 1024:
 			return MCPToolkitError.fail("FILE_TOO_LARGE",
 				"slice exceeds %d KB response cap; narrow the line range" % cap_kb)
@@ -99,7 +100,7 @@ static func _cmd_script_read(parameters: Dictionary) -> Dictionary:
 
 	# Full read with size cap.
 	var content_bytes := content.to_utf8_buffer().size()
-	var cap_kb: int = ProjectSettings.get_setting("mcp_toolkit/limits/script_read_cap_kb", 256)
+	var cap_kb: int = ResponseLimits.effective_value(ResponseLimits.SCRIPT_READ_CAP_KB)
 	if content_bytes > cap_kb * 1024:
 		var size_err := MCPToolkitError.fail("FILE_TOO_LARGE",
 			"file exceeds %d KB response cap" % cap_kb)

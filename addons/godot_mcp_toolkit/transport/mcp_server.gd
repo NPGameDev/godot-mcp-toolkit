@@ -47,6 +47,7 @@ const DispatchLane := preload("res://addons/godot_mcp_toolkit/transport/dispatch
 const UnfocusedSleepController := preload("res://addons/godot_mcp_toolkit/core/unfocused_sleep_controller.gd")
 const LspPublisher := preload("res://addons/godot_mcp_toolkit/paths/lsp_publisher.gd")
 const PortConfig := preload("res://addons/godot_mcp_toolkit/transport/port_config.gd")
+const ResponseLimits = Modules.ResponseLimits
 
 # Default editor scan band (inclusive). GODOT_MCP_EDITOR_PORT pins an exact port
 # (bind-exact-or-fail); GODOT_MCP_EDITOR_PORT_MIN/_MAX relocate the band. Resolved
@@ -348,6 +349,13 @@ func _init_transport() -> void:
 		"Free the port, or change %s (or unset it to use the scanned band)." % _ENV_PIN)
 	_transport.set_handlers(_handle_message, _build_auth_ack, _on_peer_authed,
 		_on_peer_closed, _on_transport_bound, _on_listen_conflict_changed)
+	_transport.set_buffer_kb_source(_effective_ws_buffer_kb)
+
+
+# The editor sizes each accepted peer from the effective ws_buffer_kb, so an env
+# override the server pushes reaches the next connection the editor accepts.
+func _effective_ws_buffer_kb() -> int:
+	return ResponseLimits.effective_value(ResponseLimits.WS_BUFFER_KB)
 
 
 # Log the resolved listen-port config at startup: the port + source (so both the

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A response limit set through an environment variable in `.mcp.json`
+  (`GODOT_MCP_SCRIPT_READ_LIMIT` or `GODOT_MCP_WS_BUFFER_LIMIT`) is no longer
+  written into `project.godot` when the project is saved. The dock keeps showing
+  the project's own value and adds a line under the field naming the variable in
+  use. If an earlier version already saved an environment value into
+  `project.godot`, it now counts as the project value: reset it in Project
+  Settings.
+
+### Removed
+
+- The `mcp_toolkit/limits/env_override_note` setting. The dock now shows which
+  limits an environment variable overrides. A copy stored in `project.godot` is
+  dropped the next time project settings are saved.
+
 ## [1.0.3] - 2026-10-05
 
 ### Fixed

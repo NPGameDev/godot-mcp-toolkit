@@ -1,15 +1,17 @@
 @tool
 extends RefCounted
 ## Dock ↔ Project Settings sync unit tests: the dock's limits and audit sections
-## repaint every control from its ProjectSetting, the audit checkbox without
-## firing toggled; they keep their settings_changed hook connected only while in
-## the tree; and the four dock-backed keys register the same ranges as the dock's
-## spin boxes. Settings change in memory only and are restored; nothing calls
-## ProjectSettings.save().
+## repaint every control from its project value (with no env override active), the
+## audit checkbox without firing toggled; they keep their settings_changed hook
+## connected only while in the tree; and the four dock-backed keys register the
+## same ranges as the dock's spin boxes. Settings change in memory only and are
+## restored; nothing calls ProjectSettings.save(). The env-override cases live in
+## response_limits_tests.gd.
 
 const DockLimitsSection := preload("res://addons/godot_mcp_toolkit/ui/dock/limits/dock_limits_section.gd")
 const DockAuditSection := preload("res://addons/godot_mcp_toolkit/ui/dock/security/dock_audit_section.gd")
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
+const ResponseLimits := preload("res://addons/godot_mcp_toolkit/core/response_limits.gd")
 
 const _SCRIPT_CAP_KEY := "mcp_toolkit/limits/script_read_cap_kb"
 const _SAVE_CAP_KEY := "mcp_toolkit/limits/save_read_cap_kb"
@@ -42,6 +44,8 @@ static func run(testing) -> void:
 
 static func _test_refresh_follows_settings(testing) -> void:
 	testing.begin("Dock refresh() repaints every control; the checkbox repaint fires no toggled")
+	# The spin boxes show project values; no env override may be active here.
+	ResponseLimits.clear_env_overrides()
 	# Coerced, not inferred: get_setting returns a Variant.
 	var orig_script_cap: int = int(ProjectSettings.get_setting(_SCRIPT_CAP_KEY, 256))
 	var orig_save_cap: int = int(ProjectSettings.get_setting(_SAVE_CAP_KEY, 256))
