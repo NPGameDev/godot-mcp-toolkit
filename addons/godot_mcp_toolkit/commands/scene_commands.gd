@@ -634,7 +634,9 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 			suffix += 1
 		target_name = target_name + str(suffix)
 
-	var instance: Node = (packed as PackedScene).instantiate()
+	# Instance with edit state, as the editor's own instancing does. Without it the
+	# saved node gets type= and its root script written out as overrides.
+	var instance: Node = (packed as PackedScene).instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE)
 	if instance == null:
 		return MCPToolkitError.fail("LOAD_FAILED",
 			"PackedScene.instantiate returned null for %s" % packed_path)
@@ -707,7 +709,7 @@ static func _batch_instantiate(
 		var entry = instances[i]
 		var inst_dict: Dictionary = entry if typeof(entry) == TYPE_DICTIONARY else {}
 		var inst_name := str(inst_dict.get("name", ""))
-		var instance: Node = packed.instantiate()
+		var instance: Node = packed.instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE)
 		if instance == null:
 			# Previously a silent `continue` — the failed entry vanished. Record it.
 			results.append({

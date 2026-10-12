@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- A scene added with `scene_instantiate` now saves like one the editor instances:
+  `[node ... instance=ExtResource(...)]` with no `type=`, and no `script =` line
+  pinning the instanced scene's root script. Before, the saved node repeated the
+  root's class and script, so a later change to that scene's root script didn't
+  reach the instance.
+
 ## [1.0.3] - 2026-10-05
 
 ### Fixed
