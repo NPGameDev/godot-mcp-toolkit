@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The dock's LSP line now follows a change to the LSP host or port in Editor
   Settings.
 - The Info dialog and the dock's read-only badge now agree.
+- The dock's collapsible sections no longer pad themselves with empty space; the
+  spare height sits below the last section.
 
 ### Removed
 

@@ -38,9 +38,6 @@ func show_info(server: Node, read_only_applied: bool) -> void:
 	# Fixed header — Connection + plugin/engine versions, always visible above
 	# the collapsible middle.
 	var connection := DockSectionCard.make_section("Connection")
-	# Pin the header at a fixed height — make_section returns SIZE_EXPAND_FILL,
-	# which would let the header expand and swallow the collapsible middle.
-	connection.size_flags_vertical = 0
 	_content_root.add_child(connection)
 	var conn: VBoxContainer = connection.get_meta("content")
 	if server != null and server.is_listening():
@@ -63,11 +60,10 @@ func show_info(server: Node, read_only_applied: bool) -> void:
 	_add_info_row(conn, "Plugin", "v%s" % plugin_ver)
 	_add_info_row(conn, "Godot", godot_ver)
 
-	# Collapsible middle — each section owns its own scroll; all start collapsed
-	# (the fixed header already shows the primary state), so no outer scroll.
-	var mid := VBoxContainer.new()
-	mid.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_content_root.add_child(mid)
+	# Collapsible middle — one scroll area between the header and the footer, so
+	# an open section is as tall as its content and a long one (Registered Tools)
+	# scrolls with the rest. All start collapsed: the header shows the primary state.
+	var mid := DockSectionCard.make_scroll_area(_content_root)
 
 	var tools_content := DockSectionCard.make_collapsible(mid, "Registered Tools", false)
 	if server != null and server.has_method("get_command_methods"):

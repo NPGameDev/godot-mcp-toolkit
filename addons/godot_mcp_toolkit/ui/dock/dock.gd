@@ -97,7 +97,6 @@ func _build_ui() -> void:
 
 	# == Status section (compact, pinned at top) ==============================
 	var status_section := DockSectionCard.make_section("Server Status")
-	status_section.size_flags_vertical = 0  # fixed height
 	add_child(status_section)
 	var sc: VBoxContainer = status_section.get_meta("content")
 
@@ -158,11 +157,9 @@ func _build_ui() -> void:
 	_unfocused_control = DockUnfocusedControl.new(_server)
 	sc.add_child(_unfocused_control)
 
-	# == Collapsible sections (titles always visible) =========================
-	var sections_vbox := VBoxContainer.new()
-	sections_vbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	# == Collapsible sections (one scroll area, spare height below) ===========
+	var sections_vbox := DockSectionCard.make_scroll_area(self)
 	sections_vbox.add_theme_constant_override("separation", int(2 * scale))
-	add_child(sections_vbox)
 
 	# -- Audit Log section (collapsed by default) -----------------------------
 	# The panel owns the audit settings + view/clear buttons + the lazy log
