@@ -411,14 +411,17 @@ static func coerce_value_hint(raw: Variant, existing: Variant) -> Variant:
 ## engine's own conversion truncates it.
 ## [br][br]
 ## Returns [code]{"value": <the value to set>, "truncated": bool}[/code].
-## [code]truncated[/code] is true when the int differs from the requested float by
-## more than float rounding, so the caller can warn that the value changed.
+## [code]truncated[/code] is true when the stored int differs from the requested
+## float, so the caller can warn that the value changed.
 static func coerce_to_declared_type(value: Variant, declared_type: int) -> Dictionary:
 	if declared_type != TYPE_INT or typeof(value) != TYPE_FLOAT:
 		return {"value": value, "truncated": false}
 	var requested: float = value
 	var stored := int(requested)
-	return {"value": stored, "truncated": not is_equal_approx(float(stored), requested)}
+	# Exact compare: a whole float within int64 range survives the round trip
+	# through int unchanged, while a tolerance that scales with the value would
+	# hide a dropped fraction on large numbers.
+	return {"value": stored, "truncated": float(stored) != requested}
 
 
 static func _safe_dict(value: Variant) -> Dictionary:

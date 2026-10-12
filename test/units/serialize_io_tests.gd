@@ -745,13 +745,13 @@ static func _test_settings_collect_names(testing) -> void:
 # --- resource.write: JSON numbers on int properties -----------------------
 # JSON numbers arrive as floats. In the editor a non-@tool script resource has a
 # placeholder script instance, whose set() stores the Variant as given, so an
-# unconverted float reaches the file as `price = 4.0`. _PlaceholderLike stores
-# raw Variants the same way (the headless runner gives scripts a live instance,
-# which converts).
+# unconverted float reaches the file as `price = 4.0`. The
+# placeholder_like_resource.gd fixture stores raw Variants the same way (the
+# headless runner gives scripts a live instance, which converts).
 
 static func _test_resource_write_int_property(testing) -> void:
 	testing.begin("resource.write int properties from JSON numbers")
-	var resource := _PlaceholderLike.new()
+	var resource: Resource = PlaceholderLikeResource.new()
 	var warnings := ResourceCommands._apply_resource_properties(
 			resource, {"price": 4.0, "weight": 4.0}, "Resource")
 	testing.eq(warnings.size(), 0, "no warnings")
@@ -795,6 +795,13 @@ static func _test_resource_write_int_on_update(testing) -> void:
 	testing.ok(truncation_warning.contains("4.5"), "the warning names the requested 4.5")
 	testing.ok(truncation_warning.contains("stored 4 "), "the warning names the stored 4")
 
+	# The truncation check compares exactly: a tolerance that scales with the value
+	# would hide the dropped .5 here.
+	var large_warnings := _update_resource_file(testing, fixture, {"price": 100000.5})
+	testing.eq(_saved_property_line(fixture, "price"), "price = 100000",
+			"100000.5 on an int property → the file stores the truncated price = 100000")
+	testing.eq(large_warnings.size(), 1, "100000.5 → exactly one warning")
+
 	var untyped_warnings := _update_resource_file(testing, fixture, {"note": 4.5})
 	testing.eq(_saved_property_line(fixture, "note"), "note = 4.5",
 			"a float on an untyped property is left alone")
@@ -822,22 +829,3 @@ static func _saved_property_line(path: String, property_name: String) -> String:
 		if line.begins_with(property_name + " = "):
 			return line
 	return ""
-
-
-class _PlaceholderLike extends Resource:
-	var _values := {}
-
-	func _get_property_list() -> Array[Dictionary]:
-		return [
-			{"name": "price", "type": TYPE_INT, "usage": PROPERTY_USAGE_DEFAULT},
-			{"name": "weight", "type": TYPE_FLOAT, "usage": PROPERTY_USAGE_DEFAULT},
-		]
-
-	func _set(property: StringName, value: Variant) -> bool:
-		if property == &"price" or property == &"weight":
-			_values[property] = value
-			return true
-		return false
-
-	func _get(property: StringName) -> Variant:
-		return _values.get(property)
