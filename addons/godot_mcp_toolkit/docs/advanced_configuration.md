@@ -116,13 +116,19 @@ fields. The request-parameter names stay unit-appropriate (`offset`/`max_bytes`
 for bytes, `start_line`/`end_line` for lines) — only the response *shape* is
 uniform.
 
-### When a cap change takes effect (no restart)
+### When a cap change takes effect
 
 The read caps below (`save_read_cap_kb`, `script_read_cap_kb`) are read by the
-handler **on every call**, so a change made in the dock, in Project Settings, or by
-an `.mcp.json` override applies to the **very next call**, with no restart and no
+handler **on every call**, so a change to the project value, made in the dock or in
+Project Settings, applies to the **very next call**, with no restart and no
 reconnect. `ws_buffer_kb` is the exception: the editor sizes a connection's buffer
 when it accepts the connection, so a change applies from the next connection.
+
+Adding, changing or removing an env override in `.mcp.json` takes effect only
+after you restart your MCP client, which starts the server again with the new
+environment (see **Overrides from `.mcp.json`** below). While an env override is
+active, an edit in the dock or in Project Settings changes the project value, not
+the value in use.
 
 **The server is not pushed the value.** The MCP server advertises a *static*
 `max_bytes` schema bound as a sanity ceiling; the **toolkit enforces the real,
@@ -136,10 +142,10 @@ still be rejected: the live cap is authoritative.)
 
 Each limit has a project value: the one stored in `project.godot`, which you edit
 in the dock or the Project Settings inspector. Both keep their own edits inside
-the limit's range and step. A value set by hand in `project.godot` is used as set,
-except that no limit goes below its floor (64 KB for the two read caps, 256 KB for
-the WebSocket buffer). The dock and the inspector show such a value clamped to the
-range and rounded to the nearest step.
+the limit's range and step. The editor uses a value set by hand in `project.godot`
+as set, except that it never goes below the limit's floor (64 KB for the two read
+caps, 256 KB for the WebSocket buffer). The dock and the inspector show such a
+value clamped to the range and rounded to the nearest step.
 
 **Overrides from `.mcp.json`.** Two limits can also be overridden on one machine
 by an environment variable in the `env` block of `.mcp.json`, given in bytes (see
@@ -149,7 +155,7 @@ so the rest of your team keeps the project value. The dock keeps showing the
 project value in the field and adds a line under the fields, for example:
 
 > Script cap in use: 1024 KB from GODOT_MCP_SCRIPT_READ_LIMIT (MCP client env).
-> This field applies once you remove the variable.
+> This field applies once you remove the variable and restart your MCP client.
 
 The line shows the exact value in use. To drop an override, remove the variable
 from `.mcp.json` and restart your MCP client: the server connects again without

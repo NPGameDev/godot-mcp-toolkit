@@ -7,8 +7,9 @@ extends RefCounted
 ## setting, the one the dock and the Project Settings inspector edit) and at most
 ## one env override (pushed by the MCP server from an environment variable in the
 ## client's config). The effective value is the env override when one is active,
-## else the project value, never below the limit's floor. Every reader of a limit
-## asks this file for the effective value, so the floor is applied in one place.[br]
+## else the project value, never below the limit's floor. The editor's readers of
+## a limit ask this file for the effective value, so the floor is applied in one
+## place.[br]
 ## [br]
 ## Env overrides are held here, in memory, for the editor session, and never
 ## written to [ProjectSettings]: anything that saves the project would otherwise
@@ -18,8 +19,8 @@ extends RefCounted
 ## notification is a signal on one shared instance, reached through
 ## [method env_overrides_changed].[br]
 ## [br]
-## Editor-side only: the runtime autoload sizes its connections from the project
-## value and must not preload this file.
+## Editor-side: the runtime autoload sizes its connections from the project value
+## by design, so it reads that setting itself instead of using this file.
 
 const SCRIPT_READ_CAP_KB := "script_read_cap_kb"
 const SAVE_READ_CAP_KB := "save_read_cap_kb"
@@ -135,7 +136,7 @@ static func effective_value(key: String) -> int:
 static func replace_env_overrides(pushed: Dictionary) -> void:
 	var next_overrides := {}
 	for key in KEYS:
-		var pushed_value = pushed.get(key, null)
+		var pushed_value: Variant = pushed.get(key, null)
 		if pushed_value != null:
 			next_overrides[key] = int(pushed_value)
 	if next_overrides == _env_overrides:

@@ -151,7 +151,7 @@ func _override_line_text(key: String) -> String:
 	if variable.is_empty():
 		return "%s in use: %d KB, set by the MCP server. This field applies once the server stops setting it." % [
 				field_name, in_use_kb]
-	return "%s in use: %d KB from %s (MCP client env). This field applies once you remove the variable." % [
+	return "%s in use: %d KB from %s (MCP client env). This field applies once you remove the variable and restart your MCP client." % [
 			field_name, in_use_kb, variable]
 
 
