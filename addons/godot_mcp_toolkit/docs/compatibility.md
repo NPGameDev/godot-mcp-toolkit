@@ -335,12 +335,14 @@ For a fully clean build in a binary-token mode, set Script Export Mode to **Text
 or add `res://addons/godot_mcp_toolkit/*` (and each extension `.gd` path) to the
 preset's exclude filter.
 
-`project.binary` additionally carries an inert `[mcp_toolkit]` config flag
-(`internal/bootstrap_complete`, plus any limits/audit prefs you customise) — a
-cosmetic fingerprint with **no secrets** (the auth token and registry live in
-`user://`, never packed). The export plugin leaves it in place (nulling
+`project.binary` also carries any `[mcp_toolkit]` settings your project changed
+from their defaults (limits, concurrency, audit). They are a cosmetic fingerprint
+and hold **no secrets**: the auth token and registry live in `user://` and are
+never packed. The export plugin leaves them in place, because nulling
 ProjectSettings during the bake would add a crash-window risk for a cosmetic-only
-gain).
+gain. Since 1.0.4 the toolkit no longer registers `internal/bootstrap_complete`, a
+setting that had no effect. A copy an older version left in `project.godot` is
+harmless, and disabling the plugin erases it.
 
 A headless **CLI** export on Godot 4.4 and older can also appear to hang after the
 export succeeds — an editor-session restore, not the strip plugin. Cause and

@@ -708,7 +708,15 @@ static func _test_settings_collect_names(testing) -> void:
 	# so the collector sees the full set. register_all() does NOT call
 	# ProjectSettings.save() — purely in-memory, so project.godot is untouched.
 	SettingsRegistration.register_all()
+	# A key an older version left in project.godot reaches ProjectSettings with no
+	# registration, and the scrub must still collect it. Set in memory only, and
+	# erased right after the collect so an aborted group cannot leave it behind.
+	var leftover_key := "mcp_toolkit/internal/legacy_probe"
+	ProjectSettings.set_setting(leftover_key, true)
 	var names := SettingsRegistration._collect_mcp_setting_names()
+	ProjectSettings.set_setting(leftover_key, null)
+	testing.ok(names.has(leftover_key),
+			"collector sweeps an unregistered leftover key (older-version copy)")
 	# Regression-pin: the exact key the concern's stale hardcoded list missed.
 	testing.ok(names.has("mcp_toolkit/limits/save_read_cap_kb"),
 			"collector includes save_read_cap_kb (the key the stale list missed)")
@@ -720,8 +728,9 @@ static func _test_settings_collect_names(testing) -> void:
 	# persisting it writes per-developer state into the committed project.godot.
 	testing.ok(not names.has("mcp_toolkit/status"),
 			"collector excludes status (no longer persisted to ProjectSettings)")
-	testing.ok(names.has("mcp_toolkit/internal/bootstrap_complete"),
-			"collector includes internal/bootstrap_complete")
+	# Negative pin: the key had no reader, so register_all() no longer registers it.
+	testing.ok(not names.has("mcp_toolkit/internal/bootstrap_complete"),
+			"collector excludes internal/bootstrap_complete (no longer registered)")
 	# An unrelated engine key is NOT swept by the mcp_toolkit/ prefix.
 	testing.ok(not names.has("application/config/name"),
 			"collector excludes unrelated engine key (application/config/name)")

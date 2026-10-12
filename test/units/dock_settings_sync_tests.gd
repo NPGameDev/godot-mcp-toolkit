@@ -166,6 +166,11 @@ static func _test_range_hints(testing) -> void:
 	var watchdog_grace_info := _property_info("mcp_toolkit/concurrency/mutation_watchdog_grace_ms")
 	testing.eq(int(watchdog_grace_info.get("hint", -1)), PROPERTY_HINT_NONE,
 			"mutation_watchdog_grace_ms stays unhinted (not clamped)")
+	var lease_ttl_info := _property_info("mcp_toolkit/concurrency/scene_lease_ttl_ms")
+	testing.eq(int(lease_ttl_info.get("hint", -1)), PROPERTY_HINT_NONE,
+			"scene_lease_ttl_ms is registered and stays unhinted (not clamped)")
+	testing.eq(int(lease_ttl_info.get("type", -1)), TYPE_INT,
+			"scene_lease_ttl_ms registers as int")
 	print("")
 
 

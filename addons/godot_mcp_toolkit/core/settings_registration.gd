@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## ProjectSettings registration for limits, audit, and bootstrap keys.
+## ProjectSettings registration for the limits, concurrency, and audit keys.
 ##
 ## Called once at plugin startup to ensure mcp_toolkit/* keys appear
 ## in the Project Settings inspector with correct types and defaults, and the
@@ -8,8 +8,6 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const ResponseLimits = Modules.ResponseLimits
-
-const _BOOTSTRAP_KEY := "mcp_toolkit/internal/bootstrap_complete"
 
 # Keys earlier versions stored and this one no longer writes. Each entry is
 # removable at 2.0.0.
@@ -26,7 +24,6 @@ static func register_all() -> void:
 	_register_limits()
 	_register_concurrency()
 	_register_audit()
-	_register_bootstrap_flag()
 	# One-way migration: erase whatever retired key a project still carries. The
 	# erase is in-memory only: register_all() deliberately never saves, so the key
 	# leaves project.godot at the next ProjectSettings save, from whatever source.
@@ -73,6 +70,8 @@ static func _register_concurrency() -> void:
 		"How long a scene save/open waits for the EditorFileSystem scan to finish before aborting, in ms. 0 = fail-fast; recommended 1000-30000. Higher lets slow-import projects finish scanning at the cost of longer save stalls. Not clamped.")
 	_register_basic_int("mcp_toolkit/concurrency/mutation_watchdog_grace_ms", 60000,
 		"Grace added to a mutation's deadline before the dispatch watchdog force-clears a wedged lock, in ms. Added to the command's declared timeout (or the 300s ceiling for undeclared commands). The watchdog is a safety net that should normally never fire. Not clamped.")
+	_register_basic_int("mcp_toolkit/concurrency/scene_lease_ttl_ms", 8000,
+		"How long the scene lease holder may go without renewing before a waiting client can steal the lease, in ms. Lower hands off between clients faster but switches scene tabs more; higher switches less but a waiting client blocks longer. Not clamped.")
 
 
 static func _register_audit() -> void:
@@ -80,12 +79,6 @@ static func _register_audit() -> void:
 		"Enable MCP audit log at user://addons/godot_mcp_toolkit/project_instance_<hash>/mcp_audit.log.")
 	# Max audit log size in KB. 0 = unlimited. Log truncates to 50% when exceeded.
 	_register_basic_ranged_int("mcp_toolkit/audit/max_size_kb", 1024, "0,10240,128")
-
-
-static func _register_bootstrap_flag() -> void:
-	if not ProjectSettings.has_setting(_BOOTSTRAP_KEY):
-		ProjectSettings.set_setting(_BOOTSTRAP_KEY, false)
-	ProjectSettings.set_initial_value(_BOOTSTRAP_KEY, false)
 
 
 static func _register_basic_bool(key: String, default_value: bool, description: String) -> void:

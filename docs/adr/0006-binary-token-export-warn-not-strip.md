@@ -33,6 +33,10 @@ secrets (the auth token and registry live in `user://`, never packed) — left i
 place for the same reason; an optional settings strip is tracked as a high-priority
 post-1.0 idea (`Plan/Ideas/PostRelease/2026-06-08-strip-mcp-toolkit-projectsettings.md`).
 
+**Update (2026-10-12, 1.0.4):** `internal/bootstrap_complete` is no longer registered (it
+had no effect after the feature-gate removal), so `project.binary` carries only the `[mcp_toolkit]`
+settings a project changed from their defaults.
+
 The bug is **4.3+ only** (binary tokenization was introduced in 4.3). Extends
 **ADR 0005** (single-level extension discovery / strip): the warning counts the
 same single-level extension set. Full source-verified analysis (engine line
