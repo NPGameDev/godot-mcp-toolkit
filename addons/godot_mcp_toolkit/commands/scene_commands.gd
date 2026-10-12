@@ -634,9 +634,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 			suffix += 1
 		target_name = target_name + str(suffix)
 
-	# Instance with edit state, as the editor's own instancing does. Without it the
-	# saved node gets type= and its root script written out as overrides.
-	var instance: Node = (packed as PackedScene).instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE)
+	var instance := _instantiate_for_edit(packed as PackedScene)
 	if instance == null:
 		return MCPToolkitError.fail("LOAD_FAILED",
 			"PackedScene.instantiate returned null for %s" % packed_path)
@@ -670,6 +668,20 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		"path": _path_in_scene(root, instance),
 		"class_name": instance.get_class(),
 	})
+
+
+## Instances [param packed] with its edit state, as the editor does when a scene is
+## dropped into another.
+##
+## Saving the owner scene then writes the node as a plain instance and stores only
+## what differs from the sub-scene. Without the edit state the node has no link to the
+## sub-scene's state, so the save writes the root's class ([code]type=[/code]),
+## compares the root's properties with the class defaults instead, and copies its
+## script, other non-default properties and groups into the owner scene. There they
+## override the sub-scene: later changes to those values in the sub-scene, such as a
+## new root script, never reach this instance.
+static func _instantiate_for_edit(packed: PackedScene) -> Node:
+	return packed.instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE)
 
 
 ## Coerce one transform value (position/rotation/scale) for an instantiate call.
@@ -709,7 +721,7 @@ static func _batch_instantiate(
 		var entry = instances[i]
 		var inst_dict: Dictionary = entry if typeof(entry) == TYPE_DICTIONARY else {}
 		var inst_name := str(inst_dict.get("name", ""))
-		var instance: Node = packed.instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE)
+		var instance := _instantiate_for_edit(packed)
 		if instance == null:
 			# Previously a silent `continue` — the failed entry vanished. Record it.
 			results.append({
