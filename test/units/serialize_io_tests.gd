@@ -15,6 +15,7 @@ const ExportStrip := preload("res://addons/godot_mcp_toolkit/core/export_strip.g
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
+const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resource_commands.gd")
 
 
 static func run(testing) -> void:
@@ -29,6 +30,7 @@ static func run(testing) -> void:
 	_test_log_level_continuation(testing)
 	_test_compose_error_message(testing)
 	_test_settings_collect_names(testing)
+	_test_resource_write_int_property(testing)
 
 
 # --- Coerce/serialize round-trip symmetry ---------------------------------
@@ -725,4 +727,41 @@ static func _test_settings_collect_names(testing) -> void:
 	# An unrelated engine key is NOT swept by the mcp_toolkit/ prefix.
 	testing.ok(not names.has("application/config/name"),
 			"collector excludes unrelated engine key (application/config/name)")
+	print("")
+
+
+# --- resource.write: JSON numbers on int properties -----------------------
+# JSON numbers arrive as floats. In the editor a non-@tool script resource has a
+# placeholder script instance, whose set() stores the Variant as given, so a float
+# reached the file as `price = 4.0`. _PlaceholderLike stores raw Variants the
+# same way (the headless runner gives scripts a live instance, which converts).
+
+class _PlaceholderLike extends Resource:
+	var _values := {}
+
+	func _get_property_list() -> Array[Dictionary]:
+		return [
+			{"name": "price", "type": TYPE_INT, "usage": PROPERTY_USAGE_DEFAULT},
+			{"name": "weight", "type": TYPE_FLOAT, "usage": PROPERTY_USAGE_DEFAULT},
+		]
+
+	func _set(property: StringName, value: Variant) -> bool:
+		if property == &"price" or property == &"weight":
+			_values[property] = value
+			return true
+		return false
+
+	func _get(property: StringName) -> Variant:
+		return _values.get(property)
+
+
+static func _test_resource_write_int_property(testing) -> void:
+	testing.begin("resource.write int properties from JSON numbers")
+	var resource := _PlaceholderLike.new()
+	var warnings := ResourceCommands._apply_resource_properties(
+			resource, {"price": 4.0, "weight": 4.0}, "Resource")
+	testing.eq(warnings.size(), 0, "no warnings")
+	testing.eq(typeof(resource.get("price")), TYPE_INT, "whole float on int property → int")
+	testing.eq(resource.get("price"), 4, "int value kept")
+	testing.eq(typeof(resource.get("weight")), TYPE_FLOAT, "float property stays float")
 	print("")

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `resource_write` now saves a number given for an `int` property of a script
+  resource as an int. Before, JSON numbers reached the property as floats, and on
+  a resource whose script isn't `@tool` the file read `price = 4.0`.
+
 ## [1.0.3] - 2026-10-05
 
 ### Fixed
