@@ -25,7 +25,7 @@
 > 3.2c legitimately returns success+warning; a cross-family destroy must not.)
 
 **3.2c** `node_set_property` (convertible value ADJUSTED → success + warning — 41o D1) — node_path=`Sv2Sprite`, property=`z_index`, value=`2.9`
-- **Expect:** **success** (NOT `SET_FAILED`). `z_index` is an `int`; the engine truncates `2.9` → `2` and ACCEPTS the write, so the response carries a `warning` naming the property + stored-vs-requested delta (e.g. "note: 'z_index' stored 2 but you requested 2.9 — the engine adjusted the value to fit int."). Verify `node_get_property` Sv2Sprite `z_index` = 2.
+- **Expect:** **success** (NOT `SET_FAILED`). `z_index` is an `int`; the engine truncates `2.9` → `2` and ACCEPTS the write, so the response carries a `warning` naming the property + stored-vs-requested delta (e.g. "note: 'z_index' stored 2 but you requested 2.9 — the value was adjusted to fit int."). Verify `node_get_property` Sv2Sprite `z_index` = 2.
 - Restore: `node_set_property` Sv2Sprite `z_index` = 0.
 
 > **REGRESSION WATCH (41o D1):** An accepted-but-adjusted write (in-family

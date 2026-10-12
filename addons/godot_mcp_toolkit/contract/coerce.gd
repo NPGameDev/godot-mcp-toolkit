@@ -398,5 +398,31 @@ static func coerce_value_hint(raw: Variant, existing: Variant) -> Variant:
 	return coerce_value(tagged)
 
 
+## Fits a JSON number to the [code]int[/code] a property declares; any other value
+## passes through unchanged.
+##
+## JSON numbers always decode as float. A live script instance converts a value to
+## the member's type on set(), but the editor runs a script that is not
+## [code]@tool[/code] as a placeholder instance, whose set() stores the value as
+## given, so an [code]int[/code] property would save as [code]4.0[/code]. When
+## [param declared_type] (the [code]type[/code] entry of
+## [method Object.get_property_list]) is [constant @GlobalScope.TYPE_INT] and
+## [param value] is a float, the value becomes an int, truncated toward zero as the
+## engine's own conversion truncates it.
+## [br][br]
+## Returns [code]{"value": <the value to set>, "truncated": bool}[/code].
+## [code]truncated[/code] is true when the stored int differs from the requested
+## float, so the caller can warn that the value changed.
+static func coerce_to_declared_type(value: Variant, declared_type: int) -> Dictionary:
+	if declared_type != TYPE_INT or typeof(value) != TYPE_FLOAT:
+		return {"value": value, "truncated": false}
+	var requested: float = value
+	var stored := int(requested)
+	# Exact compare: a whole float within int64 range survives the round trip
+	# through int unchanged, while a tolerance that scales with the value would
+	# hide a dropped fraction on large numbers.
+	return {"value": stored, "truncated": float(stored) != requested}
+
+
 static func _safe_dict(value: Variant) -> Dictionary:
 	return value if typeof(value) == TYPE_DICTIONARY else {}

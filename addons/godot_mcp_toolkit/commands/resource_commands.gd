@@ -5,6 +5,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
+const PropertySetCheck = Modules.PropertySetCheck
 const Untrusted = Modules.Untrusted
 const Helpers = Modules.CommandHelpers
 
@@ -28,20 +29,21 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 # -- Helpers ------------------------------------------------------------------
 
 
-static func _property_names_of(object: Object) -> Dictionary:
-	var names := {}
+## Maps each property name to its declared Variant type.
+static func _property_types_of(object: Object) -> Dictionary:
+	var types := {}
 	for property in object.get_property_list():
 		var property_name := str(property.get("name", ""))
 		if not property_name.is_empty():
-			names[property_name] = true
-	return names
+			types[property_name] = int(property.get("type", TYPE_NIL))
+	return types
 
 
 static func _apply_resource_properties(
 	resource: Resource, properties: Dictionary, resource_class: String,
 ) -> Array[String]:
 	var warnings: Array[String] = []
-	var valid := _property_names_of(resource)
+	var property_types := _property_types_of(resource)
 	for key in properties.keys():
 		var key_string := str(key)
 		var raw_value = properties[key]
@@ -72,11 +74,16 @@ static func _apply_resource_properties(
 				else:
 					warnings.append(
 						"property '%s' on %s: set() had no effect (may need a different API)" % [key_string, resource_class])
-		elif not valid.has(key_string):
+		elif not property_types.has(key_string):
 			warnings.append(
 				"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
 		else:
-			resource.set(key_string, coerced)
+			var declared_type: int = property_types[key_string]
+			var conversion := Coerce.coerce_to_declared_type(coerced, declared_type)
+			resource.set(key_string, conversion["value"])
+			if conversion["truncated"]:
+				warnings.append(PropertySetCheck.adjusted_warning(
+						conversion["value"], coerced, key_string))
 	return warnings
 
 

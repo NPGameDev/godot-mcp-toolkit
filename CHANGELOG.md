@@ -23,6 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Info dialog and the dock's read-only badge now agree.
 - The dock's collapsible sections no longer pad themselves with empty space; the
   spare height sits below the last section.
+- `resource_write` no longer saves an `int` property of a script resource as a
+  float (`price = 4.0`) when it updates an existing file and the script isn't
+  `@tool`. A value with a fraction, such as `4.5`, is saved as `4` in any `int`
+  property, whether the file is created or updated, and the response includes a
+  warning. Reported and fixed by @benfeather
+  ([#10](https://github.com/NPGameDev/godot-mcp-toolkit/issues/10),
+  [#11](https://github.com/NPGameDev/godot-mcp-toolkit/pull/11)).
 
 ### Removed
 
