@@ -39,6 +39,7 @@ const DockSettingsSyncTests := preload("res://test/units/dock_settings_sync_test
 const ResponseLimitsTests := preload("res://test/units/response_limits_tests.gd")
 const InfoDialogTests := preload("res://test/units/info_dialog_tests.gd")
 const DockLayoutTests := preload("res://test/units/dock_layout_tests.gd")
+const InputMapTests := preload("res://test/units/input_map_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -82,6 +83,7 @@ func _init() -> void:
 	await ResponseLimitsTests.run(testing, self)  # the in-tree and transport groups await frames → coroutine
 	InfoDialogTests.run(testing)
 	DockLayoutTests.run(testing)
+	InputMapTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()
