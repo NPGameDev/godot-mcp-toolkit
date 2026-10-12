@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning. Reported and fixed by @benfeather
   ([#10](https://github.com/NPGameDev/godot-mcp-toolkit/issues/10),
   [#11](https://github.com/NPGameDev/godot-mcp-toolkit/pull/11)).
+- `scene_instantiate` no longer copies the instanced scene's root class
+  (`type=`), root script, other changed root properties and groups into your
+  scene when you save it. They stayed pinned on the instance, so swapping or removing the
+  instanced scene's root script didn't reach it. Reopening and saving your scene
+  cleared the pinned values only while the instanced scene's root still matched
+  them. The instance now saves the way the editor saves a scene you drop in.
+  Reported and fixed by @benfeather
+  ([#12](https://github.com/NPGameDev/godot-mcp-toolkit/issues/12),
+  [#13](https://github.com/NPGameDev/godot-mcp-toolkit/pull/13)).
 
 ### Removed
 
