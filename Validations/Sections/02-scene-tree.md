@@ -58,15 +58,17 @@
 
 **2.14** `scene_instantiate` — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`
 - **Expect:** success, Sv2Sub node added
-- **Saved-file check:** `editor_save_scene`, then `script_read` file_path=`res://sv2_validation/Sv2Main.tscn`. The `[node name="Sv2Sub" ...]` header carries `instance=ExtResource(...)` and **no** `type=`, and the node's block under it has no `script =` line: the instance saves the way the editor saves a scene dropped into another.
+- **Saved-file check:** `editor_save_scene`, then `script_read` file_path=`res://sv2_validation/Sv2Main.tscn`. The `[node name="Sv2Sub" ...]` header carries `instance=ExtResource(...)` and **no** `type=`, and the node's block under it has no `script =` line: the instance saves the way the editor saves a scene dropped into another. `sub.tscn`'s root is a scriptless `Node2D` (1.9), so the `type=` half is the one that catches a regression here; the `script =` half fires only for a sub-scene whose root has a script.
 
 > **REGRESSION WATCH (FIX-B, 7e63aee):** Parameter must be `scene_path`, not
 > the old `packed_path`. If the tool rejects `scene_path`, the rename has regressed.
 >
-> **REGRESSION WATCH (#12):** A `type=` on an instance's header, or a `script =`
-> line in its block, means `scene_instantiate` instances without the edit state
-> again: the save pins the sub-scene root's class and properties into the owner
-> scene, so later changes to that root never reach the instance. Flag as **Major**.
+> **REGRESSION WATCH (#12):** A `type=` on an instance's header means
+> `scene_instantiate` instances without the edit state again: the save pins the
+> sub-scene root's class and properties into the owner scene, so later changes to
+> that root never reach the instance. With 1.9's scriptless `Sv2Sub` root, `type=`
+> is the sign this step can show; a pinned `script =` line in the block appears
+> only when the sub-scene's root has a script. Flag as **Major**.
 
 **2.15** `scene_instantiate` (with transform override) — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`, name=`Sv2SubProps`, transform=`{"position": {"type": "Vector2", "x": 50, "y": 75}}`
 - **Expect:** success, Sv2SubProps created. Verify via `node_get_property` position = (50, 75). **Param name is `transform`, not `properties`** — single-mode `scene_instantiate` has no `properties` param; passing `properties` silently no-ops (success:true, position stays 0,0, no error) because `properties` is batch-only (inside `instances[]` entries — see 2.15a/C9). Use `transform` for the single-mode override.
@@ -82,7 +84,7 @@
 
 **2.15a** `scene_instantiate` (batch all-success — rollup keys ABSENT) — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`, instances=`[{"name":"Sv2SubBatchA"},{"name":"Sv2SubBatchB"}]`
 - **Expect:** success, `instances` array with 2 created nodes (Sv2SubBatchA, Sv2SubBatchB), `count`=2, and **NO** top-level `failed` key and **NO** top-level `hint` key (the batch-rollup is purely additive — an all-success batch keeps its prior `{status, count, instances, results}` shape). The per-entry `results` rows are all success=true.
-- **Saved-file check (before the cleanup):** `editor_save_scene`, then `script_read` file_path=`res://sv2_validation/Sv2Main.tscn`. The `Sv2SubBatchA` and `Sv2SubBatchB` headers each carry `instance=ExtResource(...)` and **no** `type=`, and neither node's block has a `script =` line (2.14's #12 watch).
+- **Saved-file check (before the cleanup):** `editor_save_scene`, then `script_read` file_path=`res://sv2_validation/Sv2Main.tscn`. The `Sv2SubBatchA` and `Sv2SubBatchB` headers each carry `instance=ExtResource(...)` and **no** `type=`, and neither node's block has a `script =` line (2.14's #12 watch: as there, `type=` is the half that catches a regression, since `sub.tscn`'s root has no script).
 - Cleanup: `scene_delete_node` node_path=`Sv2SubBatchA`, `scene_delete_node` node_path=`Sv2SubBatchB`
 
 > **REGRESSION WATCH (concern 034 D, summarize_batch / 7244950):** `scene_instantiate`
