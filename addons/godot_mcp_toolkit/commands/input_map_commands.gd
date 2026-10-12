@@ -179,6 +179,21 @@ static func _persist_input_action(action: String, deadzone: float) -> void:
 				error, action])
 
 
+## The editor's InputMap holds only the built-in ui_* actions (main.cpp calls
+## load_default() in the editor), so load a project action from its setting
+## before the handlers check InputMap for it.
+static func _load_project_action(action: String) -> void:
+	if InputMap.has_action(action):
+		return
+	var setting = ProjectSettings.get_setting("input/" + action)
+	if typeof(setting) != TYPE_DICTIONARY:
+		return
+	InputMap.add_action(action, float(setting.get("deadzone", 0.5)))
+	for event in setting.get("events", []):
+		if event is InputEvent:
+			InputMap.action_add_event(action, event)
+
+
 # -- Commands -----------------------------------------------------------------
 
 
@@ -190,6 +205,7 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
+	_load_project_action(action_name)
 	if action == "add":
 		var deadzone_raw = parameters.get("deadzone", 0.5)
 		var deadzone := float(deadzone_raw) \
@@ -235,6 +251,7 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
+	_load_project_action(action_name)
 	if not InputMap.has_action(action_name):
 		return MCPToolkitError.fail("NOT_FOUND",
 			"no action '%s'; call input_map.action with action='add' first" % action_name)

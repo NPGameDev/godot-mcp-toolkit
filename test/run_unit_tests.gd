@@ -36,6 +36,7 @@ const RuntimeScreenshotTests := preload("res://test/units/runtime_screenshot_tes
 const RuntimeLifecycleTests := preload("res://test/units/runtime_lifecycle_tests.gd")
 const NodejsCheckTests := preload("res://test/units/nodejs_check_tests.gd")
 const DockSettingsSyncTests := preload("res://test/units/dock_settings_sync_tests.gd")
+const InputMapTests := preload("res://test/units/input_map_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -76,6 +77,7 @@ func _init() -> void:
 	RuntimeLifecycleTests.run(testing)
 	NodejsCheckTests.run(testing)
 	DockSettingsSyncTests.run(testing)
+	InputMapTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()
