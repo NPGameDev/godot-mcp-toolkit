@@ -148,7 +148,7 @@ as-built state.
 - **Server consumer:** **pure passthrough (REFLECT).** `if_exists` is a request param the LLM sets (carried in `inputSchema`); `status` is a response field the bridge forwards verbatim via `callAndWrap` (`registration/toolDispatch.ts`) → `stableStringify` (`shared/stableJson.ts`) → `message.result` (`transport/channel.ts`) — no server-side interpretation of `created`/`returned`/`replaced`. The toolkit owns the discriminator; the server adds no idempotency logic of its own.
 - **Example** (`scene.create` with `if_exists:"replace"`, other fields omitted): `{"success":true,"status":"replaced","path":"res://x.tscn","root_type":"Node2D","previous_root_type":"Node"}`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/contract/coerce.gd" data-verified="bb4d215" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/contract/coerce.gd" data-verified="3f7b2d8" -->
 ### C7 — Type-tag coercion vocabulary  ·  **public**
 - **Toolkit shape** (`contract/coerce.gd`, bidirectional `coerce_value` ⟷ `serialize_value`): complex Godot types cross JSON as tagged dicts `{"type":"<Tag>",…}`. **18 tags:**
   - `Vector2{x,y}` · `Vector3{x,y,z}` · `Vector4{x,y,z,w}` · `Vector2i{x,y}` · `Vector3i{x,y,z}` (no `Vector4i`) · `Color{r,g,b,a}` (a default 1.0) · `Rect2{x,y,w,h}` · `Rect2i{x,y,w,h}` · `Transform2D{x_axis,y_axis,origin}` · `Transform3D{basis{x,y,z},origin}` · `NodePath{path}` · `Resource{path[,class]}` · `ResourceRef{path}` (alias of Resource) · `NewResource{class,properties}` (input-only) · `PackedVector2Array{values:[…]}` · `PackedVector3Array{values:[…]}` · `PackedColorArray{values:[…]}` · `LayerMask{category="2d_physics",layers:[…]}` → int bitmask.

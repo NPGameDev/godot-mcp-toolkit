@@ -384,14 +384,14 @@ translates them bidirectionally (`coerce_value` ⟷ `serialize_value`). There ar
 and `LayerMask`. An unknown tag is **rejected**, not passed through — the symmetry is the
 contract.
 
-**Idempotency** ([§contract C6](#13-contract-surface)). The file-level create commands
-(`scene.create` and the asset writers) return a `status` discriminator and accept
-`if_exists`, so a blind retry is safe by default:
+**Idempotency** ([§contract C6](#13-contract-surface)). The `if_exists` creates
+(`scene.create` and the asset writers) return a `status` discriminator, so a blind
+retry is safe by default:
 
 <!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="bb4d215" -->
 ```mermaid
 flowchart TD
-    create["file-level create command"] --> exists{"target exists?"}
+    create["create command with if_exists"] --> exists{"target exists?"}
     exists -->|no| make["create → status: created"]
     exists -->|yes| pol{"if_exists"}
     pol -->|"return (default)"| noop["no-op → status: returned"]
