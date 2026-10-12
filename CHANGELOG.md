@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `input_map_action` has a `rename` action: `{"action": "rename", "name": "old",
+  "new_name": "new"}` moves a saved input action to a new name with its events and
+  deadzone. Before, a rename took `add`, one `bind` per event and `remove`. Needs
+  the matching server release, whose schema accepts `rename` and `new_name`.
+
 ## [1.0.3] - 2026-10-05
 
 ### Fixed

@@ -138,7 +138,7 @@ C24–C26 & C29 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| input_map.action | 65 | — | — | — | 09a6392 | Param renamed: action_name → name |
+| input_map.action | 65, 10.5, 10.6 | ✓ (10.6 rename onto existing → ALREADY_EXISTS) | — | — | 09a6392 | Param renamed: action_name → name. `rename` + `new_name` (10.5) |
 | input_map.event | 66 | — | — | — | — | |
 
 ### Save System (4 tools)
