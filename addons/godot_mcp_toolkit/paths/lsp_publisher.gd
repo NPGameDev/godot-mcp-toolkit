@@ -12,7 +12,9 @@ extends RefCounted
 ## against the last published one (live re-publish on change). (2) INBOUND: the MCP
 ## server reports the authoritative verdict via set_reported_lsp_status (it can do
 ## reliable cross-process liveness the editor cannot); the dock renders whatever was
-## last reported and refreshes exactly on change.
+## last reported and refreshes exactly on change. A reported verdict holds until the
+## server reports again or the endpoint setting changes: it describes the old
+## endpoint, so a re-publish drops it and the dock falls back to the published one.
 ##
 ## Editor-side ONLY — and TAINTED by design: resolve_lsp_endpoint() and the watch
 ## name EditorInterface directly (they read network/language_server/* and connect to
@@ -47,7 +49,8 @@ var _last_lsp_host: String = ""
 var _last_lsp_port: int = -1
 # Authoritative LSP verdict the MCP server last reported (editor.set_lsp_status). The
 # editor can't read its own LSP bind status, so the server tells us and the dock
-# renders it. {} until a server connects.
+# renders it. {} until a server connects; kept until the server reports again or the
+# endpoint setting changes.
 var _reported_lsp_status: Dictionary = {}
 
 # Injected seams (wired once by mcp_server._init_lsp_publisher). Keep the
@@ -136,9 +139,21 @@ func _on_editor_settings_changed() -> void:
 	if bound_port <= 0:
 		return
 	var lsp := resolve_lsp_endpoint()
-	if lsp["host"] == _last_lsp_host and lsp["port"] == _last_lsp_port:
+	var endpoint_changed: bool = lsp["host"] != _last_lsp_host or lsp["port"] != _last_lsp_port
+	if not endpoint_changed:
 		return  # LSP endpoint unchanged — ignore unrelated editor-setting churn.
 	_last_lsp_host = lsp["host"]
 	_last_lsp_port = lsp["port"]
 	RegistryClient.ensure_registered(bound_port, MCPAuth.get_published_token_path(), lsp["host"], lsp["port"])
 	print("[MCPServer] LSP endpoint changed -> re-published %s:%d" % [lsp["host"], lsp["port"]])
+	_after_republish(endpoint_changed)
+
+
+## Settle the reported verdict after a re-publish and tell the dock to redraw. When the
+## endpoint changed, the server's verdict was about the old one, so it is dropped and
+## the dock shows the newly published endpoint until the server reports again.
+func _after_republish(endpoint_changed: bool) -> void:
+	if endpoint_changed:
+		_reported_lsp_status = {}
+	if _on_status_changed.is_valid():
+		_on_status_changed.call()

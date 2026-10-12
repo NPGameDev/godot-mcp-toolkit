@@ -202,7 +202,8 @@ func refresh_lsp() -> void:
 				_lsp_label.add_theme_color_override("font_color", Color(1.0, 0.8, 0.2))
 				_lsp_label.tooltip_text = str(st.get("detail", "GDScript LSP not reachable."))
 		return
-	# No server has reported yet — show the configured (published) endpoint.
+	# No verdict for the current endpoint (none reported yet, or the endpoint setting
+	# changed since the last report) — show the configured (published) endpoint.
 	var ep := RegistryClient.get_lsp_endpoint()
 	if ep.is_empty():
 		_lsp_label.text = "LSP: —"

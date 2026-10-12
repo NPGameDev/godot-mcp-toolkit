@@ -18,6 +18,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Settings.
 - `mcp_toolkit/concurrency/scene_lease_ttl_ms` now appears in Project Settings,
   as the docs said.
+- The dock's LSP line now follows a change to the LSP host or port in Editor
+  Settings.
 
 ### Removed
 
