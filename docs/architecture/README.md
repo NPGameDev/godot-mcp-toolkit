@@ -143,7 +143,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="84bdde3" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="bb4d215" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>ships in the game"]
@@ -158,6 +158,7 @@ flowchart TB
       C6["notifier.gd · ws_transport.gd"]
       C7["signal_pair_resolver.gd · text_input_synth.gd"]
       C8["port_config.gd<br/>(env pin/band resolve)"]
+      C9["file_guard.gd · mcp_version_utils.gd<br/>project_paths.gd · project_key.gd<br/>(transitive preloads)"]
     end
     subgraph tainted["Editor-only — names EditorInterface / EditorPlugin / EditorSettings"]
       direction LR
@@ -172,7 +173,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified 84bdde3*
+*Figure 2 — the editor↔runtime taint boundary · verified bb4d215*
 
 Consequences that shape the rest of the architecture:
 
@@ -368,7 +369,7 @@ omits `success` is converted to an `INTERNAL` error rather than reaching the LLM
   `{"success": false, "error": <message>, "code": <code>}`, plus `"hint"` when one is passed
   or when `code` is in `DEFAULT_HINTS`. Error payloads never carry `status`.
 
-**Error-code vocabulary.** `MCPToolkitError.CODES` is the closed set of **53** codes;
+**Error-code vocabulary.** `MCPToolkitError.CODES` is the closed set of **56** codes;
 `DEFAULT_HINTS` auto-attaches a recovery hint for **7** of them (e.g. `TIMEOUT`,
 `PATH_DENIED`, `GAME_NOT_RUNNING`, `RESPONSE_TOO_LARGE`). `LOG_BUSY` / `LOG_UNAVAILABLE` are
 deliberately **not** in `DEFAULT_HINTS` — their recovery advice is version-gated (a
@@ -383,24 +384,27 @@ translates them bidirectionally (`coerce_value` ⟷ `serialize_value`). There ar
 and `LayerMask`. An unknown tag is **rejected**, not passed through — the symmetry is the
 contract.
 
-**Idempotency** ([§contract C6](#13-contract-surface)). Create-style commands return a
-`status` discriminator and accept `if_exists`, so a blind retry is safe by default:
+**Idempotency** ([§contract C6](#13-contract-surface)). The file-level create commands
+(`scene.create` and the asset writers) return a `status` discriminator and accept
+`if_exists`, so a blind retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd" data-verified="1ca3bf4" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="bb4d215" -->
 ```mermaid
 flowchart TD
-    create["create / write command"] --> exists{"target exists?"}
+    create["file-level create command"] --> exists{"target exists?"}
     exists -->|no| make["create → status: created"]
     exists -->|yes| pol{"if_exists"}
     pol -->|"return (default)"| noop["no-op → status: returned"]
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified 1ca3bf4*
+*Figure 8 — the idempotent create / if_exists decision · verified bb4d215*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
 contract is one implementation, not three ([ADR 0010](#14-key-decisions-adrs)).
+`resource.write` takes no `if_exists`: it is an upsert that updates an existing file's
+properties in place, and only a create (which needs `type`) returns `status: created`.
 
 ---
 
