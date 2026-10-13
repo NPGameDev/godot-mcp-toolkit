@@ -132,11 +132,13 @@ static func register(port: int, token_path: String, lsp_host: String, lsp_port: 
 	var key := _project_key()
 	var my_pid := OS.get_process_id()
 	var my_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, null, null)
-	# Warn on double-open (same project in two editors).
+	# Warn when another process's entry is still here: the same project open in
+	# two editors, or one that didn't close cleanly. OS.is_process_running() only
+	# knows this process's own children, so it can't tell which.
 	var existing := _read_entry()
 	if not existing.is_empty():
 		var existing_pid := int(existing.get("pid", 0))
-		if existing_pid > 0 and existing_pid != my_pid and OS.is_process_running(existing_pid):
+		if existing_pid > 0 and existing_pid != my_pid:
 			push_warning("[MCPRegistry] already registered from PID %d; overwriting with PID %d" % [existing_pid, my_pid])
 	# Write own entry file — no race: each editor writes a unique file.
 	_write_entry(my_entry)
