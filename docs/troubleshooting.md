@@ -108,10 +108,10 @@ shipped
 **Cause:** on Windows `npx` is a `.cmd` shim, not an executable, and some MCP
 clients, older Claude Code among them, cannot start it directly.
 
-**Fix:** If Claude Code on Windows shows the server failed with `spawn npx ENOENT` or `EINVAL`, update Claude Code or wrap the command in `cmd /c`.
-On Windows the dock writes the wrapped form for you (`"command": "cmd"` with
-`/c npx …` in the args); to switch a hand-written `.mcp.json` to it, let the
+**Fix:** On Windows the dock writes the wrapped form for you (`"command": "cmd"`
+with `/c npx …` in the args); to switch a hand-written `.mcp.json` to it, let the
 dock regenerate the file.
+If Claude Code on Windows shows the server failed with `spawn npx ENOENT` or `EINVAL`, update Claude Code or wrap the command in `cmd /c`.
 
 ### npm says "could not determine executable to run", or an old version starts
 
