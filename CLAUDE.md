@@ -371,16 +371,12 @@ quick operational facts only.
 ## Dogfood setup (this repo)
 
 This repo root IS a Godot 4.5 project (`project.godot` at root,
-`addons/godot_mcp_toolkit/` at root). The `.mcp.json` at repo root points at a
-locally-built server bridge.
-
-**Pre-iter-20 note.** Because `@npgamedev/godot-mcp-server` is not yet
-published to npm, the dogfood `.mcp.json` uses a path-based
-`node <abs-path>/dist/index.js` invocation rather than the scoped
-`npx -y @npgamedev/godot-mcp-server` form that end users will use
-post-iter-20. The template at `addons/godot_mcp_toolkit/.mcp.json.template`
-is kept byte-identical to the root `.mcp.json` through both states (see iter
-13b + iter 20's swap-back verification).
+`addons/godot_mcp_toolkit/` at root). The `.mcp.json` at repo root is not
+tracked: each machine's dock writes its own (**Write .mcp.json**), in the form
+for that OS (`cmd /c npx` on Windows, bare `npx` on macOS and Linux). Start the
+editor with `GODOT_MCP_DEV_SERVER_PATH` set to a local `dist/index.js` and the
+dock writes a `node <path>` entry for that build instead. The shipped template,
+`addons/godot_mcp_toolkit/.mcp.json.template`, holds the bare-`npx` entry.
 
 **Dogfood from this repo root.** Post-iter-13c, the F3 frame-skip mitigation
 in `mcp_server.gd` makes the Godot 4.4.1 TCPServer race effectively

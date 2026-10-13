@@ -5,8 +5,6 @@
 # scripts/test_framework/run_units_cold.sh for the 4.2 class-cache warm-up,
 # including when this repo is checked out as a sibling of the server repo.
 *.sh text eol=lf
-# The dock writes .mcp.json with LF, so a dock write matches a checkout on every OS.
-.mcp.json text eol=lf
 # Godot writes project.godot with LF, so an editor save matches a checkout on every OS.
 project.godot text eol=lf
 

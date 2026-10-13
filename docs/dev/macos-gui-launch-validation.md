@@ -75,8 +75,9 @@ checklist).
    git status --porcelain -- .mcp.json    # prints the same as before the reopen
    ```
    Scope the tree check to `.mcp.json`, so editor noise in other files cannot fail it. Compare
-   against the copy, not a clean tree: in a clone of this repo, step 2's write already shows
-   `.mcp.json` modified, since the committed file is the Windows form.
+   against the copy, not a clean tree: in a project that commits `.mcp.json`, step 2's write
+   can already show it modified. In a clone of this repo the file is untracked and ignored, so
+   both `git status` lines print nothing.
 
 The `claude` CLI from the project root (a terminal launch, dev-form or bare-`npx` `.mcp.json`)
 is a valid complementary E2E check, but the **Finder/Dock client launch in step 3 is the
