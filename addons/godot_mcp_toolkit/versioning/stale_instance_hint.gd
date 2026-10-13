@@ -96,10 +96,10 @@ static func write_hint(ver_label: String) -> String:
 
 ## True if `source` parses/compiles as GDScript. SAFE in-process parse via
 ## GDScript.new().reload() — NOT ResourceLoader.load(CACHE_MODE_IGNORE), which
-## corrupts already-loaded scripts on every version (P-056). The class_name
-## declaration is stripped first: the in-memory copy would otherwise hide the
-## global class of that name, a false error (P-053). The rest of its line, such
-## as a same-line `extends`, stays.
+## corrupts already-loaded scripts on every version (P-056). A class_name
+## declaration that starts its line is stripped first: the in-memory copy would
+## otherwise hide the global class of that name, a false error. The rest of its
+## line, such as a same-line `extends`, stays.
 static func source_compiles(source: String) -> bool:
 	var script := GDScript.new()
 	script.source_code = GDScriptSource.strip_class_name(source)

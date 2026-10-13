@@ -26,7 +26,7 @@ All MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message. On 4.5+ closes active or inactive tabs; last-tab close auto-creates an empty scene |
-| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The `class_name` declaration is removed before the check (a same-line `extends` stays); error messages carry `gdscript://` URIs (see below) |
+| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. A `class_name` declaration that starts its line is removed before the check (a same-line `extends` stays); a `class_name` after an annotation or a statement on the same line is not removed. Error messages carry `gdscript://` URIs (see below) |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
 | `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On Godot **< 4.4**, editing an existing `.gd` already attached to a **live** node carries a relaunch `hint` (the live instance keeps the old code until relaunch — see [Degraded behavior](#degraded-behavior-by-version)) |
@@ -221,12 +221,17 @@ correctly on both builds; the limitation is in the Godot binary.
 alternative but corrupts already-loaded scripts on all Godot versions,
 crashing the editor.
 
-The copy is checked with its `class_name` declaration removed: a copy that kept
-the declaration would clash with the global class of the same name. Only the
-declaration goes, so the one-line form `class_name Player extends Node` keeps
-its `extends`.
+When a line starts with `class_name`, the copy is checked with that declaration
+removed: a copy that kept it would clash with the global class of the same
+name. Only the declaration goes, so the one-line form
+`class_name Player extends Node` keeps its `extends`.
 
 Remaining trade-offs:
+- **`class_name` later in a line:** a `class_name` after an annotation or a
+  statement on the same line, as in `@tool class_name Player extends Node`, is
+  not removed, so the copy can report a false error that the class hides a
+  global script class. Start the line with `class_name` (put `@tool` on a line
+  of its own), or check the file with `lsp_diagnostics`.
 - **`self` as its own type:** the copy is an anonymous class, so passing
   `self` to a parameter typed as the script's own `class_name` reports a false
   error. `lsp_diagnostics` checks the file under its real path.
