@@ -20,7 +20,9 @@ plugin" and "using the plugin against a project" share a single workflow:
 open this repo in Godot, run `claude` from its root.
 
 ```
-# one-time, in the server repo
+# one-time, in the server repo, only when the editor starts with
+# GODOT_MCP_DEV_SERVER_PATH set (a local server build); the released npx
+# entry needs no build
 cd <server repo root>
 npm install
 npm run build
@@ -33,15 +35,14 @@ claude
 # /mcp should list `godot-mcp-toolkit: connected` with 10+ tools.
 ```
 
-**Post-iter-13c note.** The toolkit-root + `claude` path crashed Godot 4.4.1
-pre-iter-13c because of a race between the plugin's per-frame TCPServer poll
-and claude's auto-indexing of the plugin's `.gd` source files (the
-filesystem-importer race). Iter 13c's F3 frame-skip mitigation (toolkit
-commit `5116694`) makes that race unreachable under normal use — confirmed
-2026-04-15 late evening via Test 3 (see the plan repo's crash report). A
-sibling `godot-mcp-dogfood-playground/` project exists and still works; it's
-reserved for clean-project / end-user-install verification (e.g. iter 20
-AssetLib install checks), not day-to-day dogfood.
+**The 4.4.1 crash note.** The toolkit-root + `claude` path once crashed Godot
+4.4.1 because of a race between the plugin's per-frame TCPServer poll and
+claude's auto-indexing of the plugin's `.gd` source files (the
+filesystem-importer race). The frame-skip mitigation (toolkit commit
+`5116694`) makes that race unreachable under normal use, confirmed on
+2026-04-15. A sibling `godot-mcp-dogfood-playground/` project exists and
+still works; it's reserved for clean-project / end-user-install verification
+(Asset Library install checks, for example), not day-to-day dogfood.
 
 **The dogfood `.mcp.json`.** It is not tracked: each machine's dock writes its
 own, in the form for that OS (`cmd /c npx` on Windows, bare `npx` on macOS and

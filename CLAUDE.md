@@ -175,21 +175,26 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
 
 ## Editor UI (iter 21 + 35)
 
-- **MCP dock** — bottom-panel tab ("MCP"). Signal-driven server status (no
-  polling), polled audit log tail (visibility-gated, 500ms Timer). Action
-  buttons: Regenerate Token, Open Full Log, Clear View. Response limit settings
-  (script read cap, WS buffer size) stored in ProjectSettings `mcp_toolkit/limits/`.
-  Collapsible Info/Help panel with connection status, tool list grouped by
-  domain, version info, multi-instance guidance, read-only mode info, and
-  quick-link buttons.
-- **Menu items** — four entries under Project → Tools: Regenerate Token, Show
-  Audit Log, Open Project Settings, Write .mcp.json. All also registered in
+- **MCP dock** — "MCP Toolkit" (a bottom-panel tab on 4.5 and earlier, an
+  `EditorDock` on 4.6+). Signal-driven server status (no polling). The
+  collapsible sections (Audit Log, with its settings, Clear Audit Log and View
+  Audit Log, which opens the log in a dialog; Security & Response Limits, with
+  Regenerate Token) share one scroll area, with the spare height below them.
+  The footer's **Info / Help** button opens a dialog with connection status, the registered-tool summary, version info,
+  multi-instance guidance, read-only mode info, and reference links.
+- **Menu items** — under Project → Tools → MCP Toolkit: Regenerate
+  Token, Show Audit Log, Open Project Settings, Write .mcp.json, Extension
+  Catalog. All also registered in
   the Command Palette (Ctrl+Shift+P → "MCP").
 - **Read-only badge** — when `GODOT_MCP_READ_ONLY=1` is set in `.mcp.json`,
   the dock displays a yellow badge.
-- **Response limits** — configurable in the dock's "Response Limits" section.
-  Script read cap (default 256 KB, min 64 KB) and WebSocket buffer (default
-  1024 KB, min 256 KB). Stored in ProjectSettings `mcp_toolkit/limits/`.
+- **Response limits** — configurable in the dock's "Security & Response Limits" section.
+  Script read cap and save read cap (default 256 KB, min 64 KB) and WebSocket
+  buffer (default 1024 KB, min 256 KB). Stored in ProjectSettings
+  `mcp_toolkit/limits/`. An env override from `.mcp.json`
+  (`GODOT_MCP_SCRIPT_READ_LIMIT`, `GODOT_MCP_WS_BUFFER_LIMIT`, sent by the
+  server after it connects) is used in memory only and never saved to
+  `project.godot`; the dock names it in a line under the fields.
 - **.mcp.json sync** — the dock shows a warning when `.mcp.json` is missing.
 - **Plugin disable cleanup** — disabling the plugin via Project Settings →
   Plugins prompts to delete the orphaned `.mcp.json` at project root.
@@ -203,8 +208,8 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
 **Tool merges (iter 22):**
 - `signal_connect` + `signal_disconnect` → `signal_manage` (action: "connect"|"disconnect")
 - `resource_create` + `resource_save` → `resource_write` (upsert — `type` required for new files)
-- `input_map_add_action` + `input_map_remove_action` → `input_map_action` (action: "add"|"remove", `action_name` instead of `action`)
-- `input_map_action_add_event` + `input_map_action_remove_event` → `input_map_event` (action: "bind"|"unbind", `action_name` instead of `action`)
+- `input_map_add_action` + `input_map_remove_action` → `input_map_action` (action: "add"|"remove", the action named by `name`)
+- `input_map_action_add_event` + `input_map_action_remove_event` → `input_map_event` (action: "bind"|"unbind", the action named by `name`)
 - `animation_add_key` + `animation_remove_key` → `animation_keyframe` (action: "add"|"remove")
 
 **Profile system (iter 41l-ter):**
@@ -378,17 +383,16 @@ editor with `GODOT_MCP_DEV_SERVER_PATH` set to a local `dist/index.js` and the
 dock writes a `node <path>` entry for that build instead. The shipped template,
 `addons/godot_mcp_toolkit/.mcp.json.template`, holds the bare-`npx` entry.
 
-**Dogfood from this repo root.** Post-iter-13c, the F3 frame-skip mitigation
-in `mcp_server.gd` makes the Godot 4.4.1 TCPServer race effectively
-unreachable under normal use — toolkit-root + `claude` is back to being the
-canonical dogfood workflow. Full crash history in the plan repo's
-`Plan/Reports/2026-04-15-godot-44-tcpserver-crash-dogfood.md` (Test 3
-confirmed the fix holds in this scenario). The sibling
-`godot-mcp-dogfood-playground/` project is now reserved for clean-project /
-end-user-install verification (mainly used during iter 20 AssetLib prep).
+**Dogfood from this repo root.** The frame-skip mitigation in
+`mcp_server.gd` makes the Godot 4.4.1 TCPServer race effectively
+unreachable under normal use, so toolkit-root + `claude` is the
+canonical dogfood workflow. The sibling
+`godot-mcp-dogfood-playground/` project is reserved for clean-project /
+end-user-install verification, such as Asset Library install checks.
 
 ```
-# one-time
+# one-time, only when the editor starts with GODOT_MCP_DEV_SERVER_PATH set
+# (a local server build); the released npx entry needs no build
 cd <server-repo>
 npm install && npm run build
 

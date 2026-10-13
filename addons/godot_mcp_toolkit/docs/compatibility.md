@@ -26,13 +26,13 @@ All MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message. On 4.5+ closes active or inactive tabs; last-tab close auto-creates an empty scene |
-| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version. Error messages carry `gdscript://` URIs (see below) |
+| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version (an abstract engine class only from 4.4; see [the limitations](#script_check-limitations-all-versions)). Error messages carry `gdscript://` URIs (see below) |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
 | `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On Godot **< 4.4**, editing an existing `.gd` already attached to a **live** node carries a relaunch `hint` (the live instance keeps the old code until relaunch — see [Degraded behavior](#degraded-behavior-by-version)) |
 | `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance) carries a relaunch `hint`; a genuine typo does not. 4.4+ hot-reloads on a **display** editor, so the call just succeeds — but a **4.4+ headless** editor never re-instantiates the reloaded node, so the stale `hint` fires there too (headless wording: re-create the node or relaunch a display editor) |
 | `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see [multi-instance.md](multi-instance.md)) |
-| `editor_get_console` | 4.2 | Captures runtime output (errors/warnings/prints) on all versions. **Editor parse errors** (from `editor_refresh` recompiling a script) surface only on **4.5+** (the Logger API hooks editor diagnostics); on **4.2–4.4** they are NOT written to `godot.log`, so neither `source="buffer"` nor `source="file"` can return them — use `script_check` or the `script_write` inline diagnostics instead. Multi-line errors that ARE captured (`SCRIPT ERROR: …` + `   at: <script>.gd:LINE`) are leveled as a unit, so a filename + `level_filter:["error"]` query finds the location line. 4.5+ uses the synchronous Logger (one entry per error, zero-latency) |
+| `editor_get_console` | 4.2 | Captures runtime output (errors/warnings/prints) on all versions. **Editor parse errors** (from `editor_refresh` recompiling a script) surface only on **4.5+** (the Logger API hooks editor diagnostics); on **4.2–4.4** a default editor launch does NOT write them to `godot.log`, so neither `source="buffer"` nor `source="file"` can return them — use `script_check` or the `script_write` inline diagnostics instead. From 4.3, an editor launched with `--log-file user://logs/godot.log` writes its own errors to that file, so both sources can return them (see [Degraded behavior](#degraded-behavior-by-version)). Multi-line errors that ARE captured (`SCRIPT ERROR: …` + `   at: <script>.gd:LINE`) are leveled as a unit, so a filename + `level_filter:["error"]` query finds the location line. 4.5+ uses the synchronous Logger (one entry per error, zero-latency) |
 | `animationtree_edit` | 4.2 | All ops work on 4.2+ (set_root, add/remove_node, add/remove_transition, set_property; transitions enumerate on all versions) |
 | `animationtree_list` | 4.2 | Listing works on 4.2+, but **node enumeration is 4.5+:** `AnimationNodeStateMachine.get_node_list()` is a 4.5 script API (absent 4.2-4.4), so on 4.2-4.4 `animationtree_list` returns `nodes: []` and `nodes_count` reads 0 (node *operations* via `animationtree_edit` add/remove/has still work; only listing existing nodes is unavailable). 4.5+ enumerates nodes fully |
 | `input_simulate` (`send_text` event) | 4.2 | `send_text` synthesizes one `InputEventKey.unicode` per codepoint and delivers it via `Viewport.push_input` (engine-level APIs, all ≥4.0) — identical on every supported version, ungated. Non-ASCII via `String.unicode_at`; a `secret` `LineEdit`'s `text_after` is redacted |
@@ -121,6 +121,12 @@ script identity (even across stale/phantom tabs); with an external editor the to
   `editor_get_console` (neither `source`). Use `script_check` or `script_write`'s inline
   diagnostics for parse errors instead. (Editor *runtime* warnings — `push_warning` from
   `@tool` scripts — and game output DO reach `godot.log` and are captured on all versions.)
+  All of this holds for a default launch. From 4.3, an editor launched with
+  `--log-file user://logs/godot.log` writes its own errors to that file, so `source="file"`
+  returns them, and so does `source="buffer"`, which tails the same file before 4.5. The tail
+  is polled, so an error can arrive a moment after the call that caused it. On Windows, a 4.4
+  editor launched this way keeps the file from being read: `source="file"` returns
+  `LOG_BUSY` and `source="buffer"` returns nothing.
 - **Scene saves emit benign console errors (4.2 only).** On 4.2, saving a scene prints
   `"save_scene() resumed after await, but script is gone"` (and a paired *disconnect
   nonexistent connection 'process_frame'*) from the safe-save coroutine's `await
@@ -153,7 +159,8 @@ script identity (even across stale/phantom tabs); with an external editor the to
 - Console capture uses the Logger API (zero-latency, in-memory ring buffer) instead of
   the file-tailing backend used on 4.2-4.4 — and, because the Logger hooks the editor's
   internal error/warning stream, it captures editor **parse/import errors** that
-  `godot.log` file logging does not, so `editor_get_console` surfaces them here.
+  `godot.log` file logging does not in a default launch, so `editor_get_console` surfaces
+  them here.
 - `animationtree_list` enumerates state-machine nodes fully (`get_node_list` is 4.5+).
 
 ### EditorFileSystem indexing (all versions)

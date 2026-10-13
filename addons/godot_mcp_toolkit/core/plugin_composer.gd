@@ -139,9 +139,10 @@ static func _register_in_registry(server: Node) -> void:
 
 
 # Re-publish this editor's registry entry after the server re-writes its token to
-# a new user:// path. ensure_registered (not register) so an active playtest's
-# runtime_port/runtime_pid are preserved — otherwise Mode-B (running-game)
-# discovery dies for the rest of the session. Re-resolve the LSP endpoint at fire
+# a new user:// path. ensure_registered, not register: register's startup reap
+# deletes <hash>.runtime.json, where an active playtest's runtime_port/runtime_pid
+# live, and Mode-B (running-game) discovery would die for the rest of the
+# session. Re-resolve the LSP endpoint at fire
 # time, mirroring the startup registration, so a concurrent endpoint change isn't
 # reverted to a stale value.
 static func _republish_on_token_rewrite(server: Node, token_path: String) -> void:
