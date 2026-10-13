@@ -739,6 +739,7 @@ static func _batch_instantiate(
 		# each failure in `property_errors` on this (succeeding) entry so the
 		# response reports the dropped key.
 		var property_errors: Array = []
+		var property_warnings: Array[String] = []
 
 		# Apply transform properties (position, rotation, scale).
 		for key in ["position", "rotation", "scale"]:
@@ -762,7 +763,10 @@ static func _batch_instantiate(
 					if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 						property_errors.append({"property": prop_name, "error": str(coerced["_coerce_error"])})
 						continue
-					instance.set(prop_name, coerced)
+					var fit := Helpers.fit_to_declared_type(instance, prop_name, coerced)
+					instance.set(prop_name, fit["value"])
+					if not str(fit["warning"]).is_empty():
+						property_warnings.append(str(fit["warning"]))
 
 		# Only set owner on instance root (same as single-instance path).
 		parent_node.add_child(instance)
@@ -774,10 +778,13 @@ static func _batch_instantiate(
 
 		node_refs.append(instance)
 		# Success row — path/class are filled after commit (see below). Any per-key
-		# coerce failures ride on the row so the response reports them.
+		# coerce failures and dropped fractions ride on the row so the response
+		# reports them.
 		var slot := {"index": i, "success": true}
 		if not property_errors.is_empty():
 			slot["property_errors"] = property_errors
+		if not property_warnings.is_empty():
+			slot["warnings"] = property_warnings
 		results.append(slot)
 		_result_slots.append(slot)
 

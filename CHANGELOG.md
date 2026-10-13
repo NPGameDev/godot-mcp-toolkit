@@ -57,6 +57,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `RefCounted` instead of its real base class. Reported and first fixed by
   @benfeather ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
   [#17](https://github.com/NPGameDev/godot-mcp-toolkit/pull/17)).
+- `node_set_property` (single and batch), `scene_instantiate` (the `properties`
+  of each instance) and `node_manage`'s `duplicate` no longer save an `int`
+  property as a float (`hp = 100.0`) on a node whose script isn't `@tool`.
+  `project_set_setting` no longer saves an `int` setting as a float either
+  (`window/size/viewport_width=1153.0`). A value with a fraction, such as
+  `100.5`, is stored as `100`, and the response includes a warning
+  ([#26](https://github.com/NPGameDev/godot-mcp-toolkit/issues/26)).
 
 ### Removed
 

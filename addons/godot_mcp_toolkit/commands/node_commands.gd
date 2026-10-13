@@ -267,7 +267,8 @@ static func _set_property_scalar_single(
 		return MCPToolkitError.fail(
 			coerce_result.get("code", "INVALID_VALUE"),
 			str(coerce_result.get("error", "")))
-	var coerced = coerce_result["value"]
+	var fit := Helpers.fit_to_declared_type(node, property_name, coerce_result["value"])
+	var coerced = fit["value"]
 
 	var old_value = node.get(property_name)
 
@@ -288,9 +289,10 @@ static func _set_property_scalar_single(
 			"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw_value))
 	# Classify the write. DROPPED (silent wrong-type) fails before undo — nothing
 	# landed, so there is no state to roll back. ADJUSTED (engine reshaped the value,
-	# e.g. truncation 7.9→7 or a normalize) DID commit, so it records undo like a
-	# clean write and returns success WITH a warning naming the stored-vs-requested
-	# delta. OK is a clean success.
+	# e.g. a clamp or a normalize) DID commit, so it records undo like a clean write
+	# and returns success WITH a warning naming the stored-vs-requested delta. OK is a
+	# clean success, unless the declared-type fit already dropped a fraction (its
+	# warning, below).
 	var outcome := Helpers.describe_set_drop(old_value, node.get(property_name), coerced, property_name)
 	if outcome.get("status", "") == "dropped":
 		# A bound setter (position/modulate) may have Variant-converted the wrong type
@@ -308,6 +310,8 @@ static func _set_property_scalar_single(
 	action.commit_recorded()
 	if outcome.get("status", "") == "adjusted":
 		return MCPToolkitSuccess.ok({"warning": str(outcome.get("warning", ""))})
+	if not str(fit["warning"]).is_empty():
+		return MCPToolkitSuccess.ok({"warning": str(fit["warning"])})
 	return MCPToolkitSuccess.ok()
 
 
@@ -401,6 +405,8 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		var old_value = node.get(prop)
 		if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 			coerced = NodePath(str(coerced))
+		var fit := Helpers.fit_to_declared_type(node, prop, coerced)
+		coerced = fit["value"]
 
 		# Apply mutation unconditionally, then record for undo. Disarm the Godot 4.3
 		# tooltip-timer UAF first when prop is editor_description (no-op otherwise).
@@ -426,6 +432,8 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		var scalar_entry := {"node_path": np, "property": prop, "success": true}
 		if outcome.get("status", "") == "adjusted":
 			scalar_entry["warning"] = str(outcome.get("warning", ""))
+		elif not str(fit["warning"]).is_empty():
+			scalar_entry["warning"] = str(fit["warning"])
 		results.append(scalar_entry)
 
 	action.commit_recorded()
@@ -879,6 +887,7 @@ static func _manage_duplicate(
 	# Use coerce_value_hint so untagged dicts like {x:200,y:300}
 	# are inferred as Vector2/Vector3/Color from the property type.
 	var props_raw = parameters.get("properties", null)
+	var warnings: Array[String] = []
 	if typeof(props_raw) == TYPE_DICTIONARY:
 		for key in (props_raw as Dictionary):
 			var prop_name := str(key)
@@ -886,11 +895,16 @@ static func _manage_duplicate(
 			var coerced = Coerce.coerce_value_hint(props_raw[key], existing)
 			if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 				return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
-			dup.set(prop_name, coerced)
+			var fit := Helpers.fit_to_declared_type(dup, prop_name, coerced)
+			dup.set(prop_name, fit["value"])
+			if not str(fit["warning"]).is_empty():
+				warnings.append(str(fit["warning"]))
 
 	var dup_path := str(root.get_path_to(dup))
-	return MCPToolkitSuccess.ok({"action": "duplicate", "path": dup_path,
-		"class": dup.get_class()})
+	var response := {"action": "duplicate", "path": dup_path, "class": dup.get_class()}
+	if not warnings.is_empty():
+		response["warnings"] = warnings
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:

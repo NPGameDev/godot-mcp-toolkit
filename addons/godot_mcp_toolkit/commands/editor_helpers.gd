@@ -46,6 +46,29 @@ static func coerce_for_property(
 	return {"ok": true, "value": coerced}
 
 
+## Fits a coerced JSON value to the type [param target] declares for
+## [param property_name], through [method Coerce.coerce_to_declared_type], before the
+## caller sets it.
+##
+## The editor runs a script that is not [code]@tool[/code] as a placeholder instance,
+## whose set() stores a JSON float as given, so an [code]int[/code] export would save
+## as [code]100.0[/code]. A property missing from the target's property list keeps
+## its value.
+## [br][br]
+## Returns [code]{"value": <the value to set>, "warning": String}[/code]. The warning
+## is empty unless a fraction was dropped; then it names the stored and the requested
+## values in the readback's adjusted-write wording.
+static func fit_to_declared_type(
+	target: Object, property_name: String, value: Variant,
+) -> Dictionary:
+	var conversion := Coerce.coerce_to_declared_type(
+			value, _declared_type(target, property_name))
+	var warning := ""
+	if conversion["truncated"]:
+		warning = PropertySetCheck.adjusted_warning(conversion["value"], value, property_name)
+	return {"value": conversion["value"], "warning": warning}
+
+
 ## Compile a regex text_filter. Returns [RegEx-or-null, error-or-null, warning].
 ## Handles double-escaped metacharacters from MCP transport.
 static func compile_text_filter(parameters: Dictionary) -> Array:
@@ -331,6 +354,15 @@ static func _has_property(obj: Object, property_name: String) -> bool:
 		if p["name"] == property_name:
 			return true
 	return false
+
+
+## The Variant type [param obj]'s property list declares for [param property_name],
+## or [constant @GlobalScope.TYPE_NIL] when the list has no such entry.
+static func _declared_type(obj: Object, property_name: String) -> int:
+	for p in obj.get_property_list():
+		if p["name"] == property_name:
+			return int(p.get("type", TYPE_NIL))
+	return TYPE_NIL
 
 
 # -- Scene node resolution -----------------------------------------------------
