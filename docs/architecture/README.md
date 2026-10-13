@@ -84,7 +84,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 and *Mode B* internally) — and publishes a small **registry file** so the bridge can
 discover every live instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="d453ff7" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="e45cadf" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -103,7 +103,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified d453ff7*
+*Figure 1 — system context · verified e45cadf*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -458,7 +458,7 @@ stays in lockstep across the two repos.
 large files into a **thin orchestrator over single-responsibility children**. The registry's
 own multi-instance store is the clearest example:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_paths.gd addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="d453ff7" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_paths.gd addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="e45cadf" -->
 ```mermaid
 flowchart TD
     rc["registry_client.gd<br/>thin orchestrator — façade + sequencing"]
@@ -468,7 +468,7 @@ flowchart TD
     rc --> proj["registry_projection.gd<br/>fan-in → projects.json"]
     rc --> lock["file_lock.gd<br/>machine-wide lock, stale by age"]
 ```
-*Figure 9 — orchestrator + SRP-children (registry) · verified d453ff7*
+*Figure 9 — orchestrator + SRP-children (registry) · verified e45cadf*
 
 The same shape recurs across the codebase: `mcp_server.gd` over its transport/dispatch
 children, `plugin.gd` over `PluginComposer` ([§7](#7-plugin-lifecycle)), `dock.gd` over its
@@ -596,7 +596,7 @@ The bridge has to find every editor and every running game on the machine. The t
 this **lock-light**: each instance writes its **own** entry file, and a locked rebuild fans
 them into the single `projects.json` the bridge reads.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="d453ff7" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="e45cadf" -->
 ```mermaid
 flowchart TD
     subgraph writers["each instance writes ONE unique file"]
@@ -613,7 +613,7 @@ flowchart TD
     lock --> rebuild --> pj
     pj --> bridge["server bridge — discovers all instances"]
 ```
-*Figure 12 — registry fan-in · verified d453ff7*
+*Figure 12 — registry fan-in · verified e45cadf*
 
 The registry directory is **machine-wide**, not `user://` — `%APPDATA%\godot-mcp-toolkit` on
 Windows, `~/Library/Application Support/godot-mcp-toolkit` on macOS, `$XDG_DATA_HOME` on Linux —
@@ -623,7 +623,7 @@ the writes**; the `file_lock` only serialises the *rebuild*. The lock stores `pi
 exponentially, overwrites a lock older than 10 s, and force-writes after the retry budget so a
 caller always makes progress. It judges a lock by age alone: `OS.is_process_running()` is
 documented for the calling process's own children only, on every platform, so it cannot say
-whether another editor is alive. Rebuild output is written two-phase
+on every platform whether another editor is alive. Rebuild output is written two-phase
 (`.tmp` → `.bak` → target) so a crash never leaves a half-written `projects.json`. GC is by
 port-conflict pruning only, with no PID-based GC, for the same reason.
 
