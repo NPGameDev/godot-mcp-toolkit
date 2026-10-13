@@ -319,16 +319,13 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 
 ## Validate GDScript source via GDScript.new().reload() — safe in-process parse.
 ## DO NOT use ResourceLoader.load() with CACHE_MODE_IGNORE here:
-## it corrupts already-loaded scripts on ALL Godot versions (P-056).
-## Shared by script_write (inline diagnostics) and script_check.
+## it corrupts already-loaded scripts on ALL Godot versions.
 ##
-## The probe compiles under its own synthetic path, so a
-## [code]class_name[/code] declaration that starts its line is stripped first: a
-## probe that kept it would hide the global class the editor registered under
-## that name, a false error. Only the declaration goes, so the one-line form
-## [code]class_name Player extends Node[/code] keeps its base class. The probe is
-## then an anonymous class: a script that passes [code]self[/code] to a
-## parameter typed as its own [code]class_name[/code] reports an error here, and
+## The probe compiles under its own synthetic path, so a [code]class_name[/code]
+## declaration that starts its line is stripped first (see
+## [code]GDScriptSource.strip_class_name()[/code]). The probe is then an
+## anonymous class: a script that passes [code]self[/code] to a parameter typed
+## as its own [code]class_name[/code] reports an error here, and
 ## lsp_diagnostics, which checks the file under its real path, does not.
 ##
 ## Diagnostics carry only real fields: the error entry gains "line" (the actual

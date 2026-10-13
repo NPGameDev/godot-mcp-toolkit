@@ -708,7 +708,7 @@ static func _batch_instantiate(
 ) -> Dictionary:
 	var node_refs: Array = []
 	# Per-entry outcome record: every entry — success OR failure —
-	# gets a dict so a partial batch no longer hides its failures. Built parallel
+	# gets a dict so a partial batch never hides its failures. Built parallel
 	# to `node_refs`; success entries are backfilled with their post-commit path
 	# below. `results[i]` lines up with `instances[i]`. `_result_slots` maps each
 	# surviving node to its slot so the deferred path read patches the right row.
@@ -723,7 +723,7 @@ static func _batch_instantiate(
 		var inst_name := str(inst_dict.get("name", ""))
 		var instance := _instantiate_for_edit(packed)
 		if instance == null:
-			# Previously a silent `continue` — the failed entry vanished. Record it.
+			# Record the failure; skipping the entry would drop it from the response.
 			results.append({
 				"index": i,
 				"success": false,
@@ -735,9 +735,9 @@ static func _batch_instantiate(
 		if not inst_name.is_empty():
 			instance.name = inst_name
 
-		# Per-key coerce failures used to `continue` the inner loop silently — the
-		# node still lands but the key was dropped invisibly. Capture each into
-		# `property_errors` on this (succeeding) entry instead of losing it.
+		# A key that fails to coerce is skipped, but the node still lands: record
+		# each failure in `property_errors` on this (succeeding) entry so the
+		# response reports the dropped key.
 		var property_errors: Array = []
 
 		# Apply transform properties (position, rotation, scale).
@@ -773,8 +773,8 @@ static func _batch_instantiate(
 			.undo_method(parent_node.remove_child.bind(instance))
 
 		node_refs.append(instance)
-		# Success row — path/class are filled after commit (see below). Carry any
-		# per-key coerce failures so they're no longer invisible.
+		# Success row — path/class are filled after commit (see below). Any per-key
+		# coerce failures ride on the row so the response reports them.
 		var slot := {"index": i, "success": true}
 		if not property_errors.is_empty():
 			slot["property_errors"] = property_errors
