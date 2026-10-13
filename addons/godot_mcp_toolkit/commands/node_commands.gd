@@ -6,7 +6,6 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Helpers = Modules.CommandHelpers
-const PropertySetCheck = Modules.PropertySetCheck
 
 ## node.set_property rejects "groups" because its set is a declarative full
 ## replace (it would drop any group not in the list), whereas node.groups is
@@ -311,12 +310,9 @@ static func _set_property_scalar_single(
 	if old_value is Resource:
 		action.undo_reference(old_value)
 	action.commit_recorded()
-	if outcome.get("status", "") == "adjusted":
-		# Name the caller's value, not the fitted one, when a clamp follows the fit.
-		return MCPToolkitSuccess.ok({"warning":
-			PropertySetCheck.adjusted_warning(stored, requested, property_name)})
-	if not str(fit["warning"]).is_empty():
-		return MCPToolkitSuccess.ok({"warning": str(fit["warning"])})
+	var warning := Helpers.scalar_set_warning(outcome, fit, stored, requested, property_name)
+	if not warning.is_empty():
+		return MCPToolkitSuccess.ok({"warning": warning})
 	return MCPToolkitSuccess.ok()
 
 
@@ -442,11 +438,9 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		if old_value is Resource:
 			action.undo_reference(old_value)
 		var scalar_entry := {"node_path": np, "property": prop, "success": true}
-		if outcome.get("status", "") == "adjusted":
-			# Name the caller's value, not the fitted one, when a clamp follows the fit.
-			scalar_entry["warning"] = PropertySetCheck.adjusted_warning(stored, requested, prop)
-		elif not str(fit["warning"]).is_empty():
-			scalar_entry["warning"] = str(fit["warning"])
+		var warning := Helpers.scalar_set_warning(outcome, fit, stored, requested, prop)
+		if not warning.is_empty():
+			scalar_entry["warning"] = warning
 		results.append(scalar_entry)
 
 	action.commit_recorded()
