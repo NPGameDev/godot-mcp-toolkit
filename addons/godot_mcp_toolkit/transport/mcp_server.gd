@@ -20,8 +20,9 @@ signal lsp_status_changed
 ## Emitted after the session token is re-written to a new user:// path following a
 ## user-path change, carrying that new token path. The plugin (registry lifecycle
 ## owner) re-publishes the entry via ensure_registered, which preserves any active
-## runtime_port/runtime_pid — register would null them and break Mode-B discovery
-## for a game running across the rename.
+## runtime_port/runtime_pid, because register's startup reap would delete the
+## <hash>.runtime.json that holds them and break Mode-B discovery for a game
+## running across the rename.
 signal token_rewritten(token_path: String)
 ## Emitted when the listen state changes — a fresh bind, a listen conflict
 ## (pinned port occupied / scan band exhausted / lost rebind) raised or cleared,
