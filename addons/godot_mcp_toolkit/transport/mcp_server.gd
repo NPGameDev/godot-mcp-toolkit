@@ -256,7 +256,7 @@ func _on_user_path_changed() -> void:
 ## Re-write the current in-memory token to the new user:// path after a
 ## config/name change. Does NOT generate a new token — existing connections
 ## stay authenticated. Announces the new token path so the registry owner
-## (plugin.gd) re-publishes the entry runtime-preservingly.
+## (core/plugin_composer.gd) re-publishes the entry runtime-preservingly.
 func _rewrite_token_after_rename() -> void:
 	if _transport == null:
 		return  # No running transport → no token to re-write, nothing bound.
@@ -266,8 +266,9 @@ func _rewrite_token_after_rename() -> void:
 	else:
 		print("[MCPServer] token re-written to %s" % MCPAuth.get_token_path())
 	# Announce the new token path; the plugin re-publishes via ensure_registered so
-	# an active game's runtime_port/runtime_pid survive the rename (register nulls
-	# them). The server doesn't reach into the registry from the rename path.
+	# an active game's runtime_port/runtime_pid survive the rename (register's
+	# startup reap would delete the <hash>.runtime.json that holds them). The
+	# server doesn't reach into the registry from the rename path.
 	if _transport.get_bound_port() > 0:
 		token_rewritten.emit(MCPAuth.get_token_path())
 
