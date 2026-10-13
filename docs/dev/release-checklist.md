@@ -169,7 +169,7 @@ other files cannot fail a check. Afterwards restore only that file with
       field itself still shows the project value, and after both saves
       `grep -n script_read_cap_kb project.godot` prints what it printed before.
 - [ ] **DS7 — Removing the variable removes the line.** Take the variable back out of
-      `.mcp.json` (`git diff -- .mcp.json` shows nothing) and restart the MCP client.
+      `.mcp.json` (its `env` block matches what it held before DS6) and restart the MCP client.
       **Expected:** once the client connects again, the script cap's line is gone and the
       field's project value is the one in use.
 - [ ] **DS8 — Layout.** Collapse both collapsible sections, then expand one, then both.

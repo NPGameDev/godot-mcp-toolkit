@@ -76,7 +76,9 @@ Two Godot editors opening the same project directory simultaneously causes:
   both editors map to the *same* slot. The registry tracks only the
   **last-registering** instance — it's last-writer-wins, *not* a guaranteed
   newest-wins, so the second editor clobbers the first's entry (port, token
-  path) and which instance the bridge resolves to is undefined.
+  path) and which instance the bridge resolves to is undefined. The second
+  editor's Output panel shows a warning when it takes over the entry:
+  `[MCPRegistry] found an entry from PID <n> (another editor on this project, or one that did not exit cleanly); overwriting with PID <m>`.
 - **Token collision:** same absolute path produces the same hashed token
   filename, so auth fails on reconnect.
 - **Godot-level issues:** metadata lock warnings, `user://` cache corruption
@@ -178,8 +180,10 @@ godot --editor --path ../MyGame-b --lsp-port 6015 &
 # …its .mcp.json sets GODOT_MCP_LSP_PORT=6015
 ```
 
-Each instance now binds known, non-colliding ports with **zero registry dependence**
-— no file-lock contention, no discovery race. A pinned-but-occupied port **fails
+Each instance now binds known, non-colliding ports, and its MCP server dials them
+without a registry lookup, so there is no discovery race. Each editor still
+publishes its entry in the registry (under the shared lock, held only for the
+moment of a write), so the server can check a pin it fails to reach. A pinned-but-occupied port **fails
 loudly** (an editor dock warning + a precise server error) instead of silently
 scanning elsewhere, so a triple collision is visible immediately rather than showing
 up as a mystery cross-talk. Keep using **Pattern A** (separate directories) for the

@@ -105,12 +105,13 @@ shipped
 
 ### Windows: the server entry never starts
 
-**Cause:** on Windows `npx` is a `.cmd` shim, not an executable — an
-`.mcp.json` that invokes `npx` directly fails to spawn.
+**Cause:** on Windows `npx` is a `.cmd` shim, not an executable, and some MCP
+clients, older Claude Code among them, cannot start it directly.
 
-**Fix:** the plugin writes the correct form automatically
-(`"command": "cmd"` with `/c npx …` in the args). If you hand-wrote your
-`.mcp.json`, mirror that shape, or let the dock regenerate the file.
+**Fix:** If Claude Code on Windows shows the server failed with `spawn npx ENOENT` or `EINVAL`, update Claude Code or wrap the command in `cmd /c`.
+On Windows the dock writes the wrapped form for you (`"command": "cmd"` with
+`/c npx …` in the args); to switch a hand-written `.mcp.json` to it, let the
+dock regenerate the file.
 
 ### npm says "could not determine executable to run", or an old version starts
 
@@ -203,6 +204,28 @@ Running several editors side by side is supported — each project instance gets
 its own isolated state and its own port. The rules and patterns are in the
 shipped
 [`multi-instance.md`](../addons/godot_mcp_toolkit/docs/multi-instance.md).
+
+### The Output log names another editor's registry entry
+
+**Symptom:** at editor start the Output log shows one of these lines:
+
+- a warning, `[MCPRegistry] found an entry from PID <n> (another editor on this project, or one that did not exit cleanly); overwriting with PID <m>`
+- an info line, `[MCPRegistry] replaced an entry from PID <n>, an editor that did not exit cleanly`
+
+**Cause:** the registry keeps one entry per project, and this editor found one
+that another editor process left. If that entry names the port this editor
+has just bound, the old editor is gone, since two processes cannot listen on
+one port. The entry was left by an editor that crashed or was killed, so the
+registry replaces it and prints the info line. If the entry names another
+port, the registry cannot tell which case it is and warns: a second editor
+has this project open, which is not supported, or an editor that did not exit
+cleanly had bound a different port.
+
+**Fix:** the info line needs nothing. For the warning, close any other editor
+that has this project folder open; to run two editors, give each its own copy
+of the project (Pattern A in
+[`multi-instance.md`](../addons/godot_mcp_toolkit/docs/multi-instance.md)). If
+no other editor is open, the entry was a leftover and needs nothing either.
 
 ### C# project: scripts will not load, or C# tools error
 

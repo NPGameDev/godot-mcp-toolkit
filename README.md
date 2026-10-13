@@ -102,9 +102,11 @@ Paste this into Claude Code from your project directory. It was tested end-to-en
 Set up the Godot MCP Toolkit for this project:
 1. Write the client config (check Node >= 22 first). If this project has no .mcp.json,
    create one with a "godot-mcp-toolkit" server entry running
-   "npx -y @npgamedev/godot-mcp-server" (on Windows, wrap with cmd /c). npx fetches the
-   bridge on first connect, so no global install is needed; "npm install -g
-   @npgamedev/godot-mcp-server" is only for pinning a fixed copy or working offline.
+   "npx -y @npgamedev/godot-mcp-server". npx fetches the bridge on first connect, so no
+   global install is needed; "npm install -g @npgamedev/godot-mcp-server" is only for
+   pinning a fixed copy or working offline. If Claude Code on Windows shows the server
+   failed with `spawn npx ENOENT` or `EINVAL`, update Claude Code or wrap the command in
+   `cmd /c`.
 2. Fresh setup only: if addons/godot_mcp_toolkit exists but project.godot has no
    [editor_plugins] entry enabling it, add the enable line so the plugin loads on first launch.
    If this project is already open in Godot, tell me to enable it via Project Settings > Plugins instead,

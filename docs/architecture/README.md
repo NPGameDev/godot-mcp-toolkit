@@ -486,12 +486,12 @@ with the plugin version, wires `EditorAccess` and registers the ProjectSettings,
 the graph is wired if the project was enabled out-of-band with the `[autoload]` entry missing (ADR
 0013) — then delegates the whole collaborator graph to `PluginComposer.compose()`, which returns a
 `Handle`; `_exit_tree` calls `Handle.dispose()`, which tears the graph down in **exact reverse
-order** — the add/remove symmetry (invariant I12) that keeps plugin reload clean. The autoload's
+order** — the add/remove registration symmetry that keeps plugin reload clean. The autoload's
 identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives in a pure-const
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="3f369f1" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="8e6a5f9" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -507,9 +507,9 @@ flowchart TD
     composer --> start["server.start() + register in registry"]
     composer --> ui["write flow + dialog presenter<br/>(shared UI · ADR 0016)"]
     composer --> dock["dock UI"]
-    plugin -.->|"_exit_tree → Handle.dispose() — reverse order (I12)"| composer
+    plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 3f369f1*
+*Figure 10 — plugin composition root · verified 8e6a5f9*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
@@ -520,8 +520,8 @@ presenter are **injected** into the dock, the tool menu, and the onboarding wiza
 dock consumes them like any other UI surface rather than acting as a service locator for them
 ([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
 presenter its read-only badge's cached state, so the Info dialog shows what the badge shows (with no
-dock, the presenter reads `.mcp.json` the way the badge does). `dispose()` reverses the graph precisely, including the
-I12-symmetric `PlaytestCommands.clear_debug_bridge()`, and last clears the response limits' env
+dock, the presenter reads `.mcp.json` the way the badge does). `dispose()` reverses the graph precisely, including
+`PlaytestCommands.clear_debug_bridge()`, the reverse of handing the debug bridge to `PlaytestCommands.register`, and last clears the response limits' env
 overrides (`core/response_limits.gd`), static state that would otherwise outlive a plugin reload;
 teardown uses **immediate (not deferred)
 `free()`** throughout — for the dock control, the dialog presenter's dialogs, and the server, and
