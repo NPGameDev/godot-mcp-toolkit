@@ -114,6 +114,24 @@ static func _rebuild_projects_json() -> void:
 	_RegistryProjection.rebuild()
 
 
+# -- Double-open check ---------------------------------------------------------
+
+
+# True when the entry was written by an editor process other than this one.
+static func _is_other_editor_entry(existing: Dictionary, my_pid: int) -> bool:
+	var existing_pid := int(existing.get("pid", 0))
+	return existing_pid > 0 and existing_pid != my_pid
+
+
+# True when another PID's entry may belong to a live second editor on this
+# project. OS.is_process_running() cannot answer that, since it only knows this
+# process's own children. The caller has already bound `port`, and two
+# processes cannot listen on one port, so an entry naming `port` was left by an
+# editor that is gone. An entry naming another port may still be live. Pure.
+static func _should_warn_double_open(existing: Dictionary, my_pid: int, port: int) -> bool:
+	return _is_other_editor_entry(existing, my_pid) and int(existing.get("port", -1)) != port
+
+
 # -- Lifecycle (public façade) -------------------------------------------------
 
 
@@ -132,14 +150,14 @@ static func register(port: int, token_path: String, lsp_host: String, lsp_port: 
 	var key := _project_key()
 	var my_pid := OS.get_process_id()
 	var my_entry := _build_entry(key, port, token_path, lsp_host, lsp_port, null, null)
-	# Warn when another process's entry is still here: the same project open in
-	# two editors, or one that didn't close cleanly. OS.is_process_running() only
-	# knows this process's own children, so it can't tell which.
+	# Another PID's entry is a second editor on this project or a leftover from
+	# one that did not exit cleanly; one naming this editor's port is a leftover.
 	var existing := _read_entry()
-	if not existing.is_empty():
-		var existing_pid := int(existing.get("pid", 0))
-		if existing_pid > 0 and existing_pid != my_pid:
-			push_warning("[MCPRegistry] already registered from PID %d; overwriting with PID %d" % [existing_pid, my_pid])
+	var existing_pid := int(existing.get("pid", 0))
+	if _should_warn_double_open(existing, my_pid, port):
+		push_warning("[MCPRegistry] found an entry from PID %d (another editor on this project, or one that did not exit cleanly); overwriting with PID %d" % [existing_pid, my_pid])
+	elif _is_other_editor_entry(existing, my_pid):
+		print("[MCPRegistry] replaced an entry from PID %d, an editor that did not exit cleanly" % existing_pid)
 	# Write own entry file — no race: each editor writes a unique file.
 	_write_entry(my_entry)
 	# Rebuild projects.json from all entry files (idempotent).

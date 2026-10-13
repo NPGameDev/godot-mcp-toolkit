@@ -1,14 +1,14 @@
 @tool
 extends RefCounted
-## A PID-aware, stale-recovering machine-wide file lock for serialising
-## cross-process read-modify-write on a given path.
+## A stale-recovering machine-wide file lock for serialising cross-process
+## read-modify-write on a given path.
 ##
 ## acquire() writes "<pid>:<unix_ts>" to the lock path; a concurrent acquirer
 ## backs off (exponential, 50→1000 ms) while the lock is held and fresh. A lock
-## is treated as stale — and overwritten — when its writer PID is dead or its
-## timestamp is older than the staleness window, so a crashed holder never wedges
-## the lock permanently. As a last resort the lock is force-written so the caller
-## can always make progress.
+## is treated as stale, and overwritten, once its timestamp is older than the
+## staleness window (10 s), so a crashed holder never wedges the lock
+## permanently. As a last resort the lock is force-written so the caller can
+## always make progress.
 ##
 ## Both methods are static — no instance state; the lock path is passed in.
 ## Export-clean (FileAccess/OS/Time/DirAccess only) so runtime-reachable callers
@@ -22,9 +22,9 @@ const _LOCK_RETRIES := 10
 
 ## Returns true if the lock was acquired. On stale-lock detection the
 ## stale file is overwritten. Exponential backoff: 50, 100, 200, ... ms
-## capped at 1000 ms per retry. A lock is stale once it is _LOCK_STALE_SEC old.
-## OS.is_process_running() can't tell whether the holder is alive: it only
-## knows this process's own children, so it reports every other PID as dead.
+## capped at 1000 ms per retry. A lock is stale by age alone, once it is
+## _LOCK_STALE_SEC old, because OS.is_process_running() only knows this
+## process's own children.
 static func acquire(lock_path: String) -> bool:
 	var lp := lock_path
 	var delay_ms := _LOCK_BASE_RETRY_MS

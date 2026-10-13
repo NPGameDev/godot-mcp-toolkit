@@ -72,11 +72,12 @@ const _RUNTIME_OWNED_FIELDS := ["runtime_port", "runtime_pid"]
 
 
 ## Scans entries/*.json (+ *.runtime.json) and writes the aggregated
-## projects.json. OS.is_process_running() is unreliable on Windows (returns
-## false for live sibling editors), so PID-based GC is not used.  Instead, port-
-## conflict pruning removes stale editor entries: when two entries claim the
-## same port, the one with the older started_at is pruned (its entry
-## file is deleted so it doesn't reappear on next rebuild).
+## projects.json. PID-based GC is not used: OS.is_process_running() only knows
+## this process's own children, on every platform, so it cannot tell whether a
+## sibling editor is alive. Instead, port-conflict pruning removes stale editor
+## entries: when two entries claim the same port, the one with the older
+## started_at is pruned (its entry file is deleted so it doesn't reappear on
+## next rebuild).
 ## Fresh dead entries are cleaned up by deregister() on normal exit or
 ## overwritten when the same project reopens (same hash).
 ## Concurrent rebuilds are idempotent (same files → same output).
