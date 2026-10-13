@@ -58,7 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   or `self` stored in a `static var instance: Player`). A `class_name` that
   hides an autoload, another script's class, an engine class (an abstract one
   from Godot 4.4) or a built-in type is now reported, with its line, on every
-  Godot version. Reported and first fixed by @benfeather ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
+  Godot version. Passing `self` to another script's function typed with the
+  class still reports a false error, and `lsp_diagnostics` gives the real
+  result. Reported and first fixed by @benfeather ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
   [#17](https://github.com/NPGameDev/godot-mcp-toolkit/pull/17)).
 - `node_set_property` (single and batch), `scene_instantiate` (the `properties`
   of each instance) and `node_manage`'s `duplicate` no longer save an `int`
