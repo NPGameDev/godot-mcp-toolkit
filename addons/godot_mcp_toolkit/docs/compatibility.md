@@ -244,8 +244,8 @@ Remaining trade-offs:
   probe suffix, and an invalid script can print its error up to three times.
   Godot gives no way to keep these lines out of the panel.
 - **Abstract engine classes on 4.2–4.3:** a `class_name` equal to an abstract
-  engine class, such as `Material` or `CanvasItem`, reads as valid there. 4.4
-  and later report it.
+  engine class, such as `CanvasItem`, reads as valid there. 4.4 and later
+  report it.
 - **A member named like the script's own class:** a script that declares a
   member with the same name as its `class_name` (an enum value, for example),
   refers to it through a dotted access (`Team.Player`) and also uses its own

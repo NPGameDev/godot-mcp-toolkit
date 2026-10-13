@@ -261,14 +261,14 @@ static func _cases(minor: int) -> Array:
 
 
 static func _abstract_engine_class_case(minor: int) -> Dictionary:
-	var case := {"label": "class_name Material", "path": "",
-		"source": "class_name Material\nextends Node\n"}
+	var case := {"label": "class_name CanvasItem", "path": "",
+		"source": "class_name CanvasItem\nextends Node\n"}
 	if minor >= 4:
 		case["valid"] = false
-		case["conflict"] = "Class \"Material\" hides a native class."
+		case["conflict"] = "Class \"CanvasItem\" hides a native class."
 		case["line"] = 1
 	else:
-		case["label"] = "documented limitation: class_name Material on 4.2-4.3"
+		case["label"] = "documented limitation: class_name CanvasItem on 4.2-4.3"
 		case["valid"] = true
 	return case
 
