@@ -743,11 +743,9 @@ static func _test_settings_collect_names(testing) -> void:
 
 
 # --- resource.write: JSON numbers on int properties -----------------------
-# JSON numbers arrive as floats. In the editor a non-@tool script resource has a
-# placeholder script instance, whose set() stores the Variant as given, so an
-# unconverted float reaches the file as `price = 4.0`. The
-# placeholder_like_resource.gd fixture stores raw Variants the same way (the
-# headless runner gives scripts a live instance, which converts).
+# JSON numbers arrive as floats. The placeholder_like_resource.gd fixture stands in
+# for the editor's placeholder instance of a non-@tool script, which stores the
+# float as given, so an unconverted one reaches the file as `price = 4.0`.
 
 static func _test_resource_write_int_property(testing) -> void:
 	testing.begin("resource.write int properties from JSON numbers")
@@ -762,13 +760,12 @@ static func _test_resource_write_int_property(testing) -> void:
 
 
 # The same symptom on a resource loaded from a file that already exists (the
-# update path) and saved back, with the file's own line as the oracle. The file's
-# script is the placeholder_like_resource.gd fixture, which stores raw Variants as
-# the editor's placeholder does. The resource.write handler cannot run to the end
-# in the headless runner (after saving, it indexes the file through the editor
-# filesystem), so this drives the property writer its update path calls. Each step
-# expects a line the previous step did not leave. Writes a user:// temp file and
-# removes it afterward.
+# update path) and saved back, with the file's own line as the oracle. The
+# resource.write handler cannot run to the end in the headless runner (after
+# saving, it indexes the file through the editor filesystem), so this drives the
+# property writer its update path calls. Each step expects a different line from
+# the one the step before left, so a write that never reached the file fails.
+# Writes a user:// temp file and removes it afterward.
 static func _test_resource_write_int_on_update(testing) -> void:
 	testing.begin("resource.write update path saves int properties as ints")
 	var fixture := "user://resource_write_int_fixture.tres"
