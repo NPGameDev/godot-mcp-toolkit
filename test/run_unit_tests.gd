@@ -40,6 +40,7 @@ const ResponseLimitsTests := preload("res://test/units/response_limits_tests.gd"
 const InfoDialogTests := preload("res://test/units/info_dialog_tests.gd")
 const DockLayoutTests := preload("res://test/units/dock_layout_tests.gd")
 const InputMapTests := preload("res://test/units/input_map_tests.gd")
+const ScriptCheckTests := preload("res://test/units/script_check_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -84,6 +85,7 @@ func _init() -> void:
 	InfoDialogTests.run(testing)
 	DockLayoutTests.run(testing)
 	InputMapTests.run(testing)
+	ScriptCheckTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()

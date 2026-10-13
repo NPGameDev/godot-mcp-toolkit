@@ -322,27 +322,27 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 ## it corrupts already-loaded scripts on ALL Godot versions (P-056).
 ## Shared by script_write (inline diagnostics) and script_check.
 ##
+## The probe compiles under its own synthetic path, so a
+## [code]class_name[/code] declaration that starts its line is stripped first: a
+## probe that kept it would hide the global class the editor registered under
+## that name, a false error. Only the declaration goes, so the one-line form
+## [code]class_name Player extends Node[/code] keeps its base class. The probe is
+## then an anonymous class: a script that passes [code]self[/code] to a
+## parameter typed as its own [code]class_name[/code] reports an error here, and
+## lsp_diagnostics, which checks the file under its real path, does not.
+##
 ## Diagnostics carry only real fields: the error entry gains "line" (the actual
 ## parse/compile error line) when the 4.5+ Logger capture recovered it from the
 ## reload error; on 4.2-4.4 (file-tail capture — no structured line) the key is
 ## omitted, never a fabricated 0. "col" is never emitted — columns are
 ## lsp_diagnostics' domain.
 static func _validate_gdscript(source: String) -> Dictionary:
-	# Strip class_name to prevent false-positive conflict (P-053).
-	# GDScript.new().reload() registers a second copy of the name, colliding
-	# with the already-registered global class. Blanking the line preserves
-	# line numbers so any real errors still report correct positions.
-	var lines := source.split("\n")
-	for i in lines.size():
-		if lines[i].strip_edges().begins_with("class_name "):
-			lines[i] = ""
-			break
 	# Snapshot LogBuffer position so we can scan errors produced by reload().
 	# _next_id is the ID the next pushed entry will receive; since_id uses
 	# "entries with id > since_id", so subtract 1 to include that first entry.
 	var pre_id: int = Modules.LogBuffer._next_id - 1
 	var script := GDScript.new()
-	script.source_code = "\n".join(lines)
+	script.source_code = Modules.GDScriptSource.strip_class_name(source)
 	var is_valid := script.reload(false) == OK
 
 	var diagnostics: Array = []

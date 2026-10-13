@@ -2,6 +2,7 @@
 extends RefCounted
 ## Cross-version / paths / editor-lifecycle pure-logic unit tests: compile-error
 ## message (version-aware), script_check line emission (capability-gated),
+## script_check's class_name strip,
 ## node.set_property groups rejection, UserPathMonitor change detection,
 ## editor.refresh reload filter, unfocused-sleep backup, and the
 ## stale-live-instance hint. Exercises the versioning/ + paths/ + editor-lifecycle
@@ -17,11 +18,13 @@ const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/st
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
 
 
 static func run(testing) -> void:
 	_test_compile_error_message(testing)
 	_test_validate_gdscript_line_emission(testing)
+	_test_strip_class_name(testing)
 	_test_groups_property_rejection(testing)
 	_test_user_path_monitor(testing)
 	_test_editor_refresh_reload_filter(testing)
@@ -74,8 +77,8 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	testing.eq((valid_result.get("diagnostics", []) as Array).size(), 0,
 			"valid source → no diagnostics")
 
-	# Garbage token at line 6; class_name on line 1 exercises the conflict
-	# blanking (the line is blanked, not removed — offsets must hold).
+	# Garbage token at line 6; class_name on line 1 exercises the class_name
+	# strip (the declaration goes but its line stays, so offsets hold).
 	var bad_source := "class_name UnitProbeBad77\nextends Node\n\nvar x := 1\n\n!!!garbage!!!\n"
 	var bad_result := ScriptCommands._validate_gdscript(bad_source)
 	testing.ok(not bool(bad_result.get("valid", true)), "bad source → valid false")
@@ -90,7 +93,7 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	if LogBuffer.uses_logger_api():
 		testing.ok(error_diagnostic.has("line"), "Logger capture live → real line present")
 		testing.eq(int(error_diagnostic.get("line", -1)), 6,
-				"line is the REAL parse line (class_name blanking keeps offsets)")
+				"line is the REAL parse line (the class_name strip keeps offsets)")
 	else:
 		testing.ok(not error_diagnostic.has("line"),
 				"file-tail capture → line omitted (never a fabricated 0)")
@@ -100,6 +103,33 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	var post_cursor: int = LogBuffer.get_cursor() - 1
 	testing.eq(LogBuffer.find_script_error_line_since(post_cursor), -1,
 			"since-cursor after the error → -1")
+	print("")
+
+
+# --- GDScriptSource.strip_class_name ----------------------------------------
+# The probe's class_name strip removes only the declaration, keeps the rest of
+# its line and never adds or removes a line.
+
+static func _test_strip_class_name(testing) -> void:
+	testing.begin("GDScriptSource.strip_class_name keeps the rest of the line")
+	testing.eq(GDScriptSource.strip_class_name("class_name A extends Node\nvar x := 1\n"),
+			"extends Node\nvar x := 1\n", "one-line form → extends kept")
+	testing.eq(GDScriptSource.strip_class_name("class_name A\nextends Node\n"),
+			"\nextends Node\n", "declaration alone on its line → blank line kept")
+	testing.eq(GDScriptSource.strip_class_name("class_name\tA\textends Node\n"),
+			"extends Node\n", "tab-separated → extends kept")
+	testing.eq(GDScriptSource.strip_class_name("class_name A; extends Node\n"),
+			"extends Node\n", "';' after the name → dropped with the declaration")
+	testing.eq(GDScriptSource.strip_class_name("class_name A # note\n"),
+			"# note\n", "trailing comment → kept")
+	testing.eq(GDScriptSource.strip_class_name("class_name A extends Node\r\nvar x\r\n"),
+			"extends Node\r\nvar x\r\n", "CRLF line ends → kept")
+	testing.eq(GDScriptSource.strip_class_name("extends Node\nclass_name A\nclass_name B\n"),
+			"extends Node\n\nclass_name B\n", "first declaration only")
+	testing.eq(GDScriptSource.strip_class_name("@tool class_name A extends Node\n"),
+			"@tool class_name A extends Node\n", "declaration after an annotation → untouched")
+	testing.eq(GDScriptSource.strip_class_name("extends Node\nvar class_name_count := 1\n"),
+			"extends Node\nvar class_name_count := 1\n", "no declaration → unchanged")
 	print("")
 
 

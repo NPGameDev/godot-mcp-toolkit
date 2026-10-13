@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `input_map_action` now refuses to remove any built-in action, such as
   `ui_select`. Before, it checked a fixed list of names that missed some built-in
   actions on every supported Godot version.
+- `script_check`, `script_write` and `script_edit` no longer report false
+  compile errors when a line starts with `class_name` and also declares
+  `extends`, as in `class_name Player extends Node`. The check dropped the
+  `extends` from that line, so it compiled the script as if it extended
+  `RefCounted` instead of its real base class. Reported and first fixed by
+  @benfeather ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
+  [#17](https://github.com/NPGameDev/godot-mcp-toolkit/pull/17)).
 
 ### Removed
 

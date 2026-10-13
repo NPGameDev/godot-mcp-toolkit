@@ -26,3 +26,4 @@ const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_ver
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 const EditorAccess := preload("res://addons/godot_mcp_toolkit/core/editor_access.gd")
 const ResponseLimits := preload("res://addons/godot_mcp_toolkit/core/response_limits.gd")
+const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")

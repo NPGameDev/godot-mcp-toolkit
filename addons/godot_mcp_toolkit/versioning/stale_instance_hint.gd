@@ -27,6 +27,9 @@ extends RefCounted
 ## `major`, `minor`, and the headless flag from `Engine.get_version_info()` /
 ## `DisplayServer`.
 
+# Direct preload, not through core/modules.gd: the aggregator preloads this file.
+const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
+
 const _RECOVERY := (
 	"On Godot %s, a live instance already running this script keeps the OLD code: "
 	+ "changed method bodies AND newly-added members stay invisible to it. "
@@ -93,16 +96,13 @@ static func write_hint(ver_label: String) -> String:
 
 ## True if `source` parses/compiles as GDScript. SAFE in-process parse via
 ## GDScript.new().reload() — NOT ResourceLoader.load(CACHE_MODE_IGNORE), which
-## corrupts already-loaded scripts on every version (P-056). class_name is blanked
-## first to avoid a global-class double-registration false positive (P-053).
+## corrupts already-loaded scripts on every version (P-056). A class_name
+## declaration that starts its line is stripped first: the in-memory copy would
+## otherwise hide the global class of that name, a false error. The rest of its
+## line, such as a same-line `extends`, stays.
 static func source_compiles(source: String) -> bool:
-	var lines := source.split("\n")
-	for i in lines.size():
-		if lines[i].strip_edges().begins_with("class_name "):
-			lines[i] = ""
-			break
 	var script := GDScript.new()
-	script.source_code = "\n".join(lines)
+	script.source_code = GDScriptSource.strip_class_name(source)
 	return script.reload(false) == OK
 
 

@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (actor.gd exists)
 **Tools tested:** script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies
-**Tests:** 17
+**Tests:** 18
 
 ---
 
@@ -24,6 +24,12 @@
 
 **6.3** `script_check` — file_path=`res://sv2_validation/actor.gd`
 - **Expect:** valid=true, 0 diagnostics
+
+**6.3b** `script_check` on the one-line `class_name` form — first `script_write` file_path=`res://sv2_validation/sv2_one_line.gd`, content=`class_name Sv2OneLine extends Node\n\n\nfunc attach_child() -> void:\n\tadd_child(Node.new())\n`; then `script_check` file_path=`res://sv2_validation/sv2_one_line.gd`
+- **Expect (every version):** the `script_write` response and the `script_check` response both valid=true, 0 diagnostics. The check removes only the `class_name` declaration, so the script keeps its `Node` base and `add_child` resolves.
+
+> **REGRESSION WATCH (toolkit #16):** an error in either response means the check
+> dropped the same-line `extends` again. Flag as **Major**.
 
 **6.4** `script_write` (with error) — file_path=`res://sv2_validation/sv2_bad_script.gd`, content=`extends Node\n\nvar x = {\n`
 - **Expect:** success write, `valid: false`, `diagnostics` array non-empty
@@ -115,4 +121,5 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 - `script_delete` file_path=`res://sv2_validation/sv2_bad_script.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_preload_test.gd`
+- `script_delete` file_path=`res://sv2_validation/sv2_one_line.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_edit_target.gd`
