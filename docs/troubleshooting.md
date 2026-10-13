@@ -174,6 +174,20 @@ stale contents, wrong paths after moving or copying the project).
 clean template. If you keep hand edits in the file, back them up first; the fix
 overwrites.
 
+### `.mcp.json` shows modified after a write from another OS
+
+**Symptom:** `git status` shows `.mcp.json` modified after the dock wrote it on
+a different OS from the one that wrote the committed copy.
+
+**Cause:** the dock writes the server entry in the form for its own OS:
+`cmd /c npx` on Windows, bare `npx` on macOS and Linux.
+
+**Fix:** Working across Windows and macOS/Linux? Keep `.mcp.json` out of version control and let each machine write its own; the toolkit offers to on first open.
+
+Alternatively: Commit the macOS/Linux form; current Claude Code on Windows starts it. Discard the change a Windows write makes.
+
+A future release will write the same entry on every OS.
+
 ### Deleted the `.godot/` folder
 
 **Symptom:** after clearing the project cache (a common fix for import
