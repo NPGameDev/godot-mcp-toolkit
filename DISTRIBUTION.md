@@ -43,14 +43,10 @@ sibling `godot-mcp-dogfood-playground/` project exists and still works; it's
 reserved for clean-project / end-user-install verification (e.g. iter 20
 AssetLib install checks), not day-to-day dogfood.
 
-**Pre-iter-20 note.** This repo's dogfood `.mcp.json` (and the byte-identical
-`addons/godot_mcp_toolkit/.mcp.json.template`) currently use a path-based
-`node <abs-path>/dist/index.js` invocation rather than
-`npx -y @npgamedev/godot-mcp-server`, because the scoped npm name is not yet
-published (publish is gated on iter 20). Iter 20 publishes to npm and then
-swaps both files back to the scoped-npx form — at which point the dogfood
-`.mcp.json` works unchanged for end users too. See iter 13b for the original
-swap rationale and iter 20's verification for the swap-back.
+**The dogfood `.mcp.json`.** It is not tracked: each machine's dock writes its
+own, in the form for that OS (`cmd /c npx` on Windows, bare `npx` on macOS and
+Linux), so a tracked copy would differ between machines. The shipped
+`addons/godot_mcp_toolkit/.mcp.json.template` holds the bare-`npx` entry.
 
 ## End-user plugin install (manual zip, available today)
 
@@ -166,9 +162,9 @@ Repo-root files (`project.godot`, `icon.png`, `LICENSE`, `README.md`, `.mcp.json
 dogfood-project or AssetLib-landing-page concerns, not end-user project
 additions.
 
-The `.mcp.json.template` inside the addon directory is byte-identical to the
-dogfood `.mcp.json` at repo root. They are kept in sync manually; iter 01a
-and iter 08 include a `diff` check in their verification.
+The `.mcp.json.template` inside the addon directory holds the bare-`npx`
+entry. The dock writes the same entry into a project's `.mcp.json`, wrapping
+the command in `cmd /c` on Windows.
 
 ---
 

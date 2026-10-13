@@ -6,7 +6,7 @@ nav_order: 2
 
 # Godot MCP Toolkit — Architecture
 
-> **Architecture as of `8a1496e`** — 41n-series finalization: the runtime-autoload
+> **Architecture as of `8a1496e`** — the runtime-autoload
 > identity/registration was split out of the plugin orchestrator into a pure-const leaf
 > (`core/autoload_identity.gd`) plus a behaviour module (`core/autoload_registration.gd`),
 > shared with the export-strip domain ([ADR 0013](#14-key-decisions-adrs)); listen ports gained
@@ -17,7 +17,7 @@ nav_order: 2
 > [ADR 0018](#14-key-decisions-adrs) after a real-Mac finding;
 > the editor-channel handshake added a `headless` field ([ADR 0014](#14-key-decisions-adrs)); dispatch
 > cancellation keys were peer-scoped; and the support ceiling reached Godot 4.7. Structural
-> baseline unchanged from the 41n cohesion refactor (thin orchestrators over
+> baseline unchanged from the cohesion refactor (thin orchestrators over
 > single-responsibility children; DDD domain folders such as `commands/`, `contract/`,
 > `transport/`, `registry/`, `extensions/`; the `Modules` preload registry + the `EditorAccess`
 > facade). Latest change — macOS `.mcp.json` emission reverted to bare npx (ADR 0018
@@ -70,7 +70,7 @@ The rules that keep it honest:
    affected diagram; the release rule is in the
    [release runbook](../dev/release-runbook.md#architecture-and-contract-freshness).
 
-Diagrams below are verified against `eb4c9fa` (the 41n-series finalization) — each diagram's own
+Diagrams below are verified against `eb4c9fa` — each diagram's own
 `data-verified` comment is authoritative.
 
 ---
@@ -468,7 +468,7 @@ flowchart TD
     rc --> proj["registry_projection.gd<br/>fan-in → projects.json"]
     rc --> lock["file_lock.gd<br/>PID-aware machine-wide lock"]
 ```
-*Figure 9 — orchestrator + SRP-children (registry, concern 039) · verified eb4c9fa*
+*Figure 9 — orchestrator + SRP-children (registry) · verified eb4c9fa*
 
 The same shape recurs across the codebase: `mcp_server.gd` over its transport/dispatch
 children, `plugin.gd` over `PluginComposer` ([§7](#7-plugin-lifecycle)), `dock.gd` over its
@@ -509,7 +509,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order (I12)"| composer
 ```
-*Figure 10 — plugin composition root (concern 001) · verified 3f369f1*
+*Figure 10 — plugin composition root · verified 3f369f1*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
@@ -559,7 +559,7 @@ flowchart TD
     reserved --> mark["registry.mark_extension(method)"]
     mark --> retain["retain instance (C# GC safety)"]
 ```
-*Figure 11 — extension discovery → validate → guarded register (concern 047) · verified eb4c9fa*
+*Figure 11 — extension discovery → validate → guarded register · verified eb4c9fa*
 
 Two guards protect the built-in surface: a **collision guard** window (opened by
 `begin_extension_load`, drained by `end_extension_load`) rejects an extension that tries to
@@ -613,7 +613,7 @@ flowchart TD
     lock --> rebuild --> pj
     pj --> bridge["server bridge — discovers all instances"]
 ```
-*Figure 12 — registry fan-in (concern 039) · verified eb4c9fa*
+*Figure 12 — registry fan-in · verified eb4c9fa*
 
 The registry directory is **machine-wide**, not `user://` — `%APPDATA%\godot-mcp-toolkit` on
 Windows, `~/Library/Application Support/godot-mcp-toolkit` on macOS, `$XDG_DATA_HOME` on Linux —
@@ -710,8 +710,8 @@ from how the toolkit itself is shipped.
 
 The **contract surface** is the published language the server depends on — the part of this
 toolkit that is *not* free to change without coordinating the bridge. It is catalogued in full
-(with toolkit-side `file:line`, field types, example payloads, and stability tiers) in the 41n
-contract-surface document; the headline rows:
+(with toolkit-side `file:line`, field types, example payloads, and stability tiers) in
+[`docs/dev/contract.md`](../dev/contract.md); the headline rows:
 
 | # | Contract | Tier |
 |---|----------|------|
@@ -733,8 +733,8 @@ contract-surface document; the headline rows:
 | C16–C22 | `projects.json` format, project hash, token-path discovery, LSP/runtime publishing, untrusted envelope, ProjectSettings keys | internal |
 
 Tiers feed semver: **public** = a break is a major bump; **semi-public** = deprecate-then-change
-in a minor; **internal** = no guarantee. The server-side consumer of each contract is verified
-in the server's own review (41n-bis), and the two sides are reconciled in 41n-ter.
+in a minor; **internal** = no guarantee. The server-side consumer of each contract is described
+beside it in [`docs/dev/contract.md`](../dev/contract.md).
 
 ---
 

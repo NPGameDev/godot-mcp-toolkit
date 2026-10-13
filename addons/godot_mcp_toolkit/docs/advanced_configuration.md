@@ -2,8 +2,8 @@
 
 These are **optional fine-tuning knobs** that most users never need to touch —
 the defaults are chosen to work well out of the box. They live under
-**Project → Project Settings → `mcp_toolkit/`** (enable *Advanced Settings* to
-see them) and can also be set with `ProjectSettings`.
+**Project → Project Settings → `mcp_toolkit/`** and can also be set with
+`ProjectSettings`.
 
 Apart from the response limits under **Limits**, whose ranges the dock and the
 Project Settings inspector both enforce, none of these values are clamped in

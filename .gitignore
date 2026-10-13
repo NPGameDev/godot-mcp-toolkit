@@ -11,9 +11,12 @@ dist-plugin/
 
 # Claude Code per-project state (created when running `claude` from this
 # repo for dogfood). Local to the dev machine — settings.local.json,
-# slash-command overrides, session state. The dogfood `.mcp.json` at the
-# repo root IS tracked; everything under .claude/ is not.
+# slash-command overrides, session state.
 .claude/
+
+# The dogfood `.mcp.json` at the repo root. Each machine's dock writes its own,
+# and the entry differs between Windows and macOS/Linux.
+/.mcp.json
 
 # Smoke-test and eval-suite scratch artifacts (server repo's test/smoke.ts
 # and test/eval/). Broad pattern catches crash-leftover files at repo root.
