@@ -252,7 +252,7 @@ static func _commit_content(server: Node, file_path: String, content: String,
 
 	# Inline GDScript diagnostics — same validation as script_check.
 	if extension == "gd":
-		var validation := _validate_gdscript(content, file_path)
+		var validation := _validate_gdscript(content)
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
 
@@ -309,7 +309,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("READ_FAILED",
 			"FileAccess error %d reading %s" % [read_error, file_path])
 
-	var validation := _validate_gdscript(content, file_path)
+	var validation := _validate_gdscript(content)
 	return MCPToolkitSuccess.ok({
 		"file_path": file_path,
 		"valid": validation["valid"],
@@ -322,47 +322,27 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 ## it corrupts already-loaded scripts on ALL Godot versions (P-056).
 ## Shared by script_write (inline diagnostics) and script_check.
 ##
-## [param file_path] is the file [param source] belongs to, or empty. On Godot
-## 4.6+, when the editor has that file's script loaded and compiled
-## ([method _probes_under_own_path]), the probe compiles under the file's own
-## path: its [code]class_name[/code] is then the registered global class, so
-## passing [code]self[/code] to a parameter typed as that class checks clean.
-## Otherwise the probe keeps its own synthetic path, and the declaration is
-## stripped first: a probe that kept it under another path would hide the
-## global class of the same name. That probe is an anonymous class, so a script
-## that passes [code]self[/code] as its own type still reports an error there.
-## The gate is a version compare, not [code]has_method("set_path_cache")[/code]:
-## Resource binds that method from 4.4, but GDScript overrides it only from 4.6.
-## Before that, the call sets only the resource path, and the parser still sees
-## the probe's synthetic [code]gdscript://[/code] path.
-## Compiling under the path has two side effects on 4.6+. If the engine's
-## GDScript cache holds a parser for that path whose source differs from
-## [param source] (the file changed since it was parsed), it drops that parser
-## and the parsers of the scripts that depend on it, which are parsed again when
-## next needed. For a script with static data (a static variable or a
-## [code]_static_init()[/code]) and no [code]@static_unload[/code], the probe
-## takes the loaded script's entry in the engine's static-script cache,
-## which only keeps such scripts in memory; the loaded script stays in memory
-## through the GDScript cache. That probe stays in memory too, one per script,
-## under the file's path, so when the editor saves the script's base script it
-## reloads the probe as well, and a [code]@tool[/code] script's
-## [code]_static_init()[/code] runs once more for it.
+## The probe compiles under its own synthetic path, so its
+## [code]class_name[/code] declaration is stripped first: a probe that kept it
+## would hide the global class the editor registered under that name, a false
+## error (P-053). Only the declaration goes, so the one-line form
+## [code]class_name Player extends Node[/code] keeps its base class. The probe is
+## then an anonymous class: a script that passes [code]self[/code] to a
+## parameter typed as its own [code]class_name[/code] reports an error here, and
+## lsp_diagnostics, which checks the file under its real path, does not.
 ##
 ## Diagnostics carry only real fields: the error entry gains "line" (the actual
 ## parse/compile error line) when the 4.5+ Logger capture recovered it from the
 ## reload error; on 4.2-4.4 (file-tail capture — no structured line) the key is
 ## omitted, never a fabricated 0. "col" is never emitted — columns are
 ## lsp_diagnostics' domain.
-static func _validate_gdscript(source: String, file_path: String = "") -> Dictionary:
-	var use_path := _probes_under_own_path(file_path)
+static func _validate_gdscript(source: String) -> Dictionary:
 	# Snapshot LogBuffer position so we can scan errors produced by reload().
 	# _next_id is the ID the next pushed entry will receive; since_id uses
 	# "entries with id > since_id", so subtract 1 to include that first entry.
 	var pre_id: int = Modules.LogBuffer._next_id - 1
 	var script := GDScript.new()
-	script.source_code = source if use_path else Modules.GDScriptSource.strip_class_name(source)
-	if use_path:
-		script.call("set_path_cache", file_path)
+	script.source_code = Modules.GDScriptSource.strip_class_name(source)
 	var is_valid := script.reload(false) == OK
 
 	var diagnostics: Array = []
@@ -372,14 +352,11 @@ static func _validate_gdscript(source: String, file_path: String = "") -> Dictio
 			"message": _compile_error_message(Modules.VersionUtils.get_engine_version_pair()),
 		}
 		# The real error line, recovered from the Logger capture of the reload
-		# error this call just triggered (a stripped probe reports under its
-		# synthetic "gdscript://…" path and an own-path probe under its file, so
-		# the latch match is ours — the snapshot-to-scan window runs
-		# synchronously on the main thread; LogBuffer documents the one
-		# same-file exception). -1 (nothing recovered — 4.2-4.4, or a failed
-		# Logger hook) omits the key.
-		var real_line: int = Modules.LogBuffer.find_script_error_line_since(
-			pre_id, file_path if use_path else "")
+		# error this call just triggered (an in-memory script reports under a
+		# synthetic "gdscript://…" path, so the latch match is ours — the
+		# snapshot-to-scan window runs synchronously on the main thread). -1
+		# (nothing recovered — 4.2-4.4, or a failed Logger hook) omits the key.
+		var real_line: int = Modules.LogBuffer.find_script_error_line_since(pre_id)
 		if real_line > 0:
 			error_diagnostic["line"] = real_line
 		diagnostics.append(error_diagnostic)
@@ -394,25 +371,6 @@ static func _validate_gdscript(source: String, file_path: String = "") -> Dictio
 				"message": hint,
 			})
 	return MCPToolkitSuccess.ok({"valid": is_valid, "diagnostics": diagnostics})
-
-
-## True when [method _validate_gdscript] compiles its probe under
-## [param file_path]: on Godot 4.6+, for a script the editor has loaded and
-## compiled. The engine's GDScript cache holds such a script. A loaded script
-## that never compiled has no entry there yet (the Create Script dialog leaves
-## one that way while the editor setting
-## text_editor/behavior/files/auto_reload_and_parse_scripts_on_save is off), and
-## a probe compiled under its path would become that entry, so the scripts that
-## use the class would get the probe.
-static func _probes_under_own_path(file_path: String) -> bool:
-	if file_path == "" or not ResourceLoader.has_cached(file_path):
-		return false
-	if not Modules.VersionUtils.is_at_least(Modules.VersionUtils.get_engine_version_pair(), "4.6"):
-		return false
-	# A cache hit: load() returns the loaded script without reading the file.
-	var loaded := ResourceLoader.load(file_path) as GDScript
-	# A compiled script knows its native base class; one never compiled does not.
-	return loaded != null and loaded.get_instance_base_type() != &""
 
 
 ## Version-aware compile-error diagnostic message. editor_get_console surfaces editor

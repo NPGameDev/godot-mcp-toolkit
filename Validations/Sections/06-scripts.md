@@ -25,13 +25,11 @@
 **6.3** `script_check` — file_path=`res://sv2_validation/actor.gd`
 - **Expect:** valid=true, 0 diagnostics
 
-**6.3b** `script_check` on a loaded self-typed script — first `script_write` file_path=`res://sv2_validation/sv2_self_typed.gd`, content=`class_name Sv2SelfTyped extends Node\n\n\nfunc take(_other: Sv2SelfTyped) -> void:\n\tpass\n\n\nfunc pass_self() -> void:\n\ttake(self)\n`; then `resource_load` file_path=`res://sv2_validation/sv2_self_typed.gd`, so the editor has the script loaded; then `script_check` file_path=`res://sv2_validation/sv2_self_typed.gd`
-- **Expect (Godot 4.6+):** valid=true, 0 diagnostics. A loaded script is checked under its own path, so passing `self` to a parameter typed as its own `class_name` is clean.
-- **Expect (Godot 4.2–4.5):** valid=false with one error diagnostic. The check removes the `class_name` declaration, and that anonymous copy cannot pass `self` as `Sv2SelfTyped` (the documented `script_check` limitation in `docs/compatibility.md`).
-- **Note:** the `script_write` response may carry `valid: false` on every version: the file was not loaded when it was written.
+**6.3b** `script_check` on the one-line `class_name` form — first `script_write` file_path=`res://sv2_validation/sv2_one_line.gd`, content=`class_name Sv2OneLine extends Node\n\n\nfunc attach_child() -> void:\n\tadd_child(Node.new())\n`; then `script_check` file_path=`res://sv2_validation/sv2_one_line.gd`
+- **Expect (every version):** the `script_write` response and the `script_check` response both valid=true, 0 diagnostics. The check removes only the `class_name` declaration, so the script keeps its `Node` base and `add_child` resolves.
 
-> **REGRESSION WATCH (toolkit #16):** on 4.6+, an error from this check means the
-> own-path check has regressed. Flag as **Major**.
+> **REGRESSION WATCH (toolkit #16):** an error in either response means the check
+> dropped the same-line `extends` again. Flag as **Major**.
 
 **6.4** `script_write` (with error) — file_path=`res://sv2_validation/sv2_bad_script.gd`, content=`extends Node\n\nvar x = {\n`
 - **Expect:** success write, `valid: false`, `diagnostics` array non-empty
@@ -123,5 +121,5 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 - `script_delete` file_path=`res://sv2_validation/sv2_bad_script.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_preload_test.gd`
-- `script_delete` file_path=`res://sv2_validation/sv2_self_typed.gd`
+- `script_delete` file_path=`res://sv2_validation/sv2_one_line.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_edit_target.gd`

@@ -2,7 +2,7 @@
 extends RefCounted
 ## Cross-version / paths / editor-lifecycle pure-logic unit tests: compile-error
 ## message (version-aware), script_check line emission (capability-gated),
-## script_check's own-path probe (4.6+) and class_name strip,
+## script_check's class_name strip,
 ## node.set_property groups rejection, UserPathMonitor change detection,
 ## editor.refresh reload filter, unfocused-sleep backup, and the
 ## stale-live-instance hint. Exercises the versioning/ + paths/ + editor-lifecycle
@@ -20,14 +20,10 @@ const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
 
-const SELF_TYPED_FIXTURE := "res://test/fixtures/self_typed_fixture.gd"
-
 
 static func run(testing) -> void:
 	_test_compile_error_message(testing)
 	_test_validate_gdscript_line_emission(testing)
-	_test_validate_gdscript_own_path(testing)
-	_test_script_check_own_path_gate(testing)
 	_test_strip_class_name(testing)
 	_test_groups_property_rejection(testing)
 	_test_user_path_monitor(testing)
@@ -81,8 +77,8 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	testing.eq((valid_result.get("diagnostics", []) as Array).size(), 0,
 			"valid source → no diagnostics")
 
-	# Garbage token at line 6; class_name on line 1 exercises the conflict
-	# blanking (the line is blanked, not removed — offsets must hold).
+	# Garbage token at line 6; class_name on line 1 exercises the class_name
+	# strip (the declaration goes but its line stays, so offsets hold).
 	var bad_source := "class_name UnitProbeBad77\nextends Node\n\nvar x := 1\n\n!!!garbage!!!\n"
 	var bad_result := ScriptCommands._validate_gdscript(bad_source)
 	testing.ok(not bool(bad_result.get("valid", true)), "bad source → valid false")
@@ -97,7 +93,7 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	if LogBuffer.uses_logger_api():
 		testing.ok(error_diagnostic.has("line"), "Logger capture live → real line present")
 		testing.eq(int(error_diagnostic.get("line", -1)), 6,
-				"line is the REAL parse line (class_name blanking keeps offsets)")
+				"line is the REAL parse line (the class_name strip keeps offsets)")
 	else:
 		testing.ok(not error_diagnostic.has("line"),
 				"file-tail capture → line omitted (never a fabricated 0)")
@@ -107,76 +103,6 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	var post_cursor: int = LogBuffer.get_cursor() - 1
 	testing.eq(LogBuffer.find_script_error_line_since(post_cursor), -1,
 			"since-cursor after the error → -1")
-	print("")
-
-
-# --- script_check compiles a loaded script under its own path (4.6+) --------
-# A pathless probe is an anonymous class, so a script that passes `self` to a
-# parameter typed as its own class_name failed validation. On 4.6+ the probe of
-# an already-loaded script takes the file's path (GDScript.set_path_cache), so
-# the check passes, and a real error still reports its line under that path.
-# Older engines keep the class_name strip; only the 4.6+ branch is asserted.
-
-static func _test_validate_gdscript_own_path(testing) -> void:
-	testing.begin("script_check compiles a loaded script under its own path")
-	LogBuffer.setup()
-	if not VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.6"):
-		print("  (Godot < 4.6: no GDScript.set_path_cache override, strip kept; not asserted)")
-		print("")
-		return
-	var loaded := load(SELF_TYPED_FIXTURE)  # as the editor holds it once loaded
-	testing.ok(loaded != null, "fixture loads")
-	var source := FileAccess.get_file_as_string(SELF_TYPED_FIXTURE)
-	var result := ScriptCommands._validate_gdscript(source, SELF_TYPED_FIXTURE)
-	testing.ok(bool(result.get("valid", false)), "`self` passed as its own class_name → valid")
-	testing.eq((result.get("diagnostics", []) as Array).size(), 0, "no diagnostics")
-
-	# Garbage at line 13, after the fixture's 12 lines.
-	var bad_result := ScriptCommands._validate_gdscript(source + "!!!garbage!!!\n", SELF_TYPED_FIXTURE)
-	testing.ok(not bool(bad_result.get("valid", true)), "real error → valid false")
-	var diagnostics: Array = bad_result.get("diagnostics", [])
-	testing.eq(int((diagnostics[0] as Dictionary).get("line", -1)) if diagnostics.size() > 0 else -1, 13,
-			"real error line found under the file's own path")
-	print("")
-
-
-# --- script_check's own-path gate -------------------------------------------
-# The own-path probe is for a script the editor has loaded and compiled, on
-# 4.6+ only. Any other file_path takes the class_name strip. The probe source
-# names a class no script registers: compiled under its own path it is valid,
-# while the strip removes the name its parameter type needs, so valid:false
-# shows the strip ran.
-
-static func _test_script_check_own_path_gate(testing) -> void:
-	testing.begin("script_check takes the own-path probe only for a loaded, compiled script on 4.6+")
-	LogBuffer.setup()
-	var source := (
-		"class_name MCPToolkitUnitOwnPathGateProbe extends RefCounted\n\n\n"
-		+ "func take(_other: MCPToolkitUnitOwnPathGateProbe) -> void:\n\tpass\n\n\n"
-		+ "func pass_self() -> void:\n\ttake(self)\n"
-	)
-	# A path nothing has loaded (no file exists there).
-	var not_loaded := ScriptCommands._validate_gdscript(source,
-			"res://test/fixtures/not_loaded_gate_probe.gd")
-	testing.ok(not bool(not_loaded.get("valid", true)), "file_path not loaded → strip")
-	# Loaded but never compiled, as the Create Script dialog leaves a script while
-	# the editor's reload-on-save setting is off.
-	var never_compiled_path := "res://test/fixtures/never_compiled_gate_probe.gd"
-	var never_compiled := GDScript.new()
-	never_compiled.source_code = source
-	never_compiled.resource_path = never_compiled_path
-	testing.ok(ResourceLoader.has_cached(never_compiled_path), "uncompiled script cached under its path")
-	var uncompiled := ScriptCommands._validate_gdscript(source, never_compiled_path)
-	testing.ok(not bool(uncompiled.get("valid", true)), "cached but never compiled → strip")
-	if not VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.6"):
-		print("  (Godot < 4.6: no GDScript.set_path_cache override, strip kept; own path not asserted)")
-		print("")
-		return
-	var loaded := load(SELF_TYPED_FIXTURE)
-	testing.ok(loaded != null, "fixture loads")
-	var result := ScriptCommands._cmd_script_check({"file_path": SELF_TYPED_FIXTURE})
-	testing.ok(bool(result.get("valid", false)), "handler: loaded self-typed script → valid true")
-	testing.eq((result.get("diagnostics", []) as Array).size(), 0, "handler: no diagnostics")
 	print("")
 
 

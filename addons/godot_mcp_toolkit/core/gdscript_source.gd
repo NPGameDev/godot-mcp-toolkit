@@ -13,10 +13,9 @@ const _CLASS_NAME_END_CHARS := " \t;#\\"
 ## Returns [param source] with its [code]class_name <Name>[/code] declaration
 ## removed and the rest of that line kept, so the one-line form
 ## [code]class_name Player extends Node[/code] still extends [code]Node[/code].
-## A probe compiled under any path but the file's own that kept the declaration
-## would hide the global class the editor registered under that name, a compile
-## error the real script does not have. No line is added or removed, so error
-## lines still match the file.
+## A probe that kept the declaration would hide the global class the editor
+## registered under that name, a compile error the real script does not have.
+## No line is added or removed, so error lines still match the file.
 ## Only a line that starts with the declaration is edited, the first one found;
 ## a declaration after an annotation on the same line, such as
 ## [code]@tool class_name Player[/code], is left in place.

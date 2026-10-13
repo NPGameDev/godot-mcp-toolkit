@@ -109,22 +109,16 @@ static func push_script_error(level: String, message: String, file: String, line
 ## disk path) reports under a synthetic "gdscript://…" path ("built-in" on
 ## engines predating that scheme), so matching that shape picks the caller's
 ## own just-triggered reload error and never a threaded editor-scan error on a
-## res:// script that lands in the same window. A probe compiled under a file's
-## own path reports under that path, so [param probe_path] matches it too; an
-## editor-scan error on that same file landing in the window then matches as
-## well, and its line comes from the scan's own read of the file, which can
-## predate the source the caller checked.
-## Returns -1 on 4.2-4.4 (the file tail latches nothing) — callers omit their
-## line field then.
-static func find_script_error_line_since(since_id: int, probe_path: String = "") -> int:
+## res:// script that lands in the same window. Returns -1 on 4.2-4.4 (the
+## file tail latches nothing) — callers omit their line field then.
+static func find_script_error_line_since(since_id: int) -> int:
 	_mutex.lock()
 	var found := -1
 	for location in _script_error_locations:
 		if int(location["id"]) <= since_id:
 			continue
 		var file := str(location["file"])
-		if file == "built-in" or file.begins_with("gdscript://") \
-				or (probe_path != "" and file == probe_path):
+		if file == "built-in" or file.begins_with("gdscript://"):
 			found = int(location["line"])
 			break
 	_mutex.unlock()

@@ -10,8 +10,6 @@ const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
-# Never loaded, so script_check probes it with the class_name strip on every
-# version, never under its own path.
 const ONE_LINE_FIXTURE := "res://test/fixtures/one_line_class_name_fixture.gd"
 
 # The one-line form with a body that compiles only on a Node base: a probe that
@@ -40,13 +38,11 @@ static func _test_validate_one_line_form(testing) -> void:
 	print("")
 
 
-# --- the script_check handler, a file the editor has not loaded -------------
+# --- the script_check handler, reading the file ------------------------------
 
 static func _test_script_check_one_line_file(testing) -> void:
-	testing.begin("script_check handler: one-line class_name form in a file not loaded")
+	testing.begin("script_check handler: one-line class_name form in a file")
 	LogBuffer.setup()
-	testing.ok(not ResourceLoader.has_cached(ONE_LINE_FIXTURE),
-			"fixture not loaded → probed with the class_name strip")
 	var result := ScriptCommands._cmd_script_check({"file_path": ONE_LINE_FIXTURE})
 	testing.ok(bool(result.get("success", false)), "handler succeeds")
 	testing.ok(bool(result.get("valid", false)), "one-line class_name file → valid true")

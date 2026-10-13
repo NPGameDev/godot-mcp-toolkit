@@ -54,11 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compile errors for a script that declares `class_name` and `extends` on one
   line, such as `class_name Player extends Node`. The check dropped the
   `extends`, so it compiled the script as if it extended `RefCounted` instead
-  of its real base class. On Godot 4.6 and later, the check now compiles a
-  script the editor has loaded under its own path, so passing `self` to a
-  parameter typed as the script's own `class_name` checks clean too. On earlier
-  versions, and for a script the editor hasn't loaded, passing `self` that way
-  still reports an error. Reported and fixed by @benfeather
+  of its real base class. Reported and first fixed by @benfeather
   ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
   [#17](https://github.com/NPGameDev/godot-mcp-toolkit/pull/17)).
 
