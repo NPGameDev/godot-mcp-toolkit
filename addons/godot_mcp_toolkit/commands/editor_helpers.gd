@@ -86,6 +86,22 @@ static func fit_to_type(value: Variant, declared_type: int, property_name: Strin
 	return {"value": conversion["value"], "warning": warning}
 
 
+## The warning a scalar property write reports, or "" for a clean write.
+##
+## When the readback [param outcome] from [method describe_set_drop] is
+## [code]"adjusted"[/code], the warning names the [param stored] value against the
+## caller's [param requested] one rather than the fitted value, so a clamp that
+## follows the fit reports what the caller sent. Otherwise it is the warning in
+## [param fit], the result of [method fit_to_declared_type].
+static func scalar_set_warning(
+	outcome: Dictionary, fit: Dictionary, stored: Variant, requested: Variant,
+	property_name: String,
+) -> String:
+	if outcome.get("status", "") == "adjusted":
+		return PropertySetCheck.adjusted_warning(stored, requested, property_name)
+	return str(fit["warning"])
+
+
 ## Compile a regex text_filter. Returns [RegEx-or-null, error-or-null, warning].
 ## Handles double-escaped metacharacters from MCP transport.
 static func compile_text_filter(parameters: Dictionary) -> Array:
@@ -370,20 +386,21 @@ static func describe_set_drop(
 ## Check whether a property name exists on an object instance.
 ## Uses get_property_list() which covers built-in, @export, and metadata.
 static func _has_property(obj: Object, property_name: String) -> bool:
-	return not _property_entry(obj, property_name).is_empty()
+	return not property_entry(obj, property_name).is_empty()
 
 
 ## The Variant type [param obj]'s property list declares for [param property_name],
 ## or [constant @GlobalScope.TYPE_NIL] when the list has no such entry.
 static func _declared_type(obj: Object, property_name: String) -> int:
-	return int(_property_entry(obj, property_name).get("type", TYPE_NIL))
+	return int(property_entry(obj, property_name).get("type", TYPE_NIL))
 
 
 ## The entry [param obj]'s property list holds for [param property_name], or an
 ## empty Dictionary when it has none. Inspector group, subgroup and category
 ## headers are skipped: an [code]@export_group("speed")[/code] listed ahead of
-## [code]var speed: int[/code] shares its name but declares no type.
-static func _property_entry(obj: Object, property_name: String) -> Dictionary:
+## [code]var speed: int[/code] shares its name but declares no type, and a key
+## that names only a header is not a property.
+static func property_entry(obj: Object, property_name: String) -> Dictionary:
 	for p in obj.get_property_list():
 		if p["name"] == property_name \
 				and (int(p.get("usage", 0)) & _PROPERTY_HEADER_USAGE) == 0:

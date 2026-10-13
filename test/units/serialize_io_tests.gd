@@ -18,6 +18,8 @@ const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
 const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resource_commands.gd")
 const PlaceholderLikeResource := preload("res://test/fixtures/placeholder_like_resource.gd")
+const PlaceholderLikeGroupedResource := preload(
+		"res://test/fixtures/placeholder_like_grouped_resource.gd")
 
 
 static func run(testing) -> void:
@@ -34,6 +36,7 @@ static func run(testing) -> void:
 	_test_settings_collect_names(testing)
 	_test_resource_write_int_property(testing)
 	_test_resource_write_int_on_update(testing)
+	_test_resource_write_skips_inspector_headers(testing)
 
 
 # --- Coerce/serialize round-trip symmetry ---------------------------------
@@ -805,6 +808,37 @@ static func _test_resource_write_int_on_update(testing) -> void:
 	testing.eq(untyped_warnings.size(), 0, "untyped property → no warning")
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+	print("")
+
+
+# A placeholder's property list interleaves inspector group, subgroup and category
+# headers with the properties. A header shares a name with no property's type, so
+# the writer must look past it: a header listed after a same-named int property
+# must not hide the int, and a key that names only a header is unknown.
+static func _test_resource_write_skips_inspector_headers(testing) -> void:
+	testing.begin("resource.write looks past inspector headers")
+	var whole: Resource = PlaceholderLikeGroupedResource.new()
+	var whole_warnings := ResourceCommands._apply_resource_properties(
+			whole, {"price": 4.0}, "Resource")
+	testing.eq(typeof(whole.get("price")), TYPE_INT,
+			"whole float on an int property followed by a same-named header → int")
+	testing.eq(whole.get("price"), 4, "int value kept")
+	testing.eq(whole_warnings.size(), 0, "whole float → no warning")
+
+	var fraction: Resource = PlaceholderLikeGroupedResource.new()
+	var fraction_warnings := ResourceCommands._apply_resource_properties(
+			fraction, {"price": 4.5}, "Resource")
+	testing.eq(typeof(fraction.get("price")), TYPE_INT, "4.5 → stored as an int")
+	testing.eq(fraction.get("price"), 4, "4.5 → truncated to 4")
+	testing.eq(fraction_warnings.size(), 1, "4.5 → exactly one warning")
+
+	var header: Resource = PlaceholderLikeGroupedResource.new()
+	var header_warnings := ResourceCommands._apply_resource_properties(
+			header, {"Stats": 1}, "Resource")
+	testing.eq(header_warnings.size(), 1, "a header-only key → exactly one warning")
+	var unknown_warning: String = "" if header_warnings.is_empty() else header_warnings[0]
+	testing.ok(unknown_warning.contains("'Stats' unknown"), "the warning calls the key unknown")
+	testing.ok(unknown_warning.contains("value ignored"), "the warning says the value was ignored")
 	print("")
 
 
