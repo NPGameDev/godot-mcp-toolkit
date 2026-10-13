@@ -31,6 +31,10 @@ Two registry properties turn that gap into a user-visible failure:
   `OS.is_process_running()` returns false for live sibling editors on Windows. An
   editor that crashes or is force-killed never reaches `deregister()`, so its
   entry stays in `by_path` indefinitely.
+
+  *Amended 2026-10-13:* `OS.is_process_running()` is documented for the calling
+  process's own children only, on every platform, so the Windows reading was
+  wrong; there is still no dead-PID GC.
 - **Every editor publishes the same LSP port.** `lsp_publisher.gd`'s
   `resolve_lsp_endpoint()` reads `network/language_server/remote_port`, which is
   `6005` unless the user changed it. So each accumulated entry claims 6005.

@@ -84,7 +84,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 and *Mode B* internally) — and publishes a small **registry file** so the bridge can
 discover every live instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="84bdde3" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="e45cadf" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -103,7 +103,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified 84bdde3*
+*Figure 1 — system context · verified e45cadf*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -388,7 +388,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="ad1635a" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="180a716" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -398,7 +398,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified ad1635a*
+*Figure 8 — the idempotent create / if_exists decision · verified 180a716*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -458,7 +458,7 @@ stays in lockstep across the two repos.
 large files into a **thin orchestrator over single-responsibility children**. The registry's
 own multi-instance store is the clearest example:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_paths.gd addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_paths.gd addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="e45cadf" -->
 ```mermaid
 flowchart TD
     rc["registry_client.gd<br/>thin orchestrator — façade + sequencing"]
@@ -466,9 +466,9 @@ flowchart TD
     rc --> rp["registry_paths.gd<br/>on-disk layout authority"]
     rc --> ref["registry_entry_file.gd<br/>atomic entry read/write/delete"]
     rc --> proj["registry_projection.gd<br/>fan-in → projects.json"]
-    rc --> lock["file_lock.gd<br/>PID-aware machine-wide lock"]
+    rc --> lock["file_lock.gd<br/>machine-wide lock, stale by age"]
 ```
-*Figure 9 — orchestrator + SRP-children (registry) · verified eb4c9fa*
+*Figure 9 — orchestrator + SRP-children (registry) · verified e45cadf*
 
 The same shape recurs across the codebase: `mcp_server.gd` over its transport/dispatch
 children, `plugin.gd` over `PluginComposer` ([§7](#7-plugin-lifecycle)), `dock.gd` over its
@@ -596,7 +596,7 @@ The bridge has to find every editor and every running game on the machine. The t
 this **lock-light**: each instance writes its **own** entry file, and a locked rebuild fans
 them into the single `projects.json` the bridge reads.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/registry/registry_client.gd addons/godot_mcp_toolkit/registry/store/registry_projection.gd addons/godot_mcp_toolkit/registry/store/file_lock.gd" data-verified="e45cadf" -->
 ```mermaid
 flowchart TD
     subgraph writers["each instance writes ONE unique file"]
@@ -604,7 +604,7 @@ flowchart TD
       e2["editor B → entries/&lt;hashB&gt;.json"]
       r1["running game → entries/&lt;hashA&gt;.runtime.json"]
     end
-    lock["acquire file_lock<br/>pid:ts · backoff · stale-steal"]
+    lock["acquire file_lock<br/>pid:ts · backoff · overwrite after 10 s"]
     rebuild["registry_projection.rebuild()<br/>scan → port-prune → overlay runtime"]
     pj[("projects.json")]
     e1 --> lock
@@ -613,18 +613,23 @@ flowchart TD
     lock --> rebuild --> pj
     pj --> bridge["server bridge — discovers all instances"]
 ```
-*Figure 12 — registry fan-in · verified eb4c9fa*
+*Figure 12 — registry fan-in · verified e45cadf*
 
 The registry directory is **machine-wide**, not `user://` — `%APPDATA%\godot-mcp-toolkit` on
 Windows, `~/Library/Application Support/godot-mcp-toolkit` on macOS, `$XDG_DATA_HOME` on Linux —
 so independent editors share it. Because every writer owns a unique file (keyed by a 12-hex
 project hash, with the runtime writing a separate `.runtime.json`), there is **no contention on
 the writes**; the `file_lock` only serialises the *rebuild*. The lock stores `pid:ts`, backs off
-exponentially, steals a lock whose PID is dead or older than 10 s, and force-writes after the
-retry budget so a caller always makes progress. Rebuild output is written two-phase
+exponentially, overwrites a lock older than 10 s, and force-writes after the retry budget so a
+caller always makes progress. It judges a lock by age alone: `OS.is_process_running()` is
+documented for the calling process's own children only, on every platform, so it cannot say
+on every platform whether another editor is alive. Rebuild output is written two-phase
 (`.tmp` → `.bak` → target) so a crash never leaves a half-written `projects.json`. GC is by
-port-conflict pruning only — PID-based GC was removed because Windows' `OS.is_process_running()`
-reports false positives for live sibling editors.
+port-conflict pruning only, with no PID-based GC, for the same reason.
+
+Two editors on one project share one entry file, so `register()` overwrites an entry another PID
+left. If that entry names another port it warns, since a second editor may still hold that port;
+if it names the port this editor just bound, the old editor is gone and it prints an info line.
 
 ---
 

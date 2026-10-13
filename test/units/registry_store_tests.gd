@@ -1,14 +1,19 @@
 @tool
 extends RefCounted
 ## Project/instance registry store unit tests: ProjectKey identity, RegistryPaths
-## layout, RegistryEntryFile build + write/read/delete, RegistryProjection merge.
+## layout, RegistryEntryFile build + write/read/delete, RegistryProjection merge,
+## the FileLock acquire/release cycle and RegistryClient's double-open check.
 
+const FileLock := preload("res://addons/godot_mcp_toolkit/registry/store/file_lock.gd")
 const ProjectKey := preload("res://addons/godot_mcp_toolkit/paths/project_key.gd")
 const ProjectPaths := preload("res://addons/godot_mcp_toolkit/paths/project_paths.gd")
 const RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry/store/registry_paths.gd")
 const RegistryEntryFile := preload("res://addons/godot_mcp_toolkit/registry/store/registry_entry_file.gd")
 const RegistryProjection := preload("res://addons/godot_mcp_toolkit/registry/store/registry_projection.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
+
+# A PID for a lock or an entry that another editor wrote.
+const _OTHER_PID := 4242
 
 
 static func run(testing) -> void:
@@ -17,6 +22,8 @@ static func run(testing) -> void:
 	_test_registry_entry(testing)
 	_test_registry_entry_file_io(testing)
 	_test_registry_merge(testing)
+	_test_file_lock(testing)
+	_test_double_open_check(testing)
 
 
 # True on case-insensitive default filesystems (Windows/macOS), where
@@ -244,3 +251,103 @@ static func _test_registry_merge(testing) -> void:
 		"clear: overlay gone → runtime_port back to null")
 
 	print("")
+
+
+# --- FileLock acquire/release ---------------------------------------------
+# The lock excludes by age alone. The fresh-lock case names another PID, one
+# this process did not start: OS.is_process_running() reads such a PID as not
+# running on Windows and Linux, and on macOS unless it is a running GUI app, so
+# a liveness check through it takes the lock at once. Not this process's own PID: Windows lists the engine's own PID among
+# the processes it started, so the call reports that one as running.
+static func _test_file_lock(testing) -> void:
+	testing.begin("FileLock acquire/release")
+
+	var my_pid := OS.get_process_id()
+	var lock_path := "user://_test_file_lock_%d.lock" % my_pid
+	# Start clean in case a prior aborted run left the file behind.
+	FileLock.release(lock_path)
+
+	# 1. A fresh lock is held until its holder releases it: a worker thread
+	#    releases it after 300 ms, and acquire() waits for that.
+	var holder_pid := _OTHER_PID if _OTHER_PID != my_pid else _OTHER_PID + 1
+	_write_lock(lock_path, holder_pid, int(Time.get_unix_time_from_system()))
+	var releaser := _DelayedRelease.new(lock_path, 300)
+	var thread := Thread.new()
+	var started_at := Time.get_ticks_msec()
+	testing.eq(thread.start(releaser.run), OK, "fresh lock: the releasing thread starts")
+	var acquired := FileLock.acquire(lock_path)
+	var waited_ms := Time.get_ticks_msec() - started_at
+	thread.wait_to_finish()
+	testing.ok(acquired, "fresh lock: acquire() returns true once released")
+	testing.ok(waited_ms >= 250, "fresh lock: acquire() waits for the holder")
+	testing.eq(_lock_pid(lock_path), my_pid, "fresh lock: the file names this PID")
+
+	# 2. A lock stamped 11 s ago is stale: taken without waiting out the retries
+	#    (6.55 s in all), and rewritten with this PID.
+	FileLock.release(lock_path)
+	_write_lock(lock_path, _OTHER_PID, int(Time.get_unix_time_from_system()) - 11)
+	started_at = Time.get_ticks_msec()
+	acquired = FileLock.acquire(lock_path)
+	waited_ms = Time.get_ticks_msec() - started_at
+	testing.ok(acquired, "stale lock: acquire() returns true")
+	testing.ok(waited_ms < 1000, "stale lock: taken in under 1000 ms")
+	testing.eq(_lock_pid(lock_path), my_pid, "stale lock: rewritten with this PID")
+
+	# 3. release() removes the lock file.
+	FileLock.release(lock_path)
+	testing.ok(not FileAccess.file_exists(lock_path), "release(): the lock file is gone")
+
+	print("")
+
+
+# --- RegistryClient double-open check --------------------------------------
+# register() warns of a second editor only when another PID's entry names a port
+# other than the one this editor bound; an entry naming this editor's port was
+# left by an editor that is gone. Entries carry floats for numbers, as
+# RegistryEntryFile.read returns them (JSON numbers parse as float).
+static func _test_double_open_check(testing) -> void:
+	testing.begin("RegistryClient double-open check")
+
+	var my_pid := 1000
+	var my_port := 6550
+	testing.ok(not RegistryClient._should_warn_double_open({}, my_pid, my_port),
+			"no entry → no warning")
+	testing.ok(not RegistryClient._should_warn_double_open(
+			{"pid": 1000.0, "port": 6551.0}, my_pid, my_port),
+			"this PID's own entry → no warning")
+	testing.ok(not RegistryClient._should_warn_double_open(
+			{"pid": 4242.0, "port": 6550.0}, my_pid, my_port),
+			"another PID's entry on this editor's port → no warning (a leftover)")
+	testing.ok(RegistryClient._should_warn_double_open(
+			{"pid": 4242.0, "port": 6551.0}, my_pid, my_port),
+			"another PID's entry on another port → warning")
+
+	print("")
+
+
+static func _write_lock(lock_path: String, pid: int, unix_ts: int) -> void:
+	var f := FileAccess.open(lock_path, FileAccess.WRITE)
+	f.store_string("%d:%d" % [pid, unix_ts])
+	f.close()
+
+
+# The PID a lock file names, or 0 when the file is missing.
+static func _lock_pid(lock_path: String) -> int:
+	return int(FileAccess.get_file_as_string(lock_path).split(":")[0])
+
+
+# Releases a lock from a worker thread after a delay, standing in for another
+# editor that holds the lock for that long.
+class _DelayedRelease extends RefCounted:
+	const _FileLock := preload("res://addons/godot_mcp_toolkit/registry/store/file_lock.gd")
+
+	var _lock_path: String
+	var _delay_ms: int
+
+	func _init(lock_path: String, delay_ms: int) -> void:
+		_lock_path = lock_path
+		_delay_ms = delay_ms
+
+	func run() -> void:
+		OS.delay_msec(_delay_ms)
+		_FileLock.release(_lock_path)
