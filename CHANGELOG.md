@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- On Linux and macOS the registry no longer logs `ERROR: Thread <pid> exited
+  with errno: 10` when another process holds the registry lock or has an entry
+  for the same project. `OS.is_process_running()` only knows the process's own
+  children, so it reported every other process as dead: the registry lock was
+  taken from a live holder at once, and the double-open warning never fired. A
+  lock is now stale by age alone (10 s), and the warning fires whenever another
+  process's entry is still there.
 - A response limit set through an environment variable in `.mcp.json`
   (`GODOT_MCP_SCRIPT_READ_LIMIT` or `GODOT_MCP_WS_BUFFER_LIMIT`) is no longer
   written into `project.godot` when the project is saved. The dock keeps showing

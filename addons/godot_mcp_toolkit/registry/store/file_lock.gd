@@ -22,8 +22,9 @@ const _LOCK_RETRIES := 10
 
 ## Returns true if the lock was acquired. On stale-lock detection the
 ## stale file is overwritten. Exponential backoff: 50, 100, 200, ... ms
-## capped at 1000 ms per retry. PID-aware stale detection recovers
-## locks from dead processes immediately.
+## capped at 1000 ms per retry. A lock is stale once it is _LOCK_STALE_SEC old.
+## OS.is_process_running() can't tell whether the holder is alive: it only
+## knows this process's own children, so it reports every other PID as dead.
 static func acquire(lock_path: String) -> bool:
 	var lp := lock_path
 	var delay_ms := _LOCK_BASE_RETRY_MS
@@ -36,17 +37,14 @@ static func acquire(lock_path: String) -> bool:
 				var parts := content.split(":")
 				var lock_pid := int(parts[0]) if parts.size() >= 2 else 0
 				var lock_ts := int(parts[-1])
-				# PID check: if the locker is dead, treat as stale immediately.
-				var pid_dead := lock_pid > 0 and not OS.is_process_running(lock_pid)
-				if not pid_dead:
-					var age := int(Time.get_unix_time_from_system()) - lock_ts
-					if age < _LOCK_STALE_SEC:
-						if attempt > 0:
-							push_warning("[MCPRegistry] lock contention (attempt %d/%d, held by PID %d)" % [attempt + 1, _LOCK_RETRIES, lock_pid])
-						OS.delay_msec(delay_ms)
-						delay_ms = mini(delay_ms * 2, _LOCK_MAX_RETRY_MS)
-						continue
-				# Stale lock (age or dead PID) — fall through to overwrite.
+				var age := int(Time.get_unix_time_from_system()) - lock_ts
+				if age < _LOCK_STALE_SEC:
+					if attempt > 0:
+						push_warning("[MCPRegistry] lock contention (attempt %d/%d, held by PID %d)" % [attempt + 1, _LOCK_RETRIES, lock_pid])
+					OS.delay_msec(delay_ms)
+					delay_ms = mini(delay_ms * 2, _LOCK_MAX_RETRY_MS)
+					continue
+				# Stale lock — fall through to overwrite.
 		var f := FileAccess.open(lp, FileAccess.WRITE)
 		if f == null:
 			OS.delay_msec(delay_ms)
