@@ -67,16 +67,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#26](https://github.com/NPGameDev/godot-mcp-toolkit/issues/26)).
 - Batch `node_set_property` no longer tells you to retry with `make_unique` when
   a value was only adjusted to fit, such as `3.5` on an `int` property.
-- On Godot 4.6, the registry no longer logs `ERROR: Thread <pid> exited with
-  errno: 10` on Linux, or on macOS after an editor quits without cleaning up.
-  The registry asked Godot whether other editors were still running, and Godot
-  can only answer that for processes it started itself. On Windows and Linux
-  this also let two editors update the registry at the same time, and opening a
-  project that was already open in another editor gave no warning. Now the
-  registry lock waits while another editor holds it, and a second editor on the
-  same project gets a warning. When an editor that didn't exit cleanly left its
-  entry behind, the registry replaces it and prints an info line instead of the
-  warning. Reported and fixed by @benfeather
+- The registry no longer logs `ERROR: Thread <pid> exited with errno: 10` on
+  Godot 4.6 (Linux, or macOS after an editor quits without cleaning up) or, on
+  Godot 4.7, `The process <pid> does not exist or is not a child of the calling
+  process.` The registry asked Godot whether other editors were still running,
+  and on Windows and Linux Godot can only answer that for processes it started
+  itself. This also let two editors update the registry at the same time, and
+  opening a project that was already open in another editor gave no warning.
+  Now the registry lock waits while another editor holds it, and a second
+  editor on the same project gets a warning. When an editor that didn't exit
+  cleanly left its entry behind and the new editor takes its port, the registry
+  replaces it and prints an info line instead of the warning. Reported and
+  fixed by @benfeather
   ([#28](https://github.com/NPGameDev/godot-mcp-toolkit/issues/28),
   [#29](https://github.com/NPGameDev/godot-mcp-toolkit/pull/29)).
 

@@ -23,8 +23,10 @@ const _LOCK_RETRIES := 10
 ## Returns true if the lock was acquired. On stale-lock detection the
 ## stale file is overwritten. Exponential backoff: 50, 100, 200, ... ms
 ## capped at 1000 ms per retry. A lock is stale by age alone, once it is
-## _LOCK_STALE_SEC old, because OS.is_process_running() only knows this
-## process's own children.
+## _LOCK_STALE_SEC old. OS.is_process_running() is documented for this
+## process's own children only. Windows and Linux report every other editor as
+## not running, and only macOS 4.3+ answers for GUI apps, so it cannot tell on
+## every platform whether another editor is alive.
 static func acquire(lock_path: String) -> bool:
 	var lp := lock_path
 	var delay_ms := _LOCK_BASE_RETRY_MS

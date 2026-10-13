@@ -124,8 +124,10 @@ static func _is_other_editor_entry(existing: Dictionary, my_pid: int) -> bool:
 
 
 # True when another PID's entry may belong to a live second editor on this
-# project. OS.is_process_running() cannot answer that, since it only knows this
-# process's own children. The caller has already bound `port`, and two
+# project. OS.is_process_running() is documented for this process's own children
+# only. Windows and Linux report every other editor as not running, and only
+# macOS 4.3+ answers for GUI apps, so it cannot tell on every platform whether
+# another editor is alive. The caller has already bound `port`, and two
 # processes cannot listen on one port, so an entry naming `port` was left by an
 # editor that is gone. An entry naming another port may still be live. Pure.
 static func _should_warn_double_open(existing: Dictionary, my_pid: int, port: int) -> bool:
@@ -155,9 +157,15 @@ static func register(port: int, token_path: String, lsp_host: String, lsp_port: 
 	var existing := _read_entry()
 	var existing_pid := int(existing.get("pid", 0))
 	if _should_warn_double_open(existing, my_pid, port):
-		push_warning("[MCPRegistry] found an entry from PID %d (another editor on this project, or one that did not exit cleanly); overwriting with PID %d" % [existing_pid, my_pid])
+		push_warning(
+				"[MCPRegistry] found an entry from PID %d (another editor on this project, or one that did not exit cleanly); overwriting with PID %d"
+				% [existing_pid, my_pid]
+		)
 	elif _is_other_editor_entry(existing, my_pid):
-		print("[MCPRegistry] replaced an entry from PID %d, an editor that did not exit cleanly" % existing_pid)
+		print(
+				"[MCPRegistry] replaced an entry from PID %d, an editor that did not exit cleanly"
+				% existing_pid
+		)
 	# Write own entry file — no race: each editor writes a unique file.
 	_write_entry(my_entry)
 	# Rebuild projects.json from all entry files (idempotent).

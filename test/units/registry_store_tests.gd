@@ -256,8 +256,8 @@ static func _test_registry_merge(testing) -> void:
 # --- FileLock acquire/release ---------------------------------------------
 # The lock excludes by age alone. The fresh-lock case names another PID, one
 # this process did not start: OS.is_process_running() reads such a PID as not
-# running on every platform, so a liveness check through it takes the lock at
-# once. Not this process's own PID: Windows lists the engine's own PID among
+# running on Windows and Linux, and on macOS unless it is a running GUI app, so
+# a liveness check through it takes the lock at once. Not this process's own PID: Windows lists the engine's own PID among
 # the processes it started, so the call reports that one as running.
 static func _test_file_lock(testing) -> void:
 	testing.begin("FileLock acquire/release")
