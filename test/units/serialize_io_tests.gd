@@ -812,7 +812,7 @@ static func _test_resource_write_int_on_update(testing) -> void:
 
 
 # A placeholder's property list interleaves inspector group, subgroup and category
-# headers with the properties. A header shares a name with no property's type, so
+# headers with the properties. A header can share a property's name but declares no type, so
 # the writer must look past it: a header listed after a same-named int property
 # must not hide the int, and a key that names only a header is unknown.
 static func _test_resource_write_skips_inspector_headers(testing) -> void:
