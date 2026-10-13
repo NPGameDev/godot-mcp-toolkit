@@ -23,6 +23,7 @@ static func run(testing) -> void:
 	_test_instantiate_properties(testing)
 	_test_duplicate_properties(testing)
 	_test_batch_truncation_has_no_shared_note(testing)
+	_test_batch_shared_external_write_keeps_note(testing)
 	_test_clamp_after_fit_names_requested_value(testing)
 	_test_group_header_does_not_hide_int(testing)
 
@@ -147,6 +148,30 @@ static func _test_batch_truncation_has_no_shared_note(testing) -> void:
 	testing.ok(_first_result(response).has("warning"), "104.5 → the entry carries its warning")
 	testing.ok(not response.has("warning"),
 			"104.5 → no top-level note about shared external sub-resources")
+
+	server.get("undo_helpers").free()
+	server.free()
+	root.free()
+	print("")
+
+
+static func _test_batch_shared_external_write_keeps_note(testing) -> void:
+	testing.begin("node.set_property batch notes a write on a shared external sub-resource")
+	var root := Node.new()
+	root.name = "Root"
+	var sprite := Node2D.new()
+	sprite.name = "Sprite"
+	var material := CanvasItemMaterial.new()
+	# An in-memory path makes the material read as an external file; none is written.
+	material.resource_path = "res://shared_note_test.tres"
+	sprite.material = material
+	root.add_child(sprite)
+	var server := _server_with_undo_helpers(testing)
+
+	var response := NodeCommands._batch_set_properties(server, root,
+			[{"node_path": "Sprite", "property": "material:blend_mode", "value": 1}])
+	testing.ok(str(response.get("warning", "")).contains("material:blend_mode"),
+			"the top-level note names material:blend_mode")
 
 	server.get("undo_helpers").free()
 	server.free()

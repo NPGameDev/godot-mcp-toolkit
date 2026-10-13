@@ -70,8 +70,9 @@ static func fit_to_declared_type(
 	return fit_to_type(value, _declared_type(target, property_name), property_name)
 
 
-## Converts [param value] to [param declared_type] through
-## [method Coerce.coerce_to_declared_type].
+## Converts a float [param value] to an int when [param declared_type] is
+## [code]int[/code], through [method Coerce.coerce_to_declared_type]; any other
+## value or type passes through unchanged.
 ## [br][br]
 ## Returns [code]{"value": <the converted value>, "warning": String}[/code]. The
 ## warning is empty unless a fraction was dropped; then it names

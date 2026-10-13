@@ -65,6 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it currently holds an int. A value with a fraction, such as
   `100.5`, is stored as `100`, and the response includes a warning
   ([#26](https://github.com/NPGameDev/godot-mcp-toolkit/issues/26)).
+- Batch `node_set_property` no longer tells you to retry with `make_unique` when
+  a value was only adjusted to fit, such as `3.5` on an `int` property.
 
 ### Removed
 
