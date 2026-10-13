@@ -49,6 +49,10 @@ visibly (`LSP_PORT_CONFLICT` / `LSP_UNAVAILABLE`), never as a silent fallback.**
   live claimants and connects only if it is the **strictly earliest** `started_at`
   claimant of the port (first-to-`listen` wins, matching the engine). A
   same-second tie fails *both* sides rather than risk one returning wrong data.
+
+  *Amended 2026-10-13:* `OS.is_process_running` is documented for the calling
+  process's own children only, on every platform, so the Windows reading here
+  and under *Considered alternatives* was wrong; server-side detection stands.
 - **Root-verification guard (4.5+).** On connect the server sends its project's
   real `rootUri` in `initialize` and watches for the LSP's `window/showMessage`
   workspace-root-mismatch warning (Godot PR #104401, **4.5+**; match substring

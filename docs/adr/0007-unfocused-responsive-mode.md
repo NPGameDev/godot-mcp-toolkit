@@ -78,6 +78,10 @@ conflict-aware.**
   residual transient dip (a disconnecting instance de-boosts a still-connected
   peer until its next fresh connect) is never persistent corruption and already
   existed before this change.
+
+  *Amended 2026-10-13:* `OS.is_process_running` is documented for the calling
+  process's own children only, on every platform, so reading its answer as a
+  Windows flaw was wrong; the rejection stands.
 - **WebSocket reader thread instead of the frame-rate lever.** Rejected for this
   iter and filed post-1.0 (`Plan/Ideas/PostRelease/2026-06-07-websocket-reader-thread-latency.md`):
   it removes the 4-frame pickup batching but **not** the execution floor (command

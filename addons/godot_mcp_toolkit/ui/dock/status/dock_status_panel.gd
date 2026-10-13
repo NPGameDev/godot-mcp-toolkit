@@ -173,7 +173,7 @@ func refresh_runtime() -> void:
 
 ## LSP status indicator. The MCP server reports the authoritative verdict
 ## (editor.set_lsp_status) — the editor can't read its own LSP bind status, and
-## in-engine cross-process liveness is unreliable on Windows, so the dock renders
+## the engine cannot tell whether another editor process is alive, so the dock renders
 ## what the server determined. Falls back to the configured (published) endpoint
 ## until an MCP server connects. The dock routes server.lsp_status_changed here.
 func refresh_lsp() -> void:
