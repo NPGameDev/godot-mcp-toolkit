@@ -50,12 +50,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `input_map_action` now refuses to remove any built-in action, such as
   `ui_select`. Before, it checked a fixed list of names that missed some built-in
   actions on every supported Godot version.
-- On Godot 4.6 and later, `script_check`, `script_write` and `script_edit` no
-  longer report false compile errors in an already-loaded script that uses its own
-  type, for example by passing `self` to a parameter typed as its own
-  `class_name`, or that declares `class_name A extends Node` on one line. The check
-  now compiles the script under its own path instead of as an anonymous copy with
-  its `class_name` line removed.
+- `script_check`, `script_write` and `script_edit` no longer report false
+  compile errors for a script that declares `class_name` and `extends` on one
+  line, such as `class_name Player extends Node`. The check dropped the
+  `extends`, so it compiled the script as if it extended `RefCounted` instead
+  of its real base class. On Godot 4.6 and later, the check now compiles a
+  script the editor has loaded under its own path, so passing `self` to a
+  parameter typed as the script's own `class_name` checks clean too. On earlier
+  versions, and for a script the editor hasn't loaded, passing `self` that way
+  still reports an error. Reported and fixed by @benfeather
+  ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
+  [#17](https://github.com/NPGameDev/godot-mcp-toolkit/pull/17)).
 
 ### Removed
 

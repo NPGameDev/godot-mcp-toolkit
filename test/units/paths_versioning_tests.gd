@@ -2,6 +2,7 @@
 extends RefCounted
 ## Cross-version / paths / editor-lifecycle pure-logic unit tests: compile-error
 ## message (version-aware), script_check line emission (capability-gated),
+## script_check's own-path probe (4.6+) and class_name strip,
 ## node.set_property groups rejection, UserPathMonitor change detection,
 ## editor.refresh reload filter, unfocused-sleep backup, and the
 ## stale-live-instance hint. Exercises the versioning/ + paths/ + editor-lifecycle
@@ -17,6 +18,7 @@ const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/st
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
 
 const SELF_TYPED_FIXTURE := "res://test/fixtures/self_typed_fixture.gd"
 
@@ -25,6 +27,8 @@ static func run(testing) -> void:
 	_test_compile_error_message(testing)
 	_test_validate_gdscript_line_emission(testing)
 	_test_validate_gdscript_own_path(testing)
+	_test_script_check_own_path_gate(testing)
+	_test_strip_class_name(testing)
 	_test_groups_property_rejection(testing)
 	_test_user_path_monitor(testing)
 	_test_editor_refresh_reload_filter(testing)
@@ -133,6 +137,73 @@ static func _test_validate_gdscript_own_path(testing) -> void:
 	var diagnostics: Array = bad_result.get("diagnostics", [])
 	testing.eq(int((diagnostics[0] as Dictionary).get("line", -1)) if diagnostics.size() > 0 else -1, 13,
 			"real error line found under the file's own path")
+	print("")
+
+
+# --- script_check's own-path gate -------------------------------------------
+# The own-path probe is for a script the editor has loaded and compiled, on
+# 4.6+ only. Any other file_path takes the class_name strip. The probe source
+# names a class no script registers: compiled under its own path it is valid,
+# while the strip removes the name its parameter type needs, so valid:false
+# shows the strip ran.
+
+static func _test_script_check_own_path_gate(testing) -> void:
+	testing.begin("script_check takes the own-path probe only for a loaded, compiled script on 4.6+")
+	LogBuffer.setup()
+	var source := (
+		"class_name MCPToolkitUnitOwnPathGateProbe extends RefCounted\n\n\n"
+		+ "func take(_other: MCPToolkitUnitOwnPathGateProbe) -> void:\n\tpass\n\n\n"
+		+ "func pass_self() -> void:\n\ttake(self)\n"
+	)
+	# A path nothing has loaded (no file exists there).
+	var not_loaded := ScriptCommands._validate_gdscript(source,
+			"res://test/fixtures/not_loaded_gate_probe.gd")
+	testing.ok(not bool(not_loaded.get("valid", true)), "file_path not loaded → strip")
+	# Loaded but never compiled, as the Create Script dialog leaves a script while
+	# the editor's reload-on-save setting is off.
+	var never_compiled_path := "res://test/fixtures/never_compiled_gate_probe.gd"
+	var never_compiled := GDScript.new()
+	never_compiled.source_code = source
+	never_compiled.resource_path = never_compiled_path
+	testing.ok(ResourceLoader.has_cached(never_compiled_path), "uncompiled script cached under its path")
+	var uncompiled := ScriptCommands._validate_gdscript(source, never_compiled_path)
+	testing.ok(not bool(uncompiled.get("valid", true)), "cached but never compiled → strip")
+	if not VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.6"):
+		print("  (Godot < 4.6: no GDScript.set_path_cache override, strip kept; own path not asserted)")
+		print("")
+		return
+	var loaded := load(SELF_TYPED_FIXTURE)
+	testing.ok(loaded != null, "fixture loads")
+	var result := ScriptCommands._cmd_script_check({"file_path": SELF_TYPED_FIXTURE})
+	testing.ok(bool(result.get("valid", false)), "handler: loaded self-typed script → valid true")
+	testing.eq((result.get("diagnostics", []) as Array).size(), 0, "handler: no diagnostics")
+	print("")
+
+
+# --- GDScriptSource.strip_class_name ----------------------------------------
+# The probe's class_name strip removes only the declaration, keeps the rest of
+# its line and never adds or removes a line.
+
+static func _test_strip_class_name(testing) -> void:
+	testing.begin("GDScriptSource.strip_class_name keeps the rest of the line")
+	testing.eq(GDScriptSource.strip_class_name("class_name A extends Node\nvar x := 1\n"),
+			"extends Node\nvar x := 1\n", "one-line form → extends kept")
+	testing.eq(GDScriptSource.strip_class_name("class_name A\nextends Node\n"),
+			"\nextends Node\n", "declaration alone on its line → blank line kept")
+	testing.eq(GDScriptSource.strip_class_name("class_name\tA\textends Node\n"),
+			"extends Node\n", "tab-separated → extends kept")
+	testing.eq(GDScriptSource.strip_class_name("class_name A; extends Node\n"),
+			"extends Node\n", "';' after the name → dropped with the declaration")
+	testing.eq(GDScriptSource.strip_class_name("class_name A # note\n"),
+			"# note\n", "trailing comment → kept")
+	testing.eq(GDScriptSource.strip_class_name("class_name A extends Node\r\nvar x\r\n"),
+			"extends Node\r\nvar x\r\n", "CRLF line ends → kept")
+	testing.eq(GDScriptSource.strip_class_name("extends Node\nclass_name A\nclass_name B\n"),
+			"extends Node\n\nclass_name B\n", "first declaration only")
+	testing.eq(GDScriptSource.strip_class_name("@tool class_name A extends Node\n"),
+			"@tool class_name A extends Node\n", "declaration after an annotation → untouched")
+	testing.eq(GDScriptSource.strip_class_name("extends Node\nvar class_name_count := 1\n"),
+			"extends Node\nvar class_name_count := 1\n", "no declaration → unchanged")
 	print("")
 
 
