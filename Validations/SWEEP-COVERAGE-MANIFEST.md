@@ -66,7 +66,7 @@ C24–C26 & C29 in §§26–27).
 | script.write | 2, 3 | — | C2, C5, C11 | ✓ (6.5: preload hint) | FIX-1 | **GAP:** diagnostics fields in response |
 | script.edit | 6.11 (happy: replacements=1 + undoable/indexed/valid), 6.14 (replace_all replacements=2 newline-adjacency), 6.15 (empty new_string span delete) | 6.12 (NOT_FOUND absent), 6.13 (NOT_UNIQUE ambiguous), 6.16a (INVALID_PARAMS no-op), 6.16b (INVALID_PARAMS empty old_string) | — | ✓ (6.12 NOT_FOUND re-read hint; 6.13 NOT_UNIQUE context/replace_all hint) | 41o-quater-bis | eager; surgical MCP analogue of native Edit. Reuses `script.write`'s write/undo/index/diagnose pipeline (`_commit_content`) → identical envelope + `replacements`. `NOT_UNIQUE` is new to `MCPToolkitError.CODES` (57 total). |
 | script.delete | — | — | C2 | — | — | Only in combos |
-| script.check | 17, 6.3b | — | C2, C11 | — | toolkit #16 | 6.3b: the one-line form `class_name X extends Y` checks clean on every version (the check keeps the same-line `extends`) |
+| script.check | 17, 6.3b, 6.3c | 6.3d (a `class_name` that hides an autoload: valid=false, the engine's message, its line) | C2, C11 | — | toolkit #16 | 6.3b: the one-line form `class_name X extends Y` checks clean on every version (the check keeps the same-line `extends`); 6.3c: a singleton that types `self` as its own class and has an `X.new()` factory checks clean; 6.3d: the analyzer's class-name checks run on the original name |
 
 ### Editor Core (7 tools)
 

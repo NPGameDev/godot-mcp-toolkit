@@ -330,6 +330,12 @@ The shared helper module for the `commands/` subsystem: node-resolution, class-c
 log-level, profile-convert. The domain qualifier is mandatory — a bare `Helpers` alias is not
 permitted.
 
+**Compile probe** (`GDScriptSource`, `core/gdscript_source.gd`)
+The in-memory copy of a `.gd` file that `script_check`, the inline checks of `script_write` and
+`script_edit`, and the stale-instance hint compile to judge the file without reloading the script
+the editor has loaded. It renames the script's `class_name` and checks the original name the way
+the engine's analyzer does.
+
 **VersionUtils** (`Modules.VersionUtils` → `versioning/mcp_version_utils.gd`)
 The cross-version facts module (the `is_at_least` / `is_at_most` / `is_version_in_range` set). Reached
 as the preload alias `Modules.VersionUtils` — it is **not** a `class_name`: there is no

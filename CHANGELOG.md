@@ -50,12 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `input_map_action` now refuses to remove any built-in action, such as
   `ui_select`. Before, it checked a fixed list of names that missed some built-in
   actions on every supported Godot version.
-- `script_check`, `script_write` and `script_edit` no longer report false
-  compile errors when a line starts with `class_name` and also declares
-  `extends`, as in `class_name Player extends Node`. The check dropped the
-  `extends` from that line, so it compiled the script as if it extended
-  `RefCounted` instead of its real base class. Reported and first fixed by
-  @benfeather ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
+- `script_check`, `script_write` and `script_edit` now keep a script's
+  `class_name` when they check it and run Godot's own `class_name` checks,
+  instead of deleting the declaration. They no longer report false compile
+  errors for the one-line form `class_name Player extends Node`, for `@tool`
+  or `@abstract` before `class_name` on the same line, or for a script that
+  uses `self` as its own class (`return self` from a function typed
+  `-> Player`, or `self` stored in a `static var instance: Player`). A
+  `class_name` that hides an autoload, another script's class, an engine
+  class (an abstract one only from Godot 4.4) or a built-in type is now
+  reported, with its line, on every Godot version. Passing `self` to another
+  script's function typed with the class still reports a false error, and
+  `lsp_diagnostics` gives the real result. Reported and first fixed by @benfeather ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
   [#17](https://github.com/NPGameDev/godot-mcp-toolkit/pull/17)).
 - `node_set_property` (single and batch), `scene_instantiate` (the `properties`
   of each instance) and `node_manage`'s `duplicate` no longer save an `int`
