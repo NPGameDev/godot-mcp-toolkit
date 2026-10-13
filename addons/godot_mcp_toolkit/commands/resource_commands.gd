@@ -5,7 +5,6 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
-const PropertySetCheck = Modules.PropertySetCheck
 const Untrusted = Modules.Untrusted
 const Helpers = Modules.CommandHelpers
 
@@ -78,12 +77,10 @@ static func _apply_resource_properties(
 			warnings.append(
 				"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
 		else:
-			var declared_type: int = property_types[key_string]
-			var conversion := Coerce.coerce_to_declared_type(coerced, declared_type)
-			resource.set(key_string, conversion["value"])
-			if conversion["truncated"]:
-				warnings.append(PropertySetCheck.adjusted_warning(
-						conversion["value"], coerced, key_string))
+			var fit := Helpers.fit_to_type(coerced, int(property_types[key_string]), key_string)
+			resource.set(key_string, fit["value"])
+			if not str(fit["warning"]).is_empty():
+				warnings.append(str(fit["warning"]))
 	return warnings
 
 

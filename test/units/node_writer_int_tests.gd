@@ -5,7 +5,9 @@ extends RefCounted
 ## duplicate's properties. JSON numbers arrive as floats, and the editor stores a
 ## float as given on a node whose script is not @tool, so an unconverted write saves
 ## as `hp = 100.0`. The placeholder_like_node.gd fixture stands in for that node;
-## each group drives the handler with a whole float and with a fraction. The
+## each group drives the handler with a whole float and with a fraction. Later
+## groups cover the batch response's top-level note, a clamp that follows the fit
+## and an inspector group named like the property. The
 ## handlers run on a standalone tree, so no editor is needed; the undo builder runs
 ## as its documented headless no-op.
 
@@ -20,6 +22,9 @@ static func run(testing) -> void:
 	_test_set_property_batch(testing)
 	_test_instantiate_properties(testing)
 	_test_duplicate_properties(testing)
+	_test_batch_truncation_has_no_shared_note(testing)
+	_test_clamp_after_fit_names_requested_value(testing)
+	_test_group_header_does_not_hide_int(testing)
 
 
 static func _test_set_property_single(testing) -> void:
@@ -130,6 +135,93 @@ static func _test_duplicate_properties(testing) -> void:
 
 	root.free()
 	print("")
+
+
+static func _test_batch_truncation_has_no_shared_note(testing) -> void:
+	testing.begin("node.set_property batch truncation adds no shared-resource note")
+	var root := _scene_with_pod()
+	var server := _server_with_undo_helpers(testing)
+
+	var response := NodeCommands._batch_set_properties(server, root,
+			[{"node_path": "Pod", "property": "hp", "value": 104.5}])
+	testing.ok(_first_result(response).has("warning"), "104.5 → the entry carries its warning")
+	testing.ok(not response.has("warning"),
+			"104.5 → no top-level note about shared external sub-resources")
+
+	server.get("undo_helpers").free()
+	server.free()
+	root.free()
+	print("")
+
+
+static func _test_clamp_after_fit_names_requested_value(testing) -> void:
+	testing.begin("node.set_property names the requested value when a clamp follows the fit")
+	var root := Node.new()
+	root.name = "Root"
+	var gauge := _node_with_source(testing, "Gauge", root,
+			"extends Node\nvar hp: int = 0:\n\tset(value):\n\t\thp = clampi(value, 0, 100)\n")
+	var server := _server_with_undo_helpers(testing)
+
+	var single := NodeCommands._set_property_scalar_single(gauge, "Gauge", "hp", 150.5)
+	testing.ok(bool(single.get("success", false)), "single 150.5 → success")
+	_expect_int(testing, gauge.get("hp"), 100, "single 150.5 clamped")
+	_expect_truncation_warning(testing, str(single.get("warning", "")), "100", "150.5")
+
+	var batch := NodeCommands._batch_set_properties(server, root,
+			[{"node_path": "Gauge", "property": "hp", "value": 160.5}])
+	_expect_int(testing, gauge.get("hp"), 100, "batch 160.5 clamped")
+	_expect_truncation_warning(testing,
+			str(_first_result(batch).get("warning", "")), "100", "160.5")
+
+	server.get("undo_helpers").free()
+	server.free()
+	root.free()
+	print("")
+
+
+static func _test_group_header_does_not_hide_int(testing) -> void:
+	testing.begin("an @export_group header named like an int export does not hide its type")
+	var root := Node.new()
+	root.name = "Root"
+	# A placeholder lists the group header ahead of the property it groups.
+	var mover := _node_with_source(testing, "Mover", root, "\n".join([
+		"extends Node",
+		"var _values := {&\"speed\": 0}",
+		"func _get_property_list() -> Array[Dictionary]:",
+		"\treturn [",
+		"\t\t{\"name\": \"speed\", \"type\": TYPE_NIL, \"usage\": PROPERTY_USAGE_GROUP},",
+		"\t\t{\"name\": \"speed\", \"type\": TYPE_INT, \"usage\": PROPERTY_USAGE_DEFAULT},",
+		"\t]",
+		"func _set(property: StringName, value: Variant) -> bool:",
+		"\tif property == &\"speed\":",
+		"\t\t_values[property] = value",
+		"\t\treturn true",
+		"\treturn false",
+		"func _get(property: StringName) -> Variant:",
+		"\treturn _values.get(property)",
+		"",
+	]))
+
+	var response := NodeCommands._set_property_scalar_single(mover, "Mover", "speed", 100.0)
+	testing.ok(bool(response.get("success", false)), "whole float → success")
+	_expect_int(testing, mover.get("speed"), 100, "whole float 100.0 under a same-named group")
+
+	root.free()
+	print("")
+
+
+## A child of [param root] named [param node_name] whose script compiles from
+## [param source]; [param testing] records the compile.
+static func _node_with_source(
+		testing, node_name: String, root: Node, source: String) -> Node:
+	var script := GDScript.new()
+	script.source_code = source
+	testing.eq(script.reload(), OK, "%s script compiles" % node_name)
+	var node := Node.new()
+	node.name = node_name
+	node.set_script(script)
+	root.add_child(node)
+	return node
 
 
 ## A scene root with one child "Pod" that carries the placeholder-like script.
