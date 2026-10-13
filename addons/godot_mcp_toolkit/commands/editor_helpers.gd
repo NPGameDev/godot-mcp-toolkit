@@ -11,6 +11,11 @@ const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.g
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
 
+## Usage flags of the inspector header entries a property list interleaves with
+## its properties.
+const _PROPERTY_HEADER_USAGE := (
+		PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_CATEGORY)
+
 
 # -- Property coercion ---------------------------------------------------------
 
@@ -44,6 +49,41 @@ static func coerce_for_property(
 		coerced = NodePath(str(coerced))
 
 	return {"ok": true, "value": coerced}
+
+
+## Fits a coerced JSON value to the type [param target] declares for
+## [param property_name], through [method Coerce.coerce_to_declared_type], before the
+## caller sets it.
+##
+## The editor runs a script that is not [code]@tool[/code] as a placeholder instance,
+## whose set() stores a JSON float as given, so an [code]int[/code] export would save
+## as [code]100.0[/code]. A property missing from the target's property list keeps
+## its value. A custom project setting with no registered type lists the type of its
+## current value, so a fraction written to an int-valued custom setting is truncated
+## too.
+## [br][br]
+## Returns [code]{"value": <the value to set>, "warning": String}[/code], as
+## [method fit_to_type] does.
+static func fit_to_declared_type(
+	target: Object, property_name: String, value: Variant,
+) -> Dictionary:
+	return fit_to_type(value, _declared_type(target, property_name), property_name)
+
+
+## Converts a float [param value] to an int when [param declared_type] is
+## [code]int[/code], through [method Coerce.coerce_to_declared_type]; any other
+## value or type passes through unchanged.
+## [br][br]
+## Returns [code]{"value": <the converted value>, "warning": String}[/code]. The
+## warning is empty unless a fraction was dropped; then it names
+## [param property_name], the stored and the requested values in the readback's
+## adjusted-write wording.
+static func fit_to_type(value: Variant, declared_type: int, property_name: String) -> Dictionary:
+	var conversion := Coerce.coerce_to_declared_type(value, declared_type)
+	var warning := ""
+	if conversion["truncated"]:
+		warning = PropertySetCheck.adjusted_warning(conversion["value"], value, property_name)
+	return {"value": conversion["value"], "warning": warning}
 
 
 ## Compile a regex text_filter. Returns [RegEx-or-null, error-or-null, warning].
@@ -89,6 +129,8 @@ static func _detect_double_escaped_regex(pattern: String) -> String:
 ## Returns {"ok": true} on success, {"ok": false, "code": ..., "error": ...}
 ## on failure. Success results include an "_undo" key with info for the caller
 ## to register UndoRedo (type, effective path, old value, old resource refs).
+## A write that landed on a shared external sub-resource also carries
+## [code]"shared_external": true[/code] beside its warning.
 ##
 ## When make_unique is true and the target sub-resource is external (.tres),
 ## it is automatically duplicated as an inline copy before setting.
@@ -203,6 +245,7 @@ static func set_property_compound(
 	if result.get("ok", false) \
 			and target is Resource \
 			and _is_external_resource(target as Resource):
+		result["shared_external"] = true
 		result["warning"] = (
 			"Value was set on a shared external sub-resource in memory. "
 			+ "This change may not persist after save/reload. "
@@ -327,10 +370,25 @@ static func describe_set_drop(
 ## Check whether a property name exists on an object instance.
 ## Uses get_property_list() which covers built-in, @export, and metadata.
 static func _has_property(obj: Object, property_name: String) -> bool:
+	return not _property_entry(obj, property_name).is_empty()
+
+
+## The Variant type [param obj]'s property list declares for [param property_name],
+## or [constant @GlobalScope.TYPE_NIL] when the list has no such entry.
+static func _declared_type(obj: Object, property_name: String) -> int:
+	return int(_property_entry(obj, property_name).get("type", TYPE_NIL))
+
+
+## The entry [param obj]'s property list holds for [param property_name], or an
+## empty Dictionary when it has none. Inspector group, subgroup and category
+## headers are skipped: an [code]@export_group("speed")[/code] listed ahead of
+## [code]var speed: int[/code] shares its name but declares no type.
+static func _property_entry(obj: Object, property_name: String) -> Dictionary:
 	for p in obj.get_property_list():
-		if p["name"] == property_name:
-			return true
-	return false
+		if p["name"] == property_name \
+				and (int(p.get("usage", 0)) & _PROPERTY_HEADER_USAGE) == 0:
+			return p
+	return {}
 
 
 # -- Scene node resolution -----------------------------------------------------

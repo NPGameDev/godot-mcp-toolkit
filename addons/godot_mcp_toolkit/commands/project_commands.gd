@@ -5,6 +5,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const Untrusted = Modules.Untrusted
+const Helpers = Modules.CommandHelpers
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 const _VALID_LAYER_CATEGORIES := ["2d_physics", "2d_render", "3d_physics", "3d_render"]
@@ -100,6 +101,9 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	var coerced = Coerce.coerce_value(raw_value)
 	if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 		return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
+	# ProjectSettings stores a value as given, so an int setting would save as 1153.0.
+	var fit := Helpers.fit_to_declared_type(ProjectSettings, key, coerced)
+	coerced = fit["value"]
 	var was_set_before := ProjectSettings.has_setting(key)
 	var previous_value = ProjectSettings.get_setting(key) if was_set_before else null
 	ProjectSettings.set_setting(key, coerced)
@@ -114,6 +118,8 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 		"was_set_before": was_set_before,
 		"previous_value": Coerce.serialize_value(previous_value) if was_set_before else null,
 	}
+	if not str(fit["warning"]).is_empty():
+		response["warning"] = str(fit["warning"])
 	if key.begins_with("autoload/"):
 		response["warning"] = "Modifying autoload/* via project.set_setting — the editor cache won't refresh. Consider using autoload_manage instead."
 	return MCPToolkitSuccess.ok(response)
