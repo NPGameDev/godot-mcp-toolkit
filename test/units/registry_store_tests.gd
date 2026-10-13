@@ -254,9 +254,11 @@ static func _test_registry_merge(testing) -> void:
 
 
 # --- FileLock acquire/release ---------------------------------------------
-# The lock excludes by age alone. The fresh-lock case names this process's own
-# PID: alive, but not this process's child, so a liveness check through
-# OS.is_process_running() reads it as dead and takes the lock at once.
+# The lock excludes by age alone. The fresh-lock case names another PID, one
+# this process did not start: OS.is_process_running() reads such a PID as not
+# running on every platform, so a liveness check through it takes the lock at
+# once. Not this process's own PID: Windows lists the engine's own PID among
+# the processes it started, so the call reports that one as running.
 static func _test_file_lock(testing) -> void:
 	testing.begin("FileLock acquire/release")
 
@@ -267,7 +269,8 @@ static func _test_file_lock(testing) -> void:
 
 	# 1. A fresh lock is held until its holder releases it: a worker thread
 	#    releases it after 300 ms, and acquire() waits for that.
-	_write_lock(lock_path, my_pid, int(Time.get_unix_time_from_system()))
+	var holder_pid := _OTHER_PID if _OTHER_PID != my_pid else _OTHER_PID + 1
+	_write_lock(lock_path, holder_pid, int(Time.get_unix_time_from_system()))
 	var releaser := _DelayedRelease.new(lock_path, 300)
 	var thread := Thread.new()
 	var started_at := Time.get_ticks_msec()
