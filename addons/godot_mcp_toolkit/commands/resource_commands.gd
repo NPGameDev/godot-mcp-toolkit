@@ -28,21 +28,10 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void
 # -- Helpers ------------------------------------------------------------------
 
 
-## Maps each property name to its declared Variant type.
-static func _property_types_of(object: Object) -> Dictionary:
-	var types := {}
-	for property in object.get_property_list():
-		var property_name := str(property.get("name", ""))
-		if not property_name.is_empty():
-			types[property_name] = int(property.get("type", TYPE_NIL))
-	return types
-
-
 static func _apply_resource_properties(
 	resource: Resource, properties: Dictionary, resource_class: String,
 ) -> Array[String]:
 	var warnings: Array[String] = []
-	var property_types := _property_types_of(resource)
 	for key in properties.keys():
 		var key_string := str(key)
 		var raw_value = properties[key]
@@ -73,11 +62,15 @@ static func _apply_resource_properties(
 				else:
 					warnings.append(
 						"property '%s' on %s: set() had no effect (may need a different API)" % [key_string, resource_class])
-		elif not property_types.has(key_string):
-			warnings.append(
-				"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
 		else:
-			var fit := Helpers.fit_to_type(coerced, int(property_types[key_string]), key_string)
+			# An inspector group, subgroup or category header is not a property:
+			# set() would store nothing for a key that names only a header.
+			var entry := Helpers.property_entry(resource, key_string)
+			if entry.is_empty():
+				warnings.append(
+					"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
+				continue
+			var fit := Helpers.fit_to_type(coerced, int(entry.get("type", TYPE_NIL)), key_string)
 			resource.set(key_string, fit["value"])
 			if not str(fit["warning"]).is_empty():
 				warnings.append(str(fit["warning"]))
