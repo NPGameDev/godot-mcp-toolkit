@@ -94,14 +94,13 @@ static func write_hint(ver_label: String) -> String:
 	return _WRITE_PREFIX + recovery_message(ver_label)
 
 
-## True if `source` parses/compiles as GDScript. SAFE in-process parse via
-## GDScript.new().reload() — NOT ResourceLoader.load(CACHE_MODE_IGNORE), which
-## corrupts already-loaded scripts on every version. A class_name declaration
-## that starts its line is stripped first (see `GDScriptSource.strip_class_name()`).
-static func source_compiles(source: String) -> bool:
-	var script := GDScript.new()
-	script.source_code = GDScriptSource.strip_class_name(source)
-	return script.reload(false) == OK
+## True if `source`, the file at `file_path`, parses/compiles as GDScript and its
+## class_name clashes with nothing. SAFE in-process parse via GDScript.new().reload()
+## — NOT ResourceLoader.load(CACHE_MODE_IGNORE), which corrupts already-loaded
+## scripts on every version. The compiles run with error printing off (see
+## `GDScriptSource.judge()`); an empty `file_path` stands for source with no file.
+static func source_compiles(source: String, file_path: String = "") -> bool:
+	return bool(GDScriptSource.judge(source, file_path)["valid"])
 
 
 ## True if `source` defines `func <method>` (line scan on the raw text — no compile,

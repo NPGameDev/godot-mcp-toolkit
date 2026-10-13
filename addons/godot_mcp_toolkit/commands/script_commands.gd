@@ -252,7 +252,7 @@ static func _commit_content(server: Node, file_path: String, content: String,
 
 	# Inline GDScript diagnostics — same validation as script_check.
 	if extension == "gd":
-		var validation := _validate_gdscript(content)
+		var validation := _validate_gdscript(content, file_path)
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
 
@@ -309,7 +309,7 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 		return MCPToolkitError.fail("READ_FAILED",
 			"FileAccess error %d reading %s" % [read_error, file_path])
 
-	var validation := _validate_gdscript(content)
+	var validation := _validate_gdscript(content, file_path)
 	return MCPToolkitSuccess.ok({
 		"file_path": file_path,
 		"valid": validation["valid"],
@@ -321,53 +321,71 @@ static func _cmd_script_check(parameters: Dictionary) -> Dictionary:
 ## DO NOT use ResourceLoader.load() with CACHE_MODE_IGNORE here:
 ## it corrupts already-loaded scripts on ALL Godot versions.
 ##
-## The probe compiles under its own synthetic path, so a [code]class_name[/code]
-## declaration that starts its line is stripped first (see
-## [code]GDScriptSource.strip_class_name()[/code]). The probe is then an
-## anonymous class: a script that passes [code]self[/code] to a parameter typed
-## as its own [code]class_name[/code] reports an error here, and
-## lsp_diagnostics, which checks the file under its real path, does not.
+## The compile probe (see [code]core/gdscript_source.gd[/code]) renames the
+## script's [code]class_name[/code], so the copy neither clashes with the global
+## class the editor registered for [param file_path] nor loses its own type, and
+## checks the original name the way the engine does: a name that hides a
+## built-in type, a native class, another script's global class or an autoload
+## singleton is an error on the declaration's line. An empty
+## [param file_path] stands for source with no file.
 ##
-## Diagnostics carry only real fields: the error entry gains "line" (the actual
-## parse/compile error line) when the 4.5+ Logger capture recovered it from the
-## reload error; on 4.2-4.4 (file-tail capture — no structured line) the key is
-## omitted, never a fabricated 0. "col" is never emitted — columns are
-## lsp_diagnostics' domain.
-static func _validate_gdscript(source: String) -> Dictionary:
-	# Snapshot LogBuffer position so we can scan errors produced by reload().
-	# _next_id is the ID the next pushed entry will receive; since_id uses
-	# "entries with id > since_id", so subtract 1 to include that first entry.
-	var pre_id: int = Modules.LogBuffer._next_id - 1
-	var script := GDScript.new()
-	script.source_code = Modules.GDScriptSource.strip_class_name(source)
-	var is_valid := script.reload(false) == OK
+## Diagnostics carry only real fields. A class-name clash carries "line" on
+## every version. A compile error carries "line" (the actual parse/compile error
+## line) when the 4.5+ Logger capture recovered it from the reload error; on
+## 4.2-4.4 (file-tail capture — no structured line) the key is omitted, never a
+## fabricated 0. "col" is never emitted — columns are lsp_diagnostics' domain.
+static func _validate_gdscript(source: String, file_path: String = "") -> Dictionary:
+	var verdict := Modules.GDScriptSource.judge(source, file_path)
+	var diagnostics: Array = []
+	var conflict := str(verdict["conflict"])
+	if conflict != "":
+		diagnostics.append({
+			"severity": "error",
+			"message": conflict,
+			"line": int(verdict["conflict_line"]),
+		})
+	# A clash does not hide a compile error elsewhere in the file.
+	if not bool(verdict["compiles"]):
+		diagnostics.append_array(_compile_error_diagnostics(str(verdict["decisive_source"])))
+	return MCPToolkitSuccess.ok({"valid": bool(verdict["valid"]), "diagnostics": diagnostics})
+
+
+## Re-runs the probe compile that failed with its errors printed, then reads
+## them back: the error entry and any autoload or preload hints.
+## [param probe_source] is the probe's decisive source from
+## [code]GDScriptSource.judge()[/code]. Returns the diagnostics as
+## [code][{severity, message, line?}][/code].
+static func _compile_error_diagnostics(probe_source: String) -> Array:
+	# The first entry the re-run pushes gets the cursor's id; since_id reads
+	# "entries with id > since_id", so subtract 1 to include it.
+	var pre_id: int = Modules.LogBuffer.get_cursor() - 1
+	Modules.GDScriptSource.print_compile_errors(probe_source)
 
 	var diagnostics: Array = []
-	if not is_valid:
-		var error_diagnostic := {
-			"severity": "error",
-			"message": _compile_error_message(Modules.VersionUtils.get_engine_version_pair()),
-		}
-		# The real error line, recovered from the Logger capture of the reload
-		# error this call just triggered (an in-memory script reports under a
-		# synthetic "gdscript://…" path, so the latch match is ours — the
-		# snapshot-to-scan window runs synchronously on the main thread). -1
-		# (nothing recovered — 4.2-4.4, or a failed Logger hook) omits the key.
-		var real_line: int = Modules.LogBuffer.find_script_error_line_since(pre_id)
-		if real_line > 0:
-			error_diagnostic["line"] = real_line
-		diagnostics.append(error_diagnostic)
-		# Scan reload errors for unresolved identifiers that match autoloads.
-		# Hint entries carry no line — the hint is about an identifier, not a
-		# source position.
-		var hints := _check_autoload_hints(pre_id)
-		hints.append_array(_check_preload_hints(pre_id))
-		for hint in hints:
-			diagnostics.append({
-				"severity": "hint",
-				"message": hint,
-			})
-	return MCPToolkitSuccess.ok({"valid": is_valid, "diagnostics": diagnostics})
+	var error_diagnostic := {
+		"severity": "error",
+		"message": _compile_error_message(Modules.VersionUtils.get_engine_version_pair()),
+	}
+	# The real error line, recovered from the Logger capture of the reload
+	# error this call just triggered (an in-memory script reports under a
+	# synthetic "gdscript://…" path, so the latch match is ours — the
+	# snapshot-to-scan window runs synchronously on the main thread). -1
+	# (nothing recovered — 4.2-4.4, or a failed Logger hook) omits the key.
+	var real_line: int = Modules.LogBuffer.find_script_error_line_since(pre_id)
+	if real_line > 0:
+		error_diagnostic["line"] = real_line
+	diagnostics.append(error_diagnostic)
+	# Scan reload errors for unresolved identifiers that match autoloads.
+	# Hint entries carry no line — the hint is about an identifier, not a
+	# source position.
+	var hints := _check_autoload_hints(pre_id)
+	hints.append_array(_check_preload_hints(pre_id))
+	for hint in hints:
+		diagnostics.append({
+			"severity": "hint",
+			"message": hint,
+		})
+	return diagnostics
 
 
 ## Version-aware compile-error diagnostic message. editor_get_console surfaces editor
@@ -394,7 +412,7 @@ static func _check_autoload_hints(pre_id: int) -> Array:
 	var seen := {}
 	var hints: Array = []
 	for entry in entries:
-		var msg: String = str(entry.get("message", ""))
+		var msg := Modules.GDScriptSource.strip_probe_suffix(str(entry.get("message", "")))
 		var m := _autoload_hint_re.search(msg)
 		if m == null:
 			continue
@@ -420,7 +438,7 @@ static func _check_preload_hints(pre_id: int) -> Array:
 	var seen := {}
 	var hints: Array = []
 	for entry in entries:
-		var msg: String = str(entry.get("message", ""))
+		var msg := Modules.GDScriptSource.strip_probe_suffix(str(entry.get("message", "")))
 		var m := _preload_hint_re.search(msg)
 		if m == null:
 			continue

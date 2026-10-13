@@ -107,8 +107,10 @@ static func _godot_error_name(code: int) -> String:
 static func _read_buffer_log(limit: int, level_filter: Array, since_id: int, text_filter: String = "", text_regex: RegEx = null) -> Dictionary:
 	var buf_result: Dictionary = Modules.LogBuffer.get_entries(limit, level_filter, since_id, text_filter, text_regex)
 	var entries: Array = buf_result["entries"]
+	# A script_check probe's errors name its renamed class; the agent sees the real name.
 	for entry in entries:
-		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
+		var message := Modules.GDScriptSource.strip_probe_suffix(str(entry["message"]))
+		var scrubbed := Scrubber.scrub(message, "console")
 		entry["message"] = scrubbed["text"]
 	var has_more: bool = buf_result["has_more"]
 	# Capped-tail line paging: the resume cursor is next_id (fed back via since_id),
@@ -365,8 +367,10 @@ static func _read_console_log(
 	if entries.size() > 0:
 		next_id = entries[-1]["id"]
 
+	# A script_check probe's errors name its renamed class; the agent sees the real name.
 	for entry in entries:
-		var scrubbed := Scrubber.scrub(str(entry["message"]), "console")
+		var message := Modules.GDScriptSource.strip_probe_suffix(str(entry["message"]))
+		var scrubbed := Scrubber.scrub(message, "console")
 		entry["message"] = scrubbed["text"]
 
 	# Capped-tail line paging (resume via next_id → since_id, cursor-less for the builder).

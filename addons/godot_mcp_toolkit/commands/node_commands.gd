@@ -571,7 +571,7 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 	var version := Modules.VersionUtils.get_engine_version_ints()
 	var headless := Modules.VersionUtils.is_headless()
 	var disk_has := Modules.StaleInstanceHint.source_has_method(disk_source, method_name)
-	var disk_ok := Modules.StaleInstanceHint.source_compiles(disk_source)
+	var disk_ok := Modules.StaleInstanceHint.source_compiles(disk_source, scr_path)
 	if not Modules.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, version.x, version.y, headless):
 		return ""
 	return Modules.StaleInstanceHint.recovery_message(

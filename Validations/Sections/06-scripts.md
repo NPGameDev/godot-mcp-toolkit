@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (actor.gd exists)
 **Tools tested:** script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies
-**Tests:** 18
+**Tests:** 20
 
 ---
 
@@ -26,10 +26,27 @@
 - **Expect:** valid=true, 0 diagnostics
 
 **6.3b** `script_check` on the one-line `class_name` form — first `script_write` file_path=`res://sv2_validation/sv2_one_line.gd`, content=`class_name Sv2OneLine extends Node\n\n\nfunc attach_child() -> void:\n\tadd_child(Node.new())\n`; then `script_check` file_path=`res://sv2_validation/sv2_one_line.gd`
-- **Expect (every version):** the `script_write` response and the `script_check` response both valid=true, 0 diagnostics. The check removes only the `class_name` declaration, so the script keeps its `Node` base and `add_child` resolves.
+- **Expect (every version):** the `script_write` response and the `script_check` response both valid=true, 0 diagnostics. The check renames only the `class_name` identifier, so the script keeps its `Node` base and `add_child` resolves.
 
 > **REGRESSION WATCH (toolkit #16):** an error in either response means the check
 > dropped the same-line `extends` again. Flag as **Major**.
+
+**6.3c** `script_check` on a singleton that types `self` as its own class and has a factory — first `script_write` file_path=`res://sv2_validation/sv2_singleton.gd`, content=`class_name Sv2Singleton\nextends Node\n\nstatic var instance: Sv2Singleton\n\n\nstatic func create() -> Sv2Singleton:\n\treturn Sv2Singleton.new()\n\n\nfunc _enter_tree() -> void:\n\tinstance = self\n`; then `script_check` file_path=`res://sv2_validation/sv2_singleton.gd`
+- **Expect (every version):** the `script_write` response and the `script_check` response both valid=true, 0 diagnostics. `editor_get_console` shows no error naming `Sv2Singleton`. The editor's Output panel (not the console) may show two error lines per check naming the class with a probe suffix: a documented limitation.
+- **Restore:** the file is deleted in Cleanup.
+
+> **REGRESSION WATCH (toolkit #16):** valid=false here means the check judged `self`
+> against the registered copy of the class (the static `instance = self`) or failed on
+> the `Sv2Singleton.new()` factory. A console error that names the class with a suffix
+> means the console readers stopped mapping the probe's name back. Flag as **Major**.
+
+**6.3d** `script_write` a `class_name` that clashes with the dogfood project's autoload — file_path=`res://sv2_validation/sv2_autoload_clash.gd`, content=`# Clash fixture.\nclass_name MCPRuntimeServer\nextends Node\n`; then `script_check` file_path=`res://sv2_validation/sv2_autoload_clash.gd`
+- **Expect (every version):** both responses valid=false, and `diagnostics[0]` = `{severity: "error", message: "Class \"MCPRuntimeServer\" hides an autoload singleton.", line: 2}`. The editor's own scan may log the same parse error to the console; that entry is expected.
+- **Restore:** delete the file at once (`script_delete`, listed in Cleanup too), so the clashing class does not stay registered.
+
+> **REGRESSION WATCH (toolkit #16):** valid=true means the check skipped the engine's
+> class-name checks again; a missing `line`, or a line other than 2, means the clash is
+> no longer reported on its declaration. Flag as **Major**.
 
 **6.4** `script_write` (with error) — file_path=`res://sv2_validation/sv2_bad_script.gd`, content=`extends Node\n\nvar x = {\n`
 - **Expect:** success write, `valid: false`, `diagnostics` array non-empty
@@ -122,4 +139,6 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 - `script_delete` file_path=`res://sv2_validation/sv2_bad_script.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_preload_test.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_one_line.gd`
+- `script_delete` file_path=`res://sv2_validation/sv2_singleton.gd`
+- `script_delete` file_path=`res://sv2_validation/sv2_autoload_clash.gd` (if 6.3d's restore did not already)
 - `script_delete` file_path=`res://sv2_validation/sv2_edit_target.gd`

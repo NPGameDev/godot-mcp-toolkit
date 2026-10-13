@@ -2,7 +2,7 @@
 extends RefCounted
 ## Cross-version / paths / editor-lifecycle pure-logic unit tests: compile-error
 ## message (version-aware), script_check line emission (capability-gated),
-## script_check's class_name strip,
+## script_check's class_name rename,
 ## node.set_property groups rejection, UserPathMonitor change detection,
 ## editor.refresh reload filter, unfocused-sleep backup, and the
 ## stale-live-instance hint. Exercises the versioning/ + paths/ + editor-lifecycle
@@ -24,7 +24,8 @@ const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_so
 static func run(testing) -> void:
 	_test_compile_error_message(testing)
 	_test_validate_gdscript_line_emission(testing)
-	_test_strip_class_name(testing)
+	_test_rename_class_name(testing)
+	_test_probe_source(testing)
 	_test_groups_property_rejection(testing)
 	_test_user_path_monitor(testing)
 	_test_editor_refresh_reload_filter(testing)
@@ -78,7 +79,7 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 			"valid source → no diagnostics")
 
 	# Garbage token at line 6; class_name on line 1 exercises the class_name
-	# strip (the declaration goes but its line stays, so offsets hold).
+	# rename (the declaration stays on its line, so offsets hold).
 	var bad_source := "class_name UnitProbeBad77\nextends Node\n\nvar x := 1\n\n!!!garbage!!!\n"
 	var bad_result := ScriptCommands._validate_gdscript(bad_source)
 	testing.ok(not bool(bad_result.get("valid", true)), "bad source → valid false")
@@ -93,7 +94,7 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	if LogBuffer.uses_logger_api():
 		testing.ok(error_diagnostic.has("line"), "Logger capture live → real line present")
 		testing.eq(int(error_diagnostic.get("line", -1)), 6,
-				"line is the REAL parse line (the class_name strip keeps offsets)")
+				"line is the REAL parse line (the class_name rename keeps offsets)")
 	else:
 		testing.ok(not error_diagnostic.has("line"),
 				"file-tail capture → line omitted (never a fabricated 0)")
@@ -106,30 +107,61 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 	print("")
 
 
-# --- GDScriptSource.strip_class_name ----------------------------------------
-# The probe's class_name strip removes only the declaration, keeps the rest of
-# its line and never adds or removes a line.
+# --- GDScriptSource.rename_declaration --------------------------------------
+# The probe renames only the declared identifier, keeps the rest of its line
+# and never adds or removes a line.
 
-static func _test_strip_class_name(testing) -> void:
-	testing.begin("GDScriptSource.strip_class_name keeps the rest of the line")
-	testing.eq(GDScriptSource.strip_class_name("class_name A extends Node\nvar x := 1\n"),
-			"extends Node\nvar x := 1\n", "one-line form → extends kept")
-	testing.eq(GDScriptSource.strip_class_name("class_name A\nextends Node\n"),
-			"\nextends Node\n", "declaration alone on its line → blank line kept")
-	testing.eq(GDScriptSource.strip_class_name("class_name\tA\textends Node\n"),
-			"extends Node\n", "tab-separated → extends kept")
-	testing.eq(GDScriptSource.strip_class_name("class_name A; extends Node\n"),
-			"extends Node\n", "';' after the name → dropped with the declaration")
-	testing.eq(GDScriptSource.strip_class_name("class_name A # note\n"),
-			"# note\n", "trailing comment → kept")
-	testing.eq(GDScriptSource.strip_class_name("class_name A extends Node\r\nvar x\r\n"),
-			"extends Node\r\nvar x\r\n", "CRLF line ends → kept")
-	testing.eq(GDScriptSource.strip_class_name("extends Node\nclass_name A\nclass_name B\n"),
-			"extends Node\n\nclass_name B\n", "first declaration only")
-	testing.eq(GDScriptSource.strip_class_name("@tool class_name A extends Node\n"),
-			"@tool class_name A extends Node\n", "declaration after an annotation → untouched")
-	testing.eq(GDScriptSource.strip_class_name("extends Node\nvar class_name_count := 1\n"),
+static func _test_rename_class_name(testing) -> void:
+	testing.begin("GDScriptSource.rename_declaration keeps the rest of the line")
+	testing.eq(_renamed("class_name A extends Node\nvar x := 1\n"),
+			"class_name A__McpProbe extends Node\nvar x := 1\n", "one-line form → extends kept")
+	testing.eq(_renamed("class_name A\nextends Node\n"),
+			"class_name A__McpProbe\nextends Node\n", "declaration alone on its line → line kept")
+	testing.eq(_renamed("class_name\tA\textends Node\n"),
+			"class_name\tA__McpProbe\textends Node\n", "tab-separated → extends kept")
+	testing.eq(_renamed("class_name A; extends Node\n"),
+			"class_name A__McpProbe; extends Node\n", "';' after the name → kept")
+	testing.eq(_renamed("class_name A # note\n"),
+			"class_name A__McpProbe # note\n", "trailing comment → kept")
+	testing.eq(_renamed("class_name A extends Node\r\nvar x\r\n"),
+			"class_name A__McpProbe extends Node\r\nvar x\r\n", "CRLF line ends → kept")
+	testing.eq(_renamed("extends Node\nclass_name A\nclass_name B\n"),
+			"extends Node\nclass_name A__McpProbe\nclass_name B\n", "first declaration only")
+	testing.eq(_renamed("@tool class_name A extends Node\n"),
+			"@tool class_name A__McpProbe extends Node\n", "declaration after an annotation → renamed")
+	testing.eq(_renamed("extends Node\nvar class_name_count := 1\n"),
 			"extends Node\nvar class_name_count := 1\n", "no declaration → unchanged")
+	print("")
+
+
+static func _renamed(source: String) -> String:
+	return str(GDScriptSource.rename_declaration(source)["source"])
+
+
+# --- GDScriptSource: the rest of the probe's source handling -----------------
+# The declaration's name and line, a missing name, every bare reference, and
+# the suffix mapped back out of agent-facing text.
+
+static func _test_probe_source(testing) -> void:
+	testing.begin("GDScriptSource: rename scanner, references and suffix mapping")
+	var declaration := GDScriptSource.rename_declaration("# x\n\"class_name Q\"\nclass_name \\\nA;;\n")
+	testing.eq(str(declaration["name"]), "A", "keyword in a comment or string → skipped")
+	testing.eq(int(declaration["line"]), 4, "line → the name's line, past a continuation")
+	testing.eq(str(declaration["source"]), "# x\n\"class_name Q\"\nclass_name \\\nA__McpProbe;;\n",
+			"';;' after the name → kept")
+	for nameless: String in ["class_name \nextends Node\n", "class_name extends Node\n",
+			"class_name 2DPlayer\n", "extends Node\n"]:
+		var unchanged := GDScriptSource.rename_declaration(nameless)
+		testing.ok(str(unchanged["source"]) == nameless and str(unchanged["name"]) == "",
+				"no valid name in %s → unchanged, name empty" % nameless.c_escape())
+	var references := GDScriptSource.rename_references(
+			"class_name A\nvar a: A = A.new()\nvar s := \"A\" # A\nvar m := x.A\n")
+	testing.eq(str(references["source"]),
+			"class_name A__McpProbe\nvar a: A__McpProbe = A__McpProbe.new()\nvar s := \"A\" # A\nvar m := x.A\n",
+			"references → renamed, but not in strings, comments or after '.'")
+	testing.eq(GDScriptSource.strip_probe_suffix("Class \"Hé__McpProbe\" is not abstract"),
+			"Class \"Hé\" is not abstract", "suffix → removed, non-ASCII name intact")
+	testing.eq(GDScriptSource.class_name_conflict("", ""), "", "no name → no clash")
 	print("")
 
 
@@ -382,7 +414,7 @@ static func _test_stale_instance_hint(testing) -> void:
 	testing.ok(not StaleInstanceHint.should_hint_on_call(false, true, true, true, 5, 0, true),
 			"call: 5.0 headless → no hint (gate is major-aware)")
 
-	# source_compiles — safe GDScript.new().reload() parse (class_name stripped)
+	# source_compiles — safe GDScript.new().reload() parse (class_name renamed)
 	testing.ok(StaleInstanceHint.source_compiles("extends Node\nfunc a() -> int:\n\treturn 1\n"),
 			"source_compiles: valid GDScript → true")
 	testing.ok(not StaleInstanceHint.source_compiles("extends Node\nvar = = =\n"),

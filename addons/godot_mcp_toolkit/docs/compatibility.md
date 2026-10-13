@@ -26,7 +26,7 @@ All MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message. On 4.5+ closes active or inactive tabs; last-tab close auto-creates an empty scene |
-| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. A `class_name` declaration that starts its line is removed before the check (a same-line `extends` stays); a `class_name` after an annotation or a statement on the same line is not removed. Error messages carry `gdscript://` URIs (see below) |
+| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version. Error messages carry `gdscript://` URIs (see below) |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
 | `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On Godot **< 4.4**, editing an existing `.gd` already attached to a **live** node carries a relaunch `hint` (the live instance keeps the old code until relaunch — see [Degraded behavior](#degraded-behavior-by-version)) |
@@ -221,20 +221,42 @@ correctly on both builds; the limitation is in the Godot binary.
 alternative but corrupts already-loaded scripts on all Godot versions,
 crashing the editor.
 
-When a line starts with `class_name`, the copy is checked with that declaration
-removed: a copy that kept it would clash with the global class of the same
-name. Only the declaration goes, so the one-line form
-`class_name Player extends Node` keeps its `extends`.
+A copy that kept the script's `class_name` would clash with the global class
+the editor registered for the file, so the copy renames it: the class name
+gets a probe suffix, and so does every use of the name in the script. If that
+copy fails, the check compiles a second copy with only the declaration renamed.
+It then checks the original name the way the engine does: a name that hides a
+built-in type (`Plane`), a native class, another script's `class_name` or an
+autoload singleton is reported with the engine's message and the
+declaration's `line`, on every version. The console text `editor_get_console`
+and `game_start` return shows the original name.
 
 Remaining trade-offs:
-- **`class_name` later in a line:** a `class_name` after an annotation or a
-  statement on the same line, as in `@tool class_name Player extends Node`, is
-  not removed, so the copy can report a false error that the class hides a
-  global script class. Start the line with `class_name` (put `@tool` on a line
-  of its own), or check the file with `lsp_diagnostics`.
-- **`self` as its own type:** the copy is an anonymous class, so passing
-  `self` to a parameter typed as the script's own `class_name` reports a false
-  error. `lsp_diagnostics` checks the file under its real path.
+- **A preloaded alias of the script itself:** `const Self = preload("<this file>")`
+  with `var me: Self = self` reports a false error.
+- **A codegen-only error next to self typing:** a script that types `self` as
+  its own class, uses its own name as a value (`Player.new()`) and has an error
+  only the compiler's last stage finds (`self.hp` inside `hp`'s own getter)
+  reads as valid.
+- **The Output panel:** the editor's Output panel shows each compile the check
+  runs. A valid script that types `self` as its own class and uses its own name
+  as a value leaves two error lines per check that name the class with the
+  probe suffix, and an invalid script can print its error up to three times.
+  Godot gives no way to keep these lines out of the panel.
+- **Abstract engine classes on 4.2–4.3:** a `class_name` equal to an abstract
+  engine class, such as `Material` or `CanvasItem`, reads as valid there. 4.4
+  and later report it.
+- **A member named like the script's own class:** a script that declares a
+  member with the same name as its `class_name` (an enum value, for example),
+  refers to it through a dotted access (`Team.Player`) and also uses its own
+  class name as a type reports a false error, on every version.
+- **`text_filter`:** `editor_get_console` matches `text_filter` against the
+  stored text, which still carries the probe suffix, so a regular expression
+  that expects the class name to end there, such as `Player\b`, can miss the
+  check's error.
+- **Other threads' errors:** while its compiles run (a few milliseconds), the
+  check turns error printing off for the whole editor, so an error another
+  thread prints in that window is missing from the console.
 - **`gdscript://` URIs in error messages:** When a script has a genuine
   error, the console message references an internal `gdscript://` path
   instead of the real `res://` file path.
