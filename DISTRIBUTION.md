@@ -38,7 +38,7 @@ claude
 **The 4.4.1 crash note.** The toolkit-root + `claude` path once crashed Godot
 4.4.1 because of a race between the plugin's per-frame TCPServer poll and
 claude's auto-indexing of the plugin's `.gd` source files (the
-filesystem-importer race). The F3 frame-skip mitigation (toolkit commit
+filesystem-importer race). The frame-skip mitigation (toolkit commit
 `5116694`) makes that race unreachable under normal use, confirmed on
 2026-04-15. A sibling `godot-mcp-dogfood-playground/` project exists and
 still works; it's reserved for clean-project / end-user-install verification

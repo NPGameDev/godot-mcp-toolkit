@@ -208,8 +208,8 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
 **Tool merges (iter 22):**
 - `signal_connect` + `signal_disconnect` → `signal_manage` (action: "connect"|"disconnect")
 - `resource_create` + `resource_save` → `resource_write` (upsert — `type` required for new files)
-- `input_map_add_action` + `input_map_remove_action` → `input_map_action` (action: "add"|"remove", `action_name` instead of `action`)
-- `input_map_action_add_event` + `input_map_action_remove_event` → `input_map_event` (action: "bind"|"unbind", `action_name` instead of `action`)
+- `input_map_add_action` + `input_map_remove_action` → `input_map_action` (action: "add"|"remove", the action named by `name`)
+- `input_map_action_add_event` + `input_map_action_remove_event` → `input_map_event` (action: "bind"|"unbind", the action named by `name`)
 - `animation_add_key` + `animation_remove_key` → `animation_keyframe` (action: "add"|"remove")
 
 **Profile system (iter 41l-ter):**
@@ -383,7 +383,7 @@ editor with `GODOT_MCP_DEV_SERVER_PATH` set to a local `dist/index.js` and the
 dock writes a `node <path>` entry for that build instead. The shipped template,
 `addons/godot_mcp_toolkit/.mcp.json.template`, holds the bare-`npx` entry.
 
-**Dogfood from this repo root.** The F3 frame-skip mitigation in
+**Dogfood from this repo root.** The frame-skip mitigation in
 `mcp_server.gd` makes the Godot 4.4.1 TCPServer race effectively
 unreachable under normal use, so toolkit-root + `claude` is the
 canonical dogfood workflow. The sibling

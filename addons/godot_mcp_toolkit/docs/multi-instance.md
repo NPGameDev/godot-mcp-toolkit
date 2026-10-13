@@ -181,9 +181,10 @@ godot --editor --path ../MyGame-b --lsp-port 6015 &
 ```
 
 Each instance now binds known, non-colliding ports, and its MCP server dials them
-without a registry lookup, so there is no discovery race. Each editor still
-publishes its entry in the registry (under the shared lock, held only for the
-moment of a write), so the server can check a pin it fails to reach. A pinned-but-occupied port **fails
+without a registry port lookup, so there is no discovery race. Each editor still
+publishes its entry: the server reads the session token's path from it on every
+connect, and checks a pin it fails to reach against it (the shared lock is held
+only while `projects.json` is rebuilt). A pinned-but-occupied port **fails
 loudly** (an editor dock warning + a precise server error) instead of silently
 scanning elsewhere, so a triple collision is visible immediately rather than showing
 up as a mystery cross-talk. Keep using **Pattern A** (separate directories) for the
