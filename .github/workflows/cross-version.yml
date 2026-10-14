@@ -140,7 +140,7 @@ concurrency:
 # [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
 # the sibling-ref dispatch input.
 env:
-  SIBLING_PIN_SERVER: "194a0e4af54963fca4f1d49ffe20f8b5c5e78806"
+  SIBLING_PIN_SERVER: "997de9ba41e280dcbfade25b0a1c0b9d7ef52668"
 
 jobs:
   gdscript-behavioral:
