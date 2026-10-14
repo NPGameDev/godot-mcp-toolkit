@@ -20,7 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as the docs said.
 - The dock's LSP line now follows a change to the LSP host or port in Editor
   Settings.
-- The Info dialog and the dock's read-only badge now agree.
+- The Info dialog now shows the read-only state the running MCP server
+  applies, as the dock's badge does. If `.mcp.json` has changed since the
+  server started, it adds a line saying the change applies when the MCP client
+  restarts.
 - The dock's collapsible sections no longer pad themselves with empty space; the
   spare height sits below the last section, and a dock too short for its
   content scrolls.
@@ -31,13 +34,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   warning. Reported and fixed by @benfeather
   ([#10](https://github.com/NPGameDev/godot-mcp-toolkit/issues/10),
   [#11](https://github.com/NPGameDev/godot-mcp-toolkit/pull/11)).
+- `resource_write` now warns that a key naming only an inspector group,
+  subgroup or category (such as `Albedo` on a `StandardMaterial3D`) is an
+  unknown property. Before, it dropped the value with no warning.
 - `scene_instantiate` no longer copies the instanced scene's root class
   (`type=`), root script, other changed root properties and groups into your
-  scene when you save it. They stayed pinned on the instance, so swapping or removing the
-  instanced scene's root script didn't reach it. Reopening and saving your scene
-  cleared the pinned values only while the instanced scene's root still matched
-  them. The instance now saves the way the editor saves a scene you drop in.
-  Reported and fixed by @benfeather
+  scene when you save it. They stayed pinned on the instance, so swapping or
+  removing the instanced scene's root script didn't reach it. Reopening and
+  saving your scene cleared the pinned values only while the instanced scene's
+  root still matched them. The instance now saves the way the editor saves a
+  scene you drop in. Reported and fixed by @benfeather
   ([#12](https://github.com/NPGameDev/godot-mcp-toolkit/issues/12),
   [#13](https://github.com/NPGameDev/godot-mcp-toolkit/pull/13)).
 - `input_map_action` and `input_map_event` now see the input actions your project
@@ -51,18 +57,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `input_map_action` now refuses to remove any built-in action, such as
   `ui_select`. Before, it checked a fixed list of names that missed some built-in
   actions on every supported Godot version.
-- `script_check`, `script_write` and `script_edit` now keep a script's
-  `class_name` when they check it and run Godot's own `class_name` checks,
-  instead of deleting the declaration. They no longer report false compile
-  errors for the one-line form `class_name Player extends Node`, for `@tool`
-  or `@abstract` before `class_name` on the same line, or for a script that
+- `script_check`, `script_write` and `script_edit` no longer delete a script's
+  `class_name` from the copy they check: they rename it and run Godot's own
+  `class_name` checks on the real name. This ends the false compile errors for
+  the one-line form `class_name Player extends Node`, for `@tool` or
+  `@abstract` before `class_name` on the same line, or for a script that
   uses `self` as its own class (`return self` from a function typed
   `-> Player`, or `self` stored in a `static var instance: Player`). A
   `class_name` that hides an autoload, another script's class, an engine
   class (an abstract one only from Godot 4.4) or a built-in type is now
   reported, with its line, on every Godot version. Passing `self` to another
   script's function typed with the class still reports a false error, and
-  `lsp_diagnostics` gives the real result. Reported and first fixed by @benfeather ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
+  `lsp_diagnostics` gives the real result. Reported and first fixed by
+  @benfeather ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16),
   [#17](https://github.com/NPGameDev/godot-mcp-toolkit/pull/17)).
 - `node_set_property` (single and batch), `scene_instantiate` (the `properties`
   of each instance) and `node_manage`'s `duplicate` no longer save an `int`
