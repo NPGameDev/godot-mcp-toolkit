@@ -91,12 +91,15 @@ static func make_scroll_area(parent: Control) -> VBoxContainer:
 ## scroll no height at all. Call it once the sections are built; the floor follows
 ## later theme and font changes.
 static func apply_header_floor(box: VBoxContainer) -> void:
-	var scroll := box.get_parent() as ScrollContainer
-	if scroll == null:
+	if not (box.get_parent() is ScrollContainer):
+		push_error("[MCPToolkit] apply_header_floor() needs a box built by make_scroll_area() - its parent must be a ScrollContainer")
 		return
+	var scroll: ScrollContainer = box.get_parent()
 	var refresh := func() -> void:
 		scroll.custom_minimum_size.y = _header_floor_height(box, scroll)
-	scroll.theme_changed.connect(refresh)
+	# Deferred: a Control emits theme_changed before it clears its theme cache,
+	# so reading the scroll's "panel" stylebox in the same call can be stale.
+	scroll.theme_changed.connect(refresh, CONNECT_DEFERRED)
 	for child in box.get_children():
 		if child.has_meta(_COLLAPSIBLE_HEADER_META):
 			(child as Control).minimum_size_changed.connect(refresh)
