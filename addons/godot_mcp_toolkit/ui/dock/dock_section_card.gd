@@ -11,6 +11,10 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
+# Marks a collapsible's header bar, so the scroll-area floor can find the headers
+# among the section parts.
+const _COLLAPSIBLE_HEADER_META := "collapsible_header"
+
 
 ## Build the theme-adaptive stylebox shared by every section card and the footer.
 ## Samples the editor's "Panel" stylebox for a base colour so cards read as a
@@ -79,6 +83,26 @@ static func make_scroll_area(parent: Control) -> VBoxContainer:
 	return box
 
 
+## Keep the scroll area that holds [param box] (built by [method make_scroll_area])
+## at least as tall as the collapsible headers in [param box], so a surface
+## squeezed short still shows every header and scrolls the open sections instead
+## of shrinking them to nothing. A [ScrollContainer] never counts its child's
+## height in its own minimum, so without this floor a short parent gives the
+## scroll no height at all. Call it once the sections are built; the floor follows
+## later theme and font changes.
+static func apply_header_floor(box: VBoxContainer) -> void:
+	var scroll := box.get_parent() as ScrollContainer
+	if scroll == null:
+		return
+	var refresh := func() -> void:
+		scroll.custom_minimum_size.y = _header_floor_height(box, scroll)
+	scroll.theme_changed.connect(refresh)
+	for child in box.get_children():
+		if child.has_meta(_COLLAPSIBLE_HEADER_META):
+			(child as Control).minimum_size_changed.connect(refresh)
+	refresh.call()
+
+
 ## Build a collapsible section into [param parent]: a styled header bar whose
 ## toggle shows or hides the content box below it. Both go straight into
 ## [param parent], so an open section is as tall as its content and scrolls
@@ -87,6 +111,7 @@ static func make_scroll_area(parent: Control) -> VBoxContainer:
 static func make_collapsible(parent: VBoxContainer, title: String, expanded: bool) -> VBoxContainer:
 	var header := PanelContainer.new()
 	header.add_theme_stylebox_override("panel", make_section_style())
+	header.set_meta(_COLLAPSIBLE_HEADER_META, true)
 	parent.add_child(header)
 
 	var toggle := Button.new()
@@ -109,3 +134,19 @@ static func make_collapsible(parent: VBoxContainer, title: String, expanded: boo
 	)
 
 	return content
+
+
+# The height `box` needs with every section collapsed: its headers, the
+# separations between them, and the scroll's own panel margins. The margins are
+# included because a control's minimum is the larger of its custom minimum and
+# its computed one, never their sum.
+static func _header_floor_height(box: VBoxContainer, scroll: ScrollContainer) -> float:
+	var height := 0.0
+	var header_count := 0
+	for child in box.get_children():
+		if child.has_meta(_COLLAPSIBLE_HEADER_META):
+			height += (child as Control).get_combined_minimum_size().y
+			header_count += 1
+	if header_count > 1:
+		height += (header_count - 1) * box.get_theme_constant("separation")
+	return height + scroll.get_theme_stylebox("panel").get_minimum_size().y

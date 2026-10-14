@@ -174,6 +174,10 @@ func _build_ui() -> void:
 	limits_section.regenerate_token_requested.connect(_on_regen_token)
 	lc.add_child(limits_section)
 
+	# A dock dragged short keeps every section header in view and scrolls the
+	# open sections, while Server Status and the footer stay pinned around them.
+	DockSectionCard.apply_header_floor(sections_vbox)
+
 	# == Footer (pinned at bottom) ============================================
 	var footer := PanelContainer.new()
 	footer.add_theme_stylebox_override("panel", DockSectionCard.make_section_style())
