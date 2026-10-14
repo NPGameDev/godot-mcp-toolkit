@@ -174,4 +174,7 @@ other files cannot fail a check. Afterwards restore only that file with
       field's project value is the one in use.
 - [ ] **DS8 — Layout.** Collapse both collapsible sections, then expand one, then both.
       **Expected:** each open section is as tall as its content, the spare height sits below
-      the last section, and no section has a scrollbar of its own.
+      the last section, and no section has a scrollbar of its own. Shrink the dock until the
+      content no longer fits: Server Status and the footer stay, the section headers stay
+      visible, and the sections scroll with one scrollbar. Open **Info / Help**: it is no larger
+      than the editor window and its Close button is on screen.

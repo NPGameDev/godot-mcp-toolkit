@@ -14,6 +14,10 @@ const MCPJsonSync = Modules.MCPJsonSync
 const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_section_card.gd")
 const EditorPopup := preload("res://addons/godot_mcp_toolkit/ui/editor_popup.gd")
 
+const _DEFAULT_SIZE := Vector2i(520, 460)
+# The share of the editor window, per axis, the dialog may cover.
+const _WINDOW_FRACTION := 0.9
+
 # One-time dialog chrome (title/buttons) is installed on first show; the
 # content is cleared and rebuilt on every call.
 var _built: bool = false
@@ -53,7 +57,11 @@ func show_info(server: Node, read_only_applied: bool) -> void:
 	if not mode_text.is_empty():
 		_add_info_row(conn, "Mode", mode_text)
 	if not pending_text.is_empty():
-		_add_note_label(conn, pending_text)
+		# Unwrapped: the Connection card sits outside the scroll, so its height sets
+		# the dialog's. A wrapped label measures its height at its width before the
+		# first layout, a few pixels, one word per line, and the dialog would open
+		# that tall.
+		conn.add_child(_make_note_label(pending_text))
 	var plugin_ver := Modules.VersionUtils.read_plugin_version()
 	var vi := Engine.get_version_info()
 	var godot_ver := "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]]
@@ -168,8 +176,24 @@ func show_info(server: Node, read_only_applied: bool) -> void:
 
 	# Open at an explicit size and raised (see EditorPopup). The explicit size is
 	# load-bearing: a no-arg popup_centered on a reused dialog reuses the window's
-	# current size and only grows, so sizing drifts across reopens.
-	EditorPopup.present(self, Vector2i(520, 460))
+	# current size and only grows, so sizing drifts across reopens. The size limits
+	# are set on every show, from the editor window's current size, so the Close
+	# button stays on screen even when the content asks for more height.
+	var limits := fit_to_window(_DEFAULT_SIZE, EditorInterface.get_base_control().get_window().size)
+	min_size = limits["min_size"]
+	max_size = limits["max_size"]
+	EditorPopup.present(self, limits["open"])
+
+
+## The sizes that keep a dialog wanting [param requested] inside an editor window
+## of [param window_size]: at most 90% of the window on each axis. Returns
+## [code]{"open": Vector2i, "min_size": Vector2i, "max_size": Vector2i}[/code]:
+## the size to open at, and the dialog's minimum and maximum sizes. The minimum is
+## never above the maximum, because a window ignores a maximum below its minimum.
+static func fit_to_window(requested: Vector2i, window_size: Vector2i) -> Dictionary:
+	var cap := Vector2i(int(window_size.x * _WINDOW_FRACTION), int(window_size.y * _WINDOW_FRACTION))
+	var open := Vector2i(mini(requested.x, cap.x), mini(requested.y, cap.y))
+	return {"open": open, "min_size": open, "max_size": cap}
 
 
 ## The Connection section's read-only lines, from [param applied] (whether the
@@ -200,7 +224,6 @@ func _ensure_built() -> void:
 	title = "MCP Toolkit — Info / Help"
 	ok_button_text = "Close"
 	exclusive = false
-	min_size = Vector2i(520, 460)
 
 	_content_root = VBoxContainer.new()
 	_content_root.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -213,13 +236,20 @@ func _ensure_built() -> void:
 # Adds a small wrapped note label. `dim` renders it at half alpha for a
 # secondary aside beneath a primary line.
 func _add_note_label(parent: VBoxContainer, text: String, dim := false) -> void:
+	var lbl := _make_note_label(text, dim)
+	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	parent.add_child(lbl)
+
+
+# Builds a small note label that keeps its text on unwrapped lines. `dim` renders
+# it at half alpha.
+func _make_note_label(text: String, dim := false) -> Label:
 	var lbl := Label.new()
 	lbl.text = text
 	lbl.add_theme_font_size_override("font_size", 11)
 	if dim:
 		lbl.add_theme_color_override("font_color", Color(1, 1, 1, 0.5))
-	lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	parent.add_child(lbl)
+	return lbl
 
 
 func _add_info_row(parent: VBoxContainer, key: String, value: String) -> void:
