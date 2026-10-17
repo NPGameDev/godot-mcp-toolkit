@@ -120,13 +120,20 @@
 - (a) old_string=`# done`, new_string=`# done` (identical) → **Expect** `INVALID_PARAMS` ("would change nothing"); no-op rejected before the file is touched.
 - (b) old_string=`` (empty), new_string=`x` → **Expect** `INVALID_PARAMS` (empty `old_string` is malformed).
 
+**6.17** `script_edit` (edits array — several edits in one call) — file_path=`res://sv2_validation/sv2_edit_target.gd`, edits=`[{"old_string": "# done\nvar a := 1", "new_string": "# done\nvar a := 2"}, {"old_string": "var a := 2", "new_string": "var renamed := 2"}]` (no top-level `old_string` / `new_string`)
+- **Expect:** success, `replacements`=2, one set of `diagnostics`. A `script_read` shows `var renamed := 2`: the second edit matched the text the first one left.
+
+**6.18** `script_edit` (edits array — one edit unmatched) — file_path=`res://sv2_validation/sv2_edit_target.gd`, edits=`[{"old_string": "var renamed := 2", "new_string": "var c := 3"}, {"old_string": "never_present", "new_string": "x"}]`
+- **Expect:** `NOT_FOUND`, message starts `edits[1]: `. A `script_read` still shows `var renamed := 2`: the first edit was not written either.
+
 > **REGRESSION WATCH (script_edit):** `script_edit` must NOT be lossy vs `script_write` —
 > a successful edit carries `undoable`=true (UndoRedo entry), `indexed` (reindex), and for
 > a `.gd` file inline `diagnostics`. If a successful edit lacks any of those, the shared
 > pipeline reuse has regressed. If `replace_all` collapses adjacent newlines, or a no-op /
 > empty-`old_string` edit is accepted instead of `INVALID_PARAMS`, or an absent span returns
 > anything but `NOT_FOUND`, or an ambiguous span without `replace_all` returns anything but
-> `NOT_UNIQUE`, flag as **Major**.
+> `NOT_UNIQUE`, or a failing edit in an `edits` array leaves the other edits written, flag as
+> **Major**.
 
 ---
 

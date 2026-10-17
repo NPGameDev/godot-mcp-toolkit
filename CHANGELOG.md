@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `script_edit` accepts an `edits` array of `old_string`/`new_string`/`replace_all`
+  objects and applies them in order in one call. If any edit is not found or
+  matches more than once, nothing is written; otherwise the file is written and
+  checked once. The single `old_string`/`new_string` form is unchanged. Needs a
+  server that declares `edits`
+  ([#44](https://github.com/NPGameDev/godot-mcp-toolkit/issues/44)).
+
 ## [1.0.4] - 2026-10-14
 
 ### Fixed
