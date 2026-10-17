@@ -29,8 +29,8 @@ All MCP tools work on Godot 4.2+ unless noted below.
 | `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version (an abstract engine class only from 4.4; see [the limitations](#script_check-limitations-all-versions)). Error messages carry `gdscript://` URIs (see below) |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
-| `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On Godot **< 4.4**, editing an existing `.gd` already attached to a **live** node carries a relaunch `hint` (the live instance keeps the old code until relaunch — see [Degraded behavior](#degraded-behavior-by-version)) |
-| `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance) carries a relaunch `hint`; a genuine typo does not. 4.4+ hot-reloads on a **display** editor, so the call just succeeds — but a **4.4+ headless** editor never re-instantiates the reloaded node, so the stale `hint` fires there too (headless wording: re-create the node or relaunch a display editor) |
+| `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On Godot **< 4.4**, editing an existing `.gd` already attached to a **live** node carries a stale-instance `hint` (the live instance keeps the old code until `node_set_script` sets the script again — see [Degraded behavior](#degraded-behavior-by-version)) |
+| `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance) carries a stale-instance `hint`; a genuine typo does not. 4.4+ hot-reloads on a **display** editor, so the call just succeeds — but a **4.4+ headless** editor never re-instantiates the reloaded node, so the stale `hint` fires there too (headless wording: set the script again or relaunch a display editor) |
 | `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see [multi-instance.md](multi-instance.md)) |
 | `editor_get_console` | 4.2 | Captures runtime output (errors/warnings/prints) on all versions. **Editor parse errors** (from `editor_refresh` recompiling a script) surface only on **4.5+** (the Logger API hooks editor diagnostics); on **4.2–4.4** a default editor launch does NOT write them to `godot.log`, so neither `source="buffer"` nor `source="file"` can return them — use `script_check` or the `script_write` inline diagnostics instead. From 4.3, an editor launched with `--log-file user://logs/godot.log` writes its own errors to that file, so both sources can return them (see [Degraded behavior](#degraded-behavior-by-version)). Multi-line errors that ARE captured (`SCRIPT ERROR: …` + `   at: <script>.gd:LINE`) are leveled as a unit, so a filename + `level_filter:["error"]` query finds the location line. 4.5+ uses the synchronous Logger (one entry per error, zero-latency) |
 | `animationtree_edit` | 4.2 | All ops work on 4.2+ (set_root, add/remove_node, add/remove_transition, set_property; transitions enumerate on all versions) |
@@ -79,14 +79,14 @@ script identity (even across stale/phantom tabs); with an external editor the to
   telling you to restart the editor; a `push_warning` also shows in the Output
   panel. Godot 4.3+ applies edits live (validated on 4.5).
 - **Live attached-script reload — editing a script bound to a running instance
-  needs a relaunch (4.2 + 4.3).** A **distinct** boundary from the extension
+  needs the script set again (4.2 + 4.3).** A **distinct** boundary from the extension
   hot-reload above (which is 4.2→4.3): live scene-node attached-script reload is
   the **4.3→4.4** boundary. On 4.2 and 4.3, after `script_write` edits a `.gd` that
   is already attached to a live node, that instance keeps the OLD code — *added
   members* surface as `INVALID_METHOD`, and *changed method bodies* run silently
-  with the old behaviour and **no error**. `editor_refresh`, re-`node_set_script`,
-  and even creating a brand-new node all keep the stale code; only relaunching the
-  editor (or disabling then re-enabling the plugin) picks up the edit. The toolkit
+  with the old behaviour and **no error**. `editor_refresh` keeps the stale code.
+  `node_set_script` reloads a script whose file changed, so setting the script
+  again, on the same node or a new one, picks up the edit. The toolkit
   surfaces this on < 4.4 as a `hint`: **proactively** on the `script_write`
   response (an existing `.gd` that compiled OK) and **reactively** on a
   `node_call_method` `INVALID_METHOD` whose method exists on the on-disk script. A
@@ -97,7 +97,7 @@ script identity (even across stale/phantom tabs); with an external editor the to
   Godot 4.4+ hot-reloads promptly on a **display** editor, so no hint fires there — but a
   **headless** 4.4+ editor never re-instantiates the live node (the play/reload path is
   display-bound), so the reactive `node_call_method` hint fires headless on 4.4+ too, with
-  a headless-specific message (re-create the node or relaunch a display editor; the edit is
+  a headless-specific message (set the script again or relaunch a display editor; the edit is
   on disk, confirm with `script_check`).
 - **GDScript LSP multi-editor — root verification needs 4.5+.** The `lsp_*` tools
   work, but the server's cross-project safety check (the workspace-root mismatch

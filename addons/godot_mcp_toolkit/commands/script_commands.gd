@@ -257,8 +257,8 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		result["diagnostics"] = validation["diagnostics"]
 
 		# Proactive stale-live-instance hint. Editing an EXISTING .gd
-		# that compiled OK on Godot < 4.4 won't reach a live instance until relaunch
-		# (added members AND changed bodies; a fresh node doesn't help either —
+		# that compiled OK on Godot < 4.4 won't reach a live instance until
+		# node.set_script sets it again (added members AND changed bodies —
 		# empirically characterised, boundary 4.3->4.4). Append to the response hint
 		# (validation guidance first, stale nudge in the recency slot).
 		var version := Modules.VersionUtils.get_engine_version_ints()
