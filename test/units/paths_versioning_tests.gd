@@ -438,17 +438,17 @@ static func _test_stale_instance_hint(testing) -> void:
 	testing.ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", ""),
 			"source_has_method: empty method → false")
 
-	# recovery_message — names the version, covers bodies+added, relaunch + fresh-node
+	# recovery_message — names the version, covers bodies+added, node.set_script + relaunch
 	var msg := StaleInstanceHint.recovery_message("4.3")
 	testing.ok(msg.contains("4.3"), "recovery_message: names the version")
 	testing.ok(msg.contains("relaunch"), "recovery_message: recommends relaunch")
-	testing.ok(msg.contains("fresh node"), "recovery_message: notes a fresh node doesn't help")
+	testing.ok(msg.contains("node.set_script"), "recovery_message: recommends setting the script again")
 	testing.ok(msg.contains("changed method bodies") and msg.contains("added members"),
 			"recovery_message: covers changed bodies AND added members")
 
 	# recovery_message headless form — 4.4+ headless gets the re-instantiation wording,
 	# distinct from the < 4.4 engine-cache form; version label still named, editor.refresh
-	# is NOT offered (it doesn't help headless — re-create or relaunch).
+	# is NOT offered (it doesn't help headless — set the script again or relaunch).
 	var msg_headless := StaleInstanceHint.recovery_message("4.5", 5, true)
 	testing.ok(msg_headless.contains("4.5"), "recovery_message headless: names the version")
 	testing.ok(msg_headless.contains("re-instantiate"),

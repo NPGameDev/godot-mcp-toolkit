@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `script_write` or another editor changed the file, it set the version the
   editor first loaded from that path, so a `@tool` script kept running its old
   code. A node that already has the script picks up the change when
-  `node_set_script` sets it again.
+  `node_set_script` sets it again. On Godot 4.2 and 4.3, and on a headless
+  4.4+ editor, the stale-instance hint on `script_write` and `node_call_method`
+  now says so, instead of telling you to relaunch the editor.
 
 ## [1.0.4] - 2026-10-14
 
