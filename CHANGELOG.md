@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `node_manage` with `duplicate` now saves the copy's children. Before, the
+  editor showed them, but the saved scene held the copy alone, because
+  `Node.duplicate()` leaves the copied children with no owner. Undo and redo
+  keep them too. The internals of an instanced sub-scene stay with the instance.
+
 ## [1.0.4] - 2026-10-14
 
 ### Fixed
