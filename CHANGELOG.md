@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `GODOT_MCP_RUNTIME=0` keeps the runtime server out of a run of your project.
+  Before, every run with the editor binary started it, including a headless
+  `--script` test runner, and took the project's runtime entry in the registry
+  from the game the MCP tools had started. See "Keeping the runtime server out of
+  a run" in the advanced configuration guide.
+
 ## [1.0.4] - 2026-10-14
 
 ### Fixed

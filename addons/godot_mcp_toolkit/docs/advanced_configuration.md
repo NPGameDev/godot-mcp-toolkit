@@ -276,6 +276,27 @@ processes inherit the **same** value:
 - **Prefer Scanned mode** if you don't want to manage env on both sides — registry
   discovery keeps the two in agreement automatically.
 
+### Keeping the runtime server out of a run
+
+Any run of your project with the editor binary starts the runtime server: a
+game launched from the editor, but also `godot --path .` from a shell, a
+headless `--script` test runner, or a CI job. Each one binds a runtime port and
+publishes it in the registry as the project's runtime, replacing the game the
+MCP tools started, and clears that entry when it exits.
+
+Set `GODOT_MCP_RUNTIME=0` in the environment of a run to keep the runtime server
+out of it. `false` and `off` (any case) work too; unset, empty, or any other
+value leaves the server on. The run prints one line saying the server is off,
+binds no port, and leaves the registry alone:
+
+```bash
+GODOT_MCP_RUNTIME=0 godot --headless --path . --script res://tests/run_tests.gd
+```
+
+A game launched from the editor inherits the editor's environment, so an editor
+started with `GODOT_MCP_RUNTIME=0` set launches games without the runtime server
+too.
+
 ## macOS: launching your MCP client (Node / PATH)
 
 Modern GUI-launched MCP clients — Claude Desktop, VS Code, and Cursor — capture
