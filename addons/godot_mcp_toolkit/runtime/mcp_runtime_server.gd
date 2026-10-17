@@ -14,6 +14,10 @@ extends Node
 ##      false in every export, so Mode B self-protects in ALL exports
 ##      regardless of export_strip nulling the autoload. Security-critical;
 ##      stronger than is_debug_build() (which is true in a debug export).
+##
+## GODOT_MCP_RUNTIME=0 (or false/off) also keeps it inert, so a scripted or
+## headless run of the project (a test runner, CI) neither binds a port nor
+## takes the project's runtime entry from the game the MCP tools launched.
 
 # Runtime dependency closure — direct preloads of export-clean scripts only.
 # Deliberately NOT core/modules.gd: it statically names EditorInterface/EditorPlugin, which
@@ -45,6 +49,9 @@ const PORT_MAX := 6585  # 6570..6585 inclusive
 const _ENV_PIN := "GODOT_MCP_RUNTIME_PORT"
 const _ENV_PORT_MIN := "GODOT_MCP_RUNTIME_PORT_MIN"
 const _ENV_PORT_MAX := "GODOT_MCP_RUNTIME_PORT_MAX"
+# Opt-out switch: one of _RUNTIME_OFF_VALUES (case-insensitive) keeps the server inert.
+const _ENV_RUNTIME := "GODOT_MCP_RUNTIME"
+const _RUNTIME_OFF_VALUES := ["0", "false", "off"]
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # Throttle re-listen retries. Mirrors mcp_server.gd's editor-side loop.
@@ -70,6 +77,14 @@ const _RUNTIME_FRAME_WAIT_SECONDS := 1.0
 # Drives it inline per _process (no call_deferred — a running game has no
 # EditorFileSystem reentrancy to dodge).
 var _transport: WsTransport = null
+
+
+## True when [param value], the raw [code]GODOT_MCP_RUNTIME[/code] environment
+## value, turns the runtime server off: [code]0[/code], [code]false[/code] or
+## [code]off[/code], any case, surrounding spaces ignored. Empty (unset) and any
+## other value leave it on.
+static func is_opted_out(value: String) -> bool:
+	return value.strip_edges().to_lower() in _RUNTIME_OFF_VALUES
 
 
 func _init() -> void:
@@ -108,10 +123,19 @@ func _ready() -> void:
 	if not OS.has_feature("editor"):
 		set_process(false)
 		return
+	if is_opted_out(OS.get_environment(_ENV_RUNTIME)):
+		print("[MCPRuntimeServer] off (%s=%s): not listening or registering this run." % [
+			_ENV_RUNTIME, OS.get_environment(_ENV_RUNTIME)])
+		set_process(false)
+		return
 	_start_server()
 
 
 func _exit_tree() -> void:
+	# An opted-out run never registered, and clear_runtime() deletes the project's
+	# runtime entry whoever wrote it, so skip it: any entry belongs to another run.
+	if is_opted_out(OS.get_environment(_ENV_RUNTIME)):
+		return
 	_stop_server()
 
 
