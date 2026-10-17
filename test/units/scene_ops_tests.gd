@@ -8,12 +8,15 @@ extends RefCounted
 const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/scene/mcp_toolkit_safe_scene_ops.gd")
 const _SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const _INSTANCED_SCENE_FIXTURE := "user://scene_instantiate_fixture.tscn"
+const _BINARY_SCENE_FIXTURE := "user://scene_instantiate_fixture.scn"
+const _NON_SCENE_FIXTURE := "user://scene_instantiate_fixture.tres"
 
 
 static func run(testing) -> void:
 	_test_safe_scene_ops(testing)
 	_test_tool_context(testing)
 	_test_instance_saves_as_instance(testing)
+	_test_instantiate_takes_any_packed_scene(testing)
 
 
 # --- MCPToolkitSafeSceneOps public API -------------------------------------
@@ -117,6 +120,35 @@ static func _test_instance_saves_as_instance(testing) -> void:
 
 	owner_root.free()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_INSTANCED_SCENE_FIXTURE))
+	print("")
+
+
+# --- scene.instantiate: any file that loads as a PackedScene -----------------
+# The editor drops in any file that loads as a PackedScene: a .tscn, a binary .scn,
+# or a 3D model imported as a scene (.glb, .fbx...). This runner can't import a
+# model, so a .scn stands in for one: a PackedScene whose path isn't .tscn. A
+# resource that isn't a scene is still refused. Writes user:// temp files and
+# removes them afterward.
+
+static func _test_instantiate_takes_any_packed_scene(testing) -> void:
+	testing.begin("scene.instantiate takes any file that loads as a PackedScene")
+	var scene_root := Node3D.new()
+	scene_root.name = "Model"
+	var scene := PackedScene.new()
+	testing.eq(scene.pack(scene_root), OK, "binary scene packs")
+	scene_root.free()
+	testing.eq(ResourceSaver.save(scene, _BINARY_SCENE_FIXTURE), OK, "binary scene saved")
+	var loaded := _SceneCommands._load_instanceable_scene(_BINARY_SCENE_FIXTURE)
+	testing.eq(loaded.get("failure", {}).get("error"), null, ".scn is not refused")
+	testing.ok(loaded.get("packed") is PackedScene, ".scn loads as a PackedScene")
+
+	testing.eq(ResourceSaver.save(Resource.new(), _NON_SCENE_FIXTURE), OK, "plain resource saved")
+	var refused := _SceneCommands._load_instanceable_scene(_NON_SCENE_FIXTURE)
+	testing.eq(refused.get("failure", {}).get("code"), "INVALID_PATH",
+			".tres that isn't a scene is refused with INVALID_PATH")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_BINARY_SCENE_FIXTURE))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_NON_SCENE_FIXTURE))
 	print("")
 
 
