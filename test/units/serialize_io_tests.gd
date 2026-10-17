@@ -18,6 +18,8 @@ const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd
 const SettingsRegistration := preload("res://addons/godot_mcp_toolkit/core/settings_registration.gd")
 const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resource_commands.gd")
 const PlaceholderLikeResource := preload("res://test/fixtures/placeholder_like_resource.gd")
+const PlaceholderLikeObjectResource := preload(
+		"res://test/fixtures/placeholder_like_object_resource.gd")
 const PlaceholderLikeGroupedResource := preload(
 		"res://test/fixtures/placeholder_like_grouped_resource.gd")
 
@@ -34,6 +36,7 @@ static func run(testing) -> void:
 	_test_log_level_continuation(testing)
 	_test_compose_error_message(testing)
 	_test_settings_collect_names(testing)
+	_test_resource_write_bare_resource_path(testing)
 	_test_resource_write_int_property(testing)
 	_test_resource_write_int_on_update(testing)
 	_test_resource_write_skips_inspector_headers(testing)
@@ -742,6 +745,39 @@ static func _test_settings_collect_names(testing) -> void:
 	# An unrelated engine key is NOT swept by the mcp_toolkit/ prefix.
 	testing.ok(not names.has("application/config/name"),
 			"collector excludes unrelated engine key (application/config/name)")
+	print("")
+
+
+# --- resource.write: a bare res:// path on a Resource property ------------
+# node.set_property asks for the tagged {type: "Resource", path} form. Without that
+# check, a live instance (here the native script property) drops a bare path, and
+# the editor's placeholder stores it as a String, which reaches the file.
+
+static func _test_resource_write_bare_resource_path(testing) -> void:
+	testing.begin("resource.write warns on a bare res:// path for a Resource property")
+	var script_path := "res://test/fixtures/placeholder_like_resource.gd"
+	var native := Resource.new()
+	var native_warnings := ResourceCommands._apply_resource_properties(
+			native, {"script": script_path}, "Resource")
+	testing.eq(native_warnings.size(), 1, "bare path on script → exactly one warning")
+	var native_warning: String = "" if native_warnings.is_empty() else native_warnings[0]
+	testing.ok(native_warning.contains("'script'"), "the warning names the property")
+	testing.ok(native_warning.contains("{\"type\": \"Resource\", \"path\": \"%s\"}" % script_path),
+			"the warning gives the tagged form")
+	testing.eq(native.get_script(), null, "the script is left unset")
+
+	var texture_path := "res://test/fixtures/placeholder_texture.tres"
+	var placeholder: Resource = PlaceholderLikeObjectResource.new()
+	var placeholder_warnings := ResourceCommands._apply_resource_properties(
+			placeholder, {"icon": texture_path}, "Resource")
+	testing.eq(placeholder_warnings.size(), 1, "bare path on icon → exactly one warning")
+	testing.eq(placeholder.get("icon"), null, "the placeholder doesn't store the String")
+
+	var tagged: Resource = PlaceholderLikeObjectResource.new()
+	var tagged_warnings := ResourceCommands._apply_resource_properties(
+			tagged, {"icon": {"type": "Resource", "path": texture_path}}, "Resource")
+	testing.eq(tagged_warnings.size(), 0, "the tagged form → no warning")
+	testing.ok(tagged.get("icon") is Texture2D, "the tagged form stores the texture")
 	print("")
 
 
