@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `node_set_script` now sets a script as it is on disk. After `script_edit`,
+  `script_write` or another editor changed the file, it set the version the
+  editor first loaded from that path, so a `@tool` script kept running its old
+  code. A node that already has the script picks up the change when
+  `node_set_script` sets it again.
+
 ## [1.0.4] - 2026-10-14
 
 ### Fixed

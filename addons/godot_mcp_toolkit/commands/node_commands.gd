@@ -663,6 +663,22 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	return MCPToolkitSuccess.ok(response)
 
 
+## Brings [param script] up to date with its file on disk. ResourceLoader.load()
+## hands back the cached Script, which keeps the source it was first loaded with
+## after the file changes, so a node would run the old code. This reloads it the
+## way the script editor reloads a script changed on disk; reload(true) also
+## updates the instances already running it. A GDScript whose source matches the
+## file is left alone, since a reload cancels any coroutine suspended in it.
+static func _reload_if_changed_on_disk(script: Script) -> void:
+	if not (script is GDScript):
+		return
+	var disk_source := FileAccess.get_file_as_string(script.resource_path)
+	if disk_source.is_empty() or disk_source == script.source_code:
+		return
+	script.source_code = disk_source
+	script.reload(true)
+
+
 static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
@@ -701,6 +717,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	if not (loaded is Script):
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
+	_reload_if_changed_on_disk(loaded)
 
 	var old_script = node.get_script()
 	node.set_script(loaded)
