@@ -114,8 +114,8 @@ func _ready() -> void:
 		set_process(false)
 		return
 	# The engine honours --check-only only alongside --script; without it the run
-	# loads the main scene with its autoloads. Keep that validation run off the
-	# runtime channel.
+	# loads the main scene with its autoloads. Keep that run off the runtime
+	# channel.
 	if "--check-only" in OS.get_cmdline_args():
 		set_process(false)
 		return

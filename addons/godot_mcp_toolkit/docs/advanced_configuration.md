@@ -279,7 +279,7 @@ processes inherit the **same** value:
 
 ### Keeping a run off the runtime channel
 
-Any run of your project with the editor binary opens the runtime channel: a
+Any run of your project with the editor binary (a `--check-only` run aside) opens the runtime channel: a
 game launched from the editor, but also `godot --path .` from a shell, a
 headless `--script` test runner, or a CI job. Each one binds a runtime port and
 publishes it in the registry as the project's running game, replacing the game
