@@ -2,7 +2,8 @@
 extends RefCounted
 ## Project/instance registry store unit tests: ProjectKey identity, RegistryPaths
 ## layout, RegistryEntryFile build + write/read/delete, RegistryProjection merge,
-## the FileLock acquire/release cycle and RegistryClient's double-open check.
+## the FileLock acquire/release cycle, RegistryClient's double-open check and its
+## re-publish of this editor's own entry.
 
 const FileLock := preload("res://addons/godot_mcp_toolkit/registry/store/file_lock.gd")
 const ProjectKey := preload("res://addons/godot_mcp_toolkit/paths/project_key.gd")
@@ -24,6 +25,7 @@ static func run(testing) -> void:
 	_test_registry_merge(testing)
 	_test_file_lock(testing)
 	_test_double_open_check(testing)
+	_test_ensure_registered_own_pid(testing)
 
 
 # True on case-insensitive default filesystems (Windows/macOS), where
@@ -323,6 +325,100 @@ static func _test_double_open_check(testing) -> void:
 			"another PID's entry on another port → warning")
 
 	print("")
+
+
+# --- RegistryClient ensure_registered on this editor's own entry -----------
+# A rename moves user://, so the editor re-publishes its entry with the token's
+# new path through ensure_registered. On an entry this PID wrote, the call must
+# refresh port and token_path along with the LSP endpoint, and keep pid and
+# started_at (the server orders LSP claimants by started_at). The registry dir
+# is pointed at a temporary folder through the environment variable
+# RegistryPaths reads, so the machine-wide registry is never touched. GDScript
+# has no try/finally, so the variable is restored straight after the reads,
+# before any check runs.
+static func _test_ensure_registered_own_pid(testing) -> void:
+	testing.begin("RegistryClient ensure_registered on its own entry")
+
+	var my_pid := OS.get_process_id()
+	var env_name := _registry_env_name()
+	var had_env := OS.has_environment(env_name)
+	var prev_env := OS.get_environment(env_name)
+	var tmp_root := ProjectSettings.globalize_path(
+		"user://_test_registry_republish_%d" % my_pid)
+	_remove_tree(tmp_root)
+	DirAccess.make_dir_recursive_absolute(tmp_root)
+	var started_at := 1000
+
+	OS.set_environment(env_name, tmp_root)
+	var registry_dir := RegistryPaths.registry_dir()
+	var redirected := registry_dir.begins_with(tmp_root)
+	if not redirected:
+		_restore_environment(env_name, had_env, prev_env)
+		_remove_tree(tmp_root)
+		testing.ok(false, "the registry dir is the temporary folder (got %s); writes skipped" % registry_dir)
+		print("")
+		return
+	var entry_path := RegistryPaths.entry_file_path()
+	var old_entry := RegistryEntryFile.build_entry(
+		ProjectKey.current(), 6550, "/old/user/dir/mcp_token", "127.0.0.1", 6005, null, null)
+	old_entry["started_at"] = started_at
+	RegistryEntryFile.write(entry_path, old_entry)
+	RegistryClient.ensure_registered(6551, "/new/user/dir/mcp_token", "127.0.0.2", 6010)
+	var entry: Dictionary = RegistryEntryFile.read(entry_path)
+	var projection_text := FileAccess.get_file_as_string(RegistryPaths.registry_path())
+	_restore_environment(env_name, had_env, prev_env)
+	_remove_tree(tmp_root)
+
+	testing.ok(redirected, "the registry dir is the temporary folder")
+	testing.eq(str(entry.get("token_path", "")), "/new/user/dir/mcp_token",
+			"own entry: token_path refreshed")
+	testing.eq(int(entry.get("port", -1)), 6551, "own entry: port refreshed")
+	testing.eq(str(entry.get("lsp_host", "")), "127.0.0.2", "own entry: lsp_host refreshed")
+	testing.eq(int(entry.get("lsp_port", -1)), 6010, "own entry: lsp_port refreshed")
+	testing.eq(int(entry.get("pid", 0)), my_pid, "own entry: pid unchanged")
+	testing.eq(int(entry.get("started_at", 0)), started_at, "own entry: started_at unchanged")
+
+	# The rebuilt projects.json carries the same row.
+	var parsed: Variant = JSON.parse_string(projection_text)
+	var projection: Dictionary = parsed if parsed is Dictionary else {}
+	var by_path: Dictionary = projection.get("by_path", {})
+	var row: Dictionary = by_path.get(ProjectKey.current(), {})
+	testing.eq(str(row.get("token_path", "")), "/new/user/dir/mcp_token",
+			"projects.json row: token_path refreshed")
+	testing.eq(int(row.get("port", -1)), 6551, "projects.json row: port refreshed")
+
+	print("")
+
+
+# The environment variable RegistryPaths.registry_dir() builds on for this OS.
+static func _registry_env_name() -> String:
+	match OS.get_name():
+		"Windows":
+			return "APPDATA"
+		"macOS":
+			return "HOME"
+		_:
+			return "XDG_DATA_HOME"
+
+
+# Puts an environment variable back as it was before a test overrode it.
+static func _restore_environment(env_name: String, had_env: bool, prev_env: String) -> void:
+	if had_env:
+		OS.set_environment(env_name, prev_env)
+	else:
+		OS.unset_environment(env_name)
+
+
+# Deletes a folder and everything under it; a missing folder is a no-op.
+static func _remove_tree(path: String) -> void:
+	var dir := DirAccess.open(path)
+	if dir == null:
+		return
+	for sub in dir.get_directories():
+		_remove_tree(path.path_join(sub))
+	for file_name in dir.get_files():
+		DirAccess.remove_absolute(path.path_join(file_name))
+	DirAccess.remove_absolute(path)
 
 
 static func _write_lock(lock_path: String, pid: int, unix_ts: int) -> void:
