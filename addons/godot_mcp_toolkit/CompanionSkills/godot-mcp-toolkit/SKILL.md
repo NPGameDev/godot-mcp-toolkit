@@ -331,9 +331,9 @@ on the running game use `execute_code` (its default channel is the running game)
 On Godot **< 4.4** (4.2, 4.3), editing a `.gd` already attached to a **live**
 node does **not** reach that running instance: a newly-added method fails with
 `INVALID_METHOD`, and a changed method **body** runs the old code silently.
-`editor_refresh`, re-`node_set_script`, and a fresh node all keep the stale code
-— **relaunch the editor** (or disable+re-enable the plugin) before calling the
-changed members (`script_write` and `node_call_method` flag this in their hints).
+`editor_refresh` keeps the stale code — **set the script again** with
+`node_set_script`, which reloads it from disk, before calling the changed members
+(`script_write` and `node_call_method` flag this in their hints).
 Best practice: write the full script **before** attaching it. On 4.4+ scripts
 hot-reload, so this doesn't apply.
 

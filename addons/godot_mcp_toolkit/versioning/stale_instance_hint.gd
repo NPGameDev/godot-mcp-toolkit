@@ -2,16 +2,15 @@
 extends RefCounted
 ## Pure decision + message helpers for the stale-live-instance method-call hazard.
 ## On Godot < 4.4 a live instance already running a script does NOT see edits to that
-## script — newly-added members AND changed method bodies — until the editor relaunches:
-## editor.refresh, re-attaching the script, and even a brand-new node all keep the OLD
-## code. 4.4+ hot-reloads promptly on a display editor, so no hint there — but a HEADLESS
-## 4.4+ editor never re-instantiates the live node, so the stale hint fires there too,
-## with its own headless-specific wording.
+## script — newly-added members AND changed method bodies — and editor.refresh doesn't
+## change that. node.set_script reloads a script whose file changed, so setting the
+## script again recovers, on a fresh node or the same one. 4.4+ hot-reloads promptly on a
+## display editor, so no hint there — but a HEADLESS 4.4+ editor never re-instantiates
+## the live node, so the stale hint fires there too, with its own headless-specific
+## wording.
 ##
 ## Empirically characterised across 4.2.0 / 4.3.0 / 4.4.1 / 4.5.0 / 4.6.2 (boundary
-## 4.3 -> 4.4). The characterisation also proved a fresh node is
-## ALSO stale on 4.2 AND 4.3, so both collapse to one recovery (relaunch) — there is
-## no 4.2-vs-4.3 split.
+## 4.3 -> 4.4); 4.2 and 4.3 behave alike, so there is no 4.2-vs-4.3 split.
 ##
 ## SPLIT (mirrors unfocused_backup.gd): every function here is PURE and headless —
 ## the decision predicates take the version `major`/`minor` plus the `headless` flag as
@@ -32,20 +31,21 @@ const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_so
 
 const _RECOVERY := (
 	"On Godot %s, a live instance already running this script keeps the OLD code: "
-	+ "changed method bodies AND newly-added members stay invisible to it. "
-	+ "editor.refresh, re-attaching the script, and even creating a fresh node do NOT "
-	+ "pick up the edit on Godot < 4.4 — relaunch the editor (or disable then re-enable "
-	+ "the plugin) before calling the changed or added members."
+	+ "changed method bodies AND newly-added members stay invisible to it, and "
+	+ "editor.refresh does NOT pick up the edit on Godot < 4.4. Set the script again "
+	+ "with node.set_script, which reloads it from disk, before calling the changed or "
+	+ "added members (or relaunch the editor)."
 )
 
 # Godot 4.4+ headless: a display editor hot-reloads live instances promptly, but a
 # headless editor never re-instantiates them — a distinct hazard from the < 4.4
-# engine-cache staleness, so it carries its own guidance (recovery is re-create or
-# relaunch, never editor.refresh).
+# engine-cache staleness, so it carries its own guidance (recovery is setting the
+# script again or relaunching, never editor.refresh).
 const _RECOVERY_HEADLESS := (
 	"On Godot %s, the live instance running this script is stale — "
-	+ "headless editors don't re-instantiate live nodes on reload — re-create the node "
-	+ "or relaunch a display editor; the edit is on disk, confirm with script_check."
+	+ "headless editors don't re-instantiate live nodes on reload — set the script "
+	+ "again with node.set_script or relaunch a display editor; the edit is on disk, "
+	+ "confirm with script_check."
 )
 
 const _WRITE_PREFIX := (
@@ -80,8 +80,8 @@ static func should_hint_on_call(
 ## The recovery guidance, tailored to the stale regime. [param ver_label] is the detected
 ## "major.minor" so the message names the real running version. When [param headless] and
 ## the engine is 4.4+ ([param minor] >= 4), returns the headless re-instantiation form;
-## otherwise the < 4.4 engine-cache form (4.2 and 4.3 BOTH need relaunch; a fresh node
-## helps on neither). The defaults keep the single-arg < 4.4 callers (write_hint) intact.
+## otherwise the < 4.4 engine-cache form (4.2 and 4.3 alike). The defaults keep the
+## single-arg < 4.4 callers (write_hint) intact.
 static func recovery_message(ver_label: String, minor: int = -1, headless: bool = false) -> String:
 	if headless and minor >= 4:
 		return _RECOVERY_HEADLESS % ver_label
