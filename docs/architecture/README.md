@@ -668,9 +668,9 @@ flowchart TD
   token-protected instance directory.
 - **Untrusted content** read back from the project (script text, console output) is wrapped in
   a nonce-delimited `<untrusted-…>` envelope (with pre-existing tags scrubbed to prevent
-  breakout). Console, game-log and save-file text also runs through `Scrubber`, which redacts
-  secrets before they reach the LLM; script text is never scrubbed. This applies to read paths
-  only, never to writes or binary.
+  breakout). Console text, a running game's log and save-file text also run through
+  `Scrubber`, which redacts secrets before they reach the LLM; script text is never scrubbed.
+  This applies to read paths only, never to writes or binary.
 
 ---
 
