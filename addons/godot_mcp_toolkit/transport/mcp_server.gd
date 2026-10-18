@@ -270,8 +270,17 @@ func _rewrite_token_after_rename() -> void:
 	# an active game's runtime_port/runtime_pid survive the rename (register's
 	# startup reap would delete the <hash>.runtime.json that holds them). The
 	# server doesn't reach into the registry from the rename path.
-	if _transport.get_bound_port() > 0:
+	if _should_announce_token_path(write_err, _transport.get_bound_port()):
 		token_rewritten.emit(MCPAuth.get_token_path())
+
+
+# True when a re-written token's path should reach the registry: the write
+# succeeded and the listener is bound. After a failed write the old path stays
+# published, since it still holds the live token; announcing the new one would
+# point the bridge at a file that may not exist. While unbound, the next bind's
+# register() publishes the live path instead. Pure.
+static func _should_announce_token_path(write_err: int, bound_port: int) -> bool:
+	return write_err == OK and bound_port > 0
 
 
 func regenerate_token() -> void:

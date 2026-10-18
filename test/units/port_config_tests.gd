@@ -5,9 +5,10 @@ extends RefCounted
 ## the transport's bind-exact-or-fail pinned mode + scanned-band exhaustion
 ## (real blocker TCPServer: bounded grace, conflict seam, fresh-bind seam,
 ## recovery), the editor server's unified not-listening warning selection
-## (pinned / range / invalid-config wording + source labels), and the resolver's
-## export-cleanliness (no Editor* symbol — the runtime autoload preloads it,
-## godot#91713).
+## (pinned / range / invalid-config wording + source labels), its token-path
+## announce after a rename (only a written token on a bound port), and the
+## resolver's export-cleanliness (no Editor* symbol — the runtime autoload
+## preloads it, godot#91713).
 
 const PortConfig := preload("res://addons/godot_mcp_toolkit/transport/port_config.gd")
 const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transport.gd")
@@ -24,6 +25,7 @@ static func run(testing) -> void:
 	_test_pinned_bind_exact_or_fail(testing)
 	_test_scanned_band_exhausted(testing)
 	_test_port_warning_selection(testing)
+	_test_token_path_announce(testing)
 	_test_resolver_export_clean(testing)
 
 
@@ -315,6 +317,28 @@ static func _test_port_warning_selection(testing) -> void:
 	band_transport.shutdown_listener()
 
 	server._transport = null
+	server.free()
+	print("")
+
+
+# --- Editor server: token-path announce after a rename ------------------------
+# After a rename the server re-writes its token to the new user:// path and
+# announces that path for the registry re-publish. A failed write must announce
+# nothing, so the old path, which still holds the live token, stays published;
+# an unbound listener announces nothing either. Reached through an instance and
+# call(), so the group reports a missing method instead of failing to parse.
+static func _test_token_path_announce(testing) -> void:
+	testing.begin("MCPServer — token-path announce after a rename")
+
+	var server := MCPServer.new()
+	var method := "_should_announce_token_path"
+	var has_guard := server.has_method(method)
+	testing.ok(has_guard, "the server has the announce predicate")
+	if has_guard:
+		testing.ok(bool(server.call(method, OK, 6550)), "write OK + bound port → announce")
+		testing.ok(not bool(server.call(method, ERR_FILE_CANT_OPEN, 6550)),
+			"failed write → no announce (the old path stays published)")
+		testing.ok(not bool(server.call(method, OK, -1)), "unbound listener → no announce")
 	server.free()
 	print("")
 
