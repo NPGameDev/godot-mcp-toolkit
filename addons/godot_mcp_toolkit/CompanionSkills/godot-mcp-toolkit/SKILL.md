@@ -173,7 +173,7 @@ Then verify the victory screen triggers — skipping minutes of play and dozens 
 `input_simulate` calls.
 
 **Scene instantiation.** `scene_instantiate` (`scene_advanced` group) takes a
-`.tscn` or `.scn`, or a 3D model imported as a scene (`.glb`, `.gltf`, `.fbx`...).
+`.tscn` or `.scn`, or a 3D model imported as a scene (`.glb`, `.gltf`, `.dae`...).
 It auto-renames on name collision, so multiple instances of one scene work
 without manual renaming. Its `instances: [{name?, position?, rotation?, scale?, properties?}]`
 batch spawns N copies with transforms in one call.
