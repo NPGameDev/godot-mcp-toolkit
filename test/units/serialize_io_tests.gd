@@ -45,6 +45,7 @@ static func run(testing) -> void:
 	_test_resource_write_typed_array_of_script_class(testing)
 	_test_resource_write_typed_int_array(testing)
 	_test_resource_write_typed_array_element_precheck(testing)
+	_test_resource_write_typed_color_array(testing)
 	_test_fit_to_typed_array(testing)
 
 
@@ -948,7 +949,7 @@ static func _test_resource_write_typed_int_array(testing) -> void:
 	testing.eq(fraction_warnings.size(), 1, "fractions → exactly one warning for the property")
 	var truncation_warning: String = "" if fraction_warnings.is_empty() else fraction_warnings[0]
 	testing.ok(truncation_warning.contains("'scores'"), "the warning names the property")
-	testing.ok(truncation_warning.contains("index 0, 2"),
+	testing.ok(truncation_warning.contains("indices 0, 2 "),
 			"the warning names the truncated elements' indices")
 
 	var emptied: Resource = TypedArrayScriptedResource.new()
@@ -995,6 +996,32 @@ static func _test_resource_write_typed_array_element_precheck(testing) -> void:
 	print("")
 
 
+# The engine converts any String into a Color, but one that is neither an HTML
+# code nor a colour name becomes Color(0, 0, 0, 0) with an "Invalid color name"
+# error, so the element check refuses it.
+static func _test_resource_write_typed_color_array(testing) -> void:
+	testing.begin("resource.write fills an Array[Color] only from colour strings")
+	var invalid: Resource = TypedArrayResource.new()
+	var invalid_warnings := ResourceCommands._apply_resource_properties(
+			invalid, {"tints": ["notacolor"]}, "Resource")
+	testing.eq(invalid_warnings.size(), 1, "a String that names no colour → exactly one warning")
+	var invalid_warning: String = "" if invalid_warnings.is_empty() else invalid_warnings[0]
+	testing.ok(invalid_warning.contains("'tints'"), "the warning names the property")
+	testing.ok(invalid_warning.contains("index 0"), "the warning names the element at index 0")
+	testing.eq((invalid.get("tints") as Array).size(), 0, "the value is left unchanged")
+
+	var valid: Resource = TypedArrayResource.new()
+	var valid_warnings := ResourceCommands._apply_resource_properties(
+			valid, {"tints": ["red", "#ff8000"]}, "Resource")
+	testing.eq(valid_warnings.size(), 0, "a colour name and an HTML code → no warnings")
+	var tints: Array = valid.get("tints")
+	testing.eq(tints.size(), 2, "both colours are stored")
+	testing.eq(tints[0] if tints.size() > 0 else null, Color.RED, "\"red\" → Color.RED")
+	testing.eq(tints[1] if tints.size() > 1 else null, Color.html("#ff8000"),
+			"\"#ff8000\" → the HTML colour")
+	print("")
+
+
 # The typed-array fit on its own: what passes through, what it builds, and the
 # warning and error it returns.
 static func _test_fit_to_typed_array(testing) -> void:
@@ -1010,6 +1037,16 @@ static func _test_fit_to_typed_array(testing) -> void:
 	testing.ok(not (untyped["value"] as Array).is_typed(),
 			"a property that holds no typed array → the array stays untyped")
 	testing.eq(untyped["warning"], "", "a property that holds no typed array → no warning")
+
+	var untyped_array_target: Resource = PlaceholderLikeResource.new()
+	untyped_array_target.set("note", [])
+	var untyped_array := Helpers.fit_to_typed_array(untyped_array_target, "note", [1.5])
+	testing.ok(not (untyped_array["value"] as Array).is_typed(),
+			"a property that holds an untyped array → the array stays untyped")
+	testing.eq(untyped_array["value"], [1.5],
+			"a property that holds an untyped array → the value as given")
+	testing.eq(untyped_array["warning"], "",
+			"a property that holds an untyped array → no warning")
 
 	var fitted := Helpers.fit_to_typed_array(resource, "scores", [1.5, 2.0])
 	var fitted_value: Array = fitted["value"]

@@ -19,7 +19,8 @@ const _PROPERTY_HEADER_USAGE := (
 ## For each element type, the other types an element may have and still convert
 ## when the engine fills a typed array: the engine's strict conversions
 ## (Variant::can_convert_strict). Arrays and packed arrays, which convert into each
-## other, are left to [method _fits_typed_array].
+## other, and the Strings a [Color] takes without an error are left to
+## [method _fits_typed_array].
 const _STRICT_CONVERSIONS := {
 	TYPE_BOOL: [TYPE_INT, TYPE_FLOAT],
 	TYPE_INT: [TYPE_BOOL, TYPE_FLOAT],
@@ -167,8 +168,9 @@ static func fit_to_typed_array(
 			"error": "property '%s': an element doesn't fit the typed array" % property_name}
 	var warning := ""
 	if not truncated_indices.is_empty():
-		warning = ("note: '%s' elements at index %s were adjusted to fit %s; the fraction was dropped."
-			% [property_name, ", ".join(truncated_indices), type_string(element_type)])
+		var index_word := "index" if truncated_indices.size() == 1 else "indices"
+		warning = ("note: '%s' elements at %s %s were adjusted to fit %s; the fraction was dropped."
+			% [property_name, index_word, ", ".join(truncated_indices), type_string(element_type)])
 	return {"value": typed, "warning": warning, "error": ""}
 
 
@@ -176,7 +178,9 @@ static func fit_to_typed_array(
 ## without an engine error, by the rule the engine applies when it fills a typed
 ## array from an untyped one: an object array takes null or an instance of its
 ## class and script; any other typed array takes its own type or one that converts
-## strictly into it.
+## strictly into it. A [Color] array takes a String only when it names a colour:
+## the engine turns any other String into [code]Color(0, 0, 0, 0)[/code] and prints
+## an error.
 static func _fits_typed_array(element: Variant, template: Array) -> bool:
 	var element_type := typeof(element)
 	var target_type := template.get_typed_builtin()
@@ -186,6 +190,8 @@ static func _fits_typed_array(element: Variant, template: Array) -> bool:
 		if (element_type == TYPE_ARRAY and _is_packed_array_type(target_type)) \
 				or (target_type == TYPE_ARRAY and _is_packed_array_type(element_type)):
 			return true
+		if target_type == TYPE_COLOR and element_type == TYPE_STRING:
+			return _names_a_colour(element)
 		var sources: Array = _STRICT_CONVERSIONS.get(target_type, [])
 		return element_type in sources
 	if element_type == TYPE_NIL:
@@ -204,6 +210,14 @@ static func _fits_typed_array(element: Variant, template: Array) -> bool:
 			return true
 		script = script.get_base_script()
 	return false
+
+
+## True when [param text] is an HTML colour code or a colour name, the Strings the
+## engine converts to a [Color] without an error. [method Color.from_string] prints
+## nothing and returns its default for any other String, so the String names a
+## colour when two different defaults give the same result.
+static func _names_a_colour(text: String) -> bool:
+	return Color.from_string(text, Color.BLACK) == Color.from_string(text, Color.WHITE)
 
 
 ## True for the packed array types, which close the [enum Variant.Type] list on

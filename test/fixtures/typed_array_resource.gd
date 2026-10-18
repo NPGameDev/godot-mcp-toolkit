@@ -5,3 +5,4 @@ extends Resource
 
 @export var tags: Array[String] = []
 @export var textures: Array[Texture2D] = []
+@export var tints: Array[Color] = []
