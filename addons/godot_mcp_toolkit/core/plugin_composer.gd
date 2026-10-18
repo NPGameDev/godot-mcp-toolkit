@@ -136,6 +136,11 @@ static func _register_in_registry(server: Node) -> void:
 		var _jitter := randf_range(5.0, 10.0)
 		server.get_tree().create_timer(_jitter).timeout.connect(
 			func():
+				# A plugin disable or reload inside the jitter frees the server and
+				# deregisters; re-publishing then would call a freed instance and
+				# write back an entry for an editor that has stopped serving.
+				if not is_instance_valid(server):
+					return
 				var lsp_re := MCPServer.resolve_lsp_endpoint()
 				var token_path_re: String = str(server.get_published_token_path())
 				RegistryClient.ensure_registered(bound_port, token_path_re, lsp_re["host"], lsp_re["port"]))
