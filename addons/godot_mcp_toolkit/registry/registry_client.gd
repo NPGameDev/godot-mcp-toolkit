@@ -229,7 +229,9 @@ static func clear_runtime() -> void:
 ## exists and carries the [param port], [param token_path] and LSP endpoint
 ## passed in, then rebuilds projects.json. Callers pass the live values, so a
 ## rename that moved the token file or a changed LSP setting reaches the
-## registry. Another editor cannot clobber the entry (each has a unique path).
+## registry. A second editor on the same project shares the entry file and its
+## register() overwrites it; the entry then carries that editor's PID, so this
+## call re-creates its own entry rather than patching the other one.
 static func ensure_registered(port: int, token_path: String, lsp_host: String, lsp_port: int) -> void:
 	var key := _project_key()
 	var my_pid := OS.get_process_id()
