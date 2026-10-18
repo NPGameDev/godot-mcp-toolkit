@@ -5,15 +5,20 @@ extends RefCounted
 ## the transport's bind-exact-or-fail pinned mode + scanned-band exhaustion
 ## (real blocker TCPServer: bounded grace, conflict seam, fresh-bind seam,
 ## recovery), the editor server's unified not-listening warning selection
-## (pinned / range / invalid-config wording + source labels), and the resolver's
+## (pinned / range / invalid-config wording + source labels), its token-path
+## announce after a rename (only a written token on a bound port, driven through
+## the server, which keeps the last written path published), and the resolver's
 ## export-cleanliness (no Editor* symbol — the runtime autoload preloads it,
 ## godot#91713).
 
 const PortConfig := preload("res://addons/godot_mcp_toolkit/transport/port_config.gd")
 const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transport.gd")
 const MCPServer := preload("res://addons/godot_mcp_toolkit/transport/mcp_server.gd")
+const ProjectPaths := preload("res://addons/godot_mcp_toolkit/paths/project_paths.gd")
 
 const _RESOLVER_PATH := "res://addons/godot_mcp_toolkit/transport/port_config.gd"
+# The operator override security/auth.gd reads for the token path.
+const _TOKEN_PATH_ENV := "GODOT_MCP_TOKEN_PATH"
 
 
 static func run(testing) -> void:
@@ -24,6 +29,8 @@ static func run(testing) -> void:
 	_test_pinned_bind_exact_or_fail(testing)
 	_test_scanned_band_exhausted(testing)
 	_test_port_warning_selection(testing)
+	_test_token_path_announce(testing)
+	_test_token_rewrite_through_server(testing)
 	_test_resolver_export_clean(testing)
 
 
@@ -316,6 +323,116 @@ static func _test_port_warning_selection(testing) -> void:
 
 	server._transport = null
 	server.free()
+	print("")
+
+
+# --- Editor server: token-path announce after a rename ------------------------
+# After a rename the server re-writes its token to the new user:// path and
+# announces that path for the registry re-publish. A failed write must announce
+# nothing, so the old path, which still holds the live token, stays published;
+# an unbound listener announces nothing either. Reached through an instance and
+# call(), so the group reports a missing method instead of failing to parse.
+static func _test_token_path_announce(testing) -> void:
+	testing.begin("MCPServer — token-path announce after a rename")
+
+	var server := MCPServer.new()
+	var method := "_should_announce_token_path"
+	var has_guard := server.has_method(method)
+	testing.ok(has_guard, "the server has the announce predicate")
+	if has_guard:
+		testing.ok(bool(server.call(method, OK, 6550)), "write OK + bound port → announce")
+		testing.ok(not bool(server.call(method, ERR_FILE_CANT_OPEN, 6550)),
+			"failed write → no announce (the old path stays published)")
+		testing.ok(not bool(server.call(method, OK, -1)), "unbound listener → no announce")
+	server.free()
+	print("")
+
+
+# --- Editor server: token re-write after a rename, through the server ---------
+# Drives _rewrite_token_after_rename on a real server with a bound transport.
+# GODOT_MCP_TOKEN_PATH points the token at a temporary folder in the test
+# project's user://: a writable path is announced and becomes the published
+# path; a path whose parent is a regular file fails the write, announces nothing
+# and leaves the earlier path published. The write also creates this project's
+# user:// instance folder and its parents when missing, so the test removes the
+# ones it created. GDScript has no try/finally, so the variable is restored straight after
+# the calls, before any check runs.
+static func _test_token_rewrite_through_server(testing) -> void:
+	testing.begin("MCPServer — token re-write after a rename, through the server")
+
+	var tmp_root := ProjectSettings.globalize_path(
+		"user://_test_token_rewrite_%d" % OS.get_process_id())
+	var good_path := tmp_root.path_join("mcp_token")
+	var blocker_path := tmp_root.path_join("not_a_folder")
+	var bad_path := blocker_path.path_join("mcp_token")
+	# The folders the token write creates when missing, deepest first; only the
+	# ones missing now are removed afterwards.
+	var instance_dir := ProjectSettings.globalize_path(ProjectPaths.instance_dir()).rstrip("/")
+	var plugin_dir := instance_dir.get_base_dir()
+	var candidate_dirs: Array[String] = [instance_dir, plugin_dir, plugin_dir.get_base_dir()]
+	var created_dirs: Array[String] = []
+	for dir_path in candidate_dirs:
+		if not DirAccess.dir_exists_absolute(dir_path):
+			created_dirs.append(dir_path)
+	DirAccess.make_dir_recursive_absolute(tmp_root)
+	var blocker := FileAccess.open(blocker_path, FileAccess.WRITE)
+	if blocker == null:
+		DirAccess.remove_absolute(tmp_root)
+		testing.ok(false, "environment: cannot create %s (err %d)" % [
+			blocker_path, FileAccess.get_open_error()])
+		print("")
+		return
+	blocker.store_string("a file where the token's parent folder should be")
+	blocker.close()
+
+	var transport := WsTransport.new()
+	transport.configure("[TestTokenRewrite]", 18880, 40, "127.0.0.1", 1, 2000, true,
+		"no free port in %d-%d")
+	transport.set_handlers(Callable(), Callable(), Callable(), Callable())
+	transport.set_token("unit-test-token")
+	transport.ensure_listening()
+	var server := MCPServer.new()
+	server._transport = transport
+	var announced: Array[String] = []
+	server.token_rewritten.connect(func(token_path: String) -> void: announced.append(token_path))
+	var has_tracker := server.has_method("get_published_token_path")
+
+	var had_env := OS.has_environment(_TOKEN_PATH_ENV)
+	var prev_env := OS.get_environment(_TOKEN_PATH_ENV)
+	OS.set_environment(_TOKEN_PATH_ENV, good_path)
+	server._rewrite_token_after_rename()
+	var announced_after_write := announced.size()
+	var published_after_write := str(server.call("get_published_token_path")) if has_tracker else ""
+	OS.set_environment(_TOKEN_PATH_ENV, bad_path)
+	server._rewrite_token_after_rename()
+	var announced_after_failure := announced.size()
+	var published_after_failure := str(server.call("get_published_token_path")) if has_tracker else ""
+	if had_env:
+		OS.set_environment(_TOKEN_PATH_ENV, prev_env)
+	else:
+		OS.unset_environment(_TOKEN_PATH_ENV)
+
+	var bound := transport.get_bound_port() > 0
+	var written := FileAccess.get_file_as_string(good_path)
+	transport.shutdown_listener()
+	server._transport = null
+	server.free()
+	DirAccess.remove_absolute(good_path)
+	DirAccess.remove_absolute(blocker_path)
+	DirAccess.remove_absolute(tmp_root)
+	for dir_path in created_dirs:
+		DirAccess.remove_absolute(dir_path)
+
+	testing.ok(bound, "the transport bound a port in 18880-18919")
+	testing.eq(written, "unit-test-token", "writable path → the token is written there")
+	testing.eq(announced_after_write, 1, "writable path → the path is announced once")
+	testing.eq(announced[0] if announced.size() > 0 else "", good_path,
+		"writable path → the announced path is the written file")
+	testing.eq(announced_after_failure, 1, "failed write → nothing more is announced")
+	testing.ok(has_tracker, "the server reports the token path it last wrote")
+	testing.eq(published_after_write, good_path, "writable path → it becomes the published path")
+	testing.eq(published_after_failure, good_path,
+		"failed write → the last written path stays published")
 	print("")
 
 

@@ -24,14 +24,13 @@ const MCPServer := preload("res://addons/godot_mcp_toolkit/transport/mcp_server.
 const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
-const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/extension_loader.gd")
 const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
 const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
 const DebugBridge := preload("res://addons/godot_mcp_toolkit/transport/debug_bridge.gd")
 const ResponseLimits = Modules.ResponseLimits
 # Teardown counterpart of PlaytestCommands.register(..., debug_bridge): dispose()
-# calls PlaytestCommands.clear_debug_bridge() as the I12 reverse of that register.
+# calls PlaytestCommands.clear_debug_bridge() to undo exactly what that register set.
 const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_commands.gd")
 
 
@@ -127,15 +126,24 @@ static func _register_in_registry(server: Node) -> void:
 	var bound_port: int = server.get_bound_port()
 	if bound_port > 0:
 		var lsp := MCPServer.resolve_lsp_endpoint()
-		RegistryClient.register(bound_port, MCPAuth.get_published_token_path(), lsp["host"], lsp["port"])
+		# The server names the token file it last wrote, so a failed re-write after
+		# a rename never publishes a file that does not hold the live token.
+		var token_path: String = str(server.get_published_token_path())
+		RegistryClient.register(bound_port, token_path, lsp["host"], lsp["port"])
 		# Deferred re-verify: concurrent editors may clobber our entry after
 		# our initial verify passes. Jittered delay ensures all editors have
 		# finished their initial registration before we re-check.
 		var _jitter := randf_range(5.0, 10.0)
 		server.get_tree().create_timer(_jitter).timeout.connect(
 			func():
+				# A plugin disable or reload inside the jitter frees the server and
+				# deregisters; re-publishing then would call a freed instance and
+				# write back an entry for an editor that has stopped serving.
+				if not is_instance_valid(server):
+					return
 				var lsp_re := MCPServer.resolve_lsp_endpoint()
-				RegistryClient.ensure_registered(bound_port, MCPAuth.get_published_token_path(), lsp_re["host"], lsp_re["port"]))
+				var token_path_re: String = str(server.get_published_token_path())
+				RegistryClient.ensure_registered(bound_port, token_path_re, lsp_re["host"], lsp_re["port"]))
 
 
 # Re-publish this editor's registry entry after the server re-writes its token to
@@ -278,7 +286,8 @@ class Handle:
 				ProjectSettings.settings_changed.disconnect(_extension_watcher.on_settings_changed)
 		_extension_watcher = null
 
-		# Debugger bridge — unregister before server teardown (I12 symmetry).
+		# Debugger bridge — undo what compose() registered for it, before server
+		# teardown: the playtest commands' bridge, then the debugger plugin.
 		PlaytestCommands.clear_debug_bridge()
 		if _debug_bridge != null:
 			_debug_bridge.cleanup()

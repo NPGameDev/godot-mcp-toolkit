@@ -93,6 +93,13 @@ const _AUTH_TIMEOUT_MS := 2000
 # Callables (auth-ack payload, boost-on-authed, lease cleanup on close) and drives
 # it via _poll_connections → transport.pump().
 var _transport: WsTransport = null
+# The absolute path of the token file this server last wrote, in the form the
+# registry publishes. Every publish site reads it through
+# get_published_token_path(), so a failed re-write after a rename leaves the old
+# file, which still holds the live token, published, until a Regenerate Token
+# writes a new token to the new path: this then records that file, and the next
+# publish names it. Empty until a write succeeds.
+var _written_token_path: String = ""
 var _poll_frame_counter := 0
 # Resolved listen-port configuration (PortConfig.resolve result). A non-empty
 # "error" is fatal — the editor server does not listen and the dock shows why.
@@ -207,6 +214,15 @@ func get_bound_port() -> int:
 	return _transport.get_bound_port() if _transport != null else -1
 
 
+## The token path the registry entry should name: the absolute path of the token
+## file this server last wrote. Before any write succeeds it falls back to the
+## live path from MCPAuth.get_published_token_path().
+func get_published_token_path() -> String:
+	if _written_token_path.is_empty():
+		return MCPAuth.get_published_token_path()
+	return _written_token_path
+
+
 ## The GDScript LSP endpoint THIS editor's setting points at (default
 ## 127.0.0.1:6005). Thin static delegate to lsp_publisher.gd (C9) — kept here because
 ## plugin.gd + the registry callers call MCPServer.resolve_lsp_endpoint() statically;
@@ -261,7 +277,7 @@ func _on_user_path_changed() -> void:
 func _rewrite_token_after_rename() -> void:
 	if _transport == null:
 		return  # No running transport → no token to re-write, nothing bound.
-	var write_err := MCPAuth.write_token(_transport.get_token())
+	var write_err := _write_token_file(_transport.get_token())
 	if write_err != OK:
 		push_warning("[MCPServer] failed to re-write token after rename (err %d)" % write_err)
 	else:
@@ -270,15 +286,33 @@ func _rewrite_token_after_rename() -> void:
 	# an active game's runtime_port/runtime_pid survive the rename (register's
 	# startup reap would delete the <hash>.runtime.json that holds them). The
 	# server doesn't reach into the registry from the rename path.
-	if _transport.get_bound_port() > 0:
+	if _should_announce_token_path(write_err, _transport.get_bound_port()):
 		token_rewritten.emit(MCPAuth.get_token_path())
+
+
+# True when a re-written token's path should reach the registry: the write
+# succeeded and the listener is bound. After a failed write the old path stays
+# published, since it still holds the live token; announcing the new one would
+# point the bridge at a file that may not exist. While unbound, the next bind's
+# register() publishes the live path instead. Pure.
+static func _should_announce_token_path(write_err: int, bound_port: int) -> bool:
+	return write_err == OK and bound_port > 0
+
+
+# Writes the token to the live token path and, when the write succeeds, records
+# that file as the one the registry publishes. Returns OK or the write's error.
+func _write_token_file(token: String) -> int:
+	var write_err := MCPAuth.write_token(token)
+	if write_err == OK:
+		_written_token_path = MCPAuth.get_published_token_path()
+	return write_err
 
 
 func regenerate_token() -> void:
 	var token := MCPAuth.generate_token()
 	if _transport != null:
 		_transport.set_token(token)
-	var write_err := MCPAuth.write_token(token)
+	var write_err := _write_token_file(token)
 	if write_err != OK:
 		push_warning("[MCPServer] failed to write rotated token (err %d)" % write_err)
 	else:
@@ -315,7 +349,7 @@ func start() -> void:
 	# dock + LSP watch come up and can surface the error); skip the listen path.
 	if _transport != null:
 		_transport.set_token(token)
-	var write_err := MCPAuth.write_token(token)
+	var write_err := _write_token_file(token)
 	if write_err != OK:
 		push_warning("[MCPServer] failed to write token (err %d); auth will still be enforced but bridge may not find the file" % write_err)
 	else:
@@ -530,6 +564,7 @@ func _init_lsp_publisher() -> void:
 	_lsp = LspPublisher.new()
 	_lsp.set_bound_port_provider(func() -> int:
 		return _transport.get_bound_port() if _transport != null else -1)
+	_lsp.set_token_path_provider(func() -> String: return get_published_token_path())
 	_lsp.set_status_changed_handler(func() -> void: lsp_status_changed.emit())
 
 
@@ -548,7 +583,7 @@ func stop() -> void:
 # LSP settings-watch trigger points (the mechanism lives in lsp_publisher.gd, C9).
 # start() connects the watch (resolve baseline + listen on EditorSettings.settings_changed
 # for a mid-session GDScript LSP port/host change → debounced registry re-publish);
-# stop() disconnects it (I12 symmetry). Thin null-guarded delegates so the lifecycle
+# stop() disconnects exactly what start() connected. Thin null-guarded delegates so the lifecycle
 # sequencing stays here while the child owns the watch + debounce + re-publish.
 func _connect_lsp_settings_watch() -> void:
 	if _lsp != null:

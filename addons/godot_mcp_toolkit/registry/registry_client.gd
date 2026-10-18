@@ -225,17 +225,23 @@ static func clear_runtime() -> void:
 	release_lock()
 
 
-## Deferred re-verify: called a few seconds after initial register() to
-## ensure our entry file still exists and projects.json is up to date.
-## In the entry-file architecture this is mostly a rebuild trigger —
-## our entry file can't be clobbered by another editor (unique path).
+## Deferred re-verify and live re-publish: makes sure this editor's entry file
+## exists and carries the [param port], [param token_path] and LSP endpoint
+## passed in, then rebuilds projects.json. Callers pass the live values, so a
+## rename that moved the token file or a changed LSP setting reaches the
+## registry. A second editor on the same project shares the entry file and its
+## register() overwrites it; the entry then carries that editor's PID, so this
+## call re-creates its own entry rather than patching the other one.
 static func ensure_registered(port: int, token_path: String, lsp_host: String, lsp_port: int) -> void:
 	var key := _project_key()
 	var my_pid := OS.get_process_id()
 	var entry := _read_entry()
 	if not entry.is_empty() and int(entry.get("pid", 0)) == my_pid:
-		# Entry file present with our PID — refresh the LSP endpoint (a live
-		# re-publish may pass a changed port/host) and rebuild projects.json.
+		# Our own entry: refresh the published fields in place. pid, started_at
+		# and godot_version keep the values register() wrote: the server orders
+		# LSP claimants by started_at, so the entry is patched, never rebuilt.
+		entry["port"] = port
+		entry["token_path"] = token_path
 		entry["lsp_host"] = lsp_host
 		entry["lsp_port"] = lsp_port
 		_write_entry(entry)

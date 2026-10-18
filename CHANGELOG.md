@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- After a project rename, **Regenerate Token** no longer leaves the MCP server
+  unable to connect until the editor restarts.
+
 ## [1.0.4] - 2026-10-14
 
 ### Fixed
