@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runtime channel" in the advanced configuration guide. An editor started with
   the variable set passes it to every game it launches, and a `game_start`
   re-probe names it in its hint. The repo's cold unit runner sets it outside CI.
-  Thanks to @benfeather
+  Reported and implemented by @benfeather
   ([#46](https://github.com/NPGameDev/godot-mcp-toolkit/issues/46),
   [#47](https://github.com/NPGameDev/godot-mcp-toolkit/pull/47)).
 
