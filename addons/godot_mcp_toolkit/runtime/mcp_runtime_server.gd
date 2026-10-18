@@ -49,9 +49,10 @@ const PORT_MAX := 6585  # 6570..6585 inclusive
 const _ENV_PIN := "GODOT_MCP_RUNTIME_PORT"
 const _ENV_PORT_MIN := "GODOT_MCP_RUNTIME_PORT_MIN"
 const _ENV_PORT_MAX := "GODOT_MCP_RUNTIME_PORT_MAX"
-# Opt-out switch: one of _RUNTIME_OFF_VALUES (case-insensitive) keeps the server inert.
-const _ENV_RUNTIME := "GODOT_MCP_RUNTIME"
-const _RUNTIME_OFF_VALUES := ["0", "false", "off"]
+# Opt-out switch: one of _RUNTIME_OFF_VALUES (case-insensitive) keeps the server
+# inert. Public so the editor side can name it when a game it launches inherits it.
+const ENV_RUNTIME := "GODOT_MCP_RUNTIME"
+const _RUNTIME_OFF_VALUES: Array[String] = ["0", "false", "off"]
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # Throttle re-listen retries. Mirrors mcp_server.gd's editor-side loop.
@@ -77,12 +78,15 @@ const _RUNTIME_FRAME_WAIT_SECONDS := 1.0
 # Drives it inline per _process (no call_deferred — a running game has no
 # EditorFileSystem reentrancy to dodge).
 var _transport: WsTransport = null
+# Set once _ready gets past every gate, so _exit_tree undoes only a start that
+# happened: clear_runtime() deletes the project's runtime entry whoever wrote it.
+var _started := false
 
 
-## True when [param value], the raw [code]GODOT_MCP_RUNTIME[/code] environment
-## value, turns the runtime server off: [code]0[/code], [code]false[/code] or
-## [code]off[/code], any case, surrounding spaces ignored. Empty (unset) and any
-## other value leave it on.
+## Returns true when [param value], the raw [code]GODOT_MCP_RUNTIME[/code]
+## environment value, turns the runtime server off: [code]0[/code],
+## [code]false[/code] or [code]off[/code], any case, surrounding spaces ignored.
+## Empty (unset) and any other value leave it on.
 static func is_opted_out(value: String) -> bool:
 	return value.strip_edges().to_lower() in _RUNTIME_OFF_VALUES
 
@@ -109,10 +113,6 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		set_process(false)
 		return
-	# --check-only is a parse-only pass — no runtime server needed.
-	if "--check-only" in OS.get_cmdline_args():
-		set_process(false)
-		return
 	# Export gate: shipped games (debug OR release export templates) must not
 	# listen on 6570. has_feature("editor") is true only under an editor launch
 	# (F5/F6) and false in EVERY export template — stronger than is_debug_build()
@@ -123,23 +123,23 @@ func _ready() -> void:
 	if not OS.has_feature("editor"):
 		set_process(false)
 		return
-	if is_opted_out(OS.get_environment(_ENV_RUNTIME)):
+	var opt_out := OS.get_environment(ENV_RUNTIME)
+	if is_opted_out(opt_out):
 		print("[MCPRuntimeServer] off (%s=%s): not listening or registering this run." % [
-			_ENV_RUNTIME, OS.get_environment(_ENV_RUNTIME)])
+			ENV_RUNTIME, opt_out])
 		set_process(false)
 		return
 	_start_server()
 
 
 func _exit_tree() -> void:
-	# An opted-out run never registered, and clear_runtime() deletes the project's
-	# runtime entry whoever wrote it, so skip it: any entry belongs to another run.
-	if is_opted_out(OS.get_environment(_ENV_RUNTIME)):
+	if not _started:
 		return
 	_stop_server()
 
 
 func _start_server() -> void:
+	_started = true
 	LogBuffer.setup()
 	var config := PortConfig.resolve(_ENV_PIN, _ENV_PORT_MIN, _ENV_PORT_MAX, PORT_MIN, PORT_MAX)
 	_log_port_config(config)

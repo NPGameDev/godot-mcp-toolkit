@@ -188,12 +188,13 @@ Consequences that shape the rest of the architecture:
   and no dispatcher lanes; it dispatches a fixed handful of `runtime.*` / `signal.*` /
   `input.*` / `execute.*` handlers inline. Anything needing the editor (saving scenes,
   undo/redo, filesystem scans) stays on the editor side by construction.
-- **The runtime autoload self-disables four ways** in `_ready()`: it returns inert if
-  `Engine.is_editor_hint()`, if `--check-only` is on the command line, if `GODOT_MCP_RUNTIME`
-  is `0`/`false`/`off` (an opt-out for scripted and headless runs), or — the security-load-bearing
-  one — if `not OS.has_feature("editor")`, which is **false in every export template**. A
-  shipped game never starts the server; only an `editor`-feature build (the dev running their
-  own game from the editor) does.
+- **The runtime autoload self-disables three ways** in `_ready()`: it returns inert if
+  `Engine.is_editor_hint()`, if `GODOT_MCP_RUNTIME` is `0`/`false`/`off` (an opt-out for
+  scripted and headless runs), or — the security-load-bearing one — if
+  `not OS.has_feature("editor")`, which is **false in every export template**. A shipped game
+  never starts the server; only an `editor`-feature build (the dev running their own game
+  from the editor) does. `_exit_tree()` stops the server and clears the runtime registry
+  entry only when `_ready()` started it, so an inert copy never deletes another run's entry.
 
 The export-strip plugin ([ADR 0006](#14-key-decisions-adrs)) nulls the runtime autoload entry
 and strips addon source from the player's build as defence-in-depth, but the parse-time
