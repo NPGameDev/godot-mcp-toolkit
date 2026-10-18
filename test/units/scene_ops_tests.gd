@@ -20,6 +20,7 @@ static func run(testing) -> void:
 	_test_instance_saves_as_instance(testing)
 	_test_instantiate_takes_any_packed_scene(testing)
 	_test_instantiate_load_barrier(testing)
+	_test_instantiate_model_recovery_messages(testing)
 
 
 # --- MCPToolkitSafeSceneOps public API -------------------------------------
@@ -181,6 +182,35 @@ static func _test_instantiate_load_barrier(testing) -> void:
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_NON_SCENE_BINARY_FIXTURE))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_TEXT_SCENE_FIXTURE))
+	print("")
+
+
+# --- scene.instantiate: recovery a model's failure names ---------------------
+# This runner registers no scene importer, so a .glb never reaches these helpers
+# through _load_instanceable_scene here; they are called directly. A model can't
+# be made with scene.create, and one with no .import sidecar needs a rescan.
+
+static func _test_instantiate_model_recovery_messages(testing) -> void:
+	testing.begin("scene.instantiate failures name the recovery a model needs")
+	var missing_model := _SceneCommands._missing_scene_failure("user://no_such_model.glb")
+	testing.eq(missing_model.get("code"), "NOT_FOUND", "missing model → NOT_FOUND")
+	testing.ok(not str(missing_model.get("error", "")).contains("scene.create"),
+			"missing model doesn't advise scene.create")
+	testing.ok(str(missing_model.get("error", "")).contains("editor_refresh"),
+			"missing model names editor_refresh")
+	var missing_scene := _SceneCommands._missing_scene_failure("user://no_such_scene.tscn")
+	testing.ok(str(missing_scene.get("error", "")).contains("scene.create"),
+			"missing .tscn still advises scene.create")
+
+	var unimported := _SceneCommands._unloadable_scene_failure("user://no_sidecar_model.glb")
+	testing.eq(unimported.get("code"), "LOAD_FAILED", "model with no sidecar → LOAD_FAILED")
+	testing.ok(str(unimported.get("error", "")).contains(".import sidecar"),
+			"model with no sidecar names the missing sidecar")
+	testing.ok(str(unimported.get("error", "")).contains("editor_refresh"),
+			"model with no sidecar names editor_refresh")
+	var broken_scene := _SceneCommands._unloadable_scene_failure("user://broken_scene.tscn")
+	testing.ok(not str(broken_scene.get("error", "")).contains("editor_refresh"),
+			"broken .tscn doesn't advise editor_refresh")
 	print("")
 
 
