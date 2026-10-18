@@ -13,8 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "new_name": "new"}` moves an input action saved in `project.godot` to the new
   name with its events and deadzone, and keeps its place in the list. Before, a
   rename took `add`, one `bind` per event and `remove`. A built-in action can't be
-  renamed, and neither can an action be renamed to a name already in use (a
-  built-in action's included) or to its own name. Scripts and scenes that use the
+  renamed, and an action can't take its own name or a name already in use,
+  including a built-in action's. Scripts and scenes that use the
   old name aren't changed, the same as after a rename in Project Settings. Needs
   the matching server release, whose schema accepts `rename` and `new_name`.
   Thanks to @benfeather
