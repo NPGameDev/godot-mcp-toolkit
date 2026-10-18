@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `scene_get_tree` listed them, but the saved scene held the copy alone, because
   `Node.duplicate()` leaves the copied children with no owner. They also stay
   after an undo and a redo. The internals of an instanced sub-scene stay with
-  the instance. Thanks to @benfeather
+  the instance. Reported and fixed by @benfeather
   ([#37](https://github.com/NPGameDev/godot-mcp-toolkit/issues/37),
   [#38](https://github.com/NPGameDev/godot-mcp-toolkit/pull/38)).
 
