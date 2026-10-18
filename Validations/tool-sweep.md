@@ -237,7 +237,7 @@ So you do NOT need to split dependent operations across messages.
 | 3 | [03-node-properties.md](Sections/03-node-properties.md) | Node Properties & Methods | 35 | node_set/get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout | S2 |
 | 4 | [04-node-management.md](Sections/04-node-management.md) | Node Management | 18 | node_manage, node_groups | S2 |
 | 5 | [05-signals.md](Sections/05-signals.md) | Signals | 7 | signal_list, signal_manage | S2 |
-| 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 20 | script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies | S1 |
+| 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 22 | script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies | S1 |
 | 7 | [07-editor-console.md](Sections/07-editor-console.md) | Editor Operations & Console | 22 | editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh | S2 |
 | 8 | [08-project-settings.md](Sections/08-project-settings.md) | Project Settings & Autoloads | 12 | project_get/set_settings, autoload_manage, layer_names_get/set | S1 |
 | 9 | [09-execute-code.md](Sections/09-execute-code.md) | execute_code & Hints | 8 | execute_code | S2 |
