@@ -7,7 +7,7 @@
 ---
 
 **10.1** `input_map_action` — action=`add`, name=`sv2_jump`
-- **Expect:** success, status=created, deadzone defaults to 0.5. **Param shape:** the operation is carried by `action` (`add`/`remove`), not a separate `operation` param; `name` is the input-map action name (correct — see the watch below).
+- **Expect:** success, status=created, deadzone defaults to 0.5. **Param shape:** the operation is carried by `action` (`add`/`remove`/`rename`), not a separate `operation` param; `name` is the input-map action name (correct — see the watch below).
 
 > **REGRESSION WATCH (09a6392):** Parameter must be `name`, not old `action_name`.
 > If tool rejects `name` param, the rename has regressed.
@@ -32,11 +32,17 @@
 **10.4** `input_map_action` — action=`remove`, name=`sv2_jump`
 - **Expect:** success
 
-**10.5** `input_map_action` — action=`add`, name=`sv2_old`; `input_map_event` — action=`bind`, name=`sv2_old`, event=`{"type":"key","keycode":"Space"}`; then `input_map_action` — action=`rename`, name=`sv2_old`, new_name=`sv2_new`
-- **Expect:** success, `{"name":"sv2_new","old_name":"sv2_old"}`. `project.godot` has `sv2_new` with the Space event and no `sv2_old`.
+**10.5** `input_map_action` — action=`add`, name=`sv2_old`; `input_map_event` — action=`bind`, name=`sv2_old`, event=`{"type":"key","keycode":"Space"}`; `input_map_action` — action=`add`, name=`sv2_after`; then `input_map_action` — action=`rename`, name=`sv2_old`, new_name=`sv2_new`
+- **Expect:** success, `{"name":"sv2_new","old_name":"sv2_old"}`, with a hint that scripts and scenes using the old name are not updated. `project.godot` has `sv2_new` with the Space event and no `sv2_old`, and `sv2_new` still comes before `sv2_after` in `[input]`: the action keeps its place.
 
-**10.6** `input_map_action` — action=`rename`, name=`sv2_new`, new_name=`ui_accept`
-- **Expect:** `ALREADY_EXISTS`. Then `input_map_action` — action=`remove`, name=`sv2_new` → success.
+> **REGRESSION WATCH:** `sv2_new` listed after `sv2_after` means the rename no longer keeps the action's place in `[input]`. Flag it as **Minor**.
+
+**10.6** Refusals, in order:
+1. `input_map_action` — action=`rename`, name=`sv2_new`, new_name=`ui_accept`
+2. `input_map_action` — action=`rename`, name=`sv2_new`, new_name=`sv2_after`
+3. `input_map_action` — action=`rename`, name=`sv2_new`, new_name=`sv2_new`
+4. `input_map_action` — action=`remove`, name=`sv2_new`, then name=`sv2_after`
+- **Expect:** (1) `ALREADY_EXISTS`: a built-in action's name is taken even when `project.godot` does not override it. (2) `ALREADY_EXISTS`. (3) `INVALID_PARAMS`, "new_name equals name". (4) both succeed.
 
 ---
 

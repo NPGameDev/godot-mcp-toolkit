@@ -10,9 +10,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `input_map_action` has a `rename` action: `{"action": "rename", "name": "old",
-  "new_name": "new"}` moves a saved input action to a new name with its events and
-  deadzone. Before, a rename took `add`, one `bind` per event and `remove`. Needs
+  "new_name": "new"}` moves an input action saved in `project.godot` to the new
+  name with its events and deadzone, and keeps its place in the list. Before, a
+  rename took `add`, one `bind` per event and `remove`. A built-in action can't be
+  renamed, and neither can an action be renamed to a name already in use (a
+  built-in action's included) or to its own name. Scripts and scenes that use the
+  old name aren't changed, the same as after a rename in Project Settings. Needs
   the matching server release, whose schema accepts `rename` and `new_name`.
+  Thanks to @benfeather
+  ([#18](https://github.com/NPGameDev/godot-mcp-toolkit/issues/18),
+  [#19](https://github.com/NPGameDev/godot-mcp-toolkit/pull/19)).
 
 ## [1.0.4] - 2026-10-14
 
