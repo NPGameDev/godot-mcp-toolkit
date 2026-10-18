@@ -8,8 +8,9 @@ extends RefCounted
 ## builder runs as its documented headless no-op, so undo recording is exercised
 ## crash-free here and verified interactively by the sweep.
 ## Also checks that duplicate gives the copy's descendants the scene root as
-## owner, so the saved scene keeps them, and leaves an instanced sub-scene's
-## internals owned by the copy.
+## owner, so the saved scene keeps them, under the original's parent or another
+## one, including nodes the scene added under an instanced child, and leaves an
+## instanced sub-scene's internals owned by the copy.
 
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const _SUB_SCENE_FIXTURE := "user://node_manage_sub_scene_fixture.tscn"
@@ -20,6 +21,8 @@ static func run(testing) -> void:
 	_test_root_structural_guards_kept(testing)
 	_test_duplicate_owns_descendants(testing)
 	_test_duplicate_keeps_instance_internals(testing)
+	_test_duplicate_under_other_parent(testing)
+	_test_duplicate_keeps_nodes_added_under_an_instance(testing)
 
 
 static func _test_root_rename_allowed(testing) -> void:
@@ -128,19 +131,11 @@ static func _test_duplicate_owns_descendants(testing) -> void:
 
 static func _test_duplicate_keeps_instance_internals(testing) -> void:
 	testing.begin("node.manage duplicate leaves an instance's internals to the instance")
-	# Node.duplicate() re-instances only a file-backed scene, so the sub-scene is
-	# saved to a fixture file first.
-	var sub_root := Node2D.new()
-	sub_root.name = "Sub"
-	var inner := Node.new()
-	inner.name = "Inner"
-	sub_root.add_child(inner)
-	inner.owner = sub_root
-	var packed_sub := PackedScene.new()
-	packed_sub.pack(sub_root)
-	sub_root.free()
-	ResourceSaver.save(packed_sub, _SUB_SCENE_FIXTURE)
-	var sub_scene: PackedScene = load(_SUB_SCENE_FIXTURE)
+	var sub_scene := _save_sub_scene_fixture(testing)
+	if sub_scene == null:
+		_remove_sub_scene_fixture()
+		print("")
+		return
 
 	var root := Node2D.new()
 	root.name = "Root"
@@ -157,5 +152,118 @@ static func _test_duplicate_keeps_instance_internals(testing) -> void:
 		"instance copy's internal child stays owned by the copy")
 
 	root.free()
-	DirAccess.remove_absolute(ProjectSettings.globalize_path(_SUB_SCENE_FIXTURE))
+	_remove_sub_scene_fixture()
 	print("")
+
+
+static func _test_duplicate_under_other_parent(testing) -> void:
+	testing.begin("node.manage duplicate under another parent saves the copy's descendants")
+	var root := Node2D.new()
+	root.name = "Root"
+	var original := _add_owned_child(root, Node2D.new(), "Original", root)
+	var child := _add_owned_child(original, Node2D.new(), "Child", root)
+	_add_owned_child(child, Node.new(), "Grandchild", root)
+	_add_owned_child(root, Node2D.new(), "Holder", root)
+
+	var duplicated := NodeCommands._manage_duplicate(root, original, "Original",
+			{"new_name": "Copy", "parent_path": "Holder"})
+	testing.ok(bool(duplicated.get("success", false)), "duplicate under Holder → success")
+	testing.eq(str(duplicated.get("path", "")), "Holder/Copy", "copy lands under Holder")
+	testing.ok(_is_owned_by(root, "Holder/Copy/Child", root),
+		"copy's child owned by the scene root")
+	testing.ok(_is_owned_by(root, "Holder/Copy/Child/Grandchild", root),
+		"copy's grandchild owned by the scene root")
+
+	var reloaded := _pack_and_reload(root)
+	testing.ok(reloaded.get_node_or_null("Holder/Copy/Child/Grandchild") != null,
+		"packed scene keeps the copy's descendants under Holder")
+
+	reloaded.free()
+	root.free()
+	print("")
+
+
+static func _test_duplicate_keeps_nodes_added_under_an_instance(testing) -> void:
+	testing.begin("node.manage duplicate saves nodes the scene added under an instanced child")
+	var sub_scene := _save_sub_scene_fixture(testing)
+	if sub_scene == null:
+		_remove_sub_scene_fixture()
+		print("")
+		return
+
+	# Original holds an instance with a node the scene root owns, added straight
+	# under the instance.
+	var root := Node2D.new()
+	root.name = "Root"
+	var original := _add_owned_child(root, Node2D.new(), "Original", root)
+	var instance := _add_owned_child(original, sub_scene.instantiate(), "Pod", root)
+	_add_owned_child(instance, Node.new(), "Added", root)
+
+	var duplicated := NodeCommands._manage_duplicate(root, original, "Original", {"new_name": "Copy"})
+	testing.ok(bool(duplicated.get("success", false)), "duplicate → success")
+	testing.ok(_is_owned_by(root, "Copy/Pod", root), "copied instance owned by the scene root")
+	testing.ok(_is_owned_by(root, "Copy/Pod/Added", root),
+		"node added under the copied instance owned by the scene root")
+	testing.ok(root.get_node_or_null("Copy/Pod") != null
+			and _is_owned_by(root, "Copy/Pod/Inner", root.get_node("Copy/Pod")),
+		"copied instance's internal child stays owned by the instance")
+
+	var reloaded := _pack_and_reload(root)
+	testing.ok(reloaded.get_node_or_null("Copy/Pod/Added") != null,
+		"packed scene keeps the node added under the copied instance")
+
+	reloaded.free()
+	root.free()
+	_remove_sub_scene_fixture()
+	print("")
+
+
+## Adds [param child] under [param parent] as [param child_name], owned by
+## [param owner], the way a scene's own nodes are. Returns [param child].
+static func _add_owned_child(parent: Node, child: Node, child_name: String, owner: Node) -> Node:
+	child.name = child_name
+	parent.add_child(child)
+	child.owner = owner
+	return child
+
+
+## Returns whether the node at [param path] under [param root] exists and is
+## owned by [param owner].
+static func _is_owned_by(root: Node, path: String, owner: Node) -> bool:
+	var node := root.get_node_or_null(path)
+	return node != null and node.owner == owner
+
+
+## Packs [param root] and instantiates the result, which is what a saved .tscn
+## reloads as: the saver keeps only the nodes the scene root owns.
+static func _pack_and_reload(root: Node) -> Node:
+	var packed := PackedScene.new()
+	packed.pack(root)
+	return packed.instantiate()
+
+
+## Saves a sub-scene (a Node2D "Sub" with one internal child, "Inner") to a
+## user:// fixture and returns it loaded back, or null when the save fails.
+## Node.duplicate() re-instances only a file-backed scene, so an instance under
+## test needs a scene on disk.
+static func _save_sub_scene_fixture(testing) -> PackedScene:
+	var sub_root := Node2D.new()
+	sub_root.name = "Sub"
+	var inner := Node.new()
+	inner.name = "Inner"
+	sub_root.add_child(inner)
+	inner.owner = sub_root
+	var packed_sub := PackedScene.new()
+	packed_sub.pack(sub_root)
+	sub_root.free()
+	var save_error := ResourceSaver.save(packed_sub, _SUB_SCENE_FIXTURE)
+	testing.eq(save_error, OK, "sub-scene fixture saved")
+	if save_error != OK:
+		return null
+	var sub_scene := ResourceLoader.load(_SUB_SCENE_FIXTURE) as PackedScene
+	testing.ok(sub_scene != null, "sub-scene fixture loaded")
+	return sub_scene
+
+
+static func _remove_sub_scene_fixture() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_SUB_SCENE_FIXTURE))
