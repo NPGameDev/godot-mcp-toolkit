@@ -10,6 +10,8 @@ const _SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_c
 const _INSTANCED_SCENE_FIXTURE := "user://scene_instantiate_fixture.tscn"
 const _BINARY_SCENE_FIXTURE := "user://scene_instantiate_fixture.scn"
 const _NON_SCENE_FIXTURE := "user://scene_instantiate_fixture.tres"
+const _NON_SCENE_BINARY_FIXTURE := "user://scene_instantiate_fixture.res"
+const _TEXT_SCENE_FIXTURE := "user://scene_instantiate_text_fixture.tscn"
 
 
 static func run(testing) -> void:
@@ -17,6 +19,7 @@ static func run(testing) -> void:
 	_test_tool_context(testing)
 	_test_instance_saves_as_instance(testing)
 	_test_instantiate_takes_any_packed_scene(testing)
+	_test_instantiate_load_barrier(testing)
 
 
 # --- MCPToolkitSafeSceneOps public API -------------------------------------
@@ -149,6 +152,35 @@ static func _test_instantiate_takes_any_packed_scene(testing) -> void:
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_BINARY_SCENE_FIXTURE))
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_NON_SCENE_FIXTURE))
+	print("")
+
+
+# --- scene.instantiate: the load decides, not the extension ------------------
+# A .res can hold any resource, so its extension passes the scene check; loading
+# it is what refuses a non-scene. A mesh-imported model takes the same road: .obj
+# is on the scene-extension list whichever importer the file uses. The .tscn case
+# guards the path every existing caller takes. Writes user:// temp files and
+# removes them afterward.
+
+static func _test_instantiate_load_barrier(testing) -> void:
+	testing.begin("scene.instantiate refuses a file that doesn't load as a PackedScene")
+	testing.eq(ResourceSaver.save(Resource.new(), _NON_SCENE_BINARY_FIXTURE), OK, "plain binary resource saved")
+	var refused := _SceneCommands._load_instanceable_scene(_NON_SCENE_BINARY_FIXTURE)
+	testing.eq(refused.get("failure", {}).get("code"), "INVALID_CLASS",
+			".res holding a plain Resource is refused with INVALID_CLASS")
+
+	var scene_root := Node2D.new()
+	scene_root.name = "Prop"
+	var scene := PackedScene.new()
+	testing.eq(scene.pack(scene_root), OK, "text scene packs")
+	scene_root.free()
+	testing.eq(ResourceSaver.save(scene, _TEXT_SCENE_FIXTURE), OK, "text scene saved")
+	var loaded := _SceneCommands._load_instanceable_scene(_TEXT_SCENE_FIXTURE)
+	testing.ok(bool(loaded.get("ok", false)), ".tscn still loads")
+	testing.ok(loaded.get("packed") is PackedScene, ".tscn loads as a PackedScene")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_NON_SCENE_BINARY_FIXTURE))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_TEXT_SCENE_FIXTURE))
 	print("")
 
 
