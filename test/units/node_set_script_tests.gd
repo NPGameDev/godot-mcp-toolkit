@@ -2,10 +2,11 @@
 extends RefCounted
 ## node.set_script and a script changed on disk: ResourceLoader.load() hands back
 ## the cached Script, so node.set_script must bring it up to date before it sets
-## it. Drives commands/node_commands' _reload_if_changed_on_disk against a
-## user:// script rewritten between two loads; no editor is needed.
+## it. Drives the reload node.set_script calls, commands/editor_helpers'
+## reload_script_from_disk, against a user:// script rewritten between two loads;
+## no editor is needed.
 
-const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
+const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 
 const FIXTURE := "user://node_set_script_stale_fixture.gd"
 
@@ -25,7 +26,7 @@ static func _test_reload_after_rewrite(testing) -> void:
 	_write_version(2)
 	var cached: Script = ResourceLoader.load(FIXTURE)
 	testing.ok(cached == first, "the cache hands back the Script loaded first")
-	NodeCommands._reload_if_changed_on_disk(cached)
+	Helpers.reload_script_from_disk(cached)
 	testing.eq(running.call("version"), 2, "the node already running it runs version 2")
 
 	var fresh := Node.new()

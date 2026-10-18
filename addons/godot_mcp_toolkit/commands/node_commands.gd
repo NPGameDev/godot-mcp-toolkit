@@ -663,20 +663,13 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	return MCPToolkitSuccess.ok(response)
 
 
-## Brings [param script] up to date with its file on disk. ResourceLoader.load()
-## hands back the cached Script, which keeps the source it was first loaded with
-## after the file changes, so a node would run the old code. This reloads it the
-## way the script editor reloads a script changed on disk; reload(true) also
-## updates the instances already running it. A GDScript whose source matches the
-## file is left alone, since a reload cancels any coroutine suspended in it.
-static func _reload_if_changed_on_disk(script: Script) -> void:
-	if not (script is GDScript):
-		return
-	var disk_source := FileAccess.get_file_as_string(script.resource_path)
-	if disk_source.is_empty() or disk_source == script.source_code:
-		return
-	script.source_code = disk_source
-	script.reload(true)
+## The node.set_script hint when the script's file on disk was refused by the compile
+## gate: [param compile_error] says why, and the node runs the version the editor already
+## had, since a source that does not compile never replaces working code.
+static func _refused_reload_hint(script_path: String, compile_error: String) -> String:
+	return ("%s on disk was not loaded: %s. The editor kept the version it had loaded, so "
+		+ "the node runs that previous code. Run script_check on the file for the error "
+		+ "and its line, fix it, then call node_set_script again.") % [script_path, compile_error]
 
 
 static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
@@ -717,7 +710,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	if not (loaded is Script):
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
-	_reload_if_changed_on_disk(loaded)
+	var reload_outcome := Helpers.reload_script_from_disk(loaded)
 
 	var old_script = node.get_script()
 	node.set_script(loaded)
@@ -744,7 +737,12 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 			"hint_string": str(property.get("hint_string", "")),
 		})
 
-	return MCPToolkitSuccess.ok({"path": node_path, "script": script_path, "properties": exports})
+	var response := {"path": node_path, "script": script_path, "properties": exports}
+	var compile_error := str(reload_outcome["compile_error"])
+	if compile_error != "":
+		response["valid"] = false
+		response["hint"] = _refused_reload_hint(script_path, compile_error)
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_node_manage(parameters: Dictionary) -> Dictionary:

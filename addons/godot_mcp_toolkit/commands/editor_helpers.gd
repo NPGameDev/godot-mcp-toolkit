@@ -10,6 +10,11 @@ const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
+const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
+
+## The toolkit's own scripts, which a reload from disk never touches: reloading
+## the code that is running the reload would cancel its suspended coroutines.
+const _TOOLKIT_SOURCE_DIR := "res://addons/godot_mcp_toolkit/"
 
 ## Usage flags of the inspector header entries a property list interleaves with
 ## its properties.
@@ -713,6 +718,71 @@ static func delete_res_file_and_deindex(
 		var removal: Dictionary = await ensure_file_removed(file_path)
 		delete_result["deindexed"] = removal["removed"]
 	return delete_result
+
+
+# -- Script reload from disk ---------------------------------------------------
+
+
+## Brings [param script] up to date with its file on disk. [code]ResourceLoader.load()[/code]
+## hands back the cached script, which keeps the source it was first loaded with after the
+## file changes, so every node running it would run the old code. This reloads it the way
+## the script editor reloads a script changed outside it: the file's text becomes
+## [code]source_code[/code] and [code]reload(true)[/code] recompiles the cached object in
+## place, which also updates the instances already running it. Unlike a
+## [code]CACHE_MODE_IGNORE[/code] load, it never goes through the resource loader.
+##
+## Nothing happens unless [method should_reload_script] agrees and the script is a
+## [GDScript]. A file that does not compile is never applied: the cached script stays as
+## it was, so its nodes keep working, and the outcome says why. [param judged_valid_source]
+## is a source the caller has already judged valid; while the file still holds exactly that
+## text, the compile check is not run a second time.
+##
+## Returns [code]{reloaded: bool, compile_error: String}[/code]. [code]compile_error[/code]
+## is "" unless the file's source was refused or the reload itself failed.
+static func reload_script_from_disk(script: Script, judged_valid_source: String = "") -> Dictionary:
+	var outcome := {"reloaded": false, "compile_error": ""}
+	if not (script is GDScript):
+		return outcome
+	var script_path := script.resource_path
+	var disk_source := FileAccess.get_file_as_string(script_path)
+	if not should_reload_script(script_path, disk_source, script.source_code):
+		return outcome
+	if disk_source != judged_valid_source:
+		var verdict := GDScriptSource.judge(disk_source, script_path)
+		if not bool(verdict["valid"]):
+			var conflict := str(verdict["conflict"])
+			outcome["compile_error"] = conflict if conflict != "" else "the source on disk does not compile"
+			return outcome
+	script.source_code = disk_source
+	var reload_error := script.reload(true)
+	if reload_error != OK:
+		outcome["compile_error"] = "the reload failed (%s)" % error_string(reload_error)
+		return outcome
+	outcome["reloaded"] = true
+	return outcome
+
+
+## [method reload_script_from_disk] for the script the editor has cached for
+## [param file_path], after a write to that file. A [code].gd[/code] the editor has not
+## loaded is left alone: its first load reads the file anyway.
+## Returns the same [code]{reloaded, compile_error}[/code] outcome.
+static func reload_cached_script(file_path: String, judged_valid_source: String = "") -> Dictionary:
+	if file_path.get_extension().to_lower() != "gd" or not ResourceLoader.has_cached(file_path):
+		return {"reloaded": false, "compile_error": ""}
+	var cached: Resource = ResourceLoader.load(file_path)
+	if not (cached is Script):
+		return {"reloaded": false, "compile_error": ""}
+	return reload_script_from_disk(cached, judged_valid_source)
+
+
+## Whether a cached script at [param script_path] should take [param disk_source]: the
+## file has text, the text differs from [param cached_source], and the script is not one
+## of the toolkit's own. A reload is skipped when nothing changed because it cancels any
+## coroutine suspended in the script. Pure, so it can be unit-tested.
+static func should_reload_script(script_path: String, disk_source: String, cached_source: String) -> bool:
+	if script_path.begins_with(_TOOLKIT_SOURCE_DIR):
+		return false
+	return not disk_source.is_empty() and disk_source != cached_source
 
 
 # -- Godot 4.3 SceneTreeEditor tooltip-timer UAF mitigation -------------------
