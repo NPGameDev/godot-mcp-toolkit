@@ -60,7 +60,7 @@ discover_tools groups=["asset_ops", "input_map"]
 
 ## 25g. Remove input map actions
 
-`input_map_action` action=remove, name=sv2_jump, then name=sv2_saved (if Section 10 cleanup was skipped, or step 10.1b stopped before its remove)
+`input_map_action` action=remove, name=sv2_jump, then name=sv2_saved, sv2_old, sv2_new and sv2_after (if Section 10 cleanup was skipped, or step 10.1b, 10.5 or 10.6 stopped before its remove)
 
 ## 25h. Remove save data
 
