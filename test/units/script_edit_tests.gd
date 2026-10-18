@@ -66,6 +66,7 @@ static func _test_unmatched_edit_fails_whole_call(testing) -> void:
 
 static func _test_handler_writes_nothing_on_unmatched_edit(testing) -> void:
 	testing.begin("script.edit handler: an unmatched edit writes nothing")
+	var checkout := _write_fixture()
 	testing.eq(FileAccess.get_file_as_string(FIXTURE), SOURCE, "fixture holds the expected source")
 	var result: Dictionary = await ScriptCommands._cmd_script_edit(null, {
 		"file_path": FIXTURE,
@@ -77,11 +78,13 @@ static func _test_handler_writes_nothing_on_unmatched_edit(testing) -> void:
 	testing.eq(result.get("code", ""), "NOT_FOUND", "second edit unmatched → NOT_FOUND")
 	testing.ok(str(result.get("error", "")).begins_with("edits[1]: "), "the error names edits[1]")
 	testing.eq(FileAccess.get_file_as_string(FIXTURE), SOURCE, "the file is unchanged")
+	_restore_fixture(checkout)
 	print("")
 
 
 static func _test_handler_rejects_mixed_forms(testing) -> void:
 	testing.begin("script.edit handler: edits alone, never beside old_string")
+	var checkout := _write_fixture()
 	var mixed: Dictionary = await ScriptCommands._cmd_script_edit(null, {
 		"file_path": FIXTURE,
 		"old_string": "return 1",
@@ -97,4 +100,26 @@ static func _test_handler_rejects_mixed_forms(testing) -> void:
 	})
 	testing.eq(same.get("code", ""), "INVALID_PARAMS", "a no-op edit → INVALID_PARAMS")
 	testing.eq(FileAccess.get_file_as_string(FIXTURE), SOURCE, "the file is unchanged")
+	_restore_fixture(checkout)
 	print("")
+
+
+## Writes [constant SOURCE] to the fixture with LF line endings, so the byte-for-byte
+## asserts hold on a checkout that converts text files to CRLF. Returns the bytes the
+## checkout held, for [method _restore_fixture].
+static func _write_fixture() -> PackedByteArray:
+	var checkout := FileAccess.get_file_as_bytes(FIXTURE)
+	if checkout.is_empty():
+		checkout = SOURCE.to_utf8_buffer()
+	var file := FileAccess.open(FIXTURE, FileAccess.WRITE)
+	file.store_string(SOURCE)
+	file.close()
+	return checkout
+
+
+## Puts back the bytes [method _write_fixture] replaced, so a run leaves the working
+## tree as it found it.
+static func _restore_fixture(checkout: PackedByteArray) -> void:
+	var file := FileAccess.open(FIXTURE, FileAccess.WRITE)
+	file.store_buffer(checkout)
+	file.close()
