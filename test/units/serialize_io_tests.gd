@@ -910,8 +910,15 @@ static func _test_resource_write_typed_array_of_script_class(testing) -> void:
 	testing.eq(elements.get_typed_script(), TypedArrayElement,
 			"the stored array keeps the script as its element type")
 	testing.eq(ResourceSaver.save(live, fixture), OK, "resource saved")
-	testing.ok(_saved_property_line(fixture, "elements").begins_with("elements = Array[ExtResource("),
+	# 4.3 and later name the script as an ExtResource, 4.2 by its path, so the
+	# file is read back rather than matched as text.
+	testing.ok(_saved_property_line(fixture, "elements").begins_with("elements = Array["),
+			"the file stores a typed array")
+	var reloaded := ResourceLoader.load(fixture, "", ResourceLoader.CACHE_MODE_IGNORE)
+	var reloaded_elements: Array = reloaded.get("elements") if reloaded != null else []
+	testing.eq(reloaded_elements.get_typed_script(), TypedArrayElement,
 			"the file stores the array typed by the script")
+	testing.eq(reloaded_elements.size(), 1, "the file stores the element")
 
 	var other: Resource = TypedArrayScriptedResource.new()
 	var other_warnings := ResourceCommands._apply_resource_properties(
