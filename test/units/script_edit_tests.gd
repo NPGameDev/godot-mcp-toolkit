@@ -116,6 +116,8 @@ static func _test_handler_hints_edit_order_on_not_unique(testing) -> void:
 	testing.eq(ambiguous.get("code", ""), "NOT_UNIQUE", "two matches without replace_all → NOT_UNIQUE")
 	testing.ok(str(ambiguous.get("hint", "")).contains("Edits apply in order"),
 			"the hint says the edits apply in order")
+	testing.ok(str(ambiguous.get("hint", "")).contains("set replace_all:true on edits[0]"),
+			"the hint points replace_all at the edit, not the top level")
 	var single: Dictionary = await ScriptCommands._cmd_script_edit(null, {
 		"file_path": FIXTURE,
 		"old_string": "-> int",

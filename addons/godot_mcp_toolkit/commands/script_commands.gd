@@ -239,17 +239,19 @@ static func _check_edit_shape(edit: Variant, prefix: String) -> Dictionary:
 ## Applies [param edits] to [param content] in order, each against the text the
 ## earlier ones leave. Nothing is written here: the caller commits the result once,
 ## so a failing edit leaves the file untouched. Each edit is a Dictionary already
-## checked by [method _check_edit_shape]; [param labelled] prefixes each failure with
+## checked by [method _check_edit_shape]; [param uses_edits] prefixes each failure with
 ## the edit's index (the edits form). Returns
 ## [code]{content, replacements}[/code], or a [code]NOT_FOUND[/code] /
 ## [code]NOT_UNIQUE[/code] failure envelope for the first edit that doesn't match once.
-static func _apply_edits(content: String, edits: Array, file_path: String, labelled: bool) -> Dictionary:
+static func _apply_edits(content: String, edits: Array, file_path: String, uses_edits: bool) -> Dictionary:
 	var edited := content
 	var replacements := 0
 	for index in edits.size():
 		var edit: Dictionary = edits[index]
-		var prefix := _edit_prefix(labelled, index)
-		var order_hint := " Edits apply in order, so match the text the earlier edits leave." if labelled else ""
+		var prefix := _edit_prefix(uses_edits, index)
+		var order_hint := " Edits apply in order, so match the text the earlier edits leave." if uses_edits else ""
+		# A top-level replace_all beside edits is rejected, so the edits form points at the element.
+		var replace_all_target := "on edits[%d] " % index if uses_edits else ""
 		var old_string := str(edit.get("old_string", ""))
 		var new_string := str(edit.get("new_string", ""))
 		var replace_all := bool(edit.get("replace_all", false))
@@ -262,7 +264,7 @@ static func _apply_edits(content: String, edits: Array, file_path: String, label
 		if match_count > 1 and not replace_all:
 			return MCPToolkitError.fail("NOT_UNIQUE",
 				"%sold_string matches %d times in %s" % [prefix, match_count, file_path],
-				"Add surrounding context so old_string identifies one location, or set replace_all:true to replace all %d." % match_count + order_hint)
+				"Add surrounding context so old_string identifies one location, or set replace_all:true %sto replace all %d." % [replace_all_target, match_count] + order_hint)
 
 		if replace_all:
 			edited = edited.replace(old_string, new_string)
@@ -277,9 +279,9 @@ static func _apply_edits(content: String, edits: Array, file_path: String, label
 
 
 ## The message prefix naming edit [param index] of an edits array, or "" when
-## [param labelled] is false (the single old_string/new_string form).
-static func _edit_prefix(labelled: bool, index: int) -> String:
-	return "edits[%d]: " % index if labelled else ""
+## [param uses_edits] is false (the single old_string/new_string form).
+static func _edit_prefix(uses_edits: bool, index: int) -> String:
+	return "edits[%d]: " % index if uses_edits else ""
 
 
 ## Writes [param content] to [param file_path], wrapping it in an editor UndoRedo
