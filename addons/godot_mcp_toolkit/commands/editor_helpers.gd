@@ -86,6 +86,37 @@ static func fit_to_type(value: Variant, declared_type: int, property_name: Strin
 	return {"value": conversion["value"], "warning": warning}
 
 
+## Gives an untyped [param value] the element type of the typed array that
+## [param target] holds in [param property_name], before the caller sets it.
+##
+## A JSON array arrives untyped. A live script instance's set() drops an untyped
+## array on a typed array member, and the editor's placeholder for a script that is
+## not [code]@tool[/code] stores it untyped, so the file would save it untyped. The
+## typed array is built the way the text resource loader builds one. A value that
+## is not an [Array], or a property whose value is not a typed array, passes
+## through.
+## [br][br]
+## Returns [code]{"value": <the value to set>, "warning": String, "error": String}[/code].
+## [code]error[/code] is not empty when an element does not fit the element type;
+## the caller then leaves the property unchanged.
+static func fit_to_typed_array(
+	target: Object, property_name: String, value: Variant,
+) -> Dictionary:
+	var current: Variant = target.get(property_name)
+	if not (value is Array and current is Array):
+		return {"value": value, "warning": "", "error": ""}
+	var requested: Array = value
+	var template: Array = current
+	if not template.is_typed() or requested.is_same_typed(template):
+		return {"value": value, "warning": "", "error": ""}
+	var typed := Array(requested, template.get_typed_builtin(),
+			template.get_typed_class_name(), template.get_typed_script())
+	if typed.size() != requested.size():
+		return {"value": value, "warning": "",
+			"error": "property '%s': an element doesn't fit the typed array" % property_name}
+	return {"value": typed, "warning": "", "error": ""}
+
+
 ## The warning a scalar property write reports, or "" for a clean write.
 ##
 ## When the readback [param outcome] from [method describe_set_drop] is
