@@ -4,7 +4,7 @@ extends RefCounted
 ## color_from_dict (white + black defaults), node-sourced Packed property serialize,
 ## save.read / script.read / classdb paging, export-strip warning set, log-level continuation,
 ## the SettingsRegistration mcp_toolkit/* collector, and resource.write's int properties
-## (in memory and through a saved file). Exercises the serialize/IO/content
+## (in memory and through a saved file) and typed arrays. Exercises the serialize/IO/content
 ## subsystems' pure logic headless.
 
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
@@ -20,6 +20,7 @@ const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resou
 const PlaceholderLikeResource := preload("res://test/fixtures/placeholder_like_resource.gd")
 const PlaceholderLikeGroupedResource := preload(
 		"res://test/fixtures/placeholder_like_grouped_resource.gd")
+const TypedArrayResource := preload("res://test/fixtures/typed_array_resource.gd")
 
 
 static func run(testing) -> void:
@@ -37,6 +38,7 @@ static func run(testing) -> void:
 	_test_resource_write_int_property(testing)
 	_test_resource_write_int_on_update(testing)
 	_test_resource_write_skips_inspector_headers(testing)
+	_test_resource_write_typed_array(testing)
 
 
 # --- Coerce/serialize round-trip symmetry ---------------------------------
@@ -839,6 +841,46 @@ static func _test_resource_write_skips_inspector_headers(testing) -> void:
 	var unknown_warning: String = "" if header_warnings.is_empty() else header_warnings[0]
 	testing.ok(unknown_warning.contains("'Stats' unknown"), "the warning calls the key unknown")
 	testing.ok(unknown_warning.contains("value ignored"), "the warning says the value was ignored")
+	print("")
+
+
+# JSON arrays arrive untyped. On the create path the resource is a live script
+# instance, whose set() drops an untyped array on a typed array property; on the
+# update path the editor's placeholder stores it untyped. Each case reads the
+# saved file's line. Writes a user:// temp file and removes it afterward.
+static func _test_resource_write_typed_array(testing) -> void:
+	testing.begin("resource.write gives a JSON array its property's element type")
+	var fixture := "user://resource_write_typed_array_fixture.tres"
+	var texture := {"type": "Resource", "path": "res://test/fixtures/placeholder_texture.tres"}
+
+	var live: Resource = TypedArrayResource.new()
+	var live_warnings := ResourceCommands._apply_resource_properties(
+			live, {"tags": ["x", "y"], "textures": [texture]}, "Resource")
+	testing.eq(live_warnings.size(), 0, "live instance → no warnings")
+	testing.eq(ResourceSaver.save(live, fixture), OK, "live instance saved")
+	testing.eq(_saved_property_line(fixture, "tags"), 'tags = Array[String](["x", "y"])',
+			"live instance → the file stores the typed tags")
+	testing.ok(_saved_property_line(fixture, "textures").begins_with(
+			"textures = Array[Texture2D]([ExtResource("),
+			"live instance → the file stores the typed textures")
+
+	var placeholder: Resource = PlaceholderLikeResource.new()
+	var placeholder_warnings := ResourceCommands._apply_resource_properties(
+			placeholder, {"tags": ["x", "y"]}, "Resource")
+	testing.eq(placeholder_warnings.size(), 0, "placeholder → no warnings")
+	testing.eq(ResourceSaver.save(placeholder, fixture), OK, "placeholder saved")
+	testing.eq(_saved_property_line(fixture, "tags"), 'tags = Array[String](["x", "y"])',
+			"placeholder → the file stores the typed tags")
+
+	var mismatch: Resource = TypedArrayResource.new()
+	var mismatch_warnings := ResourceCommands._apply_resource_properties(
+			mismatch, {"textures": ["not a texture"]}, "Resource")
+	testing.eq(mismatch_warnings.size(), 1, "an element that doesn't fit → exactly one warning")
+	var mismatch_warning: String = "" if mismatch_warnings.is_empty() else mismatch_warnings[0]
+	testing.ok(mismatch_warning.contains("'textures'"), "the warning names the property")
+	testing.eq((mismatch.get("textures") as Array).size(), 0, "the value is left unchanged")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
 	print("")
 
 

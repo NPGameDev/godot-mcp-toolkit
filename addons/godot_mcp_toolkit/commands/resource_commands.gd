@@ -71,7 +71,21 @@ static func _apply_resource_properties(
 					"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
 				continue
 			var fit := Helpers.fit_to_type(coerced, int(entry.get("type", TYPE_NIL)), key_string)
-			resource.set(key_string, fit["value"])
+			var value: Variant = fit["value"]
+			# A JSON array arrives untyped. A live script instance drops it on a typed
+			# array property, and a placeholder stores it untyped, so give it the
+			# property's element type first, as the text resource loader does.
+			var current: Variant = resource.get(key_string)
+			if value is Array and current is Array and (current as Array).is_typed() \
+					and not (value as Array).is_same_typed(current):
+				var typed := Array(value, current.get_typed_builtin(),
+					current.get_typed_class_name(), current.get_typed_script())
+				if typed.size() != (value as Array).size():
+					warnings.append("property '%s': an element doesn't fit the typed array; "
+						% key_string + "value left unchanged")
+					continue
+				value = typed
+			resource.set(key_string, value)
 			if not str(fit["warning"]).is_empty():
 				warnings.append(str(fit["warning"]))
 	return warnings

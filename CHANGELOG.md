@@ -25,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - After a project rename, **Regenerate Token** no longer leaves the MCP server
   unable to connect until the editor restarts.
+- `resource_write` now saves a typed array property, such as `Array[String]`, as
+  a typed array. Before, creating a resource from a script class (`type` naming
+  a `class_name`) dropped the array with no warning, and other writes saved it
+  untyped (`tags = ["x"]`). An element that doesn't fit the array's type now
+  leaves the value unchanged, with a warning.
 
 ## [1.0.4] - 2026-10-14
 
