@@ -18,6 +18,7 @@ const RegistryClient = Modules.RegistryClient
 const Helpers = Modules.CommandHelpers
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const _LogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
+const _RuntimeServer := preload("res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd")
 
 const RUNTIME_HOST := "127.0.0.1"
 const RUNTIME_POLL_TIMEOUT_MS := 5000
@@ -189,7 +190,26 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 			+ "or use runtime_poll:true to re-probe. "
 			+ "Check debugger_get_log or editor_get_console for startup errors."
 		)
+	var opt_out_hint := _runtime_opt_out_hint()
+	if not opt_out_hint.is_empty():
+		response["hint"] = opt_out_hint if not response.has("hint") \
+			else "%s %s" % [opt_out_hint, response["hint"]]
 	return response
+
+
+## Returns a hint naming the runtime opt-out when this editor's environment sets
+## [code]GODOT_MCP_RUNTIME[/code] to an off value, else an empty string. A game the
+## editor launches inherits the editor's environment, so that game never opens the
+## runtime channel and every runtime readiness check fails.
+static func _runtime_opt_out_hint() -> String:
+	var value := OS.get_environment(_RuntimeServer.ENV_RUNTIME)
+	if not _RuntimeServer.is_opted_out(value):
+		return ""
+	return (
+		"The game won't open the runtime channel: %s=%s is set in the editor's "
+		+ "environment, and games the editor launches inherit it. Unset it and "
+		+ "restart the editor to use runtime tools."
+	) % [_RuntimeServer.ENV_RUNTIME, value]
 
 
 ## True when no main scene is configured (application/run/main_scene unset or blank).
