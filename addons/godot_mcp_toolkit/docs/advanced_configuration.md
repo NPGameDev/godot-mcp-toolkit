@@ -225,6 +225,7 @@ before launch) — the toolkit never writes them.
 | `GODOT_MCP_EDITOR_PORT_MIN` / `_MAX` | Editor channel | **Relocate** the scan band (inclusive) | `6550` / `6560` |
 | `GODOT_MCP_RUNTIME_PORT` | Runtime channel (the running game) | **Pin** — bind this exact port or fail | — (scan) |
 | `GODOT_MCP_RUNTIME_PORT_MIN` / `_MAX` | Runtime channel | **Relocate** the scan band (inclusive) | `6570` / `6585` |
+| `GODOT_MCP_RUNTIME` | Runtime channel | `0`, `false` or `off` **opts this run out**: no port, no registry entry ([below](#keeping-a-run-off-the-runtime-channel)) | — (on) |
 
 The same `GODOT_MCP_EDITOR_PORT` / `GODOT_MCP_RUNTIME_PORT` are **also read by the
 MCP server** to decide which port to **dial** — inherited by both processes, a pin
@@ -276,26 +277,30 @@ processes inherit the **same** value:
 - **Prefer Scanned mode** if you don't want to manage env on both sides — registry
   discovery keeps the two in agreement automatically.
 
-### Keeping the runtime server out of a run
+### Keeping a run off the runtime channel
 
-Any run of your project with the editor binary starts the runtime server: a
+Any run of your project with the editor binary opens the runtime channel: a
 game launched from the editor, but also `godot --path .` from a shell, a
 headless `--script` test runner, or a CI job. Each one binds a runtime port and
-publishes it in the registry as the project's runtime, replacing the game the
-MCP tools started, and clears that entry when it exits.
+publishes it in the registry as the project's running game, replacing the game
+the MCP tools started, and clears that entry when it exits.
 
-Set `GODOT_MCP_RUNTIME=0` in the environment of a run to keep the runtime server
-out of it. `false` and `off` (any case) work too; unset, empty, or any other
-value leaves the server on. The run prints one line saying the server is off,
-binds no port, and leaves the registry alone:
+Set `GODOT_MCP_RUNTIME=0` in the environment of a run to keep it off the
+runtime channel. `false` and `off` (any case) work too; unset, empty, or any
+other value leaves the channel on. The run prints one line saying the channel
+is off, binds no port, and leaves the registry alone:
 
 ```bash
 GODOT_MCP_RUNTIME=0 godot --headless --path . --script res://tests/run_tests.gd
 ```
 
 A game launched from the editor inherits the editor's environment, so an editor
-started with `GODOT_MCP_RUNTIME=0` set launches games without the runtime server
-too.
+started with `GODOT_MCP_RUNTIME=0` set launches games that never open the
+runtime channel. A `game_start` re-probe (`runtime_poll: true`) names the
+variable in its hint.
+
+The MCP server never reads this variable. It covers only the running game's
+side: set it on the run you want to keep out, not in `.mcp.json`.
 
 ## macOS: launching your MCP client (Node / PATH)
 

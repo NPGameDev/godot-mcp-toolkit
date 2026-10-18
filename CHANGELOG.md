@@ -20,11 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Thanks to @benfeather
   ([#18](https://github.com/NPGameDev/godot-mcp-toolkit/issues/18),
   [#19](https://github.com/NPGameDev/godot-mcp-toolkit/pull/19)).
-- `GODOT_MCP_RUNTIME=0` keeps the runtime server out of a run of your project.
-  Before, every run with the editor binary started it, including a headless
-  `--script` test runner, and took the project's runtime entry in the registry
-  from the game the MCP tools had started. See "Keeping the runtime server out of
-  a run" in the advanced configuration guide.
+- `GODOT_MCP_RUNTIME=0` (or `false`, `off`) keeps a run of your project off the
+  runtime channel. Before, every run with the editor binary opened it, including
+  a headless `--script` test runner, and took the project's runtime entry in the
+  registry from the game the MCP tools had started. See "Keeping a run off the
+  runtime channel" in the advanced configuration guide. An editor started with
+  the variable set passes it to every game it launches, and a `game_start`
+  re-probe names it in its hint. The repo's cold unit runner sets it outside CI.
+  Thanks to @benfeather
+  ([#46](https://github.com/NPGameDev/godot-mcp-toolkit/issues/46),
+  [#47](https://github.com/NPGameDev/godot-mcp-toolkit/pull/47)).
 
 ### Fixed
 
