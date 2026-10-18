@@ -351,6 +351,13 @@ static func _test_ensure_registered_own_pid(testing) -> void:
 
 	OS.set_environment(env_name, tmp_root)
 	var registry_dir := RegistryPaths.registry_dir()
+	var redirected := registry_dir.begins_with(tmp_root)
+	if not redirected:
+		_restore_environment(env_name, had_env, prev_env)
+		_remove_tree(tmp_root)
+		testing.ok(false, "the registry dir is the temporary folder (got %s); writes skipped" % registry_dir)
+		print("")
+		return
 	var entry_path := RegistryPaths.entry_file_path()
 	var old_entry := RegistryEntryFile.build_entry(
 		ProjectKey.current(), 6550, "/old/user/dir/mcp_token", "127.0.0.1", 6005, null, null)
@@ -359,13 +366,10 @@ static func _test_ensure_registered_own_pid(testing) -> void:
 	RegistryClient.ensure_registered(6551, "/new/user/dir/mcp_token", "127.0.0.2", 6010)
 	var entry: Dictionary = RegistryEntryFile.read(entry_path)
 	var projection_text := FileAccess.get_file_as_string(RegistryPaths.registry_path())
-	if had_env:
-		OS.set_environment(env_name, prev_env)
-	else:
-		OS.unset_environment(env_name)
+	_restore_environment(env_name, had_env, prev_env)
 	_remove_tree(tmp_root)
 
-	testing.ok(registry_dir.begins_with(tmp_root), "the registry dir is the temporary folder")
+	testing.ok(redirected, "the registry dir is the temporary folder")
 	testing.eq(str(entry.get("token_path", "")), "/new/user/dir/mcp_token",
 			"own entry: token_path refreshed")
 	testing.eq(int(entry.get("port", -1)), 6551, "own entry: port refreshed")
@@ -395,6 +399,14 @@ static func _registry_env_name() -> String:
 			return "HOME"
 		_:
 			return "XDG_DATA_HOME"
+
+
+# Puts an environment variable back as it was before a test overrode it.
+static func _restore_environment(env_name: String, had_env: bool, prev_env: String) -> void:
+	if had_env:
+		OS.set_environment(env_name, prev_env)
+	else:
+		OS.unset_environment(env_name)
 
 
 # Deletes a folder and everything under it; a missing folder is a no-op.
