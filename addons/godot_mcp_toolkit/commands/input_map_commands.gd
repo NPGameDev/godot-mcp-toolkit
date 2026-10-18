@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## input_map.* command handlers — action (add/remove) and event (bind/unbind).
+## input_map.* command handlers — action (add/remove/rename) and event (bind/unbind).
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
@@ -12,8 +12,9 @@ const NO_BUILTIN_ORDER_BASE := 1 << 16
 
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
+	var commands := new()
 	registry.add("input_map.action", func(parameters: Dictionary) -> Dictionary:
-		return _cmd_input_map_action(parameters)
+		return commands._cmd_input_map_action(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
 	registry.add("input_map.event", func(parameters: Dictionary) -> Dictionary:
 		return _cmd_input_map_event(parameters)
@@ -191,87 +192,51 @@ static func _load_project_action(action: String) -> void:
 			InputMap.action_add_event(action, event)
 
 
-# -- Commands -----------------------------------------------------------------
+# -- Rename -------------------------------------------------------------------
 
 
-static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
-	var action := str(parameters.get("action", ""))
-	if not (action in ["add", "remove", "rename"]):
-		return MCPToolkitError.fail("INVALID_PARAMS",
-			"action must be 'add', 'remove' or 'rename' (got '%s')" % action)
-	var action_name := str(parameters.get("name", ""))
-	if action_name.is_empty():
-		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
-	if action == "rename":
-		return _rename_input_action(action_name, str(parameters.get("new_name", "")))
-	if action == "add":
-		var deadzone_raw = parameters.get("deadzone", 0.5)
-		var deadzone := float(deadzone_raw) \
-			if (typeof(deadzone_raw) == TYPE_FLOAT or typeof(deadzone_raw) == TYPE_INT) else 0.5
-		if deadzone < 0.0 or deadzone > 1.0:
-			return MCPToolkitError.fail("INVALID_PARAMS",
-				"deadzone must be in [0.0, 1.0] (got %f)" % deadzone)
-		_load_project_action(action_name)
-		if InputMap.has_action(action_name):
-			return MCPToolkitSuccess.ok({
-				"status": "returned",
-				"name": action_name,
-				"deadzone": InputMap.action_get_deadzone(action_name),
-			})
-		InputMap.add_action(action_name, deadzone)
-		_persist_input_action(action_name, deadzone)
-		return MCPToolkitSuccess.ok({
-			"status": "created",
-			"name": action_name,
-			"deadzone": deadzone,
-		})
-	else:
-		_load_project_action(action_name)
-		if not InputMap.has_action(action_name):
-			return MCPToolkitError.fail("NOT_FOUND", "no action '%s'" % action_name)
-		if _is_builtin_action(action_name):
-			return MCPToolkitError.fail("INVALID_PARAMS",
-				"refusing to remove built-in UI action '%s'; use input_map.event to unbind its events instead" % action_name)
-		InputMap.erase_action(action_name)
-		if ProjectSettings.has_setting("input/" + action_name):
-			ProjectSettings.clear("input/" + action_name)
-			var error := ProjectSettings.save()
-			if error != OK:
-				push_warning(
-					"[MCPServer] ProjectSettings.save after input_map.action remove failed (err %d, action=%s)" % [
-						error, action_name])
-		return MCPToolkitSuccess.ok({"name": action_name})
-
-
-## Moves the input/<name> setting, events and deadzone as saved, to
-## input/<new_name>. Works from ProjectSettings: the editor's InputMap holds only
-## the built-in ui_* actions, so a project action is usually absent from it. If
-## InputMap does hold the old action, its events move to the new name too.
-static func _rename_input_action(action_name: String, new_name: String) -> Dictionary:
+## Returns the error that refuses renaming [param action_name] to [param new_name], or an
+## empty Dictionary when the rename may go ahead. It reads the [code]input/<name>[/code]
+## settings only, as the editor's own rename does: the settings hold every built-in
+## action, overridden or not, while InputMap may still hold a project action whose
+## setting is gone until the next call reloads it.
+static func _check_rename(action_name: String, new_name: String) -> Dictionary:
 	if new_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "new_name must be a non-empty string")
+	if new_name == action_name:
+		return MCPToolkitError.fail("INVALID_PARAMS", "new_name equals name ('%s')" % action_name)
 	if _is_builtin_action(action_name):
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"refusing to rename built-in UI action '%s'" % action_name)
-	var old_key := "input/" + action_name
-	var new_key := "input/" + new_name
-	if not ProjectSettings.has_setting(old_key):
+	if not ProjectSettings.has_setting("input/" + action_name):
 		return MCPToolkitError.fail("NOT_FOUND", "no action '%s' in project settings" % action_name)
-	if ProjectSettings.has_setting(new_key) or InputMap.has_action(new_name):
+	if ProjectSettings.has_setting("input/" + new_name):
 		return MCPToolkitError.fail("ALREADY_EXISTS", "action '%s' already exists" % new_name)
-	ProjectSettings.set_setting(new_key, ProjectSettings.get_setting(old_key))
+	return {}
+
+
+## Moves the value of the setting [param old_key] to [param new_key] and gives it the old
+## setting's order, so a renamed action keeps its place in project.godot's
+## [code][input][/code] section. A new setting is otherwise ordered after every other one.
+static func _move_setting(old_key: String, new_key: String) -> void:
+	var order := ProjectSettings.get_order(old_key)
+	var value: Variant = ProjectSettings.get_setting(old_key)
 	ProjectSettings.clear(old_key)
-	if InputMap.has_action(action_name):
-		InputMap.add_action(new_name, InputMap.action_get_deadzone(action_name))
-		for event in InputMap.action_get_events(action_name):
-			InputMap.action_add_event(new_name, event)
-		InputMap.erase_action(action_name)
-	var error := ProjectSettings.save()
-	if error != OK:
-		push_warning(
-			"[MCPServer] ProjectSettings.save after input_map.action rename failed (err %d, action=%s)" % [
-				error, new_name])
-	return MCPToolkitSuccess.ok({"name": new_name, "old_name": action_name})
+	ProjectSettings.set_setting(new_key, value)
+	ProjectSettings.set_order(new_key, order)
+
+
+## Moves a project action the editor's InputMap holds from [param action_name] to
+## [param new_name] once its setting has moved: both names are reloaded from their
+## settings. Leaves InputMap alone when it does not hold [param action_name].
+static func _move_loaded_action(action_name: String, new_name: String) -> void:
+	if not InputMap.has_action(action_name):
+		return
+	_load_project_action(action_name)
+	_load_project_action(new_name)
+
+
+# -- Commands -----------------------------------------------------------------
 
 
 static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
@@ -322,3 +287,85 @@ static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 			"name": action_name,
 			"event": _serialise_input_event(matched),
 		})
+
+
+func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
+	var action := str(parameters.get("action", ""))
+	if not (action in ["add", "remove", "rename"]):
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"action must be 'add', 'remove' or 'rename' (got '%s')" % action)
+	var action_name := str(parameters.get("name", ""))
+	if action_name.is_empty():
+		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
+	if action == "rename":
+		return _rename_input_action(action_name, str(parameters.get("new_name", "")))
+	if action == "add":
+		var deadzone_raw = parameters.get("deadzone", 0.5)
+		var deadzone := float(deadzone_raw) \
+			if (typeof(deadzone_raw) == TYPE_FLOAT or typeof(deadzone_raw) == TYPE_INT) else 0.5
+		if deadzone < 0.0 or deadzone > 1.0:
+			return MCPToolkitError.fail("INVALID_PARAMS",
+				"deadzone must be in [0.0, 1.0] (got %f)" % deadzone)
+		_load_project_action(action_name)
+		if InputMap.has_action(action_name):
+			return MCPToolkitSuccess.ok({
+				"status": "returned",
+				"name": action_name,
+				"deadzone": InputMap.action_get_deadzone(action_name),
+			})
+		InputMap.add_action(action_name, deadzone)
+		_persist_input_action(action_name, deadzone)
+		return MCPToolkitSuccess.ok({
+			"status": "created",
+			"name": action_name,
+			"deadzone": deadzone,
+		})
+	else:
+		_load_project_action(action_name)
+		if not InputMap.has_action(action_name):
+			return MCPToolkitError.fail("NOT_FOUND", "no action '%s'" % action_name)
+		if _is_builtin_action(action_name):
+			return MCPToolkitError.fail("INVALID_PARAMS",
+				"refusing to remove built-in UI action '%s'; use input_map.event to unbind its events instead" % action_name)
+		InputMap.erase_action(action_name)
+		if ProjectSettings.has_setting("input/" + action_name):
+			ProjectSettings.clear("input/" + action_name)
+			var error := ProjectSettings.save()
+			if error != OK:
+				push_warning(
+					"[MCPServer] ProjectSettings.save after input_map.action remove failed (err %d, action=%s)" % [
+						error, action_name])
+		return MCPToolkitSuccess.ok({"name": action_name})
+
+
+## Renames the project action [param action_name] to [param new_name] and saves
+## project.godot. It works from the [code]input/<name>[/code] setting, because the
+## editor's InputMap holds only the built-in actions and a project action exists there
+## only as that setting.
+##
+## A missing or empty [param new_name] is refused, and so is a [param new_name] equal to
+## [param action_name]. A built-in action is refused as [code]remove[/code] refuses one.
+## A [param action_name] with no setting answers [code]NOT_FOUND[/code], and a
+## [param new_name] that already has a setting, project action or built-in, answers
+## [code]ALREADY_EXISTS[/code]. The action keeps its events, its deadzone and its place
+## in [code][input][/code]; when InputMap holds it, it moves there too. Scripts and
+## scenes that use the old name are not changed, as after the editor's own rename.
+## Returns the new name with [code]old_name[/code].
+func _rename_input_action(action_name: String, new_name: String) -> Dictionary:
+	var refusal := _check_rename(action_name, new_name)
+	if not refusal.is_empty():
+		return refusal
+	_move_setting("input/" + action_name, "input/" + new_name)
+	_move_loaded_action(action_name, new_name)
+	var error := _save_project_settings()
+	if error != OK:
+		push_warning(
+			"[MCPServer] ProjectSettings.save after input_map.action rename failed (err %d, action=%s)" % [
+				error, new_name])
+	return MCPToolkitSuccess.ok({"name": new_name, "old_name": action_name})
+
+
+## Saves project.godot. The rename saves through this method so a test can override it
+## and run the handler without writing the file.
+func _save_project_settings() -> Error:
+	return ProjectSettings.save()
