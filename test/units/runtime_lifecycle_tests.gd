@@ -58,7 +58,10 @@ static func _test_opted_out_run_keeps_runtime_entry(testing, tree: SceneTree) ->
 	var base_var := _registry_base_variable()
 	var saved_base := _save_env(base_var)
 	var saved_opt_out := _save_env(_ENV_RUNTIME)
-	OS.set_environment(base_var, ProjectSettings.globalize_path(_SCRATCH_REGISTRY_BASE))
+	# Resolved once, before the redirect: user:// resolves through base_var, so
+	# resolving it after would name a directory inside the scratch base.
+	var scratch_base := ProjectSettings.globalize_path(_SCRATCH_REGISTRY_BASE)
+	OS.set_environment(base_var, scratch_base)
 	OS.set_environment(_ENV_RUNTIME, "0")
 	var entry_path := RegistryPaths.runtime_entry_file_path()
 	var foreign_entry := JSON.stringify({"pid": 4242, "runtime_port": 6599}).to_utf8_buffer()
@@ -77,7 +80,7 @@ static func _test_opted_out_run_keeps_runtime_entry(testing, tree: SceneTree) ->
 	var entry_kept := FileAccess.file_exists(entry_path) \
 		and FileAccess.get_file_as_bytes(entry_path) == foreign_entry
 
-	_remove_tree(ProjectSettings.globalize_path(_SCRATCH_REGISTRY_BASE))
+	_remove_tree(scratch_base)
 	_restore_env(base_var, saved_base)
 	_restore_env(_ENV_RUNTIME, saved_opt_out)
 
