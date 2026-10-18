@@ -42,6 +42,8 @@
 #   GODOT_WARM_ONLY - set to 1 to exit 0 right after a successful warm-up
 #                     (cache written, no unit run) — lets workflows reuse the
 #                     warm-up logic without duplicating it
+#   CI              - when unset (a developer machine), the unit run gets
+#                     GODOT_MCP_RUNTIME=0 so it stays off the runtime channel
 
 set -euo pipefail
 
@@ -376,6 +378,13 @@ fi
 
 echo ""
 echo "=== Unit runner (exit code gates the job) ==="
+# The unit run loads the project's autoloads, so the runtime autoload would bind
+# a port and replace this project's runtime registry entry, taking it from a game
+# a developer is playtesting. Off CI, opt the unit run out. CI runs the units
+# alone and keeps the default, so the default autoload start stays exercised.
+if [ -z "${CI:-}" ]; then
+  export GODOT_MCP_RUNTIME=0
+fi
 UNIT_EXIT=0
 "$GODOT_BIN" --headless --script test/run_unit_tests.gd || UNIT_EXIT=$?
 
