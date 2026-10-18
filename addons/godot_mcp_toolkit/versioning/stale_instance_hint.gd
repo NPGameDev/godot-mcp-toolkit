@@ -1,24 +1,24 @@
 @tool
 extends RefCounted
 ## Pure decision + message helpers for the stale-live-instance method-call hazard.
-## On Godot < 4.4 a live instance already running a script does NOT see edits to that
-## script — newly-added members AND changed method bodies — and editor.refresh doesn't
-## change that. node.set_script reloads a script whose file changed, so setting the
-## script again recovers, on a fresh node or the same one. 4.4+ hot-reloads promptly on a
-## display editor, so no hint there — but a HEADLESS 4.4+ editor never re-instantiates
-## the live node, so the stale hint fires there too, with its own headless-specific
-## wording.
+## A toolkit write reloads the script the editor has cached, but a file changed outside
+## the toolkit is not: on Godot < 4.4 a live instance already running that script does
+## NOT see the edit — newly-added members AND changed method bodies — and editor_refresh
+## doesn't change that. node_set_script reloads a script whose file changed, so setting
+## the script again recovers, on a fresh node or the same one. 4.4+ hot-reloads promptly
+## on a display editor, so no hint there — but a HEADLESS 4.4+ editor never
+## re-instantiates the live node, so the stale hint fires there too, with its own
+## headless-specific wording.
 ##
 ## Empirically characterised across 4.2.0 / 4.3.0 / 4.4.1 / 4.5.0 / 4.6.2 (boundary
 ## 4.3 -> 4.4); 4.2 and 4.3 behave alike, so there is no 4.2-vs-4.3 split.
 ##
 ## SPLIT (mirrors unfocused_backup.gd): every function here is PURE and headless —
-## the decision predicates take the version `major`/`minor` plus the `headless` flag as
+## the decision predicate takes the version `major`/`minor` plus the `headless` flag as
 ## data, so run_unit_tests.gd exercises every branch across major/minor/headless
-## combinations (4.2-4.6 + a 5.0 guard) without an editor. The
-## editor-coupled callers read the running version / on-disk source and feed these:
-##   - script_commands.gd  : proactive hint on script.write of an existing .gd
-##   - node_commands.gd    : reactive hint on node.call_method -> INVALID_METHOD
+## combinations (4.2-4.6 + a 5.0 guard) without an editor. The editor-coupled caller
+## reads the running version and the on-disk source and feeds these when
+## node.call_method hits INVALID_METHOD.
 ##
 ## Godot 4.x is the supported world; the gate is `major == 4 and (minor < 4 or headless)`,
 ## so the 4.0-4.3 hot-reload hazard is always matched, the 4.4+ hazard is matched only
@@ -32,32 +32,21 @@ const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_so
 const _RECOVERY := (
 	"On Godot %s, a live instance already running this script keeps the OLD code: "
 	+ "changed method bodies AND newly-added members stay invisible to it, and "
-	+ "editor.refresh does NOT pick up the edit on Godot < 4.4. Set the script again "
-	+ "with node.set_script, which reloads it from disk, before calling the changed or "
+	+ "editor_refresh does NOT pick up the edit on Godot < 4.4. Set the script again "
+	+ "with node_set_script, which reloads it from disk, before calling the changed or "
 	+ "added members (or relaunch the editor)."
 )
 
 # Godot 4.4+ headless: a display editor hot-reloads live instances promptly, but a
 # headless editor never re-instantiates them — a distinct hazard from the < 4.4
 # engine-cache staleness, so it carries its own guidance (recovery is setting the
-# script again or relaunching, never editor.refresh).
+# script again or relaunching, never editor_refresh).
 const _RECOVERY_HEADLESS := (
 	"On Godot %s, the live instance running this script is stale — "
 	+ "headless editors don't re-instantiate live nodes on reload — set the script "
-	+ "again with node.set_script or relaunch a display editor; the edit is on disk, "
+	+ "again with node_set_script or relaunch a display editor; the edit is on disk, "
 	+ "confirm with script_check."
 )
-
-const _WRITE_PREFIX := (
-	"Validate scripts with script_check or lsp_diagnostics (errors also surface in "
-	+ "editor_get_console). Then note: "
-)
-
-
-## Proactive trigger: an EXISTING .gd was re-written AND it compiled OK AND the
-## editor is Godot < 4.4. (Create / 4.4+ / compile-fail / non-.gd -> no hint.)
-static func should_warn_on_write(existed: bool, compiled_ok: bool, extension: String, major: int, minor: int) -> bool:
-	return existed and compiled_ok and extension == "gd" and major == 4 and minor < 4
 
 
 ## Reactive trigger: node.call_method hit INVALID_METHOD (has_method false) on a
@@ -80,18 +69,12 @@ static func should_hint_on_call(
 ## The recovery guidance, tailored to the stale regime. [param ver_label] is the detected
 ## "major.minor" so the message names the real running version. When [param headless] and
 ## the engine is 4.4+ ([param minor] >= 4), returns the headless re-instantiation form;
-## otherwise the < 4.4 engine-cache form (4.2 and 4.3 alike). The defaults keep the
-## single-arg < 4.4 callers (write_hint) intact.
+## otherwise the < 4.4 engine-cache form (4.2 and 4.3 alike), which is also what the
+## defaults give.
 static func recovery_message(ver_label: String, minor: int = -1, headless: bool = false) -> String:
 	if headless and minor >= 4:
 		return _RECOVERY_HEADLESS % ver_label
 	return _RECOVERY % ver_label
-
-
-## Composed hint for a successful script.write (deliberate ordering: validation
-## guidance leads, the situational stale nudge takes the recency slot).
-static func write_hint(ver_label: String) -> String:
-	return _WRITE_PREFIX + recovery_message(ver_label)
 
 
 ## True if `source`, the file at `file_path`, parses/compiles as GDScript and its

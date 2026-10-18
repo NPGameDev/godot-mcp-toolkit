@@ -763,11 +763,12 @@ static func reload_script_from_disk(script: Script, judged_valid_source: String 
 
 
 ## [method reload_script_from_disk] for the script the editor has cached for
-## [param file_path], after a write to that file. A [code].gd[/code] the editor has not
-## loaded is left alone: its first load reads the file anyway.
+## [param file_path], after a write to that file. A file the editor has not loaded is left
+## alone: its first load reads the file anyway. So is a cached resource that is not a
+## script, such as a shader.
 ## Returns the same [code]{reloaded, compile_error}[/code] outcome.
 static func reload_cached_script(file_path: String, judged_valid_source: String = "") -> Dictionary:
-	if file_path.get_extension().to_lower() != "gd" or not ResourceLoader.has_cached(file_path):
+	if not ResourceLoader.has_cached(file_path):
 		return {"reloaded": false, "compile_error": ""}
 	var cached: Resource = ResourceLoader.load(file_path)
 	if not (cached is Script):

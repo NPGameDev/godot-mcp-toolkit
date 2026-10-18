@@ -343,35 +343,13 @@ static func _test_unfocused_backup(testing) -> void:
 # --- Stale-live-instance hint ----------------------------------------------
 # Pure decision predicates + message builders + on-disk helpers for the
 # stale-live-instance method-call hazard. Models the pure decision that the
-# proactive script-write path and the reactive INVALID-METHOD path both consume
-# (each reads the running version + on-disk source and feeds these).
+# reactive INVALID-METHOD path consumes (it reads the running version + on-disk
+# source and feeds these).
 # Boundary: STALE on Godot < 4.4 (minor 2,3), live on 4.4+ (boundary 4.3→4.4),
 # empirically characterised across 4.2.0–4.6.2 (see stale_instance_hint.gd).
 
 static func _test_stale_instance_hint(testing) -> void:
 	testing.begin("Stale-instance hint")
-
-	# should_warn_on_write(existed, compiled_ok, extension, major, minor) — proactive gate
-	testing.ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 2),
-			"write: existing .gd compiled on 4.2 → warn")
-	testing.ok(StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 3),
-			"write: existing .gd compiled on 4.3 → warn")
-	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 4),
-			"write: 4.4 → no warn (hot-reloads)")
-	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 5),
-			"write: 4.5 → no warn")
-	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 4, 6),
-			"write: 4.6 → no warn")
-	testing.ok(not StaleInstanceHint.should_warn_on_write(false, true, "gd", 4, 3),
-			"write: create (new file) → no warn")
-	testing.ok(not StaleInstanceHint.should_warn_on_write(true, false, "gd", 4, 3),
-			"write: compile-failed → no warn (Scenario C gate)")
-	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "cs", 4, 3),
-			"write: .cs → no warn (out of scope)")
-	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gdshader", 4, 2),
-			"write: .gdshader → no warn")
-	testing.ok(not StaleInstanceHint.should_warn_on_write(true, true, "gd", 5, 0),
-			"should_warn_on_write: Godot 5.0 does not warn — gate is major-aware")
 
 	# should_hint_on_call(has_method, disk_has_method, disk_compiles, is_gd, major, minor)
 	testing.ok(StaleInstanceHint.should_hint_on_call(false, true, true, true, 4, 3),
@@ -438,38 +416,30 @@ static func _test_stale_instance_hint(testing) -> void:
 	testing.ok(not StaleInstanceHint.source_has_method("func foo():\n\tpass", ""),
 			"source_has_method: empty method → false")
 
-	# recovery_message — names the version, covers bodies+added, node.set_script + relaunch
+	# recovery_message — names the version, covers bodies+added, node_set_script + relaunch
 	var msg := StaleInstanceHint.recovery_message("4.3")
 	testing.ok(msg.contains("4.3"), "recovery_message: names the version")
 	testing.ok(msg.contains("relaunch"), "recovery_message: recommends relaunch")
-	testing.ok(msg.contains("node.set_script"), "recovery_message: recommends setting the script again")
+	testing.ok(msg.contains("node_set_script"), "recovery_message: recommends setting the script again")
 	testing.ok(msg.contains("changed method bodies") and msg.contains("added members"),
 			"recovery_message: covers changed bodies AND added members")
 
 	# recovery_message headless form — 4.4+ headless gets the re-instantiation wording,
-	# distinct from the < 4.4 engine-cache form; version label still named, editor.refresh
+	# distinct from the < 4.4 engine-cache form; version label still named, editor_refresh
 	# is NOT offered (it doesn't help headless — set the script again or relaunch).
 	var msg_headless := StaleInstanceHint.recovery_message("4.5", 5, true)
 	testing.ok(msg_headless.contains("4.5"), "recovery_message headless: names the version")
 	testing.ok(msg_headless.contains("re-instantiate"),
 			"recovery_message headless: names the re-instantiation hazard")
 	testing.ok(msg_headless.contains("script_check"), "recovery_message headless: steers to script_check")
-	testing.ok(not msg_headless.contains("editor.refresh"),
-			"recovery_message headless: does NOT offer editor.refresh")
+	testing.ok(not (msg_headless.contains("editor.refresh") or msg_headless.contains("editor_refresh")),
+			"recovery_message headless: does NOT offer editor_refresh")
 	# < 4.4 headless keeps the engine-cache form (the headless form is a 4.4+ regime).
 	testing.ok(not StaleInstanceHint.recovery_message("4.3", 3, true).contains("re-instantiate"),
 			"recovery_message: 4.3 headless is the < 4.4 engine-cache form, not the headless form")
 	# Defensive: 4.4+ WITHOUT headless (a display caller never reaches here) → < 4.4 form.
 	testing.ok(not StaleInstanceHint.recovery_message("4.5", 5, false).contains("re-instantiate"),
 			"recovery_message: 4.5 non-headless falls back to the < 4.4 form")
-
-	# write_hint — validation guidance FIRST, stale nudge in the recency slot
-	var wh := StaleInstanceHint.write_hint("4.2")
-	testing.ok(wh.begins_with("Validate"), "write_hint: validation guidance leads")
-	testing.ok(wh.contains("script_check"), "write_hint: mentions script_check")
-	testing.ok(wh.find("Validate") < wh.find("relaunch"),
-			"write_hint: validation before stale nudge (recency ordering)")
-	testing.ok(wh.contains("4.2"), "write_hint: carries the version label")
 
 	print("")
 

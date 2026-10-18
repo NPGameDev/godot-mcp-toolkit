@@ -14,7 +14,12 @@ extends Node
 ## NOT a pre-Callable workaround. Do NOT inline these into command files or bind
 ## them on an ad-hoc / transient instance: a freed host means a broken undo.
 
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
+
+## Writes [param content] to [param path] for an undo or redo of a script write, then
+## reloads the script the editor has cached for it, so the nodes running it match the file
+## again. A source that does not compile is written but never reloaded.
 func _write_file_silent(path: String, content: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
@@ -22,6 +27,7 @@ func _write_file_silent(path: String, content: String) -> void:
 		return
 	file.store_string(content)
 	file.close()
+	Modules.CommandHelpers.reload_cached_script(path)
 
 
 func _delete_file_silent(path: String) -> void:

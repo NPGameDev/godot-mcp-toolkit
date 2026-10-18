@@ -220,13 +220,14 @@ static func _cmd_script_edit(server: Node, parameters: Dictionary) -> Dictionary
 
 ## Writes [param content] to [param file_path], wrapping it in an editor UndoRedo
 ## action, reindexing the file, and — for a .gd file — attaching inline
-## diagnostics plus the stale-live-instance hint. Shared by [method _cmd_script_write]
+## diagnostics and, when it compiles, reloading the script the editor has cached, so
+## the nodes running it run the new code. Shared by [method _cmd_script_write]
 ## (whole-file) and [method _cmd_script_edit] (surgical) so both take the identical
 ## write/undo/index/diagnose pipeline. [param prior_content] is the file's content
 ## before this write (empty when [param existed] is false) — the undo restores it,
 ## or deletes the file when it did not exist. [param extension] is the lowercased
 ## file extension, used to gate the .gd-only diagnostics.
-## Returns the success envelope [code]{bytes, undoable, indexed, valid?, diagnostics?, hint?}[/code],
+## Returns the success envelope [code]{bytes, undoable, indexed, valid?, diagnostics?}[/code],
 ## or a [method MCPToolkitError.fail] envelope on a write failure.
 static func _commit_content(server: Node, file_path: String, content: String,
 		prior_content: String, existed: bool, extension: String) -> Dictionary:
@@ -255,15 +256,11 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		var validation := _validate_gdscript(content, file_path)
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
-
-		# Proactive stale-live-instance hint. Editing an EXISTING .gd
-		# that compiled OK on Godot < 4.4 won't reach a live instance until
-		# node.set_script sets it again (added members AND changed bodies —
-		# empirically characterised, boundary 4.3->4.4). Append to the response hint
-		# (validation guidance first, stale nudge in the recency slot).
-		var version := Modules.VersionUtils.get_engine_version_ints()
-		if Modules.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], extension, version.x, version.y):
-			result["hint"] = Modules.StaleInstanceHint.write_hint(Modules.VersionUtils.get_engine_version_pair())
+		# Godot < 4.4 never reloads a cached script after a write, and 4.4+ only on a
+		# later scan, so the nodes already running it would keep the old code. A
+		# source that failed the check above stays out of the cached script.
+		if bool(validation["valid"]):
+			Helpers.reload_cached_script(file_path, content)
 
 	return result
 
