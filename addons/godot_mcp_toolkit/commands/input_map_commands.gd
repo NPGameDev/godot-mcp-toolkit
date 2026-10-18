@@ -339,9 +339,8 @@ func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 
 
 ## Renames the project action [param action_name] to [param new_name] and saves
-## project.godot. It works from the [code]input/<name>[/code] setting, because the
-## editor's InputMap holds only the built-in actions and a project action exists there
-## only as that setting.
+## project.godot. The editor loads only the built-in actions into InputMap, so the
+## [code]input/<name>[/code] setting, not InputMap, is the action's source of truth.
 ##
 ## A missing or empty [param new_name] is refused, and so is a [param new_name] equal to
 ## [param action_name]. A built-in action is refused as [code]remove[/code] refuses one.
