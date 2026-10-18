@@ -96,7 +96,9 @@ var _transport: WsTransport = null
 # The absolute path of the token file this server last wrote, in the form the
 # registry publishes. Every publish site reads it through
 # get_published_token_path(), so a failed re-write after a rename leaves the old
-# file, which still holds the live token, published. Empty until a write succeeds.
+# file, which still holds the live token, published, until a Regenerate Token
+# writes a new token to the new path: this then records that file, and the next
+# publish names it. Empty until a write succeeds.
 var _written_token_path: String = ""
 var _poll_frame_counter := 0
 # Resolved listen-port configuration (PortConfig.resolve result). A non-empty
