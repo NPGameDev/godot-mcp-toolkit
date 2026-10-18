@@ -326,16 +326,19 @@ vars and inspector-visible fields. Use `execute_code` for internal state.
 on the running game use `execute_code` (its default channel is the running game):
 `get_node('/root/Main/Player').call('take_damage', 25)`.
 
-### Stale live instance after a script edit (Godot < 4.4)
+### Stale live instance after an outside script edit (Godot < 4.4)
 
-On Godot **< 4.4** (4.2, 4.3), editing a `.gd` already attached to a **live**
-node does **not** reach that running instance: a newly-added method fails with
-`INVALID_METHOD`, and a changed method **body** runs the old code silently.
-`editor_refresh` keeps the stale code — **set the script again** with
-`node_set_script`, which reloads it from disk, before calling the changed members
-(`script_write` and `node_call_method` flag this in their hints).
-Best practice: write the full script **before** attaching it. On 4.4+ scripts
-hot-reload, so this doesn't apply.
+`script_write` and `script_edit` reload a `.gd` that compiles, so the nodes
+already running it run the new code on every version. A file that does not
+compile is written but not loaded: those nodes keep the code they had.
+
+On Godot **< 4.4** (4.2, 4.3), a `.gd` changed **outside the toolkit** (an
+external editor, git) does **not** reach a **live** node already running it: a
+newly-added method fails with `INVALID_METHOD`, and a changed method **body**
+runs the old code silently. `editor_refresh` keeps the stale code — **set the
+script again** with `node_set_script`, which reloads it from disk, before calling
+the changed members (`node_call_method` flags this in its hint). On 4.4+ a
+display editor hot-reloads it, so this doesn't apply.
 
 **Env var lifecycle.** `GODOT_MCP_*` env vars (e.g. `GODOT_MCP_READ_ONLY`,
 `GODOT_MCP_EDITOR_PORT`) are read when the MCP server process starts. After

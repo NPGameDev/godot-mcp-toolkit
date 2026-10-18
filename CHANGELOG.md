@@ -25,13 +25,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - After a project rename, **Regenerate Token** no longer leaves the MCP server
   unable to connect until the editor restarts.
-- `node_set_script` now sets a script as it is on disk. After `script_edit`,
-  `script_write` or another editor changed the file, it set the version the
-  editor first loaded from that path, so a `@tool` script kept running its old
-  code. A node that already has the script picks up the change when
-  `node_set_script` sets it again. On Godot 4.2 and 4.3, and on a headless
-  4.4+ editor, the stale-instance hint on `script_write` and `node_call_method`
-  now says so, instead of telling you to relaunch the editor.
+- Nodes now run a script as it is on disk. `node_set_script` used to set the
+  version the editor first loaded from that path, so after `script_edit`,
+  `script_write` or another editor changed the file, a `@tool` script kept
+  running its old code. Now `node_set_script` reloads a changed
+  file, and a node that already has the script runs the new code too.
+  `script_write` and `script_edit` reload the script themselves, and so do their
+  undo and redo, on every Godot version. A file that doesn't compile is never
+  loaded: its nodes keep the code they had, and `node_set_script` returns
+  `valid: false` with a hint naming the error. For a file changed outside the
+  toolkit, the stale-instance hint on `node_call_method` now tells you to set the
+  script again instead of relaunching the editor, and `script_write` no longer
+  carries that hint. Reported and first fixed by @benfeather
+  ([#43](https://github.com/NPGameDev/godot-mcp-toolkit/issues/43),
+  [#45](https://github.com/NPGameDev/godot-mcp-toolkit/pull/45)).
 
 ## [1.0.4] - 2026-10-14
 
