@@ -32,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   leaves the value unchanged, with a warning that names the element. A number
   with a fraction in an `Array[int]` is truncated, as it is for an `int`
   property, and a warning lists the elements that changed.
-  Thanks to @benfeather
+  Reported and fixed by @benfeather
   ([#41](https://github.com/NPGameDev/godot-mcp-toolkit/issues/41),
   [#42](https://github.com/NPGameDev/godot-mcp-toolkit/pull/42)).
 
