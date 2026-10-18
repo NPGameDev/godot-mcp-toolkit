@@ -354,8 +354,8 @@ static func _test_token_path_announce(testing) -> void:
 # project's user://: a writable path is announced and becomes the published
 # path; a path whose parent is a regular file fails the write, announces nothing
 # and leaves the earlier path published. The write also creates this project's
-# user:// instance folder when missing, so the test removes it again in that
-# case. GDScript has no try/finally, so the variable is restored straight after
+# user:// instance folder and its parents when missing, so the test removes the
+# ones it created. GDScript has no try/finally, so the variable is restored straight after
 # the calls, before any check runs.
 static func _test_token_rewrite_through_server(testing) -> void:
 	testing.begin("MCPServer — token re-write after a rename, through the server")
@@ -365,10 +365,23 @@ static func _test_token_rewrite_through_server(testing) -> void:
 	var good_path := tmp_root.path_join("mcp_token")
 	var blocker_path := tmp_root.path_join("not_a_folder")
 	var bad_path := blocker_path.path_join("mcp_token")
+	# The folders the token write creates when missing, deepest first; only the
+	# ones missing now are removed afterwards.
 	var instance_dir := ProjectSettings.globalize_path(ProjectPaths.instance_dir()).rstrip("/")
-	var had_instance_dir := DirAccess.dir_exists_absolute(instance_dir)
+	var plugin_dir := instance_dir.get_base_dir()
+	var candidate_dirs: Array[String] = [instance_dir, plugin_dir, plugin_dir.get_base_dir()]
+	var created_dirs: Array[String] = []
+	for dir_path in candidate_dirs:
+		if not DirAccess.dir_exists_absolute(dir_path):
+			created_dirs.append(dir_path)
 	DirAccess.make_dir_recursive_absolute(tmp_root)
 	var blocker := FileAccess.open(blocker_path, FileAccess.WRITE)
+	if blocker == null:
+		DirAccess.remove_absolute(tmp_root)
+		testing.ok(false, "environment: cannot create %s (err %d)" % [
+			blocker_path, FileAccess.get_open_error()])
+		print("")
+		return
 	blocker.store_string("a file where the token's parent folder should be")
 	blocker.close()
 
@@ -407,8 +420,8 @@ static func _test_token_rewrite_through_server(testing) -> void:
 	DirAccess.remove_absolute(good_path)
 	DirAccess.remove_absolute(blocker_path)
 	DirAccess.remove_absolute(tmp_root)
-	if not had_instance_dir:
-		DirAccess.remove_absolute(instance_dir)
+	for dir_path in created_dirs:
+		DirAccess.remove_absolute(dir_path)
 
 	testing.ok(bound, "the transport bound a port in 18880-18919")
 	testing.eq(written, "unit-test-token", "writable path → the token is written there")
