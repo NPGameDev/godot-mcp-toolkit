@@ -15,8 +15,9 @@ const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _se
 # frame budget; a larger requested limit is clamped and disclosed in-band.
 const _QUERY_MAX_LIMIT := 200
 
-# Scene files a loader reads directly. Any other extension on the PackedScene list
-# belongs to an importer, so that file loads only through its .import sidecar.
+# Scene files the engine's own scene loaders read directly, with no import step.
+# Any other extension is treated as an imported scene, whose load goes through
+# its .import sidecar.
 const _NATIVE_SCENE_EXTENSIONS := ["tscn", "scn", "res"]
 
 
@@ -706,9 +707,12 @@ static func _missing_scene_failure(packed_path: String) -> Dictionary:
 ## null. An imported model with no .import sidecar yet has not been imported, which
 ## a rescan fixes; anything else is a broken file or dependency.
 static func _unloadable_scene_failure(packed_path: String) -> Dictionary:
-	if _is_imported_scene_path(packed_path) and not FileAccess.file_exists(packed_path + ".import"):
+	if _is_imported_scene_path(packed_path):
+		if not FileAccess.file_exists(packed_path + ".import"):
+			return MCPToolkitError.fail("LOAD_FAILED",
+				"%s has no .import sidecar, so the editor has not imported it yet; run editor_refresh and retry" % packed_path)
 		return MCPToolkitError.fail("LOAD_FAILED",
-			"%s has no .import sidecar, so the editor has not imported it yet; run editor_refresh and retry" % packed_path)
+			"ResourceLoader.load returned null for %s (its imported data is missing or the import failed — run editor_refresh to reimport it, and check editor_get_console)" % packed_path)
 	return MCPToolkitError.fail("LOAD_FAILED",
 		"ResourceLoader.load returned null for %s (corrupt file or dependency error — check editor_get_console)" % packed_path)
 

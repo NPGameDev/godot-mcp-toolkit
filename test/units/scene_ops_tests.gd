@@ -12,6 +12,7 @@ const _BINARY_SCENE_FIXTURE := "user://scene_instantiate_fixture.scn"
 const _NON_SCENE_FIXTURE := "user://scene_instantiate_fixture.tres"
 const _NON_SCENE_BINARY_FIXTURE := "user://scene_instantiate_fixture.res"
 const _TEXT_SCENE_FIXTURE := "user://scene_instantiate_text_fixture.tscn"
+const _UNLOADABLE_MODEL_FIXTURE := "user://scene_instantiate_unloadable_model.glb"
 
 
 static func run(testing) -> void:
@@ -211,6 +212,15 @@ static func _test_instantiate_model_recovery_messages(testing) -> void:
 	var broken_scene := _SceneCommands._unloadable_scene_failure("user://broken_scene.tscn")
 	testing.ok(not str(broken_scene.get("error", "")).contains("editor_refresh"),
 			"broken .tscn doesn't advise editor_refresh")
+
+	# A sidecar with no imported output behind it, as after a failed import.
+	var sidecar := FileAccess.open(_UNLOADABLE_MODEL_FIXTURE + ".import", FileAccess.WRITE)
+	sidecar.store_string("[remap]\n")
+	sidecar.close()
+	var failed_import := _SceneCommands._unloadable_scene_failure(_UNLOADABLE_MODEL_FIXTURE)
+	testing.ok(str(failed_import.get("error", "")).contains("editor_refresh"),
+			"model whose import failed names editor_refresh")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_UNLOADABLE_MODEL_FIXTURE + ".import"))
 	print("")
 
 
