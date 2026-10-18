@@ -173,7 +173,10 @@ static func _cmd_script_edit(server: Node, parameters: Dictionary) -> Dictionary
 
 	var edits: Array = []
 	if uses_edits:
-		if parameters.has("old_string") or parameters.has("new_string") or parameters.has("replace_all"):
+		# A top-level replace_all:false changes nothing, and clients that fill in
+		# optional defaults send it, so only a true one conflicts with edits.
+		var replace_all_set := bool(parameters.get("replace_all", false))
+		if parameters.has("old_string") or parameters.has("new_string") or replace_all_set:
 			return MCPToolkitError.fail("INVALID_PARAMS",
 				"pass either edits or old_string/new_string/replace_all, not both")
 		var edits_param = parameters.get("edits")
@@ -182,7 +185,6 @@ static func _cmd_script_edit(server: Node, parameters: Dictionary) -> Dictionary
 				"edits must be a non-empty array of {old_string, new_string, replace_all?}")
 		edits = edits_param
 	else:
-		# The top-level parameters carry the single edit's keys.
 		edits.append(parameters)
 	# Fail fast on a malformed or no-op edit before touching the file: a substitution
 	# that changes nothing would still churn undo/index/diagnostics for no effect.
@@ -260,7 +262,7 @@ static func _apply_edits(content: String, edits: Array, file_path: String, label
 		if match_count > 1 and not replace_all:
 			return MCPToolkitError.fail("NOT_UNIQUE",
 				"%sold_string matches %d times in %s" % [prefix, match_count, file_path],
-				"Add surrounding context so old_string identifies one location, or set replace_all:true to replace all %d." % match_count)
+				"Add surrounding context so old_string identifies one location, or set replace_all:true to replace all %d." % match_count + order_hint)
 
 		if replace_all:
 			edited = edited.replace(old_string, new_string)

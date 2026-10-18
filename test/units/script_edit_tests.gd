@@ -17,6 +17,8 @@ static func run(testing) -> void:
 	_test_unmatched_edit_fails_whole_call(testing)
 	await _test_handler_writes_nothing_on_unmatched_edit(testing)
 	await _test_handler_rejects_mixed_forms(testing)
+	await _test_handler_hints_edit_order_on_not_unique(testing)
+	await _test_handler_tolerates_replace_all_false(testing)
 
 
 static func _test_edits_apply_in_order(testing) -> void:
@@ -99,6 +101,53 @@ static func _test_handler_rejects_mixed_forms(testing) -> void:
 		"edits": [{"old_string": "return 1", "new_string": "return 1"}],
 	})
 	testing.eq(same.get("code", ""), "INVALID_PARAMS", "a no-op edit → INVALID_PARAMS")
+	testing.eq(FileAccess.get_file_as_string(FIXTURE), SOURCE, "the file is unchanged")
+	_restore_fixture(checkout)
+	print("")
+
+
+static func _test_handler_hints_edit_order_on_not_unique(testing) -> void:
+	testing.begin("script.edit handler: an ambiguous edit in the edits form hints at the edit order")
+	var checkout := _write_fixture()
+	var ambiguous: Dictionary = await ScriptCommands._cmd_script_edit(null, {
+		"file_path": FIXTURE,
+		"edits": [{"old_string": "-> int", "new_string": "-> float"}],
+	})
+	testing.eq(ambiguous.get("code", ""), "NOT_UNIQUE", "two matches without replace_all → NOT_UNIQUE")
+	testing.ok(str(ambiguous.get("hint", "")).contains("Edits apply in order"),
+			"the hint says the edits apply in order")
+	var single: Dictionary = await ScriptCommands._cmd_script_edit(null, {
+		"file_path": FIXTURE,
+		"old_string": "-> int",
+		"new_string": "-> float",
+	})
+	testing.eq(single.get("code", ""), "NOT_UNIQUE", "the single form → NOT_UNIQUE too")
+	testing.ok(not str(single.get("hint", "")).contains("Edits apply in order"),
+			"the single form's hint does not mention edits")
+	testing.eq(FileAccess.get_file_as_string(FIXTURE), SOURCE, "the file is unchanged")
+	_restore_fixture(checkout)
+	print("")
+
+
+static func _test_handler_tolerates_replace_all_false(testing) -> void:
+	testing.begin("script.edit handler: a default replace_all:false beside edits is not a second form")
+	var checkout := _write_fixture()
+	var defaulted: Dictionary = await ScriptCommands._cmd_script_edit(null, {
+		"file_path": FIXTURE,
+		"replace_all": false,
+		"edits": [
+			{"old_string": "func old_name()", "new_string": "func new_name()"},
+			{"old_string": "never_present", "new_string": "x"},
+		],
+	})
+	testing.eq(defaulted.get("code", ""), "NOT_FOUND", "the edits run, and the unmatched one → NOT_FOUND")
+	testing.ok(str(defaulted.get("error", "")).begins_with("edits[1]: "), "the error names edits[1]")
+	var conflicting: Dictionary = await ScriptCommands._cmd_script_edit(null, {
+		"file_path": FIXTURE,
+		"replace_all": true,
+		"edits": [{"old_string": "return 1", "new_string": "return 2"}],
+	})
+	testing.eq(conflicting.get("code", ""), "INVALID_PARAMS", "replace_all:true beside edits → INVALID_PARAMS")
 	testing.eq(FileAccess.get_file_as_string(FIXTURE), SOURCE, "the file is unchanged")
 	_restore_fixture(checkout)
 	print("")
