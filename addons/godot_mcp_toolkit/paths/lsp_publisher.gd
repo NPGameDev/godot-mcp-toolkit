@@ -63,6 +63,10 @@ var _on_status_changed: Callable = Callable()
 #   the watch needs it to skip re-publishing before/after the server is listening,
 #   exactly as the pre-extraction watch read _transport.get_bound_port()).
 var _bound_port_provider: Callable = Callable()
+# _token_path_provider: func() -> String — the token path the registry entry names
+#   (the server tracks the file it last wrote), so a re-publish never points the
+#   entry at a token file the server failed to write.
+var _token_path_provider: Callable = Callable()
 
 
 ## The GDScript LSP endpoint THIS editor's setting points at (default
@@ -94,6 +98,12 @@ func set_status_changed_handler(on_status_changed: Callable) -> void:
 ## not). Call once at construction, before connect_settings_watch / any re-publish.
 func set_bound_port_provider(bound_port_provider: Callable) -> void:
 	_bound_port_provider = bound_port_provider
+
+
+## Wire the source of the token path to publish (the server owns which token file
+## it last wrote). Call once at construction, before any re-publish.
+func set_token_path_provider(token_path_provider: Callable) -> void:
+	_token_path_provider = token_path_provider
 
 
 ## The MCP server reports the authoritative LSP verdict here — it can do reliable
@@ -144,7 +154,9 @@ func _on_editor_settings_changed() -> void:
 		return  # LSP endpoint unchanged — ignore unrelated editor-setting churn.
 	_last_lsp_host = lsp["host"]
 	_last_lsp_port = lsp["port"]
-	RegistryClient.ensure_registered(bound_port, MCPAuth.get_published_token_path(), lsp["host"], lsp["port"])
+	var token_path: String = (_token_path_provider.call() if _token_path_provider.is_valid()
+			else MCPAuth.get_published_token_path())
+	RegistryClient.ensure_registered(bound_port, token_path, lsp["host"], lsp["port"])
 	print("[MCPServer] LSP endpoint changed -> re-published %s:%d" % [lsp["host"], lsp["port"]])
 	_after_republish(endpoint_changed)
 

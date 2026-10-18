@@ -24,7 +24,6 @@ const MCPServer := preload("res://addons/godot_mcp_toolkit/transport/mcp_server.
 const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
-const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/extension_loader.gd")
 const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
 const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
@@ -127,7 +126,10 @@ static func _register_in_registry(server: Node) -> void:
 	var bound_port: int = server.get_bound_port()
 	if bound_port > 0:
 		var lsp := MCPServer.resolve_lsp_endpoint()
-		RegistryClient.register(bound_port, MCPAuth.get_published_token_path(), lsp["host"], lsp["port"])
+		# The server names the token file it last wrote, so a failed re-write after
+		# a rename never publishes a file that does not hold the live token.
+		var token_path: String = str(server.get_published_token_path())
+		RegistryClient.register(bound_port, token_path, lsp["host"], lsp["port"])
 		# Deferred re-verify: concurrent editors may clobber our entry after
 		# our initial verify passes. Jittered delay ensures all editors have
 		# finished their initial registration before we re-check.
@@ -135,7 +137,8 @@ static func _register_in_registry(server: Node) -> void:
 		server.get_tree().create_timer(_jitter).timeout.connect(
 			func():
 				var lsp_re := MCPServer.resolve_lsp_endpoint()
-				RegistryClient.ensure_registered(bound_port, MCPAuth.get_published_token_path(), lsp_re["host"], lsp_re["port"]))
+				var token_path_re: String = str(server.get_published_token_path())
+				RegistryClient.ensure_registered(bound_port, token_path_re, lsp_re["host"], lsp_re["port"]))
 
 
 # Re-publish this editor's registry entry after the server re-writes its token to
