@@ -113,6 +113,12 @@ func _ready() -> void:
 	if Engine.is_editor_hint():
 		set_process(false)
 		return
+	# The engine honours --check-only only alongside --script; without it the run
+	# loads the main scene with its autoloads. Keep that validation run off the
+	# runtime channel.
+	if "--check-only" in OS.get_cmdline_args():
+		set_process(false)
+		return
 	# Export gate: shipped games (debug OR release export templates) must not
 	# listen on 6570. has_feature("editor") is true only under an editor launch
 	# (F5/F6) and false in EVERY export template — stronger than is_debug_build()
