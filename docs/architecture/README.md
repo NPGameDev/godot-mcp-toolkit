@@ -388,7 +388,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="c05de99" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="1dd5f70" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -398,7 +398,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified c05de99*
+*Figure 8 — the idempotent create / if_exists decision · verified 1dd5f70*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
