@@ -29,7 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a typed array. Before, creating a resource from a script class (`type` naming
   a `class_name`) dropped the array with no warning, and other writes saved it
   untyped (`tags = ["x"]`). An element that doesn't fit the array's type now
-  leaves the value unchanged, with a warning.
+  leaves the value unchanged, with a warning that names the element. A number
+  with a fraction in an `Array[int]` is truncated, as it is for an `int`
+  property, and a warning lists the elements that changed.
+  Thanks to @benfeather
+  ([#41](https://github.com/NPGameDev/godot-mcp-toolkit/issues/41),
+  [#42](https://github.com/NPGameDev/godot-mcp-toolkit/pull/42)).
 
 ## [1.0.4] - 2026-10-14
 
