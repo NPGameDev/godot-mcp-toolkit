@@ -557,7 +557,7 @@ func stop() -> void:
 # LSP settings-watch trigger points (the mechanism lives in lsp_publisher.gd, C9).
 # start() connects the watch (resolve baseline + listen on EditorSettings.settings_changed
 # for a mid-session GDScript LSP port/host change → debounced registry re-publish);
-# stop() disconnects it (I12 symmetry). Thin null-guarded delegates so the lifecycle
+# stop() disconnects exactly what start() connected. Thin null-guarded delegates so the lifecycle
 # sequencing stays here while the child owns the watch + debounce + re-publish.
 func _connect_lsp_settings_watch() -> void:
 	if _lsp != null:

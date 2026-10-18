@@ -115,8 +115,8 @@ func get_reported_lsp_status() -> Dictionary:
 ## Re-publish the registry entry when the editor's GDScript LSP port/host
 ## setting changes mid-session, so the published endpoint never goes stale.
 ## EditorSettings.settings_changed fires globally; we debounce by comparing the
-## re-resolved endpoint against the last published one. Connected from start(),
-## disconnected in stop() (I12 symmetry).
+## re-resolved endpoint against the last published one. Connected from start();
+## stop() disconnects exactly what start() connected.
 func connect_settings_watch() -> void:
 	var lsp := resolve_lsp_endpoint()
 	_last_lsp_host = lsp["host"]

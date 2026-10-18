@@ -31,7 +31,7 @@ const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playte
 const DebugBridge := preload("res://addons/godot_mcp_toolkit/transport/debug_bridge.gd")
 const ResponseLimits = Modules.ResponseLimits
 # Teardown counterpart of PlaytestCommands.register(..., debug_bridge): dispose()
-# calls PlaytestCommands.clear_debug_bridge() as the I12 reverse of that register.
+# calls PlaytestCommands.clear_debug_bridge() to undo exactly what that register set.
 const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_commands.gd")
 
 
@@ -278,7 +278,8 @@ class Handle:
 				ProjectSettings.settings_changed.disconnect(_extension_watcher.on_settings_changed)
 		_extension_watcher = null
 
-		# Debugger bridge — unregister before server teardown (I12 symmetry).
+		# Debugger bridge — undo what compose() registered for it, before server
+		# teardown: the playtest commands' bridge, then the debugger plugin.
 		PlaytestCommands.clear_debug_bridge()
 		if _debug_bridge != null:
 			_debug_bridge.cleanup()

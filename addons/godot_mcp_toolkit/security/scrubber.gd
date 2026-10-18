@@ -1,9 +1,9 @@
 @tool
 extends RefCounted
-## Secret scrubber — redacts credentials from log/error output before
-## returning it through the MCP transport. Applied to debugger_get_log
-## and editor_get_console; never applied to
-## script_read (source code should not be mutated).
+## Secret scrubber — redacts credentials from text before it is returned
+## through the MCP transport. Applied to debugger_get_log,
+## editor_get_console and save_read (a save file's decoded text); never
+## applied to script_read (source code should not be mutated).
 
 # Three high-precision patterns that cover real secrets with minimal
 # false-positives. The broad hex pattern ([A-Fa-f0-9]{32,}) is

@@ -3,8 +3,8 @@ extends EditorDebuggerPlugin
 ## EditorDebuggerPlugin subclass — tracks debugger session state and
 ## provides continue-execution via send_message.
 ##
-## Registered/unregistered by plugin.gd via add_debugger_plugin /
-## remove_debugger_plugin (I12 symmetry). Session signals feed the
+## Registered by core/plugin_composer.gd via add_debugger_plugin; its teardown
+## removes it via remove_debugger_plugin. Session signals feed the
 ## debug.state command; send_message("continue") feeds debug.continue.
 
 ## Shared error-entry shape (timestamp + type vary by source; rest pass-through).
