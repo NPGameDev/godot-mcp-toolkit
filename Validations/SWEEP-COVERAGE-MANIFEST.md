@@ -53,7 +53,7 @@ C24–C26 & C29 in §§26–27).
 | node.get_property_list | 38–40 | — | C5 | — | — | |
 | node.call_method | 49, 50 | — | C9 | ✓ (CS3: C# hint) | — | |
 | node.set_script | 37 | — | C5, C8 | — | — | |
-| node.manage | 43a–43j, 4.17–4.18 | ✓ (43h2: properties; 4.17: root reparent/reorder/duplicate stay INVALID_PATH) | — | — | FIX-K | 4.17–4.18: root RENAME allowed (guard relaxed, 41n-undecies H — agrees with node.set_property `name`, 3.29); headless units pin root rename + kept structural guards |
+| node.manage | 43a–43j, 4.8a, 4.17–4.18 | ✓ (43h2: properties; 4.17: root reparent/reorder/duplicate stay INVALID_PATH) | — | — | FIX-K, ecd5fb3 | 4.17–4.18: root RENAME allowed (guard relaxed, 41n-undecies H — agrees with node.set_property `name`, 3.29); headless units pin root rename + kept structural guards. 4.8a: a duplicate's children reach the saved file (toolkit #37); headless units pin the copy's owners under the same or another parent, inside an instance, and packed |
 | node.groups | 43k–43l, 4.12–4.16 | — | — | — | 462506b, concern 034 | 4.12/4.14: batch add/remove happy path; 4.15/4.16: batch partial-failure rollup — 4.15 asserts top-level `failed`(int)+`hint` via the shape-tolerant predicate on site-2's `{status?, error?}` (no-`success`) entries; 4.16 asserts both ABSENT on all-success (summarize_batch, additive) |
 | collision_from_texture | 19.1, 19.2, §25 UR12 | ✓ (19.3: INVALID_CLASS) | — | — | — | `parent_path` param (renamed from `target_parent`) |
 | control.set_layout | 3.24–3.26 | ✓ (3.27: invalid preset, 3.28: wrong class) | C28 | — | 4d7e432 | W1 Lane 2 |
@@ -296,7 +296,7 @@ C24–C26 & C29 in §§26–27).
 | node.manage (rename) | UR2.1–UR2.4 | — | — | — | — | Rename undo/redo |
 | node.groups (add) | UR3.1–UR3.4 | — | — | — | — | Group add undo/redo |
 | node.manage (reorder) | UR4.1–UR4.5 | — | — | — | — | Reorder undo/redo (context_object regression guard) |
-| node.manage (duplicate) | UR5.1–UR5.3 | — | — | — | — | Duplicate undo/redo (context_object regression guard) |
+| node.manage (duplicate) | UR5.0–UR5.4 | — | — | — | ecd5fb3 | Duplicate undo/redo (context_object regression guard); UR5.4: redo, save, the copy's children in the saved file (toolkit #37) |
 | node.groups (remove + batch) | UR6.1–UR6.7 | — | — | — | — | Group remove + batch undo/redo (context_object regression guard) |
 | scene.delete_node | UR7.1–UR7.3 | — | — | — | — | Node deletion undo/redo (context_object regression guard) |
 | control.set_layout | UR8.1–UR8.4 | — | — | — | — | Layout preset undo/redo (context_object regression guard) |

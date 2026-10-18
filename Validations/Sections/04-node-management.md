@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in Sv2Main.tscn)
 **Tools tested:** node_manage (rename, reparent, reorder, duplicate), node_groups
-**Tests:** 18
+**Tests:** 19
 
 ---
 
@@ -29,6 +29,17 @@
 
 **4.8** `node_manage` (duplicate) — action=`duplicate`, node_path=`Sv2Label`, new_name=`Sv2LabelCopy`
 - **Expect:** success
+
+**4.8a** `node_manage` (duplicate a node with children, then save) — action=`duplicate`, node_path=`Sv2Player`, new_name=`Sv2PlayerCopy`
+- **Expect:** success
+- **Saved-file check:** `editor_save_scene`, then `script_read` file_path=`res://sv2_validation/Sv2Main.tscn`. Every child `Sv2Player` has in the file (at least `Sv2Collider`) also has a `[node ...]` header with `parent="Sv2PlayerCopy"`.
+- Restore: `scene_delete_node` node_path=`Sv2PlayerCopy` (also in the cleanup).
+
+> **REGRESSION WATCH (toolkit #37, ecd5fb3):** If the file holds `Sv2PlayerCopy`
+> with no children while `scene_get_tree` lists them, the copy's descendants lost
+> their owner again: `Node.duplicate()` leaves them unowned, and the scene saver
+> drops a node the scene root does not own. Flag as **Major** (the saved scene
+> silently loses nodes).
 
 **4.9** `node_get_property` — node_path=`Sv2LabelCopy`, property=`text`
 - **Expect:** "Hello Sweep v2" (inherits value)
@@ -100,3 +111,4 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 
 - `scene_delete_node` node_path=`Sv2LabelCopy`
 - `scene_delete_node` node_path=`Sv2SpriteCopy`
+- `scene_delete_node` node_path=`Sv2PlayerCopy` (skip if 4.8a's restore removed it)
