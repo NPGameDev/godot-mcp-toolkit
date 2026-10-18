@@ -2,7 +2,7 @@
 
 **Dependencies:** None
 **Tools tested:** input_map_action, input_map_event
-**Tests:** 5
+**Tests:** 7
 
 ---
 
@@ -31,6 +31,12 @@
 
 **10.4** `input_map_action` — action=`remove`, name=`sv2_jump`
 - **Expect:** success
+
+**10.5** `input_map_action` — action=`add`, name=`sv2_old`; `input_map_event` — action=`bind`, name=`sv2_old`, event=`{"type":"key","keycode":"Space"}`; then `input_map_action` — action=`rename`, name=`sv2_old`, new_name=`sv2_new`
+- **Expect:** success, `{"name":"sv2_new","old_name":"sv2_old"}`. `project.godot` has `sv2_new` with the Space event and no `sv2_old`.
+
+**10.6** `input_map_action` — action=`rename`, name=`sv2_new`, new_name=`ui_accept`
+- **Expect:** `ALREADY_EXISTS`. Then `input_map_action` — action=`remove`, name=`sv2_new` → success.
 
 ---
 

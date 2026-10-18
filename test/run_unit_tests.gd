@@ -42,6 +42,7 @@ const DockLayoutTests := preload("res://test/units/dock_layout_tests.gd")
 const InputMapTests := preload("res://test/units/input_map_tests.gd")
 const ScriptCheckTests := preload("res://test/units/script_check_tests.gd")
 const NodeWriterIntTests := preload("res://test/units/node_writer_int_tests.gd")
+const InputMapRenameTests := preload("res://test/units/input_map_rename_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -88,6 +89,7 @@ func _init() -> void:
 	InputMapTests.run(testing)
 	ScriptCheckTests.run(testing)
 	NodeWriterIntTests.run(testing)
+	InputMapRenameTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()

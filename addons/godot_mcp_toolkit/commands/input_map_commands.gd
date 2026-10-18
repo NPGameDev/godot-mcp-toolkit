@@ -196,12 +196,14 @@ static func _load_project_action(action: String) -> void:
 
 static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
-	if not (action in ["add", "remove"]):
+	if not (action in ["add", "remove", "rename"]):
 		return MCPToolkitError.fail("INVALID_PARAMS",
-			"action must be 'add' or 'remove' (got '%s')" % action)
+			"action must be 'add', 'remove' or 'rename' (got '%s')" % action)
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
+	if action == "rename":
+		return _rename_input_action(action_name, str(parameters.get("new_name", "")))
 	if action == "add":
 		var deadzone_raw = parameters.get("deadzone", 0.5)
 		var deadzone := float(deadzone_raw) \
@@ -239,6 +241,37 @@ static func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 					"[MCPServer] ProjectSettings.save after input_map.action remove failed (err %d, action=%s)" % [
 						error, action_name])
 		return MCPToolkitSuccess.ok({"name": action_name})
+
+
+## Moves the input/<name> setting, events and deadzone as saved, to
+## input/<new_name>. Works from ProjectSettings: the editor's InputMap holds only
+## the built-in ui_* actions, so a project action is usually absent from it. If
+## InputMap does hold the old action, its events move to the new name too.
+static func _rename_input_action(action_name: String, new_name: String) -> Dictionary:
+	if new_name.is_empty():
+		return MCPToolkitError.fail("INVALID_PARAMS", "new_name must be a non-empty string")
+	if _is_builtin_action(action_name):
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"refusing to rename built-in UI action '%s'" % action_name)
+	var old_key := "input/" + action_name
+	var new_key := "input/" + new_name
+	if not ProjectSettings.has_setting(old_key):
+		return MCPToolkitError.fail("NOT_FOUND", "no action '%s' in project settings" % action_name)
+	if ProjectSettings.has_setting(new_key) or InputMap.has_action(new_name):
+		return MCPToolkitError.fail("ALREADY_EXISTS", "action '%s' already exists" % new_name)
+	ProjectSettings.set_setting(new_key, ProjectSettings.get_setting(old_key))
+	ProjectSettings.clear(old_key)
+	if InputMap.has_action(action_name):
+		InputMap.add_action(new_name, InputMap.action_get_deadzone(action_name))
+		for event in InputMap.action_get_events(action_name):
+			InputMap.action_add_event(new_name, event)
+		InputMap.erase_action(action_name)
+	var error := ProjectSettings.save()
+	if error != OK:
+		push_warning(
+			"[MCPServer] ProjectSettings.save after input_map.action rename failed (err %d, action=%s)" % [
+				error, new_name])
+	return MCPToolkitSuccess.ok({"name": new_name, "old_name": action_name})
 
 
 static func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
