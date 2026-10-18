@@ -78,6 +78,8 @@ static func _apply_resource_properties(
 			resource.set(key_string, array_fit["value"])
 			if not str(fit["warning"]).is_empty():
 				warnings.append(str(fit["warning"]))
+			if not str(array_fit["warning"]).is_empty():
+				warnings.append(str(array_fit["warning"]))
 	return warnings
 
 

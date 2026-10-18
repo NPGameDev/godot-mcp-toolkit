@@ -21,6 +21,9 @@ const PlaceholderLikeResource := preload("res://test/fixtures/placeholder_like_r
 const PlaceholderLikeGroupedResource := preload(
 		"res://test/fixtures/placeholder_like_grouped_resource.gd")
 const TypedArrayResource := preload("res://test/fixtures/typed_array_resource.gd")
+const TypedArrayScriptedResource := preload("res://test/fixtures/typed_array_scripted_resource.gd")
+const TypedArrayElement := preload("res://test/fixtures/typed_array_element.gd")
+const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 
 
 static func run(testing) -> void:
@@ -39,6 +42,10 @@ static func run(testing) -> void:
 	_test_resource_write_int_on_update(testing)
 	_test_resource_write_skips_inspector_headers(testing)
 	_test_resource_write_typed_array(testing)
+	_test_resource_write_typed_array_of_script_class(testing)
+	_test_resource_write_typed_int_array(testing)
+	_test_resource_write_typed_array_element_precheck(testing)
+	_test_fit_to_typed_array(testing)
 
 
 # --- Coerce/serialize round-trip symmetry ---------------------------------
@@ -881,6 +888,146 @@ static func _test_resource_write_typed_array(testing) -> void:
 	testing.eq((mismatch.get("textures") as Array).size(), 0, "the value is left unchanged")
 
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+	print("")
+
+
+# An array typed by a script class takes instances of that script, loaded from a
+# resource path, and refuses a resource of another class. Writes a user:// temp
+# file and removes it afterward.
+static func _test_resource_write_typed_array_of_script_class(testing) -> void:
+	testing.begin("resource.write fills an array typed by a script class")
+	var fixture := "user://resource_write_scripted_array_fixture.tres"
+	var element := {"type": "Resource", "path": "res://test/fixtures/typed_array_element.tres"}
+	var texture := {"type": "Resource", "path": "res://test/fixtures/placeholder_texture.tres"}
+
+	var live: Resource = TypedArrayScriptedResource.new()
+	var live_warnings := ResourceCommands._apply_resource_properties(
+			live, {"elements": [element]}, "Resource")
+	testing.eq(live_warnings.size(), 0, "an instance of the script → no warnings")
+	var elements: Array = live.get("elements")
+	testing.eq(elements.size(), 1, "the element is stored")
+	testing.eq(elements.get_typed_script(), TypedArrayElement,
+			"the stored array keeps the script as its element type")
+	testing.eq(ResourceSaver.save(live, fixture), OK, "resource saved")
+	testing.ok(_saved_property_line(fixture, "elements").begins_with("elements = Array[ExtResource("),
+			"the file stores the array typed by the script")
+
+	var other: Resource = TypedArrayScriptedResource.new()
+	var other_warnings := ResourceCommands._apply_resource_properties(
+			other, {"elements": [element, texture]}, "Resource")
+	testing.eq(other_warnings.size(), 1, "a resource of another class → exactly one warning")
+	var other_warning: String = "" if other_warnings.is_empty() else other_warnings[0]
+	testing.ok(other_warning.contains("index 1"), "the warning names the element that doesn't fit")
+	testing.eq((other.get("elements") as Array).size(), 0, "the value is left unchanged")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+	print("")
+
+
+# JSON numbers arrive as floats. An Array[int] takes whole floats as ints, and
+# elements that lose a fraction add one warning for the property, as a scalar int
+# property does. Writes a user:// temp file and removes it afterward.
+static func _test_resource_write_typed_int_array(testing) -> void:
+	testing.begin("resource.write fills an Array[int] from JSON numbers")
+	var fixture := "user://resource_write_int_array_fixture.tres"
+
+	var whole: Resource = TypedArrayScriptedResource.new()
+	var whole_warnings := ResourceCommands._apply_resource_properties(
+			whole, {"scores": [1.0, 2.0]}, "Resource")
+	testing.eq(whole_warnings.size(), 0, "whole floats → no warnings")
+	testing.eq(ResourceSaver.save(whole, fixture), OK, "whole floats saved")
+	testing.eq(_saved_property_line(fixture, "scores"), "scores = Array[int]([1, 2])",
+			"whole floats → the file stores the typed ints")
+
+	var fraction: Resource = TypedArrayScriptedResource.new()
+	var fraction_warnings := ResourceCommands._apply_resource_properties(
+			fraction, {"scores": [1.5, 2.0, 3.25]}, "Resource")
+	testing.eq(ResourceSaver.save(fraction, fixture), OK, "fractions saved")
+	testing.eq(_saved_property_line(fixture, "scores"), "scores = Array[int]([1, 2, 3])",
+			"fractions → the file stores the truncated ints")
+	testing.eq(fraction_warnings.size(), 1, "fractions → exactly one warning for the property")
+	var truncation_warning: String = "" if fraction_warnings.is_empty() else fraction_warnings[0]
+	testing.ok(truncation_warning.contains("'scores'"), "the warning names the property")
+	testing.ok(truncation_warning.contains("index 0, 2"),
+			"the warning names the truncated elements' indices")
+
+	var emptied: Resource = TypedArrayScriptedResource.new()
+	var seed_warnings := ResourceCommands._apply_resource_properties(
+			emptied, {"scores": [5.0]}, "Resource")
+	testing.eq(seed_warnings.size(), 0, "a stored element to replace → no warnings")
+	var empty_warnings := ResourceCommands._apply_resource_properties(
+			emptied, {"scores": []}, "Resource")
+	testing.eq(empty_warnings.size(), 0, "an empty array → no warnings")
+	var emptied_scores: Array = emptied.get("scores")
+	testing.eq(emptied_scores.size(), 0, "an empty array replaces the stored elements")
+	testing.eq(emptied_scores.get_typed_builtin(), TYPE_INT, "the empty array stays an Array[int]")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+	print("")
+
+
+# An element that cannot convert to the element type is caught before the typed
+# array is built, so the warning names that element and the engine prints no
+# conversion error of its own.
+static func _test_resource_write_typed_array_element_precheck(testing) -> void:
+	testing.begin("resource.write checks each element before it builds a typed array")
+	var textures: Resource = TypedArrayResource.new()
+	var texture_warnings := ResourceCommands._apply_resource_properties(
+			textures, {"textures": ["not a texture"]}, "Resource")
+	testing.eq(texture_warnings.size(), 1, "a String in an Array[Texture2D] → exactly one warning")
+	var texture_warning: String = "" if texture_warnings.is_empty() else texture_warnings[0]
+	testing.ok(texture_warning.contains("index 0"), "the warning names the element at index 0")
+
+	var scores: Resource = TypedArrayScriptedResource.new()
+	var score_warnings := ResourceCommands._apply_resource_properties(
+			scores, {"scores": [1.0, "two"]}, "Resource")
+	testing.eq(score_warnings.size(), 1, "a String in an Array[int] → exactly one warning")
+	var score_warning: String = "" if score_warnings.is_empty() else score_warnings[0]
+	testing.ok(score_warning.contains("'scores'"), "the warning names the property")
+	testing.ok(score_warning.contains("index 1"), "the warning names the element at index 1")
+	testing.ok(score_warning.contains("value left unchanged"), "the warning says the value is kept")
+	testing.eq((scores.get("scores") as Array).size(), 0, "the value is left unchanged")
+
+	var nulls: Resource = TypedArrayScriptedResource.new()
+	var null_warnings := ResourceCommands._apply_resource_properties(
+			nulls, {"scores": [null]}, "Resource")
+	testing.eq(null_warnings.size(), 1, "null in an Array[int] → exactly one warning")
+	print("")
+
+
+# The typed-array fit on its own: what passes through, what it builds, and the
+# warning and error it returns.
+static func _test_fit_to_typed_array(testing) -> void:
+	testing.begin("fit_to_typed_array fits an untyped array to a typed property")
+	var resource: Resource = TypedArrayScriptedResource.new()
+
+	var scalar := Helpers.fit_to_typed_array(resource, "scores", 4)
+	testing.eq(scalar["value"], 4, "a value that is not an array passes through")
+	testing.eq(scalar["error"], "", "a value that is not an array → no error")
+
+	var untyped_target: Resource = PlaceholderLikeResource.new()
+	var untyped := Helpers.fit_to_typed_array(untyped_target, "note", [1.5])
+	testing.ok(not (untyped["value"] as Array).is_typed(),
+			"a property that holds no typed array → the array stays untyped")
+	testing.eq(untyped["warning"], "", "a property that holds no typed array → no warning")
+
+	var fitted := Helpers.fit_to_typed_array(resource, "scores", [1.5, 2.0])
+	var fitted_value: Array = fitted["value"]
+	testing.eq(fitted_value.get_typed_builtin(), TYPE_INT, "the value is an Array[int]")
+	testing.eq(fitted_value[0], 1, "1.5 → 1")
+	testing.eq(fitted["error"], "", "a lossy element → no error")
+	testing.ok(str(fitted["warning"]).contains("index 0 "),
+			"a lossy element → the warning names its index")
+	testing.ok(str(fitted["warning"]).contains("int"), "the warning names the element type")
+
+	var tags := Helpers.fit_to_typed_array(TypedArrayResource.new(), "tags", [&"name"])
+	testing.eq(tags["error"], "", "a StringName converts into an Array[String]")
+	testing.eq(typeof((tags["value"] as Array)[0]), TYPE_STRING, "the element is now a String")
+
+	var mismatch := Helpers.fit_to_typed_array(resource, "scores", ["x"])
+	testing.ok(str(mismatch["error"]).contains("'scores'"), "a mismatch → the error names the property")
+	testing.ok(str(mismatch["error"]).contains("index 0"), "a mismatch → the error names the index")
+	testing.ok(not (mismatch["value"] as Array).is_typed(), "a mismatch → the value is returned as given")
 	print("")
 
 
