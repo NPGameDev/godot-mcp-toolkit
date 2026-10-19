@@ -71,14 +71,22 @@ static func is_godot_42() -> bool:
 	return Modules.VersionUtils.is_engine_version_pair("4.2")
 
 
+## True where a [code]script_write[/code] or [code]script_edit[/code] (or their undo/redo)
+## that compiles reloads the script the editor has cached: every version but Godot 4.2.0
+## and 4.2.1, where the toolkit reloads nothing in place (the rule lives in
+## [code]editor_helpers.gd[/code], [code]reload_frees_held_lambdas[/code]).
+static func toolkit_write_reloads() -> bool:
+	return not Modules.CommandHelpers.reload_frees_held_lambdas(Engine.get_version_info())
+
+
 ## Cache mode for loading extension scripts. 4.2 uses CACHE_MODE_REUSE, which returns
 ## the editor's existing (or in-flight) resource instead of spawning the crash-prone
 ## duplicate synchronous load, so 4.2 sees an extension edit only once the cached script
-## holds it. A [code]script_write[/code] or [code]script_edit[/code] (or their undo/redo)
-## that compiles reloads the cached script, so that edit applies live; an edit made
-## outside the toolkit, or to a C# extension, waits for an editor restart (surfaced as a
-## nudge). 4.3+ keeps CACHE_MODE_IGNORE: a guaranteed-fresh read (reliable live
-## modify-detection), proven crash-free.
+## holds it. On 4.2.2, a [code]script_write[/code] or [code]script_edit[/code] (or their
+## undo/redo) that compiles reloads the cached script, so that edit applies live; an edit
+## made outside the toolkit, or to a C# extension, and on 4.2.0 and 4.2.1 every edit, waits
+## for an editor restart (surfaced as a nudge). 4.3+ keeps CACHE_MODE_IGNORE: a
+## guaranteed-fresh read (reliable live modify-detection), proven crash-free.
 static func _extension_cache_mode() -> int:
 	return ResourceLoader.CACHE_MODE_REUSE if is_godot_42() else ResourceLoader.CACHE_MODE_IGNORE
 
@@ -151,15 +159,20 @@ static func arrays_equal(a: Array, b: Array) -> bool:
 
 ## Load an extension into a scratch registry to discover which methods it
 ## registers and their metadata. Does NOT modify the live registry.
-## Returns {"methods": Array[String], "metadata": Dictionary}.
+## Returns {"methods": Array[String], "metadata": Dictionary, "source_hash": int}:
+## [code]source_hash[/code] is the hash of the GDScript source the loader read (on 4.2
+## the cached script), or 0 for a script with no readable source, such as a C# one.
 static func probe_extension(class_name_str: String, script_path: String, server: Node) -> Dictionary:
-	var empty := {"methods": [] as Array[String], "metadata": {}}
+	var empty := {"methods": [] as Array[String], "metadata": {}, "source_hash": 0}
 	var script: Script = ResourceLoader.load(script_path, "", _extension_cache_mode())
 	if script == null:
 		return empty
 	var instance = script.new()
 	if instance == null:
 		return empty
+	var source_hash := 0
+	if script is GDScript and not script.source_code.is_empty():
+		source_hash = script.source_code.hash()
 	var scratch := MCPToolkitCommandRegistry.new()
 	if instance.has_method("Register"):
 		instance.Register(scratch, server)
@@ -170,7 +183,7 @@ static func probe_extension(class_name_str: String, script_path: String, server:
 	for method: String in scratch.get_all_methods():
 		methods.append(method)
 		metadata[method] = str(scratch.get_command_metadata(method))
-	return {"methods": methods, "metadata": metadata}
+	return {"methods": methods, "metadata": metadata, "source_hash": source_hash}
 
 
 ## Load, validate, and register a single extension into the live registry. Returns

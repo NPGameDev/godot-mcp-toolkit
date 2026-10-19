@@ -3,8 +3,9 @@ extends RefCounted
 ## The shared reload of a script changed on disk (commands/editor_helpers.gd): the
 ## compile gate, a reload that fails (and node.set_script's hint for it), a file that
 ## matches the cached script, the
-## toolkit's own paths, the reload a script write runs, and the reload its undo and
-## redo run through the undo_helpers node. Drives user:// fixtures rewritten between
+## toolkit's own paths, the reload a script write runs, the reload its undo and
+## redo run through the undo_helpers node, and the patch gate that turns the reload off
+## on Godot 4.2.0 and 4.2.1, with the hints those versions get. Drives user:// fixtures rewritten between
 ## loads; no editor is needed. These cases call the helper directly, so they cannot run
 ## against a toolkit without it; the live probe covers the same behaviour through the
 ## tools.
@@ -12,6 +13,7 @@ extends RefCounted
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
+const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 
 const GATE_FIXTURE := "user://script_reload_gate_fixture.gd"
 const BROKEN_FIRST_FIXTURE := "user://script_reload_broken_first_fixture.gd"
@@ -37,6 +39,9 @@ static func run(testing) -> void:
 	_test_reload_decision(testing)
 	_test_reload_after_write(testing)
 	_test_undo_and_redo_reload(testing)
+	_test_patch_gate(testing)
+	_test_undo_and_redo_without_reload(testing)
+	_test_patch_gate_hints(testing)
 
 
 static func _test_compile_gate(testing) -> void:
@@ -251,6 +256,57 @@ static func _test_undo_and_redo_reload(testing) -> void:
 	undo_helpers.free()
 	running.free()
 	_remove(UNDO_FIXTURE)
+	print("")
+
+
+# Godot 4.2.0 and 4.2.1 free a reloaded script's lambdas while Callables held elsewhere
+# still point at them, so the toolkit reloads nothing in place there.
+static func _test_patch_gate(testing) -> void:
+	testing.begin("script reload: the patch gate covers Godot 4.2.0 and 4.2.1 only")
+	testing.ok(Helpers.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 0}), "4.2.0 → no in-place reload")
+	testing.ok(Helpers.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 1}), "4.2.1 → no in-place reload")
+	testing.ok(not Helpers.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 2}), "4.2.2 → reload")
+	testing.ok(not Helpers.reload_frees_held_lambdas({"major": 4, "minor": 3, "patch": 0}), "4.3.0 → reload")
+	testing.ok(not Helpers.reload_frees_held_lambdas({"major": 4, "minor": 7, "patch": 0}), "4.7.0 → reload")
+	testing.ok(not Helpers.reload_frees_held_lambdas({"major": 5, "minor": 2, "patch": 0}),
+			"5.2.0 → reload (the gate is major-aware)")
+	testing.ok(not Helpers.reload_frees_held_lambdas({}), "no version → reload")
+	print("")
+
+
+# The write that records the undo action passes reload_cached = false where the gate holds.
+static func _test_undo_and_redo_without_reload(testing) -> void:
+	testing.begin("script reload: an undo or redo recorded under the patch gate only writes the file")
+	_write_source(UNDO_FIXTURE, _version_source(2))
+	var running := Node.new()
+	running.set_script(ResourceLoader.load(UNDO_FIXTURE))
+	var undo_helpers := UndoRedoHelpers.new()
+
+	undo_helpers._write_file_silent(UNDO_FIXTURE, _version_source(1), false)
+	testing.eq(FileAccess.get_file_as_string(UNDO_FIXTURE), _version_source(1), "the undo writes the file")
+	testing.eq(running.call("version"), 2, "... and the node keeps the version it runs")
+
+	undo_helpers.free()
+	running.free()
+	_remove(UNDO_FIXTURE)
+	print("")
+
+
+static func _test_patch_gate_hints(testing) -> void:
+	testing.begin("script reload: the hints under the patch gate say to relaunch")
+	var relaunch := StaleInstanceHint.recovery_message("4.2", 2, false, false)
+	testing.ok(relaunch.contains("keeps the OLD code"), "the call hint names the stale instance")
+	testing.ok(relaunch.contains("relaunch"), "... and says to relaunch")
+	testing.ok(relaunch.contains("4.2.0 and 4.2.1"), "... and names the patch releases")
+	testing.ok(not relaunch.contains("with node_set_script, which reloads"),
+			"... and does not offer node_set_script, which does not reload there")
+	testing.ok(not StaleInstanceHint.recovery_message("4.2", 2, false, true).contains("4.2.0 and 4.2.1"),
+			"where node_set_script reloads, the call hint is the usual form")
+	var write := StaleInstanceHint.write_hint("4.2")
+	testing.ok(write.begins_with("Validate"), "the write hint leads with validation")
+	testing.ok(write.find("Validate") < write.find("relaunch"), "... then the relaunch advice")
+	testing.ok(write.contains("4.2") and write.contains("keeps the OLD code"),
+			"... naming the version and the stale instance")
 	print("")
 
 

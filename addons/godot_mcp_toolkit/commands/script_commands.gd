@@ -221,13 +221,15 @@ static func _cmd_script_edit(server: Node, parameters: Dictionary) -> Dictionary
 ## Writes [param content] to [param file_path], wrapping it in an editor UndoRedo
 ## action, reindexing the file, and — for a .gd file — attaching inline
 ## diagnostics and, when it compiles, reloading the script the editor has cached, so
-## the nodes running it run the new code. Shared by [method _cmd_script_write]
-## (whole-file) and [method _cmd_script_edit] (surgical) so both take the identical
-## write/undo/index/diagnose pipeline. [param prior_content] is the file's content
-## before this write (empty when [param existed] is false) — the undo restores it,
-## or deletes the file when it did not exist. [param extension] is the lowercased
-## file extension, used to gate the .gd-only diagnostics.
-## Returns the success envelope [code]{bytes, undoable, indexed, valid?, diagnostics?}[/code],
+## the nodes running it run the new code. The undo and redo reload it the same way. On
+## Godot 4.2.0 and 4.2.1, where an in-place reload is unsafe, none of them reloads, and a
+## compiling edit of an existing file gets a stale-instance hint instead. Shared by
+## [method _cmd_script_write] (whole-file) and [method _cmd_script_edit] (surgical) so
+## both take the identical write/undo/index/diagnose pipeline. [param prior_content] is
+## the file's content before this write (empty when [param existed] is false) — the undo
+## restores it, or deletes the file when it did not exist. [param extension] is the
+## lowercased file extension, used to gate the .gd-only diagnostics.
+## Returns the success envelope [code]{bytes, undoable, indexed, valid?, diagnostics?, hint?}[/code],
 ## or a [method MCPToolkitError.fail] envelope on a write failure.
 static func _commit_content(server: Node, file_path: String, content: String,
 		prior_content: String, existed: bool, extension: String) -> Dictionary:
@@ -236,11 +238,12 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		return MCPToolkitError.fail("WRITE_FAILED",
 			"could not open %s for write (err %d)" % [file_path, write_error])
 
+	var reload_allowed := not Helpers.reload_frees_held_lambdas(Engine.get_version_info())
 	var _undo := MCPToolkitUndoRedoAction.begin("script_write: %s" % file_path) \
-		.do_method(server.undo_helpers._write_file_silent.bind(file_path, content))
+		.do_method(server.undo_helpers._write_file_silent.bind(file_path, content, reload_allowed))
 	var undoable := _undo.is_active()
 	if existed:
-		_undo.undo_method(server.undo_helpers._write_file_silent.bind(file_path, prior_content))
+		_undo.undo_method(server.undo_helpers._write_file_silent.bind(file_path, prior_content, reload_allowed))
 	else:
 		_undo.undo_method(server.undo_helpers._delete_file_silent.bind(file_path))
 	_undo.commit_recorded()
@@ -258,9 +261,15 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		result["diagnostics"] = validation["diagnostics"]
 		# Godot < 4.4 never reloads a cached script after a write, and 4.4+ only on a
 		# later scan, so the nodes already running it would keep the old code. The
-		# toolkit never applies a source that failed the check above.
-		if bool(validation["valid"]):
-			Helpers.reload_cached_script(file_path, content)
+		# toolkit never applies a source that failed the check above. Where an in-place
+		# reload is unsafe, an edit that compiles stays for an editor restart, and the
+		# hint says so.
+		if reload_allowed:
+			if bool(validation["valid"]):
+				Helpers.reload_cached_script(file_path, content)
+		elif existed and bool(validation["valid"]):
+			result["hint"] = Modules.StaleInstanceHint.write_hint(
+					Modules.VersionUtils.get_engine_version_pair())
 
 	return result
 

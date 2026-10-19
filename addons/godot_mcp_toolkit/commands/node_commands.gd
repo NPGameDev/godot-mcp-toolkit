@@ -575,7 +575,8 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 	if not Modules.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, version.x, version.y, headless):
 		return ""
 	return Modules.StaleInstanceHint.recovery_message(
-			Modules.VersionUtils.get_engine_version_pair(), version.y, headless)
+			Modules.VersionUtils.get_engine_version_pair(), version.y, headless,
+			not Helpers.reload_frees_held_lambdas(Engine.get_version_info()))
 
 
 ## Builds the node.call_method hint for a null callv() result, version-gated.
@@ -714,7 +715,11 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	if not (loaded is Script):
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
-	var reload_outcome := Helpers.reload_script_from_disk(loaded)
+	# Where an in-place reload is unsafe, the node takes the version the editor has, and a
+	# file changed since then waits for an editor restart.
+	var reload_outcome := {"compile_error": "", "previous_kept": true}
+	if not Helpers.reload_frees_held_lambdas(Engine.get_version_info()):
+		reload_outcome = Helpers.reload_script_from_disk(loaded)
 
 	var old_script = node.get_script()
 	node.set_script(loaded)

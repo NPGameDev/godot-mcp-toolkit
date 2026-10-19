@@ -31,9 +31,11 @@ var _failed_classes: Dictionary = {}        # class_name_str -> true (failed val
 var _debounce_pending := false
 
 # class_name_str -> hash of the source the live registry last loaded the extension
-# from. Used ONLY on Godot 4.2, where the loader reads the editor's cached script
-# (CACHE_MODE_REUSE): an edit made outside the toolkit, or to a C# extension, never
-# reaches that cache in-session, so extensions.refresh nudges the caller to restart.
+# from. When the source the loader reads moves on from it, the class registers again,
+# so no registered Callable outlives a reload of the code that made it. On Godot 4.2,
+# where the loader reads the editor's cached script (CACHE_MODE_REUSE), it also tells
+# an edit that never reached that cache in-session, which extensions.refresh nudges the
+# caller to restart for.
 var _class_source_fingerprint: Dictionary = {}
 # class_name_str -> script_path for Godot 4.2 extensions whose edit on disk waits for
 # an editor restart. Drained by cmd_refresh into a response hint.
@@ -97,7 +99,8 @@ func _rebuild_class_methods_map() -> void:
 	for cn: String in _known_extensions:
 		var sp: String = _known_extensions[cn]
 		# Baseline the on-disk source fingerprint so a later in-session edit is
-		# detectable (drives the Godot 4.2 restart and fix nudges; harmless on 4.3+).
+		# detectable (drives the re-registration after a reload and the Godot 4.2
+		# restart and fix nudges).
 		_class_source_fingerprint[cn] = _Support.hash_extension_source(sp)
 		var probe := _Support.probe_extension(cn, sp, _server)
 		var methods: Array = probe["methods"]
@@ -177,7 +180,8 @@ func cmd_refresh(_params: Dictionary) -> Dictionary:
 	# `commands` above) and what each one waits for.
 	var waiting_hint := unapplied_edit_hint(
 			PackedStringArray(_pending_restart_modifies.keys()),
-			PackedStringArray(_pending_fix_modifies.keys()))
+			PackedStringArray(_pending_fix_modifies.keys()),
+			_Support.toolkit_write_reloads())
 	if not waiting_hint.is_empty():
 		response["hint"] = (str(response["hint"]) + " " + waiting_hint) if response.has("hint") else waiting_hint
 	return response
@@ -185,16 +189,27 @@ func cmd_refresh(_params: Dictionary) -> Dictionary:
 
 ## The extensions.refresh hint for Godot 4.2 extensions whose edit is not live:
 ## [param restart_names] wait for an editor restart, and [param fix_names] have a file
-## that does not compile, which a restart would load broken. Returns "" when both are
-## empty. Pure, so it can be unit-tested.
-static func unapplied_edit_hint(restart_names: PackedStringArray, fix_names: PackedStringArray) -> String:
+## that does not compile, which a restart would load broken. [param toolkit_writes_live]
+## is false on Godot 4.2.0 and 4.2.1, where an edit made with script_write or script_edit
+## waits for a restart too. Returns "" when both lists are empty. Pure, so it can be
+## unit-tested.
+static func unapplied_edit_hint(
+	restart_names: PackedStringArray, fix_names: PackedStringArray, toolkit_writes_live: bool = true,
+) -> String:
 	var sentences: PackedStringArray = []
-	if not restart_names.is_empty():
+	if not restart_names.is_empty() and toolkit_writes_live:
 		sentences.append((
 			"Godot 4.2: extension(s) [%s] were edited outside script_write / script_edit, "
 			+ "or are C#, and Godot 4.2 can't apply that in-session - restart the editor to "
 			+ "load the updated version. (An edit made with script_write or script_edit "
 			+ "applies live when it compiles; Godot 4.3+ applies every edit live.)"
+		) % ", ".join(restart_names))
+	elif not restart_names.is_empty():
+		sentences.append((
+			"Godot 4.2.0 and 4.2.1: extension(s) [%s] were edited, and these versions can't "
+			+ "apply an extension edit in-session - restart the editor to load the updated "
+			+ "version. (Godot 4.2.2 applies an edit made with script_write or script_edit live "
+			+ "when it compiles; Godot 4.3+ applies every edit live.)"
 		) % ", ".join(restart_names))
 	if not fix_names.is_empty():
 		sentences.append((
@@ -253,6 +268,22 @@ static func compute_class_diff(current: Dictionary, known: Dictionary, failed: D
 	return {"added": added, "removed": removed, "retry": retry}
 
 
+## Whether a known extension registers again, given [param probe] (what
+## [code]probe_extension[/code] reads now), the [param old_methods] and [param old_meta]
+## it registered, and [param loaded_hash], the hash of the source it registered from. A
+## change to its tools counts, and so does any change to the source the loader reads, a
+## body-only edit included: the registered Callables were made by the code before the
+## change, so they must not outlive it. A probe with no source hash (a C# extension)
+## compares tools only. Pure, so it can be unit-tested.
+static func needs_reregister(probe: Dictionary, old_methods: Array, old_meta: Dictionary, loaded_hash: int) -> bool:
+	var fresh_methods: Array = probe.get("methods", [])
+	var fresh_meta: Dictionary = probe.get("metadata", {})
+	if not _Support.arrays_equal(fresh_methods, old_methods) or fresh_meta != old_meta:
+		return true
+	var probed_hash := int(probe.get("source_hash", 0))
+	return probed_hash != 0 and probed_hash != loaded_hash
+
+
 ## Compute-phase: scan the live class list and classify it against known state,
 ## WITHOUT mutating the registry or the watcher's tracking dicts (the one
 ## exception is the 4.2 nudge ledger, _pending_restart_modifies and
@@ -277,7 +308,8 @@ func _compute_delta() -> Dictionary:
 
 	# Detect content changes in existing extensions (tools added/removed/modified
 	# within the same class). Re-probe each known class and compare method lists
-	# AND metadata (annotations, description, schema, timeout).
+	# AND metadata (annotations, description, schema, timeout), and the source the
+	# loader reads (see needs_reregister).
 	var modified_classes: Dictionary = {}  # class_name -> path
 	for cn: String in current:
 		if cn in added_classes or cn in retry_classes:
@@ -286,17 +318,15 @@ func _compute_delta() -> Dictionary:
 			continue
 		var sp: String = current[cn]
 		var probe := _Support.probe_extension(cn, sp, _server)
-		var fresh_methods: Array = probe["methods"]
-		var old_methods: Array = _class_methods.get(cn, [])
-		var fresh_meta: Dictionary = probe["metadata"]
-		var old_meta: Dictionary = _class_metadata.get(cn, {})
-		if not _Support.arrays_equal(fresh_methods, old_methods) or fresh_meta != old_meta:
+		if needs_reregister(probe, _class_methods.get(cn, []), _class_metadata.get(cn, {}),
+				int(_class_source_fingerprint.get(cn, 0))):
 			modified_classes[cn] = sp
 
 	# Godot 4.2 only: the probe above reads the editor's cached script (CACHE_MODE_REUSE),
-	# so it sees an edit only once a toolkit write has reloaded that script. Any other edit
-	# to an existing extension waits for a restart, or for a fix when the file does not
-	# compile; queue a one-time nudge for it.
+	# so it sees an edit only once a toolkit write has reloaded that script (on 4.2.2; on
+	# 4.2.0 and 4.2.1 the toolkit reloads nothing). Any other edit to an existing
+	# extension waits for a restart, or for a fix when the file does not compile; queue a
+	# one-time nudge for it.
 	if _Support.is_godot_42():
 		for cn: String in current:
 			if cn in added_classes or cn in retry_classes or not _class_source_fingerprint.has(cn):
@@ -319,7 +349,10 @@ func _record_unapplied_edit(class_name_str: String, script_path: String, verdict
 	var needs_restart := verdict == _Support.EDIT_NEEDS_RESTART
 	var needs_fix := verdict == _Support.EDIT_NEEDS_FIX
 	if needs_restart and class_name_str not in _pending_restart_modifies:
-		push_warning("[MCPExtensions] '%s' was edited outside script_write / script_edit, or is C#, and Godot 4.2 can't apply that in-session - restart the editor to load the updated version." % class_name_str)
+		if _Support.toolkit_write_reloads():
+			push_warning("[MCPExtensions] '%s' was edited outside script_write / script_edit, or is C#, and Godot 4.2 can't apply that in-session - restart the editor to load the updated version." % class_name_str)
+		else:
+			push_warning("[MCPExtensions] '%s' was edited, and Godot 4.2.0 and 4.2.1 can't apply an extension edit in-session - restart the editor to load the updated version." % class_name_str)
 	if needs_fix and class_name_str not in _pending_fix_modifies:
 		push_warning("[MCPExtensions] '%s' does not compile on disk, so the editor keeps the version it loaded - fix the file (script_check lists its errors)." % class_name_str)
 	if needs_restart:
