@@ -2,8 +2,9 @@
 extends RefCounted
 ## Unit tests for the pure per-OS .mcp.json server-entry builder
 ## (MCPJsonSync.build_server_entry): the bare npx (release) / node (dev) shapes on
-## macOS, Linux, and any unknown OS; the Windows cmd /c npx + node-dev shapes; and
-## the entry boundary — the builder emits only {command, args}, never an env. Also
+## macOS, Linux, and any unknown OS; the Windows cmd /c npx + node-dev shapes; the
+## pinned release form per OS; and the entry boundary — the builder emits only
+## {command, args}, never an env. Also
 ## covers the env layering (MCPJsonSync.merge_server_env): the template base plus an
 ## existing file's user GODOT_MCP_* keys, a first-create from the template alone, and
 ## the merge never mutating its inputs. The file-level write is covered against a
@@ -25,6 +26,7 @@ static func run(testing) -> void:
 	_test_linux_release(testing)
 	_test_linux_dev(testing)
 	_test_unknown_os_defaults_linux(testing)
+	_test_pinned_release_per_os(testing)
 	_test_refresh_preserves_user_env(testing)
 	_test_env_first_create_uses_template(testing)
 	_test_env_merge_is_pure(testing)
@@ -45,7 +47,7 @@ static func run(testing) -> void:
 # bare npx to a version-manager node via its captured shell env; no env is emitted.
 static func _test_macos_release(testing) -> void:
 	testing.begin("build_server_entry — macOS release (bare npx)")
-	var entry: Dictionary = MCPJsonSync.build_server_entry("macOS", "")
+	var entry: Dictionary = MCPJsonSync.build_server_entry("macOS", "", _PKG)
 	testing.eq(str(entry["command"]), "npx", "command = npx")
 	var args: Array = entry["args"]
 	testing.eq(args.size(), 2, "release args length 2")
@@ -58,7 +60,7 @@ static func _test_macos_release(testing) -> void:
 # macOS dev: bare node runs the local dist entry (a GODOT_MCP_DEV_SERVER_PATH override).
 static func _test_macos_dev(testing) -> void:
 	testing.begin("build_server_entry — macOS dev (node dist)")
-	var entry: Dictionary = MCPJsonSync.build_server_entry("macOS", _DEV)
+	var entry: Dictionary = MCPJsonSync.build_server_entry("macOS", _DEV, _PKG)
 	testing.eq(str(entry["command"]), "node", "command = node")
 	var args: Array = entry["args"]
 	testing.eq(args.size(), 1, "dev args length 1")
@@ -70,7 +72,7 @@ static func _test_macos_dev(testing) -> void:
 # Windows release: cmd /c npx (npx is a .cmd shim); no env emitted.
 static func _test_windows_release(testing) -> void:
 	testing.begin("build_server_entry — Windows release (cmd /c npx)")
-	var entry: Dictionary = MCPJsonSync.build_server_entry("Windows", "")
+	var entry: Dictionary = MCPJsonSync.build_server_entry("Windows", "", _PKG)
 	testing.eq(str(entry["command"]), "cmd", "command = cmd")
 	var args: Array = entry["args"]
 	testing.eq(args.size(), 4, "cmd args length 4")
@@ -85,7 +87,7 @@ static func _test_windows_release(testing) -> void:
 # Windows dev: node runs the dist entry directly (node is a real exe on PATH).
 static func _test_windows_dev(testing) -> void:
 	testing.begin("build_server_entry — Windows dev (node dist)")
-	var entry: Dictionary = MCPJsonSync.build_server_entry("Windows", "C:/x/dist/index.js")
+	var entry: Dictionary = MCPJsonSync.build_server_entry("Windows", "C:/x/dist/index.js", _PKG)
 	testing.eq(str(entry["command"]), "node", "command = node")
 	var args: Array = entry["args"]
 	testing.eq(args.size(), 1, "dev args length 1")
@@ -96,7 +98,7 @@ static func _test_windows_dev(testing) -> void:
 # Linux release: bare npx (no shim).
 static func _test_linux_release(testing) -> void:
 	testing.begin("build_server_entry — Linux release (bare npx)")
-	var entry: Dictionary = MCPJsonSync.build_server_entry("Linux", "")
+	var entry: Dictionary = MCPJsonSync.build_server_entry("Linux", "", _PKG)
 	testing.eq(str(entry["command"]), "npx", "command = npx")
 	var args: Array = entry["args"]
 	testing.eq(str(args[0]), "-y", "arg 0 = -y")
@@ -108,7 +110,7 @@ static func _test_linux_release(testing) -> void:
 # Linux dev: bare node + dist.
 static func _test_linux_dev(testing) -> void:
 	testing.begin("build_server_entry — Linux dev (node dist)")
-	var entry: Dictionary = MCPJsonSync.build_server_entry("Linux", _DEV)
+	var entry: Dictionary = MCPJsonSync.build_server_entry("Linux", _DEV, _PKG)
 	testing.eq(str(entry["command"]), "node", "command = node")
 	var args: Array = entry["args"]
 	testing.eq(str(args[0]), _DEV, "dev arg = dist entry")
@@ -118,10 +120,25 @@ static func _test_linux_dev(testing) -> void:
 # An unknown OS falls through to the Linux-style bare command (safe default).
 static func _test_unknown_os_defaults_linux(testing) -> void:
 	testing.begin("build_server_entry — unknown OS defaults to Linux shape")
-	var release: Dictionary = MCPJsonSync.build_server_entry("Haiku", "")
+	var release: Dictionary = MCPJsonSync.build_server_entry("Haiku", "", _PKG)
 	testing.eq(str(release["command"]), "npx", "unknown OS release = bare npx")
-	var dev: Dictionary = MCPJsonSync.build_server_entry("Haiku", _DEV)
+	var dev: Dictionary = MCPJsonSync.build_server_entry("Haiku", _DEV, _PKG)
 	testing.eq(str(dev["command"]), "node", "unknown OS dev = bare node")
+	print("")
+
+
+# The pinned release form: the package spec with its version is the last arg on
+# every OS, behind cmd /c npx -y on Windows and a bare npx -y elsewhere.
+static func _test_pinned_release_per_os(testing) -> void:
+	testing.begin("build_server_entry — pinned release form per OS")
+	var pinned := _PKG + "@1.0.4"
+	for os_name in ["macOS", "Linux"]:
+		var entry: Dictionary = MCPJsonSync.build_server_entry(os_name, "", pinned)
+		testing.eq(str(entry["command"]), "npx", "%s command = npx" % os_name)
+		testing.eq(entry["args"], ["-y", pinned], "%s args = -y + pinned package" % os_name)
+	var windows: Dictionary = MCPJsonSync.build_server_entry("Windows", "", pinned)
+	testing.eq(str(windows["command"]), "cmd", "Windows command = cmd")
+	testing.eq(windows["args"], ["/c", "npx", "-y", pinned], "Windows args = /c npx -y + pinned package")
 	print("")
 
 

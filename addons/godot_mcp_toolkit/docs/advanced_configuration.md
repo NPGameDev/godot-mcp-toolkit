@@ -302,13 +302,87 @@ variable in its hint.
 The MCP server never reads this variable. It covers only the running game's
 side: set it on the run you want to keep out, not in `.mcp.json`.
 
+## Server version (pin modes)
+
+**Write .mcp.json** names a server version in the config it writes, so your MCP
+client starts a server this toolkit was tested with. There are two modes:
+
+- **Pinned** (the default) runs the server version this toolkit was tested with.
+  When you update the toolkit, the next **Write .mcp.json** moves you to the
+  server version the new toolkit was tested with.
+- **Latest** runs the newest server release every time the client starts it. You
+  get server fixes as soon as they ship, and you may see a version warning until
+  you update the toolkit too.
+
+The MCP dock's `.mcp.json` panel shows which server the file runs, with one button
+that switches between the two (**Use latest** / **Pin to …**). The setup wizard's
+`.mcp.json` step offers the same choice. Either way, the toolkit asks before it
+changes `.mcp.json`, and it only touches its own entry. If the file was written by
+an older toolkit, or by this one for another version, the panel turns amber and
+offers to update it. If you set the version by hand, the panel offers to restore
+the recommended one and leaves the file alone until you press the button.
+
+### `mcp_toolkit/server/version` — default empty
+
+The project setting both modes use (**Project Settings → `mcp_toolkit/server/`**,
+with **Advanced Settings** on). It is saved in `project.godot`, so the whole team
+gets the same server.
+
+- empty: **Pinned**.
+- `latest`: **Latest**.
+- anything else: used as the npm version, range or tag (`1.0.5`, `~1.1.0`,
+  `next`). This is an escape hatch, and compatibility is up to you. A spec npm
+  can't resolve fails when the client starts the server.
+
+### `mcp_toolkit/server/local_path` (editor setting) — default empty
+
+The absolute path to a local server build's `dist/index.js`, for working on the
+server itself. It's an **Editor Settings** value (**Editor → Editor Settings →
+`mcp_toolkit/server/`**), so it applies to this machine only. When it is set,
+**Write .mcp.json** writes `node <that path>` on every OS, and the pin modes don't
+apply. When it is empty, the toolkit falls back to the `GODOT_MCP_DEV_SERVER_PATH`
+environment variable, and then to the npm package.
+
+### `npm_config_prefer_offline`
+
+In Pinned mode the written entry also sets `npm_config_prefer_offline` to `"true"`.
+The pinned version never changes once it is published, so `npx` can start the copy
+it already downloaded without asking the npm registry first, and the server starts
+faster. Latest and any range or tag leave it out: with it set, `npx` would keep
+starting the cached copy and never fetch a newer release. The toolkit sets or
+removes this key on every write. Don't set it yourself.
+
+### Restart your MCP client after a change
+
+`npx` caches each package spec separately, so a change of version reaches the
+server only when the client starts it again. After switching modes or updating,
+restart (or reconnect) your MCP client. The first start after a version change
+downloads that server, which takes a few seconds longer.
+
+### Other MCP clients
+
+The toolkit writes only the project's `.mcp.json`. For another client, put the
+same package spec, `@npgamedev/godot-mcp-server@<version>`, in that client's own
+config:
+
+| Client | Config | Where the spec goes |
+|---|---|---|
+| Claude Code | `.mcp.json` at the project root | `mcpServers.godot-mcp-toolkit.args`: `["-y", "@npgamedev/godot-mcp-server@<version>"]` |
+| Claude Desktop, Cursor, Windsurf | the client's own JSON config, `mcpServers` | the same `args` as above, with `"command": "npx"` |
+| VS Code | `.vscode/mcp.json`, `servers` | the same `args`, plus `"type": "stdio"` |
+| Codex | `~/.codex/config.toml`, `[mcp_servers.godot-mcp-toolkit]` | `args = ["-y", "@npgamedev/godot-mcp-server@<version>"]` |
+
+On Windows, use `"command": "cmd"` with `["/c", "npx", "-y", "@npgamedev/godot-mcp-server@<version>"]`.
+The server version this toolkit pins is in the dock's `.mcp.json` panel.
+
 ## macOS: launching your MCP client (Node / PATH)
 
 Modern GUI-launched MCP clients — Claude Desktop, VS Code, and Cursor — capture
 your login shell's environment and resolve a bare `npx` to a version-manager Node
-on their own, so the standard `npx -y @npgamedev/godot-mcp-server` config connects
-whether you launch the client from Finder/Dock or a terminal. The toolkit writes
-that standard command; there is nothing macOS-specific to configure.
+on their own, so the config the toolkit writes
+(`npx -y @npgamedev/godot-mcp-server@<version>`) connects whether you launch the
+client from Finder/Dock or a terminal. There is nothing macOS-specific to
+configure.
 
 **If a client won't connect on macOS**, work through these:
 
@@ -325,9 +399,10 @@ that standard command; there is nothing macOS-specific to configure.
 - **Zero-config alternative:** install Node from the **official nodejs.org
   installer**. It lands on the default `PATH`, so no shell setup is needed.
 
-**Point a Mac at a local server build** (development) by setting
-`GODOT_MCP_DEV_SERVER_PATH` in the environment to your built `dist/index.js` — the
-toolkit then emits a `node <that path>` command instead of the released `npx` form.
+**Point a Mac at a local server build** (development) with the
+`mcp_toolkit/server/local_path` editor setting (or the `GODOT_MCP_DEV_SERVER_PATH`
+environment variable) set to your built `dist/index.js`. The toolkit then writes a
+`node <that path>` command instead of the released `npx` form.
 
 ## Language server (LSP)
 

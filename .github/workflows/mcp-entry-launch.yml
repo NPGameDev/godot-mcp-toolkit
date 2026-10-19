@@ -1,0 +1,80 @@
+name: MCP entry launch
+
+# Launches the .mcp.json server entry that "Write .mcp.json" emits, on each OS a
+# user runs, and checks that the server it starts answers as the pinned version
+# (COMPATIBLE_SERVER_VERSION). It catches a pin the writer or the template drops,
+# and an entry shape npx or cmd cannot start, before a release ships either.
+#
+# Its own workflow because it is path-filtered: it runs only when the entry, the
+# pin or the two tools change (plus a manual dispatch). It is not a required
+# check, since a path-filtered required check would stay pending on every other
+# pull request.
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "addons/godot_mcp_toolkit/ui/mcp_json_sync.gd"
+      - "addons/godot_mcp_toolkit/.mcp.json.template"
+      - "addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd"
+      - "test/tools/print_mcp_entry.gd"
+      - "test/tools/launch_mcp_entry.mjs"
+      - "scripts/lib/compatible_server.sh"
+      - ".github/workflows/mcp-entry-launch.yml"
+  push:
+    branches: [main]
+    paths:
+      - "addons/godot_mcp_toolkit/ui/mcp_json_sync.gd"
+      - "addons/godot_mcp_toolkit/.mcp.json.template"
+      - "addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd"
+      - "test/tools/print_mcp_entry.gd"
+      - "test/tools/launch_mcp_entry.mjs"
+      - "scripts/lib/compatible_server.sh"
+      - ".github/workflows/mcp-entry-launch.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launch:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    # A leg prints one entry and waits at most 60 s for one answer.
+    timeout-minutes: 15
+    name: "Launch the written .mcp.json entry (${{ matrix.os }})"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Godot
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: "4.7.0"
+          use-dotnet: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.x
+
+      # The entry comes from the writer's own builder, so this is what a fresh
+      # install writes on this OS: cmd /c npx on Windows, a bare npx elsewhere.
+      - name: Print the entry Write .mcp.json emits
+        shell: bash
+        run: |
+          set -o pipefail
+          godot --headless --path . --script res://test/tools/print_mcp_entry.gd 2>&1 | tee entry.txt
+
+      - name: Launch the entry and check the server version
+        shell: bash
+        run: |
+          source scripts/lib/compatible_server.sh
+          expected="$(cs_current .)"
+          echo "expected server version: ${expected}"
+          node test/tools/launch_mcp_entry.mjs --entry entry.txt --expect "${expected}"

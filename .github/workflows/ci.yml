@@ -78,6 +78,12 @@ jobs:
       - name: Docs count check
         run: bash scripts/check_docs_counts.sh
 
+      # The server-pin helpers release.sh uses, against temp copies and a stubbed
+      # npm (no Godot, no network): one row is enough.
+      - name: Compatible-server script test
+        if: ${{ matrix.godot-version == '4.7.0' }}
+        run: bash scripts/test_compatible_server.sh
+
   # Unit-execution leg — a real execution signal across ALL supported versions
   # (standard editor, gating). Generalized from the former 4.2-only job
   # (41n-quater-ter): the godot-units composite runs run_units_cold.sh, whose

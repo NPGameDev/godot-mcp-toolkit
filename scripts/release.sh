@@ -13,6 +13,11 @@
 # together at the same version (a lockstep release) until that gate checks the
 # declared compatibility floor instead.
 #
+# Every release states the server version "Write .mcp.json" pins
+# (COMPATIBLE_SERVER_VERSION): --compatible-server X.Y.Z sets it, after checking
+# npm has that version, and --keep-compatible-server keeps it. Exactly one is
+# required, so a release never ships a pin nobody chose.
+#
 # With --non-interactive the script never reads stdin: every prompt is answered
 # by a named flag, or the run stops with an error naming the flag it needed.
 #
@@ -31,12 +36,22 @@ PLUGIN_CFG="addons/godot_mcp_toolkit/plugin.cfg"
 CHANGELOG="CHANGELOG.md"
 CROSS_VERSION_YML=".github/workflows/cross-version.yml"
 
+# cs_current, cs_template_token, cs_probe_npm, cs_rewrite, and the two file paths
+# the pin lives in (CS_CONSTANT_FILE, CS_TEMPLATE_FILE).
+# shellcheck source=lib/compatible_server.sh
+source "${REPO_ROOT}/scripts/lib/compatible_server.sh"
+
 # ── Usage / argument parsing ────────────────────────────────────────────────
 usage() {
   cat <<'EOF'
-Usage: ./scripts/release.sh <toolkit-version> [--dry-run]
-       ./scripts/release.sh <toolkit-version> [--dry-run] --non-interactive
+Usage: ./scripts/release.sh <toolkit-version> <server pin> [--dry-run]
+       ./scripts/release.sh <toolkit-version> <server pin> [--dry-run] --non-interactive
                             --gate-dispositions <file> [--changelog-curated]
+
+<server pin> is exactly one of:
+  --compatible-server <X.Y.Z> Pin "Write .mcp.json" to server X.Y.Z from this
+                              release on. The version must be published on npm.
+  --keep-compatible-server    Keep the current pin.
 
 Options:
   --dry-run                   Validate and report; write nothing.
@@ -56,12 +71,12 @@ Options:
   -h, --help                  Show this help.
 
 Examples:
-  ./scripts/release.sh 1.1.0            # release the toolkit
-  ./scripts/release.sh 1.1.0 --dry-run  # validate + report; write nothing
+  ./scripts/release.sh 1.1.0 --compatible-server 1.1.0            # release, pin server 1.1.0
+  ./scripts/release.sh 1.1.1 --keep-compatible-server --dry-run   # validate + report; write nothing
 
   # Agent-driven: write the gate dispositions first, dry-run, then release.
-  ./scripts/release.sh 1.1.0 --dry-run --non-interactive --gate-dispositions gate.md
-  ./scripts/release.sh 1.1.0 --non-interactive --gate-dispositions gate.md --changelog-curated
+  ./scripts/release.sh 1.1.0 --compatible-server 1.1.0 --dry-run --non-interactive --gate-dispositions gate.md
+  ./scripts/release.sh 1.1.0 --compatible-server 1.1.0 --non-interactive --gate-dispositions gate.md --changelog-curated
 EOF
 }
 
@@ -70,11 +85,19 @@ DRY_RUN=0
 NON_INTERACTIVE=0
 GATE_DISPOSITIONS=""
 CHANGELOG_CURATED=0
+COMPATIBLE_SERVER=""
+KEEP_COMPATIBLE_SERVER=0
 # Parse: the first bare positional is the toolkit version; --gate-dispositions
-# consumes the next argument as its file path.
+# and --compatible-server consume the next argument as their value.
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --dry-run) DRY_RUN=1 ;;
+    --compatible-server)
+      shift
+      [[ $# -gt 0 ]] || { echo "error: --compatible-server requires a version (X.Y.Z)." >&2; usage; exit 1; }
+      COMPATIBLE_SERVER="$1"
+      ;;
+    --keep-compatible-server) KEEP_COMPATIBLE_SERVER=1 ;;
     --non-interactive) NON_INTERACTIVE=1 ;;
     --gate-dispositions)
       shift
@@ -96,6 +119,23 @@ done
 
 if [[ -z "${VERSION}" ]]; then
   echo "error: a target version is required." >&2
+  usage
+  exit 1
+fi
+
+# ── Server pin rules (before any git check or network call) ─────────────────
+if [[ -n "${COMPATIBLE_SERVER}" && ${KEEP_COMPATIBLE_SERVER} -eq 1 ]]; then
+  echo "error: pass --compatible-server <X.Y.Z> or --keep-compatible-server, not both." >&2
+  usage
+  exit 1
+fi
+if [[ -z "${COMPATIBLE_SERVER}" && ${KEEP_COMPATIBLE_SERVER} -eq 0 ]]; then
+  echo "error: every release states its server pin: pass --compatible-server <X.Y.Z> to set it, or --keep-compatible-server to keep it." >&2
+  usage
+  exit 1
+fi
+if [[ -n "${COMPATIBLE_SERVER}" ]] && ! [[ "${COMPATIBLE_SERVER}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+  echo "error: --compatible-server '${COMPATIBLE_SERVER}' is not a well-formed semver (expected X.Y.Z)." >&2
   usage
   exit 1
 fi
@@ -280,6 +320,23 @@ if [[ -n "$(git ls-remote --tags origin "refs/tags/${TAG}")" ]]; then
   fail "tag ${TAG} already exists on origin — a genuine collision."
 fi
 
+# ── Pre-flight — the server pin ─────────────────────────────────────────────
+# The constant and the template's package spec must agree before the release
+# touches either; a new pin must already be on npm, or every Pinned user's
+# client would fail to start the server.
+CURRENT_COMPATIBLE="$(cs_current "${REPO_ROOT}")"
+[[ -n "${CURRENT_COMPATIBLE}" ]] || fail "could not read COMPATIBLE_SERVER_VERSION from ${CS_CONSTANT_FILE}."
+TEMPLATE_COMPATIBLE="$(cs_template_token "${REPO_ROOT}")"
+[[ "${TEMPLATE_COMPATIBLE}" == "${CURRENT_COMPATIBLE}" ]] || \
+  fail "${CS_TEMPLATE_FILE} pins server '${TEMPLATE_COMPATIBLE}' but ${CS_CONSTANT_FILE} says '${CURRENT_COMPATIBLE}'; make them agree first."
+if [[ -n "${COMPATIBLE_SERVER}" ]]; then
+  echo "→ Checking npm for server ${COMPATIBLE_SERVER}…"
+  if ! NPM_PROBLEM="$(cs_probe_npm "${COMPATIBLE_SERVER}")"; then
+    fail "${NPM_PROBLEM}"
+  fi
+  echo "  server ${COMPATIBLE_SERVER} is on npm."
+fi
+
 # ── Pre-flight — code-identical sibling pin ─────────────────────────────────
 # The tag-fired behavioral gate checks the server out at SIBLING_PIN_SERVER. That
 # pin must be code-identical to the server's main (a stale pin certifies a drifted
@@ -399,8 +456,14 @@ if [[ ${DRY_RUN} -eq 1 ]]; then
 ── DRY RUN — no writes, no commit, no tag ────────────────────────────────────
 Would bump ${PLUGIN_CFG}: ${CURRENT_VERSION} → ${VERSION}
 Would roll ${CHANGELOG}: '## [Unreleased]' → '## [${VERSION}] - $(date +%F)'
-Would commit (chore(release): ${TAG}) staging only ${PLUGIN_CFG} + ${CHANGELOG}
 EOF
+  if [[ -n "${COMPATIBLE_SERVER}" ]]; then
+    echo "Would set COMPATIBLE_SERVER_VERSION: ${CURRENT_COMPATIBLE} → ${COMPATIBLE_SERVER} (${CS_CONSTANT_FILE} + ${CS_TEMPLATE_FILE})"
+    echo "Would commit (chore(release): ${TAG}) staging only ${PLUGIN_CFG} + ${CHANGELOG} + ${CS_CONSTANT_FILE} + ${CS_TEMPLATE_FILE}"
+  else
+    echo "Compatible server: ${CURRENT_COMPATIBLE} (kept)"
+    echo "Would commit (chore(release): ${TAG}) staging only ${PLUGIN_CFG} + ${CHANGELOG}"
+  fi
   if [[ ${NON_INTERACTIVE} -eq 1 ]]; then
     echo "  with the trailer  Manual-Gate-Dispositions: sha256:${DISPOSITIONS_SHA256}"
   fi
@@ -462,6 +525,16 @@ awk -v ver="${VERSION}" -v date="${RELEASE_DATE}" '
 mv "${TMP_CL}" "${CHANGELOG}"
 echo "✓ ${CHANGELOG} rolled: [Unreleased] → [${VERSION}] - ${RELEASE_DATE}"
 
+# ── 2b. Set the server pin (--compatible-server only) ───────────────────────
+if [[ -n "${COMPATIBLE_SERVER}" ]]; then
+  if ! PIN_PROBLEM="$(cs_rewrite "${REPO_ROOT}" "${COMPATIBLE_SERVER}")"; then
+    fail "${PIN_PROBLEM}"
+  fi
+  echo "✓ COMPATIBLE_SERVER_VERSION set: ${CURRENT_COMPATIBLE} → ${COMPATIBLE_SERVER} (${CS_CONSTANT_FILE} + ${CS_TEMPLATE_FILE})"
+else
+  echo "✓ Compatible server kept: ${CURRENT_COMPATIBLE}"
+fi
+
 # Warn (do not abort) if the rolled section is empty.
 ROLLED_BODY="$(awk -v ver="${VERSION}" '
   index($0, "## [" ver "]") == 1 { grab=1; next }
@@ -485,15 +558,15 @@ fi
 
 # On resume, re-verify only the expected files changed (the pause breaks the
 # clean-tree assumption).
-UNEXPECTED="$(git status --porcelain | grep -vE " (${PLUGIN_CFG}|${CHANGELOG})$" || true)"
+UNEXPECTED="$(git status --porcelain | grep -vE " (${PLUGIN_CFG}|${CHANGELOG}|${CS_CONSTANT_FILE}|${CS_TEMPLATE_FILE})$" || true)"
 if [[ -n "${UNEXPECTED}" ]]; then
   echo "::error::Unexpected changes in the working tree after the pause:" >&2
   echo "${UNEXPECTED}" >&2
-  fail "only ${PLUGIN_CFG} and ${CHANGELOG} may change during a release."
+  fail "only ${PLUGIN_CFG}, ${CHANGELOG}, ${CS_CONSTANT_FILE} and ${CS_TEMPLATE_FILE} may change during a release."
 fi
 
 # ── 4. Commit (stage ONLY the expected paths) ───────────────────────────────
-git add "${PLUGIN_CFG}" "${CHANGELOG}"
+git add "${PLUGIN_CFG}" "${CHANGELOG}" "${CS_CONSTANT_FILE}" "${CS_TEMPLATE_FILE}"
 # A non-interactive release ties the commit to the gate record it was given. Only
 # the hash goes in: the record itself may live somewhere private.
 if [[ ${NON_INTERACTIVE} -eq 1 ]]; then

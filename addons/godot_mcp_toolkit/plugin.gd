@@ -154,13 +154,16 @@ func _register_editor_settings() -> void:
 	var es := EditorInterface.get_editor_settings()
 	# [type, default, hint_string]. These live in EDITOR Settings (per-user,
 	# machine-wide), NOT Project Settings: the unfocused-responsive keys control a
-	# machine-global editor effect and are a personal battery/CPU preference, so
-	# they must never be committed to project.godot / VCS.
+	# machine-global editor effect and are a personal battery/CPU preference, and the
+	# local server path names a folder on this machine, so they must never be
+	# committed to project.godot / VCS.
 	var settings := {
 		"mcp_toolkit/performance/keep_editor_responsive_unfocused": [TYPE_BOOL, true,
 			"Keep the editor responsive (raise its unfocused frame rate) while an MCP client is connected, so commands stay snappy when the editor is unfocused. Off uses Godot's default low-power unfocused throttle. Raises background CPU. A toggle is also in the MCP Toolkit dock."],
 		"mcp_toolkit/performance/unfocused_responsive_sleep_usec": [TYPE_INT, 16666,
 			"Unfocused process sleep in µs applied while a client is connected (lower = higher fps = snappier but more CPU). 16666 ≈ 60 fps (default); 33333 ≈ 30 fps (power-saver). Not clamped."],
+		"mcp_toolkit/server/local_path": [TYPE_STRING, "",
+			"Absolute path to a local server build's dist/index.js (this machine only). Empty = the npm package. Falls back to the GODOT_MCP_DEV_SERVER_PATH environment variable. Applies to the next Write .mcp.json."],
 	}
 	for key in settings:
 		if not es.has_setting(key):

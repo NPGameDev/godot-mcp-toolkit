@@ -3,30 +3,68 @@ extends RefCounted
 ## Repository for the project-root .mcp.json file.
 ##
 ## Owns all plugin access to .mcp.json: it reads (path resolution, the
-## godot-mcp-toolkit server entry's env vars, read-only detection) AND builds
-## the plugin-initiated write. The write is OS-aware — it emits a per-OS
-## mcpServers command/args (bare npx on macOS/Linux, cmd /c npx on Windows; a
-## GODOT_MCP_DEV_SERVER_PATH override emits the local-dist node form). The file
-## stays user-owned for edits; the plugin writes it only on explicit user action
-## (the dock's / Tools-menu's "Write .mcp.json"). A write replaces only the
-## toolkit's own server entry: it keeps the file's other servers and top-level
-## keys and the existing entry's GODOT_MCP_* env keys, and it never replaces a
-## file that is not valid JSON.
+## godot-mcp-toolkit server entry's env vars, read-only detection, the server spec
+## the entry runs) AND builds the plugin-initiated write. The write is OS-aware —
+## it emits a per-OS mcpServers command/args (bare npx on macOS/Linux, cmd /c npx
+## on Windows; a local server path emits the node form). The npx form pins the
+## package to a version: the one this toolkit was tested with unless the project's
+## [constant SERVER_VERSION_SETTING] asks for the newest release or another npm
+## spec (see [method resolve_package_spec]). The file stays user-owned for edits;
+## the plugin writes it only on explicit user action (the dock's / Tools-menu's
+## "Write .mcp.json"). A write replaces only the toolkit's own server entry: it
+## keeps the file's other servers and top-level keys and the existing entry's env
+## keys, and it never replaces a file that is not valid JSON.
 ##
 ## UI-free by design: the write reports its outcome through an injected
 ## on_result Callable so the update-confirmation dialog stays in the
 ## shared write flow and the feedback (toast) stays with each caller; this
 ## repository touches only the file and never reaches EditorInterface /
-## a dialog / a toast.
+## a dialog / a toast. Machine settings it needs (a local server path) are
+## passed in by the editor-side callers.
 
-# Bundled env/shape skeleton: the write reads its env block for the base env
-# (GODOT_MCP_CONFIG_VERSION); the per-OS builder overlays command/args.
-const _TEMPLATE_PATH := "res://addons/godot_mcp_toolkit/.mcp.json.template"
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
 ## The refusal reported when .mcp.json exists but is unusable (see [method
 ## is_malformed]): not a JSON object, or an mcpServers that is not one. Public so
 ## the write flow can show the same words in its dialog.
 const MALFORMED_MESSAGE := ".mcp.json isn't valid JSON, or its mcpServers isn't an object — fix or delete it, then retry"
+
+## The ProjectSettings key that picks the server version "Write .mcp.json" pins:
+## empty for the version this toolkit was tested with, [constant LATEST_SETTING_VALUE]
+## for the newest release, anything else as an npm version, range or tag. It is a
+## team-shared choice, so it lives in project.godot.
+const SERVER_VERSION_SETTING := "mcp_toolkit/server/version"
+
+## The [constant SERVER_VERSION_SETTING] value (trimmed, any case) that asks for the
+## newest server release.
+const LATEST_SETTING_VALUE := "latest"
+
+## Pin modes [method pin_mode] reports for a [constant SERVER_VERSION_SETTING] value.
+const MODE_PINNED := "pinned"
+const MODE_LATEST := "latest"
+const MODE_CUSTOM := "custom"
+
+## Server-spec classifications (see [method classify_server_entry]): an npx entry
+## with no version, an npx entry with one ([constant SPEC_NPX_PREFIX] + the version
+## part), a local build ([constant SPEC_LOCAL_PREFIX] + its path), or an entry that
+## is none of those.
+const SPEC_NPX_BARE := "npx-bare"
+const SPEC_NPX_PREFIX := "npx:"
+const SPEC_LOCAL_PREFIX := "local:"
+const SPEC_UNKNOWN := "unknown"
+
+## What [method nudge_state] says about the file's server spec: nothing to offer, a
+## toolkit-written unversioned entry the pin would fix, a toolkit-written entry that
+## no longer matches, or a spec someone set by hand.
+const NUDGE_NONE := "none"
+const NUDGE_UNPINNED := "unpinned"
+const NUDGE_DIFFERS := "differs"
+const NUDGE_FOREIGN := "foreign"
+
+# Bundled env/shape skeleton: the write reads its env block for the base env
+# (GODOT_MCP_CONFIG_VERSION, npm_config_prefer_offline); the per-OS builder
+# overlays command/args.
+const _TEMPLATE_PATH := "res://addons/godot_mcp_toolkit/.mcp.json.template"
 
 # The mcpServers key the toolkit owns in .mcp.json.
 const _SERVER_KEY := "godot-mcp-toolkit"
@@ -38,15 +76,29 @@ const _SERVER_BIN := "godot-mcp-server"
 const _RELEASE_PACKAGE := "@npgamedev/godot-mcp-server"
 
 # Optional env override: set to a local dist/index.js and the builder emits the
-# dev form ([code]node <that path>[/code]) instead of the released npx form — one
-# path serving Windows dogfooding and pointing a Mac at a local build. The path is
-# read from the environment at build time; no machine path is ever hardcoded here.
+# dev form ([code]node <that path>[/code]) instead of the released npx form. The
+# local-path editor setting wins over it; the path is read at build time, and no
+# machine path is ever hardcoded here.
 const _DEV_SERVER_PATH_ENV := "GODOT_MCP_DEV_SERVER_PATH"
+
+# An env key the builder owns: npx reuses its cached package without asking the
+# registry. Right for an exact version, which never changes once published; wrong
+# for a range or tag, which it would freeze at whatever is cached.
+const _PREFER_OFFLINE_ENV := "npm_config_prefer_offline"
+
+# The success report of a write. A changed server spec means the client must
+# restart to run it, and npx downloads it on that first launch.
+const _WRITTEN_MESSAGE := "MCP: .mcp.json written"
+const _WRITTEN_RESTART_MESSAGE := "MCP: .mcp.json written — restart your MCP client; the first launch after a version change downloads the server"
 
 # Reused JSON parser — avoids allocating a JSON on every poll (the dock re-checks
 # .mcp.json validity ~1s). Editor-only + main-thread, so one shared instance is
 # safe; each parse() overwrites the prior data.
 static var _json := JSON.new()
+
+# An exact semver version with an optional prerelease, the only version part npm
+# resolves to one fixed release.
+static var _exact_version := RegEx.create_from_string("^\\d+\\.\\d+\\.\\d+(-[0-9A-Za-z.-]+)?$")
 
 
 static func get_mcp_json_path() -> String:
@@ -180,12 +232,13 @@ static func is_malformed() -> bool:
 
 ## True iff a write would change an entry the user already has: the file parses,
 ## holds a toolkit server entry (see [method _find_own_key]), and that entry
-## differs from the one the write would emit. No file, no toolkit entry and an
-## identical entry need no confirm (nothing the user has is lost); a malformed
+## differs from the one the write would emit for [param local_path_setting] (the
+## machine's local server path setting, "" for none). No file, no toolkit entry and
+## an identical entry need no confirm (nothing the user has is lost); a malformed
 ## file is refused outright by write_from_template(), so it is not a confirm case
 ## either. The shared write flow uses this to decide whether to show the update
 ## confirmation dialog before calling write_from_template().
-static func needs_overwrite_confirm() -> bool:
+static func needs_overwrite_confirm(local_path_setting: String = "") -> bool:
 	var existing: Variant = _parse_mcp_json()
 	if existing == null:
 		return false
@@ -193,7 +246,8 @@ static func needs_overwrite_confirm() -> bool:
 	var server_key := _find_own_key(servers)
 	if server_key.is_empty():
 		return false
-	return _stringify_canonical(servers[server_key]) != _stringify_canonical(_build_entry())
+	var current := _stringify_canonical(servers[server_key])
+	return current != _stringify_canonical(_build_entry(local_path_setting))
 
 
 ## The mcpServers key a write would put the toolkit's entry under: the key of the
@@ -214,12 +268,13 @@ static func _own_key_in(document: Dictionary) -> String:
 ## Build the mcpServers server entry ({command, args}) for [param os_name] — the
 ## pure core of the OS-aware write. macOS and Linux emit a bare npx (release) or
 ## node (dev); Windows uses cmd /c npx (npx is a .cmd shim there). The release
-## form runs the published package via npx; the dev form (when [param
+## form runs [param package_spec] (the package name, with or without a version
+## part, see [method resolve_package_spec]) via npx; the dev form (when [param
 ## dev_server_path] is set) runs node against that local dist entry, serving both
 ## Windows dogfooding and pointing at a local build. No env is emitted here — the
-## caller supplies it (the template's GODOT_MCP_CONFIG_VERSION plus an existing
-## file's preserved GODOT_MCP_* keys).
-static func build_server_entry(os_name: String, dev_server_path: String) -> Dictionary:
+## caller supplies it (the template's base env plus an existing file's preserved
+## keys).
+static func build_server_entry(os_name: String, dev_server_path: String, package_spec: String) -> Dictionary:
 	var is_dev := not dev_server_path.is_empty()
 	var command := ""
 	var args: Array = []
@@ -227,13 +282,167 @@ static func build_server_entry(os_name: String, dev_server_path: String) -> Dict
 		"Windows":
 			# node is a real exe on PATH; npx is a .cmd shim that needs cmd /c.
 			command = "node" if is_dev else "cmd"
-			args = [dev_server_path] if is_dev else ["/c", "npx", "-y", _RELEASE_PACKAGE]
+			args = [dev_server_path] if is_dev else ["/c", "npx", "-y", package_spec]
 		_:
 			# macOS, Linux, and any unknown OS: no shim — a bare command. A GUI-launched
 			# client resolves bare npx to a version-manager node via its captured shell env.
 			command = "node" if is_dev else "npx"
-			args = [dev_server_path] if is_dev else ["-y", _RELEASE_PACKAGE]
+			args = [dev_server_path] if is_dev else ["-y", package_spec]
 	return {"command": command, "args": args}
+
+
+## The pin mode a [constant SERVER_VERSION_SETTING] value selects: [constant
+## MODE_PINNED] for an empty value, [constant MODE_LATEST] for [constant
+## LATEST_SETTING_VALUE] (trimmed, any case), else [constant MODE_CUSTOM].
+static func pin_mode(version_setting: String) -> String:
+	var value := version_setting.strip_edges()
+	if value.is_empty():
+		return MODE_PINNED
+	if value.to_lower() == LATEST_SETTING_VALUE:
+		return MODE_LATEST
+	return MODE_CUSTOM
+
+
+## The npm package spec a write emits for [param version_setting] (the
+## [constant SERVER_VERSION_SETTING] value): the package at [param compatible] when
+## the setting is empty, at [code]latest[/code] when it asks for the newest, else at
+## the setting's own value, trimmed and not validated (npm reports a bad spec when
+## the client launches the server).
+static func resolve_package_spec(version_setting: String, compatible: String) -> String:
+	var mode := pin_mode(version_setting)
+	if mode == MODE_PINNED:
+		return _RELEASE_PACKAGE + "@" + compatible
+	if mode == MODE_LATEST:
+		return _RELEASE_PACKAGE + "@" + LATEST_SETTING_VALUE
+	return _RELEASE_PACKAGE + "@" + version_setting.strip_edges()
+
+
+## The local server path a write uses: [param local_path_setting] (the machine's
+## editor setting) when it is set, else [param env_value] (the
+## GODOT_MCP_DEV_SERVER_PATH environment variable), else "" for the npm package.
+static func resolve_dev_server_path(local_path_setting: String, env_value: String) -> String:
+	var setting := local_path_setting.strip_edges()
+	return setting if not setting.is_empty() else env_value
+
+
+## True iff [param package_spec]'s version part (after its last "@") is one exact
+## semver version, prerelease allowed. A bare package name, a range or a tag is not.
+static func is_exact_spec(package_spec: String) -> bool:
+	var at := package_spec.rfind("@")
+	if at <= 0:
+		return false
+	return _is_exact_version(package_spec.substr(at + 1))
+
+
+## Return [param env] with the keys the builder owns set for the entry being
+## written; they always win over the existing file's values. npm_config_prefer_offline
+## is set to "true" for an exact [param package_spec] and removed for anything else,
+## including a local build ([param dev_path] set), since it would freeze a range or
+## tag at whatever npx has cached. Pure — [param env] is not mutated.
+static func apply_owned_env(env: Dictionary, package_spec: String, dev_path: String) -> Dictionary:
+	var owned: Dictionary = env.duplicate()
+	if dev_path.is_empty() and is_exact_spec(package_spec):
+		owned[_PREFER_OFFLINE_ENV] = "true"
+	else:
+		owned.erase(_PREFER_OFFLINE_ENV)
+	return owned
+
+
+## Classify the server a parsed mcpServers [param entry] runs: [constant
+## SPEC_NPX_BARE] when its last arg is the package with no version, [constant
+## SPEC_NPX_PREFIX] + the version part when it has one, [constant SPEC_LOCAL_PREFIX]
+## + the path for [code]node <path>[/code], else [constant SPEC_UNKNOWN] (not an
+## object, no args, or another command). The Windows [code]cmd /c npx[/code] and the
+## bare [code]npx[/code] forms classify alike.
+static func classify_server_entry(entry: Variant) -> String:
+	if not entry is Dictionary:
+		return SPEC_UNKNOWN
+	var args_value: Variant = entry.get("args", [])
+	if not args_value is Array or args_value.is_empty():
+		return SPEC_UNKNOWN
+	var args: Array = args_value
+	match str(entry.get("command", "")):
+		"node":
+			return SPEC_LOCAL_PREFIX + str(args[0]) if args.size() == 1 else SPEC_UNKNOWN
+		"npx", "cmd":
+			return _classify_package_arg(str(args[args.size() - 1]))
+	return SPEC_UNKNOWN
+
+
+## True iff classifications [param a] and [param b] run the same server: equal, or
+## one is the unversioned npx form and the other is npx at [code]latest[/code],
+## which npx resolves alike.
+static func same_spec(a: String, b: String) -> bool:
+	if a == b:
+		return true
+	var newest := [SPEC_NPX_BARE, SPEC_NPX_PREFIX + LATEST_SETTING_VALUE]
+	return a in newest and b in newest
+
+
+## The classification a write would produce now: [constant SPEC_LOCAL_PREFIX] +
+## [param dev_path] when a local server path is set, else that of the package spec
+## [param version_setting] resolves to against [param compatible].
+static func desired_classification(version_setting: String, compatible: String, dev_path: String) -> String:
+	if not dev_path.is_empty():
+		return SPEC_LOCAL_PREFIX + dev_path
+	return _classify_package_arg(resolve_package_spec(version_setting, compatible))
+
+
+## The classification of the server entry .mcp.json holds now (see [method
+## classify_server_entry]), found the way the server finds its own entry; [constant
+## SPEC_UNKNOWN] when the file is missing, malformed or has no such entry.
+static func get_server_spec() -> String:
+	var parsed: Variant = _parse_mcp_json()
+	if parsed == null:
+		return SPEC_UNKNOWN
+	var servers: Dictionary = parsed.get("mcpServers", {})
+	var server_key := _find_server_key(servers)
+	if server_key.is_empty():
+		return SPEC_UNKNOWN
+	return classify_server_entry(servers[server_key])
+
+
+## The classification a write would produce on this machine now (see [method
+## desired_classification]): from the project's [constant SERVER_VERSION_SETTING],
+## [param local_path_setting] (the machine's local server path setting, "" for
+## none) and the GODOT_MCP_DEV_SERVER_PATH environment variable.
+static func get_desired_spec(local_path_setting: String = "") -> String:
+	return desired_classification(
+			_read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION,
+			_resolve_dev_path(local_path_setting))
+
+
+## What to tell the user about the file's server spec [param on_disk], given
+## [param last_written] (the spec this machine last wrote for the project, "" when
+## none is recorded) and [param desired] (see [method desired_classification]).
+## [constant NUDGE_NONE] when the file has no readable entry or already runs the
+## desired server. A toolkit-written entry (it matches the record, or it is the
+## unversioned form an older toolkit wrote before records existed) is [constant
+## NUDGE_UNPINNED] when it floats and the desired spec is an exact version, else
+## [constant NUDGE_DIFFERS]. Anything else was set by hand or by a teammate:
+## [constant NUDGE_FOREIGN].
+static func nudge_state(on_disk: String, last_written: String, desired: String) -> String:
+	if on_disk == SPEC_UNKNOWN or same_spec(on_disk, desired):
+		return NUDGE_NONE
+	var toolkit_written := on_disk == last_written or (on_disk == SPEC_NPX_BARE and last_written.is_empty())
+	if not toolkit_written:
+		return NUDGE_FOREIGN
+	var floating := same_spec(on_disk, SPEC_NPX_BARE)
+	var desired_exact := (desired.begins_with(SPEC_NPX_PREFIX)
+			and _is_exact_version(desired.substr(SPEC_NPX_PREFIX.length())))
+	return NUDGE_UNPINNED if floating and desired_exact else NUDGE_DIFFERS
+
+
+static func _classify_package_arg(arg: String) -> String:
+	if arg == _RELEASE_PACKAGE:
+		return SPEC_NPX_BARE
+	if arg.begins_with(_RELEASE_PACKAGE + "@"):
+		return SPEC_NPX_PREFIX + arg.substr(_RELEASE_PACKAGE.length() + 1)
+	return SPEC_UNKNOWN
+
+
+static func _is_exact_version(version: String) -> bool:
+	return _exact_version.search(version) != null
 
 
 ## Write .mcp.json for the current OS, reporting the outcome through on_result so
@@ -248,8 +457,17 @@ static func build_server_entry(os_name: String, dev_server_path: String) -> Dict
 ## needs_overwrite_confirm()); otherwise build the OS-aware content (see
 ## build_server_entry and merge_document — every other server and top-level key is
 ## kept) and report success (info, with the destination as the tooltip) or the open
-## failure (error). UI-free: no dialog, no EditorInterface, no toast.
-static func write_from_template(force_overwrite: bool, on_result: Callable) -> void:
+## failure (error). The success message asks for a client restart when the server
+## spec changed. UI-free: no dialog, no EditorInterface, no toast.
+##
+## [param local_path_setting] is the machine's local server path setting ("" for
+## none). After a successful write and before on_result, [param on_written] (when
+## valid) receives (spec: String, changed: bool): the written entry's
+## classification (see [method classify_server_entry]) and whether it differs from
+## the entry the file held before.
+static func write_from_template(
+		force_overwrite: bool, on_result: Callable,
+		local_path_setting: String = "", on_written: Callable = Callable()) -> void:
 	if not FileAccess.file_exists(_TEMPLATE_PATH):
 		on_result.call(false, "Template not found: " + _TEMPLATE_PATH, 2, "")
 		return
@@ -257,26 +475,45 @@ static func write_from_template(force_overwrite: bool, on_result: Callable) -> v
 	if is_malformed():
 		on_result.call(false, MALFORMED_MESSAGE, 1, dest)
 		return
-	if not force_overwrite and needs_overwrite_confirm():
+	if not force_overwrite and needs_overwrite_confirm(local_path_setting):
 		# Defensive: the write flow should have shown its confirm dialog first.
 		# Report without writing so no change happens unconfirmed.
 		on_result.call(false, ".mcp.json already has a different entry — update not confirmed", 1, dest)
 		return
-	_do_write(dest, _build_content(), on_result)
+	var previous_spec := _own_entry_spec()
+	var entry := _build_entry(local_path_setting)
+	var written_spec := classify_server_entry(entry)
+	var error := _store(dest, _content_with(entry))
+	if error != OK:
+		on_result.call(false, "Failed to write .mcp.json (err %d)" % error, 2, "")
+		return
+	var changed := written_spec != previous_spec
+	if on_written.is_valid():
+		on_written.call(written_spec, changed)
+	on_result.call(true, _WRITTEN_RESTART_MESSAGE if changed else _WRITTEN_MESSAGE, 0, "Wrote to " + dest)
 
 
-## Performs the actual write of `content` to `dest` and reports via on_result.
-## Private to the repository — the public entry point is write_from_template().
-static func _do_write(dest: String, content: String, on_result: Callable) -> void:
+## Writes [param content] to [param dest]. Returns OK, or the open error.
+static func _store(dest: String, content: String) -> int:
 	var file := FileAccess.open(dest, FileAccess.WRITE)
 	if file == null:
-		on_result.call(
-			false, "Failed to write .mcp.json (err %d)" % FileAccess.get_open_error(), 2, ""
-		)
-		return
+		return FileAccess.get_open_error()
 	file.store_string(content)
 	file.close()
-	on_result.call(true, "MCP: .mcp.json written", 0, "Wrote to " + dest)
+	return OK
+
+
+## The classification of the file's own toolkit entry (see [method _find_own_key]),
+## or [constant SPEC_UNKNOWN] when there is no file or no such entry.
+static func _own_entry_spec() -> String:
+	var parsed: Variant = _parse_mcp_json()
+	if parsed == null:
+		return SPEC_UNKNOWN
+	var servers: Dictionary = parsed.get("mcpServers", {})
+	var server_key := _find_own_key(servers)
+	if server_key.is_empty():
+		return SPEC_UNKNOWN
+	return classify_server_entry(servers[server_key])
 
 
 ## Layer the emitted server env, most-general first: the template's base env
@@ -305,13 +542,17 @@ static func merge_document(existing: Dictionary, server_key: String, entry: Dict
 	return document
 
 
-## Build the OS-aware .mcp.json content — the full document string. The server
-## entry comes from [method _build_entry]; it replaces the existing file's toolkit
-## entry (under that entry's own key, see [method _find_own_key], else
+## Build the OS-aware .mcp.json content — the full document string — for
+## [param local_path_setting] (see [method _build_entry]).
+static func _build_content(local_path_setting: String = "") -> String:
+	return _content_with(_build_entry(local_path_setting))
+
+
+## The full document string with [param entry] replacing the existing file's
+## toolkit entry (under that entry's own key, see [method _find_own_key], else
 ## [constant _SERVER_KEY]) inside the file's parsed document, so the rest of a
 ## shared file survives the rewrite.
-static func _build_content() -> String:
-	var entry := _build_entry()
+static func _content_with(entry: Dictionary) -> String:
 	# The copy is deep so the document owns its data apart from the shared parser.
 	var existing_document: Dictionary = {}
 	var parsed: Variant = _parse_mcp_json()
@@ -333,19 +574,37 @@ static func _stringify_canonical(value: Variant) -> String:
 	return JSON.stringify(value, "", true, true)
 
 
-## Build the OS-aware server entry ({command, args, env}): read the dev-server
-## override, build the per-OS command/args, and layer the env so an existing
-## file's user keys are preserved (see merge_server_env).
-static func _build_entry() -> Dictionary:
-	var dev_server_path := OS.get_environment(_DEV_SERVER_PATH_ENV)
-	var entry := build_server_entry(OS.get_name(), dev_server_path)
+## Build the OS-aware server entry ({command, args, env}) a write emits: the local
+## server path ([param local_path_setting], else the GODOT_MCP_DEV_SERVER_PATH
+## environment variable) or the npm package spec the project's
+## [constant SERVER_VERSION_SETTING] resolves to, the per-OS command/args, and the
+## env layered so an existing file's user keys are preserved (see
+## merge_server_env) with the builder-owned keys applied last (see
+## apply_owned_env). Callable with no argument: that is the entry a machine with no
+## local path setting writes.
+static func _build_entry(local_path_setting: String = "") -> Dictionary:
+	var dev_server_path := _resolve_dev_path(local_path_setting)
+	var package_spec := resolve_package_spec(_read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION)
+	var entry := build_server_entry(OS.get_name(), dev_server_path, package_spec)
 	# The template base guarantees GODOT_MCP_CONFIG_VERSION; the file's own entry's
 	# env is preserved so a rewrite never strips a user's GODOT_MCP_* keys. The
 	# reads share one JSON parser, so each result is copied before the next read.
 	var base_env := _read_template_env().duplicate()
 	var existing_env := _read_own_env().duplicate()
-	entry["env"] = merge_server_env(base_env, existing_env)
+	entry["env"] = apply_owned_env(
+			merge_server_env(base_env, existing_env), package_spec, dev_server_path)
 	return entry
+
+
+## The project's [constant SERVER_VERSION_SETTING] value, "" when unset.
+static func _read_version_setting() -> String:
+	return str(ProjectSettings.get_setting(SERVER_VERSION_SETTING, ""))
+
+
+## The local server path for [param local_path_setting], falling back to the
+## GODOT_MCP_DEV_SERVER_PATH environment variable (see [method resolve_dev_server_path]).
+static func _resolve_dev_path(local_path_setting: String) -> String:
+	return resolve_dev_server_path(local_path_setting, OS.get_environment(_DEV_SERVER_PATH_ENV))
 
 
 ## The env dict of the toolkit's own entry in .mcp.json (see [method _find_own_key]),
