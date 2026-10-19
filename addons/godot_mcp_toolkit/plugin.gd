@@ -181,7 +181,7 @@ func _register_editor_settings() -> void:
 		"mcp_toolkit/performance/unfocused_responsive_sleep_usec": [TYPE_INT, 16666,
 			"Unfocused process sleep in µs applied while a client is connected (lower = higher fps = snappier but more CPU). 16666 ≈ 60 fps (default); 33333 ≈ 30 fps (power-saver). Not clamped."],
 		MCPJsonWriteFlow.LOCAL_PATH_SETTING: [TYPE_STRING, "",
-			"Absolute path to a local server build's dist/index.js (this machine only). Empty = the npm package. Falls back to the GODOT_MCP_DEV_SERVER_PATH environment variable. Applies to the next Write .mcp.json."],
+			"Absolute path to a local server build's dist/index.js (this machine only). Empty = the npm package. Falls back to the GODOT_MCP_DEV_SERVER_PATH environment variable. A local build turns the editor's version check off right away, and the server's after the next Write .mcp.json."],
 	}
 	for key in settings:
 		if not es.has_setting(key):

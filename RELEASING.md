@@ -144,19 +144,22 @@ them independent otherwise.
 declares `MIN_TOOLKIT_VERSION = "1.0"` (`src/shared/version.ts`) and sends `server_version` +
 `min_toolkit` in the auth request; the toolkit declares `MIN_SERVER_VERSION = "1.0"`
 (`addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd`) and answers with `min_server`.
-When the peer is below its floor, each side reports it once (the server as an ERROR line on
-stderr, the toolkit as an editor error and a dock line), with the same two routes on both
-sides: a toolkit below the server's floor is told to update the addon or pin an older server,
-a server below the toolkit's floor to pin the recommended server from the toolkit dock's
-`.mcp.json` panel or set the server version in the MCP client's config. Otherwise the product-version messages stay: a
-patch difference is silent, a minor difference warns, a major difference is an error. None of
-them reaches the MCP wire or refuses the connection. A local server build (the toolkit's
+When the peer is below its floor, each side reports it: the server once per connection, as an
+ERROR line on stderr, and the toolkit once per server version in an editor session, as an
+editor error and a dock line. Both sides name the same two routes: a toolkit below the server's
+floor is told to update the addon or pin an older server, a server below the toolkit's floor to
+pin the recommended server from the toolkit dock's `.mcp.json` panel or set the server version
+in the MCP client's config. Otherwise the product-version messages stay: a patch difference is
+silent, a minor difference warns, a major difference is an error. None of them reaches the MCP
+wire or refuses the connection. A local server build (the toolkit's
 `mcp_toolkit/server/local_path` editor setting or `GODOT_MCP_DEV_SERVER_PATH`) turns the check
-off on both sides, and each side prints one line saying so; the toolkit writes
-`GODOT_MCP_SKIP_VERSION_CHECK=1` into the entry it builds for it. The toolkit pins the server it
-was tested with (`COMPATIBLE_SERVER_VERSION`) when it writes `.mcp.json`, so a fresh config
-lands on a matching pair; an unpinned config can drift a minor ahead and warns until it is
-pinned.
+off on both sides, but not at the same moment. The editor skips its check from the next
+connection and prints its skip line on every connection. The server skips its check, and prints
+its skip line once at startup, only after **Write .mcp.json** has put
+`GODOT_MCP_SKIP_VERSION_CHECK=1` into the entry it builds for the local build and the MCP client
+has restarted. The toolkit pins the server it was tested with (`COMPATIBLE_SERVER_VERSION`)
+when it writes `.mcp.json`, so a fresh config lands on a matching pair; an unpinned config can
+drift a minor ahead and warns until it is pinned.
 
 **The pin and patch releases.** Every toolkit release states its pin: `release.sh
 --compatible-server X.Y.Z` moves it to a server version npm has, `--keep-compatible-server`

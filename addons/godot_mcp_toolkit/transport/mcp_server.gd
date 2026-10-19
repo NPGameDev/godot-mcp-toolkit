@@ -7,7 +7,7 @@ extends Node
 ## WS peer accept/poll + auth-handshake framing, notifier owns notification
 ## framing/sends, server_request_router + dispatch_lane own request routing and
 ## lane dispatch, and scene_lease / mutation_watchdog / unfocused_sleep_controller
-## / lsp_publisher own their domains. All command logic lives in per-domain
+## / lsp_publisher / peer_compat own their domains. All command logic lives in per-domain
 ## modules under commands/.
 
 signal client_connected(peer_count: int)
@@ -52,6 +52,7 @@ const DispatchLane := preload("res://addons/godot_mcp_toolkit/transport/dispatch
 const UnfocusedSleepController := preload("res://addons/godot_mcp_toolkit/core/unfocused_sleep_controller.gd")
 const LspPublisher := preload("res://addons/godot_mcp_toolkit/paths/lsp_publisher.gd")
 const PortConfig := preload("res://addons/godot_mcp_toolkit/transport/port_config.gd")
+const PeerCompat := preload("res://addons/godot_mcp_toolkit/transport/peer_compat.gd")
 const ResponseLimits = Modules.ResponseLimits
 
 # Default editor scan band (inclusive). GODOT_MCP_EDITOR_PORT pins an exact port
@@ -91,14 +92,6 @@ const _POLL_FRAME_INTERVAL := 4
 # Auth timeout. Peers that don't send a valid auth message within this
 # window are closed with WS close code 1008 (Policy Violation).
 const _AUTH_TIMEOUT_MS := 2000
-## Compatibility states get_peer_compat() reports in its "state" key: no authenticated
-## peer, a server that passed the floor checks, a skipped check (local server build),
-## and a side below the other's declared floor.
-const COMPAT_NONE := ""
-const COMPAT_OK := "ok"
-const COMPAT_SKIPPED := "skipped"
-const COMPAT_SERVER_BELOW_FLOOR := "server_below_floor"
-const COMPAT_TOOLKIT_BELOW_FLOOR := "toolkit_below_floor"
 
 # Owns the TCP listener + WS peers + auth-handshake framing + the bound port +
 # the session token. This file injects the editor-side decisions/side-effects as
@@ -160,12 +153,11 @@ var undo_helpers: Node = null
 ## transport never reads EditorSettings itself.
 var skip_version_check: bool = false
 
-# The last authenticated MCP server's compatibility verdict, the dock's source (see
-# get_peer_compat); back to COMPAT_NONE when the last peer disconnects.
-var _peer_compat: Dictionary = _make_peer_compat(COMPAT_NONE, "", "", "")
-# The "<state>|<server version>" pairs whose below-floor error has already printed. Kept
-# for the editor session, so a server that keeps reconnecting prints each one once.
-var _compat_warned: Dictionary = {}
+# The last authenticated MCP server's floor verdict and the once-per-session record of
+# printed below-floor errors live in peer_compat.gd. This file keeps the trigger points
+# (judge after auth, clear on the last disconnect), the console output, the
+# compat_status_changed signal the dock binds, and the delegating get_peer_compat().
+var _peer_compat: PeerCompat = PeerCompat.new()
 
 # -- Mutation serialisation ---------------------------------------------------
 # When multiple WebSocket peers are connected, mutation commands must not
@@ -273,11 +265,12 @@ func get_reported_lsp_status() -> Dictionary:
 
 ## The last authenticated MCP server's compatibility verdict, for the dock. Returns
 ## { "state": String, "server_version": String, "min_toolkit": String,
-## "message": String }: state is one of the COMPAT_* constants, and message is the
-## below-floor error (without its log prefix) for a *_below_floor state, else "".
-## With several MCP servers connected, the last one to authenticate wins.
+## "message": String }: state is one of peer_compat.gd's STATE_* constants, and
+## message is the below-floor error (without its log prefix) for a *_below_floor
+## state, else "". With several MCP servers connected, the last one to authenticate
+## wins.
 func get_peer_compat() -> Dictionary:
-	return _peer_compat.duplicate()
+	return _peer_compat.get_verdict()
 
 
 func get_command_methods() -> Array:
@@ -673,7 +666,8 @@ func _poll_connections() -> void:
 		var authed_now := _transport.get_authed_count()
 		if authed_now == 0:
 			_unfocused.restore()
-			_set_peer_compat(_make_peer_compat(COMPAT_NONE, "", "", ""))
+			_peer_compat.clear()
+			compat_status_changed.emit()
 		client_disconnected.emit(authed_now)
 
 
@@ -745,59 +739,25 @@ func _on_peer_closed(peer: WebSocketPeer, _was_authed: bool) -> void:
 
 
 # The connect-time version check against server_ver and the server's declared toolkit
-# floor min_toolkit ("" when it declares none). A local server build
-# skips it with one line. Otherwise a side below the other's floor gets one error, in
-# place of the product-version message, printed once per state and server version; an
-# unparsable version or floor falls through to the product-version message. Never
-# refuses the connection.
+# floor min_toolkit ("" when it declares none). The floor verdict comes from the
+# peer_compat child: a local server build skips the check with one line per
+# connection, a side below the other's floor gets one error in place of the
+# product-version message (printed once per state and server version), and otherwise
+# the product-version message runs. Never refuses the connection.
 func _check_peer_compat(server_ver: String, min_toolkit: String) -> void:
-	if skip_version_check:
-		print("[MCPServer] Version check skipped (local server path).")
-		_set_peer_compat(_make_peer_compat(COMPAT_SKIPPED, server_ver, min_toolkit, ""))
-		return
 	var toolkit_ver: String = Modules.VersionUtils.read_plugin_version()
-	var compat := _judge_floors(server_ver, min_toolkit, toolkit_ver)
-	_set_peer_compat(compat)
-	var state := str(compat["state"])
-	if state == COMPAT_OK:
+	var line := _peer_compat.assess(server_ver, min_toolkit, toolkit_ver,
+			Modules.VersionUtils.MIN_SERVER_VERSION, skip_version_check)
+	compat_status_changed.emit()
+	var state := _peer_compat.get_state()
+	if state == PeerCompat.STATE_SKIPPED:
+		print("[MCPServer] " + line)
+	elif state == PeerCompat.STATE_OK:
 		# A pre-handshake server sends no version: nothing to compare.
 		if not server_ver.is_empty():
 			_check_version_mismatch(toolkit_ver, server_ver)
-		return
-	var warned_key := "%s|%s" % [state, server_ver]
-	if not _compat_warned.has(warned_key):
-		_compat_warned[warned_key] = true
-		push_error("[MCPServer] " + str(compat["message"]))
-
-
-# The floor verdict for a server at server_ver declaring min_toolkit, seen from a
-# toolkit at toolkit_ver: the server's version against this
-# toolkit's MIN_SERVER_VERSION first, then this toolkit's version against the server's
-# floor. Returns the get_peer_compat() shape, COMPAT_OK when neither side is below.
-# Pure.
-static func _judge_floors(server_ver: String, min_toolkit: String, toolkit_ver: String) -> Dictionary:
-	var min_server: String = Modules.VersionUtils.MIN_SERVER_VERSION
-	if Modules.VersionUtils.floor_verdict(server_ver, min_server) == "below":
-		return _make_peer_compat(COMPAT_SERVER_BELOW_FLOOR, server_ver, min_toolkit,
-				("MCP server %s is below this toolkit's floor (server >= %s). Pin the recommended "
-				+ "server from the dock's .mcp.json panel, or set the server version in your MCP "
-				+ "client's config.") % [server_ver, min_server])
-	if not min_toolkit.is_empty() and Modules.VersionUtils.floor_verdict(toolkit_ver, min_toolkit) == "below":
-		return _make_peer_compat(COMPAT_TOOLKIT_BELOW_FLOOR, server_ver, min_toolkit,
-				("This toolkit (%s) is below the MCP server's floor (toolkit >= %s). Update the addon "
-				+ "(Godot Asset Store / Asset Library), or pin an older server in .mcp.json: "
-				+ "@npgamedev/godot-mcp-server@<version>.") % [toolkit_ver, min_toolkit])
-	return _make_peer_compat(COMPAT_OK, server_ver, min_toolkit, "")
-
-
-static func _make_peer_compat(state: String, server_ver: String, min_toolkit: String, message: String) -> Dictionary:
-	return {"state": state, "server_version": server_ver, "min_toolkit": min_toolkit, "message": message}
-
-
-# Records the verdict the dock reads and tells the dock to repaint.
-func _set_peer_compat(compat: Dictionary) -> void:
-	_peer_compat = compat
-	compat_status_changed.emit()
+	elif not line.is_empty():
+		push_error("[MCPServer] " + line)
 
 
 func _check_version_mismatch(local: String, remote: String) -> void:
