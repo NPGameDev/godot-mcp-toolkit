@@ -1,0 +1,25 @@
+[remap]
+
+importer="wavefront_obj"
+importer_version=1
+type="Mesh"
+uid="uid://df7oerbe67g8i"
+path="res://.godot/imported/mesh_triangle.obj-f3ad04f6b0f1583e248394a49d1f648e.mesh"
+
+[deps]
+
+files=["res://.godot/imported/mesh_triangle.obj-f3ad04f6b0f1583e248394a49d1f648e.mesh"]
+
+source_file="res://Validations/fixtures/mesh_triangle.obj"
+dest_files=["res://.godot/imported/mesh_triangle.obj-f3ad04f6b0f1583e248394a49d1f648e.mesh", "res://.godot/imported/mesh_triangle.obj-f3ad04f6b0f1583e248394a49d1f648e.mesh"]
+
+[params]
+
+generate_tangents=true
+generate_lods=true
+generate_shadow_mesh=true
+generate_lightmap_uv2=false
+generate_lightmap_uv2_texel_size=0.2
+scale_mesh=Vector3(1, 1, 1)
+offset_mesh=Vector3(0, 0, 0)
+force_disable_mesh_compression=false
