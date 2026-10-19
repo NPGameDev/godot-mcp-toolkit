@@ -33,7 +33,8 @@
 # A bare push to main carrying no token still skips every job, as before.
 #
 # Cross-platform legs (41n-quater-sexies) — additive, each behind its OWN token so a
-# toolkit change is validated on 3 OS × 6 versions × 2 languages = 36 combos:
+# toolkit change is validated on 3 OS × 6 versions × 2 languages = 36 combos, plus a
+# GDScript-only 4.2.2 row per OS:
 #   • [run-macos-ci]         -> macOS behavioral (gdscript+dotnet, 4.2-4.7)
 #   • [run-windows-ci]       -> Windows behavioral (gdscript+dotnet, 4.2-4.7)
 #   • [run-all-platforms-ci] -> the full 36: Linux (above) + macOS + Windows
@@ -164,7 +165,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
+        # 4.2.2 rides beside the X.Y.0 rows: its engine patch fixed the lambda hot-reload
+        # use-after-free that the toolkit works around on 4.2.0/4.2.1 (no in-place script
+        # reload there), so this row covers the reload path on 4.2.
+        godot-version: ["4.2.0", "4.2.2", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
     name: "Full smoke+flows (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v7 # toolkit (self) = the editor/dogfood project
@@ -341,7 +345,7 @@ jobs:
           IN_LANGUAGES: ${{ inputs.languages }}
         run: |
           set -euo pipefail
-          ALL_VERSIONS="4.2.0 4.3.0 4.4.0 4.5.0 4.6.0 4.7.0"
+          ALL_VERSIONS="4.2.0 4.2.2 4.3.0 4.4.0 4.5.0 4.6.0 4.7.0"
           ALL_LANGUAGES="gdscript dotnet"
           platforms=""; versions="$ALL_VERSIONS"; languages="$ALL_LANGUAGES"
 
@@ -375,6 +379,9 @@ jobs:
             for version in $versions; do
               case "$version" in 4.2*|4.3*) tfm="net6.0" ;; *) tfm="net8.0" ;; esac
               for language in $languages; do
+                # 4.2.2 is a GDScript row, as on Linux: it covers the reload path the
+                # 4.2.2 engine patch made safe (the lambda hot-reload use-after-free).
+                if [ "$version" = "4.2.2" ] && [ "$language" != "gdscript" ]; then continue; fi
                 case "$language" in
                   gdscript) editor_label="GDScript editor"; project_name="Godot MCP Toolkit" ;;
                   dotnet)   editor_label="mono editor";     project_name="MCP CSharp Fixture" ;;
