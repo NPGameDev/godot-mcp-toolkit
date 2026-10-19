@@ -84,7 +84,7 @@ C24–C26 & C29 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| project.get_settings | 11 | — | — | — | — | |
+| project.get_settings | 11, 10.7 | — | — | — | — | 10.7: `input/` prefix, each event's `class` |
 | project.set_setting | 62 | — | — | — | 23d69f9 | **GAP:** autoload key guard |
 | autoload.manage | 43m–43p | — | — | — | FIX-D | **GAP:** EditorPlugin API immediacy |
 | project.get_layer_names | 62b | — | — | — | — | |
@@ -138,8 +138,8 @@ C24–C26 & C29 in §§26–27).
 
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
-| input_map.action | 65, 10.1b, 10.5, 10.6 | ✓ (10.1b `remove ui_select` → INVALID_PARAMS; 10.6 rename onto `ui_accept` or another project action → ALREADY_EXISTS, onto its own name → INVALID_PARAMS) | — | — | 09a6392, #14 | Param renamed: action_name → name. 10.1b: on an action saved in `project.godot`, `add` → `returned` with its saved event and deadzone, `remove` → gone; a built-in action is never removed. Headless units pin the loader (rebuilt from `input/<name>` on every call, dropped from InputMap once that setting is gone, built-ins left alone) and the built-in rule against the engine's revert values. `rename` + `new_name` (10.5): the action keeps its events, deadzone and place in `[input]`; headless units pin the rename's refusals and the order through a handler whose save skips the write |
-| input_map.event | 66, 10.1b | — | — | — | #14 | 10.1b: `bind` on an action saved in `project.godot` → `created` |
+| input_map.action | 65, 10.1b, 10.5, 10.6, 10.8 | ✓ (10.1b `remove ui_select` → INVALID_PARAMS; 10.6 rename onto `ui_accept` or another project action → ALREADY_EXISTS, onto its own name → INVALID_PARAMS) | — | — | 09a6392, #14 | Param renamed: action_name → name. 10.1b: on an action saved in `project.godot`, `add` → `returned` with its saved event and deadzone, `remove` → gone; a built-in action is never removed. 10.8: `add` with no `deadzone` → the running engine's default (0.5 before 4.4, 0.2 from 4.4). Headless units run the handlers through a settings helper whose save skips the write: every call reads and writes `input/<name>` only and leaves InputMap untouched, a Project Settings edit or delete between two calls is seen, the deadzone default, and the built-in rule against the engine's revert values. `rename` + `new_name` (10.5): the action keeps its events, deadzone and place in `[input]`; headless units pin the rename's refusals and the order |
+| input_map.event | 66, 10.1b, 10.7 | — | — | — | #14 | 10.1b: `bind` on an action saved in `project.godot` → `created`. 10.7: `bind` on the built-in `ui_left` keeps its default's joypad button and motion and the events saved before it; the unbinds return the setting to its default. Headless units pin a built-in's saved events, its joypad defaults and each default key kept once, its order kept, and the key comparison on `keycode`, `physical_keycode` and `key_label` |
 
 ### Save System (4 tools)
 
