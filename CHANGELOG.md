@@ -25,6 +25,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - After a project rename, **Regenerate Token** no longer leaves the MCP server
   unable to connect until the editor restarts.
+- `node_manage` with `duplicate` now saves the copy's children. Before,
+  `scene_get_tree` listed them, but the saved scene held the copy alone, because
+  `Node.duplicate()` leaves the copied children with no owner. They also stay
+  after an undo and a redo. The internals of an instanced sub-scene stay with
+  the instance. Reported and fixed by @benfeather
+  ([#37](https://github.com/NPGameDev/godot-mcp-toolkit/issues/37),
+  [#38](https://github.com/NPGameDev/godot-mcp-toolkit/pull/38)).
 - `resource_write` now saves a typed array property, such as `Array[String]`, as
   a typed array. Before, creating a resource from a script class (`type` naming
   a `class_name`) dropped the array with no warning, and other writes saved it
