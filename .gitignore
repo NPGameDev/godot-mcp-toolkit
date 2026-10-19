@@ -1,6 +1,7 @@
 # Godot 4.x editor-local state
 .godot/
 *.import
+!/Validations/fixtures/*.import
 
 # Iter 08 distribution artifacts (AssetLib zip build output)
 dist-plugin/

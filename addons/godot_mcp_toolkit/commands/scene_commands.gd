@@ -15,6 +15,11 @@ const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _se
 # frame budget; a larger requested limit is clamped and disclosed in-band.
 const _QUERY_MAX_LIMIT := 200
 
+# Scene files the engine's own scene loaders read directly, with no import step.
+# Any other extension is treated as an imported scene, whose load goes through
+# its .import sidecar.
+const _NATIVE_SCENE_EXTENSIONS := ["tscn", "scn", "res"]
+
 
 static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void:
 	registry.add("scene.get_tree", func(parameters: Dictionary) -> Dictionary:
@@ -585,25 +590,15 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	var guard := FileGuard.resolve_safe(packed_path)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
-	if packed_path.get_extension().to_lower() != "tscn":
-		return MCPToolkitError.fail("INVALID_PATH",
-			"scene.instantiate only instantiates .tscn files (got %s); use resource.write for .tres, script.write for .gd/.cs" % packed_path)
-	if not FileAccess.file_exists(packed_path):
-		return MCPToolkitError.fail("NOT_FOUND",
-			"no scene file at %s; use scene.create first" % packed_path, MCPToolkitError.HINT_FILE_PATH)
-	var packed := ResourceLoader.load(packed_path)
-	if packed == null:
-		return MCPToolkitError.fail("LOAD_FAILED",
-			"ResourceLoader.load returned null for %s (corrupt file or dependency error — check editor_get_console)" % packed_path)
-	if not (packed is PackedScene):
-		return MCPToolkitError.fail("INVALID_CLASS",
-			"file at %s is not a PackedScene (got %s); scene.instantiate only works on .tscn files" % [
-				packed_path, packed.get_class()])
+	var loaded := _load_instanceable_scene(packed_path)
+	if not loaded["ok"]:
+		return loaded["failure"]
+	var packed: PackedScene = loaded["packed"]
 
 	# Batch mode: instances array present → instantiate N copies in one UndoRedo action.
 	var instances_raw = parameters.get("instances", null)
 	if typeof(instances_raw) == TYPE_ARRAY and (instances_raw as Array).size() > 0:
-		return _batch_instantiate(server, root, parent_node, packed as PackedScene,
+		return _batch_instantiate(server, root, parent_node, packed,
 			packed_path, parent_path, instances_raw as Array)
 
 	# Single mode (original behavior).
@@ -611,7 +606,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	var transform_raw = parameters.get("transform", {})
 	var transform: Dictionary = transform_raw if typeof(transform_raw) == TYPE_DICTIONARY else {}
 
-	var target_name := as_name if as_name != "" else (packed as PackedScene).get_state().get_node_name(0)
+	var target_name := as_name if as_name != "" else packed.get_state().get_node_name(0)
 	if parent_node.has_node(NodePath(target_name)):
 		if as_name != "":
 			# Explicit name — idempotent return.
@@ -634,7 +629,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 			suffix += 1
 		target_name = target_name + str(suffix)
 
-	var instance := _instantiate_for_edit(packed as PackedScene)
+	var instance := _instantiate_for_edit(packed)
 	if instance == null:
 		return MCPToolkitError.fail("LOAD_FAILED",
 			"PackedScene.instantiate returned null for %s" % packed_path)
@@ -668,6 +663,64 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 		"path": _path_in_scene(root, instance),
 		"class_name": instance.get_class(),
 	})
+
+
+## Loads the scene at [param packed_path] for scene.instantiate.
+##
+## Like an editor drop, it takes any file that loads as a PackedScene: a .tscn or
+## .scn, or a 3D model imported as a scene (.glb, .gltf, .fbx, .blend...).
+## Returns {"ok": true, "packed": <PackedScene>}, else
+## {"ok": false, "failure": <error envelope>}.
+static func _load_instanceable_scene(packed_path: String) -> Dictionary:
+	# The extension list comes from the registered loaders and scene importers.
+	# ResourceLoader.exists(path, "PackedScene") can't stand in for it: it ignores
+	# the type for any imported file, so it passes a texture.
+	var scene_extensions := ResourceLoader.get_recognized_extensions_for_type("PackedScene")
+	if not (packed_path.get_extension().to_lower() in scene_extensions):
+		return {"ok": false, "failure": MCPToolkitError.fail("INVALID_PATH",
+			"scene.instantiate only instantiates scenes: a .tscn or .scn, or a model imported as a scene (got %s); use resource.write for .tres, script.write for .gd/.cs" % packed_path)}
+	if not FileAccess.file_exists(packed_path):
+		return {"ok": false, "failure": _missing_scene_failure(packed_path)}
+	var packed := ResourceLoader.load(packed_path)
+	if packed == null:
+		return {"ok": false, "failure": _unloadable_scene_failure(packed_path)}
+	if not (packed is PackedScene):
+		return {"ok": false, "failure": MCPToolkitError.fail("INVALID_CLASS",
+			"file at %s is not a PackedScene (got %s); import a model as a scene to instance it" % [
+				packed_path, packed.get_class()])}
+	return {"ok": true, "packed": packed}
+
+
+## Returns the NOT_FOUND envelope for a scene.instantiate path with no file. A
+## missing .tscn can be made with scene.create; a missing model can't, so its
+## message points at adding and importing it instead.
+static func _missing_scene_failure(packed_path: String) -> Dictionary:
+	if _is_imported_scene_path(packed_path):
+		return MCPToolkitError.fail("NOT_FOUND",
+			"no model file at %s; add it to the project, then run editor_refresh so the editor imports it" % packed_path,
+			MCPToolkitError.HINT_FILE_PATH)
+	return MCPToolkitError.fail("NOT_FOUND",
+		"no scene file at %s; use scene.create first" % packed_path, MCPToolkitError.HINT_FILE_PATH)
+
+
+## Returns the LOAD_FAILED envelope for a scene.instantiate file that loaded as
+## null. An imported model with no .import sidecar yet has not been imported, which
+## a rescan fixes; anything else is a broken file or dependency.
+static func _unloadable_scene_failure(packed_path: String) -> Dictionary:
+	if _is_imported_scene_path(packed_path):
+		if not FileAccess.file_exists(packed_path + ".import"):
+			return MCPToolkitError.fail("LOAD_FAILED",
+				"%s has no .import sidecar, so the editor has not imported it yet; run editor_refresh and retry" % packed_path)
+		return MCPToolkitError.fail("LOAD_FAILED",
+			"ResourceLoader.load returned null for %s (its imported data is missing or the import failed — run editor_refresh to reimport it, and check editor_get_console)" % packed_path)
+	return MCPToolkitError.fail("LOAD_FAILED",
+		"ResourceLoader.load returned null for %s (corrupt file or dependency error — check editor_get_console)" % packed_path)
+
+
+## Whether [param packed_path] names a file an importer turns into a scene, such
+## as a .glb, rather than one a loader reads directly.
+static func _is_imported_scene_path(packed_path: String) -> bool:
+	return not (packed_path.get_extension().to_lower() in _NATIVE_SCENE_EXTENSIONS)
 
 
 ## Instances [param packed] with its edit state, as the editor does when a scene is

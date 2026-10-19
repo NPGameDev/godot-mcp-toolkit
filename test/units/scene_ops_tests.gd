@@ -8,12 +8,20 @@ extends RefCounted
 const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/scene/mcp_toolkit_safe_scene_ops.gd")
 const _SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const _INSTANCED_SCENE_FIXTURE := "user://scene_instantiate_fixture.tscn"
+const _BINARY_SCENE_FIXTURE := "user://scene_instantiate_fixture.scn"
+const _NON_SCENE_FIXTURE := "user://scene_instantiate_fixture.tres"
+const _NON_SCENE_BINARY_FIXTURE := "user://scene_instantiate_fixture.res"
+const _TEXT_SCENE_FIXTURE := "user://scene_instantiate_text_fixture.tscn"
+const _UNLOADABLE_MODEL_FIXTURE := "user://scene_instantiate_unloadable_model.glb"
 
 
 static func run(testing) -> void:
 	_test_safe_scene_ops(testing)
 	_test_tool_context(testing)
 	_test_instance_saves_as_instance(testing)
+	_test_instantiate_takes_any_packed_scene(testing)
+	_test_instantiate_load_barrier(testing)
+	_test_instantiate_model_recovery_messages(testing)
 
 
 # --- MCPToolkitSafeSceneOps public API -------------------------------------
@@ -117,6 +125,102 @@ static func _test_instance_saves_as_instance(testing) -> void:
 
 	owner_root.free()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_INSTANCED_SCENE_FIXTURE))
+	print("")
+
+
+# --- scene.instantiate: any file that loads as a PackedScene -----------------
+# The editor drops in any file that loads as a PackedScene: a .tscn, a binary .scn,
+# or a 3D model imported as a scene (.glb, .fbx...). This runner can't import a
+# model, so a .scn stands in for one: a PackedScene whose path isn't .tscn. A
+# resource that isn't a scene is still refused. Writes user:// temp files and
+# removes them afterward.
+
+static func _test_instantiate_takes_any_packed_scene(testing) -> void:
+	testing.begin("scene.instantiate takes any file that loads as a PackedScene")
+	var scene_root := Node3D.new()
+	scene_root.name = "Model"
+	var scene := PackedScene.new()
+	testing.eq(scene.pack(scene_root), OK, "binary scene packs")
+	scene_root.free()
+	testing.eq(ResourceSaver.save(scene, _BINARY_SCENE_FIXTURE), OK, "binary scene saved")
+	var loaded := _SceneCommands._load_instanceable_scene(_BINARY_SCENE_FIXTURE)
+	testing.eq(loaded.get("failure", {}).get("error"), null, ".scn is not refused")
+	testing.ok(loaded.get("packed") is PackedScene, ".scn loads as a PackedScene")
+
+	testing.eq(ResourceSaver.save(Resource.new(), _NON_SCENE_FIXTURE), OK, "plain resource saved")
+	var refused := _SceneCommands._load_instanceable_scene(_NON_SCENE_FIXTURE)
+	testing.eq(refused.get("failure", {}).get("code"), "INVALID_PATH",
+			".tres that isn't a scene is refused with INVALID_PATH")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_BINARY_SCENE_FIXTURE))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_NON_SCENE_FIXTURE))
+	print("")
+
+
+# --- scene.instantiate: the load decides, not the extension ------------------
+# A .res can hold any resource, so its extension passes the scene check; loading
+# it is what refuses a non-scene. A mesh-imported model takes the same road: .obj
+# is on the scene-extension list whichever importer the file uses. The .tscn case
+# guards the path every existing caller takes. Writes user:// temp files and
+# removes them afterward.
+
+static func _test_instantiate_load_barrier(testing) -> void:
+	testing.begin("scene.instantiate refuses a file that doesn't load as a PackedScene")
+	testing.eq(ResourceSaver.save(Resource.new(), _NON_SCENE_BINARY_FIXTURE), OK, "plain binary resource saved")
+	var refused := _SceneCommands._load_instanceable_scene(_NON_SCENE_BINARY_FIXTURE)
+	testing.eq(refused.get("failure", {}).get("code"), "INVALID_CLASS",
+			".res holding a plain Resource is refused with INVALID_CLASS")
+
+	var scene_root := Node2D.new()
+	scene_root.name = "Prop"
+	var scene := PackedScene.new()
+	testing.eq(scene.pack(scene_root), OK, "text scene packs")
+	scene_root.free()
+	testing.eq(ResourceSaver.save(scene, _TEXT_SCENE_FIXTURE), OK, "text scene saved")
+	var loaded := _SceneCommands._load_instanceable_scene(_TEXT_SCENE_FIXTURE)
+	testing.ok(bool(loaded.get("ok", false)), ".tscn still loads")
+	testing.ok(loaded.get("packed") is PackedScene, ".tscn loads as a PackedScene")
+
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_NON_SCENE_BINARY_FIXTURE))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_TEXT_SCENE_FIXTURE))
+	print("")
+
+
+# --- scene.instantiate: recovery a model's failure names ---------------------
+# This runner registers no scene importer, so a .glb never reaches these helpers
+# through _load_instanceable_scene here; they are called directly. A model can't
+# be made with scene.create, and one with no .import sidecar needs a rescan.
+
+static func _test_instantiate_model_recovery_messages(testing) -> void:
+	testing.begin("scene.instantiate failures name the recovery a model needs")
+	var missing_model := _SceneCommands._missing_scene_failure("user://no_such_model.glb")
+	testing.eq(missing_model.get("code"), "NOT_FOUND", "missing model → NOT_FOUND")
+	testing.ok(not str(missing_model.get("error", "")).contains("scene.create"),
+			"missing model doesn't advise scene.create")
+	testing.ok(str(missing_model.get("error", "")).contains("editor_refresh"),
+			"missing model names editor_refresh")
+	var missing_scene := _SceneCommands._missing_scene_failure("user://no_such_scene.tscn")
+	testing.ok(str(missing_scene.get("error", "")).contains("scene.create"),
+			"missing .tscn still advises scene.create")
+
+	var unimported := _SceneCommands._unloadable_scene_failure("user://no_sidecar_model.glb")
+	testing.eq(unimported.get("code"), "LOAD_FAILED", "model with no sidecar → LOAD_FAILED")
+	testing.ok(str(unimported.get("error", "")).contains(".import sidecar"),
+			"model with no sidecar names the missing sidecar")
+	testing.ok(str(unimported.get("error", "")).contains("editor_refresh"),
+			"model with no sidecar names editor_refresh")
+	var broken_scene := _SceneCommands._unloadable_scene_failure("user://broken_scene.tscn")
+	testing.ok(not str(broken_scene.get("error", "")).contains("editor_refresh"),
+			"broken .tscn doesn't advise editor_refresh")
+
+	# A sidecar with no imported output behind it, as after a failed import.
+	var sidecar := FileAccess.open(_UNLOADABLE_MODEL_FIXTURE + ".import", FileAccess.WRITE)
+	sidecar.store_string("[remap]\n")
+	sidecar.close()
+	var failed_import := _SceneCommands._unloadable_scene_failure(_UNLOADABLE_MODEL_FIXTURE)
+	testing.ok(str(failed_import.get("error", "")).contains("editor_refresh"),
+			"model whose import failed names editor_refresh")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_UNLOADABLE_MODEL_FIXTURE + ".import"))
 	print("")
 
 
