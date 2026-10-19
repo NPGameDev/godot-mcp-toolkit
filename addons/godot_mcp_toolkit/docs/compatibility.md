@@ -28,7 +28,7 @@ All MCP tools work on Godot 4.2+ unless noted below.
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message. On 4.5+ closes active or inactive tabs; last-tab close auto-creates an empty scene |
 | `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version (an abstract engine class only from 4.4; see [the limitations](#script_check-limitations-all-versions)). Error messages carry `gdscript://` URIs (see below) |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
-| `extensions_refresh` | 4.2 | On 4.2, **editing an existing** extension is not applied in-session (a cached read avoids an engine reimport crash — see below); the response `hint` names the extension and says to restart. Adding/removing extensions applies live. 4.3+ applies all changes live |
+| `extensions_refresh` | 4.2 | On 4.2, an extension edit made with `script_write` or `script_edit` (or their undo/redo) applies live when it compiles. An edit made outside the toolkit, or to a C# extension, needs an editor restart, and `extensions_refresh` names it in its `hint` (a cached read avoids an engine reimport crash — see below). When the file does not compile, the `hint` says to fix it instead. Adding/removing extensions applies live. 4.3+ applies all changes live |
 | `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On every version, a `.gd` that compiles is reloaded in the editor after the write, and after its undo and redo, so the nodes already running it run the new code (`script_edit` too). A `.gd` that does not compile is written but the toolkit does not load it: on Godot 4.2–4.3 and on a 4.5+ headless editor, the nodes keep the code they had. On 4.4+ with an editor window, and on 4.4 headless, the editor's own reload of the changed file can still apply the broken source to the nodes running it, until the file is fixed. Undoing a write restores the file's previous content, or deletes a file the write created |
 | `node_set_script` | 4.2 | Reloads a `.gd` whose file changed since the editor loaded it, so every node running it, old or new, runs the code on disk; the toolkit's own scripts are never reloaded. A file that does not compile is not loaded: when the file changed since the editor loaded it and does not compile, the response carries `valid: false` and a `hint` that says so and points at `script_check`, and the node runs the version the editor already had (unless the editor had already reloaded that broken source by itself; see `script_write`). Undoing `node_set_script` restores the node's previous script, not the file's previous content |
 | `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance, after the file changed outside the toolkit) carries a stale-instance `hint`; a genuine typo does not. 4.4+ hot-reloads on a **display** editor, so the call just succeeds — but a **4.4+ headless** editor never re-instantiates the reloaded node, so the stale `hint` fires there too (headless wording: set the script again or relaunch a display editor) |
@@ -67,18 +67,22 @@ script identity (even across stale/phantom tabs); with an external editor the to
 - `script_check` limitations apply (see section below).
 - On 4.2 specifically, TileMapLayer nodes do not exist (introduced in 4.3).
   The tilemap tool still works with legacy `TileMap` nodes.
-- **Extension hot-reload — editing an existing extension needs a restart (4.2
-  only).** Adding a new extension and removing one both apply live, but *editing*
-  an already-loaded extension's tools is not reflected in-session. Loading a
+- **Extension hot-reload — an edit made outside the toolkit needs a restart (4.2
+  only).** Adding a new extension and removing one both apply live. Loading a
   freshly-edited `@tool` script fresh (`CACHE_MODE_IGNORE`) while
   `EditorFileSystem` is still reimporting it spawns a second, unregistered,
   synchronous parallel load during global-class registration and natively crashes
   the 4.2 editor — the same `CACHE_MODE_IGNORE` hazard already noted for
   `script_check`. On 4.2 the extension loader therefore reads through the
-  editor cache (`CACHE_MODE_REUSE`), which is crash-safe but can't see the new
-  edit. `extensions_refresh` returns a `hint` naming the changed extension and
-  telling you to restart the editor; a `push_warning` also shows in the Output
-  panel. Godot 4.3+ applies edits live (validated on 4.5).
+  editor cache (`CACHE_MODE_REUSE`), which is crash-safe and sees an edit once
+  the cached script holds it. On 4.2, an extension edit made with
+  `script_write` or `script_edit` (or their undo/redo) applies live when it
+  compiles. An edit made outside the toolkit, or to a C# extension, needs an
+  editor restart, and `extensions_refresh` names it in its `hint`; a
+  `push_warning` also shows in the Output panel. When the file on disk does not
+  compile, the `hint` says to fix it (with `script_write` or `script_edit`;
+  `script_check` lists the errors) rather than restart, since a restart would
+  load the broken file. Godot 4.3+ applies edits live (validated on 4.5).
 - **Live attached-script reload — a script changed outside the toolkit needs the
   script set again (4.2 + 4.3).** A **distinct** boundary from the extension
   hot-reload above (which is 4.2→4.3): live scene-node attached-script reload is

@@ -346,12 +346,14 @@ Extensions are monitored at runtime and changes are picked up automatically:
   compares method lists and re-registers on change; rapid edits debounce to one
   rescan (500ms window).
 
-> **Godot 4.2 only — editing an existing extension needs an editor restart.** On
-> 4.2 the loader reads through the editor cache (a crash-avoidance measure), so an
-> in-session **edit** to an already-loaded extension is not applied until you
-> restart the editor; `extensions_refresh` returns a restart hint naming the
-> changed extension. **Adding** and **removing** extensions still apply live on
-> 4.2. Godot 4.3+ applies add / edit / remove all live.
+> **Godot 4.2 only — an edit made outside the toolkit needs an editor restart.** On
+> 4.2 the loader reads through the editor cache (a crash-avoidance measure). On
+> 4.2, an extension edit made with `script_write` or `script_edit` (or their
+> undo/redo) applies live when it compiles. An edit made outside the toolkit, or
+> to a C# extension, needs an editor restart, and `extensions_refresh` names it in
+> its hint. When the file does not compile, the hint says to fix it instead.
+> **Adding** and **removing** extensions still apply live on 4.2. Godot 4.3+
+> applies add / edit / remove all live.
 
 ## Concurrency
 
@@ -424,7 +426,7 @@ Three checks confirm a new extension works end-to-end:
 
 - **After an edit:** hot-reload picks up added/removed tools automatically; if the
   client hasn't noticed, call `extensions_refresh` (see "Hot-reload behavior" for
-  the Godot 4.2 edit-restart caveat).
+  the Godot 4.2 caveat for edits made outside the toolkit).
 - **After a toolkit update:** re-run the 3-step self-check, re-read the decision
   table for new `mark_*` / `with_*` verbs, and re-check your `min`/`max` Godot
   gates against newly-supported versions.

@@ -74,7 +74,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   editor still reloads a changed file by itself, broken or not. For a file changed outside the
   toolkit, the stale-instance hint on `node_call_method` now tells you to set the
   script again instead of relaunching the editor, and `script_write` no longer
-  carries that hint. Reported and first fixed by @benfeather
+  carries that hint. On Godot 4.2, an extension edit made with `script_write` or
+  `script_edit` now applies live when it compiles, while one made outside the
+  toolkit still needs an editor restart and `extensions_refresh` names it.
+  Reported and first fixed by @benfeather
   ([#43](https://github.com/NPGameDev/godot-mcp-toolkit/issues/43),
   [#45](https://github.com/NPGameDev/godot-mcp-toolkit/pull/45)).
 
