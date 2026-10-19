@@ -16,6 +16,8 @@ const DockLimitsSection := preload("res://addons/godot_mcp_toolkit/ui/dock/limit
 const DockUnfocusedControl := preload("res://addons/godot_mcp_toolkit/ui/dock/limits/dock_unfocused_control.gd")
 const DockAuditSection := preload("res://addons/godot_mcp_toolkit/ui/dock/security/dock_audit_section.gd")
 const DockMcpJsonPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/mcp/dock_mcp_json_panel.gd")
+const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
+const UpdateCheckRunner = Modules.UpdateCheckRunner
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -47,6 +49,8 @@ var _nodejs_status_warning: Label = null
 # onboarding wizard do; it never owns these behaviors.
 var _write_flow: MCPJsonWriteFlow = null
 var _dialog_presenter: ToolkitDialogPresenter = null
+# The composer-owned update check; the dock only hosts its badge.
+var _update_check: UpdateCheckRunner = null
 
 # Lightweight timer for runtime-status polling during playtests.
 var _runtime_timer: Timer = null
@@ -54,11 +58,13 @@ var _runtime_timer: Timer = null
 
 func bind(
 		server: Node, audit_path: String,
-		write_flow: MCPJsonWriteFlow, dialog_presenter: ToolkitDialogPresenter) -> void:
+		write_flow: MCPJsonWriteFlow, dialog_presenter: ToolkitDialogPresenter,
+		update_check: UpdateCheckRunner) -> void:
 	_server = server
 	_audit_path = audit_path
 	_write_flow = write_flow
 	_dialog_presenter = dialog_presenter
+	_update_check = update_check
 	_server.client_connected.connect(_on_client_connected)
 	_server.client_disconnected.connect(_on_client_disconnected)
 	_server.command_received.connect(_on_command_received)
@@ -97,6 +103,9 @@ func _ready() -> void:
 func _build_ui() -> void:
 	var scale := EditorInterface.get_editor_scale()
 	add_theme_constant_override("separation", int(4 * scale))
+
+	# == Update badge (first child, hidden unless a newer version is published) ==
+	add_child(DockUpdateBadge.new(_update_check, Callable(self, "_toast")))
 
 	# == Status section (compact, pinned at top) ==============================
 	var status_section := DockSectionCard.make_section("Server Status")

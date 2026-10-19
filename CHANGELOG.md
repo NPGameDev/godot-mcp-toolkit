@@ -112,6 +112,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sides: the editor prints one line per connection saying so, and **Write
   .mcp.json** adds `GODOT_MCP_SKIP_VERSION_CHECK=1` to the entry, which turns the
   server's check off. Writing an npm entry removes it again.
+- The dock shows a badge when a newer toolkit version is published. At most
+  once a day per project the toolkit asks GitHub for its latest release and,
+  when that release is newer, asks the Asset Store whether it lists it yet. The
+  badge links to the release on GitHub and to the Asset Store (on Godot 4.7+ it
+  opens the editor's Asset Store tab), and its close button hides it until the
+  next version. It never downloads or installs anything. The requests send a
+  fixed `User-Agent: godot-mcp-toolkit` and nothing about your project, and a
+  failed check stays silent. The Extensions dialog's catalog fetch sends the
+  same User-Agent. Turn the check off with the `mcp_toolkit/updates/check_for_updates`
+  project setting (Project Settings > Mcp Toolkit > Updates).
 
 ### Fixed
 

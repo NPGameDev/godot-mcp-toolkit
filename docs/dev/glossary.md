@@ -286,6 +286,24 @@ profile.
 
 ---
 
+## Update vocabulary
+
+How this project names the way users hear about a new toolkit version.
+
+**Update check**
+The toolkit's at-most-daily read of the latest published version (GitHub's latest release, then
+the Asset Store's listing of it), compared locally with the installed version
+(`versioning/update_check.gd`, run by `versioning/update_check_runner.gd`). It sends nothing about
+the project, fails silently, and the `mcp_toolkit/updates/check_for_updates` project setting turns
+it off.
+
+**Update badge**
+The closable dock notice that a newer version is published (`ui/dock/update/dock_update_badge.gd`).
+It points at the release on GitHub and the Asset Store; it never downloads or installs anything.
+Closing it hides it until a newer version.
+
+---
+
 ## Internal module naming
 
 The canonical names for internal toolkit modules and the architectural roles they occupy. These are

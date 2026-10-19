@@ -48,6 +48,7 @@ const ScriptReloadTests := preload("res://test/units/script_reload_tests.gd")
 const ScriptEditTests := preload("res://test/units/script_edit_tests.gd")
 const VersionFloorTests := preload("res://test/units/version_floor_tests.gd")
 const PeerCompatTests := preload("res://test/units/peer_compat_tests.gd")
+const UpdateCheckTests := preload("res://test/units/update_check_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -100,6 +101,7 @@ func _init() -> void:
 	await ScriptEditTests.run(testing)  # the handler groups await script.edit → coroutine
 	VersionFloorTests.run(testing)
 	PeerCompatTests.run(testing)
+	UpdateCheckTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()

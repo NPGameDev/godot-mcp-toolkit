@@ -1,6 +1,7 @@
 @tool
 extends RefCounted
-## ProjectSettings registration for the limits, concurrency, audit and server-pin keys.
+## ProjectSettings registration for the limits, concurrency, audit, server-pin and
+## update-check keys.
 ##
 ## Called once at plugin startup to ensure mcp_toolkit/* keys appear
 ## in the Project Settings inspector with correct types and defaults, and the
@@ -9,6 +10,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const ResponseLimits = Modules.ResponseLimits
 const MCPJsonSync = Modules.MCPJsonSync
+const UpdateCheck = Modules.UpdateCheck
 
 # Keys earlier versions stored and this one no longer writes. Each entry is
 # removable at 2.0.0.
@@ -26,6 +28,7 @@ static func register_all() -> void:
 	_register_concurrency()
 	_register_audit()
 	_register_server()
+	_register_updates()
 	# One-way migration: erase whatever retired key a project still carries. The
 	# erase is in-memory only: register_all() deliberately never saves, so the key
 	# leaves project.godot at the next ProjectSettings save, from whatever source.
@@ -89,6 +92,12 @@ static func _register_server() -> void:
 	_register_setting(MCPJsonSync.SERVER_VERSION_SETTING, TYPE_STRING, "", PROPERTY_HINT_NONE,
 		"Server version Write .mcp.json pins. Empty = the version this toolkit was tested with (recommended); latest = always the newest; any other value is used as the npm version, range or tag (you own compatibility). Team-shared. Restart your MCP client after a change.",
 		false)
+
+
+# Basic: a privacy switch belongs where users see it without Advanced Settings.
+static func _register_updates() -> void:
+	_register_basic_bool(UpdateCheck.SETTING, true,
+		"Checks GitHub at most once a day for a newer toolkit version, then the Asset Store if one exists, and shows a badge in the dock. The requests carry no identifier and nothing about your project.")
 
 
 static func _register_basic_bool(key: String, default_value: bool, description: String) -> void:

@@ -507,7 +507,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="138018c" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="f8049ea" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -523,16 +523,19 @@ flowchart TD
     composer --> detect["PlaytestEndDetector"]
     composer --> start["server.start() + register in registry"]
     composer --> ui["write flow + dialog presenter<br/>(shared UI · ADR 0016)"]
+    composer --> upd["update check runner<br/>(plugin child · read by the dock's badge)"]
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 138018c*
+*Figure 10 — plugin composition root · verified f8049ea*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
 export-strip plugin, the user-path monitor (which re-homes `user://` paths when the project is
 renamed), the playtest-end detector, the server start + registry registration, then the shared
-`.mcp.json` write-flow + dialog presenter, and finally the dock. The write-flow and dialog
+`.mcp.json` write-flow + dialog presenter, the update check runner (a plugin child that checks for a
+newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), and
+finally the dock. The write-flow and dialog
 presenter are **injected** into the dock, the tool menu, and the onboarding wizard alike — the
 dock consumes them like any other UI surface rather than acting as a service locator for them
 ([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
@@ -541,7 +544,7 @@ dock, the presenter reads `.mcp.json` the way the badge does). `dispose()` rever
 `PlaytestCommands.clear_debug_bridge()`, the reverse of handing the debug bridge to `PlaytestCommands.register`, and last clears the response limits' env
 overrides (`core/response_limits.gd`), static state that would otherwise outlive a plugin reload;
 teardown uses **immediate (not deferred)
-`free()`** throughout — for the dock control, the dialog presenter's dialogs, and the server, and
+`free()`** throughout — for the dock control, the update check runner, the dialog presenter's dialogs, and the server, and
 (in `plugin.gd`'s own `_exit_tree`) for the tool menu and the onboarding wizard — so nothing
 outlives ObjectDB's exit-time leak check. The tool menu, per-user EditorSettings (the unfocused-editor
 preferences and the machine-local `mcp_toolkit/server/local_path`), the

@@ -9,7 +9,7 @@
 
 AI-assisted Godot development through the [Model Context Protocol](https://modelcontextprotocol.io). This addon turns the Godot 4.2+ editor into an MCP server. Your AI coding assistant can create scenes, edit scripts, inspect nodes, run playtests, and read the results back, all inside the editor while you watch. The companion npm package [`@npgamedev/godot-mcp-server`](https://github.com/NPGameDev/godot-mcp-server) is the bridge your assistant talks to.
 
-> Runs fully locally. No telemetry, no cloud services, no account. Nothing leaves your machine.
+> Runs fully locally. No telemetry, no cloud services, no account. Nothing leaves your machine. The one exception is update checks: at most once a day the toolkit asks GitHub whether a newer version is published (and, when one is, asks the Asset Store whether it lists it yet), and the Extensions dialog fetches its catalog from GitHub when you open it. These requests carry no identifier and nothing about your project; the servers see only your IP address, as with any download. Turn the update check off in Project Settings under Mcp Toolkit > Updates (`mcp_toolkit/updates/check_for_updates`).
 >
 > This is an independent community project, not affiliated with or endorsed by the Godot Foundation or Anthropic.
 >
