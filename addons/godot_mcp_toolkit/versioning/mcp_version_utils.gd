@@ -4,7 +4,8 @@ extends RefCounted
 ##
 ## Provides is_at_least / is_at_most / is_version_in_range checks against
 ## the running engine version, used to gate commands by their min/max Godot
-## version requirements, read_plugin_version() which reads the toolkit's
+## version requirements, in_place_reload_safe() which says whether a script can be
+## reloaded in place on this engine, read_plugin_version() which reads the toolkit's
 ## own plugin.cfg, and version_skew() which classifies how the plugin's version
 ## differs from the connected server's.
 
@@ -38,6 +39,25 @@ static func is_engine_version_pair(target: String) -> bool:
 static func get_engine_version_ints() -> Vector2i:
 	var info := Engine.get_version_info()
 	return Vector2i(int(info["major"]), int(info["minor"]))
+
+
+## Whether the running engine can reload a script in place: every version but Godot 4.2.0
+## and 4.2.1 (see [method reload_frees_held_lambdas]). Where it cannot, the toolkit's
+## write, undo, redo and [code]node_set_script[/code] paths leave a changed script for an
+## editor restart to load.
+static func in_place_reload_safe() -> bool:
+	return not reload_frees_held_lambdas(Engine.get_version_info())
+
+
+## Whether the engine described by [param version_info] (the shape of
+## [code]Engine.get_version_info()[/code]) is one where reloading a script in place is
+## unsafe. On Godot 4.2.0 and 4.2.1 an in-place reload frees the code of the script's
+## lambdas while a Callable held elsewhere (a signal connection, a command registry) still
+## points at it, and the next call crashes the editor; 4.2.2 and 4.3 fixed it. Pure, so the
+## version boundary can be unit-tested.
+static func reload_frees_held_lambdas(version_info: Dictionary) -> bool:
+	return (int(version_info.get("major", 0)) == 4 and int(version_info.get("minor", 0)) == 2
+			and int(version_info.get("patch", 0)) < 2)
 
 
 ## The toolkit's own version string, read from its plugin.cfg.

@@ -391,7 +391,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="a43a7bb" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="8042387" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -401,7 +401,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified a43a7bb*
+*Figure 8 — the idempotent create / if_exists decision · verified 8042387*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -545,7 +545,7 @@ guarded lifecycle. `extension_loader.gd` is a 36-line orchestrator over four ser
 (the shared load/validate/probe leaf), `extension_watcher` (live hot-reload), and
 `extension_meta_commands` (the `extensions.list` surface).
 
-<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="8042387" -->
 ```mermaid
 flowchart TD
     scan["scan ProjectSettings.get_global_class_list()"] --> cand{"candidate?<br/>GDScript base == MCPToolkitExtension<br/>or C# MCPToolkit*.cs"}
@@ -562,7 +562,7 @@ flowchart TD
     reserved --> mark["registry.mark_extension(method)"]
     mark --> retain["retain instance (C# GC safety)"]
 ```
-*Figure 11 — extension discovery → validate → guarded register · verified eb4c9fa*
+*Figure 11 — extension discovery → validate → guarded register · verified 8042387*
 
 Two guards protect the built-in surface: a **collision guard** window (opened by
 `begin_extension_load`, drained by `end_extension_load`) rejects an extension that tries to
@@ -579,10 +579,16 @@ it and break the callbacks.
 
 **Hot-reload.** `extension_watcher` listens for `EditorFileSystem.filesystem_changed` and
 `ProjectSettings.settings_changed`, debounces ~500 ms, computes an added/removed/modified class
-diff (with a source-hash fallback for in-session edits on Godot 4.2), applies it, and broadcasts
-`extensions.changed` to all authed peers. `extensions.list` / `extensions.refresh` are the pull
+diff, applies it, and broadcasts
+`extensions.changed` to all authed peers. A class counts as modified when its tools or the
+GDScript source the loader reads change, so a reload never leaves a registered `Callable`
+from before it. `extensions.list` / `extensions.refresh` are the pull
 counterparts. (Because Claude Code drops `tools/list_changed` notifications, the bridge cannot
-rely on the broadcast alone — the pull path is the reliable one.)
+rely on the broadcast alone — the pull path is the reliable one.) On Godot 4.2 the loader reads
+the editor's cached script, which a toolkit write that compiles reloads (on 4.2.2; the toolkit
+reloads nothing in place on 4.2.0 and 4.2.1), so the watcher checks each edit against that
+cache: an edit that never reached it gets a restart hint in `extensions.refresh`, and a file
+that does not compile gets a hint to fix it.
 
 **The extension API** is the nine public `MCPToolkit*` classes plus the registry facade. C#
 extensions in particular cannot `await` GDScript statics, so the `registry` handed to

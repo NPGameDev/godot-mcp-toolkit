@@ -575,7 +575,8 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 	if not Modules.StaleInstanceHint.should_hint_on_call(false, disk_has, disk_ok, true, version.x, version.y, headless):
 		return ""
 	return Modules.StaleInstanceHint.recovery_message(
-			Modules.VersionUtils.get_engine_version_pair(), version.y, headless)
+			Modules.VersionUtils.get_engine_version_pair(), version.y, headless,
+			Modules.VersionUtils.in_place_reload_safe())
 
 
 ## Builds the node.call_method hint for a null callv() result, version-gated.
@@ -663,6 +664,19 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	return MCPToolkitSuccess.ok(response)
 
 
+## The node.set_script hint when the script's file on disk was not loaded:
+## [param compile_error] says why. When [param previous_kept] is true the node runs the
+## version the editor already had, since a source that does not compile never replaces
+## working code; when false, even that version failed to recompile.
+static func _refused_reload_hint(script_path: String, compile_error: String, previous_kept: bool) -> String:
+	var running_code := "The editor kept the version it had loaded, so the node runs that previous code."
+	if not previous_kept:
+		running_code = ("The editor could not restore the version it had loaded either, so calls "
+			+ "into the script can fail.")
+	return ("%s on disk was not loaded: %s. %s Run script_check on the file for the error "
+		+ "and its line, fix it, then call node_set_script again.") % [script_path, compile_error, running_code]
+
+
 static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	var root := _get_edited_root()
 	if root == null:
@@ -701,6 +715,11 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	if not (loaded is Script):
 		return MCPToolkitError.fail("INVALID_PARAMS",
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
+	# Where an in-place reload is unsafe, the node takes the version the editor has, and a
+	# file changed since then waits for an editor restart.
+	var reload_outcome := Helpers.unreloaded_outcome()
+	if Modules.VersionUtils.in_place_reload_safe():
+		reload_outcome = Helpers.reload_script_from_disk(loaded)
 
 	var old_script = node.get_script()
 	node.set_script(loaded)
@@ -727,7 +746,12 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 			"hint_string": str(property.get("hint_string", "")),
 		})
 
-	return MCPToolkitSuccess.ok({"path": node_path, "script": script_path, "properties": exports})
+	var response := {"path": node_path, "script": script_path, "properties": exports}
+	var compile_error := str(reload_outcome["compile_error"])
+	if compile_error != "":
+		response["valid"] = false
+		response["hint"] = _refused_reload_hint(script_path, compile_error, bool(reload_outcome["previous_kept"]))
+	return MCPToolkitSuccess.ok(response)
 
 
 static func _cmd_node_manage(parameters: Dictionary) -> Dictionary:
