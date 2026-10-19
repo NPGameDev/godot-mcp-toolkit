@@ -1,0 +1,7 @@
+[gd_resource type="Resource" load_steps=2 format=3 uid="uid://cmcp1tarrelm"]
+
+[ext_resource type="Script" path="res://test/fixtures/typed_array_element.gd" id="1_element"]
+
+[resource]
+script = ExtResource("1_element")
+label = "first"

@@ -84,7 +84,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 and *Mode B* internally) — and publishes a small **registry file** so the bridge can
 discover every live instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="2dccc26" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="d2e6e5c" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -103,7 +103,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified 2dccc26*
+*Figure 1 — system context · verified d2e6e5c*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -143,7 +143,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="2dccc26" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="d2e6e5c" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>ships in the game"]
@@ -173,7 +173,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified 2dccc26*
+*Figure 2 — the editor↔runtime taint boundary · verified d2e6e5c*
 
 Consequences that shape the rest of the architecture:
 
@@ -188,11 +188,14 @@ Consequences that shape the rest of the architecture:
   and no dispatcher lanes; it dispatches a fixed handful of `runtime.*` / `signal.*` /
   `input.*` / `execute.*` handlers inline. Anything needing the editor (saving scenes,
   undo/redo, filesystem scans) stays on the editor side by construction.
-- **The runtime autoload self-disables three ways** in `_ready()`: it returns inert if
-  `Engine.is_editor_hint()`, if `--check-only` is on the command line, or — the security-load-bearing
-  one — if `not OS.has_feature("editor")`, which is **false in every export template**. A
-  shipped game never starts the server; only an `editor`-feature build (the dev running their
-  own game from the editor) does.
+- **The runtime autoload self-disables four ways** in `_ready()`: it returns inert if
+  `Engine.is_editor_hint()`, if `--check-only` is on the command line (without `--script` the
+  engine ignores that flag and runs the main scene), if `GODOT_MCP_RUNTIME` is
+  `0`/`false`/`off` (an opt-out for scripted and headless runs), or — the
+  security-load-bearing one — if `not OS.has_feature("editor")`, which is **false in every
+  export template**. A shipped game never starts the server; only an `editor`-feature build
+  (the dev running their own game from the editor) does. `_exit_tree()` stops the server and clears the runtime registry
+  entry only when `_ready()` started it, so an inert copy never deletes another run's entry.
 
 The export-strip plugin ([ADR 0006](#14-key-decisions-adrs)) nulls the runtime autoload entry
 and strips addon source from the player's build as defence-in-depth, but the parse-time
@@ -388,7 +391,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="b023765" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="a43a7bb" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -398,7 +401,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified b023765*
+*Figure 8 — the idempotent create / if_exists decision · verified a43a7bb*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency

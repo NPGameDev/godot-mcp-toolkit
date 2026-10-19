@@ -28,6 +28,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   says to run `editor_refresh` and retry. Thanks to @benfeather
   ([#39](https://github.com/NPGameDev/godot-mcp-toolkit/issues/39),
   [#40](https://github.com/NPGameDev/godot-mcp-toolkit/pull/40)).
+- `GODOT_MCP_RUNTIME=0` (or `false`, `off`) keeps a run of your project off the
+  runtime channel. Before, every run with the editor binary opened it, including
+  a headless `--script` test runner, and took the project's runtime entry in the
+  registry from the game the MCP tools had started. See "Keeping a run off the
+  runtime channel" in the advanced configuration guide. An editor started with
+  the variable set passes it to every game it launches, and a `game_start`
+  re-probe names it in its hint. The repo's cold unit runner sets it outside CI.
+  Reported and implemented by @benfeather
+  ([#46](https://github.com/NPGameDev/godot-mcp-toolkit/issues/46),
+  [#47](https://github.com/NPGameDev/godot-mcp-toolkit/pull/47)).
 - `script_edit` accepts an `edits` array of `old_string`/`new_string`/`replace_all`
   objects and applies them in order in one call, each to the text the earlier
   ones leave. The file is written and checked once, with one undo entry, and
@@ -49,6 +59,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the instance. Reported and fixed by @benfeather
   ([#37](https://github.com/NPGameDev/godot-mcp-toolkit/issues/37),
   [#38](https://github.com/NPGameDev/godot-mcp-toolkit/pull/38)).
+- `resource_write` now saves a typed array property, such as `Array[String]`, as
+  a typed array. Before, creating a resource from a script class (`type` naming
+  a `class_name`) dropped the array with no warning, and other writes saved it
+  untyped (`tags = ["x"]`). An element that doesn't fit the array's type now
+  leaves the value unchanged, with a warning that names the element. A number
+  with a fraction in an `Array[int]` is truncated, as it is for an `int`
+  property, and a warning lists the elements that changed.
+  Reported and fixed by @benfeather
+  ([#41](https://github.com/NPGameDev/godot-mcp-toolkit/issues/41),
+  [#42](https://github.com/NPGameDev/godot-mcp-toolkit/pull/42)).
 
 ## [1.0.4] - 2026-10-14
 
