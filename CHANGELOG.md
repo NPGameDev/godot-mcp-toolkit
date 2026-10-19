@@ -69,6 +69,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reported and fixed by @benfeather
   ([#41](https://github.com/NPGameDev/godot-mcp-toolkit/issues/41),
   [#42](https://github.com/NPGameDev/godot-mcp-toolkit/pull/42)).
+- `input_map_event` with `bind` on a built-in action, such as `ui_left`, now keeps
+  the events `project.godot` saves for it, or its default events when it saves
+  none, joypad events included. Before, the bind saved the editor's keyboard-only
+  copy of the action plus the new key, so a changed built-in lost its changes and
+  an unchanged one lost its joypad events.
+- `input_map_action` with `add` and no `deadzone` now uses the engine's default,
+  as the editor's Add Action does: 0.2 from Godot 4.4, 0.5 before. Before, it used
+  0.5 on every version.
+- The `input_map_*` tools no longer change the editor's own input map. They read
+  and write the project's settings, as Project Settings does.
 
 ## [1.0.4] - 2026-10-14
 
