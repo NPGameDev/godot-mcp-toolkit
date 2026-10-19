@@ -5,8 +5,8 @@ extends RefCounted
 ##
 ## The update check asks GitHub at most once a day for the toolkit's latest release
 ## and, when that release is newer than the installed one, asks the Asset Store
-## whether it lists it. Everything here is static and touches no network, file or
-## setting, so the runner node that does the I/O stays thin and these rules are unit
+## whether it lists it. Everything here is static and touches no network or file,
+## and reads a setting only from the settings object it is given, so the runner node that does the I/O stays thin and these rules are unit
 ## tested directly. A version counts only when it is a plain stable
 ## [code]X.Y.Z[/code] (optionally [code]v[/code]-prefixed); anything else makes the
 ## check show nothing, so a release the toolkit cannot read never raises a badge.
@@ -50,6 +50,17 @@ const _STORE_HOST := "https://store.godotengine.org"
 # The trailing slash is required: without it the store answers with a redirect.
 const _STORE_PATH := "/api/v1/releases/npgamedev/godot-mcp-toolkit/"
 const _RELEASE_PAGE_PREFIX := "https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v"
+
+
+## Whether the [constant SETTING] toggle is on in [param project_settings]. Returns
+## its value, or [code]true[/code] when the key is missing or [param project_settings]
+## is [code]null[/code]. [param project_settings] is [ProjectSettings] or a stand-in
+## with [code]has_setting[/code] and [code]get_setting[/code]; this reads only the
+## object it is given.
+static func is_check_enabled(project_settings: Object) -> bool:
+	if project_settings == null or not project_settings.has_setting(SETTING):
+		return true
+	return bool(project_settings.get_setting(SETTING))
 
 
 ## Parses [param version] as a strict stable semver.

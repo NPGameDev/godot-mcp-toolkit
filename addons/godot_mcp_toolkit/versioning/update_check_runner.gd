@@ -12,6 +12,11 @@ extends Node
 ## sends nothing. When GitHub reports a newer version, one Asset Store request
 ## decides whether the store lists it.
 ##
+## Nothing is sent until the consent gate allows it, which takes the toggle on and
+## the setup wizard's update-check step seen. The first check after that step goes
+## out on the next hourly tick or when the plugin next loads, at an editor start or
+## an enable.
+##
 ## Every failure is silent: the cache is kept, nothing is printed and the dock shows
 ## no error. Turning the [code]mcp_toolkit/updates/check_for_updates[/code] toggle
 ## off cancels a request in flight and hides the badge; turning it on checks at once
@@ -26,6 +31,7 @@ signal state_changed
 # preloading it back would be a cycle.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 
 ## The state file: per project and per machine, beside the toolkit's other
 ## project-wide user:// files, never in project.godot. It survives a plugin disable.
@@ -116,9 +122,11 @@ func dismiss(version: String) -> void:
 
 
 # Re-reads the state file and, when a day has passed since the project's last
-# check, checks now. Does nothing while the toggle is off or a request is running.
+# check, checks now. Does nothing without the consent gate's go (the toggle is off,
+# or the user has not seen the setup step that explains the check) or while a
+# request is running.
 func _check_if_due() -> void:
-	if not _enabled or _pending != _PENDING_NONE:
+	if not Consent.may_check_for_updates() or _pending != _PENDING_NONE:
 		return
 	# Re-read: another editor on this project may have checked since.
 	var previous := _state
@@ -216,7 +224,7 @@ func _record(latest: String, listed: bool) -> void:
 
 
 func _read_toggle() -> bool:
-	return bool(ProjectSettings.get_setting(UpdateCheck.SETTING, true))
+	return UpdateCheck.is_check_enabled(ProjectSettings)
 
 
 func _env_host() -> String:
