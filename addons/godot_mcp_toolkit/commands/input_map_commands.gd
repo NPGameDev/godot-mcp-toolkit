@@ -1,14 +1,19 @@
 @tool
 extends RefCounted
-## input_map.* command handlers — action (add/remove/rename) and event (bind/unbind).
+## input_map.* command handlers: list (read), action (add/remove/rename/revert) and event
+## (bind/unbind).
 ##
 ## Every handler reads and writes the [code]input/<name>[/code] settings only, through
 ## [code]input_action_settings.gd[/code], and never the editor's InputMap: that InputMap holds
 ## only the built-in actions' keys, so a change written from it would replace a built-in
-## action's saved events and drop its joypad defaults.
+## action's saved events and drop its joypad defaults. Events cross the wire as the objects
+## [code]input_event_codec.gd[/code] builds and answers, and
+## [code]input_event_equivalence.gd[/code] decides when two events are the same binding.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const InputActionSettings := preload("res://addons/godot_mcp_toolkit/commands/input_action_settings.gd")
+const InputEventCodec := preload("res://addons/godot_mcp_toolkit/commands/input_event_codec.gd")
+const InputEventEquivalence := preload("res://addons/godot_mcp_toolkit/commands/input_event_equivalence.gd")
 
 var _settings: InputActionSettings
 
@@ -19,6 +24,9 @@ func _init() -> void:
 
 static func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
 	var commands := new()
+	registry.add("input_map.list", func(parameters: Dictionary) -> Dictionary:
+		return commands._cmd_input_map_list(parameters)
+	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 	registry.add("input_map.action", func(parameters: Dictionary) -> Dictionary:
 		return commands._cmd_input_map_action(parameters)
 	, MCPToolkitCommandOptions.new().mark_scene_independent())
@@ -33,142 +41,42 @@ func _create_settings() -> InputActionSettings:
 	return InputActionSettings.new()
 
 
-# -- Input event helpers ------------------------------------------------------
+# -- Shared helpers -----------------------------------------------------------
 
 
-static func _build_input_event(event: Variant) -> Variant:
-	if typeof(event) != TYPE_DICTIONARY:
-		return {"code": "INVALID_PARAMS", "error": "event must be an object"}
-	var event_type := str(event.get("type", ""))
-	match event_type:
-		"key":
-			var raw_keycode = event.get("keycode", "")
-			var resolved_keycode := 0
-			if typeof(raw_keycode) == TYPE_STRING:
-				var keycode_str: String = raw_keycode
-				if keycode_str.begins_with("KEY_"):
-					keycode_str = keycode_str.substr(4)
-				resolved_keycode = OS.find_keycode_from_string(keycode_str)
-				if resolved_keycode == 0:
-					return {"code": "INVALID_PARAMS",
-						"error": "unknown keycode '%s'; use symbolic names like 'SPACE' / 'A' / 'F1' or raw ints" % raw_keycode}
-			elif typeof(raw_keycode) == TYPE_INT or typeof(raw_keycode) == TYPE_FLOAT:
-				resolved_keycode = int(raw_keycode)
-			else:
-				return {"code": "INVALID_PARAMS",
-					"error": "event.keycode must be a string symbolic name or int"}
-			var key_event := InputEventKey.new()
-			key_event.physical_keycode = resolved_keycode
-			key_event.shift_pressed = bool(event.get("shift", false))
-			key_event.ctrl_pressed = bool(event.get("ctrl", false))
-			key_event.alt_pressed = bool(event.get("alt", false))
-			key_event.meta_pressed = bool(event.get("meta", false))
-			return key_event
-		"mouse_button":
-			var mouse_event := InputEventMouseButton.new()
-			mouse_event.button_index = int(event.get("button_index", 1))
-			mouse_event.pressed = bool(event.get("pressed", true))
-			return mouse_event
-		"joypad_button":
-			var joypad_button_event := InputEventJoypadButton.new()
-			joypad_button_event.button_index = int(event.get("button_index", 0))
-			joypad_button_event.device = int(event.get("device", -1))
-			return joypad_button_event
-		"joypad_motion":
-			var joypad_motion_event := InputEventJoypadMotion.new()
-			joypad_motion_event.axis = int(event.get("axis", 0))
-			joypad_motion_event.axis_value = float(event.get("axis_value", 0.0))
-			joypad_motion_event.device = int(event.get("device", -1))
-			return joypad_motion_event
-		_:
-			return {"code": "INVALID_PARAMS",
-				"error": "event.type must be one of 'key' | 'mouse_button' | 'joypad_button' | 'joypad_motion' (got %s)" % event_type}
-
-
-static func _serialise_input_event(event: InputEvent) -> Dictionary:
-	if event is InputEventKey:
-		var kc: int = int((event as InputEventKey).physical_keycode)
-		return {
-			"type": "key",
-			"keycode": kc,
-			"keycode_name": OS.get_keycode_string(kc),
-			"shift": (event as InputEventKey).shift_pressed,
-			"ctrl": (event as InputEventKey).ctrl_pressed,
-			"alt": (event as InputEventKey).alt_pressed,
-			"meta": (event as InputEventKey).meta_pressed,
+## Returns [param action]'s input_map.list entry: its name, [code]source[/code],
+## deadzone, events and [code]can_revert[/code]; with [code]default[/code] when it can be
+## reverted, and [code]feature[/code] when its name carries feature tags.
+func _action_entry(action: String) -> Dictionary:
+	var builtin := _settings.is_builtin(action)
+	var can_revert := builtin and _settings.differs_from_default(action)
+	var entry := {
+		"name": action,
+		"source": "builtin" if builtin else "project",
+		"deadzone": _settings.get_deadzone(action),
+		"events": InputEventCodec.serialise_all(_settings.get_events(action)),
+		"can_revert": can_revert,
+	}
+	if can_revert:
+		var default_setting := _settings.get_default(action)
+		entry["default"] = {
+			"deadzone": default_setting["deadzone"],
+			"events": InputEventCodec.serialise_all(default_setting["events"]),
 		}
-	if event is InputEventMouseButton:
-		return {
-			"type": "mouse_button",
-			"button_index": int((event as InputEventMouseButton).button_index),
-			"pressed": (event as InputEventMouseButton).pressed,
-		}
-	if event is InputEventJoypadButton:
-		return {
-			"type": "joypad_button",
-			"button_index": int((event as InputEventJoypadButton).button_index),
-			"device": int((event as InputEventJoypadButton).device),
-		}
-	if event is InputEventJoypadMotion:
-		return {
-			"type": "joypad_motion",
-			"axis": int((event as InputEventJoypadMotion).axis),
-			"axis_value": float((event as InputEventJoypadMotion).axis_value),
-			"device": int((event as InputEventJoypadMotion).device),
-		}
-	return {"type": "unknown", "class": event.get_class()}
+	var feature := _settings.get_feature(action)
+	if not feature.is_empty():
+		entry["feature"] = feature
+	return entry
 
 
-## Returns whether [param event_a] and [param event_b] are the same binding. Key events
-## compare their [code]keycode[/code], [code]physical_keycode[/code] and
-## [code]key_label[/code] exactly, plus the four modifiers: a built-in action's keys are
-## built from the logical [code]keycode[/code] with the other two left at 0, so comparing
-## [code]physical_keycode[/code] or [code]key_label[/code] alone would make every such key
-## equal to every other.
-static func _input_events_equivalent(
-	event_a: InputEvent, event_b: InputEvent,
-) -> bool:
-	if event_a == null or event_b == null:
-		return false
-	if event_a.get_class() != event_b.get_class():
-		return false
-	if event_a is InputEventKey and event_b is InputEventKey:
-		var key_a := event_a as InputEventKey
-		var key_b := event_b as InputEventKey
-		return key_a.keycode == key_b.keycode \
-			and key_a.physical_keycode == key_b.physical_keycode \
-			and key_a.key_label == key_b.key_label \
-			and key_a.shift_pressed == key_b.shift_pressed \
-			and key_a.ctrl_pressed == key_b.ctrl_pressed \
-			and key_a.alt_pressed == key_b.alt_pressed \
-			and key_a.meta_pressed == key_b.meta_pressed
-	if event_a is InputEventMouseButton and event_b is InputEventMouseButton:
-		var mouse_a := event_a as InputEventMouseButton
-		var mouse_b := event_b as InputEventMouseButton
-		return mouse_a.button_index == mouse_b.button_index \
-			and mouse_a.pressed == mouse_b.pressed
-	if event_a is InputEventJoypadButton and event_b is InputEventJoypadButton:
-		var joypad_a := event_a as InputEventJoypadButton
-		var joypad_b := event_b as InputEventJoypadButton
-		return joypad_a.button_index == joypad_b.button_index \
-			and joypad_a.device == joypad_b.device
-	if event_a is InputEventJoypadMotion and event_b is InputEventJoypadMotion:
-		var motion_a := event_a as InputEventJoypadMotion
-		var motion_b := event_b as InputEventJoypadMotion
-		return motion_a.axis == motion_b.axis \
-			and motion_a.device == motion_b.device \
-			and is_equal_approx(motion_a.axis_value, motion_b.axis_value)
-	return false
-
-
-## Returns the index in [param events] of the first event equivalent to [param event], or
-## -1 when there is none.
-static func _find_equivalent_event(events: Array, event: InputEvent) -> int:
-	for index in events.size():
-		var existing: Variant = events[index]
-		if existing is InputEvent and _input_events_equivalent(existing, event):
-			return index
-	return -1
+## Returns the error that refuses a change to [param action] when it is a built-in
+## action's feature-override entry, or an empty Dictionary otherwise. A project action
+## whose name carries feature tags may still be changed.
+func _check_not_builtin_feature(action: String) -> Dictionary:
+	if _settings.is_builtin(action) and not _settings.get_feature(action).is_empty():
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"'%s' is a built-in action's feature-override entry; feature-override entries are read-only" % action)
+	return {}
 
 
 ## Saves project.godot after the input_map.* change [param operation] to [param action]. A
@@ -179,9 +87,6 @@ func _save_settings(operation: String, action: String) -> void:
 		push_warning(
 			"[MCPServer] ProjectSettings.save after input_map.%s failed (err %d, action=%s); the change is in memory only" % [
 				operation, error, action])
-
-
-# -- Rename -------------------------------------------------------------------
 
 
 ## Returns the error that refuses renaming [param action_name] to [param new_name], or an
@@ -205,6 +110,26 @@ func _check_rename(action_name: String, new_name: String) -> Dictionary:
 # -- Commands -----------------------------------------------------------------
 
 
+## Lists actions with their events. With no [code]name[/code], it answers every project
+## action and every built-in action that differs from its default, plus the unchanged
+## built-in actions when [code]include_builtin[/code] is true. A [code]name[/code] answers
+## that one action, built-in or not, or [code]NOT_FOUND[/code]. Returns
+## [code]{actions, count}[/code], the actions in project.godot's [code][input][/code] order.
+func _cmd_input_map_list(parameters: Dictionary) -> Dictionary:
+	var action_name := str(parameters.get("name", ""))
+	if not action_name.is_empty():
+		if not _settings.exists(action_name):
+			return MCPToolkitError.fail("NOT_FOUND",
+				"no action '%s'; call input_map_list without name to see the actions" % action_name)
+		return MCPToolkitSuccess.ok({"actions": [_action_entry(action_name)], "count": 1})
+	var include_builtin := bool(parameters.get("include_builtin", false))
+	var actions: Array = []
+	for action in _settings.get_actions():
+		if include_builtin or not _settings.is_builtin(action) or _settings.differs_from_default(action):
+			actions.append(_action_entry(action))
+	return MCPToolkitSuccess.ok({"actions": actions, "count": actions.size()})
+
+
 func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
 	if not (action in ["bind", "unbind"]):
@@ -213,61 +138,91 @@ func _cmd_input_map_event(parameters: Dictionary) -> Dictionary:
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
-	var built: Variant = _build_input_event(parameters.get("event", null))
-	if typeof(built) == TYPE_DICTIONARY and built.has("error"):
+	var built := InputEventCodec.build(parameters.get("event", null))
+	if built.has("error"):
 		return MCPToolkitError.fail(str(built["code"]), str(built["error"]))
-	var event: InputEvent = built
+	var event: InputEvent = built["event"]
+	var any_device: bool = built["any_device"]
+	var warnings: Array = built["warnings"]
 	if not _settings.exists(action_name):
 		return MCPToolkitError.fail("NOT_FOUND",
 			"no action '%s'; call input_map.action with action='add' first" % action_name)
+	var refusal := _check_not_builtin_feature(action_name)
+	if not refusal.is_empty():
+		return refusal
 	var events := _settings.get_events(action_name)
-	var matched_index := _find_equivalent_event(events, event)
+	var matched_index := InputEventEquivalence.find_equivalent(events, event, any_device)
+	var response: Dictionary
 	if action == "bind":
-		if matched_index != -1:
-			return MCPToolkitSuccess.ok({
-				"status": "returned",
-				"name": action_name,
-				"event": _serialise_input_event(events[matched_index]),
-			})
-		events.append(event)
-		_settings.write(action_name, _settings.get_deadzone(action_name), events)
-		_save_settings("event bind", action_name)
-		return MCPToolkitSuccess.ok({
-			"status": "created",
-			"name": action_name,
-			"event": _serialise_input_event(event),
-		})
-	if matched_index == -1:
+		response = _bind_event(action_name, events, event, matched_index)
+	elif matched_index == -1:
 		return MCPToolkitError.fail("NOT_FOUND",
 			"no matching event on action '%s' (found %d events)" % [
 				action_name, events.size()])
+	else:
+		response = _unbind_event(action_name, events, matched_index)
+	if not warnings.is_empty():
+		response["warnings"] = warnings
+	return response
+
+
+## Appends [param event] to [param action_name]'s [param events] and saves, or answers
+## [code]status: "returned"[/code] with the saved event at [param matched_index] when it is
+## not -1.
+func _bind_event(action_name: String, events: Array, event: InputEvent, matched_index: int) -> Dictionary:
+	if matched_index != -1:
+		return MCPToolkitSuccess.ok({
+			"status": "returned",
+			"name": action_name,
+			"event": InputEventCodec.serialise(events[matched_index]),
+		})
+	events.append(event)
+	_settings.write(action_name, _settings.get_deadzone(action_name), events)
+	_save_settings("event bind", action_name)
+	return MCPToolkitSuccess.ok({
+		"status": "created",
+		"name": action_name,
+		"event": InputEventCodec.serialise(event),
+	})
+
+
+## Removes the event at [param matched_index] from [param action_name]'s [param events] and
+## saves. Returns the removed event.
+func _unbind_event(action_name: String, events: Array, matched_index: int) -> Dictionary:
 	var matched: InputEvent = events[matched_index]
 	events.remove_at(matched_index)
 	_settings.write(action_name, _settings.get_deadzone(action_name), events)
 	_save_settings("event unbind", action_name)
 	return MCPToolkitSuccess.ok({
 		"name": action_name,
-		"event": _serialise_input_event(matched),
+		"event": InputEventCodec.serialise(matched),
 	})
 
 
 func _cmd_input_map_action(parameters: Dictionary) -> Dictionary:
 	var action := str(parameters.get("action", ""))
-	if not (action in ["add", "remove", "rename"]):
+	if not (action in ["add", "remove", "rename", "revert"]):
 		return MCPToolkitError.fail("INVALID_PARAMS",
-			"action must be 'add', 'remove' or 'rename' (got '%s')" % action)
+			"action must be 'add', 'remove', 'rename' or 'revert' (got '%s')" % action)
 	var action_name := str(parameters.get("name", ""))
 	if action_name.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "name must be a non-empty string")
-	if action == "rename":
-		return _rename_input_action(action_name, str(parameters.get("new_name", "")))
-	if action == "add":
-		return _add_input_action(action_name, parameters.get("deadzone", null))
+	match action:
+		"rename":
+			return _rename_input_action(action_name, str(parameters.get("new_name", "")))
+		"add":
+			return _add_input_action(action_name, parameters.get("deadzone", null))
+		"revert":
+			return _revert_input_action(action_name)
 	if not _settings.exists(action_name):
 		return MCPToolkitError.fail("NOT_FOUND", "no action '%s'" % action_name)
+	# A feature-override entry cannot be reverted either, so it must not get the revert hint.
+	var refusal := _check_not_builtin_feature(action_name)
+	if not refusal.is_empty():
+		return refusal
 	if _settings.is_builtin(action_name):
 		return MCPToolkitError.fail("INVALID_PARAMS",
-			"refusing to remove built-in UI action '%s'; use input_map.event to unbind its events instead" % action_name)
+			"refusing to remove built-in UI action '%s'; use action='revert' to restore its default events" % action_name)
 	_settings.erase(action_name)
 	_save_settings("action remove", action_name)
 	return MCPToolkitSuccess.ok({"name": action_name})
@@ -316,3 +271,32 @@ func _rename_input_action(action_name: String, new_name: String) -> Dictionary:
 	_settings.move(action_name, new_name)
 	_save_settings("action rename", new_name)
 	return MCPToolkitSuccess.ok({"name": new_name, "old_name": action_name})
+
+
+## Puts the built-in action [param action_name] back to its default and saves
+## project.godot, which then leaves the action's line out.
+##
+## An action with no setting answers [code]NOT_FOUND[/code]; a project action, which has no
+## default, and a built-in action's feature-override entry answer
+## [code]INVALID_PARAMS[/code]. A setting that already holds its default value answers
+## [code]status: "returned"[/code]; any other, even one whose content equals the default,
+## is reverted and answers [code]status: "reverted"[/code], since project.godot keeps a
+## line whose events are not the default's own. Returns the action's input_map.list entry
+## with [code]status[/code].
+func _revert_input_action(action_name: String) -> Dictionary:
+	if not _settings.exists(action_name):
+		return MCPToolkitError.fail("NOT_FOUND", "no action '%s'" % action_name)
+	if not _settings.is_builtin(action_name):
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"'%s' is a project action and has no default to revert to; use action='remove' to delete it" % action_name)
+	var refusal := _check_not_builtin_feature(action_name)
+	if not refusal.is_empty():
+		return refusal
+	var status := "returned"
+	if not _settings.holds_default(action_name):
+		_settings.revert(action_name)
+		_save_settings("action revert", action_name)
+		status = "reverted"
+	var entry := _action_entry(action_name)
+	entry["status"] = status
+	return MCPToolkitSuccess.ok(entry)

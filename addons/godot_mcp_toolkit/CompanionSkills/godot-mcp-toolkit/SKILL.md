@@ -265,7 +265,7 @@ on-demand groups you activate with `discover_tools` to reach the full surface.
 | `runtime_advanced` | `runtime_get_node_state`, `runtime_set_property`, `animation_player_control` |
 | `signals` | `signal_emit` (`signal_manage` / `signal_list` are on the startup surface) |
 | `animation_authoring` | `animation_keyframe`, `animation_get_keys`, `animationtree_edit`, ... |
-| `input_map` | `input_map_action`, `input_map_event` |
+| `input_map` | `input_map_list`, `input_map_action`, `input_map_event` |
 | `tilemap` | `tilemap_set_cells`, `tilemap_read_cells` |
 | `audio` | `audiobus_edit`, `audiobus_list` |
 | `3d_tools` | `3d_create_primitive`, `3d_create_camera`, `3d_create_light`, ... |

@@ -60,9 +60,11 @@ discover_tools groups=["asset_ops", "input_map"]
 
 ## 25g. Remove input map actions
 
-`input_map_action` action=remove, name=sv2_jump, then name=sv2_saved, sv2_old, sv2_new, sv2_after and sv2_deadzone (if Section 10 cleanup was skipped, or step 10.1b, 10.5, 10.6 or 10.8 stopped before its remove)
+`input_map_action` action=remove, name=sv2_jump, then name=sv2_saved, sv2_old, sv2_new, sv2_after, sv2_deadzone, sv2_list and sv2_events (if Section 10 cleanup was skipped, or step 10.1b, 10.5, 10.6, 10.8, 10.9 or 10.11 stopped before its remove)
 
 `input_map_event` action=unbind, name=ui_left, event F10, then event F9 (if step 10.7 stopped before its unbinds; a `NOT_FOUND` means that key is already gone)
+
+`input_map_action` action=revert, name=ui_accept (if step 10.10 stopped before its revert; `returned` means it already holds its default)
 
 ## 25h. Remove save data
 

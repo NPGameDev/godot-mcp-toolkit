@@ -42,24 +42,102 @@ func is_builtin(action: String) -> bool:
 		and ProjectSettings.get_order(setting_name) < NO_BUILTIN_ORDER_BASE
 
 
+## Returns the feature tags of [param action]'s setting name: everything after its first
+## dot, or an empty String when it has none. The engine reads
+## [code]input/<name>.<tags>[/code] as a feature override of [code]input/<name>[/code],
+## each later dot starting another tag, and applies it only where every tag holds.
+func get_feature(action: String) -> String:
+	var dot := action.find(".")
+	return "" if dot == -1 else action.substr(dot + 1)
+
+
+## Returns the name of every action with an [code]input/<name>[/code] setting, in the order
+## project.godot's [code][input][/code] section saves them, which is the order the
+## editor's Input Map shows.
+func get_actions() -> Array[String]:
+	var setting_names: Array[String] = []
+	for property in ProjectSettings.get_property_list():
+		var setting_name := str(property.get("name", ""))
+		if setting_name.begins_with(_SETTING_PREFIX):
+			setting_names.append(setting_name)
+	setting_names.sort_custom(func(name_a: String, name_b: String) -> bool:
+		return ProjectSettings.get_order(name_a) < ProjectSettings.get_order(name_b))
+	var actions: Array[String] = []
+	for setting_name in setting_names:
+		actions.append(setting_name.trim_prefix(_SETTING_PREFIX))
+	return actions
+
+
 ## Returns [param action]'s deadzone. A setting with no [code]deadzone[/code] key reads as
 ## [method default_deadzone], as the engine reads it when it loads the project.
 func get_deadzone(action: String) -> float:
-	var setting := _read(action)
-	if not setting.has("deadzone"):
-		return default_deadzone()
-	return float(setting["deadzone"])
+	return _deadzone_of(_read(action))
 
 
 ## Returns a copy of [param action]'s events, in their saved order; empty when the action
 ## has none or no setting. A built-in action that project.godot does not change holds the
 ## engine's default Array itself, so a change made in place would change the default too.
 func get_events(action: String) -> Array:
-	var events: Variant = _read(action).get("events", [])
-	if typeof(events) != TYPE_ARRAY:
-		return []
-	var copy: Array = events
-	return copy.duplicate()
+	return _events_of(_read(action))
+
+
+## Returns the built-in action [param action]'s default as
+## [code]{"deadzone": float, "events": Array}[/code], the events a copy; an empty
+## Dictionary for a project action, which has none.
+func get_default(action: String) -> Dictionary:
+	var default_setting := _read_default(action)
+	if default_setting.is_empty():
+		return {}
+	return {"deadzone": _deadzone_of(default_setting), "events": _events_of(default_setting)}
+
+
+## Returns whether the built-in action [param action] differs from its default by the
+## rule the editor's Input Map uses for its revert button: another deadzone, another
+## number of events, or an event that does not match the default's event at the same
+## index. Order counts; which event objects the setting holds does not. A project action
+## answers false.
+func differs_from_default(action: String) -> bool:
+	var default_setting := _read_default(action)
+	if default_setting.is_empty():
+		return false
+	var setting := _read(action)
+	if not is_equal_approx(_deadzone_of(setting), _deadzone_of(default_setting)):
+		return true
+	var events := _events_of(setting)
+	var default_events := _events_of(default_setting)
+	if events.size() != default_events.size():
+		return true
+	for index in events.size():
+		var event: Variant = events[index]
+		var default_event: Variant = default_events[index]
+		if not (event is InputEvent and default_event is InputEvent):
+			return true
+		if not (default_event as InputEvent).is_match(event as InputEvent, true):
+			return true
+	return false
+
+
+## Returns whether [param action]'s setting holds its default value itself, the test
+## [code]ProjectSettings.save()[/code] makes before it leaves the line out of
+## project.godot. Event objects compare by identity there, so a setting rebuilt with the
+## default's content answers false and is still saved.
+func holds_default(action: String) -> bool:
+	var setting_name := _SETTING_PREFIX + action
+	var default_value: Variant = ProjectSettings.property_get_revert(setting_name)
+	if typeof(default_value) != TYPE_DICTIONARY:
+		return false
+	return ProjectSettings.get_setting(setting_name) == default_value
+
+
+## Puts the built-in action [param action]'s setting back to its default, keeping its
+## order. The setting takes the revert value exactly as the engine returns it: its events
+## Array is the default's own, which is what lets [method save] leave the line out of
+## project.godot. A project action is left as it is.
+func revert(action: String) -> void:
+	if not is_builtin(action):
+		return
+	var setting_name := _SETTING_PREFIX + action
+	ProjectSettings.set_setting(setting_name, ProjectSettings.property_get_revert(setting_name))
 
 
 ## Returns the deadzone the running engine gives an action when none is set: the default of
@@ -119,3 +197,32 @@ func _read(action: String) -> Dictionary:
 	if typeof(setting) != TYPE_DICTIONARY:
 		return {}
 	return setting
+
+
+## Returns the built-in action [param action]'s default setting, the value the engine
+## registered for it, or an empty Dictionary for a project action.
+func _read_default(action: String) -> Dictionary:
+	if not is_builtin(action):
+		return {}
+	var default_setting: Variant = ProjectSettings.property_get_revert(_SETTING_PREFIX + action)
+	if typeof(default_setting) != TYPE_DICTIONARY:
+		return {}
+	return default_setting
+
+
+## Returns the deadzone of an action's setting [param setting], or
+## [method default_deadzone] when it sets none.
+func _deadzone_of(setting: Dictionary) -> float:
+	if not setting.has("deadzone"):
+		return default_deadzone()
+	return float(setting["deadzone"])
+
+
+## Returns a copy of the events of an action's setting [param setting]; empty when it has
+## none.
+func _events_of(setting: Dictionary) -> Array:
+	var events: Variant = setting.get("events", [])
+	if typeof(events) != TYPE_ARRAY:
+		return []
+	var copy: Array = events
+	return copy.duplicate()
