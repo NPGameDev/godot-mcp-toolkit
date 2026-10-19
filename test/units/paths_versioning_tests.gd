@@ -4,8 +4,8 @@ extends RefCounted
 ## message (version-aware), script_check line emission (capability-gated),
 ## script_check's class_name rename,
 ## node.set_property groups rejection, UserPathMonitor change detection,
-## editor.refresh reload filter, unfocused-sleep backup, and the
-## stale-live-instance hint, and the in-place reload patch gate. Exercises the versioning/ + paths/ + editor-lifecycle
+## editor.refresh reload filter, unfocused-sleep backup, the stale-live-instance
+## hint, the in-place reload patch gate and the 4.5+ Logger construction. Exercises the versioning/ + paths/ + editor-lifecycle
 ## pure logic.
 
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
@@ -37,6 +37,7 @@ static func run(testing) -> void:
 	_test_reload_patch_gate(testing)
 	_test_version_skew(testing)
 	_test_log_path_resolution(testing)
+	_test_logger_construction(testing)
 
 
 # --- Compile-error diagnostic message (version-aware) (~10 assertions) -----
@@ -664,4 +665,36 @@ static func _test_log_path_resolution(testing) -> void:
 		ProjectSettings.set_setting(KEY, orig)
 	else:
 		ProjectSettings.set_setting(KEY, null)
+	print("")
+
+
+# --- LogBuffer 4.5+ Logger construction --------------------------------------
+# The logger is a native Logger built through ClassDB with the capture script
+# attached, never a script that extends Logger by name: a project's global
+# class_name Logger would win that lookup and fail the compile. Skipped below
+# 4.5, which has no Logger class (the file tail runs there).
+
+static func _test_logger_construction(testing) -> void:
+	testing.begin("LogBuffer 4.5+ Logger construction")
+	if not ClassDB.class_exists(&"Logger"):
+		print("  SKIP: no Logger class below Godot 4.5")
+		print("")
+		return
+	var logger: Object = LogBuffer._create_logger()
+	testing.ok(logger != null, "the logger is built")
+	if logger == null:
+		print("")
+		return
+	testing.eq(logger.get_class(), "Logger", "the logger is a native Logger")
+	var script: GDScript = logger.get_script()
+	testing.ok(script != null, "the capture script is attached")
+	if script == null:
+		print("")
+		return
+	var method_names: Array = script.get_script_method_list().map(
+			func(method: Dictionary) -> String: return str(method["name"]))
+	testing.ok(method_names.has("_log_message"), "the script has _log_message")
+	testing.ok(method_names.has("_log_error"), "the script has _log_error")
+	testing.ok(not script.source_code.contains("Logger"),
+			"the script's source never names Logger")
 	print("")

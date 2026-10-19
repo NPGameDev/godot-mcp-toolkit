@@ -201,6 +201,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Godot matches one bound now. The logical keys of a built-in action, such as
   `ui_accept`'s Enter, can now be unbound with the event `input_map_list`
   returns.
+- On Godot 4.5 and later, console capture now works in a project that declares
+  its own `class_name Logger`. Before, the toolkit's logger failed to compile in
+  such a project, in the editor and in a running game, and the toolkit fell back
+  to reading the log file. The editor writes no log file, so
+  `editor_get_console` missed new output, and `script_check` lost the line of a
+  compile error.
 
 ## [1.0.4] - 2026-10-14
 
