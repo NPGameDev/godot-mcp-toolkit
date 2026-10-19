@@ -295,12 +295,56 @@ The toolkit's at-most-daily read of the latest published version (GitHub's lates
 the Asset Store's listing of it), compared locally with the installed version
 (`versioning/update_check.gd`, run by `versioning/update_check_runner.gd`). It sends nothing about
 the project, fails silently, and the `mcp_toolkit/updates/check_for_updates` project setting turns
-it off.
+it off. It waits for the **consent gate**: nothing is sent until the user has seen the setup
+wizard's `updates` step.
 
 **Update badge**
 The closable dock notice that a newer version is published (`ui/dock/update/dock_update_badge.gd`).
 It points at the release on GitHub and the Asset Store; it never downloads or installs anything.
 Closing it hides it until a newer version.
+
+---
+
+## Setup vocabulary
+
+How this project names the first-run walkthrough and what it records. Code names it "onboarding"
+(`ui/onboarding_wizard.gd`); everywhere else it is the setup wizard.
+
+**Setup wizard**
+The dialog that walks a user through the setup steps, titled "MCP Toolkit — Setup Wizard". A new
+user sees every step; after a toolkit update, the next editor start shows only the steps the user
+has not seen.
+
+**Setup step**
+One page of the setup wizard, known by a stable id (`welcome`, `mcp_json`, `optional_steps`,
+`updates`, `dock`), never by its position (`core/setup_steps.gd`). A step reworded in place keeps
+its id; a step that must be shown again gets a new id.
+
+**Required step** / **optional step**
+A required step is one the user loses something by skipping (`welcome`, `mcp_json`, `updates`): it
+comes back at every editor start until seen. An optional step (`optional_steps`, `dock`) does too
+while the machine-wide `mcp_toolkit/setup_wizard/show_optional_steps` editor setting is on, but
+closing the wizard with × counts every optional step the run had not reached as seen, and turning
+the setting off hides unseen optional steps. Required steps show whatever that setting says.
+
+**Seen steps**
+The set of setup steps the user has seen, per project. A step is seen once the user leaves it with
+Next or Done (or a button that moves on), or closes the wizard with × on it; × also counts the
+optional steps the run had not reached. "Remind me later" counts nothing.
+
+**Setup step tracker**
+The one reader and writer of the seen steps, kept in
+`user://addons/godot_mcp_toolkit/mcp_onboarding_shown_v001` as versioned JSON
+(`core/setup_step_tracker.gd`; ADR 0027).
+
+**Run planner**
+The rule that picks which steps one wizard run shows: every step for a new user, the unseen steps
+at an editor start, nothing on a mid-session enable (`SetupSteps.plan_run`).
+
+**Consent gate**
+What the toolkit may do on its own, decided from the user's settings and the setup steps they have
+seen (`core/consent.gd`). The update check runs only when its setting is on and the `updates` step
+has been seen. Distinct from tool permissions, which govern what an MCP client may ask for.
 
 ---
 
@@ -365,7 +409,7 @@ health panel, unfocused control, audit section, limits section); it may lazily c
 window, but its home, lifecycle, and API are the dock's — the audit log is a dock section, so
 `show_audit_dialog()` stays a dock method. An **editor-global dialog** parents to
 `EditorInterface.get_base_control()` — not to the dock — and is reachable from non-dock surfaces
-(Tools menu, onboarding wizard); it is owned by the **dialog presenter**
+(Tools menu, setup wizard); it is owned by the **dialog presenter**
 (`ui/toolkit_dialog_presenter.gd`), never by the dock. The dock is a **UI surface, not a service
 locator**: cross-cutting behaviors (the shared `.mcp.json` write flow, the editor-global dialogs)
 live in composer-built, injected collaborators that every consumer — dock included — calls directly

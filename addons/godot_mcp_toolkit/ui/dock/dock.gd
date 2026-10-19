@@ -14,6 +14,7 @@ const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_se
 const DockStatusPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/status/dock_status_panel.gd")
 const DockLimitsSection := preload("res://addons/godot_mcp_toolkit/ui/dock/limits/dock_limits_section.gd")
 const DockUnfocusedControl := preload("res://addons/godot_mcp_toolkit/ui/dock/limits/dock_unfocused_control.gd")
+const DockOptionalStepsControl := preload("res://addons/godot_mcp_toolkit/ui/dock/limits/dock_optional_steps_control.gd")
 const DockAuditSection := preload("res://addons/godot_mcp_toolkit/ui/dock/security/dock_audit_section.gd")
 const DockMcpJsonPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/mcp/dock_mcp_json_panel.gd")
 const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
@@ -168,6 +169,10 @@ func _build_ui() -> void:
 	# calls the bound server directly, so no signal back to the dock is needed.
 	_unfocused_control = DockUnfocusedControl.new(_server)
 	sc.add_child(_unfocused_control)
+
+	# The setup wizard's optional-steps setting, the other machine-wide preference
+	# here. The control owns its setting I/O and repaints itself on a change.
+	sc.add_child(DockOptionalStepsControl.new())
 
 	# == Collapsible sections (one scroll area, spare height below) ===========
 	var sections_vbox := DockSectionCard.make_scroll_area(self)
