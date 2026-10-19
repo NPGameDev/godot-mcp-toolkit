@@ -3,7 +3,7 @@ extends RefCounted
 ## Self-freeing confirmation-dialog factory for the dock.
 ##
 ## A stateless `static func` helper (no instance). The dock's two yes/no
-## confirm flows (clear-audit, overwrite-.mcp.json) build the same
+## confirm flows (clear-audit, update-.mcp.json-entry) build the same
 ## ConfirmationDialog shape; this is the single place that shape — and the
 ## self-free guarantee — lives.
 

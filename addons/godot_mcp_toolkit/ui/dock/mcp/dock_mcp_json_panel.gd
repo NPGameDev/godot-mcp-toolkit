@@ -1,21 +1,21 @@
 @tool
 extends PanelContainer
 ## Dock ".mcp.json health" sub-panel — the shared missing/malformed/read-only
-## warning, the tri-mode footer button, and the write/open/fix flow.
+## warning, the write-or-open footer button, and the write/open flow.
 ##
 ## A dock sub-panel. Constructed and owned by dock.gd; this PanelContainer IS the
 ## shared warning panel and is added into the dock's status card (so the editor
 ## frees it with the dock). It owns the dock's .mcp.json UX cluster: the warning
-## panel + label (built once here), the tri-mode footer button (built by the
+## panel + label (built once here), the write-or-open footer button (built by the
 ## footer and injected, so the footer owns placement while this panel owns the
 ## button's meaning), the server-synced read-only cache, and the periodic
 ## file-validity poll. Writes delegate to the injected shared write flow (which
-## owns the overwrite-confirm and its "Open .mcp.json" recovery); this panel
+## owns the update-confirm and its "Open .mcp.json" recovery); this panel
 ## keeps only its result sink (toast + read-only re-sync).
 ##
 ## Two refresh triggers, deliberately distinct (preserves 68fb6eb's model):
 ##   * file VALIDITY/presence is a live FACT — refreshed by the dock's 1s timer
-##     fan-out (refresh(): Write-vs-Open-vs-Fix button mode + missing/malformed warning).
+##     fan-out (refresh(): Write-vs-Open button mode + missing/malformed warning).
 ##   * read-only is SERVER STATE — synced only on server (re)connect + startup +
 ##     after a dock write (sync_read_only_state()), NEVER on the timer: the server
 ##     reads GODOT_MCP_READ_ONLY once at launch, so a live poll would claim
@@ -33,7 +33,7 @@ const _TOAST_INFO := 0
 const _TOAST_WARNING := 1
 const _TOAST_ERROR := 2
 
-# Tri-mode footer button — built + placed by the footer (dock owns placement),
+# Write-or-open footer button — built + placed by the footer (dock owns placement),
 # injected here so this panel owns its label/tooltip/colour/action (its meaning).
 var _mcp_json_btn: Button = null
 # Dock-supplied toast sink (msg, severity, tooltip) — injected so the panel stays
@@ -81,7 +81,7 @@ func _init(mcp_json_button: Button, toast: Callable, write_flow: MCPJsonWriteFlo
 	_warning_label.add_theme_font_size_override("font_size", 12)
 	add_child(_warning_label)
 
-	# Bind the injected footer button to this panel's tri-mode action. Its initial
+	# Bind the injected footer button to this panel's write-or-open action. Its initial
 	# label/tooltip/colour are placeholders; refresh() owns them from here on.
 	if _mcp_json_btn != null:
 		_mcp_json_btn.text = "Open .mcp.json"
@@ -95,7 +95,7 @@ func _init(mcp_json_button: Button, toast: Callable, write_flow: MCPJsonWriteFlo
 
 
 ## Recompute the missing/malformed/read-only/normal state and repaint BOTH the
-## warning panel and the tri-mode button from it — the one place that state
+## warning panel and the write-or-open button from it — the one place that state
 ## machine lives (DRY). MUTATES the existing nodes only; never recreates them.
 ## Safe on the 1s timer: file presence + malformed are live FACTs; read-only uses
 ## the cached _read_only_active (server-synced, not a live read-only poll).
@@ -110,9 +110,8 @@ func refresh() -> void:
 		btn_tip = "No .mcp.json found — write one from the bundled template"
 		highlight = true
 	elif MCPJsonSync.is_malformed():  # live file FACT — present but invalid JSON
-		warn_text = "⚠️ .mcp.json isn't valid JSON — the MCP client can't read it, so it won't connect. Click \"Fix .mcp.json\" to repair it: overwrite with a clean template, or open the file to fix the JSON yourself."
-		btn_text = "Fix .mcp.json"
-		btn_tip = "Replace the malformed .mcp.json with a clean template (asks to confirm before overwriting)"
+		warn_text = "⚠️ .mcp.json isn't valid JSON, or its mcpServers isn't an object — the MCP client can't read it, so it won't connect. Open it to fix it, or delete it and click Write."
+		btn_tip = "Open .mcp.json in the system editor to fix the JSON (or delete it, then write a new one)"
 		highlight = true
 	elif _read_only_active:  # cached, server-synced (NOT a live read-only poll)
 		warn_text = "⚠️ READ-ONLY MODE — mutating tools are hidden. Remove GODOT_MCP_READ_ONLY from .mcp.json and reconnect the MCP client to restore full access."
@@ -123,7 +122,7 @@ func refresh() -> void:
 	visible = not warn_text.is_empty()
 	if not warn_text.is_empty() and _warning_label != null:
 		_warning_label.text = warn_text
-	# Dual-mode button (shared amber highlight).
+	# Write-or-open button (shared amber highlight).
 	if _mcp_json_btn != null:
 		_mcp_json_btn.text = btn_text
 		_mcp_json_btn.tooltip_text = btn_tip
@@ -151,23 +150,20 @@ func is_read_only_active() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Tri-mode button action (writes delegate to the shared write flow)
+# Write-or-open button action (writes delegate to the shared write flow)
 # ---------------------------------------------------------------------------
 
 
-# Tri-mode footer button (label set by refresh()):
-#   * present + valid   -> "Open"  : open .mcp.json in the system editor.
-#   * missing           -> "Write" : shared write flow — a direct write (no file
-#                                    to overwrite, so no confirm).
-#   * present + invalid -> "Fix"   : shared write flow — the file EXISTS, so the
-#                                    flow's overwrite-confirm fires before
-#                                    replacing it with a clean template; a malformed
-#                                    file is never silently clobbered (Cancel keeps
-#                                    it for a manual fix).
+# Footer button (label set by refresh()):
+#   * present (valid or not) -> "Open"  : open .mcp.json in the system editor; a
+#                                         malformed file is never rewritten, the
+#                                         user fixes or deletes it.
+#   * missing                -> "Write" : shared write flow — a direct write (no
+#                                         file, so no confirm).
 # Re-checks state on press, so the action is always correct even if the label is
 # momentarily stale.
 func on_button_pressed() -> void:
-	if MCPJsonSync.has_mcp_json() and not MCPJsonSync.is_malformed():
+	if MCPJsonSync.has_mcp_json():
 		OS.shell_open(MCPJsonSync.get_mcp_json_path())
 	elif _write_flow != null:
 		_write_flow.write(false, _on_mcp_json_write_result)
@@ -177,7 +173,7 @@ func on_button_pressed() -> void:
 # (ok, message, severity, tooltip) report straight onto a toast. `severity`
 # already matches the _TOAST_* scale (0 info / 1 warning / 2 error). On success
 # (e.g. a dock write of a missing file), re-sync the read-only + button state now
-# so the dual-mode button flips "Write" -> "Open" immediately rather than on the
+# so the write-or-open button flips "Write" -> "Open" immediately rather than on the
 # next timer tick.
 func _on_mcp_json_write_result(ok: bool, message: String, severity: int, tooltip: String) -> void:
 	if _toast.is_valid():
