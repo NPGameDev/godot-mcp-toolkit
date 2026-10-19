@@ -84,7 +84,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 and *Mode B* internally) — and publishes a small **registry file** so the bridge can
 discover every live instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="d2e6e5c" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="138018c" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -103,7 +103,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified d2e6e5c*
+*Figure 1 — system context · verified 138018c*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -143,7 +143,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="d2e6e5c" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd" data-verified="138018c" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>ships in the game"]
@@ -159,6 +159,7 @@ flowchart TB
       C7["signal_pair_resolver.gd · text_input_synth.gd"]
       C8["port_config.gd<br/>(env pin/band resolve)"]
       C9["file_guard.gd · mcp_version_utils.gd<br/>project_paths.gd · project_key.gd<br/>(transitive preloads)"]
+      C10["peer_compat.gd<br/>(floor verdict; editor server only)"]
     end
     subgraph tainted["Editor-only — names EditorInterface / EditorPlugin / EditorSettings"]
       direction LR
@@ -173,7 +174,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified d2e6e5c*
+*Figure 2 — the editor↔runtime taint boundary · verified 138018c*
 
 Consequences that shape the rest of the architecture:
 
@@ -211,17 +212,20 @@ first-frame auth handshake. The shared mechanics live in `ws_transport.gd` (list
 poll / auth framing) and `notifier.gd` (result / error / notification / broadcast). The two
 servers differ only in what they inject into that base and how they pump it.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="2dccc26" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="138018c" -->
 ```mermaid
 sequenceDiagram
     participant C as Bridge (client)
     participant T as WsTransport
     participant S as mcp_server (editor)
+    participant P as PeerCompat
     participant R as ServerRequestRouter
     C->>T: TCP connect, WebSocket upgrade
     C->>T: first frame — auth token (plus version, server_version, min_toolkit)
     T->>S: build_auth_ack
     S-->>C: authed = true (plus godot_version, plugin version, headless, min_server)
+    S->>P: assess(server_version, min_toolkit, skip_version_check)
+    P-->>S: verdict + line to print (advisory, never refuses)
     Note over C,S: no auth within 2000 ms closes the socket (1008)
     C->>T: JSON-RPC request (e.g. scene.create)
     T->>S: _handle_message (peer authed)
@@ -229,7 +233,7 @@ sequenceDiagram
     R->>R: select lane, call handler
     R-->>C: JSON-RPC result (success + status)
 ```
-*Figure 3 — connect → auth handshake → dispatch · verified 2dccc26*
+*Figure 3 — connect → auth handshake → dispatch · verified 138018c*
 
 **Ports & framing.** By default the Editor channel scans `6550–6560` and the Runtime channel
 scans `6570–6585`; both bind `127.0.0.1`. The listen configuration is resolved from the environment by the shared,
@@ -258,18 +262,23 @@ server returns `godot_version` + plugin `version` + a `headless` flag (the serve
 version-gating and headless-degradation inputs; [ADR 0014](#14-key-decisions-adrs)) + its
 declared server floor `min_server`, the runtime server returns `{"authed":true}` only. The
 editor server also checks the MCP server's version (`server_version`, or `version` from a 1.0.x
-server) against the declared floors ([ADR 0024](../adr/0024-independent-versioning-compat-floor.md)): a server below the
-toolkit's `MIN_SERVER_VERSION`, or a toolkit below the server's `min_toolkit`, logs one error
-to the editor console and shows a line in the dock, in place of the product-version message.
-Otherwise it compares the versions (`version_skew` in `versioning/mcp_version_utils.gd`): a
-major difference logs an error, a minor one a warning, and a patch difference nothing. A
-local server build skips the check with one line. None of it refuses the connection.
+server) against the declared floors ([ADR 0024](../adr/0024-independent-versioning-compat-floor.md)). The facade
+triggers the check after each auth and clears it when the last peer disconnects, while its
+`transport/peer_compat.gd` child holds the verdict and the record of printed errors. A server
+below the toolkit's `MIN_SERVER_VERSION`, or a toolkit below the server's `min_toolkit`, logs one
+error to the editor console (once per state and server version) and shows a line in the dock,
+in place of the product-version message. Otherwise it compares the versions (`version_skew` in
+`versioning/mcp_version_utils.gd`): a major difference logs an error, a minor one a warning, and
+a patch difference nothing. A local server build skips the check with one line per connection:
+`plugin.gd` sets the facade's `skip_version_check` flag from the local-server-path setting, and
+the `.mcp.json` write sets `GODOT_MCP_SKIP_VERSION_CHECK=1` on that entry so the server skips
+its own side. None of it refuses the connection.
 
 **The editor poll loop is deliberately indirect.** Editor mutations must not run re-entrantly
 inside `_process` (a scene save pumps the main loop, which could resume a coroutine mid-pump).
 So the editor server defers its poll and throttles it to every 4th frame:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="2dccc26" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="138018c" -->
 ```mermaid
 flowchart TD
     proc["_process(delta)"] --> skip{"4th frame?"}
@@ -281,7 +290,7 @@ flowchart TD
     pump --> drain["poll_peers → await _on_message per frame"]
     pump --> clean["cleanup closed peers"]
 ```
-*Figure 4 — the deferred, frame-skipped editor poll · verified 2dccc26*
+*Figure 4 — the deferred, frame-skipped editor poll · verified 138018c*
 
 The mutation **watchdog** ([§4](#4-dispatch--concurrency)) ticks every frame *unconditionally*
 — independent of this poll cadence — so a wedged mutation is always recovered on time. The
@@ -487,7 +496,7 @@ former `tileset` / `editor` / `playtest` god-files over the leaves now under
 
 ## 7. Plugin lifecycle
 
-`plugin.gd` is a thin `EditorPlugin` (~175 lines). `_enter_tree` prints a one-line startup banner
+`plugin.gd` is a thin `EditorPlugin` (~195 lines). `_enter_tree` prints a one-line startup banner
 with the plugin version, wires `EditorAccess` and registers the ProjectSettings, then
 **self-heals the runtime autoload** via `AutoloadRegistration.ensure_registered()` — re-asserting `MCPRuntimeServer` before
 the graph is wired if the project was enabled out-of-band with the `[autoload]` entry missing (ADR
@@ -498,12 +507,13 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="7d30f63" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="138018c" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
     plugin -->|"AutoloadRegistration.ensure_registered() — pre-compose"| heal["re-assert runtime autoload<br/>(identity leaf + registration module ·<br/>enabled-out-of-band gap · ADR 0013)"]
     plugin -->|"compose()"| composer["PluginComposer → Handle"]
+    plugin -->|"on start + EditorSettings settings_changed"| skip["server.skip_version_check<br/>(local server build ⇒ connect-time check off)"]
     composer --> reg["registry + mcp_server"]
     composer --> bridge["debug bridge"]
     composer --> builtins["BuiltinCommandRegistration.register_all()"]
@@ -516,7 +526,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 7d30f63*
+*Figure 10 — plugin composition root · verified 138018c*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
@@ -536,7 +546,11 @@ teardown uses **immediate (not deferred)
 outlives ObjectDB's exit-time leak check. The tool menu, per-user EditorSettings (the unfocused-editor
 preferences and the machine-local `mcp_toolkit/server/local_path`), the
 Godot-version warning, and the onboarding wizard are wired by `plugin.gd` itself after compose
-returns. The project-wide `mcp_toolkit/server/version` key is registered earlier, with the other
+returns. So is the version-check opt-out: `plugin.gd` copies `MCPJsonWriteFlow.uses_local_server()`
+(the local-path setting, else `GODOT_MCP_DEV_SERVER_PATH`) onto the server's `skip_version_check`
+once at start and again on every EditorSettings `settings_changed`, so the next connection already
+reflects an edit, and `_exit_tree` disconnects that watch because the EditorSettings singleton
+outlives the plugin. The project-wide `mcp_toolkit/server/version` key is registered earlier, with the other
 ProjectSettings. Disabling the plugin (not a reload) scrubs every `mcp_toolkit/*` ProjectSettings key,
 that one included, and hands the machine-wide EditorSettings prompt, `local_path` among its keys, to a
 detached `DisableCleanupCoordinator` that outlives the plugin.
