@@ -391,7 +391,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="8edfcae" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="8042387" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -401,7 +401,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified 8edfcae*
+*Figure 8 — the idempotent create / if_exists decision · verified 8042387*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -545,7 +545,7 @@ guarded lifecycle. `extension_loader.gd` is a 36-line orchestrator over four ser
 (the shared load/validate/probe leaf), `extension_watcher` (live hot-reload), and
 `extension_meta_commands` (the `extensions.list` surface).
 
-<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="8edfcae" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="8042387" -->
 ```mermaid
 flowchart TD
     scan["scan ProjectSettings.get_global_class_list()"] --> cand{"candidate?<br/>GDScript base == MCPToolkitExtension<br/>or C# MCPToolkit*.cs"}
@@ -562,7 +562,7 @@ flowchart TD
     reserved --> mark["registry.mark_extension(method)"]
     mark --> retain["retain instance (C# GC safety)"]
 ```
-*Figure 11 — extension discovery → validate → guarded register · verified 8edfcae*
+*Figure 11 — extension discovery → validate → guarded register · verified 8042387*
 
 Two guards protect the built-in surface: a **collision guard** window (opened by
 `begin_extension_load`, drained by `end_extension_load`) rejects an extension that tries to
