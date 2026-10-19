@@ -13,6 +13,7 @@ extends RefCounted
 
 const InputMapCommands := preload("res://addons/godot_mcp_toolkit/commands/input_map_commands.gd")
 const InputActionSettings := preload("res://addons/godot_mcp_toolkit/commands/input_action_settings.gd")
+const InputEventEquivalence := preload("res://addons/godot_mcp_toolkit/commands/input_event_equivalence.gd")
 
 const _ACTION := "mcp_test_project_action"
 ## A project action whose name looks like a built-in one.
@@ -237,17 +238,17 @@ static func _test_key_equivalence(testing) -> void:
 	var shift_enter := _logical_key_event(KEY_ENTER)
 	shift_enter.shift_pressed = true
 
-	testing.ok(not InputMapCommands._input_events_equivalent(enter, space),
+	testing.ok(not InputEventEquivalence.are_equivalent(enter, space),
 		"logical ENTER and logical SPACE are different bindings")
-	testing.ok(not InputMapCommands._input_events_equivalent(enter, physical_enter),
+	testing.ok(not InputEventEquivalence.are_equivalent(enter, physical_enter),
 		"logical ENTER and physical ENTER are different bindings")
-	testing.ok(not InputMapCommands._input_events_equivalent(enter, labelled_enter),
+	testing.ok(not InputEventEquivalence.are_equivalent(enter, labelled_enter),
 		"logical ENTER and an ENTER key label are different bindings")
-	testing.ok(not InputMapCommands._input_events_equivalent(enter, shift_enter),
+	testing.ok(not InputEventEquivalence.are_equivalent(enter, shift_enter),
 		"ENTER and Shift+ENTER are different bindings")
-	testing.ok(InputMapCommands._input_events_equivalent(enter, _logical_key_event(KEY_ENTER)),
+	testing.ok(InputEventEquivalence.are_equivalent(enter, _logical_key_event(KEY_ENTER)),
 		"two logical ENTER events are the same binding")
-	testing.ok(InputMapCommands._input_events_equivalent(physical_enter, _key_event(KEY_ENTER)),
+	testing.ok(InputEventEquivalence.are_equivalent(physical_enter, _key_event(KEY_ENTER)),
 		"two physical ENTER events are the same binding")
 	print("")
 
@@ -490,6 +491,7 @@ static func _test_list_registration(testing) -> void:
 	testing.ok(registry.is_read_only("input_map.list"), "and marked read-only")
 	testing.ok(not registry.is_read_only("input_map.action"), "input_map.action is not read-only")
 	testing.ok(not registry.is_read_only("input_map.event"), "input_map.event is not read-only")
+	testing.ok(not registry.is_active_scene_required("input_map.list"), "input_map.list needs no open scene")
 	print("")
 
 
@@ -585,6 +587,7 @@ static func _test_list_can_revert_follows_editor_rule(testing) -> void:
 		"with another deadzone": {"deadzone": 0.95, "events": _rebuilt_events(default_events)},
 		"with its events reordered": {"deadzone": default_deadzone, "events": reordered},
 		"with F9 added": {"deadzone": default_deadzone, "events": default_events + [_key_event(KEY_F9)]},
+		"with each event on device 7": {"deadzone": default_deadzone, "events": _events_on_device(default_events, 7)},
 	}
 	var entries := {}
 	for state in states:
@@ -592,7 +595,7 @@ static func _test_list_can_revert_follows_editor_rule(testing) -> void:
 		entries[state] = _entry(_list({"name": _BUILTIN_ACTION}), _BUILTIN_ACTION)
 	_restore_setting(_BUILTIN_ACTION, original)
 
-	for state in ["at its default", "rebuilt with the same content"]:
+	for state in ["at its default", "rebuilt with the same content", "with each event on device 7"]:
 		var entry: Dictionary = entries[state]
 		testing.ok(entry.has("can_revert") and not bool(entry["can_revert"]), "ui_accept %s → can_revert false" % state)
 		testing.ok(not entry.has("default"), "  and no default")
@@ -635,7 +638,7 @@ static func _test_list_dotted_project_action(testing) -> void:
 
 
 static func _test_list_builtin_feature_entry(testing) -> void:
-	testing.begin("input_map list: a built-in feature entry is listed, and bind, unbind and revert refuse it")
+	testing.begin("input_map list: a built-in feature entry is listed, and bind, unbind, revert and remove refuse it")
 	var action := _builtin_feature_action()
 	if action.is_empty():
 		testing.ok(false, "the engine registers a built-in input/<name>.macos setting")
@@ -647,6 +650,8 @@ static func _test_list_builtin_feature_entry(testing) -> void:
 	var unbind := _unbind(action, "F9")
 	var revert := _action_call("revert", action)
 	var value_after: Variant = ProjectSettings.get_setting("input/" + action)
+	var remove := _action_call("remove", action)
+	var kept_after_remove := ProjectSettings.has_setting("input/" + action)
 	_restore_setting(action, original)
 
 	var entry := _entry(listed, action)
@@ -658,6 +663,11 @@ static func _test_list_builtin_feature_entry(testing) -> void:
 		testing.ok(str(response.get("error", "")).contains("feature-override entries are read-only"),
 			"  refused as read-only (%s)" % str(response.get("error", "")))
 	testing.ok(value_after == original["value"], "and its setting is unchanged")
+	testing.eq(str(remove.get("code", "")), "INVALID_PARAMS", "remove → INVALID_PARAMS")
+	testing.ok(str(remove.get("error", "")).contains("feature-override entries are read-only")
+			and not str(remove.get("error", "")).contains("revert"),
+		"  refused as read-only, with no pointer to revert (%s)" % str(remove.get("error", "")))
+	testing.ok(kept_after_remove, "  and the setting stays")
 	print("")
 
 
@@ -916,6 +926,8 @@ static func _test_mouse_pressed_ignored(testing) -> void:
 	testing.begin("input_map mouse: pressed is accepted, never stored, and never splits a binding")
 	_seed_action(_ACTION, 0.5, [])
 	var pressed := _event_call("bind", _ACTION, {"type": "mouse_button", "button_index": 1, "pressed": true})
+	var events_after_bind := _setting_events(ProjectSettings.get_setting("input/" + _ACTION))
+	var stored: Variant = events_after_bind.back() if not events_after_bind.is_empty() else null
 	var released := _event_call("bind", _ACTION, {"type": "mouse_button", "button_index": 1, "pressed": false})
 	var unbind := _event_call("unbind", _ACTION, {"type": "mouse_button", "button_index": 1})
 	var saved_events := _setting_events(ProjectSettings.get_setting("input/" + _ACTION))
@@ -925,6 +937,8 @@ static func _test_mouse_pressed_ignored(testing) -> void:
 	testing.eq(str(pressed.get("status", "")), "created", "bind button 1 with pressed → created")
 	testing.eq(pressed.get("warnings", []), ["pressed has no effect on action matching; ignored"], "  with a warning")
 	testing.ok(not pressed_event.has("pressed"), "  and the event read back has no pressed (%s)" % str(pressed_event))
+	testing.ok(stored is InputEventMouseButton and not (stored as InputEventMouseButton).pressed,
+		"  and the saved event is not pressed")
 	testing.eq(str(released.get("status", "")), "returned", "bind button 1 with pressed false → returned")
 	testing.ok(bool(unbind.get("success", false)), "unbind button 1 → success")
 	testing.eq(saved_events.size(), 0, "and no mouse event stays")
@@ -1318,6 +1332,15 @@ static func _rebuilt_events(events: Array) -> Array:
 		if event is InputEvent:
 			rebuilt.append((event as InputEvent).duplicate())
 	return rebuilt
+
+
+## Returns a copy of each input event in [param events] with its device set to
+## [param device].
+static func _events_on_device(events: Array, device: int) -> Array:
+	var moved := _rebuilt_events(events)
+	for event in moved:
+		(event as InputEvent).device = device
+	return moved
 
 
 ## Returns the name of a built-in action the engine registers with a [code].macos[/code]
