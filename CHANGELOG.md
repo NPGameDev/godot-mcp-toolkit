@@ -32,10 +32,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file, and a node that already has the script runs the new code too.
   `script_write` and `script_edit` reload the script themselves, and so do their
   undo and redo, on every Godot version. The toolkit never loads a file that
-  doesn't compile: `node_set_script` returns `valid: false` with a hint naming
-  the error, and on Godot 4.2–4.3 and a 4.5+ headless editor the nodes keep the
-  code they had. On 4.4+ with an editor window, and on 4.4 headless, the editor
-  still reloads a changed file by itself, broken or not. For a file changed outside the
+  doesn't compile: when the file changed since the editor loaded it and does not
+  compile, the `node_set_script` response carries `valid: false` and a hint that
+  says so and points at `script_check`, and the nodes keep the code they had.
+  The exception is Godot 4.4+ with an editor window, and 4.4 headless, where the
+  editor still reloads a changed file by itself, broken or not. For a file changed outside the
   toolkit, the stale-instance hint on `node_call_method` now tells you to set the
   script again instead of relaunching the editor, and `script_write` no longer
   carries that hint. Reported and first fixed by @benfeather
