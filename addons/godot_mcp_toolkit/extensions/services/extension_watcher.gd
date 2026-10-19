@@ -15,6 +15,7 @@ extends RefCounted
 ## consistent across one _do_rescan (a removed class is erased from all of them in
 ## lockstep). Nothing outside this module pokes them.
 
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const _Support := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_support.gd")
 const _MetaCommands := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_meta_commands.gd")
 
@@ -181,7 +182,7 @@ func cmd_refresh(_params: Dictionary) -> Dictionary:
 	var waiting_hint := unapplied_edit_hint(
 			PackedStringArray(_pending_restart_modifies.keys()),
 			PackedStringArray(_pending_fix_modifies.keys()),
-			_Support.toolkit_write_reloads())
+			Modules.VersionUtils.in_place_reload_safe())
 	if not waiting_hint.is_empty():
 		response["hint"] = (str(response["hint"]) + " " + waiting_hint) if response.has("hint") else waiting_hint
 	return response
@@ -349,7 +350,7 @@ func _record_unapplied_edit(class_name_str: String, script_path: String, verdict
 	var needs_restart := verdict == _Support.EDIT_NEEDS_RESTART
 	var needs_fix := verdict == _Support.EDIT_NEEDS_FIX
 	if needs_restart and class_name_str not in _pending_restart_modifies:
-		if _Support.toolkit_write_reloads():
+		if Modules.VersionUtils.in_place_reload_safe():
 			push_warning("[MCPExtensions] '%s' was edited outside script_write / script_edit, or is C#, and Godot 4.2 can't apply that in-session - restart the editor to load the updated version." % class_name_str)
 		else:
 			push_warning("[MCPExtensions] '%s' was edited, and Godot 4.2.0 and 4.2.1 can't apply an extension edit in-session - restart the editor to load the updated version." % class_name_str)

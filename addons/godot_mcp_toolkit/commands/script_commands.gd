@@ -304,12 +304,12 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		return MCPToolkitError.fail("WRITE_FAILED",
 			"could not open %s for write (err %d)" % [file_path, write_error])
 
-	var reload_allowed := not Helpers.reload_frees_held_lambdas(Engine.get_version_info())
+	var reload_safe := Modules.VersionUtils.in_place_reload_safe()
 	var _undo := MCPToolkitUndoRedoAction.begin("script_write: %s" % file_path) \
-		.do_method(server.undo_helpers._write_file_silent.bind(file_path, content, reload_allowed))
+		.do_method(server.undo_helpers._write_file_silent.bind(file_path, content, reload_safe))
 	var undoable := _undo.is_active()
 	if existed:
-		_undo.undo_method(server.undo_helpers._write_file_silent.bind(file_path, prior_content, reload_allowed))
+		_undo.undo_method(server.undo_helpers._write_file_silent.bind(file_path, prior_content, reload_safe))
 	else:
 		_undo.undo_method(server.undo_helpers._delete_file_silent.bind(file_path))
 	_undo.commit_recorded()
@@ -330,7 +330,7 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		# toolkit never applies a source that failed the check above. Where an in-place
 		# reload is unsafe, an edit that compiles stays for an editor restart, and the
 		# hint says so.
-		if reload_allowed:
+		if reload_safe:
 			if bool(validation["valid"]):
 				Helpers.reload_cached_script(file_path, content)
 		elif existed and bool(validation["valid"]):

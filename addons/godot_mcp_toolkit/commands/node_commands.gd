@@ -576,7 +576,7 @@ static func _stale_method_hint(node: Object, method_name: String) -> String:
 		return ""
 	return Modules.StaleInstanceHint.recovery_message(
 			Modules.VersionUtils.get_engine_version_pair(), version.y, headless,
-			not Helpers.reload_frees_held_lambdas(Engine.get_version_info()))
+			Modules.VersionUtils.in_place_reload_safe())
 
 
 ## Builds the node.call_method hint for a null callv() result, version-gated.
@@ -717,8 +717,8 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
 	# Where an in-place reload is unsafe, the node takes the version the editor has, and a
 	# file changed since then waits for an editor restart.
-	var reload_outcome := {"compile_error": "", "previous_kept": true}
-	if not Helpers.reload_frees_held_lambdas(Engine.get_version_info()):
+	var reload_outcome := Helpers.unreloaded_outcome()
+	if Modules.VersionUtils.in_place_reload_safe():
 		reload_outcome = Helpers.reload_script_from_disk(loaded)
 
 	var old_script = node.get_script()

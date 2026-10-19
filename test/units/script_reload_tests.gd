@@ -4,8 +4,9 @@ extends RefCounted
 ## compile gate, a reload that fails (and node.set_script's hint for it), a file that
 ## matches the cached script, the
 ## toolkit's own paths, the reload a script write runs, the reload its undo and
-## redo run through the undo_helpers node, and the patch gate that turns the reload off
-## on Godot 4.2.0 and 4.2.1, with the hints those versions get. Drives user:// fixtures rewritten between
+## redo run through the undo_helpers node, and what happens where the patch gate turns
+## the reload off (Godot 4.2.0 and 4.2.1; the gate's own cases are in
+## paths_versioning_tests.gd), with the hints those versions get. Drives user:// fixtures rewritten between
 ## loads; no editor is needed. These cases call the helper directly, so they cannot run
 ## against a toolkit without it; the live probe covers the same behaviour through the
 ## tools.
@@ -39,7 +40,6 @@ static func run(testing) -> void:
 	_test_reload_decision(testing)
 	_test_reload_after_write(testing)
 	_test_undo_and_redo_reload(testing)
-	_test_patch_gate(testing)
 	_test_undo_and_redo_without_reload(testing)
 	_test_patch_gate_hints(testing)
 
@@ -256,21 +256,6 @@ static func _test_undo_and_redo_reload(testing) -> void:
 	undo_helpers.free()
 	running.free()
 	_remove(UNDO_FIXTURE)
-	print("")
-
-
-# Godot 4.2.0 and 4.2.1 free a reloaded script's lambdas while Callables held elsewhere
-# still point at them, so the toolkit reloads nothing in place there.
-static func _test_patch_gate(testing) -> void:
-	testing.begin("script reload: the patch gate covers Godot 4.2.0 and 4.2.1 only")
-	testing.ok(Helpers.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 0}), "4.2.0 → no in-place reload")
-	testing.ok(Helpers.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 1}), "4.2.1 → no in-place reload")
-	testing.ok(not Helpers.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 2}), "4.2.2 → reload")
-	testing.ok(not Helpers.reload_frees_held_lambdas({"major": 4, "minor": 3, "patch": 0}), "4.3.0 → reload")
-	testing.ok(not Helpers.reload_frees_held_lambdas({"major": 4, "minor": 7, "patch": 0}), "4.7.0 → reload")
-	testing.ok(not Helpers.reload_frees_held_lambdas({"major": 5, "minor": 2, "patch": 0}),
-			"5.2.0 → reload (the gate is major-aware)")
-	testing.ok(not Helpers.reload_frees_held_lambdas({}), "no version → reload")
 	print("")
 
 

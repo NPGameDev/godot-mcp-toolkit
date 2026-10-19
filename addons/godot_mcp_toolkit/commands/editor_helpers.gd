@@ -883,7 +883,7 @@ static func delete_res_file_and_deindex(
 ## itself failed. [code]previous_kept[/code] is false only when a failed reload could not
 ## recompile the previous source either, so the script may have no working code.
 static func reload_script_from_disk(script: Script, judged_valid_source: String = "") -> Dictionary:
-	var outcome := _unreloaded_outcome()
+	var outcome := unreloaded_outcome()
 	if not (script is GDScript):
 		return outcome
 	var script_path := script.resource_path
@@ -921,10 +921,10 @@ static func reload_script_from_disk(script: Script, judged_valid_source: String 
 ## Returns the same [code]{reloaded, compile_error, previous_kept}[/code] outcome.
 static func reload_cached_script(file_path: String, judged_valid_source: String = "") -> Dictionary:
 	if not ResourceLoader.has_cached(file_path):
-		return _unreloaded_outcome()
+		return unreloaded_outcome()
 	var cached: Resource = ResourceLoader.load(file_path)
 	if not (cached is Script):
-		return _unreloaded_outcome()
+		return unreloaded_outcome()
 	return reload_script_from_disk(cached, judged_valid_source)
 
 
@@ -938,20 +938,9 @@ static func should_reload_script(script_path: String, disk_source: String, cache
 	return not disk_source.is_empty() and disk_source != cached_source
 
 
-## Whether the engine described by [param version_info] (the shape of
-## [code]Engine.get_version_info()[/code]) is one where the toolkit must not reload a script
-## in place, so its write, undo, redo and [code]node_set_script[/code] paths leave a changed
-## script for an editor restart to load. On Godot 4.2.0 and 4.2.1 an in-place reload frees
-## the code of the script's lambdas while a Callable held elsewhere (a signal connection,
-## a command registry) still points at it, and the next call crashes the editor; 4.2.2 and
-## 4.3 fixed it. Pure, so the version boundary can be unit-tested.
-static func reload_frees_held_lambdas(version_info: Dictionary) -> bool:
-	return (int(version_info.get("major", 0)) == 4 and int(version_info.get("minor", 0)) == 2
-			and int(version_info.get("patch", 0)) < 2)
-
-
-# The outcome of a call that left the script as it was.
-static func _unreloaded_outcome() -> Dictionary:
+## The [method reload_script_from_disk] outcome of a call that left the script as it was:
+## [code]{reloaded: false, compile_error: "", previous_kept: true}[/code].
+static func unreloaded_outcome() -> Dictionary:
 	return {"reloaded": false, "compile_error": "", "previous_kept": true}
 
 

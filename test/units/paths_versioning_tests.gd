@@ -5,7 +5,7 @@ extends RefCounted
 ## script_check's class_name rename,
 ## node.set_property groups rejection, UserPathMonitor change detection,
 ## editor.refresh reload filter, unfocused-sleep backup, and the
-## stale-live-instance hint. Exercises the versioning/ + paths/ + editor-lifecycle
+## stale-live-instance hint, and the in-place reload patch gate. Exercises the versioning/ + paths/ + editor-lifecycle
 ## pure logic.
 
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
@@ -34,6 +34,7 @@ static func run(testing) -> void:
 	_test_call_method_null_hint(testing)
 	_test_tooltip_uaf_disarm_decision(testing)
 	_test_is_engine_version_pair(testing)
+	_test_reload_patch_gate(testing)
 	_test_version_skew(testing)
 	_test_log_path_resolution(testing)
 
@@ -547,6 +548,23 @@ static func _test_is_engine_version_pair(testing) -> void:
 	testing.eq(ints.y, int(info["minor"]), "ints.y == Engine minor")
 	testing.eq("%d.%d" % [ints.x, ints.y], live_pair,
 			"ints re-join to get_engine_version_pair() (int and string forms agree)")
+	print("")
+
+
+# --- In-place reload patch gate (7 assertions) ----------------------------------
+# Godot 4.2.0 and 4.2.1 free a reloaded script's lambdas while Callables held elsewhere
+# still point at them, so the toolkit reloads nothing in place there.
+
+static func _test_reload_patch_gate(testing) -> void:
+	testing.begin("script reload: the patch gate covers Godot 4.2.0 and 4.2.1 only")
+	testing.ok(VersionUtils.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 0}), "4.2.0 → no in-place reload")
+	testing.ok(VersionUtils.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 1}), "4.2.1 → no in-place reload")
+	testing.ok(not VersionUtils.reload_frees_held_lambdas({"major": 4, "minor": 2, "patch": 2}), "4.2.2 → reload")
+	testing.ok(not VersionUtils.reload_frees_held_lambdas({"major": 4, "minor": 3, "patch": 0}), "4.3.0 → reload")
+	testing.ok(not VersionUtils.reload_frees_held_lambdas({"major": 4, "minor": 7, "patch": 0}), "4.7.0 → reload")
+	testing.ok(not VersionUtils.reload_frees_held_lambdas({"major": 5, "minor": 2, "patch": 0}),
+			"5.2.0 → reload (the gate is major-aware)")
+	testing.ok(not VersionUtils.reload_frees_held_lambdas({}), "no version → reload")
 	print("")
 
 

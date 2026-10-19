@@ -71,14 +71,6 @@ static func is_godot_42() -> bool:
 	return Modules.VersionUtils.is_engine_version_pair("4.2")
 
 
-## True where a [code]script_write[/code] or [code]script_edit[/code] (or their undo/redo)
-## that compiles reloads the script the editor has cached: every version but Godot 4.2.0
-## and 4.2.1, where the toolkit reloads nothing in place (the rule lives in
-## [code]editor_helpers.gd[/code], [code]reload_frees_held_lambdas[/code]).
-static func toolkit_write_reloads() -> bool:
-	return not Modules.CommandHelpers.reload_frees_held_lambdas(Engine.get_version_info())
-
-
 ## Cache mode for loading extension scripts. 4.2 uses CACHE_MODE_REUSE, which returns
 ## the editor's existing (or in-flight) resource instead of spawning the crash-prone
 ## duplicate synchronous load, so 4.2 sees an extension edit only once the cached script
@@ -110,9 +102,16 @@ static func hash_extension_source(script_path: String) -> int:
 ## back to the file for a script with no readable source, such as a C# one.
 static func loaded_source_hash(instance: Object, script_path: String) -> int:
 	var loaded_script: Script = instance.get_script() if instance != null else null
-	if loaded_script is GDScript and not loaded_script.source_code.is_empty():
-		return loaded_script.source_code.hash()
-	return hash_extension_source(script_path)
+	var source_hash := _gdscript_source_hash(loaded_script)
+	return source_hash if source_hash != 0 else hash_extension_source(script_path)
+
+
+# Hash of the source the script holds in memory, or 0 when it is not a GDScript or
+# holds no source (a C# script, for one).
+static func _gdscript_source_hash(script: Script) -> int:
+	if script is GDScript and not script.source_code.is_empty():
+		return script.source_code.hash()
+	return 0
 
 
 ## Why an edit to the extension at [param script_path] is not live on Godot 4.2, given
@@ -170,9 +169,7 @@ static func probe_extension(class_name_str: String, script_path: String, server:
 	var instance = script.new()
 	if instance == null:
 		return empty
-	var source_hash := 0
-	if script is GDScript and not script.source_code.is_empty():
-		source_hash = script.source_code.hash()
+	var source_hash := _gdscript_source_hash(script)
 	var scratch := MCPToolkitCommandRegistry.new()
 	if instance.has_method("Register"):
 		instance.Register(scratch, server)
