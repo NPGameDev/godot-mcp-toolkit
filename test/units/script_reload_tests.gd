@@ -1,7 +1,8 @@
 @tool
 extends RefCounted
 ## The shared reload of a script changed on disk (commands/editor_helpers.gd): the
-## compile gate, a reload that fails, a file that matches the cached script, the
+## compile gate, a reload that fails (and node.set_script's hint for it), a file that
+## matches the cached script, the
 ## toolkit's own paths, the reload a script write runs, and the reload its undo and
 ## redo run through the undo_helpers node. Drives user:// fixtures rewritten between
 ## loads; no editor is needed. These cases call the helper directly, so they cannot run
@@ -9,24 +10,29 @@ extends RefCounted
 ## tools.
 
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
+const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
 
 const GATE_FIXTURE := "user://script_reload_gate_fixture.gd"
 const BROKEN_FIRST_FIXTURE := "user://script_reload_broken_first_fixture.gd"
 const FAILED_RELOAD_FIXTURE := "user://script_reload_failed_reload_fixture.gd"
-const UNCHANGED_FIXTURE :="user://script_reload_unchanged_fixture.gd"
+const RESTORE_FAILED_FIXTURE := "user://script_reload_restore_failed_fixture.gd"
+const UNCHANGED_FIXTURE := "user://script_reload_unchanged_fixture.gd"
 const WRITE_FIXTURE := "user://script_reload_write_fixture.gd"
 const UNDO_FIXTURE := "user://script_reload_undo_fixture.gd"
 const NEVER_LOADED_FIXTURE := "user://script_reload_never_loaded_fixture.gd"
 const SHADER_FIXTURE := "user://script_reload_shader_fixture.gdshader"
 
 const _BROKEN_SOURCE := "@tool\nextends Node\n\n\nfunc version() -> int:\n\treturn = 1\n"
+const _OTHER_BROKEN_SOURCE := "@tool\nextends Node\n\nvar = = =\n"
 
 
 static func run(testing) -> void:
 	_test_compile_gate(testing)
 	_test_broken_then_fixed_in_cache(testing)
 	_test_failed_reload_retries(testing)
+	_test_failed_reload_without_restore(testing)
+	_test_refused_reload_hint(testing)
 	_test_unchanged_file(testing)
 	_test_reload_decision(testing)
 	_test_reload_after_write(testing)
@@ -120,6 +126,52 @@ static func _test_failed_reload_retries(testing) -> void:
 
 	running.free()
 	_remove(FAILED_RELOAD_FIXTURE)
+	print("")
+
+
+# A script cached broken has no previous version that compiles, so a failed reload
+# cannot restore one, and the outcome must say so.
+static func _test_failed_reload_without_restore(testing) -> void:
+	testing.begin("script reload: a failed reload that cannot restore the previous version says so")
+	_write_source(RESTORE_FAILED_FIXTURE, _BROKEN_SOURCE)
+	var printed_errors := Engine.print_error_messages
+	Engine.print_error_messages = false
+	var script: Script = ResourceLoader.load(RESTORE_FAILED_FIXTURE)
+	testing.ok(script != null, "the loader hands back the broken script")
+	if script == null:
+		Engine.print_error_messages = printed_errors
+		_remove(RESTORE_FAILED_FIXTURE)
+		return
+	_write_source(RESTORE_FAILED_FIXTURE, _OTHER_BROKEN_SOURCE)
+	var failed := Helpers.reload_script_from_disk(script, _OTHER_BROKEN_SOURCE)
+	Engine.print_error_messages = printed_errors
+	testing.ok(not bool(failed["reloaded"]), "the failed reload is not reported as applied")
+	testing.ok(str(failed["compile_error"]).ends_with("the previous version could not be restored"),
+			"the outcome says the previous version could not be restored")
+	testing.ok(not bool(failed["previous_kept"]), "the outcome says the previous version was not kept")
+	testing.eq(script.source_code, _BROKEN_SOURCE, "the cached script keeps its previous source")
+
+	_write_source(RESTORE_FAILED_FIXTURE, _version_source(2))
+	var fixed := Helpers.reload_script_from_disk(script)
+	testing.ok(bool(fixed["reloaded"]), "the fixed file reloads")
+	testing.ok(bool(fixed["previous_kept"]), "an applied reload reports nothing lost")
+	var fresh := Node.new()
+	fresh.set_script(ResourceLoader.load(RESTORE_FAILED_FIXTURE))
+	testing.eq(fresh.call("version"), 2, "a node set afterwards runs version 2")
+
+	fresh.free()
+	_remove(RESTORE_FAILED_FIXTURE)
+	print("")
+
+
+static func _test_refused_reload_hint(testing) -> void:
+	testing.begin("script reload: node.set_script's hint says whether the node runs the previous code")
+	var kept := NodeCommands._refused_reload_hint("res://a.gd", "the source on disk does not compile", true)
+	testing.ok(kept.contains("the node runs that previous code"), "a kept version → the node runs it")
+	testing.ok(kept.contains("script_check"), "the hint points at script_check")
+	var lost := NodeCommands._refused_reload_hint("res://a.gd", "the reload failed", false)
+	testing.ok(not lost.contains("the node runs that previous code"), "a lost version → no claim that it runs")
+	testing.ok(lost.contains("could not restore"), "a lost version → the hint says it could not be restored")
 	print("")
 
 

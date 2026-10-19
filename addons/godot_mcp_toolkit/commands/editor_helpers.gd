@@ -736,12 +736,14 @@ static func delete_res_file_and_deindex(
 ## it was, so its nodes keep working, and the outcome says why. [param judged_valid_source]
 ## is a source the caller has already judged valid; while the file still holds exactly that
 ## text, the compile check is not run a second time. If the reload itself fails, the
-## script goes back to its previous source and code.
+## script goes back to its previous source and recompiles it.
 ##
-## Returns [code]{reloaded: bool, compile_error: String}[/code]. [code]compile_error[/code]
-## is "" unless the file's source was refused or the reload itself failed.
+## Returns [code]{reloaded: bool, compile_error: String, previous_kept: bool}[/code].
+## [code]compile_error[/code] is "" unless the file's source was refused or the reload
+## itself failed. [code]previous_kept[/code] is false only when a failed reload could not
+## recompile the previous source either, so the script may have no working code.
 static func reload_script_from_disk(script: Script, judged_valid_source: String = "") -> Dictionary:
-	var outcome := {"reloaded": false, "compile_error": ""}
+	var outcome := _unreloaded_outcome()
 	if not (script is GDScript):
 		return outcome
 	var script_path := script.resource_path
@@ -758,12 +760,15 @@ static func reload_script_from_disk(script: Script, judged_valid_source: String 
 	script.source_code = disk_source
 	var reload_error := script.reload(true)
 	if reload_error != OK:
-		# A failed reload marks the script invalid, so its nodes stop running any of it.
-		# Recompiling the previous source brings that code back, and keeping it as the
-		# source makes the next call see the file as changed and try again.
+		# A failed reload marks the script invalid, and on 4.3+ its nodes then stop running
+		# any of it. Recompiling the previous source brings that code back, and keeping it
+		# as the source makes the next call see the file as changed and try again.
 		script.source_code = previous_source
-		script.reload(true)
+		var restore_error := script.reload(true)
 		outcome["compile_error"] = "the reload failed (%s)" % error_string(reload_error)
+		if restore_error != OK:
+			outcome["compile_error"] += " and the previous version could not be restored"
+			outcome["previous_kept"] = false
 		return outcome
 	outcome["reloaded"] = true
 	return outcome
@@ -773,13 +778,13 @@ static func reload_script_from_disk(script: Script, judged_valid_source: String 
 ## [param file_path], after a write to that file. A file the editor has not loaded is left
 ## alone: its first load reads the file anyway. So is a cached resource that is not a
 ## script, such as a shader.
-## Returns the same [code]{reloaded, compile_error}[/code] outcome.
+## Returns the same [code]{reloaded, compile_error, previous_kept}[/code] outcome.
 static func reload_cached_script(file_path: String, judged_valid_source: String = "") -> Dictionary:
 	if not ResourceLoader.has_cached(file_path):
-		return {"reloaded": false, "compile_error": ""}
+		return _unreloaded_outcome()
 	var cached: Resource = ResourceLoader.load(file_path)
 	if not (cached is Script):
-		return {"reloaded": false, "compile_error": ""}
+		return _unreloaded_outcome()
 	return reload_script_from_disk(cached, judged_valid_source)
 
 
@@ -791,6 +796,11 @@ static func should_reload_script(script_path: String, disk_source: String, cache
 	if script_path.begins_with(_TOOLKIT_SOURCE_DIR):
 		return false
 	return not disk_source.is_empty() and disk_source != cached_source
+
+
+# The outcome of a call that left the script as it was.
+static func _unreloaded_outcome() -> Dictionary:
+	return {"reloaded": false, "compile_error": "", "previous_kept": true}
 
 
 # -- Godot 4.3 SceneTreeEditor tooltip-timer UAF mitigation -------------------

@@ -663,13 +663,17 @@ static func _cmd_node_call_method(parameters: Dictionary) -> Dictionary:
 	return MCPToolkitSuccess.ok(response)
 
 
-## The node.set_script hint when the script's file on disk was refused by the compile
-## gate: [param compile_error] says why, and the node runs the version the editor already
-## had, since a source that does not compile never replaces working code.
-static func _refused_reload_hint(script_path: String, compile_error: String) -> String:
-	return ("%s on disk was not loaded: %s. The editor kept the version it had loaded, so "
-		+ "the node runs that previous code. Run script_check on the file for the error "
-		+ "and its line, fix it, then call node_set_script again.") % [script_path, compile_error]
+## The node.set_script hint when the script's file on disk was not loaded:
+## [param compile_error] says why. When [param previous_kept] is true the node runs the
+## version the editor already had, since a source that does not compile never replaces
+## working code; when false, even that version failed to recompile.
+static func _refused_reload_hint(script_path: String, compile_error: String, previous_kept: bool) -> String:
+	var running_code := "The editor kept the version it had loaded, so the node runs that previous code."
+	if not previous_kept:
+		running_code = ("The editor could not restore the version it had loaded either, so calls "
+			+ "into the script can fail.")
+	return ("%s on disk was not loaded: %s. %s Run script_check on the file for the error "
+		+ "and its line, fix it, then call node_set_script again.") % [script_path, compile_error, running_code]
 
 
 static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
@@ -741,7 +745,7 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 	var compile_error := str(reload_outcome["compile_error"])
 	if compile_error != "":
 		response["valid"] = false
-		response["hint"] = _refused_reload_hint(script_path, compile_error)
+		response["hint"] = _refused_reload_hint(script_path, compile_error, bool(reload_outcome["previous_kept"]))
 	return MCPToolkitSuccess.ok(response)
 
 
