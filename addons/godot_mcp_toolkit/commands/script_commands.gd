@@ -286,12 +286,15 @@ static func _edit_prefix(uses_edits: bool, index: int) -> String:
 
 ## Writes [param content] to [param file_path], wrapping it in an editor UndoRedo
 ## action, reindexing the file, and — for a .gd file — attaching inline
-## diagnostics plus the stale-live-instance hint. Shared by [method _cmd_script_write]
-## (whole-file) and [method _cmd_script_edit] (surgical) so both take the identical
-## write/undo/index/diagnose pipeline. [param prior_content] is the file's content
-## before this write (empty when [param existed] is false) — the undo restores it,
-## or deletes the file when it did not exist. [param extension] is the lowercased
-## file extension, used to gate the .gd-only diagnostics.
+## diagnostics and, when it compiles, reloading the script the editor has cached, so
+## the nodes running it run the new code. The undo and redo reload it the same way. On
+## Godot 4.2.0 and 4.2.1, where an in-place reload is unsafe, none of them reloads, and a
+## compiling edit of an existing file gets a stale-instance hint instead. Shared by
+## [method _cmd_script_write] (whole-file) and [method _cmd_script_edit] (surgical) so
+## both take the identical write/undo/index/diagnose pipeline. [param prior_content] is
+## the file's content before this write (empty when [param existed] is false) — the undo
+## restores it, or deletes the file when it did not exist. [param extension] is the
+## lowercased file extension, used to gate the .gd-only diagnostics.
 ## Returns the success envelope [code]{bytes, undoable, indexed, valid?, diagnostics?, hint?}[/code],
 ## or a [method MCPToolkitError.fail] envelope on a write failure.
 static func _commit_content(server: Node, file_path: String, content: String,
@@ -301,11 +304,12 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		return MCPToolkitError.fail("WRITE_FAILED",
 			"could not open %s for write (err %d)" % [file_path, write_error])
 
+	var reload_safe := Modules.VersionUtils.in_place_reload_safe()
 	var _undo := MCPToolkitUndoRedoAction.begin("script_write: %s" % file_path) \
-		.do_method(server.undo_helpers._write_file_silent.bind(file_path, content))
+		.do_method(server.undo_helpers._write_file_silent.bind(file_path, content, reload_safe))
 	var undoable := _undo.is_active()
 	if existed:
-		_undo.undo_method(server.undo_helpers._write_file_silent.bind(file_path, prior_content))
+		_undo.undo_method(server.undo_helpers._write_file_silent.bind(file_path, prior_content, reload_safe))
 	else:
 		_undo.undo_method(server.undo_helpers._delete_file_silent.bind(file_path))
 	_undo.commit_recorded()
@@ -321,15 +325,17 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		var validation := _validate_gdscript(content, file_path)
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
-
-		# Proactive stale-live-instance hint. Editing an EXISTING .gd
-		# that compiled OK on Godot < 4.4 won't reach a live instance until relaunch
-		# (added members AND changed bodies; a fresh node doesn't help either —
-		# empirically characterised, boundary 4.3->4.4). Append to the response hint
-		# (validation guidance first, stale nudge in the recency slot).
-		var version := Modules.VersionUtils.get_engine_version_ints()
-		if Modules.StaleInstanceHint.should_warn_on_write(existed, validation["valid"], extension, version.x, version.y):
-			result["hint"] = Modules.StaleInstanceHint.write_hint(Modules.VersionUtils.get_engine_version_pair())
+		# Godot < 4.4 never reloads a cached script after a write, and 4.4+ only on a
+		# later scan, so the nodes already running it would keep the old code. The
+		# toolkit never applies a source that failed the check above. Where an in-place
+		# reload is unsafe, an edit that compiles stays for an editor restart, and the
+		# hint says so.
+		if reload_safe:
+			if bool(validation["valid"]):
+				Helpers.reload_cached_script(file_path, content)
+		elif existed and bool(validation["valid"]):
+			result["hint"] = Modules.StaleInstanceHint.write_hint(
+					Modules.VersionUtils.get_engine_version_pair())
 
 	return result
 

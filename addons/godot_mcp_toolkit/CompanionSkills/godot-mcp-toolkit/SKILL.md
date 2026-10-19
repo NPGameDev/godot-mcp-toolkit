@@ -330,16 +330,30 @@ vars and inspector-visible fields. Use `execute_code` for internal state.
 on the running game use `execute_code` (its default channel is the running game):
 `get_node('/root/Main/Player').call('take_damage', 25)`.
 
-### Stale live instance after a script edit (Godot < 4.4)
+### Stale live instance after an outside script edit (Godot < 4.4)
 
-On Godot **< 4.4** (4.2, 4.3), editing a `.gd` already attached to a **live**
-node does **not** reach that running instance: a newly-added method fails with
-`INVALID_METHOD`, and a changed method **body** runs the old code silently.
-`editor_refresh`, re-`node_set_script`, and a fresh node all keep the stale code
-— **relaunch the editor** (or disable+re-enable the plugin) before calling the
-changed members (`script_write` and `node_call_method` flag this in their hints).
-Best practice: write the full script **before** attaching it. On 4.4+ scripts
-hot-reload, so this doesn't apply.
+`script_write` and `script_edit` reload a `.gd` that compiles, so the nodes
+already running it run the new code (not on Godot 4.2.0 and 4.2.1: see below).
+The toolkit never loads a
+file that does not compile, so on 4.2–4.3 and a 4.5+ headless editor those nodes
+keep the code they had. On 4.4+ with an editor window (and 4.4 headless) the
+editor reloads the changed file by itself, so a broken write can break those
+nodes until you fix it. Read the write's inline `valid` and fix a broken source
+straight away, or check the new source in a scratch `.gd` first (drop its
+`class_name`).
+
+On Godot **< 4.4** (4.2, 4.3), a `.gd` changed **outside the toolkit** (an
+external editor, git) does **not** reach a **live** node already running it: a
+newly-added method fails with `INVALID_METHOD`, and a changed method **body**
+runs the old code silently. `editor_refresh` keeps the stale code — **set the
+script again** with `node_set_script`, which reloads it from disk, before calling
+the changed members (`node_call_method` flags this in its hint). On 4.4+ a
+display editor hot-reloads it, so this doesn't apply.
+
+On Godot **4.2.0 and 4.2.1** the toolkit reloads no script in place (there it
+can crash the editor; 4.2.2 fixed it), so neither a toolkit write nor
+`node_set_script` reaches a live node: relaunch the editor before calling the
+changed members. The `script_write` and `node_call_method` hints say so.
 
 **Env var lifecycle.** `GODOT_MCP_*` env vars (e.g. `GODOT_MCP_READ_ONLY`,
 `GODOT_MCP_EDITOR_PORT`) are read when the MCP server process starts. After

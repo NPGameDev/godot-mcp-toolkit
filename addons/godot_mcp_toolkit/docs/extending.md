@@ -1218,18 +1218,26 @@ C# architecture.
 changing descriptions, updating annotations, fixing handler logic) is
 detected automatically. The watcher re-probes each known extension on
 every scan and compares both method lists and metadata (description,
-annotations, schema, timeout). If anything differs, old tools are
-unregistered and the extension is re-loaded fresh.
+annotations, schema, timeout), and the GDScript source it loads. If anything
+differs, a body-only edit included, old tools are unregistered and the
+extension is re-loaded fresh, so no registered tool keeps running code from
+before the edit.
 
-> **Godot 4.2 only — editing an existing extension needs an editor restart.** On
+> **Godot 4.2 only — an edit made outside the toolkit needs an editor restart.** On
 > Godot 4.2, re-loading a freshly-edited `@tool` script fresh while the editor is
 > still reimporting it natively crashes the editor (a `CACHE_MODE_IGNORE`
 > reimport reentrancy — see `COMPATIBILITY.md`). To stay crash-safe, the 4.2
-> loader reads through the editor cache, so an in-session **edit** to an existing
-> extension is **not** applied until you restart the editor. `extensions_refresh`
-> returns a `hint` naming the changed extension, and a `push_warning` appears in
-> the editor's Output panel. **Adding** and **removing** extensions still apply
-> live on 4.2. Godot 4.3+ applies all changes (add / edit / remove) live.
+> loader reads through the editor cache. On 4.2.2, an extension edit made with
+> `script_write` or `script_edit` (or their undo/redo) applies live when it
+> compiles. An edit made outside the toolkit, or to a C# extension, needs an
+> editor restart, and so does every extension edit on 4.2.0 and 4.2.1, where
+> the toolkit never reloads a script in place (an engine bug there crashes the
+> editor when a reloaded script's lambdas are still registered as tools; fixed
+> in 4.2.2). `extensions_refresh` names it in its `hint`, and a
+> `push_warning` also appears in the editor's Output panel. When the file does
+> not compile, the `hint` says to fix it instead. **Adding** and **removing**
+> extensions still apply live on 4.2. Godot 4.3+ applies all changes (add / edit /
+> remove) live.
 
 **Editor focus required:** Godot's `EditorFileSystem` only scans for external
 file changes when the editor window regains focus. If you create or modify
@@ -1329,7 +1337,7 @@ non-blocking; each has a practical workaround:
 | No persistent configuration API | Extensions store settings ad-hoc | Use `ProjectSettings.set_setting()` for project-level or `ConfigFile` for user-level config |
 | No progress/streaming for long operations | Long-running operations can't report intermediate status | Use a polling pattern: register a companion `_status` tool the LLM calls to check progress |
 | No inter-extension communication | Extension A can't directly call Extension B's tools | Call `registry.call_command("other_ext.tool", params)` directly (works, but undocumented contract) |
-| In-session **edit** of an existing extension not applied (**Godot 4.2 only**) | A `@tool`-script edit isn't reflected until restart — engine reimport-crash avoidance (`CACHE_MODE_REUSE`). Adding/removing extensions still apply live | Restart the editor to load the edit (4.3+ applies edits live); `extensions_refresh` returns a restart `hint` |
+| In-session **edit** made outside the toolkit not applied (**Godot 4.2 only**) | An edit made outside the toolkit, or to a C# extension, isn't reflected until restart — engine reimport-crash avoidance (`CACHE_MODE_REUSE`). On 4.2.2, an edit made with `script_write` or `script_edit` (or their undo/redo) applies live when it compiles; on 4.2.0 and 4.2.1 every edit waits for a restart; adding/removing extensions still apply live | Make the edit with `script_write` or `script_edit` on 4.2.2, or restart the editor to load it (4.3+ applies edits live); `extensions_refresh` names it in its `hint` |
 
 Each gap is tracked as a post-1.0 improvement candidate. None prevent an
 extension from being built and shipped — they affect convenience, not

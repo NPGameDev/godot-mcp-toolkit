@@ -69,6 +69,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reported and fixed by @benfeather
   ([#41](https://github.com/NPGameDev/godot-mcp-toolkit/issues/41),
   [#42](https://github.com/NPGameDev/godot-mcp-toolkit/pull/42)).
+- Nodes now run a script as it is on disk. `node_set_script` used to set the
+  version the editor first loaded from that path, so after `script_edit`,
+  `script_write` or another editor changed the file, a `@tool` script kept
+  running its old code. Now `node_set_script` reloads a changed
+  file, and a node that already has the script runs the new code too.
+  `script_write` and `script_edit` reload the script themselves, and so do their
+  undo and redo. The toolkit never loads a file that
+  doesn't compile: when the file changed since the editor loaded it and does not
+  compile, the `node_set_script` response carries `valid: false` and a hint that
+  says so and points at `script_check`, and the nodes keep the code they had.
+  The exception is Godot 4.4+ with an editor window, and 4.4 headless, where the
+  editor still reloads a changed file by itself, broken or not. For a file changed outside the
+  toolkit, the stale-instance hint on `node_call_method` now tells you to set the
+  script again instead of relaunching the editor, and `script_write` no longer
+  carries that hint. On Godot 4.2.2, an extension edit made with `script_write` or
+  `script_edit` now applies live when it compiles, while one made outside the
+  toolkit still needs an editor restart and `extensions_refresh` names it.
+  None of this applies to Godot 4.2.0 and 4.2.1, where reloading a script in
+  place can crash the editor (fixed in 4.2.2): there the toolkit reloads nothing,
+  a changed script still needs an editor relaunch, `script_write` and
+  `node_call_method` keep saying so, and every extension edit still needs a
+  restart. When a GDScript extension's loaded source changes (a reload), the
+  toolkit now registers its tools again, even for a body-only change.
+  Reported and first fixed by @benfeather
+  ([#43](https://github.com/NPGameDev/godot-mcp-toolkit/issues/43),
+  [#45](https://github.com/NPGameDev/godot-mcp-toolkit/pull/45)).
 - `input_map_event` with `bind` on a built-in action, such as `ui_left`, now keeps
   the events `project.godot` saves for it, or its default events when it saves
   none, joypad events included. Before, the bind saved the editor's keyboard-only

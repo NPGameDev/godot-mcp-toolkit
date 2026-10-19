@@ -343,15 +343,20 @@ Extensions are monitored at runtime and changes are picked up automatically:
   rebuild), then alt-tab or call `extensions_refresh`.
 - **Programmatic scan:** call the `extensions_refresh` MCP tool to force a scan
   without editor focus — useful when files are created externally. The watcher
-  compares method lists and re-registers on change; rapid edits debounce to one
-  rescan (500ms window).
+  compares method lists and the GDScript source it loaded, and re-registers when
+  either changes, a body-only reload included; rapid edits debounce to one rescan
+  (500ms window).
 
-> **Godot 4.2 only — editing an existing extension needs an editor restart.** On
-> 4.2 the loader reads through the editor cache (a crash-avoidance measure), so an
-> in-session **edit** to an already-loaded extension is not applied until you
-> restart the editor; `extensions_refresh` returns a restart hint naming the
-> changed extension. **Adding** and **removing** extensions still apply live on
-> 4.2. Godot 4.3+ applies add / edit / remove all live.
+> **Godot 4.2 only — an edit made outside the toolkit needs an editor restart.** On
+> 4.2 the loader reads through the editor cache (a crash-avoidance measure). On
+> 4.2.2, an extension edit made with `script_write` or `script_edit` (or their
+> undo/redo) applies live when it compiles. An edit made outside the toolkit, or
+> to a C# extension, needs an editor restart, and so does every extension edit on
+> 4.2.0 and 4.2.1, where the toolkit never reloads a script in place (an engine
+> crash, fixed in 4.2.2). `extensions_refresh` names it in its hint. When the
+> file does not compile, the hint says to fix it instead.
+> **Adding** and **removing** extensions still apply live on 4.2. Godot 4.3+
+> applies add / edit / remove all live.
 
 ## Concurrency
 
@@ -424,7 +429,8 @@ Three checks confirm a new extension works end-to-end:
 
 - **After an edit:** hot-reload picks up added/removed tools automatically; if the
   client hasn't noticed, call `extensions_refresh` (see "Hot-reload behavior" for
-  the Godot 4.2 edit-restart caveat).
+  the Godot 4.2 caveat for edits made outside the toolkit, and for every edit on
+  4.2.0 and 4.2.1).
 - **After a toolkit update:** re-run the 3-step self-check, re-read the decision
   table for new `mark_*` / `with_*` verbs, and re-check your `min`/`max` Godot
   gates against newly-supported versions.

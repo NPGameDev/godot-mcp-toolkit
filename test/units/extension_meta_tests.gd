@@ -2,7 +2,8 @@
 extends RefCounted
 ## Extension subsystem leaf unit tests: load collision guard, candidate/addon
 ## detection, onboarding wizard specs, command-entry wire shape, watcher set-diff,
-## and the extension path-guard dispatch enforcement.
+## the Godot 4.2 unapplied-edit verdicts and their refresh hint, the re-registration
+## after a reload, and the extension path-guard dispatch enforcement.
 ##
 ## run() is a coroutine — the path-guard group awaits registry.call_command(); the
 ## orchestrator must `await` this module's run().
@@ -11,6 +12,11 @@ const ExtensionSupport := preload("res://addons/godot_mcp_toolkit/extensions/ser
 const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_meta_commands.gd")
 const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
+const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
+
+const UNAPPLIED_EDIT_FIXTURE := "user://extension_unapplied_edit_fixture.gd"
+const UNAPPLIED_EDIT_CS_FIXTURE := "user://extension_unapplied_edit_fixture.cs"
+const REREGISTER_FIXTURE := "user://extension_reregister_fixture.gd"
 
 
 static func run(testing) -> void:
@@ -19,6 +25,12 @@ static func run(testing) -> void:
 	_test_onboarding_wizard_specs(testing)
 	_test_build_command_entry(testing)
 	_test_compute_class_diff(testing)
+	_test_unapplied_edit(testing)
+	_test_unapplied_edit_ledger(testing)
+	_test_unapplied_edit_hint(testing)
+	_test_unapplied_edit_hint_patch_gate(testing)
+	_test_needs_reregister(testing)
+	_test_reregister_after_reload(testing)
 	await _test_extension_path_guard(testing)
 
 
@@ -321,6 +333,157 @@ static func _test_compute_class_diff(testing) -> void:
 			"empty inputs → empty delta")
 
 	print("")
+
+
+# --- Godot 4.2 unapplied-edit verdicts --------------------------------------
+# On 4.2 the loader reads the editor's cached script, so an extension edit is live
+# once that script holds the file's text. unapplied_edit sorts the rest: an edit
+# that waits for a restart, and a file that does not compile, which waits for a fix.
+# A user:// fixture stands in for the extension; the verdict needs no editor.
+static func _test_unapplied_edit(testing) -> void:
+	testing.begin("Extension 4.2 unapplied-edit verdicts (live / restart / fix)")
+	_write_fixture(UNAPPLIED_EDIT_FIXTURE, _fixture_source(1))
+	var cached: Script = ResourceLoader.load(UNAPPLIED_EDIT_FIXTURE)
+	var loaded_hash := ExtensionSupport.hash_extension_source(UNAPPLIED_EDIT_FIXTURE)
+	testing.eq(ExtensionSupport.unapplied_edit(UNAPPLIED_EDIT_FIXTURE, loaded_hash),
+			ExtensionSupport.EDIT_LIVE, "an unchanged file → live")
+
+	_write_fixture(UNAPPLIED_EDIT_FIXTURE, _fixture_source(2))
+	testing.eq(ExtensionSupport.unapplied_edit(UNAPPLIED_EDIT_FIXTURE, loaded_hash),
+			ExtensionSupport.EDIT_NEEDS_RESTART, "an edit the cached script lacks → needs a restart")
+
+	Helpers.reload_script_from_disk(cached)
+	testing.eq(ExtensionSupport.unapplied_edit(UNAPPLIED_EDIT_FIXTURE, loaded_hash),
+			ExtensionSupport.EDIT_LIVE, "the same edit once a toolkit write reloaded the cached script → live")
+
+	_write_fixture(UNAPPLIED_EDIT_FIXTURE, "@tool\nextends RefCounted\n\nvar = = =\n")
+	testing.eq(ExtensionSupport.unapplied_edit(UNAPPLIED_EDIT_FIXTURE, loaded_hash),
+			ExtensionSupport.EDIT_NEEDS_FIX, "a file that does not compile → needs a fix, not a restart")
+	testing.eq(cached.source_code, _fixture_source(2), "the verdict leaves the cached script as it was")
+
+	_write_fixture(UNAPPLIED_EDIT_CS_FIXTURE, "public partial class MCPToolkitFixture {}\n")
+	testing.eq(ExtensionSupport.unapplied_edit(UNAPPLIED_EDIT_CS_FIXTURE, 1),
+			ExtensionSupport.EDIT_NEEDS_RESTART, "an edited C# extension → needs a restart")
+
+	_remove_fixture(UNAPPLIED_EDIT_FIXTURE)
+	_remove_fixture(UNAPPLIED_EDIT_CS_FIXTURE)
+	print("")
+
+
+# The watcher files each verdict in one ledger and clears the class from the other.
+static func _test_unapplied_edit_ledger(testing) -> void:
+	testing.begin("Extension 4.2 nudge ledger follows the verdict")
+	var watcher := ExtensionWatcher.new()
+	watcher._record_unapplied_edit("FixExt", "res://fix_ext.gd", ExtensionSupport.EDIT_NEEDS_FIX)
+	testing.ok(watcher._pending_fix_modifies.has("FixExt"), "a file that does not compile → the fix ledger")
+	testing.ok(not watcher._pending_restart_modifies.has("FixExt"), "... and not the restart ledger")
+	watcher._record_unapplied_edit("FixExt", "res://fix_ext.gd", ExtensionSupport.EDIT_NEEDS_RESTART)
+	testing.ok(watcher._pending_restart_modifies.has("FixExt"), "a fixed file that still waits → the restart ledger")
+	testing.ok(not watcher._pending_fix_modifies.has("FixExt"), "... and out of the fix ledger")
+	watcher._record_unapplied_edit("FixExt", "res://fix_ext.gd", ExtensionSupport.EDIT_LIVE)
+	testing.ok(watcher._pending_restart_modifies.is_empty() and watcher._pending_fix_modifies.is_empty(),
+			"a live edit → in neither ledger")
+	print("")
+
+
+static func _test_unapplied_edit_hint(testing) -> void:
+	testing.begin("Extension 4.2 refresh hint for edits that are not live")
+	testing.eq(ExtensionWatcher.unapplied_edit_hint(PackedStringArray(), PackedStringArray()), "",
+			"nothing waits → no hint")
+	var restart_hint := ExtensionWatcher.unapplied_edit_hint(PackedStringArray(["OutsideExt"]), PackedStringArray())
+	testing.ok(restart_hint.contains("[OutsideExt]") and restart_hint.contains("restart the editor"),
+			"an edit made outside the toolkit → names it and says to restart")
+	var fix_hint := ExtensionWatcher.unapplied_edit_hint(PackedStringArray(), PackedStringArray(["BrokenExt"]))
+	testing.ok(fix_hint.contains("[BrokenExt]") and fix_hint.contains("script_check"),
+			"a file that does not compile → names it and points at script_check")
+	testing.ok(not fix_hint.to_lower().contains("restart"), "... and never says to restart")
+	var both_hint := ExtensionWatcher.unapplied_edit_hint(
+			PackedStringArray(["OutsideExt"]), PackedStringArray(["BrokenExt"]))
+	testing.ok(both_hint.contains("[OutsideExt]") and both_hint.contains("[BrokenExt]"), "both kinds → one hint names each")
+	print("")
+
+
+# On Godot 4.2.0 and 4.2.1 the toolkit reloads nothing in place, so an edit made with
+# script_write or script_edit waits for a restart like any other.
+static func _test_unapplied_edit_hint_patch_gate(testing) -> void:
+	testing.begin("Extension 4.2.0/4.2.1 refresh hint: every edit waits for a restart")
+	var gated := ExtensionWatcher.unapplied_edit_hint(PackedStringArray(["WrittenExt"]), PackedStringArray(), false)
+	testing.ok(gated.contains("[WrittenExt]") and gated.contains("restart the editor"),
+			"an edit that waits → names it and says to restart")
+	testing.ok(gated.contains("4.2.0 and 4.2.1"), "... names the patch releases")
+	testing.ok(not gated.contains("outside script_write"),
+			"... and does not blame an edit made outside the toolkit")
+	var fix_hint := ExtensionWatcher.unapplied_edit_hint(PackedStringArray(), PackedStringArray(["BrokenExt"]), false)
+	testing.ok(fix_hint.contains("script_check") and not fix_hint.to_lower().contains("restart"),
+			"a file that does not compile → still the fix advice, never restart")
+	print("")
+
+
+static func _test_needs_reregister(testing) -> void:
+	testing.begin("Watcher re-registers a class whose tools or loaded source changed")
+	var methods: Array[String] = ["ext.a"]
+	var meta := {"ext.a": "{}"}
+	var probe := {"methods": methods, "metadata": meta, "source_hash": 11}
+	testing.ok(not ExtensionWatcher.needs_reregister(probe, ["ext.a"], meta, 11), "nothing changed → no re-register")
+	testing.ok(ExtensionWatcher.needs_reregister(probe, ["ext.a"], meta, 12),
+			"a body-only change to the source the loader reads → re-register")
+	testing.ok(ExtensionWatcher.needs_reregister(probe, ["ext.a", "ext.b"], meta, 11), "a tool removed → re-register")
+	testing.ok(ExtensionWatcher.needs_reregister(probe, ["ext.a"], {"ext.a": "{\"x\":1}"}, 11),
+			"changed metadata → re-register")
+	var csharp_probe := {"methods": methods, "metadata": meta, "source_hash": 0}
+	testing.ok(not ExtensionWatcher.needs_reregister(csharp_probe, ["ext.a"], meta, 99),
+			"no readable source (C#) → tools decide alone")
+	print("")
+
+
+# The probe reports the hash of the source it read. After a reload of the cached script
+# (on 4.2, where the probe reads that cache) or a plain file change (4.3+, where it reads
+# the file), a body-only edit shows up as a new hash with the same tools.
+static func _test_reregister_after_reload(testing) -> void:
+	testing.begin("Watcher re-registers an extension after a body-only reload")
+	_write_fixture(REREGISTER_FIXTURE, _extension_fixture_source(1))
+	var first := ExtensionSupport.probe_extension("ReregisterFixture", REREGISTER_FIXTURE, null)
+	var first_hash := int(first["source_hash"])
+	testing.ok(ExtensionSupport.arrays_equal(first["methods"], ["fixture_ext.value"]) and first_hash != 0,
+			"the probe reports the fixture's tool and a source hash")
+	testing.ok(not ExtensionWatcher.needs_reregister(first, first["methods"], first["metadata"], first_hash),
+			"the same source → no re-register")
+
+	_write_fixture(REREGISTER_FIXTURE, _extension_fixture_source(2))
+	Helpers.reload_cached_script(REREGISTER_FIXTURE)
+	var second := ExtensionSupport.probe_extension("ReregisterFixture", REREGISTER_FIXTURE, null)
+	testing.ok(ExtensionSupport.arrays_equal(second["methods"], first["methods"])
+			and second["metadata"] == first["metadata"],
+			"a body-only edit keeps the tools and their metadata")
+	testing.ok(ExtensionWatcher.needs_reregister(second, first["methods"], first["metadata"], first_hash),
+			"... but its new source → re-register")
+
+	_remove_fixture(REREGISTER_FIXTURE)
+	print("")
+
+
+# A named method, not a lambda: reloading a script that made a lambda still held
+# elsewhere is unsafe on Godot 4.2.0 and 4.2.1, where these tests also run.
+static func _extension_fixture_source(value: int) -> String:
+	return ("@tool\nextends MCPToolkitExtension\n\n\n"
+		+ "func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:\n"
+		+ "\tregistry.add(\"fixture_ext.value\", _value, MCPToolkitExtensionOptions.new(\"Fixture value\"))\n\n\n"
+		+ "func _value(_params: Dictionary) -> Dictionary:\n"
+		+ "\treturn {\"success\": true, \"result\": %d}\n") % value
+
+
+static func _fixture_source(version: int) -> String:
+	return "@tool\nextends RefCounted\n\n\nfunc version() -> int:\n\treturn %d\n" % version
+
+
+static func _write_fixture(path: String, source: String) -> void:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	file.store_string(source)
+	file.close()
+
+
+static func _remove_fixture(path: String) -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
 
 
 # --- Extension path-guard (dispatch enforcement) --------------------------
