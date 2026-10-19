@@ -95,6 +95,14 @@ while [[ $# -gt 0 ]]; do
     --compatible-server)
       shift
       [[ $# -gt 0 ]] || { echo "error: --compatible-server requires a version (X.Y.Z)." >&2; usage; exit 1; }
+      # A flag in the value's place means the version was left out; taking it as
+      # the version would hide that behind a semver error.
+      if [[ "$1" == "--keep-compatible-server" ]]; then
+        echo "error: pass --compatible-server <X.Y.Z> or --keep-compatible-server, not both." >&2; usage; exit 1
+      fi
+      if [[ "$1" == -* ]]; then
+        echo "error: --compatible-server requires a version (X.Y.Z), not the flag '$1'." >&2; usage; exit 1
+      fi
       COMPATIBLE_SERVER="$1"
       ;;
     --keep-compatible-server) KEEP_COMPATIBLE_SERVER=1 ;;

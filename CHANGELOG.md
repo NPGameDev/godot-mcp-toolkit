@@ -78,9 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Write .mcp.json** now pins the server to the version this toolkit was tested
   with (`@npgamedev/godot-mcp-server@<version>`), so a new server release no
   longer lands on every user's machine, version warning included, on the day it
-  ships. This is
-  **Pinned** mode, the default. **Latest** mode runs the newest server on every
-  start instead. The dock's `.mcp.json` panel shows which server the file runs and
+  ships. This is **Pinned** mode, the default. **Latest** mode runs the newest
+  server on every start instead. The dock's `.mcp.json` panel shows which server the file runs and
   switches between the two modes, and the setup wizard's `.mcp.json` step offers
   the same choice. When a file the toolkit wrote no longer matches, the panel turns
   amber and offers to update it; a version set by hand gets a quiet offer to

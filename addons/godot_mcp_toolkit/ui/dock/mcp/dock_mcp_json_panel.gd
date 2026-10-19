@@ -84,6 +84,15 @@ var _plain_style: StyleBoxEmpty = null
 # before the server applies it (a client→server relaunch is what takes effect).
 var _read_only_active: bool = false
 
+# The spec this machine last wrote (MCPJsonWriteFlow.read_last_written_spec),
+# cached because Godot 4.2 reloads the editor's project metadata file on every
+# read. Re-read when the file's spec or the desired spec moves away from
+# _record_basis ([on_disk, desired] at the last read: any surface's write, a hand
+# edit or a setting change), and on every read-only sync, which follows a dock
+# write; an empty basis forces the next read.
+var _last_written_spec: String = ""
+var _record_basis: Array = []
+
 
 func _init(mcp_json_button: Button, toast: Callable, write_flow: MCPJsonWriteFlow) -> void:
 	_mcp_json_btn = mcp_json_button
@@ -155,12 +164,14 @@ func refresh() -> void:
 	var btn_tip := "Open .mcp.json in the system editor"
 	var highlight := false
 	var readable := false
-	if not MCPJsonSync.has_mcp_json():  # live file FACT — safe to show live
+	# One parse per tick serves the presence, validity and server-spec checks.
+	var file_state := MCPJsonSync.read_file_state()
+	if not bool(file_state["present"]):  # live file FACT — safe to show live
 		warn_text = "⚠️ NO .mcp.json — the MCP client has nothing to connect with. Use the \"Write .mcp.json\" button below to create one from the bundled template."
 		btn_text = "Write .mcp.json"
 		btn_tip = "No .mcp.json found — write one from the bundled template"
 		highlight = true
-	elif MCPJsonSync.is_malformed():  # live file FACT — present but invalid JSON
+	elif bool(file_state["malformed"]):  # live file FACT — present but invalid JSON
 		warn_text = "⚠️ .mcp.json isn't valid JSON, or its mcpServers isn't an object — the MCP client can't read it, so it won't connect. Open it to fix it, or delete it and click Write."
 		btn_tip = "Open .mcp.json in the system editor to fix the JSON (or delete it, then write a new one)"
 		highlight = true
@@ -177,7 +188,7 @@ func refresh() -> void:
 		_warning_label.visible = has_warning
 		if has_warning:
 			_warning_label.text = warn_text
-	_refresh_pin_row(readable)
+	_refresh_pin_row(readable, str(file_state["spec"]))
 	# This panel shows for a warning or for the row alone; only a warning gets the box.
 	visible = has_warning or (_pin_row != null and _pin_row.visible)
 	add_theme_stylebox_override("panel", _warning_style if has_warning else _plain_style)
@@ -198,6 +209,7 @@ func refresh() -> void:
 ## polling would falsely show read-only before the server actually applies it.
 func sync_read_only_state() -> void:
 	_read_only_active = MCPJsonSync.has_mcp_json() and MCPJsonSync.is_read_only()
+	_record_basis = []
 	refresh()
 
 
@@ -228,12 +240,14 @@ static func pin_row_state(
 	var pin_text := "Pin to %s" % compatible
 	var nudge := MCPJsonSync.nudge_state(on_disk, last_written, desired)
 	var mode := MCPJsonSync.pin_mode(version_setting)
-	if nudge == MCPJsonSync.NUDGE_UNPINNED:
+	if nudge == MCPJsonSync.NUDGE_UNPINNED and mode == MCPJsonSync.MODE_PINNED:
 		state["text"] = ("Server: unpinned — it downloads every new release. Pin it to %s, "
 			+ "the version this toolkit was tested with.") % compatible
 		_set_button(state, pin_text, _ACTION_PIN, compatible)
 		state["amber"] = true
-	elif nudge == MCPJsonSync.NUDGE_DIFFERS:
+	elif nudge == MCPJsonSync.NUDGE_DIFFERS or nudge == MCPJsonSync.NUDGE_UNPINNED:
+		# An unpinned entry under an exact Custom version is brought to that version;
+		# offering the compatible pin would clear the team's setting.
 		var wanted := _spec_label(desired)
 		state["text"] = ".mcp.json runs server %s; this project wants %s." % [_spec_label(on_disk), wanted]
 		_set_button(state, "Update to %s" % wanted, _ACTION_UPDATE, wanted)
@@ -272,22 +286,25 @@ static func _spec_label(spec: String) -> String:
 	return spec
 
 
-# Repaints the server-spec row from the file, this machine's record and settings,
-# and the project setting. Hidden while the file is missing or unreadable (the
-# warning owns those states) or has no toolkit entry, unless a local build is
-# wanted, which the row then says is not in the file yet.
-func _refresh_pin_row(readable: bool) -> void:
+# Repaints the server-spec row from the file's spec on_disk, this
+# machine's record and settings, and the project setting. Hidden while the file is
+# missing or unreadable (the warning owns those states) or has no toolkit entry,
+# unless a local build is wanted, which the row then says is not in the file yet.
+func _refresh_pin_row(readable: bool, on_disk: String) -> void:
 	if _pin_row == null:
 		return
 	var desired := MCPJsonSync.get_desired_spec(MCPJsonWriteFlow.read_local_path_setting())
-	var on_disk := MCPJsonSync.get_server_spec() if readable else MCPJsonSync.SPEC_UNKNOWN
 	var wants_local := desired.begins_with(MCPJsonSync.SPEC_LOCAL_PREFIX)
 	_pin_row.visible = readable and (on_disk != MCPJsonSync.SPEC_UNKNOWN or wants_local)
 	if not _pin_row.visible:
 		return
+	var basis := [on_disk, desired]
+	if basis != _record_basis:
+		_last_written_spec = MCPJsonWriteFlow.read_last_written_spec()
+		_record_basis = basis
 	var state := pin_row_state(
-			on_disk, MCPJsonWriteFlow.read_last_written_spec(), desired,
-			str(ProjectSettings.get_setting(MCPJsonSync.SERVER_VERSION_SETTING, "")),
+			on_disk, _last_written_spec, desired,
+			MCPJsonSync.read_version_setting(),
 			VersionUtils.COMPATIBLE_SERVER_VERSION)
 	_pin_label.text = str(state["text"])
 	_pin_label.add_theme_color_override("font_color", _AMBER if bool(state["amber"]) else _GREY)
@@ -326,10 +343,10 @@ func _on_pin_button_pressed() -> void:
 	var question := ""
 	match _pin_action:
 		_ACTION_USE_LATEST:
-			_save_version_setting(MCPJsonSync.LATEST_SETTING_VALUE)
+			MCPJsonSync.save_version_setting(MCPJsonSync.LATEST_SETTING_VALUE)
 			question = "Use the latest server"
 		_ACTION_PIN:
-			_save_version_setting("")
+			MCPJsonSync.save_version_setting("")
 			question = "Pin the server to %s" % _pin_target
 		_ACTION_UPDATE:
 			question = "Update the server to %s" % _pin_target
@@ -341,11 +358,6 @@ func _on_pin_button_pressed() -> void:
 		+ "Restart your MCP client afterwards — the first launch after a version change downloads the server.") % [
 			question, MCPJsonSync.get_own_entry_key()]
 	_write_flow.write(false, _on_mcp_json_write_result, body)
-
-
-static func _save_version_setting(value: String) -> void:
-	ProjectSettings.set_setting(MCPJsonSync.SERVER_VERSION_SETTING, value)
-	ProjectSettings.save()
 
 
 # Result sink this panel supplies to the shared write flow — maps the

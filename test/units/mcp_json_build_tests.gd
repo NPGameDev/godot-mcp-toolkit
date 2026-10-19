@@ -4,10 +4,10 @@ extends RefCounted
 ## (MCPJsonSync.build_server_entry): the bare npx (release) / node (dev) shapes on
 ## macOS, Linux, and any unknown OS; the Windows cmd /c npx + node-dev shapes; the
 ## pinned release form per OS; and the entry boundary — the builder emits only
-## {command, args}, never an env. Also
-## covers the env layering (MCPJsonSync.merge_server_env): the template base plus an
-## existing file's user GODOT_MCP_* keys, a first-create from the template alone, and
-## the merge never mutating its inputs. The file-level write is covered against a
+## {command, args}, never an env. Also covers the env layering
+## (MCPJsonSync.merge_server_env): the template base plus an existing file's user
+## GODOT_MCP_* keys, a first-create from the template alone, and the merge never
+## mutating its inputs. The file-level write is covered against a
 ## fixture .mcp.json at the project root (restored afterwards): other servers and
 ## top-level keys survive (MCPJsonSync.merge_document), a malformed file is never
 ## written, and a confirm is due only for a differing toolkit entry.

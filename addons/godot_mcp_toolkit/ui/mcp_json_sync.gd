@@ -392,14 +392,23 @@ static func desired_classification(version_setting: String, compatible: String, 
 ## classify_server_entry]), found the way the server finds its own entry; [constant
 ## SPEC_UNKNOWN] when the file is missing, malformed or has no such entry.
 static func get_server_spec() -> String:
+	return classify_server_entry(_read_file_entry(false))
+
+
+## The file's state from one parse, for a caller that polls it: {present, malformed,
+## spec}. [code]present[/code] and [code]malformed[/code] are [method has_mcp_json]
+## and [method is_malformed]; [code]spec[/code] is [method get_server_spec], or
+## [constant SPEC_UNKNOWN] while the file is missing or malformed.
+static func read_file_state() -> Dictionary:
+	var state := {"present": has_mcp_json(), "malformed": false, "spec": SPEC_UNKNOWN}
+	if not state["present"]:
+		return state
 	var parsed: Variant = _parse_mcp_json()
 	if parsed == null:
-		return SPEC_UNKNOWN
-	var servers: Dictionary = parsed.get("mcpServers", {})
-	var server_key := _find_server_key(servers)
-	if server_key.is_empty():
-		return SPEC_UNKNOWN
-	return classify_server_entry(servers[server_key])
+		state["malformed"] = true
+		return state
+	state["spec"] = classify_server_entry(_entry_in(parsed, false))
+	return state
 
 
 ## The classification a write would produce on this machine now (see [method
@@ -408,8 +417,24 @@ static func get_server_spec() -> String:
 ## none) and the GODOT_MCP_DEV_SERVER_PATH environment variable.
 static func get_desired_spec(local_path_setting: String = "") -> String:
 	return desired_classification(
-			_read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION,
+			read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION,
 			_resolve_dev_path(local_path_setting))
+
+
+## The project's [constant SERVER_VERSION_SETTING] value, "" when unset.
+static func read_version_setting() -> String:
+	return str(ProjectSettings.get_setting(SERVER_VERSION_SETTING, ""))
+
+
+## Set the project's [constant SERVER_VERSION_SETTING] to [param value] and save
+## project.godot, where the team shares it. A failed save is logged as a warning;
+## the setting still applies to this editor session. Returns the save's error code.
+static func save_version_setting(value: String) -> int:
+	ProjectSettings.set_setting(SERVER_VERSION_SETTING, value)
+	var error := ProjectSettings.save()
+	if error != OK:
+		push_warning("[MCP] could not save project.godot (err %d): the server version setting applies to this session only" % error)
+	return error
 
 
 ## What to tell the user about the file's server spec [param on_disk], given
@@ -462,9 +487,8 @@ static func _is_exact_version(version: String) -> bool:
 ##
 ## [param local_path_setting] is the machine's local server path setting ("" for
 ## none). After a successful write and before on_result, [param on_written] (when
-## valid) receives (spec: String, changed: bool): the written entry's
-## classification (see [method classify_server_entry]) and whether it differs from
-## the entry the file held before.
+## valid) receives (spec: String): the written entry's classification (see
+## [method classify_server_entry]).
 static func write_from_template(
 		force_overwrite: bool, on_result: Callable,
 		local_path_setting: String = "", on_written: Callable = Callable()) -> void:
@@ -480,7 +504,7 @@ static func write_from_template(
 		# Report without writing so no change happens unconfirmed.
 		on_result.call(false, ".mcp.json already has a different entry — update not confirmed", 1, dest)
 		return
-	var previous_spec := _own_entry_spec()
+	var previous_spec := classify_server_entry(_read_file_entry(true))
 	var entry := _build_entry(local_path_setting)
 	var written_spec := classify_server_entry(entry)
 	var error := _store(dest, _content_with(entry))
@@ -489,7 +513,7 @@ static func write_from_template(
 		return
 	var changed := written_spec != previous_spec
 	if on_written.is_valid():
-		on_written.call(written_spec, changed)
+		on_written.call(written_spec)
 	on_result.call(true, _WRITTEN_RESTART_MESSAGE if changed else _WRITTEN_MESSAGE, 0, "Wrote to " + dest)
 
 
@@ -503,17 +527,25 @@ static func _store(dest: String, content: String) -> int:
 	return OK
 
 
-## The classification of the file's own toolkit entry (see [method _find_own_key]),
-## or [constant SPEC_UNKNOWN] when there is no file or no such entry.
-static func _own_entry_spec() -> String:
+## The toolkit's server entry in .mcp.json as parsed, or null when the file is
+## missing or malformed or has no such entry. [param own_entry_only] picks the key
+## match: the strict [method _find_own_key] a write uses, else the loose
+## [method _find_server_key] that mirrors the server's own read.
+static func _read_file_entry(own_entry_only: bool) -> Variant:
 	var parsed: Variant = _parse_mcp_json()
 	if parsed == null:
-		return SPEC_UNKNOWN
-	var servers: Dictionary = parsed.get("mcpServers", {})
-	var server_key := _find_own_key(servers)
+		return null
+	return _entry_in(parsed, own_entry_only)
+
+
+## The toolkit's server entry in a parsed [param document] (see [method
+## _read_file_entry] for [param own_entry_only]), or null when it has none.
+static func _entry_in(document: Dictionary, own_entry_only: bool) -> Variant:
+	var servers: Dictionary = document.get("mcpServers", {})
+	var server_key := _find_own_key(servers) if own_entry_only else _find_server_key(servers)
 	if server_key.is_empty():
-		return SPEC_UNKNOWN
-	return classify_server_entry(servers[server_key])
+		return null
+	return servers[server_key]
 
 
 ## Layer the emitted server env, most-general first: the template's base env
@@ -584,7 +616,7 @@ static func _stringify_canonical(value: Variant) -> String:
 ## local path setting writes.
 static func _build_entry(local_path_setting: String = "") -> Dictionary:
 	var dev_server_path := _resolve_dev_path(local_path_setting)
-	var package_spec := resolve_package_spec(_read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION)
+	var package_spec := resolve_package_spec(read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION)
 	var entry := build_server_entry(OS.get_name(), dev_server_path, package_spec)
 	# The template base guarantees GODOT_MCP_CONFIG_VERSION; the file's own entry's
 	# env is preserved so a rewrite never strips a user's GODOT_MCP_* keys. The
@@ -596,11 +628,6 @@ static func _build_entry(local_path_setting: String = "") -> Dictionary:
 	return entry
 
 
-## The project's [constant SERVER_VERSION_SETTING] value, "" when unset.
-static func _read_version_setting() -> String:
-	return str(ProjectSettings.get_setting(SERVER_VERSION_SETTING, ""))
-
-
 ## The local server path for [param local_path_setting], falling back to the
 ## GODOT_MCP_DEV_SERVER_PATH environment variable (see [method resolve_dev_server_path]).
 static func _resolve_dev_path(local_path_setting: String) -> String:
@@ -610,14 +637,7 @@ static func _resolve_dev_path(local_path_setting: String) -> String:
 ## The env dict of the toolkit's own entry in .mcp.json (see [method _find_own_key]),
 ## or {} when there is no file, no such entry or no env.
 static func _read_own_env() -> Dictionary:
-	var parsed: Variant = _parse_mcp_json()
-	if parsed == null:
-		return {}
-	var servers: Dictionary = parsed.get("mcpServers", {})
-	var server_key := _find_own_key(servers)
-	if server_key.is_empty():
-		return {}
-	return _entry_env(servers[server_key])
+	return _entry_env(_read_file_entry(true))
 
 
 ## The bundled template's server-entry env dict (the write's base env), or {} when

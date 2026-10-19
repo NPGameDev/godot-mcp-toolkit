@@ -154,7 +154,11 @@ func _spec_mcp_json(mcp_exists: bool) -> Dictionary:
 		+ "Download it from https://nodejs.org if not installed.\n\n")
 	if mcp_exists:
 		return {
-			"text": intro + "An .mcp.json already exists in your project.",
+			# Continue keeps the file as it is, so the choice must say it takes
+			# effect only through a write.
+			"text": intro + (
+				"An .mcp.json already exists in your project. The server choice "
+				+ "below applies only if you press Write .mcp.json."),
 			"ok_label": "Continue (keep existing .mcp.json)",
 			"buttons": [{
 				"label": "Write .mcp.json",
@@ -261,7 +265,7 @@ func _build_pin_choice(text: String) -> VBoxContainer:
 			"Uses the server version this toolkit was tested with. Updating the toolkit updates the server.")
 	_latest_box = _add_choice(box, group, "Latest",
 			"Downloads the newest server on every launch; may show a version warning until you update the toolkit.")
-	var version_setting := str(ProjectSettings.get_setting(MCPJsonSync.SERVER_VERSION_SETTING, ""))
+	var version_setting := MCPJsonSync.read_version_setting()
 	var mode := MCPJsonSync.pin_mode(version_setting)
 	_pinned_box.button_pressed = mode == MCPJsonSync.MODE_PINNED
 	_latest_box.button_pressed = mode == MCPJsonSync.MODE_LATEST
@@ -295,12 +299,10 @@ func _apply_pin_choice() -> void:
 		chosen = MCPJsonSync.MODE_LATEST
 	else:
 		return
-	var current := str(ProjectSettings.get_setting(MCPJsonSync.SERVER_VERSION_SETTING, ""))
-	if MCPJsonSync.pin_mode(current) == chosen:
+	if MCPJsonSync.pin_mode(MCPJsonSync.read_version_setting()) == chosen:
 		return
-	var value := MCPJsonSync.LATEST_SETTING_VALUE if chosen == MCPJsonSync.MODE_LATEST else ""
-	ProjectSettings.set_setting(MCPJsonSync.SERVER_VERSION_SETTING, value)
-	ProjectSettings.save()
+	MCPJsonSync.save_version_setting(
+			MCPJsonSync.LATEST_SETTING_VALUE if chosen == MCPJsonSync.MODE_LATEST else "")
 
 
 func _clear_content_refs() -> void:

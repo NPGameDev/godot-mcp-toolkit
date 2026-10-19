@@ -6,8 +6,9 @@
 #   - cs_rewrite sets both on temp copies, keeping LF and CRLF line endings;
 #   - cs_probe_npm, against a stubbed npm, accepts a published version and
 #     refuses an unpublished one and an unreachable registry;
-#   - release.sh refuses neither pin flag, both, and a malformed version while it
-#     is still parsing its arguments, before any git command.
+#   - release.sh refuses neither pin flag, both, a flag in the version's place
+#     and a malformed version while it is still parsing its arguments, before
+#     any git command.
 #
 # Usage: bash scripts/test_compatible_server.sh   (from anywhere)
 # Exit 0 = all passed, 1 = a check failed.
@@ -136,6 +137,14 @@ run_release 1.1.0 --dry-run --compatible-server 1.0.4 --keep-compatible-server
 check "both flags: refused" equals "${RELEASE_STATUS}" "1"
 check "both flags: says not both" contains "${RELEASE_OUT}" "not both"
 check "both flags: no git call" equals "$(contains "${RELEASE_OUT}" "GIT CALLED" && echo yes || echo no)" "no"
+run_release 1.1.0 --dry-run --compatible-server --keep-compatible-server
+check "keep flag as the pin value: refused" equals "${RELEASE_STATUS}" "1"
+check "keep flag as the pin value: says not both" contains "${RELEASE_OUT}" "not both"
+check "keep flag as the pin value: no git call" equals "$(contains "${RELEASE_OUT}" "GIT CALLED" && echo yes || echo no)" "no"
+run_release 1.1.0 --compatible-server --dry-run --keep-compatible-server
+check "another flag as the pin value: refused" equals "${RELEASE_STATUS}" "1"
+check "another flag as the pin value: says a version is required" contains "${RELEASE_OUT}" "requires a version (X.Y.Z), not the flag '--dry-run'"
+check "another flag as the pin value: no git call" equals "$(contains "${RELEASE_OUT}" "GIT CALLED" && echo yes || echo no)" "no"
 run_release 1.1.0 --dry-run --compatible-server 1.0
 check "malformed pin: refused" equals "${RELEASE_STATUS}" "1"
 check "malformed pin: says why" contains "${RELEASE_OUT}" "not a well-formed semver"

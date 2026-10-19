@@ -11,6 +11,7 @@ const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const ToolMenu := preload("res://addons/godot_mcp_toolkit/core/tool_menu.gd")
 const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/disable_cleanup_coordinator.gd")
 const MCPJsonEnablePrompt := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_enable_prompt.gd")
+const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autoload_registration.gd")
 
 # The composed collaborator graph (server, dock, export plugin, watchers, debug
@@ -162,7 +163,7 @@ func _register_editor_settings() -> void:
 			"Keep the editor responsive (raise its unfocused frame rate) while an MCP client is connected, so commands stay snappy when the editor is unfocused. Off uses Godot's default low-power unfocused throttle. Raises background CPU. A toggle is also in the MCP Toolkit dock."],
 		"mcp_toolkit/performance/unfocused_responsive_sleep_usec": [TYPE_INT, 16666,
 			"Unfocused process sleep in µs applied while a client is connected (lower = higher fps = snappier but more CPU). 16666 ≈ 60 fps (default); 33333 ≈ 30 fps (power-saver). Not clamped."],
-		"mcp_toolkit/server/local_path": [TYPE_STRING, "",
+		MCPJsonWriteFlow.LOCAL_PATH_SETTING: [TYPE_STRING, "",
 			"Absolute path to a local server build's dist/index.js (this machine only). Empty = the npm package. Falls back to the GODOT_MCP_DEV_SERVER_PATH environment variable. Applies to the next Write .mcp.json."],
 	}
 	for key in settings:

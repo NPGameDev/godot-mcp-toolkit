@@ -32,8 +32,10 @@ otherwise.**
   version, and `.mcp.json.template` carries the same version for a hand copy. Only
   `scripts/release.sh` changes them: every release must pass either
   `--compatible-server X.Y.Z`, which checks that npm has that version before
-  rewriting both files, or `--keep-compatible-server`. A release cannot ship a pin
-  nobody chose, or one that points at an unpublished server.
+  rewriting both files, or `--keep-compatible-server`, which keeps the pin a
+  previous release already checked. A release cannot ship a pin nobody chose. The
+  keep path and a hand edit skip the npm check, so the CI launch job, which runs
+  the written entry, is what catches a pin that does not resolve.
 - **Two modes, plus an escape hatch.** The project setting
   `mcp_toolkit/server/version` decides. Empty is **Pinned** (the constant). `latest`
   is **Latest**. Anything else is used as an npm version, range or tag without

@@ -18,6 +18,8 @@ extends RefCounted
 ## holds a strong Ref to it — see GDScriptLambdaSelfCallable — but the explicit
 ## self-ref makes liveness obvious and owned by the coordinator.)
 
+const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+
 # Machine-wide EditorSettings keys to erase: the keys this plugin registers
 # (mirror of plugin.gd::_register_editor_settings), plus one an earlier version
 # registered, so disabling also erases a copy of it still stored. These are
@@ -30,7 +32,7 @@ const _EDITOR_SETTING_KEYS := [
 	"mcp_toolkit/personal/dock_default_visible",
 	"mcp_toolkit/performance/keep_editor_responsive_unfocused",
 	"mcp_toolkit/performance/unfocused_responsive_sleep_usec",
-	"mcp_toolkit/server/local_path",
+	MCPJsonWriteFlow.LOCAL_PATH_SETTING,
 ]
 
 # Self-reference that keeps this RefCounted alive across the async dialog flow,

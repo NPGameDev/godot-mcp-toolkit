@@ -14,9 +14,10 @@ const GODOT_TESTED_MAX_VERSION := "4.7.0"
 
 ## The server version this toolkit was tested with. "Write .mcp.json" pins the
 ## server to it unless the project's [code]mcp_toolkit/server/version[/code] setting
-## asks for another. Only [code]scripts/release.sh --compatible-server[/code] changes
-## it, and only to a version already published on npm, so a pinned entry always
-## resolves.
+## asks for another. [code]scripts/release.sh --compatible-server[/code] checks that
+## npm has the version before it rewrites this constant;
+## [code]--keep-compatible-server[/code] keeps the value a previous release checked.
+## CI launches the written entry to confirm the pin resolves.
 const COMPATIBLE_SERVER_VERSION := "1.0.4"
 
 

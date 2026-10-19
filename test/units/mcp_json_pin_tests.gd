@@ -28,6 +28,7 @@ static func run(testing) -> void:
 	_test_desired_classification(testing)
 	_test_nudge_state(testing)
 	_test_dock_pin_row_state(testing)
+	_test_dock_pin_row_custom_unpinned(testing)
 	_test_cleanup_list_carries_local_path(testing)
 
 
@@ -177,6 +178,18 @@ static func _test_dock_pin_row_state(testing) -> void:
 	testing.eq(str(local["button"]), "", "a local build hides the button")
 	testing.ok(bool(local["amber"]) and str(local["text"]).contains("not in .mcp.json yet"),
 			"a local build missing from the file is amber")
+	print("")
+
+
+# An unpinned entry under an exact Custom version is brought to that version and the
+# setting is kept; the compatible pin would clear the team's choice.
+static func _test_dock_pin_row_custom_unpinned(testing) -> void:
+	testing.begin("dock pin row — unpinned entry under an exact Custom version")
+	var row: Dictionary = DockMcpJsonPanel.pin_row_state("npx-bare", "", "npx:1.0.5", "1.0.5", _COMPATIBLE)
+	testing.eq(str(row["button"]), "Update to 1.0.5", "offers the update to the Custom version")
+	testing.eq(str(row["action"]), "update", "the update action keeps the setting")
+	testing.eq(str(row["target"]), "1.0.5", "targets the Custom version")
+	testing.ok(bool(row["amber"]), "is amber")
 	print("")
 
 

@@ -53,7 +53,7 @@ func write(force_overwrite: bool = false, on_result: Callable = Callable(), conf
 			on_result.call(ok, message, severity, tooltip)
 	var record_section := _RECORD_SECTION
 	var record_key := _RECORD_KEY
-	var record := func(spec: String, _changed: bool) -> void:
+	var record := func(spec: String) -> void:
 		EditorInterface.get_editor_settings().set_project_metadata(record_section, record_key, spec)
 
 	# The lambdas below capture only locals (report, record, dest, local_path) — a
