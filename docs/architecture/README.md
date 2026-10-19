@@ -580,12 +580,15 @@ it and break the callbacks.
 **Hot-reload.** `extension_watcher` listens for `EditorFileSystem.filesystem_changed` and
 `ProjectSettings.settings_changed`, debounces ~500 ms, computes an added/removed/modified class
 diff, applies it, and broadcasts
-`extensions.changed` to all authed peers. `extensions.list` / `extensions.refresh` are the pull
+`extensions.changed` to all authed peers. A class counts as modified when its tools or the
+GDScript source the loader reads change, so a reload never leaves a registered `Callable`
+from before it. `extensions.list` / `extensions.refresh` are the pull
 counterparts. (Because Claude Code drops `tools/list_changed` notifications, the bridge cannot
 rely on the broadcast alone — the pull path is the reliable one.) On Godot 4.2 the loader reads
-the editor's cached script, which a toolkit write that compiles reloads, so the watcher checks
-each edit against that cache: an edit made outside the toolkit gets a restart hint in
-`extensions.refresh`, and a file that does not compile gets a hint to fix it.
+the editor's cached script, which a toolkit write that compiles reloads (on 4.2.2; the toolkit
+reloads nothing in place on 4.2.0 and 4.2.1), so the watcher checks each edit against that
+cache: an edit that never reached it gets a restart hint in `extensions.refresh`, and a file
+that does not compile gets a hint to fix it.
 
 **The extension API** is the nine public `MCPToolkit*` classes plus the registry facade. C#
 extensions in particular cannot `await` GDScript statics, so the `registry` handed to
