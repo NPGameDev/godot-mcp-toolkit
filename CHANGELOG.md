@@ -20,6 +20,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Thanks to @benfeather
   ([#18](https://github.com/NPGameDev/godot-mcp-toolkit/issues/18),
   [#19](https://github.com/NPGameDev/godot-mcp-toolkit/pull/19)).
+- `scene_instantiate` now takes any file that loads as a scene, as an editor
+  drop does: a `.scn`, or a 3D model imported as a scene (`.glb`, `.gltf`,
+  `.dae`, `.blend`...). Before, it refused every file but a `.tscn`. A model
+  imported as something else, such as an `.obj` imported as a mesh, is still
+  refused. A model the editor hasn't imported yet fails with a message that
+  says to run `editor_refresh` and retry. Thanks to @benfeather
+  ([#39](https://github.com/NPGameDev/godot-mcp-toolkit/issues/39),
+  [#40](https://github.com/NPGameDev/godot-mcp-toolkit/pull/40)).
 - `script_edit` accepts an `edits` array of `old_string`/`new_string`/`replace_all`
   objects and applies them in order in one call, each to the text the earlier
   ones leave. The file is written and checked once, with one undo entry, and
