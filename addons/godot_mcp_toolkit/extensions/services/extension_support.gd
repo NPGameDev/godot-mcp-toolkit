@@ -13,6 +13,12 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
 const _PREFIX := "MCPToolkit"
 
+## [method unapplied_edit] verdicts: nothing waits, the edit waits for an editor
+## restart, or the file does not compile and waits for a fix.
+const EDIT_LIVE := 0
+const EDIT_NEEDS_RESTART := 1
+const EDIT_NEEDS_FIX := 2
+
 # Built-in namespaces that extensions cannot override.
 const RESERVED_PREFIXES: Array[String] = [
 	"scene.", "script.", "editor.", "node.", "runtime.", "server.",
@@ -67,17 +73,19 @@ static func is_godot_42() -> bool:
 
 ## Cache mode for loading extension scripts. 4.2 uses CACHE_MODE_REUSE, which returns
 ## the editor's existing (or in-flight) resource instead of spawning the crash-prone
-## duplicate synchronous load — the trade-off is that an in-session EDIT to an existing
-## extension is not reflected until restart (a cached read; surfaced as a nudge). 4.3+
-## keeps CACHE_MODE_IGNORE: a guaranteed-fresh read (reliable live modify-detection),
-## proven crash-free.
+## duplicate synchronous load, so 4.2 sees an extension edit only once the cached script
+## holds it. A [code]script_write[/code] or [code]script_edit[/code] (or their undo/redo)
+## that compiles reloads the cached script, so that edit applies live; an edit made
+## outside the toolkit, or to a C# extension, waits for an editor restart (surfaced as a
+## nudge). 4.3+ keeps CACHE_MODE_IGNORE: a guaranteed-fresh read (reliable live
+## modify-detection), proven crash-free.
 static func _extension_cache_mode() -> int:
 	return ResourceLoader.CACHE_MODE_REUSE if is_godot_42() else ResourceLoader.CACHE_MODE_IGNORE
 
 
 ## Hash of an extension's source file, or 0 if unreadable. A plain text read — no
 ## script instantiation — so it is safe to call mid-reimport on 4.2. Used to detect
-## an in-session edit the 4.2 cache path cannot apply live.
+## an in-session edit to an extension.
 static func hash_extension_source(script_path: String) -> int:
 	if not FileAccess.file_exists(script_path):
 		return 0
@@ -87,6 +95,49 @@ static func hash_extension_source(script_path: String) -> int:
 	var text := f.get_as_text()
 	f.close()
 	return text.hash()
+
+
+## Hash of the source an extension was just loaded from: on 4.2 that is the cached
+## script, which can differ from the file (see [method _extension_cache_mode]). Falls
+## back to the file for a script with no readable source, such as a C# one.
+static func loaded_source_hash(instance: Object, script_path: String) -> int:
+	var loaded_script: Script = instance.get_script() if instance != null else null
+	if loaded_script is GDScript and not loaded_script.source_code.is_empty():
+		return loaded_script.source_code.hash()
+	return hash_extension_source(script_path)
+
+
+## Why an edit to the extension at [param script_path] is not live on Godot 4.2, given
+## [param loaded_hash], the [method hash_extension_source] of the version the registry
+## runs. The 4.2 loader reads the editor's cached script, so the edit is live once that
+## script holds the file's text, whether its methods were re-registered or its code was
+## reloaded in place. A GDScript file that does not compile is never applied, and a
+## restart would load it broken, so it needs a fix instead. A text read and an in-memory
+## compile, never a resource load, so it is safe while the editor reimports.
+## Returns [constant EDIT_LIVE], [constant EDIT_NEEDS_RESTART] or [constant EDIT_NEEDS_FIX].
+static func unapplied_edit(script_path: String, loaded_hash: int) -> int:
+	if hash_extension_source(script_path) == loaded_hash:
+		return EDIT_LIVE
+	if not script_path.ends_with(".gd"):
+		return EDIT_NEEDS_RESTART
+	var disk_source := FileAccess.get_file_as_string(script_path)
+	if _cached_source(script_path) == disk_source:
+		return EDIT_LIVE
+	if not bool(Modules.GDScriptSource.judge(disk_source, script_path)["valid"]):
+		return EDIT_NEEDS_FIX
+	return EDIT_NEEDS_RESTART
+
+
+# The source of the GDScript the editor has cached for script_path, or "" when none is.
+# Only an already cached script is read, so no load starts here.
+static func _cached_source(script_path: String) -> String:
+	if not ResourceLoader.has_cached(script_path):
+		return ""
+	var cached: Resource = ResourceLoader.load(script_path, "", ResourceLoader.CACHE_MODE_REUSE)
+	if not (cached is GDScript):
+		return ""
+	var cached_script: GDScript = cached
+	return cached_script.source_code
 
 
 static func arrays_equal(a: Array, b: Array) -> bool:
