@@ -257,8 +257,8 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		result["valid"] = validation["valid"]
 		result["diagnostics"] = validation["diagnostics"]
 		# Godot < 4.4 never reloads a cached script after a write, and 4.4+ only on a
-		# later scan, so the nodes already running it would keep the old code. A
-		# source that failed the check above stays out of the cached script.
+		# later scan, so the nodes already running it would keep the old code. The
+		# toolkit never applies a source that failed the check above.
 		if bool(validation["valid"]):
 			Helpers.reload_cached_script(file_path, content)
 

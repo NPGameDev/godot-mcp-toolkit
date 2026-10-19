@@ -19,7 +19,7 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 
 ## Writes [param content] to [param path] for an undo or redo of a script write, then
 ## reloads the script the editor has cached for it, so the nodes running it match the file
-## again. A source that does not compile is written but never reloaded.
+## again. A source that does not compile is written, but the toolkit never applies it.
 func _write_file_silent(path: String, content: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:

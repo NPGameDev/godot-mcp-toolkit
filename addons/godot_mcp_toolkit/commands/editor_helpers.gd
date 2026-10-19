@@ -735,7 +735,8 @@ static func delete_res_file_and_deindex(
 ## [GDScript]. A file that does not compile is never applied: the cached script stays as
 ## it was, so its nodes keep working, and the outcome says why. [param judged_valid_source]
 ## is a source the caller has already judged valid; while the file still holds exactly that
-## text, the compile check is not run a second time.
+## text, the compile check is not run a second time. If the reload itself fails, the
+## script goes back to its previous source and code.
 ##
 ## Returns [code]{reloaded: bool, compile_error: String}[/code]. [code]compile_error[/code]
 ## is "" unless the file's source was refused or the reload itself failed.
@@ -753,9 +754,15 @@ static func reload_script_from_disk(script: Script, judged_valid_source: String 
 			var conflict := str(verdict["conflict"])
 			outcome["compile_error"] = conflict if conflict != "" else "the source on disk does not compile"
 			return outcome
+	var previous_source := script.source_code
 	script.source_code = disk_source
 	var reload_error := script.reload(true)
 	if reload_error != OK:
+		# A failed reload marks the script invalid, so its nodes stop running any of it.
+		# Recompiling the previous source brings that code back, and keeping it as the
+		# source makes the next call see the file as changed and try again.
+		script.source_code = previous_source
+		script.reload(true)
 		outcome["compile_error"] = "the reload failed (%s)" % error_string(reload_error)
 		return outcome
 	outcome["reloaded"] = true

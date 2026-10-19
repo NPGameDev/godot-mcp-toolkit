@@ -1,18 +1,20 @@
 @tool
 extends RefCounted
 ## The shared reload of a script changed on disk (commands/editor_helpers.gd): the
-## compile gate, a file that matches the cached script, the toolkit's own paths, the
-## reload a script write runs, and the reload its undo and redo run through the
-## undo_helpers node. Drives user:// fixtures rewritten between loads; no editor is
-## needed. These cases call the helper directly, so they cannot run against a toolkit
-## without it; the live probe covers the same behaviour through the tools.
+## compile gate, a reload that fails, a file that matches the cached script, the
+## toolkit's own paths, the reload a script write runs, and the reload its undo and
+## redo run through the undo_helpers node. Drives user:// fixtures rewritten between
+## loads; no editor is needed. These cases call the helper directly, so they cannot run
+## against a toolkit without it; the live probe covers the same behaviour through the
+## tools.
 
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
 
 const GATE_FIXTURE := "user://script_reload_gate_fixture.gd"
 const BROKEN_FIRST_FIXTURE := "user://script_reload_broken_first_fixture.gd"
-const UNCHANGED_FIXTURE := "user://script_reload_unchanged_fixture.gd"
+const FAILED_RELOAD_FIXTURE := "user://script_reload_failed_reload_fixture.gd"
+const UNCHANGED_FIXTURE :="user://script_reload_unchanged_fixture.gd"
 const WRITE_FIXTURE := "user://script_reload_write_fixture.gd"
 const UNDO_FIXTURE := "user://script_reload_undo_fixture.gd"
 const NEVER_LOADED_FIXTURE := "user://script_reload_never_loaded_fixture.gd"
@@ -24,6 +26,7 @@ const _BROKEN_SOURCE := "@tool\nextends Node\n\n\nfunc version() -> int:\n\tretu
 static func run(testing) -> void:
 	_test_compile_gate(testing)
 	_test_broken_then_fixed_in_cache(testing)
+	_test_failed_reload_retries(testing)
 	_test_unchanged_file(testing)
 	_test_reload_decision(testing)
 	_test_reload_after_write(testing)
@@ -81,6 +84,42 @@ static func _test_broken_then_fixed_in_cache(testing) -> void:
 
 	fresh.free()
 	_remove(BROKEN_FIRST_FIXTURE)
+	print("")
+
+
+# A reload can fail after the compile check passed. The caller's judged source stands in
+# for that check here: it skips the judge, so the engine's own reload meets the broken
+# file. The cached script must keep its source, so the next call checks the file again.
+static func _test_failed_reload_retries(testing) -> void:
+	testing.begin("script reload: a reload that fails keeps the cached source, so the next call retries")
+	_write_source(FAILED_RELOAD_FIXTURE, _version_source(1))
+	var script: Script = ResourceLoader.load(FAILED_RELOAD_FIXTURE)
+	var running := Node.new()
+	running.set_script(script)
+
+	_write_source(FAILED_RELOAD_FIXTURE, _BROKEN_SOURCE)
+	var printed_errors := Engine.print_error_messages
+	Engine.print_error_messages = false
+	var failed := Helpers.reload_script_from_disk(script, _BROKEN_SOURCE)
+	Engine.print_error_messages = printed_errors
+	testing.ok(not bool(failed["reloaded"]), "the failed reload is not reported as applied")
+	testing.ok(str(failed["compile_error"]).begins_with("the reload failed"), "the outcome says the reload failed")
+	testing.eq(script.source_code, _version_source(1), "the cached script keeps its previous source")
+	# Checked before the call: a call into an invalid script aborts this test without a FAIL.
+	testing.ok(script.can_instantiate(), "the cached script is valid again")
+	testing.eq(running.call("version"), 1, "the node keeps running version 1")
+
+	var retried := Helpers.reload_script_from_disk(script)
+	testing.ok(not bool(retried["reloaded"]) and str(retried["compile_error"]) != "",
+			"the next call checks the unchanged broken file again and refuses it")
+
+	_write_source(FAILED_RELOAD_FIXTURE, _version_source(3))
+	var fixed := Helpers.reload_script_from_disk(script)
+	testing.ok(bool(fixed["reloaded"]), "the fixed file reloads")
+	testing.eq(running.call("version"), 3, "the node runs the fixed version 3")
+
+	running.free()
+	_remove(FAILED_RELOAD_FIXTURE)
 	print("")
 
 
