@@ -57,6 +57,11 @@ func _enter_tree() -> void:
 	# -- Per-user EditorSettings --
 	_register_editor_settings()
 
+	# A local server build turns the connect-time version check off; follow the
+	# setting live, so the next connection after a change already reflects it.
+	_sync_skip_version_check()
+	EditorInterface.get_editor_settings().settings_changed.connect(_sync_skip_version_check)
+
 	# Warn about untested future Godot versions (but don't block).
 	var _engine_ver := Modules.VersionUtils.get_engine_version_pair()
 	if not Modules.VersionUtils.is_at_most(_engine_ver, Modules.VersionUtils.GODOT_TESTED_MAX_VERSION):
@@ -87,6 +92,13 @@ func _process(_delta: float) -> void:
 		_handle.poll_playtest()
 
 
+# Mirror "a local server build is configured" onto the server, which keeps no
+# EditorSettings reads of its own.
+func _sync_skip_version_check() -> void:
+	if _handle != null and _handle.server() != null:
+		_handle.server().skip_version_check = MCPJsonWriteFlow.uses_local_server()
+
+
 func _on_user_path_changed() -> void:
 	# Static consumers that can't connect to signals themselves.
 	# Instance consumers (feature_settings, server) connect directly
@@ -102,6 +114,11 @@ func _exit_tree() -> void:
 	if _wizard != null:
 		_wizard.teardown()
 		_wizard = null
+
+	# The editor-settings watch (the EditorSettings singleton outlives this plugin).
+	var editor_settings := EditorInterface.get_editor_settings()
+	if editor_settings.settings_changed.is_connected(_sync_skip_version_check):
+		editor_settings.settings_changed.disconnect(_sync_skip_version_check)
 
 	# Menus + command palette.
 	if _tool_menu != null:

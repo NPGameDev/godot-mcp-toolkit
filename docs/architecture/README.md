@@ -219,9 +219,9 @@ sequenceDiagram
     participant S as mcp_server (editor)
     participant R as ServerRequestRouter
     C->>T: TCP connect, WebSocket upgrade
-    C->>T: first frame — auth token (plus optional version)
+    C->>T: first frame — auth token (plus version, server_version, min_toolkit)
     T->>S: build_auth_ack
-    S-->>C: authed = true (plus godot_version, plugin version, headless)
+    S-->>C: authed = true (plus godot_version, plugin version, headless, min_server)
     Note over C,S: no auth within 2000 ms closes the socket (1008)
     C->>T: JSON-RPC request (e.g. scene.create)
     T->>S: _handle_message (peer authed)
@@ -255,11 +255,15 @@ reads are guarded centrally and `save.read` / `script.read` paginate.
 structurally validate** it without re-deriving the path ([ADR 0011](#14-key-decisions-adrs)).
 In-engine readers keep the `user://` form. The handshake reply differs by server: the editor
 server returns `godot_version` + plugin `version` + a `headless` flag (the server's
-version-gating and headless-degradation inputs; [ADR 0014](#14-key-decisions-adrs)), the
-runtime server returns `{"authed":true}` only. The editor server also compares the `version` in
-the MCP server's auth frame with the plugin's own (`version_skew` in
-`versioning/mcp_version_utils.gd`): a major difference logs an error to the editor console, a
-minor one a warning, and a patch difference nothing.
+version-gating and headless-degradation inputs; [ADR 0014](#14-key-decisions-adrs)) + its
+declared server floor `min_server`, the runtime server returns `{"authed":true}` only. The
+editor server also checks the MCP server's version (`server_version`, or `version` from a 1.0.x
+server) against the declared floors ([ADR 0024](../adr/0024-independent-versioning-compat-floor.md)): a server below the
+toolkit's `MIN_SERVER_VERSION`, or a toolkit below the server's `min_toolkit`, logs one error
+to the editor console and shows a line in the dock, in place of the product-version message.
+Otherwise it compares the versions (`version_skew` in `versioning/mcp_version_utils.gd`): a
+major difference logs an error, a minor one a warning, and a patch difference nothing. A
+local server build skips the check with one line. None of it refuses the connection.
 
 **The editor poll loop is deliberately indirect.** Editor mutations must not run re-entrantly
 inside `_process` (a scene save pumps the main loop, which could resume a coroutine mid-pump).

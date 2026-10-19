@@ -101,6 +101,14 @@ static func read_local_path_setting() -> String:
 	return str(editor_settings.get_setting(LOCAL_PATH_SETTING)).strip_edges()
 
 
+## True when a write on this machine builds the entry from a local server build: the
+## local server path editor setting, else GODOT_MCP_DEV_SERVER_PATH, names one. The
+## same source the write reads, so the version-check opt-out follows the setting and
+## never the shape of the entry on disk.
+static func uses_local_server() -> bool:
+	return not MCPJsonSync.resolve_machine_dev_path(read_local_path_setting()).is_empty()
+
+
 ## The server spec (see [code]MCPJsonSync.classify_server_entry[/code]) this machine
 ## last wrote into the project's .mcp.json, or "" when it has not written one.
 static func read_last_written_spec() -> String:

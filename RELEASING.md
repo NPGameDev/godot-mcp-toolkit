@@ -140,15 +140,28 @@ This is the npm `peerDependencies` / `engines` model carried over the wire: the
 floor couples the two repos exactly when the wire contract changes, and leaves
 them independent otherwise.
 
-**Status (1.0.x).** Both artifacts ship the synchronized `1.0.0` baseline, so
-there is no skew to gate yet. The connect-time handshake already compares the two
-versions and prints a human-readable warning on any mismatch (it never refuses) —
-but at 1.0.0 it compares *product versions*, not the declared floor, so the first
-independent bump (even a server patch, which the unpinned `npx` invocation
-auto-pulls) will warn against a still-compatible sibling. The `min_toolkit` /
-`min_server` constants and floor-aware comparison described above land early in
-the 1.x series, replacing the product-version warning; until then, treat a
-version-mismatch warning as advisory.
+**Status (1.1.x).** The floor machinery is live on both sides since 1.1.0. The server
+declares `MIN_TOOLKIT_VERSION = "1.0"` (`src/shared/version.ts`) and sends `server_version` +
+`min_toolkit` in the auth request; the toolkit declares `MIN_SERVER_VERSION = "1.0"`
+(`addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd`) and answers with `min_server`.
+When the peer is below its floor, each side reports it once (the server as an ERROR line on
+stderr, the toolkit as an editor error and a dock line), with the same two routes on both
+sides: a toolkit below the server's floor is told to update the addon or pin an older server,
+a server below the toolkit's floor to pin the recommended server from the toolkit dock's
+`.mcp.json` panel or set the server version in the MCP client's config. Otherwise the product-version messages stay: a
+patch difference is silent, a minor difference warns, a major difference is an error. None of
+them reaches the MCP wire or refuses the connection. A local server build (the toolkit's
+`mcp_toolkit/server/local_path` editor setting or `GODOT_MCP_DEV_SERVER_PATH`) turns the check
+off on both sides, and each side prints one line saying so; the toolkit writes
+`GODOT_MCP_SKIP_VERSION_CHECK=1` into the entry it builds for it. The toolkit pins the server it
+was tested with (`COMPATIBLE_SERVER_VERSION`) when it writes `.mcp.json`, so a fresh config
+lands on a matching pair; an unpinned config can drift a minor ahead and warns until it is
+pinned.
+
+**The pin and patch releases.** Every toolkit release states its pin: `release.sh
+--compatible-server X.Y.Z` moves it to a server version npm has, `--keep-compatible-server`
+keeps it. A server patch with a user-facing fix ships with a toolkit patch that only moves the
+pin, so pinned configs pick the fix up; a server-internal patch needs no toolkit release.
 
 ## The gated release flow
 
