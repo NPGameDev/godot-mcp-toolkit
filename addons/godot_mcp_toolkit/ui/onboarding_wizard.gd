@@ -5,6 +5,7 @@ extends RefCounted
 
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 
 const _ONBOARDING_FLAG := "user://addons/godot_mcp_toolkit/mcp_onboarding_shown_v001"
@@ -19,6 +20,11 @@ var _dialog: AcceptDialog = null
 var _step: int = 0
 var _mcp_exists: bool = false  # Tracks .mcp.json state for step-1 variants.
 var _buttons: Array = []  # Tracked custom buttons for per-step cleanup.
+# Per-step body content replacing the dialog text (the .mcp.json step's pin
+# choice), freed when the step changes like the buttons; null for a text-only step.
+var _content: Control = null
+var _pinned_box: CheckBox = null
+var _latest_box: CheckBox = null
 
 
 func _init(
@@ -66,6 +72,7 @@ func check_and_show() -> void:
 # teardown uses teardown() instead (immediate free — see below).
 func free_if_open() -> void:
 	_buttons.clear()
+	_clear_content_refs()
 	if _dialog != null and is_instance_valid(_dialog):
 		_dialog.queue_free()
 	_dialog = null
@@ -78,6 +85,7 @@ func free_if_open() -> void:
 # at exit". The dialog may be an open popup — free() closes and deletes it in one step.
 func teardown() -> void:
 	_buttons.clear()
+	_clear_content_refs()
 	if _dialog != null and is_instance_valid(_dialog):
 		_dialog.free()
 	_dialog = null
@@ -97,6 +105,7 @@ func teardown() -> void:
 #   ok_label:  String    — the OK button caption
 #   buttons:   Array     — [ { label: String, action: String }, ... ], in order
 #   on_enter:  Callable  — optional side-effect run as the step is shown
+#   pin_choice: bool     — optional; show the server pin choice under the text
 
 
 # Build the spec for the current step. Pure with respect to the dialog: it returns
@@ -145,12 +154,17 @@ func _spec_mcp_json(mcp_exists: bool) -> Dictionary:
 		+ "Download it from https://nodejs.org if not installed.\n\n")
 	if mcp_exists:
 		return {
-			"text": intro + "An .mcp.json already exists in your project.",
+			# Continue keeps the file as it is, so the choice must say it takes
+			# effect only through a write.
+			"text": intro + (
+				"An .mcp.json already exists in your project. The server choice "
+				+ "below applies only if you press Write .mcp.json."),
 			"ok_label": "Continue (keep existing .mcp.json)",
 			"buttons": [{
 				"label": "Write .mcp.json",
 				"action": "overwrite_mcp",
 			}],
+			"pin_choice": true,
 		}
 	return {
 		"text": intro + (
@@ -158,6 +172,7 @@ func _spec_mcp_json(mcp_exists: bool) -> Dictionary:
 			+ "MCP client to connect to the toolkit."),
 		"ok_label": "Create .mcp.json",
 		"buttons": [],
+		"pin_choice": true,
 	}
 
 
@@ -209,9 +224,23 @@ func _show_step(dialog: AcceptDialog) -> void:
 		if is_instance_valid(btn):
 			btn.queue_free()
 	_buttons.clear()
+	# Removed before the free so the old and new content never share the dialog,
+	# which lays every child over the same area.
+	if _content != null and is_instance_valid(_content):
+		dialog.remove_child(_content)
+		_content.queue_free()
+	_clear_content_refs()
 
 	var spec := _spec_for_step()
-	dialog.dialog_text = str(spec.get("text", ""))
+	var text := str(spec.get("text", ""))
+	if bool(spec.get("pin_choice", false)):
+		# The dialog's own text label would sit under custom content, so the text
+		# moves into the content.
+		dialog.dialog_text = ""
+		_content = _build_pin_choice(text)
+		dialog.add_child(_content)
+	else:
+		dialog.dialog_text = text
 	dialog.ok_button_text = str(spec.get("ok_label", ""))
 	var buttons: Array = spec.get("buttons", [])
 	for entry in buttons:
@@ -223,6 +252,65 @@ func _show_step(dialog: AcceptDialog) -> void:
 		on_enter.call()
 
 
+# The .mcp.json step's body: its text, then Pinned or Latest as two exclusive
+# check boxes, preselected from the project setting. A custom version checks
+# neither and says so; the step leaves it alone unless the user picks one.
+func _build_pin_choice(text: String) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	var intro := Label.new()
+	intro.text = text
+	box.add_child(intro)
+	var group := ButtonGroup.new()
+	_pinned_box = _add_choice(box, group, "Pinned (recommended)",
+			"Uses the server version this toolkit was tested with. Updating the toolkit updates the server.")
+	_latest_box = _add_choice(box, group, "Latest",
+			"Downloads the newest server on every launch; may show a version warning until you update the toolkit.")
+	var version_setting := MCPJsonSync.read_version_setting()
+	var mode := MCPJsonSync.pin_mode(version_setting)
+	_pinned_box.button_pressed = mode == MCPJsonSync.MODE_PINNED
+	_latest_box.button_pressed = mode == MCPJsonSync.MODE_LATEST
+	if mode == MCPJsonSync.MODE_CUSTOM:
+		var note := Label.new()
+		note.text = ("Project Settings names a custom server version (%s); "
+				+ "pick one above to replace it.") % version_setting.strip_edges()
+		box.add_child(note)
+	return box
+
+
+func _add_choice(box: VBoxContainer, group: ButtonGroup, label: String, description: String) -> CheckBox:
+	var choice := CheckBox.new()
+	choice.text = label
+	choice.button_group = group
+	box.add_child(choice)
+	var detail := Label.new()
+	detail.text = "      " + description
+	detail.modulate = Color(1, 1, 1, 0.7)
+	box.add_child(detail)
+	return choice
+
+
+# Saves the pin choice to the project setting before the step writes .mcp.json.
+# With neither box checked (a custom version) the setting is kept.
+func _apply_pin_choice() -> void:
+	var chosen := ""
+	if _pinned_box != null and _pinned_box.button_pressed:
+		chosen = MCPJsonSync.MODE_PINNED
+	elif _latest_box != null and _latest_box.button_pressed:
+		chosen = MCPJsonSync.MODE_LATEST
+	else:
+		return
+	if MCPJsonSync.pin_mode(MCPJsonSync.read_version_setting()) == chosen:
+		return
+	MCPJsonSync.save_version_setting(
+			MCPJsonSync.LATEST_SETTING_VALUE if chosen == MCPJsonSync.MODE_LATEST else "")
+
+
+func _clear_content_refs() -> void:
+	_content = null
+	_pinned_box = null
+	_latest_box = null
+
+
 # -- Navigation ---------------------------------------------------------------
 
 
@@ -231,6 +319,7 @@ func _on_confirmed(dialog: AcceptDialog) -> void:
 		# Step 1 OK = "Create .mcp.json" — write the file now. Fire-and-forget:
 		# the wizard advances regardless, and a failed write keeps the dock's
 		# "NO .mcp.json" warning visible as the durable signal.
+		_apply_pin_choice()
 		if _write_flow != null:
 			_write_flow.write()
 	if _is_last_relevant_step():
@@ -259,6 +348,7 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 				_save_progress()
 				_show_step(dialog)
 		"overwrite_mcp":
+			_apply_pin_choice()
 			if _write_flow != null:
 				_write_flow.write(false)
 			_step += 1

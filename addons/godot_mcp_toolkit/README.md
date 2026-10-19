@@ -21,9 +21,12 @@ Everything runs locally. Nothing leaves your machine.
    bridge through `npx -y @npgamedev/godot-mcp-server`, which fetches it on
    first connect, so there is no install step (Node.js 22 or newer required).
    If you would rather keep a fixed copy on the machine,
-   `npm install -g @npgamedev/godot-mcp-server` works too. (Manual
+   `npm install -g @npgamedev/godot-mcp-server` works too. The written config
+   pins the server version this toolkit was tested with. To run the newest
+   server instead, switch to Latest in the dock's `.mcp.json` panel. (Manual
    alternative: copy `addons/godot_mcp_toolkit/.mcp.json.template` to your
-   project root and rename it `.mcp.json`.)
+   project root and rename it `.mcp.json`; a hand-written config can pin the
+   same way, by adding `@<version>` to the package name.)
 3. **Connect:** launch your MCP client from the project root. It discovers
    the plugin and authenticates automatically; the dock's peer count
    increments on connection.

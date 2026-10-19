@@ -75,6 +75,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   release, whose schema declares `edits`. Thanks to @benfeather
   ([#44](https://github.com/NPGameDev/godot-mcp-toolkit/issues/44),
   [#50](https://github.com/NPGameDev/godot-mcp-toolkit/pull/50)).
+- **Write .mcp.json** now pins the server to the version this toolkit was tested
+  with (`@npgamedev/godot-mcp-server@<version>`), so a new server release no
+  longer reaches every user, version warning included, on the day it ships. This
+  is **Pinned** mode, the default. **Latest** mode runs the newest server on
+  every start instead. The dock's `.mcp.json` panel shows which server the file
+  runs and switches between the two modes, and the setup wizard's `.mcp.json`
+  step offers the same choice. When a file the toolkit wrote no longer matches,
+  the panel turns amber and offers to update it; a version set by hand gets a
+  quiet offer to restore the recommended one. Nothing is rewritten without a
+  confirmation. Restart your MCP client after a change. See "Server version
+  (pin modes)" in the advanced configuration guide.
+- The `mcp_toolkit/server/version` project setting picks the mode for the whole
+  team: empty for Pinned, `latest` for Latest, or any npm version, range or tag,
+  (you keep a custom value compatible yourself).
+- The `mcp_toolkit/server/local_path` editor setting points **Write .mcp.json** at
+  a local server build's `dist/index.js` on this machine (`node <path>` on every
+  OS). It falls back to the `GODOT_MCP_DEV_SERVER_PATH` environment variable, and
+  disabling the plugin offers to remove it with the toolkit's other editor
+  settings.
+- A pinned entry sets `npm_config_prefer_offline`, so `npx` starts the server it
+  already downloaded without asking the npm registry. Latest, a range or a tag
+  leaves it out, since it would stop `npx` from fetching a newer release.
+- `scripts/release.sh` takes `--compatible-server X.Y.Z` (checked against npm) or
+  `--keep-compatible-server`, and requires exactly one, so every toolkit release
+  states the server version it pins.
 
 ### Fixed
 

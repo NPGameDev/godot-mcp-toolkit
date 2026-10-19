@@ -494,7 +494,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="df9e089" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd" data-verified="7d30f63" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -512,7 +512,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified df9e089*
+*Figure 10 — plugin composition root · verified 7d30f63*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
@@ -529,9 +529,13 @@ overrides (`core/response_limits.gd`), static state that would otherwise outlive
 teardown uses **immediate (not deferred)
 `free()`** throughout — for the dock control, the dialog presenter's dialogs, and the server, and
 (in `plugin.gd`'s own `_exit_tree`) for the tool menu and the onboarding wizard — so nothing
-outlives ObjectDB's exit-time leak check. The tool menu, per-user EditorSettings, the
+outlives ObjectDB's exit-time leak check. The tool menu, per-user EditorSettings (the unfocused-editor
+preferences and the machine-local `mcp_toolkit/server/local_path`), the
 Godot-version warning, and the onboarding wizard are wired by `plugin.gd` itself after compose
-returns.
+returns. The project-wide `mcp_toolkit/server/version` key is registered earlier, with the other
+ProjectSettings. Disabling the plugin (not a reload) scrubs every `mcp_toolkit/*` ProjectSettings key,
+that one included, and hands the machine-wide EditorSettings prompt, `local_path` among its keys, to a
+detached `DisableCleanupCoordinator` that outlives the plugin.
 
 ---
 

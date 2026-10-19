@@ -60,7 +60,7 @@ You should see: the MCP dock appears in the bottom panel, and the Output log pri
 
 Let the plugin write it: **Project → Tools → MCP Toolkit → Write .mcp.json**.
 
-The config runs the bridge through `npx -y @npgamedev/godot-mcp-server`, which fetches it on first connect, so there is no install step. (Requires Node.js 22 or newer. Run `node --version` to check.) If you would rather keep a fixed copy on the machine, `npm install -g @npgamedev/godot-mcp-server` works too.
+The config runs the bridge through `npx -y @npgamedev/godot-mcp-server`, which fetches it on first connect, so there is no install step. (Requires Node.js 22 or newer. Run `node --version` to check.) If you would rather keep a fixed copy on the machine, `npm install -g @npgamedev/godot-mcp-server` works too. The plugin pins the server version this toolkit was tested with. To run the newest server instead, switch to Latest in the dock's `.mcp.json` panel. A hand-written config can pin the same way, by adding `@<version>` to the package name ([pin modes](addons/godot_mcp_toolkit/docs/advanced_configuration.md#server-version-pin-modes)).
 
 You should see: `.mcp.json` at your project root, and the dock's `.mcp.json` section showing it healthy.
 

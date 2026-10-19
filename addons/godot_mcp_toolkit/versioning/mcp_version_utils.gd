@@ -6,11 +6,19 @@ extends RefCounted
 ## the running engine version, used to gate commands by their min/max Godot
 ## version requirements, in_place_reload_safe() which says whether a script can be
 ## reloaded in place on this engine, read_plugin_version() which reads the toolkit's
-## own plugin.cfg, and version_skew() which classifies how the plugin's version
-## differs from the connected server's.
+## own plugin.cfg, version_skew() which classifies how the plugin's version
+## differs from the connected server's, and the server version the toolkit pins.
 
 ## Latest version tested. Versions above this still run but log a notice.
 const GODOT_TESTED_MAX_VERSION := "4.7.0"
+
+## The server version this toolkit was tested with. "Write .mcp.json" pins the
+## server to it unless the project's [code]mcp_toolkit/server/version[/code] setting
+## asks for another. [code]scripts/release.sh --compatible-server[/code] checks that
+## npm has the version before it rewrites this constant;
+## [code]--keep-compatible-server[/code] keeps the current value (a hand edit skips
+## the npm check). The CI launch job flags a pin that does not resolve.
+const COMPATIBLE_SERVER_VERSION := "1.0.4"
 
 
 ## True when running under `godot --headless` (no display server).

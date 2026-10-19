@@ -18,6 +18,8 @@ extends RefCounted
 ## holds a strong Ref to it — see GDScriptLambdaSelfCallable — but the explicit
 ## self-ref makes liveness obvious and owned by the coordinator.)
 
+const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+
 # Machine-wide EditorSettings keys to erase: the keys this plugin registers
 # (mirror of plugin.gd::_register_editor_settings), plus one an earlier version
 # registered, so disabling also erases a copy of it still stored. These are
@@ -30,6 +32,7 @@ const _EDITOR_SETTING_KEYS := [
 	"mcp_toolkit/personal/dock_default_visible",
 	"mcp_toolkit/performance/keep_editor_responsive_unfocused",
 	"mcp_toolkit/performance/unfocused_responsive_sleep_usec",
+	MCPJsonWriteFlow.LOCAL_PATH_SETTING,
 ]
 
 # Self-reference that keeps this RefCounted alive across the async dialog flow,
@@ -113,7 +116,7 @@ func _prompt_editor_settings_cleanup() -> void:
 	dialog.title = "MCP Plugin Disabled — Editor Preferences"
 	dialog.dialog_text = (
 		"The MCP Toolkit also stored per-user editor preferences (the "
-		+ "unfocused-responsive settings).\n\n"
+		+ "toolkit's editor settings).\n\n"
 		+ "These live in your EDITOR settings — they are machine-wide and "
 		+ "SHARED across every project that uses the toolkit, so removing them "
 		+ "affects your other projects too.\n\n"

@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## ProjectSettings registration for the limits, concurrency, and audit keys.
+## ProjectSettings registration for the limits, concurrency, audit and server-pin keys.
 ##
 ## Called once at plugin startup to ensure mcp_toolkit/* keys appear
 ## in the Project Settings inspector with correct types and defaults, and the
@@ -8,6 +8,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const ResponseLimits = Modules.ResponseLimits
+const MCPJsonSync = Modules.MCPJsonSync
 
 # Keys earlier versions stored and this one no longer writes. Each entry is
 # removable at 2.0.0.
@@ -24,6 +25,7 @@ static func register_all() -> void:
 	_register_limits()
 	_register_concurrency()
 	_register_audit()
+	_register_server()
 	# One-way migration: erase whatever retired key a project still carries. The
 	# erase is in-memory only: register_all() deliberately never saves, so the key
 	# leaves project.godot at the next ProjectSettings save, from whatever source.
@@ -81,6 +83,14 @@ static func _register_audit() -> void:
 	_register_basic_ranged_int("mcp_toolkit/audit/max_size_kb", 1024, "0,10240,128")
 
 
+# Advanced, not basic: most projects keep the default pin, and the dock and the
+# setup wizard switch between the two everyday modes.
+static func _register_server() -> void:
+	_register_setting(MCPJsonSync.SERVER_VERSION_SETTING, TYPE_STRING, "", PROPERTY_HINT_NONE,
+		"Server version Write .mcp.json pins. Empty = the version this toolkit was tested with (recommended); latest = always the newest; any other value is used as the npm version, range or tag (you own compatibility). Team-shared. Restart your MCP client after a change.",
+		false)
+
+
 static func _register_basic_bool(key: String, default_value: bool, description: String) -> void:
 	_register_basic(key, TYPE_BOOL, default_value, PROPERTY_HINT_NONE, description)
 
@@ -103,16 +113,22 @@ static func _register_basic_ranged_int(
 	_register_basic(key, TYPE_INT, default_value, PROPERTY_HINT_RANGE, range_hint)
 
 
-# Creates the key with its default only when it is absent, so a value the project
-# already stores is never clobbered, then registers it as a basic setting with its
-# inspector hint.
 static func _register_basic(
 		key: String, variant_type: int, default_value: Variant,
 		hint: int, hint_string: String) -> void:
+	_register_setting(key, variant_type, default_value, hint, hint_string, true)
+
+
+# Creates the key with its default only when it is absent, so a value the project
+# already stores is never clobbered, then registers it with its inspector hint; a
+# basic setting shows without the inspector's Advanced toggle.
+static func _register_setting(
+		key: String, variant_type: int, default_value: Variant,
+		hint: int, hint_string: String, basic: bool) -> void:
 	if not ProjectSettings.has_setting(key):
 		ProjectSettings.set_setting(key, default_value)
 	ProjectSettings.set_initial_value(key, default_value)
-	ProjectSettings.set_as_basic(key, true)
+	ProjectSettings.set_as_basic(key, basic)
 	ProjectSettings.add_property_info({
 		"name": key, "type": variant_type,
 		"hint": hint, "hint_string": hint_string,
