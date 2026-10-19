@@ -133,6 +133,8 @@ func _check_if_due() -> void:
 	# and a due check writes its time before the request goes out (see the class doc).
 	_state[UpdateCheck.STATE_LAST_CHECK] = now
 	_write_state(_state)
+	# The badge's "last checked" date must move even when the request then fails.
+	state_changed.emit()
 	if due == UpdateCheck.DUE:
 		_send(UpdateCheck.github_request(_env_host()), _PENDING_GITHUB)
 
