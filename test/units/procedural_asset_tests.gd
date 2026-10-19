@@ -241,7 +241,7 @@ static func _test_particle_prop_apply(testing) -> void:
 	testing.ok(is_equal_approx(mat_sub.spread, 45.0), "subset: spread landed")
 	testing.eq(mat_sub.turbulence_enabled, true, "subset: turbulence_enabled landed")
 	# A prop absent from the subset eff must NOT have been counted/written.
-	testing.eq(node_sub.amount, node_none.amount, "subset: absent amount stays default")
+	testing.eq(node_sub.amount, amount_default, "subset: absent amount stays default")
 	node_sub.free()
 
 

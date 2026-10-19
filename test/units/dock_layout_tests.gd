@@ -7,17 +7,30 @@ extends RefCounted
 ##
 ## Also covers the floor that keeps a short dock's section headers in view, and the
 ## size limits that keep the Info dialog inside the editor window.
+## The in-tree groups build the same shape into the runner's root, request a short
+## height and check the sorted rects.
 
 const DockSectionCard := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_section_card.gd")
 const InfoDialog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/info_dialog.gd")
 
+# Wide enough for the section titles; the in-tree groups compare rects, so any
+# realistic dock width gives the same relations.
+const _DOCK_WIDTH := 320.0
+# Enough lines that an open section's content is taller than the collapsed headers.
+const _OPEN_SECTION_LINES := 8
 
-static func run(testing) -> void:
+
+## run() is a coroutine: the in-tree groups await frames, so the runner must
+## [code]await[/code] it. [param tree] is the runner itself: Engine.get_main_loop() is still
+## null while the runner's _init runs.
+static func run(testing, tree: SceneTree) -> void:
 	_test_scroll_area(testing)
 	_test_collapsibles_in_scroll_area(testing)
 	_test_section_card(testing)
 	_test_header_floor(testing)
 	_test_info_dialog_window_cap(testing)
+	await _test_short_dock_keeps_headers_in_view(testing, tree)
+	await _test_open_section_scrolls(testing, tree)
 
 
 # The factory adds one scroll that expands vertically; the box it returns does not, so
@@ -121,6 +134,63 @@ static func _test_info_dialog_window_cap(testing) -> void:
 	print("")
 
 
+# A bottom panel dragged short gives the dock its minimum height. With every
+# section collapsed, the scroll area must still be tall enough to show each
+# header whole.
+static func _test_short_dock_keeps_headers_in_view(testing, tree: SceneTree) -> void:
+	testing.begin("Dock layout in the tree: a short dock keeps every header in view")
+	var dock := await _build_short_dock_in_tree(tree, false)
+	var root: VBoxContainer = dock["root"]
+	var scroll: ScrollContainer = dock["scroll"]
+	var box: VBoxContainer = dock["box"]
+	# Each collapsible adds its header, then its content box.
+	var headers: Array[Control] = [box.get_child(0) as Control, box.get_child(2) as Control]
+	var headers_height := 0.0
+	for header in headers:
+		headers_height += header.get_combined_minimum_size().y
+	var separations := float((headers.size() - 1) * box.get_theme_constant("separation"))
+	var view := Rect2(Vector2.ZERO, scroll.size)
+
+	testing.ok(scroll.size.y > 0.0, "the scroll keeps some height in a short dock")
+	testing.ok(scroll.size.y >= headers_height + separations,
+			"the scroll is at least as tall as both headers and the gap between them")
+	testing.ok(view.encloses(_rect_in(headers[0], scroll)), "the first header lies inside the scroll")
+	testing.ok(view.encloses(_rect_in(headers[1], scroll)), "the second header lies inside the scroll")
+	tree.root.remove_child(root)
+	root.free()
+	print("")
+
+
+# Opening a section in a short dock must scroll its content, not squeeze the
+# scroll area: the scroll keeps the collapsed dock's height and the box grows
+# past it.
+static func _test_open_section_scrolls(testing, tree: SceneTree) -> void:
+	testing.begin("Dock layout in the tree: an open section scrolls instead of shrinking")
+	var collapsed := await _build_short_dock_in_tree(tree, false)
+	var collapsed_root: VBoxContainer = collapsed["root"]
+	var collapsed_scroll: ScrollContainer = collapsed["scroll"]
+	var collapsed_height := collapsed_scroll.size.y
+	tree.root.remove_child(collapsed_root)
+	collapsed_root.free()
+
+	var dock := await _build_short_dock_in_tree(tree, true)
+	var root: VBoxContainer = dock["root"]
+	var scroll: ScrollContainer = dock["scroll"]
+	var box: VBoxContainer = dock["box"]
+	var first_header := box.get_child(0) as Control
+	var second_header := box.get_child(2) as Control
+
+	testing.ok(Rect2(Vector2.ZERO, scroll.size).encloses(_rect_in(first_header, scroll)),
+			"the first header stays in view")
+	testing.eq(scroll.size.y, collapsed_height, "the scroll keeps the collapsed dock's height")
+	testing.ok(box.size.y > scroll.size.y, "the box is taller than the scroll, so the open section scrolls")
+	testing.ok(Rect2(Vector2.ZERO, box.size).encloses(_rect_in(second_header, box)),
+			"the second header still lies inside the box")
+	tree.root.remove_child(root)
+	root.free()
+	print("")
+
+
 static func _expands_vertically(control: Control) -> bool:
 	return (control.size_flags_vertical & Control.SIZE_EXPAND) != 0
 
@@ -133,3 +203,55 @@ static func _count_scrolls(node: Node) -> int:
 			count += 1
 		count += _count_scrolls(child)
 	return count
+
+
+# Builds the dock's shape from the section factories, in the dock's order: a pinned
+# status card, the scroll area with two collapsible sections and the header floor,
+# and a footer pinned at the bottom. The root is added to the runner's root and
+# asked for a height below any minimum, so it is clamped to its combined minimum,
+# as the bottom panel's split clamps the dock. Returns the root, the scroll and the
+# box the sections sit in; the caller removes the root from the tree and frees it.
+static func _build_short_dock_in_tree(tree: SceneTree, first_open: bool) -> Dictionary:
+	# The runner's root becomes usable once its main loop has started.
+	await tree.process_frame
+	var root := VBoxContainer.new()
+	var status_card := DockSectionCard.make_section("Server Status")
+	root.add_child(status_card)
+	var status_content: VBoxContainer = status_card.get_meta("content")
+	status_content.add_child(_make_label("Listening"))
+
+	var box := DockSectionCard.make_scroll_area(root)
+	var first_content := DockSectionCard.make_collapsible(box, "First", first_open)
+	for line in _OPEN_SECTION_LINES:
+		first_content.add_child(_make_label("Line %d" % line))
+	var second_content := DockSectionCard.make_collapsible(box, "Second", false)
+	second_content.add_child(_make_label("Line"))
+	DockSectionCard.apply_header_floor(box)
+
+	var footer := PanelContainer.new()
+	footer.add_theme_stylebox_override("panel", DockSectionCard.make_section_style())
+	footer.size_flags_vertical = Control.SIZE_SHRINK_END
+	footer.add_child(_make_label("Footer"))
+	root.add_child(footer)
+
+	tree.root.add_child(root)
+	root.size = Vector2(_DOCK_WIDTH, 1.0)
+	await tree.process_frame
+	await tree.process_frame
+	return {
+		"root": root,
+		"scroll": box.get_parent() as ScrollContainer,
+		"box": box,
+	}
+
+
+static func _make_label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	return label
+
+
+# The rect of control in ancestor's coordinates. Neither is rotated or scaled, so
+# the global positions differ by a translation only.
+static func _rect_in(control: Control, ancestor: Control) -> Rect2:
+	return Rect2(control.global_position - ancestor.global_position, control.size)

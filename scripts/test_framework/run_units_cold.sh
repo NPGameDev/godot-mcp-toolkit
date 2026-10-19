@@ -27,15 +27,18 @@
 # warm-up cannot produce the cache or the unit run fails, so CI forensics
 # survive without drowning the green path.
 #
-# The unit runner's exit code is the ONLY test gate. The warm-up boot's exit
-# code is unreliable (benign headless warnings), so it is never consulted.
+# The unit runner's exit code and any runtime script error in its output are
+# the test gate: a group that throws aborts without failing an assertion, so
+# the runner can still print its passing banner. The warm-up boot's exit code
+# is unreliable (benign headless warnings), so it is never consulted.
 #
 # Same script runs locally (in a 4.2 Linux container) and in CI (composite
 # action + the cross-version warm-up step), GODOT_BIN-parameterized exactly
 # like validate_gdscript.sh — zero drift.
 #
 # Usage: ./scripts/test_framework/run_units_cold.sh [godot-binary-path]
-# Exit 0 = all units passed, 1 = unit failures, 2 = setup/warm-up error.
+# Exit 0 = all units passed, 1 = unit failures or a runtime script error,
+# 2 = setup/warm-up error.
 #
 # Environment variables:
 #   GODOT_BIN       - Godot binary (default: first arg, or "godot")
@@ -51,11 +54,10 @@ GODOT_BIN="${GODOT_BIN:-${1:-godot}}"
 
 # Headless teardown emits benign leak-at-exit reports (dummy-renderer RIDs +
 # a few ObjectDB instances). They are NOT a failure signal - the unit runner's
-# exit code (below) is the sole gate. Godot exposes no env/CLI switch to silence
-# them (leak reporting is the internal CoreGlobals::leak_reporting_enabled, always
-# on in editor/debug builds), so they simply print. (A prior
-# GODOT_DISABLE_LEAK_CHECKS=1 export here was a no-op - no such engine variable
-# exists - and was removed.)
+# exit code and its runtime script errors (below) are the gate. Godot exposes
+# no env/CLI switch to silence them (leak reporting is the internal
+# CoreGlobals::leak_reporting_enabled, always on in editor/debug builds), so
+# they simply print.
 
 # Must be run from the project root (where project.godot lives).
 if [ ! -f "project.godot" ]; then
@@ -64,6 +66,10 @@ if [ ! -f "project.godot" ]; then
 fi
 
 WARMUP_LOG="$(mktemp)"
+UNIT_LOG=""
+# One cleanup point for every exit path, a cancelled run included. An EXIT trap
+# leaves the script's exit status as it was.
+trap 'rm -f "$WARMUP_LOG" ${UNIT_LOG:+"$UNIT_LOG"}' EXIT
 CACHE_FILE=".godot/global_script_class_cache.cfg"
 
 # Bounded boot retry: an editor can die at boot (a one-off engine crash) or hang
@@ -348,7 +354,6 @@ case "$(uname -s)" in
           netstat -ano 2>/dev/null | grep -E ":(6550|6005)[^0-9]" || true
           echo "--- warm-up log tail (may explain the zombie) ---"
           tail -40 "$WARMUP_LOG" 2>/dev/null || true
-          rm -f "$WARMUP_LOG"
           exit 2
         fi
         if [ "$HELD_6005" != "0" ]; then
@@ -366,18 +371,16 @@ if [ ! -f "$CACHE_FILE" ]; then
   echo "warm-up: $NOT_DECLARED transient 'not declared' errors (expected on 4.2), cache written: no (waited ${WAITED}s)"
   echo "--- warm-up failed to produce the class cache; log tail ---"
   tail -40 "$WARMUP_LOG"
-  rm -f "$WARMUP_LOG"
   exit 2
 fi
 echo "warm-up: $NOT_DECLARED transient 'not declared' errors (expected on 4.2), cache written: yes (${WAITED}s)"
 
 if [ "${GODOT_WARM_ONLY:-0}" = "1" ]; then
-  rm -f "$WARMUP_LOG"
   exit 0
 fi
 
 echo ""
-echo "=== Unit runner (exit code gates the job) ==="
+echo "=== Unit runner (exit code and runtime script errors gate the job) ==="
 # The unit run loads the project's autoloads, so the runtime autoload would bind
 # a port and replace this project's runtime registry entry, taking it from a game
 # a developer is playtesting. Off CI, opt the unit run out. CI runs the units
@@ -386,13 +389,51 @@ if [ -z "${CI:-}" ]; then
   export GODOT_MCP_RUNTIME=0
 fi
 UNIT_EXIT=0
-"$GODOT_BIN" --headless --script test/run_unit_tests.gd || UNIT_EXIT=$?
+UNIT_LOG="$(mktemp)"
+# The engine prints SCRIPT ERROR to stderr, hence 2>&1; pipefail keeps the
+# runner's exit code through tee.
+"$GODOT_BIN" --headless --script test/run_unit_tests.gd 2>&1 | tee "$UNIT_LOG" || UNIT_EXIT=$?
 
+# A unit-leg script error is a line starting `SCRIPT ERROR: ` whose message is
+# not `Parse Error:` or `Compile Error:`; parse and compile errors belong to the
+# validate leg. Unit tests compile broken sources on purpose, so those two kinds
+# are expected in a green run. A group that throws a runtime error aborts
+# without failing an assertion, so the runner's exit code alone would pass it.
+# -a keeps a stray NUL or invalid UTF-8 byte from turning grep binary and
+# hiding every match.
+SCRIPT_ERROR_COUNT="$(grep -aE '^SCRIPT ERROR: ' "$UNIT_LOG" \
+  | grep -acvE '^SCRIPT ERROR: (Parse|Compile) Error:' || true)"
+if [ "$SCRIPT_ERROR_COUNT" -gt 0 ]; then
+  FIRST_SCRIPT_ERROR="$(grep -aE '^SCRIPT ERROR: ' "$UNIT_LOG" \
+    | grep -avE '^SCRIPT ERROR: (Parse|Compile) Error:' | head -1 | tr -d '\r' || true)"
+  echo ""
+  echo "::error title=GDScript runtime error::${FIRST_SCRIPT_ERROR//\%/%25}"
+  # Up to five hits, each with the line after it (the `at:` frame). The hit
+  # rule runs first and skips the context rule, so a hit right after another
+  # hit prints once.
+  awk '
+    /^SCRIPT ERROR: / && !/^SCRIPT ERROR: (Parse|Compile) Error:/ {
+      if (hits < 5) { print; show = 1 } else { show = 0 }
+      hits++
+      next
+    }
+    show { print; show = 0 }
+  ' "$UNIT_LOG"
+  if [ "$UNIT_EXIT" -eq 0 ]; then
+    echo "unit run: $SCRIPT_ERROR_COUNT script error(s) beside a passing banner"
+  else
+    echo "unit run: $SCRIPT_ERROR_COUNT script error(s) beside a failing run (exit $UNIT_EXIT)"
+  fi
+fi
+
+# The warm-up tail is boot forensics, so a run that failed only on a script
+# error skips it.
 if [ "$UNIT_EXIT" -ne 0 ]; then
   echo ""
   echo "--- unit run failed (exit $UNIT_EXIT); warm-up log tail for forensics ---"
   tail -40 "$WARMUP_LOG"
+elif [ "$SCRIPT_ERROR_COUNT" -gt 0 ]; then
+  UNIT_EXIT=1
 fi
 
-rm -f "$WARMUP_LOG"
 exit "$UNIT_EXIT"

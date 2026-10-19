@@ -87,7 +87,7 @@ func _init() -> void:
 	DockSettingsSyncTests.run(testing)
 	await ResponseLimitsTests.run(testing, self)  # the in-tree and transport groups await frames → coroutine
 	InfoDialogTests.run(testing)
-	DockLayoutTests.run(testing)
+	await DockLayoutTests.run(testing, self)  # the in-tree groups await frames → coroutine
 	InputMapTests.run(testing)
 	ScriptCheckTests.run(testing)
 	NodeWriterIntTests.run(testing)
