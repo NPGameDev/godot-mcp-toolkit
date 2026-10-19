@@ -79,7 +79,7 @@ func _init() -> void:
 	ScreenshotClassifyTests.run(testing)
 	ScreenshotResponseTests.run(testing)
 	RuntimeScreenshotTests.run(testing)
-	RuntimeLifecycleTests.run(testing)
+	await RuntimeLifecycleTests.run(testing, self)  # the in-tree group awaits a frame → coroutine
 	NodejsCheckTests.run(testing)
 	DockSettingsSyncTests.run(testing)
 	await ResponseLimitsTests.run(testing, self)  # the in-tree and transport groups await frames → coroutine
