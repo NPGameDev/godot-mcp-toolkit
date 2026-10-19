@@ -50,6 +50,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Writing `.mcp.json` from the dock, the Tools menu, the setup wizard or the
+  enable prompt now keeps the other servers and top-level keys in a shared file.
+  Before, the write replaced the whole file with the toolkit's entry. Only the
+  toolkit's entry changes, and the file is re-serialized, so its formatting may
+  change. A server that only has "godot-mcp" in its name is left alone,
+  unless its entry runs the toolkit's server. A file
+  that isn't valid JSON, or whose `mcpServers` isn't an object, is no longer
+  overwritten: the toolkit says so and offers to open it, so you can fix or
+  delete it first. The dock's "Fix .mcp.json" button is now "Open .mcp.json". The
+  setup wizard's "Overwrite" button is now "Write .mcp.json" and asks before it
+  changes an existing toolkit entry, as the dock already did; both ask only when
+  the entry would actually change.
 - After a project rename, **Regenerate Token** no longer leaves the MCP server
   unable to connect until the editor restarts.
 - `node_manage` with `duplicate` now saves the copy's children. Before,

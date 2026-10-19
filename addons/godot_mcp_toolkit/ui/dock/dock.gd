@@ -29,7 +29,7 @@ var _audit_path: String = ""
 var _status_panel: DockStatusPanel = null
 
 # .mcp.json health surface — shared missing/malformed/read-only warning panel +
-# the tri-mode footer button + read-only cache + write/open/fix flow (own sub-panel).
+# the write-or-open footer button + read-only cache + write/open flow (own sub-panel).
 var _mcp_json_panel: DockMcpJsonPanel = null
 
 # Unfocused-responsive mode — opt-in toggle + 3-state indicator (own sub-panel).
@@ -106,7 +106,7 @@ func _build_ui() -> void:
 	sc.add_child(_status_panel)
 
 	# .mcp.json health panel — the shared missing/malformed/read-only warning sits
-	# right after the server status row (prominent); its tri-mode button lives in
+	# right after the server status row (prominent); its write-or-open button lives in
 	# the footer (placement = orchestrator) but is driven by this panel (meaning).
 	# Create the button now so the panel can bind it; the footer positions it below.
 	# The warning panel is hosted inside the status panel (between the status row and

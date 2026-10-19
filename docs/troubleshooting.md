@@ -168,12 +168,16 @@ editor restart) picks up the change.
 
 ### The dock flags `.mcp.json`, or the project was moved
 
-**Symptom:** the dock's `.mcp.json` section shows a warning (invalid JSON,
-stale contents, wrong paths after moving or copying the project).
+**Symptom:** the dock's `.mcp.json` section shows a warning (invalid JSON, or an
+`mcpServers` that isn't an object; stale contents; wrong paths after moving or
+copying the project).
 
-**Fix:** click **Fix .mcp.json** in the dock — it rewrites the file from a
-clean template. If you keep hand edits in the file, back them up first; the fix
-overwrites.
+**Fix:** for invalid JSON or an `mcpServers` that isn't an object, click
+**Open .mcp.json** in the dock, fix the file and save; or delete it and click
+**Write .mcp.json**. The toolkit never overwrites a file in either state. For
+stale contents or wrong paths,
+use **Project → Tools → MCP Toolkit → Write .mcp.json**; it asks before it
+updates the `godot-mcp-toolkit` entry, and keeps your other servers and env keys.
 
 ### `.mcp.json` shows modified after a write from another OS
 

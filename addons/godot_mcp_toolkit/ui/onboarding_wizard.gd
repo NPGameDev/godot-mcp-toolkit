@@ -148,7 +148,7 @@ func _spec_mcp_json(mcp_exists: bool) -> Dictionary:
 			"text": intro + "An .mcp.json already exists in your project.",
 			"ok_label": "Continue (keep existing .mcp.json)",
 			"buttons": [{
-				"label": "Overwrite with clean .mcp.json",
+				"label": "Write .mcp.json",
 				"action": "overwrite_mcp",
 			}],
 		}
@@ -260,7 +260,7 @@ func _on_custom_action(action: StringName, dialog: AcceptDialog) -> void:
 				_show_step(dialog)
 		"overwrite_mcp":
 			if _write_flow != null:
-				_write_flow.write(true)
+				_write_flow.write(false)
 			_step += 1
 			_save_progress()
 			_show_step(dialog)

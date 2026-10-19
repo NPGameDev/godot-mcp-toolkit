@@ -190,7 +190,7 @@ static func _test_onboarding_wizard_specs(testing) -> void:
 	testing.eq(str(mcp_json_exists_spec.get("ok_label", "")), "Continue (keep existing .mcp.json)",
 			"step 1 (exists) → ok_label keeps existing")
 	_assert_buttons(testing, mcp_json_exists_spec.get("buttons", []),
-			[["Overwrite with clean .mcp.json", "overwrite_mcp"]], "step 1 (exists)")
+			[["Write .mcp.json", "overwrite_mcp"]], "step 1 (exists)")
 
 	# Step 1 variant B — .mcp.json ABSENT: create-it OK + NO custom buttons.
 	var mcp_json_absent_spec: Dictionary = wizard._spec_mcp_json(false)
