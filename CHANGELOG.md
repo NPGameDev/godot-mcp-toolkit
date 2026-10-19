@@ -38,6 +38,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reported and implemented by @benfeather
   ([#46](https://github.com/NPGameDev/godot-mcp-toolkit/issues/46),
   [#47](https://github.com/NPGameDev/godot-mcp-toolkit/pull/47)).
+- `script_edit` accepts an `edits` array of `old_string`/`new_string`/`replace_all`
+  objects and applies them in order in one call, each to the text the earlier
+  ones leave. The file is written and checked once, with one undo entry, and
+  `replacements` counts every span. If an edit is not found or matches more than
+  once, nothing is written and the error names it (`edits[1]: …`). The single
+  `old_string`/`new_string` form is unchanged. Needs the matching server
+  release, whose schema declares `edits`. Thanks to @benfeather
+  ([#44](https://github.com/NPGameDev/godot-mcp-toolkit/issues/44),
+  [#50](https://github.com/NPGameDev/godot-mcp-toolkit/pull/50)).
 
 ### Fixed
 

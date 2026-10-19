@@ -54,7 +54,7 @@ rather than `select:` syntax, or the full prefixed name
 | Task | Tools |
 |------|-------|
 | Create a scene | `scene_create` -> `scene_open` -> `scene_create_node` -> `node_set_property` |
-| Edit an existing script | `script_edit` (exact `old_string` -> `new_string`) -> `script_check` |
+| Edit an existing script | `script_edit` (exact `old_string` -> `new_string`; several spots in one file: one call with `edits`) -> `script_check` |
 | Write a new script | `script_write` -> `node_set_script` |
 | Test a game | `game_start` -> `discover_tools({request: "runtime"})` -> runtime tools |
 | Explore a project | `scene_get_tree` -> `script_read` -> `asset_list` |
@@ -193,7 +193,10 @@ group).
 - `@onready var label: Label = %ScoreLabel` with unique-name nodes.
 - **Prefer `script_edit` for changes to an existing script** — a surgical
   `old_string` -> `new_string` swap that keeps undo history and returns inline
-  diagnostics. Use `script_write` for new files.
+  diagnostics. For several spots in one file (a rename and its callers), pass
+  them all as `edits` in one call: they apply in order, the file is written and
+  checked once, and nothing is written if one fails. Use `script_write` for new
+  files.
 - **Use `script_write` / `script_edit` for EVERY script file** — including scratch
   drafts, experiments, and throwaway managers, never a native file-write tool. The
   MCP tools compile-check the code and register it with the running editor; a raw
@@ -425,6 +428,8 @@ response, and the context it occupies:
 
 - **Batch properties** instead of one-at-a-time: one `node_set_property` with
   `batch` replaces 5-10 individual calls.
+- **Batch script edits.** One `script_edit` with `edits` replaces a call per
+  span, and the diagnostics run once, on the finished file.
 - **Activate groups in one call.** Pass an array to `discover_tools` — every
   activation makes the client re-process the full tool list, so batch them.
 - **Use `scene_get_tree` sparingly.** `include_properties: true` returns
