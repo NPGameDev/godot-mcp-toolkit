@@ -71,14 +71,14 @@ func default_deadzone() -> float:
 		var defaults: Array = method.get("default_args", [])
 		if not defaults.is_empty():
 			return float(defaults[0])
-	# InputMap::DEFAULT_DEADZONE (core/input/input_map.h) is 0.2 from 4.4 and 0.5 before.
+	# The engine's default: InputMap::DEFAULT_DEADZONE (0.2) from 4.4, a literal 0.5 in
+	# add_action's signature before.
 	var version := Modules.VersionUtils.get_engine_version_pair()
 	return 0.2 if Modules.VersionUtils.is_at_least(version, "4.4") else 0.5
 
 
 ## Sets [param action]'s setting to [param deadzone] and [param events]. An existing setting
 ## keeps its order, a built-in action's included; a new one is ordered after every other.
-## The value is always a new Dictionary, so a built-in action's default is never changed.
 func write(action: String, deadzone: float, events: Array) -> void:
 	ProjectSettings.set_setting(_SETTING_PREFIX + action, {
 		"deadzone": deadzone,

@@ -123,7 +123,8 @@ static func _serialise_input_event(event: InputEvent) -> Dictionary:
 ## compare their [code]keycode[/code], [code]physical_keycode[/code] and
 ## [code]key_label[/code] exactly, plus the four modifiers: a built-in action's keys are
 ## built from the logical [code]keycode[/code] with the other two left at 0, so comparing
-## one of the three alone would make every such key equal to every other.
+## [code]physical_keycode[/code] or [code]key_label[/code] alone would make every such key
+## equal to every other.
 static func _input_events_equivalent(
 	event_a: InputEvent, event_b: InputEvent,
 ) -> bool:

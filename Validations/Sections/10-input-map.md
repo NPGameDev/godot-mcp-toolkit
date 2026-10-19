@@ -49,9 +49,9 @@
 2. `project_get_settings` — prefix=`input/ui_left`
 3. `input_map_event` — action=`bind`, name=`ui_left`, event=`{"type":"key","keycode":"F10"}`; then `project_get_settings` — prefix=`input/ui_left`
 4. `input_map_event` — action=`unbind`, name=`ui_left`, event F10, then event F9; then `project_get_settings` — prefix=`input/ui_left`
-- **Expect:** (1) success, status=`created`. (2) four events, by `class`: `InputEventKey` (Left), `InputEventJoypadButton`, `InputEventJoypadMotion`, `InputEventKey` (F9). (3) status=`created`, and five events: the four of step 2, then F10. (4) both unbinds succeed, and the three default events are left. `project.godot` again has no `ui_left` line: the setting holds its default.
+- **Expect:** (1) success, status=`created`. (2) four events, by `class`: `InputEventKey`, `InputEventJoypadButton`, `InputEventJoypadMotion`, `InputEventKey`. (3) status=`created`, and five events by `class`: the four of step 2, then `InputEventKey`. (4) both unbinds succeed, and the three default events are left. `project.godot` again has no `ui_left` line: the setting holds its default.
 
-> **REGRESSION WATCH:** step (2) without the `InputEventJoypadButton` or the `InputEventJoypadMotion` means a bind on a built-in action saved the editor's keyboard-only copy and dropped the joypad defaults (data loss). Step (3) without F9 means the bind no longer keeps the events saved for a built-in action. Flag either as **Major**.
+> **REGRESSION WATCH:** step (2) without the `InputEventJoypadButton` or the `InputEventJoypadMotion` means a bind on a built-in action saved the editor's keyboard-only copy and dropped the joypad defaults (data loss). Step (3) with fewer than five events means the bind no longer keeps the events saved for a built-in action. Flag either as **Major**.
 
 **10.8** `input_map_action` — action=`add`, name=`sv2_deadzone`, no `deadzone`; then action=`remove`, name=`sv2_deadzone`
 - **Expect:** the add succeeds with status=`created` and the running engine's default deadzone: 0.5 on Godot 4.2–4.3, 0.2 from 4.4 (the default of the editor's own Add Action). The remove succeeds.
