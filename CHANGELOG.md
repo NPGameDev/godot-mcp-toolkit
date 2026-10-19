@@ -100,6 +100,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `scripts/release.sh` takes `--compatible-server X.Y.Z` (checked against npm) or
   `--keep-compatible-server`, and requires exactly one, so every toolkit release
   states the server version it pins.
+- The editor now judges a connected MCP server by its declared floor. The toolkit
+  declares the oldest server it works with (1.0) and sends it at the handshake,
+  and reads the server's own floor for the toolkit. When either side is below the
+  other's floor, the editor console shows one error saying which side to update
+  and how, and the dock's status card shows the same line, in place of the
+  version-difference message. Otherwise the patch, minor and major messages are
+  unchanged, and none of them refuses the connection.
+- With a local server build set (the `mcp_toolkit/server/local_path` editor
+  setting or `GODOT_MCP_DEV_SERVER_PATH`), the version check is off on both
+  sides: the editor prints one line per connection saying so, and **Write
+  .mcp.json** adds `GODOT_MCP_SKIP_VERSION_CHECK=1` to the entry, which turns the
+  server's check off. Writing an npm entry removes it again.
 
 ### Fixed
 

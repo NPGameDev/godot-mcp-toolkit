@@ -68,6 +68,9 @@ func bind(
 	# Listen state (fresh bind, pinned/band conflict, port-config error) — repaint
 	# the instant the server's state changes, in addition to the initial pull below.
 	_server.port_status_changed.connect(_on_port_status_changed)
+	# The connected server's floor verdict — show or clear the below-floor line as
+	# soon as a peer authenticates or the last one leaves.
+	_server.compat_status_changed.connect(_on_compat_status_changed)
 	_refresh_status()
 
 
@@ -257,6 +260,13 @@ func _on_command_received(method: String) -> void:
 func _on_lsp_status_changed() -> void:
 	if _status_panel != null:
 		_status_panel.refresh_lsp()
+
+
+# Floor-verdict signal — route to the status panel's below-floor line. Separate
+# handler so bind() can connect before _build_ui exists.
+func _on_compat_status_changed() -> void:
+	if _status_panel != null:
+		_status_panel.refresh_compat()
 
 
 # Listen-state signal (fresh bind / conflict raised or cleared / config error) —
