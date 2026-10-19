@@ -90,8 +90,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   place can crash the editor (fixed in 4.2.2): there the toolkit reloads nothing,
   a changed script still needs an editor relaunch, `script_write` and
   `node_call_method` keep saying so, and every extension edit still needs a
-  restart. When an extension's source changes, the toolkit now registers its
-  tools again even if only a function body changed.
+  restart. When a GDScript extension's loaded source changes (a reload), the
+  toolkit now registers its tools again, even for a body-only change.
   Reported and first fixed by @benfeather
   ([#43](https://github.com/NPGameDev/godot-mcp-toolkit/issues/43),
   [#45](https://github.com/NPGameDev/godot-mcp-toolkit/pull/45)).

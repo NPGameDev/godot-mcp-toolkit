@@ -343,8 +343,9 @@ Extensions are monitored at runtime and changes are picked up automatically:
   rebuild), then alt-tab or call `extensions_refresh`.
 - **Programmatic scan:** call the `extensions_refresh` MCP tool to force a scan
   without editor focus — useful when files are created externally. The watcher
-  compares method lists and the GDScript source, and re-registers on any change,
-  a body-only edit included; rapid edits debounce to one rescan (500ms window).
+  compares method lists and the GDScript source it loaded, and re-registers when
+  either changes, a body-only reload included; rapid edits debounce to one rescan
+  (500ms window).
 
 > **Godot 4.2 only — an edit made outside the toolkit needs an editor restart.** On
 > 4.2 the loader reads through the editor cache (a crash-avoidance measure). On

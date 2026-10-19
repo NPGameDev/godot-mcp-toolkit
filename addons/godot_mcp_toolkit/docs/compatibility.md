@@ -93,9 +93,10 @@ script identity (even across stale/phantom tabs); with an external editor the to
   changed script keep the old code until the editor relaunches, and the hints on
   `script_write` and `node_call_method` say so. The script editor's own save
   of a `@tool` script that holds such lambdas can hit the same crash; update to
-  4.2.2 if you edit those scripts in-session. On every version, when an
-  extension's source changes the toolkit registers its tools again, so no
-  registered tool keeps running code from before a reload.
+  4.2.2 if you edit those scripts in-session. When a GDScript extension's
+  loaded source changes (a reload), the toolkit registers its tools again,
+  even for a body-only change, so no registered tool keeps running code from
+  before the reload.
 - **Live attached-script reload — a script changed outside the toolkit needs the
   script set again (4.2 + 4.3).** A **distinct** boundary from the extension
   hot-reload above (which is 4.2→4.3): live scene-node attached-script reload is
