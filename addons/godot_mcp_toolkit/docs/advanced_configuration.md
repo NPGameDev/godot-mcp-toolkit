@@ -331,8 +331,8 @@ gets the same server.
 - empty: **Pinned**.
 - `latest`: **Latest**.
 - anything else: used as the npm version, range or tag (`1.0.5`, `~1.1.0`,
-  `next`). This is an escape hatch, and compatibility is up to you. A spec npm
-  can't resolve fails when the client starts the server.
+  `next`). You keep a custom value compatible yourself. A spec npm can't resolve
+  fails when the client starts the server.
 
 ### `mcp_toolkit/server/local_path` (editor setting) — default empty
 
@@ -350,7 +350,7 @@ The pinned version never changes once it is published, so `npx` can start the co
 it already downloaded without asking the npm registry first, and the server starts
 faster. Latest and any range or tag leave it out: with it set, `npx` would keep
 starting the cached copy and never fetch a newer release. The toolkit sets or
-removes this key on every write. Don't set it yourself.
+removes this key on every write, so don't set it yourself.
 
 ### Restart your MCP client after a change
 

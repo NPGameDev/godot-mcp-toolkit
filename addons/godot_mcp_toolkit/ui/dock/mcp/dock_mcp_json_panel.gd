@@ -89,7 +89,9 @@ var _read_only_active: bool = false
 # read. Re-read when the file's spec or the desired spec moves away from
 # _record_basis ([on_disk, desired] at the last read: any surface's write, a hand
 # edit or a setting change), and on every read-only sync, which follows a dock
-# write; an empty basis forces the next read.
+# write; an empty basis forces the next read. A missed re-read is harmless: a
+# write always lands the entry on the desired spec, where the row never reads
+# the record.
 var _last_written_spec: String = ""
 var _record_basis: Array = []
 
@@ -286,10 +288,10 @@ static func _spec_label(spec: String) -> String:
 	return spec
 
 
-# Repaints the server-spec row from the file's spec on_disk, this
-# machine's record and settings, and the project setting. Hidden while the file is
-# missing or unreadable (the warning owns those states) or has no toolkit entry,
-# unless a local build is wanted, which the row then says is not in the file yet.
+# Repaints the server-spec row from the file's spec on_disk, this machine's
+# record and settings, and the project setting. Hidden while the file is missing
+# or unreadable (the warning owns those states) or has no toolkit entry, unless
+# a local build is wanted, which the row then says is not in the file yet.
 func _refresh_pin_row(readable: bool, on_disk: String) -> void:
 	if _pin_row == null:
 		return

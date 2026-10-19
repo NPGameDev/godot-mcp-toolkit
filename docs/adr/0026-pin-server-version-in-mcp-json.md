@@ -42,16 +42,15 @@ otherwise.**
   validation. The setting lives in `project.godot` because the server a project
   runs is a team decision: everyone who opens the project should get the same one.
   The dock's `.mcp.json` panel and the setup wizard switch between the two modes.
-  The third case exists for users who need it and is documented as theirs to keep
-  compatible.
-- **No patch-floating mode.** A range like `~1.1.0` looks like the best of both:
-  patch fixes without minor skew. It was rejected for three reasons.
+  The docs say the third case is the user's to keep compatible.
+- **No patch-floating mode.** A range like `~1.1.0` would give patch fixes
+  without minor skew. It was rejected for three reasons.
   - npm 10's `npx` reuses a cached package that satisfies a range without asking
     the registry, so a range quietly stops moving.
   - `npm_config_prefer_offline`, which keeps pinned starts fast, freezes a range
     the same way.
   - A range takes a new server patch on the day it is published, untested with
-    the toolkit. That is a supply-chain exposure the pin avoids.
+    the toolkit, which is a supply-chain exposure the pin avoids.
 
   A user can still type a range as the custom value.
 - **The builder owns `npm_config_prefer_offline`.** The written entry sets it to

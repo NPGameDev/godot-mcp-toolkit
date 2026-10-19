@@ -87,6 +87,7 @@ GATE_DISPOSITIONS=""
 CHANGELOG_CURATED=0
 COMPATIBLE_SERVER=""
 KEEP_COMPATIBLE_SERVER=0
+PIN_BOTH_ERROR="error: pass --compatible-server <X.Y.Z> or --keep-compatible-server, not both."
 # Parse: the first bare positional is the toolkit version; --gate-dispositions
 # and --compatible-server consume the next argument as their value.
 while [[ $# -gt 0 ]]; do
@@ -98,7 +99,7 @@ while [[ $# -gt 0 ]]; do
       # A flag in the value's place means the version was left out; taking it as
       # the version would hide that behind a semver error.
       if [[ "$1" == "--keep-compatible-server" ]]; then
-        echo "error: pass --compatible-server <X.Y.Z> or --keep-compatible-server, not both." >&2; usage; exit 1
+        echo "${PIN_BOTH_ERROR}" >&2; usage; exit 1
       fi
       if [[ "$1" == -* ]]; then
         echo "error: --compatible-server requires a version (X.Y.Z), not the flag '$1'." >&2; usage; exit 1
@@ -133,7 +134,7 @@ fi
 
 # ── Server pin rules (before any git check or network call) ─────────────────
 if [[ -n "${COMPATIBLE_SERVER}" && ${KEEP_COMPATIBLE_SERVER} -eq 1 ]]; then
-  echo "error: pass --compatible-server <X.Y.Z> or --keep-compatible-server, not both." >&2
+  echo "${PIN_BOTH_ERROR}" >&2
   usage
   exit 1
 fi

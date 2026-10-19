@@ -22,8 +22,8 @@ Everything runs locally. Nothing leaves your machine.
    first connect, so there is no install step (Node.js 22 or newer required).
    If you would rather keep a fixed copy on the machine,
    `npm install -g @npgamedev/godot-mcp-server` works too. The written config
-   pins the server version this toolkit was tested with; switch to Latest in
-   the dock's `.mcp.json` panel to always run the newest server. (Manual
+   pins the server version this toolkit was tested with. To run the newest
+   server instead, switch to Latest in the dock's `.mcp.json` panel. (Manual
    alternative: copy `addons/godot_mcp_toolkit/.mcp.json.template` to your
    project root and rename it `.mcp.json`; a hand-written config can pin the
    same way, by adding `@<version>` to the package name.)

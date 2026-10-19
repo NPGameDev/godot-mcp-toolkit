@@ -16,8 +16,8 @@ const GODOT_TESTED_MAX_VERSION := "4.7.0"
 ## server to it unless the project's [code]mcp_toolkit/server/version[/code] setting
 ## asks for another. [code]scripts/release.sh --compatible-server[/code] checks that
 ## npm has the version before it rewrites this constant;
-## [code]--keep-compatible-server[/code] keeps the value a previous release checked.
-## CI launches the written entry to confirm the pin resolves.
+## [code]--keep-compatible-server[/code] keeps the current value (a hand edit skips
+## the npm check). The CI launch job flags a pin that does not resolve.
 const COMPATIBLE_SERVER_VERSION := "1.0.4"
 
 
