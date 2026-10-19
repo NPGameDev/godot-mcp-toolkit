@@ -551,7 +551,7 @@ preferences, the setup wizard's `mcp_toolkit/setup_wizard/show_optional_steps` a
 `mcp_toolkit/server/local_path`), the
 Godot-version warning, and the onboarding wizard (the setup wizard) are wired by `plugin.gd` itself after compose
 returns. `plugin.gd` connects the wizard's `step_seen` to the setup step tracker, the one writer of
-the seen-steps file, and a deferred call asks the run planner which steps to show. The planner tells
+the seen-steps file, and a deferred call asks the run planner which steps to show. It also passes `compose()` a callable that the dock's footer Setup Wizard button calls, which starts a button run of every step, seen or not; the dock never holds the wizard. The planner tells
 an editor start from a mid-session enable by a flag `_enable_plugin()` sets: the editor calls it only
 for a mid-session enable, synchronously after `_enter_tree` ([ADR 0027](#14-key-decisions-adrs)). So is the version-check opt-out: `plugin.gd` copies `MCPJsonWriteFlow.uses_local_server()`
 (the local-path setting, else `GODOT_MCP_DEV_SERVER_PATH`) onto the server's `skip_version_check`

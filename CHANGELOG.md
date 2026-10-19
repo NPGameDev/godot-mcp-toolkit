@@ -133,6 +133,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (the welcome, `.mcp.json` and Updates steps) come back at every editor start
   until you've seen them, and "Remind me later" puts the wizard off until the
   next start.
+- The dock footer has a **Setup Wizard** button that opens the setup wizard with
+  every step, seen or not; if a run is already open, the button brings it forward.
+  A narrow dock now trims the footer labels with an ellipsis instead of widening
+  the row, and Info / Help has a tooltip.
 
 ### Fixed
 

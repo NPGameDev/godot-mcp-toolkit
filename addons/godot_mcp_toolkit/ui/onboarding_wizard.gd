@@ -67,9 +67,13 @@ func _init(
 
 
 ## Show the setup wizard over the editor for the run [param steps], a list of step
-## ids in display order. Does nothing for an empty run or while a run is open.
+## ids in display order. Does nothing for an empty run. While a run is open it
+## brings that run's dialog forward instead of starting another.
 func show_run(steps: Array[StringName]) -> void:
-	if steps.is_empty() or (_dialog != null and is_instance_valid(_dialog)):
+	if steps.is_empty():
+		return
+	if _dialog != null and is_instance_valid(_dialog):
+		_dialog.grab_focus()
 		return
 	var dialog := _open_run(steps)
 	EditorInterface.get_base_control().add_child(dialog)

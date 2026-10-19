@@ -51,7 +51,7 @@ func _enter_tree() -> void:
 	# bridge, command registrar, extensions, export plugin, log buffer, user-path
 	# monitor, registry registration, playtest watcher, write flow + dialog
 	# presenter, dock) and register in the system-wide registry.
-	_handle = PluginComposer.compose(self, _on_user_path_changed)
+	_handle = PluginComposer.compose(self, _on_user_path_changed, _on_setup_wizard_requested)
 
 	# Tools > MCP Toolkit submenu + command palette (needs the server, dock, and
 	# shared UI collaborators the composer just built).
@@ -96,6 +96,14 @@ func _check_onboarding() -> void:
 
 func _on_setup_step_seen(step_id: StringName) -> void:
 	SetupStepTracker.mark_seen(step_id)
+
+
+# The dock's Setup Wizard button: a run of every step, whatever has been seen. The
+# wizard is built after the dock, so a press before then does nothing.
+func _on_setup_wizard_requested() -> void:
+	if _wizard == null:
+		return
+	_wizard.show_run(SetupSteps.plan_button_run())
 
 
 # Reveal the toolkit dock (select its tab + expand the bottom panel). The

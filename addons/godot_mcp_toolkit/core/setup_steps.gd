@@ -88,6 +88,13 @@ static func plan_run(
 	return run
 
 
+## The steps of the run the dock footer's Setup Wizard button starts: every step,
+## seen or not. It goes through [method plan_run] so one planner decides every run.
+static func plan_button_run() -> Array[StringName]:
+	var no_unseen: Array[StringName] = []
+	return plan_run(no_unseen, true, true, false, true)
+
+
 ## The steps that closing a run with × records as seen: the step [param index] of
 ## [param run] that was open, and every optional step of the run not in
 ## [param visited]. Required steps the user never reached stay unseen, so they come
