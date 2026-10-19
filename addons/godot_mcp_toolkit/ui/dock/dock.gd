@@ -25,6 +25,9 @@ const _TOAST_INFO := 0
 const _TOAST_WARNING := 1
 const _TOAST_ERROR := 2
 
+const _SETUP_WIZARD_TOOLTIP := (
+	"Walk through every setup step again. Nothing changes until you press a button inside a step.")
+
 var _server: Node = null
 var _audit_path: String = ""
 
@@ -52,20 +55,27 @@ var _write_flow: MCPJsonWriteFlow = null
 var _dialog_presenter: ToolkitDialogPresenter = null
 # The composer-owned update check; the dock only hosts its badge.
 var _update_check: UpdateCheckRunner = null
+# Starts a setup-wizard run for the footer's Setup Wizard button. The dock does not
+# own the wizard: the plugin does, and the composer passes this in.
+var _start_setup_wizard: Callable = Callable()
 
 # Lightweight timer for runtime-status polling during playtests.
 var _runtime_timer: Timer = null
 
 
+## Binds the dock to the server and the composer-owned collaborators.
+## [param on_setup_wizard_requested] is called, with no arguments, when the user
+## presses the footer's Setup Wizard button.
 func bind(
 		server: Node, audit_path: String,
 		write_flow: MCPJsonWriteFlow, dialog_presenter: ToolkitDialogPresenter,
-		update_check: UpdateCheckRunner) -> void:
+		update_check: UpdateCheckRunner, on_setup_wizard_requested: Callable) -> void:
 	_server = server
 	_audit_path = audit_path
 	_write_flow = write_flow
 	_dialog_presenter = dialog_presenter
 	_update_check = update_check
+	_start_setup_wizard = on_setup_wizard_requested
 	_server.client_connected.connect(_on_client_connected)
 	_server.client_disconnected.connect(_on_client_disconnected)
 	_server.command_received.connect(_on_command_received)
@@ -204,30 +214,32 @@ func _build_ui() -> void:
 	var footer_row := HBoxContainer.new()
 	footer.add_child(footer_row)
 
-	var skills_btn := Button.new()
-	skills_btn.text = "Companion Skills"
-	skills_btn.tooltip_text = "Open Companion Skills folder"
-	skills_btn.pressed.connect(_open_companion_skills)
-	skills_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer_row.add_child(skills_btn)
-
-	var extensions_btn := Button.new()
-	extensions_btn.text = "Extensions"
-	extensions_btn.tooltip_text = "Browse MCP Toolkit extensions"
-	extensions_btn.pressed.connect(_on_extensions_pressed)
-	extensions_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer_row.add_child(extensions_btn)
+	footer_row.add_child(_make_footer_button(
+			"Companion Skills", "Open Companion Skills folder", _open_companion_skills))
+	footer_row.add_child(_make_footer_button(
+			"Extensions", "Browse MCP Toolkit extensions", _on_extensions_pressed))
 
 	# Built above (status section) so _mcp_json_panel could bind it; the footer owns
 	# only its placement. Label/tooltip/colour/action are driven by the panel.
+	mcp_json_btn.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	footer_row.add_child(mcp_json_btn)
 
-	var info_btn := Button.new()
-	info_btn.text = "Info / Help"
-	info_btn.pressed.connect(_on_info_pressed)
-	info_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer_row.add_child(info_btn)
+	footer_row.add_child(_make_footer_button("Info / Help", "Info / Help", _on_info_pressed))
+	footer_row.add_child(_make_footer_button(
+			"Setup Wizard", _SETUP_WIZARD_TOOLTIP, _on_setup_wizard_pressed))
 
+
+# A footer button that shares the row equally and trims its label with an ellipsis
+# when the dock is narrow, instead of widening the row. The tooltip carries the full
+# label for a trimmed button.
+func _make_footer_button(label: String, tooltip: String, on_pressed: Callable) -> Button:
+	var button := Button.new()
+	button.text = label
+	button.tooltip_text = tooltip
+	button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	button.pressed.connect(on_pressed)
+	return button
 
 
 # ---------------------------------------------------------------------------
@@ -359,6 +371,11 @@ func _on_extensions_pressed() -> void:
 func _on_info_pressed() -> void:
 	if _dialog_presenter != null:
 		_dialog_presenter.show_info(_server)
+
+
+func _on_setup_wizard_pressed() -> void:
+	if _start_setup_wizard.is_valid():
+		_start_setup_wizard.call()
 
 
 # ---------------------------------------------------------------------------

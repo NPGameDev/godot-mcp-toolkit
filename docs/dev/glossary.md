@@ -313,7 +313,8 @@ How this project names the first-run walkthrough and what it records. Code names
 **Setup wizard**
 The dialog that walks a user through the setup steps, titled "MCP Toolkit — Setup Wizard". A new
 user sees every step; after a toolkit update, the next editor start shows only the steps the user
-has not seen.
+has not seen. The dock footer's **Setup Wizard** button opens it at any time with every step, seen
+or not (a button run); while a run is open, the button brings that run forward instead.
 
 **Setup step**
 One page of the setup wizard, known by a stable id (`welcome`, `mcp_json`, `optional_steps`,

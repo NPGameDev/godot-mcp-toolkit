@@ -38,8 +38,12 @@ const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playt
 ## Composes the plugin's collaborator graph and returns the owning Handle.
 ## on_user_path_changed is the orchestrator's own handler for the user-path
 ## monitor's signal — injected so the handler stays on the orchestrator without
-## the composer poking a plugin private.
-static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Handle:
+## the composer poking a plugin private. on_setup_wizard_requested is the
+## orchestrator's handler for the dock footer's Setup Wizard button, handed to the
+## dock because the orchestrator owns the wizard.
+static func compose(
+		plugin: EditorPlugin, on_user_path_changed: Callable,
+		on_setup_wizard_requested: Callable) -> Handle:
 	var handle := Handle.new()
 	handle._plugin = plugin
 
@@ -110,7 +114,9 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 
 	# -- Toolkit dock (bottom panel on ≤4.5, EditorDock on 4.6+; DockHost owns the seam) --
 	var dock: Control = preload("res://addons/godot_mcp_toolkit/ui/dock/dock.tscn").instantiate()
-	dock.bind(server, Modules.Audit.get_log_path(), write_flow, dialog_presenter, update_check)
+	dock.bind(
+			server, Modules.Audit.get_log_path(), write_flow, dialog_presenter, update_check,
+			on_setup_wizard_requested)
 	handle._dock = dock
 	handle._dock_host = DockHost.add(plugin, dock, "MCP Toolkit")
 

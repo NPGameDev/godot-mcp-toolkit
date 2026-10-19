@@ -3,7 +3,8 @@ extends RefCounted
 ## Setup wizard unit tests: the step table, the setup step tracker against every
 ## file shape and format rule, the run planner's truth table, the consent gate and
 ## the readers of the two toggles it and the planner use, how
-## a run ends (Next, ×, "Remind me later"), the run-level buttons and labels, the
+## a run ends (Next, ×, "Remind me later"), a second request meeting an open run,
+## the run-level buttons and labels, the
 ## two checkbox steps' writes, the enable-time .mcp.json prompt's gate and the
 ## rename migration.
 ##
@@ -58,6 +59,7 @@ static func run(testing, tree: SceneTree) -> void:
 	_test_spec_in_run(testing)
 	_test_new_step_specs(testing)
 	await _test_run_endings(testing, tree)
+	await _test_open_run_reused(testing, tree)
 	await _test_check_box_writes(testing, tree)
 	_test_enable_prompt_gate(testing)
 	_test_rename_migration(testing)
@@ -191,7 +193,7 @@ static func _test_run_planner(testing) -> void:
 	testing.begin("Setup steps: the run planner")
 	var all_ids := SetupSteps.all_ids()
 	var missed := _ids([&"optional_steps", &"updates"])
-	testing.eq(SetupSteps.plan_run(_ids([]), true, true, false, true), all_ids,
+	testing.eq(SetupSteps.plan_button_run(), all_ids,
 			"a button run → every step, even mid-session with nothing unseen")
 	testing.eq(SetupSteps.plan_run(all_ids, false, false, false, false), all_ids,
 			"nothing seen, mid-session enable → every step")
@@ -369,6 +371,24 @@ static func _test_run_endings(testing, tree: SceneTree) -> void:
 	dialog = opened["dialog"]
 	opened["wizard"].teardown()
 	testing.eq(opened["seen"], [], "closing the editor mid-run records nothing")
+	print("")
+
+
+# The dock's button asks for a run of every step while one may already be open.
+static func _test_open_run_reused(testing, tree: SceneTree) -> void:
+	testing.begin("Setup wizard: a second request reuses the open run")
+	var opened := _open(tree, _ids([&"optional_steps", &"updates", &"dock"]), _settings(_Store.new(), _Store.new()))
+	var wizard: OnboardingWizard = opened["wizard"]
+	var dialog: AcceptDialog = opened["dialog"]
+	var seen: Array = opened["seen"]
+	dialog.get_ok_button().pressed.emit()
+	wizard.show_run(SetupSteps.all_ids())
+	testing.ok(wizard._dialog == dialog, "the open dialog stays the wizard's dialog")
+	testing.eq(dialog.title, "MCP Toolkit — Setup Wizard (2 of 3)", "the open run keeps its place")
+	testing.eq(wizard._run, _ids([&"optional_steps", &"updates", &"dock"]), "the run is not replaced")
+	testing.eq(seen, [&"optional_steps"], "and the request records nothing")
+	dialog.canceled.emit()
+	await _settle(tree)
 	print("")
 
 
