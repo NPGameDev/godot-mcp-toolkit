@@ -329,8 +329,11 @@ on the running game use `execute_code` (its default channel is the running game)
 ### Stale live instance after an outside script edit (Godot < 4.4)
 
 `script_write` and `script_edit` reload a `.gd` that compiles, so the nodes
-already running it run the new code on every version. A file that does not
-compile is written but not loaded: those nodes keep the code they had.
+already running it run the new code on every version. The toolkit never loads a
+file that does not compile, so on 4.2–4.3 and a 4.5+ headless editor those nodes
+keep the code they had. On 4.4+ with an editor window (and 4.4 headless) the
+editor reloads the changed file by itself, so a broken write can break those
+nodes until you fix it: run `script_check` before writing over a live script.
 
 On Godot **< 4.4** (4.2, 4.3), a `.gd` changed **outside the toolkit** (an
 external editor, git) does **not** reach a **live** node already running it: a
