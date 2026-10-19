@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (Sv2Main.tscn exists and is open)
 **Tools tested:** scene_create_node, scene_instantiate, scene_get_tree, editor_save_scene
-**Tests:** 20
+**Tests:** 21
 
 ---
 
@@ -69,6 +69,20 @@
 > that root never reach the instance. With 1.9's scriptless `Sv2Sub` root, `type=`
 > is the sign this step can show; a pinned `script =` line in the block appears
 > only when the sub-scene's root has a script. Flag as **Major**.
+
+**2.14b** `scene_instantiate` (imported model) — scene_path=`res://Validations/fixtures/imported_triangle.glb`, parent_path=`.`, as_name=`Sv2Model`
+- **Expect:** success, Sv2Model added. The `.glb` is a committed one-triangle fixture the editor imports as a scene (its `.import` sidecar is tracked beside it).
+- **Setup:** the step needs the toolkit dogfood's committed fixtures, `Validations/fixtures/imported_triangle.glb` and `mesh_triangle.obj`, each with its `.import` sidecar. **If a non-dogfood target lacks them** (e.g. the C# dogfood, minigames, or a fresh cross-version copy where `Validations/` isn't present), copy both fixtures and their sidecars into the target's `res://Validations/fixtures/`, then `editor_refresh` so the editor imports them (the same targets `tool-sweep.md` P.1 covers for the `EnvProbe` fixture).
+- **Sidecar noise on 4.2–4.4:** the tracked sidecars are written by a 4.5 editor. A 4.2–4.4 editor on a fresh `.godot/` reimports both fixtures and rewrites the two `.import` files with its own option list. That rewrite is noise: never stage it, and restore the 4.5 copies after the run (`git restore Validations/fixtures/imported_triangle.glb.import Validations/fixtures/mesh_triangle.obj.import`).
+- **Saved-file check:** `editor_save_scene`, then `script_read` file_path=`res://sv2_validation/Sv2Main.tscn`. An `[ext_resource type="PackedScene" ...]` line points at `res://Validations/fixtures/imported_triangle.glb`, and the `[node name="Sv2Model" ...]` header carries `instance=ExtResource(...)` with that id and **no** `type=`.
+- **Guard:** `scene_instantiate` scene_path=`res://Validations/fixtures/mesh_triangle.obj`, parent_path=`.`, as_name=`Sv2MeshModel` → **Expect:** `INVALID_CLASS`. The `.obj` fixture is imported as a mesh, and `.obj` is on the scene-extension list whichever importer a file uses, so loading the file is what refuses it.
+- Cleanup: `scene_delete_node` node_path=`Sv2Model`, then `editor_save_scene`
+
+> **REGRESSION WATCH (#39):** `INVALID_PATH` on the `.glb` means `scene_instantiate`
+> takes `.tscn` files only again. A success on the `.obj` means the load-then-
+> `PackedScene` check is gone. A `LOAD_FAILED` naming `editor_refresh` means the
+> editor hasn't imported the fixture: run `editor_refresh` and retry before
+> flagging. Flag a real regression as **Major**.
 
 **2.15** `scene_instantiate` (with transform override) — scene_path=`res://sv2_validation/sub.tscn`, parent_path=`.`, name=`Sv2SubProps`, transform=`{"position": {"type": "Vector2", "x": 50, "y": 75}}`
 - **Expect:** success, Sv2SubProps created. Verify via `node_get_property` position = (50, 75). **Param name is `transform`, not `properties`** — single-mode `scene_instantiate` has no `properties` param; passing `properties` silently no-ops (success:true, position stays 0,0, no error) because `properties` is batch-only (inside `instances[]` entries — see 2.15a/C9). Use `transform` for the single-mode override.
