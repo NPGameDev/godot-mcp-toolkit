@@ -10,7 +10,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const ResponseLimits = Modules.ResponseLimits
 const MCPJsonSync = Modules.MCPJsonSync
-const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
+const UpdateCheck = Modules.UpdateCheck
 
 # Keys earlier versions stored and this one no longer writes. Each entry is
 # removable at 2.0.0.

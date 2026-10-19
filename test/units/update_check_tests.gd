@@ -2,10 +2,12 @@
 extends RefCounted
 ## Unit tests for the update check's pure rules: which versions count as newer, the
 ## major bump, the badge's version, the GitHub and Asset Store reply parsing, the
-## state file, the once-a-day due rule and the request builders. The network is
-## never touched: every reply is a literal body.
+## state file and its default, the silence on malformed input, the once-a-day due
+## rule and the request builders. The network is never touched: every reply is a
+## literal body.
 
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
 
 static func run(testing) -> void:
@@ -16,6 +18,8 @@ static func run(testing) -> void:
 	_test_parse_latest_tag(testing)
 	_test_store_lists_version(testing)
 	_test_parse_state(testing)
+	_test_default_state(testing)
+	_test_malformed_input_is_silent(testing)
 	_test_due_state(testing)
 	_test_requests(testing)
 	_test_release_page_url(testing)
@@ -136,6 +140,42 @@ static func _test_parse_state(testing) -> void:
 	testing.eq(wrong[UpdateCheck.STATE_LAST_CHECK], 0, "a wrong-typed field takes its default")
 	testing.eq(wrong[UpdateCheck.STATE_LATEST_VERSION], "", "a wrong-typed version takes its default")
 	testing.eq(wrong[UpdateCheck.STATE_STORE_LISTED], false, "a wrong-typed flag takes its default")
+	var malformed := UpdateCheck.parse_state("{\"last_check\": ")
+	testing.eq(malformed, UpdateCheck.default_state(), "a malformed state file gives the default state")
+	testing.eq(UpdateCheck.parse_state("[1, 2]"), UpdateCheck.default_state(),
+			"a state file that is not an object gives the default state")
+	print("")
+
+
+static func _test_default_state(testing) -> void:
+	testing.begin("Update check: default state")
+	var state := UpdateCheck.default_state()
+	testing.eq(state.size(), 4, "the default state has the four state-file keys")
+	testing.eq(state[UpdateCheck.STATE_LAST_CHECK], 0, "never checked")
+	testing.eq(state[UpdateCheck.STATE_LATEST_VERSION], "", "nothing found")
+	testing.eq(state[UpdateCheck.STATE_STORE_LISTED], false, "nothing listed")
+	testing.eq(state[UpdateCheck.STATE_DISMISSED_VERSION], "", "nothing dismissed")
+	state[UpdateCheck.STATE_LAST_CHECK] = 5
+	testing.eq(UpdateCheck.default_state()[UpdateCheck.STATE_LAST_CHECK], 0,
+			"each call returns a fresh dictionary")
+	print("")
+
+
+# The check fails silently, so bad input must not reach the console either. Only
+# the 4.5+ Logger capture sees engine errors; older engines check the results alone.
+static func _test_malformed_input_is_silent(testing) -> void:
+	testing.begin("Update check: malformed input prints no engine error")
+	LogBuffer.setup()
+	var cursor: int = LogBuffer.get_cursor() - 1
+	testing.eq(UpdateCheck.parse_latest_tag("{\"tag_name\": "), "", "a malformed GitHub body reads as none")
+	testing.ok(not UpdateCheck.store_lists_version("[{\"version\": ", "1.2.0"),
+			"a malformed store body is not listed")
+	testing.eq(UpdateCheck.parse_state("{\"last_check\": "), UpdateCheck.default_state(),
+			"a malformed state file gives the default state")
+	testing.eq(UpdateCheck.parse_state(""), UpdateCheck.default_state(), "an empty state file gives the default state")
+	if LogBuffer.uses_logger_api():
+		var errors: Dictionary = LogBuffer.get_entries(100, ["error"], cursor, "JSON")
+		testing.eq(int(errors["returned"]), 0, "no JSON parse error reached the console")
 	print("")
 
 

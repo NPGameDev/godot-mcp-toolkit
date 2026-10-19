@@ -13,13 +13,14 @@ extends PanelContainer
 ## "Get it on the Asset Store" switches to the editor's Asset Store tab where the
 ## editor has one (Godot 4.7+), confirmed through
 ## [signal EditorPlugin.main_screen_changed], and otherwise opens the store listing
-## in the browser. The tab is found by its title, so a translated editor falls back
-## to the browser too. Both links are built locally from the version, never taken
-## from a reply.
+## in the browser. The tab's button text is the untranslated plugin name, so the
+## lookup also holds in a translated editor; a missing or hidden tab falls back to
+## the browser. Both links are built locally from the version, never taken from a
+## reply.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
-const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
+const UpdateCheck = Modules.UpdateCheck
+const UpdateCheckRunner = Modules.UpdateCheckRunner
 
 const _MINOR_TITLE := "Godot MCP Toolkit %s is available."
 const _MAJOR_TITLE := "Godot MCP Toolkit %s is out. It's a major release, so see what's new before you update."
@@ -31,11 +32,8 @@ const _STORE_TAB_TOAST := "Search for \"Godot MCP Toolkit\" in the Asset Store t
 const _DISMISS_TOOLTIP := "Hide until the next version."
 const _LAST_CHECKED_TOOLTIP := "Last checked: %s. The toolkit checks at most once a day."
 
-# The main-screen tab the 4.7+ editor names its store, and the theme variation the
-# editor gives its main-screen buttons. set_main_screen_editor reports an unknown
-# name as an engine error, so the tab is looked for before the call.
+# The main-screen tab the 4.7+ editor names its store.
 const _STORE_SCREEN := "Asset Store"
-const _MAIN_SCREEN_BUTTON_VARIATION := &"MainScreenButton"
 
 const _MINOR_COLOR := Color(0.13, 0.25, 0.42)
 const _MAJOR_COLOR := Color(0.11, 0.32, 0.17)
@@ -118,12 +116,17 @@ func _init(runner: UpdateCheckRunner, toast: Callable) -> void:
 	buttons.add_child(_store_btn)
 
 
-func _ready() -> void:
+func _enter_tree() -> void:
+	# Connected on every tree entry, not once in _ready, so the badge keeps listening
+	# after the editor moves the dock to another slot.
 	if _runner != null and not _runner.state_changed.is_connected(refresh):
 		_runner.state_changed.connect(refresh)
+	# Catch anything that changed while the badge was out of the tree.
 	refresh()
 
 
+# The runner outlives the badge; a callback left connected would keep repainting a
+# badge that has left the dock.
 func _exit_tree() -> void:
 	if _runner != null and is_instance_valid(_runner) and _runner.state_changed.is_connected(refresh):
 		_runner.state_changed.disconnect(refresh)
@@ -159,7 +162,7 @@ func _on_github_pressed() -> void:
 
 
 func _on_store_pressed() -> void:
-	if _switch_to_store_tab():
+	if Modules.EditorAccess.select_main_screen(_STORE_SCREEN):
 		if _toast.is_valid():
 			_toast.call(_STORE_TAB_TOAST)
 		return
@@ -169,41 +172,6 @@ func _on_store_pressed() -> void:
 func _on_dismiss_pressed() -> void:
 	if _runner != null and not _shown_version.is_empty():
 		_runner.dismiss(_shown_version)
-
-
-# True when the editor now shows its Asset Store tab. Calls set_main_screen_editor
-# only when such a tab exists and is not already open, and trusts the switch only
-# when main_screen_changed names the tab.
-func _switch_to_store_tab() -> bool:
-	var plugin := Modules.EditorAccess.get_plugin()
-	if plugin == null:
-		return false
-	var tab_button := _find_store_tab_button()
-	if tab_button == null:
-		return false
-	if tab_button.button_pressed:
-		return true
-	var switched := [false]
-	var on_screen_changed := func(screen_name: String) -> void:
-		if screen_name == _STORE_SCREEN:
-			switched[0] = true
-	plugin.main_screen_changed.connect(on_screen_changed)
-	EditorInterface.set_main_screen_editor(_STORE_SCREEN)
-	plugin.main_screen_changed.disconnect(on_screen_changed)
-	return switched[0]
-
-
-# The editor's visible main-screen button titled "Asset Store", or null.
-func _find_store_tab_button() -> Button:
-	var base := EditorInterface.get_base_control()
-	if base == null:
-		return null
-	for node in base.find_children("*", "Button", true, false):
-		var button: Button = node
-		if (button.text == _STORE_SCREEN and button.visible
-				and button.theme_type_variation == _MAIN_SCREEN_BUTTON_VARIATION):
-			return button
-	return null
 
 
 static func _make_style(color: Color) -> StyleBoxFlat:

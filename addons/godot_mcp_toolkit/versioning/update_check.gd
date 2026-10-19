@@ -75,22 +75,28 @@ static func parse_version(version: String) -> Array[int]:
 	return out
 
 
-## Whether [param remote] is a strictly newer stable version than [param local].
+## The state of a project that has never checked: never checked, nothing found or
+## dismissed.
 ##
-## Reads the state file's text into its four fields, each with its default when
-## missing or of the wrong type.
-##
-## Returns [code]{"last_check": int, "latest_version": String, "store_listed": bool,
-## "dismissed_version": String}[/code]; [param text] that is not a JSON object gives
-## the defaults (never checked, nothing found or dismissed).
-static func parse_state(text: String) -> Dictionary:
-	var state := {
+## Returns [code]{"last_check": 0, "latest_version": "", "store_listed": false,
+## "dismissed_version": ""}[/code], a new dictionary on each call.
+static func default_state() -> Dictionary:
+	return {
 		STATE_LAST_CHECK: 0,
 		STATE_LATEST_VERSION: "",
 		STATE_STORE_LISTED: false,
 		STATE_DISMISSED_VERSION: "",
 	}
-	var parsed: Variant = JSON.parse_string(text)
+
+
+## Reads the state file's text into its four fields, each with its default when
+## missing or of the wrong type.
+##
+## Returns a dictionary in the shape of [method default_state]; [param text] that is
+## not a JSON object gives [method default_state] itself.
+static func parse_state(text: String) -> Dictionary:
+	var state := default_state()
+	var parsed: Variant = _parse_json(text)
 	if not parsed is Dictionary:
 		return state
 	var stored: Dictionary = parsed
@@ -153,7 +159,7 @@ static func version_to_show(installed: String, latest: String, dismissed: String
 ## empty string when [param body] is not a JSON object, has no string
 ## [code]tag_name[/code], or the tag is not a stable version.
 static func parse_latest_tag(body: String) -> String:
-	var parsed: Variant = JSON.parse_string(body)
+	var parsed: Variant = _parse_json(body)
 	if not parsed is Dictionary:
 		return ""
 	var reply: Dictionary = parsed
@@ -174,7 +180,7 @@ static func store_lists_version(body: String, version: String) -> bool:
 	var wanted := parse_version(version)
 	if wanted.is_empty():
 		return false
-	var parsed: Variant = JSON.parse_string(body)
+	var parsed: Variant = _parse_json(body)
 	if not parsed is Array:
 		return false
 	var releases: Array = parsed
@@ -239,6 +245,14 @@ static func release_page_url(version: String) -> String:
 	if normalized.is_empty():
 		return ""
 	return _RELEASE_PAGE_PREFIX + normalized
+
+
+# The parsed value of text, or null when it is not valid JSON. A JSON instance
+# reports bad input through its return value, where the static parse helper prints
+# an engine error, and a malformed reply must stay silent.
+static func _parse_json(text: String) -> Variant:
+	var json := JSON.new()
+	return json.data if json.parse(text) == OK else null
 
 
 static func _request(url: String) -> Dictionary:

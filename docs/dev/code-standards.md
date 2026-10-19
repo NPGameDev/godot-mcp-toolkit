@@ -853,7 +853,7 @@ and **deliberately not** `core/modules.gd` (which statically names `EditorInterf
 in `versioning/mcp_version_utils.gd` (`is_at_least:35`, `is_at_most:39`, `is_version_in_range:43`).
 `has_method` gates: `EditorInterface.has_method("close_scene")` (4.5+) at
 `commands/editor_helpers.gd:463` and `commands/folder_commands.gd:91,108`;
-`has_method("get_editor_toaster")` (4.4+) at `core/editor_access.gd:43`;
+`has_method("get_editor_toaster")` (4.4+) at `core/editor_access.gd:46`;
 `has_method("get_command_palette")` at `core/tool_menu.gd:55,66`. The warn-don't-block check is at
 `plugin.gd:50-56` (`VersionUtils.GODOT_TESTED_MAX_VERSION`).
 

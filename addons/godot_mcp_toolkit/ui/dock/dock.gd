@@ -17,7 +17,7 @@ const DockUnfocusedControl := preload("res://addons/godot_mcp_toolkit/ui/dock/li
 const DockAuditSection := preload("res://addons/godot_mcp_toolkit/ui/dock/security/dock_audit_section.gd")
 const DockMcpJsonPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/mcp/dock_mcp_json_panel.gd")
 const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
-const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
+const UpdateCheckRunner = Modules.UpdateCheckRunner
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0

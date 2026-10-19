@@ -22,6 +22,8 @@ extends Node
 ## dismissal, or the toggle switched.
 signal state_changed
 
+# Direct preloads, not core/modules.gd: the aggregator preloads this file, so
+# preloading it back would be a cycle.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
@@ -221,10 +223,10 @@ func _env_host() -> String:
 
 func _read_state() -> Dictionary:
 	if not FileAccess.file_exists(STATE_PATH):
-		return UpdateCheck.parse_state("")
+		return UpdateCheck.default_state()
 	var file := FileAccess.open(STATE_PATH, FileAccess.READ)
 	if file == null:
-		return UpdateCheck.parse_state("")
+		return UpdateCheck.default_state()
 	var text := file.get_as_text()
 	file.close()
 	return UpdateCheck.parse_state(text)
