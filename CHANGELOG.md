@@ -33,14 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `input_map_action` has a `revert` action: `{"action": "revert", "name":
   "ui_accept"}` puts a built-in action back to its default events and deadzone,
   and `project.godot` drops its line. It answers the action's `input_map_list`
-  entry with `status: "reverted"`, or `"returned"` when the action already has
-  its default. A project action has no default, so `revert` refuses it, and
-  `remove` on a built-in action now points at `revert`.
+  entry with `status: "reverted"`, or `"returned"` when the action already holds
+  its default. A `project.godot` line that repeats the default's events is still
+  removed, with `"reverted"`. A project action has no default, so `revert`
+  refuses it, and `remove` on a built-in action now points at `revert`.
 - Input events in `input_map_event` and `input_map_list` use one shape for
   reading and writing, so an event read from the list can be passed back to
-  `unbind`. Every event has `class` (the engine class) and `device`. A key has
-  `key_kind` (`physical_keycode`, the default, `keycode` or `key_label`), so a
-  built-in action's logical keys can be bound and unbound, plus
+  `unbind`. Every event has `class` (the engine class), and every event but an
+  `unknown` one has `device`. A key has `key_kind` (`physical_keycode`, the
+  default, `keycode` or `key_label`), so a built-in action's logical keys can be
+  bound and unbound, plus
   `command_or_control` and, on Godot 4.3+, `location` (left or right). A mouse
   button has its modifiers, `command_or_control` and `double_click`. An event of
   another type is read as `{"type": "unknown", "class": …}`. A response carries
