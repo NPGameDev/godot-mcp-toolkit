@@ -1,8 +1,8 @@
 # Section 10 — Input Map
 
 **Dependencies:** None
-**Tools tested:** input_map_action, input_map_event, project_get_settings
-**Tests:** 9
+**Tools tested:** input_map_action, input_map_event, input_map_list, project_get_settings
+**Tests:** 12
 
 ---
 
@@ -57,6 +57,38 @@
 - **Expect:** the add succeeds with status=`created` and the running engine's default deadzone: 0.5 on Godot 4.2–4.3, 0.2 from 4.4 (the default of the editor's own Add Action). The remove succeeds.
 
 > **REGRESSION WATCH:** 0.5 on 4.4 or later means `add` no longer reads the engine's default. Flag it as **Minor**.
+
+**10.9** `input_map_list`. Start with no `ui_left` line in `project.godot`. Run in order:
+1. `input_map_action` — action=`add`, name=`sv2_list`; `input_map_event` — action=`bind`, name=`sv2_list`, event=`{"type":"key","keycode":"F7"}`
+2. `input_map_list` with no params
+3. `input_map_list` — include_builtin=`true`
+4. `input_map_list` — name=`ui_left`
+5. `input_map_list` — name=`sv2_missing`
+6. `input_map_action` — action=`remove`, name=`sv2_list`
+- **Expect:** (2) `{actions, count}`, `count` equal to the number of entries, in `[input]` order. `sv2_list` is listed with `source: "project"`, its deadzone, `can_revert: false`, no `default`, and one event: `type: "key"`, `class: "InputEventKey"`, `keycode` 4194338 (F7), `key_kind: "physical_keycode"`, the modifiers, `command_or_control: false` and `device`. No unchanged built-in action, such as `ui_left`, is listed. (3) `ui_left` is added, with `source: "builtin"`, `can_revert: false`, and events typed `key`, `joypad_button` and `joypad_motion`. (4) one entry, `ui_left`, `count: 1`. (5) `NOT_FOUND`, "call input_map_list without name to see the actions". (6) success.
+
+> **REGRESSION WATCH:** (2) listing `ui_left` means the list no longer compares a built-in action with its default. Flag it as **Minor**.
+
+**10.10** `revert` and the read → unbind round trip on `ui_accept`. Start with no `ui_accept` line in `project.godot`. Run in order:
+1. `input_map_event` — action=`bind`, name=`ui_accept`, event=`{"type":"key","keycode":"F9"}`
+2. `input_map_list` — name=`ui_accept`
+3. `input_map_event` — action=`unbind`, name=`ui_accept`, event= the Enter event object from step 2's `events` (`keycode` 4194309, `key_kind: "keycode"`), copied as it is
+4. `input_map_action` — action=`revert`, name=`ui_accept`
+5. `input_map_action` — action=`revert`, name=`ui_accept` again
+6. `input_map_action` — action=`remove`, name=`ui_accept`
+- **Expect:** (1) status=`created`. (2) `can_revert: true`; `events` holds Enter, Keypad Enter and Space with `key_kind: "keycode"`, then F9; `default` holds the same three keys and no F9. (3) success: an event read from the list unbinds as it is. (4) status=`reverted`, the list entry with the three default keys and `can_revert: false`, and `project.godot` on disk has no `ui_accept=` line under `[input]`. (5) status=`returned`. (6) `INVALID_PARAMS`, naming `action='revert'`.
+
+> **REGRESSION WATCH:** (3) `NOT_FOUND` means a read event no longer round-trips into `unbind` (the key kind is lost). (4) a `ui_accept=` line in `project.godot` means `revert` rebuilt the default instead of setting the engine's own revert value, so `project.godot` keeps it. Flag either as **Major**.
+
+**10.11** Fields accepted but not applied. Run in order:
+1. `input_map_action` — action=`add`, name=`sv2_events`
+2. `input_map_event` — action=`bind`, name=`sv2_events`, event=`{"type":"mouse_button","button_index":1,"pressed":true}`
+3. `input_map_event` — action=`bind`, name=`sv2_events`, event=`{"type":"mouse_button","button_index":1,"pressed":false}`
+4. `input_map_event` — action=`bind`, name=`sv2_events`, event=`{"type":"key","keycode":"Shift","location":1}`
+5. `input_map_action` — action=`remove`, name=`sv2_events`
+- **Expect:** (2) status=`created`, `warnings: ["pressed has no effect on action matching; ignored"]`, and the event read back has no `pressed`. (3) status=`returned`: `pressed` never splits a binding. (4) status=`created`; on Godot 4.3+ the event reads back with `location: 1` and no `warnings`; on Godot 4.2, `warnings: ["location needs Godot 4.3+; ignored"]` and no `location`. (5) success.
+
+> **REGRESSION WATCH:** (3) status=`created` means mouse `pressed` splits a binding again. Flag it as **Minor**.
 
 ---
 

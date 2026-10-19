@@ -20,6 +20,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Thanks to @benfeather
   ([#18](https://github.com/NPGameDev/godot-mcp-toolkit/issues/18),
   [#19](https://github.com/NPGameDev/godot-mcp-toolkit/pull/19)).
+- `input_map_list`, a read-only tool in the `input_map` group, lists input
+  actions with their events. By default it returns every project action and
+  every built-in action whose events or deadzone differ from its default;
+  `include_builtin: true` adds the unchanged built-in actions, and `name`
+  returns one action. Each entry has `source` (`builtin` or `project`), the
+  deadzone, the events and `can_revert`; a changed built-in action also has its
+  `default`. `can_revert` follows the revert button in Project Settings > Input
+  Map. A setting such as `input/jump.macos` is listed with `feature: "macos"`:
+  Godot reads it as a feature-tag variant of `jump`. Needs the matching server
+  release.
+- `input_map_action` has a `revert` action: `{"action": "revert", "name":
+  "ui_accept"}` puts a built-in action back to its default events and deadzone,
+  and `project.godot` drops its line. It answers the action's `input_map_list`
+  entry with `status: "reverted"`, or `"returned"` when the action already has
+  its default. A project action has no default, so `revert` refuses it, and
+  `remove` on a built-in action now points at `revert`.
+- Input events in `input_map_event` and `input_map_list` use one shape for
+  reading and writing, so an event read from the list can be passed back to
+  `unbind`. Every event has `class` (the engine class) and `device`. A key has
+  `key_kind` (`physical_keycode`, the default, `keycode` or `key_label`), so a
+  built-in action's logical keys can be bound and unbound, plus
+  `command_or_control` and, on Godot 4.3+, `location` (left or right). A mouse
+  button has its modifiers, `command_or_control` and `double_click`. An event of
+  another type is read as `{"type": "unknown", "class": …}`. A response carries
+  `warnings` when a field was accepted but not applied: a mouse `pressed`, or a
+  `location` on Godot 4.2.
 - `scene_instantiate` now takes any file that loads as a scene, as an editor
   drop does: a `.scn`, or a 3D model imported as a scene (`.glb`, `.gltf`,
   `.dae`, `.blend`...). Before, it refused every file but a `.tscn`. A model
@@ -105,6 +131,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   0.5 on every version.
 - The `input_map_*` tools no longer change the editor's own input map. They read
   and write the project's settings, as Project Settings does.
+- `input_map_event` now matches events the way Godot matches them when it checks
+  an action. A mouse button's `pressed` no longer makes a second binding on
+  `bind` or misses on `unbind`, and it is no longer stored or returned. A joypad
+  motion matches on its axis and direction, not its exact value, so `0.5` and
+  `1.0` on the same axis are one binding. An event with no `device` matches any
+  device, and on Godot 4.7 a key or mouse event saved with device 0 by an older
+  Godot matches one bound now. The logical keys of a built-in action, such as
+  `ui_accept`'s Enter, can now be unbound with the event `input_map_list`
+  returns.
 
 ## [1.0.4] - 2026-10-14
 
