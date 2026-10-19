@@ -7,7 +7,9 @@ extends RefCounted
 ## version requirements, in_place_reload_safe() which says whether a script can be
 ## reloaded in place on this engine, read_plugin_version() which reads the toolkit's
 ## own plugin.cfg, version_skew() which classifies how the plugin's version
-## differs from the connected server's, and the server version the toolkit pins.
+## differs from the connected server's, floor_verdict() which judges a version against
+## a declared major.minor floor, the server version the toolkit pins, and the lowest
+## server version it works with.
 
 ## Latest version tested. Versions above this still run but log a notice.
 const GODOT_TESTED_MAX_VERSION := "4.7.0"
@@ -19,6 +21,16 @@ const GODOT_TESTED_MAX_VERSION := "4.7.0"
 ## [code]--keep-compatible-server[/code] keeps the current value (a hand edit skips
 ## the npm check). The CI launch job flags a pin that does not resolve.
 const COMPATIBLE_SERVER_VERSION := "1.0.4"
+
+## The lowest MCP server version (major.minor) this toolkit works with: its declared
+## floor (ADR 0024), sent to the server as [code]min_server[/code] in the auth reply.
+## Raise it only when the toolkit depends on a newer server wire contract; that raise
+## is a MAJOR bump, since it drops older servers.
+const MIN_SERVER_VERSION := "1.0"
+
+# A strict major.minor[.patch] version with an optional -prerelease or +build suffix:
+# the grammar the MCP server parses floors with, so both sides judge a version alike.
+const _MAJOR_MINOR_PATTERN := "^(\\d+)\\.(\\d+)(?:\\.\\d+)?(?:[-+][0-9A-Za-z.-]+)?$"
 
 
 ## True when running under `godot --headless` (no display server).
@@ -115,6 +127,38 @@ static func _parse_strict(v: String) -> Array[int]:
 			return []
 		out.append(int(part))
 	return out
+
+
+## The major and minor of [param v] as [code]Vector2i(major, minor)[/code], when it is a
+## strict [code]major.minor[/code] or [code]major.minor.patch[/code] version, optionally
+## followed by a [code]-prerelease[/code] or [code]+build[/code] suffix.
+## [br]
+## Returns [code]Vector2i(-1, -1)[/code] for anything else: empty, non-numeric, a bare
+## major, or more than three numeric parts. Unlike [method is_at_least], it never reads
+## malformed text as 0, which would make it "below" every floor.
+static func parse_major_minor(v: String) -> Vector2i:
+	var regex := RegEx.new()
+	regex.compile(_MAJOR_MINOR_PATTERN)
+	var found := regex.search(v.strip_edges())
+	if found == null:
+		return Vector2i(-1, -1)
+	return Vector2i(int(found.get_string(1)), int(found.get_string(2)))
+
+
+## Judges [param peer] against the declared major.minor [param floor_version]; the
+## patch segment is ignored. Pure and advisory: the caller decides what to print, and
+## nothing refuses a connection.
+## [br]
+## Returns "ok" or "below", or "unknown" when either side does not parse (see
+## [method parse_major_minor]), so the caller falls through to its product-version check.
+static func floor_verdict(peer: String, floor_version: String) -> String:
+	var peer_pair := parse_major_minor(peer)
+	var floor_pair := parse_major_minor(floor_version)
+	if peer_pair.x < 0 or floor_pair.x < 0:
+		return "unknown"
+	if peer_pair.x != floor_pair.x:
+		return "ok" if peer_pair.x > floor_pair.x else "below"
+	return "ok" if peer_pair.y >= floor_pair.y else "below"
 
 
 static func is_at_least(engine_ver: String, min_ver: String) -> bool:

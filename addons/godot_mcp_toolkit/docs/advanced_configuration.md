@@ -343,6 +343,12 @@ server itself. It's an **Editor Settings** value (**Editor â†’ Editor Settings â
 apply. When it is empty, the toolkit falls back to the `GODOT_MCP_DEV_SERVER_PATH`
 environment variable, and then to the npm package.
 
+A local server path also turns the connect-time version check off on both sides,
+since a local build's version says nothing about the protocol it speaks. The
+editor stops checking from the next connection and prints one line per connection
+saying so. The server stops once **Write .mcp.json** has rewritten the entry (see
+`GODOT_MCP_SKIP_VERSION_CHECK` below) and you restart your MCP client.
+
 ### `npm_config_prefer_offline`
 
 In Pinned mode the written entry also sets `npm_config_prefer_offline` to `"true"`.
@@ -351,6 +357,13 @@ it already downloaded without asking the npm registry first, and the server star
 faster. Latest and any range or tag leave it out: with it set, `npx` would keep
 starting the cached copy and never fetch a newer release. The toolkit sets or
 removes this key on every write, so don't set it yourself.
+
+### `GODOT_MCP_SKIP_VERSION_CHECK`
+
+When the entry runs a local server build, the written entry also sets
+`GODOT_MCP_SKIP_VERSION_CHECK` to `"1"`, which turns the server's connect-time
+version check off. An npm entry leaves it out. The toolkit owns this key too: it
+sets or removes it on every write.
 
 ### Restart your MCP client after a change
 

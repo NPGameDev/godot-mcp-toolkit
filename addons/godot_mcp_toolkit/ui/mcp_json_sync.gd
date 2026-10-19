@@ -86,6 +86,11 @@ const _DEV_SERVER_PATH_ENV := "GODOT_MCP_DEV_SERVER_PATH"
 # for a range or tag, which it would freeze at whatever is cached.
 const _PREFER_OFFLINE_ENV := "npm_config_prefer_offline"
 
+# An env key the builder owns: the server skips its connect-time version check. Set
+# only for a local server build, whose version says nothing about the wire contract
+# it speaks; keyed to the local path setting, never to the entry's shape.
+const _SKIP_VERSION_CHECK_ENV := "GODOT_MCP_SKIP_VERSION_CHECK"
+
 # The success report of a write. A changed server spec means the client must
 # restart to run it, and npx downloads it on that first launch.
 const _WRITTEN_MESSAGE := "MCP: .mcp.json written"
@@ -338,13 +343,18 @@ static func is_exact_spec(package_spec: String) -> bool:
 ## written; they always win over the existing file's values. npm_config_prefer_offline
 ## is set to "true" for an exact [param package_spec] and removed for anything else,
 ## including a local build ([param dev_path] set), since it would freeze a range or
-## tag at whatever npx has cached. Pure — [param env] is not mutated.
+## tag at whatever npx has cached. GODOT_MCP_SKIP_VERSION_CHECK is set to "1" for a
+## local build and removed otherwise. Pure — [param env] is not mutated.
 static func apply_owned_env(env: Dictionary, package_spec: String, dev_path: String) -> Dictionary:
 	var owned: Dictionary = env.duplicate()
 	if dev_path.is_empty() and is_exact_spec(package_spec):
 		owned[_PREFER_OFFLINE_ENV] = "true"
 	else:
 		owned.erase(_PREFER_OFFLINE_ENV)
+	if dev_path.is_empty():
+		owned.erase(_SKIP_VERSION_CHECK_ENV)
+	else:
+		owned[_SKIP_VERSION_CHECK_ENV] = "1"
 	return owned
 
 
@@ -418,7 +428,7 @@ static func read_file_state() -> Dictionary:
 static func get_desired_spec(local_path_setting: String = "") -> String:
 	return desired_classification(
 			read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION,
-			_resolve_dev_path(local_path_setting))
+			resolve_machine_dev_path(local_path_setting))
 
 
 ## The project's [constant SERVER_VERSION_SETTING] value, "" when unset.
@@ -615,7 +625,7 @@ static func _stringify_canonical(value: Variant) -> String:
 ## apply_owned_env). Callable with no argument: that is the entry a machine with no
 ## local path setting writes.
 static func _build_entry(local_path_setting: String = "") -> Dictionary:
-	var dev_server_path := _resolve_dev_path(local_path_setting)
+	var dev_server_path := resolve_machine_dev_path(local_path_setting)
 	var package_spec := resolve_package_spec(read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION)
 	var entry := build_server_entry(OS.get_name(), dev_server_path, package_spec)
 	# The template base guarantees GODOT_MCP_CONFIG_VERSION; the file's own entry's
@@ -630,7 +640,7 @@ static func _build_entry(local_path_setting: String = "") -> Dictionary:
 
 ## The local server path for [param local_path_setting], falling back to the
 ## GODOT_MCP_DEV_SERVER_PATH environment variable (see [method resolve_dev_server_path]).
-static func _resolve_dev_path(local_path_setting: String) -> String:
+static func resolve_machine_dev_path(local_path_setting: String) -> String:
 	return resolve_dev_server_path(local_path_setting, OS.get_environment(_DEV_SERVER_PATH_ENV))
 
 

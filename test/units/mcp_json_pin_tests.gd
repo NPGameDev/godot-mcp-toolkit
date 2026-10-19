@@ -16,6 +16,7 @@ const _PKG := "@npgamedev/godot-mcp-server"
 const _COMPATIBLE := "1.0.4"
 const _LOCAL := "/Users/dev/godot-mcp-server/dist/index.js"
 const _PREFER_OFFLINE := "npm_config_prefer_offline"
+const _SKIP_VERSION_CHECK := "GODOT_MCP_SKIP_VERSION_CHECK"
 
 
 static func run(testing) -> void:
@@ -23,6 +24,7 @@ static func run(testing) -> void:
 	_test_resolve_dev_server_path(testing)
 	_test_is_exact_spec(testing)
 	_test_apply_owned_env(testing)
+	_test_apply_owned_env_skip_version_check(testing)
 	_test_classify_server_entry(testing)
 	_test_same_spec(testing)
 	_test_desired_classification(testing)
@@ -84,6 +86,22 @@ static func _test_apply_owned_env(testing) -> void:
 		testing.ok(not env.has(_PREFER_OFFLINE), "%s removes a stale prefer-offline" % spec)
 	var local: Dictionary = MCPJsonSync.apply_owned_env(stale, _PKG + "@1.0.4", _LOCAL)
 	testing.ok(not local.has(_PREFER_OFFLINE), "a local path removes it")
+	print("")
+
+
+# The version-check opt-out follows the local path alone: a local entry carries it,
+# and an npx entry drops one an earlier local write left behind.
+static func _test_apply_owned_env_skip_version_check(testing) -> void:
+	testing.begin("apply_owned_env — skip-version-check only for a local path")
+	var base := {"GODOT_MCP_CONFIG_VERSION": "1"}
+	var local: Dictionary = MCPJsonSync.apply_owned_env(base, _PKG + "@1.0.4", _LOCAL)
+	testing.eq(str(local.get(_SKIP_VERSION_CHECK, "")), "1", "a local path adds it")
+	testing.ok(not base.has(_SKIP_VERSION_CHECK), "input not mutated")
+	var stale := {"GODOT_MCP_CONFIG_VERSION": "1", _SKIP_VERSION_CHECK: "1"}
+	var npx_specs := [_PKG + "@1.0.4", _PKG + "@latest", _PKG + "@~1.1.0"]
+	for spec in npx_specs:
+		var env: Dictionary = MCPJsonSync.apply_owned_env(stale, str(spec), "")
+		testing.ok(not env.has(_SKIP_VERSION_CHECK), "%s removes a stale skip-version-check" % spec)
 	print("")
 
 

@@ -7,7 +7,7 @@ extends Node
 ## WS peer accept/poll + auth-handshake framing, notifier owns notification
 ## framing/sends, server_request_router + dispatch_lane own request routing and
 ## lane dispatch, and scene_lease / mutation_watchdog / unfocused_sleep_controller
-## / lsp_publisher own their domains. All command logic lives in per-domain
+## / lsp_publisher / peer_compat own their domains. All command logic lives in per-domain
 ## modules under commands/.
 
 signal client_connected(peer_count: int)
@@ -17,6 +17,10 @@ signal command_received(method: String)
 ## (set_reported_lsp_status) so the dock refreshes exactly on change — no polling,
 ## no stale label even if the status is re-assessed later (e.g. on an LSP call).
 signal lsp_status_changed
+## Emitted when the connected MCP server's compatibility verdict is set (a peer
+## authenticated) or cleared (the last peer disconnected), so the dock shows or hides
+## its below-floor line. The verdict itself comes from get_peer_compat().
+signal compat_status_changed
 ## Emitted after the session token is re-written to a new user:// path following a
 ## user-path change, carrying that new token path. The plugin (registry lifecycle
 ## owner) re-publishes the entry via ensure_registered, which preserves any active
@@ -48,6 +52,7 @@ const DispatchLane := preload("res://addons/godot_mcp_toolkit/transport/dispatch
 const UnfocusedSleepController := preload("res://addons/godot_mcp_toolkit/core/unfocused_sleep_controller.gd")
 const LspPublisher := preload("res://addons/godot_mcp_toolkit/paths/lsp_publisher.gd")
 const PortConfig := preload("res://addons/godot_mcp_toolkit/transport/port_config.gd")
+const PeerCompat := preload("res://addons/godot_mcp_toolkit/transport/peer_compat.gd")
 const ResponseLimits = Modules.ResponseLimits
 
 # Default editor scan band (inclusive). GODOT_MCP_EDITOR_PORT pins an exact port
@@ -140,6 +145,19 @@ var editor_plugin: EditorPlugin = null
 ## string name. Populated in start(); command closures access it via
 ## server.undo_helpers.
 var undo_helpers: Node = null
+
+## True while a local server build is configured, set by plugin.gd from the
+## mcp_toolkit/server/local_path editor setting or GODOT_MCP_DEV_SERVER_PATH. Such a
+## build's version says nothing about the wire contract it speaks, so the connect-time
+## version check is skipped and one line per connection says so. A flag, so this
+## transport never reads EditorSettings itself.
+var skip_version_check: bool = false
+
+# The last authenticated MCP server's floor verdict and the once-per-session record of
+# printed below-floor errors live in peer_compat.gd. This file keeps the trigger points
+# (judge after auth, clear on the last disconnect), the console output, the
+# compat_status_changed signal the dock binds, and the delegating get_peer_compat().
+var _peer_compat: PeerCompat = PeerCompat.new()
 
 # -- Mutation serialisation ---------------------------------------------------
 # When multiple WebSocket peers are connected, mutation commands must not
@@ -243,6 +261,16 @@ func set_reported_lsp_status(status: Dictionary) -> void:
 
 func get_reported_lsp_status() -> Dictionary:
 	return _lsp.get_reported_lsp_status() if _lsp != null else {}
+
+
+## The last authenticated MCP server's compatibility verdict, for the dock. Returns
+## { "state": String, "server_version": String, "min_toolkit": String,
+## "message": String }: state is one of peer_compat.gd's STATE_* constants, and
+## message is the below-floor error (without its log prefix) for a *_below_floor
+## state, else "". With several MCP servers connected, the last one to authenticate
+## wins.
+func get_peer_compat() -> Dictionary:
+	return _peer_compat.get_verdict()
 
 
 func get_command_methods() -> Array:
@@ -638,6 +666,8 @@ func _poll_connections() -> void:
 		var authed_now := _transport.get_authed_count()
 		if authed_now == 0:
 			_unfocused.restore()
+			_peer_compat.clear()
+			compat_status_changed.emit()
 		client_disconnected.emit(authed_now)
 
 
@@ -646,7 +676,7 @@ func _poll_connections() -> void:
 
 # The transport delivers each raw frame here. We parse, then route: unauthenticated
 # peers go through the transport's auth handshake (we additionally run the
-# human-only version-mismatch check); authenticated peers go to dispatch. The
+# human-only version check); authenticated peers go to dispatch. The
 # transport awaits this, so dispatch stays sequential within a poll tick.
 func _handle_message(peer: WebSocketPeer, text: String) -> void:
 	var parser := JSON.new()
@@ -662,21 +692,22 @@ func _handle_message(peer: WebSocketPeer, text: String) -> void:
 
 	if not _transport.is_authed(peer):
 		if _transport.validate_auth(peer, message):
-			# Version mismatch check — human-only (editor console), nothing on the
-			# MCP wire. Runs only after a successful auth, like the pre-extraction
-			# handshake. A pre-handshake server sends no version → skip.
-			var server_ver: String = str(message.get("version", ""))
-			if not server_ver.is_empty():
-				_check_version_mismatch(Modules.VersionUtils.read_plugin_version(), server_ver)
+			# The version check is human-only (editor console and dock), nothing on
+			# the MCP wire, and runs only after a successful auth. A 1.0.x server sends
+			# its version as `version` and declares no floor.
+			var server_ver := str(message.get("server_version", message.get("version", "")))
+			var min_toolkit := str(message.get("min_toolkit", ""))
+			_check_peer_compat(server_ver, min_toolkit)
 		return
 
 	await _router.route_request(peer, message)
 
 
 # Supplies the Mode-A auth-ack payload to the transport: the bare {authed:true} plus
-# this editor's Godot + plugin versions and its display mode (the runtime sends
-# {authed:true} only). `headless` is the wire signal the server reads to branch its
-# headless-degraded tool assertions. Pure — no side effects; the boost/signal happen in
+# this editor's Godot + plugin versions, its display mode and its declared server floor
+# (the runtime sends {authed:true} only). `headless` is the wire signal the server reads
+# to branch its headless-degraded tool assertions; `min_server` is what the server
+# judges its own version against. Pure — no side effects; the boost/signal happen in
 # _on_peer_authed.
 func _build_auth_ack(_message: Dictionary) -> Dictionary:
 	var vi := Engine.get_version_info()
@@ -685,6 +716,7 @@ func _build_auth_ack(_message: Dictionary) -> Dictionary:
 		"godot_version": "%d.%d.%d" % [vi["major"], vi["minor"], vi["patch"]],
 		"version": Modules.VersionUtils.read_plugin_version(),
 		"headless": Modules.VersionUtils.is_headless(),
+		"min_server": Modules.VersionUtils.MIN_SERVER_VERSION,
 	}
 
 
@@ -704,6 +736,28 @@ func _on_peer_authed(count: int) -> void:
 # here (the aggregate uses the transport's batch result).
 func _on_peer_closed(peer: WebSocketPeer, _was_authed: bool) -> void:
 	_scene_lease.on_peer_closed(peer)
+
+
+# The connect-time version check against server_ver and the server's declared toolkit
+# floor min_toolkit ("" when it declares none). The floor verdict comes from the
+# peer_compat child: a local server build skips the check with one line per
+# connection, a side below the other's floor gets one error in place of the
+# product-version message (printed once per state and server version), and otherwise
+# the product-version message runs. Never refuses the connection.
+func _check_peer_compat(server_ver: String, min_toolkit: String) -> void:
+	var toolkit_ver: String = Modules.VersionUtils.read_plugin_version()
+	var line := _peer_compat.assess(server_ver, min_toolkit, toolkit_ver,
+			Modules.VersionUtils.MIN_SERVER_VERSION, skip_version_check)
+	compat_status_changed.emit()
+	var state := _peer_compat.get_state()
+	if state == PeerCompat.STATE_SKIPPED:
+		print("[MCPServer] " + line)
+	elif state == PeerCompat.STATE_OK:
+		# A pre-handshake server sends no version: nothing to compare.
+		if not server_ver.is_empty():
+			_check_version_mismatch(toolkit_ver, server_ver)
+	elif not line.is_empty():
+		push_error("[MCPServer] " + line)
 
 
 func _check_version_mismatch(local: String, remote: String) -> void:
