@@ -210,6 +210,8 @@ During playtests, the plugin injects an autoload that opens a second WebSocket s
 
 It activates automatically when your assistant uses `game_start` with `wait_for_runtime: true` (the default) and shuts down when the playtest ends. To pin the port, set `GODOT_MCP_RUNTIME_PORT` where **both** the editor process (which launches the game) and the server can see it. Details are in the shipped [advanced configuration guide](addons/godot_mcp_toolkit/docs/advanced_configuration.md).
 
+Any other run of the project with the editor binary starts it too (a `--check-only` run aside), including a headless `--script` test runner. Set `GODOT_MCP_RUNTIME=0` for such a run so it doesn't take the runtime slot from the game your assistant started.
+
 Runtime tools exist only in debug builds: the runtime piece self-disables in exported games, and the bundled export plugin strips the addon (and its auth tokens) from shipped builds.
 
 ## Headless mode

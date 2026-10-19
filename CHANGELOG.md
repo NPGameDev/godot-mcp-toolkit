@@ -20,11 +20,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Thanks to @benfeather
   ([#18](https://github.com/NPGameDev/godot-mcp-toolkit/issues/18),
   [#19](https://github.com/NPGameDev/godot-mcp-toolkit/pull/19)).
+- `scene_instantiate` now takes any file that loads as a scene, as an editor
+  drop does: a `.scn`, or a 3D model imported as a scene (`.glb`, `.gltf`,
+  `.dae`, `.blend`...). Before, it refused every file but a `.tscn`. A model
+  imported as something else, such as an `.obj` imported as a mesh, is still
+  refused. A model the editor hasn't imported yet fails with a message that
+  says to run `editor_refresh` and retry. Thanks to @benfeather
+  ([#39](https://github.com/NPGameDev/godot-mcp-toolkit/issues/39),
+  [#40](https://github.com/NPGameDev/godot-mcp-toolkit/pull/40)).
+- `GODOT_MCP_RUNTIME=0` (or `false`, `off`) keeps a run of your project off the
+  runtime channel. Before, every run with the editor binary opened it, including
+  a headless `--script` test runner, and took the project's runtime entry in the
+  registry from the game the MCP tools had started. See "Keeping a run off the
+  runtime channel" in the advanced configuration guide. An editor started with
+  the variable set passes it to every game it launches, and a `game_start`
+  re-probe names it in its hint. The repo's cold unit runner sets it outside CI.
+  Reported and implemented by @benfeather
+  ([#46](https://github.com/NPGameDev/godot-mcp-toolkit/issues/46),
+  [#47](https://github.com/NPGameDev/godot-mcp-toolkit/pull/47)).
 
 ### Fixed
 
 - After a project rename, **Regenerate Token** no longer leaves the MCP server
   unable to connect until the editor restarts.
+- `node_manage` with `duplicate` now saves the copy's children. Before,
+  `scene_get_tree` listed them, but the saved scene held the copy alone, because
+  `Node.duplicate()` leaves the copied children with no owner. They also stay
+  after an undo and a redo. The internals of an instanced sub-scene stay with
+  the instance. Reported and fixed by @benfeather
+  ([#37](https://github.com/NPGameDev/godot-mcp-toolkit/issues/37),
+  [#38](https://github.com/NPGameDev/godot-mcp-toolkit/pull/38)).
+- `resource_write` now saves a typed array property, such as `Array[String]`, as
+  a typed array. Before, creating a resource from a script class (`type` naming
+  a `class_name`) dropped the array with no warning, and other writes saved it
+  untyped (`tags = ["x"]`). An element that doesn't fit the array's type now
+  leaves the value unchanged, with a warning that names the element. A number
+  with a fraction in an `Array[int]` is truncated, as it is for an `int`
+  property, and a warning lists the elements that changed.
+  Reported and fixed by @benfeather
+  ([#41](https://github.com/NPGameDev/godot-mcp-toolkit/issues/41),
+  [#42](https://github.com/NPGameDev/godot-mcp-toolkit/pull/42)).
 - Nodes now run a script as it is on disk. `node_set_script` used to set the
   version the editor first loaded from that path, so after `script_edit`,
   `script_write` or another editor changed the file, a `@tool` script kept

@@ -898,10 +898,16 @@ static func _manage_duplicate(
 
 	target_parent.add_child(dup)
 	dup.set_owner(root)
-	MCPToolkitUndoRedoAction.begin("duplicate %s" % node_path, target_parent) \
+	var owned_copies := _copies_owned_by_root(root, node, dup)
+	for copy in owned_copies:
+		copy.set_owner(root)
+	var action := MCPToolkitUndoRedoAction.begin("duplicate %s" % node_path, target_parent) \
 		.do_method(target_parent.add_child.bind(dup)) \
-		.do_method(dup.set_owner.bind(root)) \
-		.do_reference(dup) \
+		.do_method(dup.set_owner.bind(root))
+	# Undo leaves the copies with no owner, so redo sets it again, as for the copy itself.
+	for copy in owned_copies:
+		action.do_method(copy.set_owner.bind(root))
+	action.do_reference(dup) \
 		.undo_method(target_parent.remove_child.bind(dup)) \
 		.commit_recorded()
 
@@ -927,6 +933,21 @@ static func _manage_duplicate(
 	if not warnings.is_empty():
 		response["warnings"] = warnings
 	return MCPToolkitSuccess.ok(response)
+
+
+## Returns the copies, under [param copy], of the descendants of [param original]
+## that [param root] owns. Node.duplicate() leaves those copies with no owner, so
+## the scene saver would drop them. An instanced sub-scene's internals are left
+## out: the copy re-instances them and owns them itself.
+static func _copies_owned_by_root(root: Node, original: Node, copy: Node) -> Array[Node]:
+	var copies: Array[Node] = []
+	for descendant: Node in original.find_children("*", "", true, false):
+		if descendant.owner != root:
+			continue
+		var counterpart := copy.get_node_or_null(original.get_path_to(descendant))
+		if counterpart != null:
+			copies.append(counterpart)
+	return copies
 
 
 static func _cmd_node_groups(parameters: Dictionary) -> Dictionary:

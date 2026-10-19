@@ -17,11 +17,37 @@ const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/play
 const _MAIN_SCENE_KEY := "application/run/main_scene"
 const _LOG_PATH_KEY := "debug/file_logging/log_path"
 const _LOG_FIXTURE := "user://mcp_debugger_log_fixture.log"
+const _ENV_RUNTIME := "GODOT_MCP_RUNTIME"
 
 
 static func run(testing) -> void:
 	_test_main_scene_missing_predicate(testing)
 	_test_debugger_log_reads_from_zero(testing)
+	_test_runtime_opt_out_hint(testing)
+
+
+# game.start names the opt-out when the editor's own environment carries it: the
+# game inherits that environment, so its runtime channel never opens. The variable
+# is restored before asserting.
+static func _test_runtime_opt_out_hint(testing) -> void:
+	testing.begin("game.start hint for an editor environment that opts games out")
+	var had_env := OS.has_environment(_ENV_RUNTIME)
+	var saved_env := OS.get_environment(_ENV_RUNTIME)
+
+	OS.set_environment(_ENV_RUNTIME, "0")
+	var opted_out_hint := PlaytestControl._runtime_opt_out_hint()
+	OS.set_environment(_ENV_RUNTIME, "1")
+	var opted_in_hint := PlaytestControl._runtime_opt_out_hint()
+
+	if had_env:
+		OS.set_environment(_ENV_RUNTIME, saved_env)
+	else:
+		OS.unset_environment(_ENV_RUNTIME)
+
+	testing.ok(opted_out_hint.contains("GODOT_MCP_RUNTIME=0"),
+		"GODOT_MCP_RUNTIME=0 in the editor's environment → a hint naming it")
+	testing.ok(opted_in_hint.is_empty(), "any other value → no hint")
+	print("")
 
 
 static func _test_main_scene_missing_predicate(testing) -> void:

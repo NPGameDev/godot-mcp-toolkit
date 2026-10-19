@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 2 (nodes exist in `res://sv2_validation/Sv2Main.tscn`)
 **Tools tested:** node.set_property, scene.create_node, node.manage, node.groups, node.call_method, scene.delete_node, control.set_layout, signal.manage, path2d.edit_curve, navigation.edit_polygon, particles.create, collision_from_texture, node.set_script
-**Tests:** 60 (numbered UR sub-cases UR1.x–UR13.x; scaffolding UR-Setup/UR-Console/UR-Cleanup excluded)
+**Tests:** 62 (numbered UR sub-cases UR1.x–UR13.x; scaffolding UR-Setup/UR-Console/UR-Cleanup excluded)
 **Note:** Tests that MCP mutations register in the editor's undo history and can be reversed. Uses `test/test_undo_redo_action.gd` as a helper script attached to a node in the scene. Sections UR4–UR12 are regression guards for tools that previously had missing `context_object` in their `MCPToolkitUndoRedoAction.begin()` calls, which caused `UndoRedo history mismatch` errors; UR13 watches navigation's UndoRedo adoption.
 
 ---
@@ -121,6 +121,11 @@
 
 ## UR5. node.manage duplicate undo/redo
 
+**UR5.0** Setup — give `URTarget` a child and a grandchild for UR5.4:
+- `scene.create_node` — type=`Node2D`, name=`URDupChild`, parent=`URTarget`
+- `scene.create_node` — type=`Node`, name=`URDupGrandchild`, parent=`URTarget/URDupChild`
+- **Expect:** success for both
+
 **UR5.1** Duplicate:
 - `node.manage` — node_path=`URTarget`, action=`duplicate`, new_name=`URDuplicate`
 - **Expect:** success
@@ -132,6 +137,17 @@
 **UR5.3** Verify duplicate removed:
 - `scene.get_tree` — confirm `URDuplicate` does NOT exist
 - **Expect:** no node named `URDuplicate`
+
+**UR5.4** Redo, save, children present:
+- `node.call_method` — node_path=`URHelper`, method_name=`trigger_redo`, args=`[""]`
+- **Expect:** status=`ok`, `URDuplicate` back in the tree
+- **Saved-file check:** `editor_save_scene`, then `script_read` file_path=`res://sv2_validation/Sv2Main.tscn`. The file has a `[node name="URDupChild" ...]` header with `parent="URDuplicate"` and a `[node name="URDupGrandchild" ...]` header with `parent="URDuplicate/URDupChild"`.
+- **Constraint:** run UR5.2→UR5.4 back to back, as UR1.4→UR1.6.
+
+> **REGRESSION WATCH (toolkit #37, ecd5fb3):** Undo removes the copy and clears its
+> descendants' owners; redo must set them again. If the file holds `URDuplicate`
+> with no children, redo left them unowned and the save dropped them. Flag as
+> **Major**.
 
 ---
 
@@ -369,6 +385,10 @@
 **UR-C5.** Delete `URTarget` (or `URRenamed`, whichever name it currently has):
 - `scene.delete_node` — node_path matching current name
 - **Expect:** success (or already removed by undo)
+
+**UR-C5b.** Delete `URDuplicate` (UR5.4's redone copy, with its children):
+- `scene.delete_node` — node_path=`URDuplicate`
+- **Expect:** success (or already removed — skip if not found)
 
 **UR-C6.** Delete `URHelper`:
 - `scene.delete_node` — node_path=`URHelper`
