@@ -545,7 +545,7 @@ guarded lifecycle. `extension_loader.gd` is a 36-line orchestrator over four ser
 (the shared load/validate/probe leaf), `extension_watcher` (live hot-reload), and
 `extension_meta_commands` (the `extensions.list` surface).
 
-<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="eb4c9fa" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="9b28495" -->
 ```mermaid
 flowchart TD
     scan["scan ProjectSettings.get_global_class_list()"] --> cand{"candidate?<br/>GDScript base == MCPToolkitExtension<br/>or C# MCPToolkit*.cs"}
@@ -562,7 +562,7 @@ flowchart TD
     reserved --> mark["registry.mark_extension(method)"]
     mark --> retain["retain instance (C# GC safety)"]
 ```
-*Figure 11 — extension discovery → validate → guarded register · verified eb4c9fa*
+*Figure 11 — extension discovery → validate → guarded register · verified 9b28495*
 
 Two guards protect the built-in surface: a **collision guard** window (opened by
 `begin_extension_load`, drained by `end_extension_load`) rejects an extension that tries to
@@ -579,10 +579,13 @@ it and break the callbacks.
 
 **Hot-reload.** `extension_watcher` listens for `EditorFileSystem.filesystem_changed` and
 `ProjectSettings.settings_changed`, debounces ~500 ms, computes an added/removed/modified class
-diff (with a source-hash fallback for in-session edits on Godot 4.2), applies it, and broadcasts
+diff, applies it, and broadcasts
 `extensions.changed` to all authed peers. `extensions.list` / `extensions.refresh` are the pull
 counterparts. (Because Claude Code drops `tools/list_changed` notifications, the bridge cannot
-rely on the broadcast alone — the pull path is the reliable one.)
+rely on the broadcast alone — the pull path is the reliable one.) On Godot 4.2 the loader reads
+the editor's cached script, which a toolkit write that compiles reloads, so the watcher checks
+each edit against that cache: an edit made outside the toolkit gets a restart hint in
+`extensions.refresh`, and a file that does not compile gets a hint to fix it.
 
 **The extension API** is the nine public `MCPToolkit*` classes plus the registry facade. C#
 extensions in particular cannot `await` GDScript statics, so the `registry` handed to
