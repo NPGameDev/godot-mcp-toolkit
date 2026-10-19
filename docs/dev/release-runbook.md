@@ -34,10 +34,12 @@ Work through the phases in order. Each one ends in a state the next phase assume
   repo's tag gate requires the pinned sibling to declare the exact version being tagged. Until the
   tag gates check the declared floor instead, that forces a lockstep release.
 - Run the `humanizer` skill over the `[Unreleased]` entries in each repo's `CHANGELOG.md`, and edit
-  them before anything is tagged. Release notes are the most-read text either project ships, and the
-  annotated tag embeds the rolled section permanently, so a tell caught afterwards cannot be fixed
-  without the file disagreeing with the tag. Em dashes are the usual finding. Applies to new entries
-  only: entries already shipped in a tag stay as they are.
+  them before anything is tagged; curate each `[Unreleased]` in Keep a Changelog category order
+  (Added, Changed, Deprecated, Removed, Fixed, Security; empty ones omitted), so each tag's section
+  drops into the merged changelog unchanged. Release notes are the most-read text either project
+  ships, and the annotated tag embeds the rolled section permanently, so a tell caught afterwards
+  cannot be fixed without the file disagreeing with the tag. Em dashes are the usual finding.
+  Applies to new entries only: entries already shipped in a tag stay as they are.
 
 ## Phase 1. Rehearse
 
@@ -133,8 +135,6 @@ both run URLs. A red leg stops the release.
 
 ## Phase 4. Release the server
 
-Read `Workflows/release-script-gotchas.md` in the plan repo if you are touching the script itself.
-
 Rehearse the script first, then run it for real:
 
 ```bash
@@ -226,22 +226,39 @@ git rev-parse v<version>
 
 ## Phase 7. Update the listings
 
-Both listing surfaces carry copy that no CI check guards.
+Both listing surfaces carry copy that no CI check guards. Check, upload to or update every place
+below:
+
+| Where | URL | What to do |
+| --- | --- | --- |
+| Asset Store, versions | https://store.godotengine.org/asset/npgamedev/godot-mcp-toolkit/manage/#versions | add the version, Stable, upload the CI zip, paste the merged changelog |
+| Asset Store, public listing | https://store.godotengine.org/asset/npgamedev/godot-mcp-toolkit/ | check the new version shows |
+| Zip to upload | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/download/v<ver>/godot-mcp-toolkit-<ver>.zip` | the CI-built zip, never a local build |
+| Legacy Asset Library, edit | https://godotengine.org/asset-library/asset/edit/23816 | version + full 40-char Download Commit; re-enters moderation |
+| Legacy Asset Library, public | https://godotengine.org/asset-library/asset/23816 | check the version after moderation |
+| Toolkit GitHub Release | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v<ver>` | body leads with the merged changelog; zip attached |
+| Server GitHub Release | `https://github.com/NPGameDev/godot-mcp-server/releases/tag/v<ver>` | body leads with the server's own CHANGELOG section |
+| npm | `https://www.npmjs.com/package/@npgamedev/godot-mcp-server/v/<ver>` | version, provenance badge, images |
 
 1. Re-run `godot-mcp-server --tools-count` and confirm the figures the descriptions quote.
 2. Update the legacy AssetLib entry: version, download commit, and the description if it changed. An
    edit re-enters moderation and can take days.
-3. Update the Asset Store listing: upload the new zip under Versions with its changelog, mark it
-   stable, and revise the description if the surface changed. Paste the repo's rolled section as the
-   Version Changelog rather than rewriting it here. *Before you start* already humanized that text,
-   so wanting to edit it at this point means the humanizer step was skipped, and the fix belongs in
-   the next release rather than in a store-only rewrite. 1.0.1 diverged from its own tag this way.
+3. Update the Asset Store listing: upload the new zip under Versions with the merged changelog as its
+   Version Changelog, mark it stable, and revise the description if the surface changed. The merged
+   changelog carries both repos' sections for the version; paste it as is rather than rewriting it
+   here. *Before you start* already humanized both sections, so wanting to edit either at this point
+   means the humanizer step was skipped, and the fix belongs in the next release rather than in a
+   store-only rewrite. 1.0.1 diverged from its own tag this way.
+
+   The merged changelog opens with one `## [<version>] - <date>` heading, a one-sentence summary, a
+   compatibility line (Godot minimum, Node minimum, the server minor it pairs with) and upgrade notes
+   only when the user must act. A Toolkit block and a Server block follow, each its tag's own
+   CHANGELOG section with every bullet's hard wraps joined onto one line. Use full Markdown links
+   only, since `#10` and `@user` do not autolink on the store. A footer links both CHANGELOGs at the
+   tag and the compare range.
 4. Leave the maximum compatible Godot version empty. A hard cap goes stale when the next minor ships.
 
-The copy as published lives in the plan repo under `Plan/ExecutionPlan/listing-copy/`. The form
-fields, the media rules (16:9 mandatory for the store, minimum 1280x720, maximum 600 KB), and the
-editing rules any update follows live in `Plan/ExecutionPlan/42b-submission-values.md`. Image
-derivatives live in the art repo under `godot-mcp-toolkit-art/AssetStore/`.
+Store media is 16:9 (mandatory), at least 1280x720 and at most 600 KB.
 
 ## Phase 8. Close out
 
@@ -250,8 +267,8 @@ derivatives live in the art repo under `godot-mcp-toolkit-art/AssetStore/`.
   npm version have converged. Exit 1 means a tag is missing or the toolkit repo cannot be found, so
   act on it. Exit 2 means only npm is still catching up, so poll again.
 - Check both GH Release bodies. The workflow auto-generates notes from the commit range rather than
-  the changelog, so paste the rolled CHANGELOG section in as the body if you want readers to see
-  what changed.
+  the changelog, so paste the merged changelog at the top of the toolkit's body, above the generated
+  notes, and the server's own rolled section at the top of the server's.
 - If a release turns out bad, do not reuse or move the tag. `RELEASING.md` has the forward-only
   rollback paths for npm, GitHub, and the two listing surfaces.
 - Record anything that surprised you, so the next release does not rediscover it.
