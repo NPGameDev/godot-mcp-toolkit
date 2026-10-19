@@ -509,6 +509,7 @@ flowchart TD
     composer --> detect["PlaytestEndDetector"]
     composer --> start["server.start() + register in registry"]
     composer --> ui["write flow + dialog presenter<br/>(shared UI · ADR 0016)"]
+    composer --> upd["update check runner<br/>(plugin child · read by the dock's badge)"]
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
@@ -518,7 +519,9 @@ The composer builds in a behaviour-critical order: registry and server first, th
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
 export-strip plugin, the user-path monitor (which re-homes `user://` paths when the project is
 renamed), the playtest-end detector, the server start + registry registration, then the shared
-`.mcp.json` write-flow + dialog presenter, and finally the dock. The write-flow and dialog
+`.mcp.json` write-flow + dialog presenter, the update check runner (a plugin child that checks for a
+newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), and
+finally the dock. The write-flow and dialog
 presenter are **injected** into the dock, the tool menu, and the onboarding wizard alike — the
 dock consumes them like any other UI surface rather than acting as a service locator for them
 ([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
@@ -527,7 +530,7 @@ dock, the presenter reads `.mcp.json` the way the badge does). `dispose()` rever
 `PlaytestCommands.clear_debug_bridge()`, the reverse of handing the debug bridge to `PlaytestCommands.register`, and last clears the response limits' env
 overrides (`core/response_limits.gd`), static state that would otherwise outlive a plugin reload;
 teardown uses **immediate (not deferred)
-`free()`** throughout — for the dock control, the dialog presenter's dialogs, and the server, and
+`free()`** throughout — for the dock control, the update check runner, the dialog presenter's dialogs, and the server, and
 (in `plugin.gd`'s own `_exit_tree`) for the tool menu and the onboarding wizard — so nothing
 outlives ObjectDB's exit-time leak check. The tool menu, per-user EditorSettings (the unfocused-editor
 preferences and the machine-local `mcp_toolkit/server/local_path`), the

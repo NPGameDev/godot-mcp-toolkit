@@ -789,14 +789,14 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 | `registry/` | `registry_client.gd` | `registry/store/` (`file_lock`, `registry_entry_file`, `registry_paths`, `registry_projection`) |
 | `extensions/` | `extension_loader.gd` | `extensions/services/` (`extension_discovery`, `extension_meta_commands`, `extension_support`, `extension_watcher`) |
 | `commands/` | the per-domain command modules | `commands/{editor,tileset,playtest}/` |
-| `ui/dock/` | `dock.gd` | `ui/dock/{ext,limits,mcp,security,status}/` |
+| `ui/dock/` | `dock.gd` | `ui/dock/{ext,limits,mcp,security,status,update}/` |
 | `contract/` | the value types + `coerce.gd` | — |
 | `core/` | `plugin_composer.gd`, `modules.gd` (the aggregator) | `editor_access.gd`, `settings_registration.gd`, `tool_menu.gd`, `disable_cleanup_coordinator.gd`, `export_strip.gd`, `playtest_end_detector.gd`, `unfocused_*.gd` |
 | `scene/` | `scene_lease.gd` + the public scene types | `undo_redo_helpers.gd`, `signal_pair_resolver.gd` |
 | `security/` | — | `audit`, `auth`, `file_guard`, `scrubber`, `untrusted` |
 | `paths/` | `project_paths.gd` | `project_key`, `user_path_monitor`, `lsp_publisher` |
 | `logging/` | — | `log_buffer`, `log_helpers` |
-| `versioning/` | `mcp_version_utils.gd` | `nodejs_check`, `stale_instance_hint` |
+| `versioning/` | `mcp_version_utils.gd` | `nodejs_check`, `stale_instance_hint`, `update_check`, `update_check_runner` |
 | `runtime/` | `mcp_runtime_server.gd` (the runtime autoload) | — |
 
 `plugin.gd` is a thin orchestrator: lifecycle (`_enter_tree`/`_exit_tree`/`_enable_plugin`/

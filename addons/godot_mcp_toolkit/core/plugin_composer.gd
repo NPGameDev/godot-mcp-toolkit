@@ -5,8 +5,8 @@ extends RefCounted
 ##
 ## compose() builds the whole object graph (registry, server, debug bridge,
 ## command registrar, extensions, export plugin, log buffer, user-path monitor,
-## registry registration, playtest watcher, write flow + dialog presenter, dock)
-## and returns the owning Handle.
+## registry registration, playtest watcher, write flow + dialog presenter, update
+## check, dock) and returns the owning Handle.
 ## The orchestrator (plugin.gd) calls compose() once from _enter_tree, holds the
 ## Handle, drives it (poll_playtest each _process), and calls Handle.dispose()
 ## once from _exit_tree. This owns wiring, not lifecycle phases: the phase
@@ -24,6 +24,7 @@ const MCPServer := preload("res://addons/godot_mcp_toolkit/transport/mcp_server.
 const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
+const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/extension_loader.gd")
 const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
 const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
@@ -100,9 +101,16 @@ static func compose(plugin: EditorPlugin, on_user_path_changed: Callable) -> Han
 	handle._write_flow = write_flow
 	handle._dialog_presenter = dialog_presenter
 
+	# The update check runs whether or not the dock is shown, so it is a plugin
+	# child the dock's badge reads, never a dock behavior.
+	var update_check := UpdateCheckRunner.new()
+	update_check.name = "MCPUpdateCheck"
+	plugin.add_child(update_check)
+	handle._update_check = update_check
+
 	# -- Toolkit dock (bottom panel on ≤4.5, EditorDock on 4.6+; DockHost owns the seam) --
 	var dock: Control = preload("res://addons/godot_mcp_toolkit/ui/dock/dock.tscn").instantiate()
-	dock.bind(server, Modules.Audit.get_log_path(), write_flow, dialog_presenter)
+	dock.bind(server, Modules.Audit.get_log_path(), write_flow, dialog_presenter, update_check)
 	handle._dock = dock
 	handle._dock_host = DockHost.add(plugin, dock, "MCP Toolkit")
 
@@ -171,7 +179,7 @@ static func _republish_on_token_rewrite(server: Node, token_path: String) -> voi
 ##
 ## The orchestrator reaches the collaborators it still needs post-compose via
 ## server() (menu, watcher wiring), dock() (menu), write_flow() + dialog_presenter()
-## (menu, onboarding wizard), and dock_host() (the reveal façade); the other five
+## (menu, onboarding wizard), and dock_host() (the reveal façade); the other six
 ## instances stay private and are touched only by dispose(). poll_playtest()
 ## drives the playtest watcher each _process; dispose() tears the graph down in the
 ## exact reverse order of compose() (behavior-critical ordering).
@@ -193,6 +201,7 @@ class Handle:
 	var _dock_host: Object = null  # EditorDock wrapper on 4.6+; null on ≤4.5 (control is its own handle)
 	var _write_flow: MCPJsonWriteFlow = null  # Shared .mcp.json confirm-then-write flow
 	var _dialog_presenter: ToolkitDialogPresenter = null  # Editor-global dialogs (info + catalog)
+	var _update_check: Node = null  # Update check runner, read by the dock's badge
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 	var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
 	var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
@@ -228,7 +237,7 @@ class Handle:
 			_playtest_end_detector.poll()
 
 	## Tear down the composed graph in reverse construction order. Behavior-critical
-	## ordering — dock → dialog presenter + write flow → user-path monitor →
+	## ordering — dock → update check → dialog presenter + write flow → user-path monitor →
 	## playtest watcher → extension watcher → debug bridge → export plugin →
 	## server+registry → env overrides.
 	func dispose() -> void:
@@ -254,6 +263,13 @@ class Handle:
 				_dock.free()
 			_dock = null
 			_dock_host = null
+
+		# Update check — a plugin child holding a timer and an HTTPRequest; free()
+		# it immediately for the same leak-check reason (its _exit_tree cancels the
+		# request and disconnects from ProjectSettings).
+		if _update_check != null:
+			_update_check.free()
+			_update_check = null
 
 		# Editor-global dialogs (info + extension catalog) — the presenter frees
 		# them immediately, for the same leak-check reason the dock control is

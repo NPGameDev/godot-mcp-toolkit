@@ -27,6 +27,12 @@ static func has_plugin() -> bool:
 	return _plugin != null
 
 
+## The stored EditorPlugin, for its editor signals; null before [method set_plugin]
+## and after [method clear_plugin].
+static func get_plugin() -> EditorPlugin:
+	return _plugin
+
+
 ## Get EditorUndoRedoManager via the stored plugin reference.
 ## Returns the singleton on ALL Godot 4.x versions in editor context.
 ## Returns null only in headless mode (no plugin loaded).
