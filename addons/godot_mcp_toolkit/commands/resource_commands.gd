@@ -71,9 +71,15 @@ static func _apply_resource_properties(
 					"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
 				continue
 			var fit := Helpers.fit_to_type(coerced, int(entry.get("type", TYPE_NIL)), key_string)
-			resource.set(key_string, fit["value"])
+			var array_fit := Helpers.fit_to_typed_array(resource, key_string, fit["value"])
+			if not str(array_fit["error"]).is_empty():
+				warnings.append("%s; value left unchanged" % str(array_fit["error"]))
+				continue
+			resource.set(key_string, array_fit["value"])
 			if not str(fit["warning"]).is_empty():
 				warnings.append(str(fit["warning"]))
+			if not str(array_fit["warning"]).is_empty():
+				warnings.append(str(array_fit["warning"]))
 	return warnings
 
 
