@@ -155,7 +155,11 @@ static func _cmd_script_write(server: Node, parameters: Dictionary) -> Dictionar
 
 
 static func _cmd_script_edit(server: Node, parameters: Dictionary) -> Dictionary:
-	var err = MCPToolkitError.require(parameters, ["file_path", "old_string"])
+	# With an edits array the top-level old_string is absent, so only the single form
+	# requires it.
+	var uses_edits := parameters.has("edits")
+	var required := ["file_path"] if uses_edits else ["file_path", "old_string"]
+	var err = MCPToolkitError.require(parameters, required)
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
@@ -166,19 +170,28 @@ static func _cmd_script_edit(server: Node, parameters: Dictionary) -> Dictionary
 	if not (edit_extension in ALLOWED_EXTENSIONS):
 		return MCPToolkitError.fail("INVALID_PATH",
 			"script.edit only edits .gd, .cs, .gdshader, or .gdshaderinc files (got %s); use scene.create for .tscn, resource.write for .tres/.res, or a different tool for other file types" % file_path)
-	# new_string is required-present but "" is valid (an empty replacement deletes the
-	# span) — so it can't go through require(), which rejects an empty string. Check
-	# presence directly.
-	if not parameters.has("new_string"):
-		return MCPToolkitError.fail("INVALID_PARAMS", "missing new_string")
-	var old_string := str(parameters.get("old_string", ""))
-	var new_string := str(parameters.get("new_string", ""))
-	# Fail fast on a no-op / malformed edit before touching the file: a substitution
+
+	var edits: Array = []
+	if uses_edits:
+		# A top-level replace_all:false changes nothing, and clients that fill in
+		# optional defaults send it, so only a true one conflicts with edits.
+		var replace_all_set := bool(parameters.get("replace_all", false))
+		if parameters.has("old_string") or parameters.has("new_string") or replace_all_set:
+			return MCPToolkitError.fail("INVALID_PARAMS",
+				"pass either edits or old_string/new_string/replace_all, not both")
+		var edits_param = parameters.get("edits")
+		if not (edits_param is Array) or edits_param.is_empty():
+			return MCPToolkitError.fail("INVALID_PARAMS",
+				"edits must be a non-empty array of {old_string, new_string, replace_all?}")
+		edits = edits_param
+	else:
+		edits.append(parameters)
+	# Fail fast on a malformed or no-op edit before touching the file: a substitution
 	# that changes nothing would still churn undo/index/diagnostics for no effect.
-	if old_string == new_string:
-		return MCPToolkitError.fail("INVALID_PARAMS",
-			"old_string and new_string are identical — the edit would change nothing")
-	var replace_all := bool(parameters.get("replace_all", false))
+	for index in edits.size():
+		var shape_error := _check_edit_shape(edits[index], _edit_prefix(uses_edits, index))
+		if not shape_error.is_empty():
+			return shape_error
 
 	if not FileAccess.file_exists(file_path):
 		return MCPToolkitError.fail("NOT_FOUND", "no file at %s" % file_path, MCPToolkitError.HINT_FILE_PATH)
@@ -188,34 +201,87 @@ static func _cmd_script_edit(server: Node, parameters: Dictionary) -> Dictionary
 		return MCPToolkitError.fail("READ_FAILED",
 			"FileAccess error %d reading %s" % [read_error, file_path])
 
-	var match_count := prior_content.count(old_string)
-	if match_count == 0:
-		return MCPToolkitError.fail("NOT_FOUND",
-			"old_string not found in %s" % file_path,
-			"Re-read the file (script.read) and copy old_string byte-for-byte; whitespace and indentation must match exactly.")
-	if match_count > 1 and not replace_all:
-		return MCPToolkitError.fail("NOT_UNIQUE",
-			"old_string matches %d times in %s" % [match_count, file_path],
-			"Add surrounding context so old_string identifies one location, or set replace_all:true to replace all %d." % match_count)
-
-	var new_content: String
-	var replacements: int
-	if replace_all:
-		new_content = prior_content.replace(old_string, new_string)
-		replacements = match_count
-	else:
-		# Exactly one match: splice at the found offset rather than String.replace (which
-		# would substitute every occurrence), leaving every other byte untouched.
-		var at := prior_content.find(old_string)
-		new_content = prior_content.substr(0, at) + new_string + prior_content.substr(at + old_string.length())
-		replacements = 1
+	var applied := _apply_edits(prior_content, edits, file_path, uses_edits)
+	if applied.has("error"):
+		return applied
 
 	# The file existed (checked above), so the undo restores prior_content.
-	var result := await _commit_content(server, file_path, new_content, prior_content, true, edit_extension)
+	var result := await _commit_content(server, file_path, str(applied["content"]), prior_content, true, edit_extension)
 	if result.has("error"):
 		return result
-	result["replacements"] = replacements
+	result["replacements"] = applied["replacements"]
 	return result
+
+
+## Checks one edit's keys before the file is read. [param edit] is an element of
+## script.edit's edits array, or the top-level parameters for the single form;
+## [param prefix] names the element in the message ("" for the single form).
+## Returns an empty Dictionary when the edit is well formed, else an
+## [code]INVALID_PARAMS[/code] failure envelope.
+static func _check_edit_shape(edit: Variant, prefix: String) -> Dictionary:
+	if not (edit is Dictionary):
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"%smust be an object {old_string, new_string, replace_all?}" % prefix)
+	var old_string := str(edit.get("old_string", ""))
+	if old_string.is_empty():
+		return MCPToolkitError.fail("INVALID_PARAMS", "%sold_string is required" % prefix)
+	# new_string is required-present but "" is valid (an empty replacement deletes the
+	# span) — so it can't go through require(), which rejects an empty string. Check
+	# presence directly.
+	if not edit.has("new_string"):
+		return MCPToolkitError.fail("INVALID_PARAMS", "%smissing new_string" % prefix)
+	if old_string == str(edit.get("new_string", "")):
+		return MCPToolkitError.fail("INVALID_PARAMS",
+			"%sold_string and new_string are identical — the edit would change nothing" % prefix)
+	return {}
+
+
+## Applies [param edits] to [param content] in order, each against the text the
+## earlier ones leave. Nothing is written here: the caller commits the result once,
+## so a failing edit leaves the file untouched. Each edit is a Dictionary already
+## checked by [method _check_edit_shape]; [param uses_edits] prefixes each failure with
+## the edit's index (the edits form). Returns
+## [code]{content, replacements}[/code], or a [code]NOT_FOUND[/code] /
+## [code]NOT_UNIQUE[/code] failure envelope for the first edit that doesn't match once.
+static func _apply_edits(content: String, edits: Array, file_path: String, uses_edits: bool) -> Dictionary:
+	var edited := content
+	var replacements := 0
+	for index in edits.size():
+		var edit: Dictionary = edits[index]
+		var prefix := _edit_prefix(uses_edits, index)
+		var order_hint := " Edits apply in order, so match the text the earlier edits leave." if uses_edits else ""
+		# A top-level replace_all beside edits is rejected, so the edits form points at the element.
+		var replace_all_target := "on edits[%d] " % index if uses_edits else ""
+		var old_string := str(edit.get("old_string", ""))
+		var new_string := str(edit.get("new_string", ""))
+		var replace_all := bool(edit.get("replace_all", false))
+
+		var match_count := edited.count(old_string)
+		if match_count == 0:
+			return MCPToolkitError.fail("NOT_FOUND",
+				"%sold_string not found in %s" % [prefix, file_path],
+				"Re-read the file (script.read) and copy old_string byte-for-byte; whitespace and indentation must match exactly." + order_hint)
+		if match_count > 1 and not replace_all:
+			return MCPToolkitError.fail("NOT_UNIQUE",
+				"%sold_string matches %d times in %s" % [prefix, match_count, file_path],
+				"Add surrounding context so old_string identifies one location, or set replace_all:true %sto replace all %d." % [replace_all_target, match_count] + order_hint)
+
+		if replace_all:
+			edited = edited.replace(old_string, new_string)
+			replacements += match_count
+		else:
+			# Exactly one match: splice at the found offset rather than String.replace (which
+			# would substitute every occurrence), leaving every other byte untouched.
+			var at := edited.find(old_string)
+			edited = edited.substr(0, at) + new_string + edited.substr(at + old_string.length())
+			replacements += 1
+	return {"content": edited, "replacements": replacements}
+
+
+## The message prefix naming edit [param index] of an edits array, or "" when
+## [param uses_edits] is false (the single old_string/new_string form).
+static func _edit_prefix(uses_edits: bool, index: int) -> String:
+	return "edits[%d]: " % index if uses_edits else ""
 
 
 ## Writes [param content] to [param file_path], wrapping it in an editor UndoRedo
