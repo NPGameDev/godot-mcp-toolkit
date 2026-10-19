@@ -12,6 +12,7 @@ const ExtensionSupport := preload("res://addons/godot_mcp_toolkit/extensions/ser
 const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_meta_commands.gd")
 const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
+const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 
 const UNAPPLIED_EDIT_FIXTURE := "user://extension_unapplied_edit_fixture.gd"
@@ -156,7 +157,7 @@ static func _test_extension_support(testing) -> void:
 # step — including BOTH .mcp.json variants — so the DRY refactor can't silently
 # drift the user-visible wizard. The builders are pure (no dialog, no editor):
 # constructed with null collaborators, the specs build without an editor and the
-# step-2 on_enter (which would reveal the dock) is never invoked here.
+# dock step's on_enter (which would reveal the dock) is never invoked here.
 
 static func _assert_buttons(testing, buttons: Array, expected: Array, label: String) -> void:
 	# expected is [[label, action], ...] in order. Asserts count then each entry.
@@ -174,55 +175,54 @@ static func _test_onboarding_wizard_specs(testing) -> void:
 	testing.begin("Onboarding wizard step specs")
 	var wizard := OnboardingWizard.new(null, null, null, null)
 
-	# Step 0 — welcome: non-empty text, "Next", single Security-Doc button.
+	# welcome: non-empty text, "Next", single Security-Doc button.
 	var welcome_spec: Dictionary = wizard._spec_welcome()
-	testing.ok(not str(welcome_spec.get("text", "")).is_empty(), "step 0 → text non-empty")
-	testing.eq(str(welcome_spec.get("ok_label", "")), "Next", "step 0 → ok_label")
+	testing.ok(not str(welcome_spec.get("text", "")).is_empty(), "welcome → text non-empty")
+	testing.eq(str(welcome_spec.get("ok_label", "")), "Next", "welcome → ok_label")
 	_assert_buttons(testing, welcome_spec.get("buttons", []),
-			[["Open Security Doc", "open_security"]], "step 0")
-	testing.ok(not welcome_spec.has("on_enter"), "step 0 → no on_enter")
+			[["Open Security Doc", "open_security"]], "welcome")
+	testing.ok(not welcome_spec.has("on_enter"), "welcome → no on_enter")
 
-	# Step 1 variant A — .mcp.json EXISTS: keep-existing OK + an overwrite button.
+	# mcp_json variant A — .mcp.json EXISTS: keep-existing OK + an overwrite button.
 	var mcp_json_exists_spec: Dictionary = wizard._spec_mcp_json(true)
-	testing.ok(not str(mcp_json_exists_spec.get("text", "")).is_empty(), "step 1 (exists) → text non-empty")
+	testing.ok(not str(mcp_json_exists_spec.get("text", "")).is_empty(), "mcp_json (exists) → text non-empty")
 	testing.ok(str(mcp_json_exists_spec.get("text", "")).contains("already exists"),
-			"step 1 (exists) → names the existing-file case")
+			"mcp_json (exists) → names the existing-file case")
 	testing.eq(str(mcp_json_exists_spec.get("ok_label", "")), "Continue (keep existing .mcp.json)",
-			"step 1 (exists) → ok_label keeps existing")
+			"mcp_json (exists) → ok_label keeps existing")
 	_assert_buttons(testing, mcp_json_exists_spec.get("buttons", []),
-			[["Write .mcp.json", "overwrite_mcp"]], "step 1 (exists)")
+			[["Write .mcp.json", "overwrite_mcp"]], "mcp_json (exists)")
 
-	# Step 1 variant B — .mcp.json ABSENT: create-it OK + NO custom buttons.
+	# mcp_json variant B — .mcp.json ABSENT: create-it OK + NO custom buttons.
 	var mcp_json_absent_spec: Dictionary = wizard._spec_mcp_json(false)
 	testing.ok(str(mcp_json_absent_spec.get("text", "")).contains("No .mcp.json was found"),
-			"step 1 (absent) → names the missing-file case")
+			"mcp_json (absent) → names the missing-file case")
 	testing.eq(str(mcp_json_absent_spec.get("ok_label", "")), "Create .mcp.json",
-			"step 1 (absent) → ok_label creates")
-	_assert_buttons(testing, mcp_json_absent_spec.get("buttons", []), [], "step 1 (absent)")
+			"mcp_json (absent) → ok_label creates")
+	_assert_buttons(testing, mcp_json_absent_spec.get("buttons", []), [], "mcp_json (absent)")
 
-	# Step 2 — dock overview: "Close" OK, Back then Open-Info, and an on_enter.
+	# dock — dock overview: "Close" OK, Back then Open-Info, and an on_enter.
 	var dock_overview_spec: Dictionary = wizard._spec_dock_overview()
-	testing.ok(not str(dock_overview_spec.get("text", "")).is_empty(), "step 2 → text non-empty")
-	testing.eq(str(dock_overview_spec.get("ok_label", "")), "Close", "step 2 → ok_label")
+	testing.ok(not str(dock_overview_spec.get("text", "")).is_empty(), "dock → text non-empty")
+	testing.eq(str(dock_overview_spec.get("ok_label", "")), "Close", "dock → ok_label")
 	_assert_buttons(testing, dock_overview_spec.get("buttons", []),
-			[["Back", "back"], ["Open Info", "open_info"]], "step 2")
-	testing.ok(dock_overview_spec.get("on_enter") is Callable, "step 2 → on_enter is a Callable")
+			[["Back", "back"], ["Open Info", "open_info"]], "dock")
+	testing.ok(dock_overview_spec.get("on_enter") is Callable, "dock → on_enter is a Callable")
 
-	# Dispatcher routes by _step and records _mcp_exists when step 1 renders.
-	wizard._step = 0
-	testing.eq(str(wizard._spec_for_step().get("ok_label", "")), "Next", "dispatch step 0 → welcome spec")
-	wizard._step = 1
-	var dispatched_step1_spec: Dictionary = wizard._spec_for_step()
+	# Dispatcher routes by step id and records _mcp_exists when mcp_json renders.
+	testing.eq(str(wizard._spec_for_step(SetupSteps.WELCOME).get("ok_label", "")), "Next",
+			"dispatch welcome → welcome spec")
+	var dispatched_mcp_json_spec: Dictionary = wizard._spec_for_step(SetupSteps.MCP_JSON)
 	# The FS probe sets _mcp_exists; the spec variant must agree with it (the exact
 	# value is environmental — assert the two are consistent, not which branch ran).
 	if wizard._mcp_exists:
-		testing.eq(str(dispatched_step1_spec.get("ok_label", "")), "Continue (keep existing .mcp.json)",
-				"dispatch step 1 → spec matches _mcp_exists=true")
+		testing.eq(str(dispatched_mcp_json_spec.get("ok_label", "")), "Continue (keep existing .mcp.json)",
+				"dispatch mcp_json → spec matches _mcp_exists=true")
 	else:
-		testing.eq(str(dispatched_step1_spec.get("ok_label", "")), "Create .mcp.json",
-				"dispatch step 1 → spec matches _mcp_exists=false")
-	wizard._step = 2
-	testing.eq(str(wizard._spec_for_step().get("ok_label", "")), "Close", "dispatch step 2 → dock spec")
+		testing.eq(str(dispatched_mcp_json_spec.get("ok_label", "")), "Create .mcp.json",
+				"dispatch mcp_json → spec matches _mcp_exists=false")
+	testing.eq(str(wizard._spec_for_step(SetupSteps.DOCK).get("ok_label", "")), "Close",
+			"dispatch dock → dock spec")
 
 	print("")
 

@@ -371,7 +371,7 @@ before the set (a no-op off Godot 4.3) so it can't reintroduce the crash — see
 |------------|-----|-----|------|-------------------|
 | Bottom-panel dock | OK | OK | OK | 4.2–4.5: `add_control_to_bottom_panel()`. 4.6+: `add_dock()` (`EditorDock`) — capability gate flips at 4.6 |
 | Server status, audit log | OK | OK | OK | Standard Control nodes |
-| Guided onboarding wizard (3-step) | OK | OK | OK | `AcceptDialog` + `add_button()` stable since 4.0 |
+| Setup wizard | OK | OK | OK | `AcceptDialog` + `add_button()` stable since 4.0 |
 | Toast notifications | Degraded | OK | OK | Silently skipped; `push_warning()` to Output panel |
 | Menu items (Project > Tools) | OK | OK | OK | `add_tool_menu_item()` stable since 4.0 |
 | Command Palette entries | OK | OK | OK | `get_command_palette()` guarded; skipped if unavailable |

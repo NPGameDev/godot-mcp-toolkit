@@ -24,6 +24,11 @@ README's privacy line; the setting is listed in `contract.md` (C22).
 - `ui/dock/update/dock_update_badge.gd` renders the result as the dock's first child. Its links are
   built from the version, never taken from a reply.
 - `mcp_toolkit/updates/check_for_updates` set to `false` sends nothing and hides the badge.
+- Nothing is sent until the consent gate (`core/consent.gd`) allows it: the toggle on and the
+  setup wizard's `updates` step seen (ADR 0027). An editor that has never shown the wizard, such as
+  a headless one, never checks. After the step is seen, the first check goes out on the next hourly
+  tick or when the plugin next loads, at an editor start or an enable. To work on the check in a
+  project, leave the wizard's Updates step with Next once.
 
 ## Pointing the check at a local server
 

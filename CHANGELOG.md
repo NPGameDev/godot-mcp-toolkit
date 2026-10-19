@@ -122,6 +122,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failed check stays silent. The Extensions dialog's catalog fetch sends the
   same User-Agent. Turn the check off with the `mcp_toolkit/updates/check_for_updates`
   project setting (Project Settings > Mcp Toolkit > Updates).
+- The setup wizard has two new steps. **Updates** explains the update check and
+  has its "Check for updates" box. No check is sent until you've seen that
+  step. The other new step explains that toolkit updates can add steps and
+  has "Show optional steps added by toolkit updates", a setting for every
+  project on this machine that is also in the dock's Server Status. If you set
+  up the toolkit with an earlier version, the next editor start shows only these
+  two steps. From now on the wizard tracks each step you've seen: a later update
+  shows only the steps you haven't, at the next editor start. Required steps
+  (the welcome, `.mcp.json` and Updates steps) come back at every editor start
+  until you've seen them, and "Remind me later" puts the wizard off until the
+  next start.
 
 ### Fixed
 

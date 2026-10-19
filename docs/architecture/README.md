@@ -496,7 +496,7 @@ former `tileset` / `editor` / `playtest` god-files over the leaves now under
 
 ## 7. Plugin lifecycle
 
-`plugin.gd` is a thin `EditorPlugin` (~195 lines). `_enter_tree` prints a one-line startup banner
+`plugin.gd` is a thin `EditorPlugin`. `_enter_tree` prints a one-line startup banner
 with the plugin version, wires `EditorAccess` and registers the ProjectSettings, then
 **self-heals the runtime autoload** via `AutoloadRegistration.ensure_registered()` — re-asserting `MCPRuntimeServer` before
 the graph is wired if the project was enabled out-of-band with the `[autoload]` entry missing (ADR
@@ -547,9 +547,13 @@ teardown uses **immediate (not deferred)
 `free()`** throughout — for the dock control, the update check runner, the dialog presenter's dialogs, and the server, and
 (in `plugin.gd`'s own `_exit_tree`) for the tool menu and the onboarding wizard — so nothing
 outlives ObjectDB's exit-time leak check. The tool menu, per-user EditorSettings (the unfocused-editor
-preferences and the machine-local `mcp_toolkit/server/local_path`), the
-Godot-version warning, and the onboarding wizard are wired by `plugin.gd` itself after compose
-returns. So is the version-check opt-out: `plugin.gd` copies `MCPJsonWriteFlow.uses_local_server()`
+preferences, the setup wizard's `mcp_toolkit/setup_wizard/show_optional_steps` and the machine-local
+`mcp_toolkit/server/local_path`), the
+Godot-version warning, and the onboarding wizard (the setup wizard) are wired by `plugin.gd` itself after compose
+returns. `plugin.gd` connects the wizard's `step_seen` to the setup step tracker, the one writer of
+the seen-steps file, and a deferred call asks the run planner which steps to show. The planner tells
+an editor start from a mid-session enable by a flag `_enable_plugin()` sets: the editor calls it only
+for a mid-session enable, synchronously after `_enter_tree` ([ADR 0027](#14-key-decisions-adrs)). So is the version-check opt-out: `plugin.gd` copies `MCPJsonWriteFlow.uses_local_server()`
 (the local-path setting, else `GODOT_MCP_DEV_SERVER_PATH`) onto the server's `skip_version_check`
 once at start and again on every EditorSettings `settings_changed`, so the next connection already
 reflects an edit, and `_exit_tree` disconnects that watch because the EditorSettings singleton
@@ -800,6 +804,7 @@ ones most relevant to this document:
 | [0016](../adr/0016-dock-not-a-service-locator.md) | The dock is a UI surface, not a service locator (shared write-flow + dialog presenter injected) | [§7](#7-plugin-lifecycle) |
 | [0017](../adr/0017-macos-gui-launch-path.md) | OS-aware `.mcp.json` emission — resolve a macOS GUI-launch absolute node path (superseded by 0018) | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
 | [0018](../adr/0018-macos-launch-minimize.md) | Minimize the macOS `.mcp.json` emission — revert to bare npx (supersedes 0017) | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
+| [0027](../adr/0027-setup-steps-by-id-in-a-versioned-file.md) | Setup steps keyed by id, recorded when left, in a versioned file | [§7](#7-plugin-lifecycle) |
 
 ---
 

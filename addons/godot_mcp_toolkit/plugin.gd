@@ -13,6 +13,8 @@ const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/
 const MCPJsonEnablePrompt := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_enable_prompt.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autoload_registration.gd")
+const SetupSteps = Modules.SetupSteps
+const SetupStepTracker = Modules.SetupStepTracker
 
 # The composed collaborator graph (server, dock, export plugin, watchers, debug
 # bridge, user-path monitor, playtest watcher). PluginComposer.compose() builds
@@ -21,6 +23,10 @@ var _handle = null
 
 var _tool_menu: ToolMenu = null
 var _wizard: OnboardingWizard = null
+# Set by _enable_plugin(), which the editor calls only for a mid-session enable, and
+# synchronously after _enter_tree, so the deferred _check_onboarding() sees it. A
+# plugin loaded at editor start never gets the call.
+var _enabled_mid_session: bool = false
 
 
 func _enter_tree() -> void:
@@ -72,11 +78,24 @@ func _enter_tree() -> void:
 
 	_wizard = OnboardingWizard.new(
 			self, _handle.server(), _handle.write_flow(), _handle.dialog_presenter())
+	_wizard.step_seen.connect(_on_setup_step_seen)
 	call_deferred("_check_onboarding")
 
 
+# Show the setup steps due now, if any: every step for a new user, or the missed
+# ones at an editor start.
 func _check_onboarding() -> void:
-	_wizard.check_and_show()
+	if _wizard == null:
+		return
+	var all_ids: Array[StringName] = SetupSteps.all_ids()
+	var unseen: Array[StringName] = SetupStepTracker.get_unseen(all_ids)
+	var show_optional := SetupSteps.shows_optional_steps(EditorInterface.get_editor_settings())
+	_wizard.show_run(SetupSteps.plan_run(
+			unseen, unseen.size() < all_ids.size(), show_optional, not _enabled_mid_session, false))
+
+
+func _on_setup_step_seen(step_id: StringName) -> void:
+	SetupStepTracker.mark_seen(step_id)
 
 
 # Reveal the toolkit dock (select its tab + expand the bottom panel). The
@@ -103,7 +122,7 @@ func _on_user_path_changed() -> void:
 	# Static consumers that can't connect to signals themselves.
 	# Instance consumers (feature_settings, server) connect directly
 	# via bind_user_path_monitor().
-	OnboardingWizard.migrate_flag_after_rename()
+	SetupStepTracker.migrate_flag_after_rename()
 	Modules.LogBuffer.reset_tail_path()
 
 
@@ -136,6 +155,8 @@ func _exit_tree() -> void:
 
 
 func _enable_plugin() -> void:
+	_enabled_mid_session = true
+
 	# First-enable registration shares the on-load self-heal path so the two can never
 	# diverge — an undo-free set_setting + save that persists to project.godot, which
 	# is what the game reads at F5 (rationale lives in AutoloadRegistration).
@@ -172,8 +193,9 @@ func _register_editor_settings() -> void:
 	var es := EditorInterface.get_editor_settings()
 	# [type, default, hint_string]. These live in EDITOR Settings (per-user,
 	# machine-wide), NOT Project Settings: the unfocused-responsive keys control a
-	# machine-global editor effect and are a personal battery/CPU preference, and the
-	# local server path names a folder on this machine, so they must never be
+	# machine-global editor effect and are a personal battery/CPU preference, the
+	# local server path names a folder on this machine, and showing optional setup
+	# steps is a personal preference across projects, so they must never be
 	# committed to project.godot / VCS.
 	var settings := {
 		"mcp_toolkit/performance/keep_editor_responsive_unfocused": [TYPE_BOOL, true,
@@ -182,6 +204,8 @@ func _register_editor_settings() -> void:
 			"Unfocused process sleep in µs applied while a client is connected (lower = higher fps = snappier but more CPU). 16666 ≈ 60 fps (default); 33333 ≈ 30 fps (power-saver). Not clamped."],
 		MCPJsonWriteFlow.LOCAL_PATH_SETTING: [TYPE_STRING, "",
 			"Absolute path to a local server build's dist/index.js (this machine only). Empty = the npm package. Falls back to the GODOT_MCP_DEV_SERVER_PATH environment variable. A local build turns the editor's version check off right away, and the server's after the next Write .mcp.json."],
+		SetupSteps.SHOW_OPTIONAL_STEPS_SETTING: [TYPE_BOOL, true,
+			"Show optional steps added by toolkit updates, in any project on this machine. Required steps still show. A toggle is also in the MCP Toolkit dock."],
 	}
 	for key in settings:
 		if not es.has_setting(key):
