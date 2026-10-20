@@ -10,10 +10,13 @@ extends RefCounted
 ## Also checks that duplicate gives the copy's descendants the scene root as
 ## owner, so the saved scene keeps them, under the original's parent or another
 ## one, including nodes the scene added under an instanced child, and leaves an
-## instanced sub-scene's internals owned by the copy.
+## instanced sub-scene's internals owned by the copy. A duplicated scene instance
+## packs as an instance with only its overrides, and a node duplicated inside an
+## editable instance keeps the children the instance owns.
 
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const _SUB_SCENE_FIXTURE := "user://node_manage_sub_scene_fixture.tscn"
+const _DEEP_SUB_SCENE_FIXTURE := "user://node_manage_deep_sub_scene_fixture.tscn"
 
 
 static func run(testing) -> void:
@@ -23,6 +26,8 @@ static func run(testing) -> void:
 	_test_duplicate_keeps_instance_internals(testing)
 	_test_duplicate_under_other_parent(testing)
 	_test_duplicate_keeps_nodes_added_under_an_instance(testing)
+	_test_duplicate_keeps_instance_linked(testing)
+	_test_duplicate_inside_editable_instance_keeps_children(testing)
 
 
 static func _test_root_rename_allowed(testing) -> void:
@@ -218,6 +223,83 @@ static func _test_duplicate_keeps_nodes_added_under_an_instance(testing) -> void
 	print("")
 
 
+static func _test_duplicate_keeps_instance_linked(testing) -> void:
+	testing.begin("node.manage duplicate keeps a duplicated scene instance linked to its scene")
+	var sub_scene := _save_deep_sub_scene_fixture(testing)
+	if sub_scene == null:
+		_remove_deep_sub_scene_fixture()
+		print("")
+		return
+
+	# The editor opens a scene's instances with their instance state, which is what
+	# lets the saver store only an instance's overrides.
+	var root := Node2D.new()
+	root.name = "Root"
+	var instance := _add_owned_child(root,
+			sub_scene.instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE), "Pod", root) as Node2D
+	instance.position = Vector2(3, 4)
+
+	var duplicated := NodeCommands._manage_duplicate(root, instance, "Pod", {"new_name": "PodCopy"})
+	testing.ok(bool(duplicated.get("success", false)), "duplicate instance → success")
+
+	var packed := PackedScene.new()
+	packed.pack(root)
+	var state := packed.get_state()
+	var original_index := _state_node_index(state, "Pod")
+	var copy_index := _state_node_index(state, "PodCopy")
+	testing.ok(original_index >= 0 and copy_index >= 0,
+			"packed scene holds the original and the copy")
+	if copy_index >= 0:
+		testing.ok(state.get_node_instance(copy_index) != null, "packed copy is a scene instance")
+		testing.eq(str(state.get_node_type(copy_index)), "",
+				"packed copy has no type of its own (its scene gives it)")
+		testing.eq(_state_property_list(state, copy_index), "position",
+				"packed copy stores only the one override")
+		testing.ok(not _state_property_list(state, copy_index).split(",").has("script"),
+				"packed copy stores no script of its own")
+	if original_index >= 0 and copy_index >= 0:
+		testing.eq(_state_property_list(state, copy_index),
+				_state_property_list(state, original_index),
+				"packed copy stores what the original stores")
+
+	root.free()
+	_remove_deep_sub_scene_fixture()
+	print("")
+
+
+static func _test_duplicate_inside_editable_instance_keeps_children(testing) -> void:
+	testing.begin("node.manage duplicate inside an editable instance keeps the instance's children")
+	var sub_scene := _save_deep_sub_scene_fixture(testing)
+	if sub_scene == null:
+		_remove_deep_sub_scene_fixture()
+		print("")
+		return
+
+	var root := Node2D.new()
+	root.name = "Root"
+	var instance := _add_owned_child(root,
+			sub_scene.instantiate(PackedScene.GEN_EDIT_STATE_INSTANCE), "Pod", root)
+	root.set_editable_instance(instance, true)
+	var inner := instance.get_node("Inner")
+
+	var duplicated := NodeCommands._manage_duplicate(root, inner, "Pod/Inner",
+			{"new_name": "InnerCopy"})
+	testing.ok(bool(duplicated.get("success", false)), "duplicate inner node → success")
+	testing.ok(_is_owned_by(root, "Pod/InnerCopy/Leaf", root),
+			"copy's child owned by the scene root")
+	testing.ok(_is_owned_by(root, "Pod/InnerCopy/Leaf/Tip", root),
+			"copy's grandchild owned by the scene root")
+
+	var reloaded := _pack_and_reload(root)
+	testing.ok(reloaded.get_node_or_null("Pod/InnerCopy/Leaf/Tip") != null,
+			"packed scene keeps the copied inner node's children")
+
+	reloaded.free()
+	root.free()
+	_remove_deep_sub_scene_fixture()
+	print("")
+
+
 ## Adds [param child] under [param parent] as [param child_name], owned by
 ## [param owner], the way a scene's own nodes are. Returns [param child].
 static func _add_owned_child(parent: Node, child: Node, child_name: String, owner: Node) -> Node:
@@ -267,3 +349,54 @@ static func _save_sub_scene_fixture(testing) -> PackedScene:
 
 static func _remove_sub_scene_fixture() -> void:
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_SUB_SCENE_FIXTURE))
+
+
+## Saves a sub-scene to a user:// fixture and returns it loaded back, or null when
+## the save fails: a scripted Node2D "Sub" turned away from the class default, so
+## a copy that loses its link to the scene stores the script and the turn itself,
+## and an internal chain "Inner/Leaf/Tip" the scene owns.
+static func _save_deep_sub_scene_fixture(testing) -> PackedScene:
+	var root_script := GDScript.new()
+	root_script.source_code = "extends Node2D\n"
+	testing.eq(root_script.reload(), OK, "deep sub-scene root script compiles")
+	var sub_root := Node2D.new()
+	sub_root.name = "Sub"
+	sub_root.set_script(root_script)
+	sub_root.rotation = 0.5
+	var inner := _add_owned_child(sub_root, Node2D.new(), "Inner", sub_root)
+	var leaf := _add_owned_child(inner, Node2D.new(), "Leaf", sub_root)
+	_add_owned_child(leaf, Node.new(), "Tip", sub_root)
+	var packed_sub := PackedScene.new()
+	packed_sub.pack(sub_root)
+	sub_root.free()
+	var save_error := ResourceSaver.save(packed_sub, _DEEP_SUB_SCENE_FIXTURE)
+	testing.eq(save_error, OK, "deep sub-scene fixture saved")
+	if save_error != OK:
+		return null
+	var sub_scene := ResourceLoader.load(
+			_DEEP_SUB_SCENE_FIXTURE, "", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
+	testing.ok(sub_scene != null, "deep sub-scene fixture loaded")
+	return sub_scene
+
+
+static func _remove_deep_sub_scene_fixture() -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_DEEP_SUB_SCENE_FIXTURE))
+
+
+## Returns the index of the node at [param path] (relative to the packed root) in
+## [param state], or -1 when it holds no such node.
+static func _state_node_index(state: SceneState, path: String) -> int:
+	for index in state.get_node_count():
+		if str(state.get_node_path(index)).trim_prefix("./") == path:
+			return index
+	return -1
+
+
+## Returns the names of the properties [param state] stores for the node at
+## [param index], sorted and comma-separated.
+static func _state_property_list(state: SceneState, index: int) -> String:
+	var names := PackedStringArray()
+	for property_index in state.get_node_property_count(index):
+		names.append(str(state.get_node_property_name(index, property_index)))
+	names.sort()
+	return ",".join(names)

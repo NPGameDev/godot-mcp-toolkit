@@ -5,7 +5,9 @@ extends RefCounted
 ## Provides is_at_least / is_at_most / is_version_in_range checks against
 ## the running engine version, used to gate commands by their min/max Godot
 ## version requirements, in_place_reload_safe() which says whether a script can be
-## reloaded in place on this engine, read_plugin_version() which reads the toolkit's
+## reloaded in place on this engine, duplicate_from_editor_flag() which returns the
+## running engine's value for the unbound editor-duplicate flag,
+## read_plugin_version() which reads the toolkit's
 ## own plugin.cfg, version_skew() which classifies how the plugin's version
 ## differs from the connected server's, floor_verdict() which judges a version against
 ## a declared major.minor floor, the server version the toolkit pins, and the lowest
@@ -78,6 +80,35 @@ static func in_place_reload_safe() -> bool:
 static func reload_frees_held_lambdas(version_info: Dictionary) -> bool:
 	return (int(version_info.get("major", 0)) == 4 and int(version_info.get("minor", 0)) == 2
 			and int(version_info.get("patch", 0)) < 2)
+
+
+## The value of the engine's [code]Node.DUPLICATE_FROM_EDITOR[/code] flag on the running
+## engine. Passed to [method Node.duplicate], it re-instances a copied scene instance with
+## its instance state, as the editor's own Duplicate does, so the saved copy stays linked
+## to its scene instead of writing out the scene root's script and properties. It also
+## leaves non-persistent groups out of the copy, as the editor's Duplicate does.
+##
+## The engine declares the flag only in editor builds and binds no constant for it, but
+## [method Node.duplicate] passes every bit through unchecked, and the engine passes the
+## flag the same way itself ([code]scene/2d/tile_map.cpp[/code], 4.3 to 4.7). The flag is
+## the last one [code]Node::DuplicateFlags[/code] declares, so its value is the next bit
+## above the highest bound [code]DUPLICATE_*[/code] constant other than
+## [code]DUPLICATE_DEFAULT[/code]: 16 on 4.2 to 4.5 ([code]scene/main/node.h[/code] line 95
+## on 4.2, 104 on 4.5) and 32 from 4.6 (line 109 on 4.6, 113 on 4.7), which binds
+## [code]DUPLICATE_INTERNAL_STATE[/code] as 16. A wrong value is not harmless: 32 below 4.6 is
+## ignored, and 16 from 4.6 sets [code]DUPLICATE_INTERNAL_STATE[/code], which still bakes
+## the copy and makes the engine report invalid owners. Every new engine minor must be
+## checked against this rule, since a flag inserted before this one without a bound
+## constant would move its value unnoticed.
+## [br]
+## Returns the flag's value, read from the running engine's bound constants.
+static func duplicate_from_editor_flag() -> int:
+	var highest_bound := 0
+	for constant_name: String in ClassDB.class_get_integer_constant_list(&"Node", true):
+		if not constant_name.begins_with("DUPLICATE_") or constant_name == "DUPLICATE_DEFAULT":
+			continue
+		highest_bound = maxi(highest_bound, ClassDB.class_get_integer_constant(&"Node", constant_name))
+	return highest_bound << 1
 
 
 ## The toolkit's own version string, read from its plugin.cfg.
