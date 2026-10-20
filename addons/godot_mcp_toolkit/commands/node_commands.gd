@@ -13,6 +13,11 @@ const Helpers = Modules.CommandHelpers
 const _GROUPS_REJECTION_MESSAGE := "'groups' cannot be set via node.set_property: it would replace the whole group list and silently drop any group not included."
 const _GROUPS_REJECTION_HINT := "Use node.groups (action 'add'/'remove') to change group membership incrementally, or 'list' to read it."
 
+## Node.duplicate()'s bound default flags. The duplicate action adds the editor's
+## own flag to them, so a copied scene instance stays linked to its scene.
+const _DUPLICATE_DEFAULT_FLAGS := (Node.DUPLICATE_SIGNALS | Node.DUPLICATE_GROUPS
+		| Node.DUPLICATE_SCRIPTS | Node.DUPLICATE_USE_INSTANTIATION)
+
 
 const COMMON_PROPERTIES_BY_CLASS := {
 	"Node": ["name", "process_mode"],
@@ -881,7 +886,8 @@ static func _manage_duplicate(
 	if node == root:
 		return MCPToolkitError.fail("INVALID_PATH", "cannot duplicate the scene root")
 
-	var dup := node.duplicate()
+	var dup := node.duplicate(
+			_DUPLICATE_DEFAULT_FLAGS | Modules.VersionUtils.duplicate_from_editor_flag())
 	if dup == null:
 		return MCPToolkitError.fail("INTERNAL", "Node.duplicate() returned null for %s" % node_path)
 
@@ -903,7 +909,7 @@ static func _manage_duplicate(
 
 	target_parent.add_child(dup)
 	dup.set_owner(root)
-	var owned_copies := _copies_owned_by_root(root, node, dup)
+	var owned_copies := _copies_to_reown(node, dup)
 	for copy in owned_copies:
 		copy.set_owner(root)
 	var action := MCPToolkitUndoRedoAction.begin("duplicate %s" % node_path, target_parent) \
@@ -941,16 +947,25 @@ static func _manage_duplicate(
 
 
 ## Returns the copies, under [param copy], of the descendants of [param original]
-## that [param root] owns. Node.duplicate() leaves those copies with no owner, so
-## the scene saver would drop them. An instanced sub-scene's internals are left
-## out: the copy re-instances them and owns them itself.
-static func _copies_owned_by_root(root: Node, original: Node, copy: Node) -> Array[Node]:
+## that some owner up the original's owner chain owns (its owner, that owner's
+## owner, and so on), matched by relative path. Node.duplicate() leaves those
+## copies with no owner, so the scene saver would drop them; walking the whole
+## chain, as the editor's Duplicate does, also keeps the children an editable
+## instance owns under a node copied from inside it. A copy that already has an
+## owner is left out: it is the internals of a sub-scene the copy re-instanced,
+## owned by that instance's root.
+static func _copies_to_reown(original: Node, copy: Node) -> Array[Node]:
+	var owner_chain: Array[Node] = []
+	var chain_owner := original.owner
+	while chain_owner != null:
+		owner_chain.append(chain_owner)
+		chain_owner = chain_owner.owner
 	var copies: Array[Node] = []
 	for descendant: Node in original.find_children("*", "", true, false):
-		if descendant.owner != root:
+		if not owner_chain.has(descendant.owner):
 			continue
 		var counterpart := copy.get_node_or_null(original.get_path_to(descendant))
-		if counterpart != null:
+		if counterpart != null and counterpart.owner == null:
 			copies.append(counterpart)
 	return copies
 
