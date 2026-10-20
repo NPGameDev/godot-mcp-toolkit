@@ -5,7 +5,8 @@ extends RefCounted
 ## script_check's class_name rename,
 ## node.set_property groups rejection, UserPathMonitor change detection,
 ## editor.refresh reload filter, unfocused-sleep backup, the stale-live-instance
-## hint, the in-place reload patch gate and the 4.5+ Logger construction. Exercises the versioning/ + paths/ + editor-lifecycle
+## hint, the in-place reload patch gate, the editor-duplicate flag's value and the
+## 4.5+ Logger construction. Exercises the versioning/ + paths/ + editor-lifecycle
 ## pure logic.
 
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
@@ -35,6 +36,7 @@ static func run(testing) -> void:
 	_test_tooltip_uaf_disarm_decision(testing)
 	_test_is_engine_version_pair(testing)
 	_test_reload_patch_gate(testing)
+	_test_duplicate_from_editor_flag(testing)
 	_test_version_skew(testing)
 	_test_log_path_resolution(testing)
 	_test_logger_construction(testing)
@@ -566,6 +568,21 @@ static func _test_reload_patch_gate(testing) -> void:
 	testing.ok(not VersionUtils.reload_frees_held_lambdas({"major": 5, "minor": 2, "patch": 0}),
 			"5.2.0 → reload (the gate is major-aware)")
 	testing.ok(not VersionUtils.reload_frees_held_lambdas({}), "no version → reload")
+	print("")
+
+
+# --- The editor-duplicate flag's value -----------------------------------------
+# duplicate_from_editor_flag() derives Node.DUPLICATE_FROM_EDITOR from the bound
+# constants. The measured values are spelled out here, not derived, so a new bound
+# DUPLICATE_* constant that moves the derived value fails this check in the cross-version
+# matrix, while an unbound flag inserted before FROM_EDITOR leaves both on a wrong value.
+
+static func _test_duplicate_from_editor_flag(testing) -> void:
+	testing.begin("duplicate_from_editor_flag matches the measured value per engine minor")
+	var live_pair := VersionUtils.get_engine_version_pair()
+	var expected := 32 if VersionUtils.is_at_least(live_pair, "4.6") else 16
+	testing.eq(VersionUtils.duplicate_from_editor_flag(), expected,
+			"%s → %d (16 on 4.2 to 4.5, 32 from 4.6)" % [live_pair, expected])
 	print("")
 
 
