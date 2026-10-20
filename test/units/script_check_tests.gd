@@ -6,8 +6,9 @@ extends RefCounted
 ## is reported as the engine reports it.
 ## Covers _validate_gdscript, the script_check handler and the stale-instance
 ## hint's source_compiles, which share the probe. Cases marked with a minimum
-## version use syntax older versions lack; every other assertion holds on every
-## supported version.
+## version use syntax older versions lack, and the documented limitations that
+## differ by version expect each version's own result; every other assertion
+## holds on every supported version.
 
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
@@ -21,6 +22,11 @@ const SINGLETON_FIXTURE := "res://test/fixtures/script_check_singleton_fixture.g
 const SINGLETON := "MCPToolkitProbeSingleton"
 const SELF_TYPED_FIXTURE := "res://test/fixtures/script_check_self_typed_fixture.gd"
 const SELF_TYPED := "MCPToolkitProbeSelfTyped"
+# Passes self to the parameter of script_check_cross_b_fixture.gd typed with
+# this file's class_name.
+const CROSS_A_FIXTURE := "res://test/fixtures/script_check_cross_a_fixture.gd"
+const CROSS_A := "MCPToolkitProbeCrossA"
+const CROSS_B := "MCPToolkitProbeCrossB"
 # A name no script registers.
 const FREE_NAME := "MCPToolkitProbeFree"
 # The probe's class suffix, which no diagnostic may carry.
@@ -43,6 +49,7 @@ static func run(testing) -> void:
 	_test_case_table(testing)
 	_test_script_check_self_typed_files(testing)
 	_test_source_compiles_self_typed(testing)
+	_test_script_check_cross_script_self(testing)
 
 
 # --- _validate_gdscript, no file_path ---------------------------------------
@@ -235,16 +242,20 @@ static func _cases(minor: int) -> Array:
 		{"label": "a missing extends path", "valid": false, "path": "",
 			"source": "class_name %s\nextends \"res://test/fixtures/does_not_exist.gd\"\n" % FREE_NAME,
 			"error_line": 1},
+		# On 4.5+ the keep-name compile reports the clash and this error, and
+		# only a single clash may pass the script.
 		{"label": "an error after a self line", "valid": false, "path": SELF_TYPED_FIXTURE,
 			"source": ("class_name %s\nextends Node\n\n\nfunc with_speed() -> %s:\n\treturn self\n\n\n"
 				+ "func broken() -> int:\n\treturn \"text\"\n") % [SELF_TYPED, SELF_TYPED],
 			"error_line": 10},
+		# On 4.5+ the keep-name compile reports the clash and the missing base
+		# on the same line: two errors, so the script stays invalid.
+		{"label": "a second error on the declaration's line", "valid": false,
+			"path": SELF_TYPED_FIXTURE,
+			"source": "class_name %s extends MCPToolkitProbeMissingBase\n" % SELF_TYPED},
 		# --- documented limitations, pinned ---------------------------------
-		{"label": "documented limitation: a preloaded alias of the script itself",
-			"valid": false, "path": SELF_TYPED_FIXTURE,
-			"source": ("class_name %s\nextends Node\n\nconst Self = preload(\"%s\")\n\n\n"
-				+ "func own() -> Node:\n\tvar me: Self = self\n\treturn me\n") % [
-					SELF_TYPED, SELF_TYPED_FIXTURE]},
+		_preloaded_alias_case(minor),
+		_cross_script_codegen_case(minor),
 		{"label": "documented limitation: a codegen-only error beside self typing and X.new()",
 			"valid": true, "path": SINGLETON_FIXTURE,
 			"source": ("class_name %s\nextends Node\n\nstatic var instance: %s\n\n\n"
@@ -273,6 +284,36 @@ static func _abstract_engine_class_case(minor: int) -> Dictionary:
 	return case
 
 
+# A self-typed variable whose type is a preload of the script's own file is
+# the class other scripts name, which only the 4.5+ keep-name compile sees.
+static func _preloaded_alias_case(minor: int) -> Dictionary:
+	var case := {"label": "a preloaded alias of the script itself", "valid": true,
+		"path": SELF_TYPED_FIXTURE,
+		"source": ("class_name %s\nextends Node\n\nconst Self = preload(\"%s\")\n\n\n"
+			+ "func own() -> Node:\n\tvar me: Self = self\n\treturn me\n") % [
+				SELF_TYPED, SELF_TYPED_FIXTURE]}
+	if minor < 5:
+		case["label"] = "documented limitation on 4.2-4.4: a preloaded alias of the script itself"
+		case["valid"] = false
+	return case
+
+
+# The real file fails in codegen (self.hp inside hp's own getter). On 4.5+ the
+# keep-name compile stops at its class-name clash before codegen, so the
+# script reads as valid there.
+static func _cross_script_codegen_case(minor: int) -> Dictionary:
+	var case := {"label": "a codegen-only error beside self passed to another script",
+		"valid": false, "path": CROSS_A_FIXTURE,
+		"source": ("class_name %s\nextends RefCounted\n\n"
+			+ "var hp: int = 0:\n\tget:\n\t\treturn self.hp\n\n\n"
+			+ "func register_with_partner() -> void:\n\t%s.new().take(self)\n") % [
+				CROSS_A, CROSS_B]}
+	if minor >= 5:
+		case["label"] = "documented limitation on 4.5+: " + str(case["label"])
+		case["valid"] = true
+	return case
+
+
 # --- self-typed fixtures through the handler, reading the file ---------------
 
 static func _test_script_check_self_typed_files(testing) -> void:
@@ -293,4 +334,27 @@ static func _test_source_compiles_self_typed(testing) -> void:
 			"singleton with a factory, under its own path → compiles")
 	testing.ok(not StaleInstanceHint.source_compiles(source, "res://test/fixtures/not_the_owner.gd"),
 			"the same source under another path → its class_name clashes")
+	print("")
+
+
+# --- self passed to another script's typed parameter -------------------------
+# The analyzer matches class types by class_name, so only a compile that keeps
+# the name can type self as the other script expects. Below 4.5 the toolkit
+# cannot read that compile's errors back, a documented limitation there.
+
+static func _test_script_check_cross_script_self(testing) -> void:
+	testing.begin("script_check handler: self passed to another script's typed parameter")
+	LogBuffer.setup()
+	var since_id := LogBuffer.get_cursor() - 1
+	var result := ScriptCommands._cmd_script_check({"file_path": CROSS_A_FIXTURE})
+	testing.ok(bool(result.get("success", false)), "handler succeeds")
+	if VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.5"):
+		testing.ok(bool(result.get("valid", false)), "4.5+ → valid true")
+		testing.eq((result.get("diagnostics", []) as Array).size(), 0, "4.5+ → no diagnostics")
+		var clashes := LogBuffer.get_entries(500, [], since_id, "hides a global script class.")
+		testing.eq(int(clashes["total_lines"]), 0,
+				"4.5+ → the console buffer keeps no clash from the check")
+	else:
+		testing.ok(not bool(result.get("valid", true)),
+				"documented limitation on 4.2-4.4 → valid false")
 	print("")

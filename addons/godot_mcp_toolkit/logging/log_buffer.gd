@@ -25,13 +25,19 @@ const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_ver
 
 const _CAPACITY := 500
 const _POLL_INTERVAL_MS := 200
-const _SCRIPT_ERROR_LATCH_CAPACITY := 16
+# As long as the ring, so every script error the ring still holds keeps its
+# location.
+const _SCRIPT_ERROR_LATCH_CAPACITY := _CAPACITY
 
 # -- Shared state (Mutex-protected) ------------------------------------------
 
 static var _mutex: Mutex = Mutex.new()
 static var _entries: Array = []
 static var _next_id: int = 0
+# Id of the newest entry the ring dropped to stay within _CAPACITY, -1 when it
+# dropped none: entries after a cursor are all still held only while this is
+# at or below it.
+static var _evicted_through_id: int = -1
 # Structured {id, file, line} locations of captured SCRIPT errors (Logger
 # error_type 2), latched beside their console entries. A separate side-channel
 # on purpose: console entries keep their {id, timestamp_unix, level, message}
@@ -126,6 +132,42 @@ static func find_script_error_line_since(since_id: int) -> int:
 	return found
 
 
+## Removes from the buffer the script errors captured after [param since_id]
+## under the script path [param file], and returns them.
+##
+## Serves a compile whose errors are read back and then dropped, so they never
+## reach the console readers. Returns [code]{complete, errors}[/code]:
+## [code]errors[/code] holds one [code]{line, message}[/code] per captured
+## error, oldest first, with [code]message[/code] "" when the console entry is
+## gone; [code]complete[/code] is false when an entry after
+## [param since_id] has already left the ring, so [code]errors[/code] may miss
+## some. Only the 4.5+ Logger latches script errors, so on 4.2-4.4
+## [code]errors[/code] is empty.
+static func take_script_errors_since(since_id: int, file: String) -> Dictionary:
+	_mutex.lock()
+	var errors: Array = []
+	var taken_ids := {}
+	var kept_locations: Array = []
+	for location in _script_error_locations:
+		if int(location["id"]) > since_id and str(location["file"]) == file:
+			taken_ids[int(location["id"])] = errors.size()
+			errors.append({"line": int(location["line"]), "message": ""})
+		else:
+			kept_locations.append(location)
+	_script_error_locations = kept_locations
+	var kept_entries: Array = []
+	for entry in _entries:
+		var entry_id := int(entry["id"])
+		if taken_ids.has(entry_id):
+			errors[int(taken_ids[entry_id])]["message"] = str(entry["message"])
+		else:
+			kept_entries.append(entry)
+	_entries = kept_entries
+	var complete := _evicted_through_id <= since_id
+	_mutex.unlock()
+	return {"complete": complete, "errors": errors}
+
+
 # Appends one entry and returns its id. Caller must hold _mutex.
 static func _append_entry_unlocked(level: String, message: String) -> int:
 	var entry := {
@@ -136,7 +178,7 @@ static func _append_entry_unlocked(level: String, message: String) -> int:
 	}
 	_next_id += 1
 	if _entries.size() >= _CAPACITY:
-		_entries.pop_front()
+		_evicted_through_id = int(_entries.pop_front()["id"])
 	_entries.append(entry)
 	return int(entry["id"])
 
@@ -206,6 +248,7 @@ static func clear() -> void:
 	_entries.clear()
 	_script_error_locations.clear()
 	_next_id = 0
+	_evicted_through_id = -1
 	_mutex.unlock()
 
 

@@ -263,6 +263,12 @@ A copy that kept the script's `class_name` would clash with the global class
 the editor registered for the file, so the copy renames it: the class name
 gets a probe suffix, and so does every use of the name in the script. If that
 copy fails, the check compiles a second copy with only the declaration renamed.
+On 4.5+, when both fail for a script whose `class_name` is registered for that
+file, a third copy keeps the name, and the script passes when that copy's only
+error is the clash with its own registered class. That step reads the copy's
+errors back from the console capture, so it runs only while the toolkit's
+Logger capture is active; when the toolkit falls back to reading the log file,
+the step is skipped and 4.5+ behaves as 4.2–4.4 below.
 It then checks the original name the way the engine does: a name that hides a
 built-in type (`Plane`), a native class, another script's `class_name` or an
 autoload singleton is reported with the engine's message and the
@@ -270,17 +276,27 @@ declaration's `line`, on every version. The console text `editor_get_console`
 and `game_start` return shows the original name.
 
 Remaining trade-offs:
-- **A preloaded alias of the script itself:** `const Self = preload("<this file>")`
-  with `var me: Self = self` reports a false error.
+- **A preloaded alias of the script itself:** on 4.2–4.4, and on 4.5+ without
+  the Logger capture, `const Self = preload("<this file>")` with
+  `var me: Self = self` reports a false error.
 - **A codegen-only error next to self typing:** a script that types `self` as
-  its own class, uses its own name as a value (`Player.new()`) and has an error
-  only the compiler's last stage finds (`self.hp` inside `hp`'s own getter)
-  reads as valid.
+  its own class, uses its own name as a value (`Player.new()`) or passes `self`
+  to another script, and has an error only the compiler's last stage finds
+  (`self.hp` inside `hp`'s own getter) reads as valid. Passing `self` reads as
+  valid only on 4.5+ with the Logger capture active, where the check accepts it.
 - **The Output panel:** the editor's Output panel shows each compile the check
   runs. A valid script that types `self` as its own class and uses its own name
   as a value leaves two error lines per check that name the class with the
-  probe suffix, and an invalid script can print its error up to three times.
-  Godot gives no way to keep these lines out of the panel.
+  probe suffix, and an invalid script can print its error up to three times
+  on 4.2–4.4 and up to four times on 4.5+. On 4.5+, a script whose
+  `class_name` is registered for its file and that the renamed copies reject
+  is compiled once more under its own name. That compile prints the line
+  `Class "<Name>" hides a global script class.`, which is not a real error,
+  and the script's real errors again, without the probe suffix, to the panel
+  and to stderr. `editor_get_console` does not return that compile's script
+  errors; any other error it causes, such as a dependency that fails to load,
+  stays in the console. Godot gives no way to keep these lines out of the
+  panel.
 - **Abstract engine classes on 4.2–4.3:** a `class_name` equal to an abstract
   engine class, such as `CanvasItem`, reads as valid there. 4.4 and later
   report it.
@@ -288,12 +304,14 @@ Remaining trade-offs:
   member with the same name as its `class_name` (an enum value, for example),
   refers to it through a dotted access (`Team.Player`) and also uses its own
   class name as a type reports a false error, on every version.
-- **Passing `self` to another script:** a script that passes `self` to another
-  script's function whose parameter is typed with this script's `class_name`
-  (`Other.new().take(self)`, with `func take(_a: Player)`) reports a false
-  error, on every version. The check compiles a renamed copy of the script, and
-  that copy is not the type the other script expects. `lsp_diagnostics` checks
-  the file as the editor loads it, so it gives the real result.
+- **Passing `self` to another script on 4.2–4.4:** a script that passes `self`
+  to another script's function whose parameter is typed with this script's
+  `class_name` (`Other.new().take(self)`, with `func take(_a: Player)`) reports
+  a false error there, and on 4.5+ when the Logger capture is not active. The
+  renamed copy of the script is not the type the other script expects, and the
+  copy that keeps the name needs the 4.5+ Logger capture to read its errors
+  back. `lsp_diagnostics` checks the file as the editor loads it, so it gives
+  the real result.
 - **`text_filter`:** `editor_get_console` matches `text_filter` against the
   stored text, which still carries the probe suffix, so a regular expression
   that expects the class name to end there, such as `Player\b`, can miss the

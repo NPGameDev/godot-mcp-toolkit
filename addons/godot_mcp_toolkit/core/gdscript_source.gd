@@ -10,7 +10,12 @@ extends RefCounted
 ## fail. The probe therefore renames the declared class (adding
 ## [constant PROBE_SUFFIX]) and runs the analyzer's four class-name checks on
 ## the original name itself. Error lines still match the file, because the
-## rename adds no line.
+## rename adds no line. A renamed copy is not the type another script names,
+## so on 4.5+ a script the renamed copies reject is compiled once more under
+## its own name, and its errors are read back from the console capture.
+
+# Direct preload, not core/modules.gd: the aggregator preloads this file.
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
 ## Appended to the declared class name in the probe's source. Engine messages
 ## about the probe carry it; [method strip_probe_suffix] removes it from text an
@@ -18,6 +23,7 @@ extends RefCounted
 const PROBE_SUFFIX := "__McpProbe"
 
 const _CLASS_NAME_KEYWORD := "class_name"
+const _HIDES_GLOBAL_CLASS := "Class \"%s\" hides a global script class."
 # Words the parser never takes as a class name. After `class_name` one of
 # these means the name is missing, so the source is left for the engine to
 # report.
@@ -31,7 +37,8 @@ const _RESERVED_WORDS: Array[String] = [
 
 
 ## Judges [param source] as the engine would judge the file at
-## [param file_path], with every compile kept out of stderr and the 4.5+ Logger.
+## [param file_path], with no compile's script errors left in the console
+## readers.
 ##
 ## The analyzer's class-name checks run first, on the original name. Then the
 ## source compiles with the class and every bare reference to it renamed; if
@@ -41,6 +48,12 @@ const _RESERVED_WORDS: Array[String] = [
 ## script's own name, such as [code]Player.new()[/code], into a codegen error,
 ## and the declaration-only rename fails wherever the script types
 ## [code]self[/code] as its own class.
+## When both fail, the name is free and registered for [param file_path], and
+## the 4.5+ Logger capture is live, the source compiles a third time with its
+## name kept; it compiles when that compile's only error is the clash with its
+## own registered class. That compile reaches stderr and the editor's Output
+## panel, and its script errors are removed from the console buffer; any
+## other error it causes, such as a dependency that fails to load, stays.
 ## An empty [param file_path] stands for source with no file, which clashes
 ## with every registered global class of its name.
 ##
@@ -71,6 +84,9 @@ static func judge(source: String, file_path: String) -> Dictionary:
 
 	var compiles := full_result == OK or declaration_result == OK \
 			or (full_result == ERR_COMPILATION_FAILED and declaration_result == ERR_PARSE_ERROR)
+	if not compiles and conflict == "" and _keep_name_probe_applies(class_name_text, file_path):
+		compiles = _keep_name_probe_compiles(source, class_name_text,
+				int(declaration_renamed["line"]))
 	var decisive_source := ""
 	if not compiles:
 		decisive_source = full_probe.source_code if full_result == ERR_PARSE_ERROR \
@@ -175,7 +191,7 @@ static func class_name_conflict(class_name_text: String, file_path: String) -> S
 	if _is_exposed_native_class(class_name_text):
 		return "Class \"%s\" hides a native class." % class_name_text
 	if _is_other_global_class(class_name_text, file_path):
-		return "Class \"%s\" hides a global script class." % class_name_text
+		return _HIDES_GLOBAL_CLASS % class_name_text
 	if _is_autoload_singleton(class_name_text):
 		return "Class \"%s\" hides an autoload singleton." % class_name_text
 	return ""
@@ -185,6 +201,47 @@ static func _new_probe(probe_source: String) -> GDScript:
 	var probe := GDScript.new()
 	probe.source_code = probe_source
 	return probe
+
+
+# The keep-name probe needs a file that owns its registered class, since that
+# clash is the one error it may discard, and needs the Logger to read the
+# compile's errors back; the 4.2-4.4 log tail cannot list them.
+static func _keep_name_probe_applies(class_name_text: String, file_path: String) -> bool:
+	if file_path == "" or not LogBuffer.uses_logger_api():
+		return false
+	var entry := _global_class_entry(class_name_text)
+	return not entry.is_empty() and _is_registered_for(entry, file_path)
+
+
+# Compiles the source as written. Its name clashes with the class the editor
+# registered for this very file, an error the real file never meets, so the
+# analyzer reports that clash; it still analyses the body, with self typed as
+# the class other scripts name, and the engine prints every analyzer error.
+# The verdict holds only when the clash is the one error: any other entry,
+# even on the same line, is a real error or one this probe cannot tell from
+# one. The clash stops the compile before codegen, so a codegen-only error
+# passes unseen. The probe's script errors leave the console buffer whatever
+# the verdict, since they describe a copy, not the file.
+static func _keep_name_probe_compiles(source: String, class_name_text: String,
+		declaration_line: int) -> bool:
+	var probe := _new_probe(source)
+	# The path GDScript gives a script with no file, under which the Logger
+	# reports the probe's errors.
+	var probe_path := "gdscript://%d.gd" % probe.get_instance_id()
+	var since_id := LogBuffer.get_cursor() - 1
+	var printed_errors := Engine.print_error_messages
+	# With printing off the Logger receives nothing.
+	Engine.print_error_messages = true
+	probe.reload(false)
+	Engine.print_error_messages = printed_errors
+	var captured := LogBuffer.take_script_errors_since(since_id, probe_path)
+	var errors: Array = captured["errors"]
+	if not bool(captured["complete"]) or errors.size() != 1:
+		return false
+	var error: Dictionary = errors[0]
+	return int(error["line"]) == declaration_line \
+			and str(error["message"]).get_slice("\n", 0).ends_with(
+				_HIDES_GLOBAL_CLASS % class_name_text)
 
 
 # Variant type names, as the parser's built-in type lookup sees them: Nil is
@@ -217,12 +274,24 @@ static func _is_exposed_native_class(class_name_text: String) -> bool:
 
 
 static func _is_other_global_class(class_name_text: String, file_path: String) -> bool:
-	var own_path := _canonical_path(file_path) if file_path != "" else ""
+	var entry := _global_class_entry(class_name_text)
+	return not entry.is_empty() and not _is_registered_for(entry, file_path)
+
+
+# The global class list's entry for the class, empty when no script registers
+# it.
+static func _global_class_entry(class_name_text: String) -> Dictionary:
 	for entry: Dictionary in ProjectSettings.get_global_class_list():
-		if str(entry.get("class", "")) != class_name_text:
-			continue
-		return _canonical_path(str(entry.get("path", ""))) != own_path
-	return false
+		if str(entry.get("class", "")) == class_name_text:
+			return entry
+	return {}
+
+
+# Whether the global class list entry's script is the file at file_path; an
+# empty file_path owns no entry with a path.
+static func _is_registered_for(entry: Dictionary, file_path: String) -> bool:
+	var own_path := _canonical_path(file_path) if file_path != "" else ""
+	return _canonical_path(str(entry.get("path", ""))) == own_path
 
 
 static func _is_autoload_singleton(class_name_text: String) -> bool:
