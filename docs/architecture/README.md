@@ -507,7 +507,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="3aa4e84" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="eea4126" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -527,7 +527,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 3aa4e84*
+*Figure 10 — plugin composition root · verified eea4126*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
@@ -551,7 +551,7 @@ preferences, the setup wizard's `mcp_toolkit/setup_wizard/show_optional_steps` a
 `mcp_toolkit/server/local_path`), the
 Godot-version warning, and the onboarding wizard (the setup wizard) are wired by `plugin.gd` itself after compose
 returns. `plugin.gd` connects the wizard's `step_seen` to the setup step tracker, the one writer of
-the seen-steps file, and a deferred call asks the run planner which steps to show. The planner tells
+the seen-steps file, and a deferred call asks the run planner which steps to show. It also passes `compose()` a callable that the dock's footer Setup Wizard button calls, which starts a button run of every step, seen or not; the dock never holds the wizard. The planner tells
 an editor start from a mid-session enable by a flag `_enable_plugin()` sets: the editor calls it only
 for a mid-session enable, synchronously after `_enter_tree` ([ADR 0027](#14-key-decisions-adrs)). So is the version-check opt-out: `plugin.gd` copies `MCPJsonWriteFlow.uses_local_server()`
 (the local-path setting, else `GODOT_MCP_DEV_SERVER_PATH`) onto the server's `skip_version_check`
