@@ -5,7 +5,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const Untrusted = Modules.Untrusted
-const Helpers = Modules.CommandHelpers
+const DeclaredTypeFitter = Modules.DeclaredTypeFitter
 
 const SECRET_KEY_REGEX := "(?i)password|token|secret|key"
 const _VALID_LAYER_CATEGORIES := ["2d_physics", "2d_render", "3d_physics", "3d_render"]
@@ -102,7 +102,9 @@ static func _cmd_project_set_setting(parameters: Dictionary) -> Dictionary:
 	if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 		return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
 	# ProjectSettings stores a value as given, so an int setting would save as 1153.0.
-	var fit := Helpers.fit_to_declared_type(ProjectSettings, key, coerced)
+	var fit := DeclaredTypeFitter.fit(ProjectSettings, key, coerced)
+	if not str(fit["error"]).is_empty():
+		return MCPToolkitError.fail("INVALID_VALUE", str(fit["error"]))
 	coerced = fit["value"]
 	var was_set_before := ProjectSettings.has_setting(key)
 	var previous_value = ProjectSettings.get_setting(key) if was_set_before else null

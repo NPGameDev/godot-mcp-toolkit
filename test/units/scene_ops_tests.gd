@@ -22,6 +22,7 @@ static func run(testing) -> void:
 	_test_instantiate_takes_any_packed_scene(testing)
 	_test_instantiate_load_barrier(testing)
 	_test_instantiate_model_recovery_messages(testing)
+	_test_create_node_typed_array_property(testing)
 
 
 # --- MCPToolkitSafeSceneOps public API -------------------------------------
@@ -221,6 +222,36 @@ static func _test_instantiate_model_recovery_messages(testing) -> void:
 	testing.ok(str(failed_import.get("error", "")).contains("editor_refresh"),
 			"model whose import failed names editor_refresh")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(_UNLOADABLE_MODEL_FIXTURE + ".import"))
+	print("")
+
+
+# --- scene.create_node: an inline array onto an Array[T] export ---------------
+# scene.create_node creates a script-class node with the script's new(), a live
+# instance, whose set() refuses an untyped array for an Array[T] member. The handler
+# needs the editor's edited scene root, which this runner lacks, so this drives the
+# two steps it runs on its inline properties: prepare (coerce and fit), then write
+# (set and read back). New helpers, so this is green-only.
+
+static func _test_create_node_typed_array_property(testing) -> void:
+	testing.begin("scene.create_node stores a typed array on an Array[String] export")
+	var node_script := GDScript.new()
+	node_script.source_code = "extends Node\n@export var tags: Array[String] = []\n"
+	testing.eq(node_script.reload(), OK, "typed-array node script compiles")
+	var instance: Node = node_script.new()
+
+	var prepared := _SceneCommands._prepare_inline_properties(instance, {"tags": ["a", "b"]})
+	testing.eq((prepared["failed"] as Array).size(), 0, "prepare → no failure")
+	var written := _SceneCommands._write_inline_properties(instance, prepared["simple"])
+	testing.eq((written["failed"] as Array).size(), 0, "write → no failure")
+	testing.eq((written["landed"] as Array).size(), 1, "write → the property landed")
+	testing.eq((written["warnings"] as Array).size(), 0, "write → no warning")
+	var stored: Variant = instance.get("tags")
+	testing.ok(stored is Array and (stored as Array).is_typed()
+			and (stored as Array).get_typed_builtin() == TYPE_STRING,
+			"tags → stored as an Array[String]")
+	testing.eq(stored, ["a", "b"], "tags → stores [\"a\", \"b\"]")
+
+	instance.free()
 	print("")
 
 

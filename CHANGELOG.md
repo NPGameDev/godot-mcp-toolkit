@@ -226,6 +226,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to reading the log file. The editor writes no log file, so
   `editor_get_console` missed new output, and `script_check` lost the line of a
   compile error.
+- `node_set_property`, `scene_create_node`, `node_manage` with `duplicate`,
+  `scene_instantiate` and `runtime_set_property` now store an array written to a
+  typed array property, such as `Array[String]`, as a typed array. Before, on a
+  node whose script is `@tool`, on a node `scene_create_node` made, and in a
+  running game, the write reported success but the property kept its old value;
+  on a node whose script isn't `@tool`, the array was stored untyped, so the scene
+  saved it untyped. An element that doesn't fit the array's type is now refused,
+  and the property keeps its value. A number with a fraction in an `Array[int]` is
+  truncated, with a warning, as it is for an `int` property. An array of objects
+  written to a node whose script isn't `@tool` still goes in untyped when the scene
+  had saved that property untyped.
 
 ## [1.0.4] - 2026-10-14
 

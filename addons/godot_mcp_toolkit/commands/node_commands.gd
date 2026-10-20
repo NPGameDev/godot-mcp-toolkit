@@ -6,6 +6,8 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Helpers = Modules.CommandHelpers
+const DeclaredTypeFitter = Modules.DeclaredTypeFitter
+const PropertySetCheck = Modules.PropertySetCheck
 
 ## node.set_property rejects "groups" because its set is a declarative full
 ## replace (it would drop any group not in the list), whereas node.groups is
@@ -274,7 +276,9 @@ static func _set_property_scalar_single(
 			coerce_result.get("code", "INVALID_VALUE"),
 			str(coerce_result.get("error", "")))
 	var requested: Variant = coerce_result["value"]
-	var fit := Helpers.fit_to_declared_type(node, property_name, requested)
+	var fit := DeclaredTypeFitter.fit(node, property_name, requested)
+	if not str(fit["error"]).is_empty():
+		return MCPToolkitError.fail("INVALID_VALUE", str(fit["error"]))
 	var coerced = fit["value"]
 
 	var old_value = node.get(property_name)
@@ -316,7 +320,7 @@ static func _set_property_scalar_single(
 	if old_value is Resource:
 		action.undo_reference(old_value)
 	action.commit_recorded()
-	var warning := Helpers.scalar_set_warning(outcome, fit, stored, requested, property_name)
+	var warning := PropertySetCheck.scalar_set_warning(outcome, fit, stored, requested, property_name)
 	if not warning.is_empty():
 		return MCPToolkitSuccess.ok({"warning": warning})
 	return MCPToolkitSuccess.ok()
@@ -417,7 +421,11 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 			coerced = NodePath(str(coerced))
 		var requested: Variant = coerced
-		var fit := Helpers.fit_to_declared_type(node, prop, requested)
+		var fit := DeclaredTypeFitter.fit(node, prop, requested)
+		if not str(fit["error"]).is_empty():
+			results.append({"node_path": np, "property": prop,
+				"success": false, "error": str(fit["error"])})
+			continue
 		coerced = fit["value"]
 
 		# Apply mutation unconditionally, then record for undo. Disarm the Godot 4.3
@@ -444,7 +452,7 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		if old_value is Resource:
 			action.undo_reference(old_value)
 		var scalar_entry := {"node_path": np, "property": prop, "success": true}
-		var warning := Helpers.scalar_set_warning(outcome, fit, stored, requested, prop)
+		var warning := PropertySetCheck.scalar_set_warning(outcome, fit, stored, requested, prop)
 		if not warning.is_empty():
 			scalar_entry["warning"] = warning
 		results.append(scalar_entry)
@@ -935,7 +943,9 @@ static func _manage_duplicate(
 			var coerced = Coerce.coerce_value_hint(props_raw[key], existing)
 			if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 				return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
-			var fit := Helpers.fit_to_declared_type(dup, prop_name, coerced)
+			var fit := DeclaredTypeFitter.fit(dup, prop_name, coerced)
+			if not str(fit["error"]).is_empty():
+				return MCPToolkitError.fail("INVALID_PARAMS", str(fit["error"]))
 			dup.set(prop_name, fit["value"])
 			if not str(fit["warning"]).is_empty():
 				warnings.append(str(fit["warning"]))

@@ -8,6 +8,8 @@ const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
 const Helpers = Modules.CommandHelpers
+const DeclaredTypeFitter = Modules.DeclaredTypeFitter
+const PropertySetCheck = Modules.PropertySetCheck
 
 const _TAB_CLOSE_NOISE_HINT := "Closing a non-active scene tab may produce a _set_main_scene_state error in the editor console. This is benign Godot engine noise — safe to ignore."
 
@@ -416,78 +418,17 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 
 	instance.name = requested_name
 
-	# Pre-coerce inline properties before UndoRedo (validation only). The raw wire
-	# value rides along so the post-set readback guard can give the bare-res://-string
-	# tagged-form hint (parity with node.set_property).
-	var properties_raw = parameters.get("properties", null)
-	var prop_coerced: Array = []  # [{name, value, old_value, raw}] — simple props (candidate for UndoRedo)
-	var prop_compound: Array = []  # [{name, raw_value}] — compound paths (direct set)
-	var prop_failed: Array = []
-	if properties_raw != null and typeof(properties_raw) == TYPE_DICTIONARY:
-		for key in (properties_raw as Dictionary).keys():
-			var prop_name := str(key)
-			# Compound paths (: or /) bypass coerce_for_property and use
-			# centralized set_property_compound (handles shader_parameter/ etc.)
-			if ":" in prop_name or "/" in prop_name:
-				prop_compound.append({"name": prop_name, "raw_value": properties_raw[key]})
-			else:
-				var result := Helpers.coerce_for_property(
-					instance, prop_name, properties_raw[key])
-				if result.get("ok", false):
-					prop_coerced.append({
-						"name": prop_name,
-						"value": result["value"],
-						"old_value": instance.get(prop_name),
-						"raw": properties_raw[key],
-					})
-				else:
-					prop_failed.append({
-						"name": prop_name,
-						"error": str(result.get("error", "")),
-					})
+	var prepared := _prepare_inline_properties(instance, parameters.get("properties", null))
+	var prop_compound: Array = prepared["compound"]
+	var prop_failed: Array = prepared["failed"]
 
 	parent_node.add_child(instance)
 	instance.set_owner(root)
-	# Set each simple prop, then read it back and classify the write. Coercion says a
-	# value is well-formed; it does NOT prove Object.set() stored it — set() is void and
-	# silently discards a wrong-type Variant. A DROPPED write is restored, reported in
-	# properties_failed, and excluded from both the UndoRedo rows and properties_set, so
-	# the response reflects only the writes that stored. Only landed props are undoable.
-	var landed: Array = []  # coerced props that stored (clean or engine-adjusted)
+	var written := _write_inline_properties(instance, prepared["simple"])
+	var landed: Array = written["landed"]
+	prop_failed.append_array(written["failed"])
 	var warnings: Array[String] = []
-	for prop in prop_coerced:
-		var prop_name: String = str(prop["name"])
-		# Disarm the Godot 4.3 tooltip-timer UAF before an editor_description write
-		# (no-op otherwise). Usually a no-op here — the new row is (re)built deferred —
-		# but it keeps every built-in editor_description write behind one guard.
-		Helpers.disarm_tooltip_uaf(instance, prop_name)
-		instance.set(prop_name, prop["value"])
-		var after = instance.get(prop_name)
-		# Bare res:// string on a Resource-typed property: a bare path silently fails to
-		# load, so steer to the tagged {type:"Resource", path:…} form BEFORE the generic
-		# drop guard (which would fire first with a vaguer message). Message mirrors
-		# node.set_property's scalar path so both tools report the same mistake identically.
-		var raw = prop["raw"]
-		if typeof(raw) == TYPE_STRING and str(raw).begins_with("res://") \
-				and not (prop["value"] is Resource) and not (after is String):
-			instance.set(prop_name, prop["old_value"])
-			prop_failed.append({"name": prop_name, "error":
-				"property '%s' expects a Resource, not a bare string path. " % prop_name +
-				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw)})
-			continue
-		var outcome := Helpers.describe_set_drop(
-			prop["old_value"], after, prop["value"], prop_name)
-		match str(outcome.get("status", "")):
-			"dropped":
-				# A bound setter may have Variant-converted the wrong type to a ZERO and
-				# stored it; restore the prior so the drop is truly non-destructive.
-				instance.set(prop_name, prop["old_value"])
-				prop_failed.append({"name": prop_name, "error": str(outcome.get("error", ""))})
-			"adjusted":
-				warnings.append(str(outcome.get("warning", "")))
-				landed.append(prop)
-			_:
-				landed.append(prop)
+	warnings.assign(written["warnings"])
 	var _undo := MCPToolkitUndoRedoAction.begin("create %s" % requested_name, parent_node) \
 		.do_method(parent_node.add_child.bind(instance)) \
 		.do_method(instance.set_owner.bind(root)) \
@@ -539,6 +480,99 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 		instance.unique_name_in_owner = true
 		response["unique_name"] = true
 	return response
+
+
+## Coerces and fits each inline property [param properties_raw] names for
+## scene.create_node's new [param instance], before the node enters the scene. A
+## compound path ([code]:[/code] or [code]/[/code]) is set later through
+## [code]Helpers.set_property_compound[/code], so it is only collected here.
+## [br][br]
+## Returns [code]{"simple": Array, "compound": Array, "failed": Array}[/code].
+## Each [code]simple[/code] row is
+## [code]{name, value, requested, fit, old_value, raw}[/code]: [code]value[/code] is
+## the fitted value to set, [code]requested[/code] the coerced value before the fit,
+## [code]fit[/code] the [code]DeclaredTypeFitter.fit[/code] result and [code]raw[/code]
+## the wire value, which the bare-res:// readback hint quotes. Each
+## [code]compound[/code] row is [code]{name, raw_value}[/code]; each
+## [code]failed[/code] row is [code]{name, error}[/code].
+static func _prepare_inline_properties(instance: Node, properties_raw: Variant) -> Dictionary:
+	var simple: Array = []
+	var compound: Array = []
+	var failed: Array = []
+	if typeof(properties_raw) != TYPE_DICTIONARY:
+		return {"simple": simple, "compound": compound, "failed": failed}
+	var properties: Dictionary = properties_raw
+	for key in properties.keys():
+		var prop_name := str(key)
+		if ":" in prop_name or "/" in prop_name:
+			compound.append({"name": prop_name, "raw_value": properties[key]})
+			continue
+		var result := Helpers.coerce_for_property(instance, prop_name, properties[key])
+		if not result.get("ok", false):
+			failed.append({"name": prop_name, "error": str(result.get("error", ""))})
+			continue
+		var fit := DeclaredTypeFitter.fit(instance, prop_name, result["value"])
+		if not str(fit["error"]).is_empty():
+			failed.append({"name": prop_name, "error": str(fit["error"])})
+			continue
+		simple.append({
+			"name": prop_name,
+			"value": fit["value"],
+			"requested": result["value"],
+			"fit": fit,
+			"old_value": instance.get(prop_name),
+			"raw": properties[key],
+		})
+	return {"simple": simple, "compound": compound, "failed": failed}
+
+
+## Sets each [param simple] row from [method _prepare_inline_properties] on
+## [param instance], then reads it back and classifies the write. Coercion says a
+## value is well-formed; it does not prove [method Object.set] stored it, since set()
+## is void and silently discards a wrong-type Variant. A dropped write is restored and
+## reported, so only the writes that stored count as landed and become undoable.
+## [br][br]
+## Returns [code]{"landed": Array, "failed": Array, "warnings": Array[String]}[/code]:
+## the rows that stored (clean or adjusted), [code]{name, error}[/code] rows for the
+## writes that did not, and a warning for each adjusted or fitted write.
+static func _write_inline_properties(instance: Node, simple: Array) -> Dictionary:
+	var landed: Array = []
+	var failed: Array = []
+	var warnings: Array[String] = []
+	for prop in simple:
+		var prop_name: String = str(prop["name"])
+		# Disarm the Godot 4.3 tooltip-timer UAF before an editor_description write
+		# (no-op otherwise). Usually a no-op here — the new row is (re)built deferred —
+		# but it keeps every built-in editor_description write behind one guard.
+		Helpers.disarm_tooltip_uaf(instance, prop_name)
+		instance.set(prop_name, prop["value"])
+		var after: Variant = instance.get(prop_name)
+		# Bare res:// string on a Resource-typed property: a bare path silently fails to
+		# load, so steer to the tagged {type:"Resource", path:…} form BEFORE the generic
+		# drop guard (which would fire first with a vaguer message). Message mirrors
+		# node.set_property's scalar path so both tools report the same mistake identically.
+		var raw: Variant = prop["raw"]
+		if typeof(raw) == TYPE_STRING and str(raw).begins_with("res://") \
+				and not (prop["value"] is Resource) and not (after is String):
+			instance.set(prop_name, prop["old_value"])
+			failed.append({"name": prop_name, "error":
+				"property '%s' expects a Resource, not a bare string path. " % prop_name +
+				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw)})
+			continue
+		var outcome := Helpers.describe_set_drop(
+			prop["old_value"], after, prop["value"], prop_name)
+		if str(outcome.get("status", "")) == "dropped":
+			# A bound setter may have Variant-converted the wrong type to a ZERO and
+			# stored it; restore the prior so the drop is truly non-destructive.
+			instance.set(prop_name, prop["old_value"])
+			failed.append({"name": prop_name, "error": str(outcome.get("error", ""))})
+			continue
+		var warning := PropertySetCheck.scalar_set_warning(
+				outcome, prop["fit"], after, prop["requested"], prop_name)
+		if not warning.is_empty():
+			warnings.append(warning)
+		landed.append(prop)
+	return {"landed": landed, "failed": failed, "warnings": warnings}
 
 
 static func _cmd_scene_delete_node(parameters: Dictionary) -> Dictionary:
@@ -816,7 +850,10 @@ static func _batch_instantiate(
 					if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 						property_errors.append({"property": prop_name, "error": str(coerced["_coerce_error"])})
 						continue
-					var fit := Helpers.fit_to_declared_type(instance, prop_name, coerced)
+					var fit := DeclaredTypeFitter.fit(instance, prop_name, coerced)
+					if not str(fit["error"]).is_empty():
+						property_errors.append({"property": prop_name, "error": str(fit["error"])})
+						continue
 					instance.set(prop_name, fit["value"])
 					if not str(fit["warning"]).is_empty():
 						property_warnings.append(str(fit["warning"]))
