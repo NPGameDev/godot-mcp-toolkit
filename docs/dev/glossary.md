@@ -397,7 +397,11 @@ permitted.
 The in-memory copy of a `.gd` file that `script_check`, the inline checks of `script_write` and
 `script_edit`, and the stale-instance hint compile to judge the file without reloading the script
 the editor has loaded. It renames the script's `class_name` and checks the original name the way
-the engine's analyzer does.
+the engine's analyzer does. It runs in up to three steps: the **rename probe** renames the
+declaration and every bare reference to the name; the **declaration probe**, run when that fails,
+renames only the declaration; the **keep-name probe**, run on 4.5+ with the Logger capture active
+when both fail for a file that owns its registered `class_name`, compiles the source as written and
+accepts it when its only error is the clash with its own registered class.
 
 **VersionUtils** (`Modules.VersionUtils` → `versioning/mcp_version_utils.gd`)
 The cross-version facts module (the `is_at_least` / `is_at_most` / `is_version_in_range` set). Reached

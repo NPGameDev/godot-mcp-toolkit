@@ -226,6 +226,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to reading the log file. The editor writes no log file, so
   `editor_get_console` missed new output, and `script_check` lost the line of a
   compile error.
+- On Godot 4.5 and later, `script_check` no longer reports a false error when a
+  script passes `self` to another script's parameter typed with its
+  `class_name`, such as `Other.new().take(self)` with `func take(a: Player)`.
+  The inline check of `script_write` and `script_edit` gets the same fix, and so
+  does `const Self = preload("<this file>")` with `var me: Self = self`. Godot
+  4.2 to 4.4 still report the false error; `lsp_diagnostics` gives the real
+  result there. On Godot 4.5 and later, checking a script whose `class_name`
+  is registered for that file and that fails to compile also prints the line
+  `Class "X" hides a global script class.` (not a real error) and the script's
+  real errors again to the Output panel and stderr. Reported by @benfeather
+  ([#16](https://github.com/NPGameDev/godot-mcp-toolkit/issues/16)).
 - `node_set_property`, `scene_create_node`, `node_manage` with `duplicate`,
   `scene_instantiate` and `runtime_set_property` now store an array written to a
   typed array property, such as `Array[String]`, as a typed array. Before, on a
