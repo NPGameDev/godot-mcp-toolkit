@@ -255,6 +255,8 @@ static func _test_duplicate_keeps_instance_linked(testing) -> void:
 				"packed copy has no type of its own (its scene gives it)")
 		testing.eq(_state_property_list(state, copy_index), "position",
 				"packed copy stores only the one override")
+		testing.ok(not _state_property_list(state, copy_index).split(",").has("script"),
+				"packed copy stores no script of its own")
 	if original_index >= 0 and copy_index >= 0:
 		testing.eq(_state_property_list(state, copy_index),
 				_state_property_list(state, original_index),
@@ -350,12 +352,16 @@ static func _remove_sub_scene_fixture() -> void:
 
 
 ## Saves a sub-scene to a user:// fixture and returns it loaded back, or null when
-## the save fails: a Node2D "Sub" turned away from the class default, so a copy
-## that loses its link to the scene stores the turn itself, and an internal chain
-## "Inner/Leaf/Tip" the scene owns.
+## the save fails: a scripted Node2D "Sub" turned away from the class default, so
+## a copy that loses its link to the scene stores the script and the turn itself,
+## and an internal chain "Inner/Leaf/Tip" the scene owns.
 static func _save_deep_sub_scene_fixture(testing) -> PackedScene:
+	var root_script := GDScript.new()
+	root_script.source_code = "extends Node2D\n"
+	testing.eq(root_script.reload(), OK, "deep sub-scene root script compiles")
 	var sub_root := Node2D.new()
 	sub_root.name = "Sub"
+	sub_root.set_script(root_script)
 	sub_root.rotation = 0.5
 	var inner := _add_owned_child(sub_root, Node2D.new(), "Inner", sub_root)
 	var leaf := _add_owned_child(inner, Node2D.new(), "Leaf", sub_root)

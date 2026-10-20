@@ -14,7 +14,8 @@ const _GROUPS_REJECTION_MESSAGE := "'groups' cannot be set via node.set_property
 const _GROUPS_REJECTION_HINT := "Use node.groups (action 'add'/'remove') to change group membership incrementally, or 'list' to read it."
 
 ## Node.duplicate()'s bound default flags. The duplicate action adds the editor's
-## own flag to them, so a copied scene instance stays linked to its scene.
+## own flag to them, so a copied scene instance stays linked to its scene and
+## non-persistent groups stay out of the copy.
 const _DUPLICATE_DEFAULT_FLAGS := (Node.DUPLICATE_SIGNALS | Node.DUPLICATE_GROUPS
 		| Node.DUPLICATE_SCRIPTS | Node.DUPLICATE_USE_INSTANTIATION)
 
@@ -952,8 +953,8 @@ static func _manage_duplicate(
 ## copies with no owner, so the scene saver would drop them; walking the whole
 ## chain, as the editor's Duplicate does, also keeps the children an editable
 ## instance owns under a node copied from inside it. A copy that already has an
-## owner is left out: it is the internals of a sub-scene the copy re-instanced,
-## owned by that instance's root.
+## owner is left out as a safety net, so the internals of a sub-scene the copy
+## re-instanced stay owned by that instance's root and never move to the scene.
 static func _copies_to_reown(original: Node, copy: Node) -> Array[Node]:
 	var owner_chain: Array[Node] = []
 	var chain_owner := original.owner

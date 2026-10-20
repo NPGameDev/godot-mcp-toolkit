@@ -573,8 +573,9 @@ static func _test_reload_patch_gate(testing) -> void:
 
 # --- The editor-duplicate flag's value -----------------------------------------
 # duplicate_from_editor_flag() derives Node.DUPLICATE_FROM_EDITOR from the bound
-# constants. The measured values are spelled out here, not derived, so an engine minor
-# that moves the flag fails this check in the cross-version matrix.
+# constants. The measured values are spelled out here, not derived, so a new bound
+# DUPLICATE_* constant that moves the derived value fails this check in the cross-version
+# matrix, while an unbound flag inserted before FROM_EDITOR leaves both on a wrong value.
 
 static func _test_duplicate_from_editor_flag(testing) -> void:
 	testing.begin("duplicate_from_editor_flag matches the measured value per engine minor")

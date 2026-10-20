@@ -162,8 +162,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ([#37](https://github.com/NPGameDev/godot-mcp-toolkit/issues/37),
   [#38](https://github.com/NPGameDev/godot-mcp-toolkit/pull/38)).
 - `node_manage` `duplicate` keeps a duplicated scene instance linked to its
-  scene, so saving no longer writes out its script and properties; duplicating a
-  node inside an editable instance keeps its children
+  scene, so saving no longer writes its script and properties into the `.tscn`;
+  duplicating a node inside an editable instance no longer drops its children
   ([#56](https://github.com/NPGameDev/godot-mcp-toolkit/issues/56)).
 - `resource_write` now saves a typed array property, such as `Array[String]`, as
   a typed array. Before, creating a resource from a script class (`type` naming
