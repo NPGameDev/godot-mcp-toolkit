@@ -7,6 +7,7 @@ const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
 const Helpers = Modules.CommandHelpers
+const DeclaredTypeFitter = Modules.DeclaredTypeFitter
 
 const RESOURCE_SKIP_PROPERTIES: Array[String] = [
 	"image", "mesh_arrays", "surface_arrays", "_data",
@@ -65,21 +66,17 @@ static func _apply_resource_properties(
 		else:
 			# An inspector group, subgroup or category header is not a property:
 			# set() would store nothing for a key that names only a header.
-			var entry := Helpers.property_entry(resource, key_string)
-			if entry.is_empty():
+			if DeclaredTypeFitter.property_entry(resource, key_string).is_empty():
 				warnings.append(
 					"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
 				continue
-			var fit := Helpers.fit_to_type(coerced, int(entry.get("type", TYPE_NIL)), key_string)
-			var array_fit := Helpers.fit_to_typed_array(resource, key_string, fit["value"])
-			if not str(array_fit["error"]).is_empty():
-				warnings.append("%s; value left unchanged" % str(array_fit["error"]))
+			var fit := DeclaredTypeFitter.fit(resource, key_string, coerced)
+			if not str(fit["error"]).is_empty():
+				warnings.append("%s; value left unchanged" % str(fit["error"]))
 				continue
-			resource.set(key_string, array_fit["value"])
+			resource.set(key_string, fit["value"])
 			if not str(fit["warning"]).is_empty():
 				warnings.append(str(fit["warning"]))
-			if not str(array_fit["warning"]).is_empty():
-				warnings.append(str(array_fit["warning"]))
 	return warnings
 
 

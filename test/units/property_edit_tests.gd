@@ -8,6 +8,7 @@ const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
+const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 
 
 static func run(testing) -> void:
@@ -17,6 +18,9 @@ static func run(testing) -> void:
 	_test_set_drop_logic(testing)
 	_test_scene_create_node_inline_drop(testing)
 	_test_runtime_set_property_pipeline(testing)
+	_test_set_drop_typed_array_refusal(testing)
+	_test_set_property_typed_array_export(testing)
+	_test_batch_typed_array_mismatch(testing)
 	_test_compound_set_helper(testing)
 	_test_undo_info(testing)
 
@@ -337,10 +341,11 @@ static func _test_scene_create_node_inline_drop(testing) -> void:
 
 
 # --- runtime.set_property wrong-type pipeline (runtime autoload) ----
-# The runtime autoload's _cmd_runtime_set_property applies the SAME shared leaf
-# detector as the editor path: coerce → get(before) → set → get(after) →
-# PropertySetCheck.describe_set_drop. Exercise that exact pure pipeline headlessly
-# (no editor, no WebSocket) so the runtime path's wrong-type rejection is pinned.
+# The runtime autoload's _cmd_runtime_set_property classifies a write with the same
+# shared leaf detector as the editor path. This runs the classification part of its
+# pipeline headlessly (no editor, no WebSocket): coerce → get(before) → set →
+# get(after) → PropertySetCheck.describe_set_drop, without the declared-type fit the
+# handler runs before the set, so the runtime path's wrong-type rejection is pinned.
 static func _test_runtime_set_property_pipeline(testing) -> void:
 	testing.begin("runtime.set_property wrong-type pipeline")
 
@@ -388,6 +393,125 @@ static func _test_runtime_set_property_pipeline(testing) -> void:
 
 	sprite.free()
 	print("")
+
+
+# --- typed-array writes: an untyped Array onto an Array[T] property ----------
+# A live script instance refuses an untyped Array for an Array[T] member and keeps
+# the old value without an error, so the readback equals the prior value. Array onto
+# Array is one convertible family, so the family gate alone reads that refusal as an
+# engine reshape; the classifier must report it as a drop instead.
+static func _test_set_drop_typed_array_refusal(testing) -> void:
+	testing.begin("describe_set_drop: a refused Array onto Array[T]")
+	var empty_tags: Array[String] = []
+	var requested: Array = ["a", "b"]
+
+	var editor_outcome: Dictionary = Helpers.describe_set_drop(
+		empty_tags, empty_tags.duplicate(), requested, "tags")
+	testing.eq(_status(editor_outcome), "dropped",
+		"Array readback unchanged and unlike the request → dropped (editor)")
+	testing.ok(str(editor_outcome.get("error", "")).find("tags") >= 0,
+		"the refused-Array error names the property")
+	testing.eq(
+		_status(PropertySetCheck.describe_set_drop(
+			empty_tags, empty_tags.duplicate(), requested, "tags")),
+		"dropped", "Array readback unchanged and unlike the request → dropped (runtime)")
+
+	var held_tags: Array[String] = ["a", "b"]
+	testing.eq(_status(Helpers.describe_set_drop(held_tags, held_tags.duplicate(), requested, "tags")),
+		"ok", "Array set-to-same (readback equals the request) → ok")
+	print("")
+
+
+# node.set_property onto an exported Array[String] of a live script: the stored
+# value must be a typed Array[String] holding the requested elements, on the single
+# and the batch path.
+static func _test_set_property_typed_array_export(testing) -> void:
+	testing.begin("node.set_property stores a typed array on an Array[String] export")
+	var holder_script := GDScript.new()
+	holder_script.source_code = "extends Node\n@export var tags: Array[String] = []\n"
+	testing.eq(holder_script.reload(), OK, "typed-array holder script compiles")
+	var root := Node.new()
+	root.name = "Root"
+	var holder := Node.new()
+	holder.name = "Holder"
+	holder.set_script(holder_script)
+	root.add_child(holder)
+
+	var single := NodeCommands._set_property_scalar_single(holder, "Holder", "tags", ["a", "b"])
+	testing.ok(bool(single.get("success", false)), "single → success")
+	_expect_typed_tags(testing, holder.get("tags"), ["a", "b"], "single")
+	testing.ok(not single.has("warning"), "single → no warning")
+
+	var server_script := GDScript.new()
+	server_script.source_code = "extends Node\nvar undo_helpers: Node = null\n"
+	testing.eq(server_script.reload(), OK, "server stand-in script compiles")
+	var server := Node.new()
+	server.set_script(server_script)
+	server.set("undo_helpers", UndoRedoHelpers.new())
+	var batch := NodeCommands._batch_set_properties(server, root,
+			[{"node_path": "Holder", "property": "tags", "value": ["c", "d"]}])
+	var batch_results: Array = batch.get("results", [])
+	var batch_entry: Dictionary = batch_results[0] if not batch_results.is_empty() else {}
+	testing.ok(bool(batch_entry.get("success", false)), "batch → entry success")
+	_expect_typed_tags(testing, holder.get("tags"), ["c", "d"], "batch")
+	testing.ok(not batch_entry.has("warning"), "batch → no entry warning")
+
+	server.get("undo_helpers").free()
+	server.free()
+	root.free()
+	print("")
+
+
+# A batch entry whose array has an element that does not fit the Array[String] export
+# fails on its own: its error names the element's index, the property keeps its
+# value, and the batch's other entry applies.
+static func _test_batch_typed_array_mismatch(testing) -> void:
+	testing.begin("node.set_property batch: an element that does not fit an Array[String] export")
+	var holder_script := GDScript.new()
+	holder_script.source_code = (
+		"extends Node\n"
+		+ "@export var tags: Array[String] = [\"keep\"]\n"
+		+ "@export var title: String = \"\"\n")
+	testing.eq(holder_script.reload(), OK, "typed-array holder script compiles")
+	var root := Node.new()
+	root.name = "Root"
+	var holder := Node.new()
+	holder.name = "Holder"
+	holder.set_script(holder_script)
+	root.add_child(holder)
+
+	var server_script := GDScript.new()
+	server_script.source_code = "extends Node\nvar undo_helpers: Node = null\n"
+	testing.eq(server_script.reload(), OK, "server stand-in script compiles")
+	var server := Node.new()
+	server.set_script(server_script)
+	server.set("undo_helpers", UndoRedoHelpers.new())
+	var batch := NodeCommands._batch_set_properties(server, root, [
+		{"node_path": "Holder", "property": "title", "value": "hi"},
+		{"node_path": "Holder", "property": "tags", "value": ["a", {}]},
+	])
+	var results: Array = batch.get("results", [])
+	testing.eq(results.size(), 2, "batch → one result per entry")
+	var good: Dictionary = results[0] if results.size() > 0 else {}
+	var bad: Dictionary = results[1] if results.size() > 1 else {}
+	testing.ok(bool(good.get("success", false)), "the good entry → success")
+	testing.eq(holder.get("title"), "hi", "the good entry → applied")
+	testing.ok(not bool(bad.get("success", true)), "the mismatched entry → failure")
+	testing.ok(str(bad.get("error", "")).contains("index 1"),
+		"the mismatched entry → the error names the element's index")
+	testing.eq(holder.get("tags"), ["keep"], "the mismatched entry → tags keeps its value")
+
+	server.get("undo_helpers").free()
+	server.free()
+	root.free()
+	print("")
+
+
+static func _expect_typed_tags(testing, stored: Variant, expected: Array, label: String) -> void:
+	testing.ok(stored is Array and (stored as Array).is_typed()
+			and (stored as Array).get_typed_builtin() == TYPE_STRING,
+		"%s → stored as an Array[String]" % label)
+	testing.eq(stored, expected, "%s → stores %s" % [label, str(expected)])
 
 
 # --- compound_set helper (~8 assertions) ------------------------------------

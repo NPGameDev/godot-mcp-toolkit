@@ -23,7 +23,6 @@ const PlaceholderLikeGroupedResource := preload(
 const TypedArrayResource := preload("res://test/fixtures/typed_array_resource.gd")
 const TypedArrayScriptedResource := preload("res://test/fixtures/typed_array_scripted_resource.gd")
 const TypedArrayElement := preload("res://test/fixtures/typed_array_element.gd")
-const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 
 
 static func run(testing) -> void:
@@ -46,7 +45,6 @@ static func run(testing) -> void:
 	_test_resource_write_typed_int_array(testing)
 	_test_resource_write_typed_array_element_precheck(testing)
 	_test_resource_write_typed_color_array(testing)
-	_test_fit_to_typed_array(testing)
 
 
 # --- Coerce/serialize round-trip symmetry ---------------------------------
@@ -1026,52 +1024,6 @@ static func _test_resource_write_typed_color_array(testing) -> void:
 	testing.eq(tints[0] if tints.size() > 0 else null, Color.RED, "\"red\" → Color.RED")
 	testing.eq(tints[1] if tints.size() > 1 else null, Color.html("#ff8000"),
 			"\"#ff8000\" → the HTML colour")
-	print("")
-
-
-# The typed-array fit on its own: what passes through, what it builds, and the
-# warning and error it returns.
-static func _test_fit_to_typed_array(testing) -> void:
-	testing.begin("fit_to_typed_array fits an untyped array to a typed property")
-	var resource: Resource = TypedArrayScriptedResource.new()
-
-	var scalar := Helpers.fit_to_typed_array(resource, "scores", 4)
-	testing.eq(scalar["value"], 4, "a value that is not an array passes through")
-	testing.eq(scalar["error"], "", "a value that is not an array → no error")
-
-	var untyped_target: Resource = PlaceholderLikeResource.new()
-	var untyped := Helpers.fit_to_typed_array(untyped_target, "note", [1.5])
-	testing.ok(not (untyped["value"] as Array).is_typed(),
-			"a property that holds no typed array → the array stays untyped")
-	testing.eq(untyped["warning"], "", "a property that holds no typed array → no warning")
-
-	var untyped_array_target: Resource = PlaceholderLikeResource.new()
-	untyped_array_target.set("note", [])
-	var untyped_array := Helpers.fit_to_typed_array(untyped_array_target, "note", [1.5])
-	testing.ok(not (untyped_array["value"] as Array).is_typed(),
-			"a property that holds an untyped array → the array stays untyped")
-	testing.eq(untyped_array["value"], [1.5],
-			"a property that holds an untyped array → the value as given")
-	testing.eq(untyped_array["warning"], "",
-			"a property that holds an untyped array → no warning")
-
-	var fitted := Helpers.fit_to_typed_array(resource, "scores", [1.5, 2.0])
-	var fitted_value: Array = fitted["value"]
-	testing.eq(fitted_value.get_typed_builtin(), TYPE_INT, "the value is an Array[int]")
-	testing.eq(fitted_value[0], 1, "1.5 → 1")
-	testing.eq(fitted["error"], "", "a lossy element → no error")
-	testing.ok(str(fitted["warning"]).contains("index 0 "),
-			"a lossy element → the warning names its index")
-	testing.ok(str(fitted["warning"]).contains("int"), "the warning names the element type")
-
-	var tags := Helpers.fit_to_typed_array(TypedArrayResource.new(), "tags", [&"name"])
-	testing.eq(tags["error"], "", "a StringName converts into an Array[String]")
-	testing.eq(typeof((tags["value"] as Array)[0]), TYPE_STRING, "the element is now a String")
-
-	var mismatch := Helpers.fit_to_typed_array(resource, "scores", ["x"])
-	testing.ok(str(mismatch["error"]).contains("'scores'"), "a mismatch → the error names the property")
-	testing.ok(str(mismatch["error"]).contains("index 0"), "a mismatch → the error names the index")
-	testing.ok(not (mismatch["value"] as Array).is_typed(), "a mismatch → the value is returned as given")
 	print("")
 
 

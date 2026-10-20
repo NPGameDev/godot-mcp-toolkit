@@ -10,45 +10,12 @@ const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
+const DeclaredTypeFitter := preload("res://addons/godot_mcp_toolkit/contract/declared_type_fitter.gd")
 const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
 
 ## The toolkit's own scripts, which a reload from disk never touches: reloading
 ## the code that is running the reload would cancel its suspended coroutines.
 const _TOOLKIT_SOURCE_DIR := "res://addons/godot_mcp_toolkit/"
-
-## Usage flags of the inspector header entries a property list interleaves with
-## its properties.
-const _PROPERTY_HEADER_USAGE := (
-		PROPERTY_USAGE_GROUP | PROPERTY_USAGE_SUBGROUP | PROPERTY_USAGE_CATEGORY)
-
-## For each element type, the other types an element may have and still convert
-## when the engine fills a typed array: the engine's strict conversions
-## (Variant::can_convert_strict). Arrays and packed arrays, which convert into each
-## other, and the Strings a [Color] takes without an error are left to
-## [method _fits_typed_array].
-const _STRICT_CONVERSIONS := {
-	TYPE_BOOL: [TYPE_INT, TYPE_FLOAT],
-	TYPE_INT: [TYPE_BOOL, TYPE_FLOAT],
-	TYPE_FLOAT: [TYPE_BOOL, TYPE_INT],
-	TYPE_STRING: [TYPE_NODE_PATH, TYPE_STRING_NAME],
-	TYPE_VECTOR2: [TYPE_VECTOR2I],
-	TYPE_VECTOR2I: [TYPE_VECTOR2],
-	TYPE_RECT2: [TYPE_RECT2I],
-	TYPE_RECT2I: [TYPE_RECT2],
-	TYPE_TRANSFORM2D: [TYPE_TRANSFORM3D],
-	TYPE_VECTOR3: [TYPE_VECTOR3I],
-	TYPE_VECTOR3I: [TYPE_VECTOR3],
-	TYPE_VECTOR4: [TYPE_VECTOR4I],
-	TYPE_VECTOR4I: [TYPE_VECTOR4],
-	TYPE_QUATERNION: [TYPE_BASIS],
-	TYPE_BASIS: [TYPE_QUATERNION],
-	TYPE_TRANSFORM3D: [TYPE_TRANSFORM2D, TYPE_QUATERNION, TYPE_BASIS, TYPE_PROJECTION],
-	TYPE_PROJECTION: [TYPE_TRANSFORM3D],
-	TYPE_COLOR: [TYPE_STRING, TYPE_INT],
-	TYPE_RID: [TYPE_OBJECT],
-	TYPE_STRING_NAME: [TYPE_STRING],
-	TYPE_NODE_PATH: [TYPE_STRING],
-}
 
 
 # -- Property coercion ---------------------------------------------------------
@@ -83,168 +50,6 @@ static func coerce_for_property(
 		coerced = NodePath(str(coerced))
 
 	return {"ok": true, "value": coerced}
-
-
-## Fits a coerced JSON value to the type [param target] declares for
-## [param property_name], through [method Coerce.coerce_to_declared_type], before the
-## caller sets it.
-##
-## The editor runs a script that is not [code]@tool[/code] as a placeholder instance,
-## whose set() stores a JSON float as given, so an [code]int[/code] export would save
-## as [code]100.0[/code]. A property missing from the target's property list keeps
-## its value. A custom project setting with no registered type lists the type of its
-## current value, so a fraction written to an int-valued custom setting is truncated
-## too.
-## [br][br]
-## Returns [code]{"value": <the value to set>, "warning": String}[/code], as
-## [method fit_to_type] does.
-static func fit_to_declared_type(
-	target: Object, property_name: String, value: Variant,
-) -> Dictionary:
-	return fit_to_type(value, _declared_type(target, property_name), property_name)
-
-
-## Converts a float [param value] to an int when [param declared_type] is
-## [code]int[/code], through [method Coerce.coerce_to_declared_type]; any other
-## value or type passes through unchanged.
-## [br][br]
-## Returns [code]{"value": <the converted value>, "warning": String}[/code]. The
-## warning is empty unless a fraction was dropped; then it names
-## [param property_name], the stored and the requested values in the readback's
-## adjusted-write wording.
-static func fit_to_type(value: Variant, declared_type: int, property_name: String) -> Dictionary:
-	var conversion := Coerce.coerce_to_declared_type(value, declared_type)
-	var warning := ""
-	if conversion["truncated"]:
-		warning = PropertySetCheck.adjusted_warning(conversion["value"], value, property_name)
-	return {"value": conversion["value"], "warning": warning}
-
-
-## Gives an untyped [param value] the element type of the typed array that
-## [param target] holds in [param property_name], before the caller sets it.
-##
-## A JSON array arrives untyped. A live script instance's set() drops an untyped
-## array on a typed array member, and the editor's placeholder for a script that is
-## not [code]@tool[/code] stores it untyped, so the file would save it untyped. The
-## typed array is built the way the text resource loader builds one. A value that
-## is not an [Array], or a property whose value is not a typed array, passes
-## through.
-## [br][br]
-## Each element is checked against the element type first, so one that does not
-## fit is reported here instead of as an engine error. Each element then runs
-## through [method Coerce.coerce_to_declared_type], so a float that loses its
-## fraction in an [code]Array[int][/code] is reported as a scalar int property
-## reports it, in one warning for the whole property.
-## [br][br]
-## Returns [code]{"value": <the value to set>, "warning": String, "error": String}[/code].
-## [code]error[/code] is not empty when an element does not fit the element type;
-## the value is then [param value] as given and the caller leaves the property
-## unchanged. [code]warning[/code] names the indices of the truncated elements, or
-## is empty.
-static func fit_to_typed_array(
-	target: Object, property_name: String, value: Variant,
-) -> Dictionary:
-	var current: Variant = target.get(property_name)
-	if not (value is Array and current is Array):
-		return {"value": value, "warning": "", "error": ""}
-	var requested: Array = value
-	var template: Array = current
-	if not template.is_typed() or requested.is_same_typed(template):
-		return {"value": value, "warning": "", "error": ""}
-	var element_type := template.get_typed_builtin()
-	var elements: Array = []
-	var truncated_indices := PackedStringArray()
-	for index in requested.size():
-		var element: Variant = requested[index]
-		if not _fits_typed_array(element, template):
-			return {"value": value, "warning": "", "error":
-				"property '%s': the element at index %d (%s) doesn't fit the typed array"
-					% [property_name, index, type_string(typeof(element))]}
-		var conversion := Coerce.coerce_to_declared_type(element, element_type)
-		if conversion["truncated"]:
-			truncated_indices.append(str(index))
-		elements.append(conversion["value"])
-	var typed := Array(elements, element_type,
-			template.get_typed_class_name(), template.get_typed_script())
-	# A conversion the element check passed can still fail inside the engine; the
-	# typed array then comes back short.
-	if typed.size() != elements.size():
-		return {"value": value, "warning": "",
-			"error": "property '%s': an element doesn't fit the typed array" % property_name}
-	var warning := ""
-	if not truncated_indices.is_empty():
-		var index_word := "index" if truncated_indices.size() == 1 else "indices"
-		warning = ("note: '%s' elements at %s %s were adjusted to fit %s; the fraction was dropped."
-			% [property_name, index_word, ", ".join(truncated_indices), type_string(element_type)])
-	return {"value": typed, "warning": warning, "error": ""}
-
-
-## True when [param element] can go into an array typed like [param template]
-## without an engine error, by the rule the engine applies when it fills a typed
-## array from an untyped one: an object array takes null or an instance of its
-## class and script; any other typed array takes its own type or one that converts
-## strictly into it. A [Color] array takes a String only when it names a colour:
-## the engine turns any other String into [code]Color(0, 0, 0, 0)[/code] and prints
-## an error.
-static func _fits_typed_array(element: Variant, template: Array) -> bool:
-	var element_type := typeof(element)
-	var target_type := template.get_typed_builtin()
-	if target_type != TYPE_OBJECT:
-		if element_type == target_type:
-			return true
-		if (element_type == TYPE_ARRAY and _is_packed_array_type(target_type)) \
-				or (target_type == TYPE_ARRAY and _is_packed_array_type(element_type)):
-			return true
-		if target_type == TYPE_COLOR and element_type == TYPE_STRING:
-			return _names_a_colour(element)
-		var sources: Array = _STRICT_CONVERSIONS.get(target_type, [])
-		return element_type in sources
-	if element_type == TYPE_NIL:
-		return true
-	if element_type != TYPE_OBJECT or not is_instance_valid(element):
-		return false
-	var object: Object = element
-	if not ClassDB.is_parent_class(object.get_class(), template.get_typed_class_name()):
-		return false
-	var required_script: Script = template.get_typed_script()
-	var script: Script = object.get_script()
-	if required_script == null:
-		return true
-	while script != null:
-		if script == required_script:
-			return true
-		script = script.get_base_script()
-	return false
-
-
-## True when [param text] is an HTML colour code or a colour name, the Strings the
-## engine converts to a [Color] without an error. [method Color.from_string] prints
-## nothing and returns its default for any other String, so the String names a
-## colour when two different defaults give the same result.
-static func _names_a_colour(text: String) -> bool:
-	return Color.from_string(text, Color.BLACK) == Color.from_string(text, Color.WHITE)
-
-
-## True for the packed array types, which close the [enum Variant.Type] list on
-## every supported version, so a packed type a later engine adds is included.
-static func _is_packed_array_type(variant_type: int) -> bool:
-	return variant_type >= TYPE_PACKED_BYTE_ARRAY and variant_type < TYPE_MAX
-
-
-## The warning a scalar property write reports, or "" for a clean write.
-##
-## When the readback [param outcome] from [method describe_set_drop] is
-## [code]"adjusted"[/code], the warning names the [param stored] value against the
-## caller's [param requested] one rather than the fitted value, so a clamp that
-## follows the fit reports what the caller sent. Otherwise it is the warning in
-## [param fit], the result of [method fit_to_declared_type].
-static func scalar_set_warning(
-	outcome: Dictionary, fit: Dictionary, stored: Variant, requested: Variant,
-	property_name: String,
-) -> String:
-	if outcome.get("status", "") == "adjusted":
-		return PropertySetCheck.adjusted_warning(stored, requested, property_name)
-	return str(fit["warning"])
 
 
 ## Compile a regex text_filter. Returns [RegEx-or-null, error-or-null, warning].
@@ -531,26 +336,7 @@ static func describe_set_drop(
 ## Check whether a property name exists on an object instance.
 ## Uses get_property_list() which covers built-in, @export, and metadata.
 static func _has_property(obj: Object, property_name: String) -> bool:
-	return not property_entry(obj, property_name).is_empty()
-
-
-## The Variant type [param obj]'s property list declares for [param property_name],
-## or [constant @GlobalScope.TYPE_NIL] when the list has no such entry.
-static func _declared_type(obj: Object, property_name: String) -> int:
-	return int(property_entry(obj, property_name).get("type", TYPE_NIL))
-
-
-## The entry [param obj]'s property list holds for [param property_name], or an
-## empty Dictionary when it has none. Inspector group, subgroup and category
-## headers are skipped: an [code]@export_group("speed")[/code] listed ahead of
-## [code]var speed: int[/code] shares its name but declares no type, and a key
-## that names only a header is not a property.
-static func property_entry(obj: Object, property_name: String) -> Dictionary:
-	for p in obj.get_property_list():
-		if p["name"] == property_name \
-				and (int(p.get("usage", 0)) & _PROPERTY_HEADER_USAGE) == 0:
-			return p
-	return {}
+	return not DeclaredTypeFitter.property_entry(obj, property_name).is_empty()
 
 
 # -- Scene node resolution -----------------------------------------------------

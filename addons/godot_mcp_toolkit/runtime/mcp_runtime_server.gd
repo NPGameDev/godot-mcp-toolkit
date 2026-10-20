@@ -24,6 +24,7 @@ extends Node
 # would parse-fail this autoload in an export template (godot#91713) — GDScript
 # resolves identifiers at parse time, before any runtime guard can help.
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
+const DeclaredTypeFitter := preload("res://addons/godot_mcp_toolkit/contract/declared_type_fitter.gd")
 const ExecuteHints := preload("res://addons/godot_mcp_toolkit/contract/execute_hints.gd")
 const Pagination := preload("res://addons/godot_mcp_toolkit/contract/pagination.gd")
 const PropertySetCheck := preload("res://addons/godot_mcp_toolkit/contract/property_set_check.gd")
@@ -670,6 +671,12 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 	# Auto-coerce string → NodePath when the property expects NodePath.
 	if typeof(current) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 		coerced = NodePath(str(coerced))
+	var requested: Variant = coerced
+	var fit := DeclaredTypeFitter.fit(node, property, requested)
+	if not str(fit["error"]).is_empty():
+		_send_result(peer, id, MCPToolkitError.fail("INVALID_VALUE", str(fit["error"])))
+		return
+	coerced = fit["value"]
 
 	node.set(property, coerced)
 
@@ -677,12 +684,13 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 	var new_value = node.get(property)
 	# Classify the write on scalar (non-colon) paths: DROPPED (silent wrong-type,
 	# Godot's set() discards an unassignable Variant) → SET_FAILED; ADJUSTED (engine
-	# reshaped the value, e.g. truncation 7.9→7) → success with a warning appended
-	# below. A colon sub-path (e.g. "position:x") isn't read back through node.get()
+	# reshaped the value, e.g. a clamp) → success with a warning appended below that
+	# names the caller's request; otherwise a fraction the fit dropped is the warning.
+	# A colon sub-path (e.g. "position:x") isn't read back through node.get()
 	# (before/after both null), so it stays best-effort — mirrors the editor split.
-	var adjusted_warning := ""
+	var outcome: Dictionary = {}
 	if ":" not in property:
-		var outcome := PropertySetCheck.describe_set_drop(current, new_value, coerced, property)
+		outcome = PropertySetCheck.describe_set_drop(current, new_value, coerced, property)
 		if outcome.get("status", "") == "dropped":
 			# A bound setter (position/modulate) may have Variant-converted the wrong
 			# type to a ZERO and stored it; restore the prior value so SET_FAILED is
@@ -690,8 +698,8 @@ func _cmd_runtime_set_property(peer: WebSocketPeer, id, params) -> void:
 			node.set(property, current)
 			_send_result(peer, id, MCPToolkitError.fail("SET_FAILED", str(outcome.get("error", ""))))
 			return
-		if outcome.get("status", "") == "adjusted":
-			adjusted_warning = str(outcome.get("warning", ""))
+	var adjusted_warning := PropertySetCheck.scalar_set_warning(
+			outcome, fit, new_value, requested, property)
 	var result := {
 		"node_path": node_path,
 		"property": property,
