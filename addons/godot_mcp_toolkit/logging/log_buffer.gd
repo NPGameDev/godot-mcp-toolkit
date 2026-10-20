@@ -4,8 +4,9 @@ extends RefCounted
 ##
 ## Two capture strategies, selected automatically at setup():
 ##
-## Godot 4.5+  — Logger subclass (compiled at runtime via GDScript.new()
-##               to avoid parse errors on older versions). Captures
+## Godot 4.5+  — a native Logger (built through ClassDB) running a
+##               capture script that extends RefCounted, so a project's
+##               own class_name Logger cannot shadow it. Captures
 ##               print(), printerr(), push_warning(), push_error(),
 ##               engine errors, shader errors. Zero latency.
 ##
@@ -265,34 +266,61 @@ static func compose_error_message(prefix: String, code: String, rationale: Strin
 
 
 static func _setup_logger() -> void:
-	_use_logger = true
-	# Compile the Logger subclass at runtime so no file on disk contains
-	# "extends Logger" — avoids parse errors on Godot 4.2-4.4.
-	var script := GDScript.new()
-	script.source_code = _LOGGER_SOURCE
-	var err := script.reload()
-	if err != OK:
-		push_warning("[LogBuffer] Logger hook compile failed (err %d), falling back to file tail" % err)
-		_use_logger = false
+	_logger_ref = _create_logger()
+	if _logger_ref == null:
 		_setup_file_tail()
 		return
-	_logger_ref = script.new()
-	# Pass a reference to this script so the logger can call push() / compose_error_message().
-	_logger_ref.set_meta("_log_buffer", load("res://addons/godot_mcp_toolkit/logging/log_buffer.gd"))
-	# Godot 4.7 stopped surfacing the separate path-bearing "Failed to load script" error
-	# during editor script scans, leaving the script path only in the structured _log_error
-	# callback's file arg. Flag 4.7+ so the logger appends the engine-style "   at:" location
-	# line to script errors and the filename stays captured; 4.5/4.6 keep prior byte-for-byte
-	# output (their separate load error already carries the path).
-	_logger_ref.set_meta("_append_error_location",
-		VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.7"))
+	_use_logger = true
 	# Dynamic call — OS.add_logger() only exists in 4.5+; static reference
 	# causes a parse error on 4.2-4.4 even inside a guarded branch.
 	OS.call("add_logger", _logger_ref)
 
 
+# Builds the logger the 4.5+ strategy registers: a native Logger running the capture
+# script, with the metas the script reads. Returns null after a warning when the script
+# fails to compile, or when the logger ends up without a live script instance to call.
+# Registers nothing; the caller owns registration.
+static func _create_logger() -> Object:
+	# The capture script never names Logger: a script that extends Logger by name
+	# resolves a project's global class_name Logger before the native class, and its
+	# compile fails. So the script extends RefCounted and is attached to a native
+	# Logger built through ClassDB, which never resolves script classes.
+	var script := GDScript.new()
+	script.source_code = _LOGGER_SOURCE
+	var err := script.reload()
+	var logger: Object = null
+	if err == OK:
+		logger = ClassDB.instantiate(&"Logger")
+		if logger != null:
+			logger.set_script(script)
+		# set_script keeps the script even when its instance fails to build, and a
+		# native Logger binds no _log_message, so this answers only through a live
+		# script instance.
+		if logger == null or not logger.has_method(&"_log_message"):
+			err = ERR_CANT_CREATE
+	if err != OK:
+		push_warning("[LogBuffer] Logger hook compile failed (err %d), falling back to file tail" % err)
+		return null
+	# Pass a reference to this script so the logger can call push() / compose_error_message().
+	logger.set_meta("_log_buffer", load("res://addons/godot_mcp_toolkit/logging/log_buffer.gd"))
+	# Godot 4.7 stopped surfacing the separate path-bearing "Failed to load script" error
+	# during editor script scans, leaving the script path only in the structured _log_error
+	# callback's file arg. Flag 4.7+ so the logger appends the engine-style "   at:" location
+	# line to script errors and the filename stays captured; 4.5/4.6 keep prior byte-for-byte
+	# output (their separate load error already carries the path).
+	logger.set_meta("_append_error_location",
+		VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.7"))
+	return logger
+
+
+# The capture script attached to the native Logger. The engine calls _log_message and
+# _log_error by name on the script instance; @tool keeps it a real instance in the
+# editor, where a non-tool script would only get a placeholder. The source must never
+# name the class it runs on (see _create_logger), and as a single-quoted literal it
+# holds no single quote, comments included.
 const _LOGGER_SOURCE := '
-extends Logger
+@tool
+extends RefCounted
 
 func _log_message(message: String, error: bool) -> void:
 	var buf = get_meta("_log_buffer")
@@ -309,7 +337,7 @@ func _log_error(function_name: String, file_path: String, line: int,
 		return
 	var level: String = "warning" if error_type == 1 else "error"
 	var prefix: String = "WARNING" if error_type == 1 else "ERROR"
-	# error_type 2 == Logger.ERR_SCRIPT: only script errors carry a .gd source path worth
+	# error_type 2 is the engine ERR_SCRIPT type: only script errors carry a .gd source path worth
 	# preserving. The 4.7+ flag (set at setup from the engine version) enables the location
 	# line; see compose_error_message.
 	var append_location: bool = bool(get_meta("_append_error_location", false)) and error_type == 2
