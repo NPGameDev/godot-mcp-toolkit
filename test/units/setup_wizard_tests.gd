@@ -19,6 +19,7 @@ const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd"
 const SetupStepTracker := preload("res://addons/godot_mcp_toolkit/core/setup_step_tracker.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
+const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")
 const SetupStepSettings := preload("res://addons/godot_mcp_toolkit/ui/setup_step_settings.gd")
 const MCPJsonEnablePrompt := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_enable_prompt.gd")
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
@@ -267,7 +268,7 @@ static func _test_setting_readers(testing) -> void:
 static func _test_spec_in_run(testing) -> void:
 	testing.begin("Setup wizard: buttons and labels per place in a run")
 	var wizard := OnboardingWizard.new(null, null, null, null)
-	var updates_spec := wizard._spec_updates()
+	var updates_spec := StepSpecs.updates()
 
 	var first := OnboardingWizard._spec_in_run(updates_spec, true, false)
 	_assert_actions(testing, first, ["remind_later"], "first step: no Back, Remind me later")
@@ -284,13 +285,13 @@ static func _test_spec_in_run(testing) -> void:
 	_assert_actions(testing, only, ["remind_later"], "a one-step run: no Back, Remind me later")
 	testing.eq(str(only.get("ok_label")), "Done", "a one-step run: Done")
 
-	var dock_last := OnboardingWizard._spec_in_run(wizard._spec_dock_overview(), false, true)
+	var dock_last := OnboardingWizard._spec_in_run(StepSpecs.dock_overview(wizard._reveal_dock), false, true)
 	testing.eq(str(dock_last.get("ok_label")), "Close", "the dock's Close stays on the last step")
 	_assert_actions(testing, dock_last, ["back", "open_info"], "the dock keeps Back and Open Info")
 
-	var mcp_json_last := OnboardingWizard._spec_in_run(wizard._spec_mcp_json(false), false, true)
+	var mcp_json_last := OnboardingWizard._spec_in_run(StepSpecs.mcp_json(false), false, true)
 	testing.eq(str(mcp_json_last.get("ok_label")), "Create .mcp.json", "an action label stays on the last step")
-	var mcp_json_first := OnboardingWizard._spec_in_run(wizard._spec_mcp_json(true), true, false)
+	var mcp_json_first := OnboardingWizard._spec_in_run(StepSpecs.mcp_json(true), true, false)
 	_assert_actions(testing, mcp_json_first, ["overwrite_mcp", "remind_later"],
 			"the .mcp.json step keeps its own buttons")
 	testing.eq(_labels(updates_spec), ["Back"], "fitting a spec leaves the step's own spec unchanged")
@@ -300,12 +301,12 @@ static func _test_spec_in_run(testing) -> void:
 static func _test_new_step_specs(testing) -> void:
 	testing.begin("Setup wizard: the optional-steps and updates steps")
 	var wizard := OnboardingWizard.new(null, null, null, null)
-	var optional_spec := wizard._spec_optional_steps()
+	var optional_spec := StepSpecs.optional_steps()
 	testing.eq(str(optional_spec.get("text")), _OPTIONAL_STEPS_TEXT, "optional_steps → its text, verbatim")
 	testing.eq(str(optional_spec.get("check_box")), "Show optional steps added by toolkit updates",
 			"optional_steps → its checkbox label")
 	testing.eq(str(optional_spec.get("ok_label")), "Next", "optional_steps → Next")
-	var updates_spec := wizard._spec_updates()
+	var updates_spec := StepSpecs.updates()
 	testing.eq(str(updates_spec.get("text")), _UPDATES_TEXT, "updates → its text, verbatim")
 	testing.eq(str(updates_spec.get("check_box")), "Check for updates", "updates → its checkbox label")
 	testing.eq(str(updates_spec.get("ok_label")), "Next", "updates → Next")

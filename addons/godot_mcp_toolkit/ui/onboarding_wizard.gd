@@ -25,11 +25,12 @@ const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_n
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 const SetupStepSettings := preload("res://addons/godot_mcp_toolkit/ui/setup_step_settings.gd")
+const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")
 
 const _TITLE := "MCP Toolkit — Setup Wizard (%d of %d)"
-const _NEXT_LABEL := "Next"
+const _NEXT_LABEL := StepSpecs.NEXT_LABEL
 const _DONE_LABEL := "Done"
-const _BACK_ACTION := "back"
+const _BACK_ACTION := StepSpecs.BACK_ACTION
 const _REMIND_LATER_LABEL := "Remind me later"
 const _REMIND_LATER_ACTION := "remind_later"
 # The width a checkbox step's text wraps at.
@@ -147,23 +148,14 @@ func _settings_store() -> SetupStepSettings:
 
 # -- Step rendering -----------------------------------------------------------
 #
-# Each step contributes a "spec" — a plain data description of its content — while
-# a single renderer (_show_step) owns the boilerplate every step shares: the
-# title, the previous step's button cleanup, applying text/ok-label, and
-# add+track of each custom button (tracking is automatic, so a button can't leak
-# from the per-step cleanup loop). Adding a step means adding a spec, not another
-# rendering arm that has to re-implement the cleanup/track/popup contract.
-#
-# Spec shape (all values plain data except on_enter):
-#   text:       String    — the dialog body
-#   ok_label:   String    — the OK button caption
-#   buttons:    Array     — [ { label: String, action: String }, ... ], in order
-#   on_enter:   Callable  — optional side-effect run as the step is shown
-#   pin_choice: bool      — optional; show the server pin choice under the text
-#   check_box:  String    — optional; a checkbox with this label under the text,
-#                           showing and applying the step's setting
-#
-# A spec describes its step alone; _spec_in_run() fits it to its place in a run.
+# Each step contributes a "spec" — a plain data description of its content, built
+# in StepSpecs, whose header gives the shape — while a single renderer
+# (_show_step) owns the boilerplate every step shares: the title, the previous
+# step's button cleanup, applying text/ok-label, and add+track of each custom
+# button (tracking is automatic, so a button can't leak from the per-step cleanup
+# loop). Adding a step means adding a spec, not another rendering arm that has to
+# re-implement the cleanup/track/popup contract. _spec_in_run() fits a spec to its
+# place in a run.
 
 
 # Build the spec for the step `step_id`. Pure with respect to the dialog: it
@@ -172,20 +164,26 @@ func _settings_store() -> SetupStepSettings:
 # an editor.
 func _spec_for_step(step_id: StringName) -> Dictionary:
 	if step_id == SetupSteps.WELCOME:
-		return _spec_welcome()
+		return StepSpecs.welcome()
 	if step_id == SetupSteps.MCP_JSON:
 		# Probe the filesystem here (the impure part) and record it for
 		# navigation; the spec body itself is built purely from the result.
 		_mcp_exists = FileAccess.file_exists(
 			ProjectSettings.globalize_path("res://") + ".mcp.json")
-		return _spec_mcp_json(_mcp_exists)
+		return StepSpecs.mcp_json(_mcp_exists)
 	if step_id == SetupSteps.OPTIONAL_STEPS:
-		return _spec_optional_steps()
+		return StepSpecs.optional_steps()
 	if step_id == SetupSteps.UPDATES:
-		return _spec_updates()
+		return StepSpecs.updates()
 	if step_id == SetupSteps.DOCK:
-		return _spec_dock_overview()
+		return StepSpecs.dock_overview(_reveal_dock)
 	return {}
+
+
+# The dock step's on_enter.
+func _reveal_dock() -> void:
+	if _plugin != null:
+		_plugin.call("reveal_dock")  # dynamic dispatch: base EditorPlugin lacks reveal_dock
 
 
 # Fit `spec` to its place in a run: the run's first step has no Back and
@@ -205,127 +203,6 @@ static func _spec_in_run(spec: Dictionary, is_first: bool, is_last: bool) -> Dic
 	if is_last and str(spec.get("ok_label", "")) == _NEXT_LABEL:
 		fitted["ok_label"] = _DONE_LABEL
 	return fitted
-
-
-func _spec_welcome() -> Dictionary:
-	return {
-		"text": (
-			"Welcome to the Godot MCP Toolkit!\n\n"
-			+ "This plugin exposes your Godot editor to AI agents via MCP.\n"
-			+ "Some tools can modify your project or execute arbitrary code.\n\n"
-			+ "Risk is communicated per-tool via MCP annotations.\n"
-			+ "For details and copy-pasteable agent blocking configs, see:\n"
-			+ "  addons/godot_mcp_toolkit/docs/security-recommendations.md\n\n"
-			+ "All tools are available by default. Use your agent's\n"
-			+ "allowlist/blocklist to restrict specific tools if needed."),
-		"ok_label": _NEXT_LABEL,
-		"buttons": [{"label": "Open Security Doc", "action": "open_security"}],
-	}
-
-
-# Pure: the .mcp.json step has two variants keyed on whether the file already
-# exists. The OK action also differs (keep-vs-create), which navigation drives off
-# _mcp_exists — set by the caller, not here.
-func _spec_mcp_json(mcp_exists: bool) -> Dictionary:
-	var intro := (
-		"Your MCP client reads .mcp.json from the project root "
-		+ "to locate and configure the server.\n\n"
-		+ "The MCP server bridge requires Node.js 22+ to run. "
-		+ "Download it from https://nodejs.org if not installed.\n\n")
-	if mcp_exists:
-		return {
-			# Continue keeps the file as it is, so the choice must say it takes
-			# effect only through a write.
-			"text": intro + (
-				"An .mcp.json already exists in your project. The server choice "
-				+ "below applies only if you press Write .mcp.json."),
-			"ok_label": "Continue (keep existing .mcp.json)",
-			"buttons": [{
-				"label": "Write .mcp.json",
-				"action": "overwrite_mcp",
-			}],
-			"pin_choice": true,
-		}
-	return {
-		"text": intro + (
-			"No .mcp.json was found — this file is required for your "
-			+ "MCP client to connect to the toolkit."),
-		"ok_label": "Create .mcp.json",
-		"buttons": [],
-		"pin_choice": true,
-	}
-
-
-func _spec_optional_steps() -> Dictionary:
-	return {
-		"text": (
-			"Toolkit updates sometimes add steps to this wizard. When one does, the next "
-			+ "time you start the editor you'll see only the new steps.\n\n"
-			+ "Some steps are required because you lose something by skipping them: "
-			+ "without .mcp.json your AI client won't find the toolkit on its own, and the "
-			+ "update check only starts once you've seen the update-check step. Required "
-			+ "steps come back at every editor start until you've seen them. \"Remind me "
-			+ "later\" puts them off until the next start.\n\n"
-			+ "The other steps are optional. Untick the box below and optional steps that "
-			+ "future updates add won't show, in any project on this machine. Required "
-			+ "steps still show."),
-		"ok_label": _NEXT_LABEL,
-		"buttons": [{"label": "Back", "action": _BACK_ACTION}],
-		"check_box": "Show optional steps added by toolkit updates",
-	}
-
-
-func _spec_updates() -> Dictionary:
-	return {
-		"text": (
-			"At most once a day, the toolkit asks GitHub whether a newer version is out. "
-			+ "If one is, it also asks the Asset Store whether it lists that version yet. "
-			+ "When there's a newer version, a closable badge at the top of the MCP Toolkit "
-			+ "dock links to it. The toolkit never installs anything by itself.\n\n"
-			+ "These requests carry no identifier and nothing about your project. Untick "
-			+ "the box below and the toolkit sends no requests at all.\n\n"
-			+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
-			+ "It's saved in project.godot, so it applies to everyone who works on this "
-			+ "project."),
-		"ok_label": _NEXT_LABEL,
-		"buttons": [{"label": "Back", "action": _BACK_ACTION}],
-		"check_box": "Check for updates",
-	}
-
-
-func _spec_dock_overview() -> Dictionary:
-	# Surfacing the dock is a side-effect, so it rides as on_enter rather than
-	# being baked into the (otherwise pure) spec. Assigned as a separate statement
-	# (not an inline dict value) to keep the multi-line lambda unambiguous to parse.
-	var reveal_dock := func() -> void:
-		if _plugin != null:
-			_plugin.call("reveal_dock")  # dynamic dispatch: base EditorPlugin lacks reveal_dock
-	var spec := {
-		"text": (
-				"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
-				+ "From here you can:\n\n"
-				+ "  • Monitor server status — connection state, peer count, runtime port\n"
-				+ "  • Review the audit log — see what the AI agent did\n"
-				+ "  • Adjust security settings — token rotation, response limits\n\n"
-				+ "The 'Info / Help' button shows tool list and documentation links.\n"
-				+ "Companion Skills for Claude Code are in the dock footer.\n\n"
-				+ "For supervised environments, set GODOT_MCP_READ_ONLY=1 in\n"
-				+ ".mcp.json to restrict the toolkit to read-only tools.\n\n"
-				+ "The toolkit keeps the editor responsive while it's unfocused during\n"
-				+ "MCP sessions (ON by default; raises background CPU). Toggle it in the\n"
-				+ "dock's Server Status, or in Editor Settings → Mcp Toolkit → Performance.\n\n"
-				+ "The dock's limits and audit controls are shortcuts into\n"
-				+ "Project Settings → Mcp Toolkit, where all per-project options\n"
-				+ "live (including advanced ones the dock doesn't surface).\n\n"
-				+ "You're all set!"),
-		"ok_label": "Close",
-		"buttons": [
-			{"label": "Back", "action": _BACK_ACTION},
-			{"label": "Open Info", "action": "open_info"},
-		],
-	}
-	spec["on_enter"] = reveal_dock
-	return spec
 
 
 # Render the open step's spec onto the dialog. Owns the boilerplate every step

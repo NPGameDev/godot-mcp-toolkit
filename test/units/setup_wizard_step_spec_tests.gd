@@ -6,6 +6,7 @@ extends RefCounted
 ## keeps every string, label, action and flag.
 
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
+const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
 
 const _VERSION_SETTING := "mcp_toolkit/server/version"
@@ -135,8 +136,8 @@ static func _test_mcp_json_specs(testing) -> void:
 		"buttons": [],
 		"pin_choice": true,
 	}
-	testing.eq(wizard._spec_mcp_json(true), existing, "a file exists → keep or write")
-	testing.eq(wizard._spec_mcp_json(false), missing, "no file → create")
+	testing.eq(StepSpecs.mcp_json(true), existing, "a file exists → keep or write")
+	testing.eq(StepSpecs.mcp_json(false), missing, "no file → create")
 	var file_exists := FileAccess.file_exists(ProjectSettings.globalize_path("res://") + ".mcp.json")
 	testing.eq(wizard._spec_for_step(SetupSteps.MCP_JSON), existing if file_exists else missing,
 			"the dispatch → the variant for the file on disk")
