@@ -19,6 +19,16 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const _Support := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_support.gd")
 const _MetaCommands := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_meta_commands.gd")
 
+# The Godot 4.2 restart advice, worded once for the extensions.refresh hint and the
+# editor warning. On 4.2.2 only an edit made outside script_write / script_edit (or
+# to a C# extension) waits for a restart; on 4.2.0 and 4.2.1 every edit does.
+const _RESTART_AFTER_OUTSIDE_EDIT := (
+	"Godot 4.2 can't apply that in-session - restart the editor to load the updated version."
+)
+const _RESTART_AFTER_ANY_EDIT := (
+	"can't apply an extension edit in-session - restart the editor to load the updated version."
+)
+
 # Retain references to C# extension instances loaded during hot-reload to prevent
 # GC from invalidating registered Callables (the startup pass retains its own via
 # the registry meta — see extension_discovery.gd).
@@ -201,16 +211,15 @@ static func unapplied_edit_hint(
 	if not restart_names.is_empty() and toolkit_writes_live:
 		sentences.append((
 			"Godot 4.2: extension(s) [%s] were edited outside script_write / script_edit, "
-			+ "or are C#, and Godot 4.2 can't apply that in-session - restart the editor to "
-			+ "load the updated version. (An edit made with script_write or script_edit "
-			+ "applies live when it compiles; Godot 4.3+ applies every edit live.)"
+			+ "or are C#, and " + _RESTART_AFTER_OUTSIDE_EDIT + " (An edit made with "
+			+ "script_write or script_edit applies live when it compiles; Godot 4.3+ applies "
+			+ "every edit live.)"
 		) % ", ".join(restart_names))
 	elif not restart_names.is_empty():
 		sentences.append((
-			"Godot 4.2.0 and 4.2.1: extension(s) [%s] were edited, and these versions can't "
-			+ "apply an extension edit in-session - restart the editor to load the updated "
-			+ "version. (Godot 4.2.2 applies an edit made with script_write or script_edit live "
-			+ "when it compiles; Godot 4.3+ applies every edit live.)"
+			"Godot 4.2.0 and 4.2.1: extension(s) [%s] were edited, and these versions "
+			+ _RESTART_AFTER_ANY_EDIT + " (Godot 4.2.2 applies an edit made with script_write "
+			+ "or script_edit live when it compiles; Godot 4.3+ applies every edit live.)"
 		) % ", ".join(restart_names))
 	if not fix_names.is_empty():
 		sentences.append((
@@ -351,9 +360,14 @@ func _record_unapplied_edit(class_name_str: String, script_path: String, verdict
 	var needs_fix := verdict == _Support.EDIT_NEEDS_FIX
 	if needs_restart and class_name_str not in _pending_restart_modifies:
 		if Modules.VersionUtils.in_place_reload_safe():
-			push_warning("[MCPExtensions] '%s' was edited outside script_write / script_edit, or is C#, and Godot 4.2 can't apply that in-session - restart the editor to load the updated version." % class_name_str)
+			push_warning((
+				"[MCPExtensions] '%s' was edited outside script_write / script_edit, or is C#, and "
+				+ _RESTART_AFTER_OUTSIDE_EDIT
+			) % class_name_str)
 		else:
-			push_warning("[MCPExtensions] '%s' was edited, and Godot 4.2.0 and 4.2.1 can't apply an extension edit in-session - restart the editor to load the updated version." % class_name_str)
+			push_warning((
+				"[MCPExtensions] '%s' was edited, and Godot 4.2.0 and 4.2.1 " + _RESTART_AFTER_ANY_EDIT
+			) % class_name_str)
 	if needs_fix and class_name_str not in _pending_fix_modifies:
 		push_warning("[MCPExtensions] '%s' does not compile on disk, so the editor keeps the version it loaded - fix the file (script_check lists its errors)." % class_name_str)
 	if needs_restart:
