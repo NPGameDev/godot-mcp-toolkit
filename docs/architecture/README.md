@@ -527,7 +527,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 5d53087*
+*Figure 10 — plugin composition root · verified 160b137*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
