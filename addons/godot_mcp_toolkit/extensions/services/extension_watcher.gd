@@ -195,7 +195,7 @@ func cmd_refresh(_params: Dictionary) -> Dictionary:
 ## waits for a restart too. Returns "" when both lists are empty. Pure, so it can be
 ## unit-tested.
 static func unapplied_edit_hint(
-	restart_names: PackedStringArray, fix_names: PackedStringArray, toolkit_writes_live: bool = true,
+		restart_names: PackedStringArray, fix_names: PackedStringArray, toolkit_writes_live: bool = true,
 ) -> String:
 	var sentences: PackedStringArray = []
 	if not restart_names.is_empty() and toolkit_writes_live:

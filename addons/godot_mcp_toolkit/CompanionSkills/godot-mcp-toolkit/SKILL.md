@@ -408,7 +408,7 @@ events process).
 
 | Code | Cause | Recovery |
 |------|-------|----------|
-| `GAME_NOT_RUNNING` | No game started, or it crashed | `game_start`, then `editor_get_console` if it fails again |
+| `GAME_NOT_RUNNING` | No game started, it crashed, or the editor was started with `GODOT_MCP_RUNTIME=0` (or `false`, `off`; its games never open the runtime channel; the `game_start` hint names it) | `game_start`, then `editor_get_console` if it fails again; for `GODOT_MCP_RUNTIME`, unset it and restart the editor |
 | `NOT_FOUND` | Node path, file, or `script_edit` `old_string` not found | Root is `"."`, children relative; check `scene_get_tree` |
 | `NOT_UNIQUE` | `script_edit` `old_string` matched more than once | Widen the span or pass `replace_all` |
 | `PARENT_NOT_FOUND` | Parent dir doesn't exist | `scene_create` / `script_write` auto-create dirs; others may not |
@@ -500,6 +500,7 @@ These are the most common sources of wasted tool calls and retries:
 | `node_set_property` | `batch` mode: top-level `property`/`value` ignored when `batch` present |
 | `node_set_property` | Typed values need `{type: "Vector2", x: ...}` wrappers — plain `{x: 1, y: 2}` won't coerce |
 | `script_edit` | `old_string` must match byte-for-byte (whitespace included); `NOT_UNIQUE` -> widen the span or `replace_all` |
+| `script_check` | Godot 4.2 to 4.4 report a false error when a script passes `self` to a parameter typed with its own `class_name` (`Other.new().take(self)` with `func take(a: Player)`); `lsp_diagnostics` (`lsp_code_analysis` group) gives the real result there |
 | `signal_manage` vs `signal_emit` | `signal_manage` = persistent editor-time connect/disconnect; `signal_emit` = fire now (`channel: "editor"` default \| `"runtime"`) |
 | `scene_create` vs `scene_create_node` | `scene_create` = new `.tscn` file (open it after); `scene_create_node` = add a node to the open scene |
 | `autoload_manage` vs `project_set_setting` | Always use `autoload_manage` for autoloads; `project_set_setting` rejects them |

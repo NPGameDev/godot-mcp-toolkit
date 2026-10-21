@@ -2,12 +2,11 @@
 extends RefCounted
 ## The shared reload of a script changed on disk (commands/editor_helpers.gd): the
 ## compile gate, a reload that fails (and node.set_script's hint for it), a file that
-## matches the cached script, the
-## toolkit's own paths, the reload a script write runs, the reload its undo and
-## redo run through the undo_helpers node, and what happens where the patch gate turns
-## the reload off (Godot 4.2.0 and 4.2.1; the gate's own cases are in
-## paths_versioning_tests.gd), with the hints those versions get. Drives user:// fixtures rewritten between
-## loads; no editor is needed. These cases call the helper directly, so they cannot run
+## matches the cached script, the toolkit's own paths, the reload a script write runs,
+## the reload its undo and redo run through the undo_helpers node, and what happens
+## where the patch gate turns the reload off (Godot 4.2.0 and 4.2.1; the gate's own
+## cases are in paths_versioning_tests.gd), with the hints those versions get. Drives
+## user:// fixtures rewritten between loads; no editor is needed. These cases call the helper directly, so they cannot run
 ## against a toolkit without it; the live probe covers the same behaviour through the
 ## tools.
 

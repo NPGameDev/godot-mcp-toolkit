@@ -90,7 +90,7 @@ static func should_hint_on_call(
 ## defaults give. [param set_script_reloads] is false where node_set_script does not
 ## reload a changed script (Godot 4.2.0 and 4.2.1), which gets the relaunch form.
 static func recovery_message(
-	ver_label: String, minor: int = -1, headless: bool = false, set_script_reloads: bool = true,
+		ver_label: String, minor: int = -1, headless: bool = false, set_script_reloads: bool = true,
 ) -> String:
 	if headless and minor >= 4:
 		return _RECOVERY_HEADLESS % ver_label
