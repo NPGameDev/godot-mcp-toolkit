@@ -37,7 +37,7 @@ var _warned: Dictionary = {}
 ## [param toolkit_ver] with its own server floor [param min_server], and records the
 ## verdict get_verdict() returns. With [param skip] set (a local server build) it
 ## records STATE_SKIPPED without judging.
-## [br]
+##
 ## Returns the line to print, without its log prefix: SKIPPED_LINE on every skipped
 ## check, the below-floor error the first time a (state, server version) pair is seen,
 ## else "". On STATE_OK the caller runs its product-version message instead.
@@ -80,7 +80,7 @@ func get_state() -> String:
 ## Own floor first: the server's version against [param min_server], then this
 ## toolkit's version against [param min_toolkit]; an empty [param min_toolkit] skips
 ## only that second check. Pure.
-## [br]
+##
 ## Returns the get_verdict() shape, STATE_OK when neither check flags a side.
 static func judge_floors(server_ver: String, min_toolkit: String, toolkit_ver: String, min_server: String) -> Dictionary:
 	if VersionUtils.floor_verdict(server_ver, min_server) == "below":

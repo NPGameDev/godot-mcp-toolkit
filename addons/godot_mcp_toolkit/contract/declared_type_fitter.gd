@@ -10,7 +10,7 @@ extends RefCounted
 ## placeholder instance, whose set() stores either value as given, so the scene or
 ## resource file saves [code]4.0[/code] or an untyped array. [method fit] converts the
 ## value to the declared type first, so a live and a placeholder instance store the
-## same value; [method fit] names the one case it leaves as given.
+## same value; [method fit] names the cases it leaves as given.
 ##
 ## Runtime-clean: it names no editor class and preloads only export-clean scripts,
 ## because the runtime server preloads it. An editor symbol anywhere in this static

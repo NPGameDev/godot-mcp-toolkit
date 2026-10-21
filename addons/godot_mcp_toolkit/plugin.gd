@@ -16,9 +16,9 @@ const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autol
 const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
 
-# The composed collaborator graph (server, dock, export plugin, watchers, debug
-# bridge, user-path monitor, playtest watcher). PluginComposer.compose() builds
-# it; the orchestrator drives it and calls _handle.dispose() on exit.
+# The Handle that owns the composed collaborator graph and frees it in dispose().
+# PluginComposer.compose() builds it; the orchestrator drives it and calls
+# _handle.dispose() on exit.
 var _handle = null
 
 var _tool_menu: ToolMenu = null
@@ -47,10 +47,9 @@ func _enter_tree() -> void:
 	# wired inside compose() below).
 	AutoloadRegistration.ensure_registered()
 
-	# Construct + wire the whole collaborator graph (registry, server, debug
-	# bridge, command registrar, extensions, export plugin, log buffer, user-path
-	# monitor, registry registration, playtest watcher, write flow + dialog
-	# presenter, dock) and register in the system-wide registry.
+	# Construct and wire the whole collaborator graph and register in the
+	# system-wide registry. PluginComposer owns the graph's members and their
+	# construction order.
 	_handle = PluginComposer.compose(self, _on_user_path_changed, _on_setup_wizard_requested)
 
 	# Tools > MCP Toolkit submenu + command palette (needs the server, dock, and
@@ -152,8 +151,8 @@ func _exit_tree() -> void:
 		_tool_menu.uninstall()
 		_tool_menu = null
 
-	# Composed graph (dock, monitor, watchers, debug bridge, export plugin,
-	# server + registry) — disposed in reverse construction order.
+	# Composed graph, disposed in reverse construction order (the order lives in
+	# PluginComposer).
 	if _handle != null:
 		_handle.dispose()
 		_handle = null

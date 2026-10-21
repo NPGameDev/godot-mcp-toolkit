@@ -64,6 +64,10 @@ static func get_editor_theme() -> Theme:
 ## was, or [signal EditorPlugin.main_screen_changed] named it during the switch.
 ## Returns [code]false[/code] before [method set_plugin], when there is no such
 ## visible tab, or when the editor did not confirm the switch.
+##
+## The tab is found by the [code]"MainScreenButton"[/code] theme variation, which
+## the editor gives its main-screen tabs from Godot 4.3 on. On 4.2 no tab carries
+## it, so this always returns [code]false[/code] there.
 static func select_main_screen(screen_name: String) -> bool:
 	if _plugin == null:
 		return false
@@ -84,7 +88,8 @@ static func select_main_screen(screen_name: String) -> bool:
 
 # The editor's visible main-screen tab button titled screen_name, or null. The
 # button text is the main-screen plugin's untranslated name, which is also what
-# set_main_screen_editor matches, so the lookup holds in a translated editor.
+# set_main_screen_editor matches, so the lookup holds in a translated editor. The
+# theme variation exists from Godot 4.3, so on 4.2 this finds nothing.
 static func _find_main_screen_button(screen_name: String) -> Button:
 	var base := EditorInterface.get_base_control()
 	if base == null:

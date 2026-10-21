@@ -36,11 +36,14 @@ const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playt
 
 
 ## Composes the plugin's collaborator graph and returns the owning Handle.
-## on_user_path_changed is the orchestrator's own handler for the user-path
-## monitor's signal — injected so the handler stays on the orchestrator without
-## the composer poking a plugin private. on_setup_wizard_requested is the
-## orchestrator's handler for the dock footer's Setup Wizard button, handed to the
-## dock because the orchestrator owns the wizard.
+##
+## [param plugin] is the EditorPlugin host the graph's debugger and export plugins
+## register with. [param on_user_path_changed] is the orchestrator's own handler for
+## the user-path monitor's signal, injected so the handler stays on the orchestrator
+## without the composer poking a plugin private. [param on_setup_wizard_requested] is
+## the orchestrator's handler for the dock footer's Setup Wizard button, handed to the
+## dock because the orchestrator owns the wizard. Returns the Handle that owns the
+## graph; its dispose() tears the graph down.
 static func compose(
 		plugin: EditorPlugin, on_user_path_changed: Callable,
 		on_setup_wizard_requested: Callable) -> Handle:
