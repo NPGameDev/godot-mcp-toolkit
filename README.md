@@ -216,11 +216,11 @@ Runtime tools exist only in debug builds: the runtime piece self-disables in exp
 
 ## Headless mode
 
-Most tools work under `godot --headless --editor`: file, scene, node, script, ClassDB, and project tools all function without a display. Screenshots and anything needing a running game degrade with clear errors. The canonical per-tool headless matrix (tested on Godot 4.2.0 through 4.7.0) is in the shipped [compatibility guide](addons/godot_mcp_toolkit/docs/compatibility.md).
+Most tools work under `godot --headless --editor`: file, scene, node, script, ClassDB, and project tools all function without a display. Screenshots and anything needing a running game degrade with clear errors. The canonical per-tool headless matrix (tested on Godot 4.2–4.7.x) is in the shipped [compatibility guide](addons/godot_mcp_toolkit/docs/compatibility.md).
 
 ## Godot version support
 
-**Minimum:** Godot 4.2 &nbsp; **Recommended:** Godot 4.5+ &nbsp; **Tested up to:** 4.7.0
+**Minimum:** Godot 4.2 &nbsp; **Recommended:** Godot 4.5+ &nbsp; **Tested on:** Godot 4.2–4.7.x
 
 | Godot | Level | Notes |
 |-------|-------|-------|

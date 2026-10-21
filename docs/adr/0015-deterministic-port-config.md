@@ -88,6 +88,3 @@ health and conflicts.
   fast, don't reconcile.
 - **A one-shot `--port-set editor:runtime:lsp` CLI convenience form.** Rejected as
   YAGNI — the explicit per-channel flags are clearer and the surface is tiny.
-
-Iteration: `Plan/ExecutionPlan/41n-decies-deterministic-port-config.md`; grill log
-`Plan/Reference/GrillingSessions/2026-07-03-deterministic-port-config.md`.

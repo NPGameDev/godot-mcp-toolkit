@@ -55,7 +55,7 @@ considered deviation from the code-standards default of registering autoloads vi
   autoload cannot be accidentally undone away.
 - **Cache-correct via the emit.** The `emit_signal("settings_changed")` refreshes the editor's
   in-memory view of the autoload list after the disk write, the same cache-correctness pattern
-  `project_commands.gd` uses (FIX-D).
+  `project_commands.gd` uses.
 - **Version-stable.** `set_setting` / `save` / `emit_signal` behave identically on 4.2–4.6.
 
 `_disable_plugin()` keeps `remove_autoload_singleton` unchanged — removal is a genuine editor action
@@ -85,7 +85,7 @@ autoload in the exported PCK, so the unit fails the build instead.
   the game at F5, so a heal triggered by a runtime call cannot fix the *current* session. On-load
   catches 100% of the broken state (it only manifests at project-open) before any F5.
 - **An opt-out flag ("leave the autoload unregistered").** Adds configuration complexity for a state
-  that is simply broken. A genuine "Mode A only" preference is better served by a future PostRelease
+  that is simply broken. A genuine "Mode A only" preference is better served by a future
   EditorSetting that suppresses the *runtime server*, not by leaving the autoload entry missing.
 - **`add_autoload_singleton` for the heal.** Adds a startup undo entry (a stray Ctrl+Z undoes the heal)
   and does not persist to `project.godot` (the game reads disk at F5), which is exactly what the heal

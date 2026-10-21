@@ -6,7 +6,7 @@ near-verbatim into `plugin.gd` or `mcp_server.gd`. The entries below cover the
 original artwork made for this project and the architectural patterns we
 studied while designing the plugin.
 
-If future iterations import or adapt code from any of the sources below, append
+If future changes import or adapt code from any of the sources below, append
 a "Copied into: …" line with the file path(s) to keep this file accurate.
 
 ---
@@ -67,8 +67,8 @@ concepts (`scene_map`, placement, spatial audit), token-optimisation approach
 (brief / normal / full detail levels), `EngineDebugger` IPC pattern for
 runtime access, **the UndoRedo + `add_undo_reference` pattern for editor-safe
 node deletion** (confirmed via the reference-repo audit on 2026-04-14 and
-standardised in our `scene.delete_node` handler during iter 07 hardening —
-the code itself was independently written).
+standardised in our `scene.delete_node` handler — the code itself was
+independently written).
 
 ---
 
@@ -87,7 +87,7 @@ over WebSocket protocol design, UndoRedo integration approach (see
 salvo10f/godotiq entry — both projects converge on the same pattern), port
 `6505` as the standard MCP port for this style of plugin, **returning screenshot
 bytes inline via base64 + mime_type** (also standardised in our
-`editor.screenshot` handler during iter 07 hardening).
+`editor.screenshot` handler).
 
 ---
 

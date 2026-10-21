@@ -60,6 +60,3 @@ injected collaborator — never behind a dock method.
 - **Moving the audit dialog out too.** Rejected — the audit viewer is a dock
   section's lazy child, not an editor-global dialog; extracting it would cut a
   cohesive dock section in half.
-
-Iteration: `Plan/ExecutionPlan/41n-undecies-call-method-tool-hint.md` (Part F);
-grill log `Plan/Reference/GrillingSessions/2026-07-03-41n-undecies-pass3-sweep-fixes.md`.

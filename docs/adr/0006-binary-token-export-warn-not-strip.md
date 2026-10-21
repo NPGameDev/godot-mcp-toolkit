@@ -30,8 +30,8 @@ the latter (`global_script_class_cache.cfg` embeds addon paths as plaintext). Th
 inert `[mcp_toolkit]` ProjectSettings keys carried in `project.binary` (e.g.
 `internal/bootstrap_complete`) are a cosmetic fingerprint of the same class — no
 secrets (the auth token and registry live in `user://`, never packed) — left in
-place for the same reason; an optional settings strip is tracked as a high-priority
-post-1.0 idea (`Plan/Ideas/PostRelease/2026-06-08-strip-mcp-toolkit-projectsettings.md`).
+place for the same reason; an optional strip of these settings remains a possible
+later change.
 
 **Update (2026-10-12, 1.0.4):** `internal/bootstrap_complete` is no longer registered (it
 had no effect after the feature-gate removal), so `project.binary` carries only the `[mcp_toolkit]`
@@ -39,8 +39,8 @@ settings a project changed from their defaults.
 
 The bug is **4.3+ only** (binary tokenization was introduced in 4.3). Extends
 **ADR 0005** (single-level extension discovery / strip): the warning counts the
-same single-level extension set. Full source-verified analysis (engine line
-references for 4.2–4.6): `Insights/export-strip-binary-token-analysis.md`.
+same single-level extension set. The analysis behind this was verified against the
+engine source for 4.2–4.6.
 
 ## Considered alternatives
 
@@ -53,9 +53,9 @@ references for 4.2–4.6): `Insights/export-strip-binary-token-analysis.md`.
   not.
 - **`.gdignore` written at export time.** Rejected: `.gdignore` is honored only
   during an EditorFileSystem scan, but the export file list is already built from
-  the in-memory tree — a fresh ignore needs a rescan, and a mid-export rescan is the
-  scan-collision crash class fixed in 41l-tricies. A persistent `.gdignore` would
-  also hide the addon from the editor.
+  the in-memory tree — a fresh ignore needs a rescan, and a mid-export rescan risks
+  a scan-collision crash. A persistent `.gdignore` would also hide the addon from
+  the editor.
 - **Addon self-adds to the exclude filter.** Rejected: the clean version needs the
   unbound `set_exclude_filter` (#4054); the `export_presets.cfg` file-edit
   workaround is stale for the live in-memory preset, clobbered on the next editor

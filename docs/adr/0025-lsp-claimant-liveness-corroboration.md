@@ -167,12 +167,9 @@ breaks is the one left on the default configuration.
 This is pre-existing, neither caused nor cured here, and it is mitigated by
 following the documented recipe for every editor rather than only the extra ones
 — which is why `addons/godot_mcp_toolkit/docs/multi-instance.md` was tightened
-alongside this change. Tracked in
-`Plan/Ideas/PostRelease/2026-07-25-pinned-lsp-port-misreported-in-registry.md`.
+alongside this change. A fix remains open.
 
 ---
 
-Source-verified analysis (engine 4.2–4.7, the registry writers, the captured
-leak): `Insights/lsp-multi-instance-port-analysis.md`. Decision log with the full
-evidence trail:
-`Plan/Reference/GrillingSessions/2026-07-25-41s-lsp-conflict-false-positive.md`.
+The analysis behind this decision was verified against the engine source
+(4.2–4.7), the registry writers and the captured leak.

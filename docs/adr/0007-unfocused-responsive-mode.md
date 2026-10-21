@@ -82,9 +82,8 @@ conflict-aware.**
   *Amended 2026-10-13:* `OS.is_process_running` is documented for the calling
   process's own children only, on every platform, so reading its answer as a
   Windows flaw was wrong; the rejection stands.
-- **WebSocket reader thread instead of the frame-rate lever.** Rejected for this
-  iter and filed post-1.0 (`Plan/Ideas/PostRelease/2026-06-07-websocket-reader-thread-latency.md`):
-  it removes the 4-frame pickup batching but **not** the execution floor (command
+- **WebSocket reader thread instead of the frame-rate lever.** Rejected for now
+  and left as a possible later change: it removes the 4-frame pickup batching but **not** the execution floor (command
   execution must marshal to the main thread at the main-loop cadence, and
   multi-yield mutations pay one frame per yield regardless). Complementary, not a
   replacement, and a sizeable threading project.
@@ -99,9 +98,3 @@ conflict-aware.**
   to `O`.
 - **Transient concurrent de-boost.** See the refcount note above — a brief
   responsiveness dip, never persistent corruption.
-
-Full source-verified analysis (engine line references, blast radius, cost,
-rejected alternatives): `Insights/unfocused-throttle-analysis.md`. Grilling
-session: `Plan/Reference/GrillingSessions/2026-06-07-unfocused-throttle.md`.
-Supersedes the silent in-memory boost added in iter 28b
-(`unfocused-throttle-fix`).

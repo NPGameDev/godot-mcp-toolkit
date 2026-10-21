@@ -64,7 +64,7 @@ func set_settings_accessor(settings_accessor: Callable) -> void:
 
 
 ## True when the user has opted in (default true). Missing/unavailable settings
-## fall back to the default so behaviour is unchanged from before this iter.
+## fall back to that default, so the mode stays on until the user turns it off.
 func is_unfocused_responsive_enabled() -> bool:
 	var es = _editor_settings()
 	if es == null or not es.has_setting(_RESPONSIVE_ENABLED_KEY):

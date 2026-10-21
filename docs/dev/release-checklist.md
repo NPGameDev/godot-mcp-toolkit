@@ -10,8 +10,7 @@ real export, or a real Mac.
 Each item is runnable from a clone of this repo. Use `$GODOT_BIN` for the console editor of
 the version under test (e.g. `Godot_v<ver>-stable_win64_console.exe`), and install that
 version's **export templates** first (Editor → *Manage Export Templates* → *Download and
-Install*). Where a `Plan/…` path is cited it is the **full methodology in the planning repo** —
-a secondary reference; the steps here are self-contained.
+Install*). The steps here are self-contained.
 
 ---
 
@@ -28,8 +27,7 @@ outside the repo** so artifacts are never committed.
 > `global_script_class_cache.cfg` embeds every addon script path as plaintext and produces
 > false "leaked" readings. In binary modes the addon/extension `.gdc` are **expected** to ship;
 > assert the *warning* fires, non-script files + `.mcp.json` strip, and the launched build is
-> **inert**. Full procedure: `Plan/ExecutionPlan/41l-untricies-export-strip-binary-tokens.md`
-> and `…-bis-runtime-autoload-export-safety.md` (planning repo).
+> **inert**.
 
 - [ ] **EX5 — Disabled-addon dangling-autoload export.** Edit `project.godot`: empty the
       `[editor_plugins] enabled=PackedStringArray()` line but **leave** the `[autoload]
@@ -91,9 +89,6 @@ passed cleanly and which needed turn-taking (for the README note).
 - [ ] **HE5 — Mid-drag + MCP reparent.** User is mid-drag in the 2D/3D viewport; MCP reparents
       the node being dragged. **Expected:** no crash; the drag either completes or cancels
       cleanly.
-
-Full methodology: `Plan/ExecutionPlan/41o-stability-sanity-check.md` → Part G-pre-2 (planning
-repo).
 
 ---
 

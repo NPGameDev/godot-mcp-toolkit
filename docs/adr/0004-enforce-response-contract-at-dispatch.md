@@ -29,4 +29,4 @@ Option C was chosen because:
 - `MCPToolkitError.fail()` guarantees the correct error shape. Extensions should use it (or the `registry.fail()` factory for C#) rather than constructing error dictionaries manually.
 - Extensions that previously returned bare dictionaries without `success` will now get INTERNAL errors in the MCP response and `push_error` in the Godot console. The error message names the specific handler, making the fix obvious.
 - The documentation claim is now true: the framework does validate handler returns at runtime.
-- Built-in handlers fixed in this iteration: `execute.code`, `script.read` (range and full), `script.check`, `signal.list`.
+- Built-in handlers fixed with this change: `execute.code`, `script.read` (range and full), `script.check`, `signal.list`.

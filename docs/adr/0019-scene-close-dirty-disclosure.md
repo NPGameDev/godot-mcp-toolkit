@@ -46,8 +46,7 @@ pass `force` reflexively). Neither is acceptable.
 
 The cross-version path to a real guard is a **content-hash comparison** (hash the
 on-disk scene vs the in-editor state to detect dirtiness without a bound query),
-which works on 4.5/4.6 too but is a larger design. It is deferred and filed at
-`Plan/Ideas/PostRelease/2026-07-08-scene-close-dirty-guard-hash.md`. Recorded here
+which works on 4.5/4.6 too but is a larger design. It is deferred. Recorded here
 so a future contributor does not re-litigate the "just add a `force` flag"
 shortcut without seeing the version-divergence trap.
 
@@ -60,6 +59,3 @@ shortcut without seeing the version-divergence trap.
   save first if that matters (the description says so).
 - A stricter refuse-to-close guard remains open, gated on the deferred hash-based
   detection, not on the 4.7-only query.
-
-Iteration: `Plan/ExecutionPlan/archive/41o-nonies-pre-1.0-tool-polish.md`; grill log
-`Plan/Reference/GrillingSessions/2026-07-08-41o-nonies-tool-polish.md`.

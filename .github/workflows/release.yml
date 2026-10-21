@@ -1,6 +1,6 @@
 name: Release
 
-# Release path — gated on the deep behavioral tier (D13) and dry-runnable.
+# Release path — gated on the deep behavioral tier and dry-runnable.
 #
 # Two entry points:
 #   • v* tag push       → real release: the behavioral matrix runs first (via
@@ -9,11 +9,11 @@ name: Release
 #   • workflow_dispatch → DRY-RUN by default: runs EVERYTHING (the called behavioral
 #                         matrix + the zip build + the install-smoke) but skips the
 #                         GH-Release creation. Makes the whole release path testable
-#                         off a tag NOW instead of first-firing at 42b. Dispatching
+#                         off a tag, before a real release first fires it. Dispatching
 #                         ON a tag ref with dry-run: false is the manual re-run
 #                         escape hatch after a transient tag-push failure.
 #
-# ⚠ Called-workflow gate caveat (D13): the behavioral callee evaluates github.ref /
+# ⚠ Called-workflow gate caveat: the behavioral callee evaluates github.ref /
 # event_name from THIS (caller) context — a v* tag push satisfies its
 # startsWith(github.ref,'refs/tags/v') gates; a dry-run dispatch satisfies its
 # event_name=='workflow_dispatch' gates. If release.yml ever gains a NEW trigger type
@@ -37,13 +37,13 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# D7: least privilege at the top; the zip job re-grants contents: write for the GH
+# Least privilege at the top; the zip job re-grants contents: write for the GH
 # Release upload.
 permissions:
   contents: read
 
 jobs:
-  # D13: gate the release on the full cross-version behavioral matrix (6 GDScript +
+  # Gate the release on the full cross-version behavioral matrix (6 GDScript +
   # 6 .NET/mono behavioral + 2 mono-units). The callee's own workflow-level
   # SIBLING_PIN_SERVER env resolves normally under workflow_call, and
   # inputs.sibling-ref is empty when called -> the pin holds.
@@ -54,7 +54,7 @@ jobs:
   build-and-release:
     needs: behavioral
     runs-on: ubuntu-latest
-    # D7: re-grant write for the GH Release upload.
+    # Re-grant write for the GH Release upload.
     permissions:
       contents: write
     steps:
@@ -119,7 +119,7 @@ jobs:
       - name: Build plugin zip
         run: bash scripts/build-plugin-release.sh
 
-      # D16 — zip install-smoke (runs on dry-runs too; that's the point): prove the
+      # Zip install-smoke (runs on dry-runs too; that's the point): prove the
       # artifact we are about to ship actually INSTALLS and BOOTS, not just that it
       # zipped. Unzip the built artifact into a scratch project (minimal
       # project.godot with the plugin pre-enabled — the same shape as the server's

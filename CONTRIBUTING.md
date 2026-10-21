@@ -9,14 +9,14 @@ need to get started.
 - **Node.js >= 22** (for the companion server)
 - **Git**
 
-This project spans two public repositories that live as siblings on disk, plus a
-private planning repo:
+This project spans two public repositories that live as siblings on disk.
+Planning happens outside these repositories; issues and PRs here are the public
+channel.
 
 | Repo | What it is |
 |------|-----------|
 | [`godot-mcp-toolkit`](https://github.com/NPGameDev/godot-mcp-toolkit) (this repo) | Godot editor plugin (GDScript) |
 | [`godot-mcp-server`](https://github.com/NPGameDev/godot-mcp-server) | TypeScript MCP bridge (npm package) |
-| `godot-mcp-creation` (private, maintainer's planning repo) | Execution plan and design docs |
 
 Clone both as siblings:
 
@@ -248,7 +248,7 @@ are unit execution (floor) and the behavioral run below.
 smoke + flows matrix (`.github/workflows/cross-version.yml`) includes 4.2
 alongside 4.3–4.7, with a 4.2-only class-cache warm-up step before the editor
 launch (same editor-scan warm-up as the unit job). The interactive
-tool sweep stays local (mandatory on large toolkit iterations, optional on
+tool sweep stays local (mandatory on large toolkit changes, optional on
 medium ones).
 
 > **Validation vocabulary.** **SWEEP** = the toolkit's interactive, GDScript

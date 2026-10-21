@@ -17,15 +17,14 @@ display editor, but a handful **silently degrade** rather than guiding the calle
 - `node_call_method` returned `INVALID_METHOD` on a reloaded node's freshly-added method on **4.4+
   headless** — reads like a bug, not "a headless editor never re-instantiates the live node."
 
-A full-suite headless probe (41n-quater, Godot 4.5) found **15 of 531** checks failing this way, and
-41n-quater shipped CI workarounds (`smoke --skip 10,14`, `flows --skip 2`) to stay green.
+A full-suite headless probe (Godot 4.5) found **15 of 531** checks failing this way, and CI had
+shipped workarounds (`smoke --skip 10,14`, `flows --skip 2`) to stay green.
 `editor.screenshot` was already the **exemplar** — an early `is_headless()` guard returning
 `HEADLESS_UNSUPPORTED` + "requires a display server."
 
 The real defect is **misleading, not non-deterministic**: the degraded responses were already
 deterministic; what they lacked was **honesty** — a code and/or a hint telling an LLM (or a CI job)
-*why* the tool is degraded and *what to do instead*. See the plan-repo iteration
-`41n-quater-bis-headless-dx-determinism.md` and `Insights/stale-live-instance-method-hazard.md`.
+*why* the tool is degraded and *what to do instead*.
 
 ## Decision
 
@@ -58,7 +57,7 @@ branch its headless assertions.
    `bridge.isHeadless()` and the smoke/flows suites branch their headless assertions off the **wire
    signal** instead of a per-suite `editor.screenshot` probe. The runtime autoload's bare
    `{authed:true}` is unchanged. The field is additive and follows the `godot_version` precedent — it
-   gets a contract-ledger entry + a `data-verified` bump, **not** a standalone ADR; this policy ADR
+   gets a CHANGELOG entry + a `data-verified` bump, **not** a standalone ADR; this policy ADR
    records it.
 
 ### The deliberate deviation — why the guards stay scattered
@@ -74,7 +73,7 @@ so that locality is read as intentional, not as duplication to be "cleaned up."
 
 - An LLM (or CI) running headless gets deterministic, actionable guidance from every divergent tool
   instead of a false-success, an empty result, or a bare error that reads like a bug.
-- The 41n-quater `smoke --skip 10,14` / `flows --skip 2` workarounds are removed; the full suite runs
+- The `smoke --skip 10,14` / `flows --skip 2` workarounds are removed; the full suite runs
   headless, asserting the new deterministic responses (including the positive `headless_hint` proof).
 - Display behavior is unchanged — the gated branches never fire on a display editor.
 - The pure `StaleInstanceHint` decision gains a `headless` parameter and is unit-tested **editor-free**
@@ -87,19 +86,15 @@ so that locality is read as intentional, not as duplication to be "cleaned up."
 - **Make Mode-B playtest work headless** (spawn a `--headless` child game so the runtime WS binds). The
   runtime autoload is display-agnostic (`mcp_runtime_server.gd` gates only editor / `--check-only` /
   `!has_feature("editor")`), so this is likely feasible — but the blocker is the **upstream editor play
-  path**, not the toolkit. Filed PostRelease **[High]**
-  (`Plan/Ideas/PostRelease/2026-07-02-headless-mode-b-playtest.md`). Until then, deterministic-unavailable
+  path**, not the toolkit. Left as a possible later change; until then, deterministic-unavailable
   is the honest response.
 - **Make headless hot-reload actually re-instantiate (4.4+).** Likely async-scan / idle timing, not an
   architectural block, but it must prove reliably green (10/10 on 4.4–4.7, both editors) before it could
-  gate CI. Filed PostRelease **[High]**
-  (`Plan/Ideas/PostRelease/2026-07-03-headless-hot-reload-reinstantiation.md`). Until then, the stale hint
-  is the honest response.
+  gate CI. Left as a possible later change; until then, the stale hint is the honest response.
 - **A headless re-emit affordance so editor parse errors ARE captured** (force `filesystem.update_file` →
   capture via the 4.5+ `OS.add_logger` sink). Engine proposal #13479 blocks `source="file"` forever, so
-  this is the only future path to *add* headless capture — but it is its own design. Filed PostRelease
-  **[Low]** (`Plan/Ideas/PostRelease/2026-07-03-headless-editor-parse-capture-reemit.md`). Until then,
-  `headless_hint` steers to `script_check`.
+  this is the only future path to *add* headless capture — but it is its own design, left for later.
+  Until then, `headless_hint` steers to `script_check`.
 - **A dedicated new error code for headless-unsupported playtest.** Rejected: `HEADLESS_UNSUPPORTED`
   already exists and is the exemplar; reusing it keeps the code vocabulary tight (one code per condition).
 - **Unify the guards on the shared path.** Rejected — see "the deliberate deviation" above.

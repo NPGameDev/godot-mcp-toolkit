@@ -8,7 +8,7 @@ The toolkit is the **authoritative** boundary for both halves of the file/conten
 it is the only process that touches the filesystem and the only one that returns
 project-authored content to the LLM. The server is a thin npm bridge that adds
 **defense-in-depth**, never the primary guard. This ADR records where each protection lives
-and — as importantly — where it deliberately does **not**, so a future refactor (or the 41n
+and — as importantly — where it deliberately does **not**, so a future refactor (or a later
 review) doesn't re-open or accidentally weaken it.
 
 ## Threat model
@@ -29,7 +29,7 @@ the host from a malicious extension.
   non-allowed-prefix **and canonicalize** (`globalize_path → simplify_path`) to re-assert the
   boundary after lexical `.`/`..` collapse. Canonicalization is **lexical only** — it does *not*
   resolve OS symlinks, so a symlink escape is **out of scope** (single-user localhost threat
-  model; see 41n concern 021). Canonicalization is editor-side, so only the toolkit can do it.
+  model). Canonicalization is editor-side, so only the toolkit can do it.
 - The server adds a **purely syntactic** pre-filter (`src/path_guard.ts`), declared per-tool
   via `ToolDef.pathParams` and wired once into dispatch (`registerToolWrapped`), that
   fast-fails an out-of-bounds path with `PATH_DENIED` **before** the WS round-trip. It is a

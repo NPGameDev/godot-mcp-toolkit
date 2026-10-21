@@ -1,6 +1,6 @@
 # 0010 — Generated placeholder assets report their constructed class and skip import-settle
 
-**Status:** accepted (iter 41m-sexies, 2026-06-14)
+**Status:** accepted (2026-06-14)
 
 `texture_generate` and `sound_generate` write an asset whose type they know by
 construction (a PNG is a `Texture2D`, a WAV is an `AudioStreamWAV`). They therefore
