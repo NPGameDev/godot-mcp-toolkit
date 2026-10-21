@@ -19,6 +19,21 @@ extends RefCounted
 ## speaks res://; resolve_safe_user() returns the GLOBALIZED absolute path —
 ## save.* needs a real OS path for FileAccess.
 
+## The folder that holds the toolkit's own source. Test a path against it with
+## [method is_toolkit_source].
+const TOOLKIT_SOURCE_DIR := "res://addons/godot_mcp_toolkit/"
+
+
+## Whether [param path] is the toolkit's own source folder or a file inside it.
+##
+## The folder matches exactly or with a trailing slash, so a sibling such as
+## [code]res://addons/godot_mcp_toolkit_extras/[/code] is not the toolkit's. The test is
+## textual: simplify an untrusted path first, so a traversal that lands inside is caught.
+##
+## Returns [code]true[/code] for the folder itself and every path under it.
+static func is_toolkit_source(path: String) -> bool:
+	return path == TOOLKIT_SOURCE_DIR.trim_suffix("/") or path.begins_with(TOOLKIT_SOURCE_DIR)
+
 
 ## Validate and resolve a user:// path.
 ## Returns { ok: true, absolute_path } on success,
@@ -104,13 +119,9 @@ static func resolve_safe(
 	# must not read or rewrite it (FileGuard is operation-agnostic — denying here
 	# covers both reads and writes). Check the SIMPLIFIED VIRTUAL path so a
 	# traversal that lands inside (res://foo/../addons/godot_mcp_toolkit/x.gd) is
-	# caught too. The trailing-slash form is load-bearing: bare-prefix
-	# begins_with("res://addons/godot_mcp_toolkit") would also deny a sibling such
-	# as res://addons/godot_mcp_toolkit_extras/ — so match the exact dir OR its
-	# slash-terminated subtree. Other addons (res://addons/<other>/) stay editable.
+	# caught too. Other addons (res://addons/<other>/) stay editable.
 	var canonical := normalized.simplify_path()
-	if canonical == "res://addons/godot_mcp_toolkit" \
-			or canonical.begins_with("res://addons/godot_mcp_toolkit/"):
+	if is_toolkit_source(canonical):
 		return _denied(
 			"res://addons/godot_mcp_toolkit/ is the plugin's own source and is protected")
 

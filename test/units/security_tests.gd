@@ -11,6 +11,7 @@ const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/ex
 static func run(testing) -> void:
 	_test_file_guard(testing)
 	_test_file_guard_self_protect(testing)
+	_test_is_toolkit_source(testing)
 	_test_untrusted(testing)
 	_test_repo_url_allowlist(testing)
 	_test_compare_versions(testing)
@@ -90,6 +91,20 @@ static func _test_file_guard_self_protect(testing) -> void:
 	# source (only the res://addons/ root is protected) → ALLOWED.
 	testing.ok(FileGuard.resolve_safe("res://scenes/godot_mcp_toolkit/x.gd").get("error") == null,
 		"same name under a different root → ALLOWED")
+	print("")
+
+
+# --- FileGuard.is_toolkit_source --------------------------------------------
+# The one test of "this path is the toolkit's own source": the folder itself and its
+# subtree, never a sibling whose name starts the same or a path outside it.
+static func _test_is_toolkit_source(testing) -> void:
+	testing.begin("FileGuard.is_toolkit_source")
+	testing.ok(FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit"), "the folder itself")
+	testing.ok(FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit/"), "the folder with a trailing slash")
+	testing.ok(FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit/core/modules.gd"), "a file inside it")
+	testing.ok(not FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit_extras/x.gd"), "a sibling addon")
+	testing.ok(not FileGuard.is_toolkit_source("res://addons"), "the addons folder")
+	testing.ok(not FileGuard.is_toolkit_source("res://scenes/godot_mcp_toolkit/x.gd"), "the same name elsewhere")
 	print("")
 
 

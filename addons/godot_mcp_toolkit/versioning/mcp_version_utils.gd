@@ -1,17 +1,13 @@
 @tool
 extends RefCounted
-## Version helpers: engine-version comparison plus the addon's own plugin version.
+## Version rules: the running engine's version and what it can do, and the toolkit's
+## and the MCP server's own version strings.
 ##
-## Provides is_at_least / is_at_most / is_version_in_range checks against
-## the running engine version, used to gate commands by their min/max Godot
-## version requirements, in_place_reload_safe() which says whether a script can be
-## reloaded in place on this engine, duplicate_from_editor_flag() which returns the
-## running engine's value for the unbound editor-duplicate flag,
-## read_plugin_version() which reads the toolkit's
-## own plugin.cfg, version_skew() which classifies how the plugin's version
-## differs from the connected server's, floor_verdict() which judges a version against
-## a declared major.minor floor, the server version the toolkit pins, and the lowest
-## server version it works with.
+## The engine's version is read leniently, as the [code]major.minor[/code] pair the
+## command gates and engine-specific workarounds compare. The toolkit's and the server's
+## versions are read strictly, by one reader with a grammar per use, so a malformed
+## version is never mistaken for an old one. Static and runtime-clean: the runtime
+## autoload reaches this file through its preloads, so it names no editor class.
 
 ## Latest version tested. Versions above this still run but log a notice.
 const GODOT_TESTED_MAX_VERSION := "4.7.0"
@@ -30,9 +26,18 @@ const COMPATIBLE_SERVER_VERSION := "1.0.4"
 ## is a MAJOR bump, since it drops older servers.
 const MIN_SERVER_VERSION := "1.0"
 
+## The grammar of a stable release version for [method parse_strict]: exactly
+## [code]X.Y.Z[/code] or [code]vX.Y.Z[/code], each part a decimal number without a leading
+## zero, with no prerelease or build suffix.
+const STABLE_RELEASE_PATTERN := "^v?(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+
 # A strict major.minor[.patch] version with an optional -prerelease or +build suffix:
 # the grammar the MCP server parses floors with, so both sides judge a version alike.
 const _MAJOR_MINOR_PATTERN := "^(\\d+)\\.(\\d+)(?:\\.\\d+)?(?:[-+][0-9A-Za-z.-]+)?$"
+
+# Exactly three dot-separated integers, each optionally signed: the plugin and server
+# versions version_skew compares.
+const _PLAIN_TRIPLE_PATTERN := "^([+-]?\\d+)\\.([+-]?\\d+)\\.([+-]?\\d+)$"
 
 
 ## True when running under `godot --headless` (no display server).
@@ -82,35 +87,6 @@ static func reload_frees_held_lambdas(version_info: Dictionary) -> bool:
 			and int(version_info.get("patch", 0)) < 2)
 
 
-## The value of the engine's [code]Node.DUPLICATE_FROM_EDITOR[/code] flag on the running
-## engine. Passed to [method Node.duplicate], it re-instances a copied scene instance with
-## its instance state, as the editor's own Duplicate does, so the saved copy stays linked
-## to its scene instead of writing out the scene root's script and properties. It also
-## leaves non-persistent groups out of the copy, as the editor's Duplicate does.
-##
-## The engine declares the flag only in editor builds and binds no constant for it, but
-## [method Node.duplicate] passes every bit through unchecked, and the engine passes the
-## flag the same way itself ([code]scene/2d/tile_map.cpp[/code], 4.3 to 4.7). The flag is
-## the last one [code]Node::DuplicateFlags[/code] declares, so its value is the next bit
-## above the highest bound [code]DUPLICATE_*[/code] constant other than
-## [code]DUPLICATE_DEFAULT[/code]: 16 on 4.2 to 4.5 ([code]scene/main/node.h[/code] line 95
-## on 4.2, 104 on 4.5) and 32 from 4.6 (line 109 on 4.6, 113 on 4.7), which binds
-## [code]DUPLICATE_INTERNAL_STATE[/code] as 16. A wrong value is not harmless: 32 below 4.6 is
-## ignored, and 16 from 4.6 sets [code]DUPLICATE_INTERNAL_STATE[/code], which still bakes
-## the copy and makes the engine report invalid owners. Every new engine minor must be
-## checked against this rule, since a flag inserted before this one without a bound
-## constant would move its value unnoticed.
-## [br]
-## Returns the flag's value, read from the running engine's bound constants.
-static func duplicate_from_editor_flag() -> int:
-	var highest_bound := 0
-	for constant_name: String in ClassDB.class_get_integer_constant_list(&"Node", true):
-		if not constant_name.begins_with("DUPLICATE_") or constant_name == "DUPLICATE_DEFAULT":
-			continue
-		highest_bound = maxi(highest_bound, ClassDB.class_get_integer_constant(&"Node", constant_name))
-	return highest_bound << 1
-
-
 ## The toolkit's own version string, read from its plugin.cfg.
 ## Returns "unknown" if the config can't be loaded.
 static func read_plugin_version() -> String:
@@ -128,12 +104,12 @@ static func read_plugin_version() -> String:
 ## floors are declared at major.minor (ADR 0024), so the patch segment carries no
 ## compatibility meaning. The returned names match the MCP server's own severity
 ## vocabulary, so both halves of the handshake speak one language.
-## [br]
+##
 ## Returns "ok", "patch", "minor" or "major", or "unknown" when either side is not
 ## exactly three dot-separated integers.
 static func version_skew(local: String, remote: String) -> String:
-	var a := _parse_strict(local)
-	var b := _parse_strict(remote)
+	var a := parse_strict(local, _PLAIN_TRIPLE_PATTERN)
+	var b := parse_strict(remote, _PLAIN_TRIPLE_PATTERN)
 	if a.is_empty() or b.is_empty():
 		return "unknown"
 	if a[0] != b[0]:
@@ -145,43 +121,52 @@ static func version_skew(local: String, remote: String) -> String:
 	return "ok"
 
 
-## Returns [param v]'s segments as [major, minor, patch], or an empty array when it is
-## not exactly three integers. Distinct from _parse, which pads a two-segment engine
-## version and is therefore too lenient for a plugin-versus-server comparison.
-static func _parse_strict(v: String) -> Array[int]:
-	var parts := v.strip_edges().split(".")
-	if parts.size() != 3:
-		return []
-	var out: Array[int] = []
-	for part in parts:
-		if not part.is_valid_int():
-			return []
-		out.append(int(part))
-	return out
-
-
-## The major and minor of [param v] as [code]Vector2i(major, minor)[/code], when it is a
-## strict [code]major.minor[/code] or [code]major.minor.patch[/code] version, optionally
-## followed by a [code]-prerelease[/code] or [code]+build[/code] suffix.
-## [br]
-## Returns [code]Vector2i(-1, -1)[/code] for anything else: empty, non-numeric, a bare
-## major, or more than three numeric parts. Unlike [method is_at_least], it never reads
-## malformed text as 0, which would make it "below" every floor.
-static func parse_major_minor(v: String) -> Vector2i:
+## Reads [param version] strictly, against one version grammar.
+##
+## [param pattern] is a regular expression anchored at both ends whose capture groups are
+## the numeric parts to read, such as [constant STABLE_RELEASE_PATTERN]. Whitespace around
+## [param version] is trimmed first. Unlike the engine-version checks such as
+## [method is_at_least], it never reads malformed text as 0, which would make it older
+## than every real version.
+##
+## Returns the captured parts as integers, in order, or an empty array when
+## [param version] does not match [param pattern].
+static func parse_strict(version: String, pattern: String) -> Array[int]:
 	var regex := RegEx.new()
-	regex.compile(_MAJOR_MINOR_PATTERN)
-	var found := regex.search(v.strip_edges())
+	regex.compile(pattern)
+	var found := regex.search(version.strip_edges())
+	var parts: Array[int] = []
 	if found == null:
+		return parts
+	for group in range(1, found.get_group_count() + 1):
+		parts.append(int(found.get_string(group)))
+	return parts
+
+
+## The major and minor of a version, for a judgement against a declared floor.
+##
+## [param v] counts when it is a strict [code]major.minor[/code] or
+## [code]major.minor.patch[/code] version, optionally followed by a
+## [code]-prerelease[/code] or [code]+build[/code] suffix: the grammar the MCP server reads
+## floors with.
+##
+## Returns [code]Vector2i(major, minor)[/code], or [code]Vector2i(-1, -1)[/code] for
+## anything else: empty, non-numeric, a bare major, or more than three numeric parts.
+static func parse_major_minor(v: String) -> Vector2i:
+	var parts := parse_strict(v, _MAJOR_MINOR_PATTERN)
+	if parts.is_empty():
 		return Vector2i(-1, -1)
-	return Vector2i(int(found.get_string(1)), int(found.get_string(2)))
+	return Vector2i(parts[0], parts[1])
 
 
-## Judges [param peer] against the declared major.minor [param floor_version]; the
-## patch segment is ignored. Pure and advisory: the caller decides what to print, and
-## nothing refuses a connection.
-## [br]
-## Returns "ok" or "below", or "unknown" when either side does not parse (see
-## [method parse_major_minor]), so the caller falls through to its product-version check.
+## Judges a peer's version against a declared [code]major.minor[/code] floor.
+##
+## Compares [param peer] with [param floor_version], ignoring the patch segment. Pure and
+## advisory: the caller decides what to print, and nothing refuses a connection.
+##
+## Returns [code]"ok"[/code] or [code]"below"[/code], or [code]"unknown"[/code] when either
+## side does not parse with [method parse_major_minor], so the caller falls through to its
+## product-version check.
 static func floor_verdict(peer: String, floor_version: String) -> String:
 	var peer_pair := parse_major_minor(peer)
 	var floor_pair := parse_major_minor(floor_version)
@@ -193,29 +178,39 @@ static func floor_verdict(peer: String, floor_version: String) -> String:
 
 
 static func is_at_least(engine_ver: String, min_ver: String) -> bool:
-	return _compare(_parse(engine_ver), _parse(min_ver)) >= 0
+	return compare_parts(_parse(engine_ver), _parse(min_ver)) >= 0
 
 
 static func is_at_most(engine_ver: String, max_ver: String) -> bool:
-	return _compare(_parse(engine_ver), _parse(max_ver)) <= 0
+	return compare_parts(_parse(engine_ver), _parse(max_ver)) <= 0
 
 
 static func is_version_in_range(engine_ver: String, min_ver: String, max_ver: String) -> bool:
 	var engine := _parse(engine_ver)
-	if min_ver != "" and _compare(engine, _parse(min_ver)) < 0:
+	if min_ver != "" and compare_parts(engine, _parse(min_ver)) < 0:
 		return false
-	if max_ver != "" and _compare(engine, _parse(max_ver)) > 0:
+	if max_ver != "" and compare_parts(engine, _parse(max_ver)) > 0:
 		return false
 	return true
 
 
+## Orders two versions, most significant part first.
+##
+## [param a] and [param b] come from the same reader, so they hold the same number of
+## parts.
+##
+## Returns a negative number when [param a] is the older, zero when the two are equal,
+## and a positive number when [param a] is the newer.
+static func compare_parts(a: Array[int], b: Array[int]) -> int:
+	for i in a.size():
+		if a[i] != b[i]:
+			return a[i] - b[i]
+	return 0
+
+
+# The lenient reader of an engine version or a command's min/max bound: its major and
+# minor, a missing segment read as 0. Malformed text still yields numbers.
 static func _parse(v: String) -> Array[int]:
 	var parts := v.split(".")
 	return [int(parts[0]) if parts.size() > 0 else 0,
 			int(parts[1]) if parts.size() > 1 else 0]
-
-
-static func _compare(a: Array[int], b: Array[int]) -> int:
-	if a[0] != b[0]:
-		return a[0] - b[0]
-	return a[1] - b[1]

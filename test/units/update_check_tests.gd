@@ -12,6 +12,7 @@ const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd
 
 static func run(testing) -> void:
 	_test_parse_version(testing)
+	_test_parse_version_edges(testing)
 	_test_is_newer(testing)
 	_test_major_bump(testing)
 	_test_version_to_show(testing)
@@ -40,6 +41,23 @@ static func _test_parse_version(testing) -> void:
 	testing.eq(UpdateCheck.parse_version("Godot MCP Toolkit"), [], "free text is rejected")
 	testing.eq(UpdateCheck.parse_version(""), [], "an empty string is rejected")
 	testing.eq(UpdateCheck.parse_version("unknown"), [], "the unreadable plugin.cfg marker is rejected")
+	print("")
+
+
+# The edges of the release grammar: whitespace is trimmed before the v prefix is read,
+# zero is a valid part, and nothing else gets past.
+static func _test_parse_version_edges(testing) -> void:
+	testing.begin("Update check: strict version parse edges")
+	testing.eq(UpdateCheck.parse_version(" v1.2.3 "), [1, 2, 3], "whitespace is trimmed before the v")
+	testing.eq(UpdateCheck.parse_version("0.0.0"), [0, 0, 0], "zero parts parse")
+	testing.eq(UpdateCheck.parse_version("v0.10.0"), [0, 10, 0], "a zero beside a multi-digit part parses")
+	testing.eq(UpdateCheck.parse_version("1.2.3."), [], "a trailing dot is rejected")
+	testing.eq(UpdateCheck.parse_version("vv1.2.3"), [], "a doubled v is rejected")
+	testing.eq(UpdateCheck.parse_version("v 1.2.3"), [], "a space after the v is rejected")
+	testing.eq(UpdateCheck.parse_version("1. 2.3"), [], "a space inside is rejected")
+	testing.eq(UpdateCheck.parse_version("1.2.03"), [], "a leading zero on the patch is rejected")
+	testing.eq(UpdateCheck.parse_version("+1.2.3"), [], "a plus sign is rejected")
+	testing.eq(UpdateCheck.parse_version("1..3"), [], "an empty part is rejected")
 	print("")
 
 

@@ -12,6 +12,9 @@ extends RefCounted
 ## [code]v[/code]-prefixed); anything else makes the check show nothing, so a
 ## release the toolkit cannot read never raises a badge.
 
+# Direct preload, not core/modules.gd: the aggregator preloads this file.
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+
 ## The Project Settings toggle. Off means no request at all.
 const SETTING := "mcp_toolkit/updates/check_for_updates"
 
@@ -69,22 +72,11 @@ static func is_check_enabled(project_settings: Object) -> bool:
 ## Accepts exactly [code]X.Y.Z[/code] or [code]vX.Y.Z[/code], each part a decimal
 ## number without a leading zero. A prerelease or build suffix, a missing or extra
 ## part, a sign or any other character is rejected.
-## [br]
+##
 ## Returns [code][major, minor, patch][/code], or an empty array when
 ## [param version] is not such a version.
 static func parse_version(version: String) -> Array[int]:
-	var text := version.strip_edges()
-	if text.begins_with("v"):
-		text = text.substr(1)
-	var parts := text.split(".")
-	if parts.size() != 3:
-		return []
-	var out: Array[int] = []
-	for part in parts:
-		if not _is_numeric_identifier(part):
-			return []
-		out.append(int(part))
-	return out
+	return VersionUtils.parse_strict(version, VersionUtils.STABLE_RELEASE_PATTERN)
 
 
 ## The state of a project that has never checked: never checked, nothing found or
@@ -137,7 +129,7 @@ static func is_newer(local: String, remote: String) -> bool:
 	var b := parse_version(remote)
 	if a.is_empty() or b.is_empty():
 		return false
-	return _compare(a, b) < 0
+	return VersionUtils.compare_parts(a, b) < 0
 
 
 ## Whether [param remote] is newer than [param local] by its major number.
@@ -277,22 +269,3 @@ static func _normalize(version: String) -> String:
 	if parts.is_empty():
 		return ""
 	return "%d.%d.%d" % [parts[0], parts[1], parts[2]]
-
-
-# A semver numeric identifier: digits only, no leading zero unless it is "0".
-static func _is_numeric_identifier(part: String) -> bool:
-	if part.is_empty():
-		return false
-	if part.length() > 1 and part.begins_with("0"):
-		return false
-	for character in part:
-		if character < "0" or character > "9":
-			return false
-	return true
-
-
-static func _compare(a: Array[int], b: Array[int]) -> int:
-	for i in 3:
-		if a[i] != b[i]:
-			return a[i] - b[i]
-	return 0

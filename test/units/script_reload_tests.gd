@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## The shared reload of a script changed on disk (commands/editor_helpers.gd): the
+## The shared reload of a script changed on disk (core/script_reload.gd): the
 ## compile gate, a reload that fails (and node.set_script's hint for it), a file that
 ## matches the cached script, the toolkit's own paths, the reload a script write runs,
 ## the reload its undo and redo run through the undo_helpers node, and what happens
@@ -10,7 +10,7 @@ extends RefCounted
 ## directly, so they cannot run against a toolkit without it; the live probe covers the same
 ## behaviour through the tools.
 
-const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
+const ScriptReload := preload("res://addons/godot_mcp_toolkit/core/script_reload.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
@@ -51,14 +51,14 @@ static func _test_compile_gate(testing) -> void:
 	running.set_script(script)
 
 	_write_source(GATE_FIXTURE, _BROKEN_SOURCE)
-	var refused := Helpers.reload_script_from_disk(script)
+	var refused := ScriptReload.reload_script_from_disk(script)
 	testing.ok(not bool(refused["reloaded"]), "the broken source is not reloaded")
 	testing.ok(str(refused["compile_error"]) != "", "the outcome says why")
 	testing.eq(running.call("version"), 1, "the node keeps running version 1")
 	testing.eq(script.source_code, _version_source(1), "the cached script keeps its source")
 
 	_write_source(GATE_FIXTURE, _version_source(3))
-	var fixed := Helpers.reload_script_from_disk(script)
+	var fixed := ScriptReload.reload_script_from_disk(script)
 	testing.ok(bool(fixed["reloaded"]), "the fixed source reloads on the next call")
 	testing.eq(str(fixed["compile_error"]), "", "a reload that applied carries no error")
 	testing.eq(running.call("version"), 3, "the node runs the fixed version 3")
@@ -81,12 +81,12 @@ static func _test_broken_then_fixed_in_cache(testing) -> void:
 	if script == null:
 		_remove(BROKEN_FIRST_FIXTURE)
 		return
-	var unchanged := Helpers.reload_script_from_disk(script)
+	var unchanged := ScriptReload.reload_script_from_disk(script)
 	testing.ok(not bool(unchanged["reloaded"]) and str(unchanged["compile_error"]) == "",
 			"a broken file that matches the cache is left alone")
 
 	_write_source(BROKEN_FIRST_FIXTURE, _version_source(2))
-	var fixed := Helpers.reload_script_from_disk(script)
+	var fixed := ScriptReload.reload_script_from_disk(script)
 	testing.ok(bool(fixed["reloaded"]), "the fixed file reloads")
 	var fresh := Node.new()
 	fresh.set_script(ResourceLoader.load(BROKEN_FIRST_FIXTURE))
@@ -110,7 +110,7 @@ static func _test_failed_reload_retries(testing) -> void:
 	_write_source(FAILED_RELOAD_FIXTURE, _BROKEN_SOURCE)
 	var printed_errors := Engine.print_error_messages
 	Engine.print_error_messages = false
-	var failed := Helpers.reload_script_from_disk(script, _BROKEN_SOURCE)
+	var failed := ScriptReload.reload_script_from_disk(script, _BROKEN_SOURCE)
 	Engine.print_error_messages = printed_errors
 	testing.ok(not bool(failed["reloaded"]), "the failed reload is not reported as applied")
 	testing.ok(str(failed["compile_error"]).begins_with("the reload failed"), "the outcome says the reload failed")
@@ -119,12 +119,12 @@ static func _test_failed_reload_retries(testing) -> void:
 	testing.ok(script.can_instantiate(), "the cached script is valid again")
 	testing.eq(running.call("version"), 1, "the node keeps running version 1")
 
-	var retried := Helpers.reload_script_from_disk(script)
+	var retried := ScriptReload.reload_script_from_disk(script)
 	testing.ok(not bool(retried["reloaded"]) and str(retried["compile_error"]) != "",
 			"the next call checks the unchanged broken file again and refuses it")
 
 	_write_source(FAILED_RELOAD_FIXTURE, _version_source(3))
-	var fixed := Helpers.reload_script_from_disk(script)
+	var fixed := ScriptReload.reload_script_from_disk(script)
 	testing.ok(bool(fixed["reloaded"]), "the fixed file reloads")
 	testing.eq(running.call("version"), 3, "the node runs the fixed version 3")
 
@@ -147,7 +147,7 @@ static func _test_failed_reload_without_restore(testing) -> void:
 		_remove(RESTORE_FAILED_FIXTURE)
 		return
 	_write_source(RESTORE_FAILED_FIXTURE, _OTHER_BROKEN_SOURCE)
-	var failed := Helpers.reload_script_from_disk(script, _OTHER_BROKEN_SOURCE)
+	var failed := ScriptReload.reload_script_from_disk(script, _OTHER_BROKEN_SOURCE)
 	Engine.print_error_messages = printed_errors
 	testing.ok(not bool(failed["reloaded"]), "the failed reload is not reported as applied")
 	testing.ok(str(failed["compile_error"]).ends_with("the previous version could not be restored"),
@@ -156,7 +156,7 @@ static func _test_failed_reload_without_restore(testing) -> void:
 	testing.eq(script.source_code, _BROKEN_SOURCE, "the cached script keeps its previous source")
 
 	_write_source(RESTORE_FAILED_FIXTURE, _version_source(2))
-	var fixed := Helpers.reload_script_from_disk(script)
+	var fixed := ScriptReload.reload_script_from_disk(script)
 	testing.ok(bool(fixed["reloaded"]), "the fixed file reloads")
 	testing.ok(bool(fixed["previous_kept"]), "an applied reload reports nothing lost")
 	var fresh := Node.new()
@@ -183,7 +183,7 @@ static func _test_unchanged_file(testing) -> void:
 	testing.begin("script reload: a file that matches the cached script is not reloaded")
 	_write_source(UNCHANGED_FIXTURE, _version_source(1))
 	var script: Script = ResourceLoader.load(UNCHANGED_FIXTURE)
-	var outcome := Helpers.reload_script_from_disk(script)
+	var outcome := ScriptReload.reload_script_from_disk(script)
 	testing.ok(not bool(outcome["reloaded"]), "no reload")
 	testing.eq(str(outcome["compile_error"]), "", "no error")
 	_remove(UNCHANGED_FIXTURE)
@@ -192,15 +192,15 @@ static func _test_unchanged_file(testing) -> void:
 
 static func _test_reload_decision(testing) -> void:
 	testing.begin("script reload: the decision skips the toolkit's own scripts")
-	testing.ok(Helpers.should_reload_script("res://player.gd", "new", "old"),
+	testing.ok(ScriptReload.should_reload_script("res://player.gd", "new", "old"),
 			"a project script whose file changed → reload")
-	testing.ok(not Helpers.should_reload_script("res://addons/godot_mcp_toolkit/core/modules.gd", "new", "old"),
+	testing.ok(not ScriptReload.should_reload_script("res://addons/godot_mcp_toolkit/core/modules.gd", "new", "old"),
 			"a toolkit script whose file changed → no reload")
-	testing.ok(Helpers.should_reload_script("res://addons/godot_mcp_toolkit_extras/x.gd", "new", "old"),
+	testing.ok(ScriptReload.should_reload_script("res://addons/godot_mcp_toolkit_extras/x.gd", "new", "old"),
 			"a sibling addon whose name extends the toolkit's → reload")
-	testing.ok(not Helpers.should_reload_script("res://player.gd", "same", "same"),
+	testing.ok(not ScriptReload.should_reload_script("res://player.gd", "same", "same"),
 			"an unchanged file → no reload")
-	testing.ok(not Helpers.should_reload_script("res://player.gd", "", "old"),
+	testing.ok(not ScriptReload.should_reload_script("res://player.gd", "", "old"),
 			"an empty or unreadable file → no reload")
 	print("")
 
@@ -215,19 +215,19 @@ static func _test_reload_after_write(testing) -> void:
 
 	var written := _version_source(2)
 	_write_source(WRITE_FIXTURE, written)
-	var outcome := Helpers.reload_cached_script(WRITE_FIXTURE, written)
+	var outcome := ScriptReload.reload_cached_script(WRITE_FIXTURE, written)
 	testing.ok(bool(outcome["reloaded"]), "the write reloads the cached script")
 	testing.eq(running.call("version"), 2, "the node already running it runs version 2")
 
 	_write_source(NEVER_LOADED_FIXTURE, _version_source(1))
-	testing.ok(not bool(Helpers.reload_cached_script(NEVER_LOADED_FIXTURE)["reloaded"]),
+	testing.ok(not bool(ScriptReload.reload_cached_script(NEVER_LOADED_FIXTURE)["reloaded"]),
 			"a script the editor never loaded is left for its first load")
 	_write_source(SHADER_FIXTURE, "shader_type canvas_item;\n")
 	var shader: Resource = ResourceLoader.load(SHADER_FIXTURE)
 	testing.ok(shader != null and ResourceLoader.has_cached(SHADER_FIXTURE), "the shader fixture is cached")
 	# A call that fails at runtime returns an empty Dictionary, so read the key with a
 	# default that fails the check rather than aborting this test.
-	var shader_outcome := Helpers.reload_cached_script(SHADER_FIXTURE)
+	var shader_outcome := ScriptReload.reload_cached_script(SHADER_FIXTURE)
 	testing.ok(not bool(shader_outcome.get("reloaded", true)),
 			"a cached resource that is not a script is left alone")
 

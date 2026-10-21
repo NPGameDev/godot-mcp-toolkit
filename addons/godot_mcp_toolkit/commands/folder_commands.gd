@@ -53,7 +53,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	var normalized := path
 	if normalized.ends_with("/"):
 		normalized = normalized.substr(0, normalized.length() - 1)
-	if normalized == "res://addons" or normalized == "res://addons/godot_mcp_toolkit":
+	if normalized == "res://addons" or FileGuard.is_toolkit_source(normalized):
 		return MCPToolkitError.fail("FOLDER_PROTECTED",
 			"cannot delete res://addons or the toolkit plugin directory (%s); agent cannot remove its own host" % normalized)
 	if not DirAccess.dir_exists_absolute(path):

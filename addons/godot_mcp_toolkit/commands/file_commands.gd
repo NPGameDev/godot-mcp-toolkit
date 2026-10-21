@@ -25,7 +25,7 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 	var guard := FileGuard.resolve_safe(file_path)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
-	if file_path.begins_with("res://addons/godot_mcp_toolkit/"):
+	if FileGuard.is_toolkit_source(file_path):
 		return MCPToolkitError.fail("PATH_DENIED",
 			"cannot delete files inside the MCP toolkit plugin directory")
 	if not FileAccess.file_exists(file_path):
