@@ -465,7 +465,7 @@ stays in lockstep across the two repos.
 | Procedural & synthesis | `procedural_commands`, `sound_commands`, `texture_commands` |
 | Animation & particles | `animation_commands`, `particle_commands` |
 | Audio | `audiobus_commands` |
-| Input & navigation | `input_map_commands`, `navigation_commands` |
+| Input & navigation | `commands/input_map/*`, `navigation_commands` |
 | Signals | `signal_commands` |
 | Playtest & debug | `commands/playtest/*`, `debug_commands` |
 | Editor, project, introspection, save | `commands/editor/*`, `classdb_commands`, `project_commands`, `save_commands`, `meta_commands` |
