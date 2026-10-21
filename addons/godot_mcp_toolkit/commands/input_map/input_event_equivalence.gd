@@ -11,7 +11,7 @@ extends RefCounted
 ## reads a saved event's unspecified location as any location, and ignores location on a
 ## logical key.
 
-const InputEventCodec := preload("res://addons/godot_mcp_toolkit/commands/input_event_codec.gd")
+const InputEventCodec := preload("res://addons/godot_mcp_toolkit/commands/input_map/input_event_codec.gd")
 
 
 ## Returns whether [param event_a] and [param event_b] are the same binding.

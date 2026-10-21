@@ -11,9 +11,9 @@ extends RefCounted
 ## that bind a built-in action with nothing saved narrow its InputMap events to the keys
 ## first, as the editor holds them, and put them back after.
 
-const InputMapCommands := preload("res://addons/godot_mcp_toolkit/commands/input_map_commands.gd")
-const InputActionSettings := preload("res://addons/godot_mcp_toolkit/commands/input_action_settings.gd")
-const InputEventEquivalence := preload("res://addons/godot_mcp_toolkit/commands/input_event_equivalence.gd")
+const InputMapCommands := preload("res://addons/godot_mcp_toolkit/commands/input_map/input_map_commands.gd")
+const InputActionSettings := preload("res://addons/godot_mcp_toolkit/commands/input_map/input_action_settings.gd")
+const InputEventEquivalence := preload("res://addons/godot_mcp_toolkit/commands/input_map/input_event_equivalence.gd")
 
 const _ACTION := "mcp_test_project_action"
 ## A project action whose name looks like a built-in one.

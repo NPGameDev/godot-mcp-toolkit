@@ -11,9 +11,9 @@ extends RefCounted
 ## [code]input_event_equivalence.gd[/code] decides when two events are the same binding.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const InputActionSettings := preload("res://addons/godot_mcp_toolkit/commands/input_action_settings.gd")
-const InputEventCodec := preload("res://addons/godot_mcp_toolkit/commands/input_event_codec.gd")
-const InputEventEquivalence := preload("res://addons/godot_mcp_toolkit/commands/input_event_equivalence.gd")
+const InputActionSettings := preload("res://addons/godot_mcp_toolkit/commands/input_map/input_action_settings.gd")
+const InputEventCodec := preload("res://addons/godot_mcp_toolkit/commands/input_map/input_event_codec.gd")
+const InputEventEquivalence := preload("res://addons/godot_mcp_toolkit/commands/input_map/input_event_equivalence.gd")
 
 var _settings: InputActionSettings
 
