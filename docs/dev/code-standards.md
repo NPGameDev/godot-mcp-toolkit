@@ -788,7 +788,7 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 | `transport/` | `mcp_server.gd` | `transport/dispatch/` (`dispatch_lane`, `mutation_watchdog`, `server_request_router`); also `ws_transport.gd`, `notifier.gd`, `debug_bridge.gd`, `builtin_command_registration.gd` |
 | `registry/` | `registry_client.gd` | `registry/store/` (`file_lock`, `registry_entry_file`, `registry_paths`, `registry_projection`) |
 | `extensions/` | `extension_loader.gd` | `extensions/services/` (`extension_discovery`, `extension_meta_commands`, `extension_support`, `extension_watcher`) |
-| `commands/` | the per-domain command modules | `commands/{editor,tileset,playtest}/` |
+| `commands/` | the per-domain command modules | `commands/{editor,input_map,playtest,tileset}/` |
 | `ui/dock/` | `dock.gd` | `ui/dock/{ext,limits,mcp,security,status,update}/` |
 | `contract/` | the value types + `coerce.gd` | — |
 | `core/` | `plugin_composer.gd`, `modules.gd` (the aggregator) | `editor_access.gd`, `settings_registration.gd`, `tool_menu.gd`, `disable_cleanup_coordinator.gd`, `export_strip.gd`, `playtest_end_detector.gd`, `unfocused_*.gd` |
