@@ -24,6 +24,7 @@ static func run(testing) -> void:
 	_test_main_scene_missing_predicate(testing)
 	_test_debugger_log_reads_from_zero(testing)
 	_test_runtime_opt_out_hint(testing)
+	_test_runtime_opt_out_hint_text(testing)
 
 
 # game.start names the opt-out when the editor's own environment carries it: the
@@ -47,6 +48,35 @@ static func _test_runtime_opt_out_hint(testing) -> void:
 	testing.ok(opted_out_hint.contains("GODOT_MCP_RUNTIME=0"),
 		"GODOT_MCP_RUNTIME=0 in the editor's environment → a hint naming it")
 	testing.ok(opted_in_hint.is_empty(), "any other value → no hint")
+	print("")
+
+
+# The hint word for word, quoting the value as the environment holds it, and the
+# values that count as off, read the way the game's runtime server reads them.
+static func _test_runtime_opt_out_hint_text(testing) -> void:
+	testing.begin("game.start opt-out hint, word for word")
+	var had_env := OS.has_environment(_ENV_RUNTIME)
+	var saved_env := OS.get_environment(_ENV_RUNTIME)
+
+	OS.set_environment(_ENV_RUNTIME, "Off")
+	var off_hint := PlaytestControl._runtime_opt_out_hint()
+	var off_values := []
+	for value: String in ["0", "false", "off", "FALSE", " 0 ", "", "1", "no", "00"]:
+		OS.set_environment(_ENV_RUNTIME, value)
+		if not PlaytestControl._runtime_opt_out_hint().is_empty():
+			off_values.append(value)
+
+	if had_env:
+		OS.set_environment(_ENV_RUNTIME, saved_env)
+	else:
+		OS.unset_environment(_ENV_RUNTIME)
+
+	testing.eq(off_hint, (
+		"The game won't open the runtime channel: GODOT_MCP_RUNTIME=Off is set in the editor's "
+		+ "environment, and games the editor launches inherit it. Unset it and restart the editor "
+		+ "to use runtime tools."
+	), "the hint quotes the variable and its value")
+	testing.eq(off_values, ["0", "false", "off", "FALSE", " 0 "], "the values that turn games off")
 	print("")
 
 

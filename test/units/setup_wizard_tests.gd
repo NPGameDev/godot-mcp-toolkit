@@ -30,6 +30,8 @@ const _PROGRESS := "user://setup_wizard_tests_progress"
 # The files at the path a project rename moves user:// to.
 const _RENAMED_FLAG := "user://setup_wizard_tests_renamed_flag"
 const _RENAMED_PROGRESS := "user://setup_wizard_tests_renamed_progress"
+# A folder that does not exist until a record creates it.
+const _NESTED_DIR := "user://setup_wizard_tests_nested"
 
 const _OPTIONAL_STEPS_TEXT := (
 	"Toolkit updates sometimes add steps to this wizard. When one does, the next time "
@@ -56,6 +58,7 @@ static func run(testing, tree: SceneTree) -> void:
 	_test_step_table(testing)
 	_test_tracker_file_shapes(testing)
 	_test_tracker_format_rules(testing)
+	_test_tracker_written_bytes(testing)
 	_test_run_planner(testing)
 	_test_seen_on_close(testing)
 	_test_consent_gate(testing)
@@ -189,6 +192,28 @@ static func _test_tracker_format_rules(testing) -> void:
 	SetupStepTracker.mark_seen(&"updates")
 	testing.eq(_read_seen(), ["welcome", "dock", "updates"], "and is dropped on rewrite")
 	_end_scratch_files()
+	print("")
+
+
+# The exact bytes a record writes: compact JSON with sorted keys, created with its
+# folder when missing. A 1.0.x build and every later reader parse this file.
+static func _test_tracker_written_bytes(testing) -> void:
+	testing.begin("Setup step tracker: the bytes a record writes")
+	_use_scratch_files()
+	_write_file(_FLAG, JSON.stringify({"format": 1, "seen": ["welcome"], "note": "kept"}))
+	SetupStepTracker.mark_seen(&"dock")
+	testing.eq(_read_file(_FLAG), "{\"format\":1,\"note\":\"kept\",\"seen\":[\"welcome\",\"dock\"]}",
+			"compact JSON, keys sorted, unknown keys kept")
+	_end_scratch_files()
+
+	var nested_flag := _NESTED_DIR.path_join("flag")
+	_remove_nested_dir(nested_flag)
+	SetupStepTracker.set_file_paths(nested_flag, _PROGRESS)
+	SetupStepTracker.mark_seen(&"welcome")
+	testing.eq(_read_file(nested_flag), "{\"format\":1,\"seen\":[\"welcome\"]}",
+			"a missing folder is created and the file written")
+	_remove_nested_dir(nested_flag)
+	SetupStepTracker.reset_file_paths()
 	print("")
 
 
@@ -536,6 +561,13 @@ static func _remove_scratch_files() -> void:
 	for path in [_FLAG, _PROGRESS]:
 		if FileAccess.file_exists(path):
 			DirAccess.remove_absolute(path)
+
+
+static func _remove_nested_dir(nested_flag: String) -> void:
+	if FileAccess.file_exists(nested_flag):
+		DirAccess.remove_absolute(nested_flag)
+	if DirAccess.dir_exists_absolute(_NESTED_DIR):
+		DirAccess.remove_absolute(_NESTED_DIR)
 
 
 static func _remove_renamed_files() -> void:

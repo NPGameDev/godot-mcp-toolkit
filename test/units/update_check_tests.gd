@@ -3,10 +3,11 @@ extends RefCounted
 ## Unit tests for the update check's pure rules: which versions count as newer, the
 ## major bump, the badge's version, the GitHub and Asset Store reply parsing, the
 ## state file and its default, the silence on malformed input, the once-a-day due
-## rule and the request builders. The network is never touched: every reply is a
-## literal body.
+## rule, the request builders and the bytes the runner writes to the state file. The
+## network is never touched: every reply is a literal body.
 
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
+const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
 
@@ -24,6 +25,7 @@ static func run(testing) -> void:
 	_test_due_state(testing)
 	_test_requests(testing)
 	_test_release_page_url(testing)
+	_test_runner_state_bytes(testing)
 
 
 static func _test_parse_version(testing) -> void:
@@ -251,4 +253,42 @@ static func _test_release_page_url(testing) -> void:
 	testing.eq(UpdateCheck.release_page_url("1.2.0/../../evil"), "", "a non-version gives no link")
 	testing.eq(UpdateCheck.STORE_LISTING_URL, "https://store.godotengine.org/asset/npgamedev/godot-mcp-toolkit/",
 			"the store listing")
+	print("")
+
+
+# The state file is tab-indented JSON with sorted keys, and a write prints nothing.
+# The runner writes this project's real state file, so the test restores its bytes,
+# or removes it when there was none, before asserting.
+static func _test_runner_state_bytes(testing) -> void:
+	testing.begin("Update check: the bytes the runner writes")
+	var path: String = UpdateCheckRunner.STATE_PATH
+	var had_file := FileAccess.file_exists(path)
+	var saved := FileAccess.get_file_as_bytes(path) if had_file else PackedByteArray()
+	LogBuffer.setup()
+	var cursor: int = LogBuffer.get_cursor() - 1
+
+	var runner := UpdateCheckRunner.new()
+	runner._write_state({
+		"last_check": 1760000000,
+		"latest_version": "1.2.3",
+		"store_listed": true,
+		"dismissed_version": "1.2.2",
+	})
+	var written := FileAccess.get_file_as_string(path)
+	runner.free()
+
+	if had_file:
+		var file := FileAccess.open(path, FileAccess.WRITE)
+		file.store_buffer(saved)
+		file.close()
+	elif FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+
+	testing.eq(written, (
+		"{\n\t\"dismissed_version\": \"1.2.2\",\n\t\"last_check\": 1760000000,\n"
+		+ "\t\"latest_version\": \"1.2.3\",\n\t\"store_listed\": true\n}"
+	), "tab-indented JSON, keys sorted")
+	if LogBuffer.uses_logger_api():
+		var logged: Dictionary = LogBuffer.get_entries(100, ["warning", "error"], cursor)
+		testing.eq(int(logged["returned"]), 0, "a write prints no warning or error")
 	print("")
