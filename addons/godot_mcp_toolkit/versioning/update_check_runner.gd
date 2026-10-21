@@ -32,6 +32,7 @@ signal state_changed
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
+const UserJsonStore := preload("res://addons/godot_mcp_toolkit/paths/user_json_store.gd")
 
 ## The state file: per project and per machine, beside the toolkit's other
 ## project-wide user:// files, never in project.godot. It survives a plugin disable.
@@ -242,14 +243,7 @@ func _read_state() -> Dictionary:
 	return UpdateCheck.parse_state(text)
 
 
-# A failed write is silent like every other failure: the next read finds the old
-# state, so the worst case is one extra check.
+# A failed write is silent like every other failure, so the store's error is
+# dropped: the next read finds the old state, and the worst case is one extra check.
 func _write_state(state: Dictionary) -> void:
-	var dir := ProjectSettings.globalize_path(STATE_PATH.get_base_dir())
-	if not DirAccess.dir_exists_absolute(dir):
-		DirAccess.make_dir_recursive_absolute(dir)
-	var file := FileAccess.open(STATE_PATH, FileAccess.WRITE)
-	if file == null:
-		return
-	file.store_string(JSON.stringify(state, "\t"))
-	file.close()
+	UserJsonStore.write(STATE_PATH, state, "\t")

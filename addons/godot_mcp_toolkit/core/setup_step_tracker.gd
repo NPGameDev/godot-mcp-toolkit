@@ -28,6 +28,8 @@ extends RefCounted
 ## seen-steps file and deletes it; it is never written.
 
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
+# Direct preload, not core/modules.gd: the aggregator preloads this file.
+const UserJsonStore := preload("res://addons/godot_mcp_toolkit/paths/user_json_store.gd")
 
 ## The seen-steps file.
 const FLAG_PATH := "user://addons/godot_mcp_toolkit/mcp_onboarding_shown_v001"
@@ -223,23 +225,13 @@ static func _valid_ids(listed: Array) -> Array:
 	return ids
 
 
-# One store_string, so a reader never sees half a file from this writer. A failed
-# write is silent: the steps show again at the next editor start. Returns whether
-# the file could be opened and, from Godot 4.4, written: 4.2 and 4.3 do not report
-# a failed write through get_error(), so only a failed open is caught there.
+# A failed write is silent: the steps show again at the next editor start. Returns
+# whether the store reported the file written.
 static func _write(seen: Array, extra: Dictionary) -> bool:
 	var data := extra.duplicate()
 	data[_KEY_FORMAT] = FORMAT
 	data[_KEY_SEEN] = seen
-	var dir := ProjectSettings.globalize_path(_flag_path.get_base_dir())
-	if not DirAccess.dir_exists_absolute(dir):
-		DirAccess.make_dir_recursive_absolute(dir)
-	var file := FileAccess.open(_flag_path, FileAccess.WRITE)
-	if file == null:
-		return false
-	file.store_string(JSON.stringify(data))
-	var written := file.get_error() == OK
-	file.close()
+	var written := UserJsonStore.write(_flag_path, data) == OK
 	if written:
 		_last_seen = seen.duplicate()
 	return written
