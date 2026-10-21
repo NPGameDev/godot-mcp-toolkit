@@ -109,7 +109,7 @@ static func uses_local_server() -> bool:
 	return not MCPJsonSync.resolve_machine_dev_path(read_local_path_setting()).is_empty()
 
 
-## The server spec (see [code]MCPJsonSync.classify_server_entry[/code]) this machine
+## The server spec (see [code]ServerPinPolicy.classify_server_entry[/code]) this machine
 ## last wrote into the project's .mcp.json, or "" when it has not written one.
 static func read_last_written_spec() -> String:
 	return str(EditorInterface.get_editor_settings().get_project_metadata(_RECORD_SECTION, _RECORD_KEY, ""))

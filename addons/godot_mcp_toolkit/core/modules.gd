@@ -16,6 +16,7 @@ const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd
 const Scrubber := preload("res://addons/godot_mcp_toolkit/security/scrubber.gd")
 const Audit := preload("res://addons/godot_mcp_toolkit/security/audit.gd")
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const ServerPinPolicy := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_policy.gd")
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
 const ProjectPaths := preload("res://addons/godot_mcp_toolkit/paths/project_paths.gd")
 const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/paths/user_path_monitor.gd")

@@ -6,7 +6,7 @@ extends RefCounted
 ## for each drift case, and the setting read. Each table is the policy's observable
 ## output, so a move of the policy keeps every row green.
 
-const ServerPinPolicy := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const ServerPinPolicy := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_policy.gd")
 
 const _PKG := "@npgamedev/godot-mcp-server"
 const _COMPATIBLE := "1.0.4"

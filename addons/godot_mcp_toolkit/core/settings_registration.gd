@@ -9,7 +9,7 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const ResponseLimits = Modules.ResponseLimits
-const MCPJsonSync = Modules.MCPJsonSync
+const ServerPinPolicy = Modules.ServerPinPolicy
 const UpdateCheck = Modules.UpdateCheck
 
 # Keys earlier versions stored and this one no longer writes. Each entry is
@@ -89,7 +89,7 @@ static func _register_audit() -> void:
 # Advanced, not basic: most projects keep the default pin, and the dock and the
 # setup wizard switch between the two everyday modes.
 static func _register_server() -> void:
-	_register_setting(MCPJsonSync.SERVER_VERSION_SETTING, TYPE_STRING, "", PROPERTY_HINT_NONE,
+	_register_setting(ServerPinPolicy.SERVER_VERSION_SETTING, TYPE_STRING, "", PROPERTY_HINT_NONE,
 		"Server version Write .mcp.json pins. Empty = the version this toolkit was tested with (recommended); latest = always the newest; any other value is used as the npm version, range or tag (you own compatibility). Team-shared. Restart your MCP client after a change.",
 		false)
 

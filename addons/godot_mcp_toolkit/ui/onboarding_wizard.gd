@@ -20,9 +20,9 @@ signal step_seen(step_id: StringName)
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const SetupSteps = Modules.SetupSteps
+const ServerPinPolicy = Modules.ServerPinPolicy
 const SettingsNavigator := preload("res://addons/godot_mcp_toolkit/ui/settings_navigator.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
-const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 const SetupStepSettings := preload("res://addons/godot_mcp_toolkit/ui/setup_step_settings.gd")
 
@@ -388,11 +388,11 @@ func _build_pin_choice(text: String) -> VBoxContainer:
 			"Uses the server version this toolkit was tested with. Updating the toolkit updates the server.")
 	_latest_box = _add_choice(box, group, "Latest",
 			"Downloads the newest server on every launch; may show a version warning until you update the toolkit.")
-	var version_setting := MCPJsonSync.read_version_setting()
-	var mode := MCPJsonSync.pin_mode(version_setting)
-	_pinned_box.button_pressed = mode == MCPJsonSync.MODE_PINNED
-	_latest_box.button_pressed = mode == MCPJsonSync.MODE_LATEST
-	if mode == MCPJsonSync.MODE_CUSTOM:
+	var version_setting := ServerPinPolicy.read_version_setting()
+	var mode := ServerPinPolicy.pin_mode(version_setting)
+	_pinned_box.button_pressed = mode == ServerPinPolicy.MODE_PINNED
+	_latest_box.button_pressed = mode == ServerPinPolicy.MODE_LATEST
+	if mode == ServerPinPolicy.MODE_CUSTOM:
 		var note := Label.new()
 		note.text = ("Project Settings names a custom server version (%s); "
 				+ "pick one above to replace it.") % version_setting.strip_edges()
@@ -433,15 +433,15 @@ func _build_check_box(text: String, label: String, step_id: StringName) -> VBoxC
 func _apply_pin_choice() -> void:
 	var chosen := ""
 	if _pinned_box != null and _pinned_box.button_pressed:
-		chosen = MCPJsonSync.MODE_PINNED
+		chosen = ServerPinPolicy.MODE_PINNED
 	elif _latest_box != null and _latest_box.button_pressed:
-		chosen = MCPJsonSync.MODE_LATEST
+		chosen = ServerPinPolicy.MODE_LATEST
 	else:
 		return
-	if MCPJsonSync.pin_mode(MCPJsonSync.read_version_setting()) == chosen:
+	if ServerPinPolicy.pin_mode(ServerPinPolicy.read_version_setting()) == chosen:
 		return
-	MCPJsonSync.save_version_setting(
-			MCPJsonSync.LATEST_SETTING_VALUE if chosen == MCPJsonSync.MODE_LATEST else "")
+	ServerPinPolicy.save_version_setting(
+			ServerPinPolicy.LATEST_SETTING_VALUE if chosen == ServerPinPolicy.MODE_LATEST else "")
 
 
 func _clear_content_refs() -> void:
