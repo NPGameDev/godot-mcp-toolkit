@@ -113,4 +113,4 @@ static func cmd_wait_for_idle(parameters: Dictionary) -> Dictionary:
 ## an unchanged or toolkit-own script would cancel a suspended coroutine —
 ## a wedged-dispatch-lock / editor-crash class). Pure logic so it can be unit-tested.
 static func should_reload_open_script(resource_path: String, changed: Dictionary) -> bool:
-	return changed.has(resource_path) and not resource_path.begins_with("res://addons/godot_mcp_toolkit/")
+	return changed.has(resource_path) and not Modules.FileGuard.is_toolkit_source(resource_path)

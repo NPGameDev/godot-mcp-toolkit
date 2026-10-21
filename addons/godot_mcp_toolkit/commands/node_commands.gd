@@ -305,7 +305,7 @@ static func _set_property_scalar_single(
 	# clean success, unless the declared-type fit already dropped a fraction (its
 	# warning, below).
 	var stored: Variant = node.get(property_name)
-	var outcome := Helpers.describe_set_drop(old_value, stored, coerced, property_name)
+	var outcome := PropertySetCheck.describe_set_drop(old_value, stored, coerced, property_name)
 	if outcome.get("status", "") == "dropped":
 		# A bound setter (position/modulate) may have Variant-converted the wrong type
 		# to a ZERO and stored it; restore the prior value so a SET_FAILED is truly
@@ -437,7 +437,7 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		# undo; a per-entry warning names the engine's value reshape (ADJUSTED) or a
 		# fraction the fit dropped.
 		var stored: Variant = node.get(prop)
-		var outcome := Helpers.describe_set_drop(old_value, stored, coerced, prop)
+		var outcome := PropertySetCheck.describe_set_drop(old_value, stored, coerced, prop)
 		if outcome.get("status", "") == "dropped":
 			# Restore the prior value (a bound setter may have zeroed it) so this
 			# failed entry is non-destructive; skip its undo, rest of batch applies.
@@ -731,9 +731,9 @@ static func _cmd_node_set_script(parameters: Dictionary) -> Dictionary:
 			"resource at %s is not a Script (got %s)" % [script_path, loaded.get_class()])
 	# Where an in-place reload is unsafe, the node takes the version the editor has, and a
 	# file changed since then waits for an editor restart.
-	var reload_outcome := Helpers.unreloaded_outcome()
+	var reload_outcome := Modules.ScriptReload.unreloaded_outcome()
 	if Modules.VersionUtils.in_place_reload_safe():
-		reload_outcome = Helpers.reload_script_from_disk(loaded)
+		reload_outcome = Modules.ScriptReload.reload_script_from_disk(loaded)
 
 	var old_script = node.get_script()
 	node.set_script(loaded)
@@ -889,14 +889,42 @@ static func _manage_reorder(
 		"old_index": old_index, "new_index": node.get_index()})
 
 
+## The value of the engine's [code]Node.DUPLICATE_FROM_EDITOR[/code] flag on the running
+## engine. Passed to [method Node.duplicate], it re-instances a copied scene instance with
+## its instance state, as the editor's own Duplicate does, so the saved copy stays linked
+## to its scene instead of writing out the scene root's script and properties. It also
+## leaves non-persistent groups out of the copy, as the editor's Duplicate does.
+##
+## The engine declares the flag only in editor builds and binds no constant for it, but
+## [method Node.duplicate] passes every bit through unchecked, and the engine passes the
+## flag the same way itself ([code]scene/2d/tile_map.cpp[/code], 4.3 to 4.7). The flag is
+## the last one [code]Node::DuplicateFlags[/code] declares, so its value is the next bit
+## above the highest bound [code]DUPLICATE_*[/code] constant other than
+## [code]DUPLICATE_DEFAULT[/code]: 16 on 4.2 to 4.5 ([code]scene/main/node.h[/code] line 95
+## on 4.2, 104 on 4.5) and 32 from 4.6 (line 109 on 4.6, 113 on 4.7), which binds
+## [code]DUPLICATE_INTERNAL_STATE[/code] as 16. A wrong value is not harmless: 32 below 4.6 is
+## ignored, and 16 from 4.6 sets [code]DUPLICATE_INTERNAL_STATE[/code], which still bakes
+## the copy and makes the engine report invalid owners. Every new engine minor must be
+## checked against this rule, since a flag inserted before this one without a bound
+## constant would move its value unnoticed.
+##
+## Returns the flag's value, read from the running engine's bound constants.
+static func duplicate_from_editor_flag() -> int:
+	var highest_bound := 0
+	for constant_name: String in ClassDB.class_get_integer_constant_list(&"Node", true):
+		if not constant_name.begins_with("DUPLICATE_") or constant_name == "DUPLICATE_DEFAULT":
+			continue
+		highest_bound = maxi(highest_bound, ClassDB.class_get_integer_constant(&"Node", constant_name))
+	return highest_bound << 1
+
+
 static func _manage_duplicate(
 	root: Node, node: Node, node_path: String, parameters: Dictionary,
 ) -> Dictionary:
 	if node == root:
 		return MCPToolkitError.fail("INVALID_PATH", "cannot duplicate the scene root")
 
-	var dup := node.duplicate(
-			_DUPLICATE_DEFAULT_FLAGS | Modules.VersionUtils.duplicate_from_editor_flag())
+	var dup := node.duplicate(_DUPLICATE_DEFAULT_FLAGS | duplicate_from_editor_flag())
 	if dup == null:
 		return MCPToolkitError.fail("INTERNAL", "Node.duplicate() returned null for %s" % node_path)
 

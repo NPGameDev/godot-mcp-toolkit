@@ -15,8 +15,8 @@ extends EditorExportPlugin
 # shared leaf, so the null-for-bake here and the plugin's registration path can never
 # drift — one home for the pair the export must null and restore.
 const AutoloadIdentity := preload("res://addons/godot_mcp_toolkit/core/autoload_identity.gd")
+const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 
-const _ADDON_PREFIX := "res://addons/godot_mcp_toolkit/"
 const _MCP_JSON_PATH := "res://.mcp.json"
 
 # Single source of truth for "what is an extension" — must match
@@ -66,7 +66,7 @@ func _export_begin(_features: PackedStringArray, _is_debug: bool, _path: String,
 
 
 func _export_file(path: String, _type: String, _features: PackedStringArray) -> void:
-	if path.begins_with(_ADDON_PREFIX):
+	if FileGuard.is_toolkit_source(path):
 		# Track for leak detection: in binary modes only NON-script addon files
 		# reach us (the built-in tokenizer eats the .gd first) — see _decide_warning.
 		if path.ends_with(".gd"):

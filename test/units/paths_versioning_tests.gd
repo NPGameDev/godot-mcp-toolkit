@@ -38,6 +38,8 @@ static func run(testing) -> void:
 	_test_reload_patch_gate(testing)
 	_test_duplicate_from_editor_flag(testing)
 	_test_version_skew(testing)
+	_test_version_skew_grammar(testing)
+	_test_editor_refresh_reload_filter_sibling(testing)
 	_test_log_path_resolution(testing)
 	_test_logger_construction(testing)
 
@@ -581,7 +583,7 @@ static func _test_duplicate_from_editor_flag(testing) -> void:
 	testing.begin("duplicate_from_editor_flag matches the measured value per engine minor")
 	var live_pair := VersionUtils.get_engine_version_pair()
 	var expected := 32 if VersionUtils.is_at_least(live_pair, "4.6") else 16
-	testing.eq(VersionUtils.duplicate_from_editor_flag(), expected,
+	testing.eq(NodeCommands.duplicate_from_editor_flag(), expected,
 			"%s → %d (16 on 4.2 to 4.5, 32 from 4.6)" % [live_pair, expected])
 	print("")
 
@@ -602,6 +604,37 @@ static func _test_version_skew(testing) -> void:
 	testing.ok(VersionUtils.version_skew("", "1.0.0") == "unknown", "empty → unknown")
 	testing.ok(VersionUtils.version_skew("1.0", "1.0.0") == "unknown", "two segments → unknown")
 	testing.ok(VersionUtils.version_skew("1.0.x", "1.0.0") == "unknown", "non-numeric → unknown")
+	print("")
+
+
+# --- version_skew's grammar ------------------------------------------------------
+# Each part is read as a plain integer: leading zeros and a sign are read, whitespace
+# around the whole version is trimmed, and a prefix, a suffix, an empty part or a fourth
+# part make the version unreadable.
+
+static func _test_version_skew_grammar(testing) -> void:
+	testing.begin("version_skew grammar")
+	testing.eq(VersionUtils.version_skew("01.0.1", "1.0.1"), "ok", "leading zeros read as the same number")
+	testing.eq(VersionUtils.version_skew("+1.0.1", "1.0.1"), "ok", "a plus sign is read")
+	testing.eq(VersionUtils.version_skew("-1.0.1", "1.0.1"), "major", "a minus sign is read")
+	testing.eq(VersionUtils.version_skew(" 1.0.1\n", "1.0.1"), "ok", "surrounding whitespace is trimmed")
+	testing.eq(VersionUtils.version_skew("v1.0.1", "1.0.1"), "unknown", "a v prefix is unreadable")
+	testing.eq(VersionUtils.version_skew("1.0.1-beta", "1.0.1"), "unknown", "a suffix is unreadable")
+	testing.eq(VersionUtils.version_skew("1..1", "1.0.1"), "unknown", "an empty part is unreadable")
+	testing.eq(VersionUtils.version_skew("1.0.1.0", "1.0.1"), "unknown", "four parts are unreadable")
+	testing.eq(VersionUtils.version_skew("+.0.1", "1.0.1"), "unknown", "a bare sign is unreadable")
+	testing.eq(VersionUtils.version_skew("1. 0.1", "1.0.1"), "unknown", "a space inside is unreadable")
+	print("")
+
+
+# --- editor.refresh reload filter: a sibling addon ------------------------------
+# The toolkit's source is its own folder, not every path that starts with its name.
+
+static func _test_editor_refresh_reload_filter_sibling(testing) -> void:
+	testing.begin("editor.refresh reload filter: a sibling addon")
+	var sibling := "res://addons/godot_mcp_toolkit_extras/x.gd"
+	testing.ok(EditorRescan.should_reload_open_script(sibling, {sibling: true}),
+			"a changed script in a sibling addon → reload")
 	print("")
 
 

@@ -559,7 +559,7 @@ static func _write_inline_properties(instance: Node, simple: Array) -> Dictionar
 				"property '%s' expects a Resource, not a bare string path. " % prop_name +
 				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw)})
 			continue
-		var outcome := Helpers.describe_set_drop(
+		var outcome := PropertySetCheck.describe_set_drop(
 			prop["old_value"], after, prop["value"], prop_name)
 		if str(outcome.get("status", "")) == "dropped":
 			# A bound setter may have Variant-converted the wrong type to a ZERO and

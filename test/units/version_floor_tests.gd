@@ -9,6 +9,7 @@ const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_ver
 
 static func run(testing) -> void:
 	_test_parse_major_minor(testing)
+	_test_parse_major_minor_edges(testing)
 	_test_floor_verdict(testing)
 
 
@@ -23,6 +24,21 @@ static func _test_parse_major_minor(testing) -> void:
 	testing.eq(VersionUtils.parse_major_minor("1"), Vector2i(-1, -1), "a bare major")
 	testing.eq(VersionUtils.parse_major_minor("1.2.3.4"), Vector2i(-1, -1), "four numeric parts")
 	testing.eq(VersionUtils.parse_major_minor("unknown"), Vector2i(-1, -1), "non-numeric")
+	print("")
+
+
+# The edges of the floor grammar: leading zeros and a build suffix read, a prefix, a
+# sign, an empty suffix or a suffix that mixes - and + do not.
+static func _test_parse_major_minor_edges(testing) -> void:
+	testing.begin("parse_major_minor edges")
+	testing.eq(VersionUtils.parse_major_minor("01.02"), Vector2i(1, 2), "leading zeros parse")
+	testing.eq(VersionUtils.parse_major_minor("1.2+build.5"), Vector2i(1, 2), "a build suffix without a patch")
+	testing.eq(VersionUtils.parse_major_minor("\t1.2\n"), Vector2i(1, 2), "tabs and newlines are trimmed")
+	testing.eq(VersionUtils.parse_major_minor("1.2.3-rc.1+b"), Vector2i(-1, -1), "a + inside a prerelease suffix")
+	testing.eq(VersionUtils.parse_major_minor("v1.2"), Vector2i(-1, -1), "a v prefix")
+	testing.eq(VersionUtils.parse_major_minor("-1.2"), Vector2i(-1, -1), "a sign")
+	testing.eq(VersionUtils.parse_major_minor("1.2-"), Vector2i(-1, -1), "an empty suffix")
+	testing.eq(VersionUtils.parse_major_minor("1..2"), Vector2i(-1, -1), "an empty part")
 	print("")
 
 

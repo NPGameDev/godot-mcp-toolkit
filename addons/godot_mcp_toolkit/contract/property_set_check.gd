@@ -6,10 +6,8 @@ extends RefCounted
 ## the target property (a wrong type), so a write can "succeed" while the value
 ## never lands — a false success that sends an LLM caller chasing a value that was
 ## never stored. This module brackets a set with before/after readbacks and reports
-## the drop. It is the single SSOT shared by every property-set path: the editor
-## node/scene handlers (through [code]commands/editor_helpers.gd[/code] and the
-## [code]Modules[/code] aggregator) and the runtime
-## autoload's [code]runtime.set_property[/code] (via a direct preload).
+## the drop. It is the one classifier every property-set path uses, in the editor
+## and in the running game, so both sides judge a write alike.
 ##
 ## Runtime-clean by construction — it names only value types, [String] formatting,
 ## and [@GlobalScope] functions ([method @GlobalScope.type_string],

@@ -13,7 +13,7 @@ const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extension
 const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
-const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
+const ScriptReload := preload("res://addons/godot_mcp_toolkit/core/script_reload.gd")
 
 const UNAPPLIED_EDIT_FIXTURE := "user://extension_unapplied_edit_fixture.gd"
 const UNAPPLIED_EDIT_CS_FIXTURE := "user://extension_unapplied_edit_fixture.cs"
@@ -352,7 +352,7 @@ static func _test_unapplied_edit(testing) -> void:
 	testing.eq(ExtensionSupport.unapplied_edit(UNAPPLIED_EDIT_FIXTURE, loaded_hash),
 			ExtensionSupport.EDIT_NEEDS_RESTART, "an edit the cached script lacks → needs a restart")
 
-	Helpers.reload_script_from_disk(cached)
+	ScriptReload.reload_script_from_disk(cached)
 	testing.eq(ExtensionSupport.unapplied_edit(UNAPPLIED_EDIT_FIXTURE, loaded_hash),
 			ExtensionSupport.EDIT_LIVE, "the same edit once a toolkit write reloaded the cached script → live")
 
@@ -450,7 +450,7 @@ static func _test_reregister_after_reload(testing) -> void:
 			"the same source → no re-register")
 
 	_write_fixture(REREGISTER_FIXTURE, _extension_fixture_source(2))
-	Helpers.reload_cached_script(REREGISTER_FIXTURE)
+	ScriptReload.reload_cached_script(REREGISTER_FIXTURE)
 	var second := ExtensionSupport.probe_extension("ReregisterFixture", REREGISTER_FIXTURE, null)
 	testing.ok(ExtensionSupport.arrays_equal(second["methods"], first["methods"])
 			and second["metadata"] == first["metadata"],

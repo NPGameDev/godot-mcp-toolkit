@@ -30,7 +30,7 @@ func _write_file_silent(path: String, content: String, reload_cached: bool = tru
 	file.store_string(content)
 	file.close()
 	if reload_cached:
-		Modules.CommandHelpers.reload_cached_script(path)
+		Modules.ScriptReload.reload_cached_script(path)
 
 
 func _delete_file_silent(path: String) -> void:

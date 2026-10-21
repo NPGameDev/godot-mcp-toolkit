@@ -190,52 +190,52 @@ static func _test_set_drop_logic(testing) -> void:
 
 	# --- OK (clean): stored ≈ requested ---
 	# int→float where 5.0 == 5 → clean, NOT adjusted.
-	testing.eq(_status(Helpers.describe_set_drop(0, 5, 5.0, "z_index")), "ok",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(0, 5, 5.0, "z_index")), "ok",
 		"int→float 5.0==5 → ok (clean)")
 	# Cross-type set-to-same (property already holds the request) → ok.
-	testing.eq(_status(Helpers.describe_set_drop(5, 5, 5.0, "z_index")), "ok",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(5, 5, 5.0, "z_index")), "ok",
 		"cross-type set-to-same → ok")
 	# Same-type write that stored the request exactly → ok.
-	testing.eq(_status(Helpers.describe_set_drop(Vector2.ZERO, Vector2(1, 0), Vector2(1, 0), "p")), "ok",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(Vector2.ZERO, Vector2(1, 0), Vector2(1, 0), "p")), "ok",
 		"same-type exact store → ok")
 	# Stringy cross-type stored the request (StringName &"b" ≈ "b") → ok.
-	testing.eq(_status(Helpers.describe_set_drop(&"a", &"b", "b", "name")), "ok",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(&"a", &"b", "b", "name")), "ok",
 		"stringy cross-type stored request → ok")
 
 	# --- ADJUSTED: accepted but engine reshaped the value (success + warning) ---
 	# Fractional float truncates onto the CURRENT int value (7 + 7.9 → 7).
-	var trunc_same: Dictionary = Helpers.describe_set_drop(7, 7, 7.9, "hframes")
+	var trunc_same: Dictionary = PropertySetCheck.describe_set_drop(7, 7, 7.9, "hframes")
 	testing.eq(_status(trunc_same), "adjusted", "float 7.9 → int 7 (onto current) → adjusted")
 	testing.ok(str(trunc_same.get("warning", "")).find("hframes") >= 0,
 		"truncate-onto-current warning names the property")
 	# Truncation that MOVED the value (before 5, requested 7.9, stored 7) → adjusted.
-	testing.eq(_status(Helpers.describe_set_drop(5, 7, 7.9, "hframes")), "adjusted",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(5, 7, 7.9, "hframes")), "adjusted",
 		"float 7.9 → int 7 (moved) → adjusted")
 	# Stringy sanitize onto the current value ("Foo/" → "Foo", already "Foo") → adjusted.
-	var sanitize: Dictionary = Helpers.describe_set_drop(&"Foo", &"Foo", "Foo/", "name")
+	var sanitize: Dictionary = PropertySetCheck.describe_set_drop(&"Foo", &"Foo", "Foo/", "name")
 	testing.eq(_status(sanitize), "adjusted", "stringy sanitize-to-current → adjusted")
 	testing.ok(str(sanitize.get("warning", "")) != "", "sanitize adjusted carries a warning")
 	# Same-type normalize-to-same-as-before ((2,0) → (1,0), already (1,0)) → adjusted.
-	testing.eq(_status(Helpers.describe_set_drop(Vector2(1, 0), Vector2(1, 0), Vector2(2, 0), "dir")), "adjusted",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(Vector2(1, 0), Vector2(1, 0), Vector2(2, 0), "dir")), "adjusted",
 		"normalize-to-same (same type) → adjusted (not a false drop)")
 
 	# --- DROPPED: cross-family write the engine did not store as a real value ---
 	# Lock BOTH original-bug directions from a ZERO prior (kept-old, after == before).
-	testing.eq(_status(Helpers.describe_set_drop(Vector2.ZERO, Vector2.ZERO, "nope", "position")), "dropped",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(Vector2.ZERO, Vector2.ZERO, "nope", "position")), "dropped",
 		"String → Vector2, zero prior (kept-old) → dropped")
-	testing.eq(_status(Helpers.describe_set_drop(Vector2.ZERO, Vector2.ZERO, Color(1, 0, 0, 1), "position")), "dropped",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(Vector2.ZERO, Vector2.ZERO, Color(1, 0, 0, 1), "position")), "dropped",
 		"Color → Vector2, zero prior (kept-old) → dropped")
 	# REGRESSION (destructive-zero): a bound setter (position/modulate) converts the
 	# wrong type to a ZERO and STORES it, so after ≠ before. This is the case that hit
 	# the old "adjusted" branch and returned a false success — it MUST be dropped.
-	testing.eq(_status(Helpers.describe_set_drop(Vector2(50, 50), Vector2.ZERO, "not a vector", "position")), "dropped",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(Vector2(50, 50), Vector2.ZERO, "not a vector", "position")), "dropped",
 		"String → Vector2, NON-ZERO prior zeroed (after≠before) → dropped")
-	testing.eq(_status(Helpers.describe_set_drop(Color(0, 1, 0, 1), Color(0, 0, 0, 1), "green", "modulate")), "dropped",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(Color(0, 1, 0, 1), Color(0, 0, 0, 1), "green", "modulate")), "dropped",
 		"String → Color, modulate green→black (after≠before) → dropped")
 	# Null readback with a non-null request → dropped. The most common build-flow cause
 	# is a script-defined property set before its script is attached, so the hint must
 	# name the unattached-script case (not only the dedicated-API one) plus the property.
-	var null_readback: Dictionary = Helpers.describe_set_drop(null, null, 15, "max_hp")
+	var null_readback: Dictionary = PropertySetCheck.describe_set_drop(null, null, 15, "max_hp")
 	testing.eq(_status(null_readback), "dropped", "null readback → dropped")
 	testing.ok(str(null_readback.get("error", "")).find("script") >= 0,
 		"null readback hint names the unattached-script cause")
@@ -244,10 +244,10 @@ static func _test_set_drop_logic(testing) -> void:
 	# Restored: wrong-subtype Resource that kept its old object (both OBJECT) → dropped.
 	var res_a := Resource.new()
 	var res_b := Resource.new()
-	testing.eq(_status(Helpers.describe_set_drop(res_a, res_a, res_b, "texture")), "dropped",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(res_a, res_a, res_b, "texture")), "dropped",
 		"wrong-subtype Resource (kept old object) → dropped")
 	# Valid Resource set-to-same object → ok (identity backstop, no false drop).
-	testing.eq(_status(Helpers.describe_set_drop(res_a, res_a, res_a, "texture")), "ok",
+	testing.eq(_status(PropertySetCheck.describe_set_drop(res_a, res_a, res_a, "texture")), "ok",
 		"Resource set-to-same object → ok")
 
 	print("")
@@ -298,7 +298,7 @@ static func _test_scene_create_node_inline_drop(testing) -> void:
 	var scale_value = scale_coerce["value"]
 	sprite.set("scale", scale_value)
 	var scale_after = sprite.get("scale")
-	var scale_outcome: Dictionary = Helpers.describe_set_drop(
+	var scale_outcome: Dictionary = PropertySetCheck.describe_set_drop(
 		scale_old, scale_after, scale_value, "scale")
 	testing.eq(_status(scale_outcome), "dropped", "bare-array scale → dropped")
 	testing.ok(str(scale_outcome.get("error", "")).find("scale") >= 0,
@@ -321,7 +321,7 @@ static func _test_scene_create_node_inline_drop(testing) -> void:
 	var tex_ok_value = tex_ok["value"]
 	testing.ok(tex_ok_value is Resource, "tagged Resource texture: coerces to a real Resource")
 	sprite.set("texture", tex_ok_value)
-	testing.eq(_status(Helpers.describe_set_drop(
+	testing.eq(_status(PropertySetCheck.describe_set_drop(
 		tex_ok_old, sprite.get("texture"), tex_ok_value, "texture")), "ok",
 		"tagged Resource texture → ok (stored)")
 
@@ -331,7 +331,7 @@ static func _test_scene_create_node_inline_drop(testing) -> void:
 	var scale_ok_old = sprite.get("scale")
 	var scale_ok_value = scale_ok["value"]
 	sprite.set("scale", scale_ok_value)
-	testing.eq(_status(Helpers.describe_set_drop(
+	testing.eq(_status(PropertySetCheck.describe_set_drop(
 		scale_ok_old, sprite.get("scale"), scale_ok_value, "scale")), "ok",
 		"tagged Vector2 scale → ok (stored)")
 	testing.eq(sprite.scale, Vector2(4, 4), "tagged Vector2 scale: value applied")
@@ -405,7 +405,7 @@ static func _test_set_drop_typed_array_refusal(testing) -> void:
 	var empty_tags: Array[String] = []
 	var requested: Array = ["a", "b"]
 
-	var editor_outcome: Dictionary = Helpers.describe_set_drop(
+	var editor_outcome: Dictionary = PropertySetCheck.describe_set_drop(
 		empty_tags, empty_tags.duplicate(), requested, "tags")
 	testing.eq(_status(editor_outcome), "dropped",
 		"Array readback unchanged and unlike the request → dropped (editor)")
@@ -417,7 +417,7 @@ static func _test_set_drop_typed_array_refusal(testing) -> void:
 		"dropped", "Array readback unchanged and unlike the request → dropped (runtime)")
 
 	var held_tags: Array[String] = ["a", "b"]
-	testing.eq(_status(Helpers.describe_set_drop(held_tags, held_tags.duplicate(), requested, "tags")),
+	testing.eq(_status(PropertySetCheck.describe_set_drop(held_tags, held_tags.duplicate(), requested, "tags")),
 		"ok", "Array set-to-same (readback equals the request) → ok")
 	print("")
 
