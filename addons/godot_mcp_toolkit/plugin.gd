@@ -16,7 +16,7 @@ const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autol
 const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
 
-# The composed collaborator graph; PluginComposer owns what it holds.
+# The Handle that owns the composed collaborator graph and frees it in dispose().
 # PluginComposer.compose() builds it; the orchestrator drives it and calls
 # _handle.dispose() on exit.
 var _handle = null

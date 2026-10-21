@@ -6,9 +6,9 @@ extends RefCounted
 ## the reload its undo and redo run through the undo_helpers node, and what happens
 ## where the patch gate turns the reload off (Godot 4.2.0 and 4.2.1; the gate's own
 ## cases are in paths_versioning_tests.gd), with the hints those versions get. Drives
-## user:// fixtures rewritten between loads; no editor is needed. These cases call the helper directly, so they cannot run
-## against a toolkit without it; the live probe covers the same behaviour through the
-## tools.
+## user:// fixtures rewritten between loads; no editor is needed. These cases call the helper
+## directly, so they cannot run against a toolkit without it; the live probe covers the same
+## behaviour through the tools.
 
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")

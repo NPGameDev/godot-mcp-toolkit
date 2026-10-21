@@ -47,7 +47,7 @@ for `node_set_property`, `scene_create_node`, `node_manage` with `duplicate`,
 `scene_instantiate`, `runtime_set_property` and `resource_write`.
 
 - An element that doesn't fit the array's type is refused, and the property
-  keeps its value. The error names the element's index; `resource_write`
+  keeps its value. The error names the element; `resource_write`
   reports it as a warning and writes the rest.
 - A number with a fraction in an `Array[int]` is truncated, as it is for an
   `int` property, and a warning lists the elements that changed.
