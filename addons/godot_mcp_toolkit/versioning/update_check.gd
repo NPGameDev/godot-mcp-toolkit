@@ -6,10 +6,11 @@ extends RefCounted
 ## The update check asks GitHub at most once a day for the toolkit's latest release
 ## and, when that release is newer than the installed one, asks the Asset Store
 ## whether it lists it. Everything here is static and touches no network or file,
-## and reads a setting only from the settings object it is given, so the runner node that does the I/O stays thin and these rules are unit
-## tested directly. A version counts only when it is a plain stable
-## [code]X.Y.Z[/code] (optionally [code]v[/code]-prefixed); anything else makes the
-## check show nothing, so a release the toolkit cannot read never raises a badge.
+## and reads a setting only from the settings object it is given, so the runner
+## node that does the I/O stays thin and these rules are unit tested directly. A
+## version counts only when it is a plain stable [code]X.Y.Z[/code] (optionally
+## [code]v[/code]-prefixed); anything else makes the check show nothing, so a
+## release the toolkit cannot read never raises a badge.
 
 ## The Project Settings toggle. Off means no request at all.
 const SETTING := "mcp_toolkit/updates/check_for_updates"

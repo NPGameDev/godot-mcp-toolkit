@@ -143,7 +143,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd addons/godot_mcp_toolkit/contract/declared_type_fitter.gd" data-verified="c1e4719" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd addons/godot_mcp_toolkit/contract/declared_type_fitter.gd" data-verified="a48ad08" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>ships in the game"]
@@ -174,7 +174,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified c1e4719*
+*Figure 2 — the editor↔runtime taint boundary · verified a48ad08*
 
 Consequences that shape the rest of the architecture:
 
@@ -212,7 +212,7 @@ first-frame auth handshake. The shared mechanics live in `ws_transport.gd` (list
 poll / auth framing) and `notifier.gd` (result / error / notification / broadcast). The two
 servers differ only in what they inject into that base and how they pump it.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="138018c" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="a48ad08" -->
 ```mermaid
 sequenceDiagram
     participant C as Bridge (client)
@@ -233,7 +233,7 @@ sequenceDiagram
     R->>R: select lane, call handler
     R-->>C: JSON-RPC result (success + status)
 ```
-*Figure 3 — connect → auth handshake → dispatch · verified 138018c*
+*Figure 3 — connect → auth handshake → dispatch · verified a48ad08*
 
 **Ports & framing.** By default the Editor channel scans `6550–6560` and the Runtime channel
 scans `6570–6585`; both bind `127.0.0.1`. The listen configuration is resolved from the environment by the shared,
@@ -507,7 +507,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="eea4126" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="2436cba" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -527,7 +527,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified eea4126*
+*Figure 10 — plugin composition root · verified 2436cba*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
@@ -574,7 +574,7 @@ guarded lifecycle. `extension_loader.gd` is a 36-line orchestrator over four ser
 (the shared load/validate/probe leaf), `extension_watcher` (live hot-reload), and
 `extension_meta_commands` (the `extensions.list` surface).
 
-<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="8042387" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="a48ad08" -->
 ```mermaid
 flowchart TD
     scan["scan ProjectSettings.get_global_class_list()"] --> cand{"candidate?<br/>GDScript base == MCPToolkitExtension<br/>or C# MCPToolkit*.cs"}
@@ -591,7 +591,7 @@ flowchart TD
     reserved --> mark["registry.mark_extension(method)"]
     mark --> retain["retain instance (C# GC safety)"]
 ```
-*Figure 11 — extension discovery → validate → guarded register · verified 8042387*
+*Figure 11 — extension discovery → validate → guarded register · verified a48ad08*
 
 Two guards protect the built-in surface: a **collision guard** window (opened by
 `begin_extension_load`, drained by `end_extension_load`) rejects an extension that tries to

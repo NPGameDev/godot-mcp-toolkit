@@ -39,6 +39,21 @@ Element values are themselves wrapped:
 - `PackedVector3Array`: `{type: "PackedVector3Array", values: [{type: "Vector3", x: 0, y: 0, z: 0}, ...]}`
 - `PackedColorArray`: `{type: "PackedColorArray", values: [{type: "Color", r: 1, g: 0, b: 0}, ...]}`
 
+## Typed arrays
+
+A plain JSON array written to a typed array property, such as `Array[String]`,
+is stored as a typed array, so the scene or resource saves it typed. This holds
+for `node_set_property`, `scene_create_node`, `node_manage` with `duplicate`,
+`scene_instantiate`, `runtime_set_property` and `resource_write`.
+
+- An element that doesn't fit the array's type is refused, and the property
+  keeps its value. The error names the element; `resource_write`
+  reports it as a warning and writes the rest.
+- A number with a fraction in an `Array[int]` is truncated, as it is for an
+  `int` property, and a warning lists the elements that changed.
+- An array of objects written to a node whose script isn't `@tool` still goes
+  in untyped when the scene had saved that property untyped.
+
 ## Layer masks
 
 `LayerMask` sets a collision/visibility bitmask by layer **number** or by

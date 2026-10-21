@@ -4,8 +4,8 @@ extends EditorDebuggerPlugin
 ## provides continue-execution via send_message.
 ##
 ## The plugin's composition root registers it and its dispose() removes it.
-## Session signals feed the
-## debug.state command; send_message("continue") feeds debug.continue.
+## Session signals feed the debug.state command; send_message("continue") feeds
+## debug.continue.
 
 ## Shared error-entry shape (timestamp + type vary by source; rest pass-through).
 const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
