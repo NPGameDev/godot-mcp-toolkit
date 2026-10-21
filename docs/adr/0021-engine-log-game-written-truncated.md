@@ -35,14 +35,11 @@ file** whose path comes from `debug/file_logging/log_path`. Concretely:
   **no** such cursor: after truncation the whole `godot.log` *is* the current
   session, so it reads unconditionally from **byte 0** and keeps only a boolean
   "a session has started" flag (the prior snapshotted byte offset was a vestige of
-  the discredited shared-append model, removed in 41o-undecies-bis).
+  the discredited shared-append model, now removed).
 - **Do not** re-introduce the editor+game shared-append assumption. The editor
   never writes the file; the buffer/file readers populate only from a running or
   already-run game (a core reason the 4.5 Logger API — real-time in-memory capture
   of editor output — matters on 4.5+, where 4.2–4.4 have no such capture).
-
-Full engine analysis (writer guard per version, rotation call sites, verification
-greps): `Insights/engine-log-file-writer-and-rotation.md` in the plan repo.
 
 ## Consequences
 
@@ -55,5 +52,4 @@ greps): `Insights/engine-log-file-writer-and-rotation.md` in the plan repo.
   append.
 - Because `godot.log` is truncated per launch, a *tail* reader that carries a
   high-water offset across a game launch must guard the rotation case, while the
-  Mode-A session reader drops its byte offset entirely and reads from byte 0
-  (implemented in 41o-undecies-bis).
+  Mode-A session reader drops its byte offset entirely and reads from byte 0.

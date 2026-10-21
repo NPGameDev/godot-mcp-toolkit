@@ -10,8 +10,7 @@ Godot's GDScript Language Server binds a **single machine-wide** TCP port
 (default `6005`) taken from the editor setting
 `network/language_server/remote_port` or the per-launch `--lsp-port` flag — there
 is no per-project LSP port, and no engine API to read the bound port/host or
-whether the bind even succeeded (verified against engine source 4.2–4.7;
-`Insights/lsp-multi-instance-port-analysis.md`). When a second editor opens it
+whether the bind even succeeded (verified against engine source 4.2–4.7). When a second editor opens it
 cannot bind 6005, and on **4.2–4.6** its LSP **fails silently**
 (`gdscript_language_server.cpp` — no `else` on the `listen()` path). **Godot 4.7**
 added a failure branch (`--- Failed to start GDScript language server on port N:
@@ -92,11 +91,9 @@ On 4.2–4.4 the server cannot detect a foreign or near-simultaneous holder of p
   mutates a machine-wide, per-user editor setting that must stay moved all
   session, with a crash/concurrency leak window that silently breaks third-party
   LSP clients (nvim @6005, VS Code godot-tools @6008) we don't own — high-harm,
-  self-invisible, for a one-env-var gain. Full danger analysis:
-  `Plan/Ideas/PostRelease/2026-06-07-tier2-lsp-auto-move.md`. Revisit if the
+  self-invisible, for a one-env-var gain. Revisit if the
   engine exposes a port-readback API or a per-project LSP port
   (godot-proposals #11056).
 
-Source-verified analysis (engine 4.2–4.6, the issue tracker, ecosystem prior
-art): `Insights/lsp-multi-instance-port-analysis.md`. Iteration:
-`Plan/ExecutionPlan/41l-tertricies-lsp-port-discovery.md`.
+The analysis behind this decision was verified against the engine source
+(4.2–4.6), the issue tracker and ecosystem prior art.

@@ -58,7 +58,6 @@ Two quarantined web-research agents (no repo access) settled the form:
   command runs, and the stdio MCP transport treats a single stray stdout byte as
   fatal to the JSON-RPC handshake; `exec` cannot remove bytes already emitted. Risk
   is MEDIUM–HIGH. It also misses nvm-in-`~/.zshrc` (login-non-interactive skips it).
-  Evidence: `Plan/Reference/Resources/macos-node-launch/03-wrapper-stdio-safety.md`.
 - **`env`-PATH override — documented fallback only.** The `env` block *replaces*
   rather than merges the environment, so it carries the same staleness surface as an
   absolute path with more ways to get it wrong.
@@ -66,8 +65,7 @@ Two quarantined web-research agents (no repo access) settled the form:
   `command` and spawns it directly (VS Code spec: *"or contain its full path"*); it
   is the ecosystem's most-recommended fix, is stdio-safe (no wrapper shell → nothing
   can echo into the handshake), and its only weakness (staleness) is erased by the
-  on-demand + on-start regeneration this plugin already owns. Evidence:
-  `Plan/Reference/Resources/macos-node-launch/04-absolute-path-config-viability.md`.
+  on-demand + on-start regeneration this plugin already owns.
 
 ### Why layer D (server-side PATH self-heal) was cut
 
@@ -76,9 +74,8 @@ server is a thin stdio bridge that **spawns nothing** and never reads `PATH`
 (grep-verified: no `child_process` / `exec` / `process.env.PATH` in `src/`), and the
 `spawn npx ENOENT` failure happens in the *client*, **before** the server starts —
 so a server-side heal can neither fix the pre-start failure nor protect any
-post-start work. Deferred to
-`Plan/Ideas/PostRelease/2026-07-04-server-path-self-heal-revisit.md` (revisit only
-if the server ever gains PATH-dependent work).
+post-start work. Deferred (revisit only if the server ever gains PATH-dependent
+work).
 
 ## Considered alternatives
 
@@ -96,6 +93,3 @@ Graceful degradation: when resolution fails (node absent, nvm-only-in-`~/.zshrc`
 Fish/Nushell) the builder emits the bare `npx`/`node` form and recovery leans on the
 dock's macOS "listening, no peer" nudge (layer C — removed 2026-07-06; see [ADR 0018](0018-macos-launch-minimize.md)) and the server README guidance
 (layer B) — the write is never blocked.
-
-Iteration: `Plan/ExecutionPlan/41n-undecies-bis-macos-node-launch-ux.md`; grill log
-`Plan/Reference/GrillingSessions/2026-07-04-macos-node-launch-ux.md`.

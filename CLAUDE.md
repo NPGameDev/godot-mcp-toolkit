@@ -49,9 +49,9 @@ to any MCP client (e.g. Claude Code via the companion
 `@npgamedev/godot-mcp-server` npm package). A runtime server (`127.0.0.1:6570–6585`)
 runs in debug builds for live-game introspection (Mode B).
 
-## Godot version compatibility (iter 37)
+## Godot version compatibility
 
-**Minimum:** 4.2 &nbsp; **Full:** 4.5+ &nbsp; **Tested up to:** 4.7.0
+**Minimum:** 4.2 &nbsp; **Full:** 4.5+ &nbsp; **Tested on:** Godot 4.2–4.7.x
 
 All version-dependent API calls use `has_method()` + `call()` (dynamic
 dispatch) — never direct static calls behind an `if` version check.
@@ -102,7 +102,7 @@ so schemas must ride in the activation response. In interactive sessions leave
 it at the default (false): the refreshed tool list already carries the schemas,
 and `include_schemas: true` only duplicates them into the response.
 
-## Multi-project support (iter 23)
+## Multi-project support
 
 Multiple Godot editors can run the plugin simultaneously. Each editor
 dynamically allocates a port from the 6550–6560 range (editor) or 6570–6585
@@ -133,7 +133,7 @@ discovery (a pinned-but-occupied port fails loudly, never scans elsewhere).
 `GODOT_MCP_EDITOR_PORT_MIN`/`_MAX` (and the `RUNTIME` pair) relocate the scan band
 instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_configuration.md`.
 
-## Security (iter 18)
+## Security
 
 - **Session-token auth (operational summary).** On plugin start the editor
   generates a session token and writes it to the per-instance `mcp_token` file
@@ -151,7 +151,7 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
   | Linux    | `~/.local/share/godot/app_userdata/<project>/addons/godot_mcp_toolkit/project_instance_<hash>/mcp_token` |
 
   Override with env `GODOT_MCP_TOKEN_PATH` if needed (e.g. multi-project
-  setups in iter 23).
+  setups).
 
   **Do not check this file in or share it.** The token rotates on every plugin
   start; stale tokens are harmless but useless.
@@ -173,7 +173,7 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
   `docs/security-recommendations.md` and the `destructiveHint` MCP annotation
   on mutating tools for the caller-facing risk signals.
 
-## Editor UI (iter 21 + 35)
+## Editor UI
 
 - **MCP dock** — "MCP Toolkit" (a bottom-panel tab on 4.5 and earlier, an
   `EditorDock` on 4.6+). Signal-driven server status (no polling). The
@@ -199,21 +199,21 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
 - **Plugin disable cleanup** — disabling the plugin via Project Settings →
   Plugins prompts to delete the orphaned `.mcp.json` at project root.
 - **Export stripping** — `EditorExportPlugin` auto-strips all
-  `addons/godot_mcp_toolkit/` files from exported PCKs (iter 20 `export_strip.gd`).
+  `addons/godot_mcp_toolkit/` files from exported PCKs (`export_strip.gd`).
 - **EditorSettings** (per-user, not committed) — `mcp_toolkit/performance/keep_editor_responsive_unfocused`,
   `mcp_toolkit/performance/unfocused_responsive_sleep_usec`.
 
-## Breaking changes vs pre-iter-22
+## Tool changes before 1.0
 
-**Tool merges (iter 22):**
+**Tool merges:**
 - `signal_connect` + `signal_disconnect` → `signal_manage` (action: "connect"|"disconnect")
 - `resource_create` + `resource_save` → `resource_write` (upsert — `type` required for new files)
 - `input_map_add_action` + `input_map_remove_action` → `input_map_action` (action: "add"|"remove", the action named by `name`)
 - `input_map_action_add_event` + `input_map_action_remove_event` → `input_map_event` (action: "bind"|"unbind", the action named by `name`)
 - `animation_add_key` + `animation_remove_key` → `animation_keyframe` (action: "add"|"remove")
 
-**Profile system (iter 41l-ter):**
-- Profiles removed entirely. Standard is the only mode. `GODOT_MCP_PROFILE` deprecated (warning if set).
+**Profile system:**
+- The profiles were removed; Standard is the only mode. `GODOT_MCP_PROFILE` is ignored if set.
 - Read-only mode (`GODOT_MCP_READ_ONLY=1`) replaces Minimal.
 
 ## Hot-reload troubleshooting
@@ -272,10 +272,10 @@ If all 4 log lines appear but the MCP client still shows stale tools:
 
   Success payloads never carry `code`; error payloads carry `code` from the
   canonical error vocabulary. See the server repo's `CLAUDE.md` **Error code
-  reference** for the full list (the operational SSOT; keep in sync per
-  watch-item #3) and the contract's **C4** for its wire framing + stability tier.
+  reference** for the full list (the operational SSOT; keep the two repos in
+  sync) and the contract's **C4** for its wire framing + stability tier.
 
-## Extension points (iter 25)
+## Extension points
 
 ### Extensions (GDScript + C#)
 
@@ -427,8 +427,3 @@ with the same `vX.Y.Z` tag.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for dev environment setup, testing
 workflow, dependency policy, and PR guidelines.
-
-## Pointer
-
-Execution plan (all iterations, cross-repo):
-`<plan-repo>/Plan/ExecutionPlan/00-index.md`.

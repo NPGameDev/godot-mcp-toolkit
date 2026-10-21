@@ -17,12 +17,12 @@ on:
   # produce ONE floor run, not two.
   merge_group:
 
-# D7 (going-public supply-chain baseline): least privilege by default. No floor job
+# Supply-chain baseline: least privilege by default. No floor job
 # writes repo contents; the release path grants its own contents: write per-job.
 permissions:
   contents: read
 
-# D6: cancel an in-flight floor run when a newer commit lands on the same ref — the
+# Cancel an in-flight floor run when a newer commit lands on the same ref — the
 # floor gates the tip, so a superseded run's result is moot. NOT on cross-version.yml:
 # those deep-tier runs are cancelled only for a pull request, where superseding is the
 # point (see that workflow's own concurrency block). Keying the group on github.ref is
@@ -41,7 +41,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # D1: trimmed 5 rows -> the 2 boundaries. Middle-version (4.4-4.6) parse
+          # Only the 2 boundary versions run here. Middle-version (4.4-4.6) parse
           # regressions are near-nil, and a redundant row on a merge gate still
           # fails for FAKE reasons (runner/download flakes); breadth lives in the
           # deep tier, whose editor boot re-compiles the full preload graph on all
@@ -85,8 +85,7 @@ jobs:
         run: bash scripts/test_compatible_server.sh
 
   # Unit-execution leg — a real execution signal across ALL supported versions
-  # (standard editor, gating). Generalized from the former 4.2-only job
-  # (41n-quater-ter): the godot-units composite runs run_units_cold.sh, whose
+  # (standard editor, gating). The godot-units composite runs run_units_cold.sh, whose
   # class-cache warm-up is required on 4.2 (its editor scan aborts on cross-file
   # class_name refs before it completes, fixed in 4.3) and idempotent on 4.3+,
   # so the identical script runs on every version. This is where 4.3-4.7 units
@@ -107,7 +106,7 @@ jobs:
           godot-version: ${{ matrix.godot-version }}
           use-dotnet: false
 
-  # ── Manifest-diff regression (41n-quinquies) ─────────────────────────────────
+  # ── Manifest-diff regression ─────────────────────────────────────────────────
   # Lightweight, editor-free drift gate: per supported version, dump the REAL
   # engine surface (`godot --headless --dump-extension-api`) and assert the
   # committed distilled compat map's CLASS column for that version still matches
@@ -171,12 +170,12 @@ jobs:
           print("OK: Godot %s class surface matches the compat-map column (%d classes)." % (mm, len(expected)))
           PY
 
-  # ── Aggregate floor gate (D8) ────────────────────────────────────────────────
+  # ── Aggregate floor gate ─────────────────────────────────────────────────────
   # "Toolkit floor OK" is the SINGLE name bound as a required check for pull requests
   # (and on the protected branch) — never an individual matrix row. A required
-  # check pinned to a matrix leg breaks whenever the matrix is retuned (D1 just did);
-  # pinning to this one stable name never does. Every job in needs: runs
-  # unconditionally on every trigger this workflow accepts, merge_group included, so
+  # check pinned to a matrix leg breaks whenever the matrix is retuned; pinning to
+  # this one stable name never does. Every job in needs: runs unconditionally on
+  # every trigger this workflow accepts, merge_group included, so
   # the gate is always substantive: an all-skip, which WOULD pass vacuously here, is
   # structurally impossible. `if: always()` + the explicit failure/cancelled test also
   # makes future path-filtered docs-skips safe: an `if:`-skipped upstream reports

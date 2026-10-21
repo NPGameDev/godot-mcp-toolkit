@@ -8,8 +8,7 @@
 # supported minor, via the SHARED language-parameterized composite
 # (.github/actions/cross-version-behavioral in the SERVER repo, reached through the
 # sibling checkout; language: gdscript | dotnet). The section set is byte-identical
-# across both languages AND across both repos, so the tiers cannot drift (iter
-# 41n-quater-ter + the "full behavioral matrix in both repos" follow-on). The
+# across both languages AND across both repos, so the tiers cannot drift. The
 # SERVER repo's cross-version.yml runs the SAME full two-editor matrix for its own
 # changes against the pinned toolkit — so an opt-in on EITHER repo proves the full
 # GDScript+.NET contract for that repo's change.
@@ -26,13 +25,13 @@
 #     to an org — at which point the queue, not the PR, becomes the binding gate.
 #   • [run-cross-version-ci] in the push commit message  (deliberate "run it" — LINUX)
 #   • release.yml CALLS this workflow (workflow_call) on a v* tag / dry-run
-#     dispatch, and its zip job needs: it — the D13 backstop (never SHIP a
+#     dispatch, and its zip job needs: it — the release backstop (never SHIP a
 #     cross-version regression) is now an ENFORCED release gate, not a parallel
 #     best-effort run
 #   • workflow_dispatch                                   (manual)
 # A bare push to main carrying no token still skips every job, as before.
 #
-# Cross-platform legs (41n-quater-sexies) — additive, each behind its OWN token so a
+# Cross-platform legs — additive, each behind its OWN token so a
 # toolkit change is validated on 3 OS × 6 versions × 2 languages = 36 combos, plus a
 # GDScript-only 4.2.2 row per OS:
 #   • [run-macos-ci]         -> macOS behavioral (gdscript+dotnet, 4.2-4.7)
@@ -50,11 +49,11 @@
 # single stable name the required check binds to. The editor-free install-smoke + Windows
 # unit legs live in the SERVER workflow only (server code).
 # No schedule: — versions are explicitly pinned (no drift between pushes) and a
-# nightly over-runs a sparse post-release repo (feasibility spike 41n-quater).
+# nightly over-runs a sparse post-release repo.
 # The mono-editor UNIT leg lives HERE (not the server) because the unit suite is
 # toolkit code — a toolkit push/tag must re-run it.
 #
-# Feasibility proven 2026-07-01 (41n-quater Stage-2): a display-less ubuntu-latest
+# Feasibility proven 2026-07-01: a display-less ubuntu-latest
 # runner keeps the editor alive and serves the WS round-trip (standard 29/0; mono
 # §25 15/0). The smoke/flows harness, the C# fixture, AND the shared composite all
 # live in the SERVER repo, so this workflow checks the server out as a sibling and
@@ -64,12 +63,12 @@
 # server main; bump the pin deliberately, with [run-cross-version-ci] on the bump commit.
 name: cross-version (toolkit)
 
-# D7: least privilege by default; the sibling checkout uses the default github.token.
+# Least privilege by default; the sibling checkout uses the default github.token.
 permissions:
   contents: read
 
 on:
-  # D13: release.yml calls this workflow so a release GATES on the full behavioral
+  # release.yml calls this workflow so a release GATES on the full behavioral
   # matrix. Under workflow_call the job `if:` gates below evaluate the CALLER's
   # context — a v* tag push satisfies startsWith(github.ref,'refs/tags/v'); a
   # dry-run dispatch satisfies event_name=='workflow_dispatch' — so they need no
@@ -98,7 +97,7 @@ on:
         description: "Override the pinned server sibling ref (ad-hoc cross-testing / spike trials)"
         required: false
         default: ""
-      # 41n-quater-sexies D7e — debug-probe targeting for the EXPENSIVE non-Linux
+      # Debug-probe targeting for the EXPENSIVE non-Linux
       # matrix. Empty platforms => Linux static legs only (release-dry-run shape). A
       # single {platform,version,language} triple runs one cheap combo instead of the
       # full non-Linux grid (~$0.80 vs ~$9.60). The FINAL confirm is always the full
@@ -118,7 +117,7 @@ on:
         required: false
         default: ""
   push:
-    # D13: the v* self-trigger is REMOVED — a release tag now reaches this workflow
+    # No v* self-trigger: a release tag reaches this workflow
     # ONCE, through release.yml's workflow_call, instead of firing a second parallel
     # run. The [run-cross-version-ci] commit-token path (push to main) is unchanged.
     branches: [main]
@@ -149,7 +148,7 @@ jobs:
     # dispatch, a v* tag, or the token in the commit message). A plain main push (no
     # token) evaluates this to false → the job shows as "skipped" with zero runner cost.
     # [run-all-platforms-ci] runs it as part of the full 36-combo grid
-    # (41n-quater-sexies); pull_request and merge_group reach the same grid via the
+    # — pull_request and merge_group reach the same grid via the
     # event name, neither having a head_commit to carry a token.
     if: >
       github.event_name == 'pull_request' ||
@@ -189,7 +188,7 @@ jobs:
           server-dir: server
           project-path: ${{ github.workspace }}
           project-name: "Godot MCP Toolkit"
-          # D11: run the 7 dispatch-integration flows on exactly ONE row per repo
+          # Run the 7 dispatch-integration flows on exactly ONE row per repo
           # mirror (GDScript · 4.7.0) — dispatch semantics live in toolkit GDScript +
           # server transport, so project language is irrelevant (GDScript avoids the
           # mono variables) and 4.7.0 is the ceiling. Closes the last editor-required
@@ -203,14 +202,14 @@ jobs:
   # composite (language: dotnet), byte-identical section set as the server repo's
   # own C# tier. The C# fixture AND the smoke/flows harness live in the SERVER repo,
   # so they ride the sibling checkout; the addon injects from this (toolkit) checkout
-  # via TOOLKIT_ADDON_SRC. The .NET tier now runs 4.2.0 too (41n-quater-septies): the
+  # via TOOLKIT_ADDON_SRC. The .NET tier runs 4.2.0 too: the
   # shared composite's cold class-cache warm-up ports to dotnet (CWD = the C# fixture;
   # run_units_cold.sh invoked from the pinned server checkout's toolkit sibling).
   # Mono pins mirror the server C# matrix EXACTLY (initial stables — 4.6.0, same as GDScript);
   # TFM tracks the net6->net8 boundary at 4.4 so the editor's on-open build produces
   # an assembly its bundled runtime can load.
   dotnet-behavioral:
-    # [run-all-platforms-ci] runs it as part of the full 36-combo grid (41n-quater-sexies);
+    # [run-all-platforms-ci] runs it as part of the full 36-combo grid;
     # a pull request or merge-queue run reaches the same grid, event-keyed (neither has
     # a commit message).
     if: >
@@ -228,7 +227,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # 4.2.0 (net6.0): 4.2-mono behavioral leg (41n-quater-septies). Its cold
+          # 4.2.0 (net6.0): the 4.2-mono behavioral leg. Its cold
           # class-cache warm-up runs in the shared composite (dotnet path). 4.2 & 4.3
           # are both net6.0 (the net6->net8 TFM boundary is 4.4).
           - godot-version: "4.2.0"
@@ -270,19 +269,19 @@ jobs:
           project-name: "MCP CSharp Fixture"
           toolkit-addon-src: ${{ github.workspace }}/addons/godot_mcp_toolkit
 
-  # Opt-in .NET/mono-editor unit leg — the mono side of the units mirror (R4). The
+  # Opt-in .NET/mono-editor unit leg — the mono side of the units mirror. The
   # STANDARD-editor units gate merges on the floor (ci.yml, all versions); the
   # heavier mono provisioning (a .NET SDK install) rides this opt-in tier. Same
   # run_units_cold.sh via the shared godot-units composite, use-dotnet: true.
   #
-  # D10: trimmed 6 rows -> the 2 boundary FLAVORS. The unit suite is pure GDScript,
+  # Only the 2 boundary FLAVORS run here. The unit suite is pure GDScript,
   # so a mono row proves only build-flavor boot/scan — a middle row could only catch
   # a three-way interaction (suite × mono flavor × that version) that escapes BOTH
   # its shadows in the same opt-in run: the floor units ×6 (same version+suite,
   # standard flavor) and the dotnet-behavioral tier (same mono editor boot, ×6,
   # untouched). The kept rows are genuinely distinct:
   #   • 4.2.0-mono — the cold-class-cache warm-up × mono interaction
-  #     (41n-quater-septies's row; run_units_cold.sh warms it inherently)
+  #     (run_units_cold.sh warms it inherently)
   #   • 4.7.0-mono — the ceiling flavor
   # The floor asymmetry (standard units gate merges ×6; mono units are opt-in ×2) is
   # DESIGNED, not an oversight: .NET provisioning per push for a GDScript-only suite
@@ -313,7 +312,7 @@ jobs:
           use-dotnet: true
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # macOS + Windows platform legs (41n-quater-sexies) — additive, token-gated.
+  # macOS + Windows platform legs — additive, token-gated.
   # The static Linux legs above are the release backstop + [run-cross-version-ci] path.
   # These add the OTHER two desktop OSes so a toolkit change is validated on 3 OS × 6
   # versions × 2 languages = 36 combos, via the SAME shared server-hosted composite
@@ -436,7 +435,7 @@ jobs:
           toolkit-addon-src: ${{ matrix.language == 'dotnet' && format('{0}/addons/godot_mcp_toolkit', github.workspace) || '' }}
           run-dispatch: ${{ matrix.run_dispatch }}
 
-  # ── Aggregate platform gate (41n-quater-sexies D7b/7c) ───────────────────────
+  # ── Aggregate platform gate ──────────────────────────────────────────────────
   # "Platform matrix OK" is the SINGLE stable name the required check binds to (the
   # SECOND required-check tier, scoped to pull requests) — never an individual matrix
   # row. Wraps the toolkit's platform combos: the static Linux behavioral legs + the

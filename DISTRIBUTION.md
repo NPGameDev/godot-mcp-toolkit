@@ -1,16 +1,5 @@
 # DISTRIBUTION.md — release + install guide
 
-> ⚠️ **Security gate — read first.**
->
-> **Do not tag release versions, publish to npm, or submit this plugin to the
-> Godot Asset Library before iteration 20 completes.** Iter 18 adds
-> transport auth + the `FileGuard` `res://` sandbox; iter 19 adds MCP
-> annotations for high-risk tools + the user-scope opt-in; iter 20 adds
-> response caps, secret scrubbing, and the audit log.
->
-> Iter 08 produces the release *assets* (plugin zip script, npm postbuild,
-> AssetLib submission checklist below); it does not trigger the release.
-
 ---
 
 ## Dogfood setup (contributors)
@@ -52,8 +41,7 @@ Linux), so a tracked copy would differ between machines. The shipped
 ## End-user plugin install (manual zip, available today)
 
 1. Grab the latest `godot-mcp-toolkit-*.zip` from the
-   [toolkit repo's GitHub releases](https://github.com/NPGameDev/godot-mcp-toolkit/releases)
-   (note: **no releases exist yet** — gated to iter 20).
+   [toolkit repo's GitHub releases](https://github.com/NPGameDev/godot-mcp-toolkit/releases).
 2. Extract into `<your-godot-project>/addons/`. The zip's top-level entry is
    `addons/godot_mcp_toolkit/`, so the extract creates the right layout.
 3. In Godot: Project Settings → Plugins → "Godot MCP Toolkit" → Active.
@@ -72,15 +60,15 @@ Linux), so a tracked copy would differ between machines. The shipped
 3. From the project root, run `claude` — `/mcp` lists
    `godot-mcp-toolkit: connected`.
 
-(Iter 21 adds a one-click menu item in the editor's MCP dock that writes this
-file for you — no manual copy needed from that iteration onwards.)
+(The editor's MCP dock has a one-click **Write .mcp.json** item that writes
+this file for you, so the manual copy is optional.)
 
 ---
 
 ## Release process (cross-repo)
 
 The plugin zip and the npm server must ship in lockstep. Version numbers stay
-synchronised manually until a bump script lands post-MVP.
+synchronised manually; no bump script exists yet.
 
 1. In the **toolkit repo**: bump `addons/godot_mcp_toolkit/plugin.cfg` →
    `version="X.Y.Z"`.
@@ -100,14 +88,12 @@ synchronised manually until a bump script lands post-MVP.
    tarballs), then `npm publish` (requires `npm login`).
 5. In the toolkit repo: `git tag v<version>`, `git push origin v<version>`,
    create a GitHub release, and attach the plugin zip.
-6. (Only after iter 20.) Re-submit to AssetLib via the checklist below — each
-   new version is a new submission.
+6. Re-submit to AssetLib via the checklist below — each new version is a new
+   submission.
 
 ---
 
-## Asset Library submission checklist (gated to iter 20)
-
-Do not submit before iter 20 completes (see the security gate at the top).
+## Asset Library submission checklist
 
 1. Pick a clean commit on `main` that passes all smoke checks. Record the full
    40-char SHA — AssetLib's "Download Commit" field requires it.
@@ -171,8 +157,6 @@ the command in `cmd /c` on Windows.
 
 ## Pointers
 
-- Plan / security gate rationale:
-  `<plan-repo>/Plan/ExecutionPlan/00-index.md` §Stage summaries + iters 18–20.
 - Server-side release notes: the server repo's `README.md`.
 - Attribution: this repo's `ATTRIBUTIONS.md` (GDScript side) and the server
   repo's `ATTRIBUTIONS.md` (TypeScript side).

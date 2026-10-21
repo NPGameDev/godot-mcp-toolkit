@@ -1,9 +1,9 @@
 # Paginating tools return a self-describing offset envelope, built through one shared class
 
-Before 1.0 the read/cap tools accreted incompatible response shapes. Ledger #9
+Before 1.0 the read/cap tools accreted incompatible response shapes. A first pass
 (2026-06-29) harmonized them onto a `truncated` flag + canonical `total_<unit>`,
 but it propagated the incumbent `truncated` name without weighing it against the
-industry-convergent `has_more`. `41o-nonies-bis` then reshaped `scene_query` into a
+industry-convergent `has_more`. A later change then reshaped `scene_query` into a
 researched self-describing envelope — echoing its own paging state, `has_more` not
 `truncated`, `returned` not the ambiguous `count`, exact totals from a walk-all —
 and left the remaining tools split. This ADR ratifies that envelope as the standard
@@ -67,5 +67,5 @@ evidence appears.
   is affordable and worth the legibility.
 - The shared class centralizes the required-field guarantee — a tool cannot ship a
   half-formed envelope — at the cost of one indirection per emitter.
-- Pre-1.0 clean break (no shim); the breaking renames are recorded in the
-  contract-change ledger, superseding #9's `truncated` naming.
+- Pre-1.0 clean break (no shim); the breaking renames are listed in the
+  CHANGELOG, superseding the first pass's `truncated` naming.

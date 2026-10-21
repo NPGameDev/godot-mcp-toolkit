@@ -98,6 +98,9 @@ is non-conforming everywhere **unless** it is a tight, conventional local: a loo
 6. **Folder carries domain.** A file inside a bounded-context folder need not repeat the
    domain — but its class/alias must still be self-disambiguating when read *without* the path,
    because a hub alias is read as `<Hub>.<Alias>` with no folder context.
+7. **Name every flag at the call site.** A call with two or more positional booleans
+   (`open(path, true, false)`) does not say which flag is which, so it is not written: put each
+   flag in a local named for it, or have the function take an options dictionary with named keys.
 
 A grab-bag name like `Helpers` is often also a cohesion smell ([§7](#7-design-solid-cohesion-and-decomposition)),
 but the rename and the structural split are separate fixes — one fixes the name, the other
@@ -194,6 +197,12 @@ with `=` (not `:=`) is the correct choice precisely because the value is `Varian
 
 4.5 **Avoid `as` for validation.** `as` silently yields `null` on mismatch and can hide bugs.
 Validate explicitly instead of trusting a silent cast.
+
+4.6 **Validate every input before the first mutation, and read every documented outcome.** A
+command handler checks all of its parameters before it changes anything, so a bad input fails the
+call with nothing half-applied. When a helper returns a documented outcome dictionary
+([§5.11.3](#511-the-gdscript--godot-doc-comment-layer)), every call site reads it, or says in a
+comment why it does not. *Rationale: an outcome nobody reads is a failure nobody reports.*
 
 ---
 
@@ -505,8 +514,8 @@ of the **whole tree**, not of one class in isolation: apply the *same* decomposi
 everywhere so a contributor recognises one shape in every subsystem.
 
 7.1 **One statable responsibility per file (file-level SRP).** A `.gd` file should have a single
-reason to change. *Test:* if you can't write a crisp one-paragraph "this file does X" *without
-"and"*, it is a decomposition candidate. *Rationale: a file you can't spec in a sentence is one
+reason to change. *Test:* describe the file or class in about 25 words with no "and", "if", "or"
+or "but"; if you can't, it is a decomposition candidate. *Rationale: a file you can't spec in a sentence is one
 a reader can't hold in their head.*
 
 7.2 **Orchestrator + SRP-children is the standard decomposition.** When a subsystem outgrows one
@@ -522,14 +531,23 @@ runtime-reachable code (the static-graph split in
 [§8.2](#82-editorruntime-split-by-the-static-dependency-graph-not-runtime-branches) forces a split anyway). **Size is
 a secondary signal only** — a long *cohesive* file (one large command module that does one
 thing) is fine, and size alone never forces a split. *Responsibility count, not line count, is
-the metric.*
+the metric.* Size does trigger a check: a reviewer writes the one-sentence responsibility of each
+non-test file over 500 lines that a change touches; a sentence that needs "and" marks it as a
+decomposition candidate. There is no hard line ceiling and no function-length limit.
 
 7.4 **DRY — extract one helper for any shape or decision built ≥ 2×.** If the same dict shape,
 validation, or branch logic appears in two or more places, extract a single helper and call it
 from each site. *Rationale: a duplicated shape is a latent contract that drifts; one builder both
 removes the duplication and enforces the invariant in one place.* **Rule of three:** incidental
 similarity *expected to diverge* is not duplication — prefer a little repetition over the wrong
-abstraction. Extract when the shapes are the *same fact*, not merely look-alikes.
+abstraction. Extract when the shapes are the *same fact*, not merely look-alikes. **A fix covers
+every site with the same defect**, and logic duplicated across those sites moves into one class
+they all call. *Rationale: the copies drift, and the one a fix misses keeps the bug.*
+
+```
+# ✗ two command handlers each fit a value to a property's declared type
+# ✓ one fitter class fits the value; both handlers call it
+```
 
 7.5 **Command/Query separation (CQS).** A function or tool either **changes state** or **returns
 data**, not both. *Rationale: a read folded into a mutating verb hides the read from callers and
@@ -555,6 +573,16 @@ split — a reader opens one folder and finds the orchestrator beside the collab
 so a boundary that is invisible in a flat root becomes self-evident. A decomposition's children
 are **born in the right folder**, not created flat and relocated later. *(Cross-refs 1.1
 file/folder naming and 1.5.6 "folder carries domain".)*
+
+7.9 **Shared code lives with the domain that owns the fact it decides.** A function two or more
+modules need goes in the module whose domain owns that decision (a path rule beside the file
+guard, a version rule beside the version utility), is reached through the preload aggregator
+([§6.3](#6-preloads-class_name-and-the-preload-aggregator)), and is a `static func` on a
+runtime-clean leaf whenever a runtime-reachable file needs it (7.6). It never goes in a generic
+`*Helpers` grab-bag: a helper that only one group of modules shares goes in a named module in
+that group's folder, or in a new domain file. A group's private collaborators sit in the group's
+folder from their first commit (7.8). *Rationale: a shared rule has one place to look, and a
+grab-bag hides it while growing without bound.*
 
 ---
 
@@ -686,6 +714,10 @@ transport failure to diagnose.*
   VCS — register it under `EditorInterface.get_editor_settings()`.
 - **Watch `config/name` for `user://` path shifts.** If the addon stores state under `user://`,
   a project rename orphans it and can flood the console; re-derive paths on change.
+- **Never put a setting's user-facing description in `hint_string` under
+  `PROPERTY_HINT_NONE`.** The inspector never shows it. The description goes in the docs and
+  the dock; a string setting's example value goes in `hint_string` under
+  `PROPERTY_HINT_PLACEHOLDER_TEXT`.
 - **Unregister settings on uninstall — never on reload.** Scrub custom `ProjectSettings` keys in
   `_disable_plugin` (the uninstall path), **not** in `_exit_tree` (which fires on every reload,
   where the user's config must survive). Null them by **prefix-scanning** the live property list
@@ -773,8 +805,8 @@ comment, depth scaling with the member.
   editor-side `EditorDebuggerPlugin` is a *session-tracker* / *hook*, not a "bridge" (1.5.5).
 - The preload aggregator ([§6.3](#6-preloads-class_name-and-the-preload-aggregator)) is
   `addons/godot_mcp_toolkit/core/modules.gd`, aliased `Modules` by every consumer
-  (`const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")`, e.g.
-  `plugin.gd:5`). Members are read as `Modules.FileGuard`, `Modules.VersionUtils`,
+  (`const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")`, e.g. the
+  `Modules` const in `plugin.gd`). Members are read as `Modules.FileGuard`, `Modules.VersionUtils`,
   `Modules.EditorAccess`, etc.
 
 ## B2. Module taxonomy (the on-disk decomposition)
@@ -802,6 +834,13 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 `plugin.gd` is a thin orchestrator: lifecycle (`_enter_tree`/`_exit_tree`/`_enable_plugin`/
 `_disable_plugin`) delegating composition to `core/plugin_composer.gd`.
 
+**Where shared code goes ([§7.9](#7-design-solid-cohesion-and-decomposition)).** A path rule
+lives in `security/file_guard.gd`, a version rule in `versioning/`, a script-reload rule in
+`core/`, each reached as a `Modules` member. `commands/editor_helpers.gd` takes nothing new: a
+helper that only command handlers share goes in a named module under `commands/<group>/` or in a
+new domain file, and a command group's private collaborators sit in `commands/<group>/` from
+their first commit.
+
 ## B3. Contract bindings
 
 - The dispatch **contract** value types live under `contract/` —
@@ -810,7 +849,7 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 - Command modules expose the
   [§8.11](#811-static-func-utility-modules) entry point:
   `static func register(registry: MCPToolkitCommandRegistry, server: Node) -> void` (e.g.
-  `commands/asset_commands.gd:27`, `commands/folder_commands.gd`), invoked from the composer so
+  `register()` in `commands/asset_commands.gd` and `commands/folder_commands.gd`), invoked from the composer so
   one place sees the full command surface.
 - Per [§5.10](#510-relocating-stripped-rationale), this repo's decision records live in
   `docs/adr/` (not shipped; the next ADR number is `max(existing) + 1`); the narrative trail for
@@ -821,8 +860,8 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 
 ## B4. Canonical exemplars
 
-The in-tree examples a reviewer or contributor jumps to. Line numbers drift; the symbol name is
-the durable anchor.
+The in-tree examples a reviewer or contributor jumps to. Each one names a file and a symbol;
+line numbers drift, so none are given.
 
 **Comments / docs ([§5](#5-comments-and-documentation)).** The nine public classes (B1) are the
 exemplary public-API docs. `commands/editor_helpers.gd` documents dict-shaped return contracts on
@@ -831,59 +870,64 @@ its cross-module `static func` helpers (5.11.3). `contract/mcp_toolkit_command_o
 (5.11.6–5.11.7).
 
 **Preload aggregator ([§6](#6-preloads-class_name-and-the-preload-aggregator)).**
-`core/modules.gd:8-23` (the `const Name := preload(...)` set); the cycle-avoidance note at
-`commands/editor_helpers.gd:8` ("preloaded by `core/modules.gd`, so it CANNOT import
+`core/modules.gd` (its `const Name := preload(...)` set); the cycle-avoidance `NOTE` in the header
+of `commands/editor_helpers.gd` ("preloaded by `core/modules.gd`, so it CANNOT import
 `core/modules.gd`").
 
 **Cohesion ([§7](#7-design-solid-cohesion-and-decomposition)).** `plugin.gd` (orchestrator) +
 `core/plugin_composer.gd` (composition); `transport/mcp_server.gd` (orchestrator) +
 `transport/dispatch/`; the folder topology table in B2 is the worked example of 7.8.
 
-**`@tool` universality ([§8.1](#81-universal-tool)).** All 113 addon `.gd` files begin with
+**`@tool` universality ([§8.1](#81-universal-tool)).** Every addon `.gd` file begins with
 `@tool`.
 
 **Editor/runtime static split ([§8.2](#82-editorruntime-split-by-the-static-dependency-graph-not-runtime-branches)).**
-`runtime/mcp_runtime_server.gd:18-31` — the runtime autoload preloads only export-clean scripts
-(`contract/coerce`, `security/{untrusted,auth,scrubber}`, `logging/{log_helpers,log_buffer}`,
+`runtime/mcp_runtime_server.gd`, its runtime dependency-closure `const` block: the runtime
+autoload preloads only export-clean scripts (for example `contract/coerce`,
+`security/{untrusted,auth,scrubber}`, `logging/{log_helpers,log_buffer}`,
 `registry/registry_client`, `transport/{notifier,ws_transport}`, `scene/signal_pair_resolver`)
 and **deliberately not** `core/modules.gd` (which statically names `EditorInterface`/
 `EditorPlugin`), with the `godot#91713` rationale inline.
 
 **Cross-version gating ([§8.3](#83-cross-version-compatibility)).** Version comparisons centralize
-in `versioning/mcp_version_utils.gd` (`is_at_least:35`, `is_at_most:39`, `is_version_in_range:43`).
-`has_method` gates: `EditorInterface.has_method("close_scene")` (4.5+) at
-`commands/editor_helpers.gd:463` and `commands/folder_commands.gd:91,108`;
-`has_method("get_editor_toaster")` (4.4+) at `core/editor_access.gd:46`;
-`has_method("get_command_palette")` at `core/tool_menu.gd:55,66`. The warn-don't-block check is at
-`plugin.gd:50-56` (`VersionUtils.GODOT_TESTED_MAX_VERSION`).
+in `versioning/mcp_version_utils.gd` (`is_at_least()`, `is_at_most()`, `is_version_in_range()`).
+`has_method` gates: `EditorInterface.has_method("close_scene")` (4.5+) in
+`commands/editor_helpers.gd` (`close_scene_tab_safe()`) and `commands/folder_commands.gd`
+(`_cmd_folder_delete()`); `has_method("get_editor_toaster")` (4.4+) in `core/editor_access.gd`
+(`get_toaster()`); `has_method("get_command_palette")` in `core/tool_menu.gd` (`install()` and
+`uninstall()`). The warn-don't-block check is in `plugin.gd`'s `_enter_tree()`
+(`VersionUtils.GODOT_TESTED_MAX_VERSION`).
 
 **No `OS.delay_*` in handlers ([§8.4](#84-no-osdelay_msec--osdelay_usec-in-command-handlers)).**
 `commands/editor_helpers.gd` uses `await Engine.get_main_loop().create_timer(...).timeout` (e.g.
-`:546`, `:553`, `:573`, `:579`).
+`ensure_file_indexed()`, `ensure_file_removed()`).
 
 **Lifecycle + `free()` teardown ([§8.5](#85-editorplugin-lifecycle-and-teardown-symmetry),
 [§8.6](#86-plugin-teardown-frees-with-free-not-queue_free)).** `plugin.gd` registers in
-`_enter_tree:30` and reverses in `_exit_tree:79`; autoload via `_enable_plugin:101` /
-`_disable_plugin:105`. The composer frees owned objects with `free()`:
-`core/plugin_composer.gd:187` (`_dock.free()`), `:231` (`_server.free()`), and nulls
-RefCounted subsystems after `remove_*` (`:220`).
+`_enter_tree()` and reverses in `_exit_tree()`; autoload via `_enable_plugin()` /
+`_disable_plugin()`. The composer's teardown, `Handle.dispose()` in `core/plugin_composer.gd`,
+frees owned objects with `free()` (`_dock.free()`, `_server.free()`) and nulls RefCounted
+subsystems after their `remove_*` (`_export_plugin`).
 
 **TCPServer discard ([§8.7](#87-discard--recreate-a-tcpserver-after-a-failed-listen)).**
-`transport/ws_transport.gd:202` (`_tcp_server.stop()` after a failed retry) and `:368-369`
-(`stop()` + null on shutdown); mirrored in the runtime server.
+`transport/ws_transport.gd`: `_pin_listen()` and `_note_listen_failure()` drop a server that
+failed to bind (`stop()` + null) so the next attempt builds a fresh one, and
+`shutdown_listener()` does `stop()` + null on shutdown. The runtime server builds its own
+`WsTransport`, so it takes the same path.
 
 **Deferred + throttled I/O ([§8.8](#88-heavy-editor-io-is-deferred-and-frame-throttled)).**
-`transport/mcp_server.gd:44-62` (the `godot#46893`/`#54864`/`#110891` rationale,
-`_POLL_FRAME_INTERVAL := 4`) and the throttle check at `:429`.
+`transport/mcp_server.gd`: the comment above `_POLL_FRAME_INTERVAL` (the
+`godot#46893`/`#54864`/`#110891` rationale, `_POLL_FRAME_INTERVAL := 4`) and the throttle check in
+`_process()`.
 
 **`send_text` return + central size guard ([§8.9](#89-check-the-send_text-return--oversized-websocket-frames-drop-wholesale)).**
-`transport/notifier.gd:25` routes every response through `MCPToolkitError.guard_response_size(...)`
-(the central choke-point) then checks the `send_text` return at `:26-28`; notification sends are
-checked at `:52-58`.
+`transport/notifier.gd`: `send_result()` routes every response through
+`MCPToolkitError.guard_response_size(...)` (the central choke-point), then checks the `send_text`
+return; `send_notification()` and `broadcast()` check theirs too.
 
 **Custom settings ([§8.10](#810-custom-projectsettings--editorsettings)).**
-`core/settings_registration.gd` — `has_setting` guards at `:83`/`:100`, `set_as_basic(...)` at
-`:91`/`:103`, `add_property_info` at `:92`.
+`_register_setting()` in `core/settings_registration.gd` guards with `has_setting`, then calls
+`set_initial_value`, `set_as_basic(...)` and `add_property_info`.
 
 ---
 
@@ -931,23 +975,23 @@ tooling). The **plugin** rows apply to **addon** files only — test scripts are
 
 - [ ] Filename `snake_case`; any new `class_name` is `MCPToolkit`-prefixed and justified, else preload-only ([§1](#1-file-folder-and-symbol-naming), [§6](#6-preloads-class_name-and-the-preload-aggregator))
 - [ ] Identifiers: PascalCase types, snake_case funcs/vars, CONSTANT_CASE consts, `_`-prefix for private ([§1.2](#1-file-folder-and-symbol-naming))
-- [ ] Names intent-revealing, spelled-out, disambiguated; signals past-tense / event-natural ([§1.4](#1-file-folder-and-symbol-naming), [§1.5](#15-names-are-intent-revealing-unambiguous-and-spelled-out))
+- [ ] Names intent-revealing, spelled-out, disambiguated; signals past-tense / event-natural; no call with two or more positional booleans ([§1.4](#1-file-folder-and-symbol-naming), [§1.5](#15-names-are-intent-revealing-unambiguous-and-spelled-out))
 - [ ] Members in canonical declaration order; inner classes last unless type-before-use forces earlier ([§2](#2-mandatory-declaration-order))
 
 **General — formatting, typing, comments**
 
 - [ ] Tabs; 2-level arg / 1-level collection continuation; one statement per line; two blank lines between funcs; trailing commas; `and`/`or`/`not`; double quotes ([§3](#3-formatting))
-- [ ] Every func has typed params + return type; `:=` when obvious, explicit type for dynamic/`Variant`/`get()`/`call()`; no typed `Dictionary[K,V]`; no `as` for validation ([§4](#4-static-typing))
+- [ ] Every func has typed params + return type; `:=` when obvious, explicit type for dynamic/`Variant`/`get()`/`call()`; no typed `Dictionary[K,V]`; no `as` for validation; handlers validate every input before the first mutation; a documented outcome dict is read at every call site or the site says why not ([§4](#4-static-typing))
 - [ ] Comments carry *why* / contract / hazard, not *what*; no process history, author tags, or caller rosters; load-bearing public refs kept as intent + constraint ([§5.1](#51-core-principle--intent-the-why-never-history)–[§5.6](#56-anti-patterns-delete-on-sight))
 - [ ] `##` class docstring after `extends`; cross-module helpers document return shape; brief / blank-`##` / detail; `[param]` + "Returns …" prose; BBCode floored to 4.2 (plain `[codeblock]`, no 4.3+ tags); bare `@deprecated`/`@experimental` ([§5.11](#511-the-gdscript--godot-doc-comment-layer))
 - [ ] TODO/FIXME actionable + tracked; no secrets, internal-only URLs/paths; SPDX header not per-file blurb ([§5.7](#57-todo--fixme-and-friends), [§5.8](#58-open-source-hygiene-comments-are-public))
-- [ ] No dict shape / validation / decision logic duplicated ≥ 2× — extract one helper (rule of three) ([§7.4](#7-design-solid-cohesion-and-decomposition))
+- [ ] No dict shape / validation / decision logic duplicated ≥ 2× — extract one helper (rule of three); a fix covers every site with the same defect ([§7.4](#7-design-solid-cohesion-and-decomposition))
 
 **Plugin (addon files only)**
 
-- [ ] File has **one** statable responsibility (no "and"); over-broad files use orchestrator + SRP-children; children born in the right folder; commands vs queries separated ([§7.1](#7-design-solid-cohesion-and-decomposition)–[§7.8](#7-design-solid-cohesion-and-decomposition))
+- [ ] File has **one** statable responsibility (no "and"); over-broad files use orchestrator + SRP-children; children born in the right folder; commands vs queries separated; a touched non-test file over 500 lines has its one-sentence responsibility written; a shared function sits in the domain module that owns its fact, never a `*Helpers` grab-bag ([§7.1](#7-design-solid-cohesion-and-decomposition)–[§7.9](#7-design-solid-cohesion-and-decomposition))
 - [ ] Internal scripts via `preload` const through the aggregator; no `class_name` leakage; no aggregator cycle; stateless helpers `static func`; command modules expose `register(registry, server)` ([§6](#6-preloads-class_name-and-the-preload-aggregator), [§8.11](#811-static-func-utility-modules))
-- [ ] Every `add_*` has a reverse-order `remove_*`; autoload via `_enable/_disable_plugin`; owned controls freed; signals disconnected; GDScript-2.0 connect syntax; custom settings guarded + `set_as_basic` + scrubbed on uninstall (prefix-scan, prompt before erasing machine-wide) ([§8.5](#85-editorplugin-lifecycle-and-teardown-symmetry), [§8.10](#810-custom-projectsettings--editorsettings))
+- [ ] Every `add_*` has a reverse-order `remove_*`; autoload via `_enable/_disable_plugin`; owned controls freed; signals disconnected; GDScript-2.0 connect syntax; custom settings guarded + `set_as_basic` + scrubbed on uninstall (prefix-scan, prompt before erasing machine-wide), no description in `hint_string` under `PROPERTY_HINT_NONE` ([§8.5](#85-editorplugin-lifecycle-and-teardown-symmetry), [§8.10](#810-custom-projectsettings--editorsettings))
 - [ ] `@tool` on the file; if runtime-shipped, zero editor-only class names anywhere in its preload graph ([§8.1](#81-universal-tool), [§8.2](#82-editorruntime-split-by-the-static-dependency-graph-not-runtime-branches))
 - [ ] Version-gated calls use `has_method()` + `call()`; no `Callable` formed from a bare static-method reference (4.2 binds it to a NIL `self` → silent abort + typed-default return); compares go through the version utility; teardown frees with `free()` (RefCounted subsystems just null'd); failed `TCPServer.listen()` → `stop()` + null + fresh instance; listener/scene I/O stays deferred + throttled; response sends check `send_text` + central size-guard ([§8.3](#83-cross-version-compatibility)–[§8.9](#89-check-the-send_text-return--oversized-websocket-frames-drop-wholesale))
 - [ ] `plugin.cfg` only the documented fields; folder id unchanged; shipped files reference no unshipped paths; `.uid`/`.import` sidecars shipped, never stripped or git-ignored ([§8.12](#812-asset-library-shipping-hygiene))

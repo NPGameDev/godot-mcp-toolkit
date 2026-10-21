@@ -5,7 +5,7 @@
 **Date:** 2026-07-24
 
 **Supersedes:** the implicit lockstep-versioning convenience adopted in the
-iter-31 version-sync pass (both manifests unified to `1.0.0`, "bump both
+pre-1.0 version-sync pass (both manifests unified to `1.0.0`, "bump both
 together").
 
 ## Context
@@ -21,7 +21,7 @@ along as a convenience — it was never weighed against independent versioning p
 a compatibility story. Four facts make lockstep the wrong long-term model:
 
 1. **The code already tolerates skew.** The connect-time handshake
-   (`compareVersions` in the server's `channel.ts`, built in the 41l series)
+   (`compareVersions` in the server's `channel.ts`)
    computes major/minor mismatch and *warns* on human-facing channels — it
    **never refuses** the connection. It was built to detect divergence, not to
    forbid it.
@@ -41,9 +41,6 @@ a compatibility story. Four facts make lockstep the wrong long-term model:
 
 Lockstep also forces *dishonest* bumps: the unchanged repo inflates its version
 just to stay level, and the two cadences are coupled for no functional reason.
-
-Full grill decision log and blast radius:
-`Plan/Reference/GrillingSessions/2026-07-21-independent-versioning-compat-floor.md`.
 
 ## Decision
 
@@ -104,12 +101,10 @@ changes, and leaves them independent otherwise.** That is the honest version of
   unchanged toolkit — will over-warn against a still-compatible sibling. The
   `min_toolkit` / `min_server` constants and the floor-aware comparison must land
   **with or before the first release that breaks the `1.0.0` symmetry**. That
-  work is tracked as `version-mismatch-ux`
-  (`Plan/Ideas/PostRelease/2026-07-21-version-mismatch-ux-hardening.md`),
-  now load-bearing under this model.
+  work is load-bearing under this model.
 - **Every MAJOR is a fleet-wide day-one skew event** for unpinned-`npx` users —
   a reason to keep floor raises (and therefore MAJORs) deliberate and rare.
-- **The iter-31 "sync check validates they match" premise is retired.** There is
+- **The pre-1.0 "sync check validates they match" premise is retired.** There is
   no version equality to enforce after `1.0.0`; the CI analogue is asserting each
   repo's declared floor, not equality.
 

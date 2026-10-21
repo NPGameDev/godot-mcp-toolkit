@@ -6,7 +6,7 @@ macOS, and re-derived it on editor start, on the premise that a GUI-launched MCP
 client (Claude Desktop, Cursor.app, VS Code.app) runs under `launchd` with a
 minimal `PATH` and cannot find a version-manager Node.
 
-The `41n-undecies-bis-mac-gate` real-Mac validation (2026-07-05, **Claude Desktop
+A real-Mac validation (2026-07-05, **Claude Desktop
 1.11187.4** with Node under **fnm**) **refuted that premise for current GUI
 clients**. The client resolved a **bare `npx`** to fnm's Node on its own — modern
 desktop clients capture the login shell's environment before spawning the server —
@@ -50,9 +50,6 @@ editor-start refresh.**
 - **Auto-resolving an absolute Node path is deferred, evidence-gated.** Re-add it
   only if a real user report surfaces a raw-`launchd` client that genuinely cannot
   resolve a bare `npx` (none observed on current desktop clients).
-
-Iteration: `Plan/ExecutionPlan/41n-undecies-quinquies-macos-launch-minimize.md`;
-premise-flip finding `Plan/ExecutionPlan/41n-undecies-bis-mac-gate-real-mac-validation.md`.
 
 ## Update — 2026-07-06: Layer C removed
 
