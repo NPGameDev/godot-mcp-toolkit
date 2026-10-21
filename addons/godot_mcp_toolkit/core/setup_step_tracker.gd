@@ -47,6 +47,10 @@ const _LEGACY_STEPS := [&"welcome", &"mcp_json", &"dock"]
 static var _flag_path: String = FLAG_PATH
 static var _progress_path: String = LEGACY_PROGRESS_PATH
 static var _id_pattern: RegEx = _compile_id_pattern()
+# The steps the last read or write found seen. A rename points user:// at the new
+# path before the tracker hears of it, so this is the only record of the steps seen
+# at the old one.
+static var _last_seen: Array = []
 
 
 ## Point the tracker at [param flag_path] and [param progress_path] instead of the
@@ -106,10 +110,16 @@ static func mark_all_seen(ids: Array[StringName]) -> void:
 		DirAccess.remove_absolute(_progress_path)
 
 
-## Record every step of the table as seen at a new [code]user://[/code] path, after
-## a project rename moved it, so the wizard does not start over there.
+## Record the steps seen at the old [code]user://[/code] path at the new one, after
+## a project rename moved it, so the wizard resumes there instead of starting over.
+## Steps not seen at the old path stay unseen, so the consent gate stays closed for
+## them.
 static func migrate_flag_after_rename() -> void:
-	mark_all_seen(SetupSteps.all_ids())
+	var seen_before: Array[StringName] = []
+	for step_id in _last_seen:
+		seen_before.append(StringName(str(step_id)))
+	if not seen_before.is_empty():
+		mark_all_seen(seen_before)
 
 
 # The file as { seen: Array[String], all_seen, writable, current, extra }: all_seen
@@ -117,6 +127,17 @@ static func migrate_flag_after_rename() -> void:
 # current when the content is already this format, and extra the unknown top-level
 # keys a rewrite keeps.
 static func _read() -> Dictionary:
+	var state := _read_state()
+	if bool(state["all_seen"]):
+		_last_seen = []
+		for step_id in SetupSteps.all_ids():
+			_last_seen.append(str(step_id))
+	else:
+		_last_seen = (state["seen"] as Array).duplicate()
+	return state
+
+
+static func _read_state() -> Dictionary:
 	var state := {"seen": [], "all_seen": false, "writable": true, "current": false, "extra": {}}
 	if not FileAccess.file_exists(_flag_path):
 		state["seen"] = _legacy_progress_steps()
@@ -219,6 +240,8 @@ static func _write(seen: Array, extra: Dictionary) -> bool:
 	file.store_string(JSON.stringify(data))
 	var written := file.get_error() == OK
 	file.close()
+	if written:
+		_last_seen = seen.duplicate()
 	return written
 
 

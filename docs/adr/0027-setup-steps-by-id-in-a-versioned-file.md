@@ -55,9 +55,9 @@ user leaves it.**
   - With no file, the 1.0 progress file counts its steps before the saved index as
     seen. The first record folds them into the file and deletes the progress file,
     which nothing writes any more.
-- **A rename re-marks everything.** When the project's `user://` path moves, the
-  toolkit records every step as seen at the new path, keeping unknown ids, as 1.0
-  wrote `1` there.
+- **A rename carries the seen steps.** When the project's `user://` path moves, the
+  toolkit records at the new path the steps its last read or write found seen at the
+  old one, unknown ids included. Steps not seen there stay unseen at the new path.
 
 ## Considered and rejected
 
