@@ -465,7 +465,7 @@ stays in lockstep across the two repos.
 | Procedural & synthesis | `procedural_commands`, `sound_commands`, `texture_commands` |
 | Animation & particles | `animation_commands`, `particle_commands` |
 | Audio | `audiobus_commands` |
-| Input & navigation | `input_map_commands`, `navigation_commands` |
+| Input & navigation | `commands/input_map/*`, `navigation_commands` |
 | Signals | `signal_commands` |
 | Playtest & debug | `commands/playtest/*`, `debug_commands` |
 | Editor, project, introspection, save | `commands/editor/*`, `classdb_commands`, `project_commands`, `save_commands`, `meta_commands` |
@@ -507,7 +507,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="2436cba" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="5d53087" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -527,7 +527,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 2436cba*
+*Figure 10 — plugin composition root · verified 5d53087*
 
 The composer builds in a behaviour-critical order: registry and server first, then the debug
 bridge, then all built-in commands, then extensions and their hot-reload watcher, the
