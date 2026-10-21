@@ -507,7 +507,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="5d53087" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="160b137" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
