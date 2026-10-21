@@ -5,6 +5,7 @@ extends RefCounted
 ## no port bind, no editor.
 
 const RuntimeServer := preload("res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd")
+const RuntimeOptOut := preload("res://addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd")
 const RegistryPaths := preload("res://addons/godot_mcp_toolkit/registry/store/registry_paths.gd")
 
 # The public opt-out variable (contract C10), spelled out so the test pins the name.
@@ -42,9 +43,9 @@ static func _test_process_mode_always(testing) -> void:
 static func _test_runtime_opt_out(testing) -> void:
 	testing.begin("runtime server — GODOT_MCP_RUNTIME opt-out")
 	for value: String in ["0", "false", "off", "FALSE", "Off", " 0 "]:
-		testing.ok(RuntimeServer.is_opted_out(value), "\"%s\" turns the runtime server off" % value)
+		testing.ok(RuntimeOptOut.is_opted_out(value), "\"%s\" turns the runtime server off" % value)
 	for value: String in ["", "1", "true", "on", "no", "00"]:
-		testing.ok(not RuntimeServer.is_opted_out(value), "\"%s\" leaves the runtime server on" % value)
+		testing.ok(not RuntimeOptOut.is_opted_out(value), "\"%s\" leaves the runtime server on" % value)
 	print("")
 
 
