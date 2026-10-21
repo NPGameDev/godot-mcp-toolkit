@@ -26,6 +26,9 @@ const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd
 
 const _FLAG := "user://setup_wizard_tests_flag"
 const _PROGRESS := "user://setup_wizard_tests_progress"
+# The files at the path a project rename moves user:// to.
+const _RENAMED_FLAG := "user://setup_wizard_tests_renamed_flag"
+const _RENAMED_PROGRESS := "user://setup_wizard_tests_renamed_progress"
 
 const _OPTIONAL_STEPS_TEXT := (
 	"Toolkit updates sometimes add steps to this wizard. When one does, the next time "
@@ -63,6 +66,7 @@ static func run(testing, tree: SceneTree) -> void:
 	await _test_check_box_writes(testing, tree)
 	_test_enable_prompt_gate(testing)
 	_test_rename_migration(testing)
+	_test_rename_keeps_unseen_steps(testing)
 
 
 # --- The step table ------------------------------------------------------------
@@ -455,14 +459,55 @@ static func _test_enable_prompt_gate(testing) -> void:
 
 static func _test_rename_migration(testing) -> void:
 	testing.begin("Setup step tracker: the rename migration")
+	# Each case reads the old path first, which sets what the migration carries.
 	_use_scratch_files()
+	_remove_renamed_files()
+	_write_file(_FLAG, JSON.stringify({"format": 1, "seen": ["welcome", "mcp_json"]}))
+	SetupStepTracker.has_seen(&"welcome")
+	SetupStepTracker.set_file_paths(_RENAMED_FLAG, _RENAMED_PROGRESS)
 	SetupStepTracker.migrate_flag_after_rename()
-	testing.eq(_read_seen(), ["welcome", "mcp_json", "optional_steps", "updates", "dock"],
-			"with no file → every step seen at the new path")
+	testing.eq(_read_seen(_RENAMED_FLAG), ["welcome", "mcp_json"],
+			"the steps seen at the old path → seen at the new path, and no others")
+
+	_use_scratch_files()
+	_remove_renamed_files()
 	_write_file(_FLAG, JSON.stringify({"format": 1, "seen": ["future_step"]}))
+	SetupStepTracker.has_seen(&"welcome")
+	SetupStepTracker.set_file_paths(_RENAMED_FLAG, _RENAMED_PROGRESS)
 	SetupStepTracker.migrate_flag_after_rename()
-	testing.eq(_read_seen(), ["future_step", "welcome", "mcp_json", "optional_steps", "updates", "dock"],
-			"keeping an unknown id")
+	testing.eq(_read_seen(_RENAMED_FLAG), ["future_step"], "keeping an unknown id")
+	_remove_renamed_files()
+	_end_scratch_files()
+	print("")
+
+
+# A rename moves user:// before the tracker hears of it: the tracker reads the old
+# path, then the migration runs against the new one.
+static func _test_rename_keeps_unseen_steps(testing) -> void:
+	testing.begin("Setup step tracker: a rename keeps unseen steps unseen")
+	Consent.set_readers(
+			func() -> bool: return true,
+			func(step_id: StringName) -> bool: return SetupStepTracker.has_seen(step_id))
+
+	_use_scratch_files()
+	_remove_renamed_files()
+	testing.ok(not SetupStepTracker.has_seen(&"welcome"), "no file at the old path → nothing seen")
+	SetupStepTracker.set_file_paths(_RENAMED_FLAG, _RENAMED_PROGRESS)
+	SetupStepTracker.migrate_flag_after_rename()
+	testing.ok(not SetupStepTracker.has_seen(&"updates"), "nothing seen → updates unseen at the new path")
+	testing.ok(not Consent.may_check_for_updates(), "and the update check stays off")
+
+	_use_scratch_files()
+	_remove_renamed_files()
+	SetupStepTracker.mark_seen(&"welcome")
+	SetupStepTracker.set_file_paths(_RENAMED_FLAG, _RENAMED_PROGRESS)
+	SetupStepTracker.migrate_flag_after_rename()
+	testing.ok(SetupStepTracker.has_seen(&"welcome"), "welcome seen → welcome seen at the new path")
+	testing.ok(not SetupStepTracker.has_seen(&"updates"), "and updates unseen there")
+	testing.ok(not Consent.may_check_for_updates(), "and the update check stays off")
+
+	Consent.reset_readers()
+	_remove_renamed_files()
 	_end_scratch_files()
 	print("")
 
@@ -492,6 +537,12 @@ static func _remove_scratch_files() -> void:
 			DirAccess.remove_absolute(path)
 
 
+static func _remove_renamed_files() -> void:
+	for path in [_RENAMED_FLAG, _RENAMED_PROGRESS]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(path)
+
+
 static func _write_file(path: String, text: String) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_string(text)
@@ -504,15 +555,15 @@ static func _read_file(path: String) -> String:
 	return FileAccess.get_file_as_string(path)
 
 
-static func _read_data() -> Dictionary:
+static func _read_data(path: String = _FLAG) -> Dictionary:
 	var json := JSON.new()
-	if json.parse(_read_file(_FLAG)) != OK or not json.data is Dictionary:
+	if json.parse(_read_file(path)) != OK or not json.data is Dictionary:
 		return {}
 	return json.data
 
 
-static func _read_seen() -> Array:
-	var seen: Variant = _read_data().get("seen", [])
+static func _read_seen(path: String = _FLAG) -> Array:
+	var seen: Variant = _read_data(path).get("seen", [])
 	return seen if seen is Array else []
 
 
