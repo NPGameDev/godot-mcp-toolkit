@@ -100,6 +100,7 @@ static func _test_file_guard_self_protect(testing) -> void:
 static func _test_is_toolkit_source(testing) -> void:
 	testing.begin("FileGuard.is_toolkit_source")
 	testing.ok(FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit"), "the folder itself")
+	testing.ok(FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit/"), "the folder with a trailing slash")
 	testing.ok(FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit/core/modules.gd"), "a file inside it")
 	testing.ok(not FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit_extras/x.gd"), "a sibling addon")
 	testing.ok(not FileGuard.is_toolkit_source("res://addons"), "the addons folder")

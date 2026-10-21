@@ -72,7 +72,7 @@ static func is_check_enabled(project_settings: Object) -> bool:
 ## Accepts exactly [code]X.Y.Z[/code] or [code]vX.Y.Z[/code], each part a decimal
 ## number without a leading zero. A prerelease or build suffix, a missing or extra
 ## part, a sign or any other character is rejected.
-## [br]
+##
 ## Returns [code][major, minor, patch][/code], or an empty array when
 ## [param version] is not such a version.
 static func parse_version(version: String) -> Array[int]:

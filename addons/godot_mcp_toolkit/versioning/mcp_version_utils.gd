@@ -104,7 +104,7 @@ static func read_plugin_version() -> String:
 ## floors are declared at major.minor (ADR 0024), so the patch segment carries no
 ## compatibility meaning. The returned names match the MCP server's own severity
 ## vocabulary, so both halves of the handshake speak one language.
-## [br]
+##
 ## Returns "ok", "patch", "minor" or "major", or "unknown" when either side is not
 ## exactly three dot-separated integers.
 static func version_skew(local: String, remote: String) -> String:
