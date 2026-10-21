@@ -30,6 +30,7 @@ extends PanelContainer
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const MCPJsonSync = Modules.MCPJsonSync
+const ServerPinPolicy = Modules.ServerPinPolicy
 const VersionUtils = Modules.VersionUtils
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 
@@ -224,7 +225,7 @@ func is_read_only_active() -> bool:
 
 ## The server-spec row's content for the file's spec [param on_disk], the spec this
 ## machine last wrote [param last_written] ("" for none), the spec a write would
-## produce [param desired] (see [code]MCPJsonSync.desired_classification[/code]),
+## produce [param desired] (see [code]ServerPinPolicy.desired_classification[/code]),
 ## the project's [param version_setting] and the [param compatible] server version.
 ## Pure. Returns {text, button, action, target, amber}: the label, the button's
 ## caption ("" hides it), what it does, the spec it names, and whether the state
@@ -233,35 +234,35 @@ static func pin_row_state(
 		on_disk: String, last_written: String, desired: String,
 		version_setting: String, compatible: String) -> Dictionary:
 	var state := {"text": "", "button": "", "action": "", "target": "", "amber": false}
-	if desired.begins_with(MCPJsonSync.SPEC_LOCAL_PREFIX):
-		state["text"] = "Server: local build (%s)" % desired.substr(MCPJsonSync.SPEC_LOCAL_PREFIX.length())
-		if not MCPJsonSync.same_spec(on_disk, desired):
+	if desired.begins_with(ServerPinPolicy.SPEC_LOCAL_PREFIX):
+		state["text"] = "Server: local build (%s)" % desired.substr(ServerPinPolicy.SPEC_LOCAL_PREFIX.length())
+		if not ServerPinPolicy.same_spec(on_disk, desired):
 			state["text"] += " not in .mcp.json yet: use Write .mcp.json"
 			state["amber"] = true
 		return state
 	var pin_text := "Pin to %s" % compatible
-	var nudge := MCPJsonSync.nudge_state(on_disk, last_written, desired)
-	var mode := MCPJsonSync.pin_mode(version_setting)
-	if nudge == MCPJsonSync.NUDGE_UNPINNED and mode == MCPJsonSync.MODE_PINNED:
+	var nudge := ServerPinPolicy.nudge_state(on_disk, last_written, desired)
+	var mode := ServerPinPolicy.pin_mode(version_setting)
+	if nudge == ServerPinPolicy.NUDGE_UNPINNED and mode == ServerPinPolicy.MODE_PINNED:
 		state["text"] = ("Server: unpinned — it downloads every new release. Pin it to %s, "
 			+ "the version this toolkit was tested with.") % compatible
 		_set_button(state, pin_text, _ACTION_PIN, compatible)
 		state["amber"] = true
-	elif nudge == MCPJsonSync.NUDGE_DIFFERS or nudge == MCPJsonSync.NUDGE_UNPINNED:
+	elif nudge == ServerPinPolicy.NUDGE_DIFFERS or nudge == ServerPinPolicy.NUDGE_UNPINNED:
 		# An unpinned entry under an exact Custom version is brought to that version;
 		# offering the compatible pin would clear the team's setting.
 		var wanted := _spec_label(desired)
 		state["text"] = ".mcp.json runs server %s; this project wants %s." % [_spec_label(on_disk), wanted]
 		_set_button(state, "Update to %s" % wanted, _ACTION_UPDATE, wanted)
 		state["amber"] = true
-	elif nudge == MCPJsonSync.NUDGE_FOREIGN:
+	elif nudge == ServerPinPolicy.NUDGE_FOREIGN:
 		var recommended := _spec_label(desired)
 		state["text"] = "Server spec set by hand (%s)." % _spec_label(on_disk)
 		_set_button(state, "Restore recommended (%s)" % recommended, _ACTION_RESTORE, recommended)
-	elif mode == MCPJsonSync.MODE_PINNED:
+	elif mode == ServerPinPolicy.MODE_PINNED:
 		state["text"] = "Server: %s (pinned)" % compatible
-		_set_button(state, "Use latest", _ACTION_USE_LATEST, MCPJsonSync.LATEST_SETTING_VALUE)
-	elif mode == MCPJsonSync.MODE_LATEST:
+		_set_button(state, "Use latest", _ACTION_USE_LATEST, ServerPinPolicy.LATEST_SETTING_VALUE)
+	elif mode == ServerPinPolicy.MODE_LATEST:
 		state["text"] = "Server: latest (updates on every launch)"
 		_set_button(state, pin_text, _ACTION_PIN, compatible)
 	else:
@@ -279,11 +280,11 @@ static func _set_button(state: Dictionary, caption: String, action: String, targ
 # A classification as the row names it: the version part of an npx spec, "latest"
 # for the unversioned form npx resolves alike, "local build" for a node path.
 static func _spec_label(spec: String) -> String:
-	if spec.begins_with(MCPJsonSync.SPEC_NPX_PREFIX):
-		return spec.substr(MCPJsonSync.SPEC_NPX_PREFIX.length())
-	if spec == MCPJsonSync.SPEC_NPX_BARE:
-		return MCPJsonSync.LATEST_SETTING_VALUE
-	if spec.begins_with(MCPJsonSync.SPEC_LOCAL_PREFIX):
+	if spec.begins_with(ServerPinPolicy.SPEC_NPX_PREFIX):
+		return spec.substr(ServerPinPolicy.SPEC_NPX_PREFIX.length())
+	if spec == ServerPinPolicy.SPEC_NPX_BARE:
+		return ServerPinPolicy.LATEST_SETTING_VALUE
+	if spec.begins_with(ServerPinPolicy.SPEC_LOCAL_PREFIX):
 		return "local build"
 	return spec
 
@@ -296,8 +297,8 @@ func _refresh_pin_row(readable: bool, on_disk: String) -> void:
 	if _pin_row == null:
 		return
 	var desired := MCPJsonSync.get_desired_spec(MCPJsonWriteFlow.read_local_path_setting())
-	var wants_local := desired.begins_with(MCPJsonSync.SPEC_LOCAL_PREFIX)
-	_pin_row.visible = readable and (on_disk != MCPJsonSync.SPEC_UNKNOWN or wants_local)
+	var wants_local := desired.begins_with(ServerPinPolicy.SPEC_LOCAL_PREFIX)
+	_pin_row.visible = readable and (on_disk != ServerPinPolicy.SPEC_UNKNOWN or wants_local)
 	if not _pin_row.visible:
 		return
 	var basis := [on_disk, desired]
@@ -306,7 +307,7 @@ func _refresh_pin_row(readable: bool, on_disk: String) -> void:
 		_record_basis = basis
 	var state := pin_row_state(
 			on_disk, _last_written_spec, desired,
-			MCPJsonSync.read_version_setting(),
+			ServerPinPolicy.read_version_setting(),
 			VersionUtils.COMPATIBLE_SERVER_VERSION)
 	_pin_label.text = str(state["text"])
 	_pin_label.add_theme_color_override("font_color", _AMBER if bool(state["amber"]) else _GREY)
@@ -345,10 +346,10 @@ func _on_pin_button_pressed() -> void:
 	var question := ""
 	match _pin_action:
 		_ACTION_USE_LATEST:
-			MCPJsonSync.save_version_setting(MCPJsonSync.LATEST_SETTING_VALUE)
+			ServerPinPolicy.save_version_setting(ServerPinPolicy.LATEST_SETTING_VALUE)
 			question = "Use the latest server"
 		_ACTION_PIN:
-			MCPJsonSync.save_version_setting("")
+			ServerPinPolicy.save_version_setting("")
 			question = "Pin the server to %s" % _pin_target
 		_ACTION_UPDATE:
 			question = "Update the server to %s" % _pin_target

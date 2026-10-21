@@ -12,6 +12,7 @@ const ExtensionSupport := preload("res://addons/godot_mcp_toolkit/extensions/ser
 const ExtensionMetaCommands := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_meta_commands.gd")
 const ExtensionWatcher := preload("res://addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
+const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
 const ScriptReload := preload("res://addons/godot_mcp_toolkit/core/script_reload.gd")
 
@@ -176,7 +177,7 @@ static func _test_onboarding_wizard_specs(testing) -> void:
 	var wizard := OnboardingWizard.new(null, null, null, null)
 
 	# welcome: non-empty text, "Next", single Security-Doc button.
-	var welcome_spec: Dictionary = wizard._spec_welcome()
+	var welcome_spec: Dictionary = StepSpecs.welcome()
 	testing.ok(not str(welcome_spec.get("text", "")).is_empty(), "welcome → text non-empty")
 	testing.eq(str(welcome_spec.get("ok_label", "")), "Next", "welcome → ok_label")
 	_assert_buttons(testing, welcome_spec.get("buttons", []),
@@ -184,7 +185,7 @@ static func _test_onboarding_wizard_specs(testing) -> void:
 	testing.ok(not welcome_spec.has("on_enter"), "welcome → no on_enter")
 
 	# mcp_json variant A — .mcp.json EXISTS: keep-existing OK + an overwrite button.
-	var mcp_json_exists_spec: Dictionary = wizard._spec_mcp_json(true)
+	var mcp_json_exists_spec: Dictionary = StepSpecs.mcp_json(true)
 	testing.ok(not str(mcp_json_exists_spec.get("text", "")).is_empty(), "mcp_json (exists) → text non-empty")
 	testing.ok(str(mcp_json_exists_spec.get("text", "")).contains("already exists"),
 			"mcp_json (exists) → names the existing-file case")
@@ -194,7 +195,7 @@ static func _test_onboarding_wizard_specs(testing) -> void:
 			[["Write .mcp.json", "overwrite_mcp"]], "mcp_json (exists)")
 
 	# mcp_json variant B — .mcp.json ABSENT: create-it OK + NO custom buttons.
-	var mcp_json_absent_spec: Dictionary = wizard._spec_mcp_json(false)
+	var mcp_json_absent_spec: Dictionary = StepSpecs.mcp_json(false)
 	testing.ok(str(mcp_json_absent_spec.get("text", "")).contains("No .mcp.json was found"),
 			"mcp_json (absent) → names the missing-file case")
 	testing.eq(str(mcp_json_absent_spec.get("ok_label", "")), "Create .mcp.json",
@@ -202,7 +203,7 @@ static func _test_onboarding_wizard_specs(testing) -> void:
 	_assert_buttons(testing, mcp_json_absent_spec.get("buttons", []), [], "mcp_json (absent)")
 
 	# dock — dock overview: "Close" OK, Back then Open-Info, and an on_enter.
-	var dock_overview_spec: Dictionary = wizard._spec_dock_overview()
+	var dock_overview_spec: Dictionary = StepSpecs.dock_overview(wizard._reveal_dock)
 	testing.ok(not str(dock_overview_spec.get("text", "")).is_empty(), "dock → text non-empty")
 	testing.eq(str(dock_overview_spec.get("ok_label", "")), "Close", "dock → ok_label")
 	_assert_buttons(testing, dock_overview_spec.get("buttons", []),

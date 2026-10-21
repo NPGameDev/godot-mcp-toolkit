@@ -1,14 +1,16 @@
 @tool
 extends RefCounted
-## Unit tests for the server pin in .mcp.json: the pure helpers in MCPJsonSync that
-## turn the project's server-version setting and the machine's local server path
-## into the entry a write emits (resolve_package_spec, resolve_dev_server_path,
-## is_exact_spec, apply_owned_env), the classification of an entry already on disk
-## (classify_server_entry, same_spec, desired_classification), the dock's nudge
-## decision (nudge_state) and the row it paints from it, and the disable-time
-## cleanup list carrying the local-path editor setting.
+## Unit tests for the server pin in .mcp.json: the pure helpers in ServerPinPolicy
+## and MCPJsonSync that turn the project's server-version setting and the machine's
+## local server path into the entry a write emits (resolve_package_spec,
+## resolve_dev_server_path, is_exact_spec, apply_owned_env), the classification of
+## an entry already on disk (classify_server_entry, same_spec,
+## desired_classification), the dock's nudge decision (nudge_state) and the row it
+## paints from it, and the disable-time cleanup list carrying the local-path editor
+## setting.
 
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const ServerPinPolicy := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_policy.gd")
 const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/disable_cleanup_coordinator.gd")
 const DockMcpJsonPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/mcp/dock_mcp_json_panel.gd")
 
@@ -38,15 +40,15 @@ static func run(testing) -> void:
 # any case) floats, anything else is passed through as the npm spec.
 static func _test_resolve_package_spec(testing) -> void:
 	testing.begin("resolve_package_spec — pinned, latest and custom")
-	testing.eq(MCPJsonSync.resolve_package_spec("", _COMPATIBLE), _PKG + "@1.0.4", "empty = pinned to compatible")
-	testing.eq(MCPJsonSync.resolve_package_spec("latest", _COMPATIBLE), _PKG + "@latest", "latest")
-	testing.eq(MCPJsonSync.resolve_package_spec(" Latest ", _COMPATIBLE), _PKG + "@latest", "trimmed, any case")
-	testing.eq(MCPJsonSync.resolve_package_spec("1.0.5", _COMPATIBLE), _PKG + "@1.0.5", "custom exact version")
-	testing.eq(MCPJsonSync.resolve_package_spec("~1.1.0", _COMPATIBLE), _PKG + "@~1.1.0", "custom range")
-	testing.eq(MCPJsonSync.resolve_package_spec("next", _COMPATIBLE), _PKG + "@next", "custom tag")
-	testing.eq(MCPJsonSync.pin_mode(""), MCPJsonSync.MODE_PINNED, "empty setting = pinned mode")
-	testing.eq(MCPJsonSync.pin_mode(" LATEST"), MCPJsonSync.MODE_LATEST, "latest setting = latest mode")
-	testing.eq(MCPJsonSync.pin_mode("next"), MCPJsonSync.MODE_CUSTOM, "other setting = custom mode")
+	testing.eq(ServerPinPolicy.resolve_package_spec("", _COMPATIBLE), _PKG + "@1.0.4", "empty = pinned to compatible")
+	testing.eq(ServerPinPolicy.resolve_package_spec("latest", _COMPATIBLE), _PKG + "@latest", "latest")
+	testing.eq(ServerPinPolicy.resolve_package_spec(" Latest ", _COMPATIBLE), _PKG + "@latest", "trimmed, any case")
+	testing.eq(ServerPinPolicy.resolve_package_spec("1.0.5", _COMPATIBLE), _PKG + "@1.0.5", "custom exact version")
+	testing.eq(ServerPinPolicy.resolve_package_spec("~1.1.0", _COMPATIBLE), _PKG + "@~1.1.0", "custom range")
+	testing.eq(ServerPinPolicy.resolve_package_spec("next", _COMPATIBLE), _PKG + "@next", "custom tag")
+	testing.eq(ServerPinPolicy.pin_mode(""), ServerPinPolicy.MODE_PINNED, "empty setting = pinned mode")
+	testing.eq(ServerPinPolicy.pin_mode(" LATEST"), ServerPinPolicy.MODE_LATEST, "latest setting = latest mode")
+	testing.eq(ServerPinPolicy.pin_mode("next"), ServerPinPolicy.MODE_CUSTOM, "other setting = custom mode")
 	print("")
 
 
@@ -61,12 +63,12 @@ static func _test_resolve_dev_server_path(testing) -> void:
 
 static func _test_is_exact_spec(testing) -> void:
 	testing.begin("is_exact_spec — only an exact version")
-	testing.ok(MCPJsonSync.is_exact_spec(_PKG + "@1.0.4"), "1.0.4 is exact")
-	testing.ok(MCPJsonSync.is_exact_spec(_PKG + "@1.1.0-beta.1"), "a prerelease is exact")
-	testing.ok(not MCPJsonSync.is_exact_spec(_PKG + "@latest"), "latest is not")
-	testing.ok(not MCPJsonSync.is_exact_spec(_PKG + "@~1.1.0"), "a range is not")
-	testing.ok(not MCPJsonSync.is_exact_spec(_PKG + "@next"), "a tag is not")
-	testing.ok(not MCPJsonSync.is_exact_spec(_PKG), "the bare package is not")
+	testing.ok(ServerPinPolicy.is_exact_spec(_PKG + "@1.0.4"), "1.0.4 is exact")
+	testing.ok(ServerPinPolicy.is_exact_spec(_PKG + "@1.1.0-beta.1"), "a prerelease is exact")
+	testing.ok(not ServerPinPolicy.is_exact_spec(_PKG + "@latest"), "latest is not")
+	testing.ok(not ServerPinPolicy.is_exact_spec(_PKG + "@~1.1.0"), "a range is not")
+	testing.ok(not ServerPinPolicy.is_exact_spec(_PKG + "@next"), "a tag is not")
+	testing.ok(not ServerPinPolicy.is_exact_spec(_PKG), "the bare package is not")
 	print("")
 
 
@@ -107,44 +109,44 @@ static func _test_apply_owned_env_skip_version_check(testing) -> void:
 
 static func _test_classify_server_entry(testing) -> void:
 	testing.begin("classify_server_entry — npx, cmd, node and unknown shapes")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "npx", "args": ["-y", _PKG]}), "npx-bare", "bare")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "npx", "args": ["-y", _PKG + "@latest"]}),
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "npx", "args": ["-y", _PKG]}), "npx-bare", "bare")
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "npx", "args": ["-y", _PKG + "@latest"]}),
 			"npx:latest", "@latest")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "npx", "args": ["-y", _PKG + "@1.0.4"]}),
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "npx", "args": ["-y", _PKG + "@1.0.4"]}),
 			"npx:1.0.4", "@1.0.4")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "npx", "args": ["-y", _PKG + "@~1.1.0"]}),
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "npx", "args": ["-y", _PKG + "@~1.1.0"]}),
 			"npx:~1.1.0", "@~1.1.0")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "cmd", "args": ["/c", "npx", "-y", _PKG + "@1.0.4"]}),
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "cmd", "args": ["/c", "npx", "-y", _PKG + "@1.0.4"]}),
 			"npx:1.0.4", "Windows cmd /c npx classifies like npx")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "cmd", "args": ["/c", "npx", "-y", _PKG]}),
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "cmd", "args": ["/c", "npx", "-y", _PKG]}),
 			"npx-bare", "Windows bare")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "node", "args": [_LOCAL]}), "local:" + _LOCAL, "node path")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "node", "args": ["C:/x/dist/index.js"]}),
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "node", "args": [_LOCAL]}), "local:" + _LOCAL, "node path")
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "node", "args": ["C:/x/dist/index.js"]}),
 			"local:C:/x/dist/index.js", "node Windows path")
-	testing.eq(MCPJsonSync.classify_server_entry({}), "unknown", "{} = unknown")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "npx", "args": []}), "unknown", "no args = unknown")
-	testing.eq(MCPJsonSync.classify_server_entry({"command": "godot-mcp-server", "args": ["--x"]}), "unknown",
+	testing.eq(ServerPinPolicy.classify_server_entry({}), "unknown", "{} = unknown")
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "npx", "args": []}), "unknown", "no args = unknown")
+	testing.eq(ServerPinPolicy.classify_server_entry({"command": "godot-mcp-server", "args": ["--x"]}), "unknown",
 			"another command = unknown")
-	testing.eq(MCPJsonSync.classify_server_entry("not a dict"), "unknown", "not an object = unknown")
+	testing.eq(ServerPinPolicy.classify_server_entry("not a dict"), "unknown", "not an object = unknown")
 	print("")
 
 
 static func _test_same_spec(testing) -> void:
 	testing.begin("same_spec — equal, or bare and @latest alike")
-	testing.ok(MCPJsonSync.same_spec("npx:1.0.4", "npx:1.0.4"), "equal")
-	testing.ok(MCPJsonSync.same_spec("npx-bare", "npx:latest"), "bare ~ latest")
-	testing.ok(MCPJsonSync.same_spec("npx:latest", "npx-bare"), "latest ~ bare")
-	testing.ok(not MCPJsonSync.same_spec("npx-bare", "npx:1.0.4"), "bare != pinned")
-	testing.ok(not MCPJsonSync.same_spec("npx:1.0.3", "npx:1.0.4"), "two versions differ")
+	testing.ok(ServerPinPolicy.same_spec("npx:1.0.4", "npx:1.0.4"), "equal")
+	testing.ok(ServerPinPolicy.same_spec("npx-bare", "npx:latest"), "bare ~ latest")
+	testing.ok(ServerPinPolicy.same_spec("npx:latest", "npx-bare"), "latest ~ bare")
+	testing.ok(not ServerPinPolicy.same_spec("npx-bare", "npx:1.0.4"), "bare != pinned")
+	testing.ok(not ServerPinPolicy.same_spec("npx:1.0.3", "npx:1.0.4"), "two versions differ")
 	print("")
 
 
 static func _test_desired_classification(testing) -> void:
 	testing.begin("desired_classification — local path, else the resolved spec")
-	testing.eq(MCPJsonSync.desired_classification("", _COMPATIBLE, ""), "npx:1.0.4", "pinned")
-	testing.eq(MCPJsonSync.desired_classification("latest", _COMPATIBLE, ""), "npx:latest", "latest")
-	testing.eq(MCPJsonSync.desired_classification("next", _COMPATIBLE, ""), "npx:next", "custom")
-	testing.eq(MCPJsonSync.desired_classification("latest", _COMPATIBLE, _LOCAL), "local:" + _LOCAL,
+	testing.eq(ServerPinPolicy.desired_classification("", _COMPATIBLE, ""), "npx:1.0.4", "pinned")
+	testing.eq(ServerPinPolicy.desired_classification("latest", _COMPATIBLE, ""), "npx:latest", "latest")
+	testing.eq(ServerPinPolicy.desired_classification("next", _COMPATIBLE, ""), "npx:next", "custom")
+	testing.eq(ServerPinPolicy.desired_classification("latest", _COMPATIBLE, _LOCAL), "local:" + _LOCAL,
 			"a local path wins over any mode")
 	print("")
 
@@ -153,20 +155,20 @@ static func _test_desired_classification(testing) -> void:
 # spec gets a quiet one, and a match or an unreadable file gets nothing.
 static func _test_nudge_state(testing) -> void:
 	testing.begin("nudge_state — unpinned, differs, foreign and none")
-	testing.eq(MCPJsonSync.nudge_state("npx-bare", "", "npx:1.0.4"), "unpinned",
+	testing.eq(ServerPinPolicy.nudge_state("npx-bare", "", "npx:1.0.4"), "unpinned",
 			"bare on disk + no record + pinned desired = unpinned")
-	testing.eq(MCPJsonSync.nudge_state("npx:latest", "npx:latest", "npx:1.0.4"), "unpinned",
+	testing.eq(ServerPinPolicy.nudge_state("npx:latest", "npx:latest", "npx:1.0.4"), "unpinned",
 			"recorded latest + pinned desired = unpinned")
-	testing.eq(MCPJsonSync.nudge_state("npx:1.0.3", "npx:1.0.3", "npx:1.0.4"), "differs",
+	testing.eq(ServerPinPolicy.nudge_state("npx:1.0.3", "npx:1.0.3", "npx:1.0.4"), "differs",
 			"recorded 1.0.3 on disk + 1.0.4 desired = differs")
-	testing.eq(MCPJsonSync.nudge_state("npx:1.0.0", "", "npx:1.0.4"), "foreign", "unrecorded 1.0.0 = foreign")
-	testing.eq(MCPJsonSync.nudge_state("npx:1.0.0", "npx:1.0.4", "npx:1.0.4"), "foreign",
+	testing.eq(ServerPinPolicy.nudge_state("npx:1.0.0", "", "npx:1.0.4"), "foreign", "unrecorded 1.0.0 = foreign")
+	testing.eq(ServerPinPolicy.nudge_state("npx:1.0.0", "npx:1.0.4", "npx:1.0.4"), "foreign",
 			"recorded elsewhere = foreign")
-	testing.eq(MCPJsonSync.nudge_state("npx-bare", "", "npx:latest"), "none", "desired latest + bare on disk = none")
-	testing.eq(MCPJsonSync.nudge_state("local:" + _LOCAL, "", "local:" + _LOCAL), "none",
+	testing.eq(ServerPinPolicy.nudge_state("npx-bare", "", "npx:latest"), "none", "desired latest + bare on disk = none")
+	testing.eq(ServerPinPolicy.nudge_state("local:" + _LOCAL, "", "local:" + _LOCAL), "none",
 			"desired local + same path = none")
-	testing.eq(MCPJsonSync.nudge_state("npx:1.0.4", "npx:1.0.4", "npx:1.0.4"), "none", "on disk matches = none")
-	testing.eq(MCPJsonSync.nudge_state("unknown", "npx:1.0.4", "npx:1.0.4"), "none", "unknown = none")
+	testing.eq(ServerPinPolicy.nudge_state("npx:1.0.4", "npx:1.0.4", "npx:1.0.4"), "none", "on disk matches = none")
+	testing.eq(ServerPinPolicy.nudge_state("unknown", "npx:1.0.4", "npx:1.0.4"), "none", "unknown = none")
 	print("")
 
 
