@@ -3,10 +3,13 @@ extends RefCounted
 ## Unit tests for the update check's pure rules: which versions count as newer, the
 ## major bump, the badge's version, the GitHub and Asset Store reply parsing, the
 ## state file and its default, the silence on malformed input, the once-a-day due
-## rule, the request builders and the bytes the runner writes to the state file. The
-## network is never touched: every reply is a literal body.
+## rule, the request builders (the extension catalog's too, which shares their
+## identity) and the bytes the runner writes to the state file. The network is never
+## touched: every reply is a literal body.
 
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
+const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog.gd")
+const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog_dialog.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
@@ -24,6 +27,7 @@ static func run(testing) -> void:
 	_test_malformed_input_is_silent(testing)
 	_test_due_state(testing)
 	_test_requests(testing)
+	_test_catalog_request(testing)
 	_test_release_page_url(testing)
 	_test_runner_state_bytes(testing)
 
@@ -241,6 +245,18 @@ static func _test_requests(testing) -> void:
 	testing.eq(UpdateCheck.github_request("file:///tmp")["url"],
 			"https://api.github.com/repos/NPGameDev/godot-mcp-toolkit/releases/latest",
 			"a non-http scheme is ignored")
+	print("")
+
+
+# The extension catalog's fetch sends the same fixed identity as the update check.
+static func _test_catalog_request(testing) -> void:
+	testing.begin("Extension catalog: request builder")
+	var catalog := ExtensionCatalogDialog._catalog_request()
+	testing.eq(catalog["url"], ExtensionCatalog.CATALOG_URL, "the catalog URL")
+	testing.eq(catalog["headers"], PackedStringArray(["User-Agent: godot-mcp-toolkit"]),
+			"the only header is the fixed User-Agent")
+	testing.eq(catalog["headers"], UpdateCheck.github_request("")["headers"],
+			"the catalog and the update check send the same headers")
 	print("")
 
 

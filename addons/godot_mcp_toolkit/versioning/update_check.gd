@@ -14,13 +14,10 @@ extends RefCounted
 
 # Direct preload, not core/modules.gd: the aggregator preloads this file.
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity.gd")
 
 ## The Project Settings toggle. Off means no request at all.
 const SETTING := "mcp_toolkit/updates/check_for_updates"
-
-## The fixed User-Agent every toolkit HTTP request sends: no version, no Godot
-## version, no OS, so the request says nothing about the machine or the project.
-const USER_AGENT := "godot-mcp-toolkit"
 
 ## Contributor-only environment variable. Set to [code]http://host:port[/code] (or
 ## [code]https://…[/code]), it replaces the scheme and host of both request URLs,
@@ -260,7 +257,7 @@ static func _parse_json(text: String) -> Variant:
 
 
 static func _request(url: String) -> Dictionary:
-	return {"url": url, "headers": PackedStringArray(["User-Agent: " + USER_AGENT])}
+	return {"url": url, "headers": HttpIdentity.request_headers()}
 
 
 # The version as X.Y.Z (a v prefix dropped), or "" when it does not parse.
