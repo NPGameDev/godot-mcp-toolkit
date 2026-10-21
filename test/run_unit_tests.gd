@@ -31,6 +31,7 @@ const AutoloadHealTests := preload("res://test/units/autoload_heal_tests.gd")
 const PortConfigTests := preload("res://test/units/port_config_tests.gd")
 const McpJsonBuildTests := preload("res://test/units/mcp_json_build_tests.gd")
 const McpJsonPinTests := preload("res://test/units/mcp_json_pin_tests.gd")
+const ServerPinPolicyTests := preload("res://test/units/server_pin_policy_tests.gd")
 const LspStatusTests := preload("res://test/units/lsp_status_tests.gd")
 const ScreenshotClassifyTests := preload("res://test/units/screenshot_classify_tests.gd")
 const ScreenshotResponseTests := preload("res://test/units/screenshot_response_tests.gd")
@@ -51,6 +52,7 @@ const VersionFloorTests := preload("res://test/units/version_floor_tests.gd")
 const PeerCompatTests := preload("res://test/units/peer_compat_tests.gd")
 const UpdateCheckTests := preload("res://test/units/update_check_tests.gd")
 const SetupWizardTests := preload("res://test/units/setup_wizard_tests.gd")
+const SetupWizardStepSpecTests := preload("res://test/units/setup_wizard_step_spec_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -86,6 +88,7 @@ func _init() -> void:
 	PortConfigTests.run(testing)
 	McpJsonBuildTests.run(testing)
 	McpJsonPinTests.run(testing)
+	ServerPinPolicyTests.run(testing)
 	LspStatusTests.run(testing)
 	ScreenshotClassifyTests.run(testing)
 	ScreenshotResponseTests.run(testing)
@@ -106,6 +109,7 @@ func _init() -> void:
 	PeerCompatTests.run(testing)
 	UpdateCheckTests.run(testing)
 	await SetupWizardTests.run(testing, self)  # the run-ending groups await frames → coroutine
+	SetupWizardStepSpecTests.run(testing)
 	_test_published_token_path(testing)
 
 	var failed := testing.report()
