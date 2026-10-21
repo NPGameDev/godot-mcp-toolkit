@@ -84,7 +84,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 and *Mode B* internally) — and publishes a small **registry file** so the bridge can
 discover every live instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="c1e4719" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="da1d5d2" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -103,7 +103,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified c1e4719*
+*Figure 1 — system context · verified da1d5d2*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -143,7 +143,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd addons/godot_mcp_toolkit/contract/declared_type_fitter.gd" data-verified="c61a416" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd addons/godot_mcp_toolkit/contract/declared_type_fitter.gd addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd" data-verified="da1d5d2" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>ships in the game"]
@@ -156,7 +156,7 @@ flowchart TB
       C4["log_helpers.gd · log_buffer.gd"]
       C5["registry_client.gd<br/>+ registry/store/*"]
       C6["notifier.gd · ws_transport.gd"]
-      C7["signal_pair_resolver.gd · text_input_synth.gd"]
+      C7["signal_pair_resolver.gd · text_input_synth.gd<br/>runtime_opt_out.gd"]
       C8["port_config.gd<br/>(env pin/band resolve)"]
       C9["file_guard.gd · mcp_version_utils.gd<br/>project_paths.gd · project_key.gd<br/>(transitive preloads)"]
       C10["peer_compat.gd<br/>(floor verdict; editor server only)"]
@@ -174,7 +174,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified c61a416*
+*Figure 2 — the editor↔runtime taint boundary · verified da1d5d2*
 
 Consequences that shape the rest of the architecture:
 
@@ -192,7 +192,8 @@ Consequences that shape the rest of the architecture:
 - **The runtime autoload self-disables four ways** in `_ready()`: it returns inert if
   `Engine.is_editor_hint()`, if `--check-only` is on the command line (without `--script` the
   engine ignores that flag and runs the main scene), if `GODOT_MCP_RUNTIME` is
-  `0`/`false`/`off` (an opt-out for scripted and headless runs), or — the
+  `0`/`false`/`off` (an opt-out for scripted and headless runs, read through the
+  export-clean `runtime_opt_out.gd`, which the editor's `game.start` hint reads too), or — the
   security-load-bearing one — if `not OS.has_feature("editor")`, which is **false in every
   export template**. A shipped game never starts the server; only an `editor`-feature build
   (the dev running their own game from the editor) does. `_exit_tree()` stops the server and clears the runtime registry
@@ -574,7 +575,7 @@ guarded lifecycle. `extension_loader.gd` is a 36-line orchestrator over four ser
 (the shared load/validate/probe leaf), `extension_watcher` (live hot-reload), and
 `extension_meta_commands` (the `extensions.list` surface).
 
-<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="a48ad08" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/extensions/extension_loader.gd addons/godot_mcp_toolkit/extensions/services/extension_discovery.gd addons/godot_mcp_toolkit/extensions/services/extension_support.gd addons/godot_mcp_toolkit/extensions/services/extension_watcher.gd" data-verified="da1d5d2" -->
 ```mermaid
 flowchart TD
     scan["scan ProjectSettings.get_global_class_list()"] --> cand{"candidate?<br/>GDScript base == MCPToolkitExtension<br/>or C# MCPToolkit*.cs"}
@@ -591,7 +592,7 @@ flowchart TD
     reserved --> mark["registry.mark_extension(method)"]
     mark --> retain["retain instance (C# GC safety)"]
 ```
-*Figure 11 — extension discovery → validate → guarded register · verified a48ad08*
+*Figure 11 — extension discovery → validate → guarded register · verified da1d5d2*
 
 Two guards protect the built-in surface: a **collision guard** window (opened by
 `begin_extension_load`, drained by `end_extension_load`) rejects an extension that tries to

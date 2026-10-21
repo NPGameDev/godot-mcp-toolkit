@@ -39,6 +39,7 @@ const Notifier := preload("res://addons/godot_mcp_toolkit/transport/notifier.gd"
 const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transport.gd")
 const SignalPairResolver := preload("res://addons/godot_mcp_toolkit/scene/signal_pair_resolver.gd")
 const TextInputSynth := preload("res://addons/godot_mcp_toolkit/runtime/text_input_synth.gd")
+const RuntimeOptOut := preload("res://addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd")
 # Export-clean (core APIs only) — safe in this runtime autoload's preload closure.
 const PortConfig := preload("res://addons/godot_mcp_toolkit/transport/port_config.gd")
 
@@ -50,10 +51,6 @@ const PORT_MAX := 6585  # 6570..6585 inclusive
 const _ENV_PIN := "GODOT_MCP_RUNTIME_PORT"
 const _ENV_PORT_MIN := "GODOT_MCP_RUNTIME_PORT_MIN"
 const _ENV_PORT_MAX := "GODOT_MCP_RUNTIME_PORT_MAX"
-# Opt-out switch: one of _RUNTIME_OFF_VALUES (case-insensitive) keeps the server
-# inert. Public so the editor side can name it when a game it launches inherits it.
-const ENV_RUNTIME := "GODOT_MCP_RUNTIME"
-const _RUNTIME_OFF_VALUES: Array[String] = ["0", "false", "off"]
 const BIND := "127.0.0.1"
 const JSONRPC_VERSION := "2.0"
 # Throttle re-listen retries. Mirrors mcp_server.gd's editor-side loop.
@@ -82,14 +79,6 @@ var _transport: WsTransport = null
 # Set once _ready gets past every gate, so _exit_tree undoes only a start that
 # happened: clear_runtime() deletes the project's runtime entry whoever wrote it.
 var _started := false
-
-
-## Returns true when [param value], the raw [code]GODOT_MCP_RUNTIME[/code]
-## environment value, turns the runtime server off: [code]0[/code],
-## [code]false[/code] or [code]off[/code], any case, surrounding spaces ignored.
-## Empty (unset) and any other value leave it on.
-static func is_opted_out(value: String) -> bool:
-	return value.strip_edges().to_lower() in _RUNTIME_OFF_VALUES
 
 
 func _init() -> void:
@@ -130,10 +119,10 @@ func _ready() -> void:
 	if not OS.has_feature("editor"):
 		set_process(false)
 		return
-	var opt_out := OS.get_environment(ENV_RUNTIME)
-	if is_opted_out(opt_out):
+	var opt_out := OS.get_environment(RuntimeOptOut.ENV_RUNTIME)
+	if RuntimeOptOut.is_opted_out(opt_out):
 		print("[MCPRuntimeServer] off (%s=%s): not listening or registering this run." % [
-			ENV_RUNTIME, opt_out])
+			RuntimeOptOut.ENV_RUNTIME, opt_out])
 		set_process(false)
 		return
 	_start_server()

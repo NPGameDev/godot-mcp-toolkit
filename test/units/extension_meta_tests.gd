@@ -15,6 +15,8 @@ const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_
 const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
 const ScriptReload := preload("res://addons/godot_mcp_toolkit/core/script_reload.gd")
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
 const UNAPPLIED_EDIT_FIXTURE := "user://extension_unapplied_edit_fixture.gd"
 const UNAPPLIED_EDIT_CS_FIXTURE := "user://extension_unapplied_edit_fixture.cs"
@@ -31,6 +33,7 @@ static func run(testing) -> void:
 	_test_unapplied_edit_ledger(testing)
 	_test_unapplied_edit_hint(testing)
 	_test_unapplied_edit_hint_patch_gate(testing)
+	_test_unapplied_edit_texts(testing)
 	_test_needs_reregister(testing)
 	_test_reregister_after_reload(testing)
 	await _test_extension_path_guard(testing)
@@ -417,6 +420,46 @@ static func _test_unapplied_edit_hint_patch_gate(testing) -> void:
 	var fix_hint := ExtensionWatcher.unapplied_edit_hint(PackedStringArray(), PackedStringArray(["BrokenExt"]), false)
 	testing.ok(fix_hint.contains("script_check") and not fix_hint.to_lower().contains("restart"),
 			"a file that does not compile → still the fix advice, never restart")
+	print("")
+
+
+# The exact restart wording: the refresh hint for each branch, and the editor warning
+# for the branch this engine takes (the logger that captures it needs Godot 4.5).
+static func _test_unapplied_edit_texts(testing) -> void:
+	testing.begin("Extension 4.2 restart wording, word for word")
+	testing.eq(ExtensionWatcher.unapplied_edit_hint(PackedStringArray(["A", "B"]), PackedStringArray()),
+			"Godot 4.2: extension(s) [A, B] were edited outside script_write / script_edit, or are C#, "
+			+ "and Godot 4.2 can't apply that in-session - restart the editor to load the updated version. "
+			+ "(An edit made with script_write or script_edit applies live when it compiles; Godot 4.3+ "
+			+ "applies every edit live.)",
+			"the 4.2.2 refresh hint")
+	testing.eq(ExtensionWatcher.unapplied_edit_hint(PackedStringArray(["A"]), PackedStringArray(), false),
+			"Godot 4.2.0 and 4.2.1: extension(s) [A] were edited, and these versions can't apply an "
+			+ "extension edit in-session - restart the editor to load the updated version. (Godot 4.2.2 "
+			+ "applies an edit made with script_write or script_edit live when it compiles; Godot 4.3+ "
+			+ "applies every edit live.)",
+			"the 4.2.0 and 4.2.1 refresh hint")
+
+	LogBuffer.setup()
+	var cursor: int = LogBuffer.get_cursor() - 1
+	var watcher := ExtensionWatcher.new()
+	watcher._record_unapplied_edit("WarnExt", "res://warn_ext.gd", ExtensionSupport.EDIT_NEEDS_RESTART)
+	if not LogBuffer.uses_logger_api():
+		print("")
+		return
+	var expected := (
+		"[MCPExtensions] 'WarnExt' was edited outside script_write / script_edit, or is C#, and "
+		+ "Godot 4.2 can't apply that in-session - restart the editor to load the updated version."
+	)
+	if not VersionUtils.in_place_reload_safe():
+		expected = (
+			"[MCPExtensions] 'WarnExt' was edited, and Godot 4.2.0 and 4.2.1 can't apply an extension "
+			+ "edit in-session - restart the editor to load the updated version."
+		)
+	var warnings: Array = LogBuffer.get_entries(100, ["warning"], cursor, "WarnExt")["entries"]
+	testing.eq(warnings.size(), 1, "one editor warning")
+	testing.eq(str(warnings[0]["message"]) if warnings.size() == 1 else "", "WARNING: " + expected,
+			"the editor warning")
 	print("")
 
 

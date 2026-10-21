@@ -35,4 +35,4 @@ const EditorAccess := preload("res://addons/godot_mcp_toolkit/core/editor_access
 const ResponseLimits := preload("res://addons/godot_mcp_toolkit/core/response_limits.gd")
 const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
 const ScriptReload := preload("res://addons/godot_mcp_toolkit/core/script_reload.gd")
-const RuntimeServer := preload("res://addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd")
+const RuntimeOptOut := preload("res://addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd")

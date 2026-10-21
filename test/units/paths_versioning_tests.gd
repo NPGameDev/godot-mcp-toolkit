@@ -20,6 +20,11 @@ const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
+const UserJsonStore := preload("res://addons/godot_mcp_toolkit/paths/user_json_store.gd")
+
+# A folder the JSON store test creates and removes; its "blocker" file stands where a
+# folder would have to be.
+const _JSON_STORE_DIR := "user://paths_versioning_json_store"
 
 
 static func run(testing) -> void:
@@ -42,6 +47,7 @@ static func run(testing) -> void:
 	_test_editor_refresh_reload_filter_sibling(testing)
 	_test_log_path_resolution(testing)
 	_test_logger_construction(testing)
+	_test_user_json_store(testing)
 
 
 # --- Compile-error diagnostic message (version-aware) (~10 assertions) -----
@@ -748,3 +754,42 @@ static func _test_logger_construction(testing) -> void:
 	testing.ok(not script.source_code.contains("Logger"),
 			"the script's source never names Logger")
 	print("")
+
+
+# The user:// JSON store writes sorted-key JSON, compact or indented, into a folder it
+# creates, and reports a failed open through its return value without printing.
+static func _test_user_json_store(testing) -> void:
+	testing.begin("paths: user:// JSON store")
+	var compact_path := _JSON_STORE_DIR.path_join("nested/compact.json")
+	var indented_path := _JSON_STORE_DIR.path_join("indented.json")
+	var blocker_path := _JSON_STORE_DIR.path_join("blocker")
+	_remove_json_store_dir()
+	LogBuffer.setup()
+	var cursor: int = LogBuffer.get_cursor() - 1
+
+	testing.eq(UserJsonStore.write(compact_path, {"b": [1, "x"], "a": true}), OK, "a write returns OK")
+	testing.eq(FileAccess.get_file_as_string(compact_path), "{\"a\":true,\"b\":[1,\"x\"]}",
+			"compact JSON with sorted keys, in a folder it created")
+	UserJsonStore.write(indented_path, {"b": 2, "a": "y"}, "\t")
+	testing.eq(FileAccess.get_file_as_string(indented_path), "{\n\t\"a\": \"y\",\n\t\"b\": 2\n}",
+			"the indent is applied")
+	UserJsonStore.write(blocker_path, {})
+	testing.ok(UserJsonStore.write(blocker_path.path_join("unreachable.json"), {}) != OK,
+			"a file standing where the folder must be → an error")
+	if LogBuffer.uses_logger_api():
+		var logged: Dictionary = LogBuffer.get_entries(100, ["warning", "error"], cursor)
+		testing.eq(int(logged["returned"]), 0, "nothing is printed")
+	_remove_json_store_dir()
+	print("")
+
+
+static func _remove_json_store_dir() -> void:
+	for path in [
+		_JSON_STORE_DIR.path_join("nested/compact.json"),
+		_JSON_STORE_DIR.path_join("nested"),
+		_JSON_STORE_DIR.path_join("indented.json"),
+		_JSON_STORE_DIR.path_join("blocker"),
+		_JSON_STORE_DIR,
+	]:
+		if FileAccess.file_exists(path) or DirAccess.dir_exists_absolute(path):
+			DirAccess.remove_absolute(path)

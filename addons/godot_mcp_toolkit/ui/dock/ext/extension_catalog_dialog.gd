@@ -5,7 +5,7 @@ extends Window
 
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog.gd")
 const EditorPopup := preload("res://addons/godot_mcp_toolkit/ui/editor_popup.gd")
-const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
+const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity.gd")
 
 var _http: HTTPRequest = null
 var _list_vbox: VBoxContainer = null
@@ -155,13 +155,17 @@ func _fetch_catalog() -> void:
 	_status_label.text = "Fetching catalog..."
 	_update_msg.visible = false
 
-	# The fixed User-Agent replaces the engine's default, which names the Godot
-	# version and the OS.
-	var err := _http.request(ExtensionCatalog.CATALOG_URL,
-			PackedStringArray(["User-Agent: " + UpdateCheck.USER_AGENT]))
+	var request := _catalog_request()
+	var err := _http.request(str(request["url"]), request["headers"])
 	if err != OK:
 		push_warning("[MCPCatalog] HTTP request failed to start (err %d)" % err)
 		_load_from_cache("Network error \u2014 showing cached catalog")
+
+
+# The catalog fetch as {"url": String, "headers": PackedStringArray}: the catalog
+# URL and the toolkit's fixed HTTP identity.
+static func _catalog_request() -> Dictionary:
+	return {"url": ExtensionCatalog.CATALOG_URL, "headers": HttpIdentity.request_headers()}
 
 
 func _on_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
