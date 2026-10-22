@@ -36,6 +36,7 @@ const LspStatusTests := preload("res://test/units/lsp_status_tests.gd")
 const ScreenshotClassifyTests := preload("res://test/units/screenshot_classify_tests.gd")
 const ScreenshotResponseTests := preload("res://test/units/screenshot_response_tests.gd")
 const RuntimeScreenshotTests := preload("res://test/units/runtime_screenshot_tests.gd")
+const EditorScreenshotWaitTests := preload("res://test/units/editor_screenshot_wait_tests.gd")
 const RuntimeLifecycleTests := preload("res://test/units/runtime_lifecycle_tests.gd")
 const NodejsCheckTests := preload("res://test/units/nodejs_check_tests.gd")
 const DockSettingsSyncTests := preload("res://test/units/dock_settings_sync_tests.gd")
@@ -93,6 +94,7 @@ func _init() -> void:
 	ScreenshotClassifyTests.run(testing)
 	ScreenshotResponseTests.run(testing)
 	RuntimeScreenshotTests.run(testing)
+	await EditorScreenshotWaitTests.run(testing, self)  # every group awaits the bounded wait → coroutine
 	await RuntimeLifecycleTests.run(testing, self)  # the in-tree group awaits a frame → coroutine
 	NodejsCheckTests.run(testing)
 	DockSettingsSyncTests.run(testing)

@@ -191,6 +191,42 @@ replacing `editor.screenshot`'s node-focus-only `size` param.
   readable HUD text, `low` for gross layout/motion only ("not for reading text") —
   ratified by a live fidelity spot-check.
 
+## Amendment — the editor path requests a redraw and bounds its wait
+
+The editor handler's waits for a drawn frame had no bound and asked for no frame.
+The editor runs in low-processor mode, where the main loop draws, and so emits
+`frame_post_draw`, only when something on screen changed. On a visible editor
+that is idle, such as one driven from a terminal while nothing else redraws it,
+each wait could last until the server's call timeout. Minimized was never the only
+window that draws nothing.
+
+- **Every wait goes through one helper,** `await_fresh_frame()` in
+  `commands/editor/editor_screenshot.gd`: after a node is selected for a node
+  capture, before the first read of a full capture, in each heal-loop attempt, and
+  after foregrounding. It queues a redraw of the editor's base control, which makes
+  the next iteration draw, then waits for `frame_post_draw` for at most
+  `FRESH_FRAME_WAIT_SECONDS` (1.0 s, the runtime path's bound), polling each process
+  frame, which keeps ticking on an idle editor. A unit guard keeps
+  `frame_post_draw` out of the rest of the file, so a later change of mechanism
+  edits one function.
+- **A lapse reads the viewport anyway,** as the runtime path does: minimized is
+  still caught up front, so a lapse means a visible window whose last-drawn frame is
+  what is on screen. The heal loop keeps its usable-frame check, so a collapsed
+  viewport still returns `EDITOR_VIEWPORT_UNAVAILABLE`.
+- **Rejected: `RenderingServer.force_draw()`.** It would draw synchronously, but
+  three of the waits follow deferred editor work (selecting the node, laying out
+  the main screen, un-minimizing) that a draw in the same tick would capture before
+  it applies, so the bounded wait is needed there anyway, and one mechanism beats
+  two.
+- **Rejected: `render_target_update_mode = UPDATE_ONCE` on an editor viewport.** The
+  rendering server resets such a viewport to `UPDATE_DISABLED` after it renders,
+  while the property still reads `UPDATE_ONCE`, so the editor's 2D or 3D view would
+  stop rendering.
+
+The worst case per call is about 6 s, when every wait lapses: one foreground wait,
+one node or freshness wait and four heal waits. That stays under the server's
+30 s call timeout. The response shape and the wire contract are unchanged.
+
 ## Known limitations
 
 - **The `force_foreground_*` levers un-minimize to a *windowed* state, not a prior
