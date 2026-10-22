@@ -26,9 +26,15 @@ const MIN_USABLE_DIMENSION := 16
 
 ## Re-capture attempts after switching the main screen: a freshly laid-out 2D/3D
 ## canvas needs a compositing frame or two before its viewport reports real
-## dimensions. Worst case is a few frames at the connected editor's boosted frame
-## rate — cheap next to returning a blank capture.
+## dimensions. Each attempt is one bounded fresh-frame wait, so the worst case is
+## [constant MAX_HEAL_FRAMES] bounds — cheap next to returning a blank capture.
 const MAX_HEAL_FRAMES := 4
+
+## Bound on each fresh-frame wait, matching the runtime screenshot's bound. A
+## redraw-requested wait normally ends within an editor iteration or two; the
+## bound only stops a frame that never draws from holding the call until the
+## server's call timeout.
+const FRESH_FRAME_WAIT_SECONDS := 1.0
 
 ## Recovery hint when the editor window is minimized: no viewport is composited,
 ## so no frame can be captured. This is never headless — headless short-circuits
@@ -65,6 +71,43 @@ static func classify_capture(source_width: int, source_height: int) -> Dictionar
 	return {"ok": true}
 
 
+# -- Fresh frame --------------------------------------------------------------
+
+
+## Wait for the editor to draw a fresh frame, asking it to draw one, for at most
+## a bound.
+##
+## The one place this handler waits for a frame, so a change of mechanism edits
+## only this function. The editor runs in low-processor mode and draws only when
+## something on screen changed, so the wait first queues a redraw of
+## [param redraw_target], which makes the next iteration draw; a null target
+## skips the request. It then polls each process frame, which keeps ticking on an
+## idle editor, until [param frame_drawn] fires or [param bound_seconds] pass, and
+## leaves no connection on [param frame_drawn] either way. Call sites pass no
+## arguments; the parameters exist so a headless unit can stand in its own signal,
+## bound and target.
+## Returns true when a frame drew within the bound, false when the bound lapsed.
+## The caller reads the viewport in both cases: on a visible window the
+## last-drawn frame is what is on screen.
+static func await_fresh_frame(
+		redraw_target: CanvasItem = EditorInterface.get_base_control(),
+		bound_seconds: float = FRESH_FRAME_WAIT_SECONDS,
+		frame_drawn: Signal = RenderingServer.frame_post_draw) -> bool:
+	var drew := [false]
+	var on_frame_drawn := func() -> void:
+		drew[0] = true
+	frame_drawn.connect(on_frame_drawn, CONNECT_ONE_SHOT)
+	if redraw_target != null:
+		redraw_target.queue_redraw()
+	var tree: SceneTree = Engine.get_main_loop()
+	var deadline := Time.get_ticks_msec() + int(bound_seconds * 1000.0)
+	while not drew[0] and Time.get_ticks_msec() < deadline:
+		await tree.process_frame
+	if frame_drawn.is_connected(on_frame_drawn):
+		frame_drawn.disconnect(on_frame_drawn)
+	return drew[0]
+
+
 # -- Commands -----------------------------------------------------------------
 
 
@@ -89,8 +132,8 @@ static func cmd_screenshot(parameters: Dictionary) -> Dictionary:
 	var remediation: Array[String] = []
 
 	# Minimized suspends compositing, so no frame can be captured. Detect it up
-	# front — before any await frame_post_draw, which would never fire on a
-	# suspended-render editor and hang the handler until the server times out.
+	# front, before any fresh-frame wait: a wait on a suspended window always runs
+	# to its bound, and the frame it would fall back on is not what is on screen.
 	if _window_is_minimized():
 		if not force_foreground:
 			return MCPToolkitError.fail("EDITOR_VIEWPORT_UNAVAILABLE",
@@ -134,7 +177,7 @@ static func _capture_node(parameters: Dictionary, node_path: String, remediation
 		selection.clear()
 		selection.add_node(node)
 	EditorInterface.edit_node(node)
-	await RenderingServer.frame_post_draw
+	await await_fresh_frame()
 
 	var image := await _grab_usable_image(wants_3d, remediation)
 	if image == null:
@@ -166,10 +209,11 @@ static func _capture_node(parameters: Dictionary, node_path: String, remediation
 
 # Standard viewport screenshot. Defaults the heal target to the 2D viewport.
 static func _capture_standard(parameters: Dictionary, remediation: Array[String]) -> Dictionary:
-	# Freshness await before the first read: a throttled unfocused editor can
-	# otherwise hand back a slightly stale frame. Safe now that minimized is
-	# short-circuited up front — this only runs while the editor is compositing.
-	await RenderingServer.frame_post_draw
+	# Fresh frame before the first read: a throttled unfocused editor can otherwise
+	# hand back a slightly stale one. An idle editor draws only on change, so the
+	# wait asks for a redraw and is bounded; on a lapse the last-drawn frame is
+	# current, because minimized is short-circuited up front.
+	await await_fresh_frame()
 
 	var image := await _grab_usable_image(false, remediation)
 	if image == null:
@@ -237,7 +281,7 @@ static func _grab_usable_image(wants_3d: bool, remediation: Array[String]) -> Im
 	EditorInterface.set_main_screen_editor("3D" if wants_3d else "2D")
 	var switched := false
 	for _attempt in range(MAX_HEAL_FRAMES):
-		await RenderingServer.frame_post_draw
+		await await_fresh_frame()
 		image = _read_viewport_image(wants_3d)
 		if image != null and classify_capture(image.get_width(), image.get_height())["ok"]:
 			switched = true
@@ -277,7 +321,7 @@ static func _foreground_editor() -> void:
 		var win := base.get_window()
 		if win != null:
 			win.grab_focus()
-	await RenderingServer.frame_post_draw
+	await await_fresh_frame()
 
 
 # -- Helpers ------------------------------------------------------------------

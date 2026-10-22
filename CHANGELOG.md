@@ -248,6 +248,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   truncated, with a warning, as it is for an `int` property. An array of objects
   written to a node whose script isn't `@tool` still goes in untyped when the scene
   had saved that property untyped.
+- `editor_screenshot` no longer hangs until the call times out when the editor
+  window is open but nothing on screen has changed for a while. It now asks the
+  editor to draw a frame and stops waiting for each frame after a second.
 
 ## [1.0.4] - 2026-10-14
 
