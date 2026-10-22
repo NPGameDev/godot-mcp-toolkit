@@ -94,7 +94,7 @@ func _init() -> void:
 	ScreenshotClassifyTests.run(testing)
 	ScreenshotResponseTests.run(testing)
 	RuntimeScreenshotTests.run(testing)
-	await EditorScreenshotWaitTests.run(testing, self)  # every group awaits the bounded wait → coroutine
+	await EditorScreenshotWaitTests.run(testing, self)  # each frame-wait group awaits the bounded wait → coroutine
 	await RuntimeLifecycleTests.run(testing, self)  # the in-tree group awaits a frame → coroutine
 	NodejsCheckTests.run(testing)
 	DockSettingsSyncTests.run(testing)

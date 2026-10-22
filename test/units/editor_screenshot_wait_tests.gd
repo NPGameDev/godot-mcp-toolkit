@@ -15,6 +15,7 @@ const EditorScreenshot := preload("res://addons/godot_mcp_toolkit/commands/edito
 const _EDITOR_SCREENSHOT_PATH := "res://addons/godot_mcp_toolkit/commands/editor/editor_screenshot.gd"
 const _WAIT_HELPER_HEADER := "static func await_fresh_frame("
 const _FRAME_SIGNAL := "frame_post_draw"
+
 # Short enough to keep the suite fast, long enough to tell from the default bound.
 const _SHORT_BOUND_MSEC := 200
 const _SHORT_BOUND_SECONDS := _SHORT_BOUND_MSEC / 1000.0
@@ -26,7 +27,7 @@ const _LATE_FRAME_DELAY := 3
 const _STAND_IN_SIGNAL := "frame_drawn"
 
 
-## run() is a coroutine: every group awaits the helper, so the runner must
+## run() is a coroutine: each frame-wait group awaits the helper, so the runner must
 ## [code]await[/code] it. [param tree] is the runner itself: Engine.get_main_loop() is
 ## still null while the runner's _init runs, and its root joins the tree only after
 ## a frame.
