@@ -43,6 +43,7 @@ const DockSettingsSyncTests := preload("res://test/units/dock_settings_sync_test
 const ResponseLimitsTests := preload("res://test/units/response_limits_tests.gd")
 const InfoDialogTests := preload("res://test/units/info_dialog_tests.gd")
 const DockLayoutTests := preload("res://test/units/dock_layout_tests.gd")
+const DockThemeOverrideTests := preload("res://test/units/dock_theme_override_tests.gd")
 const InputMapTests := preload("res://test/units/input_map_tests.gd")
 const ScriptCheckTests := preload("res://test/units/script_check_tests.gd")
 const NodeWriterIntTests := preload("res://test/units/node_writer_int_tests.gd")
@@ -101,6 +102,7 @@ func _init() -> void:
 	await ResponseLimitsTests.run(testing, self)  # the in-tree and transport groups await frames → coroutine
 	InfoDialogTests.run(testing)
 	await DockLayoutTests.run(testing, self)  # the in-tree groups await frames → coroutine
+	await DockThemeOverrideTests.run(testing, self)  # the tree's root is usable after a frame → coroutine
 	InputMapTests.run(testing)
 	ScriptCheckTests.run(testing)
 	NodeWriterIntTests.run(testing)

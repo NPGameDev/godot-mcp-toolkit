@@ -251,6 +251,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `editor_screenshot` no longer hangs until the call times out when the editor
   window is open but nothing on screen has changed for a while. It now asks the
   editor to draw a frame and stops waiting for each frame after a second.
+- The toolkit dock no longer makes the editor redraw every second while nothing
+  in it changes. On Godot 4.2 to 4.5 this happened even with the dock hidden, so
+  an idle editor kept using CPU.
 
 ## [1.0.4] - 2026-10-14
 
