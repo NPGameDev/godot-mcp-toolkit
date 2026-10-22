@@ -1,10 +1,9 @@
 @tool
 extends RefCounted
 ## Pinning tests for the server-pin policy: the setting key and the mode, spec and
-## nudge words the dock and the wizard compare against, the package spec each kind
-## of setting value resolves to, the classification of every entry shape, the nudge
-## for each drift case, and the setting read. Each table is the policy's observable
-## output, so a move of the policy keeps every row green.
+## nudge words its callers compare against, the package spec each kind of setting
+## value resolves to, the classification of every entry shape, the nudge for each
+## drift case, and the setting read. Each row is the policy's observable output.
 
 const ServerPinPolicy := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_policy.gd")
 
@@ -21,8 +20,8 @@ static func run(testing) -> void:
 	_test_read_version_setting(testing)
 
 
-# The key lands in project.godot and the words are compared by the dock, the wizard
-# and the last-written record, so each value is part of the policy's surface.
+# The key lands in project.godot and callers store and compare the words, so each
+# value is part of the policy's surface.
 static func _test_policy_words(testing) -> void:
 	testing.begin("Server pin policy: the setting key and its words")
 	testing.eq(ServerPinPolicy.SERVER_VERSION_SETTING, "mcp_toolkit/server/version", "the setting key")

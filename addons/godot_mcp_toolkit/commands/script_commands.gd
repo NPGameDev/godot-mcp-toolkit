@@ -332,6 +332,7 @@ static func _commit_content(server: Node, file_path: String, content: String,
 		# hint says so.
 		if reload_safe:
 			if bool(validation["valid"]):
+				# The outcome goes unread: the response reports the check this source passed.
 				Modules.ScriptReload.reload_cached_script(file_path, content)
 		elif existed and bool(validation["valid"]):
 			result["hint"] = Modules.StaleInstanceHint.write_hint(
