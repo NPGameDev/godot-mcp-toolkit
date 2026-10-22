@@ -21,6 +21,7 @@ extends VBoxContainer
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const RegistryClient = Modules.RegistryClient
+const DockThemeOverride = Modules.DockThemeOverride
 
 # Shared label colors: amber for any warning state, gray for idle/informational.
 const _WARN_COLOR := Color(1.0, 0.8, 0.2)
@@ -186,17 +187,17 @@ func refresh_runtime() -> void:
 		var rt_port := RegistryClient.get_runtime_port()
 		if rt_port > 0:
 			_runtime_label.text = "Runtime: listening on 127.0.0.1:%d" % rt_port
-			_runtime_label.add_theme_color_override("font_color", Color(0.5, 1.0, 0.5))
+			DockThemeOverride.set_color(_runtime_label, "font_color", Color(0.5, 1.0, 0.5))
 		elif Time.get_ticks_msec() - _playtest_seen_ms > _RUNTIME_REACH_GRACE_MS:
 			_runtime_label.text = "Runtime: not reachable — check the game console"
-			_runtime_label.add_theme_color_override("font_color", _WARN_COLOR)
+			DockThemeOverride.set_color(_runtime_label, "font_color", _WARN_COLOR)
 		else:
 			_runtime_label.text = "Runtime: game running, waiting for port..."
-			_runtime_label.add_theme_color_override("font_color", _WARN_COLOR)
+			DockThemeOverride.set_color(_runtime_label, "font_color", _WARN_COLOR)
 	else:
 		_playtest_seen_ms = -1
 		_runtime_label.text = "Runtime: not running (start playtest with F5)"
-		_runtime_label.add_theme_color_override("font_color", _IDLE_COLOR)
+		DockThemeOverride.set_color(_runtime_label, "font_color", _IDLE_COLOR)
 
 
 ## LSP status indicator. The MCP server reports the authoritative verdict

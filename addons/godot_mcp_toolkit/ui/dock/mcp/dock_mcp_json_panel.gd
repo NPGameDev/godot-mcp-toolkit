@@ -32,6 +32,7 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const MCPJsonSync = Modules.MCPJsonSync
 const ServerPinPolicy = Modules.ServerPinPolicy
 const VersionUtils = Modules.VersionUtils
+const DockThemeOverride = Modules.DockThemeOverride
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 
 # Toast severity constants (match EditorToaster.Severity / the dock's _TOAST_*).
@@ -194,15 +195,15 @@ func refresh() -> void:
 	_refresh_pin_row(readable, str(file_state["spec"]))
 	# This panel shows for a warning or for the row alone; only a warning gets the box.
 	visible = has_warning or (_pin_row != null and _pin_row.visible)
-	add_theme_stylebox_override("panel", _warning_style if has_warning else _plain_style)
+	DockThemeOverride.set_stylebox(self, "panel", _warning_style if has_warning else _plain_style)
 	# Write-or-open button (shared amber highlight).
 	if _mcp_json_btn != null:
 		_mcp_json_btn.text = btn_text
 		_mcp_json_btn.tooltip_text = btn_tip
 		if highlight:
-			_mcp_json_btn.add_theme_color_override("font_color", _AMBER)
+			DockThemeOverride.set_color(_mcp_json_btn, "font_color", _AMBER)
 		else:
-			_mcp_json_btn.remove_theme_color_override("font_color")
+			DockThemeOverride.clear_color(_mcp_json_btn, "font_color")
 
 
 ## Re-sync the cached read-only flag from .mcp.json, then refresh(). Called on
@@ -310,7 +311,7 @@ func _refresh_pin_row(readable: bool, on_disk: String) -> void:
 			ServerPinPolicy.read_version_setting(),
 			VersionUtils.COMPATIBLE_SERVER_VERSION)
 	_pin_label.text = str(state["text"])
-	_pin_label.add_theme_color_override("font_color", _AMBER if bool(state["amber"]) else _GREY)
+	DockThemeOverride.set_color(_pin_label, "font_color", _AMBER if bool(state["amber"]) else _GREY)
 	_pin_action = str(state["action"])
 	_pin_target = str(state["target"])
 	_pin_btn.text = str(state["button"])
