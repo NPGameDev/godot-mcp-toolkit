@@ -55,6 +55,7 @@ const PeerCompatTests := preload("res://test/units/peer_compat_tests.gd")
 const UpdateCheckTests := preload("res://test/units/update_check_tests.gd")
 const SetupWizardTests := preload("res://test/units/setup_wizard_tests.gd")
 const SetupWizardStepSpecTests := preload("res://test/units/setup_wizard_step_spec_tests.gd")
+const ExtensionCatalogFetcherTests := preload("res://test/units/extension_catalog_fetcher_tests.gd")
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 
 
@@ -114,6 +115,7 @@ func _init() -> void:
 	UpdateCheckTests.run(testing)
 	await SetupWizardTests.run(testing, self)  # the run-ending groups await frames → coroutine
 	SetupWizardStepSpecTests.run(testing)
+	await ExtensionCatalogFetcherTests.run(testing, self)  # the in-tree group awaits a frame → coroutine
 	_test_published_token_path(testing)
 
 	var failed := testing.report()
