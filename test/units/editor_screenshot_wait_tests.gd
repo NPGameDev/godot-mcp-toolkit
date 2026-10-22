@@ -7,15 +7,17 @@ extends RefCounted
 ## draws, though, so the real RenderingServer.frame_post_draw never fires here,
 ## which is the idle editor the wait must survive. Each group passes a short bound,
 ## never the handler's default. The groups test the helper directly and need it to
-## exist; the single-seam guard in screenshot_classify_tests.gd checks that the
-## handler waits only through it. The lapse and redraw groups cover, without a
-## window, the paths the windowed idle probe exercises against a live editor.
+## exist; a source-text group in this file checks that the handler waits only
+## through it.
 
 const EditorScreenshot := preload("res://addons/godot_mcp_toolkit/commands/editor/editor_screenshot.gd")
 
+const _EDITOR_SCREENSHOT_PATH := "res://addons/godot_mcp_toolkit/commands/editor/editor_screenshot.gd"
+const _WAIT_HELPER_HEADER := "static func await_fresh_frame("
+const _FRAME_SIGNAL := "frame_post_draw"
 # Short enough to keep the suite fast, long enough to tell from the default bound.
-const _SHORT_BOUND_SECONDS := 0.2
 const _SHORT_BOUND_MSEC := 200
+const _SHORT_BOUND_SECONDS := _SHORT_BOUND_MSEC / 1000.0
 # Slack past the bound for the few process frames the poll may take to notice it;
 # well under the default bound, so a wait that ignored the short one still fails.
 const _LAPSE_SLACK_MSEC := 500
@@ -29,6 +31,7 @@ const _STAND_IN_SIGNAL := "frame_drawn"
 ## still null while the runner's _init runs, and its root joins the tree only after
 ## a frame.
 static func run(testing, tree: SceneTree) -> void:
+	_test_single_wait_seam(testing)
 	await tree.process_frame
 	await _test_idle_lapse(testing)
 	await _test_late_frame(testing, tree)
@@ -124,9 +127,44 @@ static func _test_null_target(testing) -> void:
 	print("")
 
 
+# The handler waits for a frame only through await_fresh_frame(), which asks for a
+# redraw and bounds the wait. A bare frame_post_draw await anywhere else hangs on an
+# idle windowed editor, which CI cannot see: its editors run headless and the handler
+# returns before any wait. So the file's text is checked instead: the signal's name
+# may appear only between the helper's header and the next top-level line.
+static func _test_single_wait_seam(testing) -> void:
+	testing.begin("editor screenshot — every frame wait goes through await_fresh_frame()")
+	var source := FileAccess.get_file_as_string(_EDITOR_SCREENSHOT_PATH)
+	testing.ok(not source.is_empty(), "the handler's source is readable")
+	var lines := source.split("\n")
+	var helper_start := -1
+	var helper_end := lines.size()
+	for index in range(lines.size()):
+		if helper_start < 0 and lines[index].begins_with(_WAIT_HELPER_HEADER):
+			helper_start = index
+		elif helper_start >= 0 and index > helper_start and _is_top_level(lines[index]):
+			helper_end = index
+			break
+	testing.ok(helper_start >= 0, "the handler defines await_fresh_frame()")
+	var outside: Array[int] = []
+	for index in range(lines.size()):
+		var in_helper := helper_start >= 0 and index >= helper_start and index < helper_end
+		if not in_helper and lines[index].contains(_FRAME_SIGNAL):
+			outside.append(index + 1)
+	testing.ok(outside.is_empty(),
+		"frame_post_draw appears only inside await_fresh_frame() (outside it on lines %s)" % str(outside))
+	print("")
+
+
 # Fires `frame_drawn` after `delay` process frames. Called without
 # await, so it runs alongside the wait it feeds.
 static func _emit_after_frames(tree: SceneTree, frame_drawn: Signal, delay: int) -> void:
 	for _frame in range(delay):
 		await tree.process_frame
 	frame_drawn.emit()
+
+
+# True for a line that starts a new top-level member: not blank and not indented.
+static func _is_top_level(line: String) -> bool:
+	var trimmed := line.strip_edges()
+	return not trimmed.is_empty() and not line.begins_with("\t") and not line.begins_with(" ")
