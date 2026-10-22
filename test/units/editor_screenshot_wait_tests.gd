@@ -124,7 +124,7 @@ static func _test_null_target(testing) -> void:
 	print("")
 
 
-# Fires [param frame_drawn] after [param delay] process frames. Called without
+# Fires `frame_drawn` after `delay` process frames. Called without
 # await, so it runs alongside the wait it feeds.
 static func _emit_after_frames(tree: SceneTree, frame_drawn: Signal, delay: int) -> void:
 	for _frame in range(delay):
