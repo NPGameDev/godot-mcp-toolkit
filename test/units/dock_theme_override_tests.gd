@@ -112,7 +112,7 @@ static func _test_mcp_json_panel_refresh_rewrites_nothing(testing, tree: SceneTr
 
 
 # Returns a one-element counter that grows by one on every theme_changed of
-# [param control]. An array, because a lambda cannot reassign a captured local.
+# `control`. An array, because a lambda cannot reassign a captured local.
 static func _count_theme_writes(control: Control) -> Array:
 	var count := [0]
 	control.theme_changed.connect(func() -> void: count[0] += 1)
