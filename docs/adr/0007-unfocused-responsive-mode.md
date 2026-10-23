@@ -9,6 +9,13 @@ restores it on the last disconnect. The engine re-reads that setting on every
 focus-out (`editor_node.cpp`), so writing the EditorSetting is the correct,
 clean integration point.
 
+*Amended 2026-10-23:* Godot 4.7 renamed the setting to
+`interface/editor/timers/unfocused_low_processor_mode_sleep_usec`, and the old
+name answers only through a compatibility map that an editor without saved
+settings does not build, so the toolkit reads and writes the first of the two
+names the editor defines, newest first, as listed in
+`versioning/engine_setting_names.gd`.
+
 The original implementation held the pre-boost value **only in memory** and
 mutated the setting silently and unconditionally. That had five problems: it is
 an obtuse global side-effect (the key is machine-wide — every project on that

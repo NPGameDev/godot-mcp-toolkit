@@ -1,8 +1,7 @@
 @tool
 extends RefCounted
 ## Machine-wide, version-keyed, first-writer-wins backup of the TRUE original
-## value of the global EditorSetting
-## `interface/editor/unfocused_low_processor_mode_sleep_usec`.
+## value of the global EditorSetting `unfocused_low_processor_mode_sleep_usec`.
 ##
 ## The toolkit lowers that key to keep the editor responsive while it is
 ## unfocused and an MCP client is connected, then restores it on the last

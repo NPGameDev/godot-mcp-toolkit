@@ -38,9 +38,10 @@ extends RefCounted
 
 const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
 const _UnfocusedBackup := preload("res://addons/godot_mcp_toolkit/core/unfocused_backup.gd")
+const _EngineSettingNames := preload("res://addons/godot_mcp_toolkit/versioning/engine_setting_names.gd")
 
-# The global EditorSetting we throttle, plus the two opt-in / rate keys (machine-wide).
-const _UNFOCUSED_SLEEP_KEY := "interface/editor/unfocused_low_processor_mode_sleep_usec"
+# The opt-in and rate keys (machine-wide). The throttled engine setting's names live in
+# engine_setting_names.gd, because Godot has renamed it.
 const _RESPONSIVE_ENABLED_KEY := "mcp_toolkit/performance/keep_editor_responsive_unfocused"
 const _RESPONSIVE_SLEEP_KEY := "mcp_toolkit/performance/unfocused_responsive_sleep_usec"
 # Default for the tunable EditorSetting unfocused_responsive_sleep_usec.
@@ -56,6 +57,10 @@ var _settings_accessor: Callable = Callable()
 # otherwise. The machine-wide backup FILE is the source of truth for restore (this
 # only gates whether the disconnect/stop path runs).
 var _original_unfocused_sleep_usec: int = -1
+
+# True once this session has warned that the editor holds the unfocused sleep under
+# none of the known names; lower() retries on every first connect, so it warns once.
+var _warned_sleep_setting_missing := false
 
 
 ## Wire the EditorSettings accessor. Call once at construction, before any boost.
@@ -100,7 +105,8 @@ func notify_unfocused_responsive_setting_changed(authed_peer_count: int) -> void
 ## Lower the global key to the boosted value on the FIRST authed connect (idempotent
 ## via should_capture_boost). Captures the TRUE original to the machine-wide backup
 ## under the registry lock first, so a concurrent instance can't record an
-## already-boosted value as the original.
+## already-boosted value as the original. Skips, warning once per session, when the
+## editor holds the setting under none of the names the toolkit knows.
 func lower() -> void:
 	if not _UnfocusedBackup.should_capture_boost(
 			is_unfocused_responsive_enabled(), is_unfocused_boost_active()):
@@ -108,7 +114,11 @@ func lower() -> void:
 	var es = _editor_settings()
 	if es == null:
 		return
-	var live := int(es.get_setting(_UNFOCUSED_SLEEP_KEY))
+	var sleep_key := _sleep_setting_name(es)
+	if sleep_key.is_empty():
+		_warn_sleep_setting_missing_once()
+		return
+	var live := int(es.get_setting(sleep_key))
 	var boosted := _configured_responsive_usec()
 	# Machine-wide first-writer-wins backup of the TRUE original, under the
 	# registry lock so a concurrent instance can't capture an already-boosted
@@ -118,10 +128,10 @@ func lower() -> void:
 	RegistryClient.acquire_lock()
 	_UnfocusedBackup.capture_if_absent(dir, live, boosted, ver)
 	RegistryClient.release_lock()
-	es.set_setting(_UNFOCUSED_SLEEP_KEY, boosted)
+	es.set_setting(sleep_key, boosted)
 	_original_unfocused_sleep_usec = live
 	print("[MCPServer] unfocused-responsive mode ON: %s %d -> %d (~%d fps while unfocused)" % [
-		_UNFOCUSED_SLEEP_KEY, live, boosted, get_unfocused_responsive_fps()])
+		sleep_key, live, boosted, get_unfocused_responsive_fps()])
 
 
 ## Restore the global key on the LAST authed disconnect / stop. Conflict-aware: if a
@@ -131,26 +141,28 @@ func restore() -> void:
 	if not is_unfocused_boost_active():
 		return
 	var es = _editor_settings()
-	if es == null:
+	var sleep_key := "" if es == null else _sleep_setting_name(es)
+	if sleep_key.is_empty():
+		# Nothing to write back to; the backup file stays for the next start's self-heal.
 		_original_unfocused_sleep_usec = -1
 		return
 	var dir := RegistryClient.registry_dir()
 	var ver := _UnfocusedBackup.version_key()
 	RegistryClient.acquire_lock()
 	var backup := _UnfocusedBackup.read_backup(dir, ver)
-	var current := int(es.get_setting(_UNFOCUSED_SLEEP_KEY))
+	var current := int(es.get_setting(sleep_key))
 	var decision := _UnfocusedBackup.resolve_restore(current, backup)
 	if decision["restore"]:
-		es.set_setting(_UNFOCUSED_SLEEP_KEY, int(decision["value"]))
+		es.set_setting(sleep_key, int(decision["value"]))
 	_UnfocusedBackup.delete_backup(dir, ver)
 	RegistryClient.release_lock()
 	_original_unfocused_sleep_usec = -1
 	if decision["restore"]:
 		print("[MCPServer] unfocused-responsive mode OFF: %s restored to %d" % [
-			_UNFOCUSED_SLEEP_KEY, int(decision["value"])])
+			sleep_key, int(decision["value"])])
 	else:
 		print("[MCPServer] unfocused-responsive mode OFF: %s left at %d (changed during boost; backup cleared)" % [
-			_UNFOCUSED_SLEEP_KEY, current])
+			sleep_key, current])
 
 
 ## Startup self-heal: if a previous session (crash) or a concurrent instance left a
@@ -168,20 +180,23 @@ func self_heal(authed_peer_count: int) -> void:
 	var es = _editor_settings()
 	if es == null:
 		return
+	var sleep_key := _sleep_setting_name(es)
+	if sleep_key.is_empty():
+		return
 	RegistryClient.acquire_lock()
 	var backup := _UnfocusedBackup.read_backup(dir, ver)
-	var current := int(es.get_setting(_UNFOCUSED_SLEEP_KEY))
+	var current := int(es.get_setting(sleep_key))
 	var decision := _UnfocusedBackup.resolve_restore(current, backup)
 	if decision["restore"]:
-		es.set_setting(_UNFOCUSED_SLEEP_KEY, int(decision["value"]))
+		es.set_setting(sleep_key, int(decision["value"]))
 	_UnfocusedBackup.delete_backup(dir, ver)
 	RegistryClient.release_lock()
 	if decision["restore"]:
 		print("[MCPServer] unfocused-responsive self-heal: reverted leftover %s to %d (crash/concurrent leftover)" % [
-			_UNFOCUSED_SLEEP_KEY, int(decision["value"])])
+			sleep_key, int(decision["value"])])
 	else:
 		print("[MCPServer] unfocused-responsive self-heal: %s changed since boost (now %d); kept it, cleared stale backup" % [
-			_UNFOCUSED_SLEEP_KEY, current])
+			sleep_key, current])
 
 
 # Configured boosted sleep value in µs (default 16666 = 60 fps; not clamped).
@@ -190,6 +205,25 @@ func _configured_responsive_usec() -> int:
 	if es == null or not es.has_setting(_RESPONSIVE_SLEEP_KEY):
 		return _ACTIVE_UNFOCUSED_SLEEP_USEC
 	return int(es.get_setting(_RESPONSIVE_SLEEP_KEY))
+
+
+# The name under which the running editor holds the unfocused sleep, or "" when it
+# defines none of the known names or holds no value under the one it defines. Every
+# read and write goes to this name: writing a name the editor does not define would
+# leave an orphan key in the machine-wide settings.
+func _sleep_setting_name(es: Object) -> String:
+	var sleep_key := _EngineSettingNames.resolve(es, _EngineSettingNames.UNFOCUSED_SLEEP_USEC)
+	if sleep_key.is_empty() or typeof(es.get_setting(sleep_key)) == TYPE_NIL:
+		return ""
+	return sleep_key
+
+
+func _warn_sleep_setting_missing_once() -> void:
+	if _warned_sleep_setting_missing:
+		return
+	_warned_sleep_setting_missing = true
+	push_warning("[MCPServer] unfocused-responsive mode skipped: the editor holds no value under %s" % [
+		", ".join(PackedStringArray(_EngineSettingNames.UNFOCUSED_SLEEP_USEC))])
 
 
 # Resolve the live EditorSettings via the injected accessor (null in headless / when
