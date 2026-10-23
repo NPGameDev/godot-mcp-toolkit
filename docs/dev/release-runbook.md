@@ -98,6 +98,54 @@ not have, take its own documented-gap path rather than skipping it silently, and
 owner. First applied: 1.0.1 (server §1 incl. B9 and §5; the toolkit's macOS GUI-launch smoke
 recorded as a documented coverage gap, since no Mac was available).
 
+### The validation ladder
+
+On top of the full gate, a minor release (x.Y.0) runs these live checks:
+
+- On Godot 4.2, the oldest supported version: the full smoke suite and the full tool sweep (the
+  toolkit's `Validations/tool-sweep.md`).
+- On the newest supported stable, now 4.7: one smoke run.
+- A mixed-version handshake check: the previous toolkit with the new server, the new toolkit with
+  the previous server, the new pair, and one pair where a side is below the other's floor. For
+  1.1.0 that is toolkit 1.0.4 + server 1.1.0, toolkit 1.1.0 + server 1.0.4, 1.1.0 + 1.1.0, and a
+  below-floor pair. Read both consoles for every pair: the server's stderr and the editor's Output panel.
+
+A major release (X.0.0) adds a full tool sweep on the newest stable, a local smoke run and full
+tool sweep on 4.5, and an npm `-rc` prerelease before the final version.
+
+### Expected mixed-pair failures
+
+With toolkit 1.0.4 and server 1.1.0, these cases fail by design, because they test 1.1.0
+behavior the older toolkit lacks. Every other case must pass.
+
+- Flow 02 (`test/flows/02_hot_reload_reachability.ts`), legs A and D: they need the toolkit's
+  script reload.
+- Smoke section 49 (`test/sections/49_script_edit.ts`), its two `edits` cases: toolkit 1.0.4
+  requires `old_string`.
+
+A re-measure on toolkit `v1.0.4` with server `0a12d13` found more. All of them depend on the
+reload, and none raises an error or a crash:
+
+- On Godot 4.2.2, flow 01's UPDATE case (`test/flows/01_extension_lifecycle.ts`): a toolkit
+  write of an extension is not live, and 1.0.4's refresh hint asks for a restart. The failure
+  throws out of the section, so its later cases never run. Flow 02 fails A (the write hint, A
+  and the A recovery), B, the C refusal, D and the E rebind.
+- On Godot 4.7, flow 02's E rebind.
+- 4.2.0 and 4.2.1, where the flows expect the fallback, were not measured.
+
+These were measured at later toolkit commits, not on `v1.0.4` itself:
+
+- Smoke section 12 (`test/sections/12_input_map.ts`), its two `ui_left` cases (binding F9 keeps
+  the default's joypad events; unbinding F9 leaves the default). Toolkit 1.0.4's `bind` saves
+  the editor's keys-only `InputMap` list. Measured at toolkit `0e81b86` on 4.7: 17 passed, 2
+  failed.
+- On a toolkit without the `input_map.list` method and the `revert` action, `input_map_list`
+  answers `RPC_ERROR` "-32601: Method not found: input_map.list" and `revert` answers
+  `INVALID_PARAMS`, with no crash. Smoke section 12's six list, revert and round-trip cases fail.
+  Measured against toolkit `567d8b6` on 4.7: 19 passed, 6 failed.
+
+The release's mixed-pair check confirms every entry not yet measured on `v1.0.4`.
+
 ### Architecture and contract freshness
 
 Before you write the gate dispositions, run both freshness checks:
@@ -155,7 +203,10 @@ There is no pause to curate in, so `[Unreleased]` must be final and committed be
 For a change that genuinely spans both repos, `./scripts/release.sh <server-version> --with-sibling
 <toolkit-version>` delegates the toolkit half to the toolkit's own script and then releases the
 server, as two independent versioned releases in one run. While the tag gates force a lockstep
-release, the two versions must be the same. That path replaces Phase 6.
+release, the two versions must be the same. That path replaces Phase 6. The delegated toolkit
+half gets no server pin flag, so the toolkit script refuses it; until that changes, release the
+toolkit through Phase 6. A release that moves the pin could not use this path anyway: the new pin
+must name a server version npm already serves, and this path tags the toolkit first.
 
 The script runs its pre-flights, rolls the CHANGELOG, then **pauses**. Use the pause: read the rolled
 section and the printed `npm pack --dry-run` listing. The listing must be `dist/`, `README.md`,
@@ -209,11 +260,26 @@ that the CI artifact never contains.
 
 ## Phase 6. Release the toolkit
 
-Same ritual: `./scripts/release.sh <version>`, curate at the pause, verify the tag content, push main
-and the tag. An agent-driven release runs the same two non-interactive commands as Phase 4, with
-the gate dispositions file. The toolkit script takes a version, `--dry-run` and the three
-non-interactive flags; `--verify` and `--with-sibling` are server-side. The gated workflow builds
-the zip, install-smokes it into a scratch project, and attaches it to the GH Release.
+Every toolkit release states its server pin, and the toolkit script refuses to run without exactly
+one of `--compatible-server <X.Y.Z>` or `--keep-compatible-server`. The toolkit's `main` pins the
+last released server until the ship. Once the new server is on npm, the toolkit release moves the
+pin with `--compatible-server <server-version>`, which rewrites `COMPATIBLE_SERVER_VERSION` and
+the token in `.mcp.json.template`. Its npm probe refuses a server version npm does not serve yet. A
+toolkit release that keeps the current pin passes `--keep-compatible-server` instead.
+
+The rest is the Phase 4 ritual:
+`./scripts/release.sh <version> --compatible-server <server-version>`, curate at the pause, verify
+the tag content, push main and the tag. An agent-driven release runs the same two non-interactive
+commands as Phase 4, with the gate dispositions file and the pin flag:
+
+```bash
+./scripts/release.sh <version> --compatible-server <server-version> --dry-run --non-interactive --gate-dispositions <file>
+./scripts/release.sh <version> --compatible-server <server-version> --non-interactive --gate-dispositions <file> --changelog-curated
+```
+
+The toolkit script takes a version, the pin flag, `--dry-run` and the three non-interactive flags;
+`--verify` and `--with-sibling` are server-side. The gated workflow builds the zip, install-smokes
+it into a scratch project, and attaches it to the GH Release.
 
 The script prints the asset submission values at tag time (version, download commit SHA, zip name).
 Keep them on screen.
