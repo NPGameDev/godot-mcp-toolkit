@@ -247,9 +247,8 @@ one taken on the 3D screen returned the hidden 2D view's last frame too.
   fresh frame through `await_fresh_frame()` and re-read, as before. That wait is
   bounded, so the returned frame is normally one drawn after the switch; a wait
   that lapses still re-reads, and can return the frame drawn before the screen was
-  hidden. The viewport's
-  update mode is not read: it follows from the container's visibility, and a plugin
-  could set it itself.
+  hidden. The viewport's update mode is not read: it follows from the container's
+  visibility, and a plugin could set it itself.
 - **A standard capture reads the shown viewport.** `choose_screen` picks 2D when
   the 2D screen is shown, else 3D when the 3D screen is shown, else 2D, which the
   capture then switches to. A node capture reads its node's viewport (3D for a

@@ -3,10 +3,10 @@ extends RefCounted
 ## editor.screenshot: capture the editor viewport to a PNG envelope — either the
 ## shown 2D or 3D view, or focused on one node (select + edit + restore the prior
 ## selection). Caps the inline image to the requested image_detail level, handles
-## headless (no viewport), and never reads a view the editor is not showing: a
-## minimized window returns EDITOR_VIEWPORT_UNAVAILABLE, and a hidden or collapsed
-## 2D/3D view makes the capture switch the main screen and wait, within a bound,
-## for a fresh frame.
+## headless (no viewport), and never returns a frame from a view the editor is not
+## showing: a minimized window returns EDITOR_VIEWPORT_UNAVAILABLE, and a hidden or
+## collapsed 2D/3D view makes the capture switch the main screen and wait, within a
+## bound, for a fresh frame.
 ## A hidden view is detected by its container's visibility, not its size: Godot
 ## stops rendering a hidden SubViewportContainer's viewport but keeps its size and
 ## last texture, so a size check alone would pass an old frame as usable. The
