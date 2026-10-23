@@ -227,6 +227,45 @@ The worst case per call is about 6 s, when every wait lapses: one foreground wai
 one node or freshness wait and four heal waits. That stays under the server's
 30 s call timeout. The response shape and the wire contract are unchanged.
 
+## Amendment — a hidden main screen keeps its last frame
+
+The premise above, that a non-2D/3D main screen collapses the capture to a 2x2
+PNG, does not hold. Each editor viewport sits in a `SubViewportContainer`
+(`canvas_item_editor_plugin.cpp`, `node_3d_editor_plugin.cpp`), and when the
+Script (or another) screen hides that container, its
+`NOTIFICATION_VISIBILITY_CHANGED` sets the viewport to `UPDATE_DISABLED` without
+resizing it (`scene/gui/subviewport_container.cpp`, the same on 4.2 through 4.7).
+The viewport keeps its full size and its last texture, so the size check passed,
+no switch happened, and the capture returned the frame drawn before the screen
+changed, with no `remediation`. A standard capture always read the 2D viewport, so
+one taken on the 3D screen returned the hidden 2D view's last frame too.
+
+- **The switch keys on visibility as well as size.** A viewport counts as shown
+  when its container `is_visible_in_tree()`; `classify_capture` takes that flag and
+  answers `hidden_main_screen` for a hidden viewport, next to `no_viewport_screen`
+  for a collapsed one. Either makes the capture switch the main screen, wait for a
+  fresh frame through `await_fresh_frame()` and re-read, as before. That wait is
+  bounded, so the returned frame is normally one drawn after the switch; a wait
+  that lapses still re-reads, and can return the frame drawn before the screen was
+  hidden. The viewport's update mode is not read: it follows from the container's
+  visibility, and a plugin could set it itself.
+- **A standard capture reads the shown viewport.** `choose_screen` picks 2D when
+  the 2D screen is shown, else 3D when the 3D screen is shown, else 2D, which the
+  capture then switches to. A node capture reads its node's viewport (3D for a
+  `Node3D`, else 2D) and switches only when that one is hidden: `edit_node` leaves
+  the Script screen up while the editor setting
+  `text_editor/behavior/navigation/stay_in_script_editor_on_node_selected` is on,
+  its default. A standard capture never switches away from a shown 2D or 3D
+  screen. For a node capture, `edit_node` itself moves a shown 2D or 3D screen to
+  a `CanvasItem`'s 2D or a `Node3D`'s 3D screen before the capture reads, so the
+  capture switches only from another screen, or from 3D to 2D for a node that is
+  neither.
+- **The switch is now routine.** The Script screen is where a user often sits
+  while an agent works, so every capture taken from it now moves the editor to the
+  2D or 3D screen. It stays one-way, for the reason in the Decision: there is no
+  getter for the current main screen, so the previous screen is not restored, and
+  `remediation: ["switched_main_screen"]` discloses the switch.
+
 ## Known limitations
 
 - **The `force_foreground_*` levers un-minimize to a *windowed* state, not a prior
