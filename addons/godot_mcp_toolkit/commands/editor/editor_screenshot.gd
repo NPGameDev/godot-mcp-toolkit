@@ -1,11 +1,14 @@
 @tool
 extends RefCounted
 ## editor.screenshot: capture the editor viewport to a PNG envelope — either the
-## full main viewport, or focused on one node (select + edit + restore the prior
+## shown 2D or 3D view, or focused on one node (select + edit + restore the prior
 ## selection). Caps the inline image to the requested image_detail level, handles
-## headless (no viewport), and self-diagnoses a collapsed viewport: a minimized
-## window returns EDITOR_VIEWPORT_UNAVAILABLE, and a wrong (non-2D/3D) main screen
-## is auto-healed by switching to a 2D/3D screen and re-capturing. The
+## headless (no viewport), and never returns a frame the editor is not showing: a
+## minimized window returns EDITOR_VIEWPORT_UNAVAILABLE, and a hidden or collapsed
+## 2D/3D view makes the capture switch the main screen and wait for a fresh frame.
+## A hidden view is detected by its container's visibility, not its size: Godot
+## stops rendering a hidden SubViewportContainer's viewport but keeps its size and
+## last texture, so a size check alone would pass an old frame as usable. The
 ## image_response_mode / image_detail / save_path handling — inline vs disk vs both,
 ## the inline-resolution cap, and the res:// or user://screenshots/ save-path guard —
 ## is shaped by the shared ScreenshotResponse builder.
@@ -16,17 +19,24 @@ extends RefCounted
 ## response shaping are reached via the Modules aliases. An extracted submodule of
 ## the editor-command group, reached via a `preload` alias.
 
+## What a capture is aimed at: whichever editor view is shown, or one node's view.
+enum CaptureRequest { STANDARD, NODE_2D, NODE_3D }
+
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Helpers = Modules.CommandHelpers
+
+## Main-screen names as [method EditorInterface.set_main_screen_editor] takes them.
+const SCREEN_2D := "2D"
+const SCREEN_3D := "3D"
 
 ## Below this pixel size a viewport frame is treated as collapsed rather than
 ## usable: Godot clamps every viewport to a hard 2x2 floor, so a zero-size
 ## central editor area bottoms out well under this threshold.
 const MIN_USABLE_DIMENSION := 16
 
-## Re-capture attempts after switching the main screen: a freshly laid-out 2D/3D
+## Re-capture attempts after switching the main screen: a freshly shown 2D/3D
 ## canvas needs a compositing frame or two before its viewport reports real
-## dimensions. Each attempt is one bounded fresh-frame wait, so the worst case is
+## dimensions and holds a newly drawn frame. Each attempt is one bounded fresh-frame wait, so the worst case is
 ## [constant MAX_HEAL_FRAMES] bounds — cheap next to returning a blank capture.
 const MAX_HEAL_FRAMES := 4
 
@@ -43,24 +53,38 @@ const FRESH_FRAME_WAIT_SECONDS := 1.0
 const _HINT_MINIMIZED := "The editor window is minimized, so no viewport is composited — this is not headless. Retry with force_foreground_editor:true to raise the editor automatically, or restore the window yourself; for non-visual checks use script_check."
 
 ## Recovery hint when a main-screen switch laid out a 2D/3D canvas but it still
-## composited nothing usable — an occlusion or timing edge past the bounded heal.
+## composited nothing usable — an occlusion or timing edge past the bounded wait.
 const _HINT_POST_HEAL := "Switched to a 2D/3D main screen but no viewport composited. Retry with force_foreground_editor:true, or use script_check for non-visual verification."
 
 
 # -- Classification -----------------------------------------------------------
 
 
-## Classify a capture by its source (pre-resize) viewport dimensions.
+## Classify a capture by its source viewport: shown or hidden, and its pre-resize
+## dimensions.
 ##
 ## Returns [code]{"ok": true}[/code] when the frame is usable, else
-## [code]{"ok": false, "reason": "no_viewport_screen", "width": w, "height": h}[/code].
-## Minimized is decided at the call site from [method DisplayServer.window_get_mode]
-## (short-circuited before any capture/await), so this pure classifier only
-## distinguishes a usable frame from a collapsed 2D/3D canvas. Editor-free and
-## deterministic — the reason the capture decision lives here rather than inline.
+## [code]{"ok": false, "reason": r, "width": w, "height": h}[/code], where
+## [code]r[/code] is [code]"hidden_main_screen"[/code] for a viewport whose screen is
+## not shown (it keeps its full size and its last frame, so only this flag can tell)
+## or [code]"no_viewport_screen"[/code] for a collapsed one. Minimized is decided at
+## the call site from [method DisplayServer.window_get_mode] (short-circuited before
+## any capture/await), so this pure classifier only tells a usable frame from one
+## the capture must switch the main screen for. Editor-free and deterministic — the
+## reason the capture decision lives here rather than inline.
 ## [param source_width] and [param source_height] are the viewport's pre-resize
-## pixel dimensions.
-static func classify_capture(source_width: int, source_height: int) -> Dictionary:
+## pixel dimensions; [param viewport_shown] is whether its screen is shown.
+static func classify_capture(
+		source_width: int,
+		source_height: int,
+		viewport_shown: bool = true) -> Dictionary:
+	if not viewport_shown:
+		return {
+			"ok": false,
+			"reason": "hidden_main_screen",
+			"width": source_width,
+			"height": source_height,
+		}
 	if source_width < MIN_USABLE_DIMENSION or source_height < MIN_USABLE_DIMENSION:
 		return {
 			"ok": false,
@@ -69,6 +93,26 @@ static func classify_capture(source_width: int, source_height: int) -> Dictionar
 			"height": source_height,
 		}
 	return {"ok": true}
+
+
+## Choose the main screen whose viewport a capture reads.
+##
+## A node capture reads its node's view: [constant SCREEN_3D] for
+## [constant CaptureRequest.NODE_3D], else [constant SCREEN_2D]. A standard capture
+## reads the view the user is looking at: 2D when it is shown, else 3D when that is
+## shown, else 2D. The capture switches to the answered screen only when its viewport
+## is hidden, so a shown 2D or 3D screen is never switched away from.
+## [param request] is a [enum CaptureRequest]; [param shown_2d] and
+## [param shown_3d] say whether each editor viewport's screen is shown.
+## Returns [constant SCREEN_2D] or [constant SCREEN_3D].
+static func choose_screen(request: CaptureRequest, shown_2d: bool, shown_3d: bool) -> String:
+	if request == CaptureRequest.NODE_3D:
+		return SCREEN_3D
+	if request == CaptureRequest.NODE_2D:
+		return SCREEN_2D
+	if shown_3d and not shown_2d:
+		return SCREEN_3D
+	return SCREEN_2D
 
 
 # -- Fresh frame --------------------------------------------------------------
@@ -153,8 +197,9 @@ static func cmd_screenshot(parameters: Dictionary) -> Dictionary:
 
 
 # Node-focused screenshot: select + edit + capture a specific node, then restore
-# the prior selection. A wrong main screen is healed against the node's own
-# viewport kind (3D for a Node3D, else 2D).
+# the prior selection. Reads the node's own viewport (3D for a Node3D, else 2D),
+# switching the main screen to it when it is hidden: edit_node leaves the Script
+# screen up under the editor's default "stay in script editor" setting.
 static func _capture_node(parameters: Dictionary, node_path: String, remediation: Array[String]) -> Dictionary:
 	var root := Helpers.get_edited_root()
 	if root == null:
@@ -167,7 +212,9 @@ static func _capture_node(parameters: Dictionary, node_path: String, remediation
 	if node == null:
 		return MCPToolkitError.fail("NOT_FOUND", "no node at %s" % node_path, MCPToolkitError.HINT_NODE_PATH)
 
-	var wants_3d := node is Node3D
+	var request := CaptureRequest.NODE_2D
+	if node is Node3D:
+		request = CaptureRequest.NODE_3D
 
 	var selection := EditorInterface.get_selection()
 	var prior_selection: Array = []
@@ -179,7 +226,7 @@ static func _capture_node(parameters: Dictionary, node_path: String, remediation
 	EditorInterface.edit_node(node)
 	await await_fresh_frame()
 
-	var image := await _grab_usable_image(wants_3d, remediation)
+	var image := await _grab_usable_image(request, remediation)
 	if image == null:
 		_restore_selection(selection, prior_selection)
 		return MCPToolkitError.fail("EDITOR_VIEWPORT_UNAVAILABLE",
@@ -207,7 +254,7 @@ static func _capture_node(parameters: Dictionary, node_path: String, remediation
 	return MCPToolkitSuccess.ok(response)
 
 
-# Standard viewport screenshot. Defaults the heal target to the 2D viewport.
+# Standard viewport screenshot of whichever 2D or 3D view is shown (see choose_screen).
 static func _capture_standard(parameters: Dictionary, remediation: Array[String]) -> Dictionary:
 	# Fresh frame before the first read: a throttled unfocused editor can otherwise
 	# hand back a slightly stale one. An idle editor draws only on change, so the
@@ -215,7 +262,7 @@ static func _capture_standard(parameters: Dictionary, remediation: Array[String]
 	# current, because minimized is short-circuited up front.
 	await await_fresh_frame()
 
-	var image := await _grab_usable_image(false, remediation)
+	var image := await _grab_usable_image(CaptureRequest.STANDARD, remediation)
 	if image == null:
 		return MCPToolkitError.fail("EDITOR_VIEWPORT_UNAVAILABLE",
 			"editor viewport unavailable: no 2D/3D viewport composited a usable frame", _HINT_POST_HEAL)
@@ -261,50 +308,70 @@ static func _downscale_inline_png(image: Image, parameters: Dictionary) -> Dicti
 	}
 
 
-# -- Viewport heal + foreground ----------------------------------------------
+# -- Main-screen switch + foreground -----------------------------------------
 
 
-# Fetch a usable viewport image, auto-healing a wrong main screen. Reads the
-# requested viewport, and if it is collapsed (2x2 floor, not minimized — that is
-# handled up front) switches to the 2D/3D main screen and re-checks across a
-# bounded frame loop, breaking the instant a usable frame arrives. Appends
-# "switched_main_screen" to [param remediation] when a switch was performed.
-# Returns the usable Image, or null when nothing composited within the cap.
-static func _grab_usable_image(wants_3d: bool, remediation: Array[String]) -> Image:
-	var image := _read_viewport_image(wants_3d)
-	if image != null and classify_capture(image.get_width(), image.get_height())["ok"]:
+# Fetch a usable frame for `request`. Reads the viewport choose_screen picks;
+# when that viewport is hidden or collapsed (not minimized — that is handled up
+# front), switches the main screen to it and re-reads across a bounded frame loop,
+# stopping at the first usable frame. Each re-read follows a fresh-frame wait, so the
+# frame returned was drawn after the screen was shown. Appends "switched_main_screen"
+# to `remediation` when a switch produced the frame. Returns the usable Image,
+# or null when nothing composited within the cap.
+static func _grab_usable_image(request: CaptureRequest, remediation: Array[String]) -> Image:
+	var shown_2d := _viewport_shown(EditorInterface.get_editor_viewport_2d())
+	var shown_3d := _viewport_shown(EditorInterface.get_editor_viewport_3d(0))
+	var screen := choose_screen(request, shown_2d, shown_3d)
+	var image := _read_usable_frame(screen)
+	if image != null:
 		return image
 
-	# Collapsed and not minimized ⇒ the 2D/3D canvas is not the active main screen.
-	# Lay it out and re-capture; there is no getter for the prior screen, so the
-	# switch is one-way and disclosed via remediation rather than restored.
-	EditorInterface.set_main_screen_editor("3D" if wants_3d else "2D")
-	var switched := false
+	# There is no getter for the current main screen, so the switch is one-way and
+	# disclosed via remediation rather than restored.
+	EditorInterface.set_main_screen_editor(screen)
 	for _attempt in range(MAX_HEAL_FRAMES):
 		await await_fresh_frame()
-		image = _read_viewport_image(wants_3d)
-		if image != null and classify_capture(image.get_width(), image.get_height())["ok"]:
-			switched = true
-			break
-
-	if switched:
-		remediation.append("switched_main_screen")
-		return image
+		image = _read_usable_frame(screen)
+		if image != null:
+			remediation.append("switched_main_screen")
+			return image
 	return null
 
 
-# Read the current texture of the requested editor viewport (3D falls back to 2D
-# when no 3D viewport exists). Returns null when no viewport or texture is
-# available.
-static func _read_viewport_image(wants_3d: bool) -> Image:
+# Read `screen`'s editor viewport (3D falls back to 2D when no 3D viewport
+# exists). Returns its current frame when classify_capture finds it usable, else
+# null, including when no viewport or texture is available.
+static func _read_usable_frame(screen: String) -> Image:
 	var viewport: SubViewport = null
-	if wants_3d:
+	if screen == SCREEN_3D:
 		viewport = EditorInterface.get_editor_viewport_3d(0)
 	if viewport == null:
 		viewport = EditorInterface.get_editor_viewport_2d()
 	if viewport == null:
 		return null
-	return viewport.get_texture().get_image()
+	var image := viewport.get_texture().get_image()
+	if image == null:
+		return null
+	var verdict := classify_capture(image.get_width(), image.get_height(), _viewport_shown(viewport))
+	if not bool(verdict["ok"]):
+		return null
+	return image
+
+
+# Whether `viewport`'s screen is shown. Each editor viewport sits in a
+# SubViewportContainer that the editor hides with its main screen, and a hidden
+# container stops its viewport rendering without resizing it, so the container's
+# visibility is the one signal that its last frame is current. A viewport outside
+# a CanvasItem parent counts as shown, leaving the size check to judge it; a
+# missing viewport counts as hidden.
+static func _viewport_shown(viewport: SubViewport) -> bool:
+	if viewport == null:
+		return false
+	var parent := viewport.get_parent()
+	if not (parent is CanvasItem):
+		return true
+	var container: CanvasItem = parent
+	return container.is_visible_in_tree()
 
 
 # Un-minimize + raise + focus the editor window, then await a composite frame so

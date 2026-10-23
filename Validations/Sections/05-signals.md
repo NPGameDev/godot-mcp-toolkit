@@ -23,20 +23,17 @@
 - **Expect:** `hit` signal connections array contains `{ target_path: "Sv2Label", method_name: "set_text" }`
 
 **5.4** `signal_manage` (method hint test) — node_path=`Sv2Player`, signal_name=`hit`, action=`connect`, target_path=`Sv2Label`, method_name=`nonexistent_method_xyz`
-- **Expect:** success OR warning with method hint. The 3-case diagnostic should fire:
-  1. If method exists → connect silently
-  2. If method doesn't exist but similar ones do → hint with suggestions
-  3. If no methods match → generic warning
+- **Expect:** error `INVALID_PARAMS`: `"method nonexistent_method_xyz not on Sv2Label; no script is attached — use node_set_script first, or connect via _ready() code"`. The connect is refused, not made with a warning. The method hint depends on the target: no script attached (this case, `Sv2Label` has none) → the `node_set_script` hint above; a script whose source defines the method but does not compile → a "likely has compilation errors" hint; a script without the method → a "check spelling and inheritance chain" hint.
 
-> **REGRESSION WATCH (5f96b62):** If no method hint appears when connecting to
-> a non-existent method, the signal_manage method diagnostic has regressed.
-> Flag as **Major**.
+> **REGRESSION WATCH (5f96b62):** If the `INVALID_PARAMS` error carries no method
+> hint after `not on Sv2Label` when connecting to a non-existent method, the
+> signal_manage method diagnostic has regressed. Flag as **Major**.
 
 **5.5** `signal_manage` (disconnect) — node_path=`Sv2Player`, signal_name=`hit`, action=`disconnect`, target_path=`Sv2Label`, method_name=`set_text`
 - **Expect:** success. The disconnect success payload also echoes the node under `node_path` (not `source_path`).
 
 **5.6** `signal_manage` (disconnect invalid method) — disconnect `nonexistent_method_xyz` connection from 5.4
-- **Expect:** success (or NOT_FOUND if connection wasn't created)
+- **Expect:** error `INVALID_PARAMS` with the same message and hint as 5.4 (5.4 created no connection, and the method check refuses `disconnect` the same way it refuses `connect`).
 
 **5.7** `signal_list` — node_path=`Sv2Player`, include_connections=`true`
 - **Expect:** `hit` connections array is empty

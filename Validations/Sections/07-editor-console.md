@@ -4,18 +4,21 @@
 **Tools tested:** editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh, execute_code (for seeding)
 **Tests:** 25
 
-> **Precondition — `editor_screenshot` self-diagnoses a collapsed viewport.**
-> The tool no longer returns a blank `2x2` / ~81-byte PNG for a viewport that
-> cannot composite. A **wrong main screen** (Script / AssetLib / Output active,
-> not minimized) is **auto-healed** — the tool switches to a 2D/3D main screen,
-> re-captures, and discloses via a success-side `remediation:["switched_main_screen"]`
+> **Precondition — `editor_screenshot` never returns a frame the editor is not showing.**
+> When a **non-2D/3D main screen** is active (Script / AssetLib / Game, not
+> minimized), Godot stops rendering the hidden 2D and 3D viewports but keeps their
+> full size and their **last frame**, so a capture that read them would return an
+> old image at real dimensions. The tool detects the hidden screen, switches the
+> main screen to 2D (or to 3D for a `Node3D` `node_path`), waits for a fresh frame,
+> and discloses the switch via a success-side `remediation:["switched_main_screen"]`
 > field (the switch is one-way; the editor is left on 2D/3D — expected, not a
-> failure). A **minimized** editor cannot composite at all, so it returns the
-> `EDITOR_VIEWPORT_UNAVAILABLE` error (**not** a 2x2 PNG, **not** headless — a
-> headless editor returns `HEADLESS_UNSUPPORTED`, so any PNG rules headless out);
-> pass `force_foreground_editor:true` to have the tool un-minimize + raise the
-> window and capture. For 7.2 (baseline) the editor should already be restored on
-> a 2D/3D screen so no remediation is needed.
+> failure). On the **2D or 3D screen** a capture without `node_path` returns the
+> shown view and switches nothing. A **minimized** editor cannot composite at all,
+> so it returns the `EDITOR_VIEWPORT_UNAVAILABLE` error (**not** a PNG, **not**
+> headless — a headless editor returns `HEADLESS_UNSUPPORTED`, so any PNG rules
+> headless out); pass `force_foreground_editor:true` to have the tool un-minimize +
+> raise the window and capture. For 7.2 (baseline) the editor should already be
+> restored on a 2D/3D screen so no remediation is needed.
 
 ---
 
@@ -23,13 +26,13 @@
 - **Expect:** success
 
 **7.2** `editor_screenshot` — editor restored + foregrounded on the **2D** main screen
-- **Expect:** Returns inline PNG at real viewport dimensions (hundreds of px, KB-scale bytes), and **no** `remediation` field (nothing had to be healed). A `2x2` / ~81-byte result on a genuinely-2D-foregrounded editor is a regression — flag it.
+- **Expect:** Returns inline PNG at real viewport dimensions (hundreds of px, KB-scale bytes), and **no** `remediation` field (the 2D screen is shown, so nothing is switched). Then switch to the **3D** main-screen tab and `editor_screenshot` again: it returns the **3D** view (not the 2D view's last frame) with **no** `remediation`. A `remediation` on either capture is a false switch — flag it.
 
-**7.2b** Auto-heal (standard path) — switch to the **Script** main-screen tab, then `editor_screenshot`
-- **Expect:** A healed **usable** frame (real dimensions) plus `remediation:["switched_main_screen"]`. The editor is left on the 2D screen afterward (no restore) — expected. A blank/2x2 frame or a missing `remediation` is a FAIL.
+**7.2b** Main-screen switch (standard path) — note `Sv2Sprite`'s position, switch to the **Script** main-screen tab, then while Script stays active move the sprite (`node_set_property` Sv2Sprite position=`{"type":"Vector2","x":600,"y":400}`), then `editor_screenshot`
+- **Expect:** A **usable** frame (real dimensions) plus `remediation:["switched_main_screen"]`, and the frame is **fresh**: it shows the sprite at its new position. The editor is left on the 2D screen afterward (no restore) — expected. A missing `remediation`, or a frame that still shows the sprite where it was before the move (the hidden viewport's last frame), is a FAIL. Cleanup: move the sprite back.
 
-**7.2c** Auto-heal (node-focused path) — on the Script tab, `editor_screenshot` node_path=`Sv2Sprite` (a Node2D), then (separately) node_path of any **Node3D** in the scene
-- **Expect:** Each returns a healed usable frame with `remediation` including `switched_main_screen` — the Node3D routes to the 3D viewport, the Node2D to the 2D viewport. First set the sprite texture if needed: `node_set_property` Sv2Sprite texture=`{"type":"Resource","path":"res://icon.svg"}`.
+**7.2c** Main-screen switch (node-focused path) — on the Script tab, change `Sv2Sprite` (`node_set_property` Sv2Sprite rotation_degrees=`45`), then `editor_screenshot` node_path=`Sv2Sprite` (a Node2D); then create a visible **Node3D** (`scene_create_node` node_type=`MeshInstance3D`, node_name=`Sv2ShotBox3D`, parent_path=`.`, then `node_set_property` Sv2ShotBox3D mesh=`{"type":"NewResource","class":"BoxMesh"}`), switch back to the Script tab, and `editor_screenshot` node_path=`Sv2ShotBox3D` image_detail=`mid`
+- **Expect:** Each returns a usable frame with `remediation` including `switched_main_screen` — the Node2D routes to the 2D viewport, the Node3D to the 3D viewport — and each frame is **fresh**: the sprite shows rotated, and the box is drawn. A missing `remediation`, or a frame without the change made on the Script tab, is a FAIL. First set the sprite texture if needed: `node_set_property` Sv2Sprite texture=`{"type":"Resource","path":"res://icon.svg"}`. Cleanup: rotate the sprite back; `scene_delete_node` `Sv2ShotBox3D`.
 
 **7.2d** Minimized signal — **minimize** the editor window, then `editor_screenshot`
 - **Expect:** `EDITOR_VIEWPORT_UNAVAILABLE` (**not** a 2x2 PNG, **not** `HEADLESS_UNSUPPORTED`). The `hint` names the minimized cause and points to `force_foreground_editor` / `script_check`.
@@ -48,7 +51,7 @@
 - **Expect:** The inline shape (`image_base64`, `mime_type`, `width`, `height`, `bytes`) **plus** `path` = the globalized absolute path of the saved `res://sv2_shot.png`; the file exists. Cleanup: `file_delete` (or `resource_delete`) `res://sv2_shot.png`.
 
 **7.2i** Oversize escape hatch — create a `Node3D` (`scene_create_node` node_type=`Node3D`, node_name=`Sv2ShotProbe3D`, parent_path=`.`), then `editor_screenshot` node_path=`Sv2ShotProbe3D` (default `image_detail`, i.e. `full`)
-- **Expect:** `RESPONSE_TOO_LARGE` whose `hint` names `image_response_mode:"disk"` as the fix (a full-size 3D capture exceeds the WS buffer). Then re-call `editor_screenshot` node_path=`Sv2ShotProbe3D` image_response_mode=`disk` → lean envelope + `path` on disk (no `image_base64`). Cleanup: `scene_delete_node` `Sv2ShotProbe3D`; delete the written PNG.
+- **Expect:** **either** an inline image **or** `RESPONSE_TOO_LARGE` whose `hint` names `image_response_mode:"disk"` as the fix: which one depends on the display size, because a full-size 3D frame lands near the inline limit (1024 KB `ws_buffer_kb` minus a 4096 B margin, 1,044,480 B of response). Record the frame's PNG `bytes` and its base64 size. Then re-call `editor_screenshot` node_path=`Sv2ShotProbe3D` image_response_mode=`disk` → lean envelope + `path` on disk (no `image_base64`). Cleanup: `scene_delete_node` `Sv2ShotProbe3D`; delete the written PNG.
 > **REGRESSION WATCH (41o-duodecies-ter):** the oversize inline hint must name `image_response_mode:"disk"` (the tailored escape hatch), not the old generic "narrow the query / paginate" boilerplate. If the disk retry still returns `image_base64` or omits `path`, the disk-mode lean envelope regressed. Flag as **Major**.
 
 **7.2j** `image_detail` inline cap — with the editor restored on a 2D/3D screen, capture at each level and compare the returned dims:
@@ -59,13 +62,13 @@
 > **REGRESSION WATCH (41o-quater-ter):** the inline cap is proportional + aspect-preserving + shrink-only. If `mid`/`low` distorts the aspect ratio, upscales a small viewport, or omits the `image_detail`/`returned` disclosure, the `image_detail` downscale regressed. Flag as **Major**.
 
 **7.2k** `image_detail` bad-value guard — `editor_screenshot` image_detail=`huge`
-- **Expect:** `INVALID_PARAMS` naming the offending value and the valid set `[full, mid, low]` — NOT a silent full-res capture. (The old `size` param is gone: `editor_screenshot` no longer accepts a `size` `{width,height}`; framing a node stays `node_path`'s job.)
+- **Expect:** a `-32602` input-validation rejection from the server before the call reaches the editor: `MCP error -32602: Input validation error: … Invalid option: expected one of "full"|"mid"|"low"` at `image_detail`. It lists the valid set but does not echo `huge` — NOT a silent full-res capture. (The toolkit's own `INVALID_PARAMS` guard, which names the value, is pinned by its headless units.) (The old `size` param is gone: `editor_screenshot` no longer accepts a `size` `{width,height}`; framing a node stays `node_path`'s job.)
 
 **7.4** `editor_get_console` — (default params)
 - **Expect:** success, returns console output
 
 **7.5** Seed console — `execute_code` code=`push_warning("SV2_SEED_Alpha42 test_line(parens)")`, channel=`"editor"`
-- **Expect:** success — `channel:"editor"` runs the snippet in the editor process (no running game needed), so the warning lands in the editor console for 7.6+ to read. Without `channel:"editor"`, `execute_code` defaults to `channel:"runtime"` and returns `GAME_NOT_RUNNING` when no game is running.
+- **Expect:** success — `channel:"editor"` runs the snippet in the editor process (no running game needed). **On Godot 4.5+** the warning lands in the editor console buffer for 7.6+ to read. **On Godot 4.2–4.4** it does not: the editor process writes no log file, and the buffer tails only a running game's log, so 7.6, 7.7, 7.8 and 7.10 return `"returned":0,"total_lines":0` there — expected, not a FAIL (7.9's regex error is unaffected). Without `channel:"editor"`, `execute_code` defaults to `channel:"runtime"` and returns `GAME_NOT_RUNNING` when no game is running.
 
 **7.5a** Legacy channel alias — `execute_code` code=`2 + 2`, channel=`"game"` (no game running)
 - **Expect:** `GAME_NOT_RUNNING` — the legacy value `"game"` is accepted as a hidden alias for `"runtime"` and routes to the runtime channel, identical to omitting the param. Advertised `tools/list` shows only `channel: "editor" | "runtime"`; `"game"` is accepted but not advertised.
@@ -75,23 +78,23 @@
 > hidden legacy alias has regressed. It must still map `game`→`runtime`.
 
 **7.6** `editor_get_console` — text_filter=`SV2_SEED`, is_regex=`false`
-- **Expect:** `returned` >= 1 (ledger #20: the matching-line count field is `returned`, was `count`)
+- **Expect:** `returned` >= 1 on Godot 4.5+, `returned` 0 on 4.2–4.4 (see 7.5) (the matching-line count field is `returned`, was `count`)
 
 **7.7** `editor_get_console` — text_filter=`SV2_SEED_Alpha\\d+`, is_regex=`true`
-- **Expect:** `returned` >= 1
+- **Expect:** `returned` >= 1 on Godot 4.5+, `returned` 0 on 4.2–4.4 (see 7.5)
 
 > **REGRESSION WATCH (a828cb1):** If `\\d+` (double-escaped in JSON) matches but
 > the tool does NOT warn about potential double-escaping, the double-escape
 > metacharacter warning has regressed. Check response hints for escaping note.
 
 **7.8** `editor_get_console` — text_filter=`test_line(parens)`, is_regex=`false`
-- **Expect:** `returned` >= 1 — metacharacters treated as literal in plain mode
+- **Expect:** `returned` >= 1 on Godot 4.5+, `returned` 0 on 4.2–4.4 (see 7.5) — metacharacters treated as literal in plain mode
 
 **7.9** `editor_get_console` — text_filter=`(unclosed`, is_regex=`true`
 - **Expect:** INVALID_PARAMS with regex hint
 
 **7.10** `editor_get_console` — text_filter=`SV2_SEED`, level_filter=`["warning"]`
-- **Expect:** `returned` >= 1, both filters compose (AND)
+- **Expect:** `returned` >= 1 on Godot 4.5+, `returned` 0 on 4.2–4.4 (see 7.5), both filters compose (AND)
 
 **7.11** `editor_get_console` — clear_buffer=`true`
 - **Expect:** success, buffer cleared

@@ -251,6 +251,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `editor_screenshot` no longer hangs until the call times out when the editor
   window is open but nothing on screen has changed for a while. It now asks the
   editor to draw a frame and stops waiting for each frame after a second.
+- `editor_screenshot` no longer returns an old frame when the Script editor (or
+  another non-2D/3D screen) is open: it switches to the 2D or 3D screen, captures
+  a fresh frame and reports `remediation: ["switched_main_screen"]`. The editor
+  stays on that screen afterwards, so a capture taken while you work in the Script
+  editor moves the editor to 2D or 3D. On the 3D screen, a capture without
+  `node_path` now returns the 3D view instead of an old 2D frame.
 - The toolkit dock no longer makes the editor redraw every second while nothing
   in it changes. On Godot 4.2 to 4.5 this happened even with the dock hidden, so
   an idle editor kept using CPU.

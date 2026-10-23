@@ -56,9 +56,9 @@
 > have regressed.
 
 **6.5** `script_write` (preload hint) — file_path=`res://sv2_validation/sv2_preload_test.gd`, content=`extends Node\n\nvar x = preload("res://sv2_nonexistent_file_99999.gd")\n`
-- **Expect:** `valid: false`, diagnostics mention preload failure with actionable hint suggesting `load()` instead
+- **Expect:** `valid: false`. **On Godot 4.5+:** the diagnostics mention the preload failure with an actionable hint suggesting `load()` instead. **On Godot 4.2–4.4:** `valid: false` still holds, but the `load()` hint is ABSENT, which is not a regression: the hint is built from the log buffer's errors, and before 4.5 that buffer tails the running game's log file only, so it holds no editor-side error.
 
-> **REGRESSION WATCH (a46487b):** If diagnostics show only generic error without
+> **REGRESSION WATCH (a46487b):** If diagnostics on Godot 4.5+ show only generic error without
 > mentioning preload specifically, the preload hint has regressed. Previous
 > off-by-one bug in LogBuffer `pre_id` caused missed hints. Flag as **Major**.
 
