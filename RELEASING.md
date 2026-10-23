@@ -24,7 +24,8 @@ The at-a-glance sequence. Each step links to its detailed section below.
    [Manual pre-release gate](#manual-pre-release-gate).
 3. **Dry-run the release workflow** (`workflow_dispatch`, `dry-run: true`) and
    require it green — see [Dry-run rehearsal](#dry-run-rehearsal).
-4. **Run `./scripts/release.sh <version>`** (try `--dry-run` first) — see
+4. **Run `./scripts/release.sh <version>`** (toolkit: `--compatible-server <X.Y.Z>`
+   or `--keep-compatible-server`; try `--dry-run` first) — see
    [The release script](#the-release-script).
 5. **Review the paused CHANGELOG** and the `npm pack` listing, then let the
    script commit + tag — see [The release script](#the-release-script).
@@ -120,9 +121,10 @@ change the public API surface. Examples:
 ## Compatibility
 
 The two artifacts version independently, so mismatched pairs are the **normal**
-state in the wild — the shipped `.mcp.json` runs the server via unpinned `npx`,
-so servers auto-update while the installed AssetLib addon stays put. This is
-supported by design, governed by a **declared floor** on each side:
+state in the wild. **Write .mcp.json** pins the server the toolkit was tested
+with, but a hand-written, unpinned `npx` entry picks up each new server while
+the installed AssetLib addon stays put. This is supported by design, governed by
+a **declared floor** on each side:
 
 - Each release declares the **minimum sibling** it needs — the server a
   `min_toolkit`, the toolkit a `min_server` (`major.minor`). A side raises its
@@ -257,11 +259,13 @@ tag. It does **not** push.
 
 ```bash
 # Common case: release one repo's half, from that repo's root. Both repos
-# release together at the same version for now; see Version scheme.
-./scripts/release.sh 1.1.0
+# release together at the same version for now; see Version scheme. The
+# toolkit's script also states its server pin (--compatible-server X.Y.Z, or
+# --keep-compatible-server); the server's script takes neither, so drop it there.
+./scripts/release.sh 1.1.0 --compatible-server 1.1.0
 
 # Rehearse first — validate + report, write nothing:
-./scripts/release.sh 1.1.0 --dry-run
+./scripts/release.sh 1.1.0 --compatible-server 1.1.0 --dry-run
 
 # A change that spans BOTH repos (rare) — from the server repo:
 ./scripts/release.sh 1.1.0 --with-sibling 1.1.0   # versions match while releases are lockstep
@@ -326,11 +330,12 @@ In this mode, a question with no answer stops the run with an error naming the
 flag it needed, and a missing `gh` is an error rather than a prompt. Before the
 pre-flights, the run prints each prompt and how it will be answered. Rehearse
 with `--dry-run` first. A dry run never reaches the curation pause, so it needs
-only `--gate-dispositions`:
+only `--gate-dispositions`. On the toolkit, both commands also carry the server
+pin, as below; on the server, drop it:
 
 ```bash
-./scripts/release.sh 1.1.0 --dry-run --non-interactive --gate-dispositions gate.md
-./scripts/release.sh 1.1.0 --non-interactive --gate-dispositions gate.md --changelog-curated
+./scripts/release.sh 1.1.0 --compatible-server 1.1.0 --dry-run --non-interactive --gate-dispositions gate.md
+./scripts/release.sh 1.1.0 --compatible-server 1.1.0 --non-interactive --gate-dispositions gate.md --changelog-curated
 ```
 
 The two answer flags are a usage error without `--non-interactive`, so an
