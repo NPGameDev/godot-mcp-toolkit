@@ -423,8 +423,9 @@ version lives in:
 
 Compatibility is a declared floor, not a matching version: the toolkit's
 `MIN_SERVER_VERSION` (`addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd`)
-and the server's `MIN_TOOLKIT_VERSION` (the server repo's `src/shared/version.ts`). The handshake warns on a breach
-and never refuses the connection. A floor rises only when a side depends on the
+and the server's `MIN_TOOLKIT_VERSION` (the server repo's
+`src/shared/version.ts`). The handshake warns on a breach and never refuses the
+connection. A floor rises only when a side depends on the
 other's newer wire contract, and that raise is a MAJOR bump.
 
 For now each repo's tag gate requires the pinned sibling to declare the version

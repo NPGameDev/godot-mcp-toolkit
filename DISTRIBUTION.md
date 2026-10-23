@@ -131,8 +131,9 @@ AssetLib submission (checklist below).
 
 ## Release assets inventory (what ships vs what doesn't)
 
-The plugin zip contains **only** `addons/godot_mcp_toolkit/**`, copied whole as
-git has it: `plugin.cfg`, `plugin.gd`, the `.mcp.json.template`, the addon's
+The plugin zip contains **only** `addons/godot_mcp_toolkit/**`, copied whole
+from the working tree (build from a clean checkout, or untracked files under the
+addon ship too): `plugin.cfg`, `plugin.gd`, `icon.svg`, the `.mcp.json.template`, the addon's
 own `README.md`, `LICENSE` and `ATTRIBUTIONS.md`, the user docs under `docs/`,
 the companion skills under `CompanionSkills/`, every source folder and the
 `.uid` sidecars (the build fails if none ship). The source archive AssetLib
