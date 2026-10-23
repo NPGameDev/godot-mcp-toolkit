@@ -4,7 +4,7 @@
 
 ## Dogfood setup (contributors)
 
-The toolkit repo root is itself a Godot 4.4 project, so "developing the
+The toolkit repo root is itself a Godot 4.5 project, so "developing the
 plugin" and "using the plugin against a project" share a single workflow:
 open this repo in Godot, run `claude` from its root.
 
@@ -17,7 +17,7 @@ npm install
 npm run build
 
 # every session
-# 1) open THIS (toolkit) repo root in Godot 4.4+
+# 1) open THIS (toolkit) repo root in Godot 4.5+
 # 2) Project Settings -> Plugins -> "Godot MCP Toolkit" -> Active
 # 3) from this repo root (where the dogfood .mcp.json lives):
 claude
@@ -45,7 +45,7 @@ Linux), so a tracked copy would differ between machines. The shipped
 2. Extract into `<your-godot-project>/addons/`. The zip's top-level entry is
    `addons/godot_mcp_toolkit/`, so the extract creates the right layout.
 3. In Godot: Project Settings → Plugins → "Godot MCP Toolkit" → Active.
-4. Confirm the editor log shows `WS server on 127.0.0.1:6550`.
+4. Confirm the editor log shows `[MCPServer] listening on 127.0.0.1:6550`.
 
 ## End-user plugin install (Asset Library, once submitted)
 
@@ -67,29 +67,30 @@ this file for you, so the manual copy is optional.)
 
 ## Release process (cross-repo)
 
-The plugin zip and the npm server must ship in lockstep. Version numbers stay
-synchronised manually; no bump script exists yet.
+The plugin and the npm server version independently (ADR 0024): each repo has
+its own semver, tags and release cadence, and compatibility is a declared floor
+that the connect-time handshake checks, not a matching version number. Each
+repo releases itself with its own `scripts/release.sh`. For now each repo's tag
+gate requires the pinned sibling to declare the version being tagged, so both
+repos still release at the same version, server first.
 
-1. In the **toolkit repo**: bump `addons/godot_mcp_toolkit/plugin.cfg` →
-   `version="X.Y.Z"`.
-2. In the **server repo**: bump `package.json` → `"version": "X.Y.Z"` (same
-   value).
-3. In the toolkit repo: run the release script:
-   ```
-   # Unix / macOS
-   ./scripts/build-plugin-release.sh
-   # Windows (PowerShell)
-   ./scripts/build-plugin-release.ps1
-   ```
-   Produces `dist-plugin/godot-mcp-toolkit-<version>.zip`. The top-level entry
-   inside the zip is `addons/godot_mcp_toolkit/` (no repo-root noise).
-4. In the server repo: `npm pack` to inspect (`tar -tvzf
-   npgamedev-godot-mcp-server-<version>.tgz` — scoped names yield dashed
-   tarballs), then `npm publish` (requires `npm login`).
-5. In the toolkit repo: `git tag v<version>`, `git push origin v<version>`,
-   create a GitHub release, and attach the plugin zip.
-6. Re-submit to AssetLib via the checklist below — each new version is a new
-   submission.
+[RELEASING.md](RELEASING.md) holds the ritual (the version scheme, the release
+script and its server-pin flag, the sibling pins) and
+[docs/dev/release-runbook.md](docs/dev/release-runbook.md) holds the
+release-day order for both repos.
+
+To build the plugin zip by hand:
+
+```
+# Unix / macOS
+./scripts/build-plugin-release.sh
+# Windows (PowerShell)
+./scripts/build-plugin-release.ps1
+```
+
+It produces `dist-plugin/godot-mcp-toolkit-<version>.zip`, whose top-level entry
+is `addons/godot_mcp_toolkit/` (no repo-root noise). Each new version is a new
+AssetLib submission (checklist below).
 
 ---
 
@@ -107,8 +108,9 @@ synchronised manually; no bump script exists yet.
 4. Go to <https://godotengine.org/asset-library/>, log in, → Submit an asset:
    - **Asset Name:** `Godot MCP Toolkit`
    - **Category:** `Addons`
-   - **Godot version:** minimum from `project.godot` `config/features`
-     (currently `4.4`)
+   - **Godot version:** the toolkit's minimum, the **Minimum** line in the
+     README's "Godot version support" (currently `4.2`), not the dogfood
+     project's `config/features`
    - **Version:** matches `plugin.cfg` version
    - **Repository URL:** `https://github.com/NPGameDev/godot-mcp-toolkit`
    - **Issues URL:** `https://github.com/NPGameDev/godot-mcp-toolkit/issues`
@@ -129,23 +131,17 @@ synchronised manually; no bump script exists yet.
 
 ## Release assets inventory (what ships vs what doesn't)
 
-The plugin zip contains **only** `addons/godot_mcp_toolkit/**`:
+The plugin zip contains **only** `addons/godot_mcp_toolkit/**`, copied whole as
+git has it: `plugin.cfg`, `plugin.gd`, the `.mcp.json.template`, the addon's
+own `README.md`, `LICENSE` and `ATTRIBUTIONS.md`, the user docs under `docs/`,
+the companion skills under `CompanionSkills/`, every source folder and the
+`.uid` sidecars (the build fails if none ship). The source archive AssetLib
+downloads carries the same tree: `.gitattributes` export-ignores every path
+outside `addons/`.
 
-```
-godot-mcp-toolkit-X.Y.Z.zip
-└── addons/
-    └── godot_mcp_toolkit/
-        ├── plugin.cfg
-        ├── plugin.gd
-        ├── mcp_server.gd
-        ├── icon.svg
-        ├── README.md
-        └── .mcp.json.template
-```
-
-Repo-root files (`project.godot`, `icon.png`, `LICENSE`, `README.md`, `.mcp.json`,
-`CLAUDE.md`, `ATTRIBUTIONS.md`, `DISTRIBUTION.md`, `scripts/`, `Main.tscn`, the
-`.godot/` cache, smoke artifacts) are **not** in the zip — they are
+Everything outside the addon (the dogfood project's `project.godot` and
+`Main.tscn`, `icon.png`, the root docs, `scripts/`, `test/`, `.github/`, the
+`.godot/` cache and any local `.mcp.json`) is **not** in the zip: those are
 dogfood-project or AssetLib-landing-page concerns, not end-user project
 additions.
 

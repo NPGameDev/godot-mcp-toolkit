@@ -413,15 +413,23 @@ if you're not intending to commit layout changes.
 See [`DISTRIBUTION.md`](./DISTRIBUTION.md) — covers the AssetLib route, the
 manual-zip route, and the server-side `npm install -g` step.
 
-## Version sync policy
+## Version policy
 
-Both repos (toolkit + server) share a single semver. The version lives in:
+The toolkit and the server version independently (ADR 0024): each has its own
+semver, tags and release cadence, and a side bumps only when it changed. The
+version lives in:
 - **Toolkit:** `addons/godot_mcp_toolkit/plugin.cfg` → `version=`
 - **Server:** `package.json` → `"version"`
 
-`scripts/get-version.sh` extracts the declared version (CI uses this to
-validate sync). Future version bumps change both files and tag both repos
-with the same `vX.Y.Z` tag.
+Compatibility is a declared floor, not a matching version: the toolkit's
+`MIN_SERVER_VERSION` (`addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd`)
+and the server's `MIN_TOOLKIT_VERSION` (the server repo's `src/shared/version.ts`). The handshake warns on a breach
+and never refuses the connection. A floor rises only when a side depends on the
+other's newer wire contract, and that raise is a MAJOR bump.
+
+For now each repo's tag gate requires the pinned sibling to declare the version
+being tagged, so both repos still release at the same version, server first.
+[RELEASING.md](RELEASING.md) ("Version scheme") has the details and the ritual.
 
 ## Contributing
 
