@@ -446,7 +446,8 @@ the familiar `lsp.serverHost` client setting.
 
 When the editor loses focus, Godot throttles its process loop to a low-power
 frame rate (the `interface/editor/unfocused_low_processor_mode_sleep_usec`
-editor setting, ~10 fps by default). The toolkit polls its WebSocket inside that
+editor setting, under `interface/editor/timers/` on Godot 4.7+, ~10 fps by
+default). The toolkit polls its WebSocket inside that
 loop, so an unfocused editor answers MCP commands only ~2–3 times per second.
 During a normal MCP session the editor *is* unfocused (you're looking at the chat
 window), so the toolkit raises the unfocused frame rate while a client is

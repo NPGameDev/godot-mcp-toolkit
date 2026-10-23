@@ -51,6 +51,7 @@ const NodeSetScriptTests := preload("res://test/units/node_set_script_tests.gd")
 const ScriptReloadTests := preload("res://test/units/script_reload_tests.gd")
 const ScriptEditTests := preload("res://test/units/script_edit_tests.gd")
 const VersionFloorTests := preload("res://test/units/version_floor_tests.gd")
+const EngineSettingNamesTests := preload("res://test/units/engine_setting_names_tests.gd")
 const PeerCompatTests := preload("res://test/units/peer_compat_tests.gd")
 const UpdateCheckTests := preload("res://test/units/update_check_tests.gd")
 const SetupWizardTests := preload("res://test/units/setup_wizard_tests.gd")
@@ -111,6 +112,7 @@ func _init() -> void:
 	ScriptReloadTests.run(testing)
 	await ScriptEditTests.run(testing)  # the handler groups await script.edit → coroutine
 	VersionFloorTests.run(testing)
+	EngineSettingNamesTests.run(testing)
 	PeerCompatTests.run(testing)
 	UpdateCheckTests.run(testing)
 	await SetupWizardTests.run(testing, self)  # the run-ending groups await frames → coroutine

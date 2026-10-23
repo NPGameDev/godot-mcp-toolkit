@@ -254,6 +254,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The toolkit dock no longer makes the editor redraw every second while nothing
   in it changes. On Godot 4.2 to 4.5 this happened even with the dock hidden, so
   an idle editor kept using CPU.
+- On Godot 4.7, keeping the editor responsive while unfocused now also works when
+  the editor starts without saved editor settings (a first launch, or CI), and
+  connecting a client no longer prints `SCRIPT ERROR: Invalid call. Nonexistent
+  'int' constructor.` Godot 4.7 renamed the setting the toolkit adjusts to
+  `interface/editor/timers/unfocused_low_processor_mode_sleep_usec`.
 
 ## [1.0.4] - 2026-10-14
 
