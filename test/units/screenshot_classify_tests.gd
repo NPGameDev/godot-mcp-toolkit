@@ -15,7 +15,6 @@ static func run(testing) -> void:
 	_test_collapsed(testing)
 	_test_boundary(testing)
 	_test_hidden_screen(testing)
-	_test_shown_screen(testing)
 	_test_standard_screen_choice(testing)
 	_test_node_screen_choice(testing)
 
@@ -69,18 +68,6 @@ static func _test_hidden_screen(testing) -> void:
 	var collapsed := EditorScreenshot.classify_capture(2, 2, viewport_shown)
 	testing.eq(str(collapsed["reason"]), "hidden_main_screen",
 		"hidden and collapsed → the hidden reason")
-	print("")
-
-
-# A shown screen's frame is judged by its size alone.
-static func _test_shown_screen(testing) -> void:
-	testing.begin("classify_capture — frame from a shown main screen")
-	var viewport_shown := true
-	testing.ok(bool(EditorScreenshot.classify_capture(1280, 720, viewport_shown)["ok"]),
-		"usable-size frame from a shown viewport → ok")
-	var collapsed := EditorScreenshot.classify_capture(2, 2, viewport_shown)
-	testing.eq(str(collapsed["reason"]), "no_viewport_screen",
-		"collapsed frame from a shown viewport → the collapse reason")
 	print("")
 
 

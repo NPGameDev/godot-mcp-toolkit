@@ -3,9 +3,10 @@ extends RefCounted
 ## editor.screenshot: capture the editor viewport to a PNG envelope — either the
 ## shown 2D or 3D view, or focused on one node (select + edit + restore the prior
 ## selection). Caps the inline image to the requested image_detail level, handles
-## headless (no viewport), and never returns a frame the editor is not showing: a
+## headless (no viewport), and never reads a view the editor is not showing: a
 ## minimized window returns EDITOR_VIEWPORT_UNAVAILABLE, and a hidden or collapsed
-## 2D/3D view makes the capture switch the main screen and wait for a fresh frame.
+## 2D/3D view makes the capture switch the main screen and wait, within a bound,
+## for a fresh frame.
 ## A hidden view is detected by its container's visibility, not its size: Godot
 ## stops rendering a hidden SubViewportContainer's viewport but keeps its size and
 ## last texture, so a size check alone would pass an old frame as usable. The
@@ -36,8 +37,9 @@ const MIN_USABLE_DIMENSION := 16
 
 ## Re-capture attempts after switching the main screen: a freshly shown 2D/3D
 ## canvas needs a compositing frame or two before its viewport reports real
-## dimensions and holds a newly drawn frame. Each attempt is one bounded fresh-frame wait, so the worst case is
-## [constant MAX_HEAL_FRAMES] bounds — cheap next to returning a blank capture.
+## dimensions and holds a newly drawn frame. Each attempt is one bounded
+## fresh-frame wait, so the worst case is [constant MAX_HEAL_FRAMES] bounds — cheap
+## next to returning a blank capture.
 const MAX_HEAL_FRAMES := 4
 
 ## Bound on each fresh-frame wait, matching the runtime screenshot's bound. A
@@ -101,7 +103,11 @@ static func classify_capture(
 ## [constant CaptureRequest.NODE_3D], else [constant SCREEN_2D]. A standard capture
 ## reads the view the user is looking at: 2D when it is shown, else 3D when that is
 ## shown, else 2D. The capture switches to the answered screen only when its viewport
-## is hidden, so a shown 2D or 3D screen is never switched away from.
+## is hidden or collapsed, so a standard capture never switches away from a shown 2D
+## or 3D screen. A node capture runs after [method EditorInterface.edit_node], which
+## already moves a shown 2D or 3D screen to a [CanvasItem]'s 2D or a [Node3D]'s 3D
+## screen, so it switches only from another screen, or from 3D to 2D for a node that
+## is neither.
 ## [param request] is a [enum CaptureRequest]; [param shown_2d] and
 ## [param shown_3d] say whether each editor viewport's screen is shown.
 ## Returns [constant SCREEN_2D] or [constant SCREEN_3D].
@@ -314,10 +320,12 @@ static func _downscale_inline_png(image: Image, parameters: Dictionary) -> Dicti
 # Fetch a usable frame for `request`. Reads the viewport choose_screen picks;
 # when that viewport is hidden or collapsed (not minimized — that is handled up
 # front), switches the main screen to it and re-reads across a bounded frame loop,
-# stopping at the first usable frame. Each re-read follows a fresh-frame wait, so the
-# frame returned was drawn after the screen was shown. Appends "switched_main_screen"
-# to `remediation` when a switch produced the frame. Returns the usable Image,
-# or null when nothing composited within the cap.
+# stopping at the first usable frame. Each re-read follows a bounded fresh-frame
+# wait, so the frame returned is normally one drawn after the screen was shown; a
+# wait that lapses still re-reads, and may return the frame drawn before the screen
+# was hidden. Appends "switched_main_screen" to `remediation` when a switch
+# produced the frame. Returns the usable Image, or null when nothing composited
+# within the cap.
 static func _grab_usable_image(request: CaptureRequest, remediation: Array[String]) -> Image:
 	var shown_2d := _viewport_shown(EditorInterface.get_editor_viewport_2d())
 	var shown_3d := _viewport_shown(EditorInterface.get_editor_viewport_3d(0))
