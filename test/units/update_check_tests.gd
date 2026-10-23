@@ -9,7 +9,7 @@ extends RefCounted
 
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog.gd")
-const ExtensionCatalogDialog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog_dialog.gd")
+const ExtensionCatalogFetcher := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog_fetcher.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
@@ -251,7 +251,7 @@ static func _test_requests(testing) -> void:
 # The extension catalog's fetch sends the same fixed identity as the update check.
 static func _test_catalog_request(testing) -> void:
 	testing.begin("Extension catalog: request builder")
-	var catalog := ExtensionCatalogDialog._catalog_request()
+	var catalog := ExtensionCatalogFetcher.catalog_request()
 	testing.eq(catalog["url"], ExtensionCatalog.CATALOG_URL, "the catalog URL")
 	testing.eq(catalog["headers"], PackedStringArray(["User-Agent: godot-mcp-toolkit"]),
 			"the only header is the fixed User-Agent")

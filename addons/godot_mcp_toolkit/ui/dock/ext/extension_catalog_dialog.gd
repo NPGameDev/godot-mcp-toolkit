@@ -1,13 +1,17 @@
 @tool
 extends Window
-## In-editor extension catalog dialog — fetches and displays curated
-## MCP Toolkit extensions from a public GitHub Gist. Discovery only.
+## Shows the curated MCP Toolkit extension catalog as a searchable list of cards.
+##
+## Discovery only: the catalog lists extensions and links to their repositories,
+## and a link the catalog does not mark official opens behind a trust warning. The
+## fetch and the cache fallback belong to [code]extension_catalog_fetcher.gd[/code].
 
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const ExtensionCatalogFetcher = Modules.ExtensionCatalogFetcher
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog.gd")
 const EditorPopup := preload("res://addons/godot_mcp_toolkit/ui/editor_popup.gd")
-const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity.gd")
 
-var _http: HTTPRequest = null
+var _fetcher: ExtensionCatalogFetcher = null
 var _list_vbox: VBoxContainer = null
 var _search_box: LineEdit = null
 var _status_label: Label = null
@@ -27,16 +31,14 @@ func _ready() -> void:
 	_toolkit_version = ExtensionCatalog.get_toolkit_version()
 	_godot_version = ExtensionCatalog.get_godot_version()
 
-	_http = HTTPRequest.new()
-	_http.request_completed.connect(_on_request_completed)
-	add_child(_http)
+	_fetcher = ExtensionCatalogFetcher.new()
+	_fetcher.catalog_resolved.connect(_on_catalog_resolved)
+	add_child(_fetcher)
 
 	_build_ui()
 
 
 func _exit_tree() -> void:
-	if _http != null:
-		_http.cancel_request()
 	# The trust dialog is a base-control child (not in this dialog's subtree), so
 	# it is not freed with this dialog. Free it immediately (not queue_free) if it
 	# is still open, so its reference chain is released before ObjectDB's exit-time
@@ -145,79 +147,34 @@ func _build_ui() -> void:
 	footer.add_child(refresh_btn)
 
 
-# -- Fetch / parse / cache ----------------------------------------------------
+# -- Fetch outcome ------------------------------------------------------------
 
 
 func _fetch_catalog() -> void:
-	if _http == null:
+	if _fetcher == null:
 		return
-	_http.cancel_request()
 	_status_label.text = "Fetching catalog..."
 	_update_msg.visible = false
-
-	var request := _catalog_request()
-	var err := _http.request(str(request["url"]), request["headers"])
-	if err != OK:
-		push_warning("[MCPCatalog] HTTP request failed to start (err %d)" % err)
-		_load_from_cache("Network error \u2014 showing cached catalog")
+	_fetcher.fetch()
 
 
-# The catalog fetch as {"url": String, "headers": PackedStringArray}: the catalog
-# URL and the toolkit's fixed HTTP identity.
-static func _catalog_request() -> Dictionary:
-	return {"url": ExtensionCatalog.CATALOG_URL, "headers": HttpIdentity.request_headers()}
+# Renders one fetch outcome, in the shape
+# ExtensionCatalogFetcher.resolve_and_cache_reply documents.
+func _on_catalog_resolved(outcome: Dictionary) -> void:
+	if outcome["newer_format"]:
+		_update_msg.text = (
+			"The catalog format has been updated. Please update the "
+			+ "MCP Toolkit plugin to see the latest extensions.")
+		_update_msg.visible = true
 
-
-func _on_request_completed(result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
-	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
-		var code := response_code if result == HTTPRequest.RESULT_SUCCESS else result
-		_load_from_cache("Fetch failed (%d) \u2014 showing cached catalog" % code)
-		return
-
-	var json_text := body.get_string_from_utf8()
-	var parsed := ExtensionCatalog.parse_catalog(json_text)
-
-	if not parsed["ok"]:
-		if str(parsed["error"]) == "NEWER_VERSION":
-			_update_msg.text = (
-				"The catalog format has been updated. Please update the "
-				+ "MCP Toolkit plugin to see the latest extensions.")
-			_update_msg.visible = true
-			# Do NOT cache incompatible response.
-			_load_from_cache("Catalog format newer than supported \u2014 showing cached catalog")
-			return
-		_load_from_cache("Parse error \u2014 showing cached catalog")
-		return
-
-	# Success — cache the raw JSON and populate.
-	var raw = JSON.parse_string(json_text)
-	if raw is Dictionary:
-		ExtensionCatalog.write_cache(raw)
-	_entries = parsed["extensions"]
-	_populate_list(_entries)
-	_set_status("Catalog loaded \u2014 %d extension%s" % [
-		_entries.size(), "" if _entries.size() == 1 else "s"], false)
-
-
-func _load_from_cache(warning: String) -> void:
-	var cached := ExtensionCatalog.read_cache()
-	if cached.is_empty():
+	var unavailable: String = outcome["unavailable"]
+	if unavailable.is_empty():
+		_entries = outcome["extensions"]
+		_populate_list(_entries)
+	else:
 		_clear_list()
-		_show_message("Catalog unavailable \u2014 check your internet connection and try again.")
-		_set_status(warning if not warning.is_empty() else "No catalog available", true)
-		return
-
-	var parsed := ExtensionCatalog.parse_catalog(JSON.stringify(cached))
-	if not parsed["ok"]:
-		_clear_list()
-		_show_message("Catalog unavailable \u2014 cached data is invalid.")
-		_set_status("Cache error", true)
-		return
-
-	_entries = parsed["extensions"]
-	_populate_list(_entries)
-	var cached_at: String = str(cached.get("_cached_at", "unknown"))
-	_set_status("%s (cached %s)" % [warning, cached_at], true)
+		_show_message(unavailable)
+	_set_status(str(outcome["status"]), bool(outcome["is_warning"]))
 
 
 func _set_status(text: String, is_warning: bool) -> void:

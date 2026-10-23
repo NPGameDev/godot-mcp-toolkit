@@ -2,8 +2,9 @@
 extends RefCounted
 ## Extension catalog data layer — fetch URL, parse logic, cache I/O, and version comparison.
 
-const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const RegistryClient = Modules.RegistryClient
+# Direct preload, not core/modules.gd: the aggregator preloads the catalog fetcher,
+# which preloads this file.
+const RegistryClient := preload("res://addons/godot_mcp_toolkit/registry/registry_client.gd")
 
 const CATALOG_URL := "https://gist.githubusercontent.com/NPGameDev/bca160bce1888bbb92082e13f9541bca/raw/catalog.json"
 const _CACHE_FILENAME := "catalog_cache.json"
