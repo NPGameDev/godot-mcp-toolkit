@@ -112,11 +112,12 @@ func lower() -> void:
 			is_unfocused_responsive_enabled(), is_unfocused_boost_active()):
 		return
 	var es = _editor_settings()
-	if es == null:
-		return
 	var sleep_key := _sleep_setting_name(es)
 	if sleep_key.is_empty():
-		_warn_sleep_setting_missing_once()
+		# Without an editor there is nothing to warn about; a live editor that holds
+		# the setting under no known name is worth one warning.
+		if es != null:
+			_warn_sleep_setting_missing_once()
 		return
 	var live := int(es.get_setting(sleep_key))
 	var boosted := _configured_responsive_usec()
@@ -141,7 +142,7 @@ func restore() -> void:
 	if not is_unfocused_boost_active():
 		return
 	var es = _editor_settings()
-	var sleep_key := "" if es == null else _sleep_setting_name(es)
+	var sleep_key := _sleep_setting_name(es)
 	if sleep_key.is_empty():
 		# Nothing to write back to; the backup file stays for the next start's self-heal.
 		_original_unfocused_sleep_usec = -1
@@ -178,8 +179,6 @@ func self_heal(authed_peer_count: int) -> void:
 	if authed_peer_count > 0:
 		return  # defensive — never true at start() (transport not built yet / no authed peer)
 	var es = _editor_settings()
-	if es == null:
-		return
 	var sleep_key := _sleep_setting_name(es)
 	if sleep_key.is_empty():
 		return
@@ -207,11 +206,13 @@ func _configured_responsive_usec() -> int:
 	return int(es.get_setting(_RESPONSIVE_SLEEP_KEY))
 
 
-# The name under which the running editor holds the unfocused sleep, or "" when it
-# defines none of the known names or holds no value under the one it defines. Every
-# read and write goes to this name: writing a name the editor does not define would
-# leave an orphan key in the machine-wide settings.
+# The name under which the running editor holds the unfocused sleep, or "" when there
+# is no editor settings object, it defines none of the known names, or it holds no
+# value under the one it defines. Every read and write goes to this name: writing a
+# name the editor does not define would leave an orphan key in the machine-wide settings.
 func _sleep_setting_name(es: Object) -> String:
+	if es == null:
+		return ""
 	var sleep_key := _EngineSettingNames.resolve(es, _EngineSettingNames.UNFOCUSED_SLEEP_USEC)
 	if sleep_key.is_empty() or typeof(es.get_setting(sleep_key)) == TYPE_NIL:
 		return ""

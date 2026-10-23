@@ -4,6 +4,8 @@ extends RefCounted
 ## and for the unfocused-sleep controller (core/unfocused_sleep_controller.gd) when the
 ## editor holds the setting under none of those names. Each stub mirrors what an editor
 ## version defines; the real editor's answer is checked by the cross-version smoke.
+## The cases are green-only: the resolver is new, and a script error aborted the old
+## controller's write anyway, so the skip cases cannot be seen red.
 
 const EngineSettingNames := preload("res://addons/godot_mcp_toolkit/versioning/engine_setting_names.gd")
 const UnfocusedSleepController := preload("res://addons/godot_mcp_toolkit/core/unfocused_sleep_controller.gd")

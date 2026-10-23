@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## The names each engine setting the toolkit drives has had across Godot versions,
+## The names each engine setting the toolkit writes has had across Godot versions,
 ## newest first, and the lookup that picks the one the running editor defines.
 ##
 ## A Godot rename keeps the old name answering only through a compatibility map that
