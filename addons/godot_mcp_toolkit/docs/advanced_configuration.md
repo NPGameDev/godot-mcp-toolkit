@@ -511,6 +511,13 @@ could otherwise leave the setting stranded at the boosted value. To prevent that
   unfocused rate until its next fresh connection. This is a brief responsiveness
   dip, never a persistent change, and matches the toolkit's earlier behaviour.
 
+## Setup wizard
+
+The setup wizard remembers which steps you have seen by user and project name, so
+every copy of the project on this machine shares them, and the **Show optional
+steps added by toolkit updates** toggle (`mcp_toolkit/setup_wizard/show_optional_steps`)
+is an Editor Setting that each Godot version keeps separately.
+
 ---
 
 *These are advanced tunables. If you're not sure, leave the defaults.*
