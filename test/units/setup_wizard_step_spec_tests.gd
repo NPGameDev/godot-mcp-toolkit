@@ -2,8 +2,8 @@
 extends RefCounted
 ## Pinning tests for the setup wizard's step copy: every step's spec dictionary,
 ## verbatim, as the wizard's dispatch returns it, and the .mcp.json step's pin-choice
-## control for each pin mode. The specs are compared whole, so a move of the copy
-## keeps every string, label, action and flag.
+## control for each pin mode. Each spec is compared whole: every string, label,
+## action and flag is the wizard's observable output.
 
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")

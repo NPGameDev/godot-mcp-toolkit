@@ -6,8 +6,7 @@ extends RefCounted
 ## The choice lives in the [constant SERVER_VERSION_SETTING] project setting.
 ## [method read_version_setting] reads it, and [method save_version_setting] sets it
 ## and saves project.godot, the only file this module writes. Everything else is
-## pure: a classification is a plain string that the dock, the setup wizard and the
-## last-written record compare.
+## pure: a classification is a plain string that callers store and compare.
 
 ## The released npm package a write runs; the version part a write appends is the
 ## pin.

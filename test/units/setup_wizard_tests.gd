@@ -196,7 +196,8 @@ static func _test_tracker_format_rules(testing) -> void:
 
 
 # The exact bytes a record writes: compact JSON with sorted keys, created with its
-# folder when missing. A 1.0.x build and every later reader parse this file.
+# folder when missing. Every later reader parses this file; a 1.0.x build only
+# checks it exists.
 static func _test_tracker_written_bytes(testing) -> void:
 	testing.begin("Setup step tracker: the bytes a record writes")
 	_use_scratch_files()

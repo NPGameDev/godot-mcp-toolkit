@@ -52,7 +52,7 @@ static var _id_pattern: RegEx = _compile_id_pattern()
 # The steps the last read or write found seen. A rename points user:// at the new
 # path before the tracker hears of it, so this is the only record of the steps seen
 # at the old one.
-static var _last_seen: Array = []
+static var _last_seen: Array[String] = []
 
 
 ## Point the tracker at [param flag_path] and [param progress_path] instead of the
@@ -118,8 +118,8 @@ static func mark_all_seen(ids: Array[StringName]) -> void:
 ## them.
 static func migrate_flag_after_rename() -> void:
 	var seen_before: Array[StringName] = []
-	for step_id in _last_seen:
-		seen_before.append(StringName(str(step_id)))
+	for step_id: String in _last_seen:
+		seen_before.append(StringName(step_id))
 	if not seen_before.is_empty():
 		mark_all_seen(seen_before)
 
@@ -127,15 +127,16 @@ static func migrate_flag_after_rename() -> void:
 # The file as { seen: Array[String], all_seen, writable, current, extra }: all_seen
 # when a newer format's list is unreadable, writable unless the format is newer,
 # current when the content is already this format, and extra the unknown top-level
-# keys a rewrite keeps.
+# keys a rewrite keeps. Side effect: refreshes _last_seen with the steps read, the
+# record migrate_flag_after_rename replays after a rename.
 static func _read() -> Dictionary:
 	var state := _read_state()
 	if bool(state["all_seen"]):
-		_last_seen = []
+		_last_seen.clear()
 		for step_id in SetupSteps.all_ids():
 			_last_seen.append(str(step_id))
 	else:
-		_last_seen = (state["seen"] as Array).duplicate()
+		_last_seen.assign(state["seen"] as Array)
 	return state
 
 
@@ -233,7 +234,7 @@ static func _write(seen: Array, extra: Dictionary) -> bool:
 	data[_KEY_SEEN] = seen
 	var written := UserJsonStore.write(_flag_path, data) == OK
 	if written:
-		_last_seen = seen.duplicate()
+		_last_seen.assign(seen)
 	return written
 
 

@@ -304,7 +304,7 @@ static func _check_set_readback(
 
 
 ## Map the [code]PropertySetCheck.describe_set_drop[/code] tri-state onto the {ok:…}
-## result shape the compound-path callers expect. A clean write keeps the historical
+## result shape the compound-path callers expect. A clean write returns
 ## {"ok": true, "value": coerced}; an ADJUSTED write adds a "warning" (the compound
 ## callers already propagate result["warning"]); a DROPPED write is SET_FAILED.
 static func _check_set_readback_value(

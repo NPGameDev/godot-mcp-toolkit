@@ -12,9 +12,11 @@ extends RefCounted
 ## one, including nodes the scene added under an instanced child, and leaves an
 ## instanced sub-scene's internals owned by the copy. A duplicated scene instance
 ## packs as an instance with only its overrides, and a node duplicated inside an
-## editable instance keeps the children the instance owns.
+## editable instance keeps the children the instance owns. The duplicate flag holds
+## the measured value for each engine minor.
 
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const _SUB_SCENE_FIXTURE := "user://node_manage_sub_scene_fixture.tscn"
 const _DEEP_SUB_SCENE_FIXTURE := "user://node_manage_deep_sub_scene_fixture.tscn"
 
@@ -28,6 +30,7 @@ static func run(testing) -> void:
 	_test_duplicate_keeps_nodes_added_under_an_instance(testing)
 	_test_duplicate_keeps_instance_linked(testing)
 	_test_duplicate_inside_editable_instance_keeps_children(testing)
+	_test_duplicate_from_editor_flag(testing)
 
 
 static func _test_root_rename_allowed(testing) -> void:
@@ -297,6 +300,19 @@ static func _test_duplicate_inside_editable_instance_keeps_children(testing) -> 
 	reloaded.free()
 	root.free()
 	_remove_deep_sub_scene_fixture()
+	print("")
+
+
+# duplicate_from_editor_flag() derives Node.DUPLICATE_FROM_EDITOR from the bound
+# constants. The measured values are spelled out here, not derived, so a new bound
+# DUPLICATE_* constant that moves the derived value fails this check in the cross-version
+# matrix, while an unbound flag inserted before FROM_EDITOR leaves both on a wrong value.
+static func _test_duplicate_from_editor_flag(testing) -> void:
+	testing.begin("duplicate_from_editor_flag matches the measured value per engine minor")
+	var live_pair := VersionUtils.get_engine_version_pair()
+	var expected := 32 if VersionUtils.is_at_least(live_pair, "4.6") else 16
+	testing.eq(NodeCommands.duplicate_from_editor_flag(), expected,
+			"%s → %d (16 on 4.2 to 4.5, 32 from 4.6)" % [live_pair, expected])
 	print("")
 
 

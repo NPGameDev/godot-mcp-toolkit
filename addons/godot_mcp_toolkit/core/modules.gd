@@ -2,7 +2,12 @@
 extends RefCounted
 ## Centralized preloads for plugin-internal scripts.
 ##
-## Script paths live here only — if a file moves, update this file and nothing else.
+## The preload aggregator: reach a script listed here through its constant, not its
+## path. Two kinds of script preload directly instead: one this file preloads, which
+## cannot preload it back (a cycle), and one in the runtime autoload's preload closure,
+## which must not pull in the editor-only scripts listed here. When a file moves, update
+## its constant here and every other file that names its path, in code, scenes, tests
+## or docs: a preload, a [code]load()[/code] call, a path string or an [code]ext_resource[/code].
 ## MCPToolkitError has class_name and needs no preload.
 
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")

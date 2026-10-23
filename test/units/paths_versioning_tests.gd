@@ -1,13 +1,8 @@
 @tool
 extends RefCounted
-## Cross-version / paths / editor-lifecycle pure-logic unit tests: compile-error
-## message (version-aware), script_check line emission (capability-gated),
-## script_check's class_name rename,
-## node.set_property groups rejection, UserPathMonitor change detection,
-## editor.refresh reload filter, unfocused-sleep backup, the stale-live-instance
-## hint, the in-place reload patch gate, the editor-duplicate flag's value and the
-## 4.5+ Logger construction. Exercises the versioning/ + paths/ + editor-lifecycle
-## pure logic.
+## Tests for the toolkit's version-aware, path and editor-lifecycle helpers, driven
+## without the editor. A group whose result depends on the running engine asserts
+## that engine's value, so each engine in the cross-version matrix checks its own.
 
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
@@ -41,10 +36,8 @@ static func run(testing) -> void:
 	_test_tooltip_uaf_disarm_decision(testing)
 	_test_is_engine_version_pair(testing)
 	_test_reload_patch_gate(testing)
-	_test_duplicate_from_editor_flag(testing)
 	_test_version_skew(testing)
 	_test_version_skew_grammar(testing)
-	_test_editor_refresh_reload_filter_sibling(testing)
 	_test_log_path_resolution(testing)
 	_test_logger_construction(testing)
 	_test_user_json_store(testing)
@@ -282,6 +275,10 @@ static func _test_editor_refresh_reload_filter(testing) -> void:
 	testing.ok(not EditorRescan.should_reload_open_script(
 			"res://addons/godot_mcp_toolkit/transport/mcp_server.gd", changed),
 			"unchanged toolkit script → skip")
+	# 5. The toolkit's source is its own folder, not every path that starts with its name.
+	var sibling := "res://addons/godot_mcp_toolkit_extras/x.gd"
+	testing.ok(EditorRescan.should_reload_open_script(sibling, {sibling: true}),
+			"a changed script in a sibling addon → reload")
 	print("")
 
 
@@ -579,21 +576,6 @@ static func _test_reload_patch_gate(testing) -> void:
 	print("")
 
 
-# --- The editor-duplicate flag's value -----------------------------------------
-# duplicate_from_editor_flag() derives Node.DUPLICATE_FROM_EDITOR from the bound
-# constants. The measured values are spelled out here, not derived, so a new bound
-# DUPLICATE_* constant that moves the derived value fails this check in the cross-version
-# matrix, while an unbound flag inserted before FROM_EDITOR leaves both on a wrong value.
-
-static func _test_duplicate_from_editor_flag(testing) -> void:
-	testing.begin("duplicate_from_editor_flag matches the measured value per engine minor")
-	var live_pair := VersionUtils.get_engine_version_pair()
-	var expected := 32 if VersionUtils.is_at_least(live_pair, "4.6") else 16
-	testing.eq(NodeCommands.duplicate_from_editor_flag(), expected,
-			"%s → %d (16 on 4.2 to 4.5, 32 from 4.6)" % [live_pair, expected])
-	print("")
-
-
 # --- version_skew — patch-level differences are compatible (8 assertions) ------
 # Compatibility floors are declared at major.minor (ADR 0024), so a patch difference
 # carries no compatibility meaning and must classify as its own severity — the
@@ -630,17 +612,6 @@ static func _test_version_skew_grammar(testing) -> void:
 	testing.eq(VersionUtils.version_skew("1.0.1.0", "1.0.1"), "unknown", "four parts are unreadable")
 	testing.eq(VersionUtils.version_skew("+.0.1", "1.0.1"), "unknown", "a bare sign is unreadable")
 	testing.eq(VersionUtils.version_skew("1. 0.1", "1.0.1"), "unknown", "a space inside is unreadable")
-	print("")
-
-
-# --- editor.refresh reload filter: a sibling addon ------------------------------
-# The toolkit's source is its own folder, not every path that starts with its name.
-
-static func _test_editor_refresh_reload_filter_sibling(testing) -> void:
-	testing.begin("editor.refresh reload filter: a sibling addon")
-	var sibling := "res://addons/godot_mcp_toolkit_extras/x.gd"
-	testing.ok(EditorRescan.should_reload_open_script(sibling, {sibling: true}),
-			"a changed script in a sibling addon → reload")
 	print("")
 
 
@@ -784,7 +755,7 @@ static func _test_user_json_store(testing) -> void:
 
 
 static func _remove_json_store_dir() -> void:
-	for path in [
+	for path: String in [
 		_JSON_STORE_DIR.path_join("nested/compact.json"),
 		_JSON_STORE_DIR.path_join("nested"),
 		_JSON_STORE_DIR.path_join("indented.json"),

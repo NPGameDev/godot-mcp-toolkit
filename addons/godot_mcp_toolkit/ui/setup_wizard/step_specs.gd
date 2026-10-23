@@ -119,29 +119,28 @@ static func updates() -> Dictionary:
 ## as the spec's [code]on_enter[/code], since showing the dock is a side effect
 ## the copy does not own.
 static func dock_overview(reveal_dock: Callable) -> Dictionary:
-	var spec := {
+	return {
 		"text": (
-				"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
-				+ "From here you can:\n\n"
-				+ "  • Monitor server status — connection state, peer count, runtime port\n"
-				+ "  • Review the audit log — see what the AI agent did\n"
-				+ "  • Adjust security settings — token rotation, response limits\n\n"
-				+ "The 'Info / Help' button shows tool list and documentation links.\n"
-				+ "Companion Skills for Claude Code are in the dock footer.\n\n"
-				+ "For supervised environments, set GODOT_MCP_READ_ONLY=1 in\n"
-				+ ".mcp.json to restrict the toolkit to read-only tools.\n\n"
-				+ "The toolkit keeps the editor responsive while it's unfocused during\n"
-				+ "MCP sessions (ON by default; raises background CPU). Toggle it in the\n"
-				+ "dock's Server Status, or in Editor Settings → Mcp Toolkit → Performance.\n\n"
-				+ "The dock's limits and audit controls are shortcuts into\n"
-				+ "Project Settings → Mcp Toolkit, where all per-project options\n"
-				+ "live (including advanced ones the dock doesn't surface).\n\n"
-				+ "You're all set!"),
+			"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
+			+ "From here you can:\n\n"
+			+ "  • Monitor server status — connection state, peer count, runtime port\n"
+			+ "  • Review the audit log — see what the AI agent did\n"
+			+ "  • Adjust security settings — token rotation, response limits\n\n"
+			+ "The 'Info / Help' button shows tool list and documentation links.\n"
+			+ "Companion Skills for Claude Code are in the dock footer.\n\n"
+			+ "For supervised environments, set GODOT_MCP_READ_ONLY=1 in\n"
+			+ ".mcp.json to restrict the toolkit to read-only tools.\n\n"
+			+ "The toolkit keeps the editor responsive while it's unfocused during\n"
+			+ "MCP sessions (ON by default; raises background CPU). Toggle it in the\n"
+			+ "dock's Server Status, or in Editor Settings → Mcp Toolkit → Performance.\n\n"
+			+ "The dock's limits and audit controls are shortcuts into\n"
+			+ "Project Settings → Mcp Toolkit, where all per-project options\n"
+			+ "live (including advanced ones the dock doesn't surface).\n\n"
+			+ "You're all set!"),
 		"ok_label": "Close",
 		"buttons": [
 			{"label": "Back", "action": BACK_ACTION},
 			{"label": "Open Info", "action": "open_info"},
 		],
+		"on_enter": reveal_dock,
 	}
-	spec["on_enter"] = reveal_dock
-	return spec

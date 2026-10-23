@@ -30,6 +30,7 @@ func _write_file_silent(path: String, content: String, reload_cached: bool = tru
 	file.store_string(content)
 	file.close()
 	if reload_cached:
+		# The outcome goes unread: an undo or redo has no response to report it in.
 		Modules.ScriptReload.reload_cached_script(path)
 
 
