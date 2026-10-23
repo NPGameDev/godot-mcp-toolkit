@@ -22,7 +22,8 @@ the preload/`class_name` aggregator, the `EditorPlugin` lifecycle, the `@tool` /
 editor-runtime / cross-version / export hard gates, Asset-Library hygiene, and god-file
 decomposition — are **addon-scoped**: non-addon GDScript is exempt from *those* rules only
 because it is not an addon, not because it earns a lower-quality bar. Test scripts are held to
-the general rules like every other file.
+the general rules like every other file. The unit-test rules in [§9](#9-unit-test-code) apply
+to test code on top of the general rules.
 
 **On conflict, the hard gates win.** Several addon rules deliberately *deviate* from the base
 Godot style guide because the addon runs inside the editor process and ships in export
@@ -763,6 +764,125 @@ untrusted link from steering it.*
 
 ---
 
+## 9. Unit-test code
+
+These rules govern the headless unit suite: the test scripts, their fixtures, and the runner. The
+general rules the scope paragraph names (naming, formatting, typing, comments, DRY) apply to test
+code in full; this section adds what is specific to tests. **The rules bind the tests a change
+adds or edits:** a new test file, a new test group, or an existing group whose inputs, assertions,
+or label the change alters. A group the change leaves alone keeps its shape until a change touches
+it, and bringing untouched tests in line is its own test-only change. A file-level rule (the
+file's module, its header, its entry-point signature) binds a new file only. In an edited group,
+the rules bind the lines the change adds or alters; the group's other assertions keep their
+inputs, values, and labels.
+
+9.1 **A unit drives one module through its interface.** A test file calls the module the way its
+callers do (its public and `static` functions, the signals it emits, the dictionaries it returns)
+and asserts on what comes back. A test touches a `_`-prefixed member only to call an engine
+callback the headless runner does not drive (`_process`, `_physics_process`) or to seed or reset
+state no public path reaches headless, with an inline comment that says so. *Rationale: a test
+that reaches past the interface breaks on every refactor and proves nothing about what callers
+get.*
+
+9.2 **One test file per source module, named after it** (`<module>_tests.gd`). A test of a seam
+between modules goes in a file named for the seam, whose header names the modules it covers. A
+module's cases live in one file. *Rationale: a reader finds a module's tests from the module's
+name.*
+
+9.3 **Tests move with the code, unaltered.** When a function moves to another module, its cases
+move to that module's test file in the same change with the same inputs, expected values, and
+labels. Changing what a moved case asserts is a separate change. *Rationale: a case left behind
+misleads the next reader about where the behaviour lives, and an unaltered move is easy to verify
+in the diff.*
+
+9.4 **No new duplicate pins.** An input and its expected result are asserted in one place in the
+suite. Before adding a case, search the suite for the same call and label, and extend the existing
+case if one already pins it. A duplicate that already exists is reported in the change's
+description and left in place: retiring an existing assertion is the maintainers' decision, made
+test by test. *Rationale: two copies drift apart, and after the next change one of them is wrong.*
+
+9.5 **Every new case is seen to fail once.** A bug fix adds the case that reproduces the bug and
+runs it red before the fix. A case for new behaviour fails before the behaviour exists. A case
+that pins behaviour already in place passes on its first run, so its author breaks the pinned code
+once on purpose (flips a branch, changes a constant), watches the case fail, and restores the
+code. The change's description names the red run or the deliberate break. *Rationale: a test that
+has never failed may be unable to.*
+
+9.6 **Extracting a class adds tests for it.** When a change moves behaviour out of a class into a
+new class that the original then depends on, the change adds a test file for the new class that
+drives its interface (9.1, 9.2). The original's tests stay as they are; any the new file makes
+redundant are listed in the change's description for the maintainers to retire (9.4). *Rationale:
+the extraction creates a new contract, and an untested contract is the first to break.*
+
+9.7 **Expected values are written down, not computed.** An expected value is a literal taken from
+the contract, the engine's documented behaviour, or a hand calculation. It never comes from the
+code under test, from a copy of its algorithm, or from pasting what a run printed. *Rationale: an
+expected value derived from the code passes by construction, including when the code is wrong.*
+
+9.8 **One behaviour per test group, and every assertion says what it checks.** A group (the span
+from one `begin` to the next) pins one behaviour and holds at least one assertion. Each
+assertion's label states the behaviour in the contract's words (the state, the action, the
+result), not the mechanism. *Rationale: a failure line should read as a sentence about the
+contract.*
+
+9.9 **Edges and error paths are tested.** A limit, cap, page size, or version floor is asserted at
+the limit and one step past it. A function with a documented error result has at least one
+assertion on that result. An expected engine error may be muted with
+`Engine.print_error_messages = false` around the one call that raises it, and is restored to its
+previous value before the next assertion. *Rationale: off-by-one and unhandled-error bugs live at
+the edges, which a suite of happy paths never reaches.*
+
+9.10 **A case cleans up before it asserts.** A case builds its own fixtures and frees every `Node`
+it creates. It restores every `ProjectSettings` key, `InputMap` entry, environment variable,
+`user://` file, and static field it changes before its first assertion: GDScript has no
+`try/finally`, and a runtime error in an assertion's expression ends the function before any later
+cleanup runs. Temp paths carry the process id. A case reads no state another case left.
+*Rationale: the suite runs in one process with nothing to reset it between cases, so a leak in one
+case fails a later one.*
+
+9.11 **Time and randomness are controlled.** A case advances time itself: it awaits a counted
+number of frames, or calls the object's `_process(delta)` with a fixed delta. A wait on a signal
+or a condition has a frame or time cap and fails with a label naming what never happened. A case
+that uses randomness seeds it first. A wall-clock delay appears only when the delay is the
+scenario (a thread holding a lock while another waits), with a comment. *Rationale: a sleep is
+slow on a fast machine and flaky on a slow one.*
+
+9.12 **A signal is checked by count, order, and arguments.** A test of a signal records each
+emission and asserts how many fired, in what order, with what arguments. *Rationale: the usual
+signal bug is a wrong argument or one emission too many, which "it fired" never catches.*
+
+9.13 **Collaborators are real; stand-ins sit at a real boundary.** In-process collaborators and
+engine objects are used for real: a real `Node` tree, real `ProjectSettings` (restored per 9.10).
+A hand-written stand-in replaces only what the headless runner cannot provide: another process,
+the network, a live editor. An assertion checks what the module did with a stand-in's answer,
+never the answer itself. *Rationale: a stand-in for your own code makes the test check the
+stand-in.*
+
+9.14 **The unit suite runs headless.** A unit test needs no editor, display, or network beyond
+loopback; a `127.0.0.1` listener the case opens and closes is allowed. A module method that cannot
+run headless is covered by another suite (smoke or integration), and the module's test file names
+that suite in its header or beside the group that skips the method. *Rationale: a coverage gap
+with no pointer is invisible.*
+
+9.15 **Tests are never weakened quietly.** A change that lowers the suite's assertion count, or a
+file's count other than by an unaltered move (9.3), comments out or disables a group, returns
+before a group's assertions, or loosens an expected value has the maintainers' agreement in
+review, and its description says which assertions changed and why. *Rationale: a green run with
+fewer checks looks the same as a full one, so the drop has to be visible.*
+
+9.16 **Test comments follow §5, with a short header.** A test file's `##` header states, in at
+most six lines, what the file pins and through which interface. It carries no change history ("was
+relaxed", "extracted so", "written green"), no list of files it mirrors, and no claim stronger
+than its assertions make. Group names and assertion labels carry no history either. *Rationale: a
+header is read by someone who never saw the history, which belongs in the commit message.*
+
+9.17 **Test code is fully typed (§4).** That includes loop variables
+(`for path: String in paths`), locals filled from a `Variant` source (`get()`,
+`JSON.parse_string`, `ProjectSettings.get_setting`), and the assertion-helper parameter of every
+test entry point. *Rationale: an untyped value hides the shape the assertion depends on.*
+
+---
+
 # Part II — Project bindings
 
 This part records what is specific to *this* repo: the public namespace, the module taxonomy,
@@ -965,6 +1085,36 @@ discoverable contract (greppable); a comment pointing at this doc from a shipped
 
 ---
 
+## B6. The unit suite
+
+Where [§9](#9-unit-test-code) touches this repo's files.
+
+- **The runner.** `test/run_unit_tests.gd` is the headless entry point
+  (`godot --headless --script test/run_unit_tests.gd`) and a thin orchestrator: it builds one
+  `testing` object (`test/units/testing.gd`) and calls each unit's entry point. The units live in
+  `test/units/`, one file per unit, each a `RefCounted` script with
+  `static func run(testing) -> void` (a unit that awaits frames takes the runner's tree as a
+  second parameter, `run(testing, tree: SceneTree)`). A new unit is one `<module>_tests.gd` (9.2)
+  and types the parameter as `testing: Testing`, with
+  `const Testing := preload("res://test/units/testing.gd")` for the type (9.17). Test cases live
+  in a unit, not in the runner.
+- **Registration is part of the change.** The runner has no auto-discovery. A new unit is
+  preloaded and called in `run_unit_tests.gd` in the same change, and the change's run shows the
+  `=== ALL N PASSED ===` total grown by the assertions it added; a green banner whose total did
+  not move means the new cases never ran. A unit whose `run` awaits is called with `await` in the
+  runner.
+- **Assertions go through `testing`.** `testing.begin(name)` opens a group,
+  `testing.ok(value, label)` and `testing.eq(actual, expected, label)` record assertions, and
+  `report()` prints the banner and returns the failure count, which the runner turns into the exit
+  code. A check that only prints is not an assertion.
+- **Exemplars.** Restore before asserting (9.10): `test/units/input_map_tests.gd`, whose cases
+  take a `_snapshot_setting` and call `_restore_setting` before the first `testing.eq` (for
+  example `_test_bind_builtin_keeps_saved_events`). A seeded private static with its reason (9.1)
+  and a named covering suite for an editor-coupled method (9.14): `test/units/scene_ops_tests.gd`
+  (the `_save_results` seed and its comment, and the comment on `queue_save`).
+
+---
+
 ## Appendix — condensed review checklist
 
 Run over **any changed `.gd` file**. The **general** rows apply to every file (addon, `test/`,
@@ -986,6 +1136,15 @@ tooling). The **plugin** rows apply to **addon** files only — test scripts are
 - [ ] `##` class docstring after `extends`; cross-module helpers document return shape; brief / blank-`##` / detail; `[param]` + "Returns …" prose; BBCode floored to 4.2 (plain `[codeblock]`, no 4.3+ tags); bare `@deprecated`/`@experimental` ([§5.11](#511-the-gdscript--godot-doc-comment-layer))
 - [ ] TODO/FIXME actionable + tracked; no secrets, internal-only URLs/paths; SPDX header not per-file blurb ([§5.7](#57-todo--fixme-and-friends), [§5.8](#58-open-source-hygiene-comments-are-public))
 - [ ] No dict shape / validation / decision logic duplicated ≥ 2× — extract one helper (rule of three); a fix covers every site with the same defect ([§7.4](#7-design-solid-cohesion-and-decomposition))
+
+**Unit tests (`test/` files only)**
+
+- [ ] A new or moved case sits in its module's `<module>_tests.gd` (or a seam file whose header names its modules), registered in the runner, and the run's total grew; moved cases are unaltered; a `_` member is touched only to call an undriven engine callback or to seed or reset state, with a comment ([§9.1](#9-unit-test-code)–[§9.3](#9-unit-test-code), [B6](#b6-the-unit-suite))
+- [ ] No new duplicate input/expected pin; an existing duplicate is reported, not deleted; no assertion dropped, group disabled, or expected value loosened without the maintainers' agreement ([§9.4](#9-unit-test-code), [§9.15](#9-unit-test-code))
+- [ ] Each new case was seen red once (a fix's case before the fix; a pin by a deliberate break) and the description says how; an extraction ships a test file for the new class and lists the pins it makes redundant ([§9.5](#9-unit-test-code), [§9.6](#9-unit-test-code))
+- [ ] Expected values are literals from the contract; one behaviour per group; labels state the behaviour; limits tested at and past the edge; documented error results asserted; signals checked by count, order, and arguments ([§9.7](#9-unit-test-code)–[§9.9](#9-unit-test-code), [§9.12](#9-unit-test-code))
+- [ ] Nodes freed; settings, `InputMap`, env, `user://` files, and statics restored before the first assertion; no sleeps, every wait capped, randomness seeded; stand-ins only at a real boundary; non-headless methods name their covering suite ([§9.10](#9-unit-test-code), [§9.11](#9-unit-test-code), [§9.13](#9-unit-test-code), [§9.14](#9-unit-test-code))
+- [ ] Header at most six lines of intent, with no history, roster, or overclaim; labels free of history; loop variables, `Variant`-sourced locals, and the `testing` parameter typed ([§9.16](#9-unit-test-code), [§9.17](#9-unit-test-code))
 
 **Plugin (addon files only)**
 
