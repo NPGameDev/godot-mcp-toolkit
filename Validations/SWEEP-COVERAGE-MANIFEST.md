@@ -2,7 +2,7 @@
 
 **Last updated:** 2026-07-13 (41o-quater-bis — surgical `script.edit` handler added (§6 6.10–6.16): happy-path single replace, NOT_FOUND, NOT_UNIQUE, replace_all newline-adjacency, empty-`new_string` span delete, no-op / empty-`old_string` INVALID_PARAMS. Prior (41o-terdecies close-out): animationtree_edit add_node `nodes_count` version-gated omission + `note` on 4.2-4.4 (§13 13.6/13.7); execute_code load()-hint both-remedies + parse-error framing (§09 9.4/9.7))
 **Toolkit commit:** T:2e2e6d9
-**Total tools (agent-facing):** 112 + 2 meta — canonical count in server
+**Total tools (agent-facing):** 113 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
 **Toolkit surfaces (non-disjoint — do not sum):** 101 editor-registered (incl. the 4 `debug.*`) ·
 12 runtime (4 names overlap the editor 101) · 7 LSP (server-side only).

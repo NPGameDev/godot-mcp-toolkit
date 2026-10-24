@@ -20,7 +20,7 @@
 
 set -u
 
-EXPECTED_TOOLS="112 tools"
+EXPECTED_TOOLS="113 tools"
 EXPECTED_GROUPS="28 on-demand groups"
 EXPECTED_OPERATIONS="150+ operations"
 

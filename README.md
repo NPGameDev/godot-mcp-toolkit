@@ -28,7 +28,7 @@ The [Model Context Protocol](https://modelcontextprotocol.io) is an open standar
 
 *Built to fit your workflow, not the other way around.*
 
-The number that says the most is **150+ operations**. That is the real work the toolkit does: create a node, paint a tilemap cell, key an animation track, read a live node mid-playtest, and roughly a hundred and fifty more. Those operations are packaged into **up to 112 tools** (an always-on core plus **28 on-demand groups**), because a tool is a slot in your client's tool budget and an operation is a thing you can actually do. Related actions sit behind one tool, which keeps the list short while the operation count tells the honest story of breadth. Some operations are version-gated, so older Godot versions (down to 4.2) expose fewer. "Up to" is literal.
+The number that says the most is **150+ operations**. That is the real work the toolkit does: create a node, paint a tilemap cell, key an animation track, read a live node mid-playtest, and roughly a hundred and fifty more. Those operations are packaged into **up to 113 tools** (an always-on core plus **28 on-demand groups**), because a tool is a slot in your client's tool budget and an operation is a thing you can actually do. Related actions sit behind one tool, which keeps the list short while the operation count tells the honest story of breadth. Some operations are version-gated, so older Godot versions (down to 4.2) expose fewer. "Up to" is literal.
 
 Two things drive the design, and they carry equal weight:
 
@@ -176,7 +176,7 @@ Register your own MCP tools in GDScript: project-specific helpers the agent call
 
 ## How we know it works
 
-CI fails the build if any of these numbers drift: **112 tools** (34 always-on + 2 meta, 78 on-demand) in **28 groups**, covering **150+ operations**; **39 tools** visible in read-only mode.
+CI fails the build if any of these numbers drift: **113 tools** (34 always-on + 2 meta, 79 on-demand) in **28 groups**, covering **150+ operations**; **40 tools** visible in read-only mode.
 
 - Every tool has smoke coverage (happy path, guards, error hints), mapped in the server's [smoke coverage manifest](https://github.com/NPGameDev/godot-mcp-server/blob/main/test/SMOKE-COVERAGE-MANIFEST.md). Cross-tool stateful flows run as their own deterministic suite (`npm run flows`), and dispatch behavior (mutation serialization, cancellation, disconnects) as another. Separate suites, separately maintained.
 - Every tool is also exercised end-to-end from GDScript in the interactive sweep, mapped in the [sweep coverage manifest](Validations/SWEEP-COVERAGE-MANIFEST.md). Last full pass: 479 cases on Godot 4.7 (2026-07-03); see [the sweep index](Validations/tool-sweep.md).
