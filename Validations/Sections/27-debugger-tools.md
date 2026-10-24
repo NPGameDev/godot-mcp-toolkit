@@ -110,11 +110,11 @@ func _process(delta: float) -> void:
 
 Setup — launch a game that hits no breakpoint, then continue:
 1. `debug_list_breakpoints` — **Expect:** no *enabled* breakpoints remain for `sv2_debug_target.gd` (27.5–27.8 disabled both). If any remain, disable them via `debug_set_breakpoint` enabled=false first.
-2. `scene_create` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn`, root_type=`Node2D`
+2. `scene_create` — file_path=`res://sv2_validation/sv2_nobreak_scene.tscn`, root_type=`Node2D`
    - **Expect:** success
 3. `scene_open` — file_path=`res://sv2_validation/sv2_nobreak_scene.tscn`
    - **Expect:** success. **Required step:** `scene_create` does NOT auto-open the new scene (its response hints "Open it for editing with scene_open") — without this step, `node_path='.'` in the next step targets whatever scene is currently active, not the new one.
-4. `node_set_script` — node_path=`.`, file_path=`res://sv2_validation/sv2_debug_target.gd`
+4. `node_set_script` — node_path=`.`, script_path=`res://sv2_validation/sv2_debug_target.gd`
    - **Expect:** success (attaches the target script; its breakpoints are disabled so `_ready` won't pause)
 5. `editor_save_scene`
    - **Expect:** success
@@ -126,7 +126,7 @@ Setup — launch a game that hits no breakpoint, then continue:
    - **Expect:** success=false, code=`NOT_BREAKED`, error mentions "breakpoint" ← the assertion
 9. `game_stop`
    - **Expect:** success
-10. `scene_delete` — scene_path=`res://sv2_validation/sv2_nobreak_scene.tscn` (cleanup)
+10. `scene_delete` — file_path=`res://sv2_validation/sv2_nobreak_scene.tscn` (cleanup)
 
 ---
 
@@ -134,11 +134,11 @@ Setup — launch a game that hits no breakpoint, then continue:
 
 ### C26. Set breakpoint → start scene → hit breakpoint → continue → stop
 
-1. `scene_create` — scene_path=`res://sv2_validation/sv2_debug_scene.tscn`, root_type=`Node2D`
+1. `scene_create` — file_path=`res://sv2_validation/sv2_debug_scene.tscn`, root_type=`Node2D`
    - **Expect:** success=true
 2. `scene_open` — file_path=`res://sv2_validation/sv2_debug_scene.tscn`
    - **Expect:** success=true. **Required step:** `scene_create` does NOT auto-open the new scene — without this, `node_path='.'` in the next step targets the wrong (currently-active) scene.
-3. `node_set_script` — node_path=`.`, file_path=`res://sv2_validation/sv2_debug_target.gd`
+3. `node_set_script` — node_path=`.`, script_path=`res://sv2_validation/sv2_debug_target.gd`
    - **Expect:** success=true (attaches the script with `_ready` breakpoint target)
 4. `editor_save_scene`
    - **Expect:** success=true
@@ -152,7 +152,7 @@ Setup — launch a game that hits no breakpoint, then continue:
 8. `debug_continue`
    - **Expect:** success=true (game resumes past the breakpoint)
 9. `debug_state`
-   - **Expect:** active=true, breaked=false (game running, no longer paused)
+   - **Expect:** active=true, breaked=false (game running, no longer paused). Poll `debug_state` until `breaked=false`; one read straight after `debug_continue` may still show true.
 10. `game_stop`
 11. `debug_set_breakpoint` — file_path=`res://sv2_validation/sv2_debug_target.gd`, line=6, enabled=false
     - **Expect:** success=true (clean up breakpoint)

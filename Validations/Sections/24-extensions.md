@@ -101,8 +101,9 @@ Call `extensions.refresh` again (no changes made).
    - **Godot 4.3+:** `sv2_ext.multiply` appears alongside `sv2_ext.hello` and
      `sv2_ext.add` (the edit is applied live). Then call `sv2_ext.multiply` —
      **Expect:** valid result.
-   - **Godot 4.2:** `sv2_ext.multiply` does **NOT** appear — in-session edits to an
-     *existing* extension are not applied on 4.2 (engine reimport-crash avoidance via
+   - **Godot 4.2.2+:** applied live as on 4.3+, with no hint.
+   - **Godot 4.2.0 / 4.2.1:** `sv2_ext.multiply` does **NOT** appear — in-session edits to an
+     *existing* extension are not applied on these builds (engine reimport-crash avoidance via
      `CACHE_MODE_REUSE`; see `COMPATIBILITY.md` / `extending.md`). Instead the
      `extensions.refresh` response includes a `hint` that names `Sv2TestExtension` and
      tells you to restart the editor (a `push_warning` also appears in the editor's

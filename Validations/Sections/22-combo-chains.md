@@ -70,10 +70,10 @@ Run discover_tools queries:
 3. request="rename node" → no on-demand group match (node_manage/node_groups are CORE; verified working in C8 without activation) — CORRECT, not a failure
 4. request="signal" → signals activated
 5. request="input" → input_map activated
-6. request="screenshot" → editor_advanced + core_matches
+6. request="screenshot" → `editor_advanced` (match `loose_keyword`); no `core_matches` key
 7. reset=true → all deactivated
 8. (no params) → full catalog, all "available"
-9. groups=["tilemap","audio"] → re-activate two
+9. request=["tilemap","audio"] → re-activate two
 10. reset=["tilemap"] (array form) → only tilemap deactivated, audio remains
 11. (no params) → verify tilemap="available", audio="already_loaded"
 12. reset=true → final cleanup

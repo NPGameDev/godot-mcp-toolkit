@@ -35,7 +35,7 @@
 - **Expect:** Returns 4 (or error with hint if Expression can't access Engine)
 
 **9.7** `execute_code` — code=`invalid syntax here @@@`
-- **Expect:** `PARSE_ERROR` framed actionably — the message carries the raw Expression parser text AND states the expression-only constraint (execute_code evaluates a single GDScript expression — no assignments, statements, or multi-line blocks) with a steer to use a method call, property access, or arithmetic.
+- **Expect:** `EXECUTE_FAILED` — Godot's Expression parser accepts the leading identifier, so execution fails with `Invalid named index 'invalid'` plus the global-identifier hint (no PARSE_ERROR for this input).
 
 **9.8** `execute_code` — code=`ProjectSettings.get_setting("application/config/name")`
 - **Expect:** error OR success depending on Expression sandbox. If error, should have hint.

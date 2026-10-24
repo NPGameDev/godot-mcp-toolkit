@@ -16,7 +16,7 @@
 - **Expect:** May find Sv2Actor if class_name registered via GDScript, or empty
 
 **12.4** `classdb_get_info` — class_name=`NonExistentClass12345`
-- **Expect:** NOT_FOUND or empty response
+- **Expect:** `UNKNOWN_CLASS` naming the class, with the `classdb.search` hint.
 
 ## Offset Pagination (41l — W1 Lane 2; ledger #20 rename)
 
