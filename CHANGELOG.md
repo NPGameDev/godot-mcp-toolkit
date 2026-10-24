@@ -28,7 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deadzone, the events and `can_revert`; a changed built-in action also has its
   `default`. `can_revert` follows the revert button in Project Settings > Input
   Map. A setting such as `input/jump.macos` is listed with `feature: "macos"`:
-  Godot reads it as a feature-tag variant of `jump`. Needs the matching server
+  Godot reads it as a feature-tag variant of `jump`. A built-in action's
+  feature-tag entry is read-only: `bind`, `unbind`, `remove`, `rename` and
+  `revert` refuse it, and `add` leaves it as it is. Needs the matching server
   release.
 - `input_map_action` has a `revert` action: `{"action": "revert", "name":
   "ui_accept"}` puts a built-in action back to its default events and deadzone,
@@ -42,12 +44,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `unbind`. Every event has `class` (the engine class), and every event but an
   `unknown` one has `device`. A key has `key_kind` (`physical_keycode`, the
   default, `keycode` or `key_label`), so a built-in action's logical keys can be
-  bound and unbound, plus
-  `command_or_control` and, on Godot 4.3+, `location` (left or right). A mouse
-  button has its modifiers, `command_or_control` and `double_click`. An event of
-  another type is read as `{"type": "unknown", "class": …}`. A response carries
-  `warnings` when a field was accepted but not applied: a mouse `pressed`, or a
-  `location` on Godot 4.2.
+  bound and unbound, plus `command_or_control` and, on Godot 4.3+, `location`
+  (left or right). A mouse button has its modifiers, `command_or_control` and
+  `double_click`. An event of another type is read as `{"type": "unknown",
+  "class": …}`. A response carries `warnings` when a field was accepted but not
+  applied: a mouse `pressed`, or a `location` on Godot 4.2.
 - `scene_instantiate` now takes any file that loads as a scene, as an editor
   drop does: a `.scn`, or a 3D model imported as a scene (`.glb`, `.gltf`,
   `.dae`, `.blend`...). Before, it refused every file but a `.tscn`. A model
@@ -83,11 +84,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs and switches between the two modes, and the setup wizard's `.mcp.json`
   step offers the same choice. When a file the toolkit wrote no longer matches,
   the panel turns amber and offers to update it; a version set by hand gets a
-  quiet offer to restore the recommended one. Nothing is rewritten without a
-  confirmation. Restart your MCP client after a change. See "Server version
-  (pin modes)" in the advanced configuration guide.
+  quiet offer to restore the recommended one. The toolkit rewrites nothing
+  without a confirmation. Restart your MCP client after a change. See
+  "Server version (pin modes)" in the advanced configuration guide.
 - The `mcp_toolkit/server/version` project setting picks the mode for the whole
-  team: empty for Pinned, `latest` for Latest, or any npm version, range or tag,
+  team: empty for Pinned, `latest` for Latest, or any npm version, range or tag
   (you keep a custom value compatible yourself).
 - The `mcp_toolkit/server/local_path` editor setting points **Write .mcp.json** at
   a local server build's `dist/index.js` on this machine (`node <path>` on every
@@ -144,14 +145,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   enable prompt now keeps the other servers and top-level keys in a shared file.
   Before, the write replaced the whole file with the toolkit's entry. Only the
   toolkit's entry changes, and the file is re-serialized, so its formatting may
-  change. A server that only has "godot-mcp" in its name is left alone,
-  unless its entry runs the toolkit's server. A file
-  that isn't valid JSON, or whose `mcpServers` isn't an object, is no longer
-  overwritten: the toolkit says so and offers to open it, so you can fix or
-  delete it first. The dock's "Fix .mcp.json" button is now "Open .mcp.json". The
-  setup wizard's "Overwrite" button is now "Write .mcp.json" and asks before it
-  changes an existing toolkit entry, as the dock already did; both ask only when
-  the entry would actually change.
+  change. A server that only has "godot-mcp" in its name is left alone, unless
+  its entry runs the toolkit's server. A file that isn't valid JSON, or whose
+  `mcpServers` isn't an object, is no longer overwritten: the toolkit says so and
+  offers to open it, so you can fix or delete it first. The dock's
+  "Fix .mcp.json" button is now "Open .mcp.json". The setup wizard's "Overwrite"
+  button is now "Write .mcp.json" and asks before it changes an existing toolkit
+  entry, as the dock already did; both ask only when the entry would change.
 - After a project rename, **Regenerate Token** no longer leaves the MCP server
   unable to connect until the editor restarts.
 - `node_manage` with `duplicate` now saves the copy's children. Before,
@@ -178,16 +178,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Nodes now run a script as it is on disk. `node_set_script` used to set the
   version the editor first loaded from that path, so after `script_edit`,
   `script_write` or another editor changed the file, a `@tool` script kept
-  running its old code. Now `node_set_script` reloads a changed
-  file, and a node that already has the script runs the new code too.
-  `script_write` and `script_edit` reload the script themselves, and so do their
-  undo and redo. The toolkit never loads a file that
-  doesn't compile: when the file changed since the editor loaded it and does not
-  compile, the `node_set_script` response carries `valid: false` and a hint that
-  says so and points at `script_check`, and the nodes keep the code they had.
-  The exception is Godot 4.4+ with an editor window, and 4.4 headless, where the
-  editor still reloads a changed file by itself, broken or not. For a file changed outside the
-  toolkit, the stale-instance hint on `node_call_method` now tells you to set the
+  running its old code. Now `node_set_script` reloads a changed file, and a node
+  that already has the script runs the new code too. `script_write` and
+  `script_edit` reload the script themselves, and so do their undo and redo. The
+  toolkit never loads a file that doesn't compile: when the file changed since
+  the editor loaded it and does not compile, the `node_set_script` response
+  carries `valid: false` and a hint that says so and points at `script_check`,
+  and the nodes keep the code they had. The exception is Godot 4.4+ with an
+  editor window, and 4.4 headless, where the editor still reloads a changed file
+  by itself, broken or not. For a file changed outside the toolkit, the
+  stale-instance hint on `node_call_method` now tells you to set the
   script again instead of relaunching the editor, and `script_write` no longer
   carries that hint. On Godot 4.2.2, an extension edit made with `script_write` or
   `script_edit` now applies live when it compiles, while one made outside the
@@ -247,7 +247,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the property keeps its value. A number with a fraction in an `Array[int]` is
   truncated, with a warning, as it is for an `int` property. An array of objects
   written to a node whose script isn't `@tool` still goes in untyped when the scene
-  had saved that property untyped.
+  had saved that property untyped. `project_set_setting` now refuses, with
+  `INVALID_VALUE`, an element that doesn't fit a typed-array setting (no built-in
+  setting is one).
 - `editor_screenshot` no longer hangs until the call times out when the editor
   window is open but nothing on screen has changed for a while. It now asks the
   editor to draw a frame and stops waiting for each frame after a second.
