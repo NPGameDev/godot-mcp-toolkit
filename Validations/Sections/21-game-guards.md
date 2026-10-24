@@ -30,7 +30,7 @@ func _ready():
 - **Known limitation:** The COMPILATION_FAILED check (4be3454) only fires when the game process completely fails to start (e.g., missing main scene). Individual script errors manifest at runtime, not pre-launch. The agent discovers them via `debugger_get_log` after launch.
 
 **21.3b** `debugger_get_log` — immediately after 21.3's game_start
-- **Expect:** `GAME_NOT_RUNNING` (no runtime/output cache for a compile-failing main scene)
+- **Expect:** `GAME_NOT_RUNNING` (no runtime/output cache for a compile-failing main scene). 4.2: the parse error halts at a debugger break — success, `source:"cache"`, `lines:[]`, `debug_state {active:true, breaked:true}`.
 - **Note:** a main-scene script that fails to COMPILE crashes the game pre-runtime-connection, so no output cache is built; the parse error surfaces in the **editor console** (`editor_get_console` level=error), NOT the runtime debugger log.
 
 **21.3c** `game_stop`

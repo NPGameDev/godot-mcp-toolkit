@@ -87,7 +87,7 @@
 > **REGRESSION WATCH (41o-quater-ter):** the inline cap is proportional + aspect-preserving + shrink-only, and disk/both stay full-res (20.5i). If `mid`/`low` distorts aspect, upscales, or omits the `image_detail`/`returned` disclosure, the downscale regressed. Flag as **Major**.
 
 **20.5h** `image_detail` bad-value guard — `runtime_screenshot` image_detail=`huge`
-- **Expect:** `INVALID_PARAMS` naming the offending value and the valid set `[full, mid, low]` — NOT a silent full-res capture.
+- **Expect:** schema rejection `-32602` listing the valid set `full|mid|low` (the zod message does not echo the bad value) — NOT a silent capture.
 
 **20.5i** Disk × detail orthogonality (disk stays full-res) — `runtime_screenshot` image_response_mode=`both`, image_detail=`low`
 - **Expect:** the **inline** `image_base64` is the downscaled frame (`returned` long edge ≤ 512, `image_detail:"low"`) BUT the disk `path` file is **full resolution** (its pixel dimensions match a native `full` capture, larger than the inline), AND the response `hint` states the saved file is "full-res" and invites a Read for detail. This proves `image_detail` caps the inline image only — disk/both persistence is never downscaled. Cleanup: delete the written PNG.

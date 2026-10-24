@@ -25,8 +25,8 @@
 - `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn`
 - **Expect:** all succeed, main is active, probe is open but non-active
 
-**18.6** `scene_delete` — file_path=`res://sv2_validation/probe.tscn` (non-active open tab)
-- **Expect:** success, `tab_closed: true`, hint present about `_set_main_scene_state`
+**18.6** **[4.5+]** `scene_delete` — file_path=`res://sv2_validation/probe.tscn` (non-active open tab)
+- **Expect:** success, `tab_closed: true`, hint present about `_set_main_scene_state`. 4.2–4.4: success, `deindexed:true`, `tab_closed:false`, phantom-tab warning.
 
 **18.7** `file_delete` — file_path=`res://sv2_validation/shader.gdshader`
 - **Expect:** success, deindexed:true, no tab_closed field (not a scene file)

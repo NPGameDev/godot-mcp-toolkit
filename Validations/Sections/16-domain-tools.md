@@ -72,7 +72,7 @@
 - **Expect:** success, draw_pass_1 is QuadMesh
 
 **16.20** All 8 presets quick check — create each with type="2d": fire, smoke, sparks, rain, snow, explosion, magic, dust
-- **Expect:** 8 successes (lightweight — only verify success + emitting)
+- **Expect:** 8 successes; `emitting:true` except the one-shot presets (sparks, explosion), which may read `emitting:false` once their burst ends.
 
 **16.21** `particles_create` guard — type=`"4d"`
 - **Expect:** INVALID_PARAMS

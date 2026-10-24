@@ -28,7 +28,7 @@
 - **Expect:** success
 
 **UR1.2** Set position:
-- `node.set_property` — node_path=`URTarget`, property=`position`, value=`{"x": 200, "y": 300}`
+- `node.set_property` — node_path=`URTarget`, property=`position`, value=`{"type":"Vector2","x":200,"y":300}`
 - **Expect:** success
 
 **UR1.3** Trigger undo:

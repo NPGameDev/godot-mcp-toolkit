@@ -64,7 +64,7 @@ dedicated group so nothing incidental matches, then page at `limit: 2`. Batch al
 - **Expect:** success. `int(total_matches) == 5` (constant across pages); `int(returned) == 2`; `int(offset) == 2`; `has_more == true`; `int(next_offset) == 4`. The 2 paths in `nodes` are DISJOINT from 17.11's 2 paths.
 
 **17.13** `scene_query` final page — group_filter=`"pagetest"`, limit=`2`, offset=`4`
-- **Expect:** success. `int(total_matches) == 5`; `int(returned) == 1` (the last partial page); `int(offset) == 4`; `has_more == false`; **NO** `next_offset` key and **NO** `hint` key. Its 1 path is disjoint from both 17.11 and 17.12.
+- **Expect:** success. `int(total_matches) == 5`; `int(returned) == 1` (the last partial page); `int(offset) == 4`; `has_more == false`; **NO** `next_offset` key and no paging hint (the static success hint `For full tree structure use scene_get_tree…` is always present). Its 1 path is disjoint from both 17.11 and 17.12.
 
 > **Completeness invariant:** across 17.11–17.13 the sum of `returned` is `2 + 2 + 1 == 5 == total_matches`; the union of the three pages' `nodes` paths == all five `Sv2Page*` nodes, with no repeats. If any page repeats or omits a node, deterministic paging has regressed. Flag as **Major**.
 
@@ -72,20 +72,20 @@ dedicated group so nothing incidental matches, then page at `limit: 2`. Batch al
 - **Expect:** byte-identical to 17.11 — same `total_matches`, same `returned`, same two `nodes` in the same order (an unchanged tree + the same query ⇒ the same DFS pre-order page). If the order differs between two identical calls, the walk is non-deterministic. Flag as **Major**.
 
 **17.15** `scene_query` past-the-end — group_filter=`"pagetest"`, limit=`2`, offset=`5`
-- **Expect:** success (NOT an error). `nodes` is empty (`[]`); `int(returned) == 0`; `int(total_matches) == 5`; `int(offset) == 5` (echoed as-sent, NOT clamped down to total_matches, so the caller can see it overshot); `has_more == false`; **NO** `next_offset`/`hint`.
+- **Expect:** success (NOT an error). `nodes` is empty (`[]`); `int(returned) == 0`; `int(total_matches) == 5`; `int(offset) == 5` (echoed as-sent, NOT clamped down to total_matches, so the caller can see it overshot); `has_more == false`; **NO** `next_offset`; no paging hint (the static success hint `For full tree structure use scene_get_tree…` is always present).
 
-**17.16** `scene_query` offset floor — group_filter=`"pagetest"`, limit=`2`, offset=`-3`
-- **Expect:** success. `int(offset) == 0` — a negative offset is floored to 0 (defensive clamp), so this returns page 1 (same as 17.11): `int(returned) == 2`, `has_more == true`.
+**17.16** `scene_query` offset floor (schema minimum) — group_filter=`"pagetest"`, limit=`2`, offset=`-3`
+- **Expect:** schema rejection `-32602 … expected number to be >=0 at offset`.
 
 **17.17** `scene_query` limit clamp disclosure — group_filter=`"pagetest"`, limit=`500`
-- **Expect:** success. `int(limit) == 200` (the effective/clamped page size, NOT the requested 500); `limit_clamped == true`; the `hint` contains a clamp clause naming the max (200). `int(total_matches) == 5`; `int(returned) == 5` (all matches fit under the clamped limit); `has_more == false` (5 < 200), so NO `next_offset`. (The `limit_clamped` key is ABSENT on the un-clamped pages 17.11–17.16.)
+- **Expect:** success. `int(limit) == 200` (the effective/clamped page size, NOT the requested 500); `limit_clamped == true`; the `hint` contains a clamp clause naming the max (200). `int(total_matches) == 5`; `int(returned) == 5` (all matches fit under the clamped limit); `has_more == false` (5 < 200), so NO `next_offset`. (The `limit_clamped` key is ABSENT on the un-clamped pages 17.11–17.15.)
 
 **17.18** `scene_query` no-match — group_filter=`"pagetest_none"` (a group nothing is in)
-- **Expect:** success (NOT an error). `nodes` empty (`[]`); `int(returned) == 0`; `int(total_matches) == 0`; `has_more == false`; **NO** `next_offset`/`hint`/`limit_clamped`.
+- **Expect:** success (NOT an error). `nodes` empty (`[]`); `int(returned) == 0`; `int(total_matches) == 0`; `has_more == false`; **NO** `next_offset`/`limit_clamped`; no paging hint (the static success hint `For full tree structure use scene_get_tree…` is always present).
 
 > **REGRESSION WATCH (scene_query pagination envelope):** the response must be the self-describing
 > envelope — `returned` (NOT the old `count`), `has_more` (NOT `truncated`), always-present
-> `total_matches`, and `next_offset`/`hint` only while `has_more`. If a response still carries `count`
+> `total_matches`, and `next_offset`/paging `hint` only while `has_more`. If a response still carries `count`
 > or `truncated`, or omits `total_matches`, the pagination reshape has regressed. Flag as **Major**.
 
 **Fixture cleanup (before Section cleanup):**
