@@ -2,10 +2,10 @@
 
 A comprehensive, modular validation sweep for the Godot MCP Toolkit.
 
-**Total tools (agent-facing):** 112 + 2 meta — canonical count in server
+**Total tools (agent-facing):** 113 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).
-**Toolkit surfaces (non-disjoint — do not sum):** 101 editor-registered (incl. the 4 `debug.*`) ·
-12 runtime (4 names overlap the editor 101) · 7 LSP (server-side only).
+**Toolkit surfaces (non-disjoint — do not sum):** 102 editor-registered (incl. the 4 `debug.*`) ·
+12 runtime (4 names overlap the editor 102) · 7 LSP (server-side only).
 **Sweep scale:** per-section defined-case counts in the Section Map below; last full-run tally in
 `RESULTS.md` (479 tests · 2026-07-03 · Godot 4.7). **Combo chains: 17** (C1–C12 & C27–C28 in §22;
 C24–C26 in §§26–27).
