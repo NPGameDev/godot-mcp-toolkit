@@ -417,10 +417,10 @@ func _new_sized_peer() -> WebSocketPeer:
 	return peer
 
 
-## Poll each peer; enforce the auth timeout (close 1008 if a peer hasn't authed in
-## time); drain available packets, delivering each frame to _on_message (awaited
-## so the editor's per-tick sequential dispatch is preserved). Returns the peers
-## that have closed, for cleanup().
+## Poll each peer; drain available packets, delivering each frame to _on_message
+## (awaited so the editor's per-tick sequential dispatch is preserved); then
+## enforce the auth timeout (close 1008 if a peer still hasn't authed in time).
+## Returns the peers that have closed, for cleanup().
 func poll_peers() -> Array[WebSocketPeer]:
 	var closed: Array[WebSocketPeer] = []
 	var now_ms := Time.get_ticks_msec()
@@ -432,12 +432,6 @@ func poll_peers() -> Array[WebSocketPeer]:
 			continue
 		if state != WebSocketPeer.STATE_OPEN:
 			continue
-		# Auth timeout — close peers that haven't authed in time.
-		if not _peer_authed.has(peer):
-			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _auth_timeout_ms:
-				peer.close(1008, "auth timeout")
-				closed.append(peer)
-				continue
 		while peer.get_available_packet_count() > 0:
 			var text := peer.get_packet().get_string_from_utf8()
 			# Editor awaits (sequential dispatch within the tick); runtime fires
@@ -446,6 +440,15 @@ func poll_peers() -> Array[WebSocketPeer]:
 				await _on_message.call(peer, text)
 			else:
 				_on_message.call(peer, text)
+		# Auth timeout — close a peer that is still unauthed once its frames are read.
+		# Reading first lets an auth frame that arrived in time count when the poll
+		# itself comes late: the editor polls between frames, and a frame can outlast
+		# the timeout while it loads a scene or imports. A frame from an unauthed peer
+		# only ever reaches validate_auth, so reading it late dispatches nothing.
+		if not _peer_authed.has(peer) and peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _auth_timeout_ms:
+				peer.close(1008, "auth timeout")
+				closed.append(peer)
 	return closed
 
 
