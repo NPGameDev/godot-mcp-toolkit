@@ -11,6 +11,7 @@ extends RefCounted
 ## exact predicate the guard calls. The happy path (a real main scene reaches
 ## play_main_scene) is validated interactively.
 
+const Testing := preload("res://test/units/testing.gd")
 const PlaytestControl := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_control.gd")
 const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 
@@ -18,11 +19,15 @@ const _MAIN_SCENE_KEY := "application/run/main_scene"
 const _LOG_PATH_KEY := "debug/file_logging/log_path"
 const _LOG_FIXTURE := "user://mcp_debugger_log_fixture.log"
 const _ENV_RUNTIME := "GODOT_MCP_RUNTIME"
+const _NO_SESSION_NOTE := "No game session recorded yet (game_start was never called this editor session)"
+const _REMOTE_DEPLOY_NOTE := "The latest run is a one-click deploy; its log is on the device, not in this machine's godot.log"
 
 
 static func run(testing) -> void:
 	_test_main_scene_missing_predicate(testing)
 	_test_debugger_log_reads_from_zero(testing)
+	_test_debugger_log_reads_playtest_the_editor_launched(testing)
+	_test_debugger_log_never_reads_local_log_for_deploy(testing)
 	_test_runtime_opt_out_hint(testing)
 	_test_runtime_opt_out_hint_text(testing)
 
@@ -157,6 +162,91 @@ static func _test_debugger_log_reads_from_zero(testing) -> void:
 		"session shorter than prior file returns output (no false-empty)")
 
 	print("")
+
+
+# A debugger session reads godot.log only when it starts for a playtest the editor
+# launched. The debug bridge's call and plugin.gd's _build() need a live editor, so
+# the interactive check in the editor covers them; this pins the reader's rule.
+static func _test_debugger_log_reads_playtest_the_editor_launched(testing: Testing) -> void:
+	testing.begin("debugger.get_log reads a playtest the editor launched")
+	# Both statics are saved and restored. The session flag is seeded false because
+	# no public path clears it, and an earlier group leaves it set.
+	var saved_session_started: bool = PlaytestLogReader._game_session_started
+	var saved_remote_deploy: bool = PlaytestLogReader._latest_run_is_remote_deploy
+	var had_setting := ProjectSettings.has_setting(_LOG_PATH_KEY)
+	var original: Variant = ProjectSettings.get_setting(_LOG_PATH_KEY, "user://logs/godot.log")
+	ProjectSettings.set_setting(_LOG_PATH_KEY, _LOG_FIXTURE)
+	_write_log_fixture("HEADLINE\nbeta\n")
+	PlaytestLogReader._game_session_started = false
+
+	PlaytestLogReader.note_editor_run()
+	PlaytestLogReader.mark_debugger_session_started(false)
+	var not_playing: Dictionary = PlaytestLogReader.cmd_debugger_get_log({})
+	PlaytestLogReader.mark_debugger_session_started(true)
+	var playing: Dictionary = PlaytestLogReader.cmd_debugger_get_log({})
+
+	_restore_log_path(had_setting, original)
+	PlaytestLogReader._game_session_started = saved_session_started
+	PlaytestLogReader._latest_run_is_remote_deploy = saved_remote_deploy
+
+	var not_playing_note: String = str(not_playing.get("note", ""))
+	var playing_lines: Array = playing.get("lines", [])
+	testing.eq(not_playing_note, _NO_SESSION_NOTE,
+			"a session that starts while the editor runs no playtest → the no-session note")
+	testing.eq(playing_lines, ["HEADLINE", "beta"],
+			"a session that starts for the editor's playtest → that playtest's log, head line first")
+
+	print("")
+
+
+# A one-click deploy's game logs on the device, so its session never reads this
+# machine's godot.log, even after an earlier game_start set the session flag. The
+# next playtest reads its own log again.
+static func _test_debugger_log_never_reads_local_log_for_deploy(testing: Testing) -> void:
+	testing.begin("debugger.get_log never reads the local log for a one-click deploy")
+	var saved_session_started: bool = PlaytestLogReader._game_session_started
+	var saved_remote_deploy: bool = PlaytestLogReader._latest_run_is_remote_deploy
+	var had_setting := ProjectSettings.has_setting(_LOG_PATH_KEY)
+	var original: Variant = ProjectSettings.get_setting(_LOG_PATH_KEY, "user://logs/godot.log")
+	ProjectSettings.set_setting(_LOG_PATH_KEY, _LOG_FIXTURE)
+	_write_log_fixture("HEADLINE\nbeta\n")
+
+	# As after a game_start earlier in the editor session.
+	PlaytestLogReader.mark_session_started()
+	PlaytestLogReader.note_editor_run()
+	PlaytestLogReader.note_remote_debug_deploy()
+	PlaytestLogReader.mark_debugger_session_started(true)
+	var deployed: Dictionary = PlaytestLogReader.cmd_debugger_get_log({})
+	PlaytestLogReader.note_editor_run()
+	PlaytestLogReader.mark_debugger_session_started(true)
+	var next_playtest: Dictionary = PlaytestLogReader.cmd_debugger_get_log({})
+
+	_restore_log_path(had_setting, original)
+	PlaytestLogReader._game_session_started = saved_session_started
+	PlaytestLogReader._latest_run_is_remote_deploy = saved_remote_deploy
+
+	var deployed_note: String = str(deployed.get("note", ""))
+	var deployed_lines: Array = deployed.get("lines", [])
+	var next_playtest_lines: Array = next_playtest.get("lines", [])
+	testing.eq(deployed_note, _REMOTE_DEPLOY_NOTE,
+			"a deploy's session after an earlier game_start → the deploy note")
+	testing.eq(deployed_lines, [],
+			"a deploy's session after an earlier game_start → no lines from the local log")
+	testing.eq(next_playtest_lines, ["HEADLINE", "beta"],
+			"the next playtest after a deploy → its log again")
+
+	print("")
+
+
+## Points the debug-log path back where it was and deletes the fixture.
+## [param had_setting] and [param original] are what the case read before it moved
+## the path to _LOG_FIXTURE.
+static func _restore_log_path(had_setting: bool, original: Variant) -> void:
+	if had_setting:
+		ProjectSettings.set_setting(_LOG_PATH_KEY, original)
+	else:
+		ProjectSettings.set_setting(_LOG_PATH_KEY, "user://logs/godot.log")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_LOG_FIXTURE))
 
 
 ## Write [param content] to the debug-log fixture (the user:// path in _LOG_FIXTURE).

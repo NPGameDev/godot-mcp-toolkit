@@ -65,6 +65,7 @@ func _on_started() -> void:
 	_breaked = false
 	_can_debug = false
 	_error_buffer.clear()
+	PlaytestLogReader.mark_debugger_session_started(EditorInterface.is_playing_scene())
 
 
 func _on_stopped() -> void:

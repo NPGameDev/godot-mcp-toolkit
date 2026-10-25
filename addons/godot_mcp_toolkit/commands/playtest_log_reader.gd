@@ -12,10 +12,12 @@ extends RefCounted
 ## bridge is present, merges its debug_state + error_buffer (falling back to a
 ## log-line error scan) into one crash-context response.
 ##
-## Owns the two pieces of state this subdomain depends on:
-##   - the session-started flag + the public mark_session_started() setter the
-##     Play-control side calls at game.start (so a read before any game.start
+## Owns the state this subdomain depends on:
+##   - the session-started flag, set at game.start and when a debugger session
+##     starts for a playtest the editor launched (so a read before any playtest
 ##     returns "no session yet" rather than a prior editor session's stale log);
+##   - whether the latest run the editor started is a one-click deploy, whose game
+##     logs on the device, so its session never reads this machine's godot.log;
 ##   - the injected _debug_bridge (the EditorDebuggerPlugin, shared upstream with
 ##     debug_commands.gd) + set_debug_bridge()/clear_debug_bridge().
 ## An extracted submodule of the playtest-command group, reached via a `preload` alias.
@@ -24,15 +26,21 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const Helpers = Modules.CommandHelpers
 const LogHelpers = Modules.LogHelpers
 
-# True once game.start has launched a play session this editor session. The engine
-# truncates user://logs/godot.log fresh on every launch (RotatedFileLogger ctor →
-# rotate_file → FileAccess::WRITE; source-verified 4.2–4.7), so once a session has
-# started the whole file IS the current session and the reader reads from byte 0.
-# Before the first game.start it stays false, so debugger.get_log reports "no
-# session yet" rather than a prior editor session's stale log. The file is written
-# by the game/play process (the editor does not write it — engine !editor guard),
-# so reading it gives game output even though the Logger API is process-local (4.5+).
+# True once a playtest has launched this editor session, by game.start or by any
+# of the editor's run commands. The engine truncates user://logs/godot.log fresh on
+# every launch (RotatedFileLogger ctor → rotate_file → FileAccess::WRITE;
+# source-verified 4.2–4.7), so once a session has started the whole file IS the
+# current session and the reader reads from byte 0. Before the first playtest it
+# stays false, so debugger.get_log reports "no session yet" rather than a prior
+# editor session's stale log. The file is written by the game/play process (the
+# editor does not write it — engine !editor guard), so reading it gives game output
+# even though the Logger API is process-local (4.5+).
 static var _game_session_started: bool = false
+
+# True while the latest run the editor started is a one-click deploy with remote
+# debug. Its game logs on the device, so the reader serves no local godot.log until
+# the next run, and leaves _game_session_started alone for that run to use.
+static var _latest_run_is_remote_deploy: bool = false
 
 # Debug bridge reference — injected at register() time. Supplies the
 # error_buffer + debug_state fields of the debugger log payload.
@@ -48,6 +56,30 @@ static var _debug_bridge: RefCounted = null
 ## (game.start) the moment a play session launches.
 static func mark_session_started() -> void:
 	_game_session_started = true
+
+
+## Records that the editor is about to run the project, as a playtest or a one-click
+## deploy. The editor calls every plugin's [code]_build()[/code] before either; a
+## deploy then reports itself through [method note_remote_debug_deploy] from its
+## export, before its game connects.
+static func note_editor_run() -> void:
+	_latest_run_is_remote_deploy = false
+
+
+## Records that the latest run is a one-click deploy with remote debug. Its game logs
+## on the device, so until the next run [method cmd_debugger_get_log] answers with a
+## note instead of reading this machine's godot.log.
+static func note_remote_debug_deploy() -> void:
+	_latest_run_is_remote_deploy = true
+
+
+## Marks the session for a debugger session that a playtest of this editor started.
+## [param is_playing_scene] is whether the editor is running the project when the
+## session starts. The session counts when it is and the latest run is not a deploy:
+## a game the editor did not launch, or a deployed one, writes no current log here.
+static func mark_debugger_session_started(is_playing_scene: bool) -> void:
+	if is_playing_scene and not _latest_run_is_remote_deploy:
+		_game_session_started = true
 
 
 # -- Debug-bridge injection ---------------------------------------------------
@@ -78,6 +110,12 @@ static func cmd_debugger_get_log(parameters: Dictionary) -> Dictionary:
 	if tf[1] != null:
 		return tf[1]
 	var regex_warning: String = tf[2]
+
+	if _latest_run_is_remote_deploy:
+		var response := MCPToolkitSuccess.ok(_empty_log_page(
+			"The latest run is a one-click deploy; its log is on the device, not in this machine's godot.log"))
+		_merge_debug_bridge_data(response)
+		return response
 
 	if not _game_session_started:
 		var response := MCPToolkitSuccess.ok(_empty_log_page(

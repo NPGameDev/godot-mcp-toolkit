@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `debugger_get_log` now reads the log of a playtest started from the editor's Play
+  buttons, Run Current Scene or Run Specific Scene once the game stops or pauses on
+  an error. Before, it answered that no game session was recorded until the first
+  `game_start` of the editor session, and starting the game again with `game_start`
+  wrote a new log in place of the one you wanted. After a one-click deploy with
+  remote debug it now says that the log is on the device. Before, once a
+  `game_start` had run, it served this machine's `godot.log`, which holds an earlier
+  playtest
+  ([#97](https://github.com/NPGameDev/godot-mcp-toolkit/issues/97)).
+
 ## [1.1.0] - 2026-10-25
 
 ### Added
