@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- On Godot 4.5 and later, console capture now works in a project that raises
+  GDScript warnings such as untyped declarations or unsafe method access to
+  errors (Project Settings → Debug → GDScript). Before, the toolkit's logger
+  failed to compile in such a project, in the editor and in a running game, and
+  the toolkit fell back to reading the log file. A game run from the editor
+  stopped in the debugger on that compile error, before its first frame.
+  Reported by @theintonerzero
+  ([#90](https://github.com/NPGameDev/godot-mcp-toolkit/issues/90)).
+
 ## [1.1.0] - 2026-10-25
 
 ### Added

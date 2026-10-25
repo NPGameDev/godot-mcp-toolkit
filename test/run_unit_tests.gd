@@ -23,6 +23,7 @@ const NodeManageTests := preload("res://test/units/node_manage_tests.gd")
 const UndoRedoTests := preload("res://test/units/undo_redo_tests.gd")
 const ErrorContractTests := preload("res://test/units/error_contract_tests.gd")
 const PathsVersioningTests := preload("res://test/units/paths_versioning_tests.gd")
+const LogBufferTests := preload("res://test/units/log_buffer_tests.gd")
 const ProceduralAssetTests := preload("res://test/units/procedural_asset_tests.gd")
 const TextInputTests := preload("res://test/units/text_input_tests.gd")
 const SerializeIoTests := preload("res://test/units/serialize_io_tests.gd")
@@ -84,6 +85,7 @@ func _init() -> void:
 	UndoRedoTests.run(testing)
 	await ErrorContractTests.run(testing)  # M10 holds group 40 (response-validation) await → coroutine
 	PathsVersioningTests.run(testing)
+	await LogBufferTests.run(testing, self)  # the warning group awaits frames → coroutine
 	ProceduralAssetTests.run(testing)
 	TextInputTests.run(testing)
 	SerializeIoTests.run(testing)

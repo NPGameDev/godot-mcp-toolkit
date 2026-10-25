@@ -360,22 +360,24 @@ static func _create_logger() -> Object:
 # _log_error by name on the script instance; @tool keeps it a real instance in the
 # editor, where a non-tool script would only get a placeholder. The source must never
 # name the class it runs on (see _create_logger), and as a single-quoted literal it
-# holds no single quote, comments included.
+# holds no single quote, comments included. A script built from source has no path for
+# a warning directory rule to match, so it compiles under the project's own warning
+# levels: it stays fully typed and reaches the buffer script through call().
 const _LOGGER_SOURCE := '
 @tool
 extends RefCounted
 
 func _log_message(message: String, error: bool) -> void:
-	var buf = get_meta("_log_buffer")
+	var buf: Object = get_meta("_log_buffer")
 	if buf == null:
 		return
 	var level: String = "error" if error else "info"
-	buf.push(level, message.strip_edges())
+	buf.call("push", level, message.strip_edges())
 
 func _log_error(function_name: String, file_path: String, line: int,
 		code: String, rationale: String, _editor_notify: bool,
-		error_type: int, _script_backtraces) -> void:
-	var buf = get_meta("_log_buffer")
+		error_type: int, _script_backtraces: Array) -> void:
+	var buf: Object = get_meta("_log_buffer")
 	if buf == null:
 		return
 	var level: String = "warning" if error_type == 1 else "error"
@@ -383,15 +385,16 @@ func _log_error(function_name: String, file_path: String, line: int,
 	# error_type 2 is the engine ERR_SCRIPT type: only script errors carry a .gd source path worth
 	# preserving. The 4.7+ flag (set at setup from the engine version) enables the location
 	# line; see compose_error_message.
-	var append_location: bool = bool(get_meta("_append_error_location", false)) and error_type == 2
-	var composed: String = buf.compose_error_message(prefix, code, rationale, function_name, file_path, line, append_location)
+	var location_enabled: bool = get_meta("_append_error_location", false)
+	var append_location: bool = location_enabled and error_type == 2
+	var composed: String = buf.call("compose_error_message", prefix, code, rationale, function_name, file_path, line, append_location)
 	if error_type == 2:
 		# Script errors also latch their structured {file, line}: the composed
 		# message drops both for in-memory scripts, and script_check needs the
 		# real parse line of a reload it just ran.
-		buf.push_script_error(level, composed, file_path, line)
+		buf.call("push_script_error", level, composed, file_path, line)
 	else:
-		buf.push(level, composed)
+		buf.call("push", level, composed)
 '
 
 
