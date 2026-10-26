@@ -21,6 +21,26 @@ your trust model:
 Any tool with a `destructiveHint` MCP annotation modifies project assets or
 state. Many of these support Undo (Ctrl+Z in the editor reverts their changes).
 
+## Paths the delete tools refuse
+
+Every delete tool (`folder_delete`, `file_delete`, `resource_delete`,
+`scene_delete` and `script_delete`) answers `PATH_DENIED` for a path that names
+one of these, at any depth and whatever the case of the name:
+
+- anything whose name starts with a dot, and everything inside such a folder:
+  `.git` (a repository or a submodule's `.git` file), `.svn`, `.godot`,
+  `.claude`, `.mcp.json`;
+- a file named `project.godot` or `override.cfg`;
+- any name shaped like a Windows alias, whatever the name, because Windows can
+  resolve it to a reserved one: a name with a `:` (an NTFS stream such as
+  `project.godot::$DATA`), a name ending in a dot or a space, and an 8.3 short
+  name such as `GIT~1` or `PROJEC~1.GOD`.
+
+The guard covers paths aimed at these entries. A recursive `folder_delete` of a
+parent folder skips hidden entries, but it still removes a nested
+`project.godot` or `override.cfg`, and on Windows a dot-named entry that isn't
+marked hidden. If you do mean to delete one of these, delete it by hand.
+
 ## Built-in read-only mode
 
 For users who want a read-only session without configuring per-tool blocking,

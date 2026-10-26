@@ -77,6 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the scripts first, and names the paths to exclude. Reported by @frankhurrican
   ([#99](https://github.com/NPGameDev/godot-mcp-toolkit/issues/99)).
 
+### Security
+
+- `folder_delete`, `file_delete`, `resource_delete`, `scene_delete` and
+  `script_delete` now refuse reserved paths: a dot-named file or folder (`.git`,
+  `.svn`, `.godot`, `.claude`, `.mcp.json`) or anything inside one, and any
+  `project.godot` or `override.cfg`. Before, `folder_delete` on `res://.git`
+  could delete the project's git repository, or on Windows leave it unusable.
+
 ## [1.1.0] - 2026-10-25
 
 ### Added

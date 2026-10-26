@@ -226,7 +226,7 @@ static func _cmd_resource_delete(parameters: Dictionary) -> Dictionary:
 	if err != null:
 		return err
 	var file_path := str(parameters.get("file_path", ""))
-	var guard := FileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe_delete(file_path)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	var extension := file_path.get_extension().to_lower()
