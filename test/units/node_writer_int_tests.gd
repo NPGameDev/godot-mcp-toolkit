@@ -28,6 +28,8 @@ static func run(testing) -> void:
 	_test_clamp_after_fit_names_requested_value(testing)
 	_test_group_header_does_not_hide_int(testing)
 	_test_set_property_bare_res_path(testing)
+	_test_set_property_bare_uid_and_user_paths(testing)
+	_test_set_property_bare_path_on_placeholder(testing)
 
 
 static func _test_set_property_single(testing) -> void:
@@ -253,6 +255,62 @@ static func _test_set_property_bare_res_path(testing) -> void:
 			"the error names the tagged form with the same path")
 	testing.eq(sprite.texture, null, "the texture is left unset")
 	sprite.free()
+	print("")
+
+
+# A uid:// or user:// String is a bare path too. The UID is registered here and
+# removed before the assertions.
+static func _test_set_property_bare_uid_and_user_paths(testing) -> void:
+	testing.begin("node.set_property refuses a bare uid:// or user:// path")
+	var sprite := Sprite2D.new()
+	var uid := ResourceUID.create_id()
+	ResourceUID.add_id(uid, TEXTURE_PATH)
+	var by_uid := NodeCommands._set_property_scalar_single(
+			sprite, "Sprite", "texture", ResourceUID.id_to_text(uid))
+	ResourceUID.remove_id(uid)
+	var by_user := NodeCommands._set_property_scalar_single(
+			sprite, "Sprite", "texture", "user://icon.tres")
+
+	testing.eq(str(by_uid.get("code", "")), "INVALID_VALUE", "bare uid:// → INVALID_VALUE")
+	testing.ok(str(by_uid.get("error", "")).contains(
+			"{\"type\": \"Resource\", \"path\": \"%s\"}" % TEXTURE_PATH),
+			"the error gives the tagged form with the path the UID names")
+	testing.eq(str(by_user.get("code", "")), "INVALID_VALUE", "bare user:// → INVALID_VALUE")
+	testing.ok(str(by_user.get("error", "")).contains("only a res:// resource can be bound"),
+			"the error refuses the user:// file")
+	testing.eq(sprite.texture, null, "the texture is left unset")
+	sprite.free()
+	print("")
+
+
+# The editor's placeholder for a script that is not @tool stores a String given for
+# a Texture2D export, so a check that reads the value back cannot see the bare path.
+static func _test_set_property_bare_path_on_placeholder(testing) -> void:
+	testing.begin("node.set_property refuses a bare res:// path on a placeholder")
+	var root := Node.new()
+	root.name = "Root"
+	var holder := _node_with_source(testing, "Holder", root, "\n".join([
+		"extends Node",
+		"var _values := {}",
+		"func _get_property_list() -> Array[Dictionary]:",
+		"\treturn [{\"name\": \"icon\", \"type\": TYPE_OBJECT,",
+		"\t\t\"hint\": PROPERTY_HINT_RESOURCE_TYPE, \"hint_string\": \"Texture2D\",",
+		"\t\t\"usage\": PROPERTY_USAGE_DEFAULT}]",
+		"func _set(property: StringName, value: Variant) -> bool:",
+		"\tif property == &\"icon\":",
+		"\t\t_values[property] = value",
+		"\t\treturn true",
+		"\treturn false",
+		"func _get(property: StringName) -> Variant:",
+		"\treturn _values.get(property)",
+		"",
+	]))
+
+	var response := NodeCommands._set_property_scalar_single(holder, "Holder", "icon", TEXTURE_PATH)
+	testing.eq(str(response.get("code", "")), "INVALID_VALUE", "bare res:// path → INVALID_VALUE")
+	testing.eq(holder.get("icon"), null, "the placeholder doesn't store the String")
+
+	root.free()
 	print("")
 
 

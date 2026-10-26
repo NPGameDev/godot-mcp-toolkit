@@ -71,15 +71,13 @@ static func _apply_resource_properties(
 				warnings.append(
 					"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
 				continue
-			# A bare res:// path on a Resource property: a live instance drops it and
-			# a placeholder saves it as a String. Ask for the tagged form, as
-			# node.set_property does.
-			if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
-					and int(entry.get("type", TYPE_NIL)) == TYPE_OBJECT:
-				warnings.append(
-					"property '%s' expects a Resource, not a bare string path. " % key_string
-					+ "Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value; " % str(raw_value)
-					+ "value left unchanged")
+			# A bare path on a Resource property: a live instance drops it and a
+			# placeholder saves it as a String. Warn with the same hint
+			# node_set_property gives, and save the rest.
+			var declared_type := int(entry.get("type", TYPE_NIL))
+			var bare_path := Helpers.bare_path_message(key_string, raw_value, declared_type)
+			if not bare_path.is_empty():
+				warnings.append("%s; value left unchanged" % bare_path)
 				continue
 			var fit := DeclaredTypeFitter.fit(resource, key_string, coerced)
 			if not str(fit["error"]).is_empty():

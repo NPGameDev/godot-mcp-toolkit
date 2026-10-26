@@ -24,6 +24,8 @@ static func run(testing) -> void:
 	_test_instantiate_model_recovery_messages(testing)
 	_test_create_node_typed_array_property(testing)
 	_test_create_node_bare_res_path(testing)
+	_test_create_node_bare_uid_and_user_paths(testing)
+	_test_create_node_bare_path_on_placeholder(testing)
 
 
 # --- MCPToolkitSafeSceneOps public API -------------------------------------
@@ -280,6 +282,72 @@ static func _test_create_node_bare_res_path(testing) -> void:
 	testing.eq(instance.texture, null, "the texture is left unset")
 	instance.free()
 	print("")
+
+
+# A uid:// or user:// String is a bare path too. The UID is registered here and
+# removed before the assertions.
+static func _test_create_node_bare_uid_and_user_paths(testing) -> void:
+	testing.begin("scene.create_node fails a bare uid:// or user:// path")
+	var texture_path := "res://test/fixtures/placeholder_texture.tres"
+	var instance := Sprite2D.new()
+	var uid := ResourceUID.create_id()
+	ResourceUID.add_id(uid, texture_path)
+	var by_uid := _inline_write_failures(instance, {"texture": ResourceUID.id_to_text(uid)})
+	ResourceUID.remove_id(uid)
+	var by_user := _inline_write_failures(instance, {"texture": "user://icon.tres"})
+
+	testing.eq(by_uid.size(), 1, "bare uid:// → one failed property")
+	var uid_row: Dictionary = by_uid[0] if not by_uid.is_empty() else {}
+	testing.ok(str(uid_row.get("error", "")).contains(
+			"{\"type\": \"Resource\", \"path\": \"%s\"}" % texture_path),
+			"the error gives the tagged form with the path the UID names")
+	testing.eq(by_user.size(), 1, "bare user:// → one failed property")
+	var user_row: Dictionary = by_user[0] if not by_user.is_empty() else {}
+	testing.ok(str(user_row.get("error", "")).contains("only a res:// resource can be bound"),
+			"the error refuses the user:// file")
+	testing.eq(instance.texture, null, "the texture is left unset")
+	instance.free()
+	print("")
+
+
+# The editor's placeholder for a script that is not @tool stores a String given for
+# a Texture2D export, so a check that reads the value back cannot see the bare path.
+static func _test_create_node_bare_path_on_placeholder(testing) -> void:
+	testing.begin("scene.create_node fails a bare res:// path on a placeholder")
+	var node_script := GDScript.new()
+	node_script.source_code = "\n".join([
+		"extends Node",
+		"var _values := {}",
+		"func _get_property_list() -> Array[Dictionary]:",
+		"\treturn [{\"name\": \"icon\", \"type\": TYPE_OBJECT,",
+		"\t\t\"hint\": PROPERTY_HINT_RESOURCE_TYPE, \"hint_string\": \"Texture2D\",",
+		"\t\t\"usage\": PROPERTY_USAGE_DEFAULT}]",
+		"func _set(property: StringName, value: Variant) -> bool:",
+		"\tif property == &\"icon\":",
+		"\t\t_values[property] = value",
+		"\t\treturn true",
+		"\treturn false",
+		"func _get(property: StringName) -> Variant:",
+		"\treturn _values.get(property)",
+		"",
+	])
+	testing.eq(node_script.reload(), OK, "placeholder-like node script compiles")
+	var instance: Node = node_script.new()
+
+	var failed := _inline_write_failures(
+			instance, {"icon": "res://test/fixtures/placeholder_texture.tres"})
+	testing.eq(failed.size(), 1, "bare res:// path → one failed property")
+	testing.eq(instance.get("icon"), null, "the placeholder doesn't store the String")
+	instance.free()
+	print("")
+
+
+## The failed rows of scene.create_node's two inline-property steps, prepare then
+## write, for [param properties] on [param instance].
+static func _inline_write_failures(instance: Node, properties: Dictionary) -> Array:
+	var prepared := _SceneCommands._prepare_inline_properties(instance, properties)
+	var written := _SceneCommands._write_inline_properties(instance, prepared["simple"])
+	return (prepared["failed"] as Array) + (written["failed"] as Array)
 
 
 ## Saves a sub-scene whose Node3D root carries a script and a group, the parts an

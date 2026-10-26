@@ -261,10 +261,10 @@ static func _set_property_compound_single(
 	return MCPToolkitSuccess.ok(response)
 
 
-## Set one scalar (non-compound) property: coerce → set → register UndoRedo,
-## then the bare-res:// readback guard (a bare "res://…" string assigned
-## to a Resource-typed property silently fails to load — detect it and steer the
-## caller to the tagged {type:"Resource", path:…} form). Leaf mechanics of
+## Set one scalar (non-compound) property: coerce → set → register UndoRedo. A
+## bare path on a Resource property (a String instead of the tagged
+## {type:"Resource", path:…} form) is refused before the set, with the message
+## [code]Helpers.bare_path_message[/code] gives. Leaf mechanics of
 ## node.set_property's scalar branch, lifted out of the handler for SRP.
 ## Needs no `server` — scalar undo uses do/undo_property.
 static func _set_property_scalar_single(
@@ -275,6 +275,12 @@ static func _set_property_scalar_single(
 		return MCPToolkitError.fail(
 			coerce_result.get("code", "INVALID_VALUE"),
 			str(coerce_result.get("error", "")))
+	# Refused before the set: a placeholder would store the String, and the generic
+	# drop guard below would give a vaguer message for a live instance.
+	var bare_path := Helpers.bare_path_message(property_name, raw_value,
+			int(DeclaredTypeFitter.property_entry(node, property_name).get("type", TYPE_NIL)))
+	if not bare_path.is_empty():
+		return MCPToolkitError.fail("INVALID_VALUE", bare_path + ".")
 	var requested: Variant = coerce_result["value"]
 	var fit := DeclaredTypeFitter.fit(node, property_name, requested)
 	if not str(fit["error"]).is_empty():
@@ -289,15 +295,6 @@ static func _set_property_scalar_single(
 	# the set outside this guard — out of scope, cured in 4.4. See disarm_tooltip_uaf.
 	Helpers.disarm_tooltip_uaf(node, property_name)
 	node.set(property_name, coerced)
-	# Bare res:// string on a Resource-typed property: give the specific
-	# tagged-form hint (a bare path silently fails to load) BEFORE the generic
-	# drop guard below, which would otherwise fire first with a vaguer message.
-	# Signature: raw String + non-Resource coercion + non-String readback.
-	if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
-			and not (coerced is Resource) and not (node.get(property_name) is String):
-		return MCPToolkitError.fail("INVALID_VALUE",
-			"property '%s' expects a Resource, not a bare string path. " % property_name +
-			"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw_value))
 	# Classify the write. DROPPED (silent wrong-type) fails before undo — nothing
 	# landed, so there is no state to roll back. ADJUSTED (engine reshaped the value,
 	# e.g. a clamp or a normalize) DID commit, so it records undo like a clean write
