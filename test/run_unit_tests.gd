@@ -103,7 +103,7 @@ func _init() -> void:
 	BarePathCheckTests.run(testing)
 	AutoloadHealTests.run(testing)
 	PortConfigTests.run(testing)
-	await WsTransportTests.run(testing)
+	await WsTransportTests.run(testing, self)  # each socket wait awaits frames → coroutine
 	McpJsonBuildTests.run(testing)
 	McpJsonPinTests.run(testing)
 	ServerPinPolicyTests.run(testing)

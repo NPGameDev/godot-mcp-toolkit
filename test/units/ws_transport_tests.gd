@@ -11,28 +11,29 @@ const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transp
 const _TOKEN := "unit-test-token"
 const _PORT_BASE := 18920
 const _PORT_RANGE := 10
-# Short, so the late poll costs the suite well under a second.
-const _AUTH_TIMEOUT_MS := 200
+# Wide enough that a slow loopback handshake opens well inside it; each case
+# sleeps twice this, so it sets the suite's cost.
+const _AUTH_TIMEOUT_MS := 1000
 # A loopback socket progresses in real time, not in frames, so each wait on a
-# socket state polls in short real-time steps and gives up after this many.
-const _HANDSHAKE_STEPS := 200
-const _STEP_MSEC := 5
+# socket state polls once a frame and gives up after this many milliseconds.
+const _WAIT_CAP_MS := 3000
 
 
-static func run(testing: Testing) -> void:
-	await _test_auth_frame_read_on_a_late_poll(testing)
-	await _test_silent_peer_closed_after_timeout(testing)
+## [param tree] is the runner itself, whose frames the socket waits await.
+static func run(testing: Testing, tree: SceneTree) -> void:
+	await _test_auth_frame_read_on_a_late_poll(testing, tree)
+	await _test_silent_peer_closed_after_timeout(testing, tree)
 
 
 # The editor polls only between frames, and a frame can take longer than the
 # timeout while it loads a scene or imports. A client that authenticated right
 # away must not be closed because the poll that reads its frame came late.
-static func _test_auth_frame_read_on_a_late_poll(testing: Testing) -> void:
+static func _test_auth_frame_read_on_a_late_poll(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("ws transport authenticates a frame that waited for a late poll")
 	var transport := _listening_transport()
 	var client := WebSocketPeer.new()
 	client.connect_to_url("ws://127.0.0.1:%d" % transport.get_bound_port())
-	var opened: bool = await _open(transport, client)
+	var opened: bool = await _open(transport, client, tree)
 
 	client.send_text(JSON.stringify({"auth": _TOKEN}))
 	client.poll()
@@ -41,7 +42,7 @@ static func _test_auth_frame_read_on_a_late_poll(testing: Testing) -> void:
 	OS.delay_msec(_AUTH_TIMEOUT_MS * 2)
 	await transport.poll_peers()
 	var authed_count := transport.get_authed_count()
-	var ack: String = await _next_frame(transport, client)
+	var ack: String = await _next_frame(transport, client, tree)
 	var client_state := client.get_ready_state()
 
 	client.close()
@@ -56,22 +57,25 @@ static func _test_auth_frame_read_on_a_late_poll(testing: Testing) -> void:
 
 
 # The timeout still does its job: a client that never authenticates is closed.
-static func _test_silent_peer_closed_after_timeout(testing: Testing) -> void:
+static func _test_silent_peer_closed_after_timeout(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("ws transport closes a peer that never sends its auth frame")
 	var transport := _listening_transport()
 	var client := WebSocketPeer.new()
 	client.connect_to_url("ws://127.0.0.1:%d" % transport.get_bound_port())
-	var opened: bool = await _open(transport, client)
+	var opened: bool = await _open(transport, client, tree)
 
+	# The delay is the scenario (§9.11): the client stays silent until the server's
+	# next poll comes after the timeout.
 	OS.delay_msec(_AUTH_TIMEOUT_MS * 2)
 	var closed: Array[WebSocketPeer] = await transport.poll_peers()
 	var closed_count := closed.size()
-	for _step: int in _HANDSHAKE_STEPS:
+	var deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
+	while Time.get_ticks_msec() < deadline:
 		client.poll()
 		if client.get_ready_state() == WebSocketPeer.STATE_CLOSED:
 			break
 		await transport.poll_peers()
-		OS.delay_msec(_STEP_MSEC)
+		await tree.process_frame
 	var close_code := client.get_close_code()
 	var close_reason := client.get_close_reason()
 
@@ -102,26 +106,28 @@ static func _listening_transport() -> WsTransport:
 	return transport
 
 
-## Drives the server and [param client] until the client's WebSocket is open.
-## Returns whether it opened within the bounded number of steps.
-static func _open(transport: WsTransport, client: WebSocketPeer) -> bool:
-	for _step: int in _HANDSHAKE_STEPS:
+## Drives the server and [param client] once a frame until the client's WebSocket
+## is open. Returns whether it opened within [constant _WAIT_CAP_MS].
+static func _open(transport: WsTransport, client: WebSocketPeer, tree: SceneTree) -> bool:
+	var deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
+	while Time.get_ticks_msec() < deadline:
 		transport.accept_pending()
 		await transport.poll_peers()
 		client.poll()
 		if client.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			return true
-		OS.delay_msec(_STEP_MSEC)
+		await tree.process_frame
 	return false
 
 
-## Polls both ends until [param client] receives a frame, and returns its text, or
-## "" when none arrives within the bounded number of steps.
-static func _next_frame(transport: WsTransport, client: WebSocketPeer) -> String:
-	for _step: int in _HANDSHAKE_STEPS:
+## Polls both ends once a frame until [param client] receives a frame, and returns
+## its text, or "" when none arrives within [constant _WAIT_CAP_MS].
+static func _next_frame(transport: WsTransport, client: WebSocketPeer, tree: SceneTree) -> String:
+	var deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
+	while Time.get_ticks_msec() < deadline:
 		await transport.poll_peers()
 		client.poll()
 		if client.get_available_packet_count() > 0:
 			return client.get_packet().get_string_from_utf8()
-		OS.delay_msec(_STEP_MSEC)
+		await tree.process_frame
 	return ""
