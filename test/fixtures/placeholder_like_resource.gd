@@ -8,7 +8,9 @@ extends Resource
 ## script declares its properties in _get_property_list() and stores raw values to
 ## stand in for the placeholder. It lives in a file, not as an inner class, because
 ## a resource saved to disk refers to its script by path. Like a placeholder, it
-## returns the typed default of its typed array [code]tags[/code] until it is set.
+## returns the typed default of its typed array [code]tags[/code] until it is set,
+## and it stores a String given for its [Texture2D] property [code]icon[/code] as
+## given. [code]icon_path[/code] is a String property that holds a file path.
 
 var _values := {}
 
@@ -29,11 +31,24 @@ func _get_property_list() -> Array[Dictionary]:
 			"hint_string": "String",
 			"usage": PROPERTY_USAGE_DEFAULT,
 		},
+		{
+			"name": "icon",
+			"type": TYPE_OBJECT,
+			"hint": PROPERTY_HINT_RESOURCE_TYPE,
+			"hint_string": "Texture2D",
+			"usage": PROPERTY_USAGE_DEFAULT,
+		},
+		{
+			"name": "icon_path",
+			"type": TYPE_STRING,
+			"hint": PROPERTY_HINT_FILE,
+			"usage": PROPERTY_USAGE_DEFAULT,
+		},
 	]
 
 
 func _set(property: StringName, value: Variant) -> bool:
-	if property in [&"price", &"weight", &"note", &"tags"]:
+	if property in [&"price", &"weight", &"note", &"tags", &"icon", &"icon_path"]:
 		_values[property] = value
 		return true
 	return false

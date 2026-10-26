@@ -3,9 +3,9 @@ extends RefCounted
 ## Serialization + I/O + content-boundary unit tests: Coerce/serialize round-trip,
 ## color_from_dict (white + black defaults), node-sourced Packed property serialize,
 ## save.read / script.read / classdb paging, export-strip warning set, log-level continuation,
-## the SettingsRegistration mcp_toolkit/* collector, and resource.write's int properties
-## (in memory and through a saved file) and typed arrays. Exercises the serialize/IO/content
-## subsystems' pure logic headless.
+## the SettingsRegistration mcp_toolkit/* collector, and resource.write's bare paths, int
+## properties (in memory and through a saved file) and typed arrays. Exercises the
+## serialize/IO/content subsystems' pure logic headless.
 
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
@@ -37,6 +37,10 @@ static func run(testing) -> void:
 	_test_log_level_continuation(testing)
 	_test_compose_error_message(testing)
 	_test_settings_collect_names(testing)
+	_test_resource_write_bare_resource_path(testing)
+	_test_resource_write_bare_path_on_update(testing)
+	_test_resource_write_bare_uid_and_user_paths(testing)
+	_test_resource_write_path_on_string_property(testing)
 	_test_resource_write_int_property(testing)
 	_test_resource_write_int_on_update(testing)
 	_test_resource_write_skips_inspector_headers(testing)
@@ -750,6 +754,104 @@ static func _test_settings_collect_names(testing) -> void:
 	# An unrelated engine key is NOT swept by the mcp_toolkit/ prefix.
 	testing.ok(not names.has("application/config/name"),
 			"collector excludes unrelated engine key (application/config/name)")
+	print("")
+
+
+# --- resource.write: a bare path on a Resource property -------------------
+# node.set_property asks for the tagged {type: "Resource", path} form. Without that
+# check, a live instance (here the native script property) drops a bare path, and
+# the editor's placeholder stores it as a String, which reaches the file.
+
+static func _test_resource_write_bare_resource_path(testing) -> void:
+	testing.begin("resource.write warns on a bare res:// path for a Resource property")
+	var script_path := "res://test/fixtures/placeholder_like_resource.gd"
+	var native := Resource.new()
+	var native_warnings := ResourceCommands._apply_resource_properties(
+			native, {"script": script_path}, "Resource")
+	testing.eq(native_warnings.size(), 1, "bare path on script → exactly one warning")
+	var native_warning: String = "" if native_warnings.is_empty() else native_warnings[0]
+	testing.ok(native_warning.contains("'script'"), "the warning names the property")
+	testing.ok(native_warning.contains("{\"type\": \"Resource\", \"path\": \"%s\"}" % script_path),
+			"the warning gives the tagged form")
+	testing.eq(native.get_script(), null, "the script is left unset")
+
+	var texture_path := "res://test/fixtures/placeholder_texture.tres"
+	var placeholder: Resource = PlaceholderLikeResource.new()
+	var placeholder_warnings := ResourceCommands._apply_resource_properties(
+			placeholder, {"icon": texture_path}, "Resource")
+	testing.eq(placeholder_warnings.size(), 1, "bare path on icon → exactly one warning")
+	testing.eq(placeholder.get("icon"), null, "the placeholder doesn't store the String")
+
+	var tagged: Resource = PlaceholderLikeResource.new()
+	var tagged_warnings := ResourceCommands._apply_resource_properties(
+			tagged, {"icon": {"type": "Resource", "path": texture_path}}, "Resource")
+	testing.eq(tagged_warnings.size(), 0, "the tagged form → no warning")
+	testing.ok(tagged.get("icon") is Texture2D, "the tagged form stores the texture")
+	print("")
+
+
+# The same bare path through a saved file, with the file's own line as the oracle: a
+# placeholder that stored the String would save icon = "res://…". The other
+# properties of the same write still save. Writes a user:// temp file and removes it
+# afterward.
+static func _test_resource_write_bare_path_on_update(testing) -> void:
+	testing.begin("resource.write update path keeps a bare res:// path out of the file")
+	var fixture := "user://resource_write_bare_path_fixture.tres"
+	var existing: Resource = PlaceholderLikeResource.new()
+	existing.set("price", 1)
+	testing.eq(ResourceSaver.save(existing, fixture), OK, "existing resource file saved")
+
+	var warnings := _update_resource_file(testing, fixture,
+			{"icon": "res://test/fixtures/placeholder_texture.tres", "price": 2})
+	var icon_line := _saved_property_line(fixture, "icon")
+	var price_line := _saved_property_line(fixture, "price")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(fixture))
+	testing.eq(warnings.size(), 1, "bare path on icon → exactly one warning")
+	testing.ok(not icon_line.begins_with("icon = \""),
+			"the file has no icon = \"res://…\" line (got '%s')" % icon_line)
+	testing.eq(price_line, "price = 2", "the rest of the write saves")
+	print("")
+
+
+# A uid:// or user:// String on a Resource property is a bare path too. The
+# warning gives the tagged form with the path a known UID names; a user:// file is
+# refused. The UID is registered here and removed before the assertions.
+static func _test_resource_write_bare_uid_and_user_paths(testing) -> void:
+	testing.begin("resource.write warns on a bare uid:// or user:// path")
+	var texture_path := "res://test/fixtures/placeholder_texture.tres"
+	var uid := ResourceUID.create_id()
+	ResourceUID.add_id(uid, texture_path)
+	var by_uid: Resource = PlaceholderLikeResource.new()
+	var uid_warnings := ResourceCommands._apply_resource_properties(
+			by_uid, {"icon": ResourceUID.id_to_text(uid)}, "Resource")
+	ResourceUID.remove_id(uid)
+	var by_user: Resource = PlaceholderLikeResource.new()
+	var user_warnings := ResourceCommands._apply_resource_properties(
+			by_user, {"icon": "user://icon.tres"}, "Resource")
+
+	testing.eq(uid_warnings.size(), 1, "bare uid:// → exactly one warning")
+	var uid_warning: String = "" if uid_warnings.is_empty() else uid_warnings[0]
+	testing.ok(uid_warning.contains("{\"type\": \"Resource\", \"path\": \"%s\"}" % texture_path),
+			"the warning gives the tagged form with the path the UID names")
+	testing.eq(by_uid.get("icon"), null, "uid:// → the placeholder doesn't store the String")
+	testing.eq(user_warnings.size(), 1, "bare user:// → exactly one warning")
+	var user_warning: String = "" if user_warnings.is_empty() else user_warnings[0]
+	testing.ok(user_warning.contains("only a res:// resource can be bound"),
+			"the warning refuses the user:// file")
+	testing.eq(by_user.get("icon"), null, "user:// → the placeholder doesn't store the String")
+	print("")
+
+
+# A String property may hold a path, as an @export_file does: that String is the
+# value, not a bare path.
+static func _test_resource_write_path_on_string_property(testing) -> void:
+	testing.begin("resource.write stores a res:// path on a String property")
+	var resource: Resource = PlaceholderLikeResource.new()
+	var warnings := ResourceCommands._apply_resource_properties(
+			resource, {"icon_path": "res://test/fixtures/placeholder_texture.tres"}, "Resource")
+	testing.eq(warnings.size(), 0, "path on a String property → no warning")
+	testing.eq(resource.get("icon_path"), "res://test/fixtures/placeholder_texture.tres",
+			"the String is stored")
 	print("")
 
 

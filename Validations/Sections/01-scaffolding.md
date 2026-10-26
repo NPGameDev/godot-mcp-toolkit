@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 0
 **Tools tested:** folder_create, script_write, resource_write, scene_create, scene_open
-**Tests:** 10
+**Tests:** 11
 
 Creates all shared test artifacts used by later sections.
 
@@ -68,6 +68,20 @@ void fragment() {
 
 **1.10** `scene_open` — file_path=`res://sv2_validation/Sv2Main.tscn`
 - **Expect:** success
+
+**1.11** `resource_write` bare paths — three updates of `res://sv2_validation/material.tres` (from 1.6), each
+with a String where the `shader` Resource belongs:
+- (a) properties=`{"shader": "res://sv2_validation/shader.gdshader"}`
+- (b) properties=`{"shader": "uid://nosuchuid0000"}`
+- (c) properties=`{"shader": "user://shader.gdshader"}`
+- **Expect:** each succeeds with exactly one entry in `warnings`, naming `'shader'` and ending `value left
+  unchanged`: (a) gives the tagged form `{"type": "Resource", "path": "res://sv2_validation/shader.gdshader"}`,
+  (b) says no resource has the UID `uid://nosuchuid0000`, (c) says only a res:// resource can be bound. After
+  (c), `resource_load` on `material.tres` still shows the 1.6 shader.
+- **Restore:** none needed: `shader` is never changed.
+
+> **REGRESSION WATCH (toolkit #48):** `warnings: []` on any leg, or a `material.tres` whose `shader` line
+> holds a quoted String, means `resource_write` bound a bare path again. Flag as **Critical**.
 
 ---
 

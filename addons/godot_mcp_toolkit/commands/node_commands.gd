@@ -3,6 +3,7 @@ extends RefCounted
 ## node.* command handlers — property get/set/list, method calls, script attachment.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const BarePathCheck = Modules.BarePathCheck
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Helpers = Modules.CommandHelpers
@@ -261,10 +262,10 @@ static func _set_property_compound_single(
 	return MCPToolkitSuccess.ok(response)
 
 
-## Set one scalar (non-compound) property: coerce → set → register UndoRedo,
-## then the bare-res:// readback guard (a bare "res://…" string assigned
-## to a Resource-typed property silently fails to load — detect it and steer the
-## caller to the tagged {type:"Resource", path:…} form). Leaf mechanics of
+## Set one scalar (non-compound) property: coerce → set → register UndoRedo. A
+## bare path on a Resource property (a String instead of the tagged
+## {type:"Resource", path:…} form) is refused before the set, with the message
+## [code]BarePathCheck.bare_path_message[/code] gives. Leaf mechanics of
 ## node.set_property's scalar branch, lifted out of the handler for SRP.
 ## Needs no `server` — scalar undo uses do/undo_property.
 static func _set_property_scalar_single(
@@ -275,6 +276,12 @@ static func _set_property_scalar_single(
 		return MCPToolkitError.fail(
 			coerce_result.get("code", "INVALID_VALUE"),
 			str(coerce_result.get("error", "")))
+	# Refused before the set: a placeholder would store the String, and the generic
+	# drop guard below would give a vaguer message for a live instance.
+	var bare_path := BarePathCheck.bare_path_message(property_name, raw_value,
+			int(DeclaredTypeFitter.property_entry(node, property_name).get("type", TYPE_NIL)))
+	if not bare_path.is_empty():
+		return MCPToolkitError.fail("INVALID_VALUE", bare_path + ".")
 	var requested: Variant = coerce_result["value"]
 	var fit := DeclaredTypeFitter.fit(node, property_name, requested)
 	if not str(fit["error"]).is_empty():
@@ -289,15 +296,6 @@ static func _set_property_scalar_single(
 	# the set outside this guard — out of scope, cured in 4.4. See disarm_tooltip_uaf.
 	Helpers.disarm_tooltip_uaf(node, property_name)
 	node.set(property_name, coerced)
-	# Bare res:// string on a Resource-typed property: give the specific
-	# tagged-form hint (a bare path silently fails to load) BEFORE the generic
-	# drop guard below, which would otherwise fire first with a vaguer message.
-	# Signature: raw String + non-Resource coercion + non-String readback.
-	if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
-			and not (coerced is Resource) and not (node.get(property_name) is String):
-		return MCPToolkitError.fail("INVALID_VALUE",
-			"property '%s' expects a Resource, not a bare string path. " % property_name +
-			"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw_value))
 	# Classify the write. DROPPED (silent wrong-type) fails before undo — nothing
 	# landed, so there is no state to roll back. ADJUSTED (engine reshaped the value,
 	# e.g. a clamp or a normalize) DID commit, so it records undo like a clean write
@@ -415,6 +413,15 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 			results.append({"node_path": np, "property": prop,
 				"success": false, "error": str(coerced["_coerce_error"])})
+			continue
+
+		# Refused before the set, as the single write does: a placeholder would store
+		# the String.
+		var bare_path := BarePathCheck.bare_path_message(prop, raw_val,
+				int(DeclaredTypeFitter.property_entry(node, prop).get("type", TYPE_NIL)))
+		if not bare_path.is_empty():
+			results.append({"node_path": np, "property": prop,
+				"success": false, "error": bare_path + "."})
 			continue
 
 		var old_value = node.get(prop)
@@ -924,6 +931,17 @@ static func _manage_duplicate(
 	if node == root:
 		return MCPToolkitError.fail("INVALID_PATH", "cannot duplicate the scene root")
 
+	# Refused before the copy is made, so a refusal leaves the scene as it was: a
+	# placeholder would store the String. The copy declares the source's properties.
+	var props_raw: Variant = parameters.get("properties", null)
+	if typeof(props_raw) == TYPE_DICTIONARY:
+		for key: Variant in (props_raw as Dictionary):
+			var prop_name := str(key)
+			var bare_path := BarePathCheck.bare_path_message(prop_name, props_raw[key],
+					int(DeclaredTypeFitter.property_entry(node, prop_name).get("type", TYPE_NIL)))
+			if not bare_path.is_empty():
+				return MCPToolkitError.fail("INVALID_PARAMS", bare_path + ".")
+
 	var dup := node.duplicate(_DUPLICATE_DEFAULT_FLAGS | duplicate_from_editor_flag())
 	if dup == null:
 		return MCPToolkitError.fail("INTERNAL", "Node.duplicate() returned null for %s" % node_path)
@@ -962,7 +980,6 @@ static func _manage_duplicate(
 	# Apply optional property overrides (position, scale, etc.).
 	# Use coerce_value_hint so untagged dicts like {x:200,y:300}
 	# are inferred as Vector2/Vector3/Color from the property type.
-	var props_raw = parameters.get("properties", null)
 	var warnings: Array[String] = []
 	if typeof(props_raw) == TYPE_DICTIONARY:
 		for key in (props_raw as Dictionary):

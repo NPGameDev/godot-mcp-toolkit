@@ -4,6 +4,7 @@ extends RefCounted
 ## node creation, instantiation.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const BarePathCheck = Modules.BarePathCheck
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
@@ -485,14 +486,15 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 ## Coerces and fits each inline property [param properties_raw] names for
 ## scene.create_node's new [param instance], before the node enters the scene. A
 ## compound path ([code]:[/code] or [code]/[/code]) is set later through
-## [code]Helpers.set_property_compound[/code], so it is only collected here.
+## [code]Helpers.set_property_compound[/code], so it is only collected here. A bare
+## path on a Resource property fails here, with the message
+## [code]BarePathCheck.bare_path_message[/code] gives, so it is never set.
 ## [br][br]
 ## Returns [code]{"simple": Array, "compound": Array, "failed": Array}[/code].
 ## Each [code]simple[/code] row is
-## [code]{name, value, requested, fit, old_value, raw}[/code]: [code]value[/code] is
-## the fitted value to set, [code]requested[/code] the coerced value before the fit,
-## [code]fit[/code] the [code]DeclaredTypeFitter.fit[/code] result and [code]raw[/code]
-## the wire value, which the bare-res:// readback hint quotes. Each
+## [code]{name, value, requested, fit, old_value}[/code]: [code]value[/code] is
+## the fitted value to set, [code]requested[/code] the coerced value before the fit
+## and [code]fit[/code] the [code]DeclaredTypeFitter.fit[/code] result. Each
 ## [code]compound[/code] row is [code]{name, raw_value}[/code]; each
 ## [code]failed[/code] row is [code]{name, error}[/code].
 static func _prepare_inline_properties(instance: Node, properties_raw: Variant) -> Dictionary:
@@ -511,6 +513,11 @@ static func _prepare_inline_properties(instance: Node, properties_raw: Variant) 
 		if not result.get("ok", false):
 			failed.append({"name": prop_name, "error": str(result.get("error", ""))})
 			continue
+		var bare_path := BarePathCheck.bare_path_message(prop_name, properties[key],
+				int(DeclaredTypeFitter.property_entry(instance, prop_name).get("type", TYPE_NIL)))
+		if not bare_path.is_empty():
+			failed.append({"name": prop_name, "error": bare_path + "."})
+			continue
 		var fit := DeclaredTypeFitter.fit(instance, prop_name, result["value"])
 		if not str(fit["error"]).is_empty():
 			failed.append({"name": prop_name, "error": str(fit["error"])})
@@ -521,7 +528,6 @@ static func _prepare_inline_properties(instance: Node, properties_raw: Variant) 
 			"requested": result["value"],
 			"fit": fit,
 			"old_value": instance.get(prop_name),
-			"raw": properties[key],
 		})
 	return {"simple": simple, "compound": compound, "failed": failed}
 
@@ -547,18 +553,6 @@ static func _write_inline_properties(instance: Node, simple: Array) -> Dictionar
 		Helpers.disarm_tooltip_uaf(instance, prop_name)
 		instance.set(prop_name, prop["value"])
 		var after: Variant = instance.get(prop_name)
-		# Bare res:// string on a Resource-typed property: a bare path silently fails to
-		# load, so steer to the tagged {type:"Resource", path:…} form BEFORE the generic
-		# drop guard (which would fire first with a vaguer message). Message mirrors
-		# node.set_property's scalar path so both tools report the same mistake identically.
-		var raw: Variant = prop["raw"]
-		if typeof(raw) == TYPE_STRING and str(raw).begins_with("res://") \
-				and not (prop["value"] is Resource) and not (after is String):
-			instance.set(prop_name, prop["old_value"])
-			failed.append({"name": prop_name, "error":
-				"property '%s' expects a Resource, not a bare string path. " % prop_name +
-				"Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value." % str(raw)})
-			continue
 		var outcome := PropertySetCheck.describe_set_drop(
 			prop["old_value"], after, prop["value"], prop_name)
 		if str(outcome.get("status", "")) == "dropped":
@@ -849,6 +843,14 @@ static func _batch_instantiate(
 					var coerced = Coerce.coerce_value(props[key])
 					if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 						property_errors.append({"property": prop_name, "error": str(coerced["_coerce_error"])})
+						continue
+					# Reported, not set: a placeholder would store the String.
+					var declared_type := int(
+							DeclaredTypeFitter.property_entry(instance, prop_name).get("type", TYPE_NIL))
+					var bare_path := BarePathCheck.bare_path_message(
+							prop_name, props[key], declared_type)
+					if not bare_path.is_empty():
+						property_errors.append({"property": prop_name, "error": bare_path + "."})
 						continue
 					var fit := DeclaredTypeFitter.fit(instance, prop_name, coerced)
 					if not str(fit["error"]).is_empty():

@@ -10,6 +10,7 @@ extends RefCounted
 ## or docs: a preload, a [code]load()[/code] call, a path string or an [code]ext_resource[/code].
 ## MCPToolkitError has class_name and needs no preload.
 
+const BarePathCheck := preload("res://addons/godot_mcp_toolkit/contract/bare_path_check.gd")
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const DeclaredTypeFitter := preload("res://addons/godot_mcp_toolkit/contract/declared_type_fitter.gd")
 const ExecuteHints := preload("res://addons/godot_mcp_toolkit/contract/execute_hints.gd")

@@ -3,6 +3,7 @@ extends RefCounted
 ## resource.* command handlers — load, write (create/update upsert), delete for .tres/.res files.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const BarePathCheck = Modules.BarePathCheck
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
@@ -66,9 +67,18 @@ static func _apply_resource_properties(
 		else:
 			# An inspector group, subgroup or category header is not a property:
 			# set() would store nothing for a key that names only a header.
-			if DeclaredTypeFitter.property_entry(resource, key_string).is_empty():
+			var entry := DeclaredTypeFitter.property_entry(resource, key_string)
+			if entry.is_empty():
 				warnings.append(
 					"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
+				continue
+			# A bare path on a Resource property: a live instance drops it and a
+			# placeholder saves it as a String. Warn with the same hint
+			# node_set_property gives, and save the rest.
+			var declared_type := int(entry.get("type", TYPE_NIL))
+			var bare_path := BarePathCheck.bare_path_message(key_string, raw_value, declared_type)
+			if not bare_path.is_empty():
+				warnings.append("%s; value left unchanged" % bare_path)
 				continue
 			var fit := DeclaredTypeFitter.fit(resource, key_string, coerced)
 			if not str(fit["error"]).is_empty():
