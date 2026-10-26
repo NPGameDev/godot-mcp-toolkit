@@ -26,6 +26,10 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const _PIN_GRACE_ATTEMPTS := 5
 # Per-peer buffer size, in KB, when the owning server supplies no source.
 const _DEFAULT_BUFFER_KB := 1024
+# A peer whose WebSocket is still not open this many auth timeouts after its accept
+# is dropped. The server-side handshake has no deadline of its own, so a client
+# that connects and never sends its upgrade request would hold a peer for good.
+const _OPEN_DEADLINE_FACTOR := 5
 
 # Injected by the owning server after construction. The base is mechanical; every
 # decision/side-effect that differs between the editor (Mode A) and the runtime
@@ -109,6 +113,7 @@ var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
 var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers only)
 var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
+var _peer_open_ms: Dictionary = {}      # WebSocketPeer -> int (ticks_msec of the first poll that saw it open)
 var _relisten_countdown: int = 0
 # Tracks the current run of consecutive listen failures so we log the first one
 # (with a hint), stay silent during retries, and announce the recovery with the
@@ -417,10 +422,12 @@ func _new_sized_peer() -> WebSocketPeer:
 	return peer
 
 
-## Poll each peer; drain available packets, delivering each frame to _on_message
+## Poll each peer; drop a peer whose WebSocket has not opened by its open
+## deadline; drain available packets, delivering each frame to _on_message
 ## (awaited so the editor's per-tick sequential dispatch is preserved); then
-## enforce the auth timeout (close 1008 if a peer still hasn't authed in time).
-## Returns the peers that have closed, for cleanup().
+## enforce the auth timeout, counted from the poll that first saw the peer open
+## (close 1008 if a peer still hasn't authed in time). Returns the peers that have
+## closed, for cleanup().
 func poll_peers() -> Array[WebSocketPeer]:
 	var closed: Array[WebSocketPeer] = []
 	var now_ms := Time.get_ticks_msec()
@@ -430,8 +437,23 @@ func poll_peers() -> Array[WebSocketPeer]:
 		if state == WebSocketPeer.STATE_CLOSED:
 			closed.append(peer)
 			continue
+		if state == WebSocketPeer.STATE_CONNECTING:
+			# Open deadline. The poll above has already read an upgrade request
+			# waiting in the socket, so a late poll never drops a client that sent
+			# one in time. Closing a peer that never opened drops its TCP connection
+			# at once, with no close code.
+			var open_deadline_ms := _auth_timeout_ms * _OPEN_DEADLINE_FACTOR
+			if now_ms - int(_peer_connect_ms.get(peer, now_ms)) > open_deadline_ms:
+				peer.close()
+				closed.append(peer)
+			continue
 		if state != WebSocketPeer.STATE_OPEN:
 			continue
+		# The auth timeout starts here, not at the accept: a late poll can complete
+		# the upgrade, and the client cannot send its auth frame before it has seen
+		# the upgrade reply.
+		if not _peer_open_ms.has(peer):
+			_peer_open_ms[peer] = now_ms
 		while peer.get_available_packet_count() > 0:
 			var text := peer.get_packet().get_string_from_utf8()
 			# Editor awaits (sequential dispatch within the tick); runtime fires
@@ -446,7 +468,7 @@ func poll_peers() -> Array[WebSocketPeer]:
 		# the timeout while it loads a scene or imports. A frame from an unauthed peer
 		# only ever reaches validate_auth, so reading it late dispatches nothing.
 		if not _peer_authed.has(peer) and peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
-			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _auth_timeout_ms:
+			if now_ms - int(_peer_open_ms.get(peer, now_ms)) > _auth_timeout_ms:
 				peer.close(1008, "auth timeout")
 				closed.append(peer)
 	return closed
@@ -466,6 +488,7 @@ func cleanup(closed: Array[WebSocketPeer]) -> bool:
 		_peers.erase(peer)
 		_peer_authed.erase(peer)
 		_peer_connect_ms.erase(peer)
+		_peer_open_ms.erase(peer)
 		if _on_peer_closed.is_valid():
 			_on_peer_closed.call(peer, was_authed)
 	return had_authed_disconnect
@@ -509,6 +532,7 @@ func close_all(code: int, reason: String) -> void:
 	_peers.clear()
 	_peer_authed.clear()
 	_peer_connect_ms.clear()
+	_peer_open_ms.clear()
 
 
 ## Stop and discard the TCPServer and reset the listen bookkeeping — the final
