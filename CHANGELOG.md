@@ -76,6 +76,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to keep. The warning stays for the case where another export plugin consumes
   the scripts first, and names the paths to exclude. Reported by @frankhurrican
   ([#99](https://github.com/NPGameDev/godot-mcp-toolkit/issues/99)).
+- The editor no longer closes an MCP client that authenticated in time when the
+  poll that reads its auth frame comes late. Before, if the editor paused for
+  more than 2 s between accepting the connection and its next poll, as it can
+  while it loads a scene or imports, it closed the client with `auth timeout`,
+  and the client had to reconnect. A running game had the same problem: a
+  runtime tool called while a game frame took more than 2 s, as during a load,
+  failed with `AUTH_FAILED` ("server closed connection during auth: auth
+  timeout")
+  ([#101](https://github.com/NPGameDev/godot-mcp-toolkit/issues/101)).
 
 ## [1.1.0] - 2026-10-25
 
