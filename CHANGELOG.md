@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `resource_write` now warns about a bare `res://` path given for a property
+  that holds a resource, such as `script` or a `Texture2D` export, and leaves
+  the value unchanged, as `node_set_property` does. Before, it saved the path
+  as a String, or dropped it when creating a resource from a script class, with
+  no warning. Use `{"type": "Resource", "path": "res://..."}`.
+
 ## [1.1.0] - 2026-10-25
 
 ### Added

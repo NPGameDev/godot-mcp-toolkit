@@ -66,9 +66,20 @@ static func _apply_resource_properties(
 		else:
 			# An inspector group, subgroup or category header is not a property:
 			# set() would store nothing for a key that names only a header.
-			if DeclaredTypeFitter.property_entry(resource, key_string).is_empty():
+			var entry := DeclaredTypeFitter.property_entry(resource, key_string)
+			if entry.is_empty():
 				warnings.append(
 					"property '%s' unknown on %s; value ignored" % [key_string, resource_class])
+				continue
+			# A bare res:// path on a Resource property: a live instance drops it and
+			# a placeholder saves it as a String. Ask for the tagged form, as
+			# node.set_property does.
+			if typeof(raw_value) == TYPE_STRING and str(raw_value).begins_with("res://") \
+					and int(entry.get("type", TYPE_NIL)) == TYPE_OBJECT:
+				warnings.append(
+					"property '%s' expects a Resource, not a bare string path. " % key_string
+					+ "Use {\"type\": \"Resource\", \"path\": \"%s\"} as the value; " % str(raw_value)
+					+ "value left unchanged")
 				continue
 			var fit := DeclaredTypeFitter.fit(resource, key_string, coerced)
 			if not str(fit["error"]).is_empty():
