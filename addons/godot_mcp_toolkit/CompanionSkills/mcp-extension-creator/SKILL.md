@@ -400,10 +400,10 @@ response rather than silent junk.
 
 ## Exporting your game
 
-On export, the toolkit's plugin strips the addon, your extension's non-script
-files, and `res://.mcp.json`. In binary-token script mode (Godot 4.3+ default)
-your `.gd` ships as an inert, orphaned `.gdc` (never loaded, no runtime effect)
-and the plugin warns. For a clean strip, see `references/exporting.md`.
+On export, the toolkit's plugin strips the addon, your GDScript extension's
+`.gd`, and `res://.mcp.json` in every Script Export Mode, binary tokens included.
+If another export plugin consumes the scripts first, the plugin warns; see
+`references/exporting.md`.
 
 ## Getting listed in the catalog
 

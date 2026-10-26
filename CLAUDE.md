@@ -199,7 +199,8 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
 - **Plugin disable cleanup** — disabling the plugin via Project Settings →
   Plugins prompts to delete the orphaned `.mcp.json` at project root.
 - **Export stripping** — `EditorExportPlugin` auto-strips all
-  `addons/godot_mcp_toolkit/` files from exported PCKs (`export_strip.gd`).
+  `addons/godot_mcp_toolkit/` files from exported PCKs in every Script Export Mode
+  (`export_strip.gd`; its name must sort before the built-in `GDScript` plugin, ADR 0028).
 - **EditorSettings** (per-user, not committed) — `mcp_toolkit/performance/keep_editor_responsive_unfocused`,
   `mcp_toolkit/performance/unfocused_responsive_sleep_usec`.
 

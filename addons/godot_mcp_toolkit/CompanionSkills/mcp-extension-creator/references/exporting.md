@@ -1,26 +1,25 @@
 # Exporting your game (extension scripts in builds)
 
 When a user exports their game, the toolkit's export plugin strips the addon,
-your extension's **non-script** files, and `res://.mcp.json` in every mode, and
-strips extension **scripts** too when Script Export Mode is **Text**.
+your GDScript extension's `.gd` (a direct subclass of `MCPToolkitExtension`), and
+`res://.mcp.json` in every Script Export Mode: Text, and both binary-token modes,
+including the Godot 4.3+ default.
 
-## The binary-token caveat (Godot 4.3+)
+## Why binary tokens are covered
 
-In a **binary-token** script mode (the Godot 4.3+ default) the engine compiles
-each `.gd` to `.gdc` before the strip can run, so your extension `.gd` ships as
-an inert, orphaned `.gdc` — never loaded at runtime, no effect on the game. The
-plugin warns at export time and names the leaked extensions.
+Godot offers each exported file to its export plugins in name order and stops at
+the first one that skips or remaps it. The strip's name sorts before the built-in
+GDScript plugin, so it removes your `.gd` before that plugin can compile it to
+`.gdc`.
 
-This is a long-standing engine limitation (godotengine/godot#4054), not specific
-to your extension. Godot 4.2 has no binary-token mode, so extension scripts
-always strip cleanly there.
+## If the export warns
 
-## For a clean strip
-
-Either of these removes the orphaned `.gdc`:
-
-- Set **Script Export Mode** to **Text** in the export preset, or
-- Add your extension's `.gd` path to the preset's **Resources → exclude filter**.
+The toolkit warns at export time when your script never reached the strip, and
+names the affected paths. Unless the preset already excludes it, another export
+plugin that sorts earlier and skips or remaps `.gd` files (an obfuscator, for
+example) consumed it first, and it may ship, as `.gdc` if that plugin compiles
+scripts. Add your extension's `.gd` path to the preset's **Resources → exclude
+filter** to remove it.
 
 ## C#
 

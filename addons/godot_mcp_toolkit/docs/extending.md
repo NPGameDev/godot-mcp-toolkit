@@ -1265,35 +1265,29 @@ them. This is a platform-side limitation, not actionable server-side.
 When you export your game, the MCP Toolkit must not ship in the build. The addon
 registers an export plugin that handles this automatically.
 
-**GDScript extensions — automatic (text export mode).** At export time the
-plugin removes `.gd` extension files (direct subclasses of
+**GDScript extensions — automatic, in every Script Export Mode.** At export time
+the plugin removes `.gd` extension files (direct subclasses of
 `MCPToolkitExtension`, wherever they live), the entire
-`addons/godot_mcp_toolkit/` folder, and `res://.mcp.json`.
+`addons/godot_mcp_toolkit/` folder, and `res://.mcp.json`. This holds in Text and
+in both binary-token modes, including Godot's 4.3+ default "Binary tokens
+(compressed)": Godot hands each file to its export plugins in name order, and the
+strip's name sorts before the built-in GDScript plugin that compiles `.gd` to
+`.gdc`.
 
-**Binary-token script export (Godot 4.3+ default) — scripts ship as inert
-`.gdc`, and the plugin warns.** Godot's default Script Export Mode is "Binary
-tokens (compressed)". In any binary-token mode the engine compiles each `.gd` to
-`.gdc` **before** the addon's strip can run, so addon and extension **scripts
-ship** in the build as compiled `.gdc`. They are orphaned and never executed (the
-loader that references them is editor-only, and GDScript loads lazily), so there
-is **no runtime effect** — they are dead weight only. Non-script files and
-`.mcp.json` are stripped in every mode.
+**If scripts never reach the strip, the plugin warns.** An export plugin that
+sorts before the strip and skips or remaps `.gd` files (an obfuscator, for
+example) can consume addon and extension scripts before the strip sees them.
+At the end of the export the plugin emits a **warning** (in the export dialog
+on Godot 4.4+, or the Output log on 4.2 and 4.3) naming the addon and each
+affected extension. Unless the preset already excludes them, those scripts may
+ship, as `.gdc` if that plugin compiles scripts. To remove them, add
+`res://addons/godot_mcp_toolkit/*` **and each named extension `.gd` path** to the
+preset's **Resources → exclude filter**.
 
-At the end of such an export the plugin emits a **warning** — in the export
-dialog on Godot 4.4+, or the Output log on 4.3 — naming the addon and any leaked
-extensions, because there is no safe way for a GDScript addon to remove an
-already-compiled `.gdc` (the engine's export-preset exclude-filter setter is not
-scriptable — a long-standing engine limitation, godotengine/godot#4054). **For a
-fully clean build, either:**
-- set the preset's **Script Export Mode to "Text"** — the plugin then strips all
-  addon and extension scripts, or
-- add `res://addons/godot_mcp_toolkit/*` **and each extension `.gd` path** to the
-  preset's **Resources → exclude filter**.
-
-**Godot 4.2** has no binary-token mode — scripts always ship as text there, so the
-plugin strips them and **no warning is shown**. Caveat: if you manually exclude a
-*single* extension via the filter (but not the whole addon), that extension may
-still be named by the warning — it is excluded correctly; the mention is cosmetic.
+Caveat: if you exclude a *single* extension through the filter (but not the
+whole addon), the warning may still name that extension, because it never
+reached the strip either. The extension is excluded correctly; the warning's
+"unless this preset already excludes them" covers this case.
 
 **C# extensions — NOT auto-stripped, author action required.** C# compiles into
 a .NET assembly (DLL); individual classes cannot be removed from it at export.

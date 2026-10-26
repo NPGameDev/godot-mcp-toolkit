@@ -5,11 +5,12 @@ extends EditorExportPlugin
 ## assemblies and cannot be stripped per-class — see docs/extending.md.
 ## Registered by plugin.gd; prevents MCP code shipping in game PCKs.
 ##
-## Binary-token script export modes (Godot 4.3+ default) compile addon/extension
-## .gd to .gdc in the built-in EditorExportGDScript plugin BEFORE this strip runs,
-## so those scripts ship as inert, orphaned .gdc. There is no safe in-addon strip
-## (set_exclude_filter is unbound through 4.6 — godotengine/godot#4054); the leak
-## is cosmetic (never loaded at runtime). We WARN, we do not strip.
+## The strip holds in every Script Export Mode because its plugin name sorts
+## before the built-in GDScript plugin, which would otherwise compile each .gd to
+## .gdc before this plugin sees it. Leak detection stays as a net: when addon or
+## extension scripts never reach this plugin, the export warns and names the paths
+## to add to the preset's exclude filter. Unless the preset already excludes them,
+## another export plugin that sorts earlier consumed them and they may ship.
 
 # The runtime-autoload identity (name/path + key/value derivation) is owned by this
 # shared leaf, so the null-for-bake here and the plugin's registration path can never
@@ -18,6 +19,13 @@ const AutoloadIdentity := preload("res://addons/godot_mcp_toolkit/core/autoload_
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 
 const _MCP_JSON_PATH := "res://.mcp.json"
+
+# The engine sorts export plugins by name (`left->get_name() < right->get_name()` in
+# godotengine/godot editor/export/editor_export_platform.cpp) and stops offering a
+# file at the first plugin that skips or remaps it. The built-in "GDScript" plugin
+# remaps every .gd to .gdc outside Text mode, so this name must sort before it: the
+# leading digit sorts before any letter, upper or lower case.
+const _PLUGIN_NAME := "0MCPExportStrip"
 
 # Single source of truth for "what is an extension" — must match
 # extension_loader.gd's _is_extension_candidate() GDScript check: an extension
@@ -38,18 +46,19 @@ const _EXPORT_MESSAGE_WARNING := 2
 var _extension_strip_paths: Dictionary = {}
 
 # Leak detection: observe which addon/extension files actually reach our
-# _export_file. In a binary-token script mode the built-in EditorExportGDScript
-# plugin consumes every .gd before our strip runs, so addon/extension SCRIPTS
-# never reach us while addon NON-script files (plugin.cfg, .uid, icons) still do.
-# That asymmetry tells us the scripts leaked as orphaned .gdc. Reset in
-# _export_begin, read in _export_end. Version-agnostic — no preset read needed.
+# _export_file. An export plugin that sorts before this one and skips or remaps .gd
+# consumes those scripts first, so addon/extension SCRIPTS never reach us while
+# addon NON-script files (plugin.cfg, .uid, icons) still do. That asymmetry means
+# the scripts did not reach the strip; unless the preset excludes them, they may
+# ship. Reset in _export_begin, read in _export_end.
+# Version-agnostic — no preset read needed.
 var _saw_addon_script: bool = false
 var _saw_addon_nonscript: bool = false
 var _seen_ext: Dictionary = {}  # extension res:// path → true (reached _export_file)
 
 
 func _get_name() -> String:
-	return "MCPExportStrip"
+	return _PLUGIN_NAME
 
 
 func _export_begin(_features: PackedStringArray, _is_debug: bool, _path: String, _flags: int) -> void:
@@ -67,8 +76,8 @@ func _export_begin(_features: PackedStringArray, _is_debug: bool, _path: String,
 
 func _export_file(path: String, _type: String, _features: PackedStringArray) -> void:
 	if FileGuard.is_toolkit_source(path):
-		# Track for leak detection: in binary modes only NON-script addon files
-		# reach us (the built-in tokenizer eats the .gd first) — see _decide_warning.
+		# Track for leak detection: when an earlier plugin consumes the .gd, only
+		# NON-script addon files reach us — see _decide_warning.
 		if path.ends_with(".gd"):
 			_saw_addon_script = true
 		else:
@@ -90,8 +99,9 @@ func _export_end() -> void:
 		ProjectSettings.set_setting(
 				AutoloadIdentity.settings_key(str(entry[0])),
 				AutoloadIdentity.settings_value(str(entry[1])))
-	# Warn (don't strip) if a binary-token script mode shipped addon/extension .gd
-	# as orphaned .gdc. No safe in-addon strip exists; the leak is cosmetic.
+	# Warn if addon/extension scripts never reached this strip. Unless the preset
+	# already excludes them, another export plugin consumed them first and they may
+	# ship; only the preset's exclude filter can remove them then.
 	var decision := _decide_warning(_saw_addon_script, _saw_addon_nonscript, _extension_strip_paths, _seen_ext)
 	if decision["warn"]:
 		_emit_warning(str(decision["message"]))
@@ -99,12 +109,11 @@ func _export_end() -> void:
 	_seen_ext.clear()
 
 
-# Deliver the binary-token leak warning. get_export_platform()/add_message() are
+# Deliver the leak warning. get_export_platform()/add_message() are
 # GDScript-bound only on 4.4+, so use has_method()+call() dynamic dispatch — a
-# static reference would parse-error on 4.2/4.3 even in a dead branch. On 4.3 (and
-# as a universal fallback) push_warning() surfaces it in the Output log instead of
-# the export dialog. 4.2 never reaches here (no binary mode → scripts ship as text
-# → they are seen and stripped, so _decide_warning returns warn=false).
+# static reference would parse-error on 4.2/4.3 even in a dead branch. On 4.2 and
+# 4.3 (and as a universal fallback) push_warning() surfaces it in the Output log
+# instead of the export dialog.
 func _emit_warning(message: String) -> void:
 	if has_method("get_export_platform"):
 		var platform = call("get_export_platform")
@@ -133,11 +142,14 @@ static func _compute_strip_paths(classes: Array) -> Dictionary:
 
 
 # ── Leak-warning decision (pure; unit-tested in test/run_unit_tests.gd) ───────
-# Given what reached _export_file, decide whether a binary-token script mode
-# leaked addon/extension scripts as orphaned .gdc, and compose the warning.
+# Given what reached _export_file, decide whether addon/extension scripts never
+# reached this strip, and compose the warning. Either an earlier plugin skipped
+# or remapped them, or the preset already excludes them, so the message names
+# both causes rather than claiming one.
 #   addon leaked  ⟺  addon non-script files were exported but no addon .gd was
-#                    (a binary mode swallowed them). The non-script signal is the
-#                    false-positive guard: if the user already excluded the
+#                    (most likely an earlier plugin consumed them). The
+#                    non-script signal is the false-positive guard: if the
+#                    user already excluded the
 #                    addon, NO addon file reaches us → saw_addon_nonscript=false
 #                    → no warning (excluding the addon is exactly what we advise).
 #   ext leaked    =  extension paths computed in _export_begin that never reached
@@ -171,8 +183,9 @@ static func _decide_warning(saw_addon_script: bool, saw_addon_nonscript: bool, e
 			quoted.append("`%s`" % str(p))
 		filter_parts.append("the extension script(s) " + ", ".join(quoted))
 	var message := (
-		"Script Export Mode is binary tokens — %s ship as inert, orphaned `.gdc` " % subject
-		+ "(never loaded at runtime; no effect on your game). For a clean strip, set "
-		+ "Script Export Mode to \"Text\", or add %s to this preset's exclude filter." % " and ".join(filter_parts)
+		"The MCP Toolkit export strip never saw %s. " % subject
+		+ "Unless this preset already excludes them, another export plugin consumed them first "
+		+ "and they may ship (as `.gdc` if that plugin compiles scripts); "
+		+ "add %s to this preset's exclude filter." % " and ".join(filter_parts)
 	)
 	return {"warn": true, "addon_leaked": addon_leaked, "leaked_ext_count": leaked_ext, "leaked_ext_paths": leaked_ext_paths, "message": message}

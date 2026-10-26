@@ -417,39 +417,36 @@ one successful launch saves the cache. Upstream reports:
 | Command Palette entries | OK | OK | OK | `get_command_palette()` guarded; skipped if unavailable |
 | Info/Help panel | OK | OK | OK | Standard Control nodes |
 | Plugin disable cleanup dialog | OK | OK | OK | `popup_dialog_centered()` guarded with fallback |
-| Export stripping (non-script + Text mode) | OK | OK | OK | 4.2 strips all modes (no binary tokens); see below |
-| Binary-token script leak warning | Output log | Export dialog | Export dialog | 4.2: n/a (no binary-token mode) |
+| Export stripping (every Script Export Mode) | OK | OK | OK | 4.2: OK (text mode only); see below |
+| Script leak warning (another export plugin) | Output log | Export dialog | Export dialog | 4.2: Output log |
 | Inspector plugin | OK | OK | OK | `EditorInspectorPlugin` API stable since 4.0 |
 | Response cap configuration | OK | OK | OK | `SpinBox` / `LineEdit` stable since 4.0 |
 
-## Export stripping (binary-token script gap)
+## Export stripping
 
-The addon's export plugin removes addon/extension **non-script** files and
-`res://.mcp.json` and nulls the runtime autoload in **every** export mode, and it
-removes addon/extension **scripts** when the preset's *Script Export Mode* is
-**Text**. It does **not** remove scripts in **Binary tokens** / **Binary tokens
-(compressed)** modes (Godot's default on 4.3+): the engine compiles each `.gd` to
-`.gdc` in the built-in GDScript export plugin — which runs **before** ours — so the
-scripts ship as inert, orphaned `.gdc`. The leak is cosmetic (orphaned +
-lazy-loaded → never executed; the runtime autoload is nulled and additionally
-self-gates on `not OS.has_feature("editor")`). There is no safe in-addon strip:
-`EditorExportPreset.set_exclude_filter` is unbound to GDScript (still so in 4.6 —
-godotengine/godot#4054). The plugin therefore **warns** instead of stripping.
+The addon's export plugin removes the addon's files (on 4.2, all but the icon's
+`.import` sidecar and its `.ctex`; see
+[Import sidecars remain in exports](#import-sidecars-remain-in-exports-godot-42-only)),
+GDScript extension scripts and `res://.mcp.json` from the build and nulls the
+runtime autoload, in **every** Script Export Mode: Text, Binary tokens and Binary
+tokens (compressed), Godot's default on 4.3+. Godot offers each exported file to
+its export plugins in name order and stops at the first one that skips or remaps
+it. The strip's name sorts before the
+built-in GDScript plugin, so it removes addon and extension scripts before that
+plugin can compile them to `.gdc`.
 
-The warning fires only when a binary-token mode leaks addon/extension scripts, and
-its delivery depends on the Godot version (`add_message` / `get_export_platform`
-were bound to GDScript in 4.4):
+The plugin still warns when addon or extension scripts never reach it. Unless the
+preset already excludes them, another export plugin that sorts earlier (an
+obfuscator, for example) consumed them first, and they may ship, as `.gdc` if that
+plugin compiles scripts. The warning names the paths to add to the preset's exclude
+filter (`res://addons/godot_mcp_toolkit/*` and each extension `.gd` path). Where the
+warning appears depends on the Godot version, because `add_message` and
+`get_export_platform` became callable from GDScript in 4.4:
 
-| Godot | Binary-token leak? | Warning delivery |
-|-------|--------------------|------------------|
-| 4.2 | No — no binary-token mode; scripts ship as text and are stripped | none (never fires) |
-| 4.3 | Yes | `push_warning()` → **Output / stderr log** (`add_message` unbound until 4.4) |
-| 4.4 | Yes | `EditorExportPlatform.add_message()` → **export dialog** |
-| 4.5+ | Yes | `add_message()` → **export dialog** |
-
-For a fully clean build in a binary-token mode, set Script Export Mode to **Text**
-or add `res://addons/godot_mcp_toolkit/*` (and each extension `.gd` path) to the
-preset's exclude filter.
+| Godot | Warning delivery |
+|-------|------------------|
+| 4.2, 4.3 | `push_warning()` → **Output / stderr log** |
+| 4.4+ | `EditorExportPlatform.add_message()` → **export dialog** |
 
 `project.binary` also carries any `[mcp_toolkit]` settings your project changed
 from their defaults (limits, concurrency, audit). They are a cosmetic fingerprint

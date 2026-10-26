@@ -66,6 +66,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compiled copies alive, except for a script that declares a `static var`, which
   the engine keeps cached. Reported by @pragmabits
   ([#98](https://github.com/NPGameDev/godot-mcp-toolkit/issues/98)).
+- The export strip now removes the addon and its GDScript extensions in every
+  Script Export Mode, including the default binary tokens. Before, on Godot 4.3
+  and later, the built-in GDScript export plugin compiled those scripts to `.gdc`
+  before the strip saw them, so they shipped in the build and the export only
+  warned. Godot offers each file to its export plugins in name order, and the
+  strip's name now sorts before the GDScript plugin's. Setting the preset to Text
+  or adding the addon to its exclude filter is no longer needed, and is harmless
+  to keep. The warning stays for the case where another export plugin consumes
+  the scripts first, and names the paths to exclude. Reported by @frankhurrican
+  ([#99](https://github.com/NPGameDev/godot-mcp-toolkit/issues/99)).
 
 ## [1.1.0] - 2026-10-25
 
