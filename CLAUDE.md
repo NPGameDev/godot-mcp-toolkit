@@ -351,9 +351,13 @@ quick operational facts only.
   4.2-4.7 matrix via the `godot-units` composite: a bounded editor-scan boot
   warms the cold class cache, then the headless unit suite runs — the floor
   execution signal on every version; on 4.2 it is the only signal, since
-  static validation can't run there). An aggregate **`Toolkit floor OK`** gate
-  `needs:` both matrices — it is the only name that ever becomes a required
-  check (never an individual matrix row).
+  static validation can't run there), the `manifest-diff` job, and the
+  `export-strip` job (4.2–4.7: exports a data pack with an uncommitted extension
+  probe and a dummy `.mcp.json` in every Script Export Mode the version has, and
+  fails if the parsed pack listing carries a toolkit script, the probe or
+  `.mcp.json`; `scripts/test_framework/check_export_strip.sh`). An aggregate
+  **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
+  that ever becomes a required check (never an individual matrix row).
 - **Cross-version** (`.github/workflows/cross-version.yml`) — opt-in
   behavioral matrix (manual dispatch, `[run-cross-version-ci]` in the commit
   message, or a release via `workflow_call`), all against the **pinned**

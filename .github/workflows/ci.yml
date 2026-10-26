@@ -170,6 +170,71 @@ jobs:
           print("OK: Godot %s class surface matches the compat-map column (%d classes)." % (mm, len(expected)))
           PY
 
+  # ── Export strip ─────────────────────────────────────────────────────────────
+  # Fails when an export ships a toolkit script, a GDScript extension or
+  # res://.mcp.json, whatever lets it through: a change of ours, another export
+  # plugin, or an engine change to how export plugins run. Per version it exports
+  # the project's data pack with the committed Windows preset in every Script
+  # Export Mode the version has (4.2 has Text only) and asserts on the parsed
+  # pack listing; check_export_strip.sh explains the pack export and the listing.
+  # A pack export needs no templates, so the Linux runner can export the
+  # Windows preset. Launching an exported build stays a manual release check.
+  export-strip:
+    runs-on: ubuntu-latest
+    # Fuse: the warm-up is capped at 240s and each pack export takes well under
+    # a minute — at 15 min the job is hung, not slow.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
+    name: "Export strip (pack export · Godot ${{ matrix.godot-version }})"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Godot
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: ${{ matrix.godot-version }}
+          use-dotnet: false
+
+      # Written here, never committed, so the tool counts and coverage manifests
+      # do not move. The probe must be a direct MCPToolkitExtension subclass with
+      # a class_name: that is what the strip removes, read from the class cache.
+      - name: Write an extension probe and a dummy .mcp.json
+        shell: bash
+        run: |
+          cat > export_strip_probe.gd <<'GD'
+          @tool
+          class_name ExportStripProbe
+          extends MCPToolkitExtension
+
+
+          func register(registry: MCPToolkitCommandRegistry, _server: Node) -> void:
+              registry.add("probe.ping", _ping, MCPToolkitExtensionOptions.new("Probe ping"))
+
+
+          func _ping(_params: Dictionary) -> Dictionary:
+              return MCPToolkitSuccess.ok({"data": "pong"})
+          GD
+          printf '%s\n' '{"mcpServers": {}}' > .mcp.json
+
+      # The unit job's class-cache warm-up, which works on every version (4.2.0's
+      # --import hangs instead), so the export knows the probe's class.
+      - name: Warm the class cache
+        shell: bash
+        env:
+          GODOT_WARM_ONLY: "1"
+        run: bash ./scripts/test_framework/run_units_cold.sh
+
+      - name: Export packs and assert the strip
+        shell: bash
+        env:
+          EXPORT_STRIP_OUT: ${{ runner.temp }}/export-strip
+          MODES: ${{ matrix.godot-version == '4.2.0' && '0' || '2 0' }}
+        run: bash ./scripts/test_framework/check_export_strip.sh res://export_strip_probe.gd $MODES
+
   # ── Aggregate floor gate ─────────────────────────────────────────────────────
   # "Toolkit floor OK" is the SINGLE name bound as a required check for pull requests
   # (and on the protected branch) — never an individual matrix row. A required
@@ -182,7 +247,7 @@ jobs:
   # success here, whereas a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [gdscript-check, unit-tests, manifest-diff]
+    needs: [gdscript-check, unit-tests, manifest-diff, export-strip]
     if: always()
     runs-on: ubuntu-latest
     steps:
