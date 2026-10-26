@@ -9,11 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `resource_write` now warns about a bare `res://` path given for a property
-  that holds a resource, such as `script` or a `Texture2D` export, and leaves
-  the value unchanged, as `node_set_property` does. Before, it saved the path
-  as a String, or dropped it when creating a resource from a script class, with
-  no warning. Use `{"type": "Resource", "path": "res://..."}`.
+- `resource_write` no longer saves a bare path given for a property that holds a
+  resource, such as `script` or a `Texture2D` export. A bare path is a `res://`,
+  `uid://` or `user://` String where `{"type": "Resource", "path": "res://..."}`
+  belongs. Before, a resource whose script isn't `@tool` saved the String to its
+  `.tres` file, and other resources dropped it, both with no warning. Now the
+  property keeps its value, the rest of the write is saved, and a warning shows
+  the `{"type": "Resource", "path": ...}` value to use instead; for a `uid://`
+  path it names the `res://` path the UID points to. A `user://` path is refused,
+  since only a project resource can be bound. `node_set_property` and
+  `scene_create_node` refuse the same paths with the same message. Before, they
+  caught only `res://`, and a node whose script isn't `@tool` stored the String.
+  Reported and fixed by @benfeather
+  ([#48](https://github.com/NPGameDev/godot-mcp-toolkit/issues/48),
+  [#49](https://github.com/NPGameDev/godot-mcp-toolkit/pull/49)).
 
 ## [1.1.0] - 2026-10-25
 
