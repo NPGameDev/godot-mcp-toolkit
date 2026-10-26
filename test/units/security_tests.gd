@@ -3,6 +3,7 @@ extends RefCounted
 ## Security boundary unit tests: FileGuard, Untrusted envelope, catalog repo-URL
 ## allowlist + version compare guard. Exercises the security/ subsystem's pure logic.
 
+const Testing := preload("res://test/units/testing.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 const Untrusted := preload("res://addons/godot_mcp_toolkit/security/untrusted.gd")
 const ExtensionCatalog := preload("res://addons/godot_mcp_toolkit/ui/dock/ext/extension_catalog.gd")
@@ -12,6 +13,9 @@ static func run(testing) -> void:
 	_test_file_guard(testing)
 	_test_file_guard_self_protect(testing)
 	_test_is_toolkit_source(testing)
+	_test_resolve_safe_delete_refuses_reserved(testing)
+	_test_resolve_safe_delete_refuses_windows_aliases(testing)
+	_test_resolve_safe_delete_allows_project_files(testing)
 	_test_untrusted(testing)
 	_test_repo_url_allowlist(testing)
 	_test_compare_versions(testing)
@@ -106,6 +110,56 @@ static func _test_is_toolkit_source(testing) -> void:
 	testing.ok(not FileGuard.is_toolkit_source("res://addons"), "the addons folder")
 	testing.ok(not FileGuard.is_toolkit_source("res://scenes/godot_mcp_toolkit/x.gd"), "the same name elsewhere")
 	print("")
+
+
+# --- FileGuard.resolve_safe_delete --------------------------------------------
+# The delete guard refuses version-control, engine and project metadata at any
+# depth, whatever the case, so an agent cannot delete the project's git repository
+# or its project.godot. Pure path checks: nothing here touches the disk.
+static func _test_resolve_safe_delete_refuses_reserved(testing: Testing) -> void:
+	testing.begin("FileGuard.resolve_safe_delete refuses reserved paths")
+	for path: String in [
+		"res://.git",
+		"res://.git/HEAD",
+		"res://addons/x/.git",
+		"res://.svn",
+		"res://.godot/uid_cache.bin",
+		"res://.claude",
+		"res://.mcp.json",
+		"res://project.godot",
+		"res://sub/project.godot",
+		"res://override.cfg",
+		"res://.GIT",
+		"res://Project.godot",
+	]:
+		testing.eq(_delete_guard_error(path), "PATH_DENIED", "%s → PATH_DENIED" % path)
+	print("")
+
+
+# Windows resolves these names to a reserved entry: an 8.3 short name, a trailing
+# dot or space it strips, and an NTFS alternate data stream.
+static func _test_resolve_safe_delete_refuses_windows_aliases(testing: Testing) -> void:
+	testing.begin("FileGuard.resolve_safe_delete refuses Windows aliases of reserved paths")
+	for path: String in [
+		"res://GIT~1",
+		"res://PROJEC~1.GOD",
+		"res://.git.",
+		"res://project.godot ",
+		"res://project.godot::$DATA",
+	]:
+		testing.eq(_delete_guard_error(path), "PATH_DENIED", "'%s' → PATH_DENIED" % path)
+	print("")
+
+
+static func _test_resolve_safe_delete_allows_project_files(testing: Testing) -> void:
+	testing.begin("FileGuard.resolve_safe_delete allows ordinary project files")
+	for path: String in ["res://scenes/main.tscn", "res://a.b/c.gd", "res://icon.svg.import"]:
+		testing.eq(_delete_guard_error(path), null, "%s → allowed" % path)
+	print("")
+
+
+static func _delete_guard_error(path: String) -> Variant:
+	return FileGuard.resolve_safe_delete(path).get("error")
 
 
 # --- Untrusted envelope pin ------------------------------------------------

@@ -40,10 +40,13 @@ plugin start — the companion MCP server reads it from disk, and unauthorized
 connections are rejected. File operations are restricted to the project
 (`res://`) by a guard that blocks path traversal, absolute OS paths, and paths
 that escape the boundary after lexical canonicalization, and that denies the
-plugin's own source directory. Setting `GODOT_MCP_READ_ONLY=1` hides every
-mutating tool from the agent — a server-side guarantee, independent of the
-editor. Every tool call is written to an append-only audit log with a timestamp
-and parameter hash. Script reads and WebSocket buffers are size-capped, and
+plugin's own source directory. The delete tools also refuse reserved paths: a
+dot-named file or folder (`.git`, `.godot`, `.mcp.json`) or anything inside
+one, any `project.godot` or `override.cfg`, and any name shaped like a Windows
+alias, so none of them can remove the project's git repository. Setting
+`GODOT_MCP_READ_ONLY=1` hides every mutating tool from the agent — a
+server-side guarantee, independent of the editor. Every tool call is written
+to an append-only audit log with a timestamp and parameter hash. Script reads and WebSocket buffers are size-capped, and
 content returned from the editor is wrapped in per-call nonce-tagged envelopes
 to mitigate prompt injection from file contents.
 

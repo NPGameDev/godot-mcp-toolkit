@@ -712,8 +712,8 @@ flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
     token -->|no| close["WS close 1008"]
     token -->|yes| filter["server-authoritative read-only filter<br/>(tools/list)"]
-    filter --> guard["FileGuard.resolve_safe / resolve_safe_user"]
-    guard --> deny["deny ..-traversal, plugin source dir,<br/>token & audit files"]
+    filter --> guard["FileGuard.resolve_safe / resolve_safe_delete / resolve_safe_user"]
+    guard --> deny["deny ..-traversal, plugin source dir,<br/>token & audit files, reserved paths on delete"]
     deny --> audit["Audit.log_call — params hashed"]
     audit --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
@@ -722,7 +722,10 @@ flowchart TD
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
-  re-verify pass), and `resolve_safe_user` confines `save.*` to `user://` while **denying the
+  re-verify pass); `resolve_safe_delete` adds, for `file.delete`, `folder.delete`,
+  `resource.delete`, `scene.delete` and `script.delete`, a refusal of reserved paths (any
+  dot-named segment such as `.git`, any `project.godot` or `override.cfg`, and any
+  Windows-alias-shaped segment); and `resolve_safe_user` confines `save.*` to `user://` while **denying the
   plugin's own internal directory** — that denial is what protects the token and audit files
   from being read or rewritten through the tools.
 - **Read-only is server-authoritative.** The toolkit does **not** gate dispatch on

@@ -42,7 +42,7 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 		return err
 	var path := str(parameters.get("path", ""))
 	var recursive := bool(parameters.get("recursive", false))
-	var guard := FileGuard.resolve_safe(path)
+	var guard := FileGuard.resolve_safe_delete(path)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 
