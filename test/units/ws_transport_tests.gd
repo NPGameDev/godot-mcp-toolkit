@@ -24,6 +24,9 @@ const _NEVER_OPENS_AUTH_TIMEOUT_MS := 200
 const _WAIT_CAP_MS := 3000
 # Any 16-byte nonce, base64-encoded; the raw client ignores the accept key.
 const _RAW_KEY := "dGhlIHNhbXBsZSBub25jZQ=="
+# A frame the test handler answers by holding the poll for twice the auth timeout,
+# standing in for a handler that runs long.
+const _BLOCKING_FRAME := "block the poll"
 const _OPCODE_TEXT := 0x1
 const _OPCODE_CLOSE := 0x8
 
@@ -34,6 +37,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_silent_peer_closed_after_timeout(testing, tree)
 	await _test_auth_in_time(testing, tree)
 	await _test_held_back_upgrade_gets_the_full_timeout(testing, tree)
+	await _test_open_after_a_long_frame_gets_the_full_timeout(testing, tree)
 	await _test_late_wrong_token_closed_once(testing, tree)
 	await _test_late_malformed_frames_answered_before_the_close(testing, tree)
 	await _test_never_opening_peer_dropped(testing, tree)
@@ -164,6 +168,67 @@ static func _test_held_back_upgrade_gets_the_full_timeout(testing: Testing, tree
 	testing.eq(ack, "{\"authed\":true}", "upgrade held back past the auth timeout → the client gets the auth ack")
 	testing.eq(authed_count, 1, "upgrade held back past the auth timeout → the peer is authed")
 	testing.eq(client_state, WebSocketPeer.STATE_OPEN, "upgrade held back past the auth timeout → the connection stays open")
+	print("")
+
+
+# One poll reads every peer in turn, so a long frame from one peer delays the rest
+# of that poll. A peer whose WebSocket opens after that frame must get its full auth
+# timeout from that moment, not from the start of the poll.
+static func _test_open_after_a_long_frame_gets_the_full_timeout(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("ws transport counts the auth timeout from the open when an earlier frame ran long")
+	var transport := _listening_transport()
+	var first := WebSocketPeer.new()
+	first.connect_to_url("ws://127.0.0.1:%d" % transport.get_bound_port())
+	var first_opened: bool = await _open(transport, first, tree)
+	first.send_text(JSON.stringify({"auth": _TOKEN}))
+	first.poll()
+	var first_ack: String = await _next_frame(transport, first, tree)
+	first.send_text(_BLOCKING_FRAME)
+	first.poll()
+
+	# The second client's upgrade request waits in the socket of a peer that sits
+	# after the first one, so the next poll opens it after the blocking frame.
+	var second := StreamPeerTCP.new()
+	second.connect_to_host("127.0.0.1", transport.get_bound_port())
+	var accept_deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
+	while Time.get_ticks_msec() < accept_deadline:
+		second.poll()
+		transport.accept_pending()
+		# Inspection: the accepted peers are not exposed, and the case needs the
+		# second one accepted before the poll it is about.
+		if transport._peers.size() == 2 and second.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+			break
+		await tree.process_frame
+	var second_accepted := transport._peers.size() == 2
+	second.put_data(_raw_upgrade_request(transport).to_utf8_buffer())
+	await transport.poll_peers()
+	# The server's next poll comes before the second client has read its reply.
+	await transport.poll_peers()
+
+	var reply := ""
+	var reply_deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
+	while Time.get_ticks_msec() < reply_deadline and not reply.contains("\r\n\r\n"):
+		second.poll()
+		# Byte by byte, so the frames after the reply stay in the socket.
+		while second.get_available_bytes() > 0 and not reply.contains("\r\n\r\n"):
+			reply += char(second.get_u8())
+		await tree.process_frame
+	_raw_send_text(second, JSON.stringify({"auth": _TOKEN}))
+	var frames: Array[Dictionary] = await _raw_frames_until_close(transport, second, tree, true)
+	var received := _describe_frames(frames)
+	var authed_count := transport.get_authed_count()
+
+	first.close()
+	second.disconnect_from_host()
+	transport.close_all(1000, "test over")
+	transport.shutdown_listener()
+
+	testing.ok(first_opened and first_ack == "{\"authed\":true}", "the first client opened and authed")
+	testing.ok(second_accepted, "the second client's TCP connection was accepted before the long frame's poll")
+	testing.ok(reply.begins_with("HTTP/1.1 101"), "the second client's upgrade got the 101 reply")
+	testing.eq(received, ["text {\"authed\":true}"],
+			"opened after a frame that outlasted the auth timeout, then authed → the client gets the auth ack, not an 'auth timeout' close")
+	testing.eq(authed_count, 2, "opened after a frame that outlasted the auth timeout, then authed → both peers are authed")
 	print("")
 
 
@@ -322,12 +387,15 @@ static func _test_reconnect_gets_fresh_deadlines(testing: Testing, tree: SceneTr
 
 
 ## A transport bound to the first free port of the test band, whose message
-## handler treats every frame as an auth frame.
+## handler treats every frame as an auth frame, except [constant _BLOCKING_FRAME].
 static func _listening_transport(auth_timeout_ms: int = _AUTH_TIMEOUT_MS) -> WsTransport:
 	var transport := WsTransport.new()
 	transport.configure("[TestAuthTimeout]", _PORT_BASE, _PORT_RANGE, "127.0.0.1", 1,
 			auth_timeout_ms, false, "no free port in %d-%d")
 	var on_message := func(peer: WebSocketPeer, text: String) -> void:
+		if text == _BLOCKING_FRAME:
+			OS.delay_msec(_AUTH_TIMEOUT_MS * 2)
+			return
 		var message: Variant = JSON.parse_string(text)
 		if message is Dictionary:
 			transport.validate_auth(peer, message)
@@ -369,9 +437,7 @@ static func _next_frame(transport: WsTransport, client: WebSocketPeer, tree: Sce
 ## within [constant _WAIT_CAP_MS].
 static func _raw_open(transport: WsTransport, client: StreamPeerTCP, tree: SceneTree) -> bool:
 	client.connect_to_host("127.0.0.1", transport.get_bound_port())
-	var request := ("GET / HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\n"
-			+ "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n") % [
-			transport.get_bound_port(), _RAW_KEY]
+	var request := _raw_upgrade_request(transport)
 	var sent := false
 	var reply := ""
 	var deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
@@ -392,6 +458,13 @@ static func _raw_open(transport: WsTransport, client: StreamPeerTCP, tree: Scene
 	return false
 
 
+## The WebSocket upgrade request a raw client sends to [param transport].
+static func _raw_upgrade_request(transport: WsTransport) -> String:
+	return ("GET / HTTP/1.1\r\nHost: 127.0.0.1:%d\r\nUpgrade: websocket\r\n"
+			+ "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n") % [
+			transport.get_bound_port(), _RAW_KEY]
+
+
 ## Sends [param text] as one masked text frame, as a client must; the zero mask
 ## leaves the payload as is. Payloads stay under 126 bytes.
 static func _raw_send_text(client: StreamPeerTCP, text: String) -> void:
@@ -402,10 +475,11 @@ static func _raw_send_text(client: StreamPeerTCP, text: String) -> void:
 
 
 ## Reads the server's frames from [param client], polling both ends once a frame,
-## until a close frame arrives or [constant _WAIT_CAP_MS] passes. Returns each frame
-## as {"opcode": int, "payload": PackedByteArray}, in arrival order.
+## until a close frame arrives (or, with [param stop_after_text], a text frame) or
+## [constant _WAIT_CAP_MS] passes. Returns each frame as
+## {"opcode": int, "payload": PackedByteArray}, in arrival order.
 static func _raw_frames_until_close(transport: WsTransport, client: StreamPeerTCP,
-		tree: SceneTree) -> Array[Dictionary]:
+		tree: SceneTree, stop_after_text: bool = false) -> Array[Dictionary]:
 	var frames: Array[Dictionary] = []
 	var buffer := PackedByteArray()
 	var deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
@@ -430,7 +504,7 @@ static func _raw_frames_until_close(transport: WsTransport, client: StreamPeerTC
 			var opcode: int = buffer[0] & 0x0F
 			frames.append({"opcode": opcode, "payload": buffer.slice(header_size, header_size + length)})
 			buffer = buffer.slice(header_size + length)
-			if opcode == _OPCODE_CLOSE:
+			if opcode == _OPCODE_CLOSE or (stop_after_text and opcode == _OPCODE_TEXT):
 				return frames
 		await tree.process_frame
 	return frames

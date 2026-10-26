@@ -426,11 +426,12 @@ func _new_sized_peer() -> WebSocketPeer:
 ## Poll each peer; drop a peer whose WebSocket has not opened by its open
 ## deadline; drain available packets, delivering each frame to _on_message
 ## (awaited so the editor's per-tick sequential dispatch is preserved); then
-## enforce the auth deadline, counted from the poll that first saw the peer open
-## (close 1008 if a peer still hasn't authed in time). Returns the peers that have
-## closed, for cleanup().
+## enforce the auth deadline, counted from the moment a poll first saw the peer
+## open (close 1008 if a peer still hasn't authed in time). Returns the peers that
+## have closed, for cleanup().
 func poll_peers() -> Array[WebSocketPeer]:
 	var closed: Array[WebSocketPeer] = []
+	# The poll's start: a deadline checked against it can only run late, never early.
 	var now_ms := Time.get_ticks_msec()
 	for peer in _peers:
 		peer.poll()
@@ -452,9 +453,10 @@ func poll_peers() -> Array[WebSocketPeer]:
 			continue
 		# The auth deadline starts here, not at the accept: a late poll can complete
 		# the upgrade, and the client cannot send its auth frame before it has seen
-		# the upgrade reply.
+		# the upgrade reply. The clock is read now, not at the start of the poll: an
+		# earlier peer's frame in this poll can run past the deadline.
 		if not _peer_open_ms.has(peer):
-			_peer_open_ms[peer] = now_ms
+			_peer_open_ms[peer] = Time.get_ticks_msec()
 		while peer.get_available_packet_count() > 0:
 			var text := peer.get_packet().get_string_from_utf8()
 			# Editor awaits (sequential dispatch within the tick); runtime fires
