@@ -4,7 +4,7 @@ extends RefCounted
 ## then tears it down in reverse.
 ##
 ## compose() builds the whole object graph (registry, server, debug bridge,
-## command registrar, extensions, export plugin, log buffer, user-path monitor,
+## command registrar, extensions, export plugins, log buffer, user-path monitor,
 ## registry registration, playtest watcher, write flow + dialog presenter, update
 ## check, dock) and returns the owning Handle.
 ## The orchestrator (plugin.gd) calls compose() once from _enter_tree, holds the
@@ -69,6 +69,8 @@ static func compose(
 
 	var export_plugin := preload("res://addons/godot_mcp_toolkit/core/export_strip.gd").new()
 	plugin.add_export_plugin(export_plugin)
+	var remote_deploy_detector := preload("res://addons/godot_mcp_toolkit/core/remote_deploy_detector.gd").new()
+	plugin.add_export_plugin(remote_deploy_detector)
 
 	Modules.LogBuffer.setup()
 
@@ -125,6 +127,7 @@ static func compose(
 
 	handle._server = server
 	handle._export_plugin = export_plugin
+	handle._remote_deploy_detector = remote_deploy_detector
 	handle._extension_watcher = extension_watcher
 	handle._debug_bridge = debug_bridge
 	handle._user_path_monitor = user_path_monitor
@@ -206,6 +209,7 @@ class Handle:
 	var _plugin: EditorPlugin = null
 	var _server: Node = null
 	var _export_plugin: EditorExportPlugin = null
+	var _remote_deploy_detector: EditorExportPlugin = null  # Tells the log reader a run is a deploy
 	var _dock: Control = null
 	var _dock_host: Object = null  # EditorDock wrapper on 4.6+; null on ≤4.5 (control is its own handle)
 	var _write_flow: MCPJsonWriteFlow = null  # Shared .mcp.json confirm-then-write flow
@@ -319,7 +323,10 @@ class Handle:
 			_plugin.remove_debugger_plugin(_debug_bridge)
 			_debug_bridge = null
 
-		# Export plugin (RefCounted — do NOT queue_free, just null).
+		# Export plugins (RefCounted — do NOT queue_free, just null).
+		if _remote_deploy_detector != null:
+			_plugin.remove_export_plugin(_remote_deploy_detector)
+			_remote_deploy_detector = null
 		if _export_plugin != null:
 			_plugin.remove_export_plugin(_export_plugin)
 			_export_plugin = null

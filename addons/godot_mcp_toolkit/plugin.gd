@@ -13,6 +13,7 @@ const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/
 const MCPJsonEnablePrompt := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_enable_prompt.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autoload_registration.gd")
+const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
 
@@ -191,6 +192,14 @@ func _disable_plugin() -> void:
 	# (they would fire into a freed object and silently no-op). Hand it to a
 	# detached coordinator that outlives the plugin and owns the dialog flow.
 	DisableCleanupCoordinator.new().start()
+
+
+# The editor calls this before every run it starts, a playtest or a one-click
+# deploy; the debugger log reader tells the two apart by the export only a deploy
+# runs next. Returning false would stop the run.
+func _build() -> bool:
+	PlaytestLogReader.note_editor_run()
+	return true
 
 
 # -- EditorSettings registration (per-user, not committed to VCS) -------------
