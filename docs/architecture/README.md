@@ -508,7 +508,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd" data-verified="160b137" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd" data-verified="ccaa57c" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -516,10 +516,16 @@ flowchart TD
     plugin -->|"compose()"| composer["PluginComposer → Handle"]
     plugin -->|"on start + EditorSettings settings_changed"| skip["server.skip_version_check<br/>(local server build ⇒ connect-time check off)"]
     composer --> reg["registry + mcp_server"]
-    composer --> bridge["debug bridge"]
+    composer --> tracker["DebugSessionTracker<br/>(session state + latest session ·<br/>editor port: EditorInterface)"]
+    plugin -->|"_build() → Handle.note_editor_build()<br/>clears a pending deploy"| tracker
+    composer --> bridge["debugger plugin (debug_bridge.gd)<br/>(thin EditorDebuggerPlugin adapter)"]
+    bridge -->|"session signals + error captures"| tracker
     composer --> builtins["BuiltinCommandRegistration.register_all()"]
+    builtins -->|"debugger log reader reads the latest session"| tracker
     composer --> ext["ExtensionLoader.load_all + start_watcher"]
     composer --> exp["export-strip plugin"]
+    composer --> deploy["remote-deploy detector<br/>(EditorExportPlugin · _export_begin only)"]
+    deploy -->|"export with the remote-debug flag"| tracker
     composer --> mon["user_path_monitor"]
     composer --> detect["PlaytestEndDetector"]
     composer --> start["server.start() + register in registry"]
@@ -528,11 +534,12 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 160b137*
+*Figure 10 — plugin composition root · verified ccaa57c*
 
-The composer builds in a behaviour-critical order: registry and server first, then the debug
-bridge, then all built-in commands, then extensions and their hot-reload watcher, the
-export-strip plugin, the user-path monitor (which re-homes `user://` paths when the project is
+The composer builds in a behaviour-critical order: registry and server first, then the
+debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
+extensions and their hot-reload watcher, the export-strip plugin and the remote-deploy detector,
+the user-path monitor (which re-homes `user://` paths when the project is
 renamed), the playtest-end detector, the server start + registry registration, then the shared
 `.mcp.json` write-flow + dialog presenter, the update check runner (a plugin child that checks for a
 newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), and
@@ -542,7 +549,7 @@ dock consumes them like any other UI surface rather than acting as a service loc
 ([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
 presenter its read-only badge's cached state, so the Info dialog shows what the badge shows (with no
 dock, the presenter reads `.mcp.json` the way the badge does). `dispose()` reverses the graph precisely, including
-`PlaytestCommands.clear_debug_bridge()`, the reverse of handing the debug bridge to `PlaytestCommands.register`, and last clears the response limits' env
+`PlaytestCommands.clear_session_tracker()`, the reverse of handing the debug-session tracker to `PlaytestCommands.register`; it drops the tracker only after the debugger plugin, the debugger log reader and the remote-deploy detector that hold it are gone, and last clears the response limits' env
 overrides (`core/response_limits.gd`), static state that would otherwise outlive a plugin reload;
 teardown uses **immediate (not deferred)
 `free()`** throughout — for the dock control, the update check runner, the dialog presenter's dialogs, and the server, and
@@ -562,6 +569,21 @@ outlives the plugin. The project-wide `mcp_toolkit/server/version` key is regist
 ProjectSettings. Disabling the plugin (not a reload) scrubs every `mcp_toolkit/*` ProjectSettings key,
 that one included, and hands the machine-wide EditorSettings prompt, `local_path` among its keys, to a
 detached `DisableCleanupCoordinator` that outlives the plugin.
+
+The debugger's session state lives in `transport/debug_session_tracker.gd`, a `RefCounted` the
+unit runner can build headless: whether a game is attached and stopped at a break, the error
+buffer, and whose game the latest debugger session is (none yet, a playtest this editor ran, or a
+game elsewhere). It reads the one editor fact it needs, whether the editor is running a playtest,
+through an injected port; the composer passes `EditorInterface`. `transport/debug_bridge.gd` stays
+the `EditorDebuggerPlugin` but only forwards the session's signals and error captures to the tracker
+and sends `debug.continue` to the live session. The composer hands the same tracker to that plugin,
+to the debugger log reader (through `PlaytestCommands.register`) and to the remote-deploy detector
+(`core/remote_deploy_detector.gd`), an `EditorExportPlugin` of its own that implements only
+`_export_begin`. A one-click deploy with remote debug runs the editor's build step, then exports
+with the remote-debug flag before its game attaches, so `plugin.gd`'s `_build` hook clears any
+pending deploy and the detector marks one. A session that starts while the editor plays and no
+deploy is pending counts as a local playtest; any other counts as elsewhere, whose log this
+machine's `godot.log` does not hold.
 
 ---
 
