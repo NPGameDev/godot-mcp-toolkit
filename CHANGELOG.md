@@ -12,14 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `resource_write` no longer saves a bare path given for a property that holds a
   resource, such as `script` or a `Texture2D` export. A bare path is a `res://`,
   `uid://` or `user://` String where `{"type": "Resource", "path": "res://..."}`
-  belongs. Before, a resource whose script isn't `@tool` saved the String to its
-  `.tres` file, and other resources dropped it, both with no warning. Now the
-  property keeps its value, the rest of the write is saved, and a warning shows
-  the `{"type": "Resource", "path": ...}` value to use instead; for a `uid://`
-  path it names the `res://` path the UID points to. A `user://` path is refused,
-  since only a project resource can be bound. `node_set_property` and
-  `scene_create_node` refuse the same paths with the same message. Before, they
-  caught only `res://`, and a node whose script isn't `@tool` stored the String.
+  belongs. Before, updating a resource whose script isn't `@tool` saved the String
+  to its file, and creating one or writing any other resource dropped it, with no
+  warning either way. Now the property keeps its value, the rest of the write is
+  saved, and a warning shows the `{"type": "Resource", "path": ...}` value to use
+  instead; for a `uid://` path it names the `res://` path the UID points to. A
+  `user://` path is refused, since only a project resource can be bound.
+  `node_set_property` (single and batch), `scene_create_node`, and the
+  `properties` of `scene_instantiate` and of a `node_manage` duplicate refuse the
+  same paths with the same message. Before, only the single `node_set_property`
+  and `scene_create_node` caught a bare path, and only a `res://` one, and a node
+  whose script isn't `@tool` stored the String.
   Reported and fixed by @benfeather
   ([#48](https://github.com/NPGameDev/godot-mcp-toolkit/issues/48),
   [#49](https://github.com/NPGameDev/godot-mcp-toolkit/pull/49)).
