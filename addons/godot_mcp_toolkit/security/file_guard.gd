@@ -5,7 +5,10 @@ extends RefCounted
 ## Every command that touches the filesystem calls resolve_safe() to
 ## validate and canonicalize the path before any I/O. Default allows
 ## res:// only; callers opt in to additional prefixes (e.g.
-## user://screenshots/) via the allowed_prefixes parameter.
+## user://screenshots/) via the allowed_prefixes parameter. The delete
+## commands (file.delete, folder.delete, resource.delete, scene.delete,
+## script.delete) call resolve_safe_delete() instead, which also refuses
+## version-control, engine and project metadata.
 ##
 ## resolve_safe_user() validates user:// paths: rejects traversal,
 ## re-asserts the user:// boundary after canonicalization, then returns
@@ -22,6 +25,19 @@ extends RefCounted
 ## The folder that holds the toolkit's own source. Test a path against it with
 ## [method is_toolkit_source].
 const TOOLKIT_SOURCE_DIR := "res://addons/godot_mcp_toolkit/"
+
+## Files the engine reads to load the project, refused by [method resolve_safe_delete].
+const _RESERVED_FILE_NAMES: Array[String] = ["project.godot", "override.cfg"]
+
+## Matches a Windows 8.3 short name, such as [code]GIT~1[/code] or
+## [code]PROJEC~1.GOD[/code], which Windows resolves to the long name it abbreviates.
+static var _short_name_re: RegEx = _compile_short_name_re()
+
+
+static func _compile_short_name_re() -> RegEx:
+	var re := RegEx.new()
+	re.compile("^[^.~]{0,6}~[0-9]+(\\.[^.]{0,3})?$")
+	return re
 
 
 ## Whether [param path] is the toolkit's own source folder or a file inside it.
@@ -138,6 +154,39 @@ static func resolve_safe(
 			return _denied("path escapes project boundary: %s" % input)
 
 	return {"path": input, "error": null}
+
+
+## Validate a res:// path a delete command is about to remove.
+##
+## Runs [method resolve_safe], then refuses reserved paths: any segment that starts
+## with a dot ([code].git[/code], [code].godot[/code], [code].mcp.json[/code] and
+## everything inside a dot-folder), and a file named [code]project.godot[/code] or
+## [code]override.cfg[/code] at any depth. It also refuses any segment shaped like a
+## Windows alias, whatever the name, because Windows can resolve it to a reserved
+## one: a [code]:[/code] (an NTFS stream), a trailing dot or space, an 8.3 short
+## name. The check is case-insensitive because the Windows and macOS filesystems
+## are. A developer who means to delete one of these does it by hand.
+##
+## Returns the same shape as [method resolve_safe].
+static func resolve_safe_delete(path: String) -> Dictionary:
+	var guard := resolve_safe(path)
+	if guard["error"] != null:
+		return guard
+	var relative := path.replace("\\", "/").simplify_path().trim_prefix("res://")
+	for segment: String in relative.split("/", false):
+		if _is_reserved_segment(segment.to_lower()):
+			return _denied(
+					"%s is reserved (version control, engine or project metadata); the delete tools refuse it, so delete it by hand if you mean to" % path)
+	return guard
+
+
+## Whether a lowercased path segment names a reserved entry or has a Windows alias shape.
+static func _is_reserved_segment(segment: String) -> bool:
+	if segment.begins_with(".") or segment in _RESERVED_FILE_NAMES:
+		return true
+	if segment.contains(":") or segment.ends_with(".") or segment.ends_with(" "):
+		return true
+	return _short_name_re.search(segment) != null
 
 
 ## True if any slash-delimited segment is exactly "..". Shared by both
