@@ -360,9 +360,10 @@ static func _create_logger() -> Object:
 # _log_error by name on the script instance; @tool keeps it a real instance in the
 # editor, where a non-tool script would only get a placeholder. The source must never
 # name the class it runs on (see _create_logger), and as a single-quoted literal it
-# holds no single quote, comments included. A script built from source has no path for
-# a warning directory rule to match, so it compiles under the project's own warning
-# levels: it stays fully typed and reaches the buffer script through call().
+# holds no single quote, comments included. A script built from source gets a
+# gdscript:// path, which matches no res:// directory rule (nor exclude_addons), so it
+# compiles under the project's own warning levels, any of which may be an error: it
+# stays fully typed and reaches the buffer script through call().
 const _LOGGER_SOURCE := '
 @tool
 extends RefCounted
