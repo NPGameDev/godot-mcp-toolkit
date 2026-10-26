@@ -3,21 +3,21 @@ extends RefCounted
 ## Unit tests for the log buffer's 4.5+ capture logger. Its capture script is built from
 ## source, so a project's own GDScript warning levels apply to it in full, and the logger
 ## is still built with every level at Error. Below Godot 4.5, which has no Logger class,
-## each case asserts the file tail runs instead and prints its skip.
+## each case asserts the capture logger stays off and prints its skip.
 
 const Testing := preload("res://test/units/testing.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
-# Every warning's level is an int setting under this prefix; the other settings there
-# (enable, directory_rules) are not ints.
+# Every warning's level is an int setting under this prefix; the others there are bools
+# or, from 4.6, the directory_rules dictionary.
 const _WARNING_SETTING_PREFIX := "debug/gdscript/warnings/"
 const _WARNING_LEVEL_ERROR := 2
 # Engine Logger error_type of a script error, the one type whose location is latched.
 const _ERROR_TYPE_SCRIPT := 2
 
 
-## [param tree] is the runner itself: a warning level set at run time reaches the parser
-## only after a frame passes.
+## [param tree] is the runner itself: from Godot 4.6 a warning level set at run time
+## reaches the parser only after a frame passes.
 static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_logger_builds_with_warnings_as_errors(testing, tree)
 	_test_logger_delivers_to_the_buffer(testing)
@@ -50,8 +50,10 @@ static func _test_logger_delivers_to_the_buffer(testing: Testing) -> void:
 	testing.begin("LogBuffer: the capture logger delivers messages and script errors to the buffer")
 	if _skipped_below_logger_floor(testing):
 		return
+	# The builder seam, as in the case above: setup()'s logger is already registered with
+	# the engine.
 	var logger: Object = LogBuffer._create_logger()
-	testing.ok(logger != null, "the logger is built")
+	testing.ok(logger != null, "precondition: the logger is built")
 	if logger == null:
 		print("")
 		return
@@ -69,17 +71,20 @@ static func _test_logger_delivers_to_the_buffer(testing: Testing) -> void:
 			"a script error reaches the buffer as an error entry")
 	testing.eq(LogBuffer.find_script_error_line_since(since_id), 3,
 			"the script error's line is latched")
+	# Removes the probe error and its latch so no later case reads them; what it removed
+	# is already asserted above.
+	LogBuffer.take_script_errors_since(since_id, "gdscript://1.gd")
 	print("")
 
 
-## Returns true, after asserting the file tail runs instead and printing the skip, when
+## Returns true, after asserting the capture logger stays off and printing the skip, when
 ## the engine has no Logger class (below Godot 4.5), so the capture logger is never built.
 static func _skipped_below_logger_floor(testing: Testing) -> bool:
 	if ClassDB.class_exists(&"Logger"):
 		return false
 	LogBuffer.setup()
 	testing.ok(not LogBuffer.uses_logger_api(),
-			"below Godot 4.5 the capture logger is never compiled and the file tail runs")
+			"below Godot 4.5 the capture logger stays off")
 	print("  SKIP: no Logger class below Godot 4.5")
 	print("")
 	return true
