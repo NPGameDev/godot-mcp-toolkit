@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Reported and fixed by @benfeather
   ([#48](https://github.com/NPGameDev/godot-mcp-toolkit/issues/48),
   [#49](https://github.com/NPGameDev/godot-mcp-toolkit/pull/49)).
+- On Godot 4.5 and later, console capture now works in a project that raises
+  GDScript warnings, such as untyped declarations, to errors (Project Settings >
+  Debug > GDScript). Before, the toolkit's logger failed to compile in such a
+  project. The editor printed `Parse Error` lines at every start, and the
+  toolkit fell back to reading the log file, which on Godot 4.7 loses the file
+  path of a script error. A game run from the editor with the debugger attached
+  stopped on the same error before its first frame, so `game_start` never saw
+  the game connect. Reported by @theintonerzero
+  ([#90](https://github.com/NPGameDev/godot-mcp-toolkit/issues/90)) and fixed
+  by @pragmabits ([#96](https://github.com/NPGameDev/godot-mcp-toolkit/pull/96)).
 
 ## [1.1.0] - 2026-10-25
 
