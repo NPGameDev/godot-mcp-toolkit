@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- `resource_write` no longer saves a bare path given for a property that holds a
-  resource, such as `script` or a `Texture2D` export. A bare path is a `res://`,
-  `uid://` or `user://` String where `{"type": "Resource", "path": "res://..."}`
-  belongs. Before, updating a resource whose script isn't `@tool` saved the String
+- `resource_write` no longer saves a bare path given for a top-level property that
+  holds a resource, such as `script` or a `Texture2D` export. A bare path is a
+  `res://`, `uid://` or `user://` String where
+  `{"type": "Resource", "path": "res://..."}` belongs. Before, updating a resource whose script isn't `@tool` saved the String
   to its file, and creating one or writing any other resource dropped it, with no
   warning either way. Now the property keeps its value, the rest of the write is
   saved, and a warning shows the `{"type": "Resource", "path": ...}` value to use
