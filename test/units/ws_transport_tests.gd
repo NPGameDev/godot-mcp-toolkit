@@ -40,9 +40,9 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_reconnect_gets_fresh_deadlines(testing, tree)
 
 
-# The editor polls only between frames, and a frame can take longer than the
-# timeout while it loads a scene or imports. A client that authenticated right
-# away must not be closed because the poll that reads its frame came late.
+# The owning server polls from its frame loop, and one long frame can outlast the
+# timeout. A client that authenticated right away must not be closed because the
+# poll that reads its frame came late.
 static func _test_auth_frame_read_on_a_late_poll(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("ws transport authenticates a frame that waited for a late poll")
 	var transport := _listening_transport()
@@ -52,7 +52,7 @@ static func _test_auth_frame_read_on_a_late_poll(testing: Testing, tree: SceneTr
 
 	client.send_text(JSON.stringify({"auth": _TOKEN}))
 	client.poll()
-	# The delay is the scenario (§9.11): the server's next poll comes after the
+	# The delay is the scenario: the server's next poll comes after the
 	# timeout, with the auth frame already in its buffer.
 	OS.delay_msec(_AUTH_TIMEOUT_MS * 2)
 	await transport.poll_peers()
