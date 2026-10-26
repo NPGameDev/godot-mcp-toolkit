@@ -1,10 +1,10 @@
 @tool
 extends RefCounted
-## Pins the transport's auth and open deadlines against a real loopback listener:
-## the auth timeout counts from the poll that first sees a peer open, a frame that
-## waited for a late poll still counts, a silent or wrong-token peer is closed once,
-## and a peer that never opens is dropped. Drives accept_pending() and poll_peers()
-## directly, as the owning servers' pump() does.
+## Pins the transport's auth and open deadlines on a real loopback listener: the auth
+## timeout counts from the open, even one after a long frame; an auth frame read late
+## counts; a silent peer is closed 1008 "auth timeout", a late wrong token once as
+## "invalid token"; late malformed frames get the runtime server's JSON-RPC errors
+## first; a waiting upgrade opens on a late poll, a peer that never opens is dropped.
 
 const Testing := preload("res://test/units/testing.gd")
 const WsTransport := preload("res://addons/godot_mcp_toolkit/transport/ws_transport.gd")
@@ -41,6 +41,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_late_wrong_token_closed_once(testing, tree)
 	await _test_late_malformed_frames_answered_before_the_close(testing, tree)
 	await _test_never_opening_peer_dropped(testing, tree)
+	await _test_waiting_upgrade_opens_on_a_late_poll(testing, tree)
 	await _test_reconnect_gets_fresh_deadlines(testing, tree)
 
 
@@ -65,8 +66,7 @@ static func _test_auth_frame_read_on_a_late_poll(testing: Testing, tree: SceneTr
 	var client_state := client.get_ready_state()
 
 	client.close()
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	_tear_down(transport)
 
 	testing.ok(opened, "the client's WebSocket opened against the loopback listener")
 	testing.eq(authed_count, 1, "auth frame sent in time, read after the timeout → the peer is authed")
@@ -99,8 +99,7 @@ static func _test_silent_peer_closed_after_timeout(testing: Testing, tree: Scene
 	var close_reason := client.get_close_reason()
 
 	transport.cleanup(closed)
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	_tear_down(transport)
 
 	testing.ok(opened, "the client's WebSocket opened against the loopback listener")
 	testing.eq(closed_count, 1, "no auth frame past the timeout → the server closes the peer")
@@ -124,8 +123,7 @@ static func _test_auth_in_time(testing: Testing, tree: SceneTree) -> void:
 	var client_state := client.get_ready_state()
 
 	client.close()
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	_tear_down(transport)
 
 	testing.ok(opened, "the client's WebSocket opened against the loopback listener")
 	testing.eq(ack, "{\"authed\":true}", "auth frame sent at once → the client gets the auth ack")
@@ -150,6 +148,10 @@ static func _test_held_back_upgrade_gets_the_full_timeout(testing: Testing, tree
 		transport.accept_pending()
 		await transport.poll_peers()
 		await tree.process_frame
+	# Inspection: the accepted peers are not exposed, and the case is only about a
+	# peer the server accepted and kept polling while it stayed unopened.
+	var held := transport._peers.size() == 1 \
+			and transport._peers[0].get_ready_state() == WebSocketPeer.STATE_CONNECTING
 	var opened: bool = await _open(transport, client, tree)
 
 	client.send_text(JSON.stringify({"auth": _TOKEN}))
@@ -160,9 +162,9 @@ static func _test_held_back_upgrade_gets_the_full_timeout(testing: Testing, tree
 	var close_reason := client.get_close_reason()
 
 	client.close()
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	_tear_down(transport)
 
+	testing.ok(held, "the held-back client's peer was accepted and still connecting past the auth timeout")
 	testing.ok(opened, "upgrade held back past the auth timeout → the client's WebSocket opens")
 	testing.eq(close_reason, "", "upgrade held back past the auth timeout → no 'auth timeout' close")
 	testing.eq(ack, "{\"authed\":true}", "upgrade held back past the auth timeout → the client gets the auth ack")
@@ -220,8 +222,7 @@ static func _test_open_after_a_long_frame_gets_the_full_timeout(testing: Testing
 
 	first.close()
 	second.disconnect_from_host()
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	_tear_down(transport)
 
 	testing.ok(first_opened and first_ack == "{\"authed\":true}", "the first client opened and authed")
 	testing.ok(second_accepted, "the second client's TCP connection was accepted before the long frame's poll")
@@ -264,8 +265,7 @@ static func _test_late_wrong_token_closed_once(testing: Testing, tree: SceneTree
 	var close_code := client.get_close_code()
 	var close_reason := client.get_close_reason()
 
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	_tear_down(transport)
 
 	testing.ok(opened, "the client's WebSocket opened against the loopback listener")
 	testing.eq(close_code, 1008, "wrong token read after the timeout → close code 1008")
@@ -299,8 +299,7 @@ static func _test_late_malformed_frames_answered_before_the_close(testing: Testi
 	var received := _describe_frames(frames)
 
 	client.disconnect_from_host()
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	_tear_down(transport)
 	server.free()
 
 	testing.ok(opened, "the raw client's upgrade got the 101 reply")
@@ -338,8 +337,7 @@ static func _test_never_opening_peer_dropped(testing: Testing, tree: SceneTree) 
 	var client_status := client.get_status()
 
 	client.disconnect_from_host()
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	_tear_down(transport)
 
 	testing.eq(returned_count, 1, "no upgrade request → poll_peers() returns the peer once")
 	testing.ok(dropped_after_ms >= _NEVER_OPENS_AUTH_TIMEOUT_MS * 5,
@@ -348,10 +346,53 @@ static func _test_never_opening_peer_dropped(testing: Testing, tree: SceneTree) 
 	print("")
 
 
-# A reconnect is a new peer: once every peer has been closed, a client that
-# connects later gets its own deadlines, not ones left from the last connection.
+# The open deadline drops a client that never sent its upgrade request, not one
+# whose request waited for a poll that came late.
+static func _test_waiting_upgrade_opens_on_a_late_poll(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("ws transport opens a waiting upgrade request on a poll past the open deadline")
+	var transport := _listening_transport(_NEVER_OPENS_AUTH_TIMEOUT_MS)
+	var client := StreamPeerTCP.new()
+	client.connect_to_host("127.0.0.1", transport.get_bound_port())
+	var sent := false
+	var deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
+	while Time.get_ticks_msec() < deadline and not sent:
+		client.poll()
+		transport.accept_pending()
+		# Inspection: the accepted peers are not exposed, and the request must
+		# wait in an accepted peer's socket.
+		if not transport._peers.is_empty() and client.get_status() == StreamPeerTCP.STATUS_CONNECTED:
+			client.put_data(_raw_upgrade_request(transport).to_utf8_buffer())
+			sent = true
+		else:
+			await tree.process_frame
+	# The delay is the scenario: the server's first poll of the peer comes after
+	# its open deadline, with the upgrade request already in its buffer.
+	OS.delay_msec(_NEVER_OPENS_AUTH_TIMEOUT_MS * 6)
+	var closed: Array[WebSocketPeer] = await transport.poll_peers()
+	var returned_count := closed.size()
+	var reply := ""
+	var reply_deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
+	while Time.get_ticks_msec() < reply_deadline and not reply.contains("\r\n\r\n"):
+		client.poll()
+		var available := client.get_available_bytes()
+		if available > 0:
+			reply += client.get_utf8_string(available)
+		await tree.process_frame
+
+	client.disconnect_from_host()
+	_tear_down(transport)
+
+	testing.ok(sent, "the client's upgrade request was sent to an accepted peer")
+	testing.eq(returned_count, 0, "upgrade request waiting at a poll past the open deadline → poll_peers() does not drop the peer")
+	testing.ok(reply.begins_with("HTTP/1.1 101"), "upgrade request waiting at a poll past the open deadline → the client gets the 101 reply")
+	print("")
+
+
+# A reconnect is a new peer: both ways a peer is closed (close_all() on a stop or a
+# token rotation, cleanup() after a poll) drop its deadline stamps, so none is left
+# behind for a later connection.
 static func _test_reconnect_gets_fresh_deadlines(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("ws transport gives a client that reconnects after a close fresh deadlines")
+	testing.begin("ws transport drops a closed peer's deadline stamps, so a reconnect starts fresh")
 	var transport := _listening_transport()
 	var first := WebSocketPeer.new()
 	first.connect_to_url("ws://127.0.0.1:%d" % transport.get_bound_port())
@@ -361,9 +402,9 @@ static func _test_reconnect_gets_fresh_deadlines(testing: Testing, tree: SceneTr
 	var first_ack: String = await _next_frame(transport, first, tree)
 	transport.close_all(1008, "token rotated")
 	first.close()
-	# The delay is the scenario: the reconnect comes after the first connection's
-	# auth timeout would have run out.
-	OS.delay_msec(_AUTH_TIMEOUT_MS * 2)
+	# Inspection: the stamp maps are not exposed, and a stale stamp is keyed by a
+	# peer no later connection reuses, so only the maps show one was left.
+	var stamps_after_close_all := transport._peer_connect_ms.size() + transport._peer_open_ms.size()
 
 	var second := WebSocketPeer.new()
 	second.connect_to_url("ws://127.0.0.1:%d" % transport.get_bound_port())
@@ -375,14 +416,26 @@ static func _test_reconnect_gets_fresh_deadlines(testing: Testing, tree: SceneTr
 	var second_state := second.get_ready_state()
 
 	second.close()
-	transport.close_all(1000, "test over")
-	transport.shutdown_listener()
+	var returned_count := 0
+	var deadline := Time.get_ticks_msec() + _WAIT_CAP_MS
+	while Time.get_ticks_msec() < deadline and returned_count == 0:
+		second.poll()
+		var closed: Array[WebSocketPeer] = await transport.poll_peers()
+		returned_count += closed.size()
+		transport.cleanup(closed)
+		await tree.process_frame
+	var stamps_after_cleanup := transport._peer_connect_ms.size() + transport._peer_open_ms.size()
+
+	_tear_down(transport)
 
 	testing.ok(first_opened and first_ack == "{\"authed\":true}", "the first client opened and authed")
+	testing.eq(stamps_after_close_all, 0, "close_all() → no deadline stamp is left")
 	testing.ok(second_opened, "reconnect after a close → the client's WebSocket opens")
 	testing.eq(second_ack, "{\"authed\":true}", "reconnect after a close → the client gets the auth ack")
 	testing.eq(authed_count, 1, "reconnect after a close → the new peer is authed")
 	testing.eq(second_state, WebSocketPeer.STATE_OPEN, "reconnect after a close → the connection stays open")
+	testing.eq(returned_count, 1, "the reconnected client hangs up → poll_peers() returns its peer")
+	testing.eq(stamps_after_cleanup, 0, "cleanup() of the closed peer → no deadline stamp is left")
 	print("")
 
 
@@ -403,6 +456,15 @@ static func _listening_transport(auth_timeout_ms: int = _AUTH_TIMEOUT_MS) -> WsT
 	transport.set_token(_TOKEN)
 	transport.ensure_listening()
 	return transport
+
+
+## Closes every peer, stops the listener and drops the handlers: the test handler
+## captures [param transport], which holds the handler, so the pair would
+## otherwise keep each other alive.
+static func _tear_down(transport: WsTransport) -> void:
+	transport.close_all(1000, "test over")
+	transport.shutdown_listener()
+	transport.set_handlers(Callable(), Callable(), Callable(), Callable())
 
 
 ## Drives the server and [param client] once a frame until the client's WebSocket
