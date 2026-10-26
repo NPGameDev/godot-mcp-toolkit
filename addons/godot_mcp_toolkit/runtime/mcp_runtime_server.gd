@@ -58,6 +58,8 @@ const JSONRPC_VERSION := "2.0"
 # recoverable case is a stale debug session that hasn't released 6570
 # yet — usually clears in 1-2 frames.
 const _RELISTEN_FRAME_INTERVAL := 60
+# The auth deadline: a peer with no valid auth within this window of its
+# WebSocket opening is closed with WS close code 1008 (Policy Violation).
 const _AUTH_TIMEOUT_MS := 2000
 # debugger.get_log default entry count when the caller passes no limit.
 const _DEFAULT_LOG_LIMIT := 200

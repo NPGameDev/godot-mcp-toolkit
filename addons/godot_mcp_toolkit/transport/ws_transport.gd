@@ -468,8 +468,9 @@ func poll_peers() -> Array[WebSocketPeer]:
 		# Auth deadline — close a peer that is still unauthed once its frames are read.
 		# Reading first lets an auth frame that arrived in time count when the poll
 		# itself comes late: the owning server polls from its frame loop, and one long
-		# frame can outlast the deadline. A frame from an unauthed peer only ever
-		# reaches validate_auth, so reading it late dispatches nothing.
+		# frame can outlast the deadline. The owning server answers an unauthed peer's
+		# frame with at most a parse error or the auth check, never a dispatch, so
+		# reading it late dispatches nothing.
 		if not _peer_authed.has(peer) and peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
 			if now_ms - int(_peer_open_ms.get(peer, now_ms)) > _auth_timeout_ms:
 				peer.close(1008, "auth timeout")

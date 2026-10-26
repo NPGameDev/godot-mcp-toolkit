@@ -82,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   closed the client with `auth timeout` even though the auth frame was already
   waiting, and the MCP server reported `AUTH_FAILED` ("server closed connection
   during auth: auth timeout"). Now the toolkit reads a waiting auth frame before
-  it checks the time, and the 2 s count from when the WebSocket opens, not from
+  it checks the time, and the 2 s count starts when the WebSocket opens, not
   when the toolkit accepts the connection. A client that connects but never
   completes the WebSocket upgrade is now dropped after 10 s. Before, the toolkit
   kept that connection until the client hung up or the editor or game closed.
