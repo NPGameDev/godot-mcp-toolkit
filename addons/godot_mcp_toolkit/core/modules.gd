@@ -31,6 +31,7 @@ const UserPathMonitor := preload("res://addons/godot_mcp_toolkit/paths/user_path
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 const CommandHelpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
 const LogHelpers := preload("res://addons/godot_mcp_toolkit/logging/log_helpers.gd")
+const DebugSessionTracker := preload("res://addons/godot_mcp_toolkit/transport/debug_session_tracker.gd")
 const NodejsCheck := preload("res://addons/godot_mcp_toolkit/versioning/nodejs_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")

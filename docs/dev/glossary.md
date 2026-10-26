@@ -422,5 +422,7 @@ live in composer-built, injected collaborators that every consumer — dock incl
 
 **Bridge** — *server-owned term; defined in the server repo's `docs/dev/glossary.md`.*
 The **Bridge** is the server (the TypeScript MCP bridge process). The editor (toolkit) side has **no**
-bridge: the `transport/debug_bridge.gd` `EditorDebuggerPlugin` session-tracker is **not** the Bridge
-despite its filename. Never call a toolkit-side component a "bridge."
+bridge: the `transport/debug_bridge.gd` `EditorDebuggerPlugin` is **not** the Bridge despite its
+filename. It is a thin adapter that feeds the debugger's session events to the session tracker,
+`transport/debug_session_tracker.gd`, which holds the session state. Never call a toolkit-side
+component a "bridge."

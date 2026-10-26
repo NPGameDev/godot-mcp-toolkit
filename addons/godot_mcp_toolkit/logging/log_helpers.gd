@@ -102,3 +102,12 @@ static func resolve_log_path() -> String:
 	if configured.begins_with("user://") or configured.begins_with("res://"):
 		return ProjectSettings.globalize_path(configured)
 	return configured
+
+
+## Whether [param path] names an existing file, even one another process holds
+## open. Before 4.4 [method FileAccess.file_exists] test-opens the file, and on
+## Windows that open fails while a game writes the log, so the directory listing,
+## which reads entries and never opens a file, decides then.
+static func is_log_file_present(path: String) -> bool:
+	return FileAccess.file_exists(path) \
+			or DirAccess.get_files_at(path.get_base_dir()).has(path.get_file())

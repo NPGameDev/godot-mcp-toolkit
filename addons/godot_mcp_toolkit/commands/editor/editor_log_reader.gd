@@ -264,9 +264,10 @@ static func _read_console_log(
 				warnings.append("fallback to stale log — no post-boot log found")
 
 	# Windows 4.4.0 get_modified_time self-collision. The engine's logger opens the
-	# live session log GENERIC_WRITE with a deny-nothing share (FileAccess WRITE never
-	# sets backup_save -> _SH_DENYNO on every version), so a reader's open always
-	# succeeds and the log is never truly locked. But on 4.4.0 get_modified_time makes
+	# live session log GENERIC_WRITE with a deny-nothing share (the game process never
+	# sets backup_save -> _SH_DENYNO on every version), so the directory listing and any
+	# open that shares writing see the live log; only an open that denies writing fails,
+	# as the safe-save READ open below does while a game runs. On 4.4.0 get_modified_time makes
 	# its own CreateFileW(GENERIC_READ, FILE_SHARE_READ) probe, which denies the live
 	# writer -> sharing violation -> mtime reads 0. So the mtime>best_mtime loops above
 	# never pick the live log even though the directory enumeration (attribute-level,

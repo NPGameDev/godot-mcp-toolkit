@@ -193,6 +193,15 @@ func _disable_plugin() -> void:
 	DisableCleanupCoordinator.new().start()
 
 
+# The editor calls this before a playtest or a one-click deploy with remote debug;
+# the debug-session tracker tells the two apart by the export only a deploy
+# runs next. Returning false would stop the run.
+func _build() -> bool:
+	if _handle != null:
+		_handle.note_editor_build()
+	return true
+
+
 # -- EditorSettings registration (per-user, not committed to VCS) -------------
 
 

@@ -41,10 +41,12 @@ const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_co
 
 
 ## Registers the entire built-in command surface onto the registry. The one
-## place every commands/*.register(...) call is enumerated. The debug bridge is
-## constructed by the composer and passed in (the playtest/debug commands need
-## it); extensions are loaded separately by the composer.
-static func register_all(registry: MCPToolkitCommandRegistry, server: Node, debug_bridge: RefCounted) -> void:
+## place every commands/*.register(...) call is enumerated. The debug bridge and the
+## debug-session tracker are constructed by the composer and passed in (the debug
+## commands need the bridge, the playtest commands' log reader the tracker);
+## extensions are loaded separately by the composer.
+static func register_all(registry: MCPToolkitCommandRegistry, server: Node,
+		debug_bridge: RefCounted, session_tracker: RefCounted) -> void:
 	SceneCommands.register(registry, server)
 	NodeCommands.register(registry, server)
 	ScriptCommands.register(registry, server)
@@ -53,7 +55,7 @@ static func register_all(registry: MCPToolkitCommandRegistry, server: Node, debu
 	FolderCommands.register(registry, server)
 	FileCommands.register(registry, server)
 	SignalCommands.register(registry, server)
-	PlaytestCommands.register(registry, server, debug_bridge)
+	PlaytestCommands.register(registry, server, session_tracker)
 	ProjectCommands.register(registry, server)
 	InputMapCommands.register(registry, server)
 	AnimationCommands.register(registry, server)
