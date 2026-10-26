@@ -36,15 +36,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the game connect. Reported by @theintonerzero
   ([#90](https://github.com/NPGameDev/godot-mcp-toolkit/issues/90)) and fixed
   by @pragmabits ([#96](https://github.com/NPGameDev/godot-mcp-toolkit/pull/96)).
-- `debugger_get_log` now reads the log of a playtest started from the editor's Play
-  buttons, Run Current Scene or Run Specific Scene once the game stops or pauses on
-  an error. Before, it answered that no game session was recorded until the first
-  `game_start` of the editor session, and starting the game again with `game_start`
-  wrote a new log in place of the one you wanted. After a one-click deploy with
-  remote debug it now says that the log is on the device. Before, once a
-  `game_start` had run, it served this machine's `godot.log`, which holds an earlier
-  playtest
-  ([#97](https://github.com/NPGameDev/godot-mcp-toolkit/issues/97)).
+- `debugger_get_log` now reads the log of the latest debugger session's game when
+  that game is a playtest from this editor, including one started from the
+  editor's Play buttons, Run Current Scene or Run Specific Scene. Before, such a
+  playtest got a note that no game session was recorded until the first
+  `game_start` of the editor session, and running the game again with
+  `game_start` wrote a new log over the one you wanted. With no playtest yet, the
+  note now says so. After a one-click deploy with remote debug, or when a game
+  attaches from outside the editor, the note says the log stays with that game and
+  that `editor_get_console(source:"file")` reads the last local playtest. Before,
+  once a `game_start` had run, it served this machine's `godot.log`, which held an
+  earlier playtest. Reported and fixed by @pragmabits
+  ([#97](https://github.com/NPGameDev/godot-mcp-toolkit/issues/97),
+  [#100](https://github.com/NPGameDev/godot-mcp-toolkit/pull/100)).
+- On Windows, `debugger_get_log` now reports the game's state while the game sits
+  at an error break or a breakpoint pause. The game holds its log file open while
+  it runs, so the editor can't read it, and a paused game can't send its own log.
+  Before, the call failed with `LOG_BUSY` and lost the debugger state on Godot 4.4
+  and later, and on 4.2 and 4.3 it said the log file was not found. Now it
+  returns `debug_state` and any caught errors, with a note on how to get the log
+  lines: at an error break, stop the game and read again; at a breakpoint pause,
+  continue the game, and it sends its own log.
 
 ## [1.1.0] - 2026-10-25
 

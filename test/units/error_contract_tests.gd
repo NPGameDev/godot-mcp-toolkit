@@ -1,12 +1,12 @@
 @tool
 extends RefCounted
 ## Error/response contract unit tests: MCPToolkitError API + code vocabulary,
-## debug_bridge error-entry shape, response validation (handler-return contract),
+## debug-session tracker error-entry shape, response validation (handler-return contract),
 ## and the response size guard. Exercises the contract/error surface headless.
 ##
 ## run() is a coroutine — the response-validation group awaits registry.call_command().
 
-const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
+const DebugSessionTracker := preload("res://addons/godot_mcp_toolkit/transport/debug_session_tracker.gd")
 const ExecuteHints := preload("res://addons/godot_mcp_toolkit/contract/execute_hints.gd")
 
 
@@ -223,16 +223,16 @@ static func _test_execute_hints(testing) -> void:
 	print("")
 
 
-# --- debug_bridge error-entry shape (single shared constructor) ------------
+# --- debug-session tracker error-entry shape (single shared constructor) ---
 # make_error_entry is the single shared constructor for the error-buffer dict
-# emitted by the live capture path (debug_bridge), the break fallback, and the
-# log-scan fallback (playtest_log_reader). Pins the exact key set + order +
+# emitted by the live capture path and the break fallback (debug_session_tracker),
+# and the log-scan fallback (playtest_log_reader). Pins the exact key set + order +
 # pass-through so the DRY extraction can't drift any one call site's output.
 # In-process call (no JSON/WS boundary), so line/timestamp_ms stay true int.
 
 static func _test_make_error_entry(testing) -> void:
-	testing.begin("debug_bridge error-entry shape")
-	var entry := PlaytestLogReader.make_error_entry(123, "msg", "res://a.gd", "f", 7, "error")
+	testing.begin("debug-session tracker error-entry shape")
+	var entry := DebugSessionTracker.make_error_entry(123, "msg", "res://a.gd", "f", 7, "error")
 	# exact key set, count, and order-of-keys pinned
 	testing.eq(entry.size(), 6, "entry has exactly 6 keys")
 	testing.ok(entry.keys() == ["timestamp_ms", "message", "source", "function", "line", "type"],
@@ -246,7 +246,7 @@ static func _test_make_error_entry(testing) -> void:
 	testing.ok(typeof(entry["line"]) == TYPE_INT, "line is int (no JSON float coercion in-process)")
 	testing.ok(typeof(entry["timestamp_ms"]) == TYPE_INT, "timestamp_ms is int")
 	# log-scan variant reproduces Site-2 derivation
-	var log_scan_entry := PlaytestLogReader.make_error_entry(0, "m2", "", "", 0, "log_scan")
+	var log_scan_entry := DebugSessionTracker.make_error_entry(0, "m2", "", "", 0, "log_scan")
 	testing.eq(log_scan_entry["timestamp_ms"], 0, "log_scan timestamp_ms=0 preserved")
 	testing.eq(log_scan_entry["type"], "log_scan", "log_scan type preserved")
 

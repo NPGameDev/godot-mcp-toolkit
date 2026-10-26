@@ -2,19 +2,20 @@
 extends RefCounted
 ## game.* / debugger.get_log command registration orchestrator — wires the play
 ## session lifecycle (game.start / game.stop) and the cached debugger.get_log
-## reader onto the registry, and injects/tears down the debug bridge. Holds no
-## subdomain logic: game.start/stop delegate to the Play-Session Control child,
-## debugger.get_log delegates to the Debug-Log Retrieval child, and the bridge
-## inject (register) + teardown (clear_debug_bridge) are forwarded to the
-## log-reader child that owns the bridge state.
+## reader onto the registry, and injects/tears down the debug-session tracker. Holds
+## no subdomain logic: game.start/stop delegate to the Play-Session Control child,
+## debugger.get_log delegates to the Debug-Log Retrieval child, and the tracker
+## inject (register) + teardown (clear_session_tracker) are forwarded to the
+## log-reader child that reads it.
 
 const _Control := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_control.gd")
 const _LogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 
 
+## [param session_tracker] is the debug-session tracker the debugger log reader reads.
 static func register(registry: MCPToolkitCommandRegistry, _server: Node,
-		debug_bridge: RefCounted = null) -> void:
-	_LogReader.set_debug_bridge(debug_bridge)
+		session_tracker: RefCounted) -> void:
+	_LogReader.set_session_tracker(session_tracker)
 	# game.start / game.stop mutate (launch / stop a play session), so they are
 	# NOT read-only. Exclusive-execution is the sole serialization driver: it
 	# forces single-in-flight ordering regardless of read-only status, which is
@@ -30,5 +31,5 @@ static func register(registry: MCPToolkitCommandRegistry, _server: Node,
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
 
 
-static func clear_debug_bridge() -> void:
-	_LogReader.clear_debug_bridge()
+static func clear_session_tracker() -> void:
+	_LogReader.clear_session_tracker()

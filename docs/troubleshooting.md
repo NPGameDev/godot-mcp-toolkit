@@ -133,11 +133,15 @@ directory (`npm config get cache` prints its location) and try again.
 **Symptom:** `editor_get_console` or `debugger_get_log` with `source="file"`
 reports the log is busy.
 
-**Cause:** the log file exists but a read could not open it. On Windows the
-dominant cause is a **running game**: the editor's read requests deny-write
-sharing, which the OS refuses while the game process holds the log open for
-writing. With no game running, an antivirus, backup, or file-sync tool may be
-holding it briefly.
+**Cause:** the log file exists but a read could not open it. For
+`editor_get_console` on Windows the dominant cause is a **running game**: the
+editor's read requests deny-write sharing, which the OS refuses while the game
+process holds the log open for writing. `debugger_get_log` is read by the game
+itself while it runs, and that read shares the file, so there the cause is an
+antivirus, backup, or file-sync tool holding it briefly, as it is for either
+tool with no game running. When the game cannot answer, as at an error break,
+`debugger_get_log` reads from the editor and does not return `LOG_BUSY`: it
+returns `debug_state` with a note on how to get the log lines.
 
 **Fix:** on Godot 4.5+ use `source="buffer"` (in-memory, no file involved —
 reads even while the game runs). Otherwise stop the game and retry; if no game

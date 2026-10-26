@@ -2,8 +2,9 @@
 extends RefCounted
 ## Pins which export flags the remote-deploy detector reads as a one-click deploy with
 ## remote debug: those carrying the remote-debug flag. Calls its static predicate,
-## since the headless runner cannot instantiate an EditorExportPlugin; the interactive
-## check in the editor covers the _export_begin call that reports it to the reader.
+## since the headless runner cannot instantiate an EditorExportPlugin. The
+## _export_begin call that reports a deploy to the debug-session tracker is not
+## covered by the sweep yet; GAP in SWEEP-COVERAGE-MANIFEST.md (`debugger.get_log`).
 
 const Testing := preload("res://test/units/testing.gd")
 const RemoteDeployDetector := preload("res://addons/godot_mcp_toolkit/core/remote_deploy_detector.gd")

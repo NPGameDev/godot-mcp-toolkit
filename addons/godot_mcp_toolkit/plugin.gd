@@ -13,7 +13,6 @@ const DisableCleanupCoordinator := preload("res://addons/godot_mcp_toolkit/core/
 const MCPJsonEnablePrompt := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_enable_prompt.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autoload_registration.gd")
-const PlaytestLogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
 
@@ -194,11 +193,12 @@ func _disable_plugin() -> void:
 	DisableCleanupCoordinator.new().start()
 
 
-# The editor calls this before every run it starts, a playtest or a one-click
-# deploy; the debugger log reader tells the two apart by the export only a deploy
+# The editor calls this before a playtest or a one-click deploy with remote debug;
+# the debug-session tracker tells the two apart by the export only a deploy
 # runs next. Returning false would stop the run.
 func _build() -> bool:
-	PlaytestLogReader.note_editor_run()
+	if _handle != null:
+		_handle.note_editor_build()
 	return true
 
 

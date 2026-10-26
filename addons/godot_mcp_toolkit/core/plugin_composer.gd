@@ -3,8 +3,8 @@ extends RefCounted
 ## The plugin's composition root — constructs and wires the collaborator graph,
 ## then tears it down in reverse.
 ##
-## compose() builds the whole object graph (registry, server, debug bridge,
-## command registrar, extensions, export plugins, log buffer, user-path monitor,
+## compose() builds the whole object graph (registry, server, debug-session tracker,
+## debug bridge, command registrar, extensions, export plugins, log buffer, user-path monitor,
 ## registry registration, playtest watcher, write flow + dialog presenter, update
 ## check, dock) and returns the owning Handle.
 ## The orchestrator (plugin.gd) calls compose() once from _enter_tree, holds the
@@ -29,9 +29,12 @@ const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/exte
 const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
 const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
 const DebugBridge := preload("res://addons/godot_mcp_toolkit/transport/debug_bridge.gd")
+# Modules cannot list it: it preloads Modules.
+const RemoteDeployDetector := preload("res://addons/godot_mcp_toolkit/core/remote_deploy_detector.gd")
+const DebugSessionTracker = Modules.DebugSessionTracker
 const ResponseLimits = Modules.ResponseLimits
-# Teardown counterpart of PlaytestCommands.register(..., debug_bridge): dispose()
-# calls PlaytestCommands.clear_debug_bridge() to undo exactly what that register set.
+# Teardown counterpart of PlaytestCommands.register(..., session_tracker): dispose()
+# calls PlaytestCommands.clear_session_tracker() to undo exactly what that register set.
 const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_commands.gd")
 
 
@@ -56,11 +59,14 @@ static func compose(
 	server.set_registry(registry)
 	server.editor_plugin = plugin
 
-	# Debugger bridge — create early so command registrars can reference it.
-	var debug_bridge := DebugBridge.new()
+	# Debug-session tracker and the debugger bridge that feeds it — create early so
+	# command registrars can reference them. The tracker reads whether the editor is
+	# playing from EditorInterface.
+	var session_tracker := DebugSessionTracker.new(EditorInterface)
+	var debug_bridge := DebugBridge.new(session_tracker)
 	plugin.add_debugger_plugin(debug_bridge)
 
-	BuiltinCommandRegistration.register_all(registry, server, debug_bridge)
+	BuiltinCommandRegistration.register_all(registry, server, debug_bridge, session_tracker)
 
 	# Third-party extensions — always loaded.
 	ExtensionLoader.load_all(registry, server)
@@ -69,7 +75,7 @@ static func compose(
 
 	var export_plugin := preload("res://addons/godot_mcp_toolkit/core/export_strip.gd").new()
 	plugin.add_export_plugin(export_plugin)
-	var remote_deploy_detector := preload("res://addons/godot_mcp_toolkit/core/remote_deploy_detector.gd").new()
+	var remote_deploy_detector := RemoteDeployDetector.new(session_tracker)
 	plugin.add_export_plugin(remote_deploy_detector)
 
 	Modules.LogBuffer.setup()
@@ -130,6 +136,7 @@ static func compose(
 	handle._remote_deploy_detector = remote_deploy_detector
 	handle._extension_watcher = extension_watcher
 	handle._debug_bridge = debug_bridge
+	handle._session_tracker = session_tracker
 	handle._user_path_monitor = user_path_monitor
 	handle._playtest_end_detector = playtest_end_detector
 	return handle
@@ -200,6 +207,7 @@ class Handle:
 
 	const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 	const RegistryClient = Modules.RegistryClient
+	const DebugSessionTracker = Modules.DebugSessionTracker
 	const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 	const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 	const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
@@ -209,7 +217,7 @@ class Handle:
 	var _plugin: EditorPlugin = null
 	var _server: Node = null
 	var _export_plugin: EditorExportPlugin = null
-	var _remote_deploy_detector: EditorExportPlugin = null  # Tells the log reader a run is a deploy
+	var _remote_deploy_detector: EditorExportPlugin = null  # Tells the session tracker an export is a deploy
 	var _dock: Control = null
 	var _dock_host: Object = null  # EditorDock wrapper on 4.6+; null on ≤4.5 (control is its own handle)
 	var _write_flow: MCPJsonWriteFlow = null  # Shared .mcp.json confirm-then-write flow
@@ -217,6 +225,7 @@ class Handle:
 	var _update_check: Node = null  # Update check runner, read by the dock's badge
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 	var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
+	var _session_tracker: DebugSessionTracker = null  # The latest debugger session's state
 	var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
 	var _playtest_end_detector: PlaytestEndDetector = null  # Edge-detects the play→stop transition
 
@@ -249,10 +258,17 @@ class Handle:
 		if _playtest_end_detector != null:
 			_playtest_end_detector.poll()
 
+	## Tell the debug-session tracker the editor is about to run the project. Called by
+	## the orchestrator's _build, which the editor runs before a playtest or a one-click
+	## deploy with remote debug.
+	func note_editor_build() -> void:
+		if _session_tracker != null:
+			_session_tracker.note_editor_build()
+
 	## Tear down the composed graph in reverse construction order. Behavior-critical
 	## ordering — dock → update check → dialog presenter + write flow → user-path monitor →
-	## playtest watcher → extension watcher → debug bridge → export plugin →
-	## server+registry → env overrides.
+	## playtest watcher → extension watcher → debug bridge → export plugins →
+	## debug-session tracker → server+registry → env overrides.
 	func dispose() -> void:
 		# Dock teardown. Free the CONTROL immediately (never queue_free) so its
 		# GDScript preload chain releases before ObjectDB's exit-time leak check.
@@ -316,8 +332,8 @@ class Handle:
 		_extension_watcher = null
 
 		# Debugger bridge — undo what compose() registered for it, before server
-		# teardown: the playtest commands' bridge, then the debugger plugin.
-		PlaytestCommands.clear_debug_bridge()
+		# teardown: the playtest commands' tracker, then the debugger plugin.
+		PlaytestCommands.clear_session_tracker()
 		if _debug_bridge != null:
 			_debug_bridge.cleanup()
 			_plugin.remove_debugger_plugin(_debug_bridge)
@@ -330,6 +346,10 @@ class Handle:
 		if _export_plugin != null:
 			_plugin.remove_export_plugin(_export_plugin)
 			_export_plugin = null
+
+		# Debug-session tracker (RefCounted — just null), once the bridge, the reader
+		# and the detector that hold it are gone.
+		_session_tracker = null
 
 		# Server + registry — clear command registry first to break the
 		# Callable → GDScript reference chains, then free() immediately.
