@@ -6,10 +6,11 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const BarePathCheck = Modules.BarePathCheck
+const Testing := preload("res://test/units/testing.gd")
 const TEXTURE_PATH := "res://test/fixtures/placeholder_texture.tres"
 
 
-static func run(testing) -> void:
+static func run(testing: Testing) -> void:
 	_test_bare_res_path(testing)
 	_test_bare_known_uid(testing)
 	_test_bare_unknown_uid(testing)
@@ -17,7 +18,7 @@ static func run(testing) -> void:
 	_test_not_a_bare_path(testing)
 
 
-static func _test_bare_res_path(testing) -> void:
+static func _test_bare_res_path(testing: Testing) -> void:
 	testing.begin("bare_path_message names the tagged form for a res:// path")
 	testing.eq(BarePathCheck.bare_path_message("icon", TEXTURE_PATH, TYPE_OBJECT),
 			"property 'icon' expects a Resource, not a bare string path. Use "
@@ -29,7 +30,7 @@ static func _test_bare_res_path(testing) -> void:
 
 # The UID is registered here and removed before the assertions, so the case does not
 # depend on the project's UID cache.
-static func _test_bare_known_uid(testing) -> void:
+static func _test_bare_known_uid(testing: Testing) -> void:
 	testing.begin("bare_path_message names the tagged form with the path a uid:// names")
 	var uid := ResourceUID.create_id()
 	ResourceUID.add_id(uid, TEXTURE_PATH)
@@ -44,7 +45,7 @@ static func _test_bare_known_uid(testing) -> void:
 	print("")
 
 
-static func _test_bare_unknown_uid(testing) -> void:
+static func _test_bare_unknown_uid(testing: Testing) -> void:
 	testing.begin("bare_path_message says no resource has an unknown uid://")
 	var uid_text := ResourceUID.id_to_text(ResourceUID.create_id())
 	testing.eq(BarePathCheck.bare_path_message("icon", uid_text, TYPE_OBJECT),
@@ -58,7 +59,7 @@ static func _test_bare_unknown_uid(testing) -> void:
 	print("")
 
 
-static func _test_bare_user_path(testing) -> void:
+static func _test_bare_user_path(testing: Testing) -> void:
 	testing.begin("bare_path_message refuses a user:// path")
 	testing.eq(BarePathCheck.bare_path_message("icon", "user://icon.tres", TYPE_OBJECT),
 			"property 'icon' expects a Resource, not a bare string path, and only a res:// "
@@ -69,7 +70,7 @@ static func _test_bare_user_path(testing) -> void:
 
 # A String property may hold a path (an @export_file); only an Object property makes a
 # String a bare path.
-static func _test_not_a_bare_path(testing) -> void:
+static func _test_not_a_bare_path(testing: Testing) -> void:
 	testing.begin("bare_path_message gives no message for a value that is not a bare path")
 	testing.eq(BarePathCheck.bare_path_message("icon_path", TEXTURE_PATH, TYPE_STRING), "",
 			"res:// path on a String property → no message")

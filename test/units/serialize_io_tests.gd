@@ -757,7 +757,7 @@ static func _test_settings_collect_names(testing) -> void:
 	print("")
 
 
-# --- resource.write: a bare res:// path on a Resource property ------------
+# --- resource.write: a bare path on a Resource property -------------------
 # node.set_property asks for the tagged {type: "Resource", path} form. Without that
 # check, a live instance (here the native script property) drops a bare path, and
 # the editor's placeholder stores it as a String, which reaches the file.

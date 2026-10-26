@@ -2,9 +2,9 @@
 extends RefCounted
 ## Decides whether a property write gives a bare path, and words its refusal.
 ##
-## A bare path is a String given where the property declares a Resource. The node,
-## scene and resource writers each take this one message and end it with their own
-## outcome, so the three describe a bare path alike.
+## A bare path is a String given where the property declares a Resource. Each writer
+## ends this one message with its own outcome, so every writer words a bare path
+## alike.
 
 
 ## The message for a bare path: a String [param raw_value] written to
