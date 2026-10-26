@@ -26,7 +26,7 @@ All MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message. On 4.5+ closes active or inactive tabs; last-tab close auto-creates an empty scene |
-| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version (an abstract engine class only from 4.4; see [the limitations](#script_check-limitations-all-versions)). Error messages carry `gdscript://` URIs (see below) |
+| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version (an abstract engine class only from 4.4; see [the limitations](#script_check-limitations-all-versions)). The copy compiles under a path in the file's folder, so a relative `preload` and the warning rules for that folder apply as they do to the file |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `input_map_event`, `input_map_list` | 4.2 | A key's `location` (left or right) needs 4.3+: on 4.2 a `location` passed to a bind or an unbind is ignored and the response carries a `warnings` entry, and keys are read back without one. On 4.7, keys and mice have their own device ids (16 and 32), and a key or mouse event saved with device 0 by an older Godot matches one bound now |
 | `extensions_refresh` | 4.2 | On 4.2.2, an extension edit made with `script_write` or `script_edit` (or their undo/redo) applies live when it compiles. An edit made outside the toolkit, or to a C# extension, needs an editor restart, and so does every extension edit on 4.2.0 and 4.2.1; `extensions_refresh` names it in its `hint` (a cached read avoids an engine reimport crash — see below). When the file does not compile, the `hint` says to fix it instead. Adding/removing extensions applies live. 4.3+ applies all changes live |
@@ -247,6 +247,14 @@ correctly on both builds; the limitation is in the Godot binary.
 
 `script_check`, and the inline check `script_write` and `script_edit` run on a
 `.gd` file, compile a copy of the script in memory with `GDScript.new().reload()`.
+The copy compiles under a path that begins with the file's own, the file's path
+followed by `.__mcp_probe_<id>.gd`, because the engine decides two things by a
+script's path: the folder a relative `preload` or `extends` resolves against,
+and the project's warning rules that apply, such as the default one that skips
+warnings under `res://addons`. A file in the project's script templates folder
+(`editor/script/templates_search_path`), whose scripts the editor never
+compiles, keeps a copy under the `gdscript://` path Godot gives a script with
+no file, so relative paths there point nowhere, as before.
 `ResourceLoader.load()` with `CACHE_MODE_IGNORE` was evaluated as an
 alternative and stays banned: it goes through the resource loader's layer,
 where it corrupted already-loaded scripts and crashed the editor. Reloading a
@@ -296,7 +304,9 @@ Remaining trade-offs:
   and to stderr. `editor_get_console` does not return that compile's script
   errors; any other error it causes, such as a dependency that fails to load,
   stays in the console. Godot gives no way to keep these lines out of the
-  panel.
+  panel. The panel's lines name the copy's path; the console text
+  `editor_get_console` returns names the file wherever it carries a path
+  (4.7+).
 - **Abstract engine classes on 4.2–4.3:** a `class_name` equal to an abstract
   engine class, such as `CanvasItem`, reads as valid there. 4.4 and later
   report it.
@@ -313,19 +323,13 @@ Remaining trade-offs:
   back. `lsp_diagnostics` checks the file as the editor loads it, so it gives
   the real result.
 - **`text_filter`:** `editor_get_console` matches `text_filter` against the
-  stored text, which still carries the probe suffix, so a regular expression
-  that expects the class name to end there, such as `Player\b`, can miss the
-  check's error.
+  stored text, which still carries the probe suffix and, on 4.7+, the copy's
+  path, so a regular expression that expects the class name to end there, such
+  as `Player\b`, or a filter on the file's path and line, such as
+  `player.gd:12`, can miss the check's error.
 - **Other threads' errors:** while its compiles run (a few milliseconds), the
   check turns error printing off for the whole editor, so an error another
   thread prints in that window is missing from the console.
-- **`gdscript://` URIs in error messages:** When a script has a genuine
-  error, the console message references an internal `gdscript://` path
-  instead of the real `res://` file path.
-
-**Workaround:** Use `editor_get_console` with `level_filter: ["error"]` as a
-cross-check — it reads diagnostics from the editor itself, which have
-accurate file paths.
 
 ### Quit during a pending save — one-time console noise (all versions)
 

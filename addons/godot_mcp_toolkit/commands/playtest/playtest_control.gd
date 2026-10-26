@@ -309,7 +309,8 @@ static func _poll_runtime_ready(
 static func _scan_compilation_errors() -> Dictionary:
 	var buf := Modules.LogBuffer.get_entries(10, ["error"])
 	var errors: Array = []
-	# A script_check probe's errors name its renamed class; the agent sees the real name.
+	# A script_check probe's errors name its renamed class and its own path; the agent sees
+	# the script's.
 	for entry in buf.get("entries", []):
 		errors.append(Modules.GDScriptSource.strip_probe_suffix(str(entry.get("message", ""))))
 	return {

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `script_check`, and the check `script_write` and `script_edit` run on a `.gd`
+  file, no longer report a script that compiles as not compiling when it
+  preloads a file by a relative path, such as `preload("helper.gd")`, or lives
+  under `res://addons` and has a warning the project treats as an error. The
+  check compiled its copy of the script under a placeholder path, so a relative
+  path pointed nowhere and the warning rules for the file's folder, such as the
+  default one that skips warnings under `res://addons`, did not apply. The
+  copy now compiles under a path in the file's folder. On 4.7+, the location
+  of the check's error in `editor_get_console` names the file instead of a
+  `gdscript://` path
+  ([#98](https://github.com/NPGameDev/godot-mcp-toolkit/issues/98)).
+
 ## [1.1.0] - 2026-10-25
 
 ### Added

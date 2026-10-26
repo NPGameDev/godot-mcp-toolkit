@@ -109,23 +109,19 @@ static func push_script_error(level: String, message: String, file: String, line
 	_mutex.unlock()
 
 
-## Line of the first in-memory script error captured after [param since_id],
-## or -1 when none was.
+## Line of the first script error captured after [param since_id] under the
+## script path [param file], or -1 when none was.
 ##
-## Serves script_check's reload validation: a GDScript built from source (no
-## disk path) reports under a synthetic "gdscript://…" path ("built-in" on
-## engines predating that scheme), so matching that shape picks the caller's
-## own just-triggered reload error and never a threaded editor-scan error on a
-## res:// script that lands in the same window. Returns -1 on 4.2-4.4 (the
-## file tail latches nothing) — callers omit their line field then.
-static func find_script_error_line_since(since_id: int) -> int:
+## Serves script_check's reload validation: matching the path of the copy the
+## caller just compiled picks that compile's error and never a threaded
+## editor-scan error on another script that lands in the same window. Returns
+## -1 on 4.2-4.4 (the file tail latches nothing) — callers omit their line
+## field then.
+static func find_script_error_line_since(since_id: int, file: String) -> int:
 	_mutex.lock()
 	var found := -1
 	for location in _script_error_locations:
-		if int(location["id"]) <= since_id:
-			continue
-		var file := str(location["file"])
-		if file == "built-in" or file.begins_with("gdscript://"):
+		if int(location["id"]) > since_id and str(location["file"]) == file:
 			found = int(location["line"])
 			break
 	_mutex.unlock()

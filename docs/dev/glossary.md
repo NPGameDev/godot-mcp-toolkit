@@ -401,7 +401,9 @@ the engine's analyzer does. It runs in up to three steps: the **rename probe** r
 declaration and every bare reference to the name; the **declaration probe**, run when that fails,
 renames only the declaration; the **keep-name probe**, run on 4.5+ with the Logger capture active
 when both fail for a file that owns its registered `class_name`, compiles the source as written and
-accepts it when its only error is the clash with its own registered class.
+accepts it when its only error is the clash with its own registered class. Each step compiles under
+a path that begins with the file's own, so a relative `preload` and the warning rules for the
+file's folder apply as they do to the file.
 
 **VersionUtils** (`Modules.VersionUtils` → `versioning/mcp_version_utils.gd`)
 The cross-version facts module (the `is_at_least` / `is_at_most` / `is_version_in_range` set). Reached

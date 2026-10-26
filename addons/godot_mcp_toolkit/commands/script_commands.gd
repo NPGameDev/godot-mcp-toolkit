@@ -419,20 +419,22 @@ static func _validate_gdscript(source: String, file_path: String = "") -> Dictio
 		})
 	# A clash does not hide a compile error elsewhere in the file.
 	if not bool(verdict["compiles"]):
-		diagnostics.append_array(_compile_error_diagnostics(str(verdict["decisive_source"])))
+		diagnostics.append_array(_compile_error_diagnostics(str(verdict["decisive_source"]),
+				file_path))
 	return MCPToolkitSuccess.ok({"valid": bool(verdict["valid"]), "diagnostics": diagnostics})
 
 
 ## Re-runs the probe compile that failed with its errors printed, then reads
 ## them back: the error entry and any autoload or preload hints.
 ## [param probe_source] is the probe's decisive source from
-## [code]GDScriptSource.judge()[/code]. Returns the diagnostics as
+## [code]GDScriptSource.judge()[/code], compiled again as the file at
+## [param file_path]. Returns the diagnostics as
 ## [code][{severity, message, line?}][/code].
-static func _compile_error_diagnostics(probe_source: String) -> Array:
+static func _compile_error_diagnostics(probe_source: String, file_path: String) -> Array:
 	# The first entry the re-run pushes gets the cursor's id; since_id reads
 	# "entries with id > since_id", so subtract 1 to include it.
 	var pre_id: int = Modules.LogBuffer.get_cursor() - 1
-	Modules.GDScriptSource.print_compile_errors(probe_source)
+	var probe_path := Modules.GDScriptSource.print_compile_errors(probe_source, file_path)
 
 	var diagnostics: Array = []
 	var error_diagnostic := {
@@ -440,11 +442,11 @@ static func _compile_error_diagnostics(probe_source: String) -> Array:
 		"message": _compile_error_message(Modules.VersionUtils.get_engine_version_pair()),
 	}
 	# The real error line, recovered from the Logger capture of the reload
-	# error this call just triggered (an in-memory script reports under a
-	# synthetic "gdscript://…" path, so the latch match is ours — the
-	# snapshot-to-scan window runs synchronously on the main thread). -1
-	# (nothing recovered — 4.2-4.4, or a failed Logger hook) omits the key.
-	var real_line: int = Modules.LogBuffer.find_script_error_line_since(pre_id)
+	# error this call just triggered (the copy reports under a path of its own,
+	# so the latch match is ours — the snapshot-to-scan window runs
+	# synchronously on the main thread). -1 (nothing recovered — 4.2-4.4, or a
+	# failed Logger hook) omits the key.
+	var real_line: int = Modules.LogBuffer.find_script_error_line_since(pre_id, probe_path)
 	if real_line > 0:
 		error_diagnostic["line"] = real_line
 	diagnostics.append(error_diagnostic)

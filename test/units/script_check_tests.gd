@@ -3,17 +3,22 @@ extends RefCounted
 ## script_check's compile probe and the script's class_name: the probe renames
 ## the declaration, so the one-line form "class_name X extends Y" keeps its base
 ## class, self typed as the script's own class compiles, and a name that clashes
-## is reported as the engine reports it.
-## Covers _validate_gdscript, the script_check handler and the stale-instance
-## hint's source_compiles, which share the probe. Cases marked with a minimum
-## version use syntax older versions lack, and the documented limitations that
-## differ by version expect each version's own result; every other assertion
-## holds on every supported version.
+## is reported as the engine reports it. The probe compiles under a path in the
+## file's folder, so a relative preload and the folder's warning rules apply as
+## they do to the file, and leaves nothing under that path once compiled.
+## Covers _validate_gdscript, the script_check handler, the stale-instance
+## hint's source_compiles and print_compile_errors, which share the probe. Cases
+## marked with a minimum version use syntax older versions lack, and the
+## documented limitations that differ by version expect each version's own
+## result; every other assertion holds on every supported version.
 
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
+const EditorLogReader := preload("res://addons/godot_mcp_toolkit/commands/editor/editor_log_reader.gd")
+const Testing := preload("res://test/units/testing.gd")
 
 const ONE_LINE_FIXTURE := "res://test/fixtures/one_line_class_name_fixture.gd"
 # Registered global classes the case table reuses: a case that declares one of
@@ -31,6 +36,9 @@ const CROSS_B := "MCPToolkitProbeCrossB"
 const FREE_NAME := "MCPToolkitProbeFree"
 # The probe's class suffix, which no diagnostic may carry.
 const PROBE_SUFFIX := "__McpProbe"
+# What the probe adds to the file's path to make its own, which no console text
+# editor_get_console returns may carry.
+const PROBE_PATH_MARKER := ".__mcp_probe_"
 # A body that compiles only on a Node base.
 const NODE_BODY := "\n\nfunc attach_child() -> void:\n\tadd_child(Node.new())\n"
 
@@ -50,6 +58,9 @@ static func run(testing) -> void:
 	_test_script_check_self_typed_files(testing)
 	_test_source_compiles_self_typed(testing)
 	_test_script_check_cross_script_self(testing)
+	_test_probe_compiles_as_the_file(testing)
+	_test_probe_errors_name_the_file(testing)
+	_test_probe_leaves_no_copy_to_save(testing)
 
 
 # --- _validate_gdscript, no file_path ---------------------------------------
@@ -357,4 +368,79 @@ static func _test_script_check_cross_script_self(testing) -> void:
 	else:
 		testing.ok(not bool(result.get("valid", true)),
 				"documented limitation on 4.2-4.4 → valid false")
+	print("")
+
+
+# --- the file's path decides what the engine decides by it -------------------
+# The engine resolves a relative preload against the script's folder and
+# applies the project's warning rules by the script's path; the default rule
+# skips warnings under res://addons. The paths name no file: only their folder
+# matters.
+
+static func _test_probe_compiles_as_the_file(testing: Testing) -> void:
+	testing.begin("script_check probe compiles as the file at its path")
+	LogBuffer.setup()
+	var relative_preload := (
+		"extends RefCounted\n\n"
+		+ "const Element := preload(\"typed_array_element.gd\")\n"
+	)
+	var beside_target := ScriptCommands._validate_gdscript(relative_preload,
+			"res://test/fixtures/uses_relative_preload.gd")
+	testing.ok(bool(beside_target.get("valid", false)),
+			"a relative preload of a file in the script's folder → valid true")
+	testing.eq((beside_target.get("diagnostics", []) as Array).size(), 0,
+			"a relative preload of a file in the script's folder → no diagnostics")
+	var away_from_target := ScriptCommands._validate_gdscript(relative_preload,
+			"res://test/units/uses_relative_preload.gd")
+	testing.ok(not bool(away_from_target.get("valid", true)),
+			"a relative preload of a file missing from the script's folder → valid false")
+	if LogBuffer.uses_logger_api():
+		testing.ok(JSON.stringify(away_from_target.get("diagnostics", [])).contains(
+					"preload('res://test/units/typed_array_element.gd') failed"),
+				"a relative preload of a missing file → the hint names it in the script's folder")
+	var node_read_too_early := "extends Node\n\nvar target: Node = get_node(\"Target\")\n"
+	testing.ok(bool(ScriptCommands._validate_gdscript(node_read_too_early,
+					"res://addons/mcp_toolkit_unit_probe/held_node.gd").get("valid", false)),
+			"a warning the project treats as an error, under res://addons → valid true")
+	testing.ok(not bool(ScriptCommands._validate_gdscript(node_read_too_early,
+					"res://test/fixtures/held_node.gd").get("valid", true)),
+			"the same warning outside res://addons → valid false")
+	print("")
+
+
+# The engine reports a compile error under the compiling script's path, and
+# only the 4.7+ capture keeps that path in the console text, which
+# editor_get_console reads from the buffer.
+static func _test_probe_errors_name_the_file(testing: Testing) -> void:
+	testing.begin("script_check probe's console errors name the file, not the copy")
+	LogBuffer.setup()
+	var since_id := LogBuffer.get_cursor() - 1
+	var result := ScriptCommands._validate_gdscript(
+			"extends Node\n\n\nfunc broken() -> int:\n\treturn \"text\"\n",
+			"res://test/fixtures/returns_text_as_int.gd")
+	testing.ok(not bool(result.get("valid", true)), "a type error → valid false")
+	if LogBuffer.uses_logger_api() \
+			and VersionUtils.is_at_least(VersionUtils.get_engine_version_pair(), "4.7"):
+		var console := JSON.stringify(EditorLogReader.cmd_get_console(null,
+				{"since_id": since_id, "level_filter": ["error"]}))
+		testing.ok(console.contains(
+					"at: GDScript::reload (res://test/fixtures/returns_text_as_int.gd:5)"),
+				"4.7+ → editor_get_console names the file and the error's line")
+		testing.ok(not console.contains(PROBE_PATH_MARKER),
+				"4.7+ → editor_get_console names no copy's path")
+	print("")
+
+
+# The engine keeps a compiled copy alive, and the editor saves to disk every
+# edited resource the resource cache holds under a res:// path at each scene
+# save. Every compile of the probe takes the same step off that path;
+# print_compile_errors is the one that names the copy's path.
+static func _test_probe_leaves_no_copy_to_save(testing: Testing) -> void:
+	testing.begin("script_check probe leaves no copy under a res:// path")
+	var copy_path := GDScriptSource.print_compile_errors("extends RefCounted\n",
+			"res://test/fixtures/compiled_copy.gd")
+	testing.ok(copy_path.begins_with("res://test/fixtures/compiled_copy.gd"),
+			"a copy of a file → compiles under a path that begins with the file's")
+	testing.ok(not ResourceLoader.has_cached(copy_path),
+			"after the compile → no resource is cached under the copy's path")
 	print("")

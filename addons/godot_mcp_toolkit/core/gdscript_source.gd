@@ -13,6 +13,14 @@ extends RefCounted
 ## rename adds no line. A renamed copy is not the type another script names,
 ## so on 4.5+ a script the renamed copies reject is compiled once more under
 ## its own name, and its errors are read back from the console capture.
+##
+## A copy of a file compiles under a path of its own that begins with the
+## file's path, since the engine decides two things by the script's path: the
+## folder a relative preload resolves against, and the project's warning rules
+## that apply, such as the default one that skips warnings under
+## [code]res://addons[/code]. Once compiled, the copy moves to a
+## [code]gdscript://[/code] path, the form GDScript gives a script with no
+## file, since the engine keeps the copy alive.
 
 # Direct preload, not core/modules.gd: the aggregator preloads this file.
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
@@ -21,6 +29,12 @@ const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd
 ## about the probe carry it; [method strip_probe_suffix] removes it from text an
 ## agent reads.
 const PROBE_SUFFIX := "__McpProbe"
+
+# Appended to the file's path, with the probe's instance id and ".gd", to make
+# the probe's path. The id keeps two live probes of one file apart: the path
+# enters the resource cache, which refuses a second resource at a path already
+# there.
+const _PROBE_PATH_MARKER := ".__mcp_probe_"
 
 const _CLASS_NAME_KEYWORD := "class_name"
 const _HIDES_GLOBAL_CLASS := "Class \"%s\" hides a global script class."
@@ -34,6 +48,9 @@ const _RESERVED_WORDS: Array[String] = [
 	"PI", "preload", "return", "self", "signal", "static", "super", "TAU", "trait",
 	"true", "var", "void", "when", "while", "yield",
 ]
+
+# The tail _new_probe adds to a file's path; instance ids can be negative.
+static var _probe_path_tail: RegEx = _compile_probe_path_tail()
 
 
 ## Judges [param source] as the engine would judge the file at
@@ -55,7 +72,8 @@ const _RESERVED_WORDS: Array[String] = [
 ## panel, and its script errors are removed from the console buffer; any
 ## other error it causes, such as a dependency that fails to load, stays.
 ## An empty [param file_path] stands for source with no file, which clashes
-## with every registered global class of its name.
+## with every registered global class of its name and compiles under the
+## placeholder path GDScript gives a script with no file.
 ##
 ## Returns [code]{valid, compiles, conflict, conflict_line, decisive_source}[/code]:
 ## [code]valid[/code] is [code]compiles[/code] with no [code]conflict[/code]
@@ -69,28 +87,23 @@ static func judge(source: String, file_path: String) -> Dictionary:
 	var class_name_text := str(declaration_renamed["name"])
 	var conflict := class_name_conflict(class_name_text, file_path)
 
-	var full_probe := _new_probe(str(all_renamed["source"]))
-	var declaration_probe := _new_probe(str(declaration_renamed["source"]))
+	var full_probe := _new_probe(str(all_renamed["source"]), file_path)
+	var declaration_probe := _new_probe(str(declaration_renamed["source"]), file_path)
 	var tries_declaration := declaration_probe.source_code != full_probe.source_code
-	var printed_errors := Engine.print_error_messages
-	# Only reload() runs while printing is off: GDScript has no `finally`, and a
-	# runtime error here would leave the editor's error printing off.
-	Engine.print_error_messages = false
-	var full_result := full_probe.reload(false)
+	var full_result := _compile(full_probe, false)
 	var declaration_result := full_result
 	if full_result != OK and tries_declaration:
-		declaration_result = declaration_probe.reload(false)
-	Engine.print_error_messages = printed_errors
+		declaration_result = _compile(declaration_probe, false)
 
 	var compiles := full_result == OK or declaration_result == OK \
 			or (full_result == ERR_COMPILATION_FAILED and declaration_result == ERR_PARSE_ERROR)
 	if not compiles and conflict == "" and _keep_name_probe_applies(class_name_text, file_path):
-		compiles = _keep_name_probe_compiles(source, class_name_text,
+		compiles = _keep_name_probe_compiles(source, file_path, class_name_text,
 				int(declaration_renamed["line"]))
 	var decisive_source := ""
 	if not compiles:
-		decisive_source = full_probe.source_code if full_result == ERR_PARSE_ERROR \
-				else declaration_probe.source_code
+		decisive_source = str(all_renamed["source"]) if full_result == ERR_PARSE_ERROR \
+				else str(declaration_renamed["source"])
 	return {
 		"valid": compiles and conflict == "",
 		"compiles": compiles,
@@ -100,24 +113,27 @@ static func judge(source: String, file_path: String) -> Dictionary:
 	}
 
 
-## Compiles [param probe_source] with error printing on, so its errors reach
-## stderr, the editor log capture and the console readers, then restores the
-## caller's [member Engine.print_error_messages] value.
-static func print_compile_errors(probe_source: String) -> void:
-	var probe := _new_probe(probe_source)
-	var printed_errors := Engine.print_error_messages
-	Engine.print_error_messages = true
-	probe.reload(false)
-	Engine.print_error_messages = printed_errors
+## Compiles [param probe_source] as the file at [param file_path], as
+## [method judge] does, with error printing on, so its errors reach stderr, the
+## editor log capture and the console readers, then restores the caller's
+## [member Engine.print_error_messages] value. Returns the script path the
+## engine reports those errors under.
+static func print_compile_errors(probe_source: String, file_path: String) -> String:
+	var probe := _new_probe(probe_source, file_path)
+	var reported_path := _reported_path(probe)
+	_compile(probe, true)
+	return reported_path
 
 
-## Returns [param text] with [constant PROBE_SUFFIX] removed, so a message
-## about the probe names the script's real class.
+## Returns [param text] with the probe's additions removed, so a message about
+## the probe names the script's real class and file: [constant PROBE_SUFFIX]
+## after a class name, and the tail a probe adds to the file's path.
 ##
-## A plain replace rather than a pattern: the suffix is unique to the probe,
-## and a regex word class would stop at a non-ASCII letter in a class name.
+## The class suffix goes by a plain replace rather than a pattern: it is unique
+## to the probe, and a regex word class would stop at a non-ASCII letter in a
+## class name.
 static func strip_probe_suffix(text: String) -> String:
-	return text.replace(PROBE_SUFFIX, "")
+	return _probe_path_tail.sub(text.replace(PROBE_SUFFIX, ""), "", true)
 
 
 ## Returns [code]{source, name, line}[/code]: [param source] with the
@@ -197,10 +213,69 @@ static func class_name_conflict(class_name_text: String, file_path: String) -> S
 	return ""
 
 
-static func _new_probe(probe_source: String) -> GDScript:
+static func _new_probe(probe_source: String, file_path: String) -> GDScript:
 	var probe := GDScript.new()
 	probe.source_code = probe_source
+	if file_path != "" and not _in_script_templates_folder(file_path):
+		probe.resource_path = "%s%s%d.gd" % [_canonical_path(file_path), _PROBE_PATH_MARKER,
+				probe.get_instance_id()]
 	return probe
+
+
+# In the editor, GDScript answers that a script compiled without compiling it
+# when the script's folder begins with the project's script templates folder,
+# so a copy of a file there keeps the placeholder path, which no folder matches.
+static func _in_script_templates_folder(file_path: String) -> bool:
+	var templates_folder := str(ProjectSettings.get_setting(
+			"editor/script/templates_search_path", "res://script_templates"))
+	return _canonical_path(file_path).get_base_dir().begins_with(templates_folder)
+
+
+# The path the engine reports the probe's errors under: its own, or for a probe
+# of source with no file, the placeholder GDScript gives it.
+static func _reported_path(probe: GDScript) -> String:
+	if probe.resource_path != "":
+		return probe.resource_path
+	return _placeholder_path(probe)
+
+
+# Compiles the probe with the engine's error printing set to print_errors, then
+# retires it. Only reload() runs while printing is changed: GDScript has no
+# `finally`, and a runtime error there would leave the editor's error printing
+# as the probe set it.
+static func _compile(probe: GDScript, print_errors: bool) -> Error:
+	var printed_errors := Engine.print_error_messages
+	Engine.print_error_messages = print_errors
+	var result := probe.reload(false)
+	Engine.print_error_messages = printed_errors
+	_retire(probe)
+	return result
+
+
+# GDScript keeps every script it compiles from source alive in its own cache,
+# so a compiled probe outlives the check. Under a res:// path it would stay in
+# the resource cache, where the editor saves every edited resource with a
+# res:// path at each scene save, so it would land on disk beside the file. The
+# probe moves to a gdscript:// path instead, which no save writes and no reload
+# reads from. It also drops its source: from 4.4 the reload the editor runs for
+# a saved script takes every script with a path that extends it, this one
+# included, and with no source that reload compiles nothing in its place.
+static func _retire(probe: GDScript) -> void:
+	if probe.resource_path == "":
+		return
+	probe.resource_path = _placeholder_path(probe)
+	probe.source_code = ""
+
+
+# The path GDScript gives a script with no file.
+static func _placeholder_path(probe: GDScript) -> String:
+	return "gdscript://%d.gd" % probe.get_instance_id()
+
+
+static func _compile_probe_path_tail() -> RegEx:
+	var pattern := RegEx.new()
+	pattern.compile(_PROBE_PATH_MARKER.replace(".", "\\.") + "-?[0-9]+\\.gd")
+	return pattern
 
 
 # The keep-name probe needs a file that owns its registered class, since that
@@ -222,19 +297,14 @@ static func _keep_name_probe_applies(class_name_text: String, file_path: String)
 # one. The clash stops the compile before codegen, so a codegen-only error
 # passes unseen. The probe's script errors leave the console buffer whatever
 # the verdict, since they describe a copy, not the file.
-static func _keep_name_probe_compiles(source: String, class_name_text: String,
-		declaration_line: int) -> bool:
-	var probe := _new_probe(source)
-	# The path GDScript gives a script with no file, under which the Logger
-	# reports the probe's errors.
-	var probe_path := "gdscript://%d.gd" % probe.get_instance_id()
+static func _keep_name_probe_compiles(source: String, file_path: String,
+		class_name_text: String, declaration_line: int) -> bool:
+	var probe := _new_probe(source, file_path)
+	var reported_path := _reported_path(probe)
 	var since_id := LogBuffer.get_cursor() - 1
-	var printed_errors := Engine.print_error_messages
 	# With printing off the Logger receives nothing.
-	Engine.print_error_messages = true
-	probe.reload(false)
-	Engine.print_error_messages = printed_errors
-	var captured := LogBuffer.take_script_errors_since(since_id, probe_path)
+	_compile(probe, true)
+	var captured := LogBuffer.take_script_errors_since(since_id, reported_path)
 	var errors: Array = captured["errors"]
 	if not bool(captured["complete"]) or errors.size() != 1:
 		return false

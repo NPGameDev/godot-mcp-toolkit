@@ -106,8 +106,13 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 
 	# The latch respects the since-cursor: a snapshot taken after the error
 	# resolves nothing (also the constant no-capture answer on 4.2-4.4).
+	var pre_cursor: int = LogBuffer.get_cursor() - 1
+	var probe_path := GDScriptSource.print_compile_errors(bad_source, "")
 	var post_cursor: int = LogBuffer.get_cursor() - 1
-	testing.eq(LogBuffer.find_script_error_line_since(post_cursor), -1,
+	if LogBuffer.uses_logger_api():
+		testing.eq(LogBuffer.find_script_error_line_since(pre_cursor, probe_path), 6,
+				"since-cursor before the error → the error's line")
+	testing.eq(LogBuffer.find_script_error_line_since(post_cursor, probe_path), -1,
 			"since-cursor after the error → -1")
 	print("")
 
