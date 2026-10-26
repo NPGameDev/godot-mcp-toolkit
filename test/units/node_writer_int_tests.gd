@@ -1,14 +1,10 @@
 @tool
 extends RefCounted
-## Node-side writers and JSON numbers on int properties: node.set_property (single
-## and batch), scene.instantiate's per-instance properties and node.manage
-## duplicate's properties. JSON numbers arrive as floats, and the editor stores a
-## float as given on a node whose script is not @tool, so an unconverted write saves
-## as `hp = 100.0`. The placeholder_like_node.gd fixture stands in for that node;
-## each group drives the handler with a whole float and with a fraction. Later
-## groups cover the batch response's top-level note, a clamp that follows the fit
-## and an inspector group named like the property, then a bare path on a Resource
-## property. The handlers run on a standalone tree, so no editor is needed; the undo
+## The node-side writers (node.set_property single and batch, scene.instantiate's
+## and node.manage duplicate's properties) on a node whose script is not @tool,
+## which the placeholder_like_node.gd fixture stands in for: a JSON float on an int
+## property stays an int, and a bare path on a Resource property is refused and not
+## stored. The handlers run on a standalone tree, so no editor is needed; the undo
 ## builder runs as its documented headless no-op.
 
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
@@ -30,6 +26,12 @@ static func run(testing) -> void:
 	_test_set_property_bare_res_path(testing)
 	_test_set_property_bare_uid_and_user_paths(testing)
 	_test_set_property_bare_path_on_placeholder(testing)
+	_test_batch_bare_path_on_placeholder(testing)
+	_test_batch_bare_uid_path(testing)
+	_test_instantiate_bare_path_on_placeholder(testing)
+	_test_instantiate_bare_user_path(testing)
+	_test_duplicate_bare_path_on_placeholder(testing)
+	_test_duplicate_bare_user_path(testing)
 
 
 static func _test_set_property_single(testing) -> void:
@@ -287,28 +289,156 @@ static func _test_set_property_bare_uid_and_user_paths(testing) -> void:
 # a Texture2D export, so a check that reads the value back cannot see the bare path.
 static func _test_set_property_bare_path_on_placeholder(testing) -> void:
 	testing.begin("node.set_property refuses a bare res:// path on a placeholder")
-	var root := Node.new()
-	root.name = "Root"
-	var holder := _node_with_source(testing, "Holder", root, "\n".join([
-		"extends Node",
-		"var _values := {}",
-		"func _get_property_list() -> Array[Dictionary]:",
-		"\treturn [{\"name\": \"icon\", \"type\": TYPE_OBJECT,",
-		"\t\t\"hint\": PROPERTY_HINT_RESOURCE_TYPE, \"hint_string\": \"Texture2D\",",
-		"\t\t\"usage\": PROPERTY_USAGE_DEFAULT}]",
-		"func _set(property: StringName, value: Variant) -> bool:",
-		"\tif property == &\"icon\":",
-		"\t\t_values[property] = value",
-		"\t\treturn true",
-		"\treturn false",
-		"func _get(property: StringName) -> Variant:",
-		"\treturn _values.get(property)",
-		"",
-	]))
+	var root := _scene_with_pod()
+	var pod := root.get_node("Pod")
 
-	var response := NodeCommands._set_property_scalar_single(holder, "Holder", "icon", TEXTURE_PATH)
+	var response := NodeCommands._set_property_scalar_single(pod, "Pod", "icon", TEXTURE_PATH)
 	testing.eq(str(response.get("code", "")), "INVALID_VALUE", "bare res:// path → INVALID_VALUE")
-	testing.eq(holder.get("icon"), null, "the placeholder doesn't store the String")
+	testing.eq(pod.get("icon"), null, "the placeholder doesn't store the String")
+
+	root.free()
+	print("")
+
+
+static func _test_batch_bare_path_on_placeholder(testing) -> void:
+	testing.begin("node.set_property batch fails a bare res:// path on a placeholder")
+	var root := _scene_with_pod()
+	var pod := root.get_node("Pod")
+	var server := _server_with_undo_helpers(testing)
+
+	var response := NodeCommands._batch_set_properties(server, root, [
+		{"node_path": "Pod", "property": "icon", "value": TEXTURE_PATH},
+		{"node_path": "Pod", "property": "hp", "value": 7},
+	])
+	var results: Array = response.get("results", [])
+	var icon_entry: Dictionary = results[0] if results.size() > 0 else {}
+	var hp_entry: Dictionary = results[1] if results.size() > 1 else {}
+	testing.ok(not bool(icon_entry.get("success", true)), "bare res:// path → entry failure")
+	testing.eq(str(icon_entry.get("error", "")),
+			"property 'icon' expects a Resource, not a bare string path. Use "
+			+ "{\"type\": \"Resource\", \"path\": \"res://test/fixtures/placeholder_texture.tres\"}"
+			+ " as the value.",
+			"the entry error names the tagged form with the same path")
+	testing.eq(pod.get("icon"), null, "the placeholder doesn't store the String")
+	testing.ok(bool(hp_entry.get("success", false)), "the other entry → success")
+	_expect_int(testing, pod.get("hp"), 7, "the other entry's 7")
+
+	server.get("undo_helpers").free()
+	server.free()
+	root.free()
+	print("")
+
+
+# The UID is registered here and removed before the assertions.
+static func _test_batch_bare_uid_path(testing) -> void:
+	testing.begin("node.set_property batch fails a bare uid:// path")
+	var root := _scene_with_pod()
+	var pod := root.get_node("Pod")
+	var server := _server_with_undo_helpers(testing)
+	var uid := ResourceUID.create_id()
+	ResourceUID.add_id(uid, TEXTURE_PATH)
+
+	var response := NodeCommands._batch_set_properties(server, root,
+			[{"node_path": "Pod", "property": "icon", "value": ResourceUID.id_to_text(uid)}])
+	ResourceUID.remove_id(uid)
+	var entry := _first_result(response)
+	testing.ok(not bool(entry.get("success", true)), "bare uid:// → entry failure")
+	testing.ok(str(entry.get("error", "")).contains(
+			"{\"type\": \"Resource\", \"path\": \"%s\"}" % TEXTURE_PATH),
+			"the entry error gives the tagged form with the path the UID names")
+	testing.eq(pod.get("icon"), null, "the placeholder doesn't store the String")
+
+	server.get("undo_helpers").free()
+	server.free()
+	root.free()
+	print("")
+
+
+static func _test_instantiate_bare_path_on_placeholder(testing) -> void:
+	testing.begin("scene.instantiate reports a bare res:// path on a placeholder")
+	var owner_root := Node.new()
+	owner_root.name = "Outer"
+
+	var response := SceneCommands._batch_instantiate(
+			null, owner_root, owner_root, _packed_pod(testing), "res://pod.tscn", ".",
+			[{"name": "Bare", "properties": {"icon": TEXTURE_PATH, "hp": 8}}])
+	testing.eq(response.get("count"), 1, "the instance is created")
+	var results: Array = response.get("results", [])
+	var row: Dictionary = results[0] if not results.is_empty() else {}
+	var property_errors: Array = row.get("property_errors", [])
+	testing.eq(property_errors.size(), 1, "bare res:// path → one property error")
+	var error_row: Dictionary = property_errors[0] if not property_errors.is_empty() else {}
+	testing.eq(str(error_row.get("property", "")), "icon", "the error row names icon")
+	testing.eq(str(error_row.get("error", "")),
+			"property 'icon' expects a Resource, not a bare string path. Use "
+			+ "{\"type\": \"Resource\", \"path\": \"res://test/fixtures/placeholder_texture.tres\"}"
+			+ " as the value.",
+			"the error names the tagged form with the same path")
+	var bare := owner_root.get_node_or_null("Bare")
+	testing.ok(bare != null, "the instance is in the tree")
+	if bare != null:
+		testing.eq(bare.get("icon"), null, "the placeholder doesn't store the String")
+		_expect_int(testing, bare.get("hp"), 8, "the other key's 8")
+
+	owner_root.free()
+	print("")
+
+
+static func _test_instantiate_bare_user_path(testing) -> void:
+	testing.begin("scene.instantiate reports a bare user:// path")
+	var owner_root := Node.new()
+	owner_root.name = "Outer"
+
+	var response := SceneCommands._batch_instantiate(
+			null, owner_root, owner_root, _packed_pod(testing), "res://pod.tscn", ".",
+			[{"name": "Bare", "properties": {"icon": "user://icon.tres"}}])
+	var results: Array = response.get("results", [])
+	var row: Dictionary = results[0] if not results.is_empty() else {}
+	var property_errors: Array = row.get("property_errors", [])
+	testing.eq(property_errors.size(), 1, "bare user:// → one property error")
+	var error_row: Dictionary = property_errors[0] if not property_errors.is_empty() else {}
+	testing.ok(str(error_row.get("error", "")).contains("only a res:// resource can be bound"),
+			"the error refuses the user:// file")
+	var bare := owner_root.get_node_or_null("Bare")
+	testing.ok(bare != null and bare.get("icon") == null,
+			"the placeholder doesn't store the String")
+
+	owner_root.free()
+	print("")
+
+
+static func _test_duplicate_bare_path_on_placeholder(testing) -> void:
+	testing.begin("node.manage duplicate refuses a bare res:// path on a placeholder")
+	var root := _scene_with_pod()
+	var pod := root.get_node("Pod")
+
+	var response := NodeCommands._manage_duplicate(root, pod, "Pod",
+			{"new_name": "Copy", "properties": {"icon": TEXTURE_PATH}})
+	testing.eq(str(response.get("code", "")), "INVALID_PARAMS", "bare res:// path → INVALID_PARAMS")
+	testing.eq(str(response.get("error", "")),
+			"property 'icon' expects a Resource, not a bare string path. Use "
+			+ "{\"type\": \"Resource\", \"path\": \"res://test/fixtures/placeholder_texture.tres\"}"
+			+ " as the value.",
+			"the error names the tagged form with the same path")
+	var copy := root.get_node_or_null("Copy")
+	testing.ok(copy == null or copy.get("icon") == null, "the copy doesn't store the String")
+
+	root.free()
+	print("")
+
+
+static func _test_duplicate_bare_user_path(testing) -> void:
+	testing.begin("node.manage duplicate refuses a bare user:// path")
+	var root := _scene_with_pod()
+	var pod := root.get_node("Pod")
+
+	var response := NodeCommands._manage_duplicate(root, pod, "Pod",
+			{"new_name": "Copy", "properties": {"icon": "user://icon.tres"}})
+	testing.eq(str(response.get("code", "")), "INVALID_PARAMS", "bare user:// → INVALID_PARAMS")
+	testing.ok(str(response.get("error", "")).contains("only a res:// resource can be bound"),
+			"the error refuses the user:// file")
+	var copy := root.get_node_or_null("Copy")
+	testing.ok(copy == null or copy.get("icon") == null, "the copy doesn't store the String")
 
 	root.free()
 	print("")
@@ -337,6 +467,18 @@ static func _scene_with_pod() -> Node:
 	pod.set_script(PlaceholderLikeNode)
 	root.add_child(pod)
 	return root
+
+
+## A packed sub-scene whose root "Pod" carries the placeholder-like script;
+## [param testing] records the pack.
+static func _packed_pod(testing) -> PackedScene:
+	var sub_root := Node.new()
+	sub_root.name = "Pod"
+	sub_root.set_script(PlaceholderLikeNode)
+	var packed := PackedScene.new()
+	testing.eq(packed.pack(sub_root), OK, "sub-scene packs")
+	sub_root.free()
+	return packed
 
 
 ## A stand-in for the editor server: the batch writer records undo through its

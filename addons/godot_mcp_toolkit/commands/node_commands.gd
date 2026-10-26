@@ -415,6 +415,15 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 				"success": false, "error": str(coerced["_coerce_error"])})
 			continue
 
+		# Refused before the set, as the single write does: a placeholder would store
+		# the String.
+		var bare_path := BarePathCheck.bare_path_message(prop, raw_val,
+				int(DeclaredTypeFitter.property_entry(node, prop).get("type", TYPE_NIL)))
+		if not bare_path.is_empty():
+			results.append({"node_path": np, "property": prop,
+				"success": false, "error": bare_path + "."})
+			continue
+
 		var old_value = node.get(prop)
 		if typeof(old_value) == TYPE_NODE_PATH and typeof(coerced) == TYPE_STRING:
 			coerced = NodePath(str(coerced))
@@ -969,6 +978,11 @@ static func _manage_duplicate(
 			var coerced = Coerce.coerce_value_hint(props_raw[key], existing)
 			if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 				return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
+			# Refused before the set: a placeholder would store the String.
+			var bare_path := BarePathCheck.bare_path_message(prop_name, props_raw[key],
+					int(DeclaredTypeFitter.property_entry(dup, prop_name).get("type", TYPE_NIL)))
+			if not bare_path.is_empty():
+				return MCPToolkitError.fail("INVALID_PARAMS", bare_path + ".")
 			var fit := DeclaredTypeFitter.fit(dup, prop_name, coerced)
 			if not str(fit["error"]).is_empty():
 				return MCPToolkitError.fail("INVALID_PARAMS", str(fit["error"]))

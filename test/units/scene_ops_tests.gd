@@ -7,6 +7,7 @@ extends RefCounted
 
 const _SafeSceneOps := preload("res://addons/godot_mcp_toolkit/scene/mcp_toolkit_safe_scene_ops.gd")
 const _SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
+const _PlaceholderLikeNode := preload("res://test/fixtures/placeholder_like_node.gd")
 const _INSTANCED_SCENE_FIXTURE := "user://scene_instantiate_fixture.tscn"
 const _BINARY_SCENE_FIXTURE := "user://scene_instantiate_fixture.scn"
 const _NON_SCENE_FIXTURE := "user://scene_instantiate_fixture.tres"
@@ -314,25 +315,7 @@ static func _test_create_node_bare_uid_and_user_paths(testing) -> void:
 # a Texture2D export, so a check that reads the value back cannot see the bare path.
 static func _test_create_node_bare_path_on_placeholder(testing) -> void:
 	testing.begin("scene.create_node fails a bare res:// path on a placeholder")
-	var node_script := GDScript.new()
-	node_script.source_code = "\n".join([
-		"extends Node",
-		"var _values := {}",
-		"func _get_property_list() -> Array[Dictionary]:",
-		"\treturn [{\"name\": \"icon\", \"type\": TYPE_OBJECT,",
-		"\t\t\"hint\": PROPERTY_HINT_RESOURCE_TYPE, \"hint_string\": \"Texture2D\",",
-		"\t\t\"usage\": PROPERTY_USAGE_DEFAULT}]",
-		"func _set(property: StringName, value: Variant) -> bool:",
-		"\tif property == &\"icon\":",
-		"\t\t_values[property] = value",
-		"\t\treturn true",
-		"\treturn false",
-		"func _get(property: StringName) -> Variant:",
-		"\treturn _values.get(property)",
-		"",
-	])
-	testing.eq(node_script.reload(), OK, "placeholder-like node script compiles")
-	var instance: Node = node_script.new()
+	var instance: Node = _PlaceholderLikeNode.new()
 
 	var failed := _inline_write_failures(
 			instance, {"icon": "res://test/fixtures/placeholder_texture.tres"})

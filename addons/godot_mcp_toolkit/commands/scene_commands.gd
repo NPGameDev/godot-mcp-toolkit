@@ -844,6 +844,14 @@ static func _batch_instantiate(
 					if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 						property_errors.append({"property": prop_name, "error": str(coerced["_coerce_error"])})
 						continue
+					# Reported, not set: a placeholder would store the String.
+					var declared_type := int(
+							DeclaredTypeFitter.property_entry(instance, prop_name).get("type", TYPE_NIL))
+					var bare_path := BarePathCheck.bare_path_message(
+							prop_name, props[key], declared_type)
+					if not bare_path.is_empty():
+						property_errors.append({"property": prop_name, "error": bare_path + "."})
+						continue
 					var fit := DeclaredTypeFitter.fit(instance, prop_name, coerced)
 					if not str(fit["error"]).is_empty():
 						property_errors.append({"property": prop_name, "error": str(fit["error"])})
