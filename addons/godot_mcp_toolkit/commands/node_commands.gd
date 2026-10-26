@@ -931,6 +931,17 @@ static func _manage_duplicate(
 	if node == root:
 		return MCPToolkitError.fail("INVALID_PATH", "cannot duplicate the scene root")
 
+	# Refused before the copy is made, so a refusal leaves the scene as it was: a
+	# placeholder would store the String. The copy declares the source's properties.
+	var props_raw: Variant = parameters.get("properties", null)
+	if typeof(props_raw) == TYPE_DICTIONARY:
+		for key: Variant in (props_raw as Dictionary):
+			var prop_name := str(key)
+			var bare_path := BarePathCheck.bare_path_message(prop_name, props_raw[key],
+					int(DeclaredTypeFitter.property_entry(node, prop_name).get("type", TYPE_NIL)))
+			if not bare_path.is_empty():
+				return MCPToolkitError.fail("INVALID_PARAMS", bare_path + ".")
+
 	var dup := node.duplicate(_DUPLICATE_DEFAULT_FLAGS | duplicate_from_editor_flag())
 	if dup == null:
 		return MCPToolkitError.fail("INTERNAL", "Node.duplicate() returned null for %s" % node_path)
@@ -969,7 +980,6 @@ static func _manage_duplicate(
 	# Apply optional property overrides (position, scale, etc.).
 	# Use coerce_value_hint so untagged dicts like {x:200,y:300}
 	# are inferred as Vector2/Vector3/Color from the property type.
-	var props_raw = parameters.get("properties", null)
 	var warnings: Array[String] = []
 	if typeof(props_raw) == TYPE_DICTIONARY:
 		for key in (props_raw as Dictionary):
@@ -978,11 +988,6 @@ static func _manage_duplicate(
 			var coerced = Coerce.coerce_value_hint(props_raw[key], existing)
 			if typeof(coerced) == TYPE_DICTIONARY and (coerced as Dictionary).has("_coerce_error"):
 				return MCPToolkitError.fail("INVALID_PARAMS", str(coerced["_coerce_error"]))
-			# Refused before the set: a placeholder would store the String.
-			var bare_path := BarePathCheck.bare_path_message(prop_name, props_raw[key],
-					int(DeclaredTypeFitter.property_entry(dup, prop_name).get("type", TYPE_NIL)))
-			if not bare_path.is_empty():
-				return MCPToolkitError.fail("INVALID_PARAMS", bare_path + ".")
 			var fit := DeclaredTypeFitter.fit(dup, prop_name, coerced)
 			if not str(fit["error"]).is_empty():
 				return MCPToolkitError.fail("INVALID_PARAMS", str(fit["error"]))

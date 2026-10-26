@@ -20,9 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `user://` path is refused, since only a project resource can be bound.
   `node_set_property` (single and batch), `scene_create_node`, and the
   `properties` of `scene_instantiate` and of a `node_manage` duplicate refuse the
-  same paths with the same message. Before, only the single `node_set_property`
-  and `scene_create_node` caught a bare path, and only a `res://` one, and a node
-  whose script isn't `@tool` stored the String.
+  same paths for a top-level property with the same message. Before, only the
+  single `node_set_property` and `scene_create_node` caught a bare path, and only
+  a `res://` one, and a node whose script isn't `@tool` stored the String.
   Reported and fixed by @benfeather
   ([#48](https://github.com/NPGameDev/godot-mcp-toolkit/issues/48),
   [#49](https://github.com/NPGameDev/godot-mcp-toolkit/pull/49)).

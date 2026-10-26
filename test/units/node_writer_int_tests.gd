@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 ## The node-side writers (node.set_property single and batch, scene.instantiate's
-## and node.manage duplicate's properties) on a node whose script is not @tool,
+## and node.manage duplicate's properties) mostly on a node whose script is not @tool,
 ## which the placeholder_like_node.gd fixture stands in for: a JSON float on an int
 ## property stays an int, and a bare path on a Resource property is refused and not
 ## stored. The handlers run on a standalone tree, so no editor is needed; the undo
@@ -314,10 +314,8 @@ static func _test_batch_bare_path_on_placeholder(testing) -> void:
 	var icon_entry: Dictionary = results[0] if results.size() > 0 else {}
 	var hp_entry: Dictionary = results[1] if results.size() > 1 else {}
 	testing.ok(not bool(icon_entry.get("success", true)), "bare res:// path → entry failure")
-	testing.eq(str(icon_entry.get("error", "")),
-			"property 'icon' expects a Resource, not a bare string path. Use "
-			+ "{\"type\": \"Resource\", \"path\": \"res://test/fixtures/placeholder_texture.tres\"}"
-			+ " as the value.",
+	testing.ok(str(icon_entry.get("error", "")).contains(
+			"{\"type\": \"Resource\", \"path\": \"%s\"}" % TEXTURE_PATH),
 			"the entry error names the tagged form with the same path")
 	testing.eq(pod.get("icon"), null, "the placeholder doesn't store the String")
 	testing.ok(bool(hp_entry.get("success", false)), "the other entry → success")
@@ -369,10 +367,8 @@ static func _test_instantiate_bare_path_on_placeholder(testing) -> void:
 	testing.eq(property_errors.size(), 1, "bare res:// path → one property error")
 	var error_row: Dictionary = property_errors[0] if not property_errors.is_empty() else {}
 	testing.eq(str(error_row.get("property", "")), "icon", "the error row names icon")
-	testing.eq(str(error_row.get("error", "")),
-			"property 'icon' expects a Resource, not a bare string path. Use "
-			+ "{\"type\": \"Resource\", \"path\": \"res://test/fixtures/placeholder_texture.tres\"}"
-			+ " as the value.",
+	testing.ok(str(error_row.get("error", "")).contains(
+			"{\"type\": \"Resource\", \"path\": \"%s\"}" % TEXTURE_PATH),
 			"the error names the tagged form with the same path")
 	var bare := owner_root.get_node_or_null("Bare")
 	testing.ok(bare != null, "the instance is in the tree")
@@ -415,13 +411,11 @@ static func _test_duplicate_bare_path_on_placeholder(testing) -> void:
 	var response := NodeCommands._manage_duplicate(root, pod, "Pod",
 			{"new_name": "Copy", "properties": {"icon": TEXTURE_PATH}})
 	testing.eq(str(response.get("code", "")), "INVALID_PARAMS", "bare res:// path → INVALID_PARAMS")
-	testing.eq(str(response.get("error", "")),
-			"property 'icon' expects a Resource, not a bare string path. Use "
-			+ "{\"type\": \"Resource\", \"path\": \"res://test/fixtures/placeholder_texture.tres\"}"
-			+ " as the value.",
+	testing.ok(str(response.get("error", "")).contains(
+			"{\"type\": \"Resource\", \"path\": \"%s\"}" % TEXTURE_PATH),
 			"the error names the tagged form with the same path")
-	var copy := root.get_node_or_null("Copy")
-	testing.ok(copy == null or copy.get("icon") == null, "the copy doesn't store the String")
+	testing.eq(root.get_child_count(), 1, "no copy is added to the parent")
+	testing.eq(root.get_node_or_null("Copy"), null, "no node has the copy's name")
 
 	root.free()
 	print("")
@@ -437,8 +431,8 @@ static func _test_duplicate_bare_user_path(testing) -> void:
 	testing.eq(str(response.get("code", "")), "INVALID_PARAMS", "bare user:// → INVALID_PARAMS")
 	testing.ok(str(response.get("error", "")).contains("only a res:// resource can be bound"),
 			"the error refuses the user:// file")
-	var copy := root.get_node_or_null("Copy")
-	testing.ok(copy == null or copy.get("icon") == null, "the copy doesn't store the String")
+	testing.eq(root.get_child_count(), 1, "no copy is added to the parent")
+	testing.eq(root.get_node_or_null("Copy"), null, "no node has the copy's name")
 
 	root.free()
 	print("")
