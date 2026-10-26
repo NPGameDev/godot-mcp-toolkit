@@ -157,7 +157,9 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 		response["runtime_failure"] = runtime_failure
 		match runtime_failure:
 			"registry_timeout":
-				if not EditorInterface.is_playing_scene():
+				var debugger_hint := _registry_timeout_hint(EditorInterface.is_playing_scene(),
+						_LogReader.get_debug_state(), _LogReader.get_break_reason())
+				if debugger_hint.is_empty():
 					# The game was playing when the poll began but has stopped — a
 					# ran-then-died soft path, framed as a runtime crash (it began
 					# running, so a compile error is unlikely). runtime_ready:false +
@@ -168,7 +170,7 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 					if not (diag["errors"] as Array).is_empty():
 						response["compilation_errors"] = diag["errors"]
 				else:
-					response["hint"] = "Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors."
+					response["hint"] = debugger_hint
 			"token_read_failed":
 				response["hint"] = "Could not read auth token — the token file may be missing or empty. Re-enable the plugin in Project Settings > Plugins."
 			"ws_connect_timeout":
@@ -384,3 +386,31 @@ static func _diagnose_startup(
 		),
 		"errors": errors,
 	}
+
+
+## The game_start hint when a runtime probe timed out waiting for the runtime's
+## registry entry while the editor still plays the game.
+##
+## Pure over its inputs so the decision is headless-unit-testable. [param is_playing]
+## is whether the editor plays the game, [param debug_state] the debug.state payload
+## ([code]{"active", "breaked", "can_debug"}[/code]) and [param break_reason] the
+## editor debugger's text for an error break, empty when it gave none. A game the
+## debugger stopped registers no runtime while stopped, so waiting is no help: an
+## error break (not [code]can_debug[/code]) needs a fix and a restart, never
+## debug_continue, which resumes a game whose script failed to load; a breakpoint
+## pause needs debug_continue. Returns that hint, the plain timeout hint when the debugger has not
+## stopped the game, or an empty String when the editor no longer plays it, for the
+## caller's startup diagnosis.
+static func _registry_timeout_hint(
+	is_playing: bool, debug_state: Dictionary, break_reason: String,
+) -> String:
+	if not is_playing:
+		return ""
+	# debug_state values are Variant at the payload boundary → coerce, never infer.
+	if bool(debug_state.get("breaked", false)):
+		if bool(debug_state.get("can_debug", false)):
+			return "The game is paused at a breakpoint; call debug_continue to resume."
+		var reason_clause := "" if break_reason.is_empty() else ": " + break_reason
+		return ("The game is paused at a script error and cannot continue, so waiting "
+				+ "won't help%s. Fix it, then game_stop and game_start.") % reason_clause
+	return "Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors."

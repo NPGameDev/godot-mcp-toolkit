@@ -1,6 +1,7 @@
 @tool
 extends RefCounted
-## Unit tests for the game.start startup-diagnosis helper _diagnose_startup (pure).
+## Unit tests for the game.start startup-diagnosis helpers _diagnose_startup and
+## _registry_timeout_hint (pure).
 ##
 ## The helper decides why a runtime probe found no live game, and must only claim a
 ## compilation failure when errors are actually captured AND the game never ran — an
@@ -18,6 +19,7 @@ const _VERSION_PAIR := "4.3"
 static func run(testing) -> void:
 	_test_diagnosis_quadrants(testing)
 	_test_file_tail_caveat(testing)
+	_test_registry_timeout_hint_follows_debugger(testing)
 
 
 ## The one compile claim: COMPILATION_FAILED only for errors-captured AND never-ran.
@@ -73,6 +75,33 @@ static func _test_file_tail_caveat(testing) -> void:
 	testing.ok(not str(logger["hint"]).contains(_VERSION_PAIR),
 		"logger source → no version text in hint")
 
+	print("")
+
+
+## The registry-timeout hint while the editor plays the game: a game the debugger
+## stopped registers no runtime while stopped, so the hint names the stop instead
+## of more time; a game the editor no longer plays gets no hint here, for the
+## startup diagnosis.
+static func _test_registry_timeout_hint_follows_debugger(testing) -> void:
+	testing.begin("game.start registry-timeout hint follows the debugger's stop")
+	var error_break := {"active": true, "breaked": true, "can_debug": false}
+	var breakpoint_pause := {"active": true, "breaked": true, "can_debug": true}
+	var running := {"active": true, "breaked": false, "can_debug": false}
+
+	testing.eq(PlaytestControl._registry_timeout_hint(true, error_break, "Parser Error: Unexpected token"),
+		"The game is paused at a script error and cannot continue, so waiting won't help: Parser Error: Unexpected token. Fix it, then game_stop and game_start.",
+		"an error break with the debugger's reason → the error-break hint with it")
+	testing.eq(PlaytestControl._registry_timeout_hint(true, error_break, ""),
+		"The game is paused at a script error and cannot continue, so waiting won't help. Fix it, then game_stop and game_start.",
+		"an error break without a reason → the error-break hint without it")
+	testing.eq(PlaytestControl._registry_timeout_hint(true, breakpoint_pause, ""),
+		"The game is paused at a breakpoint; call debug_continue to resume.",
+		"a breakpoint pause → the breakpoint hint")
+	testing.eq(PlaytestControl._registry_timeout_hint(true, running, ""),
+		"Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors.",
+		"the debugger has not stopped the game → the timeout hint")
+	testing.eq(PlaytestControl._registry_timeout_hint(false, error_break, "Parser Error: x"), "",
+		"the editor no longer plays the game → no hint, for the startup diagnosis")
 	print("")
 
 

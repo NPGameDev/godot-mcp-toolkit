@@ -67,6 +67,19 @@ static func clear_session_tracker() -> void:
 	_session_tracker_injected = false
 
 
+## Returns the latest debugger session's debug.state payload ([code]active[/code],
+## [code]breaked[/code], [code]can_debug[/code]); all false before a tracker is
+## injected.
+static func get_debug_state() -> Dictionary:
+	return _session_tracker.get_debug_state()
+
+
+## Returns the editor debugger's text for the error break the game is at, or an
+## empty String when there is none.
+static func get_break_reason() -> String:
+	return _session_tracker.get_break_reason()
+
+
 # -- Commands -----------------------------------------------------------------
 
 
@@ -187,12 +200,22 @@ static func _merge_debug_session_data(response: Dictionary,
 		return
 	response["debug_state"] = _session_tracker.get_debug_state()
 	var buf: Array = _session_tracker.get_error_buffer()
-	# Fallback: if _capture didn't fire (Godot's built-in debugger handles
-	# "error" messages before plugins see them), scan log lines for errors.
-	if buf.is_empty() and not all_lines.is_empty():
-		buf = _scan_lines_for_errors(all_lines)
+	# The editor's own debugger takes the engine's error messages before a plugin's
+	# capture, so the buffer usually holds at most an error break's entry, which
+	# names no file or line. A runtime error's log lines carry both, so they win.
+	if _holds_only_break_entries(buf) and not all_lines.is_empty():
+		var scanned := _scan_lines_for_errors(all_lines)
+		if not scanned.is_empty():
+			buf = scanned
 	if not buf.is_empty():
 		response["error_buffer"] = buf
+
+
+static func _holds_only_break_entries(entries: Array) -> bool:
+	for entry: Dictionary in entries:
+		if str(entry.get("type", "")) != "break":
+			return false
+	return true
 
 
 ## Scan log lines for error patterns and build synthetic error_buffer entries.

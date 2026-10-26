@@ -38,7 +38,11 @@ static func run(testing: Testing) -> void:
 	_test_build_after_blocked_session_keeps_elsewhere(testing)
 	_test_reader_merges_debug_state_only_from_injected_tracker(testing)
 	_test_session_state_follows_session_events(testing)
-	_test_break_records_generic_entry_only_when_needed(testing)
+	_test_break_records_entry_only_on_error_break(testing)
+	_test_break_reason_after_break_completes_entry(testing)
+	_test_break_reason_before_break_reaches_entry(testing)
+	_test_break_reason_ends_with_the_break(testing)
+	_test_break_reason_reaches_entry_in_either_signal_order(testing)
 	_test_debugger_error_payload_is_decoded(testing)
 	_test_error_buffer_read_returns_a_copy(testing)
 	_test_error_buffer_keeps_latest_fifty(testing)
@@ -281,26 +285,110 @@ static func _test_session_state_follows_session_events(testing: Testing) -> void
 	print("")
 
 
-static func _test_break_records_generic_entry_only_when_needed(testing: Testing) -> void:
-	testing.begin("debug-session tracker break fallback entry")
+static func _test_break_records_entry_only_on_error_break(testing: Testing) -> void:
+	testing.begin("debug-session tracker break entry: error break only")
+	var paused_tracker: RefCounted = _new_tracker(true)
+	if paused_tracker == null:
+		return
+	paused_tracker.call("on_session_started")
+	paused_tracker.call("on_session_breaked", true)
+	var after_breakpoint: Array = paused_tracker.call("get_error_buffer")
+	var tracker: RefCounted = _new_tracker(true)
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	var after_error_break: Array = tracker.call("get_error_buffer")
+	tracker.call("on_session_breaked", false)
+	var after_second: Array = tracker.call("get_error_buffer")
+
+	testing.eq(after_breakpoint.size(), 0, "a breakpoint pause → no entry")
+	testing.eq(after_error_break.size(), 1, "an error break with an empty buffer → one entry")
+	var entry: Dictionary = after_error_break[0] if after_error_break.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"an error break with no reason text → the break entry's message without the error clause")
+	testing.eq(str(entry.get("type", "")), "break", "the break entry's type")
+	testing.eq(str(entry.get("source", "?")), "", "the break entry names no file")
+	testing.eq(int(entry.get("line", -1)), 0, "the break entry names no line")
+	testing.eq(after_second.size(), 1, "a second error break with an entry buffered → no new entry")
+	print("")
+
+
+static func _test_break_reason_after_break_completes_entry(testing: Testing) -> void:
+	testing.begin("debug-session tracker error break, then the editor's reason")
 	var tracker: RefCounted = _new_tracker(true)
 	if tracker == null:
 		return
 	tracker.call("on_session_started")
 	tracker.call("on_session_breaked", false)
-	var after_undebuggable: Array = tracker.call("get_error_buffer")
-	tracker.call("on_session_breaked", true)
-	var after_debuggable: Array = tracker.call("get_error_buffer")
-	tracker.call("on_session_breaked", true)
-	var after_second: Array = tracker.call("get_error_buffer")
+	tracker.call("on_debugger_node_breaked", true, false, "Parser Error: Unexpected \"Identifier\" in class body.", false)
+	var buffer: Array = tracker.call("get_error_buffer")
+	var reason: String = tracker.call("get_break_reason")
 
-	testing.eq(after_undebuggable.size(), 0, "a break the debugger cannot step from → no entry")
-	testing.eq(after_debuggable.size(), 1, "a debuggable break with an empty buffer → one entry")
-	var entry: Dictionary = after_debuggable[0] if after_debuggable.size() == 1 else {}
-	testing.eq(str(entry.get("message", "")), "Game paused at error (details in editor Errors tab or log)",
-			"the break entry's message")
-	testing.eq(str(entry.get("type", "")), "break", "the break entry's type")
-	testing.eq(after_second.size(), 1, "a second debuggable break with an entry buffered → no new entry")
+	testing.eq(buffer.size(), 1, "an error break, then its reason → one entry")
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from: Parser Error: Unexpected \"Identifier\" in class body. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"a reason after the break → the entry's message carries it")
+	testing.eq(reason, "Parser Error: Unexpected \"Identifier\" in class body",
+			"the reason, without its trailing period")
+	print("")
+
+
+static func _test_break_reason_before_break_reaches_entry(testing: Testing) -> void:
+	testing.begin("debug-session tracker handlers called directly: the editor's reason, then the error break")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_debugger_node_breaked", true, false, "Parser Error: x", false)
+	tracker.call("on_session_breaked", false)
+	var buffer: Array = tracker.call("get_error_buffer")
+
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from: Parser Error: x. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"a reason before the break → the entry's message carries it")
+	print("")
+
+
+static func _test_break_reason_ends_with_the_break(testing: Testing) -> void:
+	testing.begin("debug-session tracker forgets the reason once the game continues or stops")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_breaked", true, false, "Parser Error: x", false)
+	tracker.call("on_session_continued")
+	var after_continue: String = tracker.call("get_break_reason")
+	tracker.call("on_debugger_node_breaked", true, false, "Parser Error: later", false)
+	var buffer: Array = tracker.call("get_error_buffer")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_breaked", true, false, "Parser Error: y", false)
+	tracker.call("on_session_stopped")
+	var after_stop: String = tracker.call("get_break_reason")
+
+	testing.eq(after_continue, "", "continued → no reason")
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from: Parser Error: x. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"a reason after the game continued → the earlier break's entry unchanged")
+	testing.eq(after_stop, "", "stopped → no reason")
+	print("")
+
+
+## One emission of the debugger node's breaked reaches the tracker twice: through the
+## session, which re-emits it as its own breaked(can_debug), and straight from the
+## node with the reason. The editor connects the session first, so its breaked
+## usually arrives before the reason; the entry carries the reason either way.
+static func _test_break_reason_reaches_entry_in_either_signal_order(testing: Testing) -> void:
+	testing.begin("debug-session tracker error break through the node's and session's signals")
+	var session_first := _entry_message_after_node_break(true)
+	var reason_first := _entry_message_after_node_break(false)
+
+	var expected := "Game paused at a script error it cannot continue from: Parser Error: Unexpected token. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start."
+	testing.eq(session_first, expected, "the session's breaked before the node's reason → the entry carries the reason")
+	testing.eq(reason_first, expected, "the node's reason before the session's breaked → the entry carries the reason")
 	print("")
 
 
@@ -433,6 +521,34 @@ static func _export_project(tracker: RefCounted, flags: int) -> void:
 		tracker.call("note_remote_debug_deploy")
 
 
+## Emits an error break on a stand-in debugger node wired to a new tracker as the
+## debugger plugin wires the live node and session, and returns the message of the
+## one entry the tracker then buffers, or an empty String when it buffers another
+## count. [param session_heard_first] connects the session to the node before the
+## tracker, as the editor does.
+static func _entry_message_after_node_break(session_heard_first: bool) -> String:
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return ""
+	var node := _DebuggerNodeStandIn.new()
+	var session := _DebuggerSessionStandIn.new()
+	var node_handler := Callable(tracker, &"on_debugger_node_breaked")
+	if session_heard_first:
+		node.breaked.connect(session.on_node_breaked)
+		node.breaked.connect(node_handler)
+	else:
+		node.breaked.connect(node_handler)
+		node.breaked.connect(session.on_node_breaked)
+	session.breaked.connect(Callable(tracker, &"on_session_breaked"))
+	tracker.call("on_session_started")
+	node.breaked.emit(true, false, "Parser Error: Unexpected token.", false)
+	var buffer: Array = tracker.call("get_error_buffer")
+	if buffer.size() != 1:
+		return ""
+	var entry: Dictionary = buffer[0]
+	return str(entry.get("message", ""))
+
+
 ## An "error" debugger message's payload: the engine's fixed fields, then an empty
 ## call stack.
 static func _error_payload(error: String, error_descr: String, is_warning: bool) -> Array:
@@ -479,3 +595,26 @@ class _EditorPortStandIn:
 
 	func is_playing_scene() -> bool:
 		return _playing
+
+
+# The editor's debugger node, as far as its breaked signal goes: the reason text
+# rides with the break.
+class _DebuggerNodeStandIn:
+	extends RefCounted
+
+	signal breaked(reallydid: bool, can_debug: bool, reason: String, has_stackdump: bool)
+
+
+# The editor's debugger session: re-emits its node's break without the reason, as
+# the engine's EditorDebuggerSession does.
+class _DebuggerSessionStandIn:
+	extends RefCounted
+
+	signal breaked(can_debug: bool)
+	signal continued
+
+	func on_node_breaked(really_did: bool, can_debug: bool, _reason: String, _has_stackdump: bool) -> void:
+		if really_did:
+			breaked.emit(can_debug)
+		else:
+			continued.emit()
