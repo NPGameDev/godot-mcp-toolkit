@@ -232,7 +232,7 @@ So you do NOT need to split dependent operations across messages.
 | # | File | Title | Tests | Tools Covered | Dependencies |
 |---|------|-------|-------|---------------|--------------|
 | 0 | [00-environment.md](Sections/00-environment.md) | Environment Detection | 7 | project_get_settings, asset_list, discover_tools | None |
-| 1 | [01-scaffolding.md](Sections/01-scaffolding.md) | Scaffolding & Core Files | 10 | folder_create, script_write, resource_write, scene_create, scene_open | S0 |
+| 1 | [01-scaffolding.md](Sections/01-scaffolding.md) | Scaffolding & Core Files | 11 | folder_create, script_write, resource_write, scene_create, scene_open | S0 |
 | 2 | [02-scene-tree.md](Sections/02-scene-tree.md) | Scene Tree & Node Creation | 21 | scene_create_node, scene_instantiate, scene_get_tree, editor_save_scene | S1 |
 | 3 | [03-node-properties.md](Sections/03-node-properties.md) | Node Properties & Methods | 35 | node_set/get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout | S2 |
 | 4 | [04-node-management.md](Sections/04-node-management.md) | Node Management | 19 | node_manage, node_groups | S2 |

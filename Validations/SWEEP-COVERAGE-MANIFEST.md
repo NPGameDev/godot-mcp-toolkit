@@ -103,7 +103,7 @@ C24–C26 & C29 in §§26–27).
 | Tool Name | Sweep Tests | Guard Tests | Combo Chain | Hint Checks | DX Fix Ref | Notes |
 |---|---|---|---|---|---|---|
 | resource.load | 14, 54a-verify, 54k-verify | — | C1, C12 | — | — | |
-| resource.write | 4, 5, 6 | — | C1, C12 | — | — | |
+| resource.write | 1.5, 1.6, 1.7, 1.11 | ✓ (1.11 bare res://, uid://, user:// path on a Resource property) | C1, C12 | ✓ (1.11 tagged-form hint) | toolkit #48 | |
 | resource.delete | — | — | C1, C12 | — | — | Only in combos |
 
 ### File Operations (1 tool)
