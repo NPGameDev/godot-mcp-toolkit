@@ -42,6 +42,7 @@ const SetupStepTracker := preload("res://addons/godot_mcp_toolkit/core/setup_ste
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const EditorAccess := preload("res://addons/godot_mcp_toolkit/core/editor_access.gd")
 const ResponseLimits := preload("res://addons/godot_mcp_toolkit/core/response_limits.gd")
+const CompileProbe := preload("res://addons/godot_mcp_toolkit/core/compile_probe.gd")
 const GDScriptSource := preload("res://addons/godot_mcp_toolkit/core/gdscript_source.gd")
 const ScriptReload := preload("res://addons/godot_mcp_toolkit/core/script_reload.gd")
 const RuntimeOptOut := preload("res://addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd")

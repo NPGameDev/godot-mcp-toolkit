@@ -4,6 +4,7 @@ extends RefCounted
 ## without the editor. A group whose result depends on the running engine asserts
 ## that engine's value, so each engine in the cross-version matrix checks its own.
 
+const Testing := preload("res://test/units/testing.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const Helpers := preload("res://addons/godot_mcp_toolkit/commands/editor_helpers.gd")
@@ -27,6 +28,7 @@ static func run(testing) -> void:
 	_test_validate_gdscript_line_emission(testing)
 	_test_rename_class_name(testing)
 	_test_probe_source(testing)
+	_test_strip_probe_path(testing)
 	_test_groups_property_rejection(testing)
 	_test_user_path_monitor(testing)
 	_test_editor_refresh_reload_filter(testing)
@@ -104,10 +106,21 @@ static func _test_validate_gdscript_line_emission(testing) -> void:
 		testing.ok(not error_diagnostic.has("line"),
 				"file-tail capture → line omitted (never a fabricated 0)")
 
-	# The latch respects the since-cursor: a snapshot taken after the error
+	# The latch respects the since-cursor. The bad source compiles once more
+	# through the diagnostics seam, which returns the path its errors latch
+	# under: a snapshot before that compile resolves the line, one after it
 	# resolves nothing (also the constant no-capture answer on 4.2-4.4).
+	var decisive_source := str(GDScriptSource.judge(bad_source, "")["decisive_source"])
+	var pre_cursor: int = LogBuffer.get_cursor() - 1
+	var probe_path := GDScriptSource.print_compile_errors(decisive_source, "")
 	var post_cursor: int = LogBuffer.get_cursor() - 1
-	testing.eq(LogBuffer.find_script_error_line_since(post_cursor), -1,
+	if LogBuffer.uses_logger_api():
+		testing.eq(LogBuffer.find_script_error_line_since(pre_cursor, probe_path), 6,
+				"since-cursor before the error → the real line")
+	else:
+		testing.eq(LogBuffer.find_script_error_line_since(pre_cursor, probe_path), -1,
+				"file-tail capture → -1 whatever the cursor")
+	testing.eq(LogBuffer.find_script_error_line_since(post_cursor, probe_path), -1,
 			"since-cursor after the error → -1")
 	print("")
 
@@ -167,6 +180,21 @@ static func _test_probe_source(testing) -> void:
 	testing.eq(GDScriptSource.strip_probe_suffix("Class \"Hé__McpProbe\" is not abstract"),
 			"Class \"Hé\" is not abstract", "suffix → removed, non-ASCII name intact")
 	testing.eq(GDScriptSource.class_name_conflict("", ""), "", "no name → no clash")
+	print("")
+
+
+# A copy compiled beside the file carries the file's path plus a suffix with its
+# instance id, which is negative for a RefCounted.
+static func _test_strip_probe_path(testing: Testing) -> void:
+	testing.begin("GDScriptSource.strip_probe_suffix: a message about the copy names the file")
+	testing.eq(GDScriptSource.strip_probe_suffix(
+			"Parse Error: Unexpected \"=\". (res://dir/player.gd.__mcp_probe_-9223371996019030486.gd:3)"),
+			"Parse Error: Unexpected \"=\". (res://dir/player.gd:3)",
+			"a negative instance id → the file's own path")
+	testing.eq(GDScriptSource.strip_probe_suffix(
+			"res://dir/player.gd.__mcp_probe_123.gd:3 - Class \"Player__McpProbe\" is not abstract"),
+			"res://dir/player.gd:3 - Class \"Player\" is not abstract",
+			"a positive instance id and the class suffix → the file's path and class")
 	print("")
 
 

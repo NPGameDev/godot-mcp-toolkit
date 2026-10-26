@@ -57,6 +57,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns `debug_state` and any caught errors, with a note on how to get the log
   lines: at an error break, stop the game and read again; at a breakpoint pause,
   continue the game, and it sends its own log.
+- `script_check`, `script_write`, `script_edit` and the extension edit check no
+  longer report a valid script as not compiling when it uses a relative
+  `preload()` or `extends`, or when it lives under `res://addons/` and the project
+  raises a warning to an error that the addons folder exempts. Before, a script
+  that failed this way was also refused its in-place reload. Error text now names
+  the file itself instead of `gdscript://…`. Repeated checks no longer keep their
+  compiled copies alive, except for a script that declares a `static var`, which
+  the engine keeps cached. Reported by @pragmabits
+  ([#98](https://github.com/NPGameDev/godot-mcp-toolkit/issues/98)).
 
 ## [1.1.0] - 2026-10-25
 
