@@ -1,5 +1,7 @@
 # Warn, don't strip, binary-token GDScript exports
 
+**Status:** Superseded by [ADR 0028](0028-order-export-strip-before-gdscript-tokenizer.md) (2026-10-26)
+
 Godot's default Script Export Mode (Binary tokens / compressed, 4.3+) compiles
 every `.gd` to `.gdc` in the built-in `EditorExportGDScript` plugin, which is
 registered before any addon and saves the `.gdc` + breaks the per-file export loop

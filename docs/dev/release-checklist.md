@@ -25,9 +25,9 @@ outside the repo** so artifacts are never committed.
 > **Methodology gotcha (do not skip).** Judge what actually shipped by counting **`Storing
 > File:` lines in the export log**, NOT a raw `grep -a` of the `.pck`:
 > `global_script_class_cache.cfg` embeds every addon script path as plaintext and produces
-> false "leaked" readings. In binary modes the addon/extension `.gdc` are **expected** to ship;
-> assert the *warning* fires, non-script files + `.mcp.json` strip, and the launched build is
-> **inert**.
+> false "leaked" readings. In **every** Script Export Mode no addon or extension script ships
+> (no `.gd`, `.gdc` or `.gd.remap`); assert that, that `.mcp.json` strips, that no leak
+> warning fires, and that the launched build is **inert**.
 
 - [ ] **EX5 — Disabled-addon dangling-autoload export.** Edit `project.godot`: empty the
       `[editor_plugins] enabled=PackedStringArray()` line but **leave** the `[autoload]
@@ -39,15 +39,16 @@ outside the repo** so artifacts are never committed.
   ```
       **PASS:** zero `Parse Error` lines, runtime server inert, process exits 0.
 
-- [ ] **EX6 — Binary-token script-leak warning** (`script_export_mode=2`, Godot 4.3+ default).
-      Export and read the export log. **PASS:** `export_strip` warns, naming the addon + each
-      leaked extension's exact `.gd` path; `.mcp.json` + non-script addon files are stripped;
-      the launched build is inert (no `[MCPTools]` output, port 6570 not listening). The preset
-      exclude-filter guard suppresses the warning when the addon is already excluded.
+- [ ] **EX6 — Binary-token strip-clean** (`script_export_mode=2`, Godot 4.3+ default). Add one
+      GDScript extension (a direct `MCPToolkitExtension` subclass) to the project, export, and
+      read the export log. **PASS:** **zero** addon `.gdc` / `.gd.remap` and zero extension
+      `.gdc` packed (`export_strip` sorts before the built-in GDScript plugin, so its `skip()`
+      removes them); `.mcp.json` + non-script addon files are stripped; **no leak warning
+      fires**; the launched build is inert (no `[MCPTools]` output, port 6570 not listening).
 
 - [ ] **EX6b — Text-mode strip-clean** (`script_export_mode=0`, symmetric to EX6). Flip the
       mode in `export_presets.cfg`, export. **PASS:** **zero** addon/extension `.gd` packed
-      (the GDScript plugin emits text scripts and `export_strip`'s `skip()` removes them);
+      (`export_strip`'s `skip()` removes them);
       `.mcp.json` + non-script files also stripped; **no warning fires** (nothing leaked).
 
 - [ ] **EX7 — Cross-version × two-mode.** Re-run EX5–EX6b on each installed version in **both**
