@@ -353,8 +353,9 @@ quick operational facts only.
   execution signal on every version; on 4.2 it is the only signal, since
   static validation can't run there), the `manifest-diff` job, and the
   `export-strip` job (4.2–4.7: exports a data pack with an uncommitted extension
-  probe and a dummy `.mcp.json` in every Script Export Mode the version has, and
-  fails if the parsed pack listing carries a toolkit script, the probe or
+  probe and a dummy `.mcp.json` in Text and compressed binary-token modes (Text
+  only on 4.2), and fails if the parsed pack listing carries a toolkit script,
+  the probe or
   `.mcp.json`; `scripts/test_framework/check_export_strip.sh`). An aggregate
   **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
   that ever becomes a required check (never an individual matrix row).

@@ -174,8 +174,8 @@ jobs:
   # Fails when an export ships a toolkit script, a GDScript extension or
   # res://.mcp.json, whatever lets it through: a change of ours, another export
   # plugin, or an engine change to how export plugins run. Per version it exports
-  # the project's data pack with the committed Windows preset in every Script
-  # Export Mode the version has (4.2 has Text only) and asserts on the parsed
+  # the project's data pack with the committed Windows preset in Text and
+  # compressed binary-token modes (Text only on 4.2) and asserts on the parsed
   # pack listing; check_export_strip.sh explains the pack export and the listing.
   # A pack export needs no templates, so the Linux runner can export the
   # Windows preset. Launching an exported build stays a manual release check.

@@ -106,8 +106,8 @@ contributor-facing summary.
   versions, and the **unit suite** runs on all six supported versions (Godot
   **4.2.0 through 4.7.0**, including the 4.2 cold class-cache warm-up) — a real
   execution signal on every version, every push. The **export strip** job
-  (`export-strip`) exports a data pack on each of those versions, in every Script
-  Export Mode the version has, with an uncommitted extension probe and a dummy
+  (`export-strip`) exports a data pack on each of those versions, in Text and
+  compressed binary-token modes (Text only on 4.2), with an uncommitted extension probe and a dummy
   `.mcp.json`, and fails if the pack lists a toolkit script, the probe or
   `.mcp.json` (`scripts/test_framework/check_export_strip.sh`). A single
   aggregate job, **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a

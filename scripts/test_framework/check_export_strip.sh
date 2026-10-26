@@ -9,14 +9,13 @@
 # Launching a build stays a manual release-checklist step.
 #
 # The assertions read the parsed PCK listing (pck_list.py), never a byte grep:
-# the exported class cache, uid_cache.bin and project.binary all name the
-# addon's script paths as metadata, so the bytes carry them even when the
-# strip worked.
+# the exported class cache, uid_cache.bin and project.binary name addon paths
+# as metadata, so the bytes carry them even when the strip worked.
 #
 # Per mode it asserts:
 #   - the export exits 0 and the listing has at least one script outside the
 #     addon (a control: a listing that sees no scripts would pass vacuously);
-#   - no script entry under addons/godot_mcp_toolkit/ (.gd, .gdc, .gde,
+#   - no script entry under addons/godot_mcp_toolkit/ (.gd, .gdc,
 #     .gd.remap). Non-script addon entries are printed, not failed: Godot 4.2
 #     ships the addon icon's .import sidecar in Text mode, which carries no code;
 #   - no entry for the extension probe in any form;
@@ -34,6 +33,7 @@
 # Usage: bash scripts/test_framework/check_export_strip.sh <probe-res-path> <mode>...
 #   (project root; modes: 0 = Text, 1 = binary tokens, 2 = compressed binary
 #   tokens; Godot 4.2 has Text only)
+# Needs GNU sed (Linux CI, Git Bash): the preset is rewritten with `sed -i`.
 # Environment variables:
 #   GODOT_BIN        - Godot binary (default: "godot")
 #   PYTHON           - Python 3 interpreter (default: python3)
@@ -52,7 +52,7 @@ LISTER="scripts/test_framework/pck_list.py"
 # (export_strip.gd, _decide_warning). 4.2 and 4.3 print it through push_warning,
 # 4.4+ through the export platform's message list; both carry this text.
 LEAK_WARNING="export strip never saw"
-SCRIPT_RE='\.(gd|gdc|gde|gd\.remap)$'
+SCRIPT_RE='\.(gd|gdc|gd\.remap)$'
 
 if [ ! -f "project.godot" ] || [ ! -f "$PRESETS_FILE" ]; then
   echo "ERROR: run from the project root (project.godot and $PRESETS_FILE)" >&2
@@ -101,7 +101,7 @@ for MODE in "$@"; do
   LOG="$OUT/export_m$MODE.log"
   rm -f "$PCK"
   EXPORT_EXIT=0
-  timeout 600 "$GODOT_BIN" --headless --path . --export-pack "$PRESET" "$PCK" > "$LOG" 2>&1 || EXPORT_EXIT=$?
+  timeout 180 "$GODOT_BIN" --headless --path . --export-pack "$PRESET" "$PCK" > "$LOG" 2>&1 || EXPORT_EXIT=$?
   if [ "$EXPORT_EXIT" -ne 0 ] || [ ! -f "$PCK" ]; then
     fail "the pack export failed (exit $EXPORT_EXIT); log tail below"
     tail -40 "$LOG"

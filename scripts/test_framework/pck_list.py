@@ -1,8 +1,8 @@
 """List the files a standalone Godot 4 PCK carries, one res:// path per line.
 
 The export-strip check asserts on this listing rather than grepping the PCK's
-bytes: the exported class cache, uid_cache.bin and project.binary all name the
-addon's script paths as metadata, so a byte grep would flag a clean export.
+bytes: the exported class cache, uid_cache.bin and project.binary name addon
+paths as metadata, so a byte grep would flag a clean export.
 
 Reads pack format versions 2 (Godot 4.2-4.4), 3 (4.5-4.6) and 4 (4.7), the
 layout in core/io/file_access_pack.cpp. An encrypted directory cannot be read
@@ -25,8 +25,9 @@ _RESERVED_V2 = 16 * 4
 def list_paths(data):
     """Return the pack's file paths, each with a res:// prefix.
 
-    From pack format 3 on, the engine stores paths without the prefix, so it
-    is added back to give one spelling across versions.
+    From Godot 4.4 on (still pack format 2), the engine stores paths without
+    the res:// prefix, so it is added back to give one spelling across
+    versions.
     """
     if data[:4] != _MAGIC:
         raise ValueError("no GDPC magic at offset 0 (not a standalone PCK)")
