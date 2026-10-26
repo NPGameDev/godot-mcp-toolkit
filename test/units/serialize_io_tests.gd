@@ -2,10 +2,10 @@
 extends RefCounted
 ## Serialization + I/O + content-boundary unit tests: Coerce/serialize round-trip,
 ## color_from_dict (white + black defaults), node-sourced Packed property serialize,
-## save.read / script.read / classdb paging, export-strip warning set, log-level continuation,
-## the SettingsRegistration mcp_toolkit/* collector, and resource.write's bare paths, int
-## properties (in memory and through a saved file) and typed arrays. Exercises the
-## serialize/IO/content subsystems' pure logic headless.
+## save.read / script.read / classdb paging, export-strip warning set and plugin order,
+## log-level continuation, the SettingsRegistration mcp_toolkit/* collector, and resource.write's
+## bare paths, int properties (in memory and through a saved file) and typed arrays. Exercises
+## the serialize/IO/content subsystems' pure logic headless.
 
 const Coerce := preload("res://addons/godot_mcp_toolkit/contract/coerce.gd")
 const ThemeCommands := preload("res://addons/godot_mcp_toolkit/commands/theme_commands.gd")
@@ -521,7 +521,7 @@ static func _test_classdb_pagination(testing) -> void:
 	print("")
 
 
-# --- Export strip + binary-token warning set (~7 strip + 22 warning) --------
+# --- Export strip set, leak warning and plugin order (~7 + 22 + 2) ----------
 
 static func _test_export_strip(testing) -> void:
 	testing.begin("Export strip set")
@@ -564,14 +564,15 @@ static func _test_export_strip(testing) -> void:
 	testing.ok(not strip.has("res://f/fakechild.gd"),
 			"subclass of coincidentally-named MCPToolkit* class → not stripped")
 
-	# ── Binary-token leak warning — pure _decide_warning decision ──────────
+	# ── Leak warning — pure _decide_warning decision ───────────────────────
 	# args: (saw_addon_script, saw_addon_nonscript, extension_strip_paths, seen_ext)
 
-	# No leak: text mode / 4.2 → addon scripts AND non-scripts reached us; no exts.
+	# No leak: addon scripts AND non-scripts reached us; no exts.
 	var d_clean: Dictionary = ExportStrip._decide_warning(true, true, {}, {})
-	testing.ok(not d_clean["warn"], "all addon files seen (text mode) → no warning")
+	testing.ok(not d_clean["warn"], "all addon files seen → no warning")
 
-	# Addon-only leak (binary mode, no extensions): non-scripts seen, scripts gone.
+	# Addon-only leak (an earlier plugin took the scripts, no extensions):
+	# non-scripts seen, scripts gone.
 	var d_addon: Dictionary = ExportStrip._decide_warning(false, true, {}, {})
 	testing.ok(d_addon["warn"], "addon non-script seen but no script → warn")
 	testing.ok(d_addon["addon_leaked"], "addon-only leak → addon_leaked true")
@@ -580,7 +581,7 @@ static func _test_export_strip(testing) -> void:
 	# Tail always says "extension path"; the subject clause "N extension script(s)" must be absent.
 	testing.ok(str(d_addon["message"]).find("extension script") < 0, "addon-only message omits extension clause")
 
-	# Both leak (binary mode, 1 extension): addon + one unseen extension path.
+	# Both leak (1 extension): addon + one unseen extension path.
 	var d_both: Dictionary = ExportStrip._decide_warning(false, true, {"res://x/ext.gd": true}, {})
 	testing.ok(d_both["warn"], "addon + unseen extension → warn")
 	testing.ok(int(d_both["leaked_ext_count"]) == 1, "1 unseen extension counted")
@@ -610,9 +611,19 @@ static func _test_export_strip(testing) -> void:
 	testing.ok(str(d_ext["message"]).find("Godot MCP Toolkit addon") < 0, "extension-only message omits addon clause")
 	testing.ok(str(d_ext["message"]).find("res://addons/godot_mcp_toolkit/*") < 0, "extension-only message omits addon glob")
 
-	# Extension seen (text mode for the extension) → not counted as leaked.
+	# Extension seen (it reached the strip) → not counted as leaked.
 	var d_ext_seen: Dictionary = ExportStrip._decide_warning(true, true, {"res://x/ext.gd": true}, {"res://x/ext.gd": true})
 	testing.ok(not d_ext_seen["warn"], "extension seen (stripped) → no warning")
+
+	# The engine sorts export plugins by name and the first to skip or remap a file
+	# wins, so a name sorting after the built-in "GDScript" plugin lets binary-token
+	# modes ship every addon script as .gdc. GDScript's String `<` is the same
+	# code-unit compare as the engine's sort. EditorExportPlugin can only be
+	# instantiated by the editor, so the pin reads the const _get_name() returns.
+	testing.begin("Export strip plugin sorts before the GDScript plugin")
+	var plugin_name: String = ExportStrip._PLUGIN_NAME
+	testing.ok(plugin_name < "GDScript", "plugin name sorts before \"GDScript\"")
+	testing.ok(plugin_name.left(1) == "0", "plugin name starts with the digit 0, which sorts before any letter")
 
 	print("")
 

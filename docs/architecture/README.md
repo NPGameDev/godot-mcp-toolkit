@@ -199,7 +199,7 @@ Consequences that shape the rest of the architecture:
   (the dev running their own game from the editor) does. `_exit_tree()` stops the server and clears the runtime registry
   entry only when `_ready()` started it, so an inert copy never deletes another run's entry.
 
-The export-strip plugin ([ADR 0006](#14-key-decisions-adrs)) nulls the runtime autoload entry
+The export-strip plugin ([ADR 0028](#14-key-decisions-adrs)) nulls the runtime autoload entry
 and strips addon source from the player's build as defence-in-depth, but the parse-time
 discipline above is what actually keeps the game from crashing on a stray editor reference.
 
@@ -773,7 +773,7 @@ The two repos ship through **different channels** so users never fetch what they
   `addons/godot_mcp_toolkit/icon.svg`, which is the one that ships inside the package.
 - **Server** → **npm** (`@npgamedev/godot-mcp-server`).
 
-The export-strip plugin ([ADR 0006](#14-key-decisions-adrs)) is a *separate* concern: it protects
+The export-strip plugin ([ADR 0028](#14-key-decisions-adrs)) is a *separate* concern: it protects
 a toolkit **user's** game export (nulling the runtime autoload, stripping addon source) — distinct
 from how the toolkit itself is shipped.
 
@@ -821,7 +821,7 @@ ones most relevant to this document:
 | [0003](../adr/0003-typed-command-options-builder.md) | Typed command-options builder (`MCPToolkitCommandOptions`) | [§6](#6-command-registry--catalogue) |
 | [0004](../adr/0004-enforce-response-contract-at-dispatch.md) | Enforce the response contract at dispatch | [§5](#5-the-response-contract) |
 | [0005](../adr/0005-single-level-extension-discovery.md) | Single-level extension discovery (+ matching export strip) | [§8](#8-extension-system) |
-| [0006](../adr/0006-binary-token-export-warn-not-strip.md) | Warn, don't strip, binary-token GDScript exports | [§2](#2-the-editorruntime-split), [§12](#12-distribution) |
+| [0006](../adr/0006-binary-token-export-warn-not-strip.md) | Warn, don't strip, binary-token GDScript exports (superseded by 0028) | [§2](#2-the-editorruntime-split), [§12](#12-distribution) |
 | [0007](../adr/0007-unfocused-responsive-mode.md) | Opt-in, machine-wide, crash-safe unfocused-responsive mode | [§3](#3-transport--connection) |
 | [0008](../adr/0008-lsp-port-registry-authoritative.md) | LSP port discovery is registry-authoritative | [§2](#2-the-editorruntime-split), [§9](#9-multi-project-registry) |
 | [0009](../adr/0009-fs-content-trust-boundary.md) | Filesystem-content trust boundary; extensions are full-trust | [§8](#8-extension-system), [§10](#10-security--trust-boundaries) |
@@ -834,6 +834,7 @@ ones most relevant to this document:
 | [0017](../adr/0017-macos-gui-launch-path.md) | OS-aware `.mcp.json` emission — resolve a macOS GUI-launch absolute node path (superseded by 0018) | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
 | [0018](../adr/0018-macos-launch-minimize.md) | Minimize the macOS `.mcp.json` emission — revert to bare npx (supersedes 0017) | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
 | [0027](../adr/0027-setup-steps-by-id-in-a-versioned-file.md) | Setup steps keyed by id, recorded when left, in a versioned file | [§7](#7-plugin-lifecycle) |
+| [0028](../adr/0028-order-export-strip-before-gdscript-tokenizer.md) | Order the export strip before the GDScript tokenizer (supersedes 0006) | [§2](#2-the-editorruntime-split), [§12](#12-distribution) |
 
 ---
 
