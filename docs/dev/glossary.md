@@ -240,6 +240,24 @@ a **hidden alias** for `runtime` on both channel-selecting tools (mapped in, not
 `tools/list`) — so use "the running game" as the prose gloss; never claim that no tool accepts
 "game".
 
+### Connection deadlines
+
+The two time limits a new connection on either channel must meet, enforced by the shared transport
+(`transport/ws_transport.gd`); the contract's C2 states them exactly.
+
+**Auth deadline**
+How long a peer has to authenticate once its WebSocket is open: 2000 ms, counted from the moment a
+poll first sees the peer open. A peer still unauthenticated at a poll past it is closed with WS code
+1008 "auth timeout"; an auth frame already waiting at that poll still counts.
+The code holds it as `_AUTH_TIMEOUT_MS` / `_auth_timeout_ms`; "auth timeout" is also the close
+reason on the wire.
+_Avoid_: "silence window" (the clock does not start at the TCP connect).
+
+**Open deadline**
+How long a peer has to complete the WebSocket upgrade after the toolkit accepts its TCP
+connection: 5× the **auth deadline** (10 s). A peer still not open past it is dropped with no
+close code.
+
 ### Relationships
 
 - The two channels are two separate WebSocket servers on distinct ports; a client holds the

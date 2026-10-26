@@ -89,8 +89,8 @@ const _RELISTEN_FRAME_INTERVAL := 60
 # rejected: no TCPServer accept signal exists to wake on, and gating the loop
 # fights this deferral + the always-run _mutation_watchdog.tick() for a tiny gain.
 const _POLL_FRAME_INTERVAL := 4
-# Auth timeout. Peers that don't send a valid auth message within this
-# window are closed with WS close code 1008 (Policy Violation).
+# The auth deadline: a peer with no valid auth within this window of its
+# WebSocket opening is closed with WS close code 1008 (Policy Violation).
 const _AUTH_TIMEOUT_MS := 2000
 
 # Owns the TCP listener + WS peers + auth-handshake framing + the bound port +

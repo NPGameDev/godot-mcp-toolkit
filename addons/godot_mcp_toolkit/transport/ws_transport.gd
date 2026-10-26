@@ -2,10 +2,10 @@
 extends RefCounted
 ## Owns a bound TCP listener and its WebSocket peers: scan/listen (incl. the
 ## ERR_ALREADY_IN_USE discard-recreate), accept, the auth-handshake framing, peer
-## lifecycle, and the auth timeout — driven by an externally-scheduled pump()
-## primitive (the CALLER decides cadence). The "when" and the side-effects stay in
-## the owning server, injected as Callables; this base only gets bytes on/off the
-## wire and tracks peer state.
+## lifecycle, and the auth and open deadlines — driven by an externally-scheduled
+## pump() primitive (the CALLER decides cadence). The "when" and the side-effects
+## stay in the owning server, injected as Callables; this base only gets bytes
+## on/off the wire and tracks peer state.
 ##
 ## Export-clean by contract: the Mode-B runtime autoload preloads this file, and
 ## GDScript resolves identifiers at parse time (before any is_editor_hint() guard),
@@ -26,6 +26,11 @@ const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const _PIN_GRACE_ATTEMPTS := 5
 # Per-peer buffer size, in KB, when the owning server supplies no source.
 const _DEFAULT_BUFFER_KB := 1024
+# The open deadline: a peer whose WebSocket is still not open this many auth
+# deadlines after its accept is dropped. WebSocketPeer's server-side handshake has
+# no deadline of its own, so a client that connects and never sends its upgrade
+# request would otherwise hold a peer for good.
+const _OPEN_DEADLINE_FACTOR := 5
 
 # Injected by the owning server after construction. The base is mechanical; every
 # decision/side-effect that differs between the editor (Mode A) and the runtime
@@ -86,8 +91,8 @@ var _bind: String = "127.0.0.1"
 # another process. ~1s at 60fps; the bridge's reconnect backoff sits on the same
 # order so we don't pile retries on top of it.
 var _relisten_frame_interval: int = 60
-# Peers that don't send a valid auth message within this window are closed with WS
-# code 1008 (Policy Violation).
+# The auth deadline: a peer with no valid auth within this window of its WebSocket
+# opening is closed with WS code 1008 (Policy Violation).
 var _auth_timeout_ms: int = 2000
 # Whether poll_peers() AWAITS each _on_message delivery. The editor (Mode A)
 # awaits so dispatch stays strictly sequential within a poll tick (its mutation
@@ -109,6 +114,7 @@ var _tcp_server: TCPServer = null
 var _peers: Array[WebSocketPeer] = []
 var _peer_authed: Dictionary = {}       # WebSocketPeer -> true (authed peers only)
 var _peer_connect_ms: Dictionary = {}   # WebSocketPeer -> int (ticks_msec at accept)
+var _peer_open_ms: Dictionary = {}      # WebSocketPeer -> int (ticks_msec when first seen open)
 var _relisten_countdown: int = 0
 # Tracks the current run of consecutive listen failures so we log the first one
 # (with a hint), stay silent during retries, and announce the recovery with the
@@ -417,12 +423,15 @@ func _new_sized_peer() -> WebSocketPeer:
 	return peer
 
 
-## Poll each peer; enforce the auth timeout (close 1008 if a peer hasn't authed in
-## time); drain available packets, delivering each frame to _on_message (awaited
-## so the editor's per-tick sequential dispatch is preserved). Returns the peers
-## that have closed, for cleanup().
+## Poll each peer; drop a peer whose WebSocket has not opened by its open
+## deadline; drain available packets, delivering each frame to _on_message
+## (awaited so the editor's per-tick sequential dispatch is preserved); then
+## enforce the auth deadline, counted from the moment a poll first saw the peer
+## open (close 1008 if a peer still hasn't authed in time). Returns the peers that
+## have closed, for cleanup().
 func poll_peers() -> Array[WebSocketPeer]:
 	var closed: Array[WebSocketPeer] = []
+	# The poll's start: a deadline checked against it can only run late, never early.
 	var now_ms := Time.get_ticks_msec()
 	for peer in _peers:
 		peer.poll()
@@ -430,14 +439,24 @@ func poll_peers() -> Array[WebSocketPeer]:
 		if state == WebSocketPeer.STATE_CLOSED:
 			closed.append(peer)
 			continue
+		if state == WebSocketPeer.STATE_CONNECTING:
+			# Open deadline. The poll above reads an upgrade request already
+			# waiting in the socket and sends the reply, which opens the peer, so a
+			# late poll does not drop a client that sent one in time. Closing a peer
+			# that never opened drops its TCP connection at once, with no close code.
+			var open_deadline_ms := _auth_timeout_ms * _OPEN_DEADLINE_FACTOR
+			if now_ms - int(_peer_connect_ms.get(peer, now_ms)) > open_deadline_ms:
+				peer.close()
+				closed.append(peer)
+			continue
 		if state != WebSocketPeer.STATE_OPEN:
 			continue
-		# Auth timeout — close peers that haven't authed in time.
-		if not _peer_authed.has(peer):
-			if now_ms - int(_peer_connect_ms.get(peer, 0)) > _auth_timeout_ms:
-				peer.close(1008, "auth timeout")
-				closed.append(peer)
-				continue
+		# The auth deadline starts here, not at the accept: a late poll can complete
+		# the upgrade, and the client cannot send its auth frame before it has seen
+		# the upgrade reply. The clock is read now, not at the start of the poll: an
+		# earlier peer's frame in this poll can run past the deadline.
+		if not _peer_open_ms.has(peer):
+			_peer_open_ms[peer] = Time.get_ticks_msec()
 		while peer.get_available_packet_count() > 0:
 			var text := peer.get_packet().get_string_from_utf8()
 			# Editor awaits (sequential dispatch within the tick); runtime fires
@@ -446,6 +465,16 @@ func poll_peers() -> Array[WebSocketPeer]:
 				await _on_message.call(peer, text)
 			else:
 				_on_message.call(peer, text)
+		# Auth deadline — close a peer that is still unauthed once its frames are read.
+		# Reading first lets an auth frame that arrived in time count when the poll
+		# itself comes late: the owning server polls from its frame loop, and one long
+		# frame can outlast the deadline. The owning server answers an unauthed peer's
+		# frame with at most a parse error or the auth check, never a dispatch, so
+		# reading it late dispatches nothing.
+		if not _peer_authed.has(peer) and peer.get_ready_state() == WebSocketPeer.STATE_OPEN:
+			if now_ms - int(_peer_open_ms.get(peer, now_ms)) > _auth_timeout_ms:
+				peer.close(1008, "auth timeout")
+				closed.append(peer)
 	return closed
 
 
@@ -463,6 +492,7 @@ func cleanup(closed: Array[WebSocketPeer]) -> bool:
 		_peers.erase(peer)
 		_peer_authed.erase(peer)
 		_peer_connect_ms.erase(peer)
+		_peer_open_ms.erase(peer)
 		if _on_peer_closed.is_valid():
 			_on_peer_closed.call(peer, was_authed)
 	return had_authed_disconnect
@@ -506,6 +536,7 @@ func close_all(code: int, reason: String) -> void:
 	_peers.clear()
 	_peer_authed.clear()
 	_peer_connect_ms.clear()
+	_peer_open_ms.clear()
 
 
 ## Stop and discard the TCPServer and reset the listen bookkeeping — the final
