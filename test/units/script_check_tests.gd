@@ -10,6 +10,7 @@ extends RefCounted
 ## differ by version expect each version's own result; every other assertion
 ## holds on every supported version.
 
+const Testing := preload("res://test/units/testing.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 const StaleInstanceHint := preload("res://addons/godot_mcp_toolkit/versioning/stale_instance_hint.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
@@ -31,6 +32,10 @@ const CROSS_B := "MCPToolkitProbeCrossB"
 const FREE_NAME := "MCPToolkitProbeFree"
 # The probe's class suffix, which no diagnostic may carry.
 const PROBE_SUFFIX := "__McpProbe"
+const RELATIVE_PRELOAD_FIXTURE := "res://test/fixtures/script_check_relative_preload_fixture.gd"
+# An error at the default warning level, which the project's addons rule
+# silences for a script under res://addons/.
+const GET_NODE_DEFAULT_SOURCE := "extends Node\n\nvar target: Node = get_node(\"Target\")\n"
 # A body that compiles only on a Node base.
 const NODE_BODY := "\n\nfunc attach_child() -> void:\n\tadd_child(Node.new())\n"
 
@@ -50,6 +55,9 @@ static func run(testing) -> void:
 	_test_script_check_self_typed_files(testing)
 	_test_source_compiles_self_typed(testing)
 	_test_script_check_cross_script_self(testing)
+	_test_script_check_relative_preload_file(testing)
+	_test_script_check_file_under_addons(testing)
+	_test_source_compiles_under_addons(testing)
 
 
 # --- _validate_gdscript, no file_path ---------------------------------------
@@ -357,4 +365,53 @@ static func _test_script_check_cross_script_self(testing) -> void:
 	else:
 		testing.ok(not bool(result.get("valid", true)),
 				"documented limitation on 4.2-4.4 → valid false")
+	print("")
+
+
+# --- paths and warning rules that depend on where the file is ---------------
+
+static func _test_script_check_relative_preload_file(testing: Testing) -> void:
+	testing.begin("script_check handler: a preload relative to the file's folder")
+	LogBuffer.setup()
+	var result := ScriptCommands._cmd_script_check({"file_path": RELATIVE_PRELOAD_FIXTURE})
+	testing.ok(bool(result.get("success", false)), "handler succeeds")
+	testing.ok(bool(result.get("valid", false)), "relative preload of a sibling → valid true")
+	testing.eq((result.get("diagnostics", []) as Array).size(), 0,
+			"relative preload of a sibling → no diagnostics")
+	print("")
+
+
+# The toolkit's own folder is closed to the tools, so the file goes in another
+# addon's folder, made for the case and removed before the assertions.
+static func _test_script_check_file_under_addons(testing: Testing) -> void:
+	testing.begin("script_check handler: the project's addons warning rule applies to an addon's file")
+	LogBuffer.setup()
+	var addon_dir := "res://addons/mcp_toolkit_unit_%d" % OS.get_process_id()
+	var file_path := addon_dir + "/probe_under_addons.gd"
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(addon_dir))
+	var file := FileAccess.open(file_path, FileAccess.WRITE)
+	if file == null:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(addon_dir))
+		testing.ok(false, "precondition: the case writes %s (%s)"
+				% [file_path, error_string(FileAccess.get_open_error())])
+		print("")
+		return
+	file.store_string(GET_NODE_DEFAULT_SOURCE)
+	file.close()
+	var result := ScriptCommands._cmd_script_check({"file_path": file_path})
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(file_path))
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(addon_dir))
+	testing.ok(bool(result.get("success", false)), "handler succeeds")
+	testing.ok(bool(result.get("valid", false)),
+			"get_node() in a default under res://addons/ → valid true")
+	testing.eq((result.get("diagnostics", []) as Array).size(), 0,
+			"get_node() in a default under res://addons/ → no diagnostics")
+	print("")
+
+
+static func _test_source_compiles_under_addons(testing: Testing) -> void:
+	testing.begin("source_compiles: the project's addons warning rule applies under res://addons/")
+	testing.ok(StaleInstanceHint.source_compiles(GET_NODE_DEFAULT_SOURCE,
+			"res://addons/some_other_addon/x.gd"),
+			"get_node() in a default under another addon's folder → compiles")
 	print("")

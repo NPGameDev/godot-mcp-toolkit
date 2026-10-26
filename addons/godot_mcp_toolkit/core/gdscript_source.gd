@@ -1,8 +1,9 @@
 @tool
 extends RefCounted
 ## The compile probe: a [code]GDScript.new()[/code] copy of a [code].gd[/code]
-## file, compiled in memory to judge the file without reloading the script the
-## editor has loaded.
+## file, compiled in memory beside the file to judge it without reloading the
+## script the editor has loaded. Each compile goes through
+## [code]core/compile_probe.gd[/code].
 ##
 ## A copy that kept its [code]class_name[/code] would clash with the global
 ## class the editor registered for the real file, and a copy without one is
@@ -14,7 +15,9 @@ extends RefCounted
 ## so on 4.5+ a script the renamed copies reject is compiled once more under
 ## its own name, and its errors are read back from the console capture.
 
-# Direct preload, not core/modules.gd: the aggregator preloads this file.
+# Direct preloads, not core/modules.gd: the aggregator preloads this file.
+const CompileProbe := preload("res://addons/godot_mcp_toolkit/core/compile_probe.gd")
+const GDScriptScanner := preload("res://addons/godot_mcp_toolkit/core/gdscript_scanner.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
 ## Appended to the declared class name in the probe's source. Engine messages
@@ -35,10 +38,14 @@ const _RESERVED_WORDS: Array[String] = [
 	"true", "var", "void", "when", "while", "yield",
 ]
 
+# Built on first use, then shared by every message the console readers map.
+static var _probe_path_suffix: RegEx
+
 
 ## Judges [param source] as the engine would judge the file at
 ## [param file_path], with no compile's script errors left in the console
-## readers.
+## readers. Every compile runs beside [param file_path], so relative paths and
+## the project's warning rules for that path apply as they do to the file.
 ##
 ## The analyzer's class-name checks run first, on the original name. Then the
 ## source compiles with the class and every bare reference to it renamed; if
@@ -69,28 +76,21 @@ static func judge(source: String, file_path: String) -> Dictionary:
 	var class_name_text := str(declaration_renamed["name"])
 	var conflict := class_name_conflict(class_name_text, file_path)
 
-	var full_probe := _new_probe(str(all_renamed["source"]))
-	var declaration_probe := _new_probe(str(declaration_renamed["source"]))
-	var tries_declaration := declaration_probe.source_code != full_probe.source_code
-	var printed_errors := Engine.print_error_messages
-	# Only reload() runs while printing is off: GDScript has no `finally`, and a
-	# runtime error here would leave the editor's error printing off.
-	Engine.print_error_messages = false
-	var full_result := full_probe.reload(false)
+	var full_source := str(all_renamed["source"])
+	var declaration_source := str(declaration_renamed["source"])
+	var full_result: int = CompileProbe.compile(full_source, file_path, false)["error"]
 	var declaration_result := full_result
-	if full_result != OK and tries_declaration:
-		declaration_result = declaration_probe.reload(false)
-	Engine.print_error_messages = printed_errors
+	if full_result != OK and declaration_source != full_source:
+		declaration_result = CompileProbe.compile(declaration_source, file_path, false)["error"]
 
 	var compiles := full_result == OK or declaration_result == OK \
 			or (full_result == ERR_COMPILATION_FAILED and declaration_result == ERR_PARSE_ERROR)
 	if not compiles and conflict == "" and _keep_name_probe_applies(class_name_text, file_path):
-		compiles = _keep_name_probe_compiles(source, class_name_text,
+		compiles = _keep_name_probe_compiles(source, file_path, class_name_text,
 				int(declaration_renamed["line"]))
 	var decisive_source := ""
 	if not compiles:
-		decisive_source = full_probe.source_code if full_result == ERR_PARSE_ERROR \
-				else declaration_probe.source_code
+		decisive_source = full_source if full_result == ERR_PARSE_ERROR else declaration_source
 	return {
 		"valid": compiles and conflict == "",
 		"compiles": compiles,
@@ -100,24 +100,26 @@ static func judge(source: String, file_path: String) -> Dictionary:
 	}
 
 
-## Compiles [param probe_source] with error printing on, so its errors reach
-## stderr, the editor log capture and the console readers, then restores the
-## caller's [member Engine.print_error_messages] value.
-static func print_compile_errors(probe_source: String) -> void:
-	var probe := _new_probe(probe_source)
-	var printed_errors := Engine.print_error_messages
-	Engine.print_error_messages = true
-	probe.reload(false)
-	Engine.print_error_messages = printed_errors
-
-
-## Returns [param text] with [constant PROBE_SUFFIX] removed, so a message
-## about the probe names the script's real class.
+## Compiles [param probe_source] beside the file at [param file_path] with error
+## printing on, so its errors reach stderr, the editor log capture and the
+## console readers, then restores the caller's
+## [member Engine.print_error_messages] value.
 ##
-## A plain replace rather than a pattern: the suffix is unique to the probe,
-## and a regex word class would stop at a non-ASCII letter in a class name.
+## Returns the path the compile ran under, which the captured errors name.
+static func print_compile_errors(probe_source: String, file_path: String) -> String:
+	return str(CompileProbe.compile(probe_source, file_path, true)["path"])
+
+
+## Returns [param text] with [constant PROBE_SUFFIX] and the probe's path suffix
+## removed, so a message about the probe names the script's real class and file.
+##
+## The class suffix is a plain replace rather than a pattern: it is unique to
+## the probe, and a regex word class would stop at a non-ASCII letter in a
+## class name.
 static func strip_probe_suffix(text: String) -> String:
-	return text.replace(PROBE_SUFFIX, "")
+	if _probe_path_suffix == null:
+		_probe_path_suffix = RegEx.create_from_string(CompileProbe.PATH_SUFFIX_PATTERN)
+	return _probe_path_suffix.sub(text.replace(PROBE_SUFFIX, ""), "", true)
 
 
 ## Returns [code]{source, name, line}[/code]: [param source] with the
@@ -134,10 +136,10 @@ static func rename_declaration(source: String) -> Dictionary:
 	var keyword_end := _find_class_name_keyword_end(source)
 	if keyword_end < 0:
 		return unchanged
-	var name_start := _skip_inline_space(source, keyword_end)
-	if name_start >= source.length() or not _is_identifier_start(source[name_start]):
+	var name_start := GDScriptScanner.skip_inline_space(source, keyword_end)
+	if name_start >= source.length() or not GDScriptScanner.is_identifier_start(source[name_start]):
 		return unchanged
-	var name_end := _identifier_end(source, name_start)
+	var name_end := GDScriptScanner.identifier_end(source, name_start)
 	var class_name_text := source.substr(name_start, name_end - name_start)
 	if class_name_text in _RESERVED_WORDS:
 		return unchanged
@@ -162,13 +164,13 @@ static func rename_references(source: String) -> Dictionary:
 		return declaration_renamed
 	var renamed := ""
 	var copied_up_to := 0
-	var token := _next_identifier(source, 0)
+	var token := GDScriptScanner.next_identifier(source, 0)
 	while token.x >= 0:
 		if source.substr(token.x, token.y - token.x) == class_name_text \
 				and not _follows_dot(source, token.x):
 			renamed += source.substr(copied_up_to, token.y - copied_up_to) + PROBE_SUFFIX
 			copied_up_to = token.y
-		token = _next_identifier(source, token.y)
+		token = GDScriptScanner.next_identifier(source, token.y)
 	renamed += source.substr(copied_up_to)
 	return {
 		"source": renamed,
@@ -197,12 +199,6 @@ static func class_name_conflict(class_name_text: String, file_path: String) -> S
 	return ""
 
 
-static func _new_probe(probe_source: String) -> GDScript:
-	var probe := GDScript.new()
-	probe.source_code = probe_source
-	return probe
-
-
 # The keep-name probe needs a file that owns its registered class, since that
 # clash is the one error it may discard, and needs the Logger to read the
 # compile's errors back; the 4.2-4.4 log tail cannot list them.
@@ -222,18 +218,12 @@ static func _keep_name_probe_applies(class_name_text: String, file_path: String)
 # one. The clash stops the compile before codegen, so a codegen-only error
 # passes unseen. The probe's script errors leave the console buffer whatever
 # the verdict, since they describe a copy, not the file.
-static func _keep_name_probe_compiles(source: String, class_name_text: String,
-		declaration_line: int) -> bool:
-	var probe := _new_probe(source)
-	# The path GDScript gives a script with no file, under which the Logger
-	# reports the probe's errors.
-	var probe_path := "gdscript://%d.gd" % probe.get_instance_id()
+static func _keep_name_probe_compiles(source: String, file_path: String,
+		class_name_text: String, declaration_line: int) -> bool:
 	var since_id := LogBuffer.get_cursor() - 1
-	var printed_errors := Engine.print_error_messages
-	# With printing off the Logger receives nothing.
-	Engine.print_error_messages = true
-	probe.reload(false)
-	Engine.print_error_messages = printed_errors
+	# Compiles with printing on: with it off the Logger receives nothing. The
+	# Logger reports the probe's errors under the path it compiled under.
+	var probe_path := str(CompileProbe.compile(source, file_path, true)["path"])
 	var captured := LogBuffer.take_script_errors_since(since_id, probe_path)
 	var errors: Array = captured["errors"]
 	if not bool(captured["complete"]) or errors.size() != 1:
@@ -290,8 +280,8 @@ static func _global_class_entry(class_name_text: String) -> Dictionary:
 # Whether the global class list entry's script is the file at file_path; an
 # empty file_path owns no entry with a path.
 static func _is_registered_for(entry: Dictionary, file_path: String) -> bool:
-	var own_path := _canonical_path(file_path) if file_path != "" else ""
-	return _canonical_path(str(entry.get("path", ""))) == own_path
+	var own_path := CompileProbe.canonical_path(file_path) if file_path != "" else ""
+	return CompileProbe.canonical_path(str(entry.get("path", ""))) == own_path
 
 
 static func _is_autoload_singleton(class_name_text: String) -> bool:
@@ -300,54 +290,15 @@ static func _is_autoload_singleton(class_name_text: String) -> bool:
 			and str(ProjectSettings.get_setting(key)).begins_with("*")
 
 
-static func _canonical_path(path: String) -> String:
-	return ProjectSettings.localize_path(path).simplify_path()
-
-
 # Index just past the first `class_name` keyword outside strings and comments,
 # or -1 when the source has none.
 static func _find_class_name_keyword_end(source: String) -> int:
-	var token := _next_identifier(source, 0)
+	var token := GDScriptScanner.next_identifier(source, 0)
 	while token.x >= 0:
 		if source.substr(token.x, token.y - token.x) == _CLASS_NAME_KEYWORD:
 			return token.y
-		token = _next_identifier(source, token.y)
+		token = GDScriptScanner.next_identifier(source, token.y)
 	return -1
-
-
-# Start and end (exclusive) of the first identifier at or after `from` that
-# sits outside strings and comments, or (-1, -1) when none is left.
-static func _next_identifier(source: String, from: int) -> Vector2i:
-	var length := source.length()
-	var index := from
-	while index < length:
-		var character := source[index]
-		if character == "#":
-			index = _line_end(source, index)
-		elif character == "\"" or character == "'":
-			index = _string_end(source, index)
-		elif _is_identifier_start(character):
-			return Vector2i(index, _identifier_end(source, index))
-		else:
-			index += 1
-	return Vector2i(-1, -1)
-
-
-# Skips spaces, tabs and `\` line continuations.
-static func _skip_inline_space(source: String, from: int) -> int:
-	var length := source.length()
-	var index := from
-	while index < length:
-		var character := source[index]
-		if character == " " or character == "\t":
-			index += 1
-		elif character == "\\" and source.substr(index + 1, 1) == "\n":
-			index += 2
-		elif character == "\\" and source.substr(index + 1, 2) == "\r\n":
-			index += 3
-		else:
-			break
-	return index
 
 
 static func _follows_dot(source: String, identifier_start: int) -> bool:
@@ -355,51 +306,3 @@ static func _follows_dot(source: String, identifier_start: int) -> bool:
 	while index >= 0 and (source[index] == " " or source[index] == "\t"):
 		index -= 1
 	return index >= 0 and source[index] == "."
-
-
-static func _line_end(source: String, from: int) -> int:
-	var newline := source.find("\n", from)
-	return source.length() if newline < 0 else newline
-
-
-# Index just past the string that opens at quote_index: single or
-# triple quoted, with backslash escapes. An unterminated string runs to the end.
-static func _string_end(source: String, quote_index: int) -> int:
-	var quote := source[quote_index]
-	var length := source.length()
-	var triple := source.substr(quote_index, 3) == quote.repeat(3)
-	var index := quote_index + (3 if triple else 1)
-	while index < length:
-		var character := source[index]
-		if character == "\\":
-			index += 2
-		elif character != quote:
-			index += 1
-		elif not triple:
-			return index + 1
-		elif source.substr(index, 3) == quote.repeat(3):
-			return index + 3
-		else:
-			index += 1
-	return length
-
-
-static func _identifier_end(source: String, start: int) -> int:
-	var length := source.length()
-	var index := start
-	while index < length and _is_identifier_char(source[index]):
-		index += 1
-	return index
-
-
-# GDScript identifiers allow any non-ASCII letter, so every code point above
-# ASCII counts.
-static func _is_identifier_start(character: String) -> bool:
-	var code := character.unicode_at(0)
-	return character == "_" or (code >= 65 and code <= 90) or (code >= 97 and code <= 122) \
-			or code >= 128
-
-
-static func _is_identifier_char(character: String) -> bool:
-	var code := character.unicode_at(0)
-	return _is_identifier_start(character) or (code >= 48 and code <= 57)

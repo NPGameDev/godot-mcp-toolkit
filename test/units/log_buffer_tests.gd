@@ -69,8 +69,12 @@ static func _test_logger_delivers_to_the_buffer(testing: Testing) -> void:
 			"a message reaches the buffer as an info entry")
 	testing.ok(_has_entry(entries, "error", "ERROR: unit probe error"),
 			"a script error reaches the buffer as an error entry")
-	testing.eq(LogBuffer.find_script_error_line_since(since_id), 3,
+	testing.eq(LogBuffer.find_script_error_line_since(since_id, "gdscript://1.gd"), 3,
 			"the script error's line is latched")
+	testing.eq(LogBuffer.find_script_error_line_since(since_id, "gdscript://12.gd"), -1,
+			"a script with another id does not match the latched error")
+	testing.eq(LogBuffer.find_script_error_line_since(since_id, "gdscript://1"), -1,
+			"a prefix of the latched path does not match the latched error")
 	# Removes the probe error and its latch so no later case reads them; what it removed
 	# is already asserted above.
 	LogBuffer.take_script_errors_since(since_id, "gdscript://1.gd")
