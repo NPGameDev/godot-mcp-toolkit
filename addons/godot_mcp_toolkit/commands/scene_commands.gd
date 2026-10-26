@@ -4,6 +4,7 @@ extends RefCounted
 ## node creation, instantiation.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const BarePathCheck = Modules.BarePathCheck
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
@@ -487,7 +488,7 @@ static func _cmd_scene_create_node(parameters: Dictionary) -> Dictionary:
 ## compound path ([code]:[/code] or [code]/[/code]) is set later through
 ## [code]Helpers.set_property_compound[/code], so it is only collected here. A bare
 ## path on a Resource property fails here, with the message
-## [code]Helpers.bare_path_message[/code] gives, so it is never set.
+## [code]BarePathCheck.bare_path_message[/code] gives, so it is never set.
 ## [br][br]
 ## Returns [code]{"simple": Array, "compound": Array, "failed": Array}[/code].
 ## Each [code]simple[/code] row is
@@ -512,7 +513,7 @@ static func _prepare_inline_properties(instance: Node, properties_raw: Variant) 
 		if not result.get("ok", false):
 			failed.append({"name": prop_name, "error": str(result.get("error", ""))})
 			continue
-		var bare_path := Helpers.bare_path_message(prop_name, properties[key],
+		var bare_path := BarePathCheck.bare_path_message(prop_name, properties[key],
 				int(DeclaredTypeFitter.property_entry(instance, prop_name).get("type", TYPE_NIL)))
 		if not bare_path.is_empty():
 			failed.append({"name": prop_name, "error": bare_path + "."})

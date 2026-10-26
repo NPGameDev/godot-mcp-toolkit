@@ -3,6 +3,7 @@ extends RefCounted
 ## resource.* command handlers — load, write (create/update upsert), delete for .tres/.res files.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const BarePathCheck = Modules.BarePathCheck
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Untrusted = Modules.Untrusted
@@ -75,7 +76,7 @@ static func _apply_resource_properties(
 			# placeholder saves it as a String. Warn with the same hint
 			# node_set_property gives, and save the rest.
 			var declared_type := int(entry.get("type", TYPE_NIL))
-			var bare_path := Helpers.bare_path_message(key_string, raw_value, declared_type)
+			var bare_path := BarePathCheck.bare_path_message(key_string, raw_value, declared_type)
 			if not bare_path.is_empty():
 				warnings.append("%s; value left unchanged" % bare_path)
 				continue

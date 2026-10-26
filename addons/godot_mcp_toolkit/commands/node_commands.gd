@@ -3,6 +3,7 @@ extends RefCounted
 ## node.* command handlers — property get/set/list, method calls, script attachment.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const BarePathCheck = Modules.BarePathCheck
 const Coerce = Modules.Coerce
 const FileGuard = Modules.FileGuard
 const Helpers = Modules.CommandHelpers
@@ -264,7 +265,7 @@ static func _set_property_compound_single(
 ## Set one scalar (non-compound) property: coerce → set → register UndoRedo. A
 ## bare path on a Resource property (a String instead of the tagged
 ## {type:"Resource", path:…} form) is refused before the set, with the message
-## [code]Helpers.bare_path_message[/code] gives. Leaf mechanics of
+## [code]BarePathCheck.bare_path_message[/code] gives. Leaf mechanics of
 ## node.set_property's scalar branch, lifted out of the handler for SRP.
 ## Needs no `server` — scalar undo uses do/undo_property.
 static func _set_property_scalar_single(
@@ -277,7 +278,7 @@ static func _set_property_scalar_single(
 			str(coerce_result.get("error", "")))
 	# Refused before the set: a placeholder would store the String, and the generic
 	# drop guard below would give a vaguer message for a live instance.
-	var bare_path := Helpers.bare_path_message(property_name, raw_value,
+	var bare_path := BarePathCheck.bare_path_message(property_name, raw_value,
 			int(DeclaredTypeFitter.property_entry(node, property_name).get("type", TYPE_NIL)))
 	if not bare_path.is_empty():
 		return MCPToolkitError.fail("INVALID_VALUE", bare_path + ".")
