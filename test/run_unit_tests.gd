@@ -18,6 +18,7 @@ const SignalResolverTests := preload("res://test/units/signal_resolver_tests.gd"
 const SceneOpsTests := preload("res://test/units/scene_ops_tests.gd")
 const PropertyEditTests := preload("res://test/units/property_edit_tests.gd")
 const DebugSessionTrackerTests := preload("res://test/units/debug_session_tracker_tests.gd")
+const DebugBridgeTests := preload("res://test/units/debug_bridge_tests.gd")
 const PlaytestTests := preload("res://test/units/playtest_tests.gd")
 const PlaytestDiagnosisTests := preload("res://test/units/playtest_diagnosis_tests.gd")
 const RemoteDeployDetectorTests := preload("res://test/units/remote_deploy_detector_tests.gd")
@@ -85,6 +86,7 @@ func _init() -> void:
 	SceneOpsTests.run(testing)
 	PropertyEditTests.run(testing)
 	DebugSessionTrackerTests.run(testing)  # before PlaytestTests: its red run on a reader without the tracker must see no earlier game_start mark
+	DebugBridgeTests.run(testing)
 	PlaytestTests.run(testing)
 	PlaytestDiagnosisTests.run(testing)
 	RemoteDeployDetectorTests.run(testing)

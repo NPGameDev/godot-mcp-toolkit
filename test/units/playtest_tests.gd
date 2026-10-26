@@ -2,9 +2,10 @@
 extends RefCounted
 ## Unit tests for the playtest commands that run without an editor or a game: the
 ## game.start main-scene guard and opt-out hint, and the editor-side debugger.get_log
-## reads of godot.log (whole file, locked file, missing file). game.start itself
-## returns early when headless, so the guard is pinned through the predicate it calls;
-## a real main scene reaching play_main_scene is covered by the sweep's row 21.4.
+## reads of godot.log (whole file, locked file, missing file, a break entry against
+## the log's errors). game.start itself returns early when headless, so the guard is
+## pinned through the predicate it calls; a real main scene reaching play_main_scene
+## is covered by the sweep's row 21.4.
 
 const Testing := preload("res://test/units/testing.gd")
 const PlaytestControl := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_control.gd")
@@ -27,6 +28,8 @@ static func run(testing: Testing) -> void:
 	_test_debugger_log_reads_from_zero(testing)
 	_test_debugger_log_locked_file_keeps_session_state(testing)
 	_test_debugger_log_absent_file_note(testing)
+	_test_debugger_log_scans_past_break_entry(testing)
+	_test_debugger_log_keeps_break_entry_without_log_errors(testing)
 	_test_runtime_opt_out_hint(testing)
 	_test_runtime_opt_out_hint_text(testing)
 
@@ -181,7 +184,7 @@ static func _test_debugger_log_locked_file_keeps_session_state(testing: Testing)
 	var tracker := DebugSessionTracker.new(_EditorPortStandIn.new(true))
 	PlaytestLogReader.set_session_tracker(tracker)
 	tracker.on_session_started()
-	tracker.on_session_breaked(true)
+	tracker.on_session_breaked(false)
 
 	var on_windows := OS.get_name() == "Windows"
 	var game_writer: FileAccess = null
@@ -215,7 +218,7 @@ static func _test_debugger_log_locked_file_keeps_session_state(testing: Testing)
 	testing.eq(read.get("code", null), null, "a locked log → no error code")
 	testing.eq(str(read.get("note", "")), _LOG_UNREADABLE_NOTE, "a locked log → the unreadable-log note")
 	testing.eq(read.get("lines", null), [], "a locked log → no lines")
-	testing.eq(read.get("debug_state", {}), {"active": true, "breaked": true, "can_debug": true},
+	testing.eq(read.get("debug_state", {}), {"active": true, "breaked": true, "can_debug": false},
 			"a locked log at an error break → the session's debug_state")
 	testing.eq((read.get("error_buffer", []) as Array).size(), 1,
 			"a locked log at an error break → the break's error_buffer entry")
@@ -246,6 +249,65 @@ static func _test_debugger_log_absent_file_note(testing: Testing) -> void:
 	testing.eq(read.get("debug_state", {}), {"active": true, "breaked": false, "can_debug": false},
 			"no log file → the session's debug_state")
 	print("")
+
+
+## debugger.get_log when the only buffered entry is a break's: the log's error lines
+## still get scanned, and the error they name, with its file and line, replaces the
+## break entry.
+static func _test_debugger_log_scans_past_break_entry(testing: Testing) -> void:
+	testing.begin("debugger.get_log with only a break entry buffered: the log scan's entry")
+	var read := _read_log_with_break_entry("SCRIPT ERROR: x\n   at: _ready (res://a.gd:8)\n")
+
+	var buffer: Array = read.get("error_buffer", [])
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(buffer.size(), 1, "an error in the log → one error_buffer entry")
+	testing.eq(str(entry.get("type", "")), "log_scan", "an error in the log → the log scan's entry")
+	testing.eq(str(entry.get("message", "")), "x", "the log scan's entry → the error's message")
+	testing.eq(str(entry.get("source", "")), "res://a.gd", "the log scan's entry → the error's file")
+	testing.eq(str(entry.get("function", "")), "_ready", "the log scan's entry → the error's function")
+	testing.eq(int(entry.get("line", 0)), 8, "the log scan's entry → the error's line")
+	print("")
+
+
+## debugger.get_log when the only buffered entry is a break's and the log names no
+## error: the break entry stays.
+static func _test_debugger_log_keeps_break_entry_without_log_errors(testing: Testing) -> void:
+	testing.begin("debugger.get_log with only a break entry buffered and a clean log: the break entry")
+	var read := _read_log_with_break_entry("alpha\nbeta\n")
+
+	var buffer: Array = read.get("error_buffer", [])
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(buffer.size(), 1, "no error in the log → one error_buffer entry")
+	testing.eq(str(entry.get("type", "")), "break", "no error in the log → the break entry")
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"no error in the log → the break entry's message")
+	print("")
+
+
+## Reads debugger.get_log for a playtest whose log holds [param content] and whose
+## game is at an error break, so its tracker has the break's entry buffered.
+## Restores the log path and the reader's tracker, and deletes the fixture, before
+## returning the read.
+static func _read_log_with_break_entry(content: String) -> Dictionary:
+	var had_setting := ProjectSettings.has_setting(_LOG_PATH_KEY)
+	var original: Variant = ProjectSettings.get_setting(_LOG_PATH_KEY, _DEFAULT_LOG_PATH)
+	ProjectSettings.set_setting(_LOG_PATH_KEY, _LOG_FIXTURE)
+	_write_log_fixture(content)
+	# The reader's tracker is static state: saved here, put back before returning.
+	var saved_tracker: DebugSessionTracker = PlaytestLogReader._session_tracker
+	var saved_injected: bool = PlaytestLogReader._session_tracker_injected
+	var tracker := DebugSessionTracker.new(_EditorPortStandIn.new(true))
+	PlaytestLogReader.set_session_tracker(tracker)
+	tracker.on_session_started()
+	tracker.on_session_breaked(false)
+	var read: Dictionary = PlaytestLogReader.cmd_debugger_get_log({})
+
+	PlaytestLogReader._session_tracker = saved_tracker
+	PlaytestLogReader._session_tracker_injected = saved_injected
+	_restore_log_path(had_setting, original)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(_LOG_FIXTURE))
+	return read
 
 
 ## Write [param content] to the debug-log fixture at [param path].
