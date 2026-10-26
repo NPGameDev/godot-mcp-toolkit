@@ -7,14 +7,15 @@ extends RefCounted
 ## as `hp = 100.0`. The placeholder_like_node.gd fixture stands in for that node;
 ## each group drives the handler with a whole float and with a fraction. Later
 ## groups cover the batch response's top-level note, a clamp that follows the fit
-## and an inspector group named like the property. The
-## handlers run on a standalone tree, so no editor is needed; the undo builder runs
-## as its documented headless no-op.
+## and an inspector group named like the property, then a bare path on a Resource
+## property. The handlers run on a standalone tree, so no editor is needed; the undo
+## builder runs as its documented headless no-op.
 
 const NodeCommands := preload("res://addons/godot_mcp_toolkit/commands/node_commands.gd")
 const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const UndoRedoHelpers := preload("res://addons/godot_mcp_toolkit/scene/undo_redo_helpers.gd")
 const PlaceholderLikeNode := preload("res://test/fixtures/placeholder_like_node.gd")
+const TEXTURE_PATH := "res://test/fixtures/placeholder_texture.tres"
 
 
 static func run(testing) -> void:
@@ -26,6 +27,7 @@ static func run(testing) -> void:
 	_test_batch_shared_external_write_keeps_note(testing)
 	_test_clamp_after_fit_names_requested_value(testing)
 	_test_group_header_does_not_hide_int(testing)
+	_test_set_property_bare_res_path(testing)
 
 
 static func _test_set_property_single(testing) -> void:
@@ -232,6 +234,25 @@ static func _test_group_header_does_not_hide_int(testing) -> void:
 	_expect_int(testing, mover.get("speed"), 100, "whole float 100.0 under a same-named group")
 
 	root.free()
+	print("")
+
+
+# A bare path is a String given where a Resource is expected. The writer refuses
+# it, names the tagged form the caller meant and keeps the property's value.
+static func _test_set_property_bare_res_path(testing) -> void:
+	testing.begin("node.set_property refuses a bare res:// path on a Resource property")
+	var sprite := Sprite2D.new()
+	var response := NodeCommands._set_property_scalar_single(
+			sprite, "Sprite", "texture", TEXTURE_PATH)
+	testing.ok(not bool(response.get("success", true)), "bare res:// path → failure")
+	testing.eq(str(response.get("code", "")), "INVALID_VALUE", "bare res:// path → INVALID_VALUE")
+	testing.eq(str(response.get("error", "")),
+			"property 'texture' expects a Resource, not a bare string path. Use "
+			+ "{\"type\": \"Resource\", \"path\": \"res://test/fixtures/placeholder_texture.tres\"}"
+			+ " as the value.",
+			"the error names the tagged form with the same path")
+	testing.eq(sprite.texture, null, "the texture is left unset")
+	sprite.free()
 	print("")
 
 

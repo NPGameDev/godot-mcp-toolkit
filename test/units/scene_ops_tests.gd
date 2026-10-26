@@ -23,6 +23,7 @@ static func run(testing) -> void:
 	_test_instantiate_load_barrier(testing)
 	_test_instantiate_model_recovery_messages(testing)
 	_test_create_node_typed_array_property(testing)
+	_test_create_node_bare_res_path(testing)
 
 
 # --- MCPToolkitSafeSceneOps public API -------------------------------------
@@ -251,6 +252,32 @@ static func _test_create_node_typed_array_property(testing) -> void:
 			"tags → stored as an Array[String]")
 	testing.eq(stored, ["a", "b"], "tags → stores [\"a\", \"b\"]")
 
+	instance.free()
+	print("")
+
+
+# --- scene.create_node: a bare path on a Resource property --------------------
+# A bare path is a String given where a Resource is expected. The writer lists the
+# property under failed, names the tagged form the caller meant and keeps the
+# property's value.
+
+static func _test_create_node_bare_res_path(testing) -> void:
+	testing.begin("scene.create_node fails a bare res:// path on a Resource property")
+	var instance := Sprite2D.new()
+	var prepared := _SceneCommands._prepare_inline_properties(
+			instance, {"texture": "res://test/fixtures/placeholder_texture.tres"})
+	var written := _SceneCommands._write_inline_properties(instance, prepared["simple"])
+	var failed: Array = (prepared["failed"] as Array) + (written["failed"] as Array)
+	testing.eq(failed.size(), 1, "bare res:// path → one failed property")
+	var row: Dictionary = failed[0] if not failed.is_empty() else {}
+	testing.eq(str(row.get("name", "")), "texture", "the failed row names the property")
+	testing.eq(str(row.get("error", "")),
+			"property 'texture' expects a Resource, not a bare string path. Use "
+			+ "{\"type\": \"Resource\", \"path\": \"res://test/fixtures/placeholder_texture.tres\"}"
+			+ " as the value.",
+			"the error names the tagged form with the same path")
+	testing.eq((written["landed"] as Array).size(), 0, "bare res:// path → nothing landed")
+	testing.eq(instance.texture, null, "the texture is left unset")
 	instance.free()
 	print("")
 
