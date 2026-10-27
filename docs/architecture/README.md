@@ -405,7 +405,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="1278cbd" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="e08fb56" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -415,7 +415,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified 1278cbd*
+*Figure 8 — the idempotent create / if_exists decision · verified e08fb56*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -713,19 +713,19 @@ The toolkit assumes a **single local user with a human at the editor**; the boun
 localhost + token, not a defence against an adversary who can already write project files.
 Within that model, several layers keep an LLM's requests honest.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="1278cbd" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="e08fb56" -->
 ```mermaid
 flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
     token -->|no| close["WS close 1008"]
     token -->|yes| filter["server-authoritative read-only filter<br/>(tools/list)"]
     filter --> guard["FileGuard.resolve_safe / resolve_safe_delete / resolve_safe_user"]
-    guard --> deny["deny ..-traversal, plugin source dir,<br/>token & audit files, reserved paths on delete"]
+    guard --> deny["deny ..-traversal, plugin source dir,<br/>token & audit files (any case or alias spelling),<br/>reserved paths on delete"]
     deny --> audit["Audit.log_call — params hashed"]
     audit --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
 ```
-*Figure 13 — request trust boundaries · verified 1278cbd*
+*Figure 13 — request trust boundaries · verified e08fb56*
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
@@ -734,7 +734,14 @@ flowchart TD
   dot-named segment such as `.git`, any `project.godot` or `override.cfg`, and any
   Windows-alias-shaped segment); and `resolve_safe_user` confines `save.*` to `user://` while **denying the
   plugin's own internal directory** — that denial is what protects the token and audit files
-  from being read or rewritten through the tools.
+  from being read or rewritten through the tools. `folder.delete` also refuses the host
+  folders (`res://`, `res://addons` and the toolkit's source) with `FOLDER_PROTECTED`, through
+  `FileGuard.is_host_folder`. Every host-folder check compares one canonical spelling of the path:
+  backslashes made slashes, simplified, case-folded (with the long s and Kelvin sign APFS
+  reads as `s` and `k`), and each segment cut at an NTFS stream `:` and trailing dots or
+  spaces. A folder directly under `res://addons/` or `user://addons/` named like an 8.3 short
+  name counts as the toolkit's too. Each refusal ends with `SAME_FOLDER_NOTE`, so a caller
+  who spelled the folder another way learns why it matched.
 - **Read-only is server-authoritative.** The toolkit does **not** gate dispatch on
   `GODOT_MCP_READ_ONLY`; the server filters `tools/list` by the `readOnlyHint` /
   `destructiveHint` the toolkit publishes. The toolkit consumes its own `read_only` flag only
