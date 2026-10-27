@@ -160,6 +160,23 @@ jobs:
       - name: Run the update flow
         run: bash scripts/test_framework/update_flow.sh godot
 
+  # ── Release builds agree ─────────────────────────────────────────────────────
+  # The bash and PowerShell release builds write the same release: the same zip
+  # entries with the same bytes, the same release file list, and manifests that
+  # agree on all but the zip's own size and hash (check_release_builds.sh). Editor-
+  # free; the runner's PowerShell 7 runs the .ps1 the maintainer may build with.
+  release-builds:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: "Release builds agree (bash · PowerShell)"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare the two release builds
+        run: bash scripts/test_framework/check_release_builds.sh
+
   # ── Manifest-diff regression ─────────────────────────────────────────────────
   # Lightweight, editor-free drift gate: per supported version, dump the REAL
   # engine surface (`godot --headless --dump-extension-api`) and assert the
@@ -303,7 +320,7 @@ jobs:
   # because a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [changes, docs-check, gdscript-check, unit-tests, update-flow, manifest-diff, export-strip]
+    needs: [changes, docs-check, gdscript-check, unit-tests, update-flow, release-builds, manifest-diff, export-strip]
     if: always()
     runs-on: ubuntu-latest
     steps:
