@@ -42,7 +42,9 @@ connections are rejected. File operations are restricted to the project
 that escape the boundary after lexical canonicalization, and that denies the
 plugin's own folders (`res://addons/godot_mcp_toolkit/` and
 `user://addons/godot_mcp_toolkit/`) under any spelling, whatever the letter case
-or a Windows alias name. The delete tools also refuse reserved paths: a
+or a Windows alias name, to every tool that takes a project or user-folder path.
+The exception is `asset_import`'s `source_path`, a file anywhere on disk to copy
+into the project, which is not checked against these folders. The delete tools also refuse reserved paths: a
 dot-named file or folder (`.git`, `.godot`, `.mcp.json`) or anything inside
 one, any `project.godot` or `override.cfg`, and any name shaped like a Windows
 alias, so none of them can remove the project's git repository. Setting
