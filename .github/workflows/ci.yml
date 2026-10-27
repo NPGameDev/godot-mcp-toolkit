@@ -10,11 +10,11 @@ on:
   # on the required checks that report there. RETAINED but INERT — merge queues require
   # an ORGANIZATION-owned repository and this one is user-owned, so the event never
   # fires; the live gate is the pull_request run above. Kept because it costs nothing
-  # and the floor needs no edits the day the repo moves to an org: no job below is gated
-  # on an event name or a commit-message token, so every one of them runs on every
-  # trigger this workflow accepts, and the aggregate can never pass vacuously. The
-  # gh-readonly-queue ref does not match the push filter above, so a queued PR would
-  # produce ONE floor run, not two.
+  # and the floor needs no edits the day the repo moves to an org: the only skip below
+  # is the docs-only pull request (.github/actions/changes), and a merge-queue run never
+  # classifies as docs-only, so every job runs on it and the aggregate can never pass
+  # vacuously. The gh-readonly-queue ref does not match the push filter above, so a
+  # queued PR would produce ONE floor run, not two.
   merge_group:
 
 # Supply-chain baseline: least privilege by default. No floor job
@@ -35,7 +35,40 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # A pull request that only changes *.md files skips every job that
+  # provisions Godot; docs-check below still runs on it.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - id: classify
+        uses: ./.github/actions/changes
+
+  # Editor-free checks that also cover docs-only pull requests.
+  docs-check:
+    runs-on: ubuntu-latest
+    name: "Docs and script checks (no Godot)"
+    steps:
+      - uses: actions/checkout@v7
+
+      # Docs-drift gate: README headline numbers match the pinned tool-surface
+      # counts and no retired vocabulary appears in user-facing docs
+      # (grep-only, no Godot).
+      - name: Docs count check
+        run: bash scripts/check_docs_counts.sh
+
+      # The server-pin helpers release.sh uses, against temp copies and a stubbed
+      # npm (no Godot, no network).
+      - name: Compatible-server script test
+        run: bash scripts/test_compatible_server.sh
+
   gdscript-check:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -72,18 +105,6 @@ jobs:
       - name: GDScript validation
         run: bash scripts/test_framework/validate_gdscript.sh
 
-      # Docs-drift gate: README headline numbers match the pinned tool-surface
-      # counts and no retired vocabulary appears in user-facing docs
-      # (grep-only, no Godot).
-      - name: Docs count check
-        run: bash scripts/check_docs_counts.sh
-
-      # The server-pin helpers release.sh uses, against temp copies and a stubbed
-      # npm (no Godot, no network): one row is enough.
-      - name: Compatible-server script test
-        if: ${{ matrix.godot-version == '4.7.0' }}
-        run: bash scripts/test_compatible_server.sh
-
   # Unit-execution leg — a real execution signal across ALL supported versions
   # (standard editor, gating). The godot-units composite runs run_units_cold.sh, whose
   # class-cache warm-up is required on 4.2 (its editor scan aborts on cross-file
@@ -91,6 +112,8 @@ jobs:
   # so the identical script runs on every version. This is where 4.3-4.7 units
   # run too (moved out of gdscript-check to avoid a double run). Merge gate.
   unit-tests:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     # Fuse: a leg finishes in a few minutes — at 10 min it is hung, not slow.
     timeout-minutes: 10
@@ -122,6 +145,8 @@ jobs:
   # not change ClassDB), so the repo-standard X.Y.0 matrix is safe even though the
   # map's 4.4/4.6 columns were distilled from 4.4.1/4.6.2 (compat-map meta.editor_builds).
   manifest-diff:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -180,6 +205,8 @@ jobs:
   # A pack export needs no templates, so the Linux runner can export the
   # Windows preset. Launching an exported build stays a manual release check.
   export-strip:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
     # Fuse: the warm-up is capped at 240s and each pack export takes well under
     # a minute — at 15 min the job is hung, not slow.
@@ -239,23 +266,32 @@ jobs:
   # "Toolkit floor OK" is the SINGLE name bound as a required check for pull requests
   # (and on the protected branch) — never an individual matrix row. A required
   # check pinned to a matrix leg breaks whenever the matrix is retuned; pinning to
-  # this one stable name never does. Every job in needs: runs unconditionally on
-  # every trigger this workflow accepts, merge_group included, so
-  # the gate is always substantive: an all-skip, which WOULD pass vacuously here, is
-  # structurally impossible. `if: always()` + the explicit failure/cancelled test also
-  # makes future path-filtered docs-skips safe: an `if:`-skipped upstream reports
-  # success here, whereas a `paths:`-skipped required check would deadlock as pending.
+  # this one stable name never does. The Godot jobs skip only when `changes`
+  # classified the run as a docs-only pull request; any other skip turns this gate
+  # red, so it cannot pass vacuously. It uses `if:` skips, never `paths:` filters,
+  # because a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [gdscript-check, unit-tests, manifest-diff, export-strip]
+    needs: [changes, docs-check, gdscript-check, unit-tests, manifest-diff, export-strip]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Assert every floor job succeeded
+        env:
+          CODE: ${{ needs.changes.outputs.code }}
+          FAILED: ${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}
+          SKIPPED: ${{ contains(needs.*.result, 'skipped') }}
         run: |
-          result="${{ contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') }}"
-          if [ "$result" = "true" ]; then
+          if [ "$FAILED" = "true" ]; then
             echo "::error::A toolkit floor job failed or was cancelled."
             exit 1
           fi
-          echo "All toolkit floor jobs succeeded."
+          if [ "$CODE" != "false" ] && [ "$SKIPPED" = "true" ]; then
+            echo "::error::A toolkit floor job was skipped on a run that changes code."
+            exit 1
+          fi
+          if [ "$CODE" = "false" ]; then
+            echo "Docs-only pull request: the editor-free checks succeeded, the Godot jobs were skipped."
+          else
+            echo "All toolkit floor jobs succeeded."
+          fi

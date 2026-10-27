@@ -1,0 +1,50 @@
+# Classifies a run as code or docs-only, so the editor-provisioning jobs can skip a
+# pull request that only changes Markdown. Only a pull request can be docs-only:
+# every other trigger (a push to main, a tag, a dispatch, a release's workflow_call,
+# a merge-queue run) reports code, so the release gates and the deliberate opt-ins
+# always run in full.
+#
+# The rule is *.md, not a docs/ directory: the toolkit's docs/ sits inside the Godot
+# project, so a script, a .json or a .gdignore there is something the editor legs
+# compile or export.
+#
+# Callers gate jobs with `if:`, never with `paths:` filters. A job skipped by `if:`
+# reports to the aggregate gate as skipped, which it accepts, while a required check
+# a `paths:` filter skips stays pending and blocks the merge. A caller lists the
+# classifying job in its aggregate's needs: so a failed classification turns the
+# gate red instead of skipping everything silently.
+#
+# Needs a checkout with fetch-depth: 2. A pull_request run checks out GitHub's merge
+# commit, whose first parent is the base branch tip, so HEAD^1..HEAD is exactly
+# what merging the PR would change.
+name: Classify the change
+description: "Outputs code=false for a pull request that only changes *.md files, code=true otherwise."
+outputs:
+  code:
+    description: "'false' for a docs-only pull request, 'true' for everything else."
+    value: ${{ steps.classify.outputs.code }}
+runs:
+  using: composite
+  steps:
+    - id: classify
+      shell: bash
+      env:
+        EVENT_NAME: ${{ github.event_name }}
+      run: |
+        set -euo pipefail
+        code=true
+        if [ "$EVENT_NAME" = "pull_request" ]; then
+          # --no-renames lists a rename as its delete and its add, so renaming a code
+          # file to .md still counts as a code change.
+          files="$(git diff --name-only --no-renames HEAD^1 HEAD)"
+          printf 'Changed files:\n%s\n' "$files"
+          # Every way this can go wrong must fail the step, never read as docs-only.
+          # No grep -q: exiting early would kill printf with SIGPIPE. Only grep's
+          # exit 1 (no non-Markdown line) is allowed; an error (2, 127) aborts.
+          code_files="$(printf '%s\n' "$files" | { grep -vE '\.md$' || [ $? -eq 1 ]; })"
+          if [ -n "$files" ] && [ -z "$code_files" ]; then
+            code=false
+          fi
+        fi
+        echo "code=$code" >> "$GITHUB_OUTPUT"
+        echo "code=$code (event: $EVENT_NAME)"
