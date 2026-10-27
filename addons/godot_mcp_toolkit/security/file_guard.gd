@@ -11,8 +11,10 @@ extends RefCounted
 ##
 ## Every check against a host folder (the project root, res://addons, the
 ## toolkit's source and its user:// folder) compares a case-folded form of the
-## path with Windows alias spellings cut away, because the Windows and macOS
-## filesystems open the folder under any of those spellings.
+## path with Windows alias spellings cut away. Windows opens a folder under
+## another letter case or an alias spelling (a trailing dot or space, an NTFS
+## stream, an 8.3 short name); macOS opens it under another letter case or a
+## letter it reads as ASCII, such as the long s.
 ##
 ## resolve_safe_user() validates user:// paths: rejects traversal,
 ## re-asserts the user:// boundary after canonicalization, then returns
@@ -66,7 +68,9 @@ static func _compile_short_name_re() -> RegEx:
 
 ## Whether [param path] is the toolkit's own source folder or a file inside it, under any
 ## spelling the filesystem resolves to it: another letter case, back or doubled slashes, a
-## trailing dot or space on a folder name, or an NTFS stream suffix.
+## trailing dot or space on a folder name, or an NTFS stream suffix. An 8.3 short name
+## does not match: the name alone cannot tell which folder it abbreviates, so the file
+## guards refuse it on their own.
 ##
 ## The folder matches whole, so a sibling such as
 ## [code]res://addons/godot_mcp_toolkit_extras/[/code] is not the toolkit's. On a
@@ -83,7 +87,9 @@ static func is_toolkit_source(path: String) -> bool:
 ## [code]res://addons[/code] or the toolkit's source folder, under any spelling the
 ## filesystem resolves to one of them.
 ##
-## Returns [code]true[/code] for each host folder and every path inside the toolkit's source.
+## Returns [code]true[/code] for each host folder, every path inside the toolkit's source,
+## and every path through a folder directly under [code]res://addons/[/code] whose name
+## has the shape of an 8.3 short name.
 static func is_host_folder(path: String) -> bool:
 	var form := _comparison_form(path)
 	return form == _PROJECT_ROOT or form == _ADDONS_DIR or _may_reach_toolkit_source(form)
@@ -157,6 +163,10 @@ static func resolve_safe(
 			and not normalized.begins_with("res://") \
 			and not normalized.begins_with("user://"):
 		return _denied("absolute OS path: %s" % input)
+	# A slash right after the scheme starts an absolute OS path. The engine opens
+	# res:///x inside the project, but a remove relative to res:// takes /x as absolute.
+	if normalized.begins_with("res:///") or normalized.begins_with("user:///"):
+		return _denied("absolute OS path inside a res:// or user:// path: %s" % input)
 
 	# Prefix allowlist.
 	var matched := false
@@ -175,7 +185,8 @@ static func resolve_safe(
 	# must not read or rewrite it (FileGuard is operation-agnostic — denying here
 	# covers both reads and writes). Check the SIMPLIFIED VIRTUAL path so a
 	# traversal that lands inside (res://foo/../addons/godot_mcp_toolkit/x.gd) is
-	# caught too. Other addons (res://addons/<other>/) stay editable.
+	# caught too. Other addons (res://addons/<other>/) stay editable, except one
+	# whose folder name has the shape of an 8.3 short name.
 	var canonical := normalized.simplify_path()
 	if _may_reach_toolkit_source(canonical):
 		return _denied(
@@ -218,6 +229,27 @@ static func resolve_safe_delete(path: String) -> Dictionary:
 			return _denied(
 					"%s is reserved (version control, engine or project metadata); the delete tools refuse it, so delete it by hand if you mean to" % path)
 	return guard
+
+
+## The path a [code]DirAccess[/code] opened on [code]res://[/code] removes for
+## [param file_path]: the text after the scheme, backslashes as slashes, simplified.
+## [code]DirAccess.remove[/code] takes a path that starts with a slash or names a drive as
+## absolute and removes it wherever it points, so such a path has no project-relative form.
+##
+## Returns the project-relative path, or an empty string when [param file_path] is not a
+## [code]res://[/code] path, names no file, or points outside the project.
+static func project_relative_path(file_path: String) -> String:
+	if not file_path.begins_with(_PROJECT_ROOT):
+		return ""
+	var normalized := file_path.substr(_PROJECT_ROOT.length()).replace("\\", "/")
+	# Before Godot 4.4 simplify_path drops a leading "..", so look for one first.
+	if _has_traversal(normalized):
+		return ""
+	var relative := normalized.simplify_path()
+	if relative.is_empty() or relative.is_absolute_path() or relative.begins_with("/") \
+			or relative.contains(":") or relative == ".." or relative.begins_with("../"):
+		return ""
+	return relative
 
 
 ## Whether a lowercased path segment names a reserved entry or has a Windows alias shape.

@@ -23,6 +23,8 @@ static func run(testing) -> void:
 	_test_resolve_safe_user_refuses_own_folder_spellings(testing)
 	_test_resolve_safe_user_allows_other_paths(testing)
 	_test_guards_refuse_windows_alias_spellings(testing)
+	_test_guards_refuse_absolute_path_after_scheme(testing)
+	_test_project_relative_path(testing)
 	_test_resolve_safe_delete_refuses_reserved(testing)
 	_test_resolve_safe_delete_refuses_windows_aliases(testing)
 	_test_resolve_safe_delete_allows_project_files(testing)
@@ -196,7 +198,6 @@ static func _test_resolve_safe_allows_other_spellings(testing: Testing) -> void:
 		"res://addons//",
 		"res://addons\\",
 		"res://./addons",
-		"res:///",
 		"res://.",
 		"res://./",
 		"res://addons/.",
@@ -352,7 +353,7 @@ static func _test_folder_delete_guard_refuses_spellings(testing: Testing) -> voi
 		["res://addons//", "FOLDER_PROTECTED"],
 		["res://addons\\", "FOLDER_PROTECTED"],
 		["res://./addons", "FOLDER_PROTECTED"],
-		["res:///", "FOLDER_PROTECTED"],
+		["res:///", "PATH_DENIED"],
 		["res://.", "FOLDER_PROTECTED"],
 		["res://./", "FOLDER_PROTECTED"],
 		["res://addons/.", "FOLDER_PROTECTED"],
@@ -480,6 +481,56 @@ static func _test_guards_refuse_windows_alias_spellings(testing: Testing) -> voi
 	]:
 		testing.eq(FileGuard.resolve_safe_user(path).get("error_code"), "PATH_DENIED",
 			"resolve_safe_user '%s' → PATH_DENIED" % path)
+	print("")
+
+
+# A slash or backslash right after the scheme starts an absolute OS path, which
+# DirAccess.remove on a res:// DirAccess removes wherever it points, outside the project.
+static func _test_guards_refuse_absolute_path_after_scheme(testing: Testing) -> void:
+	testing.begin("FileGuard: an absolute OS path right after the scheme")
+	for path: String in [
+		"res:///",
+		"res:///p7_08e_absent.gd",
+		"res://\\p7_08e_absent.gd",
+		"res:///C:/p7_08e_absent.gd",
+		"res://\\C:\\p7_08e_absent.gd",
+		"res:////server/share/p7_08e_absent.gd",
+	]:
+		testing.eq(FileGuard.resolve_safe(path).get("error"), "PATH_DENIED", "resolve_safe '%s' → PATH_DENIED" % path)
+		testing.eq(_delete_guard_error(path), "PATH_DENIED", "resolve_safe_delete '%s' → PATH_DENIED" % path)
+	for path: String in ["user:///p7_08e_absent.png", "user://\\p7_08e_absent.png"]:
+		testing.eq(FileGuard.resolve_safe(path, ["user://"]).get("error"), "PATH_DENIED",
+			"resolve_safe '%s' with user:// allowed → PATH_DENIED" % path)
+	print("")
+
+
+# The file deletes remove this relative path through a DirAccess opened on res://, so a
+# path that would leave the project gets none and nothing is removed.
+static func _test_project_relative_path(testing: Testing) -> void:
+	testing.begin("FileGuard.project_relative_path")
+	for row: Array in [
+		["res://scenes/main.tscn", "scenes/main.tscn"],
+		["res://p7_08e_absent.gd", "p7_08e_absent.gd"],
+		["res://a//b/./c.gd", "a/b/c.gd"],
+		["res://a\\b.gd", "a/b.gd"],
+		["res://sc\u00e8nes/\u65e5\u672c\u8a9e.gd", "sc\u00e8nes/\u65e5\u672c\u8a9e.gd"],
+	]:
+		var path := str(row[0])
+		var expected := str(row[1])
+		testing.eq(FileGuard.project_relative_path(path), expected, "'%s' → '%s'" % [path, expected])
+	for path: String in [
+		"res:///p7_08e_absent.gd",
+		"res://\\p7_08e_absent.gd",
+		"res:///C:/p7_08e_absent.gd",
+		"res://C:/p7_08e_absent.gd",
+		"res://\\\\server\\share\\p7_08e_absent.gd",
+		"res://../p7_08e_absent.gd",
+		"res://",
+		"res://.",
+		"user://p7_08e_absent.gd",
+		"p7_08e_absent.gd",
+	]:
+		testing.eq(FileGuard.project_relative_path(path), "", "'%s' → no relative path" % path)
 	print("")
 
 

@@ -134,10 +134,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and on macOS so did `ſ` (long s) and the Kelvin sign (U+212A), which it reads
   as `s` and `k`. This was possible since 1.0.0. Every one of these spellings is
   now refused, and `folder_delete` refuses any spelling of `res://` or
-  `res://addons` as well. The guards also refuse a folder whose name differs
-  from these only by letter case on a case-sensitive volume, as on most Linux
-  systems, and any folder directly under `addons/` named like an 8.3 short
-  name, such as `res://addons/v2~1/`.
+  `res://addons` as well. The guards also refuse some folders that lead
+  elsewhere: on a case-sensitive volume, as on most Linux systems, a folder
+  whose name differs from these only by letter case (an export also leaves out
+  such a copy of the toolkit's folder, without a warning); on any OS, a name
+  that adds only a trailing dot or space or a `:suffix`, or spells one of these
+  names with `ı` or `İ`; and any folder directly under `addons/` named like an
+  8.3 short name, such as `res://addons/v2~1/`. `file_delete`, `script_delete`,
+  `scene_delete` and `resource_delete` also read a path with a slash right
+  after `res://`, such as `res:///home/me/notes.txt`, as an absolute path: when
+  a file sat at the same path inside the project, they deleted the one outside
+  it. This worked on Linux and macOS, and on Windows before Godot 4.4 or for a
+  network share, also since 1.0.0. The file tools now refuse a slash or
+  backslash right after `res://` or `user://`.
 
 ## [1.1.0] - 2026-10-25
 

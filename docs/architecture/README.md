@@ -729,7 +729,9 @@ flowchart TD
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
-  re-verify pass); `resolve_safe_delete` adds, for `file.delete`, `folder.delete`,
+  re-verify pass, and an absolute path right after the scheme, such as `res:///…`, by a
+  prefix check on the `res:///` or `user:///` start); the file deletes
+  remove only the project-relative path `project_relative_path` returns; `resolve_safe_delete` adds, for `file.delete`, `folder.delete`,
   `resource.delete`, `scene.delete` and `script.delete`, a refusal of reserved paths (any
   dot-named segment such as `.git`, any `project.godot` or `override.cfg`, and any
   Windows-alias-shaped segment); and `resolve_safe_user` confines `save.*` to `user://` while **denying the
