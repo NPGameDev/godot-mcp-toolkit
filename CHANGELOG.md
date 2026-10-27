@@ -62,10 +62,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `preload()` or `extends`, or when it lives under `res://addons/` and the project
   raises a warning to an error that the addons folder exempts. Before, a script
   that failed this way was also refused its in-place reload. Error text now names
-  the file itself instead of `gdscript://…`. Repeated checks no longer keep their
-  compiled copies alive, except for a script that declares a `static var`, which
-  the engine keeps cached. Reported by @pragmabits
-  ([#98](https://github.com/NPGameDev/godot-mcp-toolkit/issues/98)).
+  the file itself instead of `gdscript://…`. A script under the project's script
+  templates folder (`res://script_templates/` by default, or a folder whose name
+  starts with it) is still judged as before. The editor loads a script there
+  without parsing it, so the check compiles it without its folder: its relative
+  `preload()` and `extends` don't resolve, and its errors name `gdscript://…`.
+  Repeated checks no longer keep their compiled copies alive, except for a
+  script that declares a `static var`, which the engine keeps cached.
+  Reported by @pragmabits
+  ([#98](https://github.com/NPGameDev/godot-mcp-toolkit/issues/98),
+  [#114](https://github.com/NPGameDev/godot-mcp-toolkit/issues/114)).
 - The export strip now removes the addon and its GDScript extensions in every
   Script Export Mode, including the default binary tokens. Before, on Godot 4.3
   and later, the built-in GDScript export plugin compiled those scripts to `.gdc`

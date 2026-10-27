@@ -2,9 +2,10 @@
 extends RefCounted
 ## Pins the compile probe: CompileProbe compiles a copy of a script beside its file,
 ## so relative paths and the project's warning rules apply as they do to the file,
-## and leaves no path, cache entry or live copy behind, nor a script it loaded
-## damaged. The verdicts are read through GDScriptSource.judge, and the error line
-## through script_check's diagnostics.
+## or with no path under the project's script-templates folder, and leaves no
+## path, cache entry or live copy behind, nor a script it loaded damaged. The
+## verdicts are read through GDScriptSource.judge, and the error line through
+## script_check's diagnostics.
 
 const Testing := preload("res://test/units/testing.gd")
 const CompileProbe := preload("res://addons/godot_mcp_toolkit/core/compile_probe.gd")
@@ -73,6 +74,10 @@ const _RELATIVE_EXTENDS_SOURCE := (
 # rule silences for a script under res://addons/.
 const _GET_NODE_DEFAULT_SOURCE := "extends Node\n\nvar target: Node = get_node(\"Target\")\n"
 const _COMPILING_SOURCE := "extends RefCounted\n\n\nfunc answer() -> int:\n\treturn 42\n"
+const _TEMPLATES_SETTING := "editor/script/templates_search_path"
+const _DEFAULT_TEMPLATES_FOLDER := "res://script_templates"
+# No folder exists at this path.
+const _OTHER_TEMPLATES_FOLDER := "res://test/fixtures/compile_probe_templates"
 const _LEAK_COMPILES := 50
 const _LEAK_BOUND := 10
 
@@ -89,6 +94,9 @@ static func run(testing: Testing) -> void:
 	_test_compile_leaves_a_loaded_script_alone(testing)
 	_test_compile_without_a_file(testing)
 	_test_compile_without_a_file_releases_the_copy(testing)
+	_test_compile_in_the_templates_folder(testing)
+	_test_compile_in_a_folder_the_templates_folder_prefixes(testing)
+	_test_compile_follows_the_templates_folder_setting(testing)
 	_test_errors_are_captured_under_the_path(testing)
 	_test_error_line_beside_the_file(testing)
 
@@ -228,6 +236,50 @@ static func _test_compile_without_a_file_releases_the_copy(testing: Testing) -> 
 	testing.ok(kept.get_ref() == null, "dropped, then a later compile → the copy is freed")
 	testing.eq(int(helper.get_script_constant_map().get("ANSWER", -1)), 42,
 			"the copy freed → the held script its inner class preloads keeps its constant")
+	print("")
+
+
+# The editor loads a script in the templates folder without parsing it, so a
+# copy there must compile with no path. The unit runner has no editor, so these
+# cases pin the path the copy compiles under, not the skip.
+static func _test_compile_in_the_templates_folder(testing: Testing) -> void:
+	testing.begin("CompileProbe.compile: a file in the script-templates folder compiles with no path")
+	var compiled := CompileProbe.compile(_COMPILING_SOURCE, "res://script_templates/Node/x.gd", false)
+	var probe: GDScript = compiled["script"]
+	testing.eq(int(compiled["error"]), OK, "a source that compiles → OK")
+	testing.eq(str(compiled["path"]), "gdscript://%d.gd" % probe.get_instance_id(),
+			"a file under res://script_templates/ → gdscript://<instance id>.gd")
+	testing.eq(probe.resource_path, "", "after the compile → the copy's resource_path is empty")
+	print("")
+
+
+# The engine's test is a prefix test on the folder, so it also takes a sibling
+# folder whose name starts with the templates folder's.
+static func _test_compile_in_a_folder_the_templates_folder_prefixes(testing: Testing) -> void:
+	testing.begin("CompileProbe.compile: a folder named after the templates folder compiles with no path")
+	var compiled := CompileProbe.compile(_COMPILING_SOURCE, "res://script_templates_v2/x.gd", false)
+	var probe: GDScript = compiled["script"]
+	testing.eq(str(compiled["path"]), "gdscript://%d.gd" % probe.get_instance_id(),
+			"a file under res://script_templates_v2/ → gdscript://<instance id>.gd")
+	print("")
+
+
+static func _test_compile_follows_the_templates_folder_setting(testing: Testing) -> void:
+	testing.begin("CompileProbe.compile: the templates folder is the one the project setting names")
+	var had_setting := ProjectSettings.has_setting(_TEMPLATES_SETTING)
+	var original: Variant = ProjectSettings.get_setting(_TEMPLATES_SETTING, _DEFAULT_TEMPLATES_FOLDER)
+	ProjectSettings.set_setting(_TEMPLATES_SETTING, _OTHER_TEMPLATES_FOLDER)
+	var in_setting := CompileProbe.compile(_COMPILING_SOURCE, _OTHER_TEMPLATES_FOLDER + "/x.gd", false)
+	var in_default := CompileProbe.compile(_COMPILING_SOURCE, "res://script_templates/x.gd", false)
+	# Restored before any assertion, so a failing one leaves the setting as it was.
+	ProjectSettings.set_setting(_TEMPLATES_SETTING, original if had_setting else null)
+	var in_setting_probe: GDScript = in_setting["script"]
+	var in_default_probe: GDScript = in_default["script"]
+	testing.eq(str(in_setting["path"]), "gdscript://%d.gd" % in_setting_probe.get_instance_id(),
+			"a file under the folder the setting names → gdscript://<instance id>.gd")
+	testing.eq(str(in_default["path"]),
+			"res://script_templates/x.gd.__mcp_probe_%d.gd" % in_default_probe.get_instance_id(),
+			"a file under res://script_templates/ with the setting elsewhere → beside the file")
 	print("")
 
 
