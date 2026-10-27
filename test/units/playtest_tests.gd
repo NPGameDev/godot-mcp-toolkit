@@ -29,6 +29,7 @@ static func run(testing: Testing) -> void:
 	_test_debugger_log_locked_file_keeps_session_state(testing)
 	_test_debugger_log_absent_file_note(testing)
 	_test_debugger_log_scans_past_break_entry(testing)
+	_test_debugger_log_scans_past_located_break_entry(testing)
 	_test_debugger_log_keeps_break_entry_without_log_errors(testing)
 	_test_runtime_opt_out_hint(testing)
 	_test_runtime_opt_out_hint_text(testing)
@@ -269,6 +270,22 @@ static func _test_debugger_log_scans_past_break_entry(testing: Testing) -> void:
 	print("")
 
 
+## debugger.get_log when the only buffered entry is a break's that the editor's stack
+## dump located: the log's errors still replace it.
+static func _test_debugger_log_scans_past_located_break_entry(testing: Testing) -> void:
+	testing.begin("debugger.get_log with only a located break entry buffered: the log scan's entry")
+	var read := _read_log_with_break_entry("SCRIPT ERROR: x\n   at: _ready (res://a.gd:8)\n",
+			[{"frame": 0, "file": "res://b.gd", "function": "_process", "line": 3}])
+
+	var buffer: Array = read.get("error_buffer", [])
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(buffer.size(), 1, "an error in the log → one error_buffer entry")
+	testing.eq(str(entry.get("type", "")), "log_scan", "an error in the log → the log scan's entry, not the located break's")
+	testing.eq(str(entry.get("source", "")), "res://a.gd", "the log scan's entry → the log error's file")
+	testing.eq(int(entry.get("line", 0)), 8, "the log scan's entry → the log error's line")
+	print("")
+
+
 ## debugger.get_log when the only buffered entry is a break's and the log names no
 ## error: the break entry stays.
 static func _test_debugger_log_keeps_break_entry_without_log_errors(testing: Testing) -> void:
@@ -286,10 +303,10 @@ static func _test_debugger_log_keeps_break_entry_without_log_errors(testing: Tes
 
 
 ## Reads debugger.get_log for a playtest whose log holds [param content] and whose
-## game is at an error break, so its tracker has the break's entry buffered.
-## Restores the log path and the reader's tracker, and deletes the fixture, before
-## returning the read.
-static func _read_log_with_break_entry(content: String) -> Dictionary:
+## game is at an error break, so its tracker has the break's entry buffered, located
+## at frame 0 of [param stack_frames] when it is not empty. Restores the log path and
+## the reader's tracker, and deletes the fixture, before returning the read.
+static func _read_log_with_break_entry(content: String, stack_frames: Array = []) -> Dictionary:
 	var had_setting := ProjectSettings.has_setting(_LOG_PATH_KEY)
 	var original: Variant = ProjectSettings.get_setting(_LOG_PATH_KEY, _DEFAULT_LOG_PATH)
 	ProjectSettings.set_setting(_LOG_PATH_KEY, _LOG_FIXTURE)
@@ -301,6 +318,8 @@ static func _read_log_with_break_entry(content: String) -> Dictionary:
 	PlaytestLogReader.set_session_tracker(tracker)
 	tracker.on_session_started()
 	tracker.on_session_breaked(false)
+	if not stack_frames.is_empty():
+		tracker.on_debugger_node_stack_dump(stack_frames)
 	var read: Dictionary = PlaytestLogReader.cmd_debugger_get_log({})
 
 	PlaytestLogReader._session_tracker = saved_tracker

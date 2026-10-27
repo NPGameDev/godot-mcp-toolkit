@@ -22,6 +22,10 @@ enum LatestSession {
 }
 
 const _ERROR_BUFFER_MAX := 50
+# The engine's GDScript analyzer words a failed script preload this way on 4.2 to 4.7.
+# The game breaks on the line of the preload, so the error to fix is in the script it
+# names.
+const _PRELOAD_FAILURE_PREFIX := "Could not preload resource script \""
 
 var _editor_port: Object = null
 var _active: bool = false
@@ -31,8 +35,11 @@ var _error_buffer: Array = []
 var _latest_session: LatestSession = LatestSession.NONE
 var _break_reason: String = ""
 # The entry the current error break recorded, empty when it recorded none, so a
-# reason that arrives after the break can complete its message.
+# reason or a location that arrives after the break can complete it.
 var _break_entry: Dictionary = {}
+# Where the current error break stopped, from the latest stack dump's frame 0:
+# source, function and line, or empty while no dump gave one.
+var _break_location: Dictionary = {}
 # Set by a remote-debug deploy's export, which runs after the editor's build step and
 # before the deployed game attaches, so the next session start can tell that game
 # from a playtest.
@@ -57,11 +64,58 @@ static func make_error_entry(timestamp_ms: int, message: String, source: String,
 	}
 
 
-static func _error_break_message(reason: String) -> String:
+## The text an error break's messages put between its [param reason] and the advice
+## to fix it, when the break is at [param location] (a Dictionary with
+## [code]source[/code] and [code]line[/code]): [code]", at <source>:<line>."[/code],
+## then, when [param reason] is a failed preload of a script, a sentence naming that
+## script. Returns an empty String for an empty [param location].
+static func error_break_location_text(reason: String, location: Dictionary) -> String:
+	if location.is_empty():
+		return ""
+	var text := ", at %s:%d." % [str(location.get("source", "")), int(location.get("line", 0))]
+	var preloaded_script := _preloaded_script_path(reason)
+	if not preloaded_script.is_empty():
+		text += (" The preloaded script %s holds the error: run script_check on it."
+				% preloaded_script)
+	return text
+
+
+static func _error_break_message(reason: String, location: Dictionary) -> String:
 	var reason_clause := "" if reason.is_empty() else ": " + reason
-	return ("Game paused at a script error it cannot continue from%s. Find the file and "
-			+ "line with script_check or lsp_project_diagnostics, fix it, then game_stop "
-			+ "and game_start.") % reason_clause
+	if location.is_empty():
+		return ("Game paused at a script error it cannot continue from%s. Find the file and "
+				+ "line with script_check or lsp_project_diagnostics, fix it, then game_stop "
+				+ "and game_start.") % reason_clause
+	return ("Game paused at a script error it cannot continue from%s%s Fix it, then "
+			+ "game_stop and game_start.") % [
+				reason_clause, error_break_location_text(reason, location)]
+
+
+## Returns the path [param reason] names when it is a failed script preload, else an
+## empty String.
+static func _preloaded_script_path(reason: String) -> String:
+	var prefix_at := reason.find(_PRELOAD_FAILURE_PREFIX)
+	if prefix_at == -1:
+		return ""
+	var path_start := prefix_at + _PRELOAD_FAILURE_PREFIX.length()
+	var path_end := reason.rfind("\"")
+	if path_end <= path_start:
+		return ""
+	return reason.substr(path_start, path_end - path_start)
+
+
+## Returns the location in frame 0 of [param frames], a stack dump's frames, as a
+## Dictionary with [code]source[/code], [code]function[/code] and [code]line[/code];
+## an empty one when there is no frame, or frame 0 names no file or no line.
+static func _frame_zero_location(frames: Array) -> Dictionary:
+	if frames.is_empty() or not frames[0] is Dictionary:
+		return {}
+	var frame: Dictionary = frames[0]
+	var file := str(frame.get("file", ""))
+	var line: int = int(frame.get("line", 0))
+	if file.is_empty() or line < 1:
+		return {}
+	return {"source": file, "function": str(frame.get("function", "")), "line": line}
 
 
 ## [param editor_port] answers [code]is_playing_scene()[/code]; null reads as never
@@ -97,12 +151,16 @@ func on_session_stopped() -> void:
 func on_session_breaked(can_debug: bool) -> void:
 	_breaked = true
 	_can_debug = can_debug
-	# An error break's message reaches only the editor's own debugger, never a
+	# A breakpoint pause is no error; debug_state's breaked reports it, and a stack
+	# dump that came first is not an error break's location.
+	if can_debug:
+		_break_location = {}
+		return
+	# An error break's error message reaches the editor's own debugger, never a
 	# plugin's capture, so an error break with nothing buffered records the entry
-	# itself. A breakpoint pause is no error; debug_state's breaked reports it.
-	if not can_debug and _error_buffer.is_empty():
-		_break_entry = make_error_entry(Time.get_ticks_msec(),
-				_error_break_message(_break_reason), "", "", 0, "break")
+	# itself, and the editor debugger node's reason and stack dump complete it.
+	if _error_buffer.is_empty():
+		_break_entry = _make_break_entry(Time.get_ticks_msec())
 		_buffer_error(_break_entry)
 
 
@@ -121,13 +179,28 @@ func on_debugger_node_breaked(really_did: bool, can_debug: bool, reason: String,
 	if not really_did or can_debug:
 		return
 	_break_reason = reason.strip_edges().trim_suffix(".")
-	if _break_entry.is_empty():
+	_replace_break_entry()
+
+
+## The editor's debugger node sent the stack of the break the game is at, the payload
+## of its own [code]stack_dump[/code] signal: one Dictionary per frame with
+## [code]file[/code], [code]function[/code] and [code]line[/code]. Frame 0 is where
+## the game stopped: at a parse error, the line the engine reports it on. At an error
+## break it fills the [code]source[/code], [code]function[/code] and [code]line[/code] of the
+## entry the break recorded, if it recorded one, as a new entry in its place, as
+## [method on_debugger_node_breaked] does with the reason, and
+## [method get_break_location] returns it until the game continues or its session
+## ends. A dump that arrives before the break is kept for the entry the break then
+## records, and a later dump replaces it. A dump at a breakpoint pause, an empty
+## stack, or a frame 0 without a file or a line is ignored.
+func on_debugger_node_stack_dump(frames: Array) -> void:
+	if _breaked and _can_debug:
 		return
-	var index := _error_buffer.find(_break_entry)
-	_break_entry = _break_entry.duplicate()
-	_break_entry["message"] = _error_break_message(_break_reason)
-	if index != -1:
-		_error_buffer[index] = _break_entry
+	var location := _frame_zero_location(frames)
+	if location.is_empty():
+		return
+	_break_location = location
+	_replace_break_entry()
 
 
 func on_session_continued() -> void:
@@ -141,9 +214,10 @@ func on_session_continued() -> void:
 ## 4.2 to 4.7: [code][hour, minute, second, msec, source_file, source_func,
 ## source_line, error, error_descr, warning, callstack_size, (file, func, line)...][/code].
 ## Warnings and payloads shorter than the fixed fields are ignored. The engine routes
-## this message to its own error handler before a plugin's capture on 4.2 to 4.7, so a
-## live session fills the buffer from the break fallback instead; this keeps a payload
-## that does reach a plugin decoded the same way.
+## this message to its own error handler before a plugin's capture on 4.2 to 4.7, so in
+## a live session an error break's entry stands in for it, with the file and line from
+## the editor debugger node's stack dump; this keeps a payload that does reach a
+## plugin decoded the same way.
 func buffer_debugger_error(data: Array) -> void:
 	if data.size() < 10:
 		return
@@ -214,9 +288,38 @@ func get_break_reason() -> String:
 	return _break_reason
 
 
+## Returns frame 0's location from the editor debugger's latest stack dump for the
+## current error break, a Dictionary with [code]source[/code], [code]function[/code]
+## and [code]line[/code]. A dump that comes before the break is kept for it, and
+## returned from its arrival on. Returns an empty one when no dump gave it, at a
+## breakpoint pause, or after the game continued or its session ended.
+func get_break_location() -> Dictionary:
+	return _break_location.duplicate()
+
+
 func _forget_break() -> void:
 	_break_reason = ""
 	_break_entry = {}
+	_break_location = {}
+
+
+func _make_break_entry(timestamp_ms: int) -> Dictionary:
+	return make_error_entry(timestamp_ms,
+			_error_break_message(_break_reason, _break_location),
+			str(_break_location.get("source", "")), str(_break_location.get("function", "")),
+			int(_break_location.get("line", 0)), "break")
+
+
+# Puts a new entry, with the current reason and location, in place of the one the
+# current error break recorded, so a buffer an earlier get_error_buffer returned
+# never changes.
+func _replace_break_entry() -> void:
+	if _break_entry.is_empty():
+		return
+	var index := _error_buffer.find(_break_entry)
+	_break_entry = _make_break_entry(int(_break_entry["timestamp_ms"]))
+	if index != -1:
+		_error_buffer[index] = _break_entry
 
 
 func _is_editor_playing() -> bool:

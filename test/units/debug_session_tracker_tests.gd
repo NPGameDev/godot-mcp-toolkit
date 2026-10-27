@@ -43,6 +43,16 @@ static func run(testing: Testing) -> void:
 	_test_break_reason_before_break_reaches_entry(testing)
 	_test_break_reason_ends_with_the_break(testing)
 	_test_break_reason_reaches_entry_in_either_signal_order(testing)
+	_test_stack_dump_locates_error_break_entry(testing)
+	_test_stack_dump_without_reason_locates_entry(testing)
+	_test_stack_dump_before_break_reaches_entry(testing)
+	_test_latest_stack_dump_wins(testing)
+	_test_stack_dump_at_breakpoint_pause_is_ignored(testing)
+	_test_stack_dump_ends_with_the_break(testing)
+	_test_stack_dump_leaves_earlier_buffer_unchanged(testing)
+	_test_stack_dump_without_frame_location_is_ignored(testing)
+	_test_stack_dump_on_failed_preload_names_preloaded_script(testing)
+	_test_failed_preload_without_stack_dump_keeps_unlocated_text(testing)
 	_test_debugger_error_payload_is_decoded(testing)
 	_test_error_buffer_read_returns_a_copy(testing)
 	_test_error_buffer_keeps_latest_fifty(testing)
@@ -392,6 +402,236 @@ static func _test_break_reason_reaches_entry_in_either_signal_order(testing: Tes
 	print("")
 
 
+# -- Error-break location from the debugger node's stack dump --------------------
+
+
+static func _test_stack_dump_locates_error_break_entry(testing: Testing) -> void:
+	testing.begin("debug-session tracker error break, its reason, then the node's stack dump")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_breaked", true, false, "Cannot call method 'get_name' on a null value.", false)
+	tracker.call("on_debugger_node_stack_dump", [
+		_frame("res://cases/runtime_null.gd", "_ready", 8),
+		_frame("res://cases/main.gd", "_on_start", 3),
+	])
+	var buffer: Array = tracker.call("get_error_buffer")
+	var location: Dictionary = tracker.call("get_break_location")
+
+	testing.eq(buffer.size(), 1, "an error break with a stack dump → one entry")
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from: Cannot call method 'get_name' on a null value, at res://cases/runtime_null.gd:8. Fix it, then game_stop and game_start.",
+			"a stack dump → the entry's message names frame 0's file and line, without the find-the-file advice")
+	testing.eq(str(entry.get("source", "")), "res://cases/runtime_null.gd", "frame 0's file → the entry's source")
+	testing.eq(str(entry.get("function", "")), "_ready", "frame 0's function → the entry's function")
+	testing.eq(int(entry.get("line", 0)), 8, "frame 0's line → the entry's line")
+	testing.eq(str(entry.get("type", "")), "break", "a located break entry keeps type break")
+	testing.eq(location, {"source": "res://cases/runtime_null.gd", "function": "_ready", "line": 8},
+			"a stack dump at an error break → get_break_location returns frame 0")
+	print("")
+
+
+static func _test_stack_dump_without_reason_locates_entry(testing: Testing) -> void:
+	testing.begin("debug-session tracker error break with a stack dump and no reason")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://cases/parse_main.gd", "", 7)])
+	var buffer: Array = tracker.call("get_error_buffer")
+
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from, at res://cases/parse_main.gd:7. Fix it, then game_stop and game_start.",
+			"a stack dump and no reason → the located message without the error clause")
+	print("")
+
+
+static func _test_stack_dump_before_break_reaches_entry(testing: Testing) -> void:
+	testing.begin("debug-session tracker handlers called directly: the node's stack dump, then the error break")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://cases/parse_main.gd", "", 7)])
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_breaked", true, false, "Parser Error: x", false)
+	var buffer: Array = tracker.call("get_error_buffer")
+
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from: Parser Error: x, at res://cases/parse_main.gd:7. Fix it, then game_stop and game_start.",
+			"a stack dump before the break → kept for the entry the break records")
+	testing.eq(int(entry.get("line", 0)), 7, "a stack dump before the break → the entry's line")
+	print("")
+
+
+static func _test_latest_stack_dump_wins(testing: Testing) -> void:
+	testing.begin("debug-session tracker takes the latest stack dump of an error break")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://a.gd", "_ready", 3)])
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://b.gd", "_process", 9)])
+	var buffer: Array = tracker.call("get_error_buffer")
+
+	testing.eq(buffer.size(), 1, "two stack dumps → still one entry")
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("source", "")), "res://b.gd", "two stack dumps → the latest's file")
+	testing.eq(str(entry.get("function", "")), "_process", "two stack dumps → the latest's function")
+	testing.eq(int(entry.get("line", 0)), 9, "two stack dumps → the latest's line")
+	print("")
+
+
+static func _test_stack_dump_at_breakpoint_pause_is_ignored(testing: Testing) -> void:
+	testing.begin("debug-session tracker ignores a stack dump at a breakpoint pause")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", true)
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://cases/breakpoint_pause.gd", "_ready", 7)])
+	var buffer: Array = tracker.call("get_error_buffer")
+	var location_after: Dictionary = tracker.call("get_break_location")
+	var early_tracker: RefCounted = _new_tracker(true)
+	if early_tracker == null:
+		return
+	early_tracker.call("on_session_started")
+	early_tracker.call("on_debugger_node_stack_dump", [_frame("res://cases/breakpoint_pause.gd", "_ready", 7)])
+	early_tracker.call("on_session_breaked", true)
+	var location_before: Dictionary = early_tracker.call("get_break_location")
+
+	testing.eq(buffer.size(), 0, "a stack dump at a breakpoint pause → no entry")
+	testing.eq(location_after, {}, "a stack dump at a breakpoint pause → no break location")
+	testing.eq(location_before, {}, "a stack dump, then a breakpoint pause → no break location")
+	print("")
+
+
+static func _test_stack_dump_ends_with_the_break(testing: Testing) -> void:
+	testing.begin("debug-session tracker forgets the stack dump once the game continues, stops or starts")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://a.gd", "_ready", 3)])
+	tracker.call("on_session_continued")
+	var after_continue: Dictionary = tracker.call("get_break_location")
+	tracker.call("on_session_breaked", false)
+	var buffer: Array = tracker.call("get_error_buffer")
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://a.gd", "_ready", 3)])
+	tracker.call("on_session_stopped")
+	var after_stop: Dictionary = tracker.call("get_break_location")
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://a.gd", "_ready", 3)])
+	tracker.call("on_session_started")
+	var after_start: Dictionary = tracker.call("get_break_location")
+
+	testing.eq(after_continue, {}, "continued → no break location")
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"a stack dump before the game continued → the next error break's entry has no location")
+	testing.eq(int(entry.get("line", -1)), 0, "a stack dump before the game continued → the next entry's line 0")
+	testing.eq(after_stop, {}, "stopped → no break location")
+	testing.eq(after_start, {}, "a new session → no break location")
+	print("")
+
+
+static func _test_stack_dump_leaves_earlier_buffer_unchanged(testing: Testing) -> void:
+	testing.begin("debug-session tracker stack dump leaves a buffer read earlier unchanged")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_breaked", true, false, "Parser Error: x", false)
+	var read_before: Array = tracker.call("get_error_buffer")
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://a.gd", "", 3)])
+	var read_after: Array = tracker.call("get_error_buffer")
+
+	var before: Dictionary = read_before[0] if read_before.size() == 1 else {}
+	var after: Dictionary = read_after[0] if read_after.size() == 1 else {}
+	testing.eq(str(before.get("message", "")),
+			"Game paused at a script error it cannot continue from: Parser Error: x. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"a buffer read before the stack dump → its entry's message unchanged")
+	testing.eq(int(before.get("line", -1)), 0, "a buffer read before the stack dump → its entry's line unchanged")
+	testing.eq(int(after.get("line", 0)), 3, "a buffer read after the stack dump → the located entry")
+	print("")
+
+
+static func _test_stack_dump_without_frame_location_is_ignored(testing: Testing) -> void:
+	testing.begin("debug-session tracker ignores a stack dump with no frame 0 file or line")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_stack_dump", [])
+	var after_empty: Dictionary = tracker.call("get_break_location")
+	tracker.call("on_debugger_node_stack_dump", [_frame("", "_ready", 3)])
+	var after_no_file: Dictionary = tracker.call("get_break_location")
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://a.gd", "_ready", 0)])
+	var after_no_line: Dictionary = tracker.call("get_break_location")
+	var buffer: Array = tracker.call("get_error_buffer")
+
+	testing.eq(after_empty, {}, "an empty stack → no break location")
+	testing.eq(after_no_file, {}, "frame 0 without a file → no break location")
+	testing.eq(after_no_line, {}, "frame 0 with line 0 → no break location")
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from. Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"ignored stack dumps → the entry's unlocated message")
+	testing.eq(str(entry.get("source", "?")), "", "ignored stack dumps → the entry names no file")
+	print("")
+
+
+## The engine reports a script whose preload failed on the preloading script's line,
+## with a reason that ends in the quoted path and a period.
+static func _test_stack_dump_on_failed_preload_names_preloaded_script(testing: Testing) -> void:
+	testing.begin("debug-session tracker located failed-preload break names the preloaded script")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_breaked", true, false,
+			"Parser Error: Could not preload resource script \"res://cases/preload_inner.gd\".", false)
+	tracker.call("on_debugger_node_stack_dump", [_frame("res://cases/preload_outer.gd", "", 4)])
+	var buffer: Array = tracker.call("get_error_buffer")
+
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from: Parser Error: Could not preload resource script \"res://cases/preload_inner.gd\", at res://cases/preload_outer.gd:4. The preloaded script res://cases/preload_inner.gd holds the error: run script_check on it. Fix it, then game_stop and game_start.",
+			"a failed preload with a stack dump → the reason without its period, the location, then the preloaded script")
+	testing.eq(str(entry.get("source", "")), "res://cases/preload_outer.gd",
+			"a failed preload → the entry's source is frame 0, the preloading script")
+	testing.eq(int(entry.get("line", 0)), 4, "a failed preload → the entry's line is frame 0's")
+	print("")
+
+
+static func _test_failed_preload_without_stack_dump_keeps_unlocated_text(testing: Testing) -> void:
+	testing.begin("debug-session tracker failed-preload break without a stack dump")
+	var tracker: RefCounted = _new_tracker(true)
+	if tracker == null:
+		return
+	tracker.call("on_session_started")
+	tracker.call("on_session_breaked", false)
+	tracker.call("on_debugger_node_breaked", true, false,
+			"Parser Error: Could not preload resource script \"res://cases/preload_inner.gd\".", false)
+	var buffer: Array = tracker.call("get_error_buffer")
+
+	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
+	testing.eq(str(entry.get("message", "")),
+			"Game paused at a script error it cannot continue from: Parser Error: Could not preload resource script \"res://cases/preload_inner.gd\". Find the file and line with script_check or lsp_project_diagnostics, fix it, then game_stop and game_start.",
+			"a failed preload without a stack dump → the unlocated message, with no preloaded-script sentence")
+	print("")
+
+
 static func _test_debugger_error_payload_is_decoded(testing: Testing) -> void:
 	testing.begin("debug-session tracker decodes a debugger error payload")
 	var tracker: RefCounted = _new_tracker(true)
@@ -547,6 +787,11 @@ static func _entry_message_after_node_break(session_heard_first: bool) -> String
 		return ""
 	var entry: Dictionary = buffer[0]
 	return str(entry.get("message", ""))
+
+
+## One frame of the editor debugger node's stack_dump payload.
+static func _frame(file: String, function: String, line: int) -> Dictionary:
+	return {"frame": 0, "file": file, "function": function, "line": line}
 
 
 ## An "error" debugger message's payload: the engine's fixed fields, then an empty
