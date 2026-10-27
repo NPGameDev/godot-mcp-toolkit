@@ -20,6 +20,7 @@ static func run(testing) -> void:
 	_test_diagnosis_quadrants(testing)
 	_test_file_tail_caveat(testing)
 	_test_registry_timeout_hint_follows_debugger(testing)
+	_test_registry_timeout_hint_names_break_location(testing)
 
 
 ## The one compile claim: COMPILATION_FAILED only for errors-captured AND never-ran.
@@ -102,6 +103,31 @@ static func _test_registry_timeout_hint_follows_debugger(testing) -> void:
 		"the debugger has not stopped the game → the timeout hint")
 	testing.eq(PlaytestControl._registry_timeout_hint(false, error_break, "Parser Error: x"), "",
 		"the editor no longer plays the game → no hint, for the startup diagnosis")
+	print("")
+
+
+## The error-break hint when the debugger's stack dump gave where the break stopped:
+## the file and line follow the reason, and a failed preload names the preloaded
+## script, only when the location is known.
+static func _test_registry_timeout_hint_names_break_location(testing) -> void:
+	testing.begin("game.start registry-timeout hint names the error break's location")
+	var error_break := {"active": true, "breaked": true, "can_debug": false}
+	var location := {"source": "res://cases/parse_main.gd", "function": "", "line": 7}
+	var preload_location := {"source": "res://cases/preload_outer.gd", "function": "", "line": 4}
+	var preload_reason := "Parser Error: Could not preload resource script \"res://cases/preload_inner.gd\""
+
+	testing.eq(PlaytestControl._registry_timeout_hint(true, error_break, "Parser Error: Unexpected token", location),
+		"The game is paused at a script error and cannot continue, so waiting won't help: Parser Error: Unexpected token, at res://cases/parse_main.gd:7. Fix it, then game_stop and game_start.",
+		"an error break with a reason and a location → the hint names the file and line after the reason")
+	testing.eq(PlaytestControl._registry_timeout_hint(true, error_break, "", location),
+		"The game is paused at a script error and cannot continue, so waiting won't help, at res://cases/parse_main.gd:7. Fix it, then game_stop and game_start.",
+		"an error break with a location and no reason → the hint names the file and line without an error clause")
+	testing.eq(PlaytestControl._registry_timeout_hint(true, error_break, preload_reason, preload_location),
+		"The game is paused at a script error and cannot continue, so waiting won't help: Parser Error: Could not preload resource script \"res://cases/preload_inner.gd\", at res://cases/preload_outer.gd:4. The preloaded script res://cases/preload_inner.gd holds the error: run script_check on it. Fix it, then game_stop and game_start.",
+		"a located failed preload → the hint names the preloaded script after the file and line")
+	testing.eq(PlaytestControl._registry_timeout_hint(true, error_break, preload_reason, {}),
+		"The game is paused at a script error and cannot continue, so waiting won't help: Parser Error: Could not preload resource script \"res://cases/preload_inner.gd\". Fix it, then game_stop and game_start.",
+		"a failed preload without a location → the unlocated hint, with no preloaded-script sentence")
 	print("")
 
 

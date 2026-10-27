@@ -17,6 +17,7 @@ const FileGuard = Modules.FileGuard
 const RegistryClient = Modules.RegistryClient
 const Helpers = Modules.CommandHelpers
 const RuntimeOptOut = Modules.RuntimeOptOut
+const DebugSessionTracker = Modules.DebugSessionTracker
 const MCPAuth := preload("res://addons/godot_mcp_toolkit/security/auth.gd")
 const _LogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 
@@ -158,7 +159,8 @@ static func cmd_game_start(parameters: Dictionary) -> Dictionary:
 		match runtime_failure:
 			"registry_timeout":
 				var debugger_hint := _registry_timeout_hint(EditorInterface.is_playing_scene(),
-						_LogReader.get_debug_state(), _LogReader.get_break_reason())
+						_LogReader.get_debug_state(), _LogReader.get_break_reason(),
+						_LogReader.get_break_location())
 				if debugger_hint.is_empty():
 					# The game was playing when the poll began but has stopped — a
 					# ran-then-died soft path, framed as a runtime crash (it began
@@ -394,7 +396,9 @@ static func _diagnose_startup(
 ## Pure over its inputs so the decision is headless-unit-testable. [param is_playing]
 ## is whether the editor plays the game, [param debug_state] the debug.state payload
 ## ([code]{"active", "breaked", "can_debug"}[/code]) and [param break_reason] the
-## editor debugger's text for an error break, empty when it gave none. A game the
+## editor debugger's text for an error break, empty when it gave none, and
+## [param break_location] where that break stopped ([code]source[/code],
+## [code]line[/code]), empty when the debugger gave no location. A game the
 ## debugger stopped registers no runtime while stopped, so waiting is no help: an
 ## error break (not [code]can_debug[/code]) needs a fix and a restart, never
 ## debug_continue, which resumes a game whose script failed to load; a breakpoint
@@ -403,6 +407,7 @@ static func _diagnose_startup(
 ## caller's startup diagnosis.
 static func _registry_timeout_hint(
 	is_playing: bool, debug_state: Dictionary, break_reason: String,
+	break_location: Dictionary = {},
 ) -> String:
 	if not is_playing:
 		return ""
@@ -411,6 +416,11 @@ static func _registry_timeout_hint(
 		if bool(debug_state.get("can_debug", false)):
 			return "The game is paused at a breakpoint; call debug_continue to resume."
 		var reason_clause := "" if break_reason.is_empty() else ": " + break_reason
+		var location_text := DebugSessionTracker.error_break_location_text(
+				break_reason, break_location)
+		if location_text.is_empty():
+			location_text = "."
 		return ("The game is paused at a script error and cannot continue, so waiting "
-				+ "won't help%s. Fix it, then game_stop and game_start.") % reason_clause
+				+ "won't help%s%s Fix it, then game_stop and game_start.") % [
+					reason_clause, location_text]
 	return "Runtime port never appeared in registry within the timeout. The game may need more time to start. Try game_start with runtime_poll:true to re-probe, or check editor_get_console for startup errors."
