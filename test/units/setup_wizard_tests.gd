@@ -46,8 +46,8 @@ const _OPTIONAL_STEPS_TEXT := (
 const _UPDATES_TEXT := (
 	"At most once a day, the toolkit asks GitHub whether a newer version is out. If one "
 	+ "is, it also asks the Asset Store whether it lists that version yet. When there's a "
-	+ "newer version, a closable badge at the top of the MCP Toolkit dock links to it. The "
-	+ "toolkit never installs anything by itself.\n\n"
+	+ "newer version, a closable badge at the top of the MCP Toolkit dock links to it. "
+	+ "Whether the toolkit may install it is the next step.\n\n"
 	+ "These requests carry no identifier and nothing about your project. Untick the box "
 	+ "below and the toolkit sends no requests at all.\n\n"
 	+ "You can change this later in Project Settings under Mcp Toolkit > Updates. It's "
@@ -62,6 +62,7 @@ static func run(testing, tree: SceneTree) -> void:
 	_test_run_planner(testing)
 	_test_seen_on_close(testing)
 	_test_consent_gate(testing)
+	_test_install_consent_gate(testing)
 	_test_setting_readers(testing)
 	_test_spec_in_run(testing)
 	_test_new_step_specs(testing)
@@ -78,7 +79,7 @@ static func run(testing, tree: SceneTree) -> void:
 static func _test_step_table(testing) -> void:
 	testing.begin("Setup steps: the table")
 	var ids := SetupSteps.all_ids()
-	testing.eq(ids, _ids([&"welcome", &"mcp_json", &"optional_steps", &"updates", &"dock"]),
+	testing.eq(ids, _ids([&"welcome", &"mcp_json", &"optional_steps", &"updates", &"update_install", &"dock"]),
 			"the ids, in display order")
 	var unique := {}
 	for step_id in ids:
@@ -88,6 +89,7 @@ static func _test_step_table(testing) -> void:
 	testing.ok(SetupSteps.is_required(&"mcp_json"), "mcp_json is required")
 	testing.ok(not SetupSteps.is_required(&"optional_steps"), "optional_steps is optional")
 	testing.ok(SetupSteps.is_required(&"updates"), "updates is required")
+	testing.ok(SetupSteps.is_required(&"update_install"), "update_install is required")
 	testing.ok(not SetupSteps.is_required(&"dock"), "dock is optional")
 	testing.ok(not SetupSteps.is_required(&"no_such_step"), "an unknown id is not required")
 	print("")
@@ -103,7 +105,7 @@ static func _test_tracker_file_shapes(testing) -> void:
 	testing.eq(SetupStepTracker.get_unseen(all_ids), all_ids, "no file → every step unseen")
 
 	_write_file(_FLAG, "1")
-	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"optional_steps", &"updates"]),
+	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"optional_steps", &"updates", &"update_install"]),
 			"a 1.0 \"1\" flag → only the steps 1.0 never had")
 	testing.ok(SetupStepTracker.has_seen(&"dock"), "a 1.0 \"1\" flag → dock seen")
 	_remove_scratch_files()
@@ -112,10 +114,10 @@ static func _test_tracker_file_shapes(testing) -> void:
 	testing.eq(SetupStepTracker.get_unseen(all_ids), all_ids, "a 1.0 progress file at 0 → every step unseen")
 	_write_file(_PROGRESS, "1")
 	testing.eq(SetupStepTracker.get_unseen(all_ids),
-			_ids([&"mcp_json", &"optional_steps", &"updates", &"dock"]),
+			_ids([&"mcp_json", &"optional_steps", &"updates", &"update_install", &"dock"]),
 			"a 1.0 progress file at 1 → welcome seen")
 	_write_file(_PROGRESS, "2")
-	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"optional_steps", &"updates", &"dock"]),
+	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"optional_steps", &"updates", &"update_install", &"dock"]),
 			"a 1.0 progress file at 2 → welcome and mcp_json seen")
 	SetupStepTracker.mark_seen(&"updates")
 	testing.ok(not FileAccess.file_exists(_PROGRESS), "the first record deletes the progress file")
@@ -127,15 +129,15 @@ static func _test_tracker_file_shapes(testing) -> void:
 	_write_file(_PROGRESS, "2")
 	SetupStepTracker.mark_seen(&"updates")
 	testing.ok(FileAccess.file_exists(_PROGRESS), "a failed write keeps the progress file")
-	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"optional_steps", &"updates", &"dock"]),
+	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"optional_steps", &"updates", &"update_install", &"dock"]),
 			"and its steps still read as seen")
 	SetupStepTracker.set_file_paths(_FLAG, _PROGRESS)
 	_remove_scratch_files()
 
-	_write_file(_FLAG, JSON.stringify({"format": 1, "seen": ["welcome", "mcp_json", "optional_steps", "updates", "dock"]}))
+	_write_file(_FLAG, JSON.stringify({"format": 1, "seen": ["welcome", "mcp_json", "optional_steps", "updates", "update_install", "dock"]}))
 	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([]), "a full set → nothing unseen")
 	_write_file(_FLAG, JSON.stringify({"format": 1, "seen": ["welcome", "updates"]}))
-	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"mcp_json", &"optional_steps", &"dock"]),
+	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"mcp_json", &"optional_steps", &"update_install", &"dock"]),
 			"a partial set → the rest, in the given order")
 	testing.eq(SetupStepTracker.get_unseen(_ids([&"dock", &"welcome", &"mcp_json"])), _ids([&"dock", &"mcp_json"]),
 			"get_unseen keeps the order it was given")
@@ -154,11 +156,11 @@ static func _test_tracker_format_rules(testing) -> void:
 	testing.begin("Setup step tracker: format rules")
 	_use_scratch_files()
 	var all_ids := SetupSteps.all_ids()
-	var legacy_unseen := _ids([&"optional_steps", &"updates"])
+	var legacy_unseen := _ids([&"optional_steps", &"updates", &"update_install"])
 
 	var newer := JSON.stringify({"format": 2, "seen": ["welcome", "updates"], "later": true})
 	_write_file(_FLAG, newer)
-	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"mcp_json", &"optional_steps", &"dock"]),
+	testing.eq(SetupStepTracker.get_unseen(all_ids), _ids([&"mcp_json", &"optional_steps", &"update_install", &"dock"]),
 			"a newer format with a readable list → that list")
 	SetupStepTracker.mark_seen(&"dock")
 	testing.eq(_read_file(_FLAG), newer, "a newer format is never written")
@@ -271,6 +273,25 @@ static func _test_consent_gate(testing) -> void:
 					func(step_id: StringName) -> bool: return updates_seen and step_id == &"updates")
 			testing.eq(Consent.may_check_for_updates(), toggle_on and updates_seen,
 					"toggle %s, updates step %s" % ["on" if toggle_on else "off", "seen" if updates_seen else "unseen"])
+	Consent.reset_readers()
+	print("")
+
+
+# Installing needs everything checking needs, plus the install step seen and a mode
+# that installs; every other combination stays manual.
+static func _test_install_consent_gate(testing) -> void:
+	testing.begin("Consent gate: may install updates")
+	for check_allowed in [true, false]:
+		for install_seen in [true, false]:
+			for mode in ["manual", "ask", "automatic", "bogus"]:
+				Consent.set_readers(
+						func() -> bool: return check_allowed,
+						func(step_id: StringName) -> bool:
+							return check_allowed if step_id == &"updates" else install_seen and step_id == &"update_install")
+				var expected: bool = check_allowed and install_seen and (mode == "ask" or mode == "automatic")
+				testing.eq(Consent.may_install_updates(mode), expected,
+						"check %s, install step %s, mode %s" % [
+							"allowed" if check_allowed else "off", "seen" if install_seen else "unseen", mode])
 	Consent.reset_readers()
 	print("")
 

@@ -184,6 +184,16 @@ jobs:
         if: always()
         run: cat zip-smoke-editor.log 2>/dev/null || true
 
+      # Update-smoke: the zip and manifest just built install over the previous
+      # version through the toolkit's self-update, signed with a key made for the
+      # run (this workflow does not sign the release's own manifest).
+      - name: Update-smoke (self-update · Godot 4.7.0)
+        timeout-minutes: 10
+        env:
+          UPDATE_FLOW_LEGS: full
+          UPDATE_FLOW_SKIP_BUILD: "1"
+        run: bash scripts/test_framework/update_flow.sh godot
+
       # Upload only on a real tag push, and NEVER on a dry-run. Dispatching ON a tag
       # ref with dry-run: false is the deliberate manual re-run path. inputs['dry-run']
       # (bracket form — the property name has a hyphen) is null on a tag push -> != true.

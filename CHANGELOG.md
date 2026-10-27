@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The toolkit can install its own updates. A new setup step asks whether it may,
+  and Project Settings → Mcp Toolkit → Updates → Install Mode keeps the answer:
+  `ask` (the default) asks at the next editor start, `automatic` installs without
+  asking, and `manual` keeps the dock's links only. An update is downloaded from
+  the toolkit's GitHub release, installed only when the maintainer's signature on
+  its manifest checks out, and written when you close or restart the editor, with
+  a backup restored if a write fails. The dock's badge offers Update, Restart now
+  and Don't install, and after the next start says what happened, with a button to
+  update `.mcp.json` when the toolkit wrote it for another server. A release
+  found during the session also gets a toast. Major releases,
+  and releases that need a newer Godot, are only linked. Releases now ship an
+  update manifest beside the zip.
+
 ### Fixed
 
 - `resource_write` no longer saves a bare path given for a top-level property that

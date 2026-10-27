@@ -44,12 +44,27 @@ const _OPTIONAL_STEPS_TEXT := (
 const _UPDATES_TEXT := (
 	"At most once a day, the toolkit asks GitHub whether a newer version is out. If one "
 	+ "is, it also asks the Asset Store whether it lists that version yet. When there's a "
-	+ "newer version, a closable badge at the top of the MCP Toolkit dock links to it. The "
-	+ "toolkit never installs anything by itself.\n\n"
+	+ "newer version, a closable badge at the top of the MCP Toolkit dock links to it. "
+	+ "Whether the toolkit may install it is the next step.\n\n"
 	+ "These requests carry no identifier and nothing about your project. Untick the box "
 	+ "below and the toolkit sends no requests at all.\n\n"
 	+ "You can change this later in Project Settings under Mcp Toolkit > Updates. It's "
 	+ "saved in project.godot, so it applies to everyone who works on this project.")
+const _UPDATE_INSTALL_TEXT := (
+	"The toolkit can install its own updates. It downloads a new version from the "
+	+ "toolkit's GitHub releases, checks the maintainer's signature, and replaces the "
+	+ "files in res://addons/godot_mcp_toolkit when you close the editor. A copy of the "
+	+ "version you have is kept until the new one starts. Major versions, and versions "
+	+ "that need a newer Godot, are only linked.\n\n"
+	+ "The new files show up in version control: commit them, so everyone on the "
+	+ "project runs the same version. This needs the update check above to be on.\n\n"
+	+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
+	+ "It's saved in project.godot, so it applies to everyone who works on this "
+	+ "project.")
+const _ASK_DETAIL := "When a new version is out, the editor asks at its next start. One click installs it."
+const _AUTOMATIC_DETAIL := "New versions download in the background and install when you close the editor."
+const _MANUAL_DETAIL := "The dock only links to new versions."
+const _INSTALL_MODE_SETTING := "mcp_toolkit/updates/install_mode"
 const _DOCK_TEXT := (
 	"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
 	+ "From here you can:\n\n"
@@ -75,6 +90,7 @@ static func run(testing) -> void:
 	_test_step_specs(testing)
 	_test_mcp_json_specs(testing)
 	_test_pin_choice_control(testing)
+	_test_install_choice_control(testing)
 
 
 static func _test_step_specs(testing) -> void:
@@ -97,6 +113,12 @@ static func _test_step_specs(testing) -> void:
 		"buttons": [{"label": "Back", "action": "back"}],
 		"check_box": "Check for updates",
 	}, "updates")
+	testing.eq(wizard._spec_for_step(SetupSteps.UPDATE_INSTALL), {
+		"text": _UPDATE_INSTALL_TEXT,
+		"ok_label": "Next",
+		"buttons": [{"label": "Back", "action": "back"}],
+		"install_choice": true,
+	}, "update_install")
 	var dock: Dictionary = wizard._spec_for_step(SetupSteps.DOCK)
 	var on_enter: Variant = dock.get("on_enter")
 	testing.ok(on_enter is Callable, "dock → an on_enter that reveals the dock")
@@ -171,6 +193,36 @@ static func _test_pin_choice_control(testing) -> void:
 	custom_rows.append(["Label", "Project Settings names a custom server version (next); pick one above to replace it."])
 	testing.eq(shapes[" next "], {"rows": custom_rows, "pressed": [false, false]},
 			"custom setting → neither checked, and a note naming it")
+	print("")
+
+
+# The install step's three modes, the stored one checked; a value that is not a mode
+# reads as manual, so nothing installs on a typo.
+static func _test_install_choice_control(testing) -> void:
+	testing.begin("Setup wizard: the install-choice control per mode")
+	var had_value: bool = ProjectSettings.has_setting(_INSTALL_MODE_SETTING)
+	var previous: Variant = ProjectSettings.get_setting(_INSTALL_MODE_SETTING) if had_value else null
+	var shapes := {}
+	for setting in [null, "automatic", "manual", "sometimes"]:
+		ProjectSettings.set_setting(_INSTALL_MODE_SETTING, setting)
+		var wizard := OnboardingWizard.new(null, null, null, null)
+		var box: VBoxContainer = wizard._build_install_choice("the step text")
+		shapes[str(setting)] = _describe(box)
+		box.free()
+	ProjectSettings.set_setting(_INSTALL_MODE_SETTING, previous if had_value else null)
+	var rows := [
+		["Label", "the step text"],
+		["CheckBox", "Ask before installing (recommended)"],
+		["Label", "      " + _ASK_DETAIL],
+		["CheckBox", "Install automatically"],
+		["Label", "      " + _AUTOMATIC_DETAIL],
+		["CheckBox", "Don't install"],
+		["Label", "      " + _MANUAL_DETAIL],
+	]
+	testing.eq(shapes["<null>"], {"rows": rows, "pressed": [true, false, false]}, "no setting → Ask checked")
+	testing.eq(shapes["automatic"], {"rows": rows, "pressed": [false, true, false]}, "automatic → Install automatically checked")
+	testing.eq(shapes["manual"], {"rows": rows, "pressed": [false, false, true]}, "manual → Don't install checked")
+	testing.eq(shapes["sometimes"], {"rows": rows, "pressed": [false, false, true]}, "an unknown value → Don't install checked")
 	print("")
 
 
