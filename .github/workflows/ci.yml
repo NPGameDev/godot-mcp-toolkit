@@ -35,7 +35,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # A pull request that only changes *.md files or docs/** skips every job that
+  # A pull request that only changes *.md files skips every job that
   # provisions Godot; docs-check below still runs on it.
   changes:
     runs-on: ubuntu-latest

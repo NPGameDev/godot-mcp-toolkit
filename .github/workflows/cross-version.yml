@@ -31,7 +31,7 @@
 #   • workflow_dispatch                                   (manual)
 # A bare push to main carrying no token still skips every test job (only the cheap
 # changes and platform-setup jobs run), and so does a pull request that changes only
-# *.md files or docs/** (the changes job).
+# *.md files (the changes job).
 #
 # Cross-platform legs — additive, each behind its OWN token so a
 # toolkit change is validated on 3 OS × 6 versions × 2 languages = 36 combos, plus a
@@ -145,7 +145,7 @@ env:
   SIBLING_PIN_SERVER: "aabe045632f7ebd8ff77b1b5bb20ac06844e2c07"
 
 jobs:
-  # A pull request that only changes *.md files or docs/** skips every behavioral
+  # A pull request that only changes *.md files skips every behavioral
   # leg below; ci.yml's editor-free docs checks still run on it.
   changes:
     runs-on: ubuntu-latest

@@ -1,8 +1,12 @@
 # Classifies a run as code or docs-only, so the editor-provisioning jobs can skip a
-# pull request that changes nothing they test. Only a pull request can be docs-only:
+# pull request that only changes Markdown. Only a pull request can be docs-only:
 # every other trigger (a push to main, a tag, a dispatch, a release's workflow_call,
 # a merge-queue run) reports code, so the release gates and the deliberate opt-ins
 # always run in full.
+#
+# The rule is *.md, not a docs/ directory: the toolkit's docs/ sits inside the Godot
+# project, so a script, a .json or a .gdignore there is something the editor legs
+# compile or export.
 #
 # Callers gate jobs with `if:`, never with `paths:` filters. A job skipped by `if:`
 # reports to the aggregate gate as skipped, which it accepts, while a required check
@@ -14,7 +18,7 @@
 # commit, whose first parent is the base branch tip, so HEAD^1..HEAD is exactly
 # what merging the PR would change.
 name: Classify the change
-description: "Outputs code=false for a pull request that only changes *.md files or docs/**, code=true otherwise."
+description: "Outputs code=false for a pull request that only changes *.md files, code=true otherwise."
 outputs:
   code:
     description: "'false' for a docs-only pull request, 'true' for everything else."
@@ -30,13 +34,14 @@ runs:
         set -euo pipefail
         code=true
         if [ "$EVENT_NAME" = "pull_request" ]; then
-          # --no-renames lists a rename as its delete and its add, so moving a code
-          # file under docs/ still counts as a code change.
+          # --no-renames lists a rename as its delete and its add, so renaming a code
+          # file to .md still counts as a code change.
           files="$(git diff --name-only --no-renames HEAD^1 HEAD)"
           printf 'Changed files:\n%s\n' "$files"
-          # No grep -q here: exiting early would kill printf with SIGPIPE, and under
-          # pipefail a negated pipeline turns that failure into docs-only.
-          code_files="$(printf '%s\n' "$files" | grep -vE '(\.md$|^docs/)' || true)"
+          # Every way this can go wrong must fail the step, never read as docs-only.
+          # No grep -q: exiting early would kill printf with SIGPIPE. Only grep's
+          # exit 1 (no non-Markdown line) is allowed; an error (2, 127) aborts.
+          code_files="$(printf '%s\n' "$files" | { grep -vE '\.md$' || [ $? -eq 1 ]; })"
           if [ -n "$files" ] && [ -z "$code_files" ]; then
             code=false
           fi
