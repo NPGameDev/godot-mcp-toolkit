@@ -143,7 +143,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd addons/godot_mcp_toolkit/contract/declared_type_fitter.gd addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd" data-verified="111bdd5" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd addons/godot_mcp_toolkit/contract/declared_type_fitter.gd addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd" data-verified="c046c91" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>ships in the game"]
@@ -174,7 +174,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified 111bdd5*
+*Figure 2 — the editor↔runtime taint boundary · verified c046c91*
 
 Consequences that shape the rest of the architecture:
 
