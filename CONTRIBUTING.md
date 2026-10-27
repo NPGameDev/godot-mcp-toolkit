@@ -109,7 +109,12 @@ contributor-facing summary.
   (`export-strip`) exports a data pack on each of those versions, in Text and
   compressed binary-token modes (Text only on 4.2), with an uncommitted extension probe and a dummy
   `.mcp.json`, and fails if the pack lists a toolkit script, the probe or
-  `.mcp.json` (`scripts/test_framework/check_export_strip.sh`). A single
+  `.mcp.json` (`scripts/test_framework/check_export_strip.sh`). The **update
+  flow** job (`update-flow`) runs the self-update end to end on the 4.2.0 + 4.7.0
+  boundaries: it builds the release zip and its update manifest, serves them from a
+  local HTTP server in place of GitHub, and checks five cases on scratch projects —
+  a full install, a rollback, an untrusted signature, the toolkit's own repository,
+  and a disable after staging (`scripts/test_framework/update_flow.sh`). A single
   aggregate job, **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
   required check binds to, never an individual matrix row. Green floor is a merge
   precondition.
@@ -117,15 +122,23 @@ contributor-facing summary.
   matrix** — GDScript-editor and .NET/mono-editor, Godot **4.2 through 4.7** —
   boots a real headless editor and round-trips the complete smoke + flows suites
   through the WebSocket bridge, plus a **dispatch-integration** leg on one row and
-  a mono-editor unit leg on the two boundary flavors (4.2.0 + 4.7.0). It does not
+  a mono-editor unit leg on the two boundary flavors (4.2.0 + 4.7.0), and the
+  **update GUI** job (`update-gui`, 4.2.0 + 4.5.0 + 4.7.0): the self-update's
+  interface in editors with a window on a virtual display
+  (`scripts/test_framework/update_gui.sh`). It does not
   run on a plain push. Trigger it by putting **`[run-cross-version-ci]`** in your
   commit message, via **`workflow_dispatch`** (optionally with a `sibling-ref`
   override), or automatically as part of a release (below).
 - **Release** (`release.yml`). A **`v*` tag push** first runs the deep behavioral
   matrix (the zip job `needs:` it — a cross-version regression can never ship),
-  then builds the plugin zip, **install-smokes the actual artifact** (unzips it
-  into a scratch project and boots a headless editor to prove the plugin enables),
-  and uploads it as a GitHub Release. You can rehearse the whole path without
+  then builds the plugin zip and its update manifest, **install-smokes the actual
+  artifact** (unzips it into a scratch project and boots a headless editor to prove
+  the plugin enables), **update-smokes** it (installs it over the previous version
+  through the self-update, `UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`), and
+  uploads the zip and the manifest as a GitHub Release. The maintainer then signs
+  the manifest and uploads its `.sig` by hand
+  ([release runbook](docs/dev/release-runbook.md), Phase 6); until then the toolkit
+  offers the release as links only. You can rehearse the whole path without
   releasing by running `release.yml` via **`workflow_dispatch`** — it is a
   **dry-run** by default (everything runs; the Release upload is skipped).
 

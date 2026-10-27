@@ -121,6 +121,7 @@ below:
 | `extensions/` | third-party extension discovery, loading, hot-reload | [§8](#8-extension-system) |
 | `registry/` + `registry/store/` | multi-instance discovery (`projects.json`) | [§9](#9-multi-project-registry) |
 | `security/` | auth token, path guard, audit log, untrusted-content wrapping | [§10](#10-security--trust-boundaries) |
+| `update/` | the self-update: verify, stage, apply at editor exit (ADR 0029) | [§7](#7-plugin-lifecycle) |
 | `paths/`, `logging/`, `scene/`, `versioning/`, `ui/` | supporting services and the dock | throughout |
 
 ---
@@ -531,6 +532,7 @@ flowchart TD
     composer --> start["server.start() + register in registry"]
     composer --> ui["write flow + dialog presenter<br/>(shared UI · ADR 0016)"]
     composer --> upd["update check runner<br/>(plugin child · read by the dock's badge)"]
+    composer --> inst["update installer<br/>(plugin child · follows the check)"]
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
@@ -542,8 +544,10 @@ extensions and their hot-reload watcher, the export-strip plugin and the remote-
 the user-path monitor (which re-homes `user://` paths when the project is
 renamed), the playtest-end detector, the server start + registry registration, then the shared
 `.mcp.json` write-flow + dialog presenter, the update check runner (a plugin child that checks for a
-newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), and
-finally the dock. The write-flow and dialog
+newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), the
+update installer (a plugin child that verifies and stages the release the check found, when the
+install mode allows; `plugin.gd`'s `_exit_tree` applies a staged one after `dispose()`, ADR 0029),
+and finally the dock. The write-flow and dialog
 presenter are **injected** into the dock, the tool menu, and the onboarding wizard alike — the
 dock consumes them like any other UI surface rather than acting as a service locator for them
 ([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
@@ -552,7 +556,7 @@ dock, the presenter reads `.mcp.json` the way the badge does). `dispose()` rever
 `PlaytestCommands.clear_session_tracker()`, the reverse of handing the debug-session tracker to `PlaytestCommands.register`; it drops the tracker only after the debugger plugin, the debugger log reader and the remote-deploy detector that hold it are gone, and last clears the response limits' env
 overrides (`core/response_limits.gd`), static state that would otherwise outlive a plugin reload;
 teardown uses **immediate (not deferred)
-`free()`** throughout — for the dock control, the update check runner, the dialog presenter's dialogs, and the server, and
+`free()`** throughout — for the dock control, the update installer, the update check runner, the dialog presenter's dialogs, and the server, and
 (in `plugin.gd`'s own `_exit_tree`) for the tool menu and the onboarding wizard — so nothing
 outlives ObjectDB's exit-time leak check. The one exception is the `EditorDock` wrapper that holds
 the dock on 4.6+: it holds no GDScript, and the editor still reads a removed dock in a deferred
@@ -845,6 +849,7 @@ ones most relevant to this document:
 | [0018](../adr/0018-macos-launch-minimize.md) | Minimize the macOS `.mcp.json` emission — revert to bare npx (supersedes 0017) | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
 | [0027](../adr/0027-setup-steps-by-id-in-a-versioned-file.md) | Setup steps keyed by id, recorded when left, in a versioned file | [§7](#7-plugin-lifecycle) |
 | [0028](../adr/0028-order-export-strip-before-gdscript-tokenizer.md) | Order the export strip before the GDScript tokenizer (supersedes 0006) | [§2](#2-the-editorruntime-split), [§12](#12-distribution) |
+| [0029](../adr/0029-self-update-applies-at-editor-exit.md) | The toolkit installs its own updates at editor exit, from a signed manifest (Proposed) | [§7](#7-plugin-lifecycle) |
 
 ---
 

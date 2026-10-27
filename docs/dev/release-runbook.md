@@ -278,8 +278,23 @@ commands as Phase 4, with the gate dispositions file and the pin flag:
 ```
 
 The toolkit script takes a version, the pin flag, `--dry-run` and the three non-interactive flags;
-`--verify` and `--with-sibling` are server-side. The gated workflow builds the zip, install-smokes
-it into a scratch project, and attaches it to the GH Release.
+`--verify` and `--with-sibling` are server-side. The gated workflow builds the zip and its update
+manifest, install-smokes the zip into a scratch project, update-smokes it over the previous version
+with a key made for the run, and attaches both to the GH Release.
+
+Then sign the manifest, so the toolkit's self-update can install the release (ADR 0029). Download
+the manifest the workflow attached, never a local build, sign it with the release key you keep off
+GitHub, and upload the signature beside it:
+
+```bash
+gh release download v<version> -p 'godot-mcp-toolkit-<version>.update.json'
+scripts/sign-release.sh godot-mcp-toolkit-<version>.update.json <release-signing.pem>
+gh release upload v<version> godot-mcp-toolkit-<version>.update.json.sig
+```
+
+Until the signature is uploaded, the badge offers the release as links only. A new key goes into
+`addons/godot_mcp_toolkit/update/trusted_release_keys.gd` (`scripts/sign-release.sh --key-entry`
+prints the entry) one release before it signs anything.
 
 The script prints the asset submission values at tag time (version, download commit SHA, zip name).
 Keep them on screen.
@@ -302,7 +317,7 @@ below:
 | Zip to upload | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/download/v<ver>/godot-mcp-toolkit-<ver>.zip` | the CI-built zip, never a local build |
 | Legacy Asset Library, edit | https://godotengine.org/asset-library/asset/edit/23816 | version + full 40-char Download Commit; re-enters moderation |
 | Legacy Asset Library, public | https://godotengine.org/asset-library/asset/23816 | check the version after moderation |
-| Toolkit GitHub Release | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v<ver>` | body leads with the merged changelog; zip attached |
+| Toolkit GitHub Release | `https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v<ver>` | body leads with the merged changelog; zip, update manifest and its `.sig` attached |
 | Server GitHub Release | `https://github.com/NPGameDev/godot-mcp-server/releases/tag/v<ver>` | body leads with the server's own CHANGELOG section |
 | npm | `https://www.npmjs.com/package/@npgamedev/godot-mcp-server/v/<ver>` | version, provenance badge, images |
 

@@ -973,7 +973,7 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 | `registry/` | `registry_client.gd` | `registry/store/` (`file_lock`, `registry_entry_file`, `registry_paths`, `registry_projection`) |
 | `extensions/` | `extension_loader.gd` | `extensions/services/` (`extension_discovery`, `extension_meta_commands`, `extension_support`, `extension_watcher`) |
 | `commands/` | the per-domain command modules | `commands/{editor,input_map,playtest,tileset}/` |
-| `ui/dock/` | `dock.gd` | `ui/dock/{ext,limits,mcp,security,status,update}/` |
+| `ui/dock/` | `dock.gd` | `ui/dock/{ext,limits,mcp,security,status,update}/`; the editor-start update window is `ui/update/update_prompt.gd` |
 | `contract/` | the value types + `coerce.gd` | — |
 | `core/` | `plugin_composer.gd`, `modules.gd` (the aggregator) | `editor_access.gd`, `settings_registration.gd`, `tool_menu.gd`, `disable_cleanup_coordinator.gd`, `export_strip.gd`, `playtest_end_detector.gd`, `unfocused_*.gd` |
 | `scene/` | `scene_lease.gd` + the public scene types | `undo_redo_helpers.gd`, `signal_pair_resolver.gd` |
@@ -981,6 +981,7 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 | `paths/` | `project_paths.gd` | `project_key`, `user_path_monitor`, `lsp_publisher` |
 | `logging/` | — | `log_buffer`, `log_helpers` |
 | `versioning/` | `mcp_version_utils.gd` | `engine_setting_names`, `nodejs_check`, `stale_instance_hint`, `update_check`, `update_check_runner` |
+| `update/` | `update_installer.gd` | `update_applier`, `pending_update`, `install_mode`, `install_guards`, `install_plan`, `release_manifest`, `release_signature`, `trusted_release_keys`, `release_archive`, `release_assets`, `release_file_list`, `folder_files`, `content_hash` |
 | `runtime/` | `mcp_runtime_server.gd` (the runtime autoload) | — |
 
 `plugin.gd` is a thin orchestrator: lifecycle (`_enter_tree`/`_exit_tree`/`_enable_plugin`/

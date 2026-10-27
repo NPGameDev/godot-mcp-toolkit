@@ -47,6 +47,14 @@ Linux), so a tracked copy would differ between machines. The shipped
 3. In Godot: Project Settings → Plugins → "Godot MCP Toolkit" → Active.
 4. Confirm the editor log shows `[MCPServer] listening on 127.0.0.1:6550`.
 
+## Updating the plugin
+
+The toolkit can install its own updates when the project allows it (Project
+Settings → Mcp Toolkit → Updates → Install Mode, asked once in the setup wizard).
+It installs only releases whose update manifest is signed by the maintainer's key,
+and writes them when the editor closes. Otherwise, update by hand: close the
+editor, delete `addons/godot_mcp_toolkit/`, and extract the new zip as above.
+
 ## End-user plugin install (Asset Library, once submitted)
 
 1. Inside Godot: AssetLib tab → search "Godot MCP Toolkit" → Download → Install.
@@ -89,8 +97,10 @@ To build the plugin zip by hand:
 ```
 
 It produces `dist-plugin/godot-mcp-toolkit-<version>.zip`, whose top-level entry
-is `addons/godot_mcp_toolkit/` (no repo-root noise). Each new version is a new
-AssetLib submission (checklist below).
+is `addons/godot_mcp_toolkit/` (no repo-root noise) and which carries the release
+file list `release_files.sha256`, and `dist-plugin/godot-mcp-toolkit-<version>.update.json`,
+the unsigned update manifest the toolkit's self-update reads (ADR 0029). Each new
+version is a new AssetLib submission (checklist below).
 
 ---
 

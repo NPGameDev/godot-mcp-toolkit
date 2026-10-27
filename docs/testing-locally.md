@@ -66,6 +66,36 @@ resolve with parse errors. Run `validate_gdscript.sh` first — its editor pass
 scans the project and warms the cache — or open the editor once. Same
 one-process-at-a-time rule as above.
 
+## Self-update flow (headless, a few minutes)
+
+`scripts/test_framework/update_flow.sh` runs the toolkit's self-update end to end
+on scratch projects: it builds the release from your tree, installs it over the
+same tree one version older through a local server, and checks a rollback, an
+untrusted signature, the repository guard and a disable. It needs python3,
+openssl and zip, and runs under a scratch `HOME`, so your own editor settings and
+registry are untouched. CI runs it on Godot 4.2.0 and 4.7.0.
+
+```bash
+bash scripts/test_framework/update_flow.sh /path/to/godot
+UPDATE_FLOW_LEGS="full rollback" UPDATE_FLOW_KEEP=1 bash scripts/test_framework/update_flow.sh godot
+```
+
+## Self-update interface (editor with a window, about 15 minutes)
+
+`scripts/test_framework/update_gui.sh` plays what a user clicks: the update badge's
+buttons, the editor-start window (Later, Skip this version), Restart now with an
+unsaved script, the automatic mode closed with Ctrl+Q, the offer to update
+`.mcp.json`, and a major release. It runs editors with a window on a virtual
+display (Xvfb), with a test-only plugin (`test/update_gui_driver/`) pressing the
+buttons, and needs `Xvfb`, `xdotool` and Mesa besides the update flow's tools.
+`UPDATE_GUI_ARTIFACTS` copies the screenshots out. CI runs it on Godot 4.2.0, 4.5.0
+and 4.7.0 in `cross-version.yml`.
+
+```bash
+bash scripts/test_framework/update_gui.sh /path/to/godot
+UPDATE_GUI_SCENARIOS="restart server" UPDATE_GUI_ARTIFACTS=/tmp/update-gui bash scripts/test_framework/update_gui.sh godot
+```
+
 ## Tool sweep (interactive, editor required)
 
 The sweep exercises every registered tool end-to-end from an MCP client: happy

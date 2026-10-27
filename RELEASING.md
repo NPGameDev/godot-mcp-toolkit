@@ -33,9 +33,12 @@ The at-a-glance sequence. Each step links to its detailed section below.
    [The gated release flow](#the-gated-release-flow).
 7. **Watch the gated CI go green** (the behavioral matrix runs before publish) —
    see [The gated release flow](#the-gated-release-flow).
-8. **Submit the Asset Store / AssetLib update** (toolkit only) — see
+8. **Sign the update manifest** the release attached and upload its `.sig`
+   (toolkit only), so the self-update can install it — see the release
+   runbook's Phase 6.
+9. **Submit the Asset Store / AssetLib update** (toolkit only) — see
    [Asset distribution](#asset-distribution).
-9. **Run the post-publish checks** (`--tools-count`, npm/GH render, the one-time
+10. **Run the post-publish checks** (`--tools-count`, npm/GH render, the one-time
    `.mcp.json` flip) — see [Post-publish follow-ups](#post-publish-follow-ups).
 
 ## Version scheme
