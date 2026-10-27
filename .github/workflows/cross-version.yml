@@ -29,7 +29,9 @@
 #     cross-version regression) is now an ENFORCED release gate, not a parallel
 #     best-effort run
 #   • workflow_dispatch                                   (manual)
-# A bare push to main carrying no token still skips every job, as before.
+# A bare push to main carrying no token still skips every test job (only the cheap
+# changes and platform-setup jobs run), and so does a pull request that changes only
+# *.md files or docs/** (the changes job).
 #
 # Cross-platform legs — additive, each behind its OWN token so a
 # toolkit change is validated on 3 OS × 6 versions × 2 languages = 36 combos, plus a
@@ -143,6 +145,19 @@ env:
   SIBLING_PIN_SERVER: "aabe045632f7ebd8ff77b1b5bb20ac06844e2c07"
 
 jobs:
+  # A pull request that only changes *.md files or docs/** skips every behavioral
+  # leg below; ci.yml's editor-free docs checks still run on it.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.classify.outputs.code }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 2
+      - id: classify
+        uses: ./.github/actions/changes
+
   gdscript-behavioral:
     # A pull request (the binding gate) or a merge-queue run, or an opt-in (manual
     # dispatch, a v* tag, or the token in the commit message). A plain main push (no
@@ -150,13 +165,15 @@ jobs:
     # [run-all-platforms-ci] runs it as part of the full 36-combo grid
     # — pull_request and merge_group reach the same grid via the
     # event name, neither having a head_commit to carry a token.
+    needs: changes
     if: >
+      needs.changes.outputs.code == 'true' && (
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'merge_group' ||
       startsWith(github.ref, 'refs/tags/v') ||
       contains(github.event.head_commit.message, '[run-cross-version-ci]') ||
-      contains(github.event.head_commit.message, '[run-all-platforms-ci]')
+      contains(github.event.head_commit.message, '[run-all-platforms-ci]'))
     runs-on: ubuntu-latest
     # Fuse: observed legs finish in ~7 min (full smoke+flows) — a leg still running
     # at 30 min is hung (e.g. an editor boot that never serves the port), not slow.
@@ -212,13 +229,15 @@ jobs:
     # [run-all-platforms-ci] runs it as part of the full 36-combo grid;
     # a pull request or merge-queue run reaches the same grid, event-keyed (neither has
     # a commit message).
+    needs: changes
     if: >
+      needs.changes.outputs.code == 'true' && (
       github.event_name == 'pull_request' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'merge_group' ||
       startsWith(github.ref, 'refs/tags/v') ||
       contains(github.event.head_commit.message, '[run-cross-version-ci]') ||
-      contains(github.event.head_commit.message, '[run-all-platforms-ci]')
+      contains(github.event.head_commit.message, '[run-all-platforms-ci]'))
     runs-on: ubuntu-latest
     # Fuse: observed legs finish in ~7 min (full smoke+flows on mono) — a leg still
     # running at 30 min is hung (e.g. an editor boot that never serves the port).
@@ -328,6 +347,7 @@ jobs:
   # platforms/versions/languages inputs). Cheap ubuntu job.
   # Repo-agnostic: identical to the server workflow's platform-setup.
   platform-setup:
+    needs: changes
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.compute.outputs.matrix }}
@@ -336,6 +356,7 @@ jobs:
       - id: compute
         shell: bash
         env:
+          CODE: ${{ needs.changes.outputs.code }}
           EVENT_NAME: ${{ github.event_name }}
           GITHUB_REF: ${{ github.ref }}
           COMMIT_MSG: ${{ github.event.head_commit.message }}
@@ -348,7 +369,10 @@ jobs:
           ALL_LANGUAGES="gdscript dotnet"
           platforms=""; versions="$ALL_VERSIONS"; languages="$ALL_LANGUAGES"
 
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+          if [ "$CODE" != "true" ]; then
+            # A docs-only pull request: no platform legs.
+            platforms=""
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             platforms="${IN_PLATFORMS:-}"
             [ -n "${IN_VERSIONS:-}" ] && versions="$IN_VERSIONS"
             [ -n "${IN_LANGUAGES:-}" ] && languages="$IN_LANGUAGES"
@@ -442,12 +466,13 @@ jobs:
   # macOS/Windows behavioral matrix. (The editor-free install-smoke / Windows unit jobs
   # live in the SERVER workflow only; mono-units is not a platform leg.) On a
   # pull_request (or merge_group) run all of the wrapped jobs are live, so the check is
-  # substantive, not vacuous. if: always() + the failure/cancelled test makes a partial
+  # substantive, not vacuous; a docs-only pull request is the one exception, and lists
+  # changes in needs: so a failed classification goes red. if: always() + the failure/cancelled test makes a partial
   # run or a bare push report success.
   platform-matrix-ok:
     name: "Platform matrix OK"
     needs:
-      [gdscript-behavioral, dotnet-behavioral, platform-setup, platform-behavioral]
+      [changes, gdscript-behavioral, dotnet-behavioral, platform-setup, platform-behavioral]
     if: always()
     runs-on: ubuntu-latest
     steps:
