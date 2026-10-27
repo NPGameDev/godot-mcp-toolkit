@@ -14,6 +14,8 @@
 #   1. The root README headline carries the pinned numbers.
 #   2. No retired vocabulary (internal host labels, removed profile system)
 #      appears in any user-facing doc.
+#   3. The root README's Minimum line names GODOT_MIN_VERSION, the Godot floor
+#      the release build writes into the update manifest.
 #
 # Usage: bash scripts/check_docs_counts.sh   (repo root; grep-only, no Godot)
 # Exit 0 = clean, 1 = drift found, 2 = setup error
@@ -63,6 +65,18 @@ if [ -n "$hits" ]; then
   fail=1
 else
   echo "  ok: no retired vocabulary"
+fi
+
+echo "check:docs-counts — README Minimum line vs GODOT_MIN_VERSION"
+min_godot=$(sed -nE 's/^const GODOT_MIN_VERSION := "([^"]+)".*/\1/p' addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd | tr -d '\r')
+if [ -z "$min_godot" ]; then
+  echo "  FAIL: could not read GODOT_MIN_VERSION from addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd" >&2
+  fail=1
+elif grep -q -F "**Minimum:** Godot $min_godot " README.md; then
+  echo "  ok: README's Minimum line names Godot $min_godot"
+else
+  echo "  FAIL: README.md's Minimum line does not name Godot $min_godot (GODOT_MIN_VERSION); update one to match the other" >&2
+  fail=1
 fi
 
 if [ "$fail" -ne 0 ]; then
