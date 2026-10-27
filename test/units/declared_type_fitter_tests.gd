@@ -1,14 +1,15 @@
 @tool
 extends RefCounted
-## DeclaredTypeFitter.fit on its own: the int fraction, the typed-array conversion
-## for each kind of element type, the warning and error it returns, and the values
-## it passes through. These pin the fitter's API and were written green; the
+## DeclaredTypeFitter on its own: fit's int fraction, its typed-array conversion for
+## each kind of element type, the warning and error it returns and the values it
+## passes through, and the type declared_type reads. These pin the fitter's API; the
 ## behaviour pins for the property writers that call it live with each writer's
-## tests. The typed_array_*.gd and placeholder_like_resource.gd fixtures supply the
+## tests. The typed_array_*.gd and placeholder_like_*.gd fixtures supply the
 ## declared properties.
 
 const DeclaredTypeFitter := preload("res://addons/godot_mcp_toolkit/contract/declared_type_fitter.gd")
 const PlaceholderLikeResource := preload("res://test/fixtures/placeholder_like_resource.gd")
+const PlaceholderLikeGroupedResource := preload("res://test/fixtures/placeholder_like_grouped_resource.gd")
 const TypedArrayResource := preload("res://test/fixtures/typed_array_resource.gd")
 const TypedArrayScriptedResource := preload("res://test/fixtures/typed_array_scripted_resource.gd")
 const TypedArrayElement := preload("res://test/fixtures/typed_array_element.gd")
@@ -55,6 +56,7 @@ static func run(testing) -> void:
 	_test_pass_throughs(testing)
 	_test_untyped_held_array(testing)
 	_test_fit_to_typed_array(testing)
+	_test_declared_type(testing)
 
 
 static func _test_int_fraction(testing) -> void:
@@ -248,6 +250,22 @@ static func _test_fit_to_typed_array(testing) -> void:
 	testing.ok(str(mismatch["error"]).contains("'scores'"), "a mismatch → the error names the property")
 	testing.ok(str(mismatch["error"]).contains("index 0"), "a mismatch → the error names the index")
 	testing.ok(not (mismatch["value"] as Array).is_typed(), "a mismatch → the value is returned as given")
+	print("")
+
+
+static func _test_declared_type(testing) -> void:
+	testing.begin("DeclaredTypeFitter.declared_type reads the type a property list declares")
+	var resource: Resource = PlaceholderLikeResource.new()
+	testing.eq(DeclaredTypeFitter.declared_type(resource, "icon"), TYPE_OBJECT,
+			"a Texture2D property → TYPE_OBJECT")
+	testing.eq(DeclaredTypeFitter.declared_type(resource, "missing"), TYPE_NIL,
+			"a name the list does not hold → TYPE_NIL")
+
+	var grouped: Resource = PlaceholderLikeGroupedResource.new()
+	testing.eq(DeclaredTypeFitter.declared_type(grouped, "price"), TYPE_INT,
+			"an int property with a same-name category header after it → TYPE_INT")
+	testing.eq(DeclaredTypeFitter.declared_type(grouped, "Stats"), TYPE_NIL,
+			"a name only a group header holds → TYPE_NIL")
 	print("")
 
 

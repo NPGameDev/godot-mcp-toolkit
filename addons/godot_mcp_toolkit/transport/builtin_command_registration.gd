@@ -38,6 +38,10 @@ const DebugCommands := preload("res://addons/godot_mcp_toolkit/commands/debug_co
 const SpatialCommands := preload("res://addons/godot_mcp_toolkit/commands/spatial_commands.gd")
 const TextureCommands := preload("res://addons/godot_mcp_toolkit/commands/texture_commands.gd")
 const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_commands.gd")
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const DebugSessionTracker = Modules.DebugSessionTracker
+# Modules cannot list it: it preloads Modules.
+const DebugBridge := preload("res://addons/godot_mcp_toolkit/transport/debug_bridge.gd")
 
 
 ## Registers the entire built-in command surface onto the registry. The one
@@ -46,7 +50,7 @@ const SoundCommands := preload("res://addons/godot_mcp_toolkit/commands/sound_co
 ## commands need the bridge, the playtest commands' log reader the tracker);
 ## extensions are loaded separately by the composer.
 static func register_all(registry: MCPToolkitCommandRegistry, server: Node,
-		debug_bridge: RefCounted, session_tracker: RefCounted) -> void:
+		debug_bridge: DebugBridge, session_tracker: DebugSessionTracker) -> void:
 	SceneCommands.register(registry, server)
 	NodeCommands.register(registry, server)
 	ScriptCommands.register(registry, server)

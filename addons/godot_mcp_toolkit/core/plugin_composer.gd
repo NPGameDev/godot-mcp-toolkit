@@ -208,6 +208,8 @@ class Handle:
 	const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 	const RegistryClient = Modules.RegistryClient
 	const DebugSessionTracker = Modules.DebugSessionTracker
+	# Modules cannot list it: it preloads Modules.
+	const DebugBridge := preload("res://addons/godot_mcp_toolkit/transport/debug_bridge.gd")
 	const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 	const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 	const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
@@ -224,7 +226,7 @@ class Handle:
 	var _dialog_presenter: ToolkitDialogPresenter = null  # Editor-global dialogs (info + catalog)
 	var _update_check: Node = null  # Update check runner, read by the dock's badge
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
-	var _debug_bridge: RefCounted = null  # EditorDebuggerPlugin for debug.* commands
+	var _debug_bridge: DebugBridge = null  # EditorDebuggerPlugin for debug.* commands
 	var _session_tracker: DebugSessionTracker = null  # The latest debugger session's state
 	var _user_path_monitor = null  # UserPathMonitor — detects config/name changes
 	var _playtest_end_detector: PlaytestEndDetector = null  # Edge-detects the play→stop transition

@@ -8,13 +8,15 @@ extends RefCounted
 ## inject (register) + teardown (clear_session_tracker) are forwarded to the
 ## log-reader child that reads it.
 
+const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const DebugSessionTracker = Modules.DebugSessionTracker
 const _Control := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_control.gd")
 const _LogReader := preload("res://addons/godot_mcp_toolkit/commands/playtest_log_reader.gd")
 
 
 ## [param session_tracker] is the debug-session tracker the debugger log reader reads.
 static func register(registry: MCPToolkitCommandRegistry, _server: Node,
-		session_tracker: RefCounted) -> void:
+		session_tracker: DebugSessionTracker) -> void:
 	_LogReader.set_session_tracker(session_tracker)
 	# game.start / game.stop mutate (launch / stop a play session), so they are
 	# NOT read-only. Exclusive-execution is the sole serialization driver: it
