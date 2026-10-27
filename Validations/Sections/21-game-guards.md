@@ -1,8 +1,8 @@
 # Section 21 — game_start Guards & Crash Recovery
 
 **Dependencies:** Section 1 (sv2_validation/ exists)
-**Tools tested:** game_start (guards), debugger_get_log (crash recovery cache, debug_state, error_buffer, log_scan)
-**Tests:** 13
+**Tools tested:** game_start (guards, error-break hint), debugger_get_log (crash recovery cache, debug_state, error_buffer, log_scan, latest debugger session)
+**Tests:** 15
 
 ---
 
@@ -26,12 +26,16 @@ func _ready():
 - **Expect:** all succeed
 
 **21.3** `game_start` — with broken main scene script
-- **Expect:** success=true (game launches — Godot does NOT block launch for individual broken node scripts)
-- **Known limitation:** The COMPILATION_FAILED check (4be3454) only fires when the game process completely fails to start (e.g., missing main scene). Individual script errors manifest at runtime, not pre-launch. The agent discovers them via `debugger_get_log` after launch.
+- **Expect:** success=true (game launches — Godot does NOT block launch for individual broken node scripts), `runtime_ready:false`, returned within a few seconds rather than after the 10 s wait, with the hint `The game is paused at a script error and cannot continue, so waiting won't help: Parser Error: <message>, at res://sv2_validation/sv2_broken_main.gd:<line>. Fix it, then game_stop and game_start.`
+- **Known limitation:** The COMPILATION_FAILED check (4be3454) only fires when the game process completely fails to start (e.g., missing main scene). Individual script errors manifest at runtime, not pre-launch: the parse error stops the game at an error break before its runtime connects.
+
+> **REGRESSION WATCH (toolkit #95):** the "game may need more time" hint, a wait of about 10 s, or an
+> error-break hint with no `res://…:<line>` means `game_start` no longer reads the debugger's stop.
+> Flag as **Major**.
 
 **21.3b** `debugger_get_log` — immediately after 21.3's game_start
-- **Expect:** `GAME_NOT_RUNNING` (no runtime/output cache for a compile-failing main scene). 4.2: the parse error halts at a debugger break — success, `source:"cache"`, `lines:[]`, `debug_state {active:true, breaked:true}`.
-- **Note:** a main-scene script that fails to COMPILE crashes the game pre-runtime-connection, so no output cache is built; the parse error surfaces in the **editor console** (`editor_get_console` level=error), NOT the runtime debugger log.
+- **Expect (every version, 4.2 included):** success, `debug_state {active:true, breaked:true, can_debug:false}`, and `error_buffer` with one entry of `type:"break"`: its `message` starts `Game paused at a script error it cannot continue from: Parser Error:` and carries `, at res://sv2_validation/sv2_broken_main.gd:<line>.`; its `source` is that path and its `line` > 0. On Windows the game holds its log open, so `lines` is empty and a note says to stop the game and read again.
+- **Note:** the parse error stops the game at an error break before it prints anything, so neither its log nor the editor's Errors tab has the text; the entry takes it from the editor's debugger.
 
 **21.3c** `game_stop`
 - **Expect:** success
@@ -87,29 +91,31 @@ func _ready():
 - `editor_save_scene`
 - `project_set_setting` application/run/main_scene = `"res://sv2_validation/sv2_error.tscn"`
 - `game_start`
-- **Expect:** all succeed, game launches (runtime error is non-fatal in Godot)
+- **Expect:** all succeed, game launches. The null call stops the game at an error break. `game_start` usually returns `runtime_ready:true` with no hint, since the runtime connects before `_ready` runs; when the break comes first, it returns the error-break hint naming `res://sv2_validation/sv2_error_main.gd:6`. Either is a pass.
 
-**21.9** Wait 2-3s, then `game_stop`
-- **Expect:** success
+**21.9** Wait 2-3s, then `debugger_get_log`, then `game_stop`
+- **Expect:** `debugger_get_log` succeeds with `debug_state {active:true, breaked:true, can_debug:false}` and an `error_buffer` entry of `type:"break"` whose `message` carries the null-call error, with `source` `res://sv2_validation/sv2_error_main.gd`, `function` `_ready` and `line` 6, on Windows, where the game holds its log; elsewhere on 4.5+ a `log_scan` entry with the same fields. `game_stop` succeeds.
 
 **21.10** `debugger_get_log` — unfiltered error capture (both paths)
-- **Expect (old path):** `lines` array includes null-ref error text (SCRIPT ERROR with queue_free)
+- **Expect (old path):** `lines` array includes null-ref error text (SCRIPT ERROR with queue_free); on 4.2–4.4 no SCRIPT ERROR line is written
 - **Expect (new path):**
   - `debug_state` present: `{active: false, breaked: false, can_debug: false}`
   - `error_buffer` array present with >= 1 entry
-  - Entry `type`: `"log_scan"` (expected on Godot 4.0–4.5; `"error"` or `"break"` also valid)
+  - Entry `type`: `"log_scan"` when the log holds the SCRIPT ERROR line; else `"break"`, the entry 21.9's error break recorded (Godot 4.2–4.4 write no SCRIPT ERROR line for it)
   - Entry `message`: contains the null-ref error text
-  - Entry `source`: file path (e.g. `res://sv2_validation/sv2_error_main.gd`)
-  - Entry `function`: function name (e.g. `_ready`)
-  - Entry `line`: line number > 0 (e.g. `4`)
+  - Entry `source`: `res://sv2_validation/sv2_error_main.gd`
+  - Entry `function`: `_ready`
+  - Entry `line`: `6`
 
-> **NOTE:** On Godot 4.0–4.5, `EditorDebuggerPlugin._capture("error")` does NOT fire
-> for built-in error messages (ScriptEditorDebugger handles them first). The `log_scan`
-> fallback parses SCRIPT ERROR / USER SCRIPT ERROR / ERROR lines with their adjacent
-> "at:" lines from the unfiltered log. This is the expected path on current Godot versions.
+> **NOTE:** `EditorDebuggerPlugin._capture("error")` does NOT fire for built-in error
+> messages (ScriptEditorDebugger handles them first). The `log_scan` fallback parses
+> SCRIPT ERROR / USER SCRIPT ERROR / ERROR lines with their adjacent "at:" lines from the
+> unfiltered log, and it replaces a buffer that holds only `break` entries when it finds
+> any. The `break` entry takes its location from the editor debugger's stack, so it
+> carries the same `source`/`function`/`line`.
 
 **21.11** `debugger_get_log` — text_filter=`queue_free`, is_regex=`false`
-- **Expect:** count >= 1 (the null-ref error mentions queue_free)
+- **Expect:** count >= 1 (the null-ref error mentions queue_free); 0 on Godot 4.2–4.4, whose log has no SCRIPT ERROR line
 - **Expect:** `error_buffer` present with same source/function/line as 21.10 — the error scan runs on unfiltered log lines, so `text_filter` does NOT strip context from `error_buffer` entries.
 
 > **REGRESSION WATCH (8a6cbf0):** If `error_buffer` entries have empty `source`/`line`
@@ -124,6 +130,22 @@ func _ready():
 
 **21.13** `debugger_get_log` — no parameters (verify all fields present in default call)
 - **Expect:** success=true, `lines` (all game output), `debug_state` present, `error_buffer` present with full context. This is the "agent calls debugger_get_log with no args after a crash" golden path.
+
+---
+
+### Whose game the latest debugger session is
+
+**21.14** A playtest the editor starts without `game_start` — `execute_code` channel=`editor`, code=`EditorInterface.play_custom_scene("res://sv2_validation/Sv2Main.tscn")`; wait 2s; `execute_code` channel=`editor`, code=`EditorInterface.stop_playing_scene()`; then `debugger_get_log`
+- **Expect:** success, `lines` holds this run's log, `debug_state.active` false, and no note that no playtest has run. This is the path of the editor's Play buttons.
+
+> **REGRESSION WATCH (toolkit #97):** a "no playtest" or "no game session" note, or the log of an earlier
+> `game_start` run, means `debugger_get_log` reads only `game_start` runs again. Flag as **Major**.
+
+**21.15** A one-click deploy with remote debug (**env-gated:** needs a one-click deploy target, such as an Android device or a Web export served locally, with Debug > Deploy with Remote Debug on; expected-SKIP on the dogfood machine without one)
+- (a) Deploy the project from the editor's one-click deploy button; once its game attaches to the debugger, `debugger_get_log`.
+  **Expect:** success with no `lines` and the note that the latest debugger session is a game this editor did not run on this machine, whose log stays with that game, and that `editor_get_console(source:"file")` reads the last local playtest. This machine's earlier playtest log is never served as the deploy's.
+- (b) Deploy to a target whose game never attaches, then `debugger_get_log`.
+  **Expect:** the last local playtest's log stays readable, as before the deploy.
 
 ---
 

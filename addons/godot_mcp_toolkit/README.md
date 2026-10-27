@@ -83,6 +83,11 @@ On the web:
 - Toolkit repository, issues, and full documentation:
   <https://github.com/NPGameDev/godot-mcp-toolkit>
 
+## Updating
+
+To update, delete `addons/godot_mcp_toolkit/` before installing the new
+version. Installing over it leaves removed files and `.uid` sidecars behind.
+
 ## Uninstalling
 
 Disable via Project Settings → Plugins (a dialog offers to clean up

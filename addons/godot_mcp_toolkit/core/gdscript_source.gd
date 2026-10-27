@@ -1,9 +1,10 @@
 @tool
 extends RefCounted
-## The compile probe: a [code]GDScript.new()[/code] copy of a [code].gd[/code]
-## file, compiled in memory beside the file to judge it without reloading the
-## script the editor has loaded, unless the file sits under the project's
-## script-templates folder, when it compiles with no path. Each compile goes
+## Judges whether a [code].gd[/code] file's source compiles, aware of its
+## [code]class_name[/code], without reloading the script the editor has loaded.
+## Each judgment compiles one or more in-memory copies of the source, the
+## compile probe, beside the file, unless the file sits under the project's
+## script-templates folder, when they compile with no path. Each compile goes
 ## through [code]core/compile_probe.gd[/code].
 ##
 ## A copy that kept its [code]class_name[/code] would clash with the global

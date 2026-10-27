@@ -953,7 +953,8 @@ comment, depth scaling with the member.
   table) and the machine-wide project/instance store under `registry/` (1.5.3). Introduce no
   third "Registry".
 - "bridge" denotes the **server** (the TypeScript MCP bridge) across the two repos; an
-  editor-side `EditorDebuggerPlugin` is a *session-tracker* / *hook*, not a "bridge" (1.5.5).
+  editor-side `EditorDebuggerPlugin` is an *adapter* / *hook* that feeds the debug-session
+  tracker (`transport/debug_session_tracker.gd`), not a "bridge" (1.5.5).
 - The preload aggregator ([§6.3](#6-preloads-class_name-and-the-preload-aggregator)) is
   `addons/godot_mcp_toolkit/core/modules.gd`, aliased `Modules` by every consumer
   (`const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")`, e.g. the
@@ -968,7 +969,7 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 
 | Domain folder | Orchestrator / root | Subdomain children |
 |---|---|---|
-| `transport/` | `mcp_server.gd` | `transport/dispatch/` (`dispatch_lane`, `mutation_watchdog`, `server_request_router`); also `ws_transport.gd`, `notifier.gd`, `debug_bridge.gd`, `builtin_command_registration.gd` |
+| `transport/` | `mcp_server.gd` | `transport/dispatch/` (`dispatch_lane`, `mutation_watchdog`, `server_request_router`); also `ws_transport.gd`, `notifier.gd`, `debug_bridge.gd`, `debug_session_tracker.gd`, `builtin_command_registration.gd` |
 | `registry/` | `registry_client.gd` | `registry/store/` (`file_lock`, `registry_entry_file`, `registry_paths`, `registry_projection`) |
 | `extensions/` | `extension_loader.gd` | `extensions/services/` (`extension_discovery`, `extension_meta_commands`, `extension_support`, `extension_watcher`) |
 | `commands/` | the per-domain command modules | `commands/{editor,input_map,playtest,tileset}/` |

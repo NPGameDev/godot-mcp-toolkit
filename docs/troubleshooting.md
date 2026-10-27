@@ -141,7 +141,9 @@ itself while it runs, and that read shares the file, so there the cause is an
 antivirus, backup, or file-sync tool holding it briefly, as it is for either
 tool with no game running. When the game cannot answer, as at an error break,
 `debugger_get_log` reads from the editor and does not return `LOG_BUSY`: it
-returns `debug_state` with a note on how to get the log lines.
+returns `debug_state` and any caught errors, which at an error break name the
+file and line the editor's debugger reports, with a note on how to get the log
+lines.
 
 **Fix:** on Godot 4.5+ use `source="buffer"` (in-memory, no file involved —
 reads even while the game runs). Otherwise stop the game and retry; if no game
@@ -156,6 +158,25 @@ is running, retry shortly.
 **Fix:** enable **Project Settings → Debug → File Logging → Enable File
 Logging** (`debug/file_logging/enable_file_logging`), then restart the editor.
 On Godot 4.5+, `source="buffer"` works without file logging.
+
+### The game is paused at a script error
+
+**Symptom:** `game_start` returns early with a hint that the game is paused at
+a script error and cannot continue, or `debugger_get_log` returns a `break`
+entry that says so.
+
+**Cause:** the editor's debugger stopped the game at an error break: a parse
+error, a script that failed to load, or a runtime error such as a method called
+on a null value. The game can't continue from it. The entry and the hint quote
+the error the debugger reports and the file and line it stopped at. When a
+script's `preload()` fails, the game stops on the preloading line, and the text
+names the preloaded script that holds the error. When the debugger reports no
+location, the `break` entry says to find the file and line with `script_check` or
+`lsp_project_diagnostics`. That advice fits a parse error; a runtime error
+compiles, so those checks don't find it. Stop the game and read
+`debugger_get_log` again, or look in the editor's Debugger panel.
+
+**Fix:** correct the script, then call `game_stop` and `game_start`.
 
 ### Tools are missing — every mutating tool is gone
 

@@ -2,7 +2,7 @@
 
 **Dependencies:** Section 1 (actor.gd exists)
 **Tools tested:** script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies
-**Tests:** 20
+**Tests:** 25
 
 ---
 
@@ -55,6 +55,17 @@
 > **REGRESSION WATCH (toolkit #114):** valid=true on a broken file means the check's copy
 > took a path in the templates folder again, where the editor loads a script without
 > parsing it. Flag as **Major**.
+
+**6.3f** `script_check` on a relative `preload()` — first `script_write` file_path=`res://sv2_validation/sv2_rel_dep.gd`, content=`extends RefCounted\n\n\nfunc value() -> int:\n\treturn 1\n`; then `script_write` file_path=`res://sv2_validation/sv2_rel_user.gd`, content=`extends Node\n\nconst Dep := preload("./sv2_rel_dep.gd")\n\n\nfunc read() -> int:\n\treturn Dep.new().value()\n`; then `script_check` file_path=`res://sv2_validation/sv2_rel_user.gd`; then `script_write` the same file with `return "text"` in place of `return Dep.new().value()`, and `editor_get_console` level_filter=`["error"]`
+- **Expect (every version):** the first write and the check valid=true, 0 diagnostics: the relative path resolves beside the file. The broken write valid=false, and on 4.5+ its console error names `res://sv2_validation/sv2_rel_user.gd`, never `gdscript://` (4.2–4.4's console holds no editor parse error).
+
+**6.3g** `script_check` under `res://addons/` with a warning raised to an error — first `project_set_setting` `debug/gdscript/warnings/untyped_declaration` = `2` (Error), keeping the addons folder's default warning exemption (`debug/gdscript/warnings/exclude_addons` = true on 4.2–4.5; the `res://addons` entry of `debug/gdscript/warnings/directory_rules` on 4.6+); then `script_write` file_path=`res://addons/sv2_probe/sv2_untyped.gd`, content=`extends Node\n\nvar count = 1\n`; then `script_check` on it
+- **Expect (every version):** the write and the check valid=true, 0 diagnostics: the addons folder is exempt from the project's warnings, and the check's copy sits in it.
+- **Restore:** at once, `project_set_setting` `debug/gdscript/warnings/untyped_declaration` back to its prior value, and `folder_delete` path=`res://addons/sv2_probe`, recursive=true.
+
+> **REGRESSION WATCH (toolkit #98):** valid=false on 6.3f's first check or on 6.3g, or a
+> 6.3f error under `gdscript://`, means the check's copy compiles away from the file
+> again. Flag as **Major**.
 
 **6.4** `script_write` (with error) — file_path=`res://sv2_validation/sv2_bad_script.gd`, content=`extends Node\n\nvar x = {\n`
 - **Expect:** success write, `valid: false`, `diagnostics` array non-empty
@@ -128,11 +139,11 @@
 - (a) old_string=`# done`, new_string=`# done` (identical) → **Expect** `INVALID_PARAMS` ("would change nothing"); no-op rejected before the file is touched.
 - (b) old_string=`` (empty), new_string=`x` → **Expect** `INVALID_PARAMS` (empty `old_string` is malformed).
 
-**6.17** `script_edit` (edits array — several edits in one call) — file_path=`res://sv2_validation/sv2_edit_target.gd`, edits=`[{"old_string": "# done\nvar a := 1", "new_string": "# done\nvar a := 2"}, {"old_string": "var a := 2", "new_string": "var renamed := 2"}]` (no top-level `old_string` / `new_string`)
-- **Expect:** success, `replacements`=2, one set of `diagnostics`. A `script_read` shows `var renamed := 2`: the second edit matched the text the first one left.
+**6.17** `script_edit` (edits array — several edits in one call) — file_path=`res://sv2_validation/sv2_edit_target.gd`, edits=`[{"old_string": "# done\nvar a := 1", "new_string": "# done\nvar a := 2"}, {"old_string": "var a := 2", "new_string": "var second_edit := 2"}]` (no top-level `old_string` / `new_string`)
+- **Expect:** success, `replacements`=2, one set of `diagnostics`. A `script_read` shows `var second_edit := 2`: the second edit matched the text the first one left.
 
-**6.18** `script_edit` (edits array — one edit unmatched) — file_path=`res://sv2_validation/sv2_edit_target.gd`, edits=`[{"old_string": "var renamed := 2", "new_string": "var c := 3"}, {"old_string": "never_present", "new_string": "x"}]`
-- **Expect:** `NOT_FOUND`, message starts `edits[1]: `. A `script_read` still shows `var renamed := 2`: the first edit was not written either.
+**6.18** `script_edit` (edits array — one edit unmatched) — file_path=`res://sv2_validation/sv2_edit_target.gd`, edits=`[{"old_string": "var second_edit := 2", "new_string": "var c := 3"}, {"old_string": "never_present", "new_string": "x"}]`
+- **Expect:** `NOT_FOUND`, message starts `edits[1]: `. A `script_read` still shows `var second_edit := 2`: the first edit was not written either.
 
 > **REGRESSION WATCH (script_edit):** `script_edit` must NOT be lossy vs `script_write` —
 > a successful edit carries `undoable`=true (UndoRedo entry), `indexed` (reindex), and for
@@ -157,4 +168,6 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 - `script_delete` file_path=`res://sv2_validation/sv2_singleton.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_autoload_clash.gd` (if 6.3d's restore did not already)
 - `folder_delete` path=`res://script_templates`, recursive=true (only if 6.3e created it), and `folder_delete` path=`res://script_templates_v2`, recursive=true (if 6.3e's restore did not already)
+- `script_delete` file_path=`res://sv2_validation/sv2_rel_user.gd` and `res://sv2_validation/sv2_rel_dep.gd`
+- `folder_delete` path=`res://addons/sv2_probe`, recursive=true (if 6.3g's restore did not already)
 - `script_delete` file_path=`res://sv2_validation/sv2_edit_target.gd`

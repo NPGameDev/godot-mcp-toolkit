@@ -233,11 +233,11 @@ So you do NOT need to split dependent operations across messages.
 |---|------|-------|-------|---------------|--------------|
 | 0 | [00-environment.md](Sections/00-environment.md) | Environment Detection | 7 | project_get_settings, asset_list, discover_tools | None |
 | 1 | [01-scaffolding.md](Sections/01-scaffolding.md) | Scaffolding & Core Files | 11 | folder_create, script_write, resource_write, scene_create, scene_open | S0 |
-| 2 | [02-scene-tree.md](Sections/02-scene-tree.md) | Scene Tree & Node Creation | 21 | scene_create_node, scene_instantiate, scene_get_tree, editor_save_scene | S1 |
+| 2 | [02-scene-tree.md](Sections/02-scene-tree.md) | Scene Tree & Node Creation | 22 | scene_create_node, scene_instantiate, scene_get_tree, editor_save_scene | S1 |
 | 3 | [03-node-properties.md](Sections/03-node-properties.md) | Node Properties & Methods | 35 | node_set/get_property, node_set_script, node_get_property_list, node_call_method, control_set_layout | S2 |
 | 4 | [04-node-management.md](Sections/04-node-management.md) | Node Management | 19 | node_manage, node_groups | S2 |
 | 5 | [05-signals.md](Sections/05-signals.md) | Signals | 7 | signal_list, signal_manage | S2 |
-| 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 22 | script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies | S1 |
+| 6 | [06-scripts.md](Sections/06-scripts.md) | Script Operations | 25 | script_read, script_write, script_edit, script_check, asset_list, asset_get_dependencies | S1 |
 | 7 | [07-editor-console.md](Sections/07-editor-console.md) | Editor Operations & Console | 22 | editor_save_scene, editor_screenshot, editor_get_console, editor_wait_for_idle, editor_refresh | S2 |
 | 8 | [08-project-settings.md](Sections/08-project-settings.md) | Project Settings & Autoloads | 12 | project_get/set_settings, autoload_manage, layer_names_get/set | S1 |
 | 9 | [09-execute-code.md](Sections/09-execute-code.md) | execute_code & Hints | 8 | execute_code | S2 |
@@ -252,13 +252,13 @@ So you do NOT need to split dependent operations across messages.
 | 18 | [18-file-operations.md](Sections/18-file-operations.md) | Phantom Tab Cleanup & File Operations | 16 | scene_close, scene_delete, file_delete, folder_delete, asset_import | S1 |
 | 19 | [19-collision-meta.md](Sections/19-collision-meta.md) | collision_from_texture | 3 | collision_from_texture | S2 |
 | 20 | [20-runtime.md](Sections/20-runtime.md) | Game Start, Runtime & Debugging | 34 | game_start/stop, runtime_*, debugger_get_log, input_simulate (send_text), execute_code, animation_player_control, signal_emit | S2 |
-| 21 | [21-game-guards.md](Sections/21-game-guards.md) | game_start Guards & Crash Recovery | 13 | game_start, debugger_get_log (debug_state, error_buffer, log_scan) | S1 |
+| 21 | [21-game-guards.md](Sections/21-game-guards.md) | game_start Guards & Crash Recovery | 15 | game_start, debugger_get_log (debug_state, error_buffer, log_scan) | S1 |
 | 22 | [22-combo-chains.md](Sections/22-combo-chains.md) | Combo Chains | 14 chains (+4 in §§26–27 = 18 total) | Multi-tool workflows | S1 |
 | 23 | [23-csharp.md](Sections/23-csharp.md) | C# Compatibility | ~50 | All tools with C# nodes | S2, .NET project |
 | 24 | [24-extensions.md](Sections/24-extensions.md) | Extension Discovery | 9+ | discover_tools, extensions.refresh | Extensions present |
 | 25 | [25-undo-redo.md](Sections/25-undo-redo.md) | Undo/Redo Verification | 62 | node.set_property, scene.create_node, node.manage, node.groups, node.call_method | S2 |
 | 26 | [26-lsp-tools.md](Sections/26-lsp-tools.md) | LSP Tools | 26+3 | lsp_diagnostics, lsp_symbols, lsp_hover, lsp_completion, lsp_definition, lsp_references, lsp_project_diagnostics | S1, LSP on port 6005 |
-| 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 16+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
+| 27 | [27-debugger-tools.md](Sections/27-debugger-tools.md) | Debugger Tools | 17+1 | debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue | S1 |
 | 28 | [28-placeholders-spatial.md](Sections/28-placeholders-spatial.md) | Spatial Map & Placeholder Generators | 22 | scene_spatial_map, texture_generate, sound_generate | S2 |
 
 ### Global Cleanup (always runs last)

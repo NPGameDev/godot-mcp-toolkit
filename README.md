@@ -41,8 +41,12 @@ Tested primarily with [Claude Code](https://docs.anthropic.com/en/docs/claude-co
 
 ### 1. Install the plugin
 
-- **Godot AssetLib:** inside the editor, open the AssetLib tab, search "Godot MCP Toolkit", Download, Install.
+- **Godot Asset Store:** [Godot MCP Toolkit](https://store.godotengine.org/asset/npgamedev/godot-mcp-toolkit/).
+  Godot 4.7: in the editor's Asset Store tab, search "Godot MCP Toolkit", Download, Install.
+  Godot 4.2–4.6: download the zip from the store page, then install it with the AssetLib tab's Import… button.
 - **Manual:** download from [GitHub Releases](https://github.com/NPGameDev/godot-mcp-toolkit/releases), extract into your project's `addons/` directory.
+
+To update, delete `addons/godot_mcp_toolkit/` before installing the new version, since installing over it leaves removed files and `.uid` sidecars behind.
 
 ### 2. Enable it
 
@@ -313,8 +317,8 @@ latest of each and they negotiate compatibility at connect (see
 [RELEASING.md](RELEASING.md) → Compatibility).
 
 - **npm:** `npm install -g @npgamedev/godot-mcp-server@latest`
-- **Godot Asset Store / AssetLib:** search "Godot MCP Toolkit" in the editor's
-  AssetLib tab
+- **Godot Asset Store:** [Godot MCP Toolkit](https://store.godotengine.org/asset/npgamedev/godot-mcp-toolkit/);
+  on Godot 4.7, search "Godot MCP Toolkit" in the editor's Asset Store tab
 - **GitHub Releases:** download from either repo's Releases page for manual installation
 
 See [RELEASING.md](RELEASING.md) for maintainer release process and version policy.

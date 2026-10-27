@@ -5,10 +5,9 @@ extends RefCounted
 ## Every command that touches the filesystem calls resolve_safe() to
 ## validate and canonicalize the path before any I/O. Default allows
 ## res:// only; callers opt in to additional prefixes (e.g.
-## user://screenshots/) via the allowed_prefixes parameter. The delete
-## commands (file.delete, folder.delete, resource.delete, scene.delete,
-## script.delete) call resolve_safe_delete() instead, which also refuses
-## version-control, engine and project metadata.
+## user://screenshots/) via the allowed_prefixes parameter. Every command
+## that deletes a res:// path calls resolve_safe_delete() instead, which
+## also refuses version-control, engine and project metadata.
 ##
 ## resolve_safe_user() validates user:// paths: rejects traversal,
 ## re-asserts the user:// boundary after canonicalization, then returns

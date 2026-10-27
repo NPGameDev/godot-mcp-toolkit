@@ -36,6 +36,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the game connect. Reported by @theintonerzero
   ([#90](https://github.com/NPGameDev/godot-mcp-toolkit/issues/90)) and fixed
   by @pragmabits ([#96](https://github.com/NPGameDev/godot-mcp-toolkit/pull/96)).
+- The toolkit now reports a game that the editor's debugger stopped at an error
+  break: a parse error, a script that failed to load, or a runtime error.
+  `debugger_get_log` returns a `break` entry with the error the debugger reports
+  and the file and line the game stopped at, or, when the game's log already
+  holds the error, that log's own error entries. When a `preload()` fails, the
+  game stops on the preloading line, and the entry names the preloaded script
+  that holds the error. `game_start`'s hint says the game can't continue, so
+  waiting won't help, and gives the error and location of that `break` entry,
+  instead of saying the game may need more time; at a breakpoint pause it says
+  to call `debug_continue`.
+  The matching server release also ends `game_start`'s wait as soon as the
+  debugger stops the game. Before, an error break left no entry, the log held
+  only the startup lines, and a breakpoint pause added a `break` entry instead.
+  Reported by @pragmabits
+  ([#95](https://github.com/NPGameDev/godot-mcp-toolkit/issues/95)).
 - `debugger_get_log` now reads the log of the latest debugger session's game when
   that game is a playtest from this editor, including one started from the
   editor's Play buttons, Run Current Scene or Run Specific Scene. Before, such a
@@ -102,8 +117,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `folder_delete`, `file_delete`, `resource_delete`, `scene_delete` and
   `script_delete` now refuse reserved paths: a dot-named file or folder (`.git`,
   `.svn`, `.godot`, `.claude`, `.mcp.json`) or anything inside one, and any
-  `project.godot` or `override.cfg`. Before, `folder_delete` on `res://.git`
-  could delete the project's git repository, or on Windows leave it unusable.
+  `project.godot` or `override.cfg`. They also refuse a path with a segment
+  shaped like a Windows alias, which Windows can resolve to a reserved path: one
+  with a `:`, a trailing dot or space, or an 8.3 short name. That covers an
+  ordinary file such as `res://enemy~1.gd` too; delete such a file by hand.
+  Before, `folder_delete` on `res://.git` could delete the project's git
+  repository, or on Windows leave it unusable.
 
 ## [1.1.0] - 2026-10-25
 
