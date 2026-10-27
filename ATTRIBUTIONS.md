@@ -140,10 +140,28 @@ Contributed (architecture reference only — no code copied): Godot 4
 
 ---
 
+## hi-godot/godot-ai
+
+Source: <https://github.com/hi-godot/godot-ai> (studied at `35da2c2`)
+License: MIT
+
+Copyright (c) 2025 Godot AI contributors
+
+Contributed (architecture reference; the 8.3 short-name pattern is theirs, no
+other code copied): refusing version-control and project manifest names at any
+depth of a delete path, and refusing names shaped like Windows aliases (8.3
+short names, trailing dots and spaces, NTFS stream suffixes).
+
+Copied into: `addons/godot_mcp_toolkit/security/file_guard.gd` (the 8.3
+short-name regular expression, from their `path_validator.gd`).
+
+---
+
 ## Notes
 
 MIT only requires preserving notices for code that is directly copied or
-substantially reproduced. No code from the repositories listed above was
+substantially reproduced. Apart from the one regular expression the
+hi-godot/godot-ai entry names, no code from the repositories listed above was
 copied into this repository — those entries document the architectural study
 we credit by courtesy.
 

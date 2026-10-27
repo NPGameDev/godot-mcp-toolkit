@@ -9,6 +9,7 @@ extends SceneTree
 
 const Testing := preload("res://test/units/testing.gd")
 const SecurityTests := preload("res://test/units/security_tests.gd")
+const DeleteCommandsTests := preload("res://test/units/delete_commands_tests.gd")
 const RegistryCommandTests := preload("res://test/units/registry_command_tests.gd")
 const RegistryStoreTests := preload("res://test/units/registry_store_tests.gd")
 const ExtensionMetaTests := preload("res://test/units/extension_meta_tests.gd")
@@ -34,6 +35,7 @@ const DeclaredTypeFitterTests := preload("res://test/units/declared_type_fitter_
 const BarePathCheckTests := preload("res://test/units/bare_path_check_tests.gd")
 const AutoloadHealTests := preload("res://test/units/autoload_heal_tests.gd")
 const PortConfigTests := preload("res://test/units/port_config_tests.gd")
+const WsTransportTests := preload("res://test/units/ws_transport_tests.gd")
 const McpJsonBuildTests := preload("res://test/units/mcp_json_build_tests.gd")
 const McpJsonPinTests := preload("res://test/units/mcp_json_pin_tests.gd")
 const ServerPinPolicyTests := preload("res://test/units/server_pin_policy_tests.gd")
@@ -77,6 +79,7 @@ func _init() -> void:
 
 	var testing := Testing.new()
 	SecurityTests.run(testing)
+	await DeleteCommandsTests.run(testing)  # each case awaits registry.call_command → coroutine
 	RegistryCommandTests.run(testing)
 	RegistryStoreTests.run(testing)
 	await ExtensionMetaTests.run(testing)  # M3 holds group 6 (path-guard) await → coroutine
@@ -102,6 +105,7 @@ func _init() -> void:
 	BarePathCheckTests.run(testing)
 	AutoloadHealTests.run(testing)
 	PortConfigTests.run(testing)
+	await WsTransportTests.run(testing, self)  # each socket wait awaits frames → coroutine
 	McpJsonBuildTests.run(testing)
 	McpJsonPinTests.run(testing)
 	ServerPinPolicyTests.run(testing)

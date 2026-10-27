@@ -22,7 +22,7 @@ static func _cmd_file_delete(parameters: Dictionary) -> Dictionary:
 	var file_path := str(parameters.get("file_path", ""))
 	if file_path.is_empty():
 		return MCPToolkitError.fail("INVALID_PARAMS", "missing file_path")
-	var guard := FileGuard.resolve_safe(file_path)
+	var guard := FileGuard.resolve_safe_delete(file_path)
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 	if FileGuard.is_toolkit_source(file_path):

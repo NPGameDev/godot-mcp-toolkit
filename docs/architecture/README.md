@@ -84,7 +84,7 @@ localhost WebSocket** to the toolkit. The toolkit runs **two** servers — one i
 and *Mode B* internally) — and publishes a small **registry file** so the bridge can
 discover every live instance on the machine.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="da1d5d2" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/registry/registry_client.gd" data-verified="79edab4" -->
 ```mermaid
 flowchart LR
     AI["AI assistant<br/>(MCP client)"]
@@ -103,7 +103,7 @@ flowchart LR
     ModeB -.->|"publishes runtime port"| Registry
     Bridge -.->|"discovers instances"| Registry
 ```
-*Figure 1 — system context · verified da1d5d2*
+*Figure 1 — system context · verified 79edab4*
 
 Everything binds to `127.0.0.1` and is gated by a per-instance auth token; the real security
 boundary is **localhost + token + a human at the editor** (see [§10](#10-security--trust-boundaries)).
@@ -143,7 +143,7 @@ exported game, so its entire `preload` closure must be **export-clean** — name
 transitively. The **editor server** (`transport/mcp_server.gd`) has no such constraint
 and freely reaches `EditorInterface`.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd addons/godot_mcp_toolkit/contract/declared_type_fitter.gd addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd" data-verified="da1d5d2" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/runtime/mcp_runtime_server.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/port_config.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/contract/property_set_check.gd addons/godot_mcp_toolkit/contract/declared_type_fitter.gd addons/godot_mcp_toolkit/runtime/runtime_opt_out.gd" data-verified="79edab4" -->
 ```mermaid
 flowchart TB
     ModeB["mcp_runtime_server.gd<br/>ships in the game"]
@@ -174,7 +174,7 @@ flowchart TB
     ModeA --> clean
     ModeA --> tainted
 ```
-*Figure 2 — the editor↔runtime taint boundary · verified da1d5d2*
+*Figure 2 — the editor↔runtime taint boundary · verified 79edab4*
 
 Consequences that shape the rest of the architecture:
 
@@ -213,7 +213,7 @@ first-frame auth handshake. The shared mechanics live in `ws_transport.gd` (list
 poll / auth framing) and `notifier.gd` (result / error / notification / broadcast). The two
 servers differ only in what they inject into that base and how they pump it.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="a48ad08" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/ws_transport.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/peer_compat.gd addons/godot_mcp_toolkit/transport/dispatch/server_request_router.gd addons/godot_mcp_toolkit/security/auth.gd" data-verified="79edab4" -->
 ```mermaid
 sequenceDiagram
     participant C as Bridge (client)
@@ -227,14 +227,14 @@ sequenceDiagram
     S-->>C: authed = true (plus godot_version, plugin version, headless, min_server)
     S->>P: assess(server_version, min_toolkit, skip_version_check)
     P-->>S: verdict + line to print (advisory, never refuses)
-    Note over C,S: no auth within 2000 ms closes the socket (1008)
+    Note over C,S: no valid auth within 2000 ms of the WebSocket opening (the auth deadline) closes the socket (1008)
     C->>T: JSON-RPC request (e.g. scene.create)
     T->>S: _handle_message (peer authed)
     S->>R: route_request
     R->>R: select lane, call handler
     R-->>C: JSON-RPC result (success + status)
 ```
-*Figure 3 — connect → auth handshake → dispatch · verified a48ad08*
+*Figure 3 — connect → auth handshake → dispatch · verified 79edab4*
 
 **Ports & framing.** By default the Editor channel scans `6550–6560` and the Runtime channel
 scans `6570–6585`; both bind `127.0.0.1`. The listen configuration is resolved from the environment by the shared,
@@ -279,7 +279,7 @@ its own side. None of it refuses the connection.
 inside `_process` (a scene save pumps the main loop, which could resume a coroutine mid-pump).
 So the editor server defers its poll and throttles it to every 4th frame:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="138018c" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/ws_transport.gd" data-verified="79edab4" -->
 ```mermaid
 flowchart TD
     proc["_process(delta)"] --> skip{"4th frame?"}
@@ -291,7 +291,7 @@ flowchart TD
     pump --> drain["poll_peers → await _on_message per frame"]
     pump --> clean["cleanup closed peers"]
 ```
-*Figure 4 — the deferred, frame-skipped editor poll · verified 138018c*
+*Figure 4 — the deferred, frame-skipped editor poll · verified 79edab4*
 
 The mutation **watchdog** ([§4](#4-dispatch--concurrency)) ticks every frame *unconditionally*
 — independent of this poll cadence — so a wedged mutation is always recovered on time. The
@@ -405,7 +405,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="f271d42" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="3598cab" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -415,7 +415,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified f271d42*
+*Figure 8 — the idempotent create / if_exists decision · verified 3598cab*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -508,7 +508,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd" data-verified="4a59ed9" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd" data-verified="e58dde4" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -534,7 +534,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 4a59ed9*
+*Figure 10 — plugin composition root · verified e58dde4*
 
 The composer builds in a behaviour-critical order: registry and server first, then the
 debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
@@ -706,23 +706,26 @@ The toolkit assumes a **single local user with a human at the editor**; the boun
 localhost + token, not a defence against an adversary who can already write project files.
 Within that model, several layers keep an LLM's requests honest.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="c61a416" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="3598cab" -->
 ```mermaid
 flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
     token -->|no| close["WS close 1008"]
     token -->|yes| filter["server-authoritative read-only filter<br/>(tools/list)"]
-    filter --> guard["FileGuard.resolve_safe / resolve_safe_user"]
-    guard --> deny["deny ..-traversal, plugin source dir,<br/>token & audit files"]
+    filter --> guard["FileGuard.resolve_safe / resolve_safe_delete / resolve_safe_user"]
+    guard --> deny["deny ..-traversal, plugin source dir,<br/>token & audit files, reserved paths on delete"]
     deny --> audit["Audit.log_call — params hashed"]
     audit --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
 ```
-*Figure 13 — request trust boundaries · verified c61a416*
+*Figure 13 — request trust boundaries · verified 3598cab*
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
-  re-verify pass), and `resolve_safe_user` confines `save.*` to `user://` while **denying the
+  re-verify pass); `resolve_safe_delete` adds, for `file.delete`, `folder.delete`,
+  `resource.delete`, `scene.delete` and `script.delete`, a refusal of reserved paths (any
+  dot-named segment such as `.git`, any `project.godot` or `override.cfg`, and any
+  Windows-alias-shaped segment); and `resolve_safe_user` confines `save.*` to `user://` while **denying the
   plugin's own internal directory** — that denial is what protects the token and audit files
   from being read or rewritten through the tools.
 - **Read-only is server-authoritative.** The toolkit does **not** gate dispatch on

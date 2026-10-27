@@ -77,6 +77,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   to keep. The warning stays for the case where another export plugin consumes
   the scripts first, and names the paths to exclude. Reported by @frankhurrican
   ([#99](https://github.com/NPGameDev/godot-mcp-toolkit/issues/99)).
+- The editor and a running game no longer close an MCP client whose auth frame
+  arrived in time but was read late. Before, if the editor or the game was busy
+  for more than 2 s between accepting the connection and its next poll, it
+  closed the client with `auth timeout` even though the auth frame was already
+  waiting, and the MCP server reported `AUTH_FAILED` ("server closed connection
+  during auth: auth timeout"). Now the toolkit reads a waiting auth frame before
+  it checks the time, and the 2 s count starts when the WebSocket opens, not
+  when the toolkit accepts the connection. A client that connects but never
+  completes the WebSocket upgrade is now dropped after 10 s. Before, the toolkit
+  kept that connection until the client hung up or the editor or game closed.
+  Reported and fixed by @pragmabits
+  ([#101](https://github.com/NPGameDev/godot-mcp-toolkit/issues/101),
+  [#102](https://github.com/NPGameDev/godot-mcp-toolkit/pull/102)).
+
+### Security
+
+- `folder_delete`, `file_delete`, `resource_delete`, `scene_delete` and
+  `script_delete` now refuse reserved paths: a dot-named file or folder (`.git`,
+  `.svn`, `.godot`, `.claude`, `.mcp.json`) or anything inside one, and any
+  `project.godot` or `override.cfg`. Before, `folder_delete` on `res://.git`
+  could delete the project's git repository, or on Windows leave it unusable.
 
 ## [1.1.0] - 2026-10-25
 
