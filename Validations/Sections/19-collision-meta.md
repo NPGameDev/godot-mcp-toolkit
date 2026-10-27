@@ -10,7 +10,7 @@
 ---
 
 **19.1** Create sprite with texture:
-- `scene_create_node` node_type=`Sprite2D`, node_name=`Sv2CollSprite`, parent_path=`.`
+- `scene_create_node` class_name=`Sprite2D`, node_name=`Sv2CollSprite`, parent_path=`.`
 - `node_set_property` node_path=`Sv2CollSprite`, property=`texture`, value=`{"type":"Resource","path":"res://icon.svg"}`
 - **Expect:** both succeed
 

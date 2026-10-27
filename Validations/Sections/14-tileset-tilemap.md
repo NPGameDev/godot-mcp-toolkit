@@ -125,7 +125,7 @@ names the tool that owns it — it is no longer silently applied under the wrong
 > bulk-fill support has regressed. Flag as **Major**.
 
 **14.20** `tilemap_set_cells` guard (no tileset) — Create TileMapLayer with NO tileset:
-- `scene_create_node` node_type=TileMapLayer, node_name=`Sv2TileNoTS`, parent_path=`.`
+- `scene_create_node` class_name=`TileMapLayer`, node_name=`Sv2TileNoTS`, parent_path=`.`
 - `tilemap_set_cells` node_path=`Sv2TileNoTS`, cells=[{"x":0,"y":0,"source_id":0,"atlas_x":0,"atlas_y":0}]
 - **Expect:** error mentioning no TileSet assigned
 

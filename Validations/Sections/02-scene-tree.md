@@ -9,54 +9,54 @@
 **2.1** `scene_get_tree`
 - **Expect:** Tree with root Sv2Main (Node2D)
 
-**2.2** `scene_create_node` — node_type=`Sprite2D`, node_name=`Sv2Sprite`, parent_path=`.`
+**2.2** `scene_create_node` — class_name=`Sprite2D`, node_name=`Sv2Sprite`, parent_path=`.`
 - **Expect:** success
 
-**2.3** `scene_create_node` — node_type=`Label`, node_name=`Sv2Label`, parent_path=`.`
+**2.3** `scene_create_node` — class_name=`Label`, node_name=`Sv2Label`, parent_path=`.`
 - **Expect:** success
 
-**2.4** `scene_create_node` — node_type=`AnimationPlayer`, node_name=`Sv2AnimPlayer`, parent_path=`.`
+**2.4** `scene_create_node` — class_name=`AnimationPlayer`, node_name=`Sv2AnimPlayer`, parent_path=`.`
 - **Expect:** success
 
-**2.5** `scene_create_node` — node_type=`AnimationTree`, node_name=`Sv2AnimTree`, parent_path=`.`
+**2.5** `scene_create_node` — class_name=`AnimationTree`, node_name=`Sv2AnimTree`, parent_path=`.`
 - **Expect:** success
 
-**2.6** `scene_create_node` — **[4.3+]** node_type=`TileMapLayer`, node_name=`Sv2TileLayer`, parent_path=`.` | **[4.2]** node_type=`TileMap`, node_name=`Sv2TileLayer`, parent_path=`.`
+**2.6** `scene_create_node` — **[4.3+]** class_name=`TileMapLayer`, node_name=`Sv2TileLayer`, parent_path=`.` | **[4.2]** class_name=`TileMap`, node_name=`Sv2TileLayer`, parent_path=`.`
 - **Expect:** success
 
-**2.7** `scene_create_node` — node_type=`CharacterBody2D`, node_name=`Sv2Player`, parent_path=`.`
+**2.7** `scene_create_node` — class_name=`CharacterBody2D`, node_name=`Sv2Player`, parent_path=`.`
 - **Expect:** success
 
-**2.8** `scene_create_node` — node_type=`CollisionShape2D`, node_name=`Sv2Collider`, parent_path=`Sv2Player`
+**2.8** `scene_create_node` — class_name=`CollisionShape2D`, node_name=`Sv2Collider`, parent_path=`Sv2Player`
 - **Expect:** success
 
-**2.9** `scene_create_node` — node_type=`Path2D`, node_name=`Sv2Path`, parent_path=`.`
+**2.9** `scene_create_node` — class_name=`Path2D`, node_name=`Sv2Path`, parent_path=`.`
 - **Expect:** success
 
-**2.10** `scene_create_node` — node_type=`NavigationRegion2D`, node_name=`Sv2NavRegion`, parent_path=`.`
+**2.10** `scene_create_node` — class_name=`NavigationRegion2D`, node_name=`Sv2NavRegion`, parent_path=`.`
 - **Expect:** success
 
-**2.11** `scene_create_node` (unique_name) — node_type=`Node2D`, node_name=`Sv2Unique`, parent_path=`.`, unique_name=`true`
+**2.11** `scene_create_node` (unique_name) — class_name=`Node2D`, node_name=`Sv2Unique`, parent_path=`.`, unique_name=`true`
 - **Expect:** success, node created with unique name access enabled (`%Sv2Unique`)
 
 > **REGRESSION WATCH (a46487b):** If `unique_name` param is rejected or ignored,
 > scene_create_node unique_name support has regressed. Flag as **Major**.
 
-**2.12** `scene_create_node` (CLASS_MISMATCH guard) — node_type=`Button`, node_name=`Sv2Label`, parent_path=`.`
+**2.12** `scene_create_node` (CLASS_MISMATCH guard) — class_name=`Button`, node_name=`Sv2Label`, parent_path=`.`
 - **Expect:** `CLASS_MISMATCH` error mentioning Label vs Button
 
 > **REGRESSION WATCH (cb4e162):** If the tool returns success (silently reuses
 > the existing Label node) or a generic NAME_EXISTS error without class info,
 > the CLASS_MISMATCH guard has regressed. Flag as **Critical**.
 
-**2.13** `scene_create_node` (idempotent) — node_type=`Label`, node_name=`Sv2Label`, parent_path=`.`
+**2.13** `scene_create_node` (idempotent) — class_name=`Label`, node_name=`Sv2Label`, parent_path=`.`
 - **Expect:** status=`returned` (idempotent, same class + same name)
 
-**2.13a** `scene_create_node` (bad-form inline properties reported, NOT silently counted — 41o-duodecies-ter F2) — node_type=`Sprite2D`, node_name=`Sv2DropProbe`, parent_path=`.`, properties=`{"texture":"res://icon.svg","scale":[4,4]}`
+**2.13a** `scene_create_node` (bad-form inline properties reported, NOT silently counted — 41o-duodecies-ter F2) — class_name=`Sprite2D`, node_name=`Sv2DropProbe`, parent_path=`.`, properties=`{"texture":"res://icon.svg","scale":[4,4]}`
 - **Expect:** the node **is created** (`status:"created"`, partial-set truthfulness), but **`properties_set` = 0** and **`properties_failed`** has **2** entries naming `texture` and `scale`. Both are wire-form values `Object.set()` silently drops (a bare string on a Texture2D, a bare array on a Vector2) — the same values `node_set_property` rejects (3.2b/GAP). The `texture` entry's `error` steers to the tagged `{"type":"Resource","path":...}` form; the `scale` entry's `error` names the expected `Vector2` type. A `properties_set:2` with no `properties_failed` here is the pre-fix bug. Cleanup: `scene_delete_node` node_path=`Sv2DropProbe`.
 > **REGRESSION WATCH (41o-duodecies-ter F2):** `scene_create_node` used to count every well-formed-looking inline value as set, even ones `set()` discarded. It now readback-verifies each and reports drops in `properties_failed` (parity with `node_set_property`). If both bad-form values land in `properties_set` with no failure reported, the drop reporting regressed. Flag as **Major**.
 
-**2.13b** `scene_create_node` (bare `uid://` and `user://` paths) — node_type=`Sprite2D`, node_name=`Sv2BareProbe`, parent_path=`.`, properties=`{"texture":"uid://nosuchuid0000"}`; then node_name=`Sv2BareProbe2`, properties=`{"texture":"user://icon.svg"}`
+**2.13b** `scene_create_node` (bare `uid://` and `user://` paths) — class_name=`Sprite2D`, node_name=`Sv2BareProbe`, parent_path=`.`, properties=`{"texture":"uid://nosuchuid0000"}`; then node_name=`Sv2BareProbe2`, properties=`{"texture":"user://icon.svg"}`
 - **Expect:** each node is created with `properties_set` = 0 and one `properties_failed` entry naming `texture`, whose `error` starts `property 'texture' expects a Resource, not a bare string path`: the first says no resource has the UID `uid://nosuchuid0000`, the second that only a res:// resource can be bound. Cleanup: `scene_delete_node` `Sv2BareProbe` and `Sv2BareProbe2`.
 
 > **REGRESSION WATCH (toolkit #48):** a `uid://` or `user://` String counted in `properties_set`, or a generic drop error with no UID or `user://` wording, means the bare-path check regressed. Flag as **Major**.
