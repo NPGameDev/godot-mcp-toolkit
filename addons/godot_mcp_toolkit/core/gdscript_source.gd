@@ -2,8 +2,9 @@
 extends RefCounted
 ## The compile probe: a [code]GDScript.new()[/code] copy of a [code].gd[/code]
 ## file, compiled in memory beside the file to judge it without reloading the
-## script the editor has loaded. Each compile goes through
-## [code]core/compile_probe.gd[/code].
+## script the editor has loaded, unless the file sits under the project's
+## script-templates folder, when it compiles with no path. Each compile goes
+## through [code]core/compile_probe.gd[/code].
 ##
 ## A copy that kept its [code]class_name[/code] would clash with the global
 ## class the editor registered for the real file, and a copy without one is
@@ -45,7 +46,9 @@ static var _probe_path_suffix: RegEx
 ## Judges [param source] as the engine would judge the file at
 ## [param file_path], with no compile's script errors left in the console
 ## readers. Every compile runs beside [param file_path], so relative paths and
-## the project's warning rules for that path apply as they do to the file.
+## the project's warning rules for that path apply as they do to the file,
+## unless the file sits under the project's script-templates folder, when it
+## compiles with no path.
 ##
 ## The analyzer's class-name checks run first, on the original name. Then the
 ## source compiles with the class and every bare reference to it renamed; if
@@ -100,7 +103,8 @@ static func judge(source: String, file_path: String) -> Dictionary:
 	}
 
 
-## Compiles [param probe_source] beside the file at [param file_path] with error
+## Compiles [param probe_source] beside the file at [param file_path], or with
+## no path for a file under the project's script-templates folder, with error
 ## printing on, so its errors reach stderr, the editor log capture and the
 ## console readers, then restores the caller's
 ## [member Engine.print_error_messages] value.

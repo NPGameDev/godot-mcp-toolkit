@@ -428,7 +428,8 @@ static func _validate_gdscript(source: String, file_path: String = "") -> Dictio
 ## them back: the error entry and any autoload or preload hints.
 ## [param probe_source] is the probe's decisive source from
 ## [code]GDScriptSource.judge()[/code], re-run beside [param file_path] as the
-## judgement ran, so it meets the same errors. Returns the diagnostics as
+## judgement ran (with no path for a file under the project's script-templates
+## folder), so it meets the same errors. Returns the diagnostics as
 ## [code][{severity, message, line?}][/code].
 static func _compile_error_diagnostics(probe_source: String, file_path: String) -> Array:
 	# The first entry the re-run pushes gets the cursor's id; since_id reads

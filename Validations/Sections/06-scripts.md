@@ -48,6 +48,14 @@
 > class-name checks again; a missing `line`, or a line other than 2, means the clash is
 > no longer reported on its declaration. Flag as **Major**.
 
+**6.3e** `script_check` on scripts in the project's script-templates folder (default settings: `res://script_templates`) — first `script_write` file_path=`res://script_templates/Node/fine_template.gd`, content=`extends Node\n\n\nfunc fine() -> int:\n\treturn 1\n`; then `script_write` file_path=`res://script_templates/Node/broken_template.gd`, content=`extends Node\n\n\nfunc broken() -> int:\n\treturn "text"\n`; then `script_check` on each; then `script_write` file_path=`res://script_templates_v2/x.gd` with the broken content, and `script_check` on it
+- **Expect (every version):** the fine template's write and check valid=true, 0 diagnostics. The broken template's `script_write` response valid=false, and its `script_check` valid=false with an error diagnostic for the `return "text"` type mismatch. The same for `res://script_templates_v2/x.gd`: a folder whose name starts with the templates folder's counts as that folder. `script_write` and `script_check` print the compile's errors under `gdscript://…`; those console entries are expected.
+- **Restore:** at once, `folder_delete` path=`res://script_templates`, recursive=true, if the case created it (the first `script_write` response carries `dirs_created: true`), and `folder_delete` path=`res://script_templates_v2`, recursive=true (listed in Cleanup too), so the dogfood project keeps no script templates of the case's.
+
+> **REGRESSION WATCH (toolkit #114):** valid=true on a broken file means the check's copy
+> took a path in the templates folder again, where the editor loads a script without
+> parsing it. Flag as **Major**.
+
 **6.4** `script_write` (with error) — file_path=`res://sv2_validation/sv2_bad_script.gd`, content=`extends Node\n\nvar x = {\n`
 - **Expect:** success write, `valid: false`, `diagnostics` array non-empty
 
@@ -148,4 +156,5 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 - `script_delete` file_path=`res://sv2_validation/sv2_one_line.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_singleton.gd`
 - `script_delete` file_path=`res://sv2_validation/sv2_autoload_clash.gd` (if 6.3d's restore did not already)
+- `folder_delete` path=`res://script_templates`, recursive=true (only if 6.3e created it), and `folder_delete` path=`res://script_templates_v2`, recursive=true (if 6.3e's restore did not already)
 - `script_delete` file_path=`res://sv2_validation/sv2_edit_target.gd`

@@ -414,7 +414,8 @@ permitted.
 **Compile probe** (`CompileProbe`, `core/compile_probe.gd`)
 The in-memory copy of a `.gd` file that `script_check`, the inline checks of `script_write` and
 `script_edit`, and the stale-instance hint compile to judge the file without reloading the script
-the editor has loaded. The copy compiles under `<file>.__mcp_probe_<id>.gd` beside the file, and
+the editor has loaded. The copy compiles under `<file>.__mcp_probe_<id>.gd` beside the file,
+unless the file sits under the project's script-templates folder, when it compiles with no path, and
 is then emptied, with its path cleared. It renames the script's `class_name` and checks the original name the way
 the engine's analyzer does. It runs in up to three steps: the **rename probe** renames the
 declaration and every bare reference to the name; the **declaration probe**, run when that fails,
