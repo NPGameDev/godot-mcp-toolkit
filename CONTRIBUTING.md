@@ -114,7 +114,11 @@ contributor-facing summary.
   boundaries: it builds the release zip and its update manifest, serves them from a
   local HTTP server in place of GitHub, and checks five cases on scratch projects —
   a full install, a rollback, an untrusted signature, the toolkit's own repository,
-  and a disable after staging (`scripts/test_framework/update_flow.sh`). A single
+  and a disable after staging (`scripts/test_framework/update_flow.sh`). The
+  **release builds** job (`release-builds`) runs the bash and PowerShell release
+  builds and fails if their zips hold different entries or bytes, or their
+  manifests disagree beyond the zip's own size and hash
+  (`scripts/test_framework/check_release_builds.sh`). A single
   aggregate job, **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
   required check binds to, never an individual matrix row. Green floor is a merge
   precondition.
@@ -122,8 +126,9 @@ contributor-facing summary.
   matrix** — GDScript-editor and .NET/mono-editor, Godot **4.2 through 4.7** —
   boots a real headless editor and round-trips the complete smoke + flows suites
   through the WebSocket bridge, plus a **dispatch-integration** leg on one row and
-  a mono-editor unit leg on the two boundary flavors (4.2.0 + 4.7.0), and the
-  **update GUI** job (`update-gui`, 4.2.0 + 4.5.0 + 4.7.0): the self-update's
+  a mono-editor unit leg on the two boundary flavors (4.2.0 + 4.7.0), the
+  **update flow** on every minor on Linux and on 4.7.0 on macOS and Windows
+  (`update-flow-platforms`), and the **update GUI** job (`update-gui`, 4.2.0 + 4.5.0 + 4.7.0): the self-update's
   interface in editors with a window on a virtual display
   (`scripts/test_framework/update_gui.sh`). It does not
   run on a plain push. Trigger it by putting **`[run-cross-version-ci]`** in your

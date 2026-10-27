@@ -71,13 +71,30 @@ one-process-at-a-time rule as above.
 `scripts/test_framework/update_flow.sh` runs the toolkit's self-update end to end
 on scratch projects: it builds the release from your tree, installs it over the
 same tree one version older through a local server, and checks a rollback, an
-untrusted signature, the repository guard and a disable. It needs python3,
-openssl and zip, and runs under a scratch `HOME`, so your own editor settings and
-registry are untouched. CI runs it on Godot 4.2.0 and 4.7.0.
+untrusted signature, the repository guard and a disable. It needs Python 3,
+openssl, GNU `timeout` (`gtimeout` on macOS, from coreutils) and zip, and runs
+under a scratch `HOME` (and a scratch `%APPDATA%` on Windows), so your own editor
+settings and registry are untouched. It runs on Linux, macOS and Windows (Git
+Bash). Git Bash has no zip, so on Windows build the release with
+`scripts/build-plugin-release.ps1` first and set `UPDATE_FLOW_SKIP_BUILD=1`. CI
+runs it on Godot 4.2.0 and 4.7.0 in the floor, and on every minor and on macOS and
+Windows in `cross-version.yml`.
 
 ```bash
 bash scripts/test_framework/update_flow.sh /path/to/godot
 UPDATE_FLOW_LEGS="full rollback" UPDATE_FLOW_KEEP=1 bash scripts/test_framework/update_flow.sh godot
+```
+
+## Release builds (no Godot, about a minute)
+
+`scripts/test_framework/check_release_builds.sh` runs the bash and the PowerShell
+release builds and checks that they write the same release: the same zip entries
+with the same bytes, the same release file list, and manifests that agree on all
+but the zip's own size and hash. It needs PowerShell 7 (`pwsh`), zip and Python 3.
+CI runs it in the floor.
+
+```bash
+bash scripts/test_framework/check_release_builds.sh
 ```
 
 ## Self-update interface (editor with a window, about 15 minutes)

@@ -362,11 +362,14 @@ quick operational facts only.
   probe and a dummy `.mcp.json` in Text and compressed binary-token modes (Text
   only on 4.2), and fails if the parsed pack listing carries a toolkit script,
   the probe or
-  `.mcp.json`; `scripts/test_framework/check_export_strip.sh`), and the
+  `.mcp.json`; `scripts/test_framework/check_export_strip.sh`), the
   `update-flow` job (4.2.0 + 4.7.0: builds the release zip and update manifest,
   serves them from a local HTTP server via `GODOT_MCP_UPDATE_CHECK_HOST`, and runs
   the self-update's five legs on scratch projects headless with
-  `GODOT_MCP_UPDATE_ALLOW_HEADLESS=1`; `scripts/test_framework/update_flow.sh`).
+  `GODOT_MCP_UPDATE_ALLOW_HEADLESS=1`; `scripts/test_framework/update_flow.sh`), and
+  the `release-builds` job (no Godot: the bash and PowerShell 7 release builds must
+  write the same zip entries and bytes, file list and manifest fields;
+  `scripts/test_framework/check_release_builds.sh`).
   An aggregate **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
   that ever becomes a required check (never an individual matrix row).
 - **Cross-version** (`.github/workflows/cross-version.yml`) — opt-in
@@ -379,7 +382,9 @@ quick operational facts only.
   the editor launch; a dispatch-integration leg rides the 4.7.0 row) AND a
   **.NET/mono-editor** tier (the server's C# fixture with this addon injected,
   4.2–4.7). A companion opt-in `mono-units` leg runs the unit suite on the
-  .NET editor's two boundary flavors (4.2.0 + 4.7.0), and an `update-gui` leg
+  .NET editor's two boundary flavors (4.2.0 + 4.7.0), an `update-flow-platforms`
+  leg (the update flow on 4.2–4.7 on Linux and on 4.7.0 on macOS and Windows,
+  where the PowerShell build makes the zip), and an `update-gui` leg
   (4.2.0 + 4.5.0 + 4.7.0) plays the self-update's interface in editors with a
   window under Xvfb (`scripts/test_framework/update_gui.sh`, driven by the
   test-only plugin `test/update_gui_driver/`). The server repo runs the

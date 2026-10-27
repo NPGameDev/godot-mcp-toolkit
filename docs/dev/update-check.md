@@ -81,12 +81,17 @@ ADR 0029 has the reasons; this is the map.
 `test/units/` has one file per `update/` module. `scripts/test_framework/update_flow.sh` runs the
 whole flow on scratch projects: it builds the release from this tree, installs it over the same tree
 one version older, and checks a rollback, an untrusted signature, the repository guard and a
-disable. It needs python3, openssl and zip, runs under a scratch `HOME`, and takes a few minutes:
+disable. It needs Python 3, openssl, GNU `timeout` and zip, runs under a scratch `HOME`, takes a few
+minutes, and runs on Linux, macOS and Windows (the [local testing guide](../testing-locally.md) has
+the per-OS notes):
 
 ```bash
 bash scripts/test_framework/update_flow.sh /path/to/godot
 UPDATE_FLOW_LEGS="full rollback" UPDATE_FLOW_KEEP=1 bash scripts/test_framework/update_flow.sh godot
 ```
+
+`scripts/test_framework/check_release_builds.sh` checks that the bash and PowerShell release builds
+write the same release.
 
 `scripts/test_framework/update_gui.sh` checks the interface in editors with a window on a virtual
 display: the badge's buttons, the editor-start window, Restart now with an unsaved script, the
