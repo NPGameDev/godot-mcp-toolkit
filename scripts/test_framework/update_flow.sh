@@ -29,8 +29,13 @@
 #   UPDATE_FLOW_KEEP  set to 1 to keep the scratch folder for forensics
 #   UPDATE_FLOW_SKIP_BUILD  set to 1 to test the zip and manifest already in
 #                     dist-plugin/ instead of building them (the release workflow)
-# Needs python3 (the HTTP server), openssl and zip. Runs everything under a scratch
-# HOME, so the machine's own registry and editor settings are never touched.
+# Needs Python 3 (the HTTP server), openssl, GNU timeout (gtimeout on macOS) and,
+# unless UPDATE_FLOW_SKIP_BUILD is set, zip. Runs everything under a scratch HOME
+# (and, on Windows, a scratch %APPDATA%, where Godot keeps its files there), so the
+# machine's own registry and editor settings are never touched. Runs on Linux, macOS
+# and Windows (Git Bash); on Windows the rollback leg makes the write fail with a
+# release file's read-only attribute (ut_set_read_only), since NTFS ignores chmod.
+# A failed run prints each leg's editor logs, install log and record.
 
 set -uo pipefail
 
@@ -42,14 +47,21 @@ source "${REPO_ROOT}/scripts/lib/release_files.sh"
 # shellcheck source=../lib/update_test_env.sh
 source "${REPO_ROOT}/scripts/lib/update_test_env.sh"
 
-for tool in python3 openssl zip unzip; do
+OS="$(ut_os)"
+PYTHON_BIN="$(ut_python_bin)" || { echo "ERROR: Python 3 is required" >&2; exit 2; }
+TIMEOUT_BIN="$(ut_timeout_bin)"
+TOOLS=(openssl "${TIMEOUT_BIN}")
+[[ "${UPDATE_FLOW_SKIP_BUILD:-0}" == 1 ]] || TOOLS+=(zip)
+for tool in "${TOOLS[@]}"; do
   command -v "${tool}" >/dev/null 2>&1 || { echo "ERROR: ${tool} is required" >&2; exit 2; }
 done
 
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/update_flow.XXXXXX")"
 SERVER_PID=""
+READ_ONLY_FILE=""
 cleanup() {
   [[ -n "${SERVER_PID}" ]] && kill "${SERVER_PID}" 2>/dev/null
+  [[ -n "${READ_ONLY_FILE}" ]] && ut_set_read_only "${READ_ONLY_FILE}" false
   chmod -R u+w "${WORK}" 2>/dev/null
   if [[ "${UPDATE_FLOW_KEEP:-0}" == 1 ]]; then
     echo "kept ${WORK}"
@@ -63,6 +75,12 @@ export HOME="${WORK}/home" XDG_DATA_HOME="${WORK}/home/.local/share" \
   XDG_CONFIG_HOME="${WORK}/home/.config" XDG_CACHE_HOME="${WORK}/home/.cache"
 export GODOT_MCP_RUNTIME=0
 mkdir -p "${HOME}"
+if [[ "${OS}" == windows ]]; then
+  mkdir -p "${HOME}/AppData/Roaming" "${HOME}/AppData/Local"
+  APPDATA="$(cygpath -w "${HOME}/AppData/Roaming")"
+  LOCALAPPDATA="$(cygpath -w "${HOME}/AppData/Local")"
+  export APPDATA LOCALAPPDATA
+fi
 
 FAILED=0
 fail() { echo "  FAIL [${LEG}] $*"; FAILED=1; }
@@ -115,9 +133,6 @@ EOF
 ut_warm "${GODOT_BIN}" "${TEMPLATE}" "${WORK}/warm.log" \
   || { tail -30 "${WORK}/warm.log"; echo "ERROR: warm-up wrote no class cache" >&2; exit 2; }
 
-PORT="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-export GODOT_MCP_EDITOR_PORT="$(( PORT % 1000 + 30000 ))"
-
 # ── One leg ─────────────────────────────────────────────────────────────────
 run_leg() {
   LEG="$1"
@@ -133,30 +148,59 @@ run_leg() {
   user_dir="$(ut_user_dir "${GODOT_BIN}" "${project}")"
   [[ -n "${user_dir}" ]] || { fail "could not read the project's user folder"; return; }
   local toolkit_user="${user_dir}/addons/godot_mcp_toolkit"
+  echo "${toolkit_user}" > "${dir}/toolkit_user"
   ut_mark_setup_seen "${user_dir}"
 
   local signer="${WORK}/trusted.pem"
   [[ "${LEG}" == untrusted ]] && signer="${WORK}/other.pem"
   ut_stage_release "${server}" "${NEW_VERSION}" "${NEW_VERSION}" "${RELEASE_ZIP}" "${RELEASE_MANIFEST}" "${signer}"
 
-  python3 -m http.server "${PORT}" --bind 127.0.0.1 --directory "${server}" > "${dir}/server.log" 2>&1 &
+  # A port of the leg's own: a server an earlier leg left behind holds no port this one
+  # needs (on Windows, kill may not reach the Python process Git Bash started).
+  local port
+  port="$("${PYTHON_BIN}" -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+  export GODOT_MCP_EDITOR_PORT="$(( port % 1000 + 30000 ))"
+  "${PYTHON_BIN}" -u -m http.server "${port}" --bind 127.0.0.1 --directory "${server}" > "${dir}/server.log" 2>&1 &
   SERVER_PID=$!
-  sleep 1
+  # The editor's first request comes within seconds of its boot, so the editor boots
+  # only once the server answers.
+  local ready=0
+  for _ in $(seq 1 50); do
+    if "${PYTHON_BIN}" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${port}/repos/NPGameDev/godot-mcp-toolkit/releases/latest', timeout=1)" 2>/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 0.2
+  done
+  [[ ${ready} -eq 1 ]] || fail "the local server did not answer within 10 s"
 
   local timeout=90 disable=0
   case "${LEG}" in
-    rollback) chmod 555 "${addon}/commands" ;;
+    rollback)
+      if [[ "${OS}" == windows ]]; then
+        # A file the release changes: a failed write of one that already holds the
+        # release's bytes reads back right, and the apply rightly counts it written.
+        READ_ONLY_FILE="${addon}/plugin.cfg"
+        ut_set_read_only "${READ_ONLY_FILE}" true
+      else
+        chmod 555 "${addon}/commands"
+      fi
+      ;;
     untrusted | repository) timeout=25 ;;
     disable) disable=1 ;;
   esac
   [[ "${LEG}" == repository ]] && mkdir -p "${project}/scripts" && touch "${project}/scripts/build-plugin-release.sh"
 
-  GODOT_MCP_UPDATE_CHECK_HOST="http://127.0.0.1:${PORT}" GODOT_MCP_UPDATE_ALLOW_HEADLESS=1 \
+  GODOT_MCP_UPDATE_CHECK_HOST="http://127.0.0.1:${port}" GODOT_MCP_UPDATE_ALLOW_HEADLESS=1 \
     UPDATE_DRIVER_WAIT_FOR=staged UPDATE_DRIVER_TIMEOUT="${timeout}" UPDATE_DRIVER_DISABLE="${disable}" \
-    timeout 180 "${GODOT_BIN}" --headless --editor --path "${project}" > "${dir}/boot1.log" 2>&1
+    "${TIMEOUT_BIN}" 180 "${GODOT_BIN}" --headless --editor --path "${project}" > "${dir}/boot1.log" 2>&1
   local boot1_status=$?
   kill "${SERVER_PID}" 2>/dev/null; wait "${SERVER_PID}" 2>/dev/null; SERVER_PID=""
-  [[ "${LEG}" == rollback ]] && chmod u+w "${addon}/commands"
+  if [[ -n "${READ_ONLY_FILE}" ]]; then
+    ut_set_read_only "${READ_ONLY_FILE}" false
+    READ_ONLY_FILE=""
+  fi
+  [[ "${LEG}" == rollback && "${OS}" != windows ]] && chmod u+w "${addon}/commands"
 
   local installed record log
   installed="$(sed -nE 's/^version="([^"]+)".*/\1/p' "${addon}/plugin.cfg" | tr -d '\r')"
@@ -166,7 +210,7 @@ run_leg() {
 
   if [[ "${LEG}" == full || "${LEG}" == rollback ]]; then
       grep -qF "[UPDATE-DRIVER] reached staged" "${dir}/boot1.log" && pass "the update was staged" || fail "the update was never staged"
-      timeout 120 "${GODOT_BIN}" --headless --editor --path "${project}" --quit-after 900 > "${dir}/boot2.log" 2>&1
+      "${TIMEOUT_BIN}" 120 "${GODOT_BIN}" --headless --editor --path "${project}" --quit-after 900 > "${dir}/boot2.log" 2>&1
       local expected="${NEW_VERSION}"
       [[ "${LEG}" == rollback ]] && expected="${OLD_VERSION}"
       grep -qF "Godot MCP Toolkit v${expected} " "${dir}/boot2.log" && pass "the next start runs ${expected}" || fail "the next start does not run ${expected}"
@@ -210,6 +254,17 @@ for leg in ${LEGS}; do
 done
 
 if [[ ${FAILED} -ne 0 ]]; then
+  # Loud on failure, for CI, where the scratch folder is gone with the runner.
+  for leg_dir in "${WORK}"/*/; do
+    for log in boot1.log boot2.log server.log; do
+      [[ -f "${leg_dir}${log}" ]] && { echo "--- ${leg_dir#"${WORK}"/}${log} (last 40 lines)"; tail -40 "${leg_dir}${log}"; }
+    done
+    [[ -f "${leg_dir}toolkit_user" ]] || continue
+    leg_user="$(cat "${leg_dir}toolkit_user")"
+    for file in update/install.log update/pending_update.json; do
+      [[ -f "${leg_user}/${file}" ]] && { echo "--- ${leg_dir#"${WORK}"/}${file}"; cat "${leg_user}/${file}"; }
+    done
+  done
   echo "RESULT: FAIL — see the logs (UPDATE_FLOW_KEEP=1 keeps ${WORK})"
   exit 1
 fi

@@ -4,8 +4,14 @@
 # that the self-update's end-to-end tests share: scripts/test_framework/update_flow.sh
 # (headless) and scripts/test_framework/update_gui.sh (an editor with a window).
 #
-# Sourced, never run, after scripts/lib/release_files.sh.
+# Sourced, never run, after scripts/lib/release_files.sh. Runs under bash on Linux,
+# macOS and Windows (Git Bash).
 #
+#   ut_os                               print linux, macos or windows
+#   ut_timeout_bin                      print this OS's GNU timeout command
+#   ut_python_bin                       print a command that runs Python 3, or fail
+#   ut_set_read_only <file> true|false  Windows only: set or clear <file>'s
+#                                       read-only attribute, so a write to it fails
 #   ut_previous_version <version>       print the version one step older within the
 #                                       same major, or nothing for a major release,
 #                                       which the toolkit only ever links to
@@ -30,6 +36,45 @@
 #                                       zip, manifest and signature) ask for; serve it
 #                                       through GODOT_MCP_UPDATE_CHECK_HOST
 
+ut_os() {
+  case "$(uname -s)" in
+    MINGW* | MSYS* | CYGWIN*) echo windows ;;
+    Darwin) echo macos ;;
+    *) echo linux ;;
+  esac
+}
+
+# On Windows a bare `timeout` can resolve to System32's timeout.exe, which runs no
+# command; Git Bash ships GNU coreutils' at /usr/bin/timeout. macOS has no timeout,
+# and the GitHub runner carries coreutils' gtimeout.
+ut_timeout_bin() {
+  case "$(ut_os)" in
+    windows) echo /usr/bin/timeout ;;
+    macos) echo gtimeout ;;
+    *) echo timeout ;;
+  esac
+}
+
+# The Windows runner names Python 3 `python`, and a `python3` there can be the
+# Microsoft Store's stub, which runs nothing.
+ut_python_bin() {
+  local candidate
+  for candidate in python3 python; do
+    if command -v "${candidate}" >/dev/null 2>&1 \
+      && "${candidate}" -c 'import sys; sys.exit(sys.version_info[0] != 3)' 2>/dev/null; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# NTFS ignores chmod. The read-only attribute makes a write to the file fail while it
+# still reads, so an apply backs it up and then fails to write it.
+ut_set_read_only() {
+  powershell -NoProfile -Command "Set-ItemProperty -LiteralPath '$(cygpath -w "$1")' -Name IsReadOnly -Value \$$2"
+}
+
 ut_previous_version() {
   local major minor patch
   IFS=. read -r major minor patch <<< "$1"
@@ -52,7 +97,7 @@ ut_install_old_toolkit() {
   sed -i.bak -E "s/^version=\"[^\"]+\"/version=\"${version}\"/" "${addon}/plugin.cfg" && rm -f "${addon}/plugin.cfg.bak"
   local key_entry
   key_entry="$(bash "${repo_root}/scripts/sign-release.sh" --key-entry "${public_pem}")"
-  python3 - "${addon}/update/trusted_release_keys.gd" "${key_entry}" <<'PY'
+  "$(ut_python_bin)" - "${addon}/update/trusted_release_keys.gd" "${key_entry}" <<'PY'
 import sys
 path, entry = sys.argv[1], sys.argv[2]
 text = open(path).read()

@@ -11,8 +11,10 @@
 # across both languages AND across both repos, so the tiers cannot drift. The
 # SERVER repo's cross-version.yml runs the SAME full two-editor matrix for its own
 # changes against the pinned toolkit — so an opt-in on EITHER repo proves the full
-# GDScript+.NET contract for that repo's change. Beside them, the update-gui job runs
-# the self-update's interactive checks in editors with a window on a virtual display.
+# GDScript+.NET contract for that repo's change. Beside them, the update-flow-platforms
+# job runs the self-update flow on every minor and on macOS and Windows, and the
+# update-gui job runs its interactive checks in editors with a window on a virtual
+# display.
 #
 # Triggers — a pull-request gate, plus explicit opt-ins:
 #   • pull_request (against the default branch) — the FULL platform matrix: both Linux
@@ -213,6 +215,66 @@ jobs:
           # CI gap (FIFO / cancellation / peer-disconnect / scene-lease). Composite
           # inputs are strings, hence the string-valued expression.
           run-dispatch: ${{ matrix.godot-version == '4.7.0' }}
+
+  # The self-update flow (scripts/test_framework/update_flow.sh) on every supported
+  # minor on Linux, and at the ceiling on macOS and Windows. The floor runs it on
+  # 4.2.0 and 4.7.0 on Linux for every pull request; this widens it, with the same
+  # triggers as the GDScript tier above. Git Bash has no zip, so on Windows the
+  # release is built by the PowerShell build, and the leg installs what it writes.
+  update-flow-platforms:
+    needs: changes
+    if: >
+      needs.changes.outputs.code == 'true' && (
+      github.event_name == 'pull_request' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event_name == 'merge_group' ||
+      startsWith(github.ref, 'refs/tags/v') ||
+      contains(github.event.head_commit.message, '[run-cross-version-ci]') ||
+      contains(github.event.head_commit.message, '[run-all-platforms-ci]'))
+    runs-on: ${{ matrix.os }}
+    # Fuse: the five legs take a few minutes on Linux, longer on a macOS or Windows
+    # runner; at 30 min a boot is hung.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, os_label: Linux, godot-version: "4.2.0" }
+          - { os: ubuntu-latest, os_label: Linux, godot-version: "4.3.0" }
+          - { os: ubuntu-latest, os_label: Linux, godot-version: "4.4.0" }
+          - { os: ubuntu-latest, os_label: Linux, godot-version: "4.5.0" }
+          - { os: ubuntu-latest, os_label: Linux, godot-version: "4.6.0" }
+          - { os: ubuntu-latest, os_label: Linux, godot-version: "4.7.0" }
+          - { os: macos-latest, os_label: macOS, godot-version: "4.7.0" }
+          - { os: windows-latest, os_label: Windows, godot-version: "4.7.0" }
+    name: "Update flow (${{ matrix.os_label }} · Godot ${{ matrix.godot-version }})"
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Godot
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: ${{ matrix.godot-version }}
+          use-dotnet: false
+
+      # update_flow.sh calls GNU timeout, which macOS names gtimeout (coreutils).
+      - name: Provide gtimeout (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        run: command -v gtimeout >/dev/null 2>&1 || brew install coreutils
+
+      - name: Build the release with the PowerShell build (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        shell: pwsh
+        run: ./scripts/build-plugin-release.ps1
+
+      - name: Run the update flow
+        env:
+          UPDATE_FLOW_SKIP_BUILD: ${{ runner.os == 'Windows' && '1' || '0' }}
+        run: bash scripts/test_framework/update_flow.sh godot
 
   # The self-update's interactive checks (scripts/test_framework/update_gui.sh):
   # editors with a window on a virtual display, the update badge and the editor's own
@@ -515,7 +577,7 @@ jobs:
   platform-matrix-ok:
     name: "Platform matrix OK"
     needs:
-      [changes, gdscript-behavioral, dotnet-behavioral, update-gui, platform-setup, platform-behavioral]
+      [changes, gdscript-behavioral, dotnet-behavioral, update-gui, update-flow-platforms, platform-setup, platform-behavioral]
     if: always()
     runs-on: ubuntu-latest
     steps:
