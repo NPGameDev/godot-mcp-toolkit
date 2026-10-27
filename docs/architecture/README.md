@@ -508,7 +508,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd" data-verified="e58dde4" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd" data-verified="40d75fa" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -519,7 +519,7 @@ flowchart TD
     composer --> tracker["DebugSessionTracker<br/>(session state + latest session ·<br/>editor port: EditorInterface)"]
     plugin -->|"_build() → Handle.note_editor_build()<br/>clears a pending deploy"| tracker
     composer --> bridge["debugger plugin (debug_bridge.gd)<br/>(thin EditorDebuggerPlugin adapter)"]
-    bridge -->|"session signals + error captures ·<br/>debugger node's breaked (reason text)"| tracker
+    bridge -->|"session signals + error captures ·<br/>debugger node's breaked (reason text)<br/>+ stack_dump (frame 0: file, line)"| tracker
     composer --> builtins["BuiltinCommandRegistration.register_all()"]
     builtins -->|"debugger log reader reads the latest session"| tracker
     composer --> ext["ExtensionLoader.load_all + start_watcher"]
@@ -534,7 +534,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified e58dde4*
+*Figure 10 — plugin composition root · verified 40d75fa*
 
 The composer builds in a behaviour-critical order: registry and server first, then the
 debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
@@ -572,17 +572,22 @@ detached `DisableCleanupCoordinator` that outlives the plugin.
 
 The debugger's session state lives in `transport/debug_session_tracker.gd`, a `RefCounted` the
 unit runner can build headless: whether a game is attached and stopped at a break, the error
-buffer, the editor's reason text for an error break, and whose game the latest debugger session is
-(none yet, a playtest this editor ran, or a game elsewhere). An error break, which the game cannot
-continue from, records a `break` entry in an empty buffer; a breakpoint pause records none. It
+buffer, the editor's reason text and location for an error break, and whose game the latest debugger
+session is (none yet, a playtest this editor ran, or a game elsewhere). An error break, which the game
+cannot continue from, records a `break` entry in an empty buffer; a breakpoint pause records none.
+The entry carries the source, function and line of frame 0 of the editor debugger's stack dump, and
+its text names that file and line. When the reason is a failed script preload, the engine breaks on
+the preloading line, so the text also names the preloaded script that holds the error. It
 reads the one editor fact it needs, whether the editor is running a playtest, through an injected
 port; the composer passes `EditorInterface`. `transport/debug_bridge.gd` stays the
 `EditorDebuggerPlugin`. It forwards the session's signals and error captures to the tracker and
-sends `debug.continue` to the live session. It also forwards the `breaked` signal of the editor's
-`ScriptEditorDebugger` node behind that session, because that signal carries the reason text
-(`Parser Error: …`) that the session's own `breaked` drops. It finds the node as the one whose
-four-argument `breaked` connects to the session, and without a match the break entry goes without
-the reason. The composer hands the same tracker to that plugin,
+sends `debug.continue` to the live session. It also forwards two signals of the editor's
+`ScriptEditorDebugger` node behind that session: `breaked`, because it carries the reason text
+(`Parser Error: …`) that the session's own `breaked` drops, and `stack_dump`, whose frame 0 is where
+the game stopped. It finds the node as the one whose four-argument `breaked` connects to the
+session, and without a match the break entry goes without the reason, file and line; a node
+without a one-argument `stack_dump` leaves the entry without the file and line. The composer hands
+the same tracker to that plugin,
 to the debugger log reader (through `PlaytestCommands.register`) and to the remote-deploy detector
 (`core/remote_deploy_detector.gd`), an `EditorExportPlugin` of its own that implements only
 `_export_begin`. A one-click deploy with remote debug runs the editor's build step, then exports
