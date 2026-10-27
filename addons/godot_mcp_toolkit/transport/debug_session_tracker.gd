@@ -291,9 +291,8 @@ func get_break_reason() -> String:
 ## Returns frame 0's location from the editor debugger's latest stack dump for the
 ## current error break, a Dictionary with [code]source[/code], [code]function[/code]
 ## and [code]line[/code]. A dump that comes before the break is kept for it, and
-## returned from its arrival on. Returns an empty
-## one when no dump gave it, at a breakpoint pause, or after the game continued or its
-## session ended.
+## returned from its arrival on. Returns an empty one when no dump gave it, at a
+## breakpoint pause, or after the game continued or its session ended.
 func get_break_location() -> Dictionary:
 	return _break_location.duplicate()
 

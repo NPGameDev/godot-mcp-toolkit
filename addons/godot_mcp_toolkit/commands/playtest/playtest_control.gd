@@ -398,13 +398,13 @@ static func _diagnose_startup(
 ## ([code]{"active", "breaked", "can_debug"}[/code]) and [param break_reason] the
 ## editor debugger's text for an error break, empty when it gave none, and
 ## [param break_location] where that break stopped ([code]source[/code],
-## [code]line[/code]), empty when the debugger gave no location. A game the
-## debugger stopped registers no runtime while stopped, so waiting is no help: an
-## error break (not [code]can_debug[/code]) needs a fix and a restart, never
-## debug_continue, which resumes a game whose script failed to load; a breakpoint
-## pause needs debug_continue. Returns that hint, the plain timeout hint when the debugger has not
-## stopped the game, or an empty String when the editor no longer plays it, for the
-## caller's startup diagnosis.
+## [code]line[/code]), empty when the debugger gave no location; a caller without a
+## location passes nothing. A game the debugger stopped registers no runtime while
+## stopped, so waiting is no help: an error break (not [code]can_debug[/code]) needs a
+## fix and a restart, never debug_continue, which resumes a game whose script failed
+## to load; a breakpoint pause needs debug_continue. Returns that hint, the plain
+## timeout hint when the debugger has not stopped the game, or an empty String when
+## the editor no longer plays it, for the caller's startup diagnosis.
 static func _registry_timeout_hint(
 	is_playing: bool, debug_state: Dictionary, break_reason: String,
 	break_location: Dictionary = {},

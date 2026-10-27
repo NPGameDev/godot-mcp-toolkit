@@ -16,6 +16,7 @@ static func run(testing: Testing) -> void:
 	_test_match_picks_node_the_session_connects_to(testing)
 	_test_match_skips_two_argument_breaked(testing)
 	_test_connect_takes_one_argument_stack_dump(testing)
+	_test_disconnect_drops_breaked_and_stack_dump(testing)
 	_test_connect_skips_other_stack_dump_signatures(testing)
 
 
@@ -66,15 +67,24 @@ static func _test_connect_takes_one_argument_stack_dump(testing: Testing) -> voi
 	tracker.on_session_breaked(false)
 	node.stack_dump.emit([{"frame": 0, "file": "res://main.gd", "function": "_ready", "line": 7}])
 	var buffer: Array = tracker.get_error_buffer()
-	DebugBridge.disconnect_debugger_node(node, tracker)
-	var breaked_after := node.breaked.is_connected(tracker.on_debugger_node_breaked)
-	var stack_dump_after := node.stack_dump.is_connected(tracker.on_debugger_node_stack_dump)
 
 	testing.ok(breaked_connected, "the node's four-argument breaked → connected")
 	testing.ok(stack_dump_connected, "the node's one-argument stack_dump → connected")
 	var entry: Dictionary = buffer[0] if buffer.size() == 1 else {}
 	testing.eq(str(entry.get("source", "")), "res://main.gd", "an emitted stack_dump → the break entry's source")
 	testing.eq(int(entry.get("line", 0)), 7, "an emitted stack_dump → the break entry's line")
+	print("")
+
+
+static func _test_disconnect_drops_breaked_and_stack_dump(testing: Testing) -> void:
+	testing.begin("debug bridge disconnects the debugger node's breaked and stack_dump from the tracker")
+	var tracker := DebugSessionTracker.new()
+	var node := _StackDumpDebuggerNodeStandIn.new()
+	DebugBridge.connect_debugger_node(node, tracker)
+	DebugBridge.disconnect_debugger_node(node, tracker)
+	var breaked_after := node.breaked.is_connected(tracker.on_debugger_node_breaked)
+	var stack_dump_after := node.stack_dump.is_connected(tracker.on_debugger_node_stack_dump)
+
 	testing.ok(not breaked_after, "disconnected → breaked no longer connected")
 	testing.ok(not stack_dump_after, "disconnected → stack_dump no longer connected")
 	print("")
