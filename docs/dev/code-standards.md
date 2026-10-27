@@ -503,6 +503,10 @@ sloppiness.
 preload the aggregator back (circular dependency). Leaf helpers that the aggregator collects use
 direct `preload()`, never the aggregator, and say so inline.
 
+6.6 **No preload cycle of any length.** If A preloads B, nothing B preloads, directly or
+transitively, preloads A. *Rationale: cyclic preloads still misbehave on supported engine
+versions.* [Example](code-standards-examples/6.6-no-preload-cycles.md).
+
 ---
 
 ## 7. Design: SOLID, cohesion, and decomposition
@@ -582,8 +586,35 @@ guard, a version rule beside the version utility), is reached through the preloa
 runtime-clean leaf whenever a runtime-reachable file needs it (7.6). It never goes in a generic
 `*Helpers` grab-bag: a helper that only one group of modules shares goes in a named module in
 that group's folder, or in a new domain file. A group's private collaborators sit in the group's
-folder from their first commit (7.8). *Rationale: a shared rule has one place to look, and a
-grab-bag hides it while growing without bound.*
+folder from their first commit (7.8). When the owner already computes the fact, it exposes the
+fact as an accessor, and callers ask for it instead of rebuilding it from the owner's lower-level
+output ([example](code-standards-examples/7.9-ask-the-owner-for-its-fact.md)). *Rationale: a
+shared rule has one place to look, and a grab-bag hides it while growing without bound.*
+
+7.10 **Pure leaves depend on nothing impure; dependencies point toward them.** A pure leaf
+(`static func` over values, with no engine lookup, I/O or state) preloads only pure leaves, and
+lookup code may preload a pure leaf but never the reverse. *Rationale: a rule that fetches its own
+data cannot be tested with plain values.*
+[Example](code-standards-examples/7.10-pure-leaf-direction.md).
+
+7.11 **Stateful collaborators are built by the composition root and passed in.** A stateful
+collaborator that serves more than its builder is built only by the composition root or its sole
+orchestrator (7.2) and passed in, never self-built, defaulted or looked up. *Rationale: one place
+shows the object graph, and two copies of one state disagree silently.* Existing cases are listed
+in [B2](#b2-module-taxonomy-the-on-disk-decomposition) and do not grow.
+[Example](code-standards-examples/7.11-inject-stateful-collaborators.md).
+
+7.12 **Type a collaborator with its class.** A parameter or field that always holds one script's
+instance is typed with that script, unless that breaks 6.6, 8.2 or 6.1 or changes a signature an
+extension sees. *Rationale: a wrong argument becomes a parse error.* Existing loose cases are
+listed in [B2](#b2-module-taxonomy-the-on-disk-decomposition) and do not grow.
+[Example](code-standards-examples/7.12-type-collaborators.md).
+
+7.13 **No new global access paths.** Do not add an autoload, a static holder of another module's
+instance or shared state, or a tree, group or meta lookup to reach a collaborator; pass it in
+(7.11). *Rationale: a global hides who depends on what.* Existing holders are listed in
+[B2](#b2-module-taxonomy-the-on-disk-decomposition) and do not grow.
+[Example](code-standards-examples/7.13-no-new-global-access.md).
 
 ---
 
@@ -961,6 +992,25 @@ helper that only command handlers share goes in a named module under `commands/<
 new domain file, and a command group's private collaborators sit in `commands/<group>/` from
 their first commit.
 
+**Composition ([§7.11](#7-design-solid-cohesion-and-decomposition)–7.13).** The composition root is
+`core/plugin_composer.gd` (`compose()`, torn down by `Handle.dispose()`); `plugin.gd` injects only
+itself (`EditorAccess.set_plugin`). The runtime autoload `runtime/mcp_runtime_server.gd` is the
+runtime's own root. Orchestrators that build children only they use: `transport/mcp_server.gd`,
+`transport/dispatch/server_request_router.gd`, `ui/dock/dock.gd`,
+`ui/toolkit_dialog_presenter.gd`. Command modules keep `register(registry, server: Node)` (B3).
+The existing cases each rule lists, which do not grow:
+
+- **7.11:** `commands/playtest_log_reader.gd` builds its own stand-in `DebugSessionTracker` until
+  one is injected and after it is cleared.
+- **7.12:** in `core/plugin_composer.gd`'s `Handle`, `_extension_watcher: RefCounted` and the
+  untyped `_user_path_monitor`; `transport/mcp_server.gd`'s `bind_user_path_monitor(monitor:
+  RefCounted)`; `plugin.gd`'s untyped `_handle` (always a `PluginComposer.Handle`);
+  `transport/dispatch/server_request_router.gd`'s untyped `_read_lane`, `_mutation_lane` and
+  `_scene_lease_lane`; `transport/dispatch/dispatch_lane.gd`'s untyped `_watchdog`.
+- **7.13:** `EditorAccess`'s plugin, `LogBuffer`'s store, `ResponseLimits`' env overrides, the
+  playtest log reader's tracker, and `core/consent.gd`'s `_toggle_reader` and `_seen_reader` (a
+  test seam, set through `set_readers`).
+
 ## B3. Contract bindings
 
 - The dispatch **contract** value types live under `contract/` —
@@ -1148,8 +1198,12 @@ tooling). The **plugin** rows apply to **addon** files only — test scripts are
 
 **Plugin (addon files only)**
 
-- [ ] File has **one** statable responsibility (no "and"); over-broad files use orchestrator + SRP-children; children born in the right folder; commands vs queries separated; a touched non-test file over 500 lines has its one-sentence responsibility written; a shared function sits in the domain module that owns its fact, never a `*Helpers` grab-bag ([§7.1](#7-design-solid-cohesion-and-decomposition)–[§7.9](#7-design-solid-cohesion-and-decomposition))
-- [ ] Internal scripts via `preload` const through the aggregator; no `class_name` leakage; no aggregator cycle; stateless helpers `static func`; command modules expose `register(registry, server)` ([§6](#6-preloads-class_name-and-the-preload-aggregator), [§8.11](#811-static-func-utility-modules))
+- [ ] File has **one** statable responsibility (no "and"); over-broad files use orchestrator + SRP-children; children born in the right folder; commands vs queries separated; a touched non-test file over 500 lines has its one-sentence responsibility written; a shared function sits in the domain module that owns its fact, never a `*Helpers` grab-bag; a fact the owner computes is read through its accessor ([§7.1](#7-design-solid-cohesion-and-decomposition)–[§7.9](#7-design-solid-cohesion-and-decomposition))
+- [ ] A pure leaf preloads only pure leaves; lookup code may depend on rule code, never the reverse ([§7.10](#7-design-solid-cohesion-and-decomposition))
+- [ ] Shared stateful collaborators built only in the composition root or their sole orchestrator, injected, never self-built or defaulted ([§7.11](#7-design-solid-cohesion-and-decomposition))
+- [ ] Collaborator params/fields typed with their script when reachable without a cycle, taint or new `class_name`; extension-visible signatures unchanged ([§7.12](#7-design-solid-cohesion-and-decomposition))
+- [ ] No new autoload, static holder of an instance or shared state, or tree/group/meta lookup for a collaborator ([§7.13](#7-design-solid-cohesion-and-decomposition))
+- [ ] Internal scripts via `preload` const through the aggregator; no `class_name` leakage; no aggregator cycle; no preload cycle of any length (6.6); stateless helpers `static func`; command modules expose `register(registry, server)` ([§6](#6-preloads-class_name-and-the-preload-aggregator), [§8.11](#811-static-func-utility-modules))
 - [ ] Every `add_*` has a reverse-order `remove_*`; autoload via `_enable/_disable_plugin`; owned controls freed; signals disconnected; GDScript-2.0 connect syntax; custom settings guarded + `set_as_basic` + scrubbed on uninstall (prefix-scan, prompt before erasing machine-wide), no description in `hint_string` under `PROPERTY_HINT_NONE` ([§8.5](#85-editorplugin-lifecycle-and-teardown-symmetry), [§8.10](#810-custom-projectsettings--editorsettings))
 - [ ] `@tool` on the file; if runtime-shipped, zero editor-only class names anywhere in its preload graph ([§8.1](#81-universal-tool), [§8.2](#82-editorruntime-split-by-the-static-dependency-graph-not-runtime-branches))
 - [ ] Version-gated calls use `has_method()` + `call()`; no `Callable` formed from a bare static-method reference (4.2 binds it to a NIL `self` → silent abort + typed-default return); compares go through the version utility; teardown frees with `free()` (RefCounted subsystems just null'd); failed `TCPServer.listen()` → `stop()` + null + fresh instance; listener/scene I/O stays deferred + throttled; response sends check `send_text` + central size-guard ([§8.3](#83-cross-version-compatibility)–[§8.9](#89-check-the-send_text-return--oversized-websocket-frames-drop-wholesale))
