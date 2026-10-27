@@ -41,6 +41,27 @@ parent folder skips hidden entries, but it still removes a nested
 `project.godot` or `override.cfg`, and on Windows a dot-named entry that isn't
 marked hidden. If you do mean to delete one of these, delete it by hand.
 
+## The toolkit's own folders
+
+Every file tool answers `PATH_DENIED` for the toolkit's source folder,
+`res://addons/godot_mcp_toolkit/`, and everything in it. The `save_*` tools do
+the same for its user folder, `user://addons/godot_mcp_toolkit/`, which holds
+the auth token and the audit log. `folder_delete` also answers
+`FOLDER_PROTECTED` for `res://` and `res://addons`. Each check refuses every
+spelling of these folders: another letter case, including `ſ` (long s) and the
+Kelvin sign (U+212A), which macOS reads as `s` and `k`; back or doubled
+slashes and `./`; and on Windows a trailing dot or space, an NTFS stream such as
+`::$INDEX_ALLOCATION`, or an 8.3 short name such as `GODOT_~1`.
+
+Two kinds of folder are refused even where they lead somewhere else:
+
+- On a case-sensitive volume, as on most Linux systems, a folder whose name
+  differs from these only by letter case, such as `res://addons/Godot_MCP_Toolkit/`.
+- Any folder directly under `res://addons/` or `user://addons/` whose name has
+  the shape of an 8.3 short name, such as `res://addons/v2~1/`. A short name
+  does not say which folder it stands for, so the guard refuses them all. To
+  work on such a folder through the tools, rename it.
+
 ## Built-in read-only mode
 
 For users who want a read-only session without configuring per-tool blocking,
