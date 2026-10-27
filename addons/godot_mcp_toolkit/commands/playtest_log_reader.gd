@@ -80,6 +80,13 @@ static func get_break_reason() -> String:
 	return _session_tracker.get_break_reason()
 
 
+## Returns where the error break the game is at stopped ([code]source[/code],
+## [code]function[/code], [code]line[/code]), or an empty Dictionary when the editor
+## debugger gave no location or there is no error break.
+static func get_break_location() -> Dictionary:
+	return _session_tracker.get_break_location()
+
+
 # -- Commands -----------------------------------------------------------------
 
 
@@ -202,7 +209,8 @@ static func _merge_debug_session_data(response: Dictionary,
 	var buf: Array = _session_tracker.get_error_buffer()
 	# The editor's own debugger takes the engine's error messages before a plugin's
 	# capture, so the buffer usually holds at most an error break's entry, which
-	# names no file or line. A runtime error's log lines carry both, so they win.
+	# names only the place the game stopped. A runtime error's log lines carry each
+	# error with its own file and line, so they win.
 	if _holds_only_break_entries(buf) and not all_lines.is_empty():
 		var scanned := _scan_lines_for_errors(all_lines)
 		if not scanned.is_empty():

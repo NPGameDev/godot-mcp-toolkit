@@ -54,9 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it runs, so the editor can't read it, and a paused game can't send its own log.
   Before, the call failed with `LOG_BUSY` and lost the debugger state on Godot 4.4
   and later, and on 4.2 and 4.3 it said the log file was not found. Now it
-  returns `debug_state` and any caught errors, with a note on how to get the log
-  lines: at an error break, stop the game and read again; at a breakpoint pause,
-  continue the game, and it sends its own log.
+  returns `debug_state` and any caught errors, which at an error break name the
+  file and line the editor's debugger reports for the break, with a note on how
+  to get the log lines: at an error break, stop the game and read again; at a
+  breakpoint pause, continue the game, and it sends its own log.
 - `script_check`, `script_write`, `script_edit` and the extension edit check no
   longer report a valid script as not compiling when it uses a relative
   `preload()` or `extends`, or when it lives under `res://addons/` and the project
