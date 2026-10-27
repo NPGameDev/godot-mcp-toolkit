@@ -89,7 +89,7 @@ static func fit(target: Object, property: String, value: Variant) -> Dictionary:
 	var entry := property_entry(target, property)
 	if _declares_typed_array(entry):
 		return _fit_to_typed_array(_element_template(target.get(property), entry), property, value)
-	var conversion := _coerce_to_declared_type(value, int(entry.get("type", TYPE_NIL)))
+	var conversion := _coerce_to_declared_type(value, _entry_type(entry))
 	var warning := ""
 	if conversion["truncated"]:
 		warning = PropertySetCheck.adjusted_warning(conversion["value"], value, property)
@@ -111,12 +111,26 @@ static func property_entry(target: Object, property: String) -> Dictionary:
 	return {}
 
 
+## The [enum Variant.Type] [param target]'s property list declares for
+## [param property], or [constant @GlobalScope.TYPE_NIL] when the list has no such
+## property or declares it as a Variant. Headers are skipped as
+## [method property_entry] skips them.
+static func declared_type(target: Object, property: String) -> int:
+	return _entry_type(property_entry(target, property))
+
+
+## The [enum Variant.Type] the property-list [param entry] declares, or
+## [constant @GlobalScope.TYPE_NIL] for an empty entry.
+static func _entry_type(entry: Dictionary) -> int:
+	return int(entry.get("type", TYPE_NIL))
+
+
 ## True when the property-list [param entry] declares a typed array. A typed
 ## [code]var[/code], or an entry a script lists itself, carries
 ## [constant @GlobalScope.PROPERTY_HINT_ARRAY_TYPE]; an [code]@export[/code] of a typed
 ## array carries [constant @GlobalScope.PROPERTY_HINT_TYPE_STRING] instead.
 static func _declares_typed_array(entry: Dictionary) -> bool:
-	if int(entry.get("type", TYPE_NIL)) != TYPE_ARRAY:
+	if _entry_type(entry) != TYPE_ARRAY:
 		return false
 	var hint := int(entry.get("hint", PROPERTY_HINT_NONE))
 	return hint == PROPERTY_HINT_ARRAY_TYPE or hint == PROPERTY_HINT_TYPE_STRING
@@ -212,7 +226,7 @@ static func _fit_to_typed_array(current: Variant, property: String, value: Varia
 ## Fits a JSON number to the [code]int[/code] a property declares; any other value
 ## passes through unchanged.
 ##
-## When [param declared_type] (the [code]type[/code] entry of
+## When [param property_type] (the [code]type[/code] entry of
 ## [method Object.get_property_list]) is [constant @GlobalScope.TYPE_INT] and
 ## [param value] is a float, the value becomes an int, truncated toward zero as the
 ## engine's own conversion truncates it.
@@ -220,8 +234,8 @@ static func _fit_to_typed_array(current: Variant, property: String, value: Varia
 ## Returns [code]{"value": <the value to set>, "truncated": bool}[/code].
 ## [code]truncated[/code] is true when the stored int differs from the requested
 ## float, so the caller can warn that the value changed.
-static func _coerce_to_declared_type(value: Variant, declared_type: int) -> Dictionary:
-	if declared_type != TYPE_INT or typeof(value) != TYPE_FLOAT:
+static func _coerce_to_declared_type(value: Variant, property_type: int) -> Dictionary:
+	if property_type != TYPE_INT or typeof(value) != TYPE_FLOAT:
 		return {"value": value, "truncated": false}
 	var requested: float = value
 	var stored := int(requested)

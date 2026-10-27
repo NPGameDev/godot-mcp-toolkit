@@ -514,7 +514,7 @@ static func _prepare_inline_properties(instance: Node, properties_raw: Variant) 
 			failed.append({"name": prop_name, "error": str(result.get("error", ""))})
 			continue
 		var bare_path := BarePathCheck.bare_path_message(prop_name, properties[key],
-				int(DeclaredTypeFitter.property_entry(instance, prop_name).get("type", TYPE_NIL)))
+				DeclaredTypeFitter.declared_type(instance, prop_name))
 		if not bare_path.is_empty():
 			failed.append({"name": prop_name, "error": bare_path + "."})
 			continue
@@ -845,10 +845,8 @@ static func _batch_instantiate(
 						property_errors.append({"property": prop_name, "error": str(coerced["_coerce_error"])})
 						continue
 					# Reported, not set: a placeholder would store the String.
-					var declared_type := int(
-							DeclaredTypeFitter.property_entry(instance, prop_name).get("type", TYPE_NIL))
-					var bare_path := BarePathCheck.bare_path_message(
-							prop_name, props[key], declared_type)
+					var bare_path := BarePathCheck.bare_path_message(prop_name, props[key],
+							DeclaredTypeFitter.declared_type(instance, prop_name))
 					if not bare_path.is_empty():
 						property_errors.append({"property": prop_name, "error": bare_path + "."})
 						continue
