@@ -2,8 +2,9 @@
 
 The ubiquitous language of `godot-mcp-toolkit` — the terms this project reserves for its
 multi-session concurrency model, editor-responsiveness throttle, test layers, hint surface,
-coverage counting, and internal module roles. Definitions here are **normative**: align code,
-comments, and the architecture documentation to the term used here.
+coverage counting, resource values, path safety, script checks, the debugger, and internal module
+roles. Definitions here are **normative**: align code, comments, and the architecture
+documentation to the term used here.
 
 **Cross-repo SSOT.** This glossary is the **single source of truth** for the project's shared
 vocabulary. The server repo's `docs/dev/glossary.md` cross-links it rather than restating it; the
@@ -364,6 +365,84 @@ at an editor start, nothing on a mid-session enable (`SetupSteps.plan_run`).
 What the toolkit may do on its own, decided from the user's settings and the setup steps they have
 seen (`core/consent.gd`). The update check runs only when its setting is on and the `updates` step
 has been seen. Distinct from tool permissions, which govern what an MCP client may ask for.
+
+---
+
+## Resource value vocabulary
+
+How a tool call names a resource file as a property value.
+
+**Tagged form**
+The one way a tool call names an existing resource file as a property value:
+`{"type": "Resource", "path": "res://…"}`.
+_Avoid_: resource ref, typed path.
+
+**Bare path**
+A path String (`res://`, `uid://` or `user://`) given where a Resource value is expected, instead
+of the tagged form. The toolkit never binds it: it names the tagged form the caller meant, or
+refuses a path no resource can come from (`contract/bare_path_check.gd`).
+_Avoid_: raw path, string path, untagged path.
+
+---
+
+## Path safety vocabulary
+
+**Reserved path**
+A project path no tool call may delete, because the engine, version control or the developer's
+tooling depends on it: anything under a dot-named folder or file (`.git`, `.svn`, `.godot`,
+`.claude`, `.mcp.json`), and any file named `project.godot` or `override.cfg`. Deleting one is the
+developer's decision, made outside the agent. The delete commands refuse it through
+`FileGuard.resolve_safe_delete()` (`security/file_guard.gd`), which also refuses a path segment
+shaped like a Windows alias, since Windows can resolve one to a reserved path.
+_Avoid_: protected file, metadata path, sensitive path.
+
+---
+
+## Debugger vocabulary
+
+How this project names what the editor's debugger is doing with a game. Never write "paused"
+alone: an error break and a breakpoint pause need opposite next steps.
+
+**Error break**
+The game stopped by the debugger at an error it cannot continue from: a parse error, a failed
+script load, a runtime error. The fix is to stop the game, correct the script and start again.
+`debug_state` reports it as `breaked: true` with `can_debug: false`.
+_Avoid_: paused (alone), crash, hang.
+
+**Breakpoint pause**
+The game stopped by the debugger at a point it can resume from, such as a breakpoint the user set.
+`debug_state` reports it as `breaked: true` with `can_debug: true`; `debug_continue` resumes it.
+_Avoid_: paused (alone), break (alone).
+
+**Local playtest**
+A run of the project on this machine that the editor starts: its Play buttons, Run Current Scene,
+Run Specific Scene, or `game_start`. Its game writes this machine's log.
+_Avoid_: editor run (also covers a deploy), game session (unqualified).
+
+**Remote deploy**
+The editor's one-click deploy with remote debug: the game runs on a device or in a browser and
+attaches to the editor's debugger, but writes its log where it runs, never into this machine's
+log.
+_Avoid_: one-click run, remote run, game session (unqualified).
+
+**Latest debugger session**
+The most recent game that attached to the editor's debugger, whether a **local playtest**, a
+**remote deploy**, or a game started outside the editor. `debugger_get_log` reports on it; the
+debug-session tracker (`transport/debug_session_tracker.gd`) holds its state.
+_Avoid_: latest run (a run whose game never attached starts no session), game session
+(unqualified).
+
+---
+
+## Script check vocabulary
+
+**Templates folder**
+The project's script-templates folder: `res://script_templates/` unless the
+`editor/script/templates_search_path` project setting moves it (a sibling folder whose name
+starts with it counts too). The engine treats a `.gd` file
+under it as a template for new scripts and never parses it, so `script_check` compiles such a
+file away from its path to still report its errors.
+_Avoid_: templates dir (bare), script_templates (alone, it ignores the setting).
 
 ---
 

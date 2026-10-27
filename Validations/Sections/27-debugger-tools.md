@@ -4,7 +4,7 @@
 **Tools tested:** debug_state, debug_list_breakpoints, debug_set_breakpoint, debug_continue
 **Groups to activate:** debugger
 **Prerequisite:** Godot editor running with plugin enabled
-**Tests:** 16 + 1 combo chain
+**Tests:** 17 + 1 combo chain
 
 ---
 
@@ -38,6 +38,9 @@ func _process(delta: float) -> void:
 
 **27.1** `debug_state` — (no params, no game running)
 - **Expect:** success=true, active=false, breaked=false, can_debug=false
+
+**27.1b** `debug_state` at an error break — `script_write` file_path=`res://sv2_validation/sv2_debug_broken.gd`, content=`extends Node2D\n\nfunc _ready():\n\tvar x = {\n`; `scene_create` file_path=`res://sv2_validation/sv2_debug_broken.tscn`, root_type=`Node2D`; `scene_open` it; `node_set_script` node_path=`.`, script_path=`res://sv2_validation/sv2_debug_broken.gd`; `editor_save_scene`; `game_start` scene_path=`res://sv2_validation/sv2_debug_broken.tscn`; then `debug_state`; then `game_stop`
+- **Expect:** `game_start` returns the error-break hint naming `res://sv2_validation/sv2_debug_broken.gd:<line>`, and `debug_state` reads active=true, breaked=true, can_debug=false: the parse error stopped the game at an error break, which the game cannot continue from.
 
 ---
 
@@ -149,6 +152,7 @@ Setup — launch a game that hits no breakpoint, then continue:
      `_ready()` executes immediately and line 6 is inside it.
 7. `debug_state`
    - **Expect:** success=true, active=true, breaked=true, can_debug=true
+   - Then `debugger_get_log`: **Expect** no `type:"break"` entry in `error_buffer`. A breakpoint pause is no error; `debug_state` reports it.
 8. `debug_continue`
    - **Expect:** success=true (game resumes past the breakpoint)
 9. `debug_state`
@@ -170,5 +174,6 @@ Per the [Console Isolation](../tool-sweep.md#console-isolation) protocol.
 - `debug_set_breakpoint` res://sv2_validation/sv2_debug_target.gd, line=9, enabled=false (if set)
 - `scene_delete` res://sv2_validation/sv2_debug_scene.tscn (if created in C26)
 - `scene_delete` res://sv2_validation/sv2_nobreak_scene.tscn (if created in 27.16)
+- `scene_delete` res://sv2_validation/sv2_debug_broken.tscn and `script_delete` res://sv2_validation/sv2_debug_broken.gd (27.1b)
 - `script_delete` res://sv2_validation/sv2_debug_target.gd
 - `discover_tools` with reset=`["debugger"]`

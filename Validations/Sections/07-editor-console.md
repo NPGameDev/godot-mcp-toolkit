@@ -132,12 +132,15 @@
 > regressed — flag as **Major**.
 
 **`LOG_BUSY` is not deterministically triggerable from the sweep.** Per the Phase 0
-engine model, the logger holds `godot.log` **deny-nothing**, so our own read open
-always succeeds — there is no engine/self lock to exercise. A real `LOG_BUSY` needs an
-**external read-denying holder** (antivirus scan, file-sync, backup tool) the sweep
-can't provision. The deterministic truth-table (POSIX never `LOG_BUSY`; 4.5+ never
-engine-`LOG_BUSY`; genuine absence → `LOG_UNAVAILABLE`; 4.4 self-held `--log-file` →
-entries) is owned by **server smoke §14** (`14_asset_discovery_and_console.ts`). To
+engine model, the editor's own logger holds `godot.log` **deny-nothing**, so with no
+game running the editor's read open succeeds — there is no self lock to exercise. On
+Windows a running game does lock it: the game holds its log open for writing, and the
+editor's read requests deny-write sharing, which Windows refuses, so `source="file"`
+can fail while a playtest runs. Otherwise a real `LOG_BUSY` needs an **external
+read-denying holder** (antivirus scan, file-sync, backup tool) the sweep can't
+provision. The deterministic truth-table (POSIX never `LOG_BUSY`; genuine absence →
+`LOG_UNAVAILABLE`; 4.4 self-held `--log-file` → entries) is owned by **server smoke
+§14** (`14_asset_discovery_and_console.ts`). To
 eyeball the `LOG_UNAVAILABLE` gate here, disable file logging (ProjectSettings → Debug →
 File Logging), then `editor_get_console` `source="file"` → expect `LOG_UNAVAILABLE` with
 the version-appropriate hint.

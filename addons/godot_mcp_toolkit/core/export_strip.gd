@@ -148,10 +148,10 @@ static func _compute_strip_paths(classes: Array) -> Dictionary:
 # both causes rather than claiming one.
 #   addon leaked  ⟺  addon non-script files were exported but no addon .gd was
 #                    (most likely an earlier plugin consumed them). The
-#                    non-script signal is the false-positive guard: if the
-#                    user already excluded the
-#                    addon, NO addon file reaches us → saw_addon_nonscript=false
-#                    → no warning (excluding the addon is exactly what we advise).
+#                    non-script signal is the false-positive guard: if the user
+#                    already excluded the addon, NO addon file reaches us →
+#                    saw_addon_nonscript=false → no warning (excluding the
+#                    addon is exactly what we advise).
 #   ext leaked    =  extension paths computed in _export_begin that never reached
 #                    _export_file. (A manually-excluded single extension also
 #                    reads as "unseen" — documented caveat in docs/extending.md.)

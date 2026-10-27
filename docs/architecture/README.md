@@ -405,7 +405,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="111bdd5" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="1278cbd" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -415,7 +415,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified 111bdd5*
+*Figure 8 — the idempotent create / if_exists decision · verified 1278cbd*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -508,7 +508,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd" data-verified="111bdd5" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd" data-verified="1278cbd" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -534,7 +534,7 @@ flowchart TD
     composer --> dock["dock UI"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
 ```
-*Figure 10 — plugin composition root · verified 111bdd5*
+*Figure 10 — plugin composition root · verified 1278cbd*
 
 The composer builds in a behaviour-critical order: registry and server first, then the
 debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
@@ -554,7 +554,9 @@ overrides (`core/response_limits.gd`), static state that would otherwise outlive
 teardown uses **immediate (not deferred)
 `free()`** throughout — for the dock control, the update check runner, the dialog presenter's dialogs, and the server, and
 (in `plugin.gd`'s own `_exit_tree`) for the tool menu and the onboarding wizard — so nothing
-outlives ObjectDB's exit-time leak check. The tool menu, per-user EditorSettings (the unfocused-editor
+outlives ObjectDB's exit-time leak check. The one exception is the `EditorDock` wrapper that holds
+the dock on 4.6+: it holds no GDScript, and the editor still reads a removed dock in a deferred
+update, so the composer `queue_free`s it after freeing the control. The tool menu, per-user EditorSettings (the unfocused-editor
 preferences, the setup wizard's `mcp_toolkit/setup_wizard/show_optional_steps` and the machine-local
 `mcp_toolkit/server/local_path`), the
 Godot-version warning, and the onboarding wizard (the setup wizard) are wired by `plugin.gd` itself after compose
@@ -711,7 +713,7 @@ The toolkit assumes a **single local user with a human at the editor**; the boun
 localhost + token, not a defence against an adversary who can already write project files.
 Within that model, several layers keep an LLM's requests honest.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="3598cab" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="1278cbd" -->
 ```mermaid
 flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
@@ -723,7 +725,7 @@ flowchart TD
     audit --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
 ```
-*Figure 13 — request trust boundaries · verified 3598cab*
+*Figure 13 — request trust boundaries · verified 1278cbd*
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →

@@ -67,12 +67,17 @@
 **3.9** `node_get_property` (colon-chain readback) — node_path=`Sv2Sprite`, property=`material:shader_parameter/brightness`
 - **Expect:** 0.3
 
-**3.10** `node_set_property` (bare res:// guard) — node_path=`Sv2RefTest`, property=`texture`, value=`"res://icon.svg"`
-- **Expect:** success OR hint warning about bare string without type wrapper
+**3.10** `node_set_property` (bare paths) — node_path=`Sv2RefTest`, property=`texture`, three calls:
+- (a) value=`"res://icon.svg"`
+- (b) value=`"uid://nosuchuid0000"`
+- (c) value=`"user://icon.svg"`
+- **Expect:** each fails with `INVALID_VALUE` and an error that starts `property 'texture' expects a
+  Resource, not a bare string path`, then gives: (a) the tagged form `{"type": "Resource", "path": "res://icon.svg"}`, (b) that no resource has the UID
+  `uid://nosuchuid0000`, (c) that only a res:// resource can be bound. `node_get_property` Sv2RefTest
+  `texture` still reads the 3.7 texture.
 
-> **REGRESSION WATCH (FIX-F, 7e63aee):** If a bare `res://` string is silently
-> accepted without any hint/warning, the bare-res detection has regressed. The tool
-> should either reject with a hint or accept with a diagnostic note.
+> **REGRESSION WATCH (FIX-F, 7e63aee; toolkit #48):** a bare path accepted, or a generic drop error with no
+> tagged form or UID wording, means the bare-path check regressed. Flag as **Major**.
 
 **3.11** `node_set_property` (LayerMask coercion) — node_path=`Sv2Player`, property=`collision_layer`, value=`{"type":"LayerMask","layers":[1,3]}`
 - **Expect:** success, collision_layer set to 5 (layers 1 and 3 → bits 0 and 2 → 1 + 4 = 5)

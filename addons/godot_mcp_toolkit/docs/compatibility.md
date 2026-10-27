@@ -26,7 +26,7 @@ All MCP tools work on Godot 4.2+ unless noted below.
 | Tool | Min version | Behavior on older Godot |
 |------|-------------|------------------------|
 | `scene_close` | 4.5 | Returns `UNSUPPORTED` error with version message. On 4.5+ closes active or inactive tabs; last-tab close auto-creates an empty scene |
-| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version (an abstract engine class only from 4.4; see [the limitations](#script_check-limitations-all-versions)). Error messages carry `gdscript://` URIs (see below) |
+| `script_check` | 4.2 | GDScript only (`.gd`); rejects `.cs` with `INVALID_PARAMS`. The check renames the script's `class_name` in its copy and checks the name itself, as the engine does; a name that clashes reports its error with a `line` on every version (an abstract engine class only from 4.4; see [the limitations](#script_check-limitations-all-versions)). Error messages name the file itself, except for a script under the project's script-templates folder (see below) |
 | `editor_refresh` | 4.2 | Supports `file_paths` param for targeted O(1)-per-file mode; without params falls back to full `scan()`. Both modes work on all versions |
 | `input_map_event`, `input_map_list` | 4.2 | A key's `location` (left or right) needs 4.3+: on 4.2 a `location` passed to a bind or an unbind is ignored and the response carries a `warnings` entry, and keys are read back without one. On 4.7, keys and mice have their own device ids (16 and 32), and a key or mouse event saved with device 0 by an older Godot matches one bound now |
 | `extensions_refresh` | 4.2 | On 4.2.2, an extension edit made with `script_write` or `script_edit` (or their undo/redo) applies live when it compiles. An edit made outside the toolkit, or to a C# extension, needs an editor restart, and so does every extension edit on 4.2.0 and 4.2.1; `extensions_refresh` names it in its `hint` (a cached read avoids an engine reimport crash — see below). When the file does not compile, the `hint` says to fix it instead. Adding/removing extensions applies live. 4.3+ applies all changes live |
@@ -319,13 +319,21 @@ Remaining trade-offs:
 - **Other threads' errors:** while its compiles run (a few milliseconds), the
   check turns error printing off for the whole editor, so an error another
   thread prints in that window is missing from the console.
-- **`gdscript://` URIs in error messages:** When a script has a genuine
-  error, the console message references an internal `gdscript://` path
-  instead of the real `res://` file path.
+- **Where the check compiles its copy:** the check compiles its copy beside
+  the file, so relative `preload()` and `extends` paths and the project's
+  per-directory warning rules apply to it as to the file, and its error
+  messages name the file itself. A file under the project's script-templates
+  folder (the `editor/script/templates_search_path` project setting,
+  `res://script_templates/` by default; a sibling folder whose name starts
+  with it counts too) is the exception: the editor loads a
+  template without parsing it, so the check compiles its copy with no path.
+  Its relative `preload()` and `extends` paths don't resolve, its error
+  messages name an internal `gdscript://` path instead of the file, and on
+  4.5+ a relative `preload()` gets the hint that the file doesn't exist yet, even
+  when the file sits beside the template.
 
-**Workaround:** Use `editor_get_console` with `level_filter: ["error"]` as a
-cross-check — it reads diagnostics from the editor itself, which have
-accurate file paths.
+**Workaround:** for a template, use absolute `res://` paths in its `preload()`
+and `extends`, or check a copy of it saved outside the templates folder.
 
 ### Quit during a pending save — one-time console noise (all versions)
 

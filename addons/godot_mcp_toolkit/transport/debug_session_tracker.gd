@@ -269,10 +269,14 @@ func get_debug_state() -> Dictionary:
 	}
 
 
+## Returns whether a game is attached to the latest debugger session, the
+## [code]active[/code] of [method get_debug_state].
 func is_active() -> bool:
 	return _active
 
 
+## Returns whether the debugger stopped the game, at an error break or a
+## breakpoint pause, the [code]breaked[/code] of [method get_debug_state].
 func is_breaked() -> bool:
 	return _breaked
 
