@@ -1004,9 +1004,12 @@ The existing cases each rule lists, which do not grow:
   one is injected and after it is cleared.
 - **7.12:** in `core/plugin_composer.gd`'s `Handle`, `_extension_watcher: RefCounted` and the
   untyped `_user_path_monitor`; `transport/mcp_server.gd`'s `bind_user_path_monitor(monitor:
-  RefCounted)`.
-- **7.13:** `EditorAccess`'s plugin, `LogBuffer`'s store, `ResponseLimits`' env overrides, and the
-  playtest log reader's tracker.
+  RefCounted)`; `plugin.gd`'s untyped `_handle` (always a `PluginComposer.Handle`);
+  `transport/dispatch/server_request_router.gd`'s untyped `_read_lane`, `_mutation_lane` and
+  `_scene_lease_lane`; `transport/dispatch/dispatch_lane.gd`'s untyped `_watchdog`.
+- **7.13:** `EditorAccess`'s plugin, `LogBuffer`'s store, `ResponseLimits`' env overrides, the
+  playtest log reader's tracker, and `core/consent.gd`'s `_toggle_reader` and `_seen_reader` (a
+  test seam, set through `set_readers`).
 
 ## B3. Contract bindings
 
