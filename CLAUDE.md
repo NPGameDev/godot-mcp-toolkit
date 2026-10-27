@@ -398,8 +398,8 @@ quick operational facts only.
   update-smokes it (`UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`: the built
   zip installs over the previous version, signed with a key made for the run),
   and uploads the zip and the manifest as GitHub Release artifacts. The
-  maintainer signs the manifest and uploads its `.sig` by hand afterwards
-  (`docs/dev/release-runbook.md`, Phase 6). `workflow_dispatch` runs the whole
+  workflow does not sign the manifest; until a signature by a trusted key sits
+  beside it, the toolkit offers the release as links only. `workflow_dispatch` runs the whole
   chain as a **dry-run** (upload skipped).
 
 ## Dogfood setup (this repo)

@@ -140,9 +140,8 @@ contributor-facing summary.
   artifact** (unzips it into a scratch project and boots a headless editor to prove
   the plugin enables), **update-smokes** it (installs it over the previous version
   through the self-update, `UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`), and
-  uploads the zip and the manifest as a GitHub Release. The maintainer then signs
-  the manifest and uploads its `.sig` by hand
-  ([release runbook](docs/dev/release-runbook.md), Phase 6); until then the toolkit
+  uploads the zip and the manifest as a GitHub Release. The workflow does not sign
+  the manifest; until a signature by a trusted key sits beside it, the toolkit
   offers the release as links only. You can rehearse the whole path without
   releasing by running `release.yml` via **`workflow_dispatch`** — it is a
   **dry-run** by default (everything runs; the Release upload is skipped).

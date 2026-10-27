@@ -343,8 +343,8 @@ applies a staged one; the next start reports what happened and deletes it.
 
 **Trusted release key**
 A public key in `update/trusted_release_keys.gd`. A release is installed from the editor only when
-its update manifest carries a signature by one of them; the maintainer holds the private key and
-signs with `scripts/sign-release.sh`.
+its update manifest carries a signature by one of them; `scripts/sign-release.sh` makes and checks
+such a signature.
 
 **Release file list**
 `release_files.sha256` in a release's addon folder: every other file with its SHA-256, in

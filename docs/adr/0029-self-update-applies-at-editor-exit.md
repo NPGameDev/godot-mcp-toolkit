@@ -59,9 +59,9 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
   `restart_editor(false)`, so the restart runs outside the plugin's call stack. A dialog the user
   cancels leaves nothing written.
 - **Signatures.** A release is installable only when its manifest carries an RSA-SHA256
-  signature by a trusted key (`openssl dgst -sha256 -sign`, checked with `Crypto.verify`). The
-  maintainer keeps the private key off GitHub and signs the manifest CI built
-  (`scripts/sign-release.sh`). With no trusted key the toolkit offers links only, as before.
+  signature by a trusted key (`openssl dgst -sha256 -sign`, checked with `Crypto.verify`), which
+  `scripts/sign-release.sh` makes over the manifest CI built. Where the private key is kept is
+  open (below). With no trusted key the toolkit offers links only, as before.
   Rotation is a release that trusts both keys.
 - **Consent and modes.** The project setting `mcp_toolkit/updates/install_mode` is `manual`,
   `ask` (default) or `automatic`, and lives in `project.godot` for the reason ADR 0026 gave the
@@ -85,8 +85,17 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
   need a loader plugin with no preloads, and the exit hook already avoids the problem.
 - **A checksum without a signature.** A hash published in the same release only proves the
   download matches the release; whoever can change the release can change both.
-- **A key held in CI.** It signs without a manual step, but whoever takes the repository or a
-  workflow dependency can sign with it, which is the attack the signature exists to stop.
+## Open: where the signing key is kept
+
+The maintainer decides, and until a key is chosen the trusted key list stays empty. Two places
+fit the tooling as built:
+
+- **Off GitHub, signed by hand.** After the release workflow attaches the manifest, its holder
+  signs it with `scripts/sign-release.sh` and uploads the signature: one manual step per release,
+  and a compromised repository or workflow dependency cannot sign.
+- **A GitHub environment secret with a required reviewer.** The workflow signs with no manual
+  step, but whoever takes the repository or a workflow dependency can sign with it, which is the
+  attack the signature exists to stop.
 
 ## Consequences
 
@@ -95,8 +104,8 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
   with its troubleshooting entry, are the mitigation.
 - **The first release that ships the installer updates itself from then on;** older installs
   update by hand once.
-- **A stolen key reaches projects in the automatic mode.** Offline custody, rotation and the
-  `ask` default bound it.
+- **A stolen key reaches projects in the automatic mode.** Where the key is kept, rotation and
+  the `ask` default bound it.
 - **Installs from the legacy Asset Library** (an archive of the tagged commit) carry no file
   list, so their update deletes nothing; files a release dropped stay behind, unused.
 - **Several teammates in the automatic mode** each produce the same diff of the addon folder.
