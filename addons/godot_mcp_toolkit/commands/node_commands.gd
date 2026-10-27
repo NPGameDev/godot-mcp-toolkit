@@ -279,7 +279,7 @@ static func _set_property_scalar_single(
 	# Refused before the set: a placeholder would store the String, and the generic
 	# drop guard below would give a vaguer message for a live instance.
 	var bare_path := BarePathCheck.bare_path_message(property_name, raw_value,
-			int(DeclaredTypeFitter.property_entry(node, property_name).get("type", TYPE_NIL)))
+			DeclaredTypeFitter.declared_type(node, property_name))
 	if not bare_path.is_empty():
 		return MCPToolkitError.fail("INVALID_VALUE", bare_path + ".")
 	var requested: Variant = coerce_result["value"]
@@ -418,7 +418,7 @@ static func _batch_set_properties(server: Node, root: Node, entries: Array) -> D
 		# Refused before the set, as the single write does: a placeholder would store
 		# the String.
 		var bare_path := BarePathCheck.bare_path_message(prop, raw_val,
-				int(DeclaredTypeFitter.property_entry(node, prop).get("type", TYPE_NIL)))
+				DeclaredTypeFitter.declared_type(node, prop))
 		if not bare_path.is_empty():
 			results.append({"node_path": np, "property": prop,
 				"success": false, "error": bare_path + "."})
@@ -938,7 +938,7 @@ static func _manage_duplicate(
 		for key: Variant in (props_raw as Dictionary):
 			var prop_name := str(key)
 			var bare_path := BarePathCheck.bare_path_message(prop_name, props_raw[key],
-					int(DeclaredTypeFitter.property_entry(node, prop_name).get("type", TYPE_NIL)))
+					DeclaredTypeFitter.declared_type(node, prop_name))
 			if not bare_path.is_empty():
 				return MCPToolkitError.fail("INVALID_PARAMS", bare_path + ".")
 

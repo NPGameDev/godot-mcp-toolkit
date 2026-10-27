@@ -89,7 +89,7 @@ static func fit(target: Object, property: String, value: Variant) -> Dictionary:
 	var entry := property_entry(target, property)
 	if _declares_typed_array(entry):
 		return _fit_to_typed_array(_element_template(target.get(property), entry), property, value)
-	var conversion := _coerce_to_declared_type(value, int(entry.get("type", TYPE_NIL)))
+	var conversion := _coerce_to_declared_type(value, _entry_type(entry))
 	var warning := ""
 	if conversion["truncated"]:
 		warning = PropertySetCheck.adjusted_warning(conversion["value"], value, property)
@@ -111,12 +111,26 @@ static func property_entry(target: Object, property: String) -> Dictionary:
 	return {}
 
 
+## The [enum Variant.Type] [param target]'s property list declares for
+## [param property], or [constant @GlobalScope.TYPE_NIL] when the list has no such
+## property or declares it as a Variant. Headers are skipped as
+## [method property_entry] skips them.
+static func declared_type(target: Object, property: String) -> int:
+	return _entry_type(property_entry(target, property))
+
+
+## The [enum Variant.Type] the property-list [param entry] declares, or
+## [constant @GlobalScope.TYPE_NIL] for an empty entry.
+static func _entry_type(entry: Dictionary) -> int:
+	return int(entry.get("type", TYPE_NIL))
+
+
 ## True when the property-list [param entry] declares a typed array. A typed
 ## [code]var[/code], or an entry a script lists itself, carries
 ## [constant @GlobalScope.PROPERTY_HINT_ARRAY_TYPE]; an [code]@export[/code] of a typed
 ## array carries [constant @GlobalScope.PROPERTY_HINT_TYPE_STRING] instead.
 static func _declares_typed_array(entry: Dictionary) -> bool:
-	if int(entry.get("type", TYPE_NIL)) != TYPE_ARRAY:
+	if _entry_type(entry) != TYPE_ARRAY:
 		return false
 	var hint := int(entry.get("hint", PROPERTY_HINT_NONE))
 	return hint == PROPERTY_HINT_ARRAY_TYPE or hint == PROPERTY_HINT_TYPE_STRING

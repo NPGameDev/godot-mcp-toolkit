@@ -4,9 +4,11 @@ extends RefCounted
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const FileGuard = Modules.FileGuard
+# Modules cannot list it: it preloads Modules.
+const DebugBridge := preload("res://addons/godot_mcp_toolkit/transport/debug_bridge.gd")
 
 
-static func register(registry: MCPToolkitCommandRegistry, debug_bridge: RefCounted) -> void:
+static func register(registry: MCPToolkitCommandRegistry, debug_bridge: DebugBridge) -> void:
 	registry.add("debug.state", func(_params: Dictionary) -> Dictionary:
 		return _cmd_debug_state(debug_bridge)
 	, MCPToolkitCommandOptions.new().mark_read_only().mark_scene_independent())
@@ -24,7 +26,7 @@ static func register(registry: MCPToolkitCommandRegistry, debug_bridge: RefCount
 # -- Commands -----------------------------------------------------------------
 
 
-static func _cmd_debug_state(debug_bridge: RefCounted) -> Dictionary:
+static func _cmd_debug_state(debug_bridge: DebugBridge) -> Dictionary:
 	var state := debug_bridge.get_debug_state() as Dictionary
 	return MCPToolkitSuccess.ok(state)
 
@@ -168,7 +170,7 @@ static func _cmd_debug_set_breakpoint(params: Dictionary) -> Dictionary:
 		{"file_path": current_script.resource_path, "line": line, "enabled": enabled})
 
 
-static func _cmd_debug_continue(debug_bridge: RefCounted) -> Dictionary:
+static func _cmd_debug_continue(debug_bridge: DebugBridge) -> Dictionary:
 	var result := debug_bridge.try_continue() as Dictionary
 	if result.has("error"):
 		var code: String = result["error"]
