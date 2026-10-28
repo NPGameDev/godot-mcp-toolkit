@@ -1,6 +1,6 @@
 # Sweep Coverage Manifest
 
-**Last updated:** 2026-10-27 (1.1.1: bare `uid://` / `user://` paths on the node and scene writers (§2 2.13b, §3 3.10, toolkit #48); `script_check` beside the file, a relative `preload()` and an addons-folder file (§6 6.3f, 6.3g, toolkit #98); the error-break entry, hint and `debug_state` (§21 21.3, 21.3b, 21.8–21.13, §27 27.1b, C26, toolkit #95); whose game the latest debugger session is (§21 21.14, 21.15, toolkit #97); §6 6.17/6.18's member renamed `second_edit`)
+**Last updated:** 2026-10-28 (1.1.1: `scene_create_node` steps pass `class_name` (§2, §3, §7, §14, §19); 6.3e's diagnostic per version (§6); 21.14's playtest started from the editor's Run Current Scene (§21); bare `uid://` / `user://` paths on the node and scene writers (§2 2.13b, §3 3.10, toolkit #48); `script_check` beside the file, a relative `preload()` and an addons-folder file (§6 6.3f, 6.3g, toolkit #98); the error-break entry, hint and `debug_state` (§21 21.3, 21.3b, 21.8–21.13, §27 27.1b, C26, toolkit #95); whose game the latest debugger session is (§21 21.14, 21.15, toolkit #97); §6 6.17/6.18's member renamed `second_edit`)
 **Toolkit commit:** T:2c24e80
 **Total tools (agent-facing):** 113 + 2 meta — canonical count in server
 `src/registration/catalogue.ts` (`--tools-count`).

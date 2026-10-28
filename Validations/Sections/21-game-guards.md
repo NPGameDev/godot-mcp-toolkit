@@ -135,7 +135,7 @@ func _ready():
 
 ### Whose game the latest debugger session is
 
-**21.14** A playtest the editor starts without `game_start` — `execute_code` channel=`editor`, code=`EditorInterface.play_custom_scene("res://sv2_validation/Sv2Main.tscn")`; wait 2s; `execute_code` channel=`editor`, code=`EditorInterface.stop_playing_scene()`; then `debugger_get_log`
+**21.14** A playtest the editor starts without `game_start` — `scene_open` file_path=`res://sv2_validation/Sv2Main.tscn`; press Run Current Scene (F6) in the editor, by hand or with an editor-automation harness; wait 2s; stop it with the editor's Stop button; then `debugger_get_log`
 - **Expect:** success, `lines` holds this run's log, `debug_state.active` false, and no note that no playtest has run. This is the path of the editor's Play buttons.
 
 > **REGRESSION WATCH (toolkit #97):** a "no playtest" or "no game session" note, or the log of an earlier

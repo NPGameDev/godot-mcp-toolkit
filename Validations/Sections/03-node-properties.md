@@ -54,7 +54,7 @@
 > If the tool requires a different format or fails silently, Resource type handling has regressed.
 
 **3.7** `node_set_property` (ResourceRef alias) — create temp Sprite2D, set texture:
-- First: `scene_create_node` node_type=`Sprite2D`, node_name=`Sv2RefTest`, parent_path=`.`
+- First: `scene_create_node` class_name=`Sprite2D`, node_name=`Sv2RefTest`, parent_path=`.`
 - Then: `node_set_property` node_path=`Sv2RefTest`, property=`texture`, value=`{"type":"ResourceRef","path":"res://icon.svg"}`
 - **Expect:** success — "ResourceRef" alias accepted
 
@@ -171,7 +171,7 @@
 > string read-back means the `serialize_value` symmetry regressed. (The unit suite
 > holds the authoritative coerce∘serialize round-trip.) Flag as **Major**.
 
-**3.20a** Setup — `scene_create_node` node_type=`Line2D`, node_name=`Sv2PackedLine`, parent_path=`.`
+**3.20a** Setup — `scene_create_node` class_name=`Line2D`, node_name=`Sv2PackedLine`, parent_path=`.`
 - **Expect:** success (a node whose `points` is a top-level `PackedVector2Array` — no sub-resource path, so the read==write contract is exercised directly).
 
 **3.20b** `node_set_property` then `node_get_property` (Packed read-back is TAGGED — concern 053):
@@ -195,7 +195,7 @@
 
 ## control.set_layout (41l — W1 Lane 2)
 
-**3.23** Setup — `scene_create_node` node_type=`Control`, node_name=`Sv2LayoutTest`, parent_path=`.`
+**3.23** Setup — `scene_create_node` class_name=`Control`, node_name=`Sv2LayoutTest`, parent_path=`.`
 - **Expect:** success
 
 **3.24** `control_set_layout` — node_path=`Sv2LayoutTest`, preset=`PRESET_FULL_RECT`
