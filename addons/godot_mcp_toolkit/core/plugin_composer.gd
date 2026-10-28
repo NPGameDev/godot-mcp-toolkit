@@ -6,7 +6,7 @@ extends RefCounted
 ## compose() builds the whole object graph (registry, server, debug-session tracker,
 ## debug bridge, command registrar, extensions, export plugins, log buffer, user-path monitor,
 ## registry registration, playtest watcher, write flow + dialog presenter, update
-## check, dock) and returns the owning Handle.
+## check, update installer, dock) and returns the owning Handle.
 ## The orchestrator (plugin.gd) calls compose() once from _enter_tree, holds the
 ## Handle, drives it (poll_playtest each _process), and calls Handle.dispose()
 ## once from _exit_tree. This owns wiring, not lifecycle phases: the phase
@@ -25,6 +25,7 @@ const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 const UpdateCheckRunner = Modules.UpdateCheckRunner
+const UpdateInstaller = Modules.UpdateInstaller
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/extension_loader.gd")
 const BuiltinCommandRegistration := preload("res://addons/godot_mcp_toolkit/transport/builtin_command_registration.gd")
 const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
@@ -123,11 +124,18 @@ static func compose(
 	plugin.add_child(update_check)
 	handle._update_check = update_check
 
+	# The installer follows the check's version, so it is built after it and freed
+	# before it.
+	var update_installer := UpdateInstaller.new(update_check)
+	update_installer.name = "MCPUpdateInstaller"
+	plugin.add_child(update_installer)
+	handle._update_installer = update_installer
+
 	# -- Toolkit dock (bottom panel on ≤4.5, EditorDock on 4.6+; DockHost owns the seam) --
 	var dock: Control = preload("res://addons/godot_mcp_toolkit/ui/dock/dock.tscn").instantiate()
 	dock.bind(
 			server, Modules.Audit.get_log_path(), write_flow, dialog_presenter, update_check,
-			on_setup_wizard_requested)
+			update_installer, on_setup_wizard_requested)
 	handle._dock = dock
 	handle._dock_host = DockHost.add(plugin, dock, "MCP Toolkit")
 
@@ -225,6 +233,7 @@ class Handle:
 	var _write_flow: MCPJsonWriteFlow = null  # Shared .mcp.json confirm-then-write flow
 	var _dialog_presenter: ToolkitDialogPresenter = null  # Editor-global dialogs (info + catalog)
 	var _update_check: Node = null  # Update check runner, read by the dock's badge
+	var _update_installer: UpdateInstaller = null  # Stages updates the install mode allows; the badge drives it
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 	var _debug_bridge: DebugBridge = null  # EditorDebuggerPlugin for debug.* commands
 	var _session_tracker: DebugSessionTracker = null  # The latest debugger session's state
@@ -250,6 +259,11 @@ class Handle:
 	func dialog_presenter() -> ToolkitDialogPresenter:
 		return _dialog_presenter
 
+	## The update installer (the orchestrator asks it whether the editor-start
+	## update window is due).
+	func update_installer() -> UpdateInstaller:
+		return _update_installer
+
 	## The dock host — the EditorDock wrapper on 4.6+, null on ≤4.5. The reveal
 	## façade (plugin.reveal_dock) passes it back to DockHost.reveal.
 	func dock_host() -> Object:
@@ -268,9 +282,9 @@ class Handle:
 			_session_tracker.note_editor_build()
 
 	## Tear down the composed graph in reverse construction order. Behavior-critical
-	## ordering — dock → update check → dialog presenter + write flow → user-path monitor →
-	## playtest watcher → extension watcher → debug bridge → export plugins →
-	## debug-session tracker → server+registry → env overrides.
+	## ordering — dock → update installer → update check → dialog presenter + write flow →
+	## user-path monitor → playtest watcher → extension watcher → debug bridge →
+	## export plugins → debug-session tracker → server+registry → env overrides.
 	func dispose() -> void:
 		# Dock teardown. Free the CONTROL immediately (never queue_free) so its
 		# GDScript preload chain releases before ObjectDB's exit-time leak check.
@@ -294,6 +308,13 @@ class Handle:
 				_dock.free()
 			_dock = null
 			_dock_host = null
+
+		# Update installer — a plugin child holding an HTTPRequest and connected to the
+		# update check; free() it before the check, immediately, for the same
+		# leak-check reason (its _exit_tree cancels the request and disconnects).
+		if _update_installer != null:
+			_update_installer.free()
+			_update_installer = null
 
 		# Update check — a plugin child holding a timer and an HTTPRequest; free()
 		# it immediately for the same leak-check reason (its _exit_tree cancels the
