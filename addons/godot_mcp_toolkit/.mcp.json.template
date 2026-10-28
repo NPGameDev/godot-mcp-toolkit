@@ -2,7 +2,7 @@
   "mcpServers": {
     "godot-mcp-toolkit": {
       "command": "npx",
-      "args": ["-y", "@npgamedev/godot-mcp-server@1.1.0"],
+      "args": ["-y", "@npgamedev/godot-mcp-server@1.1.1"],
       "env": {
         "GODOT_MCP_CONFIG_VERSION": "1",
         "npm_config_prefer_offline": "true"
