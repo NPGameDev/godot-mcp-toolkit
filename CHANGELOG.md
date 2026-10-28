@@ -73,6 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file and line the editor's debugger reports for the break, with a note on how
   to get the log lines: at an error break, stop the game and read again; at a
   breakpoint pause, continue the game, and it sends its own log.
+  Reported by @pragmabits
+  ([#97](https://github.com/NPGameDev/godot-mcp-toolkit/issues/97)).
 - `script_check`, `script_write`, `script_edit` and the extension edit check no
   longer report a valid script as not compiling when it uses a relative
   `preload()` or `extends`, or when it lives under `res://addons/` and the project
