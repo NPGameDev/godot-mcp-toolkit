@@ -10,6 +10,7 @@ extends SceneTree
 const Testing := preload("res://test/units/testing.gd")
 const SecurityTests := preload("res://test/units/security_tests.gd")
 const DeleteCommandsTests := preload("res://test/units/delete_commands_tests.gd")
+const SaveGuardTests := preload("res://test/units/save_guard_tests.gd")
 const RegistryCommandTests := preload("res://test/units/registry_command_tests.gd")
 const RegistryStoreTests := preload("res://test/units/registry_store_tests.gd")
 const ExtensionMetaTests := preload("res://test/units/extension_meta_tests.gd")
@@ -80,6 +81,7 @@ func _init() -> void:
 	var testing := Testing.new()
 	SecurityTests.run(testing)
 	await DeleteCommandsTests.run(testing)  # each case awaits registry.call_command → coroutine
+	await SaveGuardTests.run(testing)  # each case awaits registry.call_command → coroutine
 	RegistryCommandTests.run(testing)
 	RegistryStoreTests.run(testing)
 	await ExtensionMetaTests.run(testing)  # M3 holds group 6 (path-guard) await → coroutine

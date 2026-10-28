@@ -1,15 +1,16 @@
 @tool
 extends RefCounted
-## The delete commands (commands/file_, folder_, resource_, scene_ and script_commands.gd)
-## refuse a reserved path before they look for it. The runner's res:// is this repo, so
-## every target is a name that does not exist: if the guard regresses, the command answers
-## NOT_FOUND and has nothing to delete. run() is a coroutine: each case awaits
-## registry.call_command().
+## The delete commands (commands/file_, folder_, resource_, save_, scene_ and
+## script_commands.gd) refuse a reserved path before they look for it. The runner's res://
+## is this repo, so every target is a name that does not exist: if the guard regresses, the
+## command answers NOT_FOUND and has nothing to delete. run() is a coroutine: each case
+## awaits registry.call_command().
 
 const Testing := preload("res://test/units/testing.gd")
 const FileCommands := preload("res://addons/godot_mcp_toolkit/commands/file_commands.gd")
 const FolderCommands := preload("res://addons/godot_mcp_toolkit/commands/folder_commands.gd")
 const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resource_commands.gd")
+const SaveCommands := preload("res://addons/godot_mcp_toolkit/commands/save_commands.gd")
 const SceneCommands := preload("res://addons/godot_mcp_toolkit/commands/scene_commands.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
 
@@ -19,11 +20,13 @@ static func run(testing: Testing) -> void:
 	FileCommands.register(registry, null)
 	FolderCommands.register(registry, null)
 	ResourceCommands.register(registry, null)
+	SaveCommands.register(registry, null)
 	SceneCommands.register(registry, null)
 	ScriptCommands.register(registry, null)
 	await _test_folder_delete_refuses_reserved(testing, registry)
 	await _test_file_delete_refuses_reserved(testing, registry)
 	await _test_typed_deletes_refuse_dot_folders(testing, registry)
+	await _test_deletes_refuse_toolkit_folder_in_any_case(testing, registry)
 
 
 static func _test_folder_delete_refuses_reserved(testing: Testing, registry: MCPToolkitCommandRegistry) -> void:
@@ -61,6 +64,26 @@ static func _test_typed_deletes_refuse_dot_folders(testing: Testing, registry: M
 	var script: Dictionary = await _delete_absent(registry, "script.delete", "file_path",
 			"res://.claude/p7_07c_absent.gd", {})
 	testing.eq(script.get("code"), "PATH_DENIED", "script.delete res://.claude/p7_07c_absent.gd → PATH_DENIED")
+	print("")
+
+
+# On Windows and macOS an upper-case spelling of the toolkit's folder opens the real one,
+# so every delete command refuses it by name.
+static func _test_deletes_refuse_toolkit_folder_in_any_case(testing: Testing, registry: MCPToolkitCommandRegistry) -> void:
+	testing.begin("The delete commands refuse the toolkit's folders in any letter case")
+	for target: Array in [
+		["folder.delete", "path", "res://ADDONS/GODOT_MCP_TOOLKIT/p7_08e_absent", {"recursive": true}],
+		["file.delete", "file_path", "res://Addons/Godot_MCP_Toolkit/p7_08e_absent.txt", {}],
+		["script.delete", "file_path", "res://ADDONS/GODOT_MCP_TOOLKIT/p7_08e_absent.gd", {}],
+		["scene.delete", "file_path", "res://ADDONS/GODOT_MCP_TOOLKIT/p7_08e_absent.tscn", {}],
+		["resource.delete", "file_path", "res://ADDONS/GODOT_MCP_TOOLKIT/p7_08e_absent.tres", {}],
+		["save.delete", "path", "user://ADDONS/GODOT_MCP_TOOLKIT/p7_08e_absent", {}],
+	]:
+		var method := str(target[0])
+		var path := str(target[2])
+		var extra_parameters: Dictionary = target[3]
+		var result: Dictionary = await _delete_absent(registry, method, str(target[1]), path, extra_parameters)
+		testing.eq(result.get("code"), "PATH_DENIED", "%s %s → PATH_DENIED" % [method, path])
 	print("")
 
 

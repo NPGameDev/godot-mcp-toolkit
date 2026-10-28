@@ -46,16 +46,13 @@ static func _cmd_folder_delete(parameters: Dictionary) -> Dictionary:
 	if guard["error"] != null:
 		return MCPToolkitError.fail("PATH_DENIED", str(guard["reason"]))
 
-	if path == "res://" or path == "res:///" or path.get_base_dir() == "":
+	if FileGuard.is_host_folder(path):
 		return MCPToolkitError.fail("FOLDER_PROTECTED",
-			"cannot delete the project root res://; narrow the path")
+			"cannot delete %s: the project root res://, res://addons and the toolkit plugin directory res://addons/godot_mcp_toolkit/ host the agent, so narrow the path; %s" % [path, FileGuard.SAME_FOLDER_NOTE])
 
 	var normalized := path
 	if normalized.ends_with("/"):
 		normalized = normalized.substr(0, normalized.length() - 1)
-	if normalized == "res://addons" or FileGuard.is_toolkit_source(normalized):
-		return MCPToolkitError.fail("FOLDER_PROTECTED",
-			"cannot delete res://addons or the toolkit plugin directory (%s); agent cannot remove its own host" % normalized)
 	if not DirAccess.dir_exists_absolute(path):
 		return MCPToolkitError.fail("NOT_FOUND", "no folder at %s" % path)
 	var normalized_with_slash := normalized + "/"

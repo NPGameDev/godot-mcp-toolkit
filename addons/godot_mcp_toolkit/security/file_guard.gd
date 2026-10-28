@@ -9,6 +9,13 @@ extends RefCounted
 ## that deletes a res:// path calls resolve_safe_delete() instead, which
 ## also refuses version-control, engine and project metadata.
 ##
+## Every check against a host folder (the project root, res://addons, the
+## toolkit's source and its user:// folder) compares a case-folded form of the
+## path with Windows alias spellings cut away. Windows opens a folder under
+## another letter case or an alias spelling (a trailing dot or space, an NTFS
+## stream, an 8.3 short name); macOS opens it under another letter case or a
+## letter it reads as ASCII, such as the long s.
+##
 ## resolve_safe_user() validates user:// paths: rejects traversal,
 ## re-asserts the user:// boundary after canonicalization, then returns
 ## the globalized absolute path.
@@ -25,6 +32,26 @@ extends RefCounted
 ## [method is_toolkit_source].
 const TOOLKIT_SOURCE_DIR := "res://addons/godot_mcp_toolkit/"
 
+## Ends every refusal of a host folder, so a caller who spelled the folder another way
+## learns why the path counts as that folder.
+const SAME_FOLDER_NOTE := "letter case and Windows alias spellings (a trailing dot or space, an NTFS stream, an 8.3 short name) count as the same folder"
+
+const _PROJECT_ROOT := "res://"
+const _ADDONS_DIR := "res://addons"
+const _USER_ADDONS_DIR := "addons/"
+const _USER_TOOLKIT_DIR := "addons/godot_mcp_toolkit"
+
+## The letters a case-insensitive filesystem can read as ASCII that one case call misses:
+## [code]to_lower()[/code] keeps the dotless i and the long s, [code]to_upper()[/code] keeps
+## the Kelvin sign and the dotted capital I, and before Godot 4.4 the engine's case tables
+## fold only the dotless i. Mapping them first gives the same verdict on every version.
+const _FOLD_MAP := {
+	"\u0131": "i", # dotless i
+	"\u017f": "s", # long s, which APFS reads as s
+	"\u212a": "k", # Kelvin sign, which APFS reads as k
+	"\u0130": "i", # dotted capital I
+}
+
 ## Files the engine reads to load the project, refused by [method resolve_safe_delete].
 const _RESERVED_FILE_NAMES: Array[String] = ["project.godot", "override.cfg"]
 
@@ -39,15 +66,33 @@ static func _compile_short_name_re() -> RegEx:
 	return re
 
 
-## Whether [param path] is the toolkit's own source folder or a file inside it.
+## Whether [param path] is the toolkit's own source folder or a file inside it, under any
+## spelling the filesystem resolves to it: another letter case, back or doubled slashes, a
+## trailing dot or space on a folder name, or an NTFS stream suffix. An 8.3 short name
+## does not match: the name alone cannot tell which folder it abbreviates, so the file
+## guards refuse it on their own.
 ##
-## The folder matches exactly or with a trailing slash, so a sibling such as
-## [code]res://addons/godot_mcp_toolkit_extras/[/code] is not the toolkit's. The test is
-## textual: simplify an untrusted path first, so a traversal that lands inside is caught.
+## The folder matches whole, so a sibling such as
+## [code]res://addons/godot_mcp_toolkit_extras/[/code] is not the toolkit's. On a
+## case-sensitive volume a folder that differs from it only by case counts as the toolkit's
+## too: a refusal there costs less than a bypass on Windows or macOS.
 ##
 ## Returns [code]true[/code] for the folder itself and every path under it.
 static func is_toolkit_source(path: String) -> bool:
-	return path == TOOLKIT_SOURCE_DIR.trim_suffix("/") or path.begins_with(TOOLKIT_SOURCE_DIR)
+	var form := _comparison_form(path)
+	return form == TOOLKIT_SOURCE_DIR.trim_suffix("/") or form.begins_with(TOOLKIT_SOURCE_DIR)
+
+
+## Whether [param path] is a host folder, one a delete must never remove: the project root,
+## [code]res://addons[/code] or the toolkit's source folder, under any spelling the
+## filesystem resolves to one of them.
+##
+## Returns [code]true[/code] for each host folder, every path inside the toolkit's source,
+## and every path through a folder directly under [code]res://addons/[/code] whose name
+## has the shape of an 8.3 short name.
+static func is_host_folder(path: String) -> bool:
+	var form := _comparison_form(path)
+	return form == _PROJECT_ROOT or form == _ADDONS_DIR or _may_reach_toolkit_source(form)
 
 
 ## Validate and resolve a user:// path.
@@ -73,13 +118,15 @@ static func resolve_safe_user(path: String) -> Dictionary:
 		}
 	# Deny toolkit internal paths (token, audit log, onboarding flags). This is
 	# the keystone the res:// resolver mirrors: the plugin's own user-data dir is
-	# off-limits so a tool call can't tamper with the auth token or audit log.
-	var rel := path.trim_prefix("user://")
-	if rel.begins_with("addons/godot_mcp_toolkit/"):
+	# off-limits so a tool call can't tamper with the auth token or audit log. The
+	# folder itself counts too: a path naming it without a trailing slash reaches it.
+	var rel := _comparison_form(path).trim_prefix("user://")
+	if rel == _USER_TOOLKIT_DIR or rel.begins_with(_USER_TOOLKIT_DIR + "/") \
+			or _is_short_name_under(rel, _USER_ADDONS_DIR):
 		return {
 			"ok": false,
 			"error_code": "PATH_DENIED",
-			"error_message": "user://addons/godot_mcp_toolkit/ is reserved for plugin internals (auth token, audit log)",
+			"error_message": "user://addons/godot_mcp_toolkit/ is reserved for plugin internals (auth token, audit log); %s" % SAME_FOLDER_NOTE,
 		}
 	# Re-assert the user:// boundary after canonicalization (lexical simplify +
 	# prefix substitution — NOT an OS-symlink resolution; localhost single-user
@@ -116,6 +163,10 @@ static func resolve_safe(
 			and not normalized.begins_with("res://") \
 			and not normalized.begins_with("user://"):
 		return _denied("absolute OS path: %s" % input)
+	# A slash right after the scheme starts an absolute OS path. The engine opens
+	# res:///x inside the project, but a remove relative to res:// takes /x as absolute.
+	if normalized.begins_with("res:///") or normalized.begins_with("user:///"):
+		return _denied("absolute OS path inside a res:// or user:// path: %s" % input)
 
 	# Prefix allowlist.
 	var matched := false
@@ -134,11 +185,12 @@ static func resolve_safe(
 	# must not read or rewrite it (FileGuard is operation-agnostic — denying here
 	# covers both reads and writes). Check the SIMPLIFIED VIRTUAL path so a
 	# traversal that lands inside (res://foo/../addons/godot_mcp_toolkit/x.gd) is
-	# caught too. Other addons (res://addons/<other>/) stay editable.
+	# caught too. Other addons (res://addons/<other>/) stay editable, except one
+	# whose folder name has the shape of an 8.3 short name.
 	var canonical := normalized.simplify_path()
-	if is_toolkit_source(canonical):
+	if _may_reach_toolkit_source(canonical):
 		return _denied(
-			"res://addons/godot_mcp_toolkit/ is the plugin's own source and is protected")
+			"res://addons/godot_mcp_toolkit/ is the plugin's own source and is protected; %s" % SAME_FOLDER_NOTE)
 
 	# Canonicalize and re-assert the path still resolves under its boundary root
 	# (lexical simplify + prefix substitution — NOT OS-symlink resolution). On
@@ -179,6 +231,27 @@ static func resolve_safe_delete(path: String) -> Dictionary:
 	return guard
 
 
+## The path a [code]DirAccess[/code] opened on [code]res://[/code] removes for
+## [param file_path]: the text after the scheme, backslashes as slashes, simplified.
+## [code]DirAccess.remove[/code] takes a path that starts with a slash or names a drive as
+## absolute and removes it wherever it points, so such a path has no project-relative form.
+##
+## Returns the project-relative path, or an empty string when [param file_path] is not a
+## [code]res://[/code] path, names no file, or points outside the project.
+static func project_relative_path(file_path: String) -> String:
+	if not file_path.begins_with(_PROJECT_ROOT):
+		return ""
+	var normalized := file_path.substr(_PROJECT_ROOT.length()).replace("\\", "/")
+	# Before Godot 4.4 simplify_path drops a leading "..", so look for one first.
+	if _has_traversal(normalized):
+		return ""
+	var relative := normalized.simplify_path()
+	if relative.is_empty() or relative.is_absolute_path() or relative.begins_with("/") \
+			or relative.contains(":") or relative == ".." or relative.begins_with("../"):
+		return ""
+	return relative
+
+
 ## Whether a lowercased path segment names a reserved entry or has a Windows alias shape.
 static func _is_reserved_segment(segment: String) -> bool:
 	if segment.begins_with(".") or segment in _RESERVED_FILE_NAMES:
@@ -186,6 +259,53 @@ static func _is_reserved_segment(segment: String) -> bool:
 	if segment.contains(":") or segment.ends_with(".") or segment.ends_with(" "):
 		return true
 	return _short_name_re.search(segment) != null
+
+
+## Whether [param path] may open the toolkit's source folder: [method is_toolkit_source],
+## or an 8.3 short name directly under [code]res://addons/[/code]. Windows expands a short
+## name to the long name it abbreviates, and the name alone cannot tell which folder that
+## is, so a real folder named like [code]v2~1[/code] is refused too. The short-name test
+## stays out of [method is_toolkit_source], whose engine-supplied paths never carry a short
+## name, so such a folder is still exported and reloaded like any other.
+static func _may_reach_toolkit_source(path: String) -> bool:
+	return is_toolkit_source(path) or _is_short_name_under(_comparison_form(path), _ADDONS_DIR + "/")
+
+
+## The spelling every host-folder comparison uses: backslashes as slashes, simplified,
+## case-folded, and each segment cut to the name Windows opens, the text before any
+## [code]:[/code] (an NTFS stream) without trailing dots or spaces. Comparison only: the
+## engine still gets the caller's path.
+static func _comparison_form(path: String) -> String:
+	var form := _fold(path.replace("\\", "/").simplify_path())
+	var head := ""
+	var scheme_end := form.find("://")
+	if scheme_end > 0:
+		head = form.substr(0, scheme_end + 3)
+		form = form.substr(scheme_end + 3)
+	var names := PackedStringArray()
+	for segment: String in form.split("/", false):
+		var name := segment.get_slice(":", 0).rstrip(". ")
+		if not name.is_empty():
+			names.append(name)
+	return head + "/".join(names)
+
+
+## Folds [param text] for a comparison against the lowercase ASCII host-folder names. A
+## case-insensitive filesystem matches names whatever their case, and macOS's APFS also
+## reads the long s as s and the Kelvin sign as k, which neither case call alone folds.
+static func _fold(text: String) -> String:
+	var mapped := text
+	for letter: String in _FOLD_MAP:
+		mapped = mapped.replace(letter, str(_FOLD_MAP[letter]))
+	return mapped.to_upper().to_lower()
+
+
+## Whether the first segment of the comparison form [param form] below [param parent] has
+## the shape of a Windows 8.3 short name.
+static func _is_short_name_under(form: String, parent: String) -> bool:
+	if not form.begins_with(parent):
+		return false
+	return _short_name_re.search(form.substr(parent.length()).get_slice("/", 0)) != null
 
 
 ## True if any slash-delimited segment is exactly "..". Shared by both

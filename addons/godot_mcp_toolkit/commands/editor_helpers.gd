@@ -523,13 +523,16 @@ static func close_scene_tab_safe(file_path: String) -> Dictionary:
 ## Clears the in-memory ResourceUID cache to prevent stale-UID errors.
 ## Returns {success: true, path: String} or an MCPToolkitError dict.
 static func delete_res_file(file_path: String, companions: Array = [".uid"]) -> Dictionary:
+	var relative_path := FileGuard.project_relative_path(file_path)
+	if relative_path.is_empty():
+		return MCPToolkitError.fail("PATH_DENIED",
+			"%s does not name a file inside the project, so it is not removed" % file_path)
 	# Capture the UID before deleting so we can evict it from the cache.
 	var uid: int = ResourceLoader.get_resource_uid(file_path)
 
 	var directory := DirAccess.open("res://")
 	if directory == null:
 		return MCPToolkitError.fail("INTERNAL", "DirAccess.open(res://) returned null")
-	var relative_path := file_path.substr("res://".length())
 	var remove_error := directory.remove(relative_path)
 	if remove_error != OK:
 		return MCPToolkitError.fail("DELETE_FAILED",

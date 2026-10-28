@@ -13,6 +13,18 @@ static func run(testing) -> void:
 	_test_file_guard(testing)
 	_test_file_guard_self_protect(testing)
 	_test_is_toolkit_source(testing)
+	_test_resolve_safe_refuses_own_source_spellings(testing)
+	_test_resolve_safe_allows_other_spellings(testing)
+	_test_file_delete_guard_refuses_spellings(testing)
+	_test_file_delete_guard_allows_other_files(testing)
+	_test_is_host_folder(testing)
+	_test_folder_delete_guard_refuses_spellings(testing)
+	_test_folder_delete_guard_allows_other_folders(testing)
+	_test_resolve_safe_user_refuses_own_folder_spellings(testing)
+	_test_resolve_safe_user_allows_other_paths(testing)
+	_test_guards_refuse_windows_alias_spellings(testing)
+	_test_guards_refuse_absolute_path_after_scheme(testing)
+	_test_project_relative_path(testing)
 	_test_resolve_safe_delete_refuses_reserved(testing)
 	_test_resolve_safe_delete_refuses_windows_aliases(testing)
 	_test_resolve_safe_delete_allows_project_files(testing)
@@ -109,6 +121,416 @@ static func _test_is_toolkit_source(testing) -> void:
 	testing.ok(not FileGuard.is_toolkit_source("res://addons/godot_mcp_toolkit_extras/x.gd"), "a sibling addon")
 	testing.ok(not FileGuard.is_toolkit_source("res://addons"), "the addons folder")
 	testing.ok(not FileGuard.is_toolkit_source("res://scenes/godot_mcp_toolkit/x.gd"), "the same name elsewhere")
+	for path: String in [
+		"res://ADDONS/GODOT_MCP_TOOLKIT",
+		"res://addons/Godot_MCP_Toolkit/plugin.cfg",
+		"res://Addons/godot_mcp_toolkit/",
+		"res://addon\u017f/godot_mcp_toolk\u0131t/x.gd",
+		"res://addons/godot_mcp_tool\u212ait/x.gd",
+	]:
+		testing.ok(FileGuard.is_toolkit_source(path), "'%s', another spelling of the folder" % path)
+	for path: String in [
+		"res://addons/GODOT_MCP_TOOLKIT_EXTRAS/x.gd",
+		"res://\uff41ddons/godot_mcp_toolkit/x.gd",
+		"res://addons/godot_mcp_toolk\u0456t/x.gd",
+	]:
+		testing.ok(not FileGuard.is_toolkit_source(path), "'%s', a sibling or look-alike" % path)
+	print("")
+
+
+# --- FileGuard: the own folders under any spelling -----------------------------
+# Windows and macOS find a file whatever the letter case of its path, and macOS also
+# reads the long s as s and the Kelvin sign as k. So each guard refuses every spelling
+# of a protected folder, and allows look-alike letters that no filesystem maps to ASCII.
+# Pure path checks: nothing here touches the disk.
+static func _test_resolve_safe_refuses_own_source_spellings(testing: Testing) -> void:
+	testing.begin("FileGuard.resolve_safe: own source in any spelling")
+	for path: String in [
+		"res://addons/godot_mcp_toolkit/plugin.cfg",
+		"res://ADDONS/GODOT_MCP_TOOLKIT",
+		"res://ADDONS/GODOT_MCP_TOOLKIT/core/modules.gd",
+		"res://addons/Godot_MCP_Toolkit/plugin.cfg",
+		"res://ADDONS/GODOT_MCP_TOOLKIT/PLUGIN.CFG",
+		"res://ADDONS/GODOT_MCP_TOOLKIT/nested",
+		"res://Addons/godot_mcp_toolkit/",
+		"res://addons/GODOT_MCP_TOOLKIT/nested/INNER.TXT",
+		"res://ADDONS/godot_mcp_toolkit/plugin.cfg",
+		"res://addon\u017f/godot_mcp_toolk\u0131t/plugin.cfg",
+		"res://addons/godot_mcp_toolk\u0131t",
+		"res://addons/godot_mcp_tool\u212ait/plugin.cfg",
+		"res://addons/godot_mcp_toolk\u0130t/plugin.cfg",
+		"res://ADDON\u017f/GODOT_MCP_TOOLKIT",
+		"res://addons/godot_mcp_toolk\u0131t/nested/inner.txt",
+		"res://ADDON\u017f\\GODOT_MCP_TOOLK\u0131T\\",
+		"res://addons//godot_mcp_toolkit/plugin.cfg",
+		"res://addons\\godot_mcp_toolkit\\plugin.cfg",
+		"res://./addons/godot_mcp_toolkit/plugin.cfg",
+		"res://addons/godot_mcp_toolkit/",
+		"res://addons/./godot_mcp_toolkit",
+		"res://addons//godot_mcp_toolkit//",
+		"res:///addons/godot_mcp_toolkit/plugin.cfg",
+		"res://ADDONS\\GODOT_MCP_TOOLKIT",
+		"res://addons/godot_mcp_toolkit\\",
+		"res://addons/godot_mcp_toolkit/CON",
+		"res://addons/godot_mcp_toolkit/nul.gd",
+		"RES://addons/godot_mcp_toolkit/plugin.cfg",
+	]:
+		testing.eq(FileGuard.resolve_safe(path).get("error"), "PATH_DENIED", "'%s' → PATH_DENIED" % path)
+	print("")
+
+
+# Reading or writing a host folder's own path, or a file outside the toolkit's folder, is
+# not this guard's call: only the toolkit's source is refused.
+static func _test_resolve_safe_allows_other_spellings(testing: Testing) -> void:
+	testing.begin("FileGuard.resolve_safe allows host folders, look-alikes and other paths")
+	for path: String in [
+		"res://ADDONS",
+		"res://Addons/",
+		"res://addons",
+		"res://addons/",
+		"res://",
+		"res://addon\u017f",
+		"res://\uff41ddons/godot_mcp_toolkit/plugin.cfg",
+		"res://addons/godot_mcp_toolk\u0456t/plugin.cfg",
+		"res://addon\u0455/godot_mcp_toolkit",
+		"res://\uff21\uff24\uff24\uff2f\uff2e\uff33",
+		"res://addons/\uff47odot_mcp_toolkit",
+		"res://addons//",
+		"res://addons\\",
+		"res://./addons",
+		"res://.",
+		"res://./",
+		"res://addons/.",
+		"res://override.cfg",
+		"res://OVERRIDE.CFG",
+		"res://overr\u0131de.cfg",
+		"res://OVERR\u0130DE.CFG",
+		"res://project.godot",
+		"res://PROJECT.GODOT",
+		"res://p7_08e_vc/.git/marker.txt",
+		"res://p7_08e_vc/.GIT/marker.txt",
+		"res://p7_08e_vc/.g\u0131t",
+		"res://p7_08e_vc/.git",
+		"res://ov\u0435rride.cfg",
+		"res://addons/other_addon/plugin.cfg",
+		"res://addons/other_addon",
+		"res://addons/godot_mcp_toolkit_extras/extras.txt",
+		"res://addons/godot_mcp_toolkit_extras",
+		"res://addons/GODOT_MCP_TOOLKIT_EXTRAS/extras.txt",
+		"res://addons_backup/backup.txt",
+		"res://addons_backup",
+		"res://scenes/scene_marker.txt",
+		"res://scenes",
+		"res://Addons_Backup",
+		"res://addons/godot_mcp_toolkit2/",
+		"res://addons/godot-mcp-toolkit/",
+		"res://addons/godot_mcp_toolkit.bak/",
+		"res://addons/godot_mcp_toolkit_extras/",
+		"res://my_addons/godot_mcp_toolkit/",
+		"res://game/addons/godot_mcp_toolkit/",
+		"res://levels/override.cfg",
+		"res://docs/project.godot.md",
+		"res://.github/",
+		"res://.gitignore",
+		"res://.gitattributes",
+		"res://addons/other/.gitkeep",
+		"res://override.cfg.bak",
+		"res://addons/caf\u00e9/",
+		"res://donn\u00e9es/",
+		"res://addons/\u0131s\u0131k/",
+		"res://addons/stra\u00dfe/",
+		"res://notes_godot_mcp_toolkit.txt",
+		"res://addons/\u0131s\u0131k/isik_file.txt",
+		"res://ADDONS/GODOT_MCP_TOOLKIT2",
+		"res://addons/cafe\u0301/",
+		"res://addons/other_addon\\x.gd",
+		"res://scenes\\level.tscn",
+		"res://icon.svg.import",
+		"res://sc\u00e8nes/\u65e5\u672c\u8a9e.gd",
+		"res://CONIN$",
+	]:
+		testing.eq(FileGuard.resolve_safe(path).get("error"), null, "'%s' → allowed" % path)
+	print("")
+
+
+static func _test_file_delete_guard_refuses_spellings(testing: Testing) -> void:
+	testing.begin("FileGuard: the file.delete checks refuse the toolkit's source and reserved files in any spelling")
+	for path: String in [
+		"res://addons/godot_mcp_toolkit/plugin.cfg",
+		"res://addons/Godot_MCP_Toolkit/plugin.cfg",
+		"res://ADDONS/GODOT_MCP_TOOLKIT/PLUGIN.CFG",
+		"res://addons/GODOT_MCP_TOOLKIT/nested/INNER.TXT",
+		"res://ADDONS/godot_mcp_toolkit/plugin.cfg",
+		"res://addon\u017f/godot_mcp_toolk\u0131t/plugin.cfg",
+		"res://addons/godot_mcp_tool\u212ait/plugin.cfg",
+		"res://addons/godot_mcp_toolk\u0130t/plugin.cfg",
+		"res://addons/godot_mcp_toolk\u0131t/nested/inner.txt",
+		"res://addons//godot_mcp_toolkit/plugin.cfg",
+		"res://addons\\godot_mcp_toolkit\\plugin.cfg",
+		"res://./addons/godot_mcp_toolkit/plugin.cfg",
+		"res:///addons/godot_mcp_toolkit/plugin.cfg",
+		"res://OVERRIDE.CFG",
+		"res://PROJECT.GODOT",
+		"res://p7_08e_vc/.git/marker.txt",
+		"res://p7_08e_vc/.GIT/marker.txt",
+		"res://levels/override.cfg",
+		"res://.gitignore",
+		"res://.gitattributes",
+		"res://addons/other/.gitkeep",
+		"res://addons/godot_mcp_toolkit/CON",
+		"res://addons/godot_mcp_toolkit/nul.gd",
+		"RES://addons/godot_mcp_toolkit/plugin.cfg",
+	]:
+		testing.eq(_file_delete_guard_error(path), "PATH_DENIED", "'%s' → PATH_DENIED" % path)
+	print("")
+
+
+static func _test_file_delete_guard_allows_other_files(testing: Testing) -> void:
+	testing.begin("FileGuard: the file.delete checks allow look-alikes and ordinary files")
+	for path: String in [
+		"res://\uff41ddons/godot_mcp_toolkit/plugin.cfg",
+		"res://addons/godot_mcp_toolk\u0456t/plugin.cfg",
+		"res://ov\u0435rride.cfg",
+		"res://addons/other_addon/plugin.cfg",
+		"res://addons/godot_mcp_toolkit_extras/extras.txt",
+		"res://addons/GODOT_MCP_TOOLKIT_EXTRAS/extras.txt",
+		"res://addons_backup/backup.txt",
+		"res://scenes/scene_marker.txt",
+		"res://docs/project.godot.md",
+		"res://override.cfg.bak",
+		"res://notes_godot_mcp_toolkit.txt",
+		"res://addons/\u0131s\u0131k/isik_file.txt",
+		"res://addons/other_addon\\x.gd",
+		"res://scenes\\level.tscn",
+		"res://sc\u00e8nes/\u65e5\u672c\u8a9e.gd",
+		"res://CONIN$",
+	]:
+		testing.eq(_file_delete_guard_error(path), null, "'%s' → allowed" % path)
+	print("")
+
+
+static func _test_is_host_folder(testing: Testing) -> void:
+	testing.begin("FileGuard.is_host_folder")
+	for path: String in [
+		"res://",
+		"res://addons",
+		"res://ADDONS",
+		"res://addons/",
+		"res://addons//",
+		"res://addons\\",
+		"res://Addons/Godot_MCP_Toolkit",
+	]:
+		testing.ok(FileGuard.is_host_folder(path), "'%s' is a host folder" % path)
+	for path: String in ["res://addons/other_addon", "res://scenes"]:
+		testing.ok(not FileGuard.is_host_folder(path), "'%s' is not a host folder" % path)
+	print("")
+
+
+static func _test_folder_delete_guard_refuses_spellings(testing: Testing) -> void:
+	testing.begin("FileGuard: the folder.delete checks refuse host folders and reserved folders in any spelling")
+	for row: Array in [
+		["res://addons/godot_mcp_toolkit", "PATH_DENIED"],
+		["res://ADDONS/GODOT_MCP_TOOLKIT", "PATH_DENIED"],
+		["res://ADDONS/GODOT_MCP_TOOLKIT/nested", "PATH_DENIED"],
+		["res://Addons/godot_mcp_toolkit/", "PATH_DENIED"],
+		["res://addons/godot_mcp_toolk\u0131t", "PATH_DENIED"],
+		["res://ADDON\u017f/GODOT_MCP_TOOLKIT", "PATH_DENIED"],
+		["res://ADDON\u017f\\GODOT_MCP_TOOLK\u0131T\\", "PATH_DENIED"],
+		["res://addons/godot_mcp_toolkit/", "PATH_DENIED"],
+		["res://addons/./godot_mcp_toolkit", "PATH_DENIED"],
+		["res://addons//godot_mcp_toolkit//", "PATH_DENIED"],
+		["res://ADDONS\\GODOT_MCP_TOOLKIT", "PATH_DENIED"],
+		["res://addons/godot_mcp_toolkit\\", "PATH_DENIED"],
+		["res://p7_08e_vc/.g\u0131t", "PATH_DENIED"],
+		["res://p7_08e_vc/.git", "PATH_DENIED"],
+		["res://.github/", "PATH_DENIED"],
+		["res://ADDONS", "FOLDER_PROTECTED"],
+		["res://Addons/", "FOLDER_PROTECTED"],
+		["res://addons", "FOLDER_PROTECTED"],
+		["res://addons/", "FOLDER_PROTECTED"],
+		["res://", "FOLDER_PROTECTED"],
+		["res://addon\u017f", "FOLDER_PROTECTED"],
+		["res://addons//", "FOLDER_PROTECTED"],
+		["res://addons\\", "FOLDER_PROTECTED"],
+		["res://./addons", "FOLDER_PROTECTED"],
+		["res:///", "PATH_DENIED"],
+		["res://.", "FOLDER_PROTECTED"],
+		["res://./", "FOLDER_PROTECTED"],
+		["res://addons/.", "FOLDER_PROTECTED"],
+	]:
+		var path := str(row[0])
+		var code := str(row[1])
+		testing.eq(_folder_delete_guard_error(path), code, "'%s' → %s" % [path, code])
+	print("")
+
+
+static func _test_folder_delete_guard_allows_other_folders(testing: Testing) -> void:
+	testing.begin("FileGuard: the folder.delete checks allow look-alikes and other folders")
+	for path: String in [
+		"res://addon\u0455/godot_mcp_toolkit",
+		"res://\uff21\uff24\uff24\uff2f\uff2e\uff33",
+		"res://addons/\uff47odot_mcp_toolkit",
+		"res://addons/other_addon",
+		"res://addons/godot_mcp_toolkit_extras",
+		"res://addons_backup",
+		"res://scenes",
+		"res://Addons_Backup",
+		"res://addons/godot_mcp_toolkit2/",
+		"res://addons/godot-mcp-toolkit/",
+		"res://addons/godot_mcp_toolkit.bak/",
+		"res://addons/godot_mcp_toolkit_extras/",
+		"res://my_addons/godot_mcp_toolkit/",
+		"res://game/addons/godot_mcp_toolkit/",
+		"res://addons/caf\u00e9/",
+		"res://donn\u00e9es/",
+		"res://addons/\u0131s\u0131k/",
+		"res://addons/stra\u00dfe/",
+		"res://ADDONS/GODOT_MCP_TOOLKIT2",
+		"res://addons/cafe\u0301/",
+	]:
+		testing.eq(_folder_delete_guard_error(path), null, "'%s' → allowed" % path)
+	print("")
+
+
+static func _test_resolve_safe_user_refuses_own_folder_spellings(testing: Testing) -> void:
+	testing.begin("FileGuard.resolve_safe_user: the plugin's user folder in any spelling")
+	for path: String in [
+		"user://ADDONS/GODOT_MCP_TOOLKIT/mcp_token",
+		"user://Addons/godot_mcp_toolkit/project_instance_x/mcp_audit.log",
+		"user://addons/godot_mcp_toolkit/",
+		"user://ADDONS/GODOT_MCP_TOOLKIT/",
+		"user://addons/Godot_MCP_Toolkit/mcp_token",
+		"user://addons/GODOT_MCP_TOOLKIT/project_instance_x/",
+		"user://addon\u017f/godot_mcp_toolk\u0131t/mcp_token",
+		"user://addons/godot_mcp_tool\u212ait/mcp_token",
+		"user://addons/godot_mcp_toolk\u0130t/mcp_token",
+		"user://addons/godot_mcp_toolk\u0131t/",
+		"user://ADDON\u017f/GODOT_MCP_TOOLKIT/mcp_token",
+		"user://addons//godot_mcp_toolkit/mcp_token",
+		"user://./addons/godot_mcp_toolkit/mcp_token",
+		"user://addons\\godot_mcp_toolkit\\mcp_token",
+		"user:///addons/godot_mcp_toolkit/mcp_token",
+		"user://addons/./godot_mcp_toolkit/mcp_token",
+		"user://addons/godot_mcp_toolkit",
+		"user://addons//godot_mcp_toolkit/",
+		"user://addons\\godot_mcp_toolkit\\",
+		"user://addons/godot_mcp_toolkit\\mcp_token",
+	]:
+		testing.eq(FileGuard.resolve_safe_user(path).get("error_code"), "PATH_DENIED", "'%s' → PATH_DENIED" % path)
+	testing.eq(FileGuard.resolve_safe_user("USER://addons/godot_mcp_toolkit/mcp_token").get("error_code"),
+		"INVALID_PATH", "an upper-case USER:// scheme is not user:// → INVALID_PATH")
+	print("")
+
+
+static func _test_resolve_safe_user_allows_other_paths(testing: Testing) -> void:
+	testing.begin("FileGuard.resolve_safe_user allows look-alikes and other user folders")
+	for path: String in [
+		"user://\uff41ddons/godot_mcp_toolkit/mcp_token",
+		"user://addons/godot_mcp_toolk\u0456t/mcp_token",
+		"user://addon\u0455/godot_mcp_toolkit/",
+		"user://saves/slot1.json",
+		"user://saves/",
+		"user://addons/other_addon/other.txt",
+		"user://addons/godot_mcp_toolkit_extras/extras.txt",
+		"user://addonsx/addonsx.txt",
+		"user://addonsx/",
+		"user://ADDONS/GODOT_MCP_TOOLKIT_EXTRAS/extras.txt",
+		"user://addons/",
+		"user://Saves/SLOT1.JSON",
+		"user://",
+		"user://saves/godot_mcp_toolkit.json",
+		"user://addons/godot_mcp_toolkit2/u_nm2_file.txt",
+		"user://addons/godot-mcp-toolkit/u_dash_file.txt",
+		"user://addons/godot_mcp_toolkit.bak/u_bak_file.txt",
+		"user://my_addons/godot_mcp_toolkit/u_my_file.txt",
+		"user://addons/\u0131s\u0131k/u_isik_file.txt",
+		"user://addons/godot_mcp_toolkit2/",
+		"user://addons",
+	]:
+		testing.ok(FileGuard.resolve_safe_user(path).get("ok", false), "'%s' → allowed" % path)
+	print("")
+
+
+# Windows can open a folder through a trailing dot or space on its name, an NTFS stream
+# suffix, or its 8.3 short name. An 8.3-shaped name directly under addons/ is refused
+# whatever folder it names, so a real folder named like v2~1 is refused too.
+static func _test_guards_refuse_windows_alias_spellings(testing: Testing) -> void:
+	testing.begin("FileGuard: Windows alias spellings of the own folders")
+	for path: String in [
+		"res://addons./godot_mcp_toolkit/plugin.cfg",
+		"res://addons/godot_mcp_toolkit./plugin.cfg",
+		"res://addons/godot_mcp_toolkit.",
+		"res://addons/godot_mcp_toolkit::$INDEX_ALLOCATION/plugin.cfg",
+		"res://addons/godot_mcp_toolkit:$I30:$INDEX_ALLOCATION/plugin.cfg",
+		"res://addons::$INDEX_ALLOCATION/godot_mcp_toolkit/plugin.cfg",
+		"res://addons/GODOT_~1/plugin.cfg",
+		"res://addons/GODOT_~1",
+		"res://ADDONS./GODOT_MCP_TOOLKIT/PLUGIN.CFG",
+		"res://addons/godot_mcp_toolkit::$INDEX_ALLOCATION",
+		"res://addons/v2~1/",
+	]:
+		testing.eq(FileGuard.resolve_safe(path).get("error"), "PATH_DENIED", "resolve_safe '%s' → PATH_DENIED" % path)
+	for path: String in [
+		"user://addons./godot_mcp_toolkit/mcp_token",
+		"user://addons/godot_mcp_toolkit./mcp_token",
+		"user://addons/godot_mcp_toolkit::$INDEX_ALLOCATION/mcp_token",
+		"user://addons/godot_mcp_toolkit:$I30:$INDEX_ALLOCATION/mcp_token",
+		"user://addons/GODOT_~1/mcp_token",
+		"user://addons/godot_mcp_toolkit.",
+		"user://addons::$INDEX_ALLOCATION/godot_mcp_toolkit/mcp_token",
+	]:
+		testing.eq(FileGuard.resolve_safe_user(path).get("error_code"), "PATH_DENIED",
+			"resolve_safe_user '%s' → PATH_DENIED" % path)
+	print("")
+
+
+# A slash or backslash right after the scheme starts an absolute OS path, which
+# DirAccess.remove on a res:// DirAccess removes wherever it points, outside the project.
+static func _test_guards_refuse_absolute_path_after_scheme(testing: Testing) -> void:
+	testing.begin("FileGuard: an absolute OS path right after the scheme")
+	for path: String in [
+		"res:///",
+		"res:///p7_08e_absent.gd",
+		"res://\\p7_08e_absent.gd",
+		"res:///C:/p7_08e_absent.gd",
+		"res://\\C:\\p7_08e_absent.gd",
+		"res:////server/share/p7_08e_absent.gd",
+	]:
+		testing.eq(FileGuard.resolve_safe(path).get("error"), "PATH_DENIED", "resolve_safe '%s' → PATH_DENIED" % path)
+		testing.eq(_delete_guard_error(path), "PATH_DENIED", "resolve_safe_delete '%s' → PATH_DENIED" % path)
+	for path: String in ["user:///p7_08e_absent.png", "user://\\p7_08e_absent.png"]:
+		testing.eq(FileGuard.resolve_safe(path, ["user://"]).get("error"), "PATH_DENIED",
+			"resolve_safe '%s' with user:// allowed → PATH_DENIED" % path)
+	print("")
+
+
+# The file deletes remove this relative path through a DirAccess opened on res://, so a
+# path that would leave the project gets none and nothing is removed.
+static func _test_project_relative_path(testing: Testing) -> void:
+	testing.begin("FileGuard.project_relative_path")
+	for row: Array in [
+		["res://scenes/main.tscn", "scenes/main.tscn"],
+		["res://p7_08e_absent.gd", "p7_08e_absent.gd"],
+		["res://a//b/./c.gd", "a/b/c.gd"],
+		["res://a\\b.gd", "a/b.gd"],
+		["res://sc\u00e8nes/\u65e5\u672c\u8a9e.gd", "sc\u00e8nes/\u65e5\u672c\u8a9e.gd"],
+	]:
+		var path := str(row[0])
+		var expected := str(row[1])
+		testing.eq(FileGuard.project_relative_path(path), expected, "'%s' → '%s'" % [path, expected])
+	for path: String in [
+		"res:///p7_08e_absent.gd",
+		"res://\\p7_08e_absent.gd",
+		"res:///C:/p7_08e_absent.gd",
+		"res://C:/p7_08e_absent.gd",
+		"res://\\\\server\\share\\p7_08e_absent.gd",
+		"res://../p7_08e_absent.gd",
+		"res://",
+		"res://.",
+		"user://p7_08e_absent.gd",
+		"p7_08e_absent.gd",
+	]:
+		testing.eq(FileGuard.project_relative_path(path), "", "'%s' → no relative path" % path)
 	print("")
 
 
@@ -160,6 +582,22 @@ static func _test_resolve_safe_delete_allows_project_files(testing: Testing) -> 
 
 static func _delete_guard_error(path: String) -> Variant:
 	return FileGuard.resolve_safe_delete(path).get("error")
+
+
+# The two checks file.delete runs, in its order, before it looks for the file.
+static func _file_delete_guard_error(path: String) -> Variant:
+	var error: Variant = _delete_guard_error(path)
+	if error != null:
+		return error
+	return "PATH_DENIED" if FileGuard.is_toolkit_source(path) else null
+
+
+# The two checks folder.delete runs, in its order, before it looks for the folder.
+static func _folder_delete_guard_error(path: String) -> Variant:
+	var error: Variant = _delete_guard_error(path)
+	if error != null:
+		return error
+	return "FOLDER_PROTECTED" if FileGuard.is_host_folder(path) else null
 
 
 # --- Untrusted envelope pin ------------------------------------------------
