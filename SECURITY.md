@@ -54,6 +54,18 @@ to mitigate prompt injection from file contents.
 `127.0.0.1` only. Nothing listens on a network interface, and nothing is ever
 exposed to the network.
 
+**Self-update:** the toolkit installs a new version of itself only when the
+project allows it (`mcp_toolkit/updates/install_mode`, asked in the setup
+wizard) and only a release whose update manifest is signed by a key listed in
+`addons/godot_mcp_toolkit/update/trusted_release_keys.gd`. The manifest pins the
+zip by size and SHA-256, every download URL is built from the version, and the
+files are written while the editor closes, with a backup restored if a write
+fails. Only a holder of a trusted private key can produce an installable
+release, so where that key is kept decides who can (ADR 0029 leaves the choice to
+the maintainer); a stolen key could, which is why `ask` is the default and a key
+can be rotated by a release that trusts both. Major releases, and releases that need a newer Godot, are never installed
+this way. See ADR 0029.
+
 ## What no setting can promise
 
 A Godot project is a code-execution environment: the engine runs GDScript, and

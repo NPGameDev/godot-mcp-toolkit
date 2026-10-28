@@ -19,6 +19,7 @@ const DockAuditSection := preload("res://addons/godot_mcp_toolkit/ui/dock/securi
 const DockMcpJsonPanel := preload("res://addons/godot_mcp_toolkit/ui/dock/mcp/dock_mcp_json_panel.gd")
 const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
 const UpdateCheckRunner = Modules.UpdateCheckRunner
+const UpdateInstaller = Modules.UpdateInstaller
 
 # Toast severity constants (match EditorToaster.Severity).
 const _TOAST_INFO := 0
@@ -55,6 +56,7 @@ var _write_flow: MCPJsonWriteFlow = null
 var _dialog_presenter: ToolkitDialogPresenter = null
 # The composer-owned update check; the dock only hosts its badge.
 var _update_check: UpdateCheckRunner = null
+var _update_installer: UpdateInstaller = null
 # Starts a setup-wizard run for the footer's Setup Wizard button. The dock does not
 # own the wizard: the plugin does, and the composer passes this in.
 var _start_setup_wizard: Callable = Callable()
@@ -64,17 +66,20 @@ var _runtime_timer: Timer = null
 
 
 ## Binds the dock to the server and the composer-owned collaborators.
+## [param update_installer] is the update installer the update badge drives.
 ## [param on_setup_wizard_requested] is called, with no arguments, when the user
 ## presses the footer's Setup Wizard button.
 func bind(
 		server: Node, audit_path: String,
 		write_flow: MCPJsonWriteFlow, dialog_presenter: ToolkitDialogPresenter,
-		update_check: UpdateCheckRunner, on_setup_wizard_requested: Callable) -> void:
+		update_check: UpdateCheckRunner, update_installer: UpdateInstaller,
+		on_setup_wizard_requested: Callable) -> void:
 	_server = server
 	_audit_path = audit_path
 	_write_flow = write_flow
 	_dialog_presenter = dialog_presenter
 	_update_check = update_check
+	_update_installer = update_installer
 	_start_setup_wizard = on_setup_wizard_requested
 	_server.client_connected.connect(_on_client_connected)
 	_server.client_disconnected.connect(_on_client_disconnected)
@@ -116,7 +121,7 @@ func _build_ui() -> void:
 	add_theme_constant_override("separation", int(4 * scale))
 
 	# == Update badge (first child, hidden unless a newer version is published) ==
-	add_child(DockUpdateBadge.new(_update_check, Callable(self, "_toast")))
+	add_child(DockUpdateBadge.new(_update_check, _update_installer, _write_flow, Callable(self, "_toast")))
 
 	# == Status section (compact, pinned at top) ==============================
 	var status_section := DockSectionCard.make_section("Server Status")

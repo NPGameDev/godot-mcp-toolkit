@@ -186,6 +186,12 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
   Token, Show Audit Log, Open Project Settings, Write .mcp.json, Extension
   Catalog. All also registered in
   the Command Palette (Ctrl+Shift+P → "MCP").
+- **Update badge and self-update** — the dock's first child shows a newer toolkit
+  release (a daily check). When Project Settings → Mcp Toolkit → Updates → Install
+  Mode allows it (`ask`, the default, or `automatic`; asked once in the setup
+  wizard), the toolkit downloads a release whose manifest the maintainer signed
+  and installs it while the editor closes, restoring a backup if a write fails
+  (ADR 0029). An install changes `res://addons/godot_mcp_toolkit/`; commit it.
 - **Read-only badge** — when `GODOT_MCP_READ_ONLY=1` is set in `.mcp.json`,
   the dock displays a yellow badge.
 - **Response limits** — configurable in the dock's "Security & Response Limits" section.
@@ -356,8 +362,15 @@ quick operational facts only.
   probe and a dummy `.mcp.json` in Text and compressed binary-token modes (Text
   only on 4.2), and fails if the parsed pack listing carries a toolkit script,
   the probe or
-  `.mcp.json`; `scripts/test_framework/check_export_strip.sh`). An aggregate
-  **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
+  `.mcp.json`; `scripts/test_framework/check_export_strip.sh`), the
+  `update-flow` job (4.2.0 + 4.7.0: builds the release zip and update manifest,
+  serves them from a local HTTP server via `GODOT_MCP_UPDATE_CHECK_HOST`, and runs
+  the self-update's five legs on scratch projects headless with
+  `GODOT_MCP_UPDATE_ALLOW_HEADLESS=1`; `scripts/test_framework/update_flow.sh`), and
+  the `release-builds` job (no Godot: the bash and PowerShell 7 release builds must
+  write the same zip entries and bytes, file list and manifest fields;
+  `scripts/test_framework/check_release_builds.sh`).
+  An aggregate **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
   that ever becomes a required check (never an individual matrix row).
 - **Cross-version** (`.github/workflows/cross-version.yml`) — opt-in
   behavioral matrix (manual dispatch, `[run-cross-version-ci]` in the commit
@@ -369,15 +382,25 @@ quick operational facts only.
   the editor launch; a dispatch-integration leg rides the 4.7.0 row) AND a
   **.NET/mono-editor** tier (the server's C# fixture with this addon injected,
   4.2–4.7). A companion opt-in `mono-units` leg runs the unit suite on the
-  .NET editor's two boundary flavors (4.2.0 + 4.7.0). The server repo runs the
+  .NET editor's two boundary flavors (4.2.0 + 4.7.0), an `update-flow-platforms`
+  leg (the update flow on 4.2–4.7 on Linux and on 4.7.0 on macOS and Windows,
+  where the PowerShell build makes the zip), and an `update-gui` leg
+  (4.2.0 + 4.5.0 + 4.7.0) plays the self-update's interface in editors with a
+  window under Xvfb (`scripts/test_framework/update_gui.sh`, driven by the
+  test-only plugin `test/update_gui_driver/`). The server repo runs the
   same two-editor matrix for its own changes.
 - **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push; GATES
   on the deep behavioral tier (`behavioral: uses: cross-version.yml` +
   `needs:`), then validates tag matches `plugin.cfg` version, builds the
-  plugin zip via `scripts/build-plugin-release.sh`, install-smokes the zip
-  (unzip into a scratch project, headless 4.7.0 boot, assert
-  `[MCPServer] listening`), and uploads it as a GitHub Release artifact.
-  `workflow_dispatch` runs the whole chain as a **dry-run** (upload skipped).
+  plugin zip and its `.update.json` manifest via
+  `scripts/build-plugin-release.sh`, install-smokes the zip (unzip into a
+  scratch project, headless 4.7.0 boot, assert `[MCPServer] listening`),
+  update-smokes it (`UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`: the built
+  zip installs over the previous version, signed with a key made for the run),
+  and uploads the zip and the manifest as GitHub Release artifacts. The
+  workflow does not sign the manifest; until a signature by a trusted key sits
+  beside it, the toolkit offers the release as links only. `workflow_dispatch` runs the whole
+  chain as a **dry-run** (upload skipped).
 
 ## Dogfood setup (this repo)
 

@@ -129,6 +129,54 @@ jobs:
           godot-version: ${{ matrix.godot-version }}
           use-dotnet: false
 
+  # ── Self-update flow ─────────────────────────────────────────────────────────
+  # The toolkit's self-update end to end, on scratch projects (update_flow.sh): the
+  # release this tree builds installs over the previous version at an editor's exit,
+  # a failed write rolls back, an untrusted signature and the repository guard stage
+  # nothing, and a disable installs nothing. Headless with the contributor-only
+  # GODOT_MCP_UPDATE_ALLOW_HEADLESS, against a local server in place of GitHub. The
+  # floor's two boundaries: 4.2 frees plugins at exit differently from 4.3+.
+  update-flow:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    # Fuse: the five legs take a few minutes — at 15 min a boot is hung.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        godot-version: ["4.2.0", "4.7.0"]
+    name: "Update flow (GDScript editor · Godot ${{ matrix.godot-version }})"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Godot
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: ${{ matrix.godot-version }}
+          use-dotnet: false
+
+      - name: Run the update flow
+        run: bash scripts/test_framework/update_flow.sh godot
+
+  # ── Release builds agree ─────────────────────────────────────────────────────
+  # The bash and PowerShell release builds write the same release: the same zip
+  # entries with the same bytes, the same release file list, and manifests that
+  # agree on all but the zip's own size and hash (check_release_builds.sh). Editor-
+  # free; the runner's PowerShell 7 runs the .ps1 the maintainer may build with.
+  release-builds:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: "Release builds agree (bash · PowerShell)"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare the two release builds
+        run: bash scripts/test_framework/check_release_builds.sh
+
   # ── Manifest-diff regression ─────────────────────────────────────────────────
   # Lightweight, editor-free drift gate: per supported version, dump the REAL
   # engine surface (`godot --headless --dump-extension-api`) and assert the
@@ -272,7 +320,7 @@ jobs:
   # because a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [changes, docs-check, gdscript-check, unit-tests, manifest-diff, export-strip]
+    needs: [changes, docs-check, gdscript-check, unit-tests, update-flow, release-builds, manifest-diff, export-strip]
     if: always()
     runs-on: ubuntu-latest
     steps:

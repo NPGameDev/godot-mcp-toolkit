@@ -319,8 +319,37 @@ wizard's `updates` step.
 
 **Update badge**
 The closable dock notice that a newer version is published (`ui/dock/update/dock_update_badge.gd`).
-It points at the release on GitHub and the Asset Store; it never downloads or installs anything.
-Closing it hides it until a newer version.
+It points at the release on GitHub and the Asset Store and, when the **install mode** allows,
+offers Update, then Restart now and Don't install. After an editor start that installed a release,
+or failed to, it shows that result until closed. Otherwise closing it hides it until a newer
+version.
+
+**Install mode**
+The project setting `mcp_toolkit/updates/install_mode` that says whether the toolkit installs its
+own updates (`update/install_mode.gd`): `manual` (links only), `ask` (the default; a window asks at
+the next editor start) or `automatic` (installs when the editor closes, without asking). Until the
+setup wizard's `update_install` step has been seen, every mode acts as `manual`. A major release,
+or one that needs a newer Godot, is always `manual`.
+
+**Self-update**
+The toolkit verifying and installing a newer version of itself (`update/`, ADR 0029). The
+installer stages a release in `user://`; the plugin's `_exit_tree` applies it while the editor
+closes (`update/update_applier.gd`), never while it runs, and restores a backup if a write fails.
+
+**Pending update**
+A release the installer verified or staged, recorded with its files in
+`user://addons/godot_mcp_toolkit/update/` (`update/pending_update.gd`). The editor's next exit
+applies a staged one; the next start reports what happened and deletes it.
+
+**Trusted release key**
+A public key in `update/trusted_release_keys.gd`. A release is installed from the editor only when
+its update manifest carries a signature by one of them; `scripts/sign-release.sh` makes and checks
+such a signature.
+
+**Release file list**
+`release_files.sha256` in a release's addon folder: every other file with its SHA-256, in
+`sha256sum` format (`update/release_file_list.gd`). The self-update deletes only files an installed
+release listed and notices the ones changed by hand.
 
 ---
 
@@ -364,7 +393,8 @@ at an editor start, nothing on a mid-session enable (`SetupSteps.plan_run`).
 **Consent gate**
 What the toolkit may do on its own, decided from the user's settings and the setup steps they have
 seen (`core/consent.gd`). The update check runs only when its setting is on and the `updates` step
-has been seen. Distinct from tool permissions, which govern what an MCP client may ask for.
+has been seen; installing an update also needs the `update_install` step seen and an install mode
+that installs. Distinct from tool permissions, which govern what an MCP client may ask for.
 
 ---
 
