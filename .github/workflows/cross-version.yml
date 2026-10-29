@@ -142,7 +142,7 @@ concurrency:
 # [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
 # the sibling-ref dispatch input.
 env:
-  SIBLING_PIN_SERVER: "40ad80f44f935fbf5599f2c6bb1a061ad1ab1558"
+  SIBLING_PIN_SERVER: "20eb8269ce7da6bcb5e5803580dbe1f05d8a1819"
 
 jobs:
   # A pull request that only changes *.md files skips every behavioral
