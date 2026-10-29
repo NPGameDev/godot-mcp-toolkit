@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The compatibility guide now says what an exported game still names: the addon's
+  class names and file paths, and the plugin's enabled entry in the project
+  settings. These are safe to ship and do nothing in a shipped game, since no
+  addon code ships with them. On Godot 4.7 the export preset's exclude filter
+  clears the class names and file paths; the enabled entry stays on every version.
+  The guide also says how to re-enable the plugin if it shows as disabled after
+  the editor crashes during an export. Reported by @frankhurrican
+  ([#99](https://github.com/NPGameDev/godot-mcp-toolkit/issues/99#issuecomment-6488013168)).
+
 ## [1.1.1] - 2026-10-28
 
 ### Fixed

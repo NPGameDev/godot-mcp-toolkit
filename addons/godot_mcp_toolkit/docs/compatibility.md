@@ -456,19 +456,46 @@ warning appears depends on the Godot version, because `add_message` and
 | 4.2, 4.3 | `push_warning()` → **Output / stderr log** |
 | 4.4+ | `EditorExportPlatform.add_message()` → **export dialog** |
 
-`project.binary` also carries any `[mcp_toolkit]` settings your project changed
-from their defaults (limits, concurrency, audit). They are a cosmetic fingerprint
-and hold **no secrets**: the auth token and registry live in `user://` and are
-never packed. The export plugin leaves them in place, because nulling
-ProjectSettings during the bake would add a crash-window risk for a cosmetic-only
-gain. Since 1.0.4 the toolkit no longer registers `internal/bootstrap_complete`, a
-setting that had no effect. A copy an older version left in `project.godot` is
-harmless, and disabling the plugin erases it.
-
 A headless **CLI** export on Godot 4.4 and older can also appear to hang after the
 export succeeds — an editor-session restore, not the strip plugin. Cause and
 remedies:
 <https://github.com/NPGameDev/godot-mcp-toolkit/blob/main/docs/troubleshooting.md>
+
+### What an export still carries
+
+An exported game still names the toolkit in a few files. These names are safe to
+ship and do nothing in a shipped game. They are names and paths only, with no
+addon code behind them, and nothing in the game loads or runs from them. They hold
+**no secrets**: the auth token and the registry live in `user://` and are
+never packed.
+
+The addon's class names stay in `.godot/global_script_class_cache.cfg` and its file
+paths in `.godot/uid_cache.bin` (on Godot 4.2 and 4.3 that file lists only the
+addon's icon). On Godot 4.7, adding `res://addons/godot_mcp_toolkit/*` to the
+preset's exclude filter drops the addon from both files. On 4.2 to 4.6 the engine
+copies both files whole, so the filter doesn't change them and the names stay.
+
+`project.binary` keeps the plugin's `editor_plugins/enabled` entry and any
+`[mcp_toolkit]` settings your project changed from their defaults (limits,
+concurrency, audit). That holds on every version, with or without the filter. The
+toolkit leaves them there on purpose. Godot builds `project.binary` from the
+editor's live settings, so removing an entry for the export means removing it in
+the editor, and a project save during the export would write that to
+`project.godot`. A lost enabled entry disables the plugin in the editor, and a lost
+setting goes back to its default. The runtime autoload is the one entry the strip
+does remove: it nulls the autoload for the export and restores it when the export
+ends, and if a save catches it nulled, the plugin registers it again the next time
+it loads.
+
+Don't disable the plugin before exporting to keep the entry out. With the plugin
+off, the strip doesn't run, and the addon's files ship unless the preset's exclude
+filter covers them. If the editor crashes during an export and the toolkit shows as
+disabled when you reopen the project, re-enable it in **Project Settings →
+Plugins**.
+
+Since 1.0.4 the toolkit no longer registers `internal/bootstrap_complete`, a
+setting that had no effect. A copy an older version left in `project.godot` is
+harmless, and disabling the plugin erases it.
 
 ### Import sidecars remain in exports (Godot 4.2 only)
 

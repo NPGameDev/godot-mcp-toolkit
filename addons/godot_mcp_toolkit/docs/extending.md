@@ -1272,7 +1272,9 @@ the plugin removes `.gd` extension files (direct subclasses of
 in both binary-token modes, including Godot's 4.3+ default "Binary tokens
 (compressed)": Godot hands each file to its export plugins in name order, and the
 strip's name sorts before the built-in GDScript plugin that compiles `.gd` to
-`.gdc`.
+`.gdc`. Names remain, but no code: the build still lists the addon's class names
+and paths and the plugin's enabled entry, which are safe to ship. See
+[What an export still carries](compatibility.md#what-an-export-still-carries).
 
 **If scripts never reach the strip, the plugin warns.** An export plugin that
 sorts before the strip and skips or remaps `.gd` files (an obfuscator, for

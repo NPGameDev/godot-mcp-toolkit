@@ -216,7 +216,7 @@ It activates automatically when your assistant uses `game_start` with `wait_for_
 
 Any other run of the project with the editor binary starts it too (a `--check-only` run aside), including a headless `--script` test runner. Set `GODOT_MCP_RUNTIME=0` for such a run so it doesn't take the runtime slot from the game your assistant started.
 
-Runtime tools exist only in debug builds: the runtime piece self-disables in exported games, and the bundled export plugin strips the addon from shipped builds in every Script Export Mode.
+Runtime tools exist only in debug builds: the runtime piece self-disables in exported games, and the bundled export plugin strips the addon from shipped builds in every Script Export Mode. A build still names the addon in a few files, but carries none of its code; see [What an export still carries](addons/godot_mcp_toolkit/docs/compatibility.md#what-an-export-still-carries).
 
 ## Headless mode
 
@@ -264,7 +264,7 @@ Yes. MIT, both the addon and the server.
 <details>
 <summary><strong>Should I commit the addon to my game repo?</strong></summary>
 
-Yes. The bundled export plugin strips it from exported builds in every Script Export Mode; the runtime piece self-disables outside debug builds.
+Yes. The bundled export plugin strips it from exported builds in every Script Export Mode; the runtime piece self-disables outside debug builds. Some names remain in the build, but no code, and they are safe to ship: see [What an export still carries](addons/godot_mcp_toolkit/docs/compatibility.md#what-an-export-still-carries).
 
 </details>
 

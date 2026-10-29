@@ -95,9 +95,16 @@ New with this decision:
   The workaround ADR 0006 advised (Text mode, or the addon in the exclude filter)
   is no longer needed and is harmless to keep.
 - Paths remain as metadata in `global_script_class_cache.cfg`, `uid_cache.bin`
-  (4.5+) and `project.binary`, the cosmetic fingerprint ADR 0006 already accepted;
-  a raw byte grep of the PCK still finds them, so a check counts entries in the
-  PCK directory instead.
+  and `project.binary`, the cosmetic fingerprint ADR 0006 already accepted.
+  `uid_cache.bin` ships on every supported version; on 4.2 and 4.3 it names only
+  the addon's icon. On 4.7 the preset's exclude filter drops the addon from both
+  caches; on 4.2 to 4.6 the engine copies them whole. A raw byte grep of the PCK
+  still finds these paths, so a check counts entries in the PCK directory instead.
+- The plugin's `editor_plugins/enabled` entry stays in `project.binary` on every
+  version. The strip could null it for the bake, as it does the runtime autoload,
+  but a project save during the export would then write the plugin disabled, and
+  no in-plugin heal exists for it: a disabled plugin never loads to restore its
+  own entry. The autoload null has that heal, at plugin load (issue #99).
 - The release checklist's binary-token row expects zero addon `.gdc` and no
   warning, where it used to expect the warning.
 - A future rename of the plugin must keep a name that sorts before `"GDScript"`;
