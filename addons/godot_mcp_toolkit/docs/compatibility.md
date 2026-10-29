@@ -465,9 +465,10 @@ remedies:
 
 An exported game still names the toolkit in a few files. These names are safe to
 ship and do nothing in a shipped game. They are names and paths only, with no
-addon code behind them, and nothing in the game loads or runs from them. They hold
-**no secrets**: the auth token and the registry live in `user://` and are
-never packed.
+addon code behind them. The game reads these files when it starts, but no addon
+script ships for them to point to, so none of the addon runs. They hold
+**no secrets**: the auth token lives in `user://` and the registry in a per-user
+folder outside the project, so neither is packed.
 
 The addon's class names stay in `.godot/global_script_class_cache.cfg` and its file
 paths in `.godot/uid_cache.bin` (on Godot 4.2 and 4.3 that file lists only the
