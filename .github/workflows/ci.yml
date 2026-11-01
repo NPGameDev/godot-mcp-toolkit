@@ -66,6 +66,24 @@ jobs:
       - name: Compatible-server script test
         run: bash scripts/test_compatible_server.sh
 
+      # The release's list and manifest writers, signing and the release check, on
+      # generated fixtures and a throwaway key (no Godot, no network). Nothing may be
+      # skipped here: this runner has the .ps1 half's pwsh.
+      - name: Release files script test
+        env:
+          RELEASE_FILES_REQUIRE_ALL: "1"
+        run: bash scripts/test_release_files.sh
+
+  # The same test where openssl is LibreSSL and the tools are BSD's.
+  release-files-macos:
+    runs-on: macos-latest
+    name: "Release files script test (macOS)"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Release files script test
+        run: bash scripts/test_release_files.sh
+
   gdscript-check:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
@@ -272,7 +290,7 @@ jobs:
   # because a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [changes, docs-check, gdscript-check, unit-tests, manifest-diff, export-strip]
+    needs: [changes, docs-check, release-files-macos, gdscript-check, unit-tests, manifest-diff, export-strip]
     if: always()
     runs-on: ubuntu-latest
     steps:
