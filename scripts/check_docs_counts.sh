@@ -14,8 +14,9 @@
 #   1. The root README headline carries the pinned numbers.
 #   2. No retired vocabulary (internal host labels, removed profile system)
 #      appears in any user-facing doc.
-#   3. The root README's Minimum line names GODOT_MIN_VERSION, the Godot floor
-#      the release build writes into the update manifest.
+#   3. The root README's Minimum line and the shipped compatibility page's
+#      Minimum supported line name GODOT_MIN_VERSION, the Godot floor the release
+#      build writes into the update manifest.
 #
 # Usage: bash scripts/check_docs_counts.sh   (repo root; grep-only, no Godot)
 # Exit 0 = clean, 1 = drift found, 2 = setup error
@@ -76,6 +77,18 @@ elif grep -q -F "**Minimum:** Godot $min_godot " README.md; then
   echo "  ok: README's Minimum line names Godot $min_godot"
 else
   echo "  FAIL: README.md's Minimum line does not name Godot $min_godot (GODOT_MIN_VERSION); update one to match the other" >&2
+  fail=1
+fi
+
+echo "check:docs-counts — compatibility page's Minimum supported line vs GODOT_MIN_VERSION"
+compatibility_page="addons/godot_mcp_toolkit/docs/compatibility.md"
+if [ -z "$min_godot" ]; then
+  echo "  FAIL: no GODOT_MIN_VERSION to compare $compatibility_page against (see above)" >&2
+  fail=1
+elif grep -q -F "**Minimum supported:** Godot $min_godot " "$compatibility_page"; then
+  echo "  ok: $compatibility_page's Minimum supported line names Godot $min_godot"
+else
+  echo "  FAIL: $compatibility_page's Minimum supported line does not name Godot $min_godot (GODOT_MIN_VERSION); update one to match the other" >&2
   fail=1
 fi
 
