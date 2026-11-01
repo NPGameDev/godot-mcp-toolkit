@@ -66,6 +66,40 @@ jobs:
       - name: Compatible-server script test
         run: bash scripts/test_compatible_server.sh
 
+      # The release's list and manifest writers, signing and the release check, on
+      # generated fixtures and a throwaway key (no Godot, no network). Nothing may be
+      # skipped here: this runner has the .ps1 half's pwsh.
+      - name: Release files script test
+        env:
+          RELEASE_FILES_REQUIRE_ALL: "1"
+        run: bash scripts/test_release_files.sh
+
+  # The same test on the tools macOS ships: LibreSSL and BSD's. They live in /usr/bin,
+  # and an earlier PATH entry can hold Homebrew's OpenSSL instead, so the job puts
+  # /usr/bin first and fails unless openssl really is LibreSSL. It runs the check's zip
+  # cases too, so a missing zip or unzip fails here instead of skipping them.
+  release-files-macos:
+    runs-on: macos-latest
+    name: "Release files script test (macOS)"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Release files script test
+        run: |
+          export PATH="/usr/bin:${PATH}"
+          command -v zip
+          command -v unzip
+          openssl_version="$(openssl version)"
+          echo "${openssl_version}"
+          case "${openssl_version}" in
+            *LibreSSL*) ;;
+            *)
+              echo "error: expected the system's LibreSSL, got: ${openssl_version}" >&2
+              exit 1
+              ;;
+          esac
+          bash scripts/test_release_files.sh
+
   gdscript-check:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
@@ -272,7 +306,7 @@ jobs:
   # because a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [changes, docs-check, gdscript-check, unit-tests, manifest-diff, export-strip]
+    needs: [changes, docs-check, release-files-macos, gdscript-check, unit-tests, manifest-diff, export-strip]
     if: always()
     runs-on: ubuntu-latest
     steps:

@@ -2,11 +2,18 @@
 # Build the AssetLib-distributable plugin zip from addons/godot_mcp_toolkit/.
 # Output: dist-plugin/godot-mcp-toolkit-<version>.zip (zip's top entry is
 # `addons/godot_mcp_toolkit/`, matching what both AssetLib and a manual
-# extract-into-addons install expect).
+# extract-into-addons install expect), holding the release file list
+# (release_files.sha256), and dist-plugin/godot-mcp-toolkit-<version>.update.json,
+# the update manifest that pins the zip by size and hash. The manifest is unsigned:
+# the maintainer signs it with scripts/sign-release.sh.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${REPO_ROOT}"
+# shellcheck source=lib/release_files.sh
+source "${REPO_ROOT}/scripts/lib/release_files.sh"
+# shellcheck source=lib/compatible_server.sh
+source "${REPO_ROOT}/scripts/lib/compatible_server.sh"
 
 PLUGIN_CFG="addons/godot_mcp_toolkit/plugin.cfg"
 if [[ ! -f "${PLUGIN_CFG}" ]]; then
@@ -28,19 +35,44 @@ rm -rf "${STAGE}"
 mkdir -p "${STAGE}/addons"
 cp -r addons/godot_mcp_toolkit "${STAGE}/addons/godot_mcp_toolkit"
 
-# Ship .uid sidecars (Godot 4.4+): they are project state that must travel WITH
-# the addon, or `uid://` references to addon files break on update. We must NOT
-# strip them — keep the staged tree identical to the git tree and the AssetLib
-# archive. Regression guard: a future re-introduction of any
-# `.uid` strip would empty the staged tree and must break the build loudly.
-UID_COUNT="$(find "${STAGE}/addons/godot_mcp_toolkit" -name "*.uid" | wc -l)"
-if [[ "${UID_COUNT}" -eq 0 ]]; then
-  echo "error: .uid sidecars must ship — none found in staged tree (${STAGE}). Do not strip *.uid from the addon." >&2
+# .uid sidecars (Godot 4.4+) are project state that must travel WITH the addon. A
+# script shipped without one gets a new random uid on each machine after each update,
+# which breaks `uid://` references to it and leaves a file in the addon folder that no
+# release listed.
+MISSING_UID="$(rf_scripts_without_uid "${STAGE}/addons/godot_mcp_toolkit")"
+if [[ -n "${MISSING_UID}" ]]; then
+  echo "error: every scanned script must ship with its .uid sidecar. Open the project in Godot 4.4+ to mint it, and commit it. Missing for:" >&2
+  echo "${MISSING_UID}" | sed 's/^/  /' >&2
   exit 1
 fi
+
+MIN_GODOT="$(rf_min_godot "${REPO_ROOT}")"
+if [[ -z "${MIN_GODOT}" ]]; then
+  echo "error: could not read GODOT_MIN_VERSION from addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd." >&2
+  exit 1
+fi
+
+COMPATIBLE_SERVER="$(cs_current "${REPO_ROOT}")" || COMPATIBLE_SERVER=""
+if [[ -z "${COMPATIBLE_SERVER}" ]]; then
+  echo "error: could not read COMPATIBLE_SERVER_VERSION from ${CS_CONSTANT_FILE}." >&2
+  exit 1
+fi
+
+EXPIRES_AT="$(rf_expires_at "${REPO_ROOT}")" || {
+  echo "error: could not read HEAD's commit time, which sets the manifest's expires_at (is this a git checkout with a commit?)." >&2
+  exit 1
+}
+
+# The list of the release's files, inside the zip: it names every file a zip may hold but itself,
+# and its hashes show a hand-edited file.
+rf_write_list "${STAGE}/addons/godot_mcp_toolkit"
 
 rm -f "${OUT_DIR}/${ZIP_NAME}"
 (cd "${STAGE}" && zip -qr "../${ZIP_NAME}" addons)
 rm -rf "${STAGE}"
 
+MANIFEST_NAME="godot-mcp-toolkit-${VERSION}.update.json"
+rf_write_manifest "${OUT_DIR}/${ZIP_NAME}" "${VERSION}" "${MIN_GODOT}" "${COMPATIBLE_SERVER}" "${EXPIRES_AT}" "${OUT_DIR}/${MANIFEST_NAME}"
+
 echo "Built ${OUT_DIR}/${ZIP_NAME}"
+echo "Built ${OUT_DIR}/${MANIFEST_NAME} (unsigned; sign it with scripts/sign-release.sh)"
