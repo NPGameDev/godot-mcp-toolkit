@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# Sign, or verify, a release's update manifest for the toolkit's self-update.
+# Sign, or verify, a release's update manifest.
 #
-# The toolkit installs a release from the editor only when its update manifest
-# (godot-mcp-toolkit-<version>.update.json, written by build-plugin-release.sh)
-# carries a signature by a key it trusts. The signature is RSA with SHA-256 over the
-# manifest's exact bytes, trailing newline included, and sits beside the manifest as
-# godot-mcp-toolkit-<version>.update.json.sig. That name comes from the manifest's
-# version, never its path: the self-update fetches the asset by that exact name. Sign
-# the manifest the release workflow built, never a local build: the manifest pins the
-# zip by hash. Upload the .sig to the draft before publishing, since a published
-# release may be immutable.
+# A release's update manifest (godot-mcp-toolkit-<version>.update.json, written by
+# build-plugin-release.sh) is signed with RSA and SHA-256 over its exact bytes, trailing
+# newline included. The signature sits beside the manifest as
+# godot-mcp-toolkit-<version>.update.json.sig. That is a fixed asset name, so it comes
+# from the manifest's version, never its path. Sign the manifest the release workflow
+# built, never a local build: the manifest pins the zip by hash. Upload the .sig to the
+# draft before publishing, since a published release may be immutable.
 #
 # Usage:
 #   scripts/sign-release.sh <manifest> <private-key.pem> <public-key.pem>
@@ -31,19 +29,24 @@ usage() {
   awk '/^# Usage:/ { show = 1 } /^set -euo/ { exit } show' "$0" | sed 's/^# \{0,1\}//'
 }
 
-# Prints where the manifest's signature belongs. The version becomes part of a path,
-# so anything but a version is refused.
-sig_path() {
+# Prints the manifest's version. It becomes part of a path, so anything but a version
+# is refused.
+manifest_version() {
   local version
   version="$(sed -nE 's/.*"version": *"([^"]*)".*/\1/p' "$1" | tr -d '\r')"
   if [[ ! "${version}" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.+-]+)?$ ]]; then
     echo "error: $1 carries no usable version." >&2
     return 1
   fi
-  printf '%s/godot-mcp-toolkit-%s.update.json.sig\n' "$(dirname "$1")" "${version}"
+  printf '%s\n' "${version}"
 }
 
-# The toolkit verifies PKCS#1 v1.5 RSA, and `openssl dgst -sign` would quietly emit
+# Prints where the signature of the manifest $1, of version $2, belongs.
+sig_path() {
+  printf '%s/godot-mcp-toolkit-%s.update.json.sig\n' "$(dirname "$1")" "$2"
+}
+
+# The signature must be PKCS#1 v1.5 RSA, and `openssl dgst -sign` would quietly emit
 # something else for another key type. The check reads the public half, so it costs
 # no passphrase.
 require_rsa() {
@@ -53,7 +56,7 @@ require_rsa() {
     return 1
   }
   if [[ "${text}" != *Modulus* || "${text}" == *PSS* ]]; then
-    echo "error: $1 is not an RSA key; the toolkit verifies RSA signatures only." >&2
+    echo "error: $1 is not an RSA key; a release's signature must be RSA." >&2
     return 1
   fi
 }
@@ -64,13 +67,14 @@ case "${1:-}" in
   --verify)
     [[ $# -eq 3 ]] || { usage >&2; exit 2; }
     [[ -f "$2" ]] || { echo "error: no manifest at $2." >&2; exit 1; }
-    SIG="$(sig_path "$2")"
+    VERSION="$(manifest_version "$2")"
+    SIG="$(sig_path "$2" "${VERSION}")"
     [[ -f "${SIG}" ]] || { echo "error: no signature at ${SIG}." >&2; exit 1; }
     openssl dgst -sha256 -verify "$3" -signature "${SIG}" "$2"
     ;;
   --key-entry)
     [[ $# -eq 2 ]] || { usage >&2; exit 2; }
-    openssl pkey -pubin -in "$2" -noout 2>/dev/null || { echo "error: $2 is not a PEM public key." >&2; exit 1; }
+    require_rsa "$2"
     printf '"'
     awk 'BEGIN { ORS = "" } { gsub(/\r/, ""); print $0 "\\n" }' "$2"
     printf '"\n'
@@ -81,7 +85,8 @@ case "${1:-}" in
   *)
     [[ $# -eq 3 ]] || { usage >&2; exit 2; }
     [[ -f "$1" ]] || { echo "error: no manifest at $1." >&2; exit 1; }
-    SIG="$(sig_path "$1")"
+    VERSION="$(manifest_version "$1")"
+    SIG="$(sig_path "$1" "${VERSION}")"
     require_rsa "$3"
     trap 'rm -f "${SIG}.tmp"' EXIT
     # This is the one read of the private key: a passphrase piped through stdin is
@@ -98,6 +103,6 @@ case "${1:-}" in
       exit 1
     }
     mv "${SIG}.tmp" "${SIG}"
-    echo "Wrote ${SIG}. Upload it to the draft before publishing: gh release upload v<version> ${SIG}"
+    echo "Wrote ${SIG}. Upload it to the draft before publishing: gh release upload v${VERSION} ${SIG}"
     ;;
 esac
