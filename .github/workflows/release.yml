@@ -184,6 +184,20 @@ jobs:
         if: always()
         run: cat zip-smoke-editor.log 2>/dev/null || true
 
+      # The tree the smoke just booted, against the zip's file list and the manifest:
+      # a changed file, a file the plugin or the engine wrote into the addon folder, or
+      # a manifest that does not describe the zip stops the release here. The smoke stops
+      # the editor as soon as the port is up, and the engine creates plugins before its
+      # full scan, which is what mints a missing .uid. --import runs until that scan ends.
+      - name: Verify release files
+        timeout-minutes: 5
+        run: |
+          godot --headless --import --path "$RUNNER_TEMP/zip-install-smoke"
+          bash scripts/check_release_files.sh \
+            dist-plugin/godot-mcp-toolkit-*.zip \
+            dist-plugin/godot-mcp-toolkit-*.update.json \
+            "$RUNNER_TEMP/zip-install-smoke/addons/godot_mcp_toolkit"
+
       # Upload only on a real tag push, and NEVER on a dry-run. Dispatching ON a tag
       # ref with dry-run: false is the deliberate manual re-run path. inputs['dry-run']
       # (bracket form — the property name has a hyphen) is null on a tag push -> != true.
