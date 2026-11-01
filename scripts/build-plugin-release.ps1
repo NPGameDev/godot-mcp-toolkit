@@ -3,7 +3,7 @@
 # `addons/godot_mcp_toolkit/`, matching what both AssetLib and a manual
 # extract-into-addons install expect), holding the release file list
 # (release_files.sha256), and dist-plugin\godot-mcp-toolkit-<version>.update.json,
-# the update manifest the toolkit's self-update reads. The list matches what
+# the update manifest that pins the zip by size and hash. The list matches what
 # build-plugin-release.sh writes (scripts/lib/release_files.sh) byte for byte. The
 # manifest has the same keys but is for local tests only: a .NET zip cannot match
 # `zip -qr` byte for byte, so its size and hash differ, and only the bash build's
@@ -95,8 +95,8 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
 # The list of the release's files, inside the zip: one "<sha256>  <path>" line per
 # file, paths relative to the addon folder with forward slashes, in byte order, the
-# list left out. The self-update checks a zip's entries against it and spots a
-# hand-edited file with it.
+# list left out. It names every entry a zip may hold, and its hashes show a hand-edited
+# file.
 $ListName = "release_files.sha256"
 # A typed string array, so Sort compares ordinally: the items of a pipeline's object
 # array compare through PowerShell's case-insensitive rules instead.
@@ -112,7 +112,7 @@ $Lines = foreach ($Path in $Paths) {
 
 # Written entry by entry under forward-slash names: Compress-Archive leaves out
 # hidden files (every dotfile on macOS and Linux), and on Windows PowerShell 5.1 it
-# writes backslash separators, which the toolkit's self-update refuses.
+# writes backslash separators, where a release's entry names must use forward slashes.
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }

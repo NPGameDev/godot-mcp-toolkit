@@ -1,10 +1,10 @@
 # shellcheck shell=bash
 #
-# scripts/lib/release_files.sh: the two files a release publishes for the toolkit's
-# self-update: the file list inside its zip and the update manifest beside it.
+# scripts/lib/release_files.sh: the two files a release publishes: the file list inside
+# its zip and the update manifest beside it.
 #
-# Sourced, never run. The formats are a contract with the toolkit's update/ readers:
-# keep them in step.
+# Sourced, never run. The formats are a contract with whatever reads a published
+# release: keep them stable.
 #
 #   rf_sha256 <file>                    print the file's SHA-256, lowercase hex
 #   rf_write_list <addon-dir>           write <addon-dir>/release_files.sha256: one
@@ -64,10 +64,10 @@ rf_scripts_without_uid() {
 
 rf_min_godot() {
   sed -nE 's/^const GODOT_MIN_VERSION := "([^"]+)".*/\1/p' \
-    "$1/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd" | tr -d '\r'
+    "$1/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd"
 }
 
-# Commit time, never the clock: a rebuild of the same commit writes the same bytes.
+# Commit time, never the clock: the same commit, the same expiry.
 rf_expires_at() {
   local committed
   committed="$(git -C "$1" log -1 --format=%ct HEAD 2>/dev/null | tr -d '\r')" || return 1

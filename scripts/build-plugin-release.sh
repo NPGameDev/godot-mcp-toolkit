@@ -4,7 +4,7 @@
 # `addons/godot_mcp_toolkit/`, matching what both AssetLib and a manual
 # extract-into-addons install expect), holding the release file list
 # (release_files.sha256), and dist-plugin/godot-mcp-toolkit-<version>.update.json,
-# the update manifest the toolkit's self-update reads. The manifest is unsigned:
+# the update manifest that pins the zip by size and hash. The manifest is unsigned:
 # the maintainer signs it with scripts/sign-release.sh.
 set -euo pipefail
 
@@ -63,8 +63,8 @@ EXPIRES_AT="$(rf_expires_at "${REPO_ROOT}")" || {
   exit 1
 }
 
-# The list of the release's files, inside the zip: what the self-update checks a zip's
-# entries against and spots a hand-edited file with.
+# The list of the release's files, inside the zip: it names every entry a zip may hold,
+# and its hashes show a hand-edited file.
 rf_write_list "${STAGE}/addons/godot_mcp_toolkit"
 
 rm -f "${OUT_DIR}/${ZIP_NAME}"

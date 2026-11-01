@@ -13,10 +13,10 @@ extends RefCounted
 const GODOT_TESTED_MAX_VERSION := "4.7.0"
 
 ## The oldest Godot the toolkit runs on, as [code]major.minor[/code]. The release
-## build writes it into the update manifest as [code]min_godot[/code], so an editor
-## below a later release's floor is never offered that release to install, and
-## [code]scripts/check_docs_counts.sh[/code] checks that the README's Minimum line
-## agrees. Raise it only with the README and the CI matrix.
+## build writes it into the update manifest as [code]min_godot[/code], that release's
+## floor, and [code]scripts/check_docs_counts.sh[/code] checks that the README's Minimum
+## line and the compatibility page's Minimum supported line agree. Raise it only with
+## the README, the compatibility page and the CI matrix.
 const GODOT_MIN_VERSION := "4.2"
 
 ## The server version this toolkit was tested with. "Write .mcp.json" pins the
