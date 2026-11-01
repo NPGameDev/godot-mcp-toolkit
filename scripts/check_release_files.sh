@@ -4,14 +4,16 @@
 # unzipped into a project and booted:
 #   1. Every file release_files.sha256 lists is in the tree, unchanged.
 #   2. The tree holds nothing the list leaves out, other than the engine's *.import.
-#      The self-update replaces the whole addon folder, so a plugin that writes there
-#      loses the file on the next update; it fails here, and so does a .uid the engine
-#      minted for a shipped file that lacks one.
-#   3. The manifest's size and hash match the zip, its archive name is the zip's, and
+#      An update replaces the whole addon folder, so a plugin that writes there loses
+#      the file on the next update; it fails here, and so does a .uid the engine minted
+#      for a shipped file that lacks one.
+#   3. The tree's list is the zip's, byte for byte: a list edited after the build could
+#      otherwise vouch for a file the release never held.
+#   4. The manifest's size and hash match the zip, its archive name is the zip's, and
 #      its version is the one in the name and in the tree's plugin.cfg.
 #
 # Usage: bash scripts/check_release_files.sh <zip> <manifest> <unzipped-addon-dir>
-# Exit 0 = clean, 1 = a check failed, 2 = setup error
+# Exit 0 = clean, 1 = a check failed, 2 = setup error (a wrong call, no unzip)
 
 set -uo pipefail
 
@@ -30,6 +32,7 @@ for path in "${ZIP}" "${MANIFEST}"; do
   [[ -f "${path}" ]] || { echo "ERROR: no file at ${path}" >&2; exit 2; }
 done
 [[ -d "${TREE}" ]] || { echo "ERROR: no folder at ${TREE}" >&2; exit 2; }
+command -v unzip >/dev/null 2>&1 || { echo "ERROR: unzip is required" >&2; exit 2; }
 
 fail=0
 problem() {
@@ -75,6 +78,11 @@ else
   else
     problem "files the list leaves out (a plugin writing into its own folder, or a .uid the engine minted):"
     printf '%s\n' "${extras}" | sed 's/^/    /' >&2
+  fi
+  if unzip -p "${ZIP}" "addons/godot_mcp_toolkit/${RF_LIST_NAME}" 2>/dev/null | cmp -s - "${TREE}/${RF_LIST_NAME}"; then
+    echo "  ok: the list is the zip's"
+  else
+    problem "the tree's ${RF_LIST_NAME} is not the zip's: the list changed after the build"
   fi
 fi
 

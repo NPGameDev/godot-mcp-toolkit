@@ -5,12 +5,14 @@
 # endings in a checkout cannot move a pinned hash, and no key lives in the repo:
 #   - scripts/lib/release_files.sh against known SHA-256 vectors and a fixed manifest;
 #   - both build scripts on a fixture repo: the missing .uid and the unreadable commit
-#     time refused, the list and manifest pinned, the .ps1 matching them;
+#     time refused, the list and manifest pinned, the .ps1 matching them and ASCII; the
+#     bash build also refusing an unreadable Godot floor or server pin;
 #   - scripts/sign-release.sh with plain, encrypted, mismatched and non-RSA keys;
-#   - scripts/check_release_files.sh's failures.
+#   - scripts/check_release_files.sh's failures, on real zips.
 #
-# The real builds need zip, unzip and pwsh, and those checks say "skip" without them.
-# RELEASE_FILES_REQUIRE_ALL=1 turns a skip into a failure; RELEASE_FILES_PS names
+# The real builds need zip, unzip and pwsh, the check's cases need zip and unzip, and the
+# RSA-PSS case needs an openssl that makes such a key; those checks say "skip" without
+# them. RELEASE_FILES_REQUIRE_ALL=1 turns a skip into a failure; RELEASE_FILES_PS names
 # another PowerShell than pwsh.
 #
 # Usage: bash scripts/test_release_files.sh   (from anywhere)
@@ -101,7 +103,7 @@ check "no temporary file left behind" no_file "${LIST_DIR}/release_files.sha256.
 
 echo "── rf_scripts_without_uid ──"
 UID_DIR="${WORK}/uids"
-mkdir -p "${UID_DIR}/commands" "${UID_DIR}/skills/deep/er" "${UID_DIR}/.dot"
+mkdir -p "${UID_DIR}/commands" "${UID_DIR}/skills/deep/er"
 printf 'x' > "${UID_DIR}/commands/has_uid.gd"
 printf 'x' > "${UID_DIR}/commands/has_uid.gd.uid"
 printf 'x' > "${UID_DIR}/commands/no_uid.gd"
@@ -110,6 +112,12 @@ printf '' > "${UID_DIR}/skills/.gdignore"
 printf 'x' > "${UID_DIR}/skills/deep/er/exempt.gd"
 printf 'x' > "${UID_DIR}/notes.txt"
 check "names only the scanned scripts with no sidecar" equals "$(rf_scripts_without_uid "${UID_DIR}" | tr '\n' ' ')" "also_no_uid.gd commands/no_uid.gd "
+UID_IGNORED_ROOT="${WORK}/uids-ignored-root"
+mkdir -p "${UID_IGNORED_ROOT}/deep"
+printf '' > "${UID_IGNORED_ROOT}/.gdignore"
+printf 'x' > "${UID_IGNORED_ROOT}/top.gd"
+printf 'x' > "${UID_IGNORED_ROOT}/deep/nested.gd"
+check "a .gdignore at the folder's root exempts every script" equals "$(rf_scripts_without_uid "${UID_IGNORED_ROOT}")" ""
 
 echo "── rf_min_godot ──"
 CRLF_ROOT="${WORK}/crlf/addons/godot_mcp_toolkit/versioning"
@@ -156,8 +164,8 @@ make_fixture_repo() {
   make_commit "${repo}"
 }
 
-# The fixture's three version files are hashed literally, taken with Python's hashlib
-# rather than the code under test.
+# The fixture's three version files are hashed literally: known SHA-256 vectors, like
+# the others.
 {
   printf '%s  .mcp.json.template\n' "${HASH_ABC}"
   printf '%s  CompanionSkills/.gdignore\n' "${HASH_EMPTY}"
@@ -176,9 +184,10 @@ manifest_without_zip_bytes() {
 }
 printf '{"format": 1, "version": "1.2.0", "archive": "godot-mcp-toolkit-1.2.0.zip", "archive_size": SIZE, "archive_sha256": "HASH", "min_godot": "4.9", "compatible_server": "9.8.7", "expires_at": 1715552000}\n' > "${WORK}/build-manifest.expected"
 
-# The entries the zip must hold, files only, whichever tool wrote it.
+# The entries the zip must hold, files only, whichever tool wrote it. An unreadable zip
+# gives an empty set, for the comparison to report.
 zip_files() {
-  unzip -Z1 "$1" | grep -v '/$' | LC_ALL=C sort
+  { unzip -Z1 "$1" || true; } | { grep -v '/$' || true; } | LC_ALL=C sort
 }
 {
   for entry in .mcp.json.template CompanionSkills/.gdignore CompanionSkills/references/example.gd \
@@ -196,16 +205,20 @@ manifest_field() {
   sed -nE "s/.*\"$1\": *\"?([^\",}]*)\"?.*/\1/p" "$2"
 }
 
-# Checks one finished build: its manifest and its zip's list and file set.
+# Checks one finished build: its manifest and its zip's list and file set. A build that
+# wrote neither is a failed check here, so the suite still finishes and reports.
 check_built_release() {
   local name="$1" repo="$2"
   local zip="${repo}/dist-plugin/godot-mcp-toolkit-1.2.0.zip"
   local manifest="${repo}/dist-plugin/godot-mcp-toolkit-1.2.0.update.json"
+  check "${name}: the build wrote the zip" is_file "${zip}"
+  check "${name}: the build wrote the manifest" is_file "${manifest}"
+  [[ -f "${zip}" && -f "${manifest}" ]] || return 0
   manifest_without_zip_bytes "${manifest}" > "${WORK}/${name}-manifest.actual"
   check "${name}: the manifest, zip bytes aside" same_bytes "${WORK}/${name}-manifest.actual" "${WORK}/build-manifest.expected"
   check "${name}: archive_size is the zip's" equals "$(manifest_field archive_size "${manifest}")" "$(file_size "${zip}")"
   check "${name}: archive_sha256 is the zip's" equals "$(manifest_field archive_sha256 "${manifest}")" "$(openssl_sha256 "${zip}")"
-  unzip -p "${zip}" "${ZIP_ENTRY}" > "${WORK}/${name}-list.actual"
+  unzip -p "${zip}" "${ZIP_ENTRY}" > "${WORK}/${name}-list.actual" || true
   check "${name}: the list, byte for byte, dotfiles included" same_bytes "${WORK}/${name}-list.actual" "${WORK}/build-list.expected"
   zip_files "${zip}" > "${WORK}/${name}-files.actual"
   check "${name}: the zip's forward-slash file set, dotfiles included" same_bytes "${WORK}/${name}-files.actual" "${WORK}/zip-files.expected"
@@ -225,6 +238,28 @@ git -C "${WORK}/no-commit-repo" init -q
 run bash "${WORK}/no-commit-repo/scripts/build-plugin-release.sh"
 check "bash: no commit time is refused" equals "${STATUS}" "1"
 check "bash: the refusal says so" contains "${OUT}" "commit time"
+
+make_fixture_repo "${WORK}/no-floor"
+printf 'const COMPATIBLE_SERVER_VERSION := "9.8.7"\n' > "${WORK}/no-floor/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd"
+run bash "${WORK}/no-floor/scripts/build-plugin-release.sh"
+check "bash: an unreadable Godot floor is refused" equals "${STATUS}" "1"
+check "bash: the refusal names the constant" contains "${OUT}" "GODOT_MIN_VERSION"
+check "bash: no manifest written for an unreadable floor" no_file "${WORK}/no-floor/dist-plugin/godot-mcp-toolkit-1.2.0.update.json"
+
+make_fixture_repo "${WORK}/no-server"
+printf 'const GODOT_MIN_VERSION := "4.9"\n' > "${WORK}/no-server/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd"
+run bash "${WORK}/no-server/scripts/build-plugin-release.sh"
+check "bash: an unreadable server pin is refused" equals "${STATUS}" "1"
+check "bash: the refusal names the constant" contains "${OUT}" "COMPATIBLE_SERVER_VERSION"
+check "bash: no manifest written for an unreadable server pin" no_file "${WORK}/no-server/dist-plugin/godot-mcp-toolkit-1.2.0.update.json"
+
+# Windows PowerShell 5.1 reads a script with no BOM in the system code page, where a
+# UTF-8 dash can end a string early. pwsh reads UTF-8 and parses the same file, so the
+# .ps1 half running green does not rule one out.
+non_ascii_bytes() {
+  LC_ALL=C tr -d '\11\12\15\40-\176' < "$1" | wc -c | tr -d ' '
+}
+check ".ps1: every byte is ASCII" equals "$(non_ascii_bytes "${REPO_ROOT}/scripts/build-plugin-release.ps1")" "0"
 
 if command -v zip >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1; then
   make_fixture_repo "${WORK}/bash-build"
@@ -295,6 +330,7 @@ check "plain key through the pipe: signed" equals "${STATUS}" "0"
 check "plain key: the .sig verifies with openssl directly" verifies "${KEYS}/plain.pub.pem" "${SIGNING}/plain/${SIG_NAME}" "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json"
 check "plain key: the raw 256-byte signature of an RSA-2048 key" equals "$(file_size "${SIGNING}/plain/${SIG_NAME}")" "256"
 check "plain key: the output says to upload to the draft" contains "${OUT}" "draft before publishing"
+check "plain key: the upload command names the manifest's version" contains "${OUT}" "gh release upload v1.2.0 "
 
 make_signing_case encrypted "godot-mcp-toolkit-1.2.0.update.json"
 sign_piped "${PASSPHRASE}" "${SIGNING}/encrypted/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/encrypted.pem" "${KEYS}/encrypted.pub.pem"
@@ -342,6 +378,22 @@ check "the refusal says RSA" contains "${OUT}" "not an RSA key"
 check "the refusal comes before the private key is read" equals "$(private_key_reads "${KEYS}/ec.pem")" "0"
 check "the refusal leaves no .sig" no_file "${SIGNING}/ec/${SIG_NAME}"
 
+# An RSA-PSS key prints a modulus like a plain RSA key, but signs with another padding.
+# An openssl may not make such a key, or may not print one.
+if openssl genpkey -algorithm RSA-PSS -pkeyopt rsa_keygen_bits:2048 -out "${KEYS}/pss.pem" 2>/dev/null \
+  && openssl pkey -in "${KEYS}/pss.pem" -pubout -out "${KEYS}/pss.pub.pem" 2>/dev/null \
+  && openssl pkey -pubin -in "${KEYS}/pss.pub.pem" -noout -text >/dev/null 2>&1; then
+  make_signing_case pss "godot-mcp-toolkit-1.2.0.update.json"
+  sign_piped "${UNUSED_LINE}" "${SIGNING}/pss/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/pss.pem" "${KEYS}/pss.pub.pem"
+  check "an RSA-PSS key is refused" equals "${STATUS}" "1"
+  check "the RSA-PSS refusal says RSA" contains "${OUT}" "not an RSA key"
+  check "the RSA-PSS refusal leaves no .sig" no_file "${SIGNING}/pss/${SIG_NAME}"
+  run bash "${SIGN}" --key-entry "${KEYS}/pss.pub.pem"
+  check "--key-entry refuses an RSA-PSS key" equals "${STATUS}" "1"
+else
+  skip "the RSA-PSS case needs an openssl that makes and prints such a key"
+fi
+
 make_signing_case mismatched "godot-mcp-toolkit-1.2.0.update.json"
 sign_piped "${UNUSED_LINE}" "${SIGNING}/mismatched/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem" "${KEYS}/encrypted.pub.pem"
 check "another key's public half fails" equals "${STATUS}" "1"
@@ -360,6 +412,7 @@ make_signing_case no-version "godot-mcp-toolkit-1.2.0.update.json"
 printf '{"format": 1, "version": "../../evil"}\n' > "${SIGNING}/no-version/godot-mcp-toolkit-1.2.0.update.json"
 sign_piped "${UNUSED_LINE}" "${SIGNING}/no-version/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pem" "${KEYS}/plain.pub.pem"
 check "a version that is no version is refused" equals "${STATUS}" "1"
+check "the refusal says the version is the problem" contains "${OUT}" "no usable version"
 
 run bash "${SIGN}" --verify "${SIGNING}/plain/godot-mcp-toolkit-1.2.0.update.json" "${KEYS}/plain.pub.pem"
 check "--verify accepts the signed manifest" equals "${STATUS}" "0"
@@ -376,6 +429,13 @@ check "--key-entry closes it" contains "${ENTRY}" '-----END PUBLIC KEY-----\n"'
 printf '%b' "$(printf '%s' "${ENTRY}" | tr -d '"')" > "${WORK}/entry.pem"
 tr -d '\r' < "${KEYS}/plain.pub.pem" > "${WORK}/plain.lf.pem"
 check "--key-entry unescapes to the key" same_bytes "${WORK}/entry.pem" "${WORK}/plain.lf.pem"
+run bash "${SIGN}" --key-entry "${KEYS}/ec.pub.pem"
+check "--key-entry refuses an EC key, which signing would refuse" equals "${STATUS}" "1"
+check "that refusal says RSA" contains "${OUT}" "not an RSA key"
+check "that refusal prints no key" lacks "${OUT}" "BEGIN PUBLIC KEY"
+run bash "${SIGN}" --key-entry "${WORK}/manifest.expected"
+check "--key-entry refuses a file that is no PEM key" equals "${STATUS}" "1"
+check "that refusal says so" contains "${OUT}" "not a PEM public key"
 run bash "${SIGN}" --help
 check "the usage does not say where keys live" lacks "${OUT}" "PUBLIC_KEYS"
 check "the usage names the three-argument form" contains "${OUT}" "<manifest> <private-key.pem> <public-key.pem>"
@@ -386,105 +446,169 @@ echo "── check_release_files.sh ──"
 CHECK="${REPO_ROOT}/scripts/check_release_files.sh"
 CASES="${WORK}/cases"
 BASE="${CASES}/base"
-mkdir -p "${BASE}/tree/commands"
-printf 'abc' > "${BASE}/godot-mcp-toolkit-1.2.0.zip"
-printf '[plugin]\nversion="1.2.0"\n' > "${BASE}/tree/plugin.cfg"
-printf 'extends RefCounted\n' > "${BASE}/tree/commands/a.gd"
-printf 'uid://a\n' > "${BASE}/tree/commands/a.gd.uid"
-printf '' > "${BASE}/tree/.hidden"
-rf_write_list "${BASE}/tree"
+CASE_ZIP="godot-mcp-toolkit-1.2.0.zip"
 
+# Zips a case's tree as $2, under the path a release's zip uses.
+zip_case() {
+  mkdir -p "$1/stage/addons"
+  cp -R "$1/tree" "$1/stage/addons/godot_mcp_toolkit"
+  rm -f "$1/$2"
+  (cd "$1/stage" && zip -qr "../$2" addons)
+  rm -rf "$1/stage"
+}
 # Writes a case's manifest: size, hash, version and archive, in that order.
 write_case_manifest() {
   printf '{"format": 1, "version": "%s", "archive": "%s", "archive_size": %s, "archive_sha256": "%s", "min_godot": "4.2", "compatible_server": "1.2.0", "expires_at": 1793000000}\n' \
     "$4" "$5" "$2" "$3" > "$1/manifest.json"
 }
-write_case_manifest "${BASE}" 3 "${HASH_ABC}" 1.2.0 godot-mcp-toolkit-1.2.0.zip
-
+# Writes a manifest true to the case's zip $2, at version $3.
+write_true_manifest() {
+  write_case_manifest "$1" "$(file_size "$1/$2")" "$(openssl_sha256 "$1/$2")" "$3" "$2"
+}
 new_case() {
   cp -R "${BASE}" "${CASES}/$1"
 }
 run_case() {
-  run bash "${CHECK}" "${CASES}/$1/godot-mcp-toolkit-1.2.0.zip" "${CASES}/$1/manifest.json" "${CASES}/$1/tree"
+  run bash "${CHECK}" "${CASES}/$1/${CASE_ZIP}" "${CASES}/$1/manifest.json" "${CASES}/$1/tree"
 }
-
-new_case clean
-run_case clean
-check "a clean release passes" equals "${STATUS}" "0"
-
-new_case booted
-printf 'engine state\n' > "${CASES}/booted/tree/icon.svg.import"
-run_case booted
-check "the engine's *.import is allowed" equals "${STATUS}" "0"
-
-new_case tampered
-printf 'x' >> "${CASES}/tampered/tree/commands/a.gd"
-run_case tampered
-check "a tampered file fails" equals "${STATUS}" "1"
-check "its report names the file" contains "${OUT}" "commands/a.gd"
-
-new_case missing
-rm "${CASES}/missing/tree/commands/a.gd"
-run_case missing
-check "a listed file gone fails" equals "${STATUS}" "1"
-
-new_case extra
-printf 'written at runtime\n' > "${CASES}/extra/tree/commands/stray.cfg"
-run_case extra
-check "an unlisted file fails" equals "${STATUS}" "1"
-check "its report names the file" contains "${OUT}" "commands/stray.cfg"
-
-new_case minted
-printf 'uid://minted\n' > "${CASES}/minted/tree/commands/b.gd.uid"
-run_case minted
-check "a .uid the engine minted fails" equals "${STATUS}" "1"
-check "its report names the file" contains "${OUT}" "commands/b.gd.uid"
-
-new_case no-list
-rm "${CASES}/no-list/tree/release_files.sha256"
-run_case no-list
-check "a tree with no list fails" equals "${STATUS}" "1"
-
-new_case wrong-hash
-write_case_manifest "${CASES}/wrong-hash" 3 "${HASH_HELLO}" 1.2.0 godot-mcp-toolkit-1.2.0.zip
-run_case wrong-hash
-check "a wrong hash fails" equals "${STATUS}" "1"
-check "its report names archive_sha256" contains "${OUT}" "archive_sha256 is '${HASH_HELLO}'"
-
-new_case wrong-size
-write_case_manifest "${CASES}/wrong-size" 4 "${HASH_ABC}" 1.2.0 godot-mcp-toolkit-1.2.0.zip
-run_case wrong-size
-check "a wrong size fails" equals "${STATUS}" "1"
-check "its report names archive_size" contains "${OUT}" "archive_size is '4'"
-
-new_case wrong-version
-write_case_manifest "${CASES}/wrong-version" 3 "${HASH_ABC}" 1.2.1 godot-mcp-toolkit-1.2.0.zip
-run_case wrong-version
-check "a wrong version fails" equals "${STATUS}" "1"
-check "its report names the version" contains "${OUT}" "version is '1.2.1'"
-
-new_case tree-version
-printf '[plugin]\nversion="1.1.9"\n' > "${CASES}/tree-version/tree/plugin.cfg"
-rf_write_list "${CASES}/tree-version/tree"
-run_case tree-version
-check "a plugin.cfg of another version fails" equals "${STATUS}" "1"
-
-new_case wrong-archive
-write_case_manifest "${CASES}/wrong-archive" 3 "${HASH_ABC}" 1.2.0 other.zip
-run_case wrong-archive
-check "another archive name fails" equals "${STATUS}" "1"
-
-new_case tampered-zip
-printf 'abd' > "${CASES}/tampered-zip/godot-mcp-toolkit-1.2.0.zip"
-run_case tampered-zip
-check "a zip changed after the manifest fails on its hash" contains "${OUT}" "archive_sha256 is '${HASH_ABC}'"
 
 run bash "${CHECK}" only-one-argument
 check "a wrong call is a setup error" equals "${STATUS}" "2"
 
+if command -v zip >/dev/null 2>&1 && command -v unzip >/dev/null 2>&1; then
+  mkdir -p "${BASE}/tree/commands"
+  printf '[plugin]\nversion="1.2.0"\n' > "${BASE}/tree/plugin.cfg"
+  printf 'extends RefCounted\n' > "${BASE}/tree/commands/a.gd"
+  printf 'uid://a\n' > "${BASE}/tree/commands/a.gd.uid"
+  printf '' > "${BASE}/tree/.hidden"
+  rf_write_list "${BASE}/tree"
+  zip_case "${BASE}" "${CASE_ZIP}"
+  write_true_manifest "${BASE}" "${CASE_ZIP}" 1.2.0
+  BASE_SIZE="$(file_size "${BASE}/${CASE_ZIP}")"
+  BASE_HASH="$(openssl_sha256 "${BASE}/${CASE_ZIP}")"
+
+  new_case clean
+  run_case clean
+  check "a clean release passes" equals "${STATUS}" "0"
+
+  new_case booted
+  printf 'engine state\n' > "${CASES}/booted/tree/icon.svg.import"
+  run_case booted
+  check "the engine's *.import is allowed" equals "${STATUS}" "0"
+
+  new_case import-suffix
+  printf 'a backup\n' > "${CASES}/import-suffix/tree/icon.svg.import.bak"
+  run_case import-suffix
+  check "a name that only holds .import fails" equals "${STATUS}" "1"
+  check "its report names the file" contains "${OUT}" "icon.svg.import.bak"
+
+  new_case tampered
+  printf 'x' >> "${CASES}/tampered/tree/commands/a.gd"
+  run_case tampered
+  check "a tampered file fails" equals "${STATUS}" "1"
+  check "its report names the file" contains "${OUT}" "commands/a.gd"
+
+  new_case missing
+  rm "${CASES}/missing/tree/commands/a.gd"
+  run_case missing
+  check "a listed file gone fails" equals "${STATUS}" "1"
+
+  new_case extra
+  printf 'written at runtime\n' > "${CASES}/extra/tree/commands/stray.cfg"
+  run_case extra
+  check "an unlisted file fails" equals "${STATUS}" "1"
+  check "its report names the file" contains "${OUT}" "commands/stray.cfg"
+
+  # sha256sum -c ignores a line with no hash, and the line still counts as listing the file.
+  new_case listed-bare
+  printf 'written at runtime\n' > "${CASES}/listed-bare/tree/stray.cfg"
+  printf 'stray.cfg\n' >> "${CASES}/listed-bare/tree/release_files.sha256"
+  run_case listed-bare
+  check "a stray file with a bare line added to the list fails" equals "${STATUS}" "1"
+  check "its report says the list is not the zip's" contains "${OUT}" "is not the zip's"
+
+  new_case listed-hash
+  printf 'written at runtime\n' > "${CASES}/listed-hash/tree/stray.cfg"
+  printf '%s  stray.cfg\n' "$(openssl_sha256 "${CASES}/listed-hash/tree/stray.cfg")" >> "${CASES}/listed-hash/tree/release_files.sha256"
+  run_case listed-hash
+  check "a stray file listed with a good hash fails" equals "${STATUS}" "1"
+  check "its report says the list is not the zip's" contains "${OUT}" "is not the zip's"
+
+  new_case zip-no-list
+  rm "${CASES}/zip-no-list/tree/release_files.sha256"
+  zip_case "${CASES}/zip-no-list" "${CASE_ZIP}"
+  cp "${BASE}/tree/release_files.sha256" "${CASES}/zip-no-list/tree/release_files.sha256"
+  write_true_manifest "${CASES}/zip-no-list" "${CASE_ZIP}" 1.2.0
+  run_case zip-no-list
+  check "a zip that holds no list fails" equals "${STATUS}" "1"
+  check "its report says the list is not the zip's" contains "${OUT}" "is not the zip's"
+
+  new_case minted
+  printf 'uid://minted\n' > "${CASES}/minted/tree/commands/b.gd.uid"
+  run_case minted
+  check "a .uid the engine minted fails" equals "${STATUS}" "1"
+  check "its report names the file" contains "${OUT}" "commands/b.gd.uid"
+
+  new_case no-list
+  rm "${CASES}/no-list/tree/release_files.sha256"
+  run_case no-list
+  check "a tree with no list fails" equals "${STATUS}" "1"
+
+  new_case wrong-hash
+  write_case_manifest "${CASES}/wrong-hash" "${BASE_SIZE}" "${HASH_HELLO}" 1.2.0 "${CASE_ZIP}"
+  run_case wrong-hash
+  check "a wrong hash fails" equals "${STATUS}" "1"
+  check "its report names archive_sha256" contains "${OUT}" "archive_sha256 is '${HASH_HELLO}'"
+
+  new_case wrong-size
+  write_case_manifest "${CASES}/wrong-size" 4 "${BASE_HASH}" 1.2.0 "${CASE_ZIP}"
+  run_case wrong-size
+  check "a wrong size fails" equals "${STATUS}" "1"
+  check "its report names archive_size" contains "${OUT}" "archive_size is '4'"
+
+  new_case wrong-version
+  write_case_manifest "${CASES}/wrong-version" "${BASE_SIZE}" "${BASE_HASH}" 1.2.1 "${CASE_ZIP}"
+  run_case wrong-version
+  check "a wrong version fails" equals "${STATUS}" "1"
+  check "its report names the version" contains "${OUT}" "version is '1.2.1'"
+
+  # The zip is rebuilt, so the plugin.cfg clause is the only thing left to fail.
+  new_case tree-version
+  printf '[plugin]\nversion="1.1.9"\n' > "${CASES}/tree-version/tree/plugin.cfg"
+  rf_write_list "${CASES}/tree-version/tree"
+  zip_case "${CASES}/tree-version" "${CASE_ZIP}"
+  write_true_manifest "${CASES}/tree-version" "${CASE_ZIP}" 1.2.0
+  run_case tree-version
+  check "a plugin.cfg of another version fails" equals "${STATUS}" "1"
+  check "its report names that version" contains "${OUT}" "plugin.cfg says '1.1.9'"
+
+  new_case wrong-archive
+  write_case_manifest "${CASES}/wrong-archive" "${BASE_SIZE}" "${BASE_HASH}" 1.2.0 other.zip
+  run_case wrong-archive
+  check "another archive name fails" equals "${STATUS}" "1"
+  check "its report names the archive" contains "${OUT}" "archive is 'other.zip'"
+
+  # A zip named for another version, in a manifest that names that zip and agrees with
+  # the tree: only the zip name's clause is left to fail.
+  new_case zip-name
+  mv "${CASES}/zip-name/${CASE_ZIP}" "${CASES}/zip-name/godot-mcp-toolkit-1.2.1.zip"
+  write_true_manifest "${CASES}/zip-name" godot-mcp-toolkit-1.2.1.zip 1.2.0
+  run bash "${CHECK}" "${CASES}/zip-name/godot-mcp-toolkit-1.2.1.zip" "${CASES}/zip-name/manifest.json" "${CASES}/zip-name/tree"
+  check "a zip named for another version fails" equals "${STATUS}" "1"
+  check "its report names the zip" contains "${OUT}" "version is '1.2.0', the zip is godot-mcp-toolkit-1.2.1.zip"
+
+  new_case tampered-zip
+  printf 'x' >> "${CASES}/tampered-zip/${CASE_ZIP}"
+  run_case tampered-zip
+  check "a zip changed after the manifest fails" equals "${STATUS}" "1"
+  check "a zip changed after the manifest fails on its hash" contains "${OUT}" "archive_sha256 is '${BASE_HASH}'"
+else
+  skip "the check's cases need zip and unzip"
+fi
+
 if [[ -f "${WORK}/bash-build/dist-plugin/godot-mcp-toolkit-1.2.0.zip" ]]; then
   mkdir -p "${WORK}/unzipped"
-  unzip -q "${WORK}/bash-build/dist-plugin/godot-mcp-toolkit-1.2.0.zip" -d "${WORK}/unzipped"
+  unzip -q "${WORK}/bash-build/dist-plugin/godot-mcp-toolkit-1.2.0.zip" -d "${WORK}/unzipped" || true
   run bash "${CHECK}" "${WORK}/bash-build/dist-plugin/godot-mcp-toolkit-1.2.0.zip" \
     "${WORK}/bash-build/dist-plugin/godot-mcp-toolkit-1.2.0.update.json" \
     "${WORK}/unzipped/addons/godot_mcp_toolkit"
