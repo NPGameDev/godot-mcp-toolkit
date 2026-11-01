@@ -82,7 +82,7 @@ else
   if unzip -p "${ZIP}" "addons/godot_mcp_toolkit/${RF_LIST_NAME}" 2>/dev/null | cmp -s - "${TREE}/${RF_LIST_NAME}"; then
     echo "  ok: the list is the zip's"
   else
-    problem "the tree's ${RF_LIST_NAME} is not the zip's: the list changed after the build"
+    problem "the tree's ${RF_LIST_NAME} is not the zip's"
   fi
 fi
 

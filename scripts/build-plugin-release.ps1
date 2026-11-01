@@ -95,7 +95,7 @@ $Utf8NoBom = New-Object System.Text.UTF8Encoding $false
 
 # The list of the release's files, inside the zip: one "<sha256>  <path>" line per
 # file, paths relative to the addon folder with forward slashes, in byte order, the
-# list left out. It names every entry a zip may hold, and its hashes show a hand-edited
+# list left out. It names every file a zip may hold but itself, and its hashes show a hand-edited
 # file.
 $ListName = "release_files.sha256"
 # A typed string array, so Sort compares ordinally: the items of a pipeline's object

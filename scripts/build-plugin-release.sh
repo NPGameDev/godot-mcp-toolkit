@@ -63,7 +63,7 @@ EXPIRES_AT="$(rf_expires_at "${REPO_ROOT}")" || {
   exit 1
 }
 
-# The list of the release's files, inside the zip: it names every entry a zip may hold,
+# The list of the release's files, inside the zip: it names every file a zip may hold but itself,
 # and its hashes show a hand-edited file.
 rf_write_list "${STAGE}/addons/godot_mcp_toolkit"
 
