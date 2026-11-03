@@ -356,7 +356,10 @@ quick operational facts only.
   probe and a dummy `.mcp.json` in Text and compressed binary-token modes (Text
   only on 4.2), and fails if the parsed pack listing carries a toolkit script,
   the probe or
-  `.mcp.json`; `scripts/test_framework/check_export_strip.sh`). An aggregate
+  `.mcp.json` or anything from a seeded self-update folder;
+  `scripts/test_framework/check_export_strip.sh`), and the `apply-kill` job (4.2 and
+  4.7: the self-update's swap in real editors, killed at each step;
+  `test/apply_kill_driver/run_legs.sh`). An aggregate
   **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
   that ever becomes a required check (never an individual matrix row).
 - **Cross-version** (`.github/workflows/cross-version.yml`) — opt-in

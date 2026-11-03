@@ -27,8 +27,20 @@
 # probe as an extension. Both stay uncommitted, so the tool counts and coverage
 # manifests do not move.
 #
-# The preset's script_export_mode is rewritten in place for each export and
-# restored on exit.
+# Then it holds the self-update's folder to the same standard, with two more exports
+# in Text mode (update_folder_leg below). The folder and every other seed they need
+# are written here and deleted on exit, so a checkout that already has that folder is
+# a setup error:
+#   - include filter `*`: no entry under the folder, and a seeded sibling with no dot,
+#     which ships only because of that filter, must be there;
+#   - selected scenes: a scene references a script in the seeded backup, and the
+#     exporter offers that path because of the reference. No entry under the folder.
+#     The same scene references a script in another dot-folder, which must ship, so
+#     the reference did reach the exporter and only the strip kept the backup out.
+#     The pack is then run with --main-pack: the scene that references the backup must
+#     fail to load, and a control scene without that reference must run.
+#
+# The preset is rewritten in place for each export and restored on exit.
 #
 # Usage: bash scripts/test_framework/check_export_strip.sh <probe-res-path> <mode>...
 #   (project root; modes: 0 = Text, 1 = binary tokens, 2 = compressed binary
@@ -70,10 +82,22 @@ if [ ! -f "$PROBE_FILE" ]; then
   exit 2
 fi
 
+UPDATE_FOLDER="addons/.godot_mcp_toolkit_update"
+SEED_SIBLING_FOLDER="addons/godot_mcp_toolkit_update"
+SEED_DOT_FOLDER="addons/.export_strip_seed"
+SEED_SCENE="export_strip_seed.tscn"
+SEED_CONTROL_SCENE="export_strip_seed_control.tscn"
+SEED_BACKUP_SCRIPT="$UPDATE_FOLDER/backup-1.0.0/seed_backup.gd"
+SEED_DOT_SCRIPT="$SEED_DOT_FOLDER/seed_control.gd"
+if [ -e "$UPDATE_FOLDER" ]; then
+  echo "ERROR: $UPDATE_FOLDER already exists; this check seeds it and deletes it after" >&2
+  exit 2
+fi
+
 OUT="${EXPORT_STRIP_OUT:-$(mktemp -d)}"
 mkdir -p "$OUT"
 cp "$PRESETS_FILE" "$OUT/export_presets.cfg.orig"
-trap 'cp "$OUT/export_presets.cfg.orig" "$PRESETS_FILE"' EXIT
+trap 'cp "$OUT/export_presets.cfg.orig" "$PRESETS_FILE"; rm -rf "$UPDATE_FOLDER" "$SEED_SIBLING_FOLDER" "$SEED_DOT_FOLDER" "$SEED_SCENE" "$SEED_CONTROL_SCENE"' EXIT
 
 FAILED=0
 # Lines of stdin that start with $1, compared as a literal string.
@@ -151,6 +175,148 @@ for MODE in "$@"; do
     printf '%s\n' "$WARNING_LINES" | head -3 | sed 's/^/  /'
   fi
 done
+
+fail_update_folder() {
+  echo "::error title=Export strip (update folder)::$1"
+  FAILED=1
+}
+
+# Exports the current preset to $OUT/<name>.pck and writes its parsed listing beside it.
+export_listing() {
+  local name="$1" export_exit=0
+  rm -f "$OUT/$name.pck"
+  timeout 180 "$GODOT_BIN" --headless --path . --export-pack "$PRESET" "$OUT/$name.pck" > "$OUT/export_$name.log" 2>&1 || export_exit=$?
+  if [ "$export_exit" -ne 0 ] || [ ! -f "$OUT/$name.pck" ]; then
+    fail_update_folder "the $name export failed (exit $export_exit); log tail below"
+    tail -40 "$OUT/export_$name.log"
+    return 1
+  fi
+  if ! "$PYTHON" "$LISTER" "$OUT/$name.pck" | tr -d '\r' > "$OUT/pck_$name.txt"; then
+    fail_update_folder "pck_list.py could not read the $name pack"
+    return 1
+  fi
+}
+
+assert_nothing_from_update_folder() {
+  local name="$1" hits
+  hits="$(with_prefix "res://$UPDATE_FOLDER" < "$OUT/pck_$name.txt")"
+  echo "$name: entries under the update folder: $(printf '%s' "$hits" | count_lines)"
+  if [ -n "$hits" ]; then
+    fail_update_folder "the $name export shipped the update folder"
+    printf '%s\n' "$hits" | head -5 | sed 's/^/  /'
+  fi
+}
+
+assert_shipped() {
+  local name="$1" entry="$2" why="$3"
+  if [ -z "$(with_prefix "$entry" < "$OUT/pck_$name.txt")" ]; then
+    fail_update_folder "$entry is not in the $name pack, so $why"
+  fi
+}
+
+# Writes the folder as the self-update leaves it, with something of every kind in it.
+seed_update_folder() {
+  mkdir -p "$UPDATE_FOLDER/backup-1.0.0" "$UPDATE_FOLDER/stage" "$UPDATE_FOLDER/1.0.1" "$SEED_SIBLING_FOLDER"
+  : > "$UPDATE_FOLDER/.gdignore"
+  printf '*\n' > "$UPDATE_FOLDER/.gitignore"
+  printf '*\n' > "$UPDATE_FOLDER/.p4ignore"
+  printf '{"format": 1, "state": "staged", "from": "1.0.0", "to": "1.0.1"}\n' > "$UPDATE_FOLDER/journal.json"
+  printf 'seed\n' > "$UPDATE_FOLDER/install.log"
+  printf 'extends Node\n\n\nfunc _ready() -> void:\n\tprint("export strip seed: backup script ran")\n' > "$SEED_BACKUP_SCRIPT"
+  printf 'extends Node\n' > "$UPDATE_FOLDER/stage/seed_stage.gd"
+  printf 'not a real zip\n' > "$UPDATE_FOLDER/1.0.1/godot-mcp-toolkit-1.0.1.zip"
+  printf 'seed\n' > "$SEED_SIBLING_FOLDER/seed_sibling.txt"
+}
+
+seed_scenes() {
+  mkdir -p "$SEED_DOT_FOLDER"
+  printf 'extends Node\n\n\nfunc _ready() -> void:\n\tprint("export strip seed: control scene ran")\n\tget_tree().quit()\n' > "$SEED_DOT_SCRIPT"
+  cat > "$SEED_SCENE" <<EOF
+[gd_scene load_steps=3 format=3]
+
+[ext_resource type="Script" path="res://$SEED_BACKUP_SCRIPT" id="1"]
+[ext_resource type="Script" path="res://$SEED_DOT_SCRIPT" id="2"]
+
+[node name="Seed" type="Node"]
+script = ExtResource("1")
+
+[node name="Control" type="Node" parent="."]
+script = ExtResource("2")
+EOF
+  cat > "$SEED_CONTROL_SCENE" <<EOF
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://$SEED_DOT_SCRIPT" id="1"]
+
+[node name="SeedControl" type="Node"]
+script = ExtResource("1")
+EOF
+}
+
+# Runs a scene from the pack alone, from an empty folder: res:// falls back to the
+# working folder, where the project's own files would stand in for what the pack lacks.
+# The run's output goes to $OUT/<log>.log.
+run_scene_from_pack() {
+  local pack="$1" scene="$2" log="$3" run_folder="$OUT/empty_run_folder" godot="$GODOT_BIN"
+  mkdir -p "$run_folder"
+  case "$godot" in
+    */*) godot="$(cd "$(dirname "$godot")" && pwd)/$(basename "$godot")" ;;
+  esac
+  (cd "$run_folder" && timeout 60 "$godot" --headless --main-pack "$pack" "res://$scene" --quit-after 300 > "$log" 2>&1 < /dev/null) || true
+}
+
+# One leg in Text mode, the only mode every version has. The strip's script handling is
+# what the modes above prove; this is about the folder.
+update_folder_leg() {
+  local out_absolute
+  out_absolute="$(cd "$OUT" && pwd)"
+  echo ""
+  echo "=== update folder: include filter * ==="
+  seed_update_folder
+  cp "$OUT/export_presets.cfg.orig" "$PRESETS_FILE"
+  sed -i -e "s/^script_export_mode=[0-9]*/script_export_mode=0/" -e 's/^include_filter=.*/include_filter="*"/' "$PRESETS_FILE"
+  if ! tr -d '\r' < "$PRESETS_FILE" | grep -qx 'include_filter="\*"'; then
+    echo "ERROR: could not set the include filter in $PRESETS_FILE" >&2
+    exit 2
+  fi
+  if export_listing update_filter; then
+    assert_nothing_from_update_folder update_filter
+    assert_shipped update_filter "res://$SEED_SIBLING_FOLDER/seed_sibling.txt" "the include filter did nothing and the check proves nothing"
+  fi
+
+  echo ""
+  echo "=== update folder: a selected scene references the backup ==="
+  seed_scenes
+  cp "$OUT/export_presets.cfg.orig" "$PRESETS_FILE"
+  sed -i -e "s/^script_export_mode=[0-9]*/script_export_mode=0/" \
+    -e "s|^export_filter=.*|export_filter=\"scenes\"\nexport_files=PackedStringArray(\"res://$SEED_SCENE\", \"res://$SEED_CONTROL_SCENE\")|" \
+    "$PRESETS_FILE"
+  if ! tr -d '\r' < "$PRESETS_FILE" | grep -qx 'export_filter="scenes"'; then
+    echo "ERROR: could not select scenes in $PRESETS_FILE" >&2
+    exit 2
+  fi
+  export_listing update_scenes || return 0
+  assert_nothing_from_update_folder update_scenes
+  assert_shipped update_scenes "res://$SEED_SCENE" "the scene that references the backup never exported"
+  assert_shipped update_scenes "res://$SEED_DOT_SCRIPT" "a reference into a dot-folder does not reach the exporter and the check proves nothing"
+
+  run_scene_from_pack "$out_absolute/update_scenes.pck" "$SEED_CONTROL_SCENE" "$out_absolute/run_control.log"
+  run_scene_from_pack "$out_absolute/update_scenes.pck" "$SEED_SCENE" "$out_absolute/run_seed.log"
+  if ! grep -aqF "export strip seed: control scene ran" "$out_absolute/run_control.log"; then
+    fail_update_folder "the control scene did not run from the pack, so the failed load below would prove nothing"
+    tail -20 "$out_absolute/run_control.log"
+  fi
+  if grep -aqF "export strip seed: backup script ran" "$out_absolute/run_seed.log"; then
+    fail_update_folder "the scene that references the backup ran its backup script"
+  fi
+  if grep -aqF "export strip seed: control scene ran" "$out_absolute/run_seed.log"; then
+    fail_update_folder "the scene that references the backup loaded without it"
+  fi
+  echo "the scene that references the backup, run from the pack:"
+  grep -aE "^(ERROR|SCRIPT ERROR)" "$out_absolute/run_seed.log" | head -4 | sed 's/^/  /' || true
+}
+
+update_folder_leg
 
 echo ""
 if [ "$FAILED" -ne 0 ]; then

@@ -1,0 +1,489 @@
+#!/usr/bin/env bash
+# test/apply_kill_driver/run_legs.sh
+# The self-update's swap in real editors: kills at each step, a clean update, a scan in
+# flight at exit, a real git repository and a linked folder, each on a scratch project.
+#
+# Nothing in the shipped plugin calls the applier or the settler yet, so a test-only
+# plugin (plugin/driver_plugin.gd) brings the calls: at start it settles, at exit it
+# applies, and it can kill the editor at one of the steps the applier names. Each session
+# is one real editor start and exit, closed by a close request sent from inside it. The
+# run grades what that left: the plugin's notes, the journal and the folders on disk,
+# never an exit code.
+#
+# Both versions are built by scripts/build-plugin-release.sh and signed by
+# scripts/sign-release.sh with a throwaway key, so staging runs a really built zip through
+# the name rules. A is this checkout's version; B is one patch newer. Each carries a file
+# the other lacks, and A also gets a file by hand, the one a release never lists.
+#
+# Legs (default: all of them):
+#   k1     kill with the journal at applying; the next start settles, the next exit retries
+#   k2     kill between the renames; the next start finds no toolkit, and both trees whole
+#   k3     kill after the swap; the next start settles it as applied
+#   clean  A to B with no copy-back; the toolkit starts on B and its icon reimports
+#   scan   a scan requested in the same frame as the close. Evidence: a result nobody
+#          predicted prints a warning and is not a failure, as long as the row really ran.
+#   git    the update folder stays out of a real repository's index
+#   link   a linked addon folder refuses the swap and its target stays whole
+#
+# Usage: bash test/apply_kill_driver/run_legs.sh [leg...]
+#   (needs a display: xvfb-run on Linux. Runs on Linux and in Git Bash on Windows.)
+# Environment variables:
+#   GODOT_BIN                  - Godot binary (default: "godot")
+#   APPLY_KILL_OUT             - folder for everything this run writes (default: a new
+#                                temp folder); logs/ under it holds the evidence
+#   APPLY_KILL_SESSION_TIMEOUT - seconds one editor session gets (default: 300)
+# Exit 0 = every leg passed, 1 = a leg failed, 2 = setup error. The last line printed is
+# the verdict, so a caller can tell a finished run from one that died.
+
+set -uo pipefail
+
+GODOT_BIN="${GODOT_BIN:-godot}"
+SESSION_TIMEOUT="${APPLY_KILL_SESSION_TIMEOUT:-300}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+OUT="${APPLY_KILL_OUT:-$(mktemp -d)}"
+mkdir -p "$OUT"
+OUT="$(cd "$OUT" && pwd)"
+LOGS="$OUT/logs"
+PROJECT_NAME="ApplyKillDriver"
+ADDON="addons/godot_mcp_toolkit"
+UPDATES="addons/.godot_mcp_toolkit_update"
+DRIVER_DIR=".kill_driver"
+ONLY_IN_A="driver_only_in_a.txt"
+ONLY_IN_B="driver_only_in_b.txt"
+HAND_ADDED="driver_added_by_hand.txt"
+ICON_IMPORT="icon.svg.import"
+ALL_LEGS="k1 k2 k3 clean scan git link"
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) ON_WINDOWS=1 ;;
+  *) ON_WINDOWS=0 ;;
+esac
+
+# Everything the editor keeps outside the project goes under the run's folder, so a run
+# neither reads nor changes this machine's editor settings.
+EDITOR_HOME="$OUT/editor_home"
+if [ "$ON_WINDOWS" = 1 ]; then
+  EDITOR_ENV=("APPDATA=$(cygpath -m "$EDITOR_HOME/appdata")" "LOCALAPPDATA=$(cygpath -m "$EDITOR_HOME/localappdata")")
+  EDITOR_CONFIG="$EDITOR_HOME/appdata/Godot"
+  EDITOR_USER_DATA="$EDITOR_HOME/appdata/Godot/app_userdata/$PROJECT_NAME"
+  GUI_ARGS=()
+else
+  EDITOR_ENV=("HOME=$EDITOR_HOME" "XDG_DATA_HOME=$EDITOR_HOME/.local/share" "XDG_CONFIG_HOME=$EDITOR_HOME/.config" "XDG_CACHE_HOME=$EDITOR_HOME/.cache")
+  EDITOR_CONFIG="$EDITOR_HOME/.config/godot"
+  EDITOR_USER_DATA="$EDITOR_HOME/.local/share/godot/app_userdata/$PROJECT_NAME"
+  GUI_ARGS=(--rendering-driver opengl3 --audio-driver Dummy)
+fi
+
+FAILED=0
+LEG=""
+LEG_LOGS=""
+PROJECT=""
+A_VERSION=""
+B_VERSION=""
+B_TREE=""
+A_DIGEST=""
+
+die() {
+  echo "ERROR: $1" >&2
+  echo "apply kill legs: SETUP ERROR"
+  exit 2
+}
+
+check() { # <what> <actual> <expected>
+  if [ "$2" = "$3" ]; then
+    echo "  ok: $1"
+  else
+    echo "::error title=Apply kill driver ($LEG)::$1: expected '$3', got '$2'"
+    FAILED=1
+  fi
+}
+
+# A file's text, line ends normalised; nothing when it is not there.
+text_of() {
+  [ -f "$1" ] && tr -d '\r' < "$1"
+}
+
+# Every file's path and bytes under a folder, its engine-written .import files aside.
+tree_digest() {
+  [ -d "$1" ] || { echo "no folder"; return 0; }
+  (cd "$1" && find . -type f ! -name '*.import' -print0 | LC_ALL=C sort -z | xargs -0 sha256sum | sha256sum | cut -d' ' -f1)
+}
+
+note() { # <session> <key>: the session's last note under that key
+  text_of "$LEG_LOGS/$1.txt" | sed -n "s/^$2=//p" | tail -1
+}
+
+steps_of() { # <session>: the steps the applier reached, in order
+  text_of "$LEG_LOGS/$1.txt" | sed -n 's/^step=//p' | paste -sd, -
+}
+
+journal_state() {
+  text_of "$PROJECT/$UPDATES/journal.json" | sed -nE 's/.*"state": *"([^"]*)".*/\1/p'
+}
+
+live_version() {
+  text_of "$PROJECT/$ADDON/plugin.cfg" | sed -nE 's/^version="([^"]*)".*/\1/p'
+}
+
+exists() { # <path relative to the project>
+  if [ -e "$PROJECT/$1" ] || [ -L "$PROJECT/$1" ]; then echo present; else echo absent; fi
+}
+
+# One real editor start and exit. <id> names the session; the rest are its key=value lines.
+session() {
+  local id="$1"
+  shift
+  mkdir -p "$PROJECT/$DRIVER_DIR" "$LEG_LOGS"
+  printf '%s\n' "id=$id" "$@" > "$PROJECT/$DRIVER_DIR/session.txt"
+  echo "  session $id: $*"
+  local started="$SECONDS" editor_exit=0
+  env "${EDITOR_ENV[@]}" timeout -k 10 "$SESSION_TIMEOUT" \
+    "$GODOT_BIN" ${GUI_ARGS[@]+"${GUI_ARGS[@]}"} --editor --path "$PROJECT" \
+    > "$LEG_LOGS/$id.log" 2>&1 < /dev/null || editor_exit=$?
+  rm -f "$PROJECT/$DRIVER_DIR/session.txt"
+  cp "$PROJECT/$DRIVER_DIR/$id.txt" "$LEG_LOGS/$id.txt" 2>/dev/null || : > "$LEG_LOGS/$id.txt"
+  # Recorded for a reader. A kill exits 0 on Windows and 137 on Linux, so nothing grades it.
+  echo "editor_exit=$editor_exit" >> "$LEG_LOGS/$id.txt"
+  echo "seconds=$((SECONDS - started))" >> "$LEG_LOGS/$id.txt"
+  cp "$PROJECT/$UPDATES/install.log" "$LEG_LOGS/$id.install.log" 2>/dev/null || true
+  cp "$PROJECT/$UPDATES/journal.json" "$LEG_LOGS/$id.journal.json" 2>/dev/null || true
+  check "session $id started" "$(note "$id" session_started)" "1"
+}
+
+# A release of <version> built by the real script in a throwaway copy of this checkout.
+# The copy gets a commit of its own, since the manifest's expiry reads HEAD's time.
+build_release() { # <version> <file only this version has> <out folder>
+  local version="$1" only_here="$2" out="$3" tree="$OUT/build/$1"
+  mkdir -p "$tree/addons" "$out"
+  cp -r "$REPO_ROOT/$ADDON" "$tree/addons/" || return 1
+  cp -r "$REPO_ROOT/scripts" "$tree/" || return 1
+  # A checkout an editor has opened holds .import files; a release's clean checkout has none.
+  find "$tree/addons" -name '*.import' -delete
+  rm -f "$tree/$ADDON/release_files.sha256"
+  sed -i -E "s/^version=\"[^\"]*\"/version=\"$version\"/" "$tree/$ADDON/plugin.cfg"
+  printf 'only in %s\n' "$version" > "$tree/$ADDON/$only_here"
+  git -C "$tree" init -q || return 1
+  git -C "$tree" -c user.name=driver -c user.email=driver@example.invalid commit -q --allow-empty -m build || return 1
+  (cd "$tree" && bash scripts/build-plugin-release.sh) || return 1
+  cp "$tree/dist-plugin/"* "$out/" || return 1
+  rm -rf "$tree"
+}
+
+# The editor's own settings and the toolkit's first-run wizard, seen already.
+seed_editor_home() {
+  local minor settings='[gd_resource type="EditorSettings" format=3]
+
+[resource]
+interface/editor/single_window_mode = true
+interface/editor/editor_language = "en"
+'
+  minor="$("$GODOT_BIN" --version 2>/dev/null | tr -d '\r' | head -1 | cut -d. -f1,2)"
+  [ -n "$minor" ] || die "$GODOT_BIN --version printed nothing"
+  GODOT_MINOR="$minor"
+  mkdir -p "$EDITOR_CONFIG" "$EDITOR_USER_DATA/addons/godot_mcp_toolkit"
+  printf '%s' "$settings" > "$EDITOR_CONFIG/editor_settings-4.tres"
+  printf '%s' "$settings" > "$EDITOR_CONFIG/editor_settings-$minor.tres"
+  printf '%s' '{"format": 1, "seen": ["welcome", "mcp_json", "optional_steps", "updates", "dock"]}' \
+    > "$EDITOR_USER_DATA/addons/godot_mcp_toolkit/mcp_onboarding_shown_v001"
+}
+
+# Builds and signs both releases, then makes the project every leg starts from: A
+# installed and warmed, one windowed session behind it, B's assets in the update folder
+# as a download leaves them, and the stage made by the real stepper in a real editor.
+prepare_template() {
+  local releases="$OUT/releases"
+  LEG="setup"
+  LEG_LOGS="$LOGS/setup"
+  PROJECT="$OUT/template"
+  mkdir -p "$releases" "$PROJECT/addons" "$LEG_LOGS"
+
+  A_VERSION="$(sed -nE 's/^version="([^"]*)".*/\1/p' "$REPO_ROOT/$ADDON/plugin.cfg" | tr -d '\r')"
+  [ -n "$A_VERSION" ] || die "no version in $ADDON/plugin.cfg"
+  B_VERSION="${A_VERSION%.*}.$((${A_VERSION##*.} + 1))"
+  echo "=== Build: A $A_VERSION, B $B_VERSION ==="
+  build_release "$A_VERSION" "$ONLY_IN_A" "$releases" || die "could not build $A_VERSION"
+  build_release "$B_VERSION" "$ONLY_IN_B" "$releases" || die "could not build $B_VERSION"
+
+  local private_key="$OUT/release_key.pem" public_key="$OUT/release_key.pub.pem"
+  openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$private_key" 2>/dev/null || die "could not make a key"
+  openssl pkey -in "$private_key" -pubout -out "$public_key" || die "could not read the key's public half"
+  # sign-release.sh reads a passphrase line from a pipe even for a plain key.
+  echo unused | bash "$REPO_ROOT/scripts/sign-release.sh" \
+    "$releases/godot-mcp-toolkit-$B_VERSION.update.json" "$private_key" "$public_key" > /dev/null \
+    || die "could not sign $B_VERSION"
+
+  unzip -q "$releases/godot-mcp-toolkit-$A_VERSION.zip" -d "$PROJECT" || die "could not unpack A"
+  printf 'put here by hand\n' > "$PROJECT/$ADDON/$HAND_ADDED"
+  B_TREE="$OUT/b_tree"
+  unzip -q "$releases/godot-mcp-toolkit-$B_VERSION.zip" -d "$B_TREE" || die "could not unpack B"
+  B_TREE="$B_TREE/$ADDON"
+
+  cp -r "$REPO_ROOT/test/apply_kill_driver/plugin" "$PROJECT/addons/apply_kill_driver"
+  mkdir -p "$PROJECT/$DRIVER_DIR"
+  cp "$public_key" "$PROJECT/$DRIVER_DIR/public_key.pem"
+  cat > "$PROJECT/project.godot" <<EOF
+config_version=5
+
+[application]
+
+config/name="$PROJECT_NAME"
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/apply_kill_driver/plugin.cfg", "res://$ADDON/plugin.cfg")
+EOF
+  seed_editor_home
+
+  echo "=== Warm-up ==="
+  (cd "$PROJECT" && env "${EDITOR_ENV[@]}" GODOT_BIN="$GODOT_BIN" GODOT_WARM_ONLY=1 \
+    bash "$REPO_ROOT/scripts/test_framework/run_units_cold.sh") > "$LEG_LOGS/warm.log" 2>&1 \
+    || { tail -20 "$LEG_LOGS/warm.log"; die "the warm-up failed"; }
+
+  echo "=== Template sessions ==="
+  session first_start wait_toolkit=1 wait_import=1
+  check "A's toolkit loads" "$(note first_start toolkit_loaded)" "true"
+  check "A's toolkit reports A" "$(note first_start toolkit_version)" "$A_VERSION"
+  check "the icon has its .import before any swap" "$(exists "$ADDON/$ICON_IMPORT")" "present"
+
+  mkdir -p "$PROJECT/$UPDATES/$B_VERSION"
+  cp "$releases/godot-mcp-toolkit-$B_VERSION."* "$PROJECT/$UPDATES/$B_VERSION/"
+  session stage "stage=1" "from=$A_VERSION" "to=$B_VERSION"
+  check "the built zip passes the name rules and stages whole" "$(note stage stage_state)" "done"
+  check "the stepper wrote every listed file" "$(note stage stage_written)" "$(note stage stage_total)"
+  check "the stage equals the zip" "$(tree_digest "$PROJECT/$UPDATES/stage")" "$(tree_digest "$B_TREE")"
+  check "the journal says staged" "$(journal_state)" "staged"
+
+  check "the ignore file for git holds a star" "$(text_of "$PROJECT/$UPDATES/.gitignore")" "*"
+  check "the ignore file for Perforce holds a star" "$(text_of "$PROJECT/$UPDATES/.p4ignore")" "*"
+  check "the ignore file for the engine is there and empty" \
+    "$( [ -f "$PROJECT/$UPDATES/.gdignore" ] && wc -c < "$PROJECT/$UPDATES/.gdignore" | tr -d ' ' )" "0"
+  A_DIGEST="$(tree_digest "$PROJECT/$ADDON")"
+  [ "$FAILED" = 0 ] || die "the template did not come out as the legs need it"
+}
+
+begin_leg() {
+  LEG="$1"
+  LEG_LOGS="$LOGS/$LEG"
+  PROJECT="$OUT/legs/$LEG"
+  echo ""
+  echo "=== Leg $LEG ==="
+  mkdir -p "$OUT/legs" "$LEG_LOGS"
+  cp -a "$OUT/template" "$PROJECT" || die "could not copy the template for $LEG"
+}
+
+# What a kill at <step> must leave in the session's notes: it fired there, nothing ran past
+# it, and the apply never returned.
+check_killed_at() { # <session> <step> <steps expected>
+  check "the applier reached exactly these steps" "$(steps_of "$1")" "$3"
+  check "the kill fired at $2" "$(note "$1" kill_fired)" "$2"
+  check "the process died at the kill" "$(note "$1" survived_kill)" ""
+  check "the apply never returned" "$(note "$1" apply_state)" ""
+}
+
+check_updated_on_b() { # <session>
+  check "settle reports the update" "$(note "$1" settle_report)" "updated"
+  check "from A" "$(note "$1" settle_from)" "$A_VERSION"
+  check "to B" "$(note "$1" settle_to)" "$B_VERSION"
+  check "B is on disk" "$(live_version)" "$B_VERSION"
+  check "the toolkit reached its loaded state" "$(note "$1" toolkit_loaded)" "true"
+  check "the running toolkit reports B" "$(note "$1" toolkit_version)" "$B_VERSION"
+  check "the journal is gone" "$(exists "$UPDATES/journal.json")" "absent"
+  check "the stage is gone" "$(exists "$UPDATES/stage")" "absent"
+  check "the release's folder is gone" "$(exists "$UPDATES/$B_VERSION")" "absent"
+  check "the backup stays, whole" "$(tree_digest "$PROJECT/$UPDATES/backup-$A_VERSION")" "$A_DIGEST"
+}
+
+leg_k1() {
+  begin_leg k1
+  session kill apply=1 kill_at=applying
+  check_killed_at kill applying "checked,applying"
+  check "the journal says applying" "$(journal_state)" "applying"
+  check "the live folder is still A" "$(tree_digest "$PROJECT/$ADDON")" "$A_DIGEST"
+  check "the stage is whole" "$(tree_digest "$PROJECT/$UPDATES/stage")" "$(tree_digest "$B_TREE")"
+
+  session retry settle=1 apply=1
+  check "settle puts it back to waiting" "$(note retry settle_report)" "waiting"
+  check "the next exit retries and applies" "$(note retry apply_state)" "applied"
+  check "the retry walked every step" "$(steps_of retry)" "checked,applying,live_moved,stage_moved"
+  check "the journal says applied" "$(journal_state)" "applied"
+
+  session after_retry settle=1 wait_toolkit=1
+  check_updated_on_b after_retry
+}
+
+leg_k2() {
+  begin_leg k2
+  session kill apply=1 kill_at=live_moved
+  check_killed_at kill live_moved "checked,applying,live_moved"
+  check "the journal says applying" "$(journal_state)" "applying"
+  check "the live folder is gone" "$(exists "$ADDON")" "absent"
+  check "the backup holds A, whole" "$(tree_digest "$PROJECT/$UPDATES/backup-$A_VERSION")" "$A_DIGEST"
+  check "the stage is whole" "$(tree_digest "$PROJECT/$UPDATES/stage")" "$(tree_digest "$B_TREE")"
+
+  # The settler sits in the folder that is gone, so no start can run it here. This row
+  # belongs to a guard outside that folder; what a real start must do is disturb nothing.
+  session next_start wait_toolkit=0
+  check "the next start finds no toolkit" "$(note next_start toolkit_folder_present)" "false"
+  check "the journal still says applying" "$(journal_state)" "applying"
+  check "the live folder is still gone" "$(exists "$ADDON")" "absent"
+  check "the backup is still whole" "$(tree_digest "$PROJECT/$UPDATES/backup-$A_VERSION")" "$A_DIGEST"
+  check "the stage is still whole" "$(tree_digest "$PROJECT/$UPDATES/stage")" "$(tree_digest "$B_TREE")"
+}
+
+leg_k3() {
+  begin_leg k3
+  session kill apply=1 kill_at=stage_moved
+  check_killed_at kill stage_moved "checked,applying,live_moved,stage_moved"
+  check "the journal still says applying" "$(journal_state)" "applying"
+  check "the live folder is B, whole" "$(tree_digest "$PROJECT/$ADDON")" "$(tree_digest "$B_TREE")"
+
+  session next_start settle=1 wait_toolkit=1
+  check_updated_on_b next_start
+}
+
+leg_clean() {
+  begin_leg clean
+  session apply apply=1
+  check "the apply finished" "$(note apply apply_state)" "applied"
+  check "the apply walked every step" "$(steps_of apply)" "checked,applying,live_moved,stage_moved"
+  check "the journal says applied" "$(journal_state)" "applied"
+  check "the live folder is B, whole" "$(tree_digest "$PROJECT/$ADDON")" "$(tree_digest "$B_TREE")"
+  check "no copy-back: the hand-added file stays behind" "$(exists "$ADDON/$HAND_ADDED")" "absent"
+  check "no copy-back: A's own file stays behind" "$(exists "$ADDON/$ONLY_IN_A")" "absent"
+  check "B's own file arrived" "$(exists "$ADDON/$ONLY_IN_B")" "present"
+  check "the backup holds the hand-added file" "$(exists "$UPDATES/backup-$A_VERSION/$HAND_ADDED")" "present"
+  check "the swap discards the icon's .import" "$(exists "$ADDON/$ICON_IMPORT")" "absent"
+  check "the backup holds that .import" "$(exists "$UPDATES/backup-$A_VERSION/$ICON_IMPORT")" "present"
+
+  session next_start settle=1 wait_toolkit=1 wait_import=1
+  check_updated_on_b next_start
+  check "the plugin stays enabled" "$(note next_start toolkit_enabled)" "true"
+  check "the icon reimports and loads" "$(note next_start icon_imported)" "true"
+  check "the .import is back" "$(exists "$ADDON/$ICON_IMPORT")" "present"
+  check "B's start logs no script error" "$(grep -ac '^SCRIPT ERROR' "$LEG_LOGS/next_start.log")" "0"
+  echo "  record: the apply took $(note apply apply_ms) ms inside _exit_tree"
+}
+
+leg_scan() {
+  begin_leg scan
+  session apply apply=1 scan_at_close=1
+  check "the scan was requested in the closing frame" "$(note apply scan_called)" "1"
+  check "the editor's exit reached the plugin" "$(note apply exit_tree_reached)" "1"
+  session next_start settle=1 wait_toolkit=1
+
+  local scanning_after apply_state report errors
+  scanning_after="$(note apply scanning_after_call)"
+  apply_state="$(note apply apply_state)"
+  report="$(note next_start settle_report)"
+  errors="$(grep -acE '^(ERROR|SCRIPT ERROR)' "$LEG_LOGS/apply.log")"
+  echo "  record: scanning right after the call: $scanning_after"
+  echo "  record: scanning at each step: $(text_of "$LEG_LOGS/apply.txt" | sed -n 's/^scanning_at_step=//p' | paste -sd' ' -)"
+  echo "  record: apply_state=$apply_state reason=$(note apply apply_reason) editor_exit=$(note apply editor_exit)"
+  echo "  record: next start's report=$report; live version $(live_version); error lines in the closing log: $errors"
+  if [ "$apply_state" != "applied" ] || [ "$report" != "updated" ] \
+    || [ "$(tree_digest "$PROJECT/$ADDON")" != "$(tree_digest "$B_TREE")" ]; then
+    echo "::warning title=Apply kill driver (scan)::a scan in flight changed the outcome: apply_state=$apply_state, report=$report. See logs/scan."
+  fi
+}
+
+git_in_project() {
+  git -C "$PROJECT" -c core.autocrlf=false -c core.safecrlf=false -c user.name=driver -c user.email=driver@example.invalid "$@"
+}
+
+# How many staged paths start with <prefix>.
+staged_under() {
+  git_in_project diff --cached --name-only | tr -d '\r' | grep -c "^$1" || true
+}
+
+leg_git() {
+  begin_leg git
+  git_in_project init -q || die "git init failed"
+  printf '.godot/\n%s/\n!addons/**\n' "$DRIVER_DIR" > "$PROJECT/.gitignore"
+
+  git_in_project add -A
+  check "after staging, git add -A stages the toolkit" "$(staged_under "$ADDON/")" "$(git_in_project ls-files "$ADDON/" | wc -l | tr -d ' ')"
+  check "after staging, it stages nothing from the update folder" "$(staged_under "$UPDATES/")" "0"
+  git_in_project commit -q -m baseline
+
+  # Without the ignore file the same command takes the folder, so the rule above is what
+  # kept it out.
+  rm "$PROJECT/$UPDATES/.gitignore"
+  git_in_project add -A
+  local exposed
+  exposed="$(staged_under "$UPDATES/")"
+  if [ "$exposed" -eq 0 ]; then
+    check "with its .gitignore deleted, the folder shows up" "$exposed" "more than 0"
+  else
+    echo "  ok: with its .gitignore deleted, the folder shows up ($exposed paths)"
+  fi
+  git_in_project reset -q
+
+  session apply apply=1
+  check "the apply finished" "$(note apply apply_state)" "applied"
+  check "another entry point writes the .gitignore back" "$(text_of "$PROJECT/$UPDATES/.gitignore")" "*"
+  git_in_project add -A
+  check "after the swap, git add -A stages the toolkit's change" "$(staged_under "$ADDON/plugin.cfg")" "1"
+  check "after the swap, it stages nothing from the update folder" "$(staged_under "$UPDATES/")" "0"
+  git_in_project diff --cached --name-only > "$LEG_LOGS/staged_after_swap.txt"
+}
+
+leg_link() {
+  # Godot 4.2 on Windows cannot see a link, so the swap goes ahead there. That case has its
+  # own proof; this leg is about the refusal.
+  if [ "$ON_WINDOWS" = 1 ] && [ "$GODOT_MINOR" = "4.2" ]; then
+    echo ""
+    echo "=== Leg link: skipped, Godot 4.2 on Windows does not detect a link ==="
+    return 0
+  fi
+  begin_leg link
+  local target="$OUT/legs/link_target"
+  mv "$PROJECT/$ADDON" "$target" || die "could not move the addon out"
+  if [ "$ON_WINDOWS" = 1 ]; then
+    cmd //c mklink //J "$(cygpath -w "$PROJECT/$ADDON")" "$(cygpath -w "$target")" > /dev/null \
+      || die "could not make a junction"
+  else
+    ln -s "$target" "$PROJECT/$ADDON" || die "could not make a link"
+  fi
+
+  session apply apply=1
+  check "the apply refuses" "$(note apply apply_state)" "not_applied"
+  check "the refusal names the link" "$(note apply apply_reason)" "The toolkit's folder is a link to another place."
+  check "no step of the swap ran" "$(steps_of apply)" ""
+  check "the link's target is whole" "$(tree_digest "$target")" "$A_DIGEST"
+  check "the link stays" "$(exists "$ADDON/plugin.cfg")" "present"
+  check "no backup was taken" "$(exists "$UPDATES/backup-$A_VERSION")" "absent"
+  check "the stage is gone" "$(exists "$UPDATES/stage")" "absent"
+
+  session next_start settle=1
+  check "the next start reports the failure" "$(note next_start settle_report)" "failed"
+  check "and clears the journal" "$(exists "$UPDATES/journal.json")" "absent"
+  check "the link's target is still whole" "$(tree_digest "$target")" "$A_DIGEST"
+}
+
+[ -f "$REPO_ROOT/project.godot" ] || die "cannot find the repository root from $0"
+command -v "$GODOT_BIN" > /dev/null 2>&1 || die "no Godot binary: $GODOT_BIN"
+
+LEGS="${*:-$ALL_LEGS}"
+for leg in $LEGS; do
+  case " $ALL_LEGS " in
+    *" $leg "*) ;;
+    *) die "no such leg: $leg (legs: $ALL_LEGS)" ;;
+  esac
+done
+
+prepare_template
+for leg in $LEGS; do
+  before="$FAILED"
+  FAILED=0
+  "leg_$leg"
+  if [ "$FAILED" = 0 ]; then echo "leg $leg: PASS" | tee -a "$LOGS/summary.txt"; else echo "leg $leg: FAIL" | tee -a "$LOGS/summary.txt"; fi
+  FAILED=$((before | FAILED))
+done
+
+echo ""
+if [ "$FAILED" != 0 ]; then
+  echo "apply kill legs: FAILED (evidence in $LOGS)"
+  exit 1
+fi
+echo "apply kill legs: PASS ($LEGS on Godot $GODOT_MINOR)"
+exit 0

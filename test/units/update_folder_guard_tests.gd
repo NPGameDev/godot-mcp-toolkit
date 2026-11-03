@@ -216,7 +216,7 @@ static func _test_strip_leaves_others_alone(testing: Testing) -> void:
 	print("")
 
 
-# Whether the plugin skipped [param path] when offered it, as the engine does.
+# Whether the plugin skipped the path when offered it, as the engine does.
 static func _offer(strip: Variant, path: String) -> bool:
 	var before: int = strip.get("skips")
 	strip.call("_export_file", path, "", PackedStringArray())

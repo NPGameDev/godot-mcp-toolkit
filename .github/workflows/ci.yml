@@ -237,13 +237,14 @@ jobs:
   # compressed binary-token modes (Text only on 4.2) and asserts on the parsed
   # pack listing; check_export_strip.sh explains the pack export and the listing.
   # A pack export needs no templates, so the Linux runner can export the
-  # Windows preset. Launching an exported build stays a manual release check.
+  # Windows preset. Launching an exported build stays a manual release check. The
+  # script also seeds the self-update's folder and fails if any of it ships.
   export-strip:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
-    # Fuse: the warm-up is capped at 240s and each pack export takes well under
-    # a minute — at 15 min the job is hung, not slow.
+    # Fuse: the warm-up is capped at 240s and each of the four pack exports takes
+    # well under a minute — at 15 min the job is hung, not slow.
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -296,6 +297,54 @@ jobs:
           MODES: ${{ matrix.godot-version == '4.2.0' && '0' || '2 0' }}
         run: bash ./scripts/test_framework/check_export_strip.sh res://export_strip_probe.gd $MODES
 
+  # ── The self-update's swap in real editors ───────────────────────────────────
+  # Kills an editor at each step of the swap and grades the next start, on the floor
+  # and ceiling versions; run_legs.sh names its legs. It sits in the floor, not the
+  # opt-in deep tier, because no other job runs the swap on a real folder. Xvfb serves
+  # the editor's OpenGL through Mesa's software renderer.
+  apply-kill:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    # Fuse: about twenty editor sessions, each ended from inside within 240s if it hangs.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        godot-version: ["4.2.0", "4.7.0"]
+    name: "Apply kill legs (real editor · Godot ${{ matrix.godot-version }})"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Godot
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: ${{ matrix.godot-version }}
+          use-dotnet: false
+
+      - name: Install a virtual display
+        run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri
+
+      # The verdict is the script's last line, so a run that died before it never passes.
+      - name: Run the legs
+        shell: bash
+        env:
+          APPLY_KILL_OUT: ${{ runner.temp }}/apply-kill
+        run: |
+          set -o pipefail
+          xvfb-run -a -s "-screen 0 1600x1000x24" bash test/apply_kill_driver/run_legs.sh 2>&1 | tee "${RUNNER_TEMP}/apply-kill.log"
+          tail -1 "${RUNNER_TEMP}/apply-kill.log" | grep -q '^apply kill legs: PASS'
+
+      - name: Upload the evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v5
+        with:
+          name: apply-kill-${{ matrix.godot-version }}
+          path: ${{ runner.temp }}/apply-kill/logs
+          if-no-files-found: warn
+          retention-days: 14
+
   # ── Aggregate floor gate ─────────────────────────────────────────────────────
   # "Toolkit floor OK" is the SINGLE name bound as a required check for pull requests
   # (and on the protected branch) — never an individual matrix row. A required
@@ -306,7 +355,7 @@ jobs:
   # because a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [changes, docs-check, release-files-macos, gdscript-check, unit-tests, manifest-diff, export-strip]
+    needs: [changes, docs-check, release-files-macos, gdscript-check, unit-tests, manifest-diff, export-strip, apply-kill]
     if: always()
     runs-on: ubuntu-latest
     steps:
