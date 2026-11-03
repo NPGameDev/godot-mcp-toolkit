@@ -7,10 +7,12 @@ const Testing := preload("res://test/units/testing.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
+const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
 
 
 static func run(testing: Testing) -> void:
 	_test_layout(testing)
+	_test_guard_reserves_this_folder(testing)
 	_test_ignore_files_written(testing)
 	_test_ignore_files_repaired(testing)
 	_test_ignore_file_that_cannot_be_written(testing)
@@ -29,6 +31,14 @@ static func _test_layout(testing: Testing) -> void:
 	testing.ok(UpdateFolder.is_backup_name("backup-1.1.0"), "backup-<from> → a backup")
 	testing.ok(not UpdateFolder.is_backup_name("stage"), "the stage → not a backup")
 	testing.ok(not UpdateFolder.is_backup_name("1.2.0"), "a version's folder → not a backup")
+	print("")
+
+
+static func _test_guard_reserves_this_folder(testing: Testing) -> void:
+	testing.begin("Update folder: FileGuard reserves the folder this module writes")
+	testing.eq(FileGuard.UPDATE_FOLDER, UpdateFolder.FOLDER, "both name the same folder")
+	testing.ok(FileGuard.is_update_folder(UpdateFolder.stage_folder()), "the stage is inside it")
+	testing.ok(FileGuard.is_update_folder(UpdateFolder.backup_folder("1.1.0")), "a backup is inside it")
 	print("")
 
 

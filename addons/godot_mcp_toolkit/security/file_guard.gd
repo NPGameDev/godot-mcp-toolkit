@@ -10,7 +10,7 @@ extends RefCounted
 ## also refuses version-control, engine and project metadata.
 ##
 ## Every check against a host folder (the project root, res://addons, the
-## toolkit's source and its user:// folder) compares a case-folded form of the
+## toolkit's source, its update folder and its user:// folder) compares a case-folded form of the
 ## path with Windows alias spellings cut away. Windows opens a folder under
 ## another letter case or an alias spelling (a trailing dot or space, an NTFS
 ## stream, an 8.3 short name); macOS opens it under another letter case or a
@@ -31,6 +31,10 @@ extends RefCounted
 ## The folder that holds the toolkit's own source. Test a path against it with
 ## [method is_toolkit_source].
 const TOOLKIT_SOURCE_DIR := "res://addons/godot_mcp_toolkit/"
+
+## The folder the self-update keeps everything in. Test a path against it with
+## [method is_update_folder].
+const UPDATE_FOLDER := "res://addons/.godot_mcp_toolkit_update"
 
 ## Ends every refusal of a host folder, so a caller who spelled the folder another way
 ## learns why the path counts as that folder.
@@ -81,6 +85,19 @@ static func _compile_short_name_re() -> RegEx:
 static func is_toolkit_source(path: String) -> bool:
 	var form := _comparison_form(path)
 	return form == TOOLKIT_SOURCE_DIR.trim_suffix("/") or form.begins_with(TOOLKIT_SOURCE_DIR)
+
+
+## Whether [param path] is the self-update's folder or a path inside it, under the same
+## spellings as [method is_toolkit_source], with the same limit: an 8.3 short name does not
+## match, and [method resolve_safe] refuses one under [code]res://addons/[/code] on its own.
+##
+## The folder matches whole, so a sibling such as
+## [code]res://addons/.godot_mcp_toolkit_update_x/[/code] is not the self-update's.
+##
+## Returns [code]true[/code] for the folder itself and every path under it.
+static func is_update_folder(path: String) -> bool:
+	var form := _comparison_form(path)
+	return form == UPDATE_FOLDER or form.begins_with(UPDATE_FOLDER + "/")
 
 
 ## Whether [param path] is a host folder, one a delete must never remove: the project root,
@@ -191,6 +208,12 @@ static func resolve_safe(
 	if _may_reach_toolkit_source(canonical):
 		return _denied(
 			"res://addons/godot_mcp_toolkit/ is the plugin's own source and is protected; %s" % SAME_FOLDER_NOTE)
+	# The update folder holds the staged release, the backup and the journal the
+	# self-update acts on, so a tool call must not write there either. The self-update
+	# itself does not come through this guard.
+	if is_update_folder(canonical):
+		return _denied(
+			"%s/ is reserved for the toolkit's self-update; %s" % [UPDATE_FOLDER, SAME_FOLDER_NOTE])
 
 	# Canonicalize and re-assert the path still resolves under its boundary root
 	# (lexical simplify + prefix substitution — NOT OS-symlink resolution). On
