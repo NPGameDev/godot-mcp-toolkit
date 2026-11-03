@@ -4,7 +4,7 @@ extends RefCounted
 ## only listed files the release dropped deleted, .import and unlisted files kept,
 ## changed files reported, and nothing deleted without an installed list.
 
-const InstallPlan := preload("res://addons/godot_mcp_toolkit/update/install_plan.gd")
+const InstallPlan := preload("res://addons/godot_mcp_toolkit/self_update/install_plan.gd")
 
 const _A := "aa"
 const _B := "bb"

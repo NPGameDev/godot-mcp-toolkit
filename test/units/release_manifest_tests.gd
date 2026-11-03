@@ -4,7 +4,7 @@ extends RefCounted
 ## manifest, each field missing or malformed, a manifest for another version, the
 ## size limits, and the Godot floor at and past the running engine.
 
-const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/update/release_manifest.gd")
+const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/release_manifest.gd")
 
 const _DIGEST := "3370a7ff44d61ecd5519ab44ccd866d68644c4b099de1e85e5fad913dbdd12f8"
 

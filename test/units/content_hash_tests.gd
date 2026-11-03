@@ -3,7 +3,7 @@ extends RefCounted
 ## Unit tests for the self-update's SHA-256 helpers: the hex digest of bytes, the raw
 ## digest, and the hex-digest shape check, against the published test vectors.
 
-const ContentHash := preload("res://addons/godot_mcp_toolkit/update/content_hash.gd")
+const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
 const _EMPTY_SHA256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"

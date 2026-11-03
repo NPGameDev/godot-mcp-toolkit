@@ -15,7 +15,7 @@ extends RefCounted
 
 # Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const UserJsonStore := preload("res://addons/godot_mcp_toolkit/paths/user_json_store.gd")
-const FolderFiles := preload("res://addons/godot_mcp_toolkit/update/folder_files.gd")
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 
 ## Where updates are kept: the record, one subfolder per version, the backup and the
 ## install log.
@@ -119,4 +119,3 @@ static func log_line(line: String, folder: String = FOLDER) -> void:
 ## The install log's path in [param folder], as the user would open it.
 static func log_path(folder: String = FOLDER) -> String:
 	return ProjectSettings.globalize_path(folder.path_join(_LOG_FILE))
-

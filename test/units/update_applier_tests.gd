@@ -5,9 +5,9 @@ extends RefCounted
 ## and a record that is not staged. The editor-exit call itself runs in the update
 ## flow integration test (scripts/test_framework/update_flow.sh).
 
-const UpdateApplier := preload("res://addons/godot_mcp_toolkit/update/update_applier.gd")
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/update/pending_update.gd")
-const FolderFiles := preload("res://addons/godot_mcp_toolkit/update/folder_files.gd")
+const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
+const PendingUpdate := preload("res://addons/godot_mcp_toolkit/self_update/pending_update.gd")
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 

@@ -4,7 +4,7 @@ extends RefCounted
 ## the headless override, the sentences shown to the user, and the facts this
 ## repository's own project reports.
 
-const InstallGuards := preload("res://addons/godot_mcp_toolkit/update/install_guards.gd")
+const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
 
 
 static func run(testing) -> void:

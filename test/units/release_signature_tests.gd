@@ -4,7 +4,7 @@ extends RefCounted
 ## by openssl (the release script's tool) over a fixed manifest, a tampered message,
 ## an untrusted key, and a key list.
 
-const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/update/release_signature.gd")
+const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
 # Made with `openssl dgst -sha256 -sign` over _OPENSSL_MESSAGE by the key whose public
@@ -65,4 +65,3 @@ static func _test_key_list(testing) -> void:
 	Engine.print_error_messages = printed
 	testing.ok(with_garbage, "an unreadable key beside the signing one → valid")
 	print("")
-

@@ -3,7 +3,7 @@ extends RefCounted
 ## Unit tests for the install mode setting: its default, the values it accepts, the
 ## manual fallback for anything else, and saving only a change.
 
-const InstallMode := preload("res://addons/godot_mcp_toolkit/update/install_mode.gd")
+const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
 
 
 class _Store extends RefCounted:

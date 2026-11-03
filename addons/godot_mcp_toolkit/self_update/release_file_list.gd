@@ -13,7 +13,7 @@ extends RefCounted
 const FILE_NAME := "release_files.sha256"
 
 # Direct preload, not core/modules.gd: the aggregator preloads this file.
-const ContentHash := preload("res://addons/godot_mcp_toolkit/update/content_hash.gd")
+const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 
 
 ## Reads the list [param text] into a dictionary of path to SHA-256.

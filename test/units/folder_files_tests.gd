@@ -5,7 +5,7 @@ extends RefCounted
 ## that leaves matching files alone, and deleting a tree.
 
 const Testing := preload("res://test/units/testing.gd")
-const FolderFiles := preload("res://addons/godot_mcp_toolkit/update/folder_files.gd")
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
 const _ABC_SHA256 := "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

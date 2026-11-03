@@ -8,7 +8,7 @@ extends RefCounted
 ## the file back, because a failed rename only prints an error.
 
 # Direct preload, not core/modules.gd: the aggregator preloads this file.
-const ContentHash := preload("res://addons/godot_mcp_toolkit/update/content_hash.gd")
+const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 
 
 ## Every file under [param folder], hidden ones included, as paths relative to it,

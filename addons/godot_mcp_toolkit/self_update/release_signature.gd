@@ -8,7 +8,7 @@ extends RefCounted
 ## trusts both the old and the new one.
 
 # Direct preload, not core/modules.gd: the aggregator preloads this file.
-const ContentHash := preload("res://addons/godot_mcp_toolkit/update/content_hash.gd")
+const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 
 ## The largest signature read, in bytes: an RSA-4096 signature is 512.
 const MAX_BYTES := 4096

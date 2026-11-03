@@ -4,11 +4,11 @@ extends RefCounted
 ## release zips written with ZIPPacker, signed manifests, installed addon folders and
 ## staged updates, all under scratch folders named with the process id.
 
-const ContentHash := preload("res://addons/godot_mcp_toolkit/update/content_hash.gd")
-const FolderFiles := preload("res://addons/godot_mcp_toolkit/update/folder_files.gd")
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/update/pending_update.gd")
-const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/update/release_assets.gd")
-const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/update/release_file_list.gd")
+const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
+const PendingUpdate := preload("res://addons/godot_mcp_toolkit/self_update/pending_update.gd")
+const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
+const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 
 static var _key: CryptoKey = null
 static var _other_key: CryptoKey = null

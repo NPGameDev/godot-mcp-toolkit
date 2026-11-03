@@ -15,16 +15,16 @@ extends RefCounted
 ## log, and the record's state tells the next start what happened.
 
 # Direct preloads, not core/modules.gd: the aggregator preloads this file.
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/update/pending_update.gd")
-const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/update/release_assets.gd")
-const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/update/release_manifest.gd")
-const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/update/release_signature.gd")
-const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/update/release_archive.gd")
-const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/update/release_file_list.gd")
-const InstallPlan := preload("res://addons/godot_mcp_toolkit/update/install_plan.gd")
-const InstallGuards := preload("res://addons/godot_mcp_toolkit/update/install_guards.gd")
-const FolderFiles := preload("res://addons/godot_mcp_toolkit/update/folder_files.gd")
-const TrustedReleaseKeys := preload("res://addons/godot_mcp_toolkit/update/trusted_release_keys.gd")
+const PendingUpdate := preload("res://addons/godot_mcp_toolkit/self_update/pending_update.gd")
+const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
+const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/release_manifest.gd")
+const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
+const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
+const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
+const InstallPlan := preload("res://addons/godot_mcp_toolkit/self_update/install_plan.gd")
+const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
+const TrustedReleaseKeys := preload("res://addons/godot_mcp_toolkit/self_update/trusted_release_keys.gd")
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 

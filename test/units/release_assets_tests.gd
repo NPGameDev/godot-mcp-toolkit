@@ -4,7 +4,7 @@ extends RefCounted
 ## version alone, on GitHub unless the update check's host variable replaces the
 ## scheme and host.
 
-const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/update/release_assets.gd")
+const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 
 
 static func run(testing) -> void:

@@ -4,7 +4,7 @@ extends RefCounted
 ## release, each forbidden entry, a missing or mismatched plugin.cfg, an unreadable
 ## file, and reading an addon file back.
 
-const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/update/release_archive.gd")
+const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
 

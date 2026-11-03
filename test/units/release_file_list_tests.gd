@@ -3,7 +3,7 @@ extends RefCounted
 ## Unit tests for the release file list: its sha256sum-format text, read and written,
 ## the damaged lists it refuses whole, and reading an installed folder's list.
 
-const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/update/release_file_list.gd")
+const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
 const _A := "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"

@@ -4,7 +4,7 @@ extends RefCounted
 ## missing, broken or newer-format record, clearing with and without the backup, the
 ## folder paths and the install log.
 
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/update/pending_update.gd")
+const PendingUpdate := preload("res://addons/godot_mcp_toolkit/self_update/pending_update.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
 

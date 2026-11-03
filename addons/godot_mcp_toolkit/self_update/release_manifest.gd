@@ -13,8 +13,8 @@ extends RefCounted
 # Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
-const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/update/release_assets.gd")
-const ContentHash := preload("res://addons/godot_mcp_toolkit/update/content_hash.gd")
+const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
+const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 
 ## The manifest format this toolkit reads.
 const FORMAT := 1
