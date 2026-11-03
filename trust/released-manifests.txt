@@ -1,0 +1,6 @@
+# The update manifest of each published release, one line per release, oldest first:
+#
+#   <version> <SHA-256 of the release's .update.json, lowercase hex>
+#
+# Committed at publish. No client reads this file. A later document can pin a release from it,
+# and git history shows any later edit.

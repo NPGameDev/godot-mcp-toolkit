@@ -74,13 +74,17 @@ jobs:
           RELEASE_FILES_REQUIRE_ALL: "1"
         run: bash scripts/test_release_files.sh
 
-  # The same test on the tools macOS ships: LibreSSL and BSD's. They live in /usr/bin,
+      # trust-document.sh with keys made at run time (no Godot, no network).
+      - name: Trust documents script test
+        run: bash scripts/test_trust_documents.sh
+
+  # The same tests on the tools macOS ships: LibreSSL and BSD's. They live in /usr/bin,
   # and an earlier PATH entry can hold Homebrew's OpenSSL instead, so the job puts
   # /usr/bin first and fails unless openssl really is LibreSSL. It runs the check's zip
   # cases too, so a missing zip or unzip fails here instead of skipping them.
   release-files-macos:
     runs-on: macos-latest
-    name: "Release files script test (macOS)"
+    name: "Release script tests (macOS)"
     steps:
       - uses: actions/checkout@v7
 
@@ -99,6 +103,38 @@ jobs:
               ;;
           esac
           bash scripts/test_release_files.sh
+
+      - name: Trust documents script test
+        env:
+          TRUST_DOCUMENTS_EXPECT_OPENSSL: LibreSSL
+        run: |
+          export PATH="/usr/bin:${PATH}"
+          bash scripts/test_trust_documents.sh
+
+  # A chain trust-document.sh makes in this run, read by the real reader, so the pinned
+  # fixtures the unit job reads cannot drift from the tool. One leg: the unit job already
+  # reads the fixtures on every version.
+  trust-documents-reader:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    # Fuse: key generation and one short Godot run — at 10 min it is hung, not slow.
+    timeout-minutes: 10
+    name: "Trust documents read by the reader (Godot 4.7.0)"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Godot
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: "4.7.0"
+          use-dotnet: false
+
+      - name: Trust documents script test, with the reader
+        env:
+          TRUST_DOCUMENTS_GODOT: godot
+        run: bash scripts/test_trust_documents.sh
 
   gdscript-check:
     needs: changes
@@ -355,7 +391,7 @@ jobs:
   # because a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [changes, docs-check, release-files-macos, gdscript-check, unit-tests, manifest-diff, export-strip, apply-kill]
+    needs: [changes, docs-check, release-files-macos, trust-documents-reader, gdscript-check, unit-tests, manifest-diff, export-strip, apply-kill]
     if: always()
     runs-on: ubuntu-latest
     steps:
