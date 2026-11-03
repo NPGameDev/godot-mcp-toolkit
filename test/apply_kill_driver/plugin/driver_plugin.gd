@@ -42,6 +42,7 @@ var _phase_started_ms := 0
 var _settled_since_ms := -1
 var _stepper: RefCounted = null
 var _longest_step_usec := 0
+var _scan_called_usec := 0
 # Held from the start: the swap moves the files these came from.
 var _applier: GDScript = null
 
@@ -91,14 +92,21 @@ func _process(_delta: float) -> void:
 func _exit_tree() -> void:
 	if _session.is_empty():
 		return
+	var entered_usec := Time.get_ticks_usec()
 	_note("exit_tree_reached", "1")
 	if _applier == null:
 		return
+	if _flag("scan_at_close"):
+		_note("exit_tree_after_scan_ms", str((entered_usec - _scan_called_usec) / 1000))
 	var started_usec := Time.get_ticks_usec()
 	var result: Dictionary = _applier.call("apply_pending", {"public_keys": [_public_key], "on_step": _on_step})
-	_note("apply_ms", str((Time.get_ticks_usec() - started_usec) / 1000))
+	var apply_usec := Time.get_ticks_usec() - started_usec
+	if _flag("scan_at_close"):
+		_note("scanning_after_apply", _scan_position())
+	_note("apply_ms", str(apply_usec / 1000))
 	_note("apply_state", str(result["state"]))
 	_note("apply_reason", str(result["reason"]))
+	_note("exit_tree_ms", str((Time.get_ticks_usec() - entered_usec) / 1000))
 
 
 # Reached by every step of the swap. Each line is on disk before the next thing happens, so
@@ -106,7 +114,7 @@ func _exit_tree() -> void:
 func _on_step(step: String) -> void:
 	_note("step", step)
 	if _flag("scan_at_close"):
-		_note("scanning_at_step", "%s:%s" % [step, EditorInterface.get_resource_filesystem().is_scanning()])
+		_note("scanning_at_step", "%s:%s" % [step, _scan_position()])
 	if step == str(_session.get("kill_at", "")):
 		_note("kill_fired", step)
 		OS.kill(OS.get_process_id())
@@ -206,11 +214,19 @@ func _close(now: int) -> void:
 	_enter_phase(_Phase.CLOSING, now)
 	_note("closing", "1")
 	if _flag("scan_at_close"):
+		_note("seed_revealed", str(DirAccess.remove_absolute(ProjectSettings.globalize_path(str(_session["reveal_at_close"]))) == OK))
 		var filesystem := EditorInterface.get_resource_filesystem()
+		_scan_called_usec = Time.get_ticks_usec()
 		filesystem.scan()
 		_note("scan_called", "1")
 		_note("scanning_after_call", str(filesystem.is_scanning()))
 	get_parent().call_deferred("notification", NOTIFICATION_WM_CLOSE_REQUEST)
+
+
+# Whether a scan runs, and how far through its files it says it is.
+func _scan_position() -> String:
+	var filesystem := EditorInterface.get_resource_filesystem()
+	return "%s:%.3f" % [filesystem.is_scanning(), filesystem.get_scanning_progress()]
 
 
 func _enter_phase(phase: _Phase, now: int) -> void:

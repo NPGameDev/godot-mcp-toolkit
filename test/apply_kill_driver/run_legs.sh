@@ -20,8 +20,11 @@
 #   k2     kill between the renames; the next start finds no toolkit, and both trees whole
 #   k3     kill after the swap; the next start settles it as applied
 #   clean  A to B with no copy-back; the toolkit starts on B and its icon reimports
-#   scan   a scan requested in the same frame as the close. Evidence: a result nobody
-#          predicted prints a warning and is not a failure, as long as the row really ran.
+#   scan   a scan requested in the same frame as the close, its walk inside the folder the
+#          swap moves. The row fails if the scan is not in flight across the swap. What the
+#          scan does to the swap is evidence: anything but a clean apply prints a warning.
+#   scan_beside
+#          the same, the walk in a folder beside the one the swap moves
 #   git    the update folder stays out of a real repository's index
 #   link   a linked addon folder refuses the swap and its target stays whole
 #
@@ -52,7 +55,10 @@ ONLY_IN_A="driver_only_in_a.txt"
 ONLY_IN_B="driver_only_in_b.txt"
 HAND_ADDED="driver_added_by_hand.txt"
 ICON_IMPORT="icon.svg.import"
-ALL_LEGS="k1 k2 k3 clean scan git link"
+ALL_LEGS="k1 k2 k3 clean scan scan_beside git link"
+SCAN_SEED="driver_scan_seed"
+SCAN_SEED_FOLDERS=100
+SCAN_SEED_FILES=30
 
 case "$(uname -s)" in
   MINGW*|MSYS*|CYGWIN*) ON_WINDOWS=1 ;;
@@ -252,6 +258,7 @@ EOF
   check "the stepper wrote every listed file" "$(note stage stage_written)" "$(note stage stage_total)"
   check "the stage equals the zip" "$(tree_digest "$PROJECT/$UPDATES/stage")" "$(tree_digest "$B_TREE")"
   check "the journal says staged" "$(journal_state)" "staged"
+  echo "  record: staging's begin took $(note stage stage_begin_ms) ms, its longest step $(note stage stage_longest_step_ms) ms"
 
   check "the ignore file for git holds a star" "$(text_of "$PROJECT/$UPDATES/.gitignore")" "*"
   check "the ignore file for Perforce holds a star" "$(text_of "$PROJECT/$UPDATES/.p4ignore")" "*"
@@ -361,29 +368,77 @@ leg_clean() {
   check "the icon reimports and loads" "$(note next_start icon_imported)" "true"
   check "the .import is back" "$(exists "$ADDON/$ICON_IMPORT")" "present"
   check "B's start logs no script error" "$(grep -ac '^SCRIPT ERROR' "$LEG_LOGS/next_start.log")" "0"
-  echo "  record: the apply took $(note apply apply_ms) ms inside _exit_tree"
+  echo "  record: the apply took $(note apply apply_ms) ms, the plugin's whole _exit_tree $(note apply exit_tree_ms) ms"
 }
 
-leg_scan() {
-  begin_leg scan
-  session apply apply=1 scan_at_close=1
+# Scripts in a folder under <folder, relative to the project>, hidden from the session's
+# first scan by a .gdignore the plugin deletes just before it asks for the second one. To
+# that scan every one is new, so it reads each of them, far slower than files it knows.
+seed_scan_files() {
+  local seed="$PROJECT/$1" folder file
+  mkdir -p "$seed"
+  : > "$seed/.gdignore"
+  (cd "$seed" && seq -f 'f%g' 1 "$SCAN_SEED_FOLDERS" | xargs mkdir)
+  for ((folder = 1; folder <= SCAN_SEED_FOLDERS; folder++)); do
+    for ((file = 1; file <= SCAN_SEED_FILES; file++)); do
+      echo 'extends RefCounted' > "$seed/f$folder/s$file.gd"
+    done
+  done
+}
+
+scanning_at_step() { # <step>: what the applier's notes say of the scan at that step
+  text_of "$LEG_LOGS/apply.txt" | sed -nE "s/^scanning_at_step=$1:([a-z]*):.*/\1/p"
+}
+
+# A scan requested in the closing frame, seeded so that it is still walking at the swap. The
+# editor waits for a running scan only in its filesystem's own exit, which on every supported
+# version comes after a plugin's _exit_tree, so the overlap can happen and this row requires
+# it. What the overlap then does is the evidence: anything but a clean apply prints a warning.
+scan_row() { # <seed folder, relative to the project>
+  seed_scan_files "$1"
+  session apply apply=1 scan_at_close=1 "reveal_at_close=res://$1/.gdignore"
+  check "the seed was revealed" "$(note apply seed_revealed)" "true"
   check "the scan was requested in the closing frame" "$(note apply scan_called)" "1"
   check "the editor's exit reached the plugin" "$(note apply exit_tree_reached)" "1"
-  session next_start settle=1 wait_toolkit=1
+  check "the scan was in flight before the first rename" "$(scanning_at_step applying)" "true"
+  check "the scan outlasted the whole apply" "$(note apply scanning_after_apply | cut -d: -f1)" "true"
 
-  local scanning_after apply_state report errors
-  scanning_after="$(note apply scanning_after_call)"
+  local apply_state errors live_after_apply stage_after_apply
   apply_state="$(note apply apply_state)"
-  report="$(note next_start settle_report)"
   errors="$(grep -acE '^(ERROR|SCRIPT ERROR)' "$LEG_LOGS/apply.log")"
-  echo "  record: scanning right after the call: $scanning_after"
-  echo "  record: scanning at each step: $(text_of "$LEG_LOGS/apply.txt" | sed -n 's/^scanning_at_step=//p' | paste -sd' ' -)"
-  echo "  record: apply_state=$apply_state reason=$(note apply apply_reason) editor_exit=$(note apply editor_exit)"
-  echo "  record: next start's report=$report; live version $(live_version); error lines in the closing log: $errors"
-  if [ "$apply_state" != "applied" ] || [ "$report" != "updated" ] \
-    || [ "$(tree_digest "$PROJECT/$ADDON")" != "$(tree_digest "$B_TREE")" ]; then
-    echo "::warning title=Apply kill driver (scan)::a scan in flight changed the outcome: apply_state=$apply_state, report=$report. See logs/scan."
+  live_after_apply="$(live_version)"
+  stage_after_apply="gone or changed"
+  [ "$(tree_digest "$PROJECT/$UPDATES/stage")" = "$(tree_digest "$B_TREE")" ] && stage_after_apply="whole"
+  echo "  record: _exit_tree came $(note apply exit_tree_after_scan_ms) ms after the scan call"
+  echo "  record: step:scanning:progress: $(text_of "$LEG_LOGS/apply.txt" | sed -n 's/^scanning_at_step=//p' | paste -sd' ' -)"
+  echo "  record: after the apply: $(note apply scanning_after_apply); the apply took $(note apply apply_ms) ms"
+  echo "  record: apply_state=$apply_state reason=$(note apply apply_reason) journal=$(journal_state) editor_exit=$(note apply editor_exit)"
+  echo "  record: live version $live_after_apply; stage $stage_after_apply; error lines in the closing log: $errors"
+
+  session next_start settle=1 wait_toolkit=1 apply=1
+  session after settle=1 wait_toolkit=1
+  local final_digest="differs from B"
+  [ "$(tree_digest "$PROJECT/$ADDON")" = "$(tree_digest "$B_TREE")" ] && final_digest="equals B"
+  echo "  record: next start's report=$(note next_start settle_report), its exit's apply=$(note next_start apply_state)"
+  echo "  record: the start after that: report=$(note after settle_report), toolkit loaded=$(note after toolkit_loaded) on $(note after toolkit_version); the live folder $final_digest"
+  if [ "$apply_state" != "applied" ]; then
+    echo "::warning title=Apply kill driver ($LEG)::a scan in flight changed the outcome: apply_state=$apply_state, reason=$(note apply apply_reason). See logs/$LEG."
   fi
+  if [ "$final_digest" != "equals B" ] || [ "$(note after toolkit_version)" != "$B_VERSION" ]; then
+    echo "::warning title=Apply kill driver ($LEG)::the update did not finish after the scan: live version $(live_version). See logs/$LEG."
+  fi
+}
+
+# The whole walk is inside the folder the swap moves.
+leg_scan() {
+  begin_leg scan
+  scan_row "$ADDON/$SCAN_SEED"
+}
+
+# The walk is beside that folder, the likelier case on a real project.
+leg_scan_beside() {
+  begin_leg scan_beside
+  scan_row "addons/$SCAN_SEED"
 }
 
 git_in_project() {
@@ -428,13 +483,6 @@ leg_git() {
 }
 
 leg_link() {
-  # Godot 4.2 on Windows cannot see a link, so the swap goes ahead there. That case has its
-  # own proof; this leg is about the refusal.
-  if [ "$ON_WINDOWS" = 1 ] && [ "$GODOT_MINOR" = "4.2" ]; then
-    echo ""
-    echo "=== Leg link: skipped, Godot 4.2 on Windows does not detect a link ==="
-    return 0
-  fi
   begin_leg link
   local target="$OUT/legs/link_target"
   mv "$PROJECT/$ADDON" "$target" || die "could not move the addon out"
@@ -444,7 +492,6 @@ leg_link() {
   else
     ln -s "$target" "$PROJECT/$ADDON" || die "could not make a link"
   fi
-
   session apply apply=1
   check "the apply refuses" "$(note apply apply_state)" "not_applied"
   check "the refusal names the link" "$(note apply apply_reason)" "The toolkit's folder is a link to another place."
