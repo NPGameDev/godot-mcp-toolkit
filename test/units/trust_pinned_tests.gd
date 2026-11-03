@@ -135,7 +135,7 @@ static func _text(folder_name: String, number: int) -> String:
 	return _file(folder_name, number).get_string_from_utf8()
 
 
-# The pinned file with only the signatures at [param positions], in that order. Its private
+# The pinned file with only the signatures at the given positions, in that order. Its private
 # halves are gone, so a document short of a signature can only come from taking one away.
 static func _with_signatures(folder_name: String, number: int, positions: Array) -> PackedByteArray:
 	var outer: Dictionary = JSON.parse_string(_text(folder_name, number))
