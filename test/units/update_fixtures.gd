@@ -73,17 +73,29 @@ static func plugin_config(version: String) -> String:
 
 
 ## Writes a zip at [param path] holding [param entries] (zip path to text), with the
-## directory entries a release zip carries.
-static func write_zip(path: String, entries: Dictionary) -> void:
+## directory entries a release zip carries, each once, then [param repeated]: an empty
+## entry per name, for a name the zip already holds.[br]
+## [br]
+## From 4.7 [method ZIPPacker.start_file] also writes the entry of the folder a name sits in
+## when that folder has none yet, which for a folder's own name writes it twice, so the two
+## directory entries go through [code]add_directory[/code] there. A zip whose files sit in
+## the addon folder itself then holds the same entries on every version.
+static func write_zip(path: String, entries: Dictionary, repeated: PackedStringArray = PackedStringArray()) -> void:
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(path.get_base_dir()))
 	var packer := ZIPPacker.new()
 	packer.open(path)
 	for directory: String in ["addons/", "addons/godot_mcp_toolkit/"]:
-		packer.start_file(directory)
-		packer.close_file()
+		if packer.has_method("add_directory"):
+			packer.call("add_directory", directory)
+		else:
+			packer.start_file(directory)
+			packer.close_file()
 	for entry: String in entries:
 		packer.start_file(entry)
 		packer.write_file(str(entries[entry]).to_utf8_buffer())
+		packer.close_file()
+	for entry: String in repeated:
+		packer.start_file(entry)
 		packer.close_file()
 	packer.close()
 

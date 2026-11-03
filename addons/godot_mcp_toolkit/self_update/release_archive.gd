@@ -2,17 +2,22 @@
 extends RefCounted
 ## Reads a release zip and checks its layout before any of it is written.
 ##
-## A release zip holds [code]addons/[/code] and the addon folder under it, and its files
-## are exactly the ones the file list inside it names. The checks run on the zip the
-## manifest pinned, so they guard against a broken build rather than an attacker: an entry
-## outside the folder, an absolute path or a [code]..[/code] segment, a name that would
-## land elsewhere or nowhere on Windows, a name that hides the addon from the engine or
-## from version control, a missing [code]plugin.cfg[/code] or list, or a
-## [code]plugin.cfg[/code] that names another version.[br]
+## A release zip's files sit in the addon folder, and are exactly the ones the file list
+## inside it names. The checks run on the zip the manifest pinned, so they guard against a
+## broken build rather than an attacker: an entry outside the folder, an absolute path or a
+## [code]..[/code] segment, a name that would land elsewhere or nowhere on Windows, a name
+## that hides the addon from the engine or from version control, a file twice, a missing
+## [code]plugin.cfg[/code] or list, or a [code]plugin.cfg[/code] that names another
+## version.[br]
 ## [br]
-## The entry count is capped because the checks read every name. Nothing caps an entry's
-## size: [ZIPReader] shows no size before [method ZIPReader.read_file] allocates it, and
-## only a signed zip gets this far.[br]
+## Nothing is written from a folder entry, and a list that names one is refused. Tools
+## differ in writing them: one per folder, none, or, with [ZIPPacker] from 4.7, one twice
+## when the caller writes it too. So a folder entry may repeat or be absent, and the name
+## rules and the cap still hold it.[br]
+## [br]
+## The entry count is capped because the checks read every name, a folder entry's included.
+## Nothing caps an entry's size: [ZIPReader] shows no size before
+## [method ZIPReader.read_file] allocates it, and only a signed zip gets this far.[br]
 ## [br]
 ## An installed copy of these rules reads every later release, so a release that breaks
 ## one is refused by every older toolkit, and breaking one on purpose needs a bridge
@@ -73,15 +78,16 @@ static func inspect_open(reader: ZIPReader, expected_version: String) -> Diction
 	var spellings := {}
 	for entry: String in entries:
 		var reason := entry_problem(entry)
-		if reason.is_empty() and seen.has(entry):
+		var is_folder := entry.ends_with("/")
+		if reason.is_empty() and not is_folder and seen.has(entry):
 			reason = "the archive holds an entry twice: %s" % entry
 		if reason.is_empty():
 			reason = _case_collision(entry, spellings)
 		if not reason.is_empty():
 			return {"error": reason}
-		seen[entry] = true
-		if entry.ends_with("/"):
+		if is_folder:
 			continue
+		seen[entry] = true
 		files.append(entry.substr(ADDON_PREFIX.length()))
 	if not files.has(_PLUGIN_CONFIG):
 		return {"error": "the archive has no plugin.cfg"}
