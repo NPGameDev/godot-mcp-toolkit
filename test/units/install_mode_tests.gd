@@ -7,24 +7,6 @@ const Testing := preload("res://test/units/testing.gd")
 const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
 
 
-class _Store extends RefCounted:
-	var values := {}
-	var saves := 0
-
-	func has_setting(key: String) -> bool:
-		return values.has(key)
-
-	func get_setting(key: String) -> Variant:
-		return values.get(key)
-
-	func set_setting(key: String, value: Variant) -> void:
-		values[key] = value
-
-	func save() -> Error:
-		saves += 1
-		return OK
-
-
 static func run(testing: Testing) -> void:
 	_test_values(testing)
 	_test_read(testing)
@@ -80,3 +62,22 @@ static func _test_save(testing: Testing) -> void:
 	InstallMode.save(store, "sometimes")
 	testing.eq(store.values.get("mcp_toolkit/updates/install_mode"), "manual", "an unknown mode → ignored")
 	print("")
+
+
+# Stands in for ProjectSettings: its real save() would rewrite this project's project.godot.
+class _Store extends RefCounted:
+	var values := {}
+	var saves := 0
+
+	func has_setting(key: String) -> bool:
+		return values.has(key)
+
+	func get_setting(key: String) -> Variant:
+		return values.get(key)
+
+	func set_setting(key: String, value: Variant) -> void:
+		values[key] = value
+
+	func save() -> Error:
+		saves += 1
+		return OK

@@ -40,7 +40,7 @@ static func _test_trust_seam(testing: Testing) -> void:
 	testing.ok(ReleaseSignature.is_trusted(message, signature, trusted), "a signature by a key passed in → trusted")
 	testing.ok(not ReleaseSignature.is_trusted("changed".to_utf8_buffer(), signature, trusted), "a changed manifest → not trusted")
 	testing.ok(not ReleaseSignature.is_trusted(message, signature), "the shipped keys, and a key they do not hold → not trusted")
-	testing.ok(not ReleaseSignature.is_trusted(message, PackedByteArray()), "no signature → not trusted")
+	testing.ok(not ReleaseSignature.is_trusted(message, PackedByteArray(), trusted), "no signature → not trusted")
 	print("")
 
 

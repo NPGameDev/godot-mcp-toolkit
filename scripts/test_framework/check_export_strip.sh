@@ -223,6 +223,10 @@ seed_update_folder() {
   printf '{"format": 1, "state": "staged", "from": "1.0.0", "to": "1.0.1"}\n' > "$UPDATE_FOLDER/journal.json"
   printf 'seed\n' > "$UPDATE_FOLDER/install.log"
   printf 'extends Node\n\n\nfunc _ready() -> void:\n\tprint("export strip seed: backup script ran")\n' > "$SEED_BACKUP_SCRIPT"
+  if [ ! -f "$SEED_BACKUP_SCRIPT" ]; then
+    echo "ERROR: could not seed $SEED_BACKUP_SCRIPT" >&2
+    exit 2
+  fi
   printf 'extends Node\n' > "$UPDATE_FOLDER/stage/seed_stage.gd"
   printf 'not a real zip\n' > "$UPDATE_FOLDER/1.0.1/godot-mcp-toolkit-1.0.1.zip"
   printf 'seed\n' > "$SEED_SIBLING_FOLDER/seed_sibling.txt"

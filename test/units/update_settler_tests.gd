@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 ## Unit tests for settling the update folder at the next start, on scratch addon and update
-## folders: one group per row of the state table, what a whole stage means, the one
+## folders: one group per journal state and live folder, what a whole stage means, the one
 ## re-stage, and the keep_backup setting.
 
 const Testing := preload("res://test/units/testing.gd")
@@ -54,23 +54,9 @@ static func run(testing: Testing) -> void:
 # A scenario's folders, absolute forms and the options pointing at them, with an older
 # update's backup in the update folder.
 static func _setup(purpose: String, installed_version: String) -> Dictionary:
-	var addon := UpdateFixtures.scratch(purpose + "_addon")
-	var updates := UpdateFixtures.scratch(purpose + "_updates")
-	UpdateFixtures.make_addon(addon, installed_version, {"core/a.gd": "old a"})
-	_place_old_backup(ProjectSettings.globalize_path(updates))
-	return {
-		"addon": addon,
-		"updates": updates,
-		"addon_path": ProjectSettings.globalize_path(addon),
-		"updates_path": ProjectSettings.globalize_path(updates),
-		"options": {
-			"addon_folder": addon,
-			"update_folder": updates,
-			"engine_version": "4.7",
-			"public_keys": [UpdateFixtures.public_pem(UpdateFixtures.key())],
-			"guard_facts": {},
-		},
-	}
+	var scenario := UpdateFixtures.make_scenario(purpose, installed_version, {"core/a.gd": "old a"})
+	_place_old_backup(scenario["updates_path"])
+	return scenario
 
 
 static func _place_old_backup(updates_path: String) -> void:
@@ -118,17 +104,13 @@ static func _stage_path(scenario: Dictionary) -> String:
 	return str(scenario["updates_path"]).path_join("stage")
 
 
-static func _exists(scenario: Dictionary, relative: String) -> bool:
-	return DirAccess.dir_exists_absolute(str(scenario["updates_path"]).path_join(relative))
-
-
 # What a row leaves on disk: the journal's state, the stage, the zip's folder, the older
 # backup and the live version. Read before the cleanup, compared after.
 static func _left(scenario: Dictionary) -> Dictionary:
 	return {
 		"journal": UpdateJournal.read(scenario["updates"])["state"],
-		"stage": _exists(scenario, "stage"),
-		"zip": _exists(scenario, "1.2.0"),
+		"stage": UpdateFixtures.scenario_has_folder(scenario, "stage"),
+		"zip": UpdateFixtures.scenario_has_folder(scenario, "1.2.0"),
 		"backup": FileAccess.file_exists(str(scenario["updates_path"]).path_join(_OLD_BACKUP).path_join("a.gd")),
 		"live": UpdateApplier.installed_version(scenario["addon_path"]),
 	}
@@ -136,11 +118,6 @@ static func _left(scenario: Dictionary) -> Dictionary:
 
 static func _left_as(journal: String, stage: bool, zip: bool, live: String) -> Dictionary:
 	return {"journal": journal, "stage": stage, "zip": zip, "backup": true, "live": live}
-
-
-static func _cleanup(scenario: Dictionary) -> void:
-	UpdateFixtures.remove(str(scenario["addon"]))
-	UpdateFixtures.remove(str(scenario["updates"]))
 
 
 static func _settle_quietly(options: Dictionary) -> Dictionary:
@@ -180,7 +157,7 @@ static func _test_no_journal(testing: Testing) -> void:
 	DirAccess.remove_absolute(str(scenario["updates_path"]).path_join("journal.json"))
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result, {"report": "", "from": "", "to": "", "reason": "", "attempts": 0, "compatible_server": ""},
 			"a folder with no journal → nothing to report")
 	testing.eq(left, _left_as("", true, true, "1.1.0"), "and nothing touched")
@@ -196,22 +173,22 @@ static func _test_unknown_state(testing: Testing) -> void:
 	var result := UpdateSettler.settle(scenario["options"])
 	var kept_text := FileAccess.get_file_as_string(path)
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.NOTHING, "reads as none → nothing to report")
 	testing.eq(kept_text, text, "the journal stays as it was")
 	testing.eq(left, _left_as("", true, true, "1.1.0"), "its stage and zip stay until the next staging")
 	print("")
 
 
-# L-01's K3: the swap finished and a kill took the journal's last write.
+# A kill after the swap took the journal's last write.
 static func _test_applying_at_to(testing: Testing) -> void:
 	testing.begin("Update settler: applying, the live folder at to")
 	var scenario := _swapped("settle_k3", UpdateJournal.APPLYING)
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	var swap_backup := _exists(scenario, "backup-1.1.0")
+	var swap_backup := UpdateFixtures.scenario_has_folder(scenario, "backup-1.1.0")
 	var again := UpdateSettler.settle(scenario["options"])
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result, {"report": "updated", "from": "1.1.0", "to": "1.2.0", "reason": "", "attempts": 0,
 			"compatible_server": "1.1.0"}, "reports the update, naming both versions")
 	testing.eq(left, _left_as("", false, false, "1.2.0"), "the journal and the zip go")
@@ -239,7 +216,7 @@ static func _test_applying_writes_applied_first(testing: Testing) -> void:
 	var state := str(UpdateJournal.read(scenario["updates"])["state"])
 	var again := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.UPDATED, "reports the update")
 	testing.eq(state, "applied", "a journal that will not delete says applied")
 	testing.eq(again["report"], UpdateSettler.UPDATED, "the next start settles that row, and reports again")
@@ -254,14 +231,14 @@ static func _test_applying_write_fails(testing: Testing) -> void:
 	UpdateFixtures.set_read_only(journal_path, true)
 	var result := _settle_quietly(scenario["options"])
 	UpdateFixtures.set_read_only(journal_path, false)
-	var zip_gone := not _exists(scenario, "1.2.0")
-	_cleanup(scenario)
+	var zip_gone := not UpdateFixtures.scenario_has_folder(scenario, "1.2.0")
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.UPDATED, "the swap happened, so it still reports the update")
 	testing.ok(zip_gone, "and still clears the zip")
 	print("")
 
 
-# L-01's K1: a kill after the journal said applying, before anything moved.
+# A kill after the journal said applying, before anything moved.
 static func _test_applying_at_from_stage_whole(testing: Testing) -> void:
 	testing.begin("Update settler: applying, the live folder at from, the stage whole")
 	var scenario := _staged("settle_k1", UpdateJournal.APPLYING)
@@ -269,7 +246,7 @@ static func _test_applying_at_from_stage_whole(testing: Testing) -> void:
 	var left := _left(scenario)
 	var retried := UpdateApplier.apply_pending(scenario["options"])
 	var live_after := UpdateApplier.installed_version(scenario["addon_path"])
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.WAITING, "waits for the exit")
 	testing.eq(left, _left_as("staged", true, true, "1.1.0"), "back to staged, everything kept")
 	testing.eq(retried["state"], "applied", "the next exit retries and applies")
@@ -283,7 +260,7 @@ static func _test_applying_at_from_stage_not_whole(testing: Testing) -> void:
 	DirAccess.remove_absolute(_stage_path(scenario).path_join("core/b.gd"))
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.FAILED, "reports it")
 	testing.eq(result["reason"], _NOT_WHOLE, "with the reason")
 	testing.eq(left, _left_as("", false, false, "1.1.0"), "the journal and the stage go, the backup stays")
@@ -296,13 +273,14 @@ static func _test_applying_at_another_version(testing: Testing) -> void:
 		var scenario := _staged("settle_hand_install_" + installed, UpdateJournal.APPLYING, installed)
 		var result := UpdateSettler.settle(scenario["options"])
 		var left := _left(scenario)
-		_cleanup(scenario)
+		UpdateFixtures.remove_scenario(scenario)
 		testing.eq(result["report"], UpdateSettler.NOTHING, "%s by hand → nothing to report" % installed)
 		testing.eq(left, _left_as("", false, false, installed), "%s by hand → journal and stage go, the backup stays" % installed)
 	print("")
 
 
-# L-01's K2 and a failed undo. No toolkit runs from such a folder, so settling leaves it be.
+# A kill between the renames, and a failed undo. No toolkit runs from such a folder, so
+# settling leaves it be.
 static func _test_applying_missing(testing: Testing) -> void:
 	testing.begin("Update settler: applying, the live folder missing")
 	var scenario := _staged("settle_k2", UpdateJournal.APPLYING)
@@ -313,7 +291,7 @@ static func _test_applying_missing(testing: Testing) -> void:
 	var backup_whole := FileAccess.get_file_as_string(backup.path_join("core/a.gd")) == "old a"
 	var stage_whole := FileAccess.get_file_as_string(_stage_path(scenario).path_join("core/a.gd")) == "new a"
 	var live_made := DirAccess.dir_exists_absolute(str(scenario["addon_path"]))
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.NOTHING, "nothing to report")
 	testing.eq(left, _left_as("applying", true, true, ""), "nothing touched")
 	testing.ok(backup_whole, "the backup is whole")
@@ -325,7 +303,7 @@ static func _test_applying_missing(testing: Testing) -> void:
 	FolderFiles.write_checked(str(undo_failed["addon_path"]).path_join("in_the_way.gd"), "held".to_utf8_buffer())
 	var undo_result := UpdateSettler.settle(undo_failed["options"])
 	var undo_left := _left(undo_failed)
-	_cleanup(undo_failed)
+	UpdateFixtures.remove_scenario(undo_failed)
 	testing.eq(undo_result["report"], UpdateSettler.NOTHING, "a folder with no plugin.cfg counts as missing")
 	testing.eq(undo_left, _left_as("applying", true, true, ""), "and nothing is touched")
 	print("")
@@ -337,7 +315,7 @@ static func _test_verified(testing: Testing) -> void:
 		var scenario := _staged("settle_verified_" + installed, UpdateJournal.VERIFIED, installed)
 		var result := UpdateSettler.settle(scenario["options"])
 		var left := _left(scenario)
-		_cleanup(scenario)
+		UpdateFixtures.remove_scenario(scenario)
 		testing.eq(result["report"], UpdateSettler.NOTHING, "at %s → nothing to report, the offer returns" % installed)
 		testing.eq(left, _left_as("", false, false, installed), "at %s → journal and stage go, the backup stays" % installed)
 	print("")
@@ -349,7 +327,7 @@ static func _test_staged_at_to_or_later(testing: Testing) -> void:
 		var scenario := _staged("settle_pulled_" + installed, UpdateJournal.STAGED, installed)
 		var result := UpdateSettler.settle(scenario["options"])
 		var left := _left(scenario)
-		_cleanup(scenario)
+		UpdateFixtures.remove_scenario(scenario)
 		testing.eq(result["report"], UpdateSettler.NOTHING, "%s → cleared quietly" % installed)
 		testing.eq(left, _left_as("", false, false, installed), "%s → journal and stage go, the backup stays" % installed)
 	print("")
@@ -360,7 +338,7 @@ static func _test_staged_older_whole(testing: Testing) -> void:
 	var scenario := _staged("settle_waiting", UpdateJournal.STAGED)
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.WAITING, "waits for the exit")
 	testing.eq(result["reason"], "", "no attempt yet → no reason")
 	testing.eq(left, _left_as("staged", true, true, "1.1.0"), "everything stays")
@@ -379,7 +357,7 @@ static func _test_staged_older_postponed(testing: Testing) -> void:
 	UpdateJournal.write(journal, scenario["updates"])
 	var result := UpdateSettler.settle(scenario["options"])
 	var state := str(UpdateJournal.read(scenario["updates"])["state"])
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(no_attempts["reason"], "", "a reason with no attempts → not returned")
 	testing.eq(result["report"], UpdateSettler.WAITING, "attempts above zero → still waits")
 	testing.eq(result["reason"], "a held file", "and returns the reason")
@@ -396,7 +374,7 @@ static func _test_pinned_journal(testing: Testing) -> void:
 	FolderFiles.write_checked(path, UpdateFixtures.PINNED_1_2_0_JOURNAL.to_utf8_buffer())
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result, {"report": "waiting", "from": "1.1.0", "to": "1.2.0", "reason": "a held file", "attempts": 2,
 			"compatible_server": "1.1.0"}, "the wait is reported with its reason, attempts and versions")
 	testing.eq(left, _left_as("staged", true, true, "1.1.0"), "everything stays")
@@ -414,21 +392,21 @@ static func _test_staged_older_not_whole(testing: Testing) -> void:
 		change.call(scenario)
 		var result := UpdateSettler.settle(scenario["options"])
 		var left := _left(scenario)
-		_cleanup(scenario)
+		UpdateFixtures.remove_scenario(scenario)
 		testing.eq(result["report"], UpdateSettler.FAILED, "%s → reported" % label)
 		testing.eq(result["reason"], _NOT_WHOLE, "%s → with the reason" % label)
 		testing.eq(left, _left_as("", false, false, "1.1.0"), "%s → journal and stage go, the backup stays" % label)
 	print("")
 
 
-# Neither table row reads a version that is not there, so nothing moves.
+# With no live version to compare, no rule applies, so nothing moves.
 static func _test_staged_missing(testing: Testing) -> void:
 	testing.begin("Update settler: staged, the live folder missing")
 	var scenario := _staged("settle_staged_missing", UpdateJournal.STAGED)
 	FolderFiles.remove_tree(str(scenario["addon_path"]))
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.NOTHING, "nothing to report")
 	testing.eq(left, _left_as("staged", true, true, ""), "nothing touched")
 	print("")
@@ -439,10 +417,10 @@ static func _test_applied_at_to(testing: Testing) -> void:
 	var scenario := _swapped("settle_applied", UpdateJournal.APPLIED)
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	var swap_backup := _exists(scenario, "backup-1.1.0")
+	var swap_backup := UpdateFixtures.scenario_has_folder(scenario, "backup-1.1.0")
 	var logged := FileAccess.get_file_as_string(UpdateFolder.log_path(scenario["updates"]))
 	var again := UpdateSettler.settle(scenario["options"])
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result, {"report": "updated", "from": "1.1.0", "to": "1.2.0", "reason": "", "attempts": 0,
 			"compatible_server": "1.1.0"}, "reports the update, naming both versions")
 	testing.eq(left, _left_as("", false, false, "1.2.0"), "the journal and the zip go")
@@ -457,7 +435,7 @@ static func _test_applied_at_another_version(testing: Testing) -> void:
 	var scenario := _staged("settle_applied_other", UpdateJournal.APPLIED)
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.FAILED, "reported as not installed")
 	testing.eq(result["reason"], "the editor started version 1.1.0", "naming the version it started")
 	testing.eq(left, _left_as("", false, false, "1.1.0"), "the journal goes, the backup stays")
@@ -470,7 +448,7 @@ static func _test_applied_missing(testing: Testing) -> void:
 	FolderFiles.remove_tree(str(scenario["addon_path"]))
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.NOTHING, "nothing to report")
 	testing.eq(left, _left_as("applied", true, true, ""), "nothing touched")
 	print("")
@@ -482,7 +460,7 @@ static func _test_not_applied_zip_gone(testing: Testing) -> void:
 	FolderFiles.remove_tree(str(scenario["updates_path"]).path_join("1.2.0"))
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.FAILED, "reported")
 	testing.eq(result["reason"], "the stage does not match the release", "with the journal's reason")
 	testing.eq(left, _left_as("", false, false, "1.1.0"), "the journal goes, the backup stays")
@@ -498,11 +476,11 @@ static func _test_not_applied_restages(testing: Testing) -> void:
 	var result := UpdateSettler.settle(scenario["options"])
 	var after := UpdateJournal.read(scenario["updates"])
 	var stage_a := FileAccess.get_file_as_string(_stage_path(scenario).path_join("core/a.gd"))
-	var backup_gone := not _exists(scenario, _OLD_BACKUP)
-	var zip_kept := _exists(scenario, "1.2.0")
+	var backup_gone := not UpdateFixtures.scenario_has_folder(scenario, _OLD_BACKUP)
+	var zip_kept := UpdateFixtures.scenario_has_folder(scenario, "1.2.0")
 	var applied := UpdateApplier.apply_pending(scenario["options"])
 	var live_after := UpdateApplier.installed_version(scenario["addon_path"])
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.WAITING, "the stage waits for the exit")
 	testing.eq(result["reason"], "", "with nothing to show")
 	testing.eq(after["state"], "staged", "the journal says staged")
@@ -544,7 +522,7 @@ static func _test_not_applied_check_fails(testing: Testing) -> void:
 		_mark_mismatched(scenario)
 		var result := UpdateSettler.settle(scenario["options"])
 		var left := _left(scenario)
-		_cleanup(scenario)
+		UpdateFixtures.remove_scenario(scenario)
 		testing.eq(result["report"], UpdateSettler.FAILED, "%s → reported" % label)
 		testing.eq(result["reason"], str(test_case[2]), "%s → with the check's reason" % label)
 		testing.eq(left, _left_as("", false, false, installed), "%s → no re-stage, cleared, the backup stays" % label)
@@ -554,7 +532,7 @@ static func _test_not_applied_check_fails(testing: Testing) -> void:
 	guarded_options["guard_facts"] = {"headless": true}
 	var guarded_result := UpdateSettler.settle(guarded_options)
 	var guarded_left := _left(guarded)
-	_cleanup(guarded)
+	UpdateFixtures.remove_scenario(guarded)
 	testing.eq(guarded_result["reason"], "A headless editor never installs updates.", "a guard → with its sentence")
 	testing.eq(guarded_left, _left_as("", false, false, "1.1.0"), "a guard → no re-stage, cleared, the backup stays")
 	print("")
@@ -568,7 +546,7 @@ static func _test_not_applied_only_once(testing: Testing) -> void:
 	UpdateJournal.write(journal, scenario["updates"])
 	var result := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.FAILED, "reported")
 	testing.eq(result["reason"], "the stage does not match the release", "with the journal's reason")
 	testing.eq(left, _left_as("", false, false, "1.1.0"), "no second re-stage, cleared, the backup stays")
@@ -588,7 +566,7 @@ static func _test_second_mismatch_clears(testing: Testing) -> void:
 	var second_exit := UpdateApplier.apply_pending(scenario["options"])
 	var second_start := UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(first_exit["state"], "not_applied", "the first mismatch → not applied")
 	testing.eq(first_start["report"], UpdateSettler.WAITING, "the next start re-stages")
 	testing.eq(second_exit["state"], "not_applied", "the second mismatch → not applied")
@@ -607,7 +585,7 @@ static func _test_restage_fails(testing: Testing) -> void:
 	DirAccess.remove_absolute(_stage_path(scenario))
 	var left := _left(scenario)
 	var again := _settle_quietly(scenario["options"])
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.FAILED, "reported")
 	testing.ok(str(result["reason"]).begins_with("could not write "), "with the stepper's reason")
 	testing.eq(left["journal"], "", "the journal goes")
@@ -623,12 +601,12 @@ static func _test_restage_write_fails(testing: Testing) -> void:
 	var journal_path := str(scenario["updates_path"]).path_join("journal.json")
 	UpdateFixtures.set_read_only(journal_path, true)
 	var result := _settle_quietly(scenario["options"])
-	var stage_gone := not _exists(scenario, "stage")
-	var zip_gone := not _exists(scenario, "1.2.0")
+	var stage_gone := not UpdateFixtures.scenario_has_folder(scenario, "stage")
+	var zip_gone := not UpdateFixtures.scenario_has_folder(scenario, "1.2.0")
 	UpdateFixtures.set_read_only(journal_path, false)
 	UpdateSettler.settle(scenario["options"])
 	var left := _left(scenario)
-	_cleanup(scenario)
+	UpdateFixtures.remove_scenario(scenario)
 	testing.eq(result["report"], UpdateSettler.FAILED, "reported")
 	testing.eq(result["reason"], "could not write the journal", "with the reason")
 	testing.ok(stage_gone and zip_gone, "the stage and the zip go, so nothing re-stages")
@@ -653,7 +631,7 @@ static func _test_keep_backup_off(testing: Testing) -> void:
 	var applied_result := _with_keep_backup(false, applied["options"])
 	var applied_gone := not DirAccess.dir_exists_absolute(str(applied["updates_path"]))
 	var applied_live := UpdateApplier.installed_version(applied["addon_path"])
-	_cleanup(applied)
+	UpdateFixtures.remove_scenario(applied)
 	testing.eq(applied_result["report"], UpdateSettler.UPDATED, "applied at to → reported first")
 	testing.ok(applied_gone, "applied at to → the whole folder goes, nothing makes it again")
 	testing.eq(applied_live, "1.2.0", "the live folder stays")
@@ -661,7 +639,7 @@ static func _test_keep_backup_off(testing: Testing) -> void:
 	var interrupted := _swapped("settle_keep_off_k3", UpdateJournal.APPLYING)
 	var interrupted_result := _with_keep_backup(false, interrupted["options"])
 	var interrupted_gone := not DirAccess.dir_exists_absolute(str(interrupted["updates_path"]))
-	_cleanup(interrupted)
+	UpdateFixtures.remove_scenario(interrupted)
 	testing.eq(interrupted_result["report"], UpdateSettler.UPDATED, "applying at to → reported first")
 	testing.ok(interrupted_gone, "applying at to → the whole folder goes")
 	print("")
@@ -672,8 +650,8 @@ static func _test_keep_backup_unreadable(testing: Testing) -> void:
 	for value: Variant in [true, "false", 0]:
 		var scenario := _swapped("settle_keep_%s" % str(value), UpdateJournal.APPLIED)
 		_with_keep_backup(value, scenario["options"])
-		var swap_backup := _exists(scenario, "backup-1.1.0")
-		_cleanup(scenario)
+		var swap_backup := UpdateFixtures.scenario_has_folder(scenario, "backup-1.1.0")
+		UpdateFixtures.remove_scenario(scenario)
 		testing.ok(swap_backup, "%s → the backup stays" % var_to_str(value))
 	print("")
 
@@ -684,19 +662,19 @@ static func _test_keep_backup_off_failures(testing: Testing) -> void:
 	var other := _staged("settle_keep_off_other", UpdateJournal.APPLIED)
 	_with_keep_backup(false, other["options"])
 	var other_left := _left(other)
-	_cleanup(other)
+	UpdateFixtures.remove_scenario(other)
 	testing.eq(other_left, _left_as("", false, false, "1.1.0"), "applied at another version → the backup stays")
 
 	var torn := _staged("settle_keep_off_torn", UpdateJournal.STAGED)
 	DirAccess.remove_absolute(_stage_path(torn).path_join("core/b.gd"))
 	_with_keep_backup(false, torn["options"])
 	var torn_left := _left(torn)
-	_cleanup(torn)
+	UpdateFixtures.remove_scenario(torn)
 	testing.eq(torn_left, _left_as("", false, false, "1.1.0"), "a stage not whole → the backup stays")
 
 	var refused := _mismatched("settle_keep_off_refused", "1.2.0")
 	_with_keep_backup(false, refused["options"])
 	var refused_left := _left(refused)
-	_cleanup(refused)
+	UpdateFixtures.remove_scenario(refused)
 	testing.eq(refused_left, _left_as("", false, false, "1.2.0"), "a failed check → the backup stays")
 	print("")

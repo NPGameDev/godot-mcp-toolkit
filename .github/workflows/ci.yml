@@ -243,7 +243,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
-    # Fuse: the warm-up is capped at 240s and each of the four pack exports takes
+    # Fuse: the warm-up is capped at 240s and each of the up to four pack exports takes
     # well under a minute — at 15 min the job is hung, not slow.
     timeout-minutes: 15
     strategy:

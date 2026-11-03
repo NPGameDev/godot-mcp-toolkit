@@ -20,7 +20,9 @@ const LINKED_FOLDER := "linked_folder"
 const VERSION_CONTROL_FOLDER := "version_control_folder"
 const HEADLESS := "headless"
 
-const _ADDON_PATH := "res://addons/godot_mcp_toolkit"
+## The installed addon folder.
+const ADDON_FOLDER := "res://addons/godot_mcp_toolkit"
+
 # Files only the toolkit's own repository holds: installing there would overwrite
 # the source with a release.
 const _REPOSITORY_MARKERS := [
@@ -35,7 +37,7 @@ const _REPOSITORY_MARKERS := [
 ## [method FolderFiles.is_link], which counts anything but a clear "not a link" as one.[br]
 ## [br]
 ## [param addon_path] is the folder the link and git facts look at. Only tests pass it.
-static func facts(addon_path: String = _ADDON_PATH) -> Dictionary:
+static func facts(addon_path: String = ADDON_FOLDER) -> Dictionary:
 	var git_path := addon_path.path_join(".git")
 	var in_repository := false
 	for marker in _REPOSITORY_MARKERS:
@@ -49,17 +51,17 @@ static func facts(addon_path: String = _ADDON_PATH) -> Dictionary:
 	}
 
 
-## The first rule [param facts] break, or an empty string when the toolkit may
-## install. [param facts] has the shape [method facts] returns; a missing key counts
+## The first rule [param guard_facts] break, or an empty string when the toolkit may
+## install. [param guard_facts] has the shape [method facts] returns; a missing key counts
 ## as false.
-static func refusal(facts: Dictionary) -> String:
-	if bool(facts.get(TOOLKIT_REPOSITORY, false)):
+static func refusal(guard_facts: Dictionary) -> String:
+	if bool(guard_facts.get(TOOLKIT_REPOSITORY, false)):
 		return TOOLKIT_REPOSITORY
-	if bool(facts.get(LINKED_FOLDER, false)):
+	if bool(guard_facts.get(LINKED_FOLDER, false)):
 		return LINKED_FOLDER
-	if bool(facts.get(VERSION_CONTROL_FOLDER, false)):
+	if bool(guard_facts.get(VERSION_CONTROL_FOLDER, false)):
 		return VERSION_CONTROL_FOLDER
-	if bool(facts.get(HEADLESS, false)) and not bool(facts.get("headless_allowed", false)):
+	if bool(guard_facts.get(HEADLESS, false)) and not bool(guard_facts.get("headless_allowed", false)):
 		return HEADLESS
 	return ""
 

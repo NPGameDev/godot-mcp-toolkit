@@ -14,6 +14,8 @@ extends EditorPlugin
 ## The toolkit is reached through [method @GDScript.load], never a preload: at one kill
 ## point its folder is gone, and this plugin still has to start and say so.
 
+enum _Phase { WAIT_FOR_SCAN, STAGE, WAIT_FOR_TOOLKIT, CLOSING }
+
 const _DRIVER_FOLDER := "res://.kill_driver"
 const _TOOLKIT_FOLDER := "res://addons/godot_mcp_toolkit"
 const _SELF_UPDATE_FOLDER := _TOOLKIT_FOLDER + "/self_update"
@@ -31,8 +33,6 @@ const _WAIT_LIMIT_MS := 90000
 const _CLOSE_LIMIT_MS := 30000
 # Ends a hung session from inside, so the driver's own timeout never leaves an editor behind.
 const _WATCHDOG_MS := 240000
-
-enum _Phase { WAIT_FOR_SCAN, STAGE, WAIT_FOR_TOOLKIT, CLOSING }
 
 var _session: Dictionary = {}
 var _public_key := ""
@@ -155,7 +155,7 @@ func _advance_stage(now: int) -> void:
 	_finish_stage_if_over(outcome, now)
 
 
-# Writes the journal the installer would once the stage is whole; the stepper writes none.
+# Writes the journal the stepper's caller would once the stage is whole; the stepper writes none.
 func _finish_stage_if_over(outcome: Dictionary, now: int) -> void:
 	var state := str(outcome["state"])
 	if state == _STEPPER_RUNNING:

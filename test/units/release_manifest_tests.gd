@@ -89,6 +89,11 @@ static func _test_size_limits(testing: Testing) -> void:
 	var padded := JSON.stringify(_manifest()) + " ".repeat(64 * 1024)
 	testing.eq(str(ReleaseManifest.parse(padded, "1.2.0")["error"]), "the manifest is larger than 65536 bytes",
 			"a manifest past 64 KiB → refused")
+	var at_limit := JSON.stringify(_manifest())
+	at_limit += " ".repeat(65536 - at_limit.length())
+	testing.eq(str(ReleaseManifest.parse(at_limit, "1.2.0")["error"]), "", "a manifest of exactly 65536 bytes → reads")
+	testing.eq(str(ReleaseManifest.parse(at_limit + " ", "1.2.0")["error"]), "the manifest is larger than 65536 bytes",
+			"a manifest of 65537 bytes → refused")
 	print("")
 
 

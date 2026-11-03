@@ -37,9 +37,6 @@ const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
-## The installed addon folder.
-const ADDON_FOLDER := "res://addons/godot_mcp_toolkit"
-
 ## The steps [method apply_pending] names to [code]on_step[/code], in order: every check
 ## passed; the journal says applying; the installed folder is now the backup; the stage is
 ## now the installed folder.
@@ -67,7 +64,7 @@ const STEP_STAGE_MOVED := "stage_moved"
 ## journal, or an empty state when nothing was staged. [code]applying[/code] means the undo
 ## failed too, and the journal stays there with the backup and the stage whole.
 static func apply_pending(options: Dictionary = {}) -> Dictionary:
-	var addon_folder := ProjectSettings.globalize_path(str(options.get("addon_folder", ADDON_FOLDER)))
+	var addon_folder := ProjectSettings.globalize_path(str(options.get("addon_folder", InstallGuards.ADDON_FOLDER)))
 	var update_folder := str(options.get("update_folder", UpdateFolder.FOLDER))
 	var journal := UpdateJournal.read(update_folder)
 	if journal["state"] != UpdateJournal.STAGED:
@@ -160,7 +157,7 @@ static func check_release(
 	if not ReleaseManifest.supports_engine(manifest, engine_version):
 		return _problem("version %s needs Godot %s or newer" % [version, manifest["min_godot"]])
 
-	var archive := release_folder.path_join(ReleaseAssets.archive_name(version))
+	var archive := UpdateFolder.archive_path(version, update_folder)
 	if not FileAccess.file_exists(archive) or FolderFiles.hash_of_file(archive) != manifest["archive_sha256"]:
 		return _problem("the staged archive does not match its manifest")
 	var installed := installed_version(addon_folder)
@@ -239,7 +236,11 @@ static func _finish(journal: Dictionary, state: String, reason: String, update_f
 	journal["state"] = state
 	journal["reason"] = reason
 	var written := UpdateJournal.write(journal, update_folder)
-	UpdateFolder.log_line("apply %s: %s%s%s" % [journal["to"], state,
-			"" if reason.is_empty() else " (%s)" % reason,
-			"" if written else ", but the journal could not be written"], update_folder)
+	var log_parts := [
+		journal["to"],
+		state,
+		"" if reason.is_empty() else " (%s)" % reason,
+		"" if written else ", but the journal could not be written",
+	]
+	UpdateFolder.log_line("apply %s: %s%s%s" % log_parts, update_folder)
 	return {"state": state, "reason": reason}

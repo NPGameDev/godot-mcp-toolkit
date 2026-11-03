@@ -76,9 +76,10 @@ static func write_checked(path: String, bytes: PackedByteArray) -> bool:
 ## [code]test -L[/code] on Unix and [code]fsutil reparsepoint query[/code] on Windows, one
 ## process per call, and anything but a clear "not a link" counts as one: a missing tool,
 ## an empty [code]SystemRoot[/code] (no process runs then), an access error, a path that is
-## not there on Windows, a parent that does not open, or a path the shell would expand. On
-## Windows every reparse point counts, a cloud placeholder too, as it does for
-## [method DirAccess.is_link].
+## not there on Windows, or a path the shell would expand. On Windows every reparse point
+## counts, a cloud placeholder too, as it does for [method DirAccess.is_link].[br]
+## [br]
+## A parent that does not open counts as a link on every version.
 static func is_link(folder: String) -> bool:
 	var parent := DirAccess.open(folder.get_base_dir())
 	if parent == null:

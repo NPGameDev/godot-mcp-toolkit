@@ -12,9 +12,10 @@ extends RefCounted
 ## A journal it does not trust reads as none and stays, with its stage, until the next
 ## staging replaces them.
 
+# Direct preloads: core/modules.gd does not list this folder's scripts.
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
+const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
 const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
-const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const StageStepper := preload("res://addons/godot_mcp_toolkit/self_update/stage_stepper.gd")
 const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
@@ -52,7 +53,7 @@ const _STAGE_NOT_WHOLE := "the stage or its zip is not whole"
 ## another. It finishes once per update, while the editor is starting; a kill before it
 ## finishes leaves the journal as it was, so the next start runs it again.
 static func settle(options: Dictionary = {}) -> Dictionary:
-	var addon_folder := ProjectSettings.globalize_path(str(options.get("addon_folder", UpdateApplier.ADDON_FOLDER)))
+	var addon_folder := ProjectSettings.globalize_path(str(options.get("addon_folder", InstallGuards.ADDON_FOLDER)))
 	var update_folder := str(options.get("update_folder", UpdateFolder.FOLDER))
 	var journal := UpdateJournal.read(update_folder)
 	var state := str(journal["state"])
@@ -161,8 +162,7 @@ static func _stage_is_whole(journal: Dictionary, update_folder: String) -> bool:
 
 
 static func _archive(journal: Dictionary, update_folder: String) -> String:
-	var version := str(journal["to"])
-	return UpdateFolder.version_folder(version, update_folder).path_join(ReleaseAssets.archive_name(version))
+	return UpdateFolder.archive_path(str(journal["to"]), update_folder)
 
 
 static func _keeps_backup() -> bool:

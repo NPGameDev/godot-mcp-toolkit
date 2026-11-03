@@ -3,12 +3,13 @@ extends RefCounted
 ## Names what an update's swap would cost: the installed files changed by hand, and the
 ## files that are not the release's at all.
 ##
-## Pure: it compares the installed folder's release file list with the files the folder
-## holds now. The swap replaces the whole addon folder and copies nothing back, so a file
+## It does no I/O of its own: it compares the installed folder's release file list with the
+## files the folder holds now. The swap replaces the whole addon folder and copies nothing back, so a file
 ## the list does not name is someone's own and leaves with the old folder. Two files are
 ## never named as discarded: an engine-generated [code].import[/code] file, which the engine
 ## makes again, and the list itself, which leaves itself out and comes back with the release.
 
+# Direct preload: core/modules.gd does not list this folder's scripts.
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 
 const _ENGINE_FILE_SUFFIX := ".import"

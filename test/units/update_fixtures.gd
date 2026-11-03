@@ -124,6 +124,39 @@ static func make_addon(folder: String, version: String, files: Dictionary) -> vo
 		FolderFiles.write_checked(path, str(entries[entry]).to_utf8_buffer())
 
 
+## A scratch addon at [param installed_version] holding [param installed_files], and the
+## scenario around it: the addon and update folders, their absolute forms and the options
+## that point an apply or a settle at them. The update folder is not created here.
+static func make_scenario(purpose: String, installed_version: String, installed_files: Dictionary) -> Dictionary:
+	var addon := scratch(purpose + "_addon")
+	var updates := scratch(purpose + "_updates")
+	make_addon(addon, installed_version, installed_files)
+	return {
+		"addon": addon,
+		"updates": updates,
+		"addon_path": ProjectSettings.globalize_path(addon),
+		"updates_path": ProjectSettings.globalize_path(updates),
+		"options": {
+			"addon_folder": addon,
+			"update_folder": updates,
+			"engine_version": "4.7",
+			"public_keys": [public_pem(key())],
+			"guard_facts": {},
+		},
+	}
+
+
+## Whether the folder [param relative] exists in the update folder of [param scenario].
+static func scenario_has_folder(scenario: Dictionary, relative: String) -> bool:
+	return DirAccess.dir_exists_absolute(str(scenario["updates_path"]).path_join(relative))
+
+
+## Deletes the addon and update folders of [param scenario].
+static func remove_scenario(scenario: Dictionary) -> void:
+	remove(str(scenario["addon"]))
+	remove(str(scenario["updates"]))
+
+
 ## The manifest text for a zip of [param archive_bytes] at [param version].
 static func manifest_text(version: String, archive_bytes: PackedByteArray, min_godot: String = "4.2") -> String:
 	return JSON.stringify({
@@ -152,7 +185,7 @@ static func make_folder_link(link: String, target: String) -> bool:
 
 
 ## Stages a release of [param version] holding [param files] in [param update_folder]
-## as the installer would: the zip, its manifest signed by [param signing_key], the
+## as the stepper's caller would: the zip, its manifest signed by [param signing_key], the
 ## unpacked stage, and a journal in [param state] over [param from_version].
 static func stage(
 		update_folder: String, version: String, files: Dictionary, from_version: String,

@@ -23,8 +23,10 @@ const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content
 ## stream), so a damaged list is never half used.
 static func parse(text: String) -> Dictionary:
 	var entries := {}
+	var strip_left := false
+	var strip_right := true
 	for raw_line in text.split("\n"):
-		var line := raw_line.strip_edges(false, true)
+		var line := raw_line.strip_edges(strip_left, strip_right)
 		if line.is_empty():
 			continue
 		var digest := line.substr(0, 64)

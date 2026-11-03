@@ -3,14 +3,14 @@
 # The self-update's swap in real editors: kills at each step, a clean update, a scan in
 # flight at exit, a real git repository and a linked folder, each on a scratch project.
 #
-# Nothing in the shipped plugin calls the applier or the settler yet, so a test-only
+# Nothing in the shipped plugin calls the applier or the settler, so a test-only
 # plugin (plugin/driver_plugin.gd) brings the calls: at start it settles, at exit it
 # applies, and it can kill the editor at one of the steps the applier names. Each session
 # is one real editor start and exit, closed by a close request sent from inside it. The
 # run grades what that left: the plugin's notes, the journal and the folders on disk,
 # never an exit code.
 #
-# Both versions are built by scripts/build-plugin-release.sh and signed by
+# Both versions are built by scripts/build-plugin-release.sh; B is signed by
 # scripts/sign-release.sh with a throwaway key, so staging runs a really built zip through
 # the name rules. A is this checkout's version; B is one patch newer. Each carries a file
 # the other lacks, and A also gets a file by hand, the one a release never lists.
@@ -456,7 +456,12 @@ leg_git() {
   printf '.godot/\n%s/\n!addons/**\n' "$DRIVER_DIR" > "$PROJECT/.gitignore"
 
   git_in_project add -A
-  check "after staging, git add -A stages the toolkit" "$(staged_under "$ADDON/")" "$(git_in_project ls-files "$ADDON/" | wc -l | tr -d ' ')"
+  # Counted on disk, because the index reads 0 on both sides when a rule hides the toolkit.
+  # The .gitignore above re-includes addons/ whole, so every file there has to be staged.
+  local on_disk
+  on_disk="$(find "$PROJECT/$ADDON" -type f | wc -l | tr -d ' ')"
+  [ "$on_disk" -gt 0 ] || check "the toolkit has files on disk" "$on_disk" "more than 0"
+  check "after staging, git add -A stages the toolkit" "$(staged_under "$ADDON/")" "$on_disk"
   check "after staging, it stages nothing from the update folder" "$(staged_under "$UPDATES/")" "0"
   git_in_project commit -q -m baseline
 

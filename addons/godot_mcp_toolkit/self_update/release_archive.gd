@@ -138,7 +138,9 @@ static func _is_windows_alias(segment: String) -> bool:
 		if tilde + 1 < segment.length() and _DIGITS.contains(segment[tilde + 1]):
 			return true
 		tilde = segment.find("~", tilde + 1)
-	return _WINDOWS_DEVICE_NAMES.has(segment.get_slice(".", 0).strip_edges(false, true).to_upper())
+	var strip_left := false
+	var strip_right := true
+	return _WINDOWS_DEVICE_NAMES.has(segment.get_slice(".", 0).strip_edges(strip_left, strip_right).to_upper())
 
 
 # Why `entry` differs only in case from a path in `spellings`, which it joins. A folder

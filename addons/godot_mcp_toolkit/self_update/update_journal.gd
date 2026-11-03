@@ -36,7 +36,6 @@ const _FILE_NAME := "journal.json"
 const _STATES := [VERIFIED, STAGED, APPLYING, APPLIED, NOT_APPLIED]
 # The fields no path is built from: a wrong type reads as empty and the journal stands.
 const _PLAIN_TEXT_FIELDS := ["expected_tree_hash", "compatible_server", "reason"]
-# Every field written as text.
 const _TEXT_FIELDS := ["state", "from", "to", "backup", "expected_tree_hash", "compatible_server", "reason"]
 
 
@@ -122,8 +121,17 @@ static func clear(folder: String = UpdateFolder.FOLDER) -> void:
 
 
 static func _no_journal() -> Dictionary:
-	return {"state": "", "from": "", "to": "", "backup": "", "expected_tree_hash": "",
-			"compatible_server": "", "reason": "", "attempts": 0, "changed_files": PackedStringArray()}
+	return {
+		"state": "",
+		"from": "",
+		"to": "",
+		"backup": "",
+		"expected_tree_hash": "",
+		"compatible_server": "",
+		"reason": "",
+		"attempts": 0,
+		"changed_files": PackedStringArray(),
+	}
 
 
 static func _is_version(value: Variant) -> bool:

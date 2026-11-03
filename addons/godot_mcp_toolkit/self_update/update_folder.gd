@@ -3,8 +3,9 @@ extends RefCounted
 ## The one folder the self-update keeps everything in, its layout and its ignore files.
 ##
 ## The folder sits in the project, beside the addon, so a project rename strands nothing.
-## The engine's scanner, exporter and Plugins list each skip a folder whose name starts
-## with a dot; [code].gdignore[/code] is there for other tools.[br]
+## The engine's scanner, the exporter's folder walk and the Plugins list each skip a folder
+## whose name starts with a dot, and the export strip covers the exporter's dependency walk;
+## [code].gdignore[/code] is there for other tools.[br]
 ## [br]
 ## It holds the update journal, [code]install.log[/code], one [code]<version>/[/code]
 ## folder with the zip, manifest and signature, [code]stage/[/code] with the unpacked
@@ -14,8 +15,9 @@ extends RefCounted
 ## [code]git stash -a[/code] can delete it at any moment: no code here assumes the folder
 ## survives from one call to the next.
 
-# Direct preload: core/modules.gd does not list this folder's scripts.
+# Direct preloads: core/modules.gd does not list this folder's scripts.
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
+const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 
 ## Where the self-update keeps everything.
 const FOLDER := "res://addons/.godot_mcp_toolkit_update"
@@ -47,6 +49,11 @@ static func ensure_ignore_files(folder: String = FOLDER) -> bool:
 ## The folder that holds the zip, manifest and signature of [param version].
 static func version_folder(version: String, folder: String = FOLDER) -> String:
 	return folder.path_join(version)
+
+
+## The path of the zip of [param version].
+static func archive_path(version: String, folder: String = FOLDER) -> String:
+	return version_folder(version, folder).path_join(ReleaseAssets.archive_name(version))
 
 
 ## The folder that holds the unpacked release until the swap.

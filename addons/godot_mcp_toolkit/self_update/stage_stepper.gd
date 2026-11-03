@@ -17,10 +17,10 @@ extends RefCounted
 ## next [method begin] wipes. The folder can also vanish between frames, and the applier's
 ## check before the swap catches the stage that leaves.
 
+# Direct preloads: core/modules.gd does not list this folder's scripts.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
-const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 
@@ -50,7 +50,7 @@ var _update_folder := UpdateFolder.FOLDER
 ## ending any run still going.[br]
 ## [br]
 ## The stage is wiped first, so nothing of an earlier run survives. The update backups go
-## last, so a zip that will not stage costs no backup. Each step that cannot be done
+## last, so a zip whose names do not hold costs no backup. Each step that cannot be done
 ## refuses the run: the ignore files, the wipe, the zip's layout and the backups.[br]
 ## [br]
 ## Returns the shape [method advance] returns.
@@ -69,7 +69,7 @@ func begin(version: String, update_folder: String = UpdateFolder.FOLDER) -> Dict
 		return _fail("could not write the update folder's ignore files")
 	if not FolderFiles.remove_tree(_stage):
 		return _fail("could not delete the old stage")
-	var archive := UpdateFolder.version_folder(version, update_folder).path_join(ReleaseAssets.archive_name(version))
+	var archive := UpdateFolder.archive_path(version, update_folder)
 	if not FileAccess.file_exists(archive):
 		return _fail("the update's zip is missing")
 	var reader := ZIPReader.new()

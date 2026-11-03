@@ -14,7 +14,7 @@ const ASK := "ask"
 
 const DEFAULT := ASK
 
-## The values in the order the inspector and the setup step list them.
+## The values the setting accepts.
 const VALUES := [MANUAL, ASK]
 
 
@@ -30,6 +30,7 @@ static func read(project_settings: Object) -> String:
 
 
 ## Stores [param mode] in [param project_settings] and saves it when it changed.
+## A mode outside [constant VALUES] is ignored.
 ## Returns the save's error, or [constant OK] when nothing changed.
 static func save(project_settings: Object, mode: String) -> Error:
 	if not VALUES.has(mode) or read(project_settings) == mode:

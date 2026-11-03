@@ -29,17 +29,8 @@ static func run(testing: Testing) -> void:
 	_test_zip_that_never_opened(testing)
 
 
-static func _inspect(name: String, entries: Dictionary, version: String = "1.2.0") -> Dictionary:
-	var folder := UpdateFixtures.scratch("archive_" + name)
-	var path := folder.path_join("release.zip")
-	UpdateFixtures.write_zip(path, entries)
-	var result := ReleaseArchive.inspect(path, version)
-	UpdateFixtures.remove(folder)
-	return result
-
-
 # The fixture's zip of `entries`, then an empty entry per name in `repeated`.
-static func _inspect_repeating(name: String, entries: Dictionary, repeated: PackedStringArray) -> Dictionary:
+static func _inspect(name: String, entries: Dictionary, repeated := PackedStringArray()) -> Dictionary:
 	var folder := UpdateFixtures.scratch("archive_" + name)
 	var path := folder.path_join("release.zip")
 	UpdateFixtures.write_zip(path, entries, repeated)
@@ -48,7 +39,7 @@ static func _inspect_repeating(name: String, entries: Dictionary, repeated: Pack
 	return result
 
 
-# A zip holding `extra` after a good release's entries, for what a dictionary cannot hold.
+# A good release's entries with no directory entries from the fixture, then `extra`.
 static func _inspect_with_extra(name: String, extra: PackedStringArray) -> Dictionary:
 	var folder := UpdateFixtures.scratch("archive_" + name)
 	var path := folder.path_join("release.zip")
@@ -189,11 +180,11 @@ static func _test_entry_cap_counts_folders(testing: Testing) -> void:
 	var files := {}
 	for index: int in 4995:
 		files["f%d.gd" % index] = ""
-	var at_cap := _inspect_repeating("folders_at_cap", UpdateFixtures.release_entries("1.2.0", files),
+	var at_cap := _inspect("folders_at_cap", UpdateFixtures.release_entries("1.2.0", files),
 			PackedStringArray(["addons/"]))
 	testing.eq(str(at_cap["error"]), "", "4997 files and 3 folder entries, one of them twice → allowed")
 	files["one_more.gd"] = ""
-	var over := _inspect_repeating("folders_over_cap", UpdateFixtures.release_entries("1.2.0", files),
+	var over := _inspect("folders_over_cap", UpdateFixtures.release_entries("1.2.0", files),
 			PackedStringArray(["addons/"]))
 	testing.eq(str(over["error"]), "the archive holds 5001 entries, more than 5000",
 			"4998 files and 3 folder entries, one of them twice → refused")
@@ -222,31 +213,32 @@ static func _test_folder_entries(testing: Testing) -> void:
 	var core_folder := _ADDON_ENTRY + "core/"
 	var core_file := _ADDON_ENTRY + "core/a.gd"
 	var entries := UpdateFixtures.release_entries("1.2.0", {"core/a.gd": "a"})
+	# From 4.7 start_file writes folder entries itself, so there this zip is not folderless.
 	testing.eq(str(_inspect_with_extra("folders_none", PackedStringArray())["error"]), "",
 			"a zip packed from its files alone → allowed")
-	var twice := _inspect_repeating("folders_twice", entries,
+	var twice := _inspect("folders_twice", entries,
 			PackedStringArray(["addons/", _ADDON_ENTRY, core_folder, core_folder]))
 	testing.eq(str(twice["error"]), "", "each folder entry again → allowed")
 	var twice_files: PackedStringArray = twice.get("files", PackedStringArray())
 	var sorted := Array(twice_files)
 	sorted.sort()
 	testing.eq(sorted, ["core/a.gd", "plugin.cfg", "release_files.sha256"], "… and none of them reads as a file")
-	testing.eq(str(_inspect_repeating("folder_and_file_twice", entries,
+	testing.eq(str(_inspect("folder_and_file_twice", entries,
 			PackedStringArray(["addons/", core_file]))["error"]),
 			"the archive holds an entry twice: addons/godot_mcp_toolkit/core/a.gd",
 			"a file twice beside a folder twice → refused")
-	testing.eq(str(_inspect_repeating("folder_case", entries,
+	testing.eq(str(_inspect("folder_case", entries,
 			PackedStringArray([_ADDON_ENTRY + "CORE/", _ADDON_ENTRY + "CORE/"]))["error"]),
 			"the archive holds names that differ only in letter case: addons/godot_mcp_toolkit/core, addons/godot_mcp_toolkit/CORE",
 			"a folder entry differing only in case → refused")
-	testing.eq(str(_inspect_repeating("folder_outside", entries,
+	testing.eq(str(_inspect("folder_outside", entries,
 			PackedStringArray(["addons/other/", "addons/other/"]))["error"]),
 			"the archive holds a path outside the addon folder: addons/other/",
 			"a folder entry outside the addon folder → refused")
 	var listing_folder := entries.duplicate()
 	var list_entry := _ADDON_ENTRY + ReleaseFileList.FILE_NAME
 	listing_folder[list_entry] = str(listing_folder[list_entry]) + "%s  core/\n" % "0".repeat(64)
-	testing.eq(str(_inspect_repeating("list_folder", listing_folder, PackedStringArray([core_folder]))["error"]),
+	testing.eq(str(_inspect("list_folder", listing_folder, PackedStringArray([core_folder]))["error"]),
 			"the archive's file list names core/, which it does not hold",
 			"a list naming a folder the zip holds an entry for → refused")
 	print("")

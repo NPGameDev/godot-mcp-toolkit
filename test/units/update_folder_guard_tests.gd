@@ -7,7 +7,9 @@ extends RefCounted
 
 const Testing := preload("res://test/units/testing.gd")
 const FileGuard := preload("res://addons/godot_mcp_toolkit/security/file_guard.gd")
+const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const ExportStrip := preload("res://addons/godot_mcp_toolkit/core/export_strip.gd")
+const AssetCommands := preload("res://addons/godot_mcp_toolkit/commands/asset_commands.gd")
 const FolderCommands := preload("res://addons/godot_mcp_toolkit/commands/folder_commands.gd")
 const ResourceCommands := preload("res://addons/godot_mcp_toolkit/commands/resource_commands.gd")
 const ScriptCommands := preload("res://addons/godot_mcp_toolkit/commands/script_commands.gd")
@@ -17,11 +19,13 @@ const _STRIP_SOURCE := "res://addons/godot_mcp_toolkit/core/export_strip.gd"
 
 
 static func run(testing: Testing) -> void:
+	_test_guard_reserves_this_folder(testing)
 	_test_guard_refuses_every_entry(testing)
 	_test_guard_refuses_spellings(testing)
 	_test_guard_refuses_forms_refused_anywhere(testing)
 	_test_guard_allows_look_alikes(testing)
 	var registry := MCPToolkitCommandRegistry.new()
+	AssetCommands.register(registry, null)
 	FolderCommands.register(registry, null)
 	ResourceCommands.register(registry, null)
 	ScriptCommands.register(registry, null)
@@ -29,6 +33,14 @@ static func run(testing: Testing) -> void:
 	await _test_tools_refuse_writes(testing, registry)
 	_test_strip_skips_the_folder(testing)
 	_test_strip_leaves_others_alone(testing)
+
+
+static func _test_guard_reserves_this_folder(testing: Testing) -> void:
+	testing.begin("Update folder: FileGuard reserves the folder this module writes")
+	testing.eq(FileGuard.UPDATE_FOLDER, UpdateFolder.FOLDER, "both name the same folder")
+	testing.ok(FileGuard.is_update_folder(UpdateFolder.stage_folder()), "the stage is inside it")
+	testing.ok(FileGuard.is_update_folder(UpdateFolder.backup_folder("1.1.0")), "a backup is inside it")
+	print("")
 
 
 static func _test_guard_refuses_every_entry(testing: Testing) -> void:
@@ -113,10 +125,10 @@ static func _test_guard_allows_look_alikes(testing: Testing) -> void:
 	]:
 		testing.eq(FileGuard.resolve_safe(path).get("error"), null, "'%s' → allowed" % path)
 	testing.eq(
-		FileGuard.resolve_safe("user://addons/.godot_mcp_toolkit_update/x", ["user://"]).get("error"), null,
-		"the same name under user:// → allowed")
+			FileGuard.resolve_safe("user://addons/.godot_mcp_toolkit_update/x", ["user://"]).get("error"), null,
+			"the same name under user:// → allowed")
 	testing.ok(not FileGuard.is_toolkit_source(_FOLDER + "/stage/plugin.cfg"),
-		"the update folder is not the toolkit's source, which the strip counts for leaks")
+			"the update folder is not the toolkit's source, which the strip counts for leaks")
 	print("")
 
 
@@ -133,8 +145,8 @@ static func _test_tools_refuse_reads(testing: Testing, registry: MCPToolkitComma
 
 
 # Past the guard, the script and resource writes stop on the target's extension or missing
-# type before they touch the disk. folder.create would write, so that case clears whatever
-# landed before it asserts.
+# type before they touch the disk. folder.create and asset.import would write, so those
+# cases clear whatever landed before they assert.
 static func _test_tools_refuse_writes(testing: Testing, registry: MCPToolkitCommandRegistry) -> void:
 	testing.begin("The file tools refuse a write into the update folder")
 	var folder_target := _FOLDER + "/stage/guard_test_absent"
@@ -147,11 +159,18 @@ static func _test_tools_refuse_writes(testing: Testing, registry: MCPToolkitComm
 		"file_path": "res://addons\\.godot_mcp_toolkit_update\\journal.json", "content": "{}"})
 	var resource_written: Dictionary = await registry.call_command("resource.write", {
 		"file_path": _FOLDER + "/stage/guard_test_absent.tres"})
+	var asset_target := _FOLDER + "/stage/guard_test_absent.png"
+	var asset_imported: Dictionary = await registry.call_command("asset.import", {
+		"base64_data": "AAAA", "dest_path": asset_target})
+	if FileAccess.file_exists(asset_target):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(asset_target))
+	_clear_folder_target(folder_target)
 	testing.eq(folder_created.get("code"), "PATH_DENIED", "folder.create under stage/ → PATH_DENIED")
 	testing.ok(not folder_landed, "folder.create under stage/ → no folder on disk")
 	testing.eq(script_written.get("code"), "PATH_DENIED", "script.write journal.json → PATH_DENIED")
 	testing.eq(backslash_written.get("code"), "PATH_DENIED", "script.write with backslashes → PATH_DENIED")
 	testing.eq(resource_written.get("code"), "PATH_DENIED", "resource.write under stage/ → PATH_DENIED")
+	testing.eq(asset_imported.get("code"), "PATH_DENIED", "asset.import under stage/ → PATH_DENIED")
 	print("")
 
 
@@ -185,6 +204,7 @@ static func _test_strip_skips_the_folder(testing: Testing) -> void:
 		"res://addons/.godot_mcp_toolkit_update./stage/plugin.gd",
 	]:
 		testing.ok(_offer(strip, path), "'%s' → skipped" % path)
+	# No public path reads the _saw_addon_* flags headless, so this reads them directly.
 	var saw_script: bool = strip.get("_saw_addon_script")
 	var saw_nonscript: bool = strip.get("_saw_addon_nonscript")
 	testing.ok(not saw_script, "no path in it counts as an addon script")
