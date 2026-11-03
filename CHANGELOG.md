@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The core of a self-update, built on
+  [#125](https://github.com/NPGameDev/godot-mcp-toolkit/pull/125). A verified release can be
+  unpacked a few files at a time and swapped in at editor exit by two folder renames under
+  one journal, and the next start settles what a kill left. A kill between the two
+  renames leaves no toolkit to start, with both copies whole in the update folder;
+  recovering from that comes later. No part of the plugin calls any of this yet, so this
+  version never updates itself.
+
+### Changed
+
+- The file guard refuses paths in `res://addons/.godot_mcp_toolkit_update/`, the folder
+  reserved for the self-update, and exports leave it out. A scene that references a file
+  in that folder fails to load in the exported game.
+
 ## [1.1.2] - 2026-10-29
 
 ### Fixed

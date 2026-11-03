@@ -109,8 +109,11 @@ contributor-facing summary.
   (`export-strip`) exports a data pack on each of those versions, in Text and
   compressed binary-token modes (Text only on 4.2), with an uncommitted extension probe and a dummy
   `.mcp.json`, and fails if the pack lists a toolkit script, the probe or
-  `.mcp.json` (`scripts/test_framework/check_export_strip.sh`). A single
-  aggregate job, **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
+  `.mcp.json` (`scripts/test_framework/check_export_strip.sh`), or anything from a seeded
+  self-update folder. The **apply kill** job (`apply-kill`) runs the self-update's swap in
+  real editors on 4.2.0 and 4.7.0, killing them at each step
+  (`test/apply_kill_driver/run_legs.sh`). A single aggregate job,
+  **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
   required check binds to, never an individual matrix row. Green floor is a merge
   precondition.
 - **Deep tier — opt-in** (`cross-version.yml`). The full **two-editor behavioral
