@@ -437,7 +437,7 @@ run bash "${SIGN}" --key-entry "${WORK}/manifest.expected"
 check "--key-entry refuses a file that is no PEM key" equals "${STATUS}" "1"
 check "that refusal says so" contains "${OUT}" "not a PEM public key"
 run bash "${SIGN}" --help
-check "the usage does not say where keys live" lacks "${OUT}" "PUBLIC_KEYS"
+check "the usage does not say where keys live" lacks "${OUT}" "embedded_trust_document"
 check "the usage names the three-argument form" contains "${OUT}" "<manifest> <private-key.pem> <public-key.pem>"
 run bash "${SIGN}" "${SIGNING}/renamed/some-other-name.json" "${KEYS}/plain.pem"
 check "two arguments no longer sign" equals "${STATUS}" "2"

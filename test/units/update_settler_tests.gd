@@ -500,7 +500,7 @@ static func _test_not_applied_check_fails(testing: Testing) -> void:
 	testing.begin("Update settler: not applied, the zip there, a check that fails")
 	var files := {"core/a.gd": "new a"}
 	var cases := [
-		["an untrusted signature", "1.1.0", "the update's signature does not verify",
+		["an untrusted signature", "1.1.0", "the update is not signed by a key this toolkit trusts",
 				func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.other_key())],
 		["a Godot floor above the engine", "1.1.0", "version 1.2.0 needs Godot 4.9 or newer",
 				func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key(), UpdateJournal.STAGED, "4.9")],

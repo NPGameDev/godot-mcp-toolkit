@@ -50,9 +50,11 @@ const STEP_STAGE_MOVED := "stage_moved"
 ##
 ## [param options] replaces what the apply reads, for tests: [code]addon_folder[/code],
 ## [code]update_folder[/code], [code]engine_version[/code] ([code]major.minor[/code]),
-## [code]public_keys[/code] and [code]guard_facts[/code] (the shape
-## [method InstallGuards.facts] returns). [code]on_step[/code] is a [Callable] called with
-## each step's name as it is reached, so a test can act or a driver can kill there.[br]
+## [code]guard_facts[/code] (the shape [method InstallGuards.facts] returns), and what the
+## signature is checked against: [code]trust_document[/code] and [code]trust_store[/code]
+## (the shape [method ReleaseSignature.chain] takes), or [code]public_keys[/code], which skips
+## the chain. [code]on_step[/code] is a [Callable] called with each step's name as it is
+## reached, so a test can act or a driver can kill there.[br]
 ## [br]
 ## What cannot apply today leaves one of two states. Something that may pass by itself (a
 ## held file, a backup in the way) stays [code]staged[/code], with its [code]reason[/code]
@@ -146,10 +148,8 @@ static func check_release(
 	var release_folder := UpdateFolder.version_folder(version, update_folder)
 	var manifest_bytes := FileAccess.get_file_as_bytes(release_folder.path_join(ReleaseAssets.manifest_name(version)))
 	var signature := FileAccess.get_file_as_bytes(release_folder.path_join(ReleaseAssets.signature_name(version)))
-	var trusted := ReleaseSignature.is_trusted(manifest_bytes, signature, options["public_keys"]) \
-			if options.has("public_keys") else ReleaseSignature.is_trusted(manifest_bytes, signature)
-	if not trusted:
-		return _problem("the update's signature does not verify")
+	if not ReleaseSignature.is_trusted(manifest_bytes, signature, options.get("public_keys"), options):
+		return _problem("the update is not signed by a key this toolkit trusts")
 	var manifest := ReleaseManifest.parse(manifest_bytes.get_string_from_utf8(), version)
 	if not str(manifest["error"]).is_empty():
 		return _problem(str(manifest["error"]))

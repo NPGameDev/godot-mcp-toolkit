@@ -13,6 +13,8 @@ const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/relea
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
+const TrustFixtures := preload("res://test/units/trust_fixtures.gd")
+const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_chain.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
 const _RELEASE := {"core/a.gd": "new a", "core/b.gd": "new b"}
@@ -33,6 +35,7 @@ static func run(testing: Testing) -> void:
 	_test_vanished(testing)
 	_test_not_applied(testing)
 	_test_shipped_keys(testing)
+	_test_exit_reads_the_chain(testing)
 	_test_nothing_staged(testing)
 
 
@@ -459,7 +462,7 @@ static func _test_not_applied(testing: Testing) -> void:
 			func(updates: String) -> void: UpdateFixtures.stage_tampered(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key()))
 	var no_list := _apply_outcome("apply_no_list", "1.1.0",
 			func(updates: String) -> void: _stage_without_list(updates))
-	testing.eq(untrusted["result"], {"state": "not_applied", "reason": "the update's signature does not verify"},
+	testing.eq(untrusted["result"], {"state": "not_applied", "reason": "the update is not signed by a key this toolkit trusts"},
 			"a manifest signed by an untrusted key → not applied")
 	testing.eq(above_floor["result"], {"state": "not_applied", "reason": "version 1.2.0 needs Godot 4.9 or newer"},
 			"a Godot floor above the engine → not applied")
@@ -498,8 +501,65 @@ static func _test_shipped_keys(testing: Testing) -> void:
 	var result := UpdateApplier.apply_pending(options)
 	var version := _version(scenario["addon"])
 	UpdateFixtures.remove_scenario(scenario)
-	testing.eq(result, {"state": "not_applied", "reason": "the update's signature does not verify"}, "not applied")
+	testing.eq(result, {"state": "not_applied", "reason": "the update is not signed by a key this toolkit trusts"}, "not applied")
 	testing.eq(version, "1.1.0", "the live folder stays")
+	print("")
+
+
+# A scenario with a release signed by `signing_key` staged over 1.1.0, whose apply reads the
+# chain from the first document and `trust_store`, never public_keys, which would skip it.
+static func _staged_on_chain(purpose: String, signing_key: CryptoKey, trust_store: String) -> Dictionary:
+	var scenario := UpdateFixtures.make_scenario(purpose, "1.1.0", {"core/a.gd": "old a"})
+	UpdateFixtures.stage(scenario["updates"], "1.2.0", _RELEASE, "1.1.0", signing_key)
+	var options: Dictionary = scenario["options"]
+	options.erase("public_keys")
+	options["trust_document"] = TrustFixtures.first_document([TrustFixtures.release_key()])
+	options["trust_store"] = trust_store
+	return scenario
+
+
+# Applies a stage made by _staged_on_chain and answers what a test reads, cleaning up first.
+static func _apply_on_chain(scenario: Dictionary) -> Dictionary:
+	var has_keys_option: bool = scenario["options"].has("public_keys")
+	var result := UpdateApplier.apply_pending(scenario["options"])
+	var version := _version(scenario["addon"])
+	var zip_kept := UpdateFixtures.scenario_has_folder(scenario, "1.2.0")
+	UpdateFixtures.remove_scenario(scenario)
+	return {"result": result, "version": version, "zip_kept": zip_kept, "has_keys_option": has_keys_option}
+
+
+# The second document, moving the release key to the next one, accepted into `trust_store`.
+static func _store_rotation(trust_store: String) -> String:
+	var root := TrustFixtures.root_key()
+	var chain := TrustChain.new(TrustFixtures.first_document([TrustFixtures.release_key()]), trust_store)
+	var document := TrustFixtures.file_of(TrustFixtures.body(2, [root], 1, [TrustFixtures.next_release_key()]), [root])
+	return str(chain.accept(document)["outcome"])
+
+
+static func _test_exit_reads_the_chain(testing: Testing) -> void:
+	testing.begin("Update applier: the exit verifies from the store, with no network")
+	var store := UpdateFixtures.scratch("apply_chain_store")
+	UpdateFixtures.remove(store)
+	var first_key := TrustFixtures.release_key()
+	var next_key := TrustFixtures.next_release_key()
+
+	var first_key_before := _apply_on_chain(_staged_on_chain("apply_chain_first_before", first_key, store))
+	var next_key_before := _apply_on_chain(_staged_on_chain("apply_chain_next_before", next_key, store))
+	var rotation := _store_rotation(store)
+	var next_key_after := _apply_on_chain(_staged_on_chain("apply_chain_next_after", next_key, store))
+	var dropped := _apply_on_chain(_staged_on_chain("apply_chain_dropped", first_key, store))
+	UpdateFixtures.remove(store)
+
+	var refusal := {"state": "not_applied", "reason": "the update is not signed by a key this toolkit trusts"}
+	testing.ok(not first_key_before["has_keys_option"], "the drill runs without public_keys")
+	testing.eq(first_key_before["result"]["state"], "applied", "before the rotation, the first key's release applies")
+	testing.eq(next_key_before["result"], refusal, "before the rotation, the next key's release is refused")
+	testing.eq(rotation, "accepted", "the document reaches the store")
+	testing.eq(next_key_after["result"]["state"], "applied", "after it, the next key's release applies from the store")
+	testing.eq(next_key_after["version"], "1.2.0", "and the live folder is the release")
+	testing.eq(dropped["result"], refusal, "a release staged under the dropped key is refused, with the reason")
+	testing.eq(dropped["version"], "1.1.0", "the live folder stays")
+	testing.ok(not dropped["zip_kept"], "its zip is deleted")
 	print("")
 
 
