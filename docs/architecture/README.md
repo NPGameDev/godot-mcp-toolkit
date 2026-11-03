@@ -405,7 +405,7 @@ contract.
 (`scene.create` and the asset writers) return a `status` discriminator, so a blind
 retry is safe by default:
 
-<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="71aaab2" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/commands/scene_commands.gd addons/godot_mcp_toolkit/commands/resource_commands.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/commands/editor_helpers.gd" data-verified="f63ae30" -->
 ```mermaid
 flowchart TD
     create["create command with if_exists"] --> exists{"target exists?"}
@@ -415,7 +415,7 @@ flowchart TD
     pol -->|"fail"| ae["ALREADY_EXISTS"]
     pol -->|"replace"| repl["overwrite → status: replaced"]
 ```
-*Figure 8 — the idempotent create / if_exists decision · verified 71aaab2*
+*Figure 8 — the idempotent create / if_exists decision · verified f63ae30*
 
 The shared `write_asset_with_settle` helper centralises the path-guard → extension-allowlist →
 `if_exists` → write → import-settle bracket for assets/textures/sounds, so the idempotency
@@ -713,24 +713,27 @@ The toolkit assumes a **single local user with a human at the editor**; the boun
 localhost + token, not a defence against an adversary who can already write project files.
 Within that model, several layers keep an LLM's requests honest.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="71aaab2" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="f63ae30" -->
 ```mermaid
 flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
     token -->|no| close["WS close 1008"]
     token -->|yes| filter["server-authoritative read-only filter<br/>(tools/list)"]
-    filter --> guard["FileGuard.resolve_safe / resolve_safe_delete / resolve_safe_user"]
-    guard --> deny["deny ..-traversal, plugin source dir,<br/>token & audit files (any case or alias spelling),<br/>reserved paths on delete"]
-    deny --> audit["Audit.log_call — params hashed"]
-    audit --> handler["command handler"]
+    filter --> audit["Audit.log_call — params hashed"]
+    audit --> guard["FileGuard.resolve_safe / resolve_safe_delete / resolve_safe_user"]
+    guard --> deny["deny ..-traversal, plugin source dir, update folder,<br/>token & audit files (any case or alias spelling),<br/>reserved paths on delete"]
+    deny --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
 ```
-*Figure 13 — request trust boundaries · verified 71aaab2*
+*Figure 13 — request trust boundaries · verified f63ae30*
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
   re-verify pass, and an absolute path right after the scheme, such as `res:///…`, by a
-  prefix check on the `res:///` or `user:///` start); the file deletes (`file.delete`,
+  prefix check on the `res:///` or `user:///` start), and refuses the toolkit's own source and
+  the self-update's folder, `res://addons/.godot_mcp_toolkit_update/` (`is_update_folder`),
+  which holds the staged release, the backup and the journal (the self-update itself does not
+  come through this guard); the file deletes (`file.delete`,
   `resource.delete`, `scene.delete`, `script.delete`, through `delete_res_file`) remove only
   the project-relative path `project_relative_path` returns, and answer `PATH_DENIED` when it
   has none; `resolve_safe_delete` adds, for `file.delete`, `folder.delete`,
