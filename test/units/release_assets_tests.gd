@@ -4,15 +4,16 @@ extends RefCounted
 ## version alone, on GitHub unless the update check's host variable replaces the
 ## scheme and host.
 
+const Testing := preload("res://test/units/testing.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 
 
-static func run(testing) -> void:
+static func run(testing: Testing) -> void:
 	_test_names(testing)
 	_test_urls(testing)
 
 
-static func _test_names(testing) -> void:
+static func _test_names(testing: Testing) -> void:
 	testing.begin("Release assets: names from the version")
 	testing.eq(ReleaseAssets.archive_name("1.2.0"), "godot-mcp-toolkit-1.2.0.zip", "the zip")
 	testing.eq(ReleaseAssets.manifest_name("1.2.0"), "godot-mcp-toolkit-1.2.0.update.json", "the manifest")
@@ -20,7 +21,7 @@ static func _test_names(testing) -> void:
 	print("")
 
 
-static func _test_urls(testing) -> void:
+static func _test_urls(testing: Testing) -> void:
 	testing.begin("Release assets: download URLs")
 	testing.eq(ReleaseAssets.download_url("", "1.2.0", "godot-mcp-toolkit-1.2.0.zip"),
 			"https://github.com/NPGameDev/godot-mcp-toolkit/releases/download/v1.2.0/godot-mcp-toolkit-1.2.0.zip",

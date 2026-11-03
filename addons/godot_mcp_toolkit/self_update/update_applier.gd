@@ -23,7 +23,7 @@ extends RefCounted
 ## Once shipped, this code installs the next release on machines nothing can patch, so it
 ## stays this small: the journal, the checks, two renames and the undo.
 
-# Direct preloads, not core/modules.gd: the aggregator preloads this file.
+# Direct preloads: core/modules.gd does not list this folder's scripts.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")

@@ -7,7 +7,7 @@ extends RefCounted
 ## for a local test server through the update check's contributor-only host
 ## variable; the manifest's signature makes another host harmless.
 
-# Direct preload, not core/modules.gd: the aggregator preloads this file.
+# Direct preload: core/modules.gd does not list this folder's scripts.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 
 const _DOWNLOAD_HOST := "https://github.com"

@@ -8,6 +8,7 @@ const Testing := preload("res://test/units/testing.gd")
 const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
+const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
 const _ADDON_ENTRY := "addons/godot_mcp_toolkit/"
 const _NO_LIST := "the staged archive has no file list this version can read"
@@ -25,6 +26,7 @@ static func run(testing: Testing) -> void:
 	_test_list_must_equal_entries(testing)
 	_test_plugin_config(testing)
 	_test_read_file(testing)
+	_test_zip_that_never_opened(testing)
 
 
 static func _inspect(name: String, entries: Dictionary, version: String = "1.2.0") -> Dictionary:
@@ -315,4 +317,17 @@ static func _test_read_file(testing: Testing) -> void:
 	reader.close()
 	UpdateFixtures.remove(folder)
 	testing.eq(text, "content of a", "a path relative to the addon folder → its bytes")
+	print("")
+
+
+static func _test_zip_that_never_opened(testing: Testing) -> void:
+	testing.begin("Release archive: a zip that never opened is not closed")
+	LogBuffer.setup()
+	var cursor: int = LogBuffer.get_cursor() - 1
+	var path := ProjectSettings.globalize_path(UpdateFixtures.scratch("archive_never_opened")).path_join("release.zip")
+	var result := ReleaseArchive.inspect(path, "1.2.0")
+	testing.eq(str(result["error"]), "the archive is not a readable zip", "a missing zip → refused")
+	if LogBuffer.uses_logger_api():
+		var logged: Dictionary = LogBuffer.get_entries(100, ["error"], cursor)
+		testing.eq(int(logged["returned"]), 0, "a missing zip → no engine error")
 	print("")

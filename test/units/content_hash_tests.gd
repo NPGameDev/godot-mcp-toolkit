@@ -3,6 +3,7 @@ extends RefCounted
 ## Unit tests for the self-update's SHA-256 helpers: the hex digest of bytes, the raw
 ## digest, and the hex-digest shape check, against the published test vectors.
 
+const Testing := preload("res://test/units/testing.gd")
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
@@ -10,12 +11,12 @@ const _EMPTY_SHA256 := "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b
 const _ABC_SHA256 := "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 
 
-static func run(testing) -> void:
+static func run(testing: Testing) -> void:
 	_test_digests(testing)
 	_test_hex_shape(testing)
 
 
-static func _test_digests(testing) -> void:
+static func _test_digests(testing: Testing) -> void:
 	testing.begin("Content hash: SHA-256 of bytes")
 	LogBuffer.setup()
 	var cursor: int = LogBuffer.get_cursor() - 1
@@ -29,7 +30,7 @@ static func _test_digests(testing) -> void:
 	print("")
 
 
-static func _test_hex_shape(testing) -> void:
+static func _test_hex_shape(testing: Testing) -> void:
 	testing.begin("Content hash: the hex digest shape")
 	testing.ok(ContentHash.is_hex_digest(_ABC_SHA256), "64 lowercase hex characters → a digest")
 	testing.ok(not ContentHash.is_hex_digest(_ABC_SHA256.to_upper()), "uppercase hex → not a digest")

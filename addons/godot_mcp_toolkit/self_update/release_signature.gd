@@ -7,7 +7,7 @@ extends RefCounted
 ## A signature from any trusted key counts, so a key can be rotated by a release that
 ## trusts both the old and the new one.
 
-# Direct preloads, not core/modules.gd: the aggregator preloads this file.
+# Direct preloads: core/modules.gd does not list this folder's scripts.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const TrustedReleaseKeys := preload("res://addons/godot_mcp_toolkit/self_update/trusted_release_keys.gd")
 

@@ -10,7 +10,7 @@ const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
 
-static func run(testing) -> void:
+static func run(testing: Testing) -> void:
 	_test_refusals(testing)
 	_test_order(testing)
 	_test_descriptions(testing)
@@ -40,7 +40,7 @@ static func _test_linked_folder_fact(testing: Testing) -> void:
 	print("")
 
 
-static func _test_refusals(testing) -> void:
+static func _test_refusals(testing: Testing) -> void:
 	testing.begin("Install guards: each refusal")
 	testing.eq(InstallGuards.refusal({}), "", "no fact set → may install")
 	testing.eq(InstallGuards.refusal({"toolkit_repository": true}), "toolkit_repository", "the toolkit's repository → refused")
@@ -52,7 +52,7 @@ static func _test_refusals(testing) -> void:
 	print("")
 
 
-static func _test_order(testing) -> void:
+static func _test_order(testing: Testing) -> void:
 	testing.begin("Install guards: the first rule broken is the one named")
 	testing.eq(InstallGuards.refusal({"headless": true, "version_control_folder": true, "toolkit_repository": true}),
 			"toolkit_repository", "repository before git folder before headless")
@@ -61,7 +61,7 @@ static func _test_order(testing) -> void:
 	print("")
 
 
-static func _test_descriptions(testing) -> void:
+static func _test_descriptions(testing: Testing) -> void:
 	testing.begin("Install guards: the sentence for each refusal")
 	testing.eq(InstallGuards.describe("toolkit_repository"),
 			"This project is the toolkit's own repository; a release would overwrite its source.", "repository")
@@ -74,7 +74,7 @@ static func _test_descriptions(testing) -> void:
 
 
 # The unit suite runs in the toolkit's own repository, headless.
-static func _test_repository_facts(testing) -> void:
+static func _test_repository_facts(testing: Testing) -> void:
 	testing.begin("Install guards: the facts of this repository")
 	var facts := InstallGuards.facts()
 	testing.ok(bool(facts["toolkit_repository"]), "the repository's markers → toolkit_repository")

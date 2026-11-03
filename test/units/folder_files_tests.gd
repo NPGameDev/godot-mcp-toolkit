@@ -11,7 +11,7 @@ const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 const _ABC_SHA256 := "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 
 
-static func run(testing) -> void:
+static func run(testing: Testing) -> void:
 	_test_file_hash(testing)
 	_test_list_and_hash(testing)
 	_test_write_checked(testing)
@@ -22,7 +22,7 @@ static func run(testing) -> void:
 	_test_shell_never_runs_a_name(testing)
 
 
-static func _test_file_hash(testing) -> void:
+static func _test_file_hash(testing: Testing) -> void:
 	testing.begin("Folder files: SHA-256 of a file")
 	var folder := ProjectSettings.globalize_path(UpdateFixtures.scratch("folder_hash"))
 	var path := folder.path_join("abc.txt")
@@ -35,7 +35,7 @@ static func _test_file_hash(testing) -> void:
 	print("")
 
 
-static func _test_list_and_hash(testing) -> void:
+static func _test_list_and_hash(testing: Testing) -> void:
 	testing.begin("Folder files: listing and hashing")
 	var folder := ProjectSettings.globalize_path(UpdateFixtures.scratch("folder_list"))
 	FolderFiles.write_checked(folder.path_join("b.txt"), "abc".to_utf8_buffer())
@@ -51,7 +51,7 @@ static func _test_list_and_hash(testing) -> void:
 	print("")
 
 
-static func _test_write_checked(testing) -> void:
+static func _test_write_checked(testing: Testing) -> void:
 	testing.begin("Folder files: a checked write")
 	var folder := ProjectSettings.globalize_path(UpdateFixtures.scratch("folder_write"))
 	var written := FolderFiles.write_checked(folder.path_join("new/dir/a.txt"), "abc".to_utf8_buffer())

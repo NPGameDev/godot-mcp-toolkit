@@ -24,7 +24,7 @@ const _OPENSSL_MESSAGE := "{\"format\": 1, \"version\": \"1.2.0\", \"archive\": 
 const _OPENSSL_SIGNATURE := "Sba5fSItkcKvaCG4xz4r3TymOX2gxgzlLiUK9aftiSf2LDQNShdKbx2UjHv1XvTKUhXZHAr3PpRxaLnOh1E8e1ogjUIsz/mqc2tr4NUQBQ2Jf6Y9xt4eTDVJdTg3S28Qju0b5VpWaWYKjSz6Y6l+E0o5FwwLeWcc/YnFpq0wAnSPQFDCUjV8O8NALvB5mbvUQtT7QIYAJqYhez/1q1nnfSEFpEteb3DfWMM6oJj+6MOq7tZNsgzzPwkJf9ZC6ABScid4aL4vEIa8QJGGabB5+0ENJFNDWRckeVjGTiwzBIFI2yQHFVBAB5rdch9UXY7RdhHllPTiRPYBGlMjkbqL3A=="
 
 
-static func run(testing) -> void:
+static func run(testing: Testing) -> void:
 	_test_run_key(testing)
 	_test_openssl_interop(testing)
 	_test_key_list(testing)
@@ -44,7 +44,7 @@ static func _test_trust_seam(testing: Testing) -> void:
 	print("")
 
 
-static func _test_run_key(testing) -> void:
+static func _test_run_key(testing: Testing) -> void:
 	testing.begin("Release signature: a key made in the run")
 	var message := "the manifest".to_utf8_buffer()
 	var signature := UpdateFixtures.signature_of(message, UpdateFixtures.key())
@@ -57,7 +57,7 @@ static func _test_run_key(testing) -> void:
 	print("")
 
 
-static func _test_openssl_interop(testing) -> void:
+static func _test_openssl_interop(testing: Testing) -> void:
 	testing.begin("Release signature: a signature openssl made")
 	var signature := Marshalls.base64_to_raw(_OPENSSL_SIGNATURE)
 	testing.ok(ReleaseSignature.is_valid(_OPENSSL_MESSAGE.to_utf8_buffer(), signature, [_OPENSSL_PUBLIC_KEY]),
@@ -67,7 +67,7 @@ static func _test_openssl_interop(testing) -> void:
 	print("")
 
 
-static func _test_key_list(testing) -> void:
+static func _test_key_list(testing: Testing) -> void:
 	testing.begin("Release signature: any trusted key counts")
 	var message := "rotated".to_utf8_buffer()
 	var signature := UpdateFixtures.signature_of(message, UpdateFixtures.key())

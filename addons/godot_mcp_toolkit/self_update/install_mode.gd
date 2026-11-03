@@ -2,23 +2,20 @@
 extends RefCounted
 ## The project setting that says whether the toolkit installs its own updates.
 ##
-## [constant MANUAL] only links to a new version, as the update check always did.
-## [constant ASK] asks before installing; [constant AUTOMATIC] installs when the
-## editor closes without asking. The value lives in project.godot because the files
-## an update changes are committed: which version a project runs is the team's
-## choice. Until the setup step that explains it has been seen, every mode behaves
-## as [constant MANUAL] (see [code]core/consent.gd[/code]).
+## [constant MANUAL] only links to a new version. [constant ASK] asks before installing. No
+## mode installs unasked, because an update must stay visible to whoever is working in the
+## project. The value lives in project.godot because the files an update changes are
+## committed: which version a project runs is the team's choice.
 
 const SETTING := "mcp_toolkit/updates/install_mode"
 
 const MANUAL := "manual"
 const ASK := "ask"
-const AUTOMATIC := "automatic"
 
 const DEFAULT := ASK
 
 ## The values in the order the inspector and the setup step list them.
-const VALUES := [MANUAL, ASK, AUTOMATIC]
+const VALUES := [MANUAL, ASK]
 
 
 ## The mode [param project_settings] holds: [ProjectSettings] or a stand-in with

@@ -8,9 +8,15 @@ extends RefCounted
 ## maintainer published, and the zip it pins can be trusted byte for byte.[br]
 ## [br]
 ## Shape: [code]{"format": 1, "version": "X.Y.Z", "archive": "godot-mcp-toolkit-X.Y.Z.zip",
-## "archive_size": N, "archive_sha256": "<64 hex>", "min_godot": "4.2"}[/code].
+## "archive_size": N, "archive_sha256": "<64 hex>", "min_godot": "4.2",
+## "compatible_server": "X.Y.Z", "expires_at": N}[/code]. [code]expires_at[/code] is a Unix
+## time.[br]
+## [br]
+## The last two inform and never refuse, so a release with neither, or with one this reader
+## cannot read, still installs. An older toolkit reads a later manifest's additions the same
+## way: a key it does not know is ignored.
 
-# Direct preloads, not core/modules.gd: the aggregator preloads this file.
+# Direct preloads: core/modules.gd does not list this folder's scripts.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
@@ -32,14 +38,19 @@ const _KEY_ARCHIVE := "archive"
 const _KEY_ARCHIVE_SIZE := "archive_size"
 const _KEY_ARCHIVE_SHA256 := "archive_sha256"
 const _KEY_MIN_GODOT := "min_godot"
+const _KEY_COMPATIBLE_SERVER := "compatible_server"
+const _KEY_EXPIRES_AT := "expires_at"
 
 
 ## Reads the manifest [param text] for the release [param expected_version].
 ##
 ## Returns a dictionary whose [code]error[/code] is empty when the manifest holds,
 ## with [code]version[/code], [code]archive[/code], [code]archive_size[/code] (int),
-## [code]archive_sha256[/code] and [code]min_godot[/code]. Otherwise
-## [code]error[/code] names the first rule broken and no other key is set.
+## [code]archive_sha256[/code] and [code]min_godot[/code], plus
+## [code]compatible_server[/code] (a stable [code]X.Y.Z[/code]) and
+## [code]expires_at[/code] (int) when the manifest holds them in that form; each key is
+## left out otherwise. When the manifest does not hold, [code]error[/code] names the first
+## rule broken and no other key is set.
 static func parse(text: String, expected_version: String) -> Dictionary:
 	if text.length() > MAX_BYTES:
 		return _failure("the manifest is larger than %d bytes" % MAX_BYTES)
@@ -70,7 +81,7 @@ static func parse(text: String, expected_version: String) -> Dictionary:
 	if not min_godot is String or VersionUtils.parse_major_minor(str(min_godot)).x < 0:
 		return _failure("the manifest's Godot floor is not a version")
 
-	return {
+	var manifest := {
 		"error": "",
 		_KEY_VERSION: normalized,
 		_KEY_ARCHIVE: str(archive),
@@ -78,6 +89,15 @@ static func parse(text: String, expected_version: String) -> Dictionary:
 		_KEY_ARCHIVE_SHA256: str(digest),
 		_KEY_MIN_GODOT: str(min_godot),
 	}
+	var compatible_server: Variant = data.get(_KEY_COMPATIBLE_SERVER, null)
+	if compatible_server is String:
+		var server_parts := UpdateCheck.parse_version(str(compatible_server))
+		if not server_parts.is_empty():
+			manifest[_KEY_COMPATIBLE_SERVER] = "%d.%d.%d" % [server_parts[0], server_parts[1], server_parts[2]]
+	var expires_at: Variant = data.get(_KEY_EXPIRES_AT, null)
+	if _is_whole_number(expires_at):
+		manifest[_KEY_EXPIRES_AT] = int(expires_at)
+	return manifest
 
 
 ## Whether the release a [method parse] result describes runs on the engine whose

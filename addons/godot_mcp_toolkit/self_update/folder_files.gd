@@ -7,7 +7,7 @@ extends RefCounted
 ## on Windows when an antivirus holds the file), and [method write_checked] reads
 ## the file back, because a failed rename only prints an error.
 
-# Direct preload, not core/modules.gd: the aggregator preloads this file.
+# Direct preload: core/modules.gd does not list this folder's scripts.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 
 # The exit code of `test -L` on a path that is not a link.

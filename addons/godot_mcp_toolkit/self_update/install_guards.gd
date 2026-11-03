@@ -6,7 +6,7 @@ extends RefCounted
 ## [method facts] looks at the project and the editor; [method refusal] judges those
 ## facts and stays pure, so each rule is tested with literal facts.
 
-# Direct preloads, not core/modules.gd: the aggregator preloads this file.
+# Direct preloads: core/modules.gd does not list this folder's scripts.
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
