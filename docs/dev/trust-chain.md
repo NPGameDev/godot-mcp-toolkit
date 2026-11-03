@@ -81,24 +81,11 @@ against a real release here.** That includes a release with `--prerelease --late
 `releases/latest` alone, which is why step 3 ends by checking it. Check each command's result as the
 step says, and stop at the first surprise.
 
-### 1. Sign the release draft with the new key
-
-Have release `X.Y.Z` up as an unpublished draft, then make the key and sign the manifest the release
-workflow built, never a local build:
+### 1. Build and sign the document, then land it
 
 ```sh
 openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -aes-256-cbc -out new-release.pem
 openssl pkey -in new-release.pem -pubout -out new-release.pub.pem
-gh release download vX.Y.Z --pattern 'godot-mcp-toolkit-X.Y.Z.update.json'
-scripts/sign-release.sh godot-mcp-toolkit-X.Y.Z.update.json new-release.pem new-release.pub.pem
-gh release upload vX.Y.Z godot-mcp-toolkit-X.Y.Z.update.json.sig
-```
-
-`sign-release.sh` prompts once for the passphrase, or reads it from a pipe on stdin.
-
-### 2. Build and sign the document, then land it
-
-```sh
 scripts/trust-document.sh build trust/trust-7.json --add-release new-release.pub.pem --drop-release old-release.pub.pem
 scripts/trust-document.sh sign trust/trust-8.json root-1.pem
 scripts/trust-document.sh verify trust/trust-7.json trust/trust-8.json
@@ -131,7 +118,20 @@ Godot version, walks `trust/` with the real reader from `trust-1` on: each docum
 before it, each `trust-N.json` carrying version N, and the constant held to its own roots.
 
 **Host nothing before CI has read it.** The walk requires exactly the next version, so a mis-signed
-`trust-8` stops every client at 7.
+`trust-8` stops every client at 7. Merging hosts nothing, so the old key stays trusted until step 3.
+
+### 2. Sign the release draft with the new key
+
+From the merged `main`, have release `X.Y.Z` up as an unpublished draft, so that it embeds `trust-8`.
+Then sign the manifest the release workflow built, never a local build:
+
+```sh
+gh release download vX.Y.Z --pattern 'godot-mcp-toolkit-X.Y.Z.update.json'
+scripts/sign-release.sh godot-mcp-toolkit-X.Y.Z.update.json new-release.pem new-release.pub.pem
+gh release upload vX.Y.Z godot-mcp-toolkit-X.Y.Z.update.json.sig
+```
+
+`sign-release.sh` prompts once for the passphrase, or reads it from a pipe on stdin.
 
 ### 3. Publish the document
 
@@ -174,9 +174,8 @@ The last command must print `vX.Y.Z`.
   the update again, for the new release.
 - **A client behind on the old latest** refuses that release from the moment it holds `trust-8` until
   the new one is out. That gap fails safe.
-- **The release from step 1** was built before `trust-8` merged, so it embeds `trust-7`. A machine that
-  installs it by hand with an empty store trusts the old key until it reaches `trust-8`. The next
-  release embeds `trust-8`.
+- **A machine that installs the release by hand** starts from the `trust-8` it embeds, so it never
+  trusts the old key, even with an empty store.
 
 ## A leaked release key
 
@@ -186,7 +185,7 @@ seen the new document still trusts it. See the first of [the limits](#the-limits
 
 ## A leaked root key
 
-Replace it in a next document. A root change signs no release, so steps 1 and 4 do not apply:
+Replace it in a next document. A root change signs no release, so steps 2 and 4 do not apply:
 
 ```sh
 scripts/trust-document.sh build trust/trust-7.json --add-root new-root.pub.pem --drop-root leaked-root.pub.pem
@@ -213,7 +212,7 @@ scripts/trust-document.sh build trust/trust-7.json --drop-release old-release.pu
 ```
 
 Pass `--drop-release` once per listed key. `build` warns that the document stops all updates, and
-`verify` says so too. Sign, land and publish it as in steps 2 and 3. It reaches only the clients that
+`verify` says so too. Sign, land and publish it as in steps 1 and 3. It reaches only the clients that
 fetch it, and it undoes nothing already installed. To lift it, run the rotation with `--add-release`
 alone, since there is no key left to drop.
 
