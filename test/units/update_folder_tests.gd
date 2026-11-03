@@ -101,15 +101,14 @@ static func _test_remove_backups(testing: Testing) -> void:
 	print("")
 
 
-# A read-only file blocks its delete on Windows; elsewhere a read-only parent folder does.
 static func _test_remove_backups_that_cannot_go(testing: Testing) -> void:
 	testing.begin("Update folder: a backup that will not go is reported")
 	var folder := UpdateFixtures.scratch("folder_backup_held")
 	var backup := ProjectSettings.globalize_path(folder).path_join("backup-1.1.0")
 	FolderFiles.write_checked(backup.path_join("a.gd"), "a".to_utf8_buffer())
-	_block_delete(backup, "a.gd", true)
+	UpdateFixtures.block_delete(backup, "a.gd", true)
 	var removed := UpdateFolder.remove_backups(folder)
-	_block_delete(backup, "a.gd", false)
+	UpdateFixtures.block_delete(backup, "a.gd", false)
 	UpdateFixtures.remove(folder)
 	testing.ok(not removed, "a backup still there → false")
 	print("")
@@ -149,13 +148,3 @@ static func _test_log(testing: Testing) -> void:
 	testing.eq(lines.size(), 2, "each call → one line")
 	testing.ok(lines[0].ends_with(" first") and lines[1].ends_with(" second"), "appended in order, after a timestamp")
 	print("")
-
-
-static func _block_delete(folder: String, file_name: String, blocked: bool) -> void:
-	if OS.get_name() == "Windows":
-		FileAccess.set_read_only_attribute(folder.path_join(file_name), blocked)
-		return
-	var permissions := FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_EXECUTE_OWNER
-	if not blocked:
-		permissions |= FileAccess.UNIX_WRITE_OWNER
-	FileAccess.set_unix_permissions(folder, permissions)

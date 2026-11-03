@@ -164,36 +164,16 @@ static func _check_release(
 	if not UpdateCheck.is_newer(installed, version):
 		return _problem("version %s is not newer than the installed %s" % [version, installed])
 
-	var list := _read_file_list(archive, version)
-	if not str(list["error"]).is_empty():
-		return list
-	return {"error": "", "installed": installed, "list": list["bytes"]}
-
-
-# The file list inside the zip at `archive`, as an empty "error" and its "bytes"; or
-# "error" says why this version cannot read the zip.
-static func _read_file_list(archive: String, version: String) -> Dictionary:
-	var reader := ZIPReader.new()
-	if reader.open(archive) != OK:
-		return _problem("the staged archive is not a readable zip")
-	var inspection := ReleaseArchive.inspect_open(reader, version)
-	var bytes := PackedByteArray()
-	if str(inspection["error"]).is_empty() and (inspection["files"] as PackedStringArray).has(ReleaseFileList.FILE_NAME):
-		bytes = ReleaseArchive.read_file(reader, ReleaseFileList.FILE_NAME)
-	reader.close()
+	var inspection := ReleaseArchive.inspect(archive, version)
 	if not str(inspection["error"]).is_empty():
 		return inspection
-	if ReleaseFileList.parse(bytes.get_string_from_utf8()).is_empty():
-		return _problem("the staged archive has no file list this version can read")
-	return {"error": "", "bytes": bytes}
+	return {"error": "", "installed": installed, "list": inspection["list"]}
 
 
 # Whether the stage holds exactly what the signed list says: every listed file with its
 # hash, the list's own bytes, and no other file.
 static func _stage_matches(stage: String, list_bytes: PackedByteArray) -> bool:
-	var expected := ReleaseFileList.parse(list_bytes.get_string_from_utf8())
-	expected[ReleaseFileList.FILE_NAME] = ContentHash.of_bytes(list_bytes)
-	return FolderFiles.hashes(stage) == expected
+	return FolderFiles.hashes(stage) == ReleaseFileList.release_tree(list_bytes)
 
 
 # Frees the path the backup moves to. A backup there that equals the installed folder is

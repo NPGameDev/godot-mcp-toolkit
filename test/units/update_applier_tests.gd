@@ -370,7 +370,8 @@ static func _mismatch_of(purpose: String, change: Callable) -> Dictionary:
 static func _test_stage_mismatches(testing: Testing) -> void:
 	testing.begin("Update applier: a stage held to what is signed")
 	var cases := {
-		"a changed file, with the list and the stored hash rewritten": _forge_stage,
+		"a changed file, with the list and the stored hash rewritten": func(scenario: Dictionary) -> void:
+			_forge_stage(scenario),
 		"a changed file": func(scenario: Dictionary) -> void:
 			FolderFiles.write_checked(str(scenario["updates_path"]).path_join("stage/core/a.gd"), "evil".to_utf8_buffer()),
 		"an extra file": func(scenario: Dictionary) -> void:
@@ -497,7 +498,8 @@ static func _test_not_applied(testing: Testing) -> void:
 			{"guard_facts": {"headless": true}})
 	var tampered := _not_applied_reason("apply_tampered", "1.1.0",
 			func(updates: String) -> void: UpdateFixtures.stage_tampered(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key()))
-	var no_list := _not_applied_reason("apply_no_list", "1.1.0", _stage_without_list)
+	var no_list := _not_applied_reason("apply_no_list", "1.1.0",
+			func(updates: String) -> void: _stage_without_list(updates))
 	testing.eq(untrusted["result"], {"state": "not_applied", "reason": "the update's signature does not verify"},
 			"a manifest signed by an untrusted key → not applied")
 	testing.eq(above_floor["result"], {"state": "not_applied", "reason": "version 1.2.0 needs Godot 4.9 or newer"},

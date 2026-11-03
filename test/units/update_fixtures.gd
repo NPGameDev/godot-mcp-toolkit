@@ -144,6 +144,19 @@ static func stage(
 			"compatible_server": "1.1.0"}, update_folder)
 
 
+## Makes the file [param file_name] in [param folder] undeletable, or deletable again when
+## [param blocked] is false: a read-only file blocks its delete on Windows, a read-only
+## parent folder does elsewhere.
+static func block_delete(folder: String, file_name: String, blocked: bool) -> void:
+	if OS.get_name() == "Windows":
+		FileAccess.set_read_only_attribute(folder.path_join(file_name), blocked)
+		return
+	var permissions := FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_EXECUTE_OWNER
+	if not blocked:
+		permissions |= FileAccess.UNIX_WRITE_OWNER
+	FileAccess.set_unix_permissions(folder, permissions)
+
+
 ## [method stage], then one byte appended to the staged zip, so it no longer matches
 ## its signed manifest.
 static func stage_tampered(
