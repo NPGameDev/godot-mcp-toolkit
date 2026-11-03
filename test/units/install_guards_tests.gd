@@ -18,7 +18,7 @@ static func run(testing: Testing) -> void:
 	_test_linked_folder_fact(testing)
 
 
-# Godot 4.2 on Windows shows no link; everywhere else the guard refuses before any swap.
+# Every supported version sees a link, so the guard refuses before any swap.
 static func _test_linked_folder_fact(testing: Testing) -> void:
 	testing.begin("Install guards: a toolkit folder that is a link")
 	var root := ProjectSettings.globalize_path(UpdateFixtures.scratch("guards_link"))
@@ -28,13 +28,12 @@ static func _test_linked_folder_fact(testing: Testing) -> void:
 	var made := UpdateFixtures.make_folder_link(link, target)
 	var through_link := InstallGuards.facts(link)
 	var real := InstallGuards.facts(target)
-	var shows_links := OS.get_name() != "Windows" or DirAccess.open("user://").has_method("is_link")
 	FolderFiles.remove_tree(link)
 	FolderFiles.remove_tree(root)
 	testing.ok(not bool(real["linked_folder"]), "a real folder → not linked")
 	testing.ok(not bool(InstallGuards.facts()["linked_folder"]), "this repository's folder → not linked")
 	if made:
-		testing.eq(bool(through_link["linked_folder"]), shows_links, "a link → linked, wherever a link shows")
+		testing.ok(bool(through_link["linked_folder"]), "a link → always linked")
 	else:
 		print("  SKIP: no folder link can be made here")
 	print("")

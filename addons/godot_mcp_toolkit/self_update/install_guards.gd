@@ -31,9 +31,8 @@ const _REPOSITORY_MARKERS := [
 
 ## What the rules look at, read from this project and editor: [code]toolkit_repository[/code],
 ## [code]linked_folder[/code], [code]version_control_folder[/code], [code]headless[/code]
-## and [code]headless_allowed[/code], all booleans. A linked folder is detected everywhere
-## but on Godot 4.2 on Windows, where nothing shows a link; a delete there takes a link
-## as a link (see [method FolderFiles.remove_tree]).[br]
+## and [code]headless_allowed[/code], all booleans. [code]linked_folder[/code] is
+## [method FolderFiles.is_link], which counts anything but a clear "not a link" as one.[br]
 ## [br]
 ## [param addon_path] is the folder the link and git facts look at. Only tests pass it.
 static func facts(addon_path: String = _ADDON_PATH) -> Dictionary:

@@ -16,6 +16,14 @@ const _TEST_NOT_A_LINK := 1
 # double quotes, where these characters still act. Escaping them would point `test` at
 # another path if the engine ran no shell, and that reads as "not a link".
 const _SHELL_ACTIVE := ["\"", "$", "`", "\\"]
+# `fsutil reparsepoint query` on a folder that is no reparse point exits with this and
+# prints this Windows error number. The match is on the number alone, since the words are
+# the system language's. It prints no path, so a folder's name cannot supply the number.
+const _FSUTIL_ANSWERED_NO := 1
+const _FSUTIL_NOT_A_REPARSE_POINT := "4390"
+# Given a bare name, OS.execute's CreateProcessW looks in the editor's folder and its working
+# directory, the project, before System32, so a fsutil.exe at the project root could answer.
+const _FSUTIL_UNDER_SYSTEM_ROOT := "\\System32\\fsutil.exe"
 
 
 ## Every file under [param folder], hidden ones included, as paths relative to it,
@@ -64,11 +72,13 @@ static func write_checked(path: String, bytes: PackedByteArray) -> bool:
 
 ## Whether the folder [param folder] is a link, as far as this engine can tell.
 ##
-## [method DirAccess.is_link] is Godot 4.3+. On 4.2 on Unix the engine shows no link, so
-## this asks [code]test -L[/code], one process per call, and anything but a clear "not a
-## link" counts as one: a missing [code]test[/code], a parent that does not open, or a
-## path the shell would expand. On 4.2 on Windows nothing shows a link and this returns
-## false; [method remove_tree] says what a delete does there.
+## [method DirAccess.is_link] is Godot 4.3+. On 4.2 the engine shows no link, so this asks
+## [code]test -L[/code] on Unix and [code]fsutil reparsepoint query[/code] on Windows, one
+## process per call, and anything but a clear "not a link" counts as one: a missing tool,
+## an empty [code]SystemRoot[/code] (no process runs then), an access error, a path that is
+## not there on Windows, a parent that does not open, or a path the shell would expand. On
+## Windows every reparse point counts, a cloud placeholder too, as it does for
+## [method DirAccess.is_link].
 static func is_link(folder: String) -> bool:
 	var parent := DirAccess.open(folder.get_base_dir())
 	if parent == null:
@@ -76,7 +86,13 @@ static func is_link(folder: String) -> bool:
 	if parent.has_method("is_link"):
 		return bool(parent.call("is_link", folder.get_file()))
 	if OS.get_name() == "Windows":
-		return false
+		var system_root := OS.get_environment("SystemRoot")
+		if system_root.is_empty():
+			return true
+		var fsutil := system_root + _FSUTIL_UNDER_SYSTEM_ROOT
+		var output: Array = []
+		var exit_code := OS.execute(fsutil, ["reparsepoint", "query", folder.replace("/", "\\")], output)
+		return exit_code != _FSUTIL_ANSWERED_NO or not str(output).contains(_FSUTIL_NOT_A_REPARSE_POINT)
 	for character: String in _SHELL_ACTIVE:
 		if folder.contains(character):
 			return true
@@ -86,10 +102,9 @@ static func is_link(folder: String) -> bool:
 ## Deletes [param folder] and everything under it, and never what a link points at.
 ##
 ## A link, at the top or at any depth, goes as a link when the engine can remove one, its
-## target untouched. Where it cannot (Godot 4.2 on Unix) the link and its target stay.
-## On 4.2 on Windows no link shows, but the plain remove tried first takes a junction or
-## a directory symlink as a link. One whose remove fails there (an ACL, say) looks like a
-## real folder, and its target's files go.[br]
+## target untouched. Where it cannot (Godot 4.2 on Unix, or a remove an ACL denies) the
+## link and its target stay. On 4.2 each real folder that holds anything costs one process,
+## through [method is_link].[br]
 ## [br]
 ## Returns whether [param folder] is gone.
 static func remove_tree(folder: String) -> bool:
