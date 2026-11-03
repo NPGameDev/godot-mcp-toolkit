@@ -6,7 +6,8 @@ extends RefCounted
 ## [method facts] looks at the project and the editor; [method refusal] judges those
 ## facts and stays pure, so each rule is tested with literal facts.
 
-# Direct preload, not core/modules.gd: the aggregator preloads this file.
+# Direct preloads, not core/modules.gd: the aggregator preloads this file.
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
 ## The contributor-only environment variable that lets a headless editor install,
@@ -19,8 +20,7 @@ const LINKED_FOLDER := "linked_folder"
 const VERSION_CONTROL_FOLDER := "version_control_folder"
 const HEADLESS := "headless"
 
-const _ADDONS_PATH := "res://addons"
-const _ADDON_NAME := "godot_mcp_toolkit"
+const _ADDON_PATH := "res://addons/godot_mcp_toolkit"
 # Files only the toolkit's own repository holds: installing there would overwrite
 # the source with a release.
 const _REPOSITORY_MARKERS := [
@@ -31,21 +31,19 @@ const _REPOSITORY_MARKERS := [
 
 ## What the rules look at, read from this project and editor: [code]toolkit_repository[/code],
 ## [code]linked_folder[/code], [code]version_control_folder[/code], [code]headless[/code]
-## and [code]headless_allowed[/code], all booleans. [method DirAccess.is_link] is
-## Godot 4.3+, so on 4.2 a linked folder is not detected.
-static func facts() -> Dictionary:
-	var addons := DirAccess.open(_ADDONS_PATH)
-	var addon_path := _ADDONS_PATH.path_join(_ADDON_NAME)
+## and [code]headless_allowed[/code], all booleans. A linked folder is detected everywhere
+## but on Godot 4.2 on Windows, where nothing shows a link; a delete there takes a link
+## as a link (see [method FolderFiles.remove_tree]).[br]
+## [br]
+## [param addon_path] is the folder the link and git facts look at. Only tests pass it.
+static func facts(addon_path: String = _ADDON_PATH) -> Dictionary:
 	var git_path := addon_path.path_join(".git")
 	var in_repository := false
 	for marker in _REPOSITORY_MARKERS:
 		in_repository = in_repository or FileAccess.file_exists(marker)
-	var linked := false
-	if addons != null and addons.has_method("is_link"):
-		linked = bool(addons.call("is_link", _ADDON_NAME))
 	return {
 		TOOLKIT_REPOSITORY: in_repository,
-		LINKED_FOLDER: linked,
+		LINKED_FOLDER: FolderFiles.is_link(ProjectSettings.globalize_path(addon_path)),
 		VERSION_CONTROL_FOLDER: FileAccess.file_exists(git_path) or DirAccess.dir_exists_absolute(git_path),
 		HEADLESS: VersionUtils.is_headless(),
 		"headless_allowed": OS.get_environment(HEADLESS_OVERRIDE_ENV) == "1",

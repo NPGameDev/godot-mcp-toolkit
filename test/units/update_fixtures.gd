@@ -106,15 +106,35 @@ static func manifest_text(version: String, archive_bytes: PackedByteArray, min_g
 	})
 
 
+## Makes [param link] a link to the folder [param target], both absolute: a junction on
+## Windows, which needs no elevation, [code]create_link[/code] where the engine has it, and
+## [code]ln -s[/code] elsewhere. Returns whether the link now leads to a folder.
+static func make_folder_link(link: String, target: String) -> bool:
+	if OS.get_name() == "Windows":
+		OS.execute("cmd.exe", ["/c", "mklink", "/J", link.replace("/", "\\"), target.replace("/", "\\")])
+		return DirAccess.dir_exists_absolute(link)
+	var parent := DirAccess.open(link.get_base_dir())
+	if parent != null and parent.has_method("create_link"):
+		parent.call("create_link", target, link)
+	else:
+		OS.execute("ln", ["-s", target, link])
+	return DirAccess.dir_exists_absolute(link)
+
+
 ## Stages a release of [param version] holding [param files] in [param update_folder]
-## as the installer would: the zip, its manifest signed by [param signing_key], and a
-## journal in [param state] over [param from_version].
+## as the installer would: the zip, its manifest signed by [param signing_key], the
+## unpacked stage, and a journal in [param state] over [param from_version].
 static func stage(
 		update_folder: String, version: String, files: Dictionary, from_version: String,
 		signing_key: CryptoKey, state: String = UpdateJournal.STAGED, min_godot: String = "4.2") -> void:
 	var folder := UpdateFolder.version_folder(version, update_folder)
 	var archive := folder.path_join(ReleaseAssets.archive_name(version))
-	write_zip(archive, release_entries(version, files))
+	var entries := release_entries(version, files)
+	write_zip(archive, entries)
+	var stage_folder := ProjectSettings.globalize_path(UpdateFolder.stage_folder(update_folder))
+	for entry: String in entries:
+		FolderFiles.write_checked(stage_folder.path_join(entry.trim_prefix("addons/godot_mcp_toolkit/")),
+				str(entries[entry]).to_utf8_buffer())
 	var archive_bytes := FileAccess.get_file_as_bytes(archive)
 	var manifest := manifest_text(version, archive_bytes, min_godot).to_utf8_buffer()
 	var absolute := ProjectSettings.globalize_path(folder)

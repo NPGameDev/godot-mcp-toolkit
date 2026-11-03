@@ -1,6 +1,6 @@
 @tool
 extends RefCounted
-## Lists, hashes, copies and writes the files of a folder, one file at a time.
+## Lists, hashes, writes and deletes the files of a folder, one file at a time.
 ##
 ## Every path here is absolute. A write goes through [FileAccess], which in the
 ## editor writes a temporary file and renames it over the target (retrying a while
@@ -9,6 +9,13 @@ extends RefCounted
 
 # Direct preload, not core/modules.gd: the aggregator preloads this file.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
+
+# The exit code of `test -L` on a path that is not a link.
+const _TEST_NOT_A_LINK := 1
+# On Godot 4.2 on Unix OS.execute hands its command to a shell with each argument in
+# double quotes, where these characters still act. Escaping them would point `test` at
+# another path if the engine ran no shell, and that reads as "not a link".
+const _SHELL_ACTIVE := ["\"", "$", "`", "\\"]
 
 
 ## Every file under [param folder], hidden ones included, as paths relative to it,
@@ -55,25 +62,45 @@ static func write_checked(path: String, bytes: PackedByteArray) -> bool:
 	return hash_of_file(path) == ContentHash.of_bytes(bytes)
 
 
-## Copies every file of [param source] into [param target] with
-## [method write_checked]; with [param skip_identical], a target file that already
-## holds the same bytes is left alone. Returns the relative paths that failed,
-## empty on success.
-static func copy_tree(source: String, target: String, skip_identical: bool = false) -> PackedStringArray:
-	var failed := PackedStringArray()
-	for path in list(source):
-		var bytes := FileAccess.get_file_as_bytes(source.path_join(path))
-		if skip_identical and hash_of_file(target.path_join(path)) == ContentHash.of_bytes(bytes):
-			continue
-		if not write_checked(target.path_join(path), bytes):
-			failed.append(path)
-	return failed
+## Whether the folder [param folder] is a link, as far as this engine can tell.
+##
+## [method DirAccess.is_link] is Godot 4.3+. On 4.2 on Unix the engine shows no link, so
+## this asks [code]test -L[/code], one process per call, and anything but a clear "not a
+## link" counts as one: a missing [code]test[/code], a parent that does not open, or a
+## path the shell would expand. On 4.2 on Windows nothing shows a link and this returns
+## false; [method remove_tree] says what a delete does there.
+static func is_link(folder: String) -> bool:
+	var parent := DirAccess.open(folder.get_base_dir())
+	if parent == null:
+		return true
+	if parent.has_method("is_link"):
+		return bool(parent.call("is_link", folder.get_file()))
+	if OS.get_name() == "Windows":
+		return false
+	for character: String in _SHELL_ACTIVE:
+		if folder.contains(character):
+			return true
+	return OS.execute("test", ["-L", folder]) != _TEST_NOT_A_LINK
 
 
-## Deletes [param folder] and everything under it. Returns whether it is gone.
+## Deletes [param folder] and everything under it, and never what a link points at.
+##
+## A link, at the top or at any depth, goes as a link when the engine can remove one, its
+## target untouched. Where it cannot (Godot 4.2 on Unix) the link and its target stay.
+## On 4.2 on Windows no link shows, but the plain remove tried first takes a junction or
+## a directory symlink as a link. One whose remove fails there (an ACL, say) looks like a
+## real folder, and its target's files go.[br]
+## [br]
+## Returns whether [param folder] is gone.
 static func remove_tree(folder: String) -> bool:
 	if not DirAccess.dir_exists_absolute(folder):
 		return true
+	# Takes an empty folder or a link, and fails on a real folder that holds anything.
+	DirAccess.remove_absolute(folder)
+	if not DirAccess.dir_exists_absolute(folder):
+		return true
+	if is_link(folder):
+		return false
 	var dir := DirAccess.open(folder)
 	if dir == null:
 		return false

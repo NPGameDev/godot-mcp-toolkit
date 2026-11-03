@@ -16,6 +16,7 @@ static func run(testing: Testing) -> void:
 	_test_ignore_file_that_cannot_be_written(testing)
 	_test_remove_backups(testing)
 	_test_remove_backups_that_cannot_go(testing)
+	_test_remove_backup_that_is_a_link(testing)
 	_test_log(testing)
 
 
@@ -111,6 +112,30 @@ static func _test_remove_backups_that_cannot_go(testing: Testing) -> void:
 	_block_delete(backup, "a.gd", false)
 	UpdateFixtures.remove(folder)
 	testing.ok(not removed, "a backup still there → false")
+	print("")
+
+
+# After the swap of a linked toolkit folder the backup is the link, and its target is the
+# user's own copy.
+static func _test_remove_backup_that_is_a_link(testing: Testing) -> void:
+	testing.begin("Update folder: a backup that is a link")
+	var folder := UpdateFixtures.scratch("folder_backup_link")
+	var absolute := ProjectSettings.globalize_path(folder)
+	var target := absolute.path_join("target")
+	var link := absolute.path_join("backup-1.1.0")
+	FolderFiles.write_checked(target.path_join("kept.gd"), "a".to_utf8_buffer())
+	if not UpdateFixtures.make_folder_link(link, target):
+		print("  SKIP: no folder link can be made here")
+		UpdateFixtures.remove(folder)
+		print("")
+		return
+	var removed := UpdateFolder.remove_backups(folder)
+	var kept := FolderFiles.list(target)
+	var gone := not DirAccess.dir_exists_absolute(link)
+	FolderFiles.remove_tree(link)
+	UpdateFixtures.remove(folder)
+	testing.eq(kept, PackedStringArray(["kept.gd"]), "the target's files → still there")
+	testing.eq(removed, gone, "the result → whether the link went")
 	print("")
 
 

@@ -1,8 +1,8 @@
 @tool
 extends RefCounted
 ## Unit tests for the folder helpers: hashing a file, listing hidden and nested files and
-## hashing them, a checked write and a write that cannot happen, copying a tree, a copy
-## that leaves matching files alone, and deleting a tree.
+## hashing them, a checked write and a write that cannot happen, deleting a tree, and
+## deleting a tree that holds a link.
 
 const Testing := preload("res://test/units/testing.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
@@ -15,8 +15,11 @@ static func run(testing) -> void:
 	_test_file_hash(testing)
 	_test_list_and_hash(testing)
 	_test_write_checked(testing)
-	_test_copy_and_remove(testing)
-	_test_copy_skips_identical(testing)
+	_test_remove(testing)
+	_test_remove_link_at_the_top(testing)
+	_test_remove_link_nested(testing)
+	_test_is_link(testing)
+	_test_shell_never_runs_a_name(testing)
 
 
 static func _test_file_hash(testing) -> void:
@@ -65,60 +68,110 @@ static func _test_write_checked(testing) -> void:
 	print("")
 
 
-static func _test_copy_and_remove(testing) -> void:
-	testing.begin("Folder files: copying and deleting a tree")
-	var source := ProjectSettings.globalize_path(UpdateFixtures.scratch("folder_source"))
+static func _test_remove(testing: Testing) -> void:
+	testing.begin("Folder files: deleting a tree")
 	var target := ProjectSettings.globalize_path(UpdateFixtures.scratch("folder_target"))
-	FolderFiles.write_checked(source.path_join("a.txt"), "abc".to_utf8_buffer())
-	FolderFiles.write_checked(source.path_join("sub/b.txt"), "abc".to_utf8_buffer())
-	var failed := FolderFiles.copy_tree(source, target)
-	var copied := FolderFiles.list(target)
+	FolderFiles.write_checked(target.path_join("a.txt"), "abc".to_utf8_buffer())
+	FolderFiles.write_checked(target.path_join("sub/b.txt"), "abc".to_utf8_buffer())
 	var removed := FolderFiles.remove_tree(target)
 	var gone := not DirAccess.dir_exists_absolute(target)
-	FolderFiles.remove_tree(source)
-	testing.eq(failed, PackedStringArray(), "every file copied")
-	testing.eq(copied, PackedStringArray(["a.txt", "sub/b.txt"]), "the target holds the same files")
 	testing.ok(removed and gone, "remove_tree → the folder is gone")
 	testing.ok(FolderFiles.remove_tree(target), "removing a missing folder → done")
 	print("")
 
 
-# A restore copies the backup over the folder an install changed; a file the install
-# never changed already holds the backup's bytes and must not count as a failed write.
-# A read-only target file is the injected failure: the headless runner writes in place,
-# so writing over it fails.
-static func _test_copy_skips_identical(testing: Testing) -> void:
-	testing.begin("Folder files: a copy that skips identical files leaves them alone")
-	var source := ProjectSettings.globalize_path(UpdateFixtures.scratch("folder_skip_source"))
-	var target := ProjectSettings.globalize_path(UpdateFixtures.scratch("folder_skip_target"))
-	FolderFiles.write_checked(source.path_join("same.txt"), "abc".to_utf8_buffer())
-	FolderFiles.write_checked(source.path_join("changed.txt"), "new".to_utf8_buffer())
-	FolderFiles.write_checked(target.path_join("same.txt"), "abc".to_utf8_buffer())
-	FolderFiles.write_checked(target.path_join("changed.txt"), "old".to_utf8_buffer())
-	_set_read_only(target.path_join("same.txt"), true)
-	var skipping_failed := FolderFiles.copy_tree(source, target, true)
-	var changed_text := FileAccess.get_file_as_string(target.path_join("changed.txt"))
-	var printed := Engine.print_error_messages
-	Engine.print_error_messages = false
-	var plain_failed := FolderFiles.copy_tree(source, target)
-	Engine.print_error_messages = printed
-	_set_read_only(target.path_join("same.txt"), false)
-	FolderFiles.remove_tree(source)
-	FolderFiles.remove_tree(target)
-	testing.eq(skipping_failed, PackedStringArray(), "a matching read-only file → skipped, no failure")
-	testing.eq(changed_text, "new", "a differing file → copied")
-	testing.eq(plain_failed, PackedStringArray(["same.txt"]),
-			"without the skip, the same read-only file → reported as failed")
+# The engine removes a link as a link everywhere but on Godot 4.2 on Unix, where its
+# remove calls rmdir, which fails on a symlink.
+static func _engine_keeps_links() -> bool:
+	return OS.get_name() != "Windows" and not DirAccess.open("user://").has_method("is_link")
+
+
+# A link and the folder it points at, with a file in the target.
+static func _make_link(purpose: String) -> Dictionary:
+	var root := ProjectSettings.globalize_path(UpdateFixtures.scratch(purpose))
+	var target := root.path_join("target")
+	var holder := root.path_join("holder")
+	FolderFiles.write_checked(target.path_join("kept.txt"), "abc".to_utf8_buffer())
+	FolderFiles.write_checked(target.path_join("sub/kept.txt"), "abc".to_utf8_buffer())
+	FolderFiles.write_checked(holder.path_join("mine.txt"), "abc".to_utf8_buffer())
+	var link := holder.path_join("link")
+	return {"root": root, "target": target, "holder": holder, "link": link,
+			"made": UpdateFixtures.make_folder_link(link, target)}
+
+
+# Deletes what _make_link made. A link left behind goes first, so that the walk through
+# the root cannot reach the target through it twice.
+static func _remove_link(link_files: Dictionary) -> void:
+	FolderFiles.remove_tree(str(link_files["link"]))
+	FolderFiles.remove_tree(str(link_files["root"]))
+
+
+static func _test_remove_link_at_the_top(testing: Testing) -> void:
+	testing.begin("Folder files: deleting a folder that is a link")
+	var made := _make_link("folder_link_top")
+	if not made["made"]:
+		print("  SKIP: no folder link can be made here")
+		FolderFiles.remove_tree(str(made["root"]))
+		print("")
+		return
+	var removed := FolderFiles.remove_tree(str(made["link"]))
+	var kept := FolderFiles.list(str(made["target"]))
+	var link_gone := not DirAccess.dir_exists_absolute(str(made["link"]))
+	_remove_link(made)
+	testing.eq(kept, PackedStringArray(["kept.txt", "sub/kept.txt"]), "the target's files → all still there")
+	testing.eq(removed, not _engine_keeps_links(), "the result → whether the link went")
+	testing.eq(link_gone, removed, "and it says so truly")
 	print("")
 
 
-# Makes `path` read-only or writable again: the read-only attribute on Windows,
-# the owner's write bit elsewhere.
-static func _set_read_only(path: String, read_only: bool) -> void:
-	if OS.get_name() == "Windows":
-		FileAccess.set_read_only_attribute(path, read_only)
+static func _test_remove_link_nested(testing: Testing) -> void:
+	testing.begin("Folder files: deleting a tree with a link inside")
+	var made := _make_link("folder_link_nested")
+	if not made["made"]:
+		print("  SKIP: no folder link can be made here")
+		FolderFiles.remove_tree(str(made["root"]))
+		print("")
 		return
-	var permissions := FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_READ_GROUP | FileAccess.UNIX_READ_OTHER
-	if not read_only:
-		permissions |= FileAccess.UNIX_WRITE_OWNER
-	FileAccess.set_unix_permissions(path, permissions)
+	var removed := FolderFiles.remove_tree(str(made["holder"]))
+	var kept := FolderFiles.list(str(made["target"]))
+	var holder_gone := not DirAccess.dir_exists_absolute(str(made["holder"]))
+	_remove_link(made)
+	testing.eq(kept, PackedStringArray(["kept.txt", "sub/kept.txt"]), "the target's files → all still there")
+	testing.eq(removed, not _engine_keeps_links(), "the result → whether the tree went")
+	testing.eq(holder_gone, removed, "and it says so truly")
+	print("")
+
+
+# 4.2 on Windows shows no link at all, by design: remove_tree stays safe there by the
+# plain remove it tries first, which the tests above prove.
+static func _test_is_link(testing: Testing) -> void:
+	testing.begin("Folder files: telling a link from a folder")
+	var made := _make_link("folder_is_link")
+	var shows_links := OS.get_name() != "Windows" or DirAccess.open("user://").has_method("is_link")
+	var link_seen := FolderFiles.is_link(str(made["link"]))
+	var folder_seen := FolderFiles.is_link(str(made["target"]))
+	var made_link: bool = made["made"]
+	_remove_link(made)
+	testing.ok(not folder_seen, "a real folder → not a link")
+	if made_link:
+		testing.eq(link_seen, shows_links, "a link → seen wherever the engine or test -L can see one")
+	print("")
+
+
+# On 4.2 on Unix OS.execute runs a shell, so a folder name must never reach it. The name
+# would create the marker if it did.
+static func _test_shell_never_runs_a_name(testing: Testing) -> void:
+	testing.begin("Folder files: a folder name the shell would expand")
+	var root := ProjectSettings.globalize_path(UpdateFixtures.scratch("folder_shell"))
+	var marker := root.path_join("ran")
+	var folder := root.path_join("$(touch ran)")
+	FolderFiles.write_checked(folder.path_join("a.txt"), "abc".to_utf8_buffer())
+	var seen := FolderFiles.is_link(folder)
+	var removed := FolderFiles.remove_tree(folder)
+	var marker_made := FileAccess.file_exists(marker) or FileAccess.file_exists("ran")
+	var refused := _engine_keeps_links()
+	FolderFiles.remove_tree(root)
+	testing.ok(not marker_made, "the name → never run")
+	testing.eq(seen, refused, "the check → refuses only where it would ask a shell")
+	testing.eq(removed, not refused, "the delete → the same")
+	print("")

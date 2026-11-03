@@ -4,6 +4,7 @@ extends RefCounted
 ## by openssl (the release script's tool) over a fixed manifest, a tampered message,
 ## an untrusted key, and a key list.
 
+const Testing := preload("res://test/units/testing.gd")
 const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
@@ -27,6 +28,20 @@ static func run(testing) -> void:
 	_test_run_key(testing)
 	_test_openssl_interop(testing)
 	_test_key_list(testing)
+	_test_trust_seam(testing)
+
+
+# A key made in the run is never a shipped key, so these hold once real keys ship too.
+static func _test_trust_seam(testing: Testing) -> void:
+	testing.begin("Release signature: the one trust decision")
+	var message := "the manifest".to_utf8_buffer()
+	var signature := UpdateFixtures.signature_of(message, UpdateFixtures.key())
+	var trusted := [UpdateFixtures.public_pem(UpdateFixtures.key())]
+	testing.ok(ReleaseSignature.is_trusted(message, signature, trusted), "a signature by a key passed in → trusted")
+	testing.ok(not ReleaseSignature.is_trusted("changed".to_utf8_buffer(), signature, trusted), "a changed manifest → not trusted")
+	testing.ok(not ReleaseSignature.is_trusted(message, signature), "the shipped keys, and a key they do not hold → not trusted")
+	testing.ok(not ReleaseSignature.is_trusted(message, PackedByteArray()), "no signature → not trusted")
+	print("")
 
 
 static func _test_run_key(testing) -> void:

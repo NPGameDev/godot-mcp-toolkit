@@ -8,6 +8,6 @@ extends RefCounted
 ## release verifies, so the toolkit offers updates as links only, as before.[br]
 ## [br]
 ## To rotate a key, ship a release whose list holds the old and the new key, signed
-## with the old one; sign the next release with the new key and drop the old one.
+## with the old one, then sign the next release with the new key.
 
 const PUBLIC_KEYS := []

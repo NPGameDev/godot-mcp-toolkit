@@ -1,26 +1,42 @@
 @tool
 extends RefCounted
-## Unit tests for applying a staged update, on scratch addon and update folders: a
-## full apply, a rollback after a write that cannot happen, each reason not to apply,
-## and a journal that is not staged. The editor-exit call itself runs in the update
-## flow integration test (scripts/test_framework/update_flow.sh).
+## Unit tests for swapping a staged update in, on scratch addon and update folders: the
+## swap and each step of it, a stage held to what is signed, what postpones, what refuses,
+## and a journal that is not staged.
 
+const Testing := preload("res://test/units/testing.gd")
+const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
+const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
+const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
 
+const _RELEASE := {"core/a.gd": "new a", "core/b.gd": "new b"}
 
-static func run(testing) -> void:
+
+static func run(testing: Testing) -> void:
 	_test_full_apply(testing)
-	_test_rollback(testing)
+	_test_steps(testing)
+	_test_ignore_files(testing)
+	_test_from_refreshed(testing)
+	_test_leftover_backup(testing)
+	_test_failed_first_rename(testing)
+	_test_failed_second_rename(testing)
+	_test_failed_undo(testing)
+	_test_failed_applying_write(testing)
+	_test_stage_mismatches(testing)
+	_test_second_mismatch(testing)
+	_test_vanished(testing)
 	_test_not_applied(testing)
+	_test_shipped_keys(testing)
 	_test_nothing_staged(testing)
 
 
-# A scenario's folders and the apply options pointing at them.
+# A scenario's folders, absolute forms and the apply options pointing at them.
 static func _setup(purpose: String, installed_version: String, installed_files: Dictionary) -> Dictionary:
 	var addon := UpdateFixtures.scratch(purpose + "_addon")
 	var updates := UpdateFixtures.scratch(purpose + "_updates")
@@ -28,6 +44,8 @@ static func _setup(purpose: String, installed_version: String, installed_files: 
 	return {
 		"addon": addon,
 		"updates": updates,
+		"addon_path": ProjectSettings.globalize_path(addon),
+		"updates_path": ProjectSettings.globalize_path(updates),
 		"options": {
 			"addon_folder": addon,
 			"update_folder": updates,
@@ -36,6 +54,13 @@ static func _setup(purpose: String, installed_version: String, installed_files: 
 			"guard_facts": {},
 		},
 	}
+
+
+# A scenario with a release staged over 1.1.0.
+static func _staged(purpose: String) -> Dictionary:
+	var scenario := _setup(purpose, "1.1.0", {"core/a.gd": "old a"})
+	UpdateFixtures.stage(scenario["updates"], "1.2.0", _RELEASE, "1.1.0", UpdateFixtures.key())
+	return scenario
 
 
 static func _read(folder: String, path: String) -> String:
@@ -48,76 +73,413 @@ static func _version(folder: String) -> String:
 	return str(config.get_value("plugin", "version", ""))
 
 
+static func _exists(scenario: Dictionary, relative: String) -> bool:
+	return DirAccess.dir_exists_absolute(str(scenario["updates_path"]).path_join(relative))
+
+
 static func _cleanup(scenario: Dictionary) -> void:
 	UpdateFixtures.remove(str(scenario["addon"]))
 	UpdateFixtures.remove(str(scenario["updates"]))
 
 
-static func _test_full_apply(testing) -> void:
-	testing.begin("Update applier: a staged update is written")
+# Runs the apply with engine errors silenced, for a scenario that makes one on purpose.
+static func _apply_quietly(options: Dictionary) -> Dictionary:
+	var printed := Engine.print_error_messages
+	Engine.print_error_messages = false
+	var result := UpdateApplier.apply_pending(options)
+	Engine.print_error_messages = printed
+	return result
+
+
+static func _test_full_apply(testing: Testing) -> void:
+	testing.begin("Update applier: a staged update is swapped in")
 	var scenario := _setup("apply_full", "1.1.0", {"core/a.gd": "old a", "old.gd": "dropped"})
 	var addon: String = scenario["addon"]
 	var updates: String = scenario["updates"]
-	FolderFiles.write_checked(ProjectSettings.globalize_path(addon).path_join("mine.gd"), "my own".to_utf8_buffer())
-	UpdateFixtures.stage(updates, "1.2.0", {"core/a.gd": "new a", "core/b.gd": "new b"}, "1.1.0", UpdateFixtures.key())
+	FolderFiles.write_checked(str(scenario["addon_path"]).path_join("mine.gd"), "my own".to_utf8_buffer())
+	UpdateFixtures.stage(updates, "1.2.0", _RELEASE, "1.1.0", UpdateFixtures.key())
+	var list_text := str(UpdateFixtures.release_entries("1.2.0", _RELEASE)["addons/godot_mcp_toolkit/" + ReleaseFileList.FILE_NAME])
 	var result := UpdateApplier.apply_pending(scenario["options"])
 	var a := _read(addon, "core/a.gd")
 	var b := _read(addon, "core/b.gd")
-	var dropped_gone := not FileAccess.file_exists(ProjectSettings.globalize_path(addon).path_join("old.gd"))
-	var mine := _read(addon, "mine.gd")
+	var dropped_gone := not FileAccess.file_exists(str(scenario["addon_path"]).path_join("old.gd"))
+	var mine_gone := not FileAccess.file_exists(str(scenario["addon_path"]).path_join("mine.gd"))
 	var version := _version(addon)
-	var backup_a := _read(UpdateFolder.backup_folder("1.1.0", updates), "core/a.gd")
-	var record := UpdateJournal.read(updates)
+	var backup := UpdateFolder.backup_folder("1.1.0", updates)
+	var backup_a := _read(backup, "core/a.gd")
+	var backup_dropped := _read(backup, "old.gd")
+	var backup_mine := _read(backup, "mine.gd")
+	var stage_gone := not _exists(scenario, "stage")
+	var journal := UpdateJournal.read(updates)
 	var logged := FileAccess.get_file_as_string(UpdateFolder.log_path(updates))
 	_cleanup(scenario)
 	testing.eq(result, {"state": "applied", "reason": ""}, "the apply reports applied")
 	testing.eq(a, "new a", "a changed file → the release's content")
 	testing.eq(b, "new b", "a new file → written")
 	testing.ok(dropped_gone, "a listed file the release dropped → deleted")
-	testing.eq(mine, "my own", "a file the list does not name → kept")
+	testing.ok(mine_gone, "a file the list does not name → not copied back")
 	testing.eq(version, "1.2.0", "plugin.cfg → the new version")
 	testing.eq(backup_a, "old a", "the backup holds the old content")
-	testing.eq(record["state"], "applied", "the journal says applied")
+	testing.eq(backup_dropped, "dropped", "the backup holds the dropped file")
+	testing.eq(backup_mine, "my own", "the backup holds the file the swap discarded")
+	testing.ok(stage_gone, "the stage → it is the live folder now")
+	testing.eq(journal["state"], "applied", "the journal says applied")
+	testing.eq(journal["expected_tree_hash"], ContentHash.of_bytes(list_text.to_utf8_buffer()),
+			"the journal keeps the hash of the signed list")
 	testing.ok(logged.contains("apply 1.2.0: applied"), "the install log says applied")
 	print("")
 
 
-static func _test_rollback(testing) -> void:
-	testing.begin("Update applier: a failed write restores the backup")
-	var scenario := _setup("apply_rollback", "1.1.0", {"core/a.gd": "old a"})
+# What each step finds, which is what a kill at that step leaves.
+static func _test_steps(testing: Testing) -> void:
+	testing.begin("Update applier: the state at each step")
+	var scenario := _staged("apply_steps")
 	var addon: String = scenario["addon"]
 	var updates: String = scenario["updates"]
-	# A folder where the release writes core/b.gd makes that write fail after
-	# core/a.gd was already written.
-	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(addon).path_join("core/b.gd"))
-	UpdateFixtures.stage(updates, "1.2.0", {"core/a.gd": "new a", "core/b.gd": "new b"}, "1.1.0", UpdateFixtures.key())
-	var printed := Engine.print_error_messages
-	Engine.print_error_messages = false
-	var result := UpdateApplier.apply_pending(scenario["options"])
-	Engine.print_error_messages = printed
-	var a := _read(addon, "core/a.gd")
-	var version := _version(addon)
-	var record := UpdateJournal.read(updates)
+	var seen := []
+	var options: Dictionary = scenario["options"]
+	options["on_step"] = func(step: String) -> void:
+		seen.append([step, UpdateJournal.read(updates)["state"], _version(addon), _exists(scenario, "stage"), _exists(scenario, "backup-1.1.0")])
+	var result := UpdateApplier.apply_pending(options)
 	_cleanup(scenario)
-	testing.eq(result, {"state": "rolled_back", "reason": "could not write core/b.gd"}, "the apply reports the rollback and why")
-	testing.eq(a, "old a", "a file the update had written → the old content again")
-	testing.eq(version, "1.1.0", "plugin.cfg → still the old version")
-	testing.eq(record["state"], "not_applied", "the journal says not applied")
+	testing.eq(result["state"], "applied", "the apply finishes")
+	testing.eq(seen, [
+		["checked", "staged", "1.1.0", true, false],
+		["applying", "applying", "1.1.0", true, false],
+		["live_moved", "applying", "", true, true],
+		["stage_moved", "applying", "1.2.0", false, true],
+	], "journal, live version, stage and backup at each step, in order")
+	print("")
+
+
+static func _test_ignore_files(testing: Testing) -> void:
+	testing.begin("Update applier: the ignore files")
+	var scenario := _staged("apply_ignore")
+	var result := UpdateApplier.apply_pending(scenario["options"])
+	var gitignore := _read(scenario["updates"], ".gitignore")
+	var p4ignore := _read(scenario["updates"], ".p4ignore")
+	var gdignore_there := FileAccess.file_exists(str(scenario["updates_path"]).path_join(".gdignore"))
+	_cleanup(scenario)
+	testing.eq(result["state"], "applied", "missing ones → the apply goes on")
+	testing.eq(gitignore, "*\n", "and .gitignore is back")
+	testing.eq(p4ignore, "*\n", "and .p4ignore is back")
+	testing.ok(gdignore_there, "and .gdignore is back")
+
+	var blocked := _staged("apply_ignore_blocked")
+	DirAccess.make_dir_recursive_absolute(str(blocked["updates_path"]).path_join(".gitignore"))
+	var blocked_result := _apply_quietly(blocked["options"])
+	var journal := UpdateJournal.read(blocked["updates"])
+	var version := _version(blocked["addon"])
+	var stage_kept := _exists(blocked, "stage")
+	_cleanup(blocked)
+	testing.eq(blocked_result, {"state": "staged", "reason": "could not write the update folder's ignore files"},
+			"one that cannot be written → postponed")
+	testing.eq(journal["attempts"], 1, "and one attempt counted")
+	testing.eq(version, "1.1.0", "the live folder stays")
+	testing.ok(stage_kept, "the stage stays")
+	print("")
+
+
+# A pull between staging and exit: the journal's `from` is stale.
+static func _test_from_refreshed(testing: Testing) -> void:
+	testing.begin("Update applier: from is read from the live folder")
+	var scenario := _setup("apply_refresh", "1.1.5", {"core/a.gd": "old a"})
+	UpdateFixtures.stage(scenario["updates"], "1.2.0", _RELEASE, "1.1.0", UpdateFixtures.key())
+	var result := UpdateApplier.apply_pending(scenario["options"])
+	var journal := UpdateJournal.read(scenario["updates"])
+	var right_backup := _exists(scenario, "backup-1.1.5")
+	var wrong_backup := _exists(scenario, "backup-1.1.0")
+	_cleanup(scenario)
+	testing.eq(result["state"], "applied", "the apply goes on")
+	testing.eq(journal["from"], "1.1.5", "the journal says the live version")
+	testing.eq(journal["backup"], "backup-1.1.5", "and the backup named with it, or it would read as no journal")
+	testing.ok(right_backup and not wrong_backup, "the backup folder has that name")
+	print("")
+
+
+static func _test_leftover_backup(testing: Testing) -> void:
+	testing.begin("Update applier: a backup already there")
+	var equal := _staged("apply_backup_equal")
+	var equal_files: Dictionary = UpdateFixtures.release_entries("1.1.0", {"core/a.gd": "old a"})
+	for entry: String in equal_files:
+		FolderFiles.write_checked(str(equal["updates_path"]).path_join("backup-1.1.0").path_join(entry.trim_prefix("addons/godot_mcp_toolkit/")),
+				str(equal_files[entry]).to_utf8_buffer())
+	var equal_result := UpdateApplier.apply_pending(equal["options"])
+	var equal_version := _version(equal["addon"])
+	_cleanup(equal)
+	testing.eq(equal_result["state"], "applied", "equal to the live folder → deleted, and the apply goes on")
+	testing.eq(equal_version, "1.2.0", "the live folder is the release")
+
+	var other := _staged("apply_backup_other")
+	var other_backup := str(other["updates_path"]).path_join("backup-1.1.0")
+	FolderFiles.write_checked(other_backup.path_join("someone.gd"), "keep me".to_utf8_buffer())
+	var reason := "backup-1.1.0 holds something other than the installed toolkit"
+	var first := UpdateApplier.apply_pending(other["options"])
+	var second := UpdateApplier.apply_pending(other["options"])
+	var journal := UpdateJournal.read(other["updates"])
+	var kept := FileAccess.get_file_as_string(other_backup.path_join("someone.gd"))
+	var version := _version(other["addon"])
+	var stage_kept := _exists(other, "stage")
+	_cleanup(other)
+	testing.eq(first, {"state": "staged", "reason": reason}, "different → postponed, naming the folder")
+	testing.eq(second, first, "and again at the next exit")
+	testing.eq(journal["attempts"], 2, "counting each attempt")
+	testing.eq(journal["reason"], reason, "the journal keeps the reason")
+	testing.eq(kept, "keep me", "the folder is left alone")
+	testing.eq(version, "1.1.0", "the live folder stays")
+	testing.ok(stage_kept, "the stage stays")
+	print("")
+
+
+# A folder with a file in it where the backup goes blocks a rename on every platform.
+static func _test_failed_first_rename(testing: Testing) -> void:
+	testing.begin("Update applier: the first rename fails")
+	var scenario := _staged("apply_rename_one")
+	var obstacle := str(scenario["updates_path"]).path_join("backup-1.1.0")
+	var options: Dictionary = scenario["options"]
+	options["on_step"] = func(step: String) -> void:
+		if step == UpdateApplier.STEP_APPLYING:
+			FolderFiles.write_checked(obstacle.path_join("held.gd"), "held".to_utf8_buffer())
+	var result := _apply_quietly(options)
+	var journal := UpdateJournal.read(scenario["updates"])
+	var version := _version(scenario["addon"])
+	var stage_kept := _exists(scenario, "stage")
+	FolderFiles.remove_tree(obstacle)
+	options.erase("on_step")
+	var retried := UpdateApplier.apply_pending(options)
+	var retried_version := _version(scenario["addon"])
+	_cleanup(scenario)
+	testing.eq(result, {"state": "staged", "reason": "could not move the installed toolkit to backup-1.1.0"}, "postponed, with the reason")
+	testing.eq(journal["state"], "staged", "the journal goes back to staged")
+	testing.eq(journal["attempts"], 1, "one attempt counted")
+	testing.eq(version, "1.1.0", "the live folder stays")
+	testing.ok(stage_kept, "the stage stays")
+	testing.eq(retried["state"], "applied", "the next exit, nothing in the way → applied")
+	testing.eq(retried_version, "1.2.0", "the live folder is the release")
+	print("")
+
+
+static func _test_failed_second_rename(testing: Testing) -> void:
+	testing.begin("Update applier: the second rename fails, and the first is undone")
+	var scenario := _staged("apply_rename_two")
+	var stage := str(scenario["updates_path"]).path_join("stage")
+	var options: Dictionary = scenario["options"]
+	options["on_step"] = func(step: String) -> void:
+		if step == UpdateApplier.STEP_LIVE_MOVED:
+			FolderFiles.remove_tree(stage)
+	var result := _apply_quietly(options)
+	var journal := UpdateJournal.read(scenario["updates"])
+	var a := _read(scenario["addon"], "core/a.gd")
+	var version := _version(scenario["addon"])
+	var backup_left := _exists(scenario, "backup-1.1.0")
+	_cleanup(scenario)
+	testing.eq(result, {"state": "staged", "reason": "could not move the stage into place"}, "postponed, with the reason")
+	testing.eq(journal["state"], "staged", "the journal goes back to staged")
+	testing.eq(a, "old a", "the live folder holds the old files again")
+	testing.eq(version, "1.1.0", "at the old version")
+	testing.ok(not backup_left, "by rename: no backup stays behind")
+	print("")
+
+
+static func _test_failed_undo(testing: Testing) -> void:
+	testing.begin("Update applier: the undo fails too")
+	var scenario := _staged("apply_undo")
+	var addon_path := str(scenario["addon_path"])
+	var options: Dictionary = scenario["options"]
+	options["on_step"] = func(step: String) -> void:
+		if step == UpdateApplier.STEP_LIVE_MOVED:
+			FolderFiles.write_checked(addon_path.path_join("in_the_way.gd"), "held".to_utf8_buffer())
+	var result := _apply_quietly(options)
+	var journal := UpdateJournal.read(scenario["updates"])
+	var backup_whole := _read(UpdateFolder.backup_folder("1.1.0", scenario["updates"]), "core/a.gd") == "old a"
+	var stage_whole := _read(UpdateFolder.stage_folder(scenario["updates"]), "core/a.gd") == "new a"
+	_cleanup(scenario)
+	testing.eq(result, {"state": "applying", "reason": "could not move the stage into place, nor backup-1.1.0 back"},
+			"reported as still applying")
+	testing.eq(journal["state"], "applying", "the journal stays there for the next start")
+	testing.ok(backup_whole, "the backup is whole")
+	testing.ok(stage_whole, "the stage is whole")
+	print("")
+
+
+# A read-only journal is the injected failure: the headless runner writes in place, so
+# writing over it fails.
+static func _test_failed_applying_write(testing: Testing) -> void:
+	testing.begin("Update applier: the applying write fails")
+	var scenario := _staged("apply_write")
+	var journal_path := str(scenario["updates_path"]).path_join("journal.json")
+	var options: Dictionary = scenario["options"]
+	options["on_step"] = func(step: String) -> void:
+		if step == UpdateApplier.STEP_CHECKED:
+			_set_read_only(journal_path, true)
+	var result := _apply_quietly(options)
+	_set_read_only(journal_path, false)
+	var state := str(UpdateJournal.read(scenario["updates"])["state"])
+	var version := _version(scenario["addon"])
+	var stage_kept := _exists(scenario, "stage")
+	_cleanup(scenario)
+	testing.eq(result, {"state": "staged", "reason": "could not write the journal"}, "postponed")
+	testing.eq(state, "staged", "the journal never said applying")
+	testing.eq(version, "1.1.0", "nothing moved")
+	testing.ok(stage_kept, "the stage stays")
+	print("")
+
+
+# Makes `path` read-only or writable again: the read-only attribute on Windows,
+# the owner's write bit elsewhere.
+static func _set_read_only(path: String, read_only: bool) -> void:
+	if OS.get_name() == "Windows":
+		FileAccess.set_read_only_attribute(path, read_only)
+		return
+	var permissions := FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_READ_GROUP | FileAccess.UNIX_READ_OTHER
+	if not read_only:
+		permissions |= FileAccess.UNIX_WRITE_OWNER
+	FileAccess.set_unix_permissions(path, permissions)
+
+
+# Rewrites the stage's list so its hashes agree with a changed stage, and the journal's
+# stored hash with that list: nothing an agent could rewrite may satisfy the check.
+static func _forge_stage(scenario: Dictionary) -> void:
+	var stage := str(scenario["updates_path"]).path_join("stage")
+	FolderFiles.write_checked(stage.path_join("core/a.gd"), "evil".to_utf8_buffer())
+	var hashes := FolderFiles.hashes(stage)
+	hashes.erase(ReleaseFileList.FILE_NAME)
+	var forged := ReleaseFileList.format(hashes).to_utf8_buffer()
+	FolderFiles.write_checked(stage.path_join(ReleaseFileList.FILE_NAME), forged)
+	var journal := UpdateJournal.read(scenario["updates"])
+	journal["expected_tree_hash"] = ContentHash.of_bytes(forged)
+	UpdateJournal.write(journal, scenario["updates"])
+
+
+# The result of a stage changed by `change`, and what it left.
+static func _mismatch_of(purpose: String, change: Callable) -> Dictionary:
+	var scenario := _staged(purpose)
+	change.call(scenario)
+	var result := UpdateApplier.apply_pending(scenario["options"])
+	var outcome := {
+		"result": result,
+		"journal": UpdateJournal.read(scenario["updates"])["state"],
+		"stage": _exists(scenario, "stage"),
+		"zip": _exists(scenario, "1.2.0"),
+		"live": _read(scenario["addon"], "core/a.gd"),
+	}
+	_cleanup(scenario)
+	return outcome
+
+
+static func _test_stage_mismatches(testing: Testing) -> void:
+	testing.begin("Update applier: a stage held to what is signed")
+	var cases := {
+		"a changed file, with the list and the stored hash rewritten": _forge_stage,
+		"a changed file": func(scenario: Dictionary) -> void:
+			FolderFiles.write_checked(str(scenario["updates_path"]).path_join("stage/core/a.gd"), "evil".to_utf8_buffer()),
+		"an extra file": func(scenario: Dictionary) -> void:
+			FolderFiles.write_checked(str(scenario["updates_path"]).path_join("stage/extra.gd"), "evil".to_utf8_buffer()),
+		"a missing file": func(scenario: Dictionary) -> void:
+			DirAccess.remove_absolute(str(scenario["updates_path"]).path_join("stage/core/b.gd")),
+		"the list changed alone": func(scenario: Dictionary) -> void:
+			FolderFiles.write_checked(str(scenario["updates_path"]).path_join("stage").path_join(ReleaseFileList.FILE_NAME), "\n".to_utf8_buffer()),
+		"no stage at all": func(scenario: Dictionary) -> void:
+			FolderFiles.remove_tree(str(scenario["updates_path"]).path_join("stage")),
+	}
+	var index := 0
+	for label: String in cases:
+		var change: Callable = cases[label]
+		var outcome := _mismatch_of("apply_mismatch_%d" % index, change)
+		index += 1
+		testing.eq(outcome, {
+			"result": {"state": "not_applied", "reason": "the stage does not match the release"},
+			"journal": "not_applied",
+			"stage": false,
+			"zip": true,
+			"live": "old a",
+		}, "%s → not applied, the stage gone, the zip kept, the live folder as it was" % label)
+	print("")
+
+
+static func _test_second_mismatch(testing: Testing) -> void:
+	testing.begin("Update applier: a mismatch after the one re-stage")
+	var scenario := _staged("apply_mismatch_second")
+	FolderFiles.write_checked(str(scenario["updates_path"]).path_join("backup-1.0.0/a.gd"), "old".to_utf8_buffer())
+	var journal := UpdateJournal.read(scenario["updates"])
+	journal["restaged"] = true
+	UpdateJournal.write(journal, scenario["updates"])
+	_forge_stage(scenario)
+	var result := UpdateApplier.apply_pending(scenario["options"])
+	var state := str(UpdateJournal.read(scenario["updates"])["state"])
+	var stage_gone := not _exists(scenario, "stage")
+	var zip_gone := not _exists(scenario, "1.2.0")
+	var backup_kept := _exists(scenario, "backup-1.0.0")
+	_cleanup(scenario)
+	testing.eq(result, {"state": "not_applied", "reason": "the stage does not match the release"}, "not applied")
+	testing.eq(state, "not_applied", "the journal stays, so the next start can report it")
+	testing.ok(stage_gone and zip_gone, "the stage and the zip → gone, so nothing re-stages")
+	testing.ok(backup_kept, "a backup → kept")
+	print("")
+
+
+static func _test_vanished(testing: Testing) -> void:
+	testing.begin("Update applier: the folder vanishes before the first rename")
+	var scenario := _staged("apply_vanished")
+	var updates_path := str(scenario["updates_path"])
+	var options: Dictionary = scenario["options"]
+	options["on_step"] = func(step: String) -> void:
+		if step == UpdateApplier.STEP_CHECKED:
+			FolderFiles.remove_tree(updates_path)
+	var result := UpdateApplier.apply_pending(options)
+	var version := _version(scenario["addon"])
+	var recreated := DirAccess.dir_exists_absolute(updates_path)
+	_cleanup(scenario)
+	testing.eq(result, {"state": "", "reason": ""}, "no journal → nothing in progress")
+	testing.eq(version, "1.1.0", "the live folder stays")
+	testing.ok(not recreated, "the folder is not made again")
+
+	var no_stage := _staged("apply_vanished_stage")
+	var stage := str(no_stage["updates_path"]).path_join("stage")
+	var no_stage_options: Dictionary = no_stage["options"]
+	no_stage_options["on_step"] = func(step: String) -> void:
+		if step == UpdateApplier.STEP_CHECKED:
+			FolderFiles.remove_tree(stage)
+	var no_stage_result := UpdateApplier.apply_pending(no_stage_options)
+	var no_stage_version := _version(no_stage["addon"])
+	_cleanup(no_stage)
+	testing.eq(no_stage_result, {"state": "not_applied", "reason": "the stage does not match the release"},
+			"only the stage gone → a mismatch, before anything moves")
+	testing.eq(no_stage_version, "1.1.0", "the live folder stays")
 	print("")
 
 
 static func _not_applied_reason(purpose: String, installed_version: String, prepare: Callable, extra_options: Dictionary = {}) -> Dictionary:
 	var scenario := _setup(purpose, installed_version, {"core/a.gd": "old a"})
+	FolderFiles.write_checked(str(scenario["updates_path"]).path_join("backup-1.0.0/a.gd"), "old".to_utf8_buffer())
 	prepare.call(scenario["updates"])
 	var options: Dictionary = scenario["options"]
 	options.merge(extra_options, true)
 	var result := UpdateApplier.apply_pending(options)
 	var untouched := _read(scenario["addon"], "core/a.gd") == "old a" and _version(scenario["addon"]) == installed_version
+	var cleared := not _exists(scenario, "stage") and not _exists(scenario, "1.2.0") and _exists(scenario, "backup-1.0.0")
+	var journal_state := str(UpdateJournal.read(scenario["updates"])["state"])
 	_cleanup(scenario)
-	return {"result": result, "untouched": untouched}
+	return {"result": result, "untouched": untouched, "cleared": cleared, "journal": journal_state}
 
 
-static func _test_not_applied(testing) -> void:
+# Staged normally, then the zip swapped for one without a file list, re-signed: a layout
+# this version cannot read, in a release the key did sign.
+static func _stage_without_list(updates: String) -> void:
+	UpdateFixtures.stage(updates, "1.2.0", {"core/a.gd": "new a"}, "1.1.0", UpdateFixtures.key())
+	var folder := UpdateFolder.version_folder("1.2.0", updates)
+	var archive := folder.path_join(ReleaseAssets.archive_name("1.2.0"))
+	var entries := UpdateFixtures.release_entries("1.2.0", {"core/a.gd": "new a"})
+	entries.erase("addons/godot_mcp_toolkit/" + ReleaseFileList.FILE_NAME)
+	UpdateFixtures.write_zip(archive, entries)
+	var manifest := UpdateFixtures.manifest_text("1.2.0", FileAccess.get_file_as_bytes(archive)).to_utf8_buffer()
+	var absolute := ProjectSettings.globalize_path(folder)
+	FolderFiles.write_checked(absolute.path_join(ReleaseAssets.manifest_name("1.2.0")), manifest)
+	FolderFiles.write_checked(absolute.path_join(ReleaseAssets.signature_name("1.2.0")),
+			UpdateFixtures.signature_of(manifest, UpdateFixtures.key()))
+
+
+static func _test_not_applied(testing: Testing) -> void:
 	testing.begin("Update applier: each reason not to apply")
 	LogBuffer.setup()
 	var cursor: int = LogBuffer.get_cursor() - 1
@@ -135,6 +497,7 @@ static func _test_not_applied(testing) -> void:
 			{"guard_facts": {"headless": true}})
 	var tampered := _not_applied_reason("apply_tampered", "1.1.0",
 			func(updates: String) -> void: UpdateFixtures.stage_tampered(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key()))
+	var no_list := _not_applied_reason("apply_no_list", "1.1.0", _stage_without_list)
 	testing.eq(untrusted["result"], {"state": "not_applied", "reason": "the update's signature does not verify"},
 			"a manifest signed by an untrusted key → not applied")
 	testing.eq(above_floor["result"], {"state": "not_applied", "reason": "version 1.2.0 needs Godot 4.9 or newer"},
@@ -146,15 +509,40 @@ static func _test_not_applied(testing) -> void:
 			"a guard → not applied, with its sentence")
 	testing.eq(tampered["result"], {"state": "not_applied", "reason": "the staged archive does not match its manifest"},
 			"an archive changed after staging → not applied")
-	var all_untouched: bool = untrusted["untouched"] and above_floor["untouched"] and same["untouched"] and guarded["untouched"] and tampered["untouched"]
+	testing.eq(no_list["result"], {"state": "not_applied", "reason": "the staged archive has no file list this version can read"},
+			"a zip with no list → not applied")
+	var refused := [untrusted, above_floor, same, guarded, tampered, no_list]
+	var all_untouched := true
+	var all_cleared := true
+	var all_journals := true
+	for outcome: Dictionary in refused:
+		all_untouched = all_untouched and bool(outcome["untouched"])
+		all_cleared = all_cleared and bool(outcome["cleared"])
+		all_journals = all_journals and outcome["journal"] == "not_applied"
 	testing.ok(all_untouched, "every refused apply leaves the addon folder as it was")
+	testing.ok(all_cleared, "every refused apply deletes the stage and the zip and keeps the backup")
+	testing.ok(all_journals, "every refused apply leaves a not_applied journal to report from")
 	if LogBuffer.uses_logger_api():
 		var logged: Dictionary = LogBuffer.get_entries(100, ["error"], cursor)
 		testing.eq(int(logged["returned"]), 0, "a refused apply prints no engine error")
 	print("")
 
 
-static func _test_nothing_staged(testing) -> void:
+# A run's key is never a shipped key, so this holds once real keys ship too.
+static func _test_shipped_keys(testing: Testing) -> void:
+	testing.begin("Update applier: no keys passed in means the shipped keys")
+	var scenario := _staged("apply_shipped_keys")
+	var options: Dictionary = scenario["options"]
+	options.erase("public_keys")
+	var result := UpdateApplier.apply_pending(options)
+	var version := _version(scenario["addon"])
+	_cleanup(scenario)
+	testing.eq(result, {"state": "not_applied", "reason": "the update's signature does not verify"}, "not applied")
+	testing.eq(version, "1.1.0", "the live folder stays")
+	print("")
+
+
+static func _test_nothing_staged(testing: Testing) -> void:
 	testing.begin("Update applier: only a staged journal is applied")
 	var none := _not_applied_reason("apply_none", "1.1.0", func(_updates: String) -> void: pass)
 	var verified := _not_applied_reason("apply_verified", "1.1.0",

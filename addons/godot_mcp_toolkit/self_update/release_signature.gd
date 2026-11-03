@@ -7,11 +7,21 @@ extends RefCounted
 ## A signature from any trusted key counts, so a key can be rotated by a release that
 ## trusts both the old and the new one.
 
-# Direct preload, not core/modules.gd: the aggregator preloads this file.
+# Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
+const TrustedReleaseKeys := preload("res://addons/godot_mcp_toolkit/self_update/trusted_release_keys.gd")
 
 ## The largest signature read, in bytes: an RSA-4096 signature is 512.
 const MAX_BYTES := 4096
+
+
+## Whether a manifest's bytes and its signature are trusted. Every decision to trust a
+## release goes through here, so what makes one trusted can change behind this function
+## alone. [param public_keys] replaces the shipped key list; only tests pass it.
+static func is_trusted(
+		manifest_bytes: PackedByteArray, signature: PackedByteArray,
+		public_keys: Array = TrustedReleaseKeys.PUBLIC_KEYS) -> bool:
+	return is_valid(manifest_bytes, signature, public_keys)
 
 
 ## Whether [param signature] is a valid signature over [param message] by one of

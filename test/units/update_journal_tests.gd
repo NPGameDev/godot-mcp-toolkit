@@ -36,6 +36,7 @@ static func run(testing: Testing) -> void:
 	_test_unknown_state(testing)
 	_test_mistyped_fields(testing)
 	_test_unknown_keys(testing)
+	_test_restaged(testing)
 	_test_write_that_fails(testing)
 	_test_clear(testing)
 
@@ -188,6 +189,29 @@ static func _test_unknown_keys(testing: Testing) -> void:
 			"a_later_key": "value"})
 	testing.eq(record["state"], "staged", "the journal still reads")
 	testing.ok(not record.has("a_later_key"), "the key is ignored")
+	print("")
+
+
+# The key exists only once true, so a journal that never re-staged stays the pinned text.
+static func _test_restaged(testing: Testing) -> void:
+	testing.begin("Update journal: the mark of the one re-stage")
+	var folder := UpdateFixtures.scratch("journal_restaged")
+	var path := ProjectSettings.globalize_path(folder).path_join("journal.json")
+	UpdateJournal.write({"state": "staged", "from": "1.1.0", "to": "1.2.0", "restaged": true}, folder)
+	var marked := UpdateJournal.read(folder)
+	UpdateJournal.write(marked, folder)
+	var kept := UpdateJournal.read(folder)
+	UpdateJournal.write({"state": "staged", "from": "1.1.0", "to": "1.2.0", "restaged": false}, folder)
+	var unmarked_text := FileAccess.get_file_as_string(path)
+	var unmarked := UpdateJournal.read(folder)
+	UpdateFixtures.remove(folder)
+	testing.eq(marked.get("restaged", false), true, "written true → read true")
+	testing.eq(kept.get("restaged", false), true, "and it survives the next write")
+	testing.ok(not unmarked_text.contains("restaged"), "written false → not in the file")
+	testing.ok(not unmarked.has("restaged"), "and not in the record")
+	var mistyped := _read_fields("journal_restaged_mistyped", {"format": 1, "state": "staged", "from": "1.1.0",
+			"to": "1.2.0", "restaged": "yes"})
+	testing.ok(not mistyped.has("restaged"), "a value that is not true → not marked")
 	print("")
 
 
