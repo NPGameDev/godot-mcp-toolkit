@@ -6,7 +6,8 @@ extends RefCounted
 
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/self_update/pending_update.gd")
+const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
+const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 
@@ -107,11 +108,11 @@ static func manifest_text(version: String, archive_bytes: PackedByteArray, min_g
 
 ## Stages a release of [param version] holding [param files] in [param update_folder]
 ## as the installer would: the zip, its manifest signed by [param signing_key], and a
-## record in [param state] over [param from_version].
+## journal in [param state] over [param from_version].
 static func stage(
 		update_folder: String, version: String, files: Dictionary, from_version: String,
-		signing_key: CryptoKey, state: String = PendingUpdate.STAGED, min_godot: String = "4.2") -> void:
-	var folder := PendingUpdate.version_folder(version, update_folder)
+		signing_key: CryptoKey, state: String = UpdateJournal.STAGED, min_godot: String = "4.2") -> void:
+	var folder := UpdateFolder.version_folder(version, update_folder)
 	var archive := folder.path_join(ReleaseAssets.archive_name(version))
 	write_zip(archive, release_entries(version, files))
 	var archive_bytes := FileAccess.get_file_as_bytes(archive)
@@ -119,7 +120,7 @@ static func stage(
 	var absolute := ProjectSettings.globalize_path(folder)
 	FolderFiles.write_checked(absolute.path_join(ReleaseAssets.manifest_name(version)), manifest)
 	FolderFiles.write_checked(absolute.path_join(ReleaseAssets.signature_name(version)), signature_of(manifest, signing_key))
-	PendingUpdate.write({"state": state, "version": version, "from_version": from_version,
+	UpdateJournal.write({"state": state, "to": version, "from": from_version,
 			"compatible_server": "1.1.0"}, update_folder)
 
 
@@ -129,7 +130,7 @@ static func stage_tampered(
 		update_folder: String, version: String, files: Dictionary, from_version: String,
 		signing_key: CryptoKey) -> void:
 	stage(update_folder, version, files, from_version, signing_key)
-	var archive := ProjectSettings.globalize_path(PendingUpdate.version_folder(version, update_folder)).path_join(
+	var archive := ProjectSettings.globalize_path(UpdateFolder.version_folder(version, update_folder)).path_join(
 			ReleaseAssets.archive_name(version))
 	var file := FileAccess.open(archive, FileAccess.READ_WRITE)
 	file.seek_end()

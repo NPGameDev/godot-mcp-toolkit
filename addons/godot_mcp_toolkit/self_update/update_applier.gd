@@ -12,10 +12,11 @@ extends RefCounted
 ## The apply re-checks the staged files, copies the installed folder to the backup,
 ## writes every release file and reads it back, deletes the files the release
 ## dropped, and on any failure writes the backup back. Each step goes to the install
-## log, and the record's state tells the next start what happened.
+## log, and the journal's state tells the next start what happened.
 
 # Direct preloads, not core/modules.gd: the aggregator preloads this file.
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/self_update/pending_update.gd")
+const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
+const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/release_manifest.gd")
 const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
@@ -31,6 +32,9 @@ const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_ver
 ## The installed addon folder.
 const ADDON_FOLDER := "res://addons/godot_mcp_toolkit"
 
+# Reported by a restored apply; the journal itself says not_applied.
+const _ROLLED_BACK := "rolled_back"
+
 
 ## Applies the staged update, if there is one.
 ##
@@ -39,29 +43,29 @@ const ADDON_FOLDER := "res://addons/godot_mcp_toolkit"
 ## [code]public_keys[/code] and [code]guard_facts[/code] (the shape
 ## [method InstallGuards.facts] returns).[br]
 ## [br]
-## Returns [code]{"state": String, "reason": String}[/code]: the record's new state,
+## Returns [code]{"state": String, "reason": String}[/code]: the journal's new state,
 ## or an empty state when nothing was staged.
 static func apply_pending(options: Dictionary = {}) -> Dictionary:
 	var addon_folder := ProjectSettings.globalize_path(str(options.get("addon_folder", ADDON_FOLDER)))
-	var update_folder := str(options.get("update_folder", PendingUpdate.FOLDER))
-	var record := PendingUpdate.read(update_folder)
-	if record["state"] != PendingUpdate.STAGED:
+	var update_folder := str(options.get("update_folder", UpdateFolder.FOLDER))
+	var record := UpdateJournal.read(update_folder)
+	if record["state"] != UpdateJournal.STAGED:
 		return {"state": "", "reason": ""}
-	var version: String = record["version"]
-	PendingUpdate.log_line("apply %s over %s started" % [version, record["from_version"]], update_folder)
+	var version: String = record["to"]
+	UpdateFolder.log_line("apply %s over %s started" % [version, record["from"]], update_folder)
 
 	var reader := ZIPReader.new()
 	var check := _check_staged(version, addon_folder, update_folder, options, reader)
 	if not str(check["error"]).is_empty():
-		return _finish(record, PendingUpdate.NOT_APPLIED, str(check["error"]), update_folder)
+		return _finish(record, UpdateJournal.NOT_APPLIED, str(check["error"]), update_folder)
 	var release_files: PackedStringArray = check["files"]
 
-	var backup := ProjectSettings.globalize_path(PendingUpdate.backup_folder(update_folder))
+	var backup := ProjectSettings.globalize_path(UpdateFolder.backup_folder(str(record["from"]), update_folder))
 	FolderFiles.remove_tree(backup)
 	var not_backed_up := FolderFiles.copy_tree(addon_folder, backup)
 	if not not_backed_up.is_empty():
 		reader.close()
-		return _finish(record, PendingUpdate.NOT_APPLIED,
+		return _finish(record, UpdateJournal.NOT_APPLIED,
 				"could not back up %s" % not_backed_up[0], update_folder)
 
 	var plan := InstallPlan.plan(
@@ -80,11 +84,12 @@ static func apply_pending(options: Dictionary = {}) -> Dictionary:
 	reader.close()
 
 	if failure.is_empty():
-		return _finish(record, PendingUpdate.APPLIED, "", update_folder)
+		return _finish(record, UpdateJournal.APPLIED, "", update_folder)
 	var not_restored := _restore(backup, addon_folder, plan["write"])
 	if not not_restored.is_empty():
 		failure += "; %d files were not restored, copy them back from %s" % [not_restored.size(), backup]
-	return _finish(record, PendingUpdate.ROLLED_BACK, failure, update_folder)
+	_finish(record, UpdateJournal.NOT_APPLIED, failure, update_folder)
+	return {"state": _ROLLED_BACK, "reason": failure}
 
 
 # Re-checks what the installer checked before staging, on the files as they are now,
@@ -99,7 +104,7 @@ static func _check_staged(
 	if not refusal.is_empty():
 		return _problem(InstallGuards.describe(refusal))
 
-	var staged := PendingUpdate.version_folder(version, update_folder)
+	var staged := UpdateFolder.version_folder(version, update_folder)
 	var manifest_bytes := FileAccess.get_file_as_bytes(staged.path_join(ReleaseAssets.manifest_name(version)))
 	var signature := FileAccess.get_file_as_bytes(staged.path_join(ReleaseAssets.signature_name(version)))
 	var public_keys: Array = options.get("public_keys", TrustedReleaseKeys.PUBLIC_KEYS)
@@ -159,7 +164,7 @@ static func _restore(backup: String, addon_folder: String, written: PackedString
 static func _finish(record: Dictionary, state: String, reason: String, update_folder: String) -> Dictionary:
 	record["state"] = state
 	record["reason"] = reason
-	PendingUpdate.write(record, update_folder)
-	PendingUpdate.log_line("apply %s: %s%s" % [record["version"], state,
+	UpdateJournal.write(record, update_folder)
+	UpdateFolder.log_line("apply %s: %s%s" % [record["to"], state,
 			"" if reason.is_empty() else " (%s)" % reason], update_folder)
 	return {"state": state, "reason": reason}

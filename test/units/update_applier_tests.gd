@@ -2,11 +2,12 @@
 extends RefCounted
 ## Unit tests for applying a staged update, on scratch addon and update folders: a
 ## full apply, a rollback after a write that cannot happen, each reason not to apply,
-## and a record that is not staged. The editor-exit call itself runs in the update
+## and a journal that is not staged. The editor-exit call itself runs in the update
 ## flow integration test (scripts/test_framework/update_flow.sh).
 
 const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/self_update/pending_update.gd")
+const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
+const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 const LogBuffer := preload("res://addons/godot_mcp_toolkit/logging/log_buffer.gd")
@@ -65,9 +66,9 @@ static func _test_full_apply(testing) -> void:
 	var dropped_gone := not FileAccess.file_exists(ProjectSettings.globalize_path(addon).path_join("old.gd"))
 	var mine := _read(addon, "mine.gd")
 	var version := _version(addon)
-	var backup_a := _read(PendingUpdate.backup_folder(updates), "core/a.gd")
-	var record := PendingUpdate.read(updates)
-	var logged := FileAccess.get_file_as_string(PendingUpdate.log_path(updates))
+	var backup_a := _read(UpdateFolder.backup_folder("1.1.0", updates), "core/a.gd")
+	var record := UpdateJournal.read(updates)
+	var logged := FileAccess.get_file_as_string(UpdateFolder.log_path(updates))
 	_cleanup(scenario)
 	testing.eq(result, {"state": "applied", "reason": ""}, "the apply reports applied")
 	testing.eq(a, "new a", "a changed file → the release's content")
@@ -76,7 +77,7 @@ static func _test_full_apply(testing) -> void:
 	testing.eq(mine, "my own", "a file the list does not name → kept")
 	testing.eq(version, "1.2.0", "plugin.cfg → the new version")
 	testing.eq(backup_a, "old a", "the backup holds the old content")
-	testing.eq(record["state"], "applied", "the record says applied")
+	testing.eq(record["state"], "applied", "the journal says applied")
 	testing.ok(logged.contains("apply 1.2.0: applied"), "the install log says applied")
 	print("")
 
@@ -96,12 +97,12 @@ static func _test_rollback(testing) -> void:
 	Engine.print_error_messages = printed
 	var a := _read(addon, "core/a.gd")
 	var version := _version(addon)
-	var record := PendingUpdate.read(updates)
+	var record := UpdateJournal.read(updates)
 	_cleanup(scenario)
 	testing.eq(result, {"state": "rolled_back", "reason": "could not write core/b.gd"}, "the apply reports the rollback and why")
 	testing.eq(a, "old a", "a file the update had written → the old content again")
 	testing.eq(version, "1.1.0", "plugin.cfg → still the old version")
-	testing.eq(record["state"], "rolled_back", "the record says rolled back")
+	testing.eq(record["state"], "not_applied", "the journal says not applied")
 	print("")
 
 
@@ -124,9 +125,9 @@ static func _test_not_applied(testing) -> void:
 	var untrusted := _not_applied_reason("apply_untrusted", "1.1.0",
 			func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.other_key()))
 	var above_floor := _not_applied_reason("apply_floor", "1.1.0",
-			func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key(), PendingUpdate.STAGED, "4.9"))
+			func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key(), UpdateJournal.STAGED, "4.9"))
 	var at_floor := _not_applied_reason("apply_at_floor", "1.1.0",
-			func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key(), PendingUpdate.STAGED, "4.7"))
+			func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key(), UpdateJournal.STAGED, "4.7"))
 	var same := _not_applied_reason("apply_same", "1.2.0",
 			func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.2.0", UpdateFixtures.key()))
 	var guarded := _not_applied_reason("apply_guarded", "1.1.0",
@@ -154,11 +155,11 @@ static func _test_not_applied(testing) -> void:
 
 
 static func _test_nothing_staged(testing) -> void:
-	testing.begin("Update applier: only a staged record is applied")
+	testing.begin("Update applier: only a staged journal is applied")
 	var none := _not_applied_reason("apply_none", "1.1.0", func(_updates: String) -> void: pass)
 	var verified := _not_applied_reason("apply_verified", "1.1.0",
-			func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", {"core/a.gd": "new a"}, "1.1.0", UpdateFixtures.key(), PendingUpdate.VERIFIED))
-	testing.eq(none["result"], {"state": "", "reason": ""}, "no record → nothing done")
-	testing.eq(verified["result"], {"state": "", "reason": ""}, "a verified record → nothing done")
+			func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", {"core/a.gd": "new a"}, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED))
+	testing.eq(none["result"], {"state": "", "reason": ""}, "no journal → nothing done")
+	testing.eq(verified["result"], {"state": "", "reason": ""}, "a verified journal → nothing done")
 	testing.ok(none["untouched"] and verified["untouched"], "the addon folder stays as it was")
 	print("")
