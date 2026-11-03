@@ -311,9 +311,9 @@ static func _test_failed_applying_write(testing: Testing) -> void:
 	var options: Dictionary = scenario["options"]
 	options["on_step"] = func(step: String) -> void:
 		if step == UpdateApplier.STEP_CHECKED:
-			_set_read_only(journal_path, true)
+			UpdateFixtures.set_read_only(journal_path, true)
 	var result := _apply_quietly(options)
-	_set_read_only(journal_path, false)
+	UpdateFixtures.set_read_only(journal_path, false)
 	var state := str(UpdateJournal.read(scenario["updates"])["state"])
 	var version := _version(scenario["addon"])
 	var stage_kept := _exists(scenario, "stage")
@@ -323,18 +323,6 @@ static func _test_failed_applying_write(testing: Testing) -> void:
 	testing.eq(version, "1.1.0", "nothing moved")
 	testing.ok(stage_kept, "the stage stays")
 	print("")
-
-
-# Makes `path` read-only or writable again: the read-only attribute on Windows,
-# the owner's write bit elsewhere.
-static func _set_read_only(path: String, read_only: bool) -> void:
-	if OS.get_name() == "Windows":
-		FileAccess.set_read_only_attribute(path, read_only)
-		return
-	var permissions := FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_READ_GROUP | FileAccess.UNIX_READ_OTHER
-	if not read_only:
-		permissions |= FileAccess.UNIX_WRITE_OWNER
-	FileAccess.set_unix_permissions(path, permissions)
 
 
 # Rewrites the stage's list so its hashes agree with a changed stage, and the journal's

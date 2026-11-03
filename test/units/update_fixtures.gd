@@ -11,6 +11,24 @@ const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/updat
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 
+## The journal the 1.2.0 toolkit writes. 1.2.0's code stays on users' machines and writes
+## this for a later release to read, so this text never changes: if a test against it
+## fails, the change that broke it needs a bridge release.
+const PINNED_1_2_0_JOURNAL := """{
+	"attempts": 2,
+	"backup": "backup-1.1.0",
+	"changed_files": [
+		"core/a.gd"
+	],
+	"compatible_server": "1.1.0",
+	"expected_tree_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+	"format": 1,
+	"from": "1.1.0",
+	"reason": "a held file",
+	"state": "staged",
+	"to": "1.2.0"
+}"""
+
 static var _key: CryptoKey = null
 static var _other_key: CryptoKey = null
 
@@ -155,6 +173,18 @@ static func block_delete(folder: String, file_name: String, blocked: bool) -> vo
 	if not blocked:
 		permissions |= FileAccess.UNIX_WRITE_OWNER
 	FileAccess.set_unix_permissions(folder, permissions)
+
+
+## Makes the file [param path] read-only, or writable again when [param read_only] is
+## false: the read-only attribute on Windows, the owner's write bit elsewhere.
+static func set_read_only(path: String, read_only: bool) -> void:
+	if OS.get_name() == "Windows":
+		FileAccess.set_read_only_attribute(path, read_only)
+		return
+	var permissions := FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_READ_GROUP | FileAccess.UNIX_READ_OTHER
+	if not read_only:
+		permissions |= FileAccess.UNIX_WRITE_OWNER
+	FileAccess.set_unix_permissions(path, permissions)
 
 
 ## [method stage], then one byte appended to the staged zip, so it no longer matches

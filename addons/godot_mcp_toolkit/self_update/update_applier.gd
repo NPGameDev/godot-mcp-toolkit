@@ -78,11 +78,11 @@ static func apply_pending(options: Dictionary = {}) -> Dictionary:
 	if not UpdateFolder.ensure_ignore_files(update_folder):
 		return _postpone(journal, "could not write the update folder's ignore files", update_folder)
 
-	var check := _check_release(str(journal["to"]), addon_folder, update_folder, options)
+	var check := check_release(str(journal["to"]), addon_folder, update_folder, options)
 	if not str(check["error"]).is_empty():
 		return _refuse(journal, str(check["error"]), update_folder)
 	var list_bytes: PackedByteArray = check["list"]
-	if not _stage_matches(stage, list_bytes):
+	if not stage_matches(stage, list_bytes):
 		return _stage_mismatch(journal, stage, update_folder)
 
 	# A pull between staging and this exit changes the installed version, and the backup
@@ -133,10 +133,13 @@ static func installed_version(addon_folder: String) -> String:
 	return str(config.get_value("plugin", "version", ""))
 
 
-# Everything that must hold before the stage is looked at, on the files as they are now.
-# Returns an empty "error", the "installed" version and the zip's file "list" as bytes
-# when it all holds; otherwise "error" names the first thing that does not.
-static func _check_release(
+## Everything that must hold before the stage is looked at, on the files as they are now.
+##
+## [param options] is what [method apply_pending] takes, and [param addon_folder] is
+## absolute. Returns an empty [code]error[/code], the [code]installed[/code] version and
+## the zip's file [code]list[/code] as bytes when it all holds; otherwise
+## [code]error[/code] names the first thing that does not.
+static func check_release(
 		version: String, addon_folder: String, update_folder: String, options: Dictionary) -> Dictionary:
 	var guard_facts: Dictionary = options["guard_facts"] if options.has("guard_facts") else InstallGuards.facts()
 	var refusal := InstallGuards.refusal(guard_facts)
@@ -170,9 +173,9 @@ static func _check_release(
 	return {"error": "", "installed": installed, "list": inspection["list"]}
 
 
-# Whether the stage holds exactly what the signed list says: every listed file with its
-# hash, the list's own bytes, and no other file.
-static func _stage_matches(stage: String, list_bytes: PackedByteArray) -> bool:
+## Whether the folder [param stage] holds exactly what [param list_bytes] says: every
+## listed file with its hash, the list's own bytes, and no other file.
+static func stage_matches(stage: String, list_bytes: PackedByteArray) -> bool:
 	return FolderFiles.hashes(stage) == ReleaseFileList.release_tree(list_bytes)
 
 

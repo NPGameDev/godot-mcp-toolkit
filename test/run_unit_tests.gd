@@ -56,6 +56,7 @@ const UpdateFolderTests := preload("res://test/units/update_folder_tests.gd")
 const UpdateJournalTests := preload("res://test/units/update_journal_tests.gd")
 const FolderFilesTests := preload("res://test/units/folder_files_tests.gd")
 const UpdateApplierTests := preload("res://test/units/update_applier_tests.gd")
+const UpdateSettlerTests := preload("res://test/units/update_settler_tests.gd")
 const ScreenshotResponseTests := preload("res://test/units/screenshot_response_tests.gd")
 const RuntimeScreenshotTests := preload("res://test/units/runtime_screenshot_tests.gd")
 const EditorScreenshotWaitTests := preload("res://test/units/editor_screenshot_wait_tests.gd")
@@ -163,6 +164,7 @@ func _init() -> void:
 	UpdateJournalTests.run(testing)
 	FolderFilesTests.run(testing)
 	UpdateApplierTests.run(testing)
+	UpdateSettlerTests.run(testing)
 	await SetupWizardTests.run(testing, self)  # the run-ending groups await frames → coroutine
 	SetupWizardStepSpecTests.run(testing)
 	await ExtensionCatalogFetcherTests.run(testing, self)  # the in-tree group awaits a frame → coroutine

@@ -8,24 +8,6 @@ const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/updat
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
-# The journal the 1.2.0 toolkit writes. 1.2.0's code stays on users' machines and writes
-# this for a later release to read, so this text never changes: if a test against it
-# fails, the change that broke it needs a bridge release.
-const _PINNED_1_2_0_JOURNAL := """{
-	"attempts": 2,
-	"backup": "backup-1.1.0",
-	"changed_files": [
-		"core/a.gd"
-	],
-	"compatible_server": "1.1.0",
-	"expected_tree_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-	"format": 1,
-	"from": "1.1.0",
-	"reason": "a held file",
-	"state": "staged",
-	"to": "1.2.0"
-}"""
-
 
 static func run(testing: Testing) -> void:
 	_test_round_trip(testing)
@@ -87,7 +69,7 @@ static func _test_round_trip(testing: Testing) -> void:
 static func _test_pinned_journal(testing: Testing) -> void:
 	testing.begin("Update journal: the journal 1.2.0 writes")
 	var folder := UpdateFixtures.scratch("journal_pinned")
-	_write_text(folder, _PINNED_1_2_0_JOURNAL)
+	_write_text(folder, UpdateFixtures.PINNED_1_2_0_JOURNAL)
 	var record := UpdateJournal.read(folder)
 	UpdateFixtures.remove(folder)
 	testing.eq(record, {"state": "staged", "from": "1.1.0", "to": "1.2.0", "backup": "backup-1.1.0",
