@@ -255,6 +255,11 @@ require_rsa_public() {
     echo "error: $2 is not a PEM public key." >&2
     return 1
   }
+  # OpenSSL 3's -pubin also loads a private key, so its answer cannot tell the two apart.
+  if [[ "$(<"$1")" == *"PRIVATE KEY"* ]]; then
+    echo "error: $2 is not a PEM public key." >&2
+    return 1
+  fi
   if [[ "${text}" != *Modulus* || "${text}" == *PSS* ]]; then
     echo "error: $2 is not an RSA key; a trust document's keys must be RSA." >&2
     return 1
