@@ -7,6 +7,7 @@ extends RefCounted
 const Testing := preload("res://test/units/testing.gd")
 const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
+const TrustFixtures := preload("res://test/units/trust_fixtures.gd")
 
 # Made with `openssl dgst -sha256 -sign` over _OPENSSL_MESSAGE by the key whose public
 # half is below; the private half was discarded.
@@ -29,6 +30,7 @@ static func run(testing: Testing) -> void:
 	_test_openssl_interop(testing)
 	_test_key_list(testing)
 	_test_trust_seam(testing)
+	_test_seam_reads_the_chain(testing)
 
 
 # A key made in the run is never a shipped key, so these hold once real keys ship too.
@@ -41,6 +43,25 @@ static func _test_trust_seam(testing: Testing) -> void:
 	testing.ok(not ReleaseSignature.is_trusted("changed".to_utf8_buffer(), signature, trusted), "a changed manifest → not trusted")
 	testing.ok(not ReleaseSignature.is_trusted(message, signature), "the shipped keys, and a key they do not hold → not trusted")
 	testing.ok(not ReleaseSignature.is_trusted(message, PackedByteArray(), trusted), "no signature → not trusted")
+	print("")
+
+
+static func _test_seam_reads_the_chain(testing: Testing) -> void:
+	testing.begin("Release signature: the seam reads the chain")
+	var message := "the manifest".to_utf8_buffer()
+	var release := TrustFixtures.release_key()
+	var signature := UpdateFixtures.signature_of(message, release)
+	var store := UpdateFixtures.scratch("signature_seam_store")
+	UpdateFixtures.remove(store)
+	var chain_source := {"trust_document": TrustFixtures.first_document([release]), "trust_store": store}
+	var listed := ReleaseSignature.is_trusted(message, signature, null, chain_source)
+	var empty_document := ReleaseSignature.is_trusted(message, signature, null, {"trust_document": "", "trust_store": store})
+	var no_keys_over_chain := ReleaseSignature.is_trusted(message, signature, [], chain_source)
+	var version := ReleaseSignature.chain(chain_source).version()
+	testing.ok(listed, "a key the document lists → trusted")
+	testing.ok(not empty_document, "an empty document → no chain, not trusted")
+	testing.ok(not no_keys_over_chain, "keys passed in replace the chain, even none")
+	testing.eq(version, 1, "the chain the seam walks is at the document")
 	print("")
 
 
