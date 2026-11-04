@@ -13,10 +13,9 @@ extends PanelContainer
 ## "Get it on the Asset Store" switches to the editor's Asset Store tab where the
 ## editor has one (Godot 4.7+), confirmed through
 ## [signal EditorPlugin.main_screen_changed], and otherwise opens the store listing
-## in the browser. The tab's button text is the untranslated plugin name, so the
-## lookup also holds in a translated editor; a missing or hidden tab falls back to
-## the browser. Both links are built locally from the version, never taken from a
-## reply.
+## in the browser. The lookup matches the screen's untranslated name, so it also holds
+## in a translated editor; a missing, hidden or closed tab falls back to the browser.
+## Both links are built locally from the version, never taken from a reply.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const UpdateCheck = Modules.UpdateCheck
