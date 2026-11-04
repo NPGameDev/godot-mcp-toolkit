@@ -365,6 +365,17 @@ make_file "${HAND}/repeated-signature.json" "$(body_text 1 "${ROOT_JSON}, ${OTHE
 tool verify --first "${HAND}/repeated-signature.json"
 refused "one key's signature twice counts once" "1 of its own roots signed"
 
+# The same next document both ways, valid against its own roots, so only the previous roots'
+# threshold can tell the two apart.
+NEXT_OF_TWO="$(body_text 2 "${ROOT_JSON}" 1 "")"
+make_file "${HAND}/one-of-two-previous.json" "${NEXT_OF_TWO}" "${KEYS}/root.pem"
+tool verify "${TWO}/trust-1.json" "${HAND}/one-of-two-previous.json"
+refused "one signature of a previous threshold of 2" "1 of the previous roots signed it, and it needs 2"
+make_file "${HAND}/two-of-two-previous.json" "${NEXT_OF_TWO}" "${KEYS}/root.pem" "${KEYS}/other_root.pem"
+tool verify "${TWO}/trust-1.json" "${HAND}/two-of-two-previous.json"
+check "control: two signatures of a previous threshold of 2" equals "${STATUS}" "0"
+check "and the previous threshold it met is 2" contains "${OUT}" "previous roots: 2 signed, 2 needed"
+
 echo "── refusals, on files the tool did not make ──"
 ONE_ROOT="${WORK}/one-root.json"
 make_file "${ONE_ROOT}" "$(body_text 1 "${ROOT_JSON}" 1 "${FIRST_RELEASE_JSON}")" "${KEYS}/root.pem"
