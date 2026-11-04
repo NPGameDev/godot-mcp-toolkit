@@ -59,7 +59,7 @@ static func parse(text: String, expected_version: String) -> Dictionary:
 		return _failure("the manifest is not a JSON object")
 	var data: Dictionary = json.data
 	var format: Variant = data.get(_KEY_FORMAT, null)
-	if not _is_whole_number(format) or int(format) != FORMAT:
+	if not is_whole_number(format) or int(format) != FORMAT:
 		return _failure("the manifest format is not %d" % FORMAT)
 
 	var wanted := UpdateCheck.parse_version(expected_version)
@@ -72,7 +72,7 @@ static func parse(text: String, expected_version: String) -> Dictionary:
 	if not archive is String or str(archive) != ReleaseAssets.archive_name(normalized):
 		return _failure("the manifest names another archive")
 	var size: Variant = data.get(_KEY_ARCHIVE_SIZE, null)
-	if not _is_whole_number(size) or int(size) <= 0 or int(size) > MAX_ARCHIVE_BYTES:
+	if not is_whole_number(size) or int(size) <= 0 or int(size) > MAX_ARCHIVE_BYTES:
 		return _failure("the manifest's archive size is not a size")
 	var digest: Variant = data.get(_KEY_ARCHIVE_SHA256, null)
 	if not digest is String or not ContentHash.is_hex_digest(str(digest)):
@@ -95,7 +95,7 @@ static func parse(text: String, expected_version: String) -> Dictionary:
 		if not server_parts.is_empty():
 			manifest[_KEY_COMPATIBLE_SERVER] = "%d.%d.%d" % [server_parts[0], server_parts[1], server_parts[2]]
 	var expires_at: Variant = data.get(_KEY_EXPIRES_AT, null)
-	if _is_whole_number(expires_at):
+	if is_whole_number(expires_at):
 		manifest[_KEY_EXPIRES_AT] = int(expires_at)
 	return manifest
 
@@ -110,8 +110,9 @@ static func _failure(reason: String) -> Dictionary:
 	return {"error": reason}
 
 
-# JSON numbers arrive as floats; a size or a format must be a whole one.
-static func _is_whole_number(value: Variant) -> bool:
+## Whether a value read from JSON is a whole number: JSON numbers arrive as floats, and a
+## size or a format must be a whole one.
+static func is_whole_number(value: Variant) -> bool:
 	if value is int:
 		return true
 	return value is float and is_equal_approx(float(value), roundf(float(value)))

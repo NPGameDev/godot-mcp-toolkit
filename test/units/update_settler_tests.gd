@@ -10,7 +10,9 @@ const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/updat
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const UpdateSettler := preload("res://addons/godot_mcp_toolkit/self_update/update_settler.gd")
+const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_chain.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
+const TrustFixtures := preload("res://test/units/trust_fixtures.gd")
 
 const _RELEASE := {"core/a.gd": "new a", "core/b.gd": "new b"}
 # An older update's backup, which no row may touch.
@@ -42,6 +44,7 @@ static func run(testing: Testing) -> void:
 	_test_not_applied_zip_gone(testing)
 	_test_not_applied_restages(testing)
 	_test_not_applied_check_fails(testing)
+	_test_not_applied_reads_the_chain(testing)
 	_test_not_applied_only_once(testing)
 	_test_second_mismatch_clears(testing)
 	_test_restage_fails(testing)
@@ -500,7 +503,7 @@ static func _test_not_applied_check_fails(testing: Testing) -> void:
 	testing.begin("Update settler: not applied, the zip there, a check that fails")
 	var files := {"core/a.gd": "new a"}
 	var cases := [
-		["an untrusted signature", "1.1.0", "the update's signature does not verify",
+		["an untrusted signature", "1.1.0", "the update is not signed by a key this toolkit trusts",
 				func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.other_key())],
 		["a Godot floor above the engine", "1.1.0", "version 1.2.0 needs Godot 4.9 or newer",
 				func(updates: String) -> void: UpdateFixtures.stage(updates, "1.2.0", files, "1.1.0", UpdateFixtures.key(), UpdateJournal.STAGED, "4.9")],
@@ -535,6 +538,47 @@ static func _test_not_applied_check_fails(testing: Testing) -> void:
 	UpdateFixtures.remove_scenario(guarded)
 	testing.eq(guarded_result["reason"], "A headless editor never installs updates.", "a guard → with its sentence")
 	testing.eq(guarded_left, _left_as("", false, false, "1.1.0"), "a guard → no re-stage, cleared, the backup stays")
+	print("")
+
+
+# A stage mismatch over a release signed by the first release key, whose check can trust that
+# key only through the chain, and what its settling answers.
+static func _settle_on_chain(purpose: String, trust_store: String) -> Dictionary:
+	var scenario := _setup(purpose, "1.1.0")
+	UpdateFixtures.stage(scenario["updates"], "1.2.0", _RELEASE, "1.1.0", TrustFixtures.release_key())
+	_mark_mismatched(scenario)
+	var options: Dictionary = scenario["options"]
+	options.erase("public_keys")
+	options["trust_document"] = TrustFixtures.first_document([TrustFixtures.release_key()])
+	options["trust_store"] = trust_store
+	var result := UpdateSettler.settle(options)
+	var left := _left(scenario)
+	UpdateFixtures.remove_scenario(scenario)
+	return {"result": result, "left": left, "has_keys_option": options.has("public_keys")}
+
+
+# The second document, moving the release key to the next one, accepted into `trust_store`.
+static func _store_rotation(trust_store: String) -> String:
+	var root := TrustFixtures.root_key()
+	var chain := TrustChain.new(TrustFixtures.first_document([TrustFixtures.release_key()]), trust_store)
+	var document := TrustFixtures.file_of(TrustFixtures.body(2, [root], 1, [TrustFixtures.next_release_key()]), [root])
+	return str(chain.accept(document)["outcome"])
+
+
+static func _test_not_applied_reads_the_chain(testing: Testing) -> void:
+	testing.begin("Update settler: the re-stage's check refuses a key dropped since staging")
+	var store := UpdateFixtures.scratch("settle_chain_store")
+	UpdateFixtures.remove(store)
+	var before := _settle_on_chain("settle_chain_before", store)
+	var rotation := _store_rotation(store)
+	var dropped := _settle_on_chain("settle_chain_dropped", store)
+	UpdateFixtures.remove(store)
+	testing.ok(not before["has_keys_option"], "the drill runs without public_keys")
+	testing.eq(before["result"]["report"], UpdateSettler.WAITING, "before the rotation, the key's release re-stages")
+	testing.eq(rotation, "accepted", "the document reaches the store")
+	testing.eq(dropped["result"]["report"], UpdateSettler.FAILED, "after it, the same release is reported")
+	testing.eq(dropped["result"]["reason"], "the update is not signed by a key this toolkit trusts", "with the check's reason")
+	testing.eq(dropped["left"], _left_as("", false, false, "1.1.0"), "no re-stage, cleared, the backup stays")
 	print("")
 
 

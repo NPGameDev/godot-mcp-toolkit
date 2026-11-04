@@ -1,8 +1,8 @@
 @tool
 extends RefCounted
-## Unit tests for the names and download URLs of a release's assets: built from the
-## version alone, on GitHub unless the update check's host variable replaces the
-## scheme and host.
+## Unit tests for the names and download URLs of a release's assets and of trust
+## documents: built from the version or the number alone, on GitHub unless the update
+## check's host variable replaces the scheme and host.
 
 const Testing := preload("res://test/units/testing.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
@@ -11,6 +11,7 @@ const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/relea
 static func run(testing: Testing) -> void:
 	_test_names(testing)
 	_test_urls(testing)
+	_test_trust_documents(testing)
 
 
 static func _test_names(testing: Testing) -> void:
@@ -31,5 +32,20 @@ static func _test_urls(testing: Testing) -> void:
 			"a host variable → its scheme and host, the same path")
 	testing.eq(ReleaseAssets.download_url("ftp://example.com", "1.2.0", "x.sig"),
 			"https://github.com/NPGameDev/godot-mcp-toolkit/releases/download/v1.2.0/x.sig",
+			"a host variable that is not http or https → ignored")
+	print("")
+
+
+static func _test_trust_documents(testing: Testing) -> void:
+	testing.begin("Release assets: a trust document, from its number alone")
+	testing.eq(ReleaseAssets.trust_document_name(7), "trust-7.json", "the file name")
+	testing.eq(ReleaseAssets.trust_document_url("", 7),
+			"https://github.com/NPGameDev/godot-mcp-toolkit/releases/download/trust-7/trust-7.json",
+			"no host variable → its own release, not a version's")
+	testing.eq(ReleaseAssets.trust_document_url("http://127.0.0.1:8123/", 7),
+			"http://127.0.0.1:8123/NPGameDev/godot-mcp-toolkit/releases/download/trust-7/trust-7.json",
+			"a host variable → its scheme and host, the same path")
+	testing.eq(ReleaseAssets.trust_document_url("ftp://example.com", 7),
+			"https://github.com/NPGameDev/godot-mcp-toolkit/releases/download/trust-7/trust-7.json",
 			"a host variable that is not http or https → ignored")
 	print("")
