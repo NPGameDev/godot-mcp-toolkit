@@ -129,9 +129,9 @@ static func choose_screen(request: CaptureRequest, shown_2d: bool, shown_3d: boo
 ## Godot 4.8 reports a switch to a dock outside the main-screen tabs as an engine error,
 ## so there the answer is [code]false[/code] for a screen that reads absent, and the
 ## capture goes on to its bounded re-read as it does elsewhere after a switch that
-## changes nothing. Earlier versions return silently for a screen with no tab, and on 4.2
-## every screen reads absent though the editor can switch, so they always answer
-## [code]true[/code].
+## changes nothing. Earlier versions are silent for a hidden tab and 2D and 3D always have
+## a tab there, and on 4.2 every screen reads absent though the editor can switch, so they
+## always answer [code]true[/code].
 static func can_request_switch(interface: Object, screen: String) -> bool:
 	if not Modules.EditorAccess.main_screens_are_docks(interface):
 		return true
@@ -153,12 +153,12 @@ static func should_restore_game_screen(interface: Object) -> bool:
 	return Modules.EditorAccess.main_screen_state(interface, SCREEN_GAME) == Modules.EditorAccess.MainScreenState.SHOWN
 
 
-## Ends a capture's main-screen switch. Goes back to the Game screen when
-## [param restore_game] is set, and otherwise, or when going back fails, appends
-## [code]"switched_main_screen"[/code] to [param remediation], because the editor stays
-## on the screen the capture switched to.
-static func finish_switch(restore_game: bool, remediation: Array[String]) -> void:
-	if restore_game and Modules.EditorAccess.select_main_screen(SCREEN_GAME):
+## Ends a capture's main-screen switch. When [param restore_game] is set, calls
+## [param switch_back], which answers whether the Game screen is current again. Otherwise,
+## or when going back fails, appends [code]"switched_main_screen"[/code] to
+## [param remediation], because the editor stays on the screen the capture switched to.
+static func finish_switch(restore_game: bool, remediation: Array[String], switch_back: Callable) -> void:
+	if restore_game and bool(switch_back.call()):
 		return
 	remediation.append("switched_main_screen")
 
@@ -386,7 +386,8 @@ static func _grab_usable_image(request: CaptureRequest, remediation: Array[Strin
 		image = _read_usable_frame(screen)
 		if image != null:
 			break
-	finish_switch(restore_game, remediation)
+	var switch_back := func() -> bool: return Modules.EditorAccess.select_main_screen(SCREEN_GAME)
+	finish_switch(restore_game, remediation, switch_back)
 	return image
 
 

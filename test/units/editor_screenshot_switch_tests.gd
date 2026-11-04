@@ -3,7 +3,7 @@ extends RefCounted
 ## Unit tests for the editor screenshot's main-screen switch decisions: whether to ask
 ## for the switch, whether to go back to a running game's screen, and what the response
 ## discloses. Stand-ins take the place of the EditorInterface singleton in both of the
-## editor's shapes. A switch back that succeeds needs a real editor and a running game.
+## editor's shapes and of the switch back.
 
 const Testing := preload("res://test/units/testing.gd")
 const EditorAccess := preload("res://addons/godot_mcp_toolkit/core/editor_access.gd")
@@ -27,6 +27,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_switch_request_on_docks(testing, tree)
 	_test_switch_request_on_tab_buttons(testing)
 	_test_disclosure(testing)
+	_test_switch_back_success(testing)
 
 
 # Only a playing scene with the Game screen current gets its screen back.
@@ -96,8 +97,8 @@ static func _test_switch_request_on_docks(testing: Testing, tree: SceneTree) -> 
 	tabs.free()
 
 
-# Earlier versions return silently for a screen that has no tab, and on Godot 4.2 every
-# screen reads absent though the editor can switch, so a read of the state must not stop it.
+# Earlier versions are silent for a hidden tab, and on Godot 4.2 every screen reads absent
+# though the editor can switch, so a read of the state must not stop it.
 static func _test_switch_request_on_tab_buttons(testing: Testing) -> void:
 	testing.begin("can_request_switch, tab buttons: always")
 	var marked := _make_tab_button_base(_SCREEN_2D, _BUTTON_VARIATION)
@@ -121,12 +122,26 @@ static func _test_switch_request_on_tab_buttons(testing: Testing) -> void:
 static func _test_disclosure(testing: Testing) -> void:
 	testing.begin("finish_switch: a switch that stays is disclosed")
 	testing.ok(not EditorAccess.has_plugin(), "the runner holds no plugin")
+	var attempts := [0]
+	var count_attempt := func() -> bool:
+		attempts[0] += 1
+		return true
 	var no_restore: Array[String] = [_FOREGROUNDED]
-	EditorScreenshot.finish_switch(false, no_restore)
+	EditorScreenshot.finish_switch(false, no_restore, count_attempt)
 	testing.eq(str(no_restore), str([_FOREGROUNDED, _SWITCHED]), "no switch back asked for: disclosed")
+	testing.eq(attempts[0], 0, "no switch back asked for: none attempted")
 	var failed_restore: Array[String] = []
-	EditorScreenshot.finish_switch(true, failed_restore)
+	var select_game_screen := func() -> bool: return EditorAccess.select_main_screen(_SCREEN_GAME)
+	EditorScreenshot.finish_switch(true, failed_restore, select_game_screen)
 	testing.eq(str(failed_restore), str([_SWITCHED]), "the switch back failed: disclosed")
+
+
+static func _test_switch_back_success(testing: Testing) -> void:
+	testing.begin("finish_switch: a switch back that succeeds is not disclosed")
+	var remediation: Array[String] = [_FOREGROUNDED]
+	var succeed := func() -> bool: return true
+	EditorScreenshot.finish_switch(true, remediation, succeed)
+	testing.eq(str(remediation), str([_FOREGROUNDED]), "only the entry already there remains")
 
 
 # The editor's main-screen tabs on Godot 4.8, with two docks in them.
