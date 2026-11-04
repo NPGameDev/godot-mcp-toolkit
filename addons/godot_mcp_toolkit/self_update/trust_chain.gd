@@ -74,24 +74,6 @@ var _store := ""
 var _accepted_count := 0
 
 
-## Walks from [param embedded_document], the text of a document file, through the folder
-## [param store]. An embedded document [method read_embedded] refuses means no chain, no walk
-## and no trusted key. A folder that is not absolute is no store, and nothing reads or
-## writes it.
-func _init(embedded_document: String, store: String) -> void:
-	# With no HOME or APPDATA the data folder is ".", the working directory, which could be
-	# the project. This check is true for any string holding ":/", and "." is what it must
-	# catch.
-	if store.is_absolute_path():
-		_store = ProjectSettings.globalize_path(store)
-	var embedded := read_embedded(embedded_document)
-	if not str(embedded["error"]).is_empty():
-		return
-	_current = embedded
-	if has_store():
-		_walk_store()
-
-
 ## The folder this machine keeps its documents in, in the OS's data folder rather than
 ## [code]user://[/code], which follows the project's name, or EditorSettings, which follows
 ## Godot's minor version.
@@ -140,75 +122,6 @@ static func read_next(previous: Dictionary, file_bytes: PackedByteArray) -> Dict
 	if _count_signing_roots(previous["root_keys"], envelope) < int(previous["root_threshold"]):
 		return _failure("too few of the previous document's root keys signed it")
 	return _held_to_own_roots(_read_body(envelope["decoded"], int(previous["version"]) + 1), envelope)
-
-
-## Whether this machine has a usable store. Without one the chain ends at the embedded
-## document, and the user needs to hear what to set.
-func has_store() -> bool:
-	return not _store.is_empty()
-
-
-## The version of the latest document, or 0 when there is no chain.
-func version() -> int:
-	return int(_current.get("version", 0))
-
-
-## The version to fetch next, or 0 when none can be taken: no chain, no store, or this walk
-## is full.
-func next_version() -> int:
-	if _current.is_empty() or not has_store() or _accepted_count >= MAX_DOCUMENTS_PER_WALK:
-		return 0
-	return version() + 1
-
-
-## The PEM keys a release may be signed by today. Empty with no chain, and when the latest
-## document lists none, which is the emergency stop on all updates.
-func release_keys() -> Array:
-	var keys: Array = _current.get("release_keys", [])
-	return keys
-
-
-## Takes [param file_bytes] as the next document. It counts only once it is on disk and has
-## been read back and verified, or the exit, which has no network, could not verify from it.
-## The chain then walks on through whatever the store already holds past it.
-##
-## Returns [code]{"outcome": String, "reason": String}[/code]. [code]outcome[/code] is
-## [constant ACCEPTED] when the chain moved on; otherwise the chain stays where it was and
-## [code]reason[/code] says why, for a log.
-func accept(file_bytes: PackedByteArray) -> Dictionary:
-	if _current.is_empty():
-		return _outcome(NOT_EXPECTED, "there is no chain")
-	if not has_store():
-		return _outcome(NO_STORE, "the data folder is not an absolute path")
-	if _accepted_count >= MAX_DOCUMENTS_PER_WALK:
-		return _outcome(NOT_EXPECTED, "this walk took its %d documents" % MAX_DOCUMENTS_PER_WALK)
-	var document := read_next(_current, file_bytes)
-	if not str(document["error"]).is_empty():
-		return _outcome(INVALID, str(document["error"]))
-	var target := _store.path_join(ReleaseAssets.trust_document_name(int(document["version"])))
-	var already_stored := str(read_next(_current, _read_file(target))["error"]).is_empty()
-	if not already_stored and not _write(target, file_bytes):
-		return _outcome(WRITE_FAILED, "could not write %s" % target.get_file())
-	var stored := read_next(_current, _read_file(target))
-	if not str(stored["error"]).is_empty():
-		return _outcome(WRITE_FAILED, "%s did not read back: %s" % [target.get_file(), stored["error"]])
-	_current = stored
-	_accepted_count += 1
-	# This document may have been the store's gap, and next_version must not ask for a file
-	# that is already here. What the walk reads costs no fetch, so it does not count.
-	_walk_store()
-	return _outcome(ACCEPTED, "")
-
-
-func _walk_store() -> void:
-	while true:
-		var path := _store.path_join(ReleaseAssets.trust_document_name(version() + 1))
-		if not FileAccess.file_exists(path):
-			return
-		var document := read_next(_current, _read_file(path))
-		if not str(document["error"]).is_empty():
-			return
-		_current = document
 
 
 # Two editors can reach the same document, and its content never changes, so each writes its
@@ -348,3 +261,90 @@ static func _failure(reason: String) -> Dictionary:
 
 static func _outcome(outcome: String, reason: String) -> Dictionary:
 	return {"outcome": outcome, "reason": reason}
+
+
+## Walks from [param embedded_document], the text of a document file, through the folder
+## [param store]. An embedded document [method read_embedded] refuses means no chain, no walk
+## and no trusted key. A folder that is not absolute is no store, and nothing reads or
+## writes it.
+func _init(embedded_document: String, store: String) -> void:
+	# With no HOME or APPDATA the data folder is ".", the working directory, which could be
+	# the project. This check is true for any string holding ":/", and "." is what it must
+	# catch.
+	if store.is_absolute_path():
+		_store = ProjectSettings.globalize_path(store)
+	var embedded := read_embedded(embedded_document)
+	if not str(embedded["error"]).is_empty():
+		return
+	_current = embedded
+	if has_store():
+		_walk_store()
+
+
+## Whether this machine has a usable store. Without one the chain ends at the embedded
+## document, and the user needs to hear what to set.
+func has_store() -> bool:
+	return not _store.is_empty()
+
+
+## The version of the latest document, or 0 when there is no chain.
+func version() -> int:
+	return int(_current.get("version", 0))
+
+
+## The version to fetch next, or 0 when none can be taken: no chain, no store, or this walk
+## is full.
+func next_version() -> int:
+	if _current.is_empty() or not has_store() or _accepted_count >= MAX_DOCUMENTS_PER_WALK:
+		return 0
+	return version() + 1
+
+
+## The PEM keys a release may be signed by today. Empty with no chain, and when the latest
+## document lists none, which is the emergency stop on all updates.
+func release_keys() -> Array:
+	var keys: Array = _current.get("release_keys", [])
+	return keys
+
+
+## Takes [param file_bytes] as the next document. It counts only once it is on disk and has
+## been read back and verified, or the exit, which has no network, could not verify from it.
+## The chain then walks on through whatever the store already holds past it.
+##
+## Returns [code]{"outcome": String, "reason": String}[/code]. [code]outcome[/code] is
+## [constant ACCEPTED] when the chain moved on; otherwise the chain stays where it was and
+## [code]reason[/code] says why, for a log.
+func accept(file_bytes: PackedByteArray) -> Dictionary:
+	if _current.is_empty():
+		return _outcome(NOT_EXPECTED, "there is no chain")
+	if not has_store():
+		return _outcome(NO_STORE, "the data folder is not an absolute path")
+	if _accepted_count >= MAX_DOCUMENTS_PER_WALK:
+		return _outcome(NOT_EXPECTED, "this walk took its %d documents" % MAX_DOCUMENTS_PER_WALK)
+	var document := read_next(_current, file_bytes)
+	if not str(document["error"]).is_empty():
+		return _outcome(INVALID, str(document["error"]))
+	var target := _store.path_join(ReleaseAssets.trust_document_name(int(document["version"])))
+	var already_stored := str(read_next(_current, _read_file(target))["error"]).is_empty()
+	if not already_stored and not _write(target, file_bytes):
+		return _outcome(WRITE_FAILED, "could not write %s" % target.get_file())
+	var stored := read_next(_current, _read_file(target))
+	if not str(stored["error"]).is_empty():
+		return _outcome(WRITE_FAILED, "%s did not read back: %s" % [target.get_file(), stored["error"]])
+	_current = stored
+	_accepted_count += 1
+	# This document may have been the store's gap, and next_version must not ask for a file
+	# that is already here. What the walk reads costs no fetch, so it does not count.
+	_walk_store()
+	return _outcome(ACCEPTED, "")
+
+
+func _walk_store() -> void:
+	while true:
+		var path := _store.path_join(ReleaseAssets.trust_document_name(version() + 1))
+		if not FileAccess.file_exists(path):
+			return
+		var document := read_next(_current, _read_file(path))
+		if not str(document["error"]).is_empty():
+			return
+		_current = document
