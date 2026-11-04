@@ -8,11 +8,12 @@ extends RefCounted
 
 ## Where a main screen stands, as [method main_screen_state] reports it.
 enum MainScreenState {
-	## The editor cannot switch to it: no such screen, or it is not among the tabs.
+	## The lookup does not find it among the main-screen tabs: no such screen, its tab
+	## is out of them, or the lookup cannot tell, as on Godot 4.2.
 	ABSENT,
-	## The editor can switch to it, and another screen is on show.
+	## The lookup finds it among the tabs, and another screen is the current one.
 	AVAILABLE,
-	## It is the screen on show.
+	## It is the current screen. An expanded bottom panel can still cover it.
 	SHOWN,
 }
 
@@ -72,9 +73,9 @@ static func get_editor_theme() -> Theme:
 ##
 ## The switch is asked for only when [method main_screen_state] finds the screen,
 ## because [method EditorInterface.set_main_screen_editor] reports an unknown name as
-## an engine error. Returns [code]true[/code] when that screen is now shown: it already
+## an engine error. Returns [code]true[/code] when that screen is now current: it already
 ## was, or [signal EditorPlugin.main_screen_changed] named it during the switch.
-## Returns [code]false[/code] before [method set_plugin], when the screen is absent,
+## Returns [code]false[/code] before [method set_plugin], when the screen reads absent,
 ## or when the editor did not confirm the switch.
 static func select_main_screen(screen_name: String) -> bool:
 	if _plugin == null:
@@ -94,16 +95,23 @@ static func select_main_screen(screen_name: String) -> bool:
 	return switched[0]
 
 
+## Whether [param interface], the [EditorInterface] singleton or a stand-in, holds the
+## main screens as docks, as Godot 4.8 does and has
+## [code]EditorInterface.get_dock_by_name[/code] for. Earlier versions have tab buttons.
+static func main_screens_are_docks(interface: Object) -> bool:
+	return interface.has_method("get_dock_by_name")
+
+
 ## Where the main screen titled [param screen_name] stands in [param interface], the
 ## [EditorInterface] singleton or a stand-in with the methods it reads. Returns a
 ## [enum MainScreenState] value.
 ##
-## Godot 4.8 holds the main screens as docks and has
-## [code]EditorInterface.get_dock_by_name[/code]. Earlier versions have tab buttons,
-## found by the [code]"MainScreenButton"[/code] theme variation the editor gives them
-## from Godot 4.3 on. On 4.2 no tab carries it, so the screen is always absent there.
+## The tab buttons of versions before Godot 4.8 are found by the
+## [code]"MainScreenButton"[/code] theme variation the editor gives them from Godot 4.3
+## on. On 4.2 no tab carries it, so every screen reads absent there, though the editor
+## can switch to it.
 static func main_screen_state(interface: Object, screen_name: String) -> MainScreenState:
-	if interface.has_method("get_dock_by_name"):
+	if main_screens_are_docks(interface):
 		return _main_screen_dock_state(interface, screen_name)
 	var tab_button := _find_main_screen_button(interface, screen_name)
 	if tab_button == null:
@@ -115,15 +123,16 @@ static func main_screen_state(interface: Object, screen_name: String) -> MainScr
 # tabs and reports anything else as an engine error, so a closed or floating dock
 # counts as absent. The title is the dock's untranslated name, which is also what
 # set_main_screen_editor and main_screen_changed use, so this holds in a translated
-# editor.
+# editor. The current tab decides shown, not visibility: an expanded bottom panel hides
+# every tab, and asking to switch to the current one changes nothing and confirms nothing.
 static func _main_screen_dock_state(interface: Object, screen_name: String) -> MainScreenState:
 	var dock: Control = interface.call("get_dock_by_name", screen_name)
 	if dock == null:
 		return MainScreenState.ABSENT
-	var tabs := dock.get_parent() as Control
+	var tabs := dock.get_parent() as TabContainer
 	if tabs == null or tabs.theme_type_variation != _MAIN_SCREEN_TABS_VARIATION:
 		return MainScreenState.ABSENT
-	return MainScreenState.SHOWN if dock.is_visible_in_tree() else MainScreenState.AVAILABLE
+	return MainScreenState.SHOWN if tabs.get_current_tab_control() == dock else MainScreenState.AVAILABLE
 
 
 # The editor's visible main-screen tab button titled screen_name, or null. The

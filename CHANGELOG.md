@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The update badge's Store button opens the Asset Store tab on Godot 4.8, where it opened
   the browser before.
+- `editor_screenshot` during play on Godot 4.8 goes back to the Game screen after the capture,
+  where it left the embedded game hidden before.
 
 ## [1.1.2] - 2026-10-29
 

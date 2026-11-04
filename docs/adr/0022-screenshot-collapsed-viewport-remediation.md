@@ -265,6 +265,11 @@ one taken on the 3D screen returned the hidden 2D view's last frame too.
   2D or 3D screen. It stays one-way, for the reason in the Decision: there is no
   getter for the current main screen, so the previous screen is not restored, and
   `remediation: ["switched_main_screen"]` discloses the switch.
+- **A running game's screen is the one exception.** Godot 4.8 embeds a played game
+  in the Game screen by default, and a switch that stayed would hide the game. On
+  that version the Game screen can be read as a dock, so a capture during play goes
+  back to it after the capture and omits the `remediation` entry, keeping it only
+  when going back fails. Every other state, and every earlier version, stays one-way.
 
 ## Known limitations
 
