@@ -50,7 +50,7 @@ One key in two PEM layouts counts once. A release key that does not load counts 
 field the reader does not know is ignored.
 
 The embedded document is the text of the constant in `self_update/embedded_trust_document.gd`. It
-is read without checking its signatures, since the release's own signature carries it. Steps 3 and
+is read without checking its signatures, since the release's own signature carries it. Steps 1, 3 and
 4 still apply to it, without the previous version, and one that fails them reads as empty. While it
 is empty there is no chain and no trusted key, so the toolkit offers updates as links only.
 
@@ -62,8 +62,10 @@ is a fact about the keys, not about a project.
 
 The files cannot add trust. Every load walks from the embedded document and verifies each file
 again, and the first missing or invalid file ends the walk. Deleting the folder only undoes a
-revocation until the client next takes those documents again. A document counts once it has been
-written, read back and verified. If that write fails, the chain stays where it was.
+revocation until the client next takes those documents. A document counts once it has been
+written, read back and verified. If that write fails, the chain stays where it was. A crash between
+the write and the rename leaves a `trust-N.json.<pid>.tmp` that nothing removes, and it is only bytes,
+since no walk reads it.
 
 The chain has no network of its own. The owner of the fetch asks `next_version()`, downloads that
 file and hands its bytes to `accept()`. Checking a signature only reads files, so the applier can
@@ -71,10 +73,11 @@ verify at the editor's exit, offline, from what the store holds.
 
 ## Rotating a release key
 
-The examples go from `trust-7` to `trust-8` and publish release `X.Y.Z`. Run them from the repo root,
-with private keys kept outside the checkout. The order matters: the document goes up minutes before
-the release signed by the new key, and the old key is dropped at once. Any key a document still
-lists can sign a release, so keeping the old one listed "for a while" keeps it trusted.
+The examples go from `trust-7` to `trust-8` and publish release `X.Y.Z`. Run them from the repo root.
+`<keys>` is a folder outside the checkout, for the private keys. The order matters: the document
+goes up minutes before the release signed by the new key, and the old key is dropped at once. Any
+key a document still lists can sign a release, so keeping the old one listed "for a while" keeps it
+trusted.
 
 **The publishing commands below were read from GitHub's documentation and have not yet been run
 against a real release here.** That includes a release with `--prerelease --latest=false` leaving
@@ -84,15 +87,15 @@ step says, and stop at the first surprise.
 ### 1. Build and sign the document, then land it
 
 ```sh
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -aes-256-cbc -out new-release.pem
-openssl pkey -in new-release.pem -pubout -out new-release.pub.pem
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -aes-256-cbc -out <keys>/new-release.pem
+openssl pkey -in <keys>/new-release.pem -pubout -out new-release.pub.pem
 scripts/trust-document.sh build trust/trust-7.json --add-release new-release.pub.pem --drop-release old-release.pub.pem
-scripts/trust-document.sh sign trust/trust-8.json root-1.pem
+scripts/trust-document.sh sign trust/trust-8.json <keys>/root-1.pem
 scripts/trust-document.sh verify trust/trust-7.json trust/trust-8.json
 ```
 
-- `build` takes PEM **public** keys and refuses a private one. It keeps the threshold unless you pass
-  `--threshold T`. If `old-release.pub.pem` is gone, `scripts/trust-document.sh show trust/trust-7.json`
+- `--add-release` and `--add-root` take PEM **public** keys and refuse a private one. `build` keeps
+  the threshold unless you pass `--threshold T`. If `old-release.pub.pem` is gone, `scripts/trust-document.sh show trust/trust-7.json`
   prints every listed key as a JSON string with `\n` for each line break: save it as a file with real
   line breaks. Keys match by content, not layout.
 - Repeat `sign` once per root until `verify` is satisfied. A document needs a threshold of the previous
@@ -123,11 +126,12 @@ before it, each `trust-N.json` carrying version N, and the constant held to its 
 ### 2. Sign the release draft with the new key
 
 From the merged `main`, have release `X.Y.Z` up as an unpublished draft, so that it embeds `trust-8`.
+`release.yml` publishes on the tag push today and has no draft mode yet; do not push the tag until it does.
 Then sign the manifest the release workflow built, never a local build:
 
 ```sh
 gh release download vX.Y.Z --pattern 'godot-mcp-toolkit-X.Y.Z.update.json'
-scripts/sign-release.sh godot-mcp-toolkit-X.Y.Z.update.json new-release.pem new-release.pub.pem
+scripts/sign-release.sh godot-mcp-toolkit-X.Y.Z.update.json <keys>/new-release.pem new-release.pub.pem
 gh release upload vX.Y.Z godot-mcp-toolkit-X.Y.Z.update.json.sig
 ```
 
@@ -168,13 +172,13 @@ The last command must print `vX.Y.Z`.
 
 ### What clients see
 
-- **A client that holds `trust-8`** trusts the new key and refuses the old one.
-- **An update staged earlier and signed by the old key** is refused at the exit, with "the update is
+- A client that holds `trust-8` trusts the new key and refuses the old one.
+- An update staged earlier and signed by the old key is refused at the exit, with "the update is
   not signed by a key this toolkit trusts", and its stage and zip are deleted. The user has to start
   the update again, for the new release.
-- **A client behind on the old latest** refuses that release from the moment it holds `trust-8` until
+- A client behind on the old latest refuses that release from the moment it holds `trust-8` until
   the new one is out. That gap fails safe.
-- **A machine that installs the release by hand** starts from the `trust-8` it embeds, so it never
+- A machine that installs the release by hand starts from the `trust-8` it embeds, so it never
   trusts the old key, even with an empty store.
 
 ## A leaked release key
@@ -189,8 +193,8 @@ Replace it in a next document. A root change signs no release, so steps 2 and 4 
 
 ```sh
 scripts/trust-document.sh build trust/trust-7.json --add-root new-root.pub.pem --drop-root leaked-root.pub.pem
-scripts/trust-document.sh sign trust/trust-8.json leaked-root.pem
-scripts/trust-document.sh sign trust/trust-8.json new-root.pem
+scripts/trust-document.sh sign trust/trust-8.json <keys>/leaked-root.pem
+scripts/trust-document.sh sign trust/trust-8.json <keys>/new-root.pem
 scripts/trust-document.sh verify trust/trust-7.json trust/trust-8.json
 ```
 
@@ -239,7 +243,7 @@ A client that stays on a release keeps its copy of the reader for good. Every do
 must stay readable by the oldest client anyone may still run, and 1.2.0 is the first with a chain. A
 later release can change these for itself, never for someone who stays on 1.2.0.
 
-The caps are in `trust_chain.gd`, where their comments say only "Permanent". This table holds the reasons.
+The caps are in `trust_chain.gd`, where each comment ends in "Permanent". This table holds the reasons.
 
 | What | Value | Why | For someone who stays on 1.2.0 |
 |---|---|---|---|
@@ -247,7 +251,7 @@ The caps are in `trust_chain.gd`, where their comments say only "Permanent". Thi
 | Signatures in a file | 16 | Each root is tried against each signature, so this bounds the work an unverified file can ask for. | More are refused. A document that replaces all its roots needs both thresholds' signers in those 16. |
 | Size of one signature | 4,096 bytes | The same bound. An RSA-4096 signature is 512 bytes. | A signature over this is refused, on a document or a manifest. |
 | Documents one instance accepts | 32 | Each one is read, written, read back and verified, so one check stays short. | A client more than 32 behind stops at 32 and carries on at the next check. The next load walks every stored file with no cap, so there is no total limit, and a load's cost grows with the chain. |
-| `format` | 1, never bumped | Anything else is refused, so a bump would strand every client that stays. | What is new must be additive. A field 1.2.0 does not know is ignored. |
+| `format` | 1, never bumped | Anything else is refused, so a bump would strand every client that stays. | What is new goes in a field of its own, which 1.2.0 ignores. `root_keys` and `release_keys` stay lists of PEM strings for good: any other entry in `root_keys` refuses the document, and one in `release_keys` is no key. |
 | Key expiry | None | Nothing reads a `not_after`. | A later client can enforce one. 1.2.0 trusts a key until a document drops it. |
 | Signatures on a release | One is enough | A manifest has one `.sig`, and any listed key counts. | A later client can ask for more. 1.2.0 accepts one, so one stolen release key is enough until it is dropped. |
 

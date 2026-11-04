@@ -63,10 +63,11 @@ static func _test_leak(testing: Testing) -> void:
 	var manifest := _MANIFEST.to_utf8_buffer()
 	var signature := Marshalls.base64_to_raw(_SIGNED_BY_FIRST_RELEASE)
 	var before := ReleaseSignature.is_trusted(manifest, signature, null, source)
-	ReleaseSignature.chain(source).accept(_file("one_root", 2))
+	var outcome := str(ReleaseSignature.chain(source).accept(_file("one_root", 2))["outcome"])
 	var after := ReleaseSignature.is_trusted(manifest, signature, null, source)
 	UpdateFixtures.remove(store)
 	testing.ok(before, "before it sees the document, the old key is trusted")
+	testing.eq(outcome, TrustChain.ACCEPTED, "it takes the document that drops the key")
 	testing.ok(not after, "after it, the old key is refused")
 	print("")
 

@@ -11,6 +11,7 @@ project.godot text eol=lf
 *.import text eol=lf
 # Publishing uploads a committed trust document's bytes, so a checkout must not change them.
 trust/*.json text eol=lf
+test/fixtures/trust/**/*.json text eol=lf
 
 # Source archives (Asset Library installs, GitHub "Download ZIP") carry the
 # addon and nothing else. Exclude every path, then re-admit the addons tree.

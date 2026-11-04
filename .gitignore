@@ -34,3 +34,6 @@ dist-plugin/
 
 # OS / shell crash artifacts
 *.stackdump
+
+# A key file left in the checkout cannot be staged by accident.
+*.pem

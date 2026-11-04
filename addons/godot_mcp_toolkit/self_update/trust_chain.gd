@@ -29,7 +29,9 @@ const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/relea
 const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/release_manifest.gd")
 
 ## The one format, never bumped: a bump would strand every client that stays on this
-## release, so what is new stays additive.
+## release, so what is new goes in a field of its own. [code]root_keys[/code] and
+## [code]release_keys[/code] stay lists of PEM strings for good: any other entry in
+## [code]root_keys[/code] refuses the document, and one in [code]release_keys[/code] is no key.
 const FORMAT := 1
 
 ## The largest document file read, in bytes. Permanent.
@@ -45,13 +47,21 @@ const MAX_SIGNATURE_BYTES := 4096
 ## them all and carries on, so there is no total limit. Permanent.
 const MAX_DOCUMENTS_PER_WALK := 32
 
-## The outcomes of [method accept]: the chain moved on; the bytes are not the next document;
-## they are, and they did not reach the disk; the data folder is no store; or no document can
-## be taken now, since there is no chain or this walk is full.
+## The outcome of [method accept] when the chain moved on.
 const ACCEPTED := "accepted"
+
+## The outcome of [method accept] when the bytes are not the next document.
 const INVALID := "invalid"
+
+## The outcome of [method accept] when the bytes are the next document and did not reach the
+## disk, or did not read back from it.
 const WRITE_FAILED := "write_failed"
+
+## The outcome of [method accept] when the data folder is no store.
 const NO_STORE := "no_store"
+
+## The outcome of [method accept] when no document can be taken now, since there is no chain
+## or this walk is full.
 const NOT_EXPECTED := "not_expected"
 
 const _STORE_SUBFOLDER := "godot_mcp_toolkit/trust"
@@ -89,8 +99,8 @@ static func store_folder() -> String:
 	return OS.get_data_dir().path_join(_STORE_SUBFOLDER)
 
 
-## Reads a document file the way an embedded one is read: without its signatures, which the
-## release's own signature stands in for, and without a version to follow.
+## Reads a document file the way an embedded one is read: without verifying its signatures,
+## which the release's own signature stands in for, and without a version to follow.
 ##
 ## Returns what [method read_next] returns.
 static func read_embedded(file_text: String) -> Dictionary:
@@ -160,6 +170,7 @@ func release_keys() -> Array:
 
 ## Takes [param file_bytes] as the next document. It counts only once it is on disk and has
 ## been read back and verified, or the exit, which has no network, could not verify from it.
+## The chain then walks on through whatever the store already holds past it.
 ##
 ## Returns [code]{"outcome": String, "reason": String}[/code]. [code]outcome[/code] is
 ## [constant ACCEPTED] when the chain moved on; otherwise the chain stays where it was and
@@ -183,6 +194,9 @@ func accept(file_bytes: PackedByteArray) -> Dictionary:
 		return _outcome(WRITE_FAILED, "%s did not read back: %s" % [target.get_file(), stored["error"]])
 	_current = stored
 	_accepted_count += 1
+	# This document may have been the store's gap, and next_version must not ask for a file
+	# that is already here. What the walk reads costs no fetch, so it does not count.
+	_walk_store()
 	return _outcome(ACCEPTED, "")
 
 

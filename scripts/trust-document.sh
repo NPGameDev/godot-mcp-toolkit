@@ -20,9 +20,10 @@
 #       public key, matched by its content rather than its layout. The threshold stays as it
 #       was unless given. Dropping every release key stops all updates.
 #   scripts/trust-document.sh sign <document> <private-key.pem>
-#       add one signature to <document>, refusing a non-RSA key. Pipe an encrypted key's
-#       passphrase in on stdin; without a pipe, openssl prompts once. A next document needs a
-#       threshold of the previous roots and a threshold of its own.
+#       add one signature to <document>, refusing a non-RSA key or a file whose decoded
+#       bytes are no document. Pipe an encrypted key's passphrase in on stdin; without a pipe,
+#       openssl prompts once. A next document needs a threshold of the previous roots and a
+#       threshold of its own.
 #   scripts/trust-document.sh verify <previous> <document>
 #   scripts/trust-document.sh verify --first <document>
 #       check <document> against the document before it, or the first one against its own
@@ -469,6 +470,7 @@ sign_document() {
   local file="$1" key="$2" signature="${WORK}/new.signature" text i
   [[ -f "${key}" ]] || die "no key at ${key}."
   read_envelope "${file}" "${WORK}/document.decoded"
+  read_body "${WORK}/document.decoded" "${file}"
   (( ${#SIGNATURE_TEXTS[@]} < MAX_SIGNATURES )) || die "${file} already holds ${MAX_SIGNATURES} signatures."
   # This is the one read of the private key: a passphrase piped through stdin is gone after it,
   # so a second openssl call on the key would fail. An encrypted PEM does not say its key's type
@@ -476,13 +478,10 @@ sign_document() {
   # this padding option, and a PSS key takes only PSS, so openssl stops before it signs. openssl
   # reads the passphrase line whether or not the key needs it, so even a plain key fails on an
   # empty pipe.
-  if [[ -t 0 ]]; then
-    openssl dgst -sha256 -sign "${key}" -sigopt rsa_padding_mode:pkcs1 -out "${signature}" "${WORK}/document.decoded" \
-      || die "could not sign with ${key}: is it an RSA key, with the right passphrase? A trust document's keys must be RSA."
-  else
-    openssl dgst -sha256 -sign "${key}" -passin stdin -sigopt rsa_padding_mode:pkcs1 -out "${signature}" "${WORK}/document.decoded" \
-      || die "could not sign with ${key}: is it an RSA key, with the right passphrase? A trust document's keys must be RSA."
-  fi
+  local -a options=(-sigopt rsa_padding_mode:pkcs1)
+  [[ -t 0 ]] || options=(-passin stdin "${options[@]}")
+  openssl dgst -sha256 -sign "${key}" "${options[@]}" -out "${signature}" "${WORK}/document.decoded" \
+    || die "could not sign with ${key}: is it an RSA key, with the right passphrase? A trust document's keys must be RSA."
   text="$(encode_base64 "${signature}")"
   for (( i = 0; i < ${#SIGNATURE_TEXTS[@]}; i++ )); do
     [[ "${SIGNATURE_TEXTS[i]}" != "${text}" ]] || die "${key} has already signed ${file}."

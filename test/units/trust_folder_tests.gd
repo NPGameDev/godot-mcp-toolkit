@@ -39,11 +39,13 @@ static func _test_walk_holds(testing: Testing) -> void:
 	var folder := _folder("walk_holds")
 	DirAccess.make_dir_recursive_absolute(folder)
 	var empty := _joined(TrustFolderCheck.folder_problems(folder))
-	_write_chain(folder, 7)
+	var chain_written := _write_chain(folder, 7)
 	var whole := _joined(TrustFolderCheck.folder_problems(folder))
-	FolderFiles.write_checked(folder.path_join("released-manifests.txt"), "1.2.0 abc\n".to_utf8_buffer())
+	var ledger_written := _write(folder, "released-manifests.txt", "1.2.0 abc\n".to_utf8_buffer())
 	var with_ledger := _joined(TrustFolderCheck.folder_problems(folder))
 	UpdateFixtures.remove(folder)
+	testing.ok(chain_written, "the seven documents reach the disk")
+	testing.ok(ledger_written, "and so does the file that is no document")
 	testing.eq(empty, _NO_PROBLEMS, "an empty folder holds")
 	testing.eq(whole, _NO_PROBLEMS, "seven documents in order hold")
 	testing.eq(with_ledger, _NO_PROBLEMS, "a file that is no document is left alone")
@@ -102,11 +104,12 @@ static func _test_embedded_holds(testing: Testing) -> void:
 	testing.begin("Trust folder: an embedded document that holds")
 	var folder := _folder("embedded_holds")
 	var nothing := _joined(TrustFolderCheck.embedded_problems(folder, ""))
-	_write_chain(folder, 3)
+	var chain_written := _write_chain(folder, 3)
 	var highest := FileAccess.get_file_as_string(folder.path_join("trust-3.json"))
 	var same := _joined(TrustFolderCheck.embedded_problems(folder, highest))
 	var with_crlf := _joined(TrustFolderCheck.embedded_problems(folder, highest + "\r\n"))
 	UpdateFixtures.remove(folder)
+	testing.ok(chain_written, "the three documents reach the disk")
 	testing.eq(nothing, _NO_PROBLEMS, "both absent holds")
 	testing.eq(same, _NO_PROBLEMS, "the highest document holds")
 	testing.eq(with_crlf, _NO_PROBLEMS, "a line end added on checkout changes nothing")
@@ -179,13 +182,16 @@ static func _folder(purpose: String) -> String:
 	return folder
 
 
-static func _write(folder: String, file_name: String, file_bytes: PackedByteArray) -> void:
-	FolderFiles.write_checked(folder.path_join(file_name), file_bytes)
+static func _write(folder: String, file_name: String, file_bytes: PackedByteArray) -> bool:
+	return FolderFiles.write_checked(folder.path_join(file_name), file_bytes)
 
 
-# Writes trust-1.json to trust-[count].json, each signed by the one root.
-static func _write_chain(folder: String, count: int) -> void:
+# Writes the documents numbered 1 to `count`, each signed by the one root, and answers whether
+# every one reached the disk.
+static func _write_chain(folder: String, count: int) -> bool:
 	var root := TrustFixtures.root_key()
+	var written := true
 	for number: int in range(1, count + 1):
 		var document := TrustFixtures.body(number, [root], 1, [TrustFixtures.release_key()])
-		_write(folder, "trust-%d.json" % number, TrustFixtures.file_of(document, [root]))
+		written = _write(folder, "trust-%d.json" % number, TrustFixtures.file_of(document, [root])) and written
+	return written

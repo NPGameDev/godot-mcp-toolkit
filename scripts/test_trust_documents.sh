@@ -444,6 +444,12 @@ refused "text after the object" "not a JSON object"
 tool verify "${ONE_ROOT}" "${HAND}/no-such-file.json"
 refused "a missing file" "no document at"
 
+make_file "${HAND}/no-document.json" "not json"
+cp "${HAND}/no-document.json" "${HAND}/no-document.before.json"
+sign_piped "${UNUSED_LINE}" "${HAND}/no-document.json" "${KEYS}/root.pem"
+refused "signing an envelope whose decoded bytes are no document" "the document is not a JSON object"
+check "that refusal writes nothing" same_bytes "${HAND}/no-document.json" "${HAND}/no-document.before.json"
+
 ONE_SIGNATURE="$(cat "${ONE_ROOT}")"
 ONE_SIGNATURE="${ONE_SIGNATURE#*\"signatures\":\[\"}"
 ONE_SIGNATURE="${ONE_SIGNATURE%%\"*}"

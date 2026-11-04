@@ -92,7 +92,7 @@ static func rewrapped_layout(pem: String) -> String:
 	var lines := pem.strip_edges().split("\n")
 	var base64 := "".join(lines.slice(1, lines.size() - 1))
 	var wrapped := PackedStringArray([lines[0]])
-	for start in range(0, base64.length(), 40):
+	for start: int in range(0, base64.length(), 40):
 		wrapped.append(base64.substr(start, 40))
 	wrapped.append(lines[lines.size() - 1])
 	return "\n".join(wrapped) + "\n"

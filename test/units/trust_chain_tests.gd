@@ -17,6 +17,7 @@ static func run(testing: Testing) -> void:
 	_test_leak(testing)
 	_test_root_change(testing)
 	_test_two_of_two(testing)
+	_test_key_listed_twice(testing)
 	_test_each_check_counts_a_key_once(testing)
 	_test_key_layouts(testing)
 	_test_order_of_reading(testing)
@@ -31,7 +32,9 @@ static func run(testing: Testing) -> void:
 	_test_store_tampered(testing)
 	_test_store_tampered_past_a_good_file(testing)
 	_test_store_deleted(testing)
-	_test_store_gap_and_lower(testing)
+	_test_store_gap(testing)
+	_test_accept_closes_a_gap(testing)
+	_test_store_never_goes_lower(testing)
 	_test_store_oversized(testing)
 	_test_failed_write(testing)
 	_test_concurrent_editor(testing)
@@ -40,6 +43,7 @@ static func run(testing: Testing) -> void:
 	_test_walk_limit(testing)
 	_test_unknown_field(testing)
 	_test_going_back(testing)
+	_test_outcome_strings(testing)
 
 
 # An empty scratch folder for a store. The folder itself is not created.
@@ -160,29 +164,40 @@ static func _test_root_change(testing: Testing) -> void:
 
 
 static func _test_two_of_two(testing: Testing) -> void:
-	testing.begin("Trust chain: two of two roots, and a key listed twice")
-	var a := TrustFixtures.root_key()
-	var b := TrustFixtures.second_root_key()
+	testing.begin("Trust chain: a threshold of two of two needs both roots")
+	var root := TrustFixtures.root_key()
+	var second_root := TrustFixtures.second_root_key()
 	var release := TrustFixtures.release_key()
-	var first := TrustFixtures.file_of(TrustFixtures.body(1, [a, b], 2, [release]), [a, b]).get_string_from_utf8()
-	var next := TrustFixtures.body(2, [a, b], 2, [release])
+	var first := TrustFixtures.file_of(TrustFixtures.body(1, [root, second_root], 2, [release]), [root, second_root]).get_string_from_utf8()
+	var next := TrustFixtures.body(2, [root, second_root], 2, [release])
 	var decoded := JSON.stringify(next).to_utf8_buffer()
-	var one_signature := TrustFixtures.signatures_over(decoded, [a])
+	var one_signature := TrustFixtures.signatures_over(decoded, [root])
 	var store := _store("two_of_two")
-	var both := _offer(_load(first, store), TrustFixtures.file_of(next, [a, b]))
+	var both := _offer(_load(first, store), TrustFixtures.file_of(next, [root, second_root]))
 	UpdateFixtures.remove(store)
-	var one := _offer(_load(first, store), TrustFixtures.file_of(next, [a]))
+	var one := _offer(_load(first, store), TrustFixtures.file_of(next, [root]))
 	var same_twice := _offer(_load(first, store), TrustFixtures.envelope(decoded, one_signature + one_signature))
-	var pem := UpdateFixtures.public_pem(a)
-	var listed_twice_needing_two := _offer(_load(first, store), TrustFixtures.file_of(TrustFixtures.body(2, [pem, pem], 2, [release]), [a, b]))
-	var chain := _load(first, store)
-	var listed_twice_needing_one := _offer(chain, TrustFixtures.file_of(TrustFixtures.body(2, [pem, pem], 1, [release]), [a, b]))
-	var from_listed_twice := TrustFixtures.body(3, [a], 1, [release])
-	var after_listed_twice := _offer(chain, TrustFixtures.file_of(from_listed_twice, [a]))
 	UpdateFixtures.remove(store)
 	testing.eq(both, TrustChain.ACCEPTED, "signed by both → accepted")
 	testing.eq(one, TrustChain.INVALID, "signed by one → refused")
 	testing.eq(same_twice, TrustChain.INVALID, "one key's signature held twice → refused")
+	print("")
+
+
+static func _test_key_listed_twice(testing: Testing) -> void:
+	testing.begin("Trust chain: a key listed twice counts once toward its document's threshold")
+	var root := TrustFixtures.root_key()
+	var second_root := TrustFixtures.second_root_key()
+	var release := TrustFixtures.release_key()
+	var first := TrustFixtures.file_of(TrustFixtures.body(1, [root, second_root], 2, [release]), [root, second_root]).get_string_from_utf8()
+	var pem := UpdateFixtures.public_pem(root)
+	var store := _store("listed_twice")
+	var listed_twice_needing_two := _offer(_load(first, store), TrustFixtures.file_of(TrustFixtures.body(2, [pem, pem], 2, [release]), [root, second_root]))
+	var chain := _load(first, store)
+	var listed_twice_needing_one := _offer(chain, TrustFixtures.file_of(TrustFixtures.body(2, [pem, pem], 1, [release]), [root, second_root]))
+	var from_listed_twice := TrustFixtures.body(3, [root], 1, [release])
+	var after_listed_twice := _offer(chain, TrustFixtures.file_of(from_listed_twice, [root]))
+	UpdateFixtures.remove(store)
 	testing.eq(listed_twice_needing_two, TrustChain.INVALID, "a key listed twice, a threshold of 2 → refused")
 	testing.eq(listed_twice_needing_one, TrustChain.ACCEPTED, "a key listed twice, a threshold of 1 → accepted")
 	testing.eq(after_listed_twice, TrustChain.ACCEPTED, "and the chain moves on from it")
@@ -193,21 +208,21 @@ static func _test_two_of_two(testing: Testing) -> void:
 # refuse the repeat, and a check that counted repeats would take it alone.
 static func _test_each_check_counts_a_key_once(testing: Testing) -> void:
 	testing.begin("Trust chain: each signature check counts one key's signature once")
-	var a := TrustFixtures.root_key()
-	var b := TrustFixtures.second_root_key()
+	var root := TrustFixtures.root_key()
+	var second_root := TrustFixtures.second_root_key()
 	var release := TrustFixtures.release_key()
-	var two_roots := TrustFixtures.file_of(TrustFixtures.body(1, [a, b], 2, [release]), [a, b]).get_string_from_utf8()
-	var to_one_root := TrustFixtures.body(2, [a], 1, [release])
-	var to_two_roots := TrustFixtures.body(2, [a, b], 2, [release])
+	var two_roots := TrustFixtures.file_of(TrustFixtures.body(1, [root, second_root], 2, [release]), [root, second_root]).get_string_from_utf8()
+	var to_one_root := TrustFixtures.body(2, [root], 1, [release])
+	var to_two_roots := TrustFixtures.body(2, [root, second_root], 2, [release])
 	var store := _store("each_check")
-	var previous_twice := _refusal_reason(_load(two_roots, store), _signed_twice_by(a, to_one_root))
+	var previous_twice := _refusal_reason(_load(two_roots, store), _signed_twice_by(root, to_one_root))
 	UpdateFixtures.remove(store)
-	var previous_both := _offer(_load(two_roots, store), TrustFixtures.file_of(to_one_root, [a, b]))
+	var previous_both := _offer(_load(two_roots, store), TrustFixtures.file_of(to_one_root, [root, second_root]))
 	UpdateFixtures.remove(store)
 	var one_root := TrustFixtures.first_document([release])
-	var own_twice := _refusal_reason(_load(one_root, store), _signed_twice_by(a, to_two_roots))
+	var own_twice := _refusal_reason(_load(one_root, store), _signed_twice_by(root, to_two_roots))
 	UpdateFixtures.remove(store)
-	var own_both := _offer(_load(one_root, store), TrustFixtures.file_of(to_two_roots, [a, b]))
+	var own_both := _offer(_load(one_root, store), TrustFixtures.file_of(to_two_roots, [root, second_root]))
 	UpdateFixtures.remove(store)
 	testing.eq(previous_twice, "too few of the previous document's root keys signed it",
 			"a 2-of-2 previous, a next that needs one, one key's signature twice → the previous roots refuse")
@@ -272,7 +287,8 @@ static func _test_order_of_reading(testing: Testing) -> void:
 	print("")
 
 
-# Each row differs from an accepted document by the one thing it names.
+# Each row differs from an accepted document by the one thing it names, and holds the reason
+# it is refused for: without its own check, most of these still fall to a later one.
 static func _refusal_rows() -> Array:
 	var root := TrustFixtures.root_key()
 	var other := TrustFixtures.second_root_key()
@@ -281,44 +297,60 @@ static func _refusal_rows() -> Array:
 	var decoded := JSON.stringify(good).to_utf8_buffer()
 	var good_signatures := TrustFixtures.signatures_over(decoded, [root])
 	var changed := TrustFixtures.body(2, [root], 1, [TrustFixtures.next_release_key()])
+	var previous_roots := "too few of the previous document's root keys signed it"
+	var not_held := "the file does not hold a document and its signatures"
+	var not_an_object := "the file is not a JSON object"
+	var bad_version := "the document's version is not a whole number"
+	var not_next := "the document's version is not 2"
+	var bad_roots := "the document's root keys are empty or do not load"
+	var bad_threshold := "the document's root threshold is not between 1 and its distinct root keys"
+	var bad_format := "the document's format is not 1"
+	var bad_release_keys := "the document's release keys are not a list"
 	var rows := [
-		["a skipped version", TrustFixtures.file_of(TrustFixtures.body(3, [root], 1, [release]), [root])],
-		["a repeated version", TrustFixtures.file_of(TrustFixtures.body(1, [root], 1, [release]), [root])],
-		["a version with a fraction", TrustFixtures.file_of(TrustFixtures.body(2.5, [root], 1, [release]), [root])],
-		["a version that is text", TrustFixtures.file_of(TrustFixtures.body("2", [root], 1, [release]), [root])],
-		["empty root_keys", TrustFixtures.file_of(TrustFixtures.body(2, [], 1, [release]), [root])],
-		["a root key that does not load", TrustFixtures.file_of(TrustFixtures.body(2, [root, "not a key"], 1, [release]), [root])],
-		["a root key that is no string", TrustFixtures.file_of(TrustFixtures.body(2, [root, 7], 1, [release]), [root])],
-		["a threshold of 0", TrustFixtures.file_of(TrustFixtures.body(2, [root], 0, [release]), [root])],
-		["a threshold above the roots", TrustFixtures.file_of(TrustFixtures.body(2, [root], 2, [release]), [root])],
-		["a threshold with a fraction", TrustFixtures.file_of(TrustFixtures.body(2, [root], 1.5, [release]), [root])],
-		["a threshold that is text", TrustFixtures.file_of(TrustFixtures.body(2, [root], "1", [release]), [root])],
-		["a threshold its own roots do not meet", TrustFixtures.file_of(TrustFixtures.body(2, [root, other], 2, [release]), [root])],
-		["a tampered document", TrustFixtures.envelope(JSON.stringify(changed).to_utf8_buffer(), good_signatures)],
-		["no signatures", TrustFixtures.envelope(decoded, [])],
-		["a signature by a stranger", TrustFixtures.file_of(good, [other])],
-		["a good signature beside one that does not decode", TrustFixtures.envelope(decoded, good_signatures + ["!!!!"])],
-		["a good signature beside an empty one", TrustFixtures.envelope(decoded, good_signatures + [""])],
-		["a good signature beside one that is no string", TrustFixtures.envelope(decoded, good_signatures + [7])],
-		["a document that does not decode", JSON.stringify({"document": "!!!!", "signatures": good_signatures}).to_utf8_buffer()],
-		["an empty document", JSON.stringify({"document": "", "signatures": good_signatures}).to_utf8_buffer()],
-		["a document that is no string", JSON.stringify({"document": 7, "signatures": good_signatures}).to_utf8_buffer()],
-		["no document", JSON.stringify({"signatures": good_signatures}).to_utf8_buffer()],
-		["signatures that are no list", JSON.stringify({"document": Marshalls.raw_to_base64(decoded), "signatures": good_signatures[0]}).to_utf8_buffer()],
-		["a file that is not JSON", "not json".to_utf8_buffer()],
-		["a file that is a JSON list", "[1, 2]".to_utf8_buffer()],
-		["an empty file", PackedByteArray()],
+		["a skipped version", TrustFixtures.file_of(TrustFixtures.body(3, [root], 1, [release]), [root]), not_next],
+		["a repeated version", TrustFixtures.file_of(TrustFixtures.body(1, [root], 1, [release]), [root]), not_next],
+		["a version with a fraction", TrustFixtures.file_of(TrustFixtures.body(2.5, [root], 1, [release]), [root]), bad_version],
+		["a version that is text", TrustFixtures.file_of(TrustFixtures.body("2", [root], 1, [release]), [root]), bad_version],
+		["empty root_keys", TrustFixtures.file_of(TrustFixtures.body(2, [], 1, [release]), [root]), bad_roots],
+		["a root key that does not load", TrustFixtures.file_of(TrustFixtures.body(2, [root, "not a key"], 1, [release]), [root]), bad_roots],
+		["a root key that is no string", TrustFixtures.file_of(TrustFixtures.body(2, [root, 7], 1, [release]), [root]), bad_roots],
+		["a threshold of 0", TrustFixtures.file_of(TrustFixtures.body(2, [root], 0, [release]), [root]), bad_threshold],
+		["a threshold above the roots", TrustFixtures.file_of(TrustFixtures.body(2, [root], 2, [release]), [root]), bad_threshold],
+		["a threshold with a fraction", TrustFixtures.file_of(TrustFixtures.body(2, [root], 1.5, [release]), [root]), bad_threshold],
+		["a threshold that is text", TrustFixtures.file_of(TrustFixtures.body(2, [root], "1", [release]), [root]), bad_threshold],
+		["a threshold its own roots do not meet", TrustFixtures.file_of(TrustFixtures.body(2, [root, other], 2, [release]), [root]), "too few of the document's own root keys signed it"],
+		["a tampered document", TrustFixtures.envelope(JSON.stringify(changed).to_utf8_buffer(), good_signatures), previous_roots],
+		["no signatures", TrustFixtures.envelope(decoded, []), previous_roots],
+		["a signature by a stranger", TrustFixtures.file_of(good, [other]), previous_roots],
+		["a good signature beside one that does not decode", TrustFixtures.envelope(decoded, good_signatures + ["!!!!"]), "a signature does not decode"],
+		["a good signature beside an empty one", TrustFixtures.envelope(decoded, good_signatures + [""]), "a signature does not decode"],
+		["a good signature beside one that is no string", TrustFixtures.envelope(decoded, good_signatures + [7]), "a signature is not a string"],
+		["a document that does not decode", JSON.stringify({"document": "!!!!", "signatures": good_signatures}).to_utf8_buffer(), "the document does not decode"],
+		["an empty document", JSON.stringify({"document": "", "signatures": good_signatures}).to_utf8_buffer(), "the document does not decode"],
+		["a document that is no string", JSON.stringify({"document": 7, "signatures": good_signatures}).to_utf8_buffer(), not_held],
+		["no document", JSON.stringify({"signatures": good_signatures}).to_utf8_buffer(), not_held],
+		["signatures that are no list", JSON.stringify({"document": Marshalls.raw_to_base64(decoded), "signatures": good_signatures[0]}).to_utf8_buffer(), not_held],
+		["a file that is not JSON", "not json".to_utf8_buffer(), not_an_object],
+		["a file that is a JSON list", "[1, 2]".to_utf8_buffer(), not_an_object],
+		["an empty file", PackedByteArray(), not_an_object],
 	]
-	for field: String in ["format", "version", "root_keys", "root_threshold", "release_keys"]:
+	var missing_field_reasons := {
+		"format": bad_format,
+		"version": bad_version,
+		"root_keys": bad_roots,
+		"root_threshold": bad_threshold,
+		"release_keys": bad_release_keys,
+	}
+	for field: String in missing_field_reasons:
 		var without := good.duplicate()
 		without.erase(field)
-		rows.append(["no %s" % field, TrustFixtures.file_of(without, [root])])
+		rows.append(["no %s" % field, TrustFixtures.file_of(without, [root]), missing_field_reasons[field]])
 	var format_two := good.duplicate()
 	format_two["format"] = 2
-	rows.append(["a format of 2", TrustFixtures.file_of(format_two, [root])])
+	rows.append(["a format of 2", TrustFixtures.file_of(format_two, [root]), bad_format])
 	var keys_not_listed := good.duplicate()
 	keys_not_listed["release_keys"] = "a key"
-	rows.append(["release_keys that are no list", TrustFixtures.file_of(keys_not_listed, [root])])
+	rows.append(["release_keys that are no list", TrustFixtures.file_of(keys_not_listed, [root]), bad_release_keys])
 	return rows
 
 
@@ -332,7 +364,9 @@ static func _test_refusals(testing: Testing) -> void:
 	for row: Array in rows:
 		var chain := _load(first, store)
 		var outcome := _offer(chain, row[1])
+		var reason := _refusal_reason(chain, row[1])
 		testing.eq(outcome, TrustChain.INVALID, "%s → refused" % row[0])
+		testing.eq(reason, row[2], "%s → for that reason" % row[0])
 		testing.eq(chain.version(), 1, "%s → the chain stays" % row[0])
 		testing.eq(_store_files(store), PackedStringArray(), "%s → nothing written" % row[0])
 	var accepted := _offer(_load(first, store), TrustFixtures.file_of(TrustFixtures.body(2, [root], 1, [release]), [root]))
@@ -386,7 +420,7 @@ static func _test_edges(testing: Testing) -> void:
 	var at_limit := document.duplicate()
 	at_limit.resize(TrustChain.MAX_FILE_BYTES)
 	at_limit.fill(0x20)
-	for index in document.size():
+	for index: int in document.size():
 		at_limit[index] = document[index]
 	var past_limit := at_limit.duplicate()
 	past_limit.append(0x20)
@@ -395,7 +429,7 @@ static func _test_edges(testing: Testing) -> void:
 	filler.resize(256)
 	var filler_signature := Marshalls.raw_to_base64(filler)
 	var fifteen_more := []
-	for _index in 15:
+	for _index: int in 15:
 		fifteen_more.append(filler_signature)
 
 	var largest := PackedByteArray()
@@ -491,22 +525,34 @@ static func _test_embedded(testing: Testing) -> void:
 		["a version of 0", TrustFixtures.file_of(TrustFixtures.body(0, [root], 1, [release]), [root]).get_string_from_utf8()],
 		["a version that is text", TrustFixtures.file_of(TrustFixtures.body("1", [root], 1, [release]), [root]).get_string_from_utf8()],
 	]
+	var results := []
 	for row: Array in rows:
 		var chain := _load(row[1], store)
 		var printed := Engine.print_error_messages
 		Engine.print_error_messages = false
 		var trusted := ReleaseSignature.is_trusted(manifest, signature, null, {"trust_document": row[1], "trust_store": store})
 		Engine.print_error_messages = printed
-		testing.eq(chain.version(), 0, "%s → no chain" % row[0])
-		testing.eq(chain.next_version(), 0, "%s → no walk" % row[0])
-		testing.eq(chain.release_keys(), [], "%s → no key" % row[0])
-		testing.eq(_offer(chain, _read_from_store(store, 2)), TrustChain.NOT_EXPECTED, "%s → takes no document" % row[0])
-		testing.ok(not trusted, "%s → the release is not trusted" % row[0])
+		results.append({
+			"label": row[0],
+			"version": chain.version(),
+			"next_version": chain.next_version(),
+			"release_keys": chain.release_keys(),
+			"outcome": _offer(chain, _read_from_store(store, 2)),
+			"trusted": trusted,
+		})
+	var read_empty := TrustChain.read_embedded("")
 	var unsigned := TrustFixtures.file_of(TrustFixtures.body(1, [root], 1, [release]), []).get_string_from_utf8()
 	var chain := _load(unsigned, store)
 	var version_walked := chain.version()
 	var trusted_unsigned := ReleaseSignature.is_trusted(manifest, signature, null, {"trust_document": unsigned, "trust_store": store})
 	UpdateFixtures.remove(store)
+	for result: Dictionary in results:
+		testing.eq(result["version"], 0, "%s → no chain" % result["label"])
+		testing.eq(result["next_version"], 0, "%s → no walk" % result["label"])
+		testing.eq(result["release_keys"], [], "%s → no key" % result["label"])
+		testing.eq(result["outcome"], TrustChain.NOT_EXPECTED, "%s → takes no document" % result["label"])
+		testing.ok(not result["trusted"], "%s → the release is not trusted" % result["label"])
+	testing.eq(read_empty, {"error": "there is no document"}, "empty → read_embedded says there is no document")
 	testing.eq(version_walked, 2, "signatures are not checked on it, and the walk starts from it")
 	testing.ok(trusted_unsigned, "the release key it leads to is trusted")
 	print("")
@@ -522,8 +568,8 @@ static func _test_self_signed(testing: Testing) -> void:
 	var by_stranger := TrustChain.read_self_signed(TrustFixtures.file_of(TrustFixtures.body(1, [root], 1, [release]), [second]))
 	var short := TrustChain.read_self_signed(TrustFixtures.file_of(TrustFixtures.body(1, [root, second], 2, [release]), [root]))
 	testing.eq(signed["error"], "", "signed by its root → read")
-	testing.eq(signed["version"], 1, "its version")
-	testing.eq(signed["root_threshold"], 1, "its threshold")
+	testing.eq(signed["version"], 1, "the result carries the version the document lists")
+	testing.eq(signed["root_threshold"], 1, "and the threshold it lists")
 	testing.eq(signed["release_keys"], [UpdateFixtures.public_pem(release)], "its release keys, as listed")
 	testing.eq(unsigned, {"error": "too few of the document's own root keys signed it"}, "unsigned → refused")
 	testing.eq(by_stranger, {"error": "too few of the document's own root keys signed it"}, "signed by a stranger → refused")
@@ -592,6 +638,7 @@ static func _test_store_deleted(testing: Testing) -> void:
 	var first := TrustFixtures.first_document([TrustFixtures.release_key()])
 	var document := TrustFixtures.file_of(TrustFixtures.body(2, [root], 1, [TrustFixtures.next_release_key()]), [root])
 	var store := _store("deleted")
+	# The offer's result is dropped: version_stored shows whether the file landed.
 	_offer(_load(first, store), document)
 	var version_stored := _load(first, store).version()
 	UpdateFixtures.remove(store)
@@ -611,8 +658,8 @@ static func _test_store_deleted(testing: Testing) -> void:
 	print("")
 
 
-static func _test_store_gap_and_lower(testing: Testing) -> void:
-	testing.begin("Trust chain: the first gap ends the walk, and it never goes lower")
+static func _test_store_gap(testing: Testing) -> void:
+	testing.begin("Trust chain: the first gap ends the walk")
 	var root := TrustFixtures.root_key()
 	var release := TrustFixtures.release_key()
 	var first := TrustFixtures.first_document([release])
@@ -622,6 +669,42 @@ static func _test_store_gap_and_lower(testing: Testing) -> void:
 	var with_gap := _load(first, store)
 	var gap_version := with_gap.version()
 	var gap_next := with_gap.next_version()
+	UpdateFixtures.remove(store)
+	testing.eq(gap_version, 2, "trust-3 missing → the walk stops at 2, past trust-4 unread")
+	testing.eq(gap_next, 3, "and asks for 3")
+	print("")
+
+
+static func _test_accept_closes_a_gap(testing: Testing) -> void:
+	testing.begin("Trust chain: taking the document a gap lacks walks on through what is stored past it")
+	var root := TrustFixtures.root_key()
+	var release := TrustFixtures.release_key()
+	var store := _store("gap_closed")
+	_write_to_store(store, 2, TrustFixtures.file_of(TrustFixtures.body(2, [root], 1, [release]), [root]))
+	_write_to_store(store, 3, TrustFixtures.file_of(TrustFixtures.body(3, [root], 1, [release]), [root]))
+	_write_to_store(store, 5, TrustFixtures.file_of(TrustFixtures.body(5, [root], 1, [TrustFixtures.next_release_key()]), [root]))
+	var chain := _load(TrustFixtures.first_document([release]), store)
+	var version_at_gap := chain.version()
+	var outcome := _offer(chain, TrustFixtures.file_of(TrustFixtures.body(4, [root], 1, [release]), [root]))
+	var version_after := chain.version()
+	var next_after := chain.next_version()
+	var keys_after := chain.release_keys()
+	UpdateFixtures.remove(store)
+	testing.eq(version_at_gap, 3, "the walk stops at the gap")
+	testing.eq(outcome, TrustChain.ACCEPTED, "the missing document is accepted")
+	testing.eq(next_after, 6, "the chain asks past the file it already holds")
+	testing.eq(version_after, 5, "it stands on that file")
+	testing.eq(keys_after, [UpdateFixtures.public_pem(TrustFixtures.next_release_key())], "with that file's keys")
+	print("")
+
+
+static func _test_store_never_goes_lower(testing: Testing) -> void:
+	testing.begin("Trust chain: an embedded document never walks to a lower file")
+	var root := TrustFixtures.root_key()
+	var release := TrustFixtures.release_key()
+	var store := _store("lower")
+	_write_to_store(store, 2, TrustFixtures.file_of(TrustFixtures.body(2, [root], 1, [release]), [root]))
+	_write_to_store(store, 4, TrustFixtures.file_of(TrustFixtures.body(4, [root], 1, [release]), [root]))
 	var at_three := TrustFixtures.file_of(TrustFixtures.body(3, [root], 1, [release]), [root]).get_string_from_utf8()
 	var version_from_three := _load(at_three, store).version()
 	var at_five := TrustFixtures.file_of(TrustFixtures.body(5, [root], 1, [TrustFixtures.next_release_key()]), [root]).get_string_from_utf8()
@@ -629,8 +712,6 @@ static func _test_store_gap_and_lower(testing: Testing) -> void:
 	var version_from_five := from_five.version()
 	var keys_from_five := from_five.release_keys()
 	UpdateFixtures.remove(store)
-	testing.eq(gap_version, 2, "trust-3 missing → the walk stops at 2, past trust-4 unread")
-	testing.eq(gap_next, 3, "and asks for 3")
 	testing.eq(version_from_three, 4, "an embedded 3 reads trust-4 and ignores trust-2")
 	testing.eq(version_from_five, 5, "an embedded 5 stays at 5 over lower files")
 	testing.eq(keys_from_five, [UpdateFixtures.public_pem(TrustFixtures.next_release_key())], "with its own keys")
@@ -645,7 +726,7 @@ static func _test_store_oversized(testing: Testing) -> void:
 	var padded := document.duplicate()
 	padded.resize(TrustChain.MAX_FILE_BYTES + 1)
 	padded.fill(0x20)
-	for index in document.size():
+	for index: int in document.size():
 		padded[index] = document[index]
 	var store := _store("oversized")
 	_write_to_store(store, 2, padded)
@@ -672,6 +753,7 @@ static func _test_failed_write(testing: Testing) -> void:
 	var folder_outcome := _offer(blocked_folder, document)
 	var folder_version := blocked_folder.version()
 	var folder_keys := blocked_folder.release_keys()
+	var folder_reason := _refusal_reason(blocked_folder, document)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(file_as_store))
 
 	# A folder where the file should land: the temporary file writes, the rename cannot.
@@ -681,6 +763,7 @@ static func _test_failed_write(testing: Testing) -> void:
 	var blocked_rename := _load(first, target_store)
 	var rename_outcome := _offer(blocked_rename, document)
 	var rename_version := blocked_rename.version()
+	var rename_reason := _refusal_reason(blocked_rename, document)
 	var leftovers := _store_files(target_store)
 	UpdateFixtures.remove(target_store)
 
@@ -692,9 +775,11 @@ static func _test_failed_write(testing: Testing) -> void:
 	UpdateFixtures.remove(temporary_store)
 
 	testing.eq(folder_outcome, TrustChain.WRITE_FAILED, "a store folder that cannot be made → the write fails")
+	testing.eq(folder_reason, "could not write trust-2.json", "and says so, before any read-back")
 	testing.eq(folder_version, 1, "the chain stays")
 	testing.eq(folder_keys, [UpdateFixtures.public_pem(release)], "with the keys it had")
 	testing.eq(rename_outcome, TrustChain.WRITE_FAILED, "a target that cannot be replaced → the write fails")
+	testing.eq(rename_reason, "could not write trust-2.json", "and says so, before any read-back")
 	testing.eq(rename_version, 1, "the chain stays")
 	testing.eq(leftovers, PackedStringArray(), "no temporary file is left")
 	testing.eq(temporary_outcome, TrustChain.WRITE_FAILED, "the temporary file is named for this process")
@@ -749,7 +834,7 @@ static func _test_no_store(testing: Testing) -> void:
 
 static func _test_store_folder(testing: Testing) -> void:
 	testing.begin("Trust chain: the store is in the OS's data folder")
-	testing.eq(TrustChain.store_folder(), OS.get_data_dir().path_join("godot_mcp_toolkit/trust"), "the folder")
+	testing.eq(TrustChain.store_folder(), OS.get_data_dir().path_join("godot_mcp_toolkit/trust"), "the toolkit's folder under the OS's data folder, whatever the project")
 	testing.ok(TrustChain.store_folder().is_absolute_path(), "absolute on a machine that sets HOME or APPDATA")
 	print("")
 
@@ -762,7 +847,7 @@ static func _test_walk_limit(testing: Testing) -> void:
 	var store := _store("walk_limit")
 	var chain := _load(first, store)
 	var outcomes := {}
-	for number in range(2, 34):
+	for number: int in range(2, 34):
 		var outcome := _offer(chain, TrustFixtures.file_of(TrustFixtures.body(number, [root], 1, [release]), [root]))
 		outcomes[outcome] = int(outcomes.get(outcome, 0)) + 1
 	var version_at_limit := chain.version()
@@ -819,6 +904,7 @@ static func _test_going_back(testing: Testing) -> void:
 	var store := _store("going_back")
 	var source := {"trust_document": older, "trust_store": store}
 	var walker := _load(older, store)
+	# The offers' results are dropped: reached shows whether both landed.
 	_offer(walker, document_2)
 	_offer(walker, document_3)
 	var older_chain := ReleaseSignature.chain(source)
@@ -846,4 +932,14 @@ static func _test_going_back(testing: Testing) -> void:
 	testing.eq(taken_2, TrustChain.ACCEPTED, "takes the first it never stored")
 	testing.eq(taken_3, TrustChain.ACCEPTED, "and the next")
 	testing.eq(fetched_version, 3, "and reaches the same document")
+	print("")
+
+
+static func _test_outcome_strings(testing: Testing) -> void:
+	testing.begin("Trust chain: accept's outcomes keep their strings")
+	testing.eq(TrustChain.ACCEPTED, "accepted", "the chain moved on")
+	testing.eq(TrustChain.INVALID, "invalid", "the bytes are not the next document")
+	testing.eq(TrustChain.WRITE_FAILED, "write_failed", "the document did not reach the disk")
+	testing.eq(TrustChain.NO_STORE, "no_store", "the data folder is no store")
+	testing.eq(TrustChain.NOT_EXPECTED, "not_expected", "no document can be taken now")
 	print("")
