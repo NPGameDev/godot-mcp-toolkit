@@ -17,9 +17,11 @@ static func run(testing: Testing) -> void:
 	_test_leak(testing)
 	_test_root_change(testing)
 	_test_two_of_two(testing)
+	_test_each_check_counts_a_key_once(testing)
 	_test_key_layouts(testing)
 	_test_order_of_reading(testing)
 	_test_refusals(testing)
+	_test_values_only_coercion_would_pass(testing)
 	_test_edges(testing)
 	_test_outer_file_formatting(testing)
 	_test_duplicate_key(testing)
@@ -27,6 +29,7 @@ static func run(testing: Testing) -> void:
 	_test_embedded(testing)
 	_test_self_signed(testing)
 	_test_store_tampered(testing)
+	_test_store_tampered_past_a_good_file(testing)
 	_test_store_deleted(testing)
 	_test_store_gap_and_lower(testing)
 	_test_store_oversized(testing)
@@ -74,6 +77,15 @@ static func _offer(chain: TrustChain, file_bytes: PackedByteArray) -> String:
 	var outcome := str(chain.accept(file_bytes)["outcome"])
 	Engine.print_error_messages = printed
 	return outcome
+
+
+# Offers a file with engine errors silenced, and answers why it was refused: empty if taken.
+static func _refusal_reason(chain: TrustChain, file_bytes: PackedByteArray) -> String:
+	var printed := Engine.print_error_messages
+	Engine.print_error_messages = false
+	var reason := str(chain.accept(file_bytes)["reason"])
+	Engine.print_error_messages = printed
+	return reason
 
 
 static func _signed_by(key: CryptoKey, manifest: PackedByteArray) -> PackedByteArray:
@@ -175,6 +187,42 @@ static func _test_two_of_two(testing: Testing) -> void:
 	testing.eq(listed_twice_needing_one, TrustChain.ACCEPTED, "a key listed twice, a threshold of 1 → accepted")
 	testing.eq(after_listed_twice, TrustChain.ACCEPTED, "and the chain moves on from it")
 	print("")
+
+
+# Each document here passes one check with a single signature, so only the other check can
+# refuse the repeat, and a check that counted repeats would take it alone.
+static func _test_each_check_counts_a_key_once(testing: Testing) -> void:
+	testing.begin("Trust chain: each signature check counts one key's signature once")
+	var a := TrustFixtures.root_key()
+	var b := TrustFixtures.second_root_key()
+	var release := TrustFixtures.release_key()
+	var two_roots := TrustFixtures.file_of(TrustFixtures.body(1, [a, b], 2, [release]), [a, b]).get_string_from_utf8()
+	var to_one_root := TrustFixtures.body(2, [a], 1, [release])
+	var to_two_roots := TrustFixtures.body(2, [a, b], 2, [release])
+	var store := _store("each_check")
+	var previous_twice := _refusal_reason(_load(two_roots, store), _signed_twice_by(a, to_one_root))
+	UpdateFixtures.remove(store)
+	var previous_both := _offer(_load(two_roots, store), TrustFixtures.file_of(to_one_root, [a, b]))
+	UpdateFixtures.remove(store)
+	var one_root := TrustFixtures.first_document([release])
+	var own_twice := _refusal_reason(_load(one_root, store), _signed_twice_by(a, to_two_roots))
+	UpdateFixtures.remove(store)
+	var own_both := _offer(_load(one_root, store), TrustFixtures.file_of(to_two_roots, [a, b]))
+	UpdateFixtures.remove(store)
+	testing.eq(previous_twice, "too few of the previous document's root keys signed it",
+			"a 2-of-2 previous, a next that needs one, one key's signature twice → the previous roots refuse")
+	testing.eq(previous_both, TrustChain.ACCEPTED, "that document signed by both → accepted")
+	testing.eq(own_twice, "too few of the document's own root keys signed it",
+			"a previous that needs one, a next that needs two, one key's signature twice → its own roots refuse")
+	testing.eq(own_both, TrustChain.ACCEPTED, "that document signed by both → accepted")
+	print("")
+
+
+# A file holding `document` and the signature of `key` over it, twice.
+static func _signed_twice_by(key: CryptoKey, document: Dictionary) -> PackedByteArray:
+	var decoded := JSON.stringify(document).to_utf8_buffer()
+	var signature := TrustFixtures.signatures_over(decoded, [key])
+	return TrustFixtures.envelope(decoded, signature + signature)
 
 
 static func _test_key_layouts(testing: Testing) -> void:
@@ -290,6 +338,33 @@ static func _test_refusals(testing: Testing) -> void:
 	var accepted := _offer(_load(first, store), TrustFixtures.file_of(TrustFixtures.body(2, [root], 1, [release]), [root]))
 	UpdateFixtures.remove(store)
 	testing.eq(accepted, TrustChain.ACCEPTED, "the document those rows change → accepted")
+	print("")
+
+
+# int(1.5) reads as the format and str(true) decodes as base64, so each row stands only on
+# its type check. The boolean, since JSON numbers read as floats and str(1234.0) keeps a "."
+# from 4.4 on, which does not decode.
+static func _test_values_only_coercion_would_pass(testing: Testing) -> void:
+	testing.begin("Trust chain: a value that holds only once coerced")
+	var root := TrustFixtures.root_key()
+	var release := TrustFixtures.release_key()
+	var first := TrustFixtures.first_document([release])
+	var good := TrustFixtures.body(2, [root], 1, [release])
+	var decoded := JSON.stringify(good).to_utf8_buffer()
+	var good_signatures := TrustFixtures.signatures_over(decoded, [root])
+	var fractional_format := good.duplicate()
+	fractional_format["format"] = 1.5
+	var store := _store("coerced")
+	var format_reason := _refusal_reason(_load(first, store), TrustFixtures.file_of(fractional_format, [root]))
+	UpdateFixtures.remove(store)
+	var signature_reason := _refusal_reason(_load(first, store), TrustFixtures.envelope(decoded, good_signatures + [true]))
+	UpdateFixtures.remove(store)
+	var without_them := _offer(_load(first, store), TrustFixtures.envelope(decoded, good_signatures))
+	UpdateFixtures.remove(store)
+	testing.eq(format_reason, "the document's format is not 1", "a format of 1.5 → refused")
+	testing.eq(Marshalls.base64_to_raw(str(true)).size(), 3, "the boolean's text decodes as base64")
+	testing.eq(signature_reason, "a signature is not a string", "a good signature beside that boolean → refused")
+	testing.eq(without_them, TrustChain.ACCEPTED, "the document with neither → accepted")
 	print("")
 
 
@@ -484,6 +559,30 @@ static func _test_store_tampered(testing: Testing) -> void:
 	testing.eq(outcome, TrustChain.ACCEPTED, "the real document is accepted")
 	testing.ok(restored, "and overwrites the tampered file")
 	testing.eq(version_after, 2, "the next load reaches it")
+	print("")
+
+
+static func _test_store_tampered_past_a_good_file(testing: Testing) -> void:
+	testing.begin("Trust chain: a tampered file past a good one stops the walk at the good one")
+	var root := TrustFixtures.root_key()
+	var first := TrustFixtures.first_document([TrustFixtures.release_key()])
+	var third := TrustFixtures.body(3, [root], 1, [TrustFixtures.release_key()])
+	var store := _store("tampered_past_good")
+	_write_to_store(store, 2, TrustFixtures.file_of(TrustFixtures.body(2, [root], 1, [TrustFixtures.next_release_key()]), [root]))
+	_write_to_store(store, 3, TrustFixtures.file_of(third, [root]))
+	var intact_version := _load(first, store).version()
+	# The real file's signatures over a document that lists another key.
+	var other_bytes := JSON.stringify(TrustFixtures.body(3, [root], 1, [TrustFixtures.second_root_key()])).to_utf8_buffer()
+	_write_to_store(store, 3, TrustFixtures.envelope(other_bytes, TrustFixtures.signatures_over(JSON.stringify(third).to_utf8_buffer(), [root])))
+	var chain := _load(first, store)
+	var version_with_tampered := chain.version()
+	var keys_with_tampered := chain.release_keys()
+	var next_with_tampered := chain.next_version()
+	UpdateFixtures.remove(store)
+	testing.eq(intact_version, 3, "the files as written load to 3")
+	testing.eq(version_with_tampered, 2, "tampered trust-3 → the walk stops at 2, not at the embedded document")
+	testing.eq(keys_with_tampered, [UpdateFixtures.public_pem(TrustFixtures.next_release_key())], "with trust-2's keys")
+	testing.eq(next_with_tampered, 3, "and asks for 3")
 	print("")
 
 

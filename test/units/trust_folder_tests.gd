@@ -21,6 +21,7 @@ static func run(testing: Testing) -> void:
 	_test_walk_fails(testing)
 	_test_embedded_holds(testing)
 	_test_embedded_fails(testing)
+	_test_embedded_differs_in_one_field(testing)
 
 
 static func _test_the_repository(testing: Testing) -> void:
@@ -141,6 +142,28 @@ static func _test_embedded_fails(testing: Testing) -> void:
 	testing.ok(differs.contains("differs from trust-3.json"), "a lower document than the highest")
 	testing.ok(not_json.contains("differs from trust-3.json"), "text that is no document")
 	testing.ok(own_roots.contains("own root keys") and not own_roots.contains("differs"), "the highest, not signed by its own roots")
+	print("")
+
+
+# The file carries signatures over both documents, so either document stands against its own
+# roots and only the comparison of the two fields can tell them apart.
+static func _test_embedded_differs_in_one_field(testing: Testing) -> void:
+	testing.begin("Trust folder: an embedded document that differs in one field")
+	var root := TrustFixtures.root_key()
+	var committed := JSON.stringify(TrustFixtures.body(1, [root], 1, [TrustFixtures.release_key()])).to_utf8_buffer()
+	var another := JSON.stringify(TrustFixtures.body(1, [root], 1, [TrustFixtures.next_release_key()])).to_utf8_buffer()
+	var over_committed := TrustFixtures.signatures_over(committed, [root])
+	var signatures: Array = over_committed + TrustFixtures.signatures_over(another, [root])
+	var committed_file := TrustFixtures.envelope(committed, signatures)
+	var folder := _folder("embedded_one_field")
+	_write(folder, "trust-1.json", committed_file)
+	var same := _joined(TrustFolderCheck.embedded_problems(folder, committed_file.get_string_from_utf8()))
+	var other_signatures := _joined(TrustFolderCheck.embedded_problems(folder, TrustFixtures.envelope(committed, over_committed).get_string_from_utf8()))
+	var other_document := _joined(TrustFolderCheck.embedded_problems(folder, TrustFixtures.envelope(another, signatures).get_string_from_utf8()))
+	UpdateFixtures.remove(folder)
+	testing.eq(same, _NO_PROBLEMS, "the committed file itself holds")
+	testing.eq(other_signatures, "the embedded document differs from trust-1.json", "the same document with other signatures, and nothing else wrong")
+	testing.eq(other_document, "the embedded document differs from trust-1.json", "the same signatures with another document, and nothing else wrong")
 	print("")
 
 
