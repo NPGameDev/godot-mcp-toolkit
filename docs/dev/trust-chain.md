@@ -64,7 +64,7 @@ The files cannot add trust. Every load walks from the embedded document and veri
 again, and the first missing or invalid file ends the walk. Deleting the folder only undoes a
 revocation until the client next takes those documents. A document counts once it has been
 written, read back and verified. If that write fails, the chain stays where it was. A crash between
-the write and the rename leaves a `trust-N.json.<pid>.tmp` that nothing removes, and it is only bytes,
+the write and the rename leaves a `trust-N.json.<pid>.tmp` that no walk removes, and it is only bytes,
 since no walk reads it.
 
 The chain has no network of its own. The owner of the fetch asks `next_version()`, downloads that
