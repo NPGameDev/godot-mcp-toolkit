@@ -6,7 +6,8 @@ extends RefCounted
 ## headless (no viewport), and never returns a frame from a view the editor is not
 ## showing: a minimized window returns EDITOR_VIEWPORT_UNAVAILABLE, and a hidden or
 ## collapsed 2D/3D view makes the capture switch the main screen and wait, within a
-## bound, for a fresh frame.
+## bound, for a fresh frame. On Godot 4.8 a capture during play goes back to the Game
+## screen it switched away from.
 ## A hidden view is detected by its container's visibility, not its size: Godot
 ## stops rendering a hidden SubViewportContainer's viewport but keeps its size and
 ## last texture, so a size check alone would pass an old frame as usable. The
@@ -29,6 +30,7 @@ const Helpers = Modules.CommandHelpers
 ## Main-screen names as [method EditorInterface.set_main_screen_editor] takes them.
 const SCREEN_2D := "2D"
 const SCREEN_3D := "3D"
+const SCREEN_GAME := "Game"
 
 ## Below this pixel size a viewport frame is treated as collapsed rather than
 ## usable: Godot clamps every viewport to a hard 2x2 floor, so a zero-size
@@ -119,6 +121,46 @@ static func choose_screen(request: CaptureRequest, shown_2d: bool, shown_3d: boo
 	if shown_3d and not shown_2d:
 		return SCREEN_3D
 	return SCREEN_2D
+
+
+## Whether the capture asks [param interface], the [EditorInterface] singleton or a
+## stand-in, to switch to the main screen [param screen].
+##
+## Godot 4.8 reports a switch to a dock outside the main-screen tabs as an engine error,
+## so there the answer is [code]false[/code] for a screen that reads absent, and the
+## capture goes on to its bounded re-read as it does elsewhere after a switch that
+## changes nothing. Earlier versions are silent for a hidden tab and 2D and 3D always have
+## a tab there, and on 4.2 every screen reads absent though the editor can switch, so they
+## always answer [code]true[/code].
+static func can_request_switch(interface: Object, screen: String) -> bool:
+	if not Modules.EditorAccess.main_screens_are_docks(interface):
+		return true
+	return Modules.EditorAccess.main_screen_state(interface, screen) != Modules.EditorAccess.MainScreenState.ABSENT
+
+
+## Whether the capture goes back to the Game screen after switching away from it, read
+## from [param interface], the [EditorInterface] singleton or a stand-in.
+##
+## [code]true[/code] when the main screens are docks, a scene is playing and the Game
+## screen is the current one. Godot 4.8 embeds a played game in that screen by default,
+## and a screen left switched would hide the game. On earlier versions the game floats
+## by default, so no switch hides it, and they keep the one-way switch.
+static func should_restore_game_screen(interface: Object) -> bool:
+	if not Modules.EditorAccess.main_screens_are_docks(interface):
+		return false
+	if not bool(interface.call("is_playing_scene")):
+		return false
+	return Modules.EditorAccess.main_screen_state(interface, SCREEN_GAME) == Modules.EditorAccess.MainScreenState.SHOWN
+
+
+## Ends a capture's main-screen switch. When [param restore_game] is set, calls
+## [param switch_back], which answers whether the Game screen is current again. Otherwise,
+## or when going back fails, appends [code]"switched_main_screen"[/code] to
+## [param remediation], because the editor stays on the screen the capture switched to.
+static func finish_switch(restore_game: bool, remediation: Array[String], switch_back: Callable) -> void:
+	if restore_game and bool(switch_back.call()):
+		return
+	remediation.append("switched_main_screen")
 
 
 # -- Fresh frame --------------------------------------------------------------
@@ -323,9 +365,9 @@ static func _downscale_inline_png(image: Image, parameters: Dictionary) -> Dicti
 # stopping at the first usable frame. Each re-read follows a bounded fresh-frame
 # wait, so the frame returned is normally one drawn after the screen was shown; a
 # wait that lapses still re-reads, and may return the frame drawn before the screen
-# was hidden. Appends "switched_main_screen" to `remediation` when a switch
-# produced the frame. Returns the usable Image, or null when nothing composited
-# within the cap.
+# was hidden. finish_switch appends "switched_main_screen" to `remediation` when the
+# switch stays; a caller drops `remediation` when nothing composited. Returns the
+# usable Image, or null when nothing composited within the cap.
 static func _grab_usable_image(request: CaptureRequest, remediation: Array[String]) -> Image:
 	var shown_2d := _viewport_shown(EditorInterface.get_editor_viewport_2d())
 	var shown_3d := _viewport_shown(EditorInterface.get_editor_viewport_3d(0))
@@ -334,16 +376,19 @@ static func _grab_usable_image(request: CaptureRequest, remediation: Array[Strin
 	if image != null:
 		return image
 
-	# There is no getter for the current main screen, so the switch is one-way and
-	# disclosed via remediation rather than restored.
-	EditorInterface.set_main_screen_editor(screen)
+	# The switch is one-way and disclosed via remediation, except from a running game's
+	# screen on Godot 4.8. That answer has to be read before the switch changes it.
+	var restore_game := should_restore_game_screen(EditorInterface)
+	if can_request_switch(EditorInterface, screen):
+		EditorInterface.set_main_screen_editor(screen)
 	for _attempt in range(MAX_HEAL_FRAMES):
 		await await_fresh_frame()
 		image = _read_usable_frame(screen)
 		if image != null:
-			remediation.append("switched_main_screen")
-			return image
-	return null
+			break
+	var switch_back := func() -> bool: return Modules.EditorAccess.select_main_screen(SCREEN_GAME)
+	finish_switch(restore_game, remediation, switch_back)
+	return image
 
 
 # Read `screen`'s editor viewport (3D falls back to 2D when no 3D viewport

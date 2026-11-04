@@ -23,6 +23,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reserved for the self-update, and exports leave it out. A scene that references a file
   in that folder fails to load in the exported game.
 
+### Fixed
+
+- The update badge's Store button opens the Asset Store tab on Godot 4.8, where it opened
+  the browser before.
+- `editor_screenshot` during play on Godot 4.8 goes back to the Game screen after the capture,
+  where it left the embedded game hidden before. The game window is still hidden for part
+  of the call, 65-93 ms measured on Windows.
+
 ## [1.1.2] - 2026-10-29
 
 ### Fixed

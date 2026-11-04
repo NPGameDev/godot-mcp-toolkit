@@ -23,9 +23,9 @@ Detect the cause up front and act on it:
 - **A wrong editor main screen** (2x2 floor, *not* minimized) is **auto-healed** —
   switch to the 2D/3D main screen (keyed on the target node's type: 3D for a
   `Node3D`, else 2D), re-capture across a bounded frame loop, and disclose via a
-  success-side `remediation: ["switched_main_screen"]` field. There is no getter
-  for the prior main-screen name (`editor_interface.h`), so the switch is one-way;
-  the `remediation` field is the disclosure rather than a fragile restore.
+  success-side `remediation: ["switched_main_screen"]` field. Before Godot 4.8 there
+  is no getter for the prior main-screen name (`editor_interface.h`), so the switch
+  is one-way; the `remediation` field is the disclosure rather than a fragile restore.
 - **Unrecoverable states return first-class error codes** instead of a tiny/blank
   PNG: a minimized editor → `EDITOR_VIEWPORT_UNAVAILABLE`; a minimized game
   window → `RUNTIME_WINDOW_MINIMIZED`. Distinct codes (not one shared code)
@@ -262,9 +262,22 @@ one taken on the 3D screen returned the hidden 2D view's last frame too.
   neither.
 - **The switch is now routine.** The Script screen is where a user often sits
   while an agent works, so every capture taken from it now moves the editor to the
-  2D or 3D screen. It stays one-way, for the reason in the Decision: there is no
-  getter for the current main screen, so the previous screen is not restored, and
-  `remediation: ["switched_main_screen"]` discloses the switch.
+  2D or 3D screen. It stays one-way, for the reason in the Decision: before Godot
+  4.8 there is no getter for the current main screen, so the previous screen is not
+  restored, and `remediation: ["switched_main_screen"]` discloses the switch.
+- **A running game's screen is the one exception.** Godot 4.8 embeds a played game
+  in the Game screen by default, and a switch that stayed would hide the game. On
+  that version the Game screen can be read as a dock, so a capture during play goes
+  back to it after the capture and omits the `remediation` entry, keeping it only
+  when going back fails. Every other state, and every earlier version, stays one-way.
+- **What remains.** On Godot 4.8, a capture during embedded play with the Game screen
+  on show hides the game window for part of the call: 65-93 ms measured on Windows,
+  with 4.8-beta2. It also moves the editor's focus from the game view to the Game
+  tab's bar, so the game view's focus outline stays off until the mouse hovers over
+  it; the engine draws that outline only while the view holds the editor's focus
+  (`editor/run/embedded_process.cpp`). On Windows the OS foreground stayed on the
+  game, the game logged no focus change, a held key did not release, and a key press
+  reached the game with no hover. Other platforms were not driven.
 
 ## Known limitations
 

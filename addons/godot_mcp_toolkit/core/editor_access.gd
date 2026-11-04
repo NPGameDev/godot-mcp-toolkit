@@ -6,8 +6,21 @@ extends RefCounted
 ## the plugin needs so callers reach them through one place. Editor-only by design — only ever used
 ## from editor code via the hub const Modules.EditorAccess.
 
+## Where a main screen stands, as [method main_screen_state] reports it.
+enum MainScreenState {
+	## The lookup does not find it among the main-screen tabs: no such screen, its tab
+	## is out of them, or the lookup cannot tell, as on Godot 4.2.
+	ABSENT,
+	## The lookup finds it among the tabs, and another screen is the current one.
+	AVAILABLE,
+	## It is the current screen. An expanded bottom panel can still cover it.
+	SHOWN,
+}
+
 # The theme variation the editor gives its main-screen tab buttons.
 const _MAIN_SCREEN_BUTTON_VARIATION := &"MainScreenButton"
+# The theme variation of the tab container that holds the main screens as docks.
+const _MAIN_SCREEN_TABS_VARIATION := &"MainScreenContainer"
 
 ## Stores the EditorPlugin instance so that EditorUndoRedoManager is accessible
 ## on ALL Godot 4.x versions via plugin.get_undo_redo() — not just 4.4+ where
@@ -58,23 +71,19 @@ static func get_editor_theme() -> Theme:
 ## Switches the editor to the main screen named [param screen_name], the title of
 ## its tab in the editor's top bar.
 ##
-## The switch is asked for only when such a tab exists and is visible, because
-## [method EditorInterface.set_main_screen_editor] reports an unknown name as an
-## engine error. Returns [code]true[/code] when that screen is now shown: it already
+## The switch is asked for only when [method main_screen_state] finds the screen,
+## because [method EditorInterface.set_main_screen_editor] reports an unknown name as
+## an engine error. Returns [code]true[/code] when that screen is now current: it already
 ## was, or [signal EditorPlugin.main_screen_changed] named it during the switch.
-## Returns [code]false[/code] before [method set_plugin], when there is no such
-## visible tab, or when the editor did not confirm the switch.
-##
-## The tab is found by the [code]"MainScreenButton"[/code] theme variation, which
-## the editor gives its main-screen tabs from Godot 4.3 on. On 4.2 no tab carries
-## it, so this always returns [code]false[/code] there.
+## Returns [code]false[/code] before [method set_plugin], when the screen reads absent,
+## or when the editor did not confirm the switch.
 static func select_main_screen(screen_name: String) -> bool:
 	if _plugin == null:
 		return false
-	var tab_button := _find_main_screen_button(screen_name)
-	if tab_button == null:
+	var state := main_screen_state(EditorInterface, screen_name)
+	if state == MainScreenState.ABSENT:
 		return false
-	if tab_button.button_pressed:
+	if state == MainScreenState.SHOWN:
 		return true
 	var switched := [false]
 	var on_screen_changed := func(changed_name: String) -> void:
@@ -86,12 +95,52 @@ static func select_main_screen(screen_name: String) -> bool:
 	return switched[0]
 
 
+## Whether [param interface], the [EditorInterface] singleton or a stand-in, holds the
+## main screens as docks, as Godot 4.8 does and has
+## [code]EditorInterface.get_dock_by_name[/code] for. Earlier versions have tab buttons.
+static func main_screens_are_docks(interface: Object) -> bool:
+	return interface.has_method("get_dock_by_name")
+
+
+## Where the main screen titled [param screen_name] stands in [param interface], the
+## [EditorInterface] singleton or a stand-in with the methods it reads. Returns a
+## [enum MainScreenState] value.
+##
+## The tab buttons of versions before Godot 4.8 are found by the
+## [code]"MainScreenButton"[/code] theme variation the editor gives them from Godot 4.3
+## on. On 4.2 no tab carries it, so every screen reads absent there, though the editor
+## can switch to it.
+static func main_screen_state(interface: Object, screen_name: String) -> MainScreenState:
+	if main_screens_are_docks(interface):
+		return _main_screen_dock_state(interface, screen_name)
+	var tab_button := _find_main_screen_button(interface, screen_name)
+	if tab_button == null:
+		return MainScreenState.ABSENT
+	return MainScreenState.SHOWN if tab_button.button_pressed else MainScreenState.AVAILABLE
+
+
+# The lookup reads every dock, but set_main_screen_editor reads only the main-screen
+# tabs and reports anything else as an engine error, so a closed or floating dock
+# counts as absent. The title is the dock's untranslated name, which is also what
+# set_main_screen_editor and main_screen_changed use, so this holds in a translated
+# editor. The current tab decides shown, not visibility: an expanded bottom panel hides
+# every tab, and asking to switch to the current one changes nothing and confirms nothing.
+static func _main_screen_dock_state(interface: Object, screen_name: String) -> MainScreenState:
+	var dock: Control = interface.call("get_dock_by_name", screen_name)
+	if dock == null:
+		return MainScreenState.ABSENT
+	var tabs := dock.get_parent() as TabContainer
+	if tabs == null or tabs.theme_type_variation != _MAIN_SCREEN_TABS_VARIATION:
+		return MainScreenState.ABSENT
+	return MainScreenState.SHOWN if tabs.get_current_tab_control() == dock else MainScreenState.AVAILABLE
+
+
 # The editor's visible main-screen tab button titled screen_name, or null. The
 # button text is the main-screen plugin's untranslated name, which is also what
 # set_main_screen_editor matches, so the lookup holds in a translated editor. The
 # theme variation exists from Godot 4.3, so on 4.2 this finds nothing.
-static func _find_main_screen_button(screen_name: String) -> Button:
-	var base := EditorInterface.get_base_control()
+static func _find_main_screen_button(interface: Object, screen_name: String) -> Button:
+	var base: Control = interface.call("get_base_control")
 	if base == null:
 		return null
 	for node in base.find_children("*", "Button", true, false):
