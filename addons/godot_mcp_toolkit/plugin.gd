@@ -16,7 +16,7 @@ const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autol
 const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
 const UpdateApplier = Modules.UpdateApplier
-const PendingUpdate = Modules.PendingUpdate
+const UpdateJournal = Modules.UpdateJournal
 const UpdateInstaller = Modules.UpdateInstaller
 const UpdatePrompt := preload("res://addons/godot_mcp_toolkit/ui/update/update_prompt.gd")
 
@@ -209,7 +209,7 @@ func _enable_plugin() -> void:
 func _disable_plugin() -> void:
 	_disabling = true
 	# A disable removes the toolkit: drop a staged update with its files.
-	PendingUpdate.clear()
+	UpdateJournal.clear()
 
 	AutoloadRegistration.unregister(self)
 

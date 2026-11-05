@@ -18,7 +18,7 @@ static func run(testing: Testing) -> void:
 # since it decides whether the toolkit may change its own files; a missing key
 # reverts to ask.
 static func _test_install_mode_registration(testing: Testing) -> void:
-	testing.begin("Install mode registers as a basic three-value choice that defaults to ask")
+	testing.begin("Install mode registers as a basic choice that defaults to ask")
 	var had_key := ProjectSettings.has_setting(_INSTALL_MODE_KEY)
 	var previous_value: Variant = ProjectSettings.get_setting(_INSTALL_MODE_KEY) if had_key else null
 	SettingsRegistration.register_all()
@@ -28,8 +28,8 @@ static func _test_install_mode_registration(testing: Testing) -> void:
 
 	testing.eq(int(info.get("type", TYPE_NIL)), TYPE_STRING, "the mode is a String")
 	testing.eq(int(info.get("hint", -1)), PROPERTY_HINT_ENUM, "the inspector offers a fixed choice")
-	testing.eq(str(info.get("hint_string", "")), "manual,ask,automatic",
-			"the choice is manual, ask and automatic, in that order")
+	testing.eq(str(info.get("hint_string", "")), "manual,ask",
+			"the choice is manual and ask, in that order")
 	testing.eq(revert_value, "ask", "the default is ask")
 	testing.ok((int(info.get("usage", 0)) & PROPERTY_USAGE_EDITOR_BASIC_SETTING) != 0,
 			"the mode shows without the inspector's Advanced toggle")

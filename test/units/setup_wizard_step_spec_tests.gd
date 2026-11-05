@@ -62,7 +62,6 @@ const _UPDATE_INSTALL_TEXT := (
 	+ "It's saved in project.godot, so it applies to everyone who works on this "
 	+ "project.")
 const _ASK_DETAIL := "When a new version is out, the editor asks at its next start. One click installs it."
-const _AUTOMATIC_DETAIL := "New versions download in the background and install when you close the editor."
 const _MANUAL_DETAIL := "The dock only links to new versions."
 const _INSTALL_MODE_SETTING := "mcp_toolkit/updates/install_mode"
 const _DOCK_TEXT := (
@@ -196,8 +195,8 @@ static func _test_pin_choice_control(testing) -> void:
 	print("")
 
 
-# The install step's three modes, the stored one checked; a value that is not a mode
-# reads as manual, so nothing installs on a typo.
+# The install step's two modes, the stored one checked; a value that is not a mode,
+# the retired automatic among them, reads as manual, so nothing installs on a typo.
 static func _test_install_choice_control(testing) -> void:
 	testing.begin("Setup wizard: the install-choice control per mode")
 	var had_value: bool = ProjectSettings.has_setting(_INSTALL_MODE_SETTING)
@@ -214,15 +213,13 @@ static func _test_install_choice_control(testing) -> void:
 		["Label", "the step text"],
 		["CheckBox", "Ask before installing (recommended)"],
 		["Label", "      " + _ASK_DETAIL],
-		["CheckBox", "Install automatically"],
-		["Label", "      " + _AUTOMATIC_DETAIL],
 		["CheckBox", "Don't install"],
 		["Label", "      " + _MANUAL_DETAIL],
 	]
-	testing.eq(shapes["<null>"], {"rows": rows, "pressed": [true, false, false]}, "no setting → Ask checked")
-	testing.eq(shapes["automatic"], {"rows": rows, "pressed": [false, true, false]}, "automatic → Install automatically checked")
-	testing.eq(shapes["manual"], {"rows": rows, "pressed": [false, false, true]}, "manual → Don't install checked")
-	testing.eq(shapes["sometimes"], {"rows": rows, "pressed": [false, false, true]}, "an unknown value → Don't install checked")
+	testing.eq(shapes["<null>"], {"rows": rows, "pressed": [true, false]}, "no setting → Ask checked")
+	testing.eq(shapes["automatic"], {"rows": rows, "pressed": [false, true]}, "the retired automatic → Don't install checked")
+	testing.eq(shapes["manual"], {"rows": rows, "pressed": [false, true]}, "manual → Don't install checked")
+	testing.eq(shapes["sometimes"], {"rows": rows, "pressed": [false, true]}, "an unknown value → Don't install checked")
 	print("")
 
 

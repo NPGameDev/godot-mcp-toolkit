@@ -329,9 +329,9 @@ func _on_mcp_json_written(ok: bool, message: String, severity: int, tooltip: Str
 
 func _on_installer_state_changed() -> void:
 	refresh()
-	# Deferred, so a state the installer passes through on its way (a verified
-	# release the automatic mode downloads at once) is not announced. A release an
-	# earlier session found gets no toast: the editor-start window covers it.
+	# Deferred, so a state the installer passes through on its way is not announced.
+	# A release an earlier session found gets no toast: the editor-start window
+	# covers it.
 	call_deferred("_note_installable", _installer.found_this_session())
 
 

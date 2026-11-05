@@ -7,13 +7,12 @@ extends Node
 ## undismissed version it follows. When the install mode, the consent gate, the
 ## trusted keys and the install guards allow it, the installer downloads the release's
 ## manifest and signature and verifies them ([constant AVAILABLE]); then, on the
-## user's word or at once in the automatic mode, it downloads the zip, checks it
-## against the manifest and stages it ([constant READY]). The editor's next exit
-## applies it (see [code]update_applier.gd[/code]); nothing here writes the addon
-## folder.[br]
+## user's word, it downloads the zip, checks it against the manifest and stages it
+## ([constant READY]). The editor's next exit applies it (see
+## [code]update_applier.gd[/code]); nothing here writes the addon folder.[br]
 ## [br]
-## A verified manifest and a staged zip are kept in [code]user://[/code], so an editor
-## start finds them again without a request. Failures before the user asked are
+## A verified manifest and a staged zip are kept in the update folder (see
+## [code]update_folder.gd[/code]), so an editor start finds them again without a request. Failures before the user asked are
 ## silent, like the update check's; after a click on Update they show in the badge.
 ## Every URL is built from the version (see [code]release_assets.gd[/code]).
 
@@ -25,18 +24,19 @@ const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_c
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
-const InstallMode := preload("res://addons/godot_mcp_toolkit/update/install_mode.gd")
-const InstallGuards := preload("res://addons/godot_mcp_toolkit/update/install_guards.gd")
-const InstallPlan := preload("res://addons/godot_mcp_toolkit/update/install_plan.gd")
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/update/pending_update.gd")
-const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/update/release_assets.gd")
-const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/update/release_archive.gd")
-const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/update/release_file_list.gd")
-const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/update/release_manifest.gd")
-const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/update/release_signature.gd")
-const TrustedReleaseKeys := preload("res://addons/godot_mcp_toolkit/update/trusted_release_keys.gd")
-const FolderFiles := preload("res://addons/godot_mcp_toolkit/update/folder_files.gd")
-const UpdateApplier := preload("res://addons/godot_mcp_toolkit/update/update_applier.gd")
+const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
+const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
+const InstallPlan := preload("res://addons/godot_mcp_toolkit/self_update/install_plan.gd")
+const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
+const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
+const UpdateSettler := preload("res://addons/godot_mcp_toolkit/self_update/update_settler.gd")
+const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
+const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
+const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
+const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/release_manifest.gd")
+const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
+const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 
 ## [method state] values. [constant IDLE]: nothing to install, the badge links only.
@@ -64,9 +64,10 @@ const _WAITING_SIGNATURE := 2
 const _WAITING_ARCHIVE := 3
 
 var _runner: UpdateCheckRunner = null
-var _update_folder: String = PendingUpdate.FOLDER
-var _addon_folder: String = UpdateApplier.ADDON_FOLDER
-var _public_keys: Array = TrustedReleaseKeys.PUBLIC_KEYS
+var _update_folder: String = UpdateFolder.FOLDER
+var _addon_folder: String = InstallGuards.ADDON_FOLDER
+# What the constructor was given, in the names the settler and the trust chain read.
+var _options: Dictionary = {}
 # Where the install mode is read: [ProjectSettings] or a test's stand-in.
 var _project_settings: Object = ProjectSettings
 # The install guards' facts, or an empty dictionary to read them from the project.
@@ -88,11 +89,10 @@ var _manifest_bytes := PackedByteArray()
 var _notice := {}
 # Whether the running attempt came from a click, so its failure is shown.
 var _user_asked: bool = false
-# The version this session already tried to verify, and to download on its own in
-# the automatic mode, so a failure is not retried on every change the runner or
-# the project settings report. A click on Update always tries again.
+# The version this session already tried to verify, so a failure is not retried on
+# every change the runner or the project settings report. A click on Update always
+# tries again.
 var _verify_tried: String = ""
-var _download_tried: String = ""
 # The version this session verified or downloaded itself, as opposed to one picked up
 # from a record an earlier session left.
 var _found_version: String = ""
@@ -100,14 +100,15 @@ var _found_version: String = ""
 
 ## [param runner] is the update check runner whose version the installer follows.
 ## [param options] replaces what the installer reads, for tests:
-## [code]update_folder[/code], [code]addon_folder[/code], [code]public_keys[/code],
+## [code]update_folder[/code], [code]addon_folder[/code], [code]trust_document[/code] and
+## [code]trust_store[/code] (the shape [method ReleaseSignature.chain] takes),
 ## [code]guard_facts[/code] (the shape [method InstallGuards.facts] returns) and
 ## [code]project_settings[/code] (a stand-in [method InstallMode.read] accepts).
 func _init(runner: UpdateCheckRunner, options: Dictionary = {}) -> void:
 	_runner = runner
-	_update_folder = str(options.get("update_folder", PendingUpdate.FOLDER))
-	_addon_folder = str(options.get("addon_folder", UpdateApplier.ADDON_FOLDER))
-	_public_keys = options.get("public_keys", TrustedReleaseKeys.PUBLIC_KEYS)
+	_options = options
+	_update_folder = str(options.get("update_folder", UpdateFolder.FOLDER))
+	_addon_folder = str(options.get("addon_folder", InstallGuards.ADDON_FOLDER))
 	_guard_facts = options.get("guard_facts", {})
 	_project_settings = options.get("project_settings", ProjectSettings)
 
@@ -116,7 +117,7 @@ func _ready() -> void:
 	_http = HTTPRequest.new()
 	_http.request_completed.connect(_on_request_completed)
 	add_child(_http)
-	_read_last_apply()
+	_settle_last_update()
 	if _runner != null:
 		_runner.state_changed.connect(_evaluate)
 	ProjectSettings.settings_changed.connect(_evaluate)
@@ -169,7 +170,7 @@ func install_mode() -> String:
 
 ## The install log's path, as the user would open it.
 func log_path() -> String:
-	return PendingUpdate.log_path(_update_folder)
+	return UpdateFolder.log_path(_update_folder)
 
 
 ## Whether this session verified or downloaded [method version] itself, rather than
@@ -213,7 +214,7 @@ func install() -> void:
 ## a newer one.
 func discard() -> void:
 	_cancel()
-	PendingUpdate.clear(_update_folder)
+	UpdateJournal.clear(_update_folder)
 	if _runner != null and not _version.is_empty():
 		_runner.dismiss(_version)
 	_set_state(IDLE)
@@ -239,15 +240,15 @@ func _evaluate() -> void:
 	# A failure the user saw stays until they act on it.
 	if _state == FAILED and newer == _version:
 		return
-	var record := PendingUpdate.read(_update_folder)
+	var record := UpdateJournal.read(_update_folder)
 	if newer.is_empty() or not _install_allowed(newer):
-		if record["state"] == PendingUpdate.VERIFIED or record["state"] == PendingUpdate.STAGED:
-			PendingUpdate.clear(_update_folder)
+		if record["state"] == UpdateJournal.VERIFIED or record["state"] == UpdateJournal.STAGED:
+			UpdateJournal.clear(_update_folder)
 		_version = newer
 		_set_state(IDLE)
 		return
 	_version = newer
-	if record["version"] == newer and _restore_record(record):
+	if record["to"] == newer and _restore_record(record):
 		return
 	if _verify_tried != newer:
 		_start_verify(newer)
@@ -257,7 +258,7 @@ func _evaluate() -> void:
 # a guard is the reason.
 func _install_allowed(newer: String) -> bool:
 	_guard_note = ""
-	if not Consent.may_install_updates(install_mode()) or _public_keys.is_empty():
+	if not Consent.may_install_updates(install_mode()) or ReleaseSignature.chain(_options).release_keys().is_empty():
 		return false
 	if _runner.is_major():
 		return false
@@ -271,28 +272,27 @@ func _install_allowed(newer: String) -> bool:
 # Picks up a verified or staged record of the version the runner reports, after
 # checking its files again. Returns whether it did.
 func _restore_record(record: Dictionary) -> bool:
-	var version: String = record["version"]
-	var folder := PendingUpdate.version_folder(version, _update_folder)
+	var version: String = record["to"]
+	var folder := UpdateFolder.version_folder(version, _update_folder)
 	var manifest_bytes := FileAccess.get_file_as_bytes(folder.path_join(ReleaseAssets.manifest_name(version)))
 	var signature := FileAccess.get_file_as_bytes(folder.path_join(ReleaseAssets.signature_name(version)))
-	if not ReleaseSignature.is_valid(manifest_bytes, signature, _public_keys):
-		PendingUpdate.clear(_update_folder)
+	if not ReleaseSignature.is_trusted(manifest_bytes, signature, null, _options):
+		UpdateJournal.clear(_update_folder)
 		return false
 	var manifest := ReleaseManifest.parse(manifest_bytes.get_string_from_utf8(), version)
 	if not str(manifest["error"]).is_empty():
-		PendingUpdate.clear(_update_folder)
+		UpdateJournal.clear(_update_folder)
 		return false
 	_manifest = manifest
 	_manifest_bytes = manifest_bytes
 	_changed_files = record["changed_files"]
-	if record["state"] == PendingUpdate.STAGED:
+	if record["state"] == UpdateJournal.STAGED:
 		var archive := ProjectSettings.globalize_path(folder.path_join(ReleaseAssets.archive_name(version)))
 		if FolderFiles.hash_of_file(archive) == str(manifest["archive_sha256"]):
 			_set_state(READY)
 			return true
-		_write_record(PendingUpdate.VERIFIED)
+		_write_record(UpdateJournal.VERIFIED)
 	_set_state(AVAILABLE)
-	_continue_automatically()
 	return true
 
 
@@ -304,7 +304,7 @@ func _start_verify(version: String) -> void:
 
 
 func _download_archive() -> void:
-	var folder := ProjectSettings.globalize_path(PendingUpdate.version_folder(_version, _update_folder))
+	var folder := ProjectSettings.globalize_path(UpdateFolder.version_folder(_version, _update_folder))
 	DirAccess.make_dir_recursive_absolute(folder)
 	_set_state(DOWNLOADING)
 	_send(ReleaseAssets.archive_name(_version), _WAITING_ARCHIVE, int(_manifest["archive_size"]),
@@ -331,7 +331,7 @@ func _on_request_completed(
 		# Up to Godot 4.6, HTTPRequest leaves what it wrote of a failed download.
 		if waiting == _WAITING_ARCHIVE:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(
-					PendingUpdate.version_folder(_version, _update_folder).path_join(ReleaseAssets.archive_name(_version))))
+					UpdateFolder.version_folder(_version, _update_folder).path_join(ReleaseAssets.archive_name(_version))))
 		_fail("the download failed (result %d, HTTP %d)" % [result, response_code])
 		return
 	match waiting:
@@ -345,7 +345,7 @@ func _on_request_completed(
 
 
 func _on_signature(signature: PackedByteArray) -> void:
-	if not ReleaseSignature.is_valid(_manifest_bytes, signature, _public_keys):
+	if not ReleaseSignature.is_trusted(_manifest_bytes, signature, null, _options):
 		_fail("version %s is not signed by a trusted key" % _version)
 		return
 	var manifest := ReleaseManifest.parse(_manifest_bytes.get_string_from_utf8(), _version)
@@ -361,25 +361,23 @@ func _on_signature(signature: PackedByteArray) -> void:
 	_manifest = manifest
 	var addon := ProjectSettings.globalize_path(_addon_folder)
 	_changed_files = InstallPlan.plan(
-			ReleaseFileList.read_installed(addon), FolderFiles.hashes(addon), PackedStringArray())["changed"]
-	var folder := PendingUpdate.version_folder(_version, _update_folder)
+			ReleaseFileList.read_installed(addon), FolderFiles.hashes(addon))["changed"]
+	var folder := UpdateFolder.version_folder(_version, _update_folder)
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(folder))
 	if not FolderFiles.write_checked(ProjectSettings.globalize_path(folder.path_join(ReleaseAssets.manifest_name(_version))), _manifest_bytes) \
 			or not FolderFiles.write_checked(ProjectSettings.globalize_path(folder.path_join(ReleaseAssets.signature_name(_version))), signature):
 		_fail("could not keep the verified manifest")
 		return
-	_write_record(PendingUpdate.VERIFIED)
+	_write_record(UpdateJournal.VERIFIED)
 	_found_version = _version
 	_set_state(AVAILABLE)
 	if _user_asked:
 		_download_archive()
-	else:
-		_continue_automatically()
 
 
 func _on_archive() -> void:
 	var archive := ProjectSettings.globalize_path(
-			PendingUpdate.version_folder(_version, _update_folder).path_join(ReleaseAssets.archive_name(_version)))
+			UpdateFolder.version_folder(_version, _update_folder).path_join(ReleaseAssets.archive_name(_version)))
 	if FolderFiles.hash_of_file(archive) != str(_manifest["archive_sha256"]):
 		DirAccess.remove_absolute(archive)
 		_fail("the downloaded archive does not match the manifest")
@@ -389,36 +387,26 @@ func _on_archive() -> void:
 		DirAccess.remove_absolute(archive)
 		_fail(str(layout["error"]))
 		return
-	_write_record(PendingUpdate.STAGED)
+	_write_record(UpdateJournal.STAGED)
 	_user_asked = false
 	_found_version = _version
 	_set_state(READY)
 
 
-# In the automatic mode a verified release downloads at once, once per session,
-# unless installed files were changed by hand: then the user decides, as in the ask
-# mode.
-func _continue_automatically() -> void:
-	if install_mode() != InstallMode.AUTOMATIC or not _changed_files.is_empty() or _download_tried == _version:
-		return
-	_download_tried = _version
-	_download_archive()
-
-
 func _write_record(state: String) -> void:
-	PendingUpdate.write({
+	UpdateJournal.write({
 		"state": state,
-		"version": _version,
-		"from_version": _installed_version(),
+		"to": _version,
+		"from": _installed_version(),
 		"compatible_server": VersionUtils.COMPATIBLE_SERVER_VERSION,
 		"changed_files": _changed_files,
 	}, _update_folder)
-	PendingUpdate.log_line("%s %s" % [state, _version], _update_folder)
+	UpdateFolder.log_line("%s %s" % [state, _version], _update_folder)
 
 
 # A failure the user asked to see goes to FAILED; any other leaves the badge as links.
 func _fail(reason: String) -> void:
-	PendingUpdate.log_line("%s: %s" % [_version, reason], _update_folder)
+	UpdateFolder.log_line("%s: %s" % [_version, reason], _update_folder)
 	if _user_asked:
 		_user_asked = false
 		_error = reason
@@ -435,26 +423,21 @@ func _cancel() -> void:
 	_user_asked = false
 
 
-# Reads what the editor's last exit did with a staged update, turns it into the
-# notice, and deletes the files it no longer needs.
-func _read_last_apply() -> void:
-	var record := PendingUpdate.read(_update_folder)
-	var state: String = record["state"]
-	if state != PendingUpdate.APPLIED and state != PendingUpdate.ROLLED_BACK and state != PendingUpdate.NOT_APPLIED:
+# Settles what the editor's last exit left and turns a result worth showing into the
+# notice.
+func _settle_last_update() -> void:
+	var settled := UpdateSettler.settle(_options)
+	var report := str(settled["report"])
+	if report != UpdateSettler.UPDATED and report != UpdateSettler.FAILED:
 		return
-	var running := _installed_version()
-	var updated: bool = state == PendingUpdate.APPLIED and running == str(record["version"])
+	var updated := report == UpdateSettler.UPDATED
 	_notice = {
 		"kind": NOTICE_UPDATED if updated else NOTICE_FAILED,
-		"version": record["version"],
-		"from_version": record["from_version"],
-		"reason": record["reason"] if not updated else "",
-		"server_changed": updated and record["compatible_server"] != VersionUtils.COMPATIBLE_SERVER_VERSION,
+		"version": settled["to"],
+		"from_version": settled["from"],
+		"reason": settled["reason"],
+		"server_changed": updated and settled["compatible_server"] != VersionUtils.COMPATIBLE_SERVER_VERSION,
 	}
-	if state == PendingUpdate.APPLIED and not updated:
-		_notice["reason"] = "the editor started version %s" % running
-	# A rollback that could not restore every file names the backup; keep it then.
-	PendingUpdate.clear(_update_folder, str(record["reason"]).contains("copy them back"))
 
 
 # The version in the addon folder's plugin.cfg: the running toolkit's, since the

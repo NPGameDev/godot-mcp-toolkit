@@ -7,9 +7,10 @@ extends RefCounted
 
 const Testing := preload("res://test/units/testing.gd")
 const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
-const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/update/update_installer.gd")
+const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
-const PendingUpdate := preload("res://addons/godot_mcp_toolkit/update/pending_update.gd")
+const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
+const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
@@ -57,7 +58,6 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_notice_offers_mcp_json_update(testing, tree)
 	_test_notice_failed(testing, tree)
 	await _test_toast_once_for_verified(testing, tree)
-	await _test_toast_for_staged_in_automatic(testing, tree)
 	await _test_no_toast_for_shown_release(testing, tree)
 	await _test_no_toast_for_restored_release(testing, tree)
 
@@ -126,7 +126,7 @@ static func _restore_host(previous: String) -> void:
 static func _test_available(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a verified release offers Update")
 	var world := UpdateFixtures.begin_world("badge_available", "1.9.0", "ask", "1.1.0")
-	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), PendingUpdate.VERIFIED)
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED)
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
 	var visible := (badge as Control).visible
@@ -147,10 +147,10 @@ static func _test_available(testing: Testing, tree: SceneTree) -> void:
 static func _test_available_with_changed_files(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: changed files are named before installing")
 	var world := UpdateFixtures.begin_world("badge_changed", "1.9.0", "ask", "1.1.0")
-	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), PendingUpdate.VERIFIED)
-	var record := PendingUpdate.read(world["updates"])
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED)
+	var record := UpdateJournal.read(world["updates"])
 	record["changed_files"] = PackedStringArray(["core/a.gd"])
-	PendingUpdate.write(record, world["updates"])
+	UpdateJournal.write(record, world["updates"])
 	var nodes := _start(world, tree)
 	var status := _text(nodes["badge"], "Status")
 	_end(world, nodes)
@@ -162,7 +162,7 @@ static func _test_available_with_changed_files(testing: Testing, tree: SceneTree
 static func _test_close_hides_version(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: closing the version notice hides it until a newer version")
 	var world := UpdateFixtures.begin_world("badge_close", "1.9.0", "ask", "1.1.0")
-	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), PendingUpdate.VERIFIED)
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED)
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
 	_press(badge, "DismissButton")
@@ -178,7 +178,7 @@ static func _test_update_shows_download(testing: Testing, tree: SceneTree) -> vo
 	testing.begin("Update badge: pressing Update shows the download")
 	var previous_host := _set_host(_UNREACHABLE_HOST)
 	var world := UpdateFixtures.begin_world("badge_download", "1.9.0", "ask", "1.1.0")
-	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), PendingUpdate.VERIFIED)
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED)
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
 	_press(badge, "UpdateButton")
@@ -195,7 +195,7 @@ static func _test_failed_download_offers_retry(testing: Testing, tree: SceneTree
 	testing.begin("Update badge: a failed download offers Try again")
 	var previous_host := _set_host(_UNREACHABLE_HOST)
 	var world := UpdateFixtures.begin_world("badge_retry", "1.9.0", "ask", "1.1.0")
-	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), PendingUpdate.VERIFIED)
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED)
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
 	var installer: UpdateInstaller = nodes["installer"]
@@ -242,7 +242,7 @@ static func _test_close_gives_up_staged(testing: Testing, tree: SceneTree) -> vo
 	var badge: Node = nodes["badge"]
 	_press(badge, "DismissButton")
 	var state := (nodes["installer"] as UpdateInstaller).state()
-	var record_state: String = PendingUpdate.read(world["updates"])["state"]
+	var record_state: String = UpdateJournal.read(world["updates"])["state"]
 	var visible := (badge as Control).visible
 	_end(world, nodes)
 	testing.eq(state, "idle", "close → the installer gives the release up")
@@ -256,7 +256,7 @@ static func _test_close_gives_up_staged(testing: Testing, tree: SceneTree) -> vo
 static func _test_notice_updated(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: the notice after an install")
 	var world := UpdateFixtures.begin_world("badge_updated", "1.1.0", "ask", "1.9.0")
-	PendingUpdate.write({"state": "applied", "version": "1.9.0", "from_version": "1.1.0",
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
 			"compatible_server": VersionUtils.COMPATIBLE_SERVER_VERSION}, world["updates"])
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
@@ -281,7 +281,7 @@ static func _test_notice_updated(testing: Testing, tree: SceneTree) -> void:
 static func _test_notice_offers_mcp_json_update(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: the notice offers to update .mcp.json while the entry it wrote is outdated")
 	var world := UpdateFixtures.begin_world("badge_server", "1.1.0", "ask", "1.9.0")
-	PendingUpdate.write({"state": "applied", "version": "1.9.0", "from_version": "1.1.0",
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
 			"compatible_server": "0.0.1"}, world["updates"])
 	var write_flow := _WriteFlowStandIn.new()
 	var nodes := _start(world, tree, write_flow)
@@ -294,7 +294,7 @@ static func _test_notice_offers_mcp_json_update(testing: Testing, tree: SceneTre
 	_end(world, nodes)
 
 	world = UpdateFixtures.begin_world("badge_server_current", "1.1.0", "ask", "1.9.0")
-	PendingUpdate.write({"state": "applied", "version": "1.9.0", "from_version": "1.1.0",
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
 			"compatible_server": "0.0.1"}, world["updates"])
 	var current_flow := _WriteFlowStandIn.new()
 	current_flow.other_server = false
@@ -320,7 +320,7 @@ static func _test_notice_offers_mcp_json_update(testing: Testing, tree: SceneTre
 static func _test_notice_failed(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: the notice after a failed install")
 	var world := UpdateFixtures.begin_world("badge_failed", "1.1.0", "ask", "1.1.0")
-	PendingUpdate.write({"state": "rolled_back", "version": "1.9.0", "from_version": "1.1.0",
+	UpdateJournal.write({"state": "not_applied", "to": "1.9.0", "from": "1.1.0",
 			"reason": "could not write core/a.gd"}, world["updates"])
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
@@ -329,7 +329,7 @@ static func _test_notice_failed(testing: Testing, tree: SceneTree) -> void:
 	var link_shown := _shown(badge, "GitHubButton")
 	_end(world, nodes)
 	testing.eq(title, "Godot MCP Toolkit 1.9.0 was not installed.", "the title names the version")
-	testing.eq(status, "Could not write core/a.gd. Version 1.1.0 is still installed. Install log: %s" % PendingUpdate.log_path(world["updates"]),
+	testing.eq(status, "Could not write core/a.gd. Version 1.1.0 is still installed. Install log: %s" % UpdateFolder.log_path(world["updates"]),
 			"the status line gives the reason as a sentence, the version kept and the log")
 	testing.ok(not link_shown, "no release notes link")
 	print("")
@@ -371,31 +371,10 @@ static func _test_toast_once_for_verified(testing: Testing, tree: SceneTree) -> 
 	print("")
 
 
-# The automatic mode downloads a verified release at once, so the toast says the
-# editor's exit installs it, and the verified state it passed through gets none.
-static func _test_toast_for_staged_in_automatic(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("Update badge: a release staged during the session is announced once staged")
-	var server := UpdateFixtures.LoopbackReleaseServer.new(
-			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
-	var previous_host := _set_host(server.host())
-	var world := UpdateFixtures.begin_world("badge_toast_staged", "1.9.0", "automatic", "1.1.0")
-	var nodes := _start(world, tree)
-	var installer: UpdateInstaller = nodes["installer"]
-	var frames := await _serve_until(server, installer, "ready", tree)
-	var toasts: Array = (nodes["toasts"] as _ToastLog).messages.duplicate()
-	_end(world, nodes)
-	server.stop()
-	_restore_host(previous_host)
-	testing.ok(frames < 1200, "the release is staged within 1200 frames")
-	testing.eq(toasts, ["Godot MCP Toolkit 1.9.0 installs when you close the editor."],
-			"the automatic mode's download → one toast saying the editor's exit installs it")
-	print("")
-
-
 static func _test_no_toast_for_shown_release(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a release already installable when the badge appears gets no toast")
 	var world := UpdateFixtures.begin_world("badge_toast_shown", "1.9.0", "ask", "1.1.0")
-	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), PendingUpdate.VERIFIED)
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED)
 	var nodes := _start(world, tree)
 	await tree.process_frame
 	(nodes["installer"] as UpdateInstaller).state_changed.emit()
@@ -412,7 +391,7 @@ static func _test_no_toast_for_shown_release(testing: Testing, tree: SceneTree) 
 static func _test_no_toast_for_restored_release(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a release an earlier session found gets no toast")
 	var world := UpdateFixtures.begin_world("badge_toast_restored", "1.9.0", "ask", "1.1.0")
-	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), PendingUpdate.VERIFIED)
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED)
 	var nodes := _start_badge_first(world, tree)
 	await tree.process_frame
 	var state := (nodes["installer"] as UpdateInstaller).state()

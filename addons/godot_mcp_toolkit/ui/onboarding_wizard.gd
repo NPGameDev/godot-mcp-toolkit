@@ -303,8 +303,8 @@ func _add_choice(box: VBoxContainer, group: ButtonGroup, label: String, descript
 	return choice
 
 
-# The install step's body: its text, wrapped, then the three install modes as
-# exclusive check boxes, preselected from the project setting.
+# The install step's body: its text, wrapped, then the install modes as exclusive
+# check boxes, preselected from the project setting.
 func _build_install_choice(text: String) -> VBoxContainer:
 	var box := VBoxContainer.new()
 	var intro := Label.new()
@@ -315,8 +315,6 @@ func _build_install_choice(text: String) -> VBoxContainer:
 	var group := ButtonGroup.new()
 	_install_boxes[InstallMode.ASK] = _add_choice(box, group, "Ask before installing (recommended)",
 			"When a new version is out, the editor asks at its next start. One click installs it.")
-	_install_boxes[InstallMode.AUTOMATIC] = _add_choice(box, group, "Install automatically",
-			"New versions download in the background and install when you close the editor.")
 	_install_boxes[InstallMode.MANUAL] = _add_choice(box, group, "Don't install",
 			"The dock only links to new versions.")
 	var current := InstallMode.read(ProjectSettings)

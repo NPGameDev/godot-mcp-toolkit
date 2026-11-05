@@ -288,7 +288,7 @@ static func _test_install_consent_gate(testing) -> void:
 						func() -> bool: return check_allowed,
 						func(step_id: StringName) -> bool:
 							return check_allowed if step_id == &"updates" else install_seen and step_id == &"update_install")
-				var expected: bool = check_allowed and install_seen and (mode == "ask" or mode == "automatic")
+				var expected: bool = check_allowed and install_seen and mode == "ask"
 				testing.eq(Consent.may_install_updates(mode), expected,
 						"check %s, install step %s, mode %s" % [
 							"allowed" if check_allowed else "off", "seen" if install_seen else "unseen", mode])

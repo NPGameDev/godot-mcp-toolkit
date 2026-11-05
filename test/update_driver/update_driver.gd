@@ -1,13 +1,13 @@
 @tool
 extends EditorPlugin
 ## Test-only editor plugin for scripts/test_framework/update_flow.sh, copied into the
-## flow's scratch projects. It waits until the toolkit's pending update record reaches
+## flow's scratch projects. It waits until the toolkit's update journal reaches
 ## the state UPDATE_DRIVER_WAIT_FOR names, then quits the editor so the toolkit's exit
 ## applies the update; with UPDATE_DRIVER_DISABLE=1 it disables the toolkit first. It
 ## gives up after UPDATE_DRIVER_TIMEOUT seconds (60 by default). Without
 ## UPDATE_DRIVER_WAIT_FOR it does nothing.
 
-const _RECORD := "user://addons/godot_mcp_toolkit/update/pending_update.json"
+const _RECORD := "res://addons/.godot_mcp_toolkit_update/journal.json"
 
 var _wait_for: String = ""
 var _deadline_msec: int = 0

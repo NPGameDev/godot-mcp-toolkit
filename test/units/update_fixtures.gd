@@ -11,10 +11,10 @@ const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
-const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/update/update_installer.gd")
+const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
-const InstallMode := preload("res://addons/godot_mcp_toolkit/update/install_mode.gd")
+const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
 
 ## The journal the 1.2.0 toolkit writes. 1.2.0's code stays on users' machines and writes
 ## this for a later release to read, so this text never changes: if a test against it
@@ -283,6 +283,9 @@ static func begin_world(purpose: String, latest: String, mode: String, installed
 	var addon := scratch(purpose + "_addon")
 	var updates := scratch(purpose + "_updates")
 	make_addon(addon, installed, {"core/a.gd": "a"})
+	# Loaded, not preloaded: trust_fixtures.gd preloads this file.
+	var trust_fixtures: GDScript = load("res://test/units/trust_fixtures.gd")
+	var trust_document: String = trust_fixtures.call("first_document", [key()])
 	return {
 		"cache_path": cache_path,
 		"saved_cache": saved_cache,
@@ -291,7 +294,8 @@ static func begin_world(purpose: String, latest: String, mode: String, installed
 		"options": {
 			"addon_folder": addon,
 			"update_folder": updates,
-			"public_keys": [public_pem(key())],
+			"trust_document": trust_document,
+			"trust_store": scratch(purpose + "_trust"),
 			"guard_facts": {"toolkit_repository": false},
 			"project_settings": ModeSettings.new(mode),
 		},
@@ -314,6 +318,7 @@ static func end_world(world: Dictionary, nodes: Dictionary) -> void:
 	Consent.reset_readers()
 	remove(str(world["addon"]))
 	remove(str(world["updates"]))
+	remove(str((world["options"] as Dictionary)["trust_store"]))
 	var cache_path: String = world["cache_path"]
 	if world["saved_cache"] == null:
 		DirAccess.remove_absolute(cache_path)
