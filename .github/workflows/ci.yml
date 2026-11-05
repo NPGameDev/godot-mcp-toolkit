@@ -173,6 +173,8 @@ jobs:
       # Replaces the split --check-only / editor paths. --check-only was a
       # no-op without --script (engine source audit, 2026-05-27).
       - name: GDScript validation
+        env:
+          GODOT_QUIT_AFTER: ${{ matrix.godot-version == '4.3.0' && '1' || '30' }}
         run: bash scripts/test_framework/validate_gdscript.sh
 
   # Unit-execution leg — a real execution signal across ALL supported versions
