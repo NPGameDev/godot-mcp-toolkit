@@ -36,15 +36,17 @@ GODOT_BIN=/path/to/godot-editor-binary \
 
 The script loads the full editor headless and compiles every project script, so
 it catches cross-file errors (`class_name` resolution, coroutine propagation,
-type mismatches) that a per-file syntax check cannot. It times itself out, so a
-hung editor will not hang your terminal.
+type mismatches) that a per-file syntax check cannot. On a tree with no class
+cache (a fresh clone, or after deleting `.godot/`) it first boots the editor to
+write the cache, and exits 2 if that fails. It times itself out, so a hung editor
+will not hang your terminal.
 
 Two rules:
 
 - **The first argument is the Godot binary, not a file to check.** If you pass a
-  `.gd` path as the first argument, no Godot runs and the script reports a
-  meaningless "PASS". Pass the binary (or set `GODOT_BIN`); the script always
-  validates the whole project.
+  `.gd` path as the first argument, Godot cannot start and the script exits 2.
+  Pass the binary (or set `GODOT_BIN`); the script always validates the whole
+  project.
 - **One instance at a time.** Two Godot processes opening the same project fight
   over the project lock (reliably so on Windows). Never run two validations, or
   a validation and a unit run, simultaneously.
@@ -62,9 +64,9 @@ GODOT_BIN=/path/to/godot-editor-binary \
 The runner executes every test group and reports per-group results. It needs a
 **warm global class cache**: the bare `--script` runner does not scan the
 project, so on a fresh clone (or after deleting `.godot/`) class names fail to
-resolve with parse errors. Run `validate_gdscript.sh` first — its editor pass
-scans the project and warms the cache — or open the editor once. Same
-one-process-at-a-time rule as above.
+resolve with parse errors. Run `validate_gdscript.sh` first — it writes the cache
+when the cache is missing — or open the editor once. Same one-process-at-a-time
+rule as above.
 
 ## Tool sweep (interactive, editor required)
 

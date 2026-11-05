@@ -78,6 +78,11 @@ jobs:
       - name: Trust documents script test
         run: bash scripts/test_trust_documents.sh
 
+      # validate_gdscript.sh's warm-up and its setup-error exits, against a stub
+      # binary (no Godot, no network).
+      - name: Validator script test
+        run: bash scripts/test_validator.sh
+
   # The same tests on the tools macOS ships: LibreSSL and BSD's. They live in /usr/bin,
   # and an earlier PATH entry can hold Homebrew's OpenSSL instead, so the job puts
   # /usr/bin first and fails unless openssl really is LibreSSL. It runs the check's zip
@@ -140,6 +145,8 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
+    env:
+      GODOT_QUIT_AFTER: ${{ matrix.quit-after }}
     strategy:
       fail-fast: false
       matrix:
@@ -156,8 +163,12 @@ jobs:
           #     signal is the unit-tests job below (which warms the class cache
           #     and runs the suite). See CLAUDE.md and COMPATIBILITY.md.
           #   • 4.7.0 — the ceiling.
+          # On 4.3.0, one frame quits pass 1 before the threaded scan writes the class
+          # cache, so this row fails every run if the validator's warm-up goes away.
           - godot-version: "4.3.0"
+            quit-after: "1"
           - godot-version: "4.7.0"
+            quit-after: "30"
     name: "Static validation (GDScript editor · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v7
@@ -169,10 +180,14 @@ jobs:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
 
-      # Centralized validation: editor-headless + per-file script runner.
+      # Centralized validation: the class-cache warm-up on a cold tree, then
+      # editor-headless + per-file script runner.
       # Replaces the split --check-only / editor paths. --check-only was a
       # no-op without --script (engine source audit, 2026-05-27).
       - name: GDScript validation
+        # Fuse: about 375s if the warm-up (240s plus teardown) and both passes (60s
+        # each) all run out — at 10 min it is hung, not slow.
+        timeout-minutes: 10
         run: bash scripts/test_framework/validate_gdscript.sh
 
   # Unit-execution leg — a real execution signal across ALL supported versions

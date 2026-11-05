@@ -7,12 +7,19 @@
 # This script uses editor-headless mode instead, which loads the full
 # editor, compiles all project scripts, and surfaces real errors.
 #
+# A tree with no class cache is warmed first, by the sibling run_units_cold.sh.
+# The per-file pass needs its script in the working directory, so another
+# project's root runs the editor pass alone and says so.
+#
 # Usage: ./scripts/test_framework/validate_gdscript.sh [godot-binary-path]
-# Exit 0 = clean, Exit 1 = script errors found, Exit 2 = setup error
+# The first argument is the binary; a .gd path there exits 2.
+# Exit 0 = clean, Exit 1 = script errors found, Exit 2 = setup error: the warm-up
+# failed, Godot never started, or the per-file pass reported no verdict.
 #
 # Environment variables:
 #   GODOT_BIN              - Godot binary (default: first arg, or "godot")
-#   GODOT_VALIDATE_TIMEOUT - timeout in seconds (default: 60)
+#   GODOT_VALIDATE_TIMEOUT - timeout per pass in seconds (default: 60); the warm-up
+#                            has its own bound
 #   GODOT_QUIT_AFTER       - editor frames before quit (default: 30)
 #   SKIP_SCRIPT_RUNNER     - set to 1 to skip the per-file loader pass
 
@@ -22,6 +29,10 @@ GODOT_BIN="${GODOT_BIN:-${1:-godot}}"
 GODOT_VALIDATE_TIMEOUT="${GODOT_VALIDATE_TIMEOUT:-60}"
 GODOT_QUIT_AFTER="${GODOT_QUIT_AFTER:-30}"
 SKIP_SCRIPT_RUNNER="${SKIP_SCRIPT_RUNNER:-0}"
+# From this script's own path: extension authors run it from their project's root.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CACHE_FILE=".godot/global_script_class_cache.cfg"
+PASS2_SCRIPT="scripts/test_framework/check_all_scripts.gd"
 
 # ---------------------------------------------------------------------------
 # Centralized error patterns — update this single line when Godot changes
@@ -42,6 +53,19 @@ fi
 
 ERRORS_FOUND=0
 
+# --- Warm-up: the class cache -----------------------------------------------
+# Godot 4.3 writes the cache only when its threaded scan ends, so pass 1's
+# frame-count quit can beat the write, and pass 2 then fails on every class_name.
+# The warm-up polls for the file instead. It runs on any version with no cache,
+# and a stale cache needs nothing: pass 1's scan picks up new classes.
+if [ ! -f "$CACHE_FILE" ]; then
+  if ! GODOT_BIN="$GODOT_BIN" GODOT_WARM_ONLY=1 bash "$SCRIPT_DIR/run_units_cold.sh"; then
+    echo "ERROR: the class-cache warm-up failed, so nothing was validated" >&2
+    exit 2
+  fi
+  echo ""
+fi
+
 # --- Pass 1: Editor-headless validation -----------------------------------
 echo "=== Pass 1: Editor-headless validation ==="
 echo "  Binary:     $GODOT_BIN"
@@ -49,10 +73,21 @@ echo "  Timeout:    ${GODOT_VALIDATE_TIMEOUT}s"
 echo "  Quit-after: $GODOT_QUIT_AFTER frames"
 echo ""
 
+PASS1_EXIT=0
 PASS1_OUTPUT=$(timeout "$GODOT_VALIDATE_TIMEOUT" \
-  "$GODOT_BIN" --headless --editor --quit-after "$GODOT_QUIT_AFTER" 2>&1) || true
+  "$GODOT_BIN" --headless --editor --quit-after "$GODOT_QUIT_AFTER" 2>&1) || PASS1_EXIT=$?
 
-if echo "$PASS1_OUTPUT" | grep -qE "$ERROR_PATTERN"; then
+echo "Pass 1 exit code: $PASS1_EXIT"
+# 126 and 127 mean Godot never started. Every other code stays unenforced, since
+# 134 and 139 appear on good runs: the output below is the verdict.
+if [ "$PASS1_EXIT" -eq 126 ] || [ "$PASS1_EXIT" -eq 127 ]; then
+  echo "ERROR: Godot never started: '$GODOT_BIN' is not a binary that can run" >&2
+  exit 2
+fi
+
+# A here-string, not a pipe: grep -q stops at its first match, which can kill the
+# writer of a large output, and pipefail then reads that as no match.
+if grep -qE "$ERROR_PATTERN" <<<"$PASS1_OUTPUT"; then
   echo "FAIL — GDScript errors detected in editor-headless output:"
   echo ""
   # Show 3 lines of context after each match to capture file paths
@@ -64,29 +99,38 @@ else
 fi
 
 # --- Pass 2: Per-file script runner (optional) ----------------------------
-if [ "$SKIP_SCRIPT_RUNNER" != "1" ]; then
+if [ "$SKIP_SCRIPT_RUNNER" = "1" ]; then
+  echo ""
+  echo "=== Pass 2: Skipped (SKIP_SCRIPT_RUNNER=1) ==="
+elif [ ! -f "$PASS2_SCRIPT" ]; then
+  echo ""
+  echo "=== Pass 2: Skipped ($PASS2_SCRIPT is not in this project) ==="
+else
   echo ""
   echo "=== Pass 2: Per-file script runner ==="
 
   PASS2_OUTPUT=$(timeout "$GODOT_VALIDATE_TIMEOUT" \
-    "$GODOT_BIN" --headless --script \
-    scripts/test_framework/check_all_scripts.gd 2>&1) || true
+    "$GODOT_BIN" --headless --script "$PASS2_SCRIPT" 2>&1) || true
 
   echo "$PASS2_OUTPUT"
 
+  # The script always ends on one of these two lines, so neither means it crashed,
+  # hung or never loaded. No retry: a retry would hide a real crash.
+  if ! grep -qE "^(PASS|FAIL):" <<<"$PASS2_OUTPUT"; then
+    echo "ERROR: pass 2 reported neither PASS: nor FAIL:, so it reached no verdict" >&2
+    exit 2
+  fi
+
   # Check both the script runner's own FAIL line and the centralized error
   # patterns in Godot's output (belt-and-suspenders).
-  if echo "$PASS2_OUTPUT" | grep -q "^FAIL:"; then
+  if grep -q "^FAIL:" <<<"$PASS2_OUTPUT"; then
     ERRORS_FOUND=1
-  elif echo "$PASS2_OUTPUT" | grep -qE "$ERROR_PATTERN"; then
+  elif grep -qE "$ERROR_PATTERN" <<<"$PASS2_OUTPUT"; then
     echo ""
     echo "FAIL — GDScript errors detected in script runner output:"
     echo "$PASS2_OUTPUT" | grep -E -A 3 "$ERROR_PATTERN"
     ERRORS_FOUND=1
   fi
-else
-  echo ""
-  echo "=== Pass 2: Skipped (SKIP_SCRIPT_RUNNER=1) ==="
 fi
 
 # --- Result ---------------------------------------------------------------
