@@ -159,3 +159,5 @@ func _disconnect_session() -> void:
 		_session.breaked.disconnect(_session_tracker.on_session_breaked)
 	if _session.continued.is_connected(_session_tracker.on_session_continued):
 		_session.continued.disconnect(_session_tracker.on_session_continued)
+
+func seeded_parse_error(:

@@ -12,10 +12,9 @@
 #
 # The warm-up gates on the ARTIFACT, not on frames: the editor boot runs in
 # the background and the script polls for the cache file, then kills the
-# editor. A frame-count quit (--quit-after) races the threaded scan — on slow
-# runner disks the editor can exit before the cache write lands (observed CI
-# flake), while fast local disks always win the race. Polling for the file is
-# deterministic on both.
+# editor. A frame-count quit (--quit-after) races the threaded scan — the editor
+# can exit before the cache write lands, on a CI runner or a local disk. Polling
+# for the file is deterministic on both.
 #
 # The warm-up must NOT use --import: on Godot 4.2.0, --import hangs
 # indefinitely after the autoload load failure and never writes the class
@@ -32,9 +31,9 @@
 # the runner can still print its passing banner. The warm-up boot's exit code
 # is unreliable (benign headless warnings), so it is never consulted.
 #
-# Same script runs locally (in a 4.2 Linux container) and in CI (composite
-# action + the cross-version warm-up step), GODOT_BIN-parameterized exactly
-# like validate_gdscript.sh — zero drift.
+# Same script runs locally (in a 4.2 Linux container) and in CI, GODOT_BIN-
+# parameterized exactly like validate_gdscript.sh — zero drift. CI's warm-up
+# steps and validate_gdscript.sh's cold-tree warm-up call it with GODOT_WARM_ONLY.
 #
 # Usage: ./scripts/test_framework/run_units_cold.sh [godot-binary-path]
 # Exit 0 = all units passed, 1 = unit failures or a runtime script error,
@@ -43,7 +42,7 @@
 # Environment variables:
 #   GODOT_BIN       - Godot binary (default: first arg, or "godot")
 #   GODOT_WARM_ONLY - set to 1 to exit 0 right after a successful warm-up
-#                     (cache written, no unit run) — lets workflows reuse the
+#                     (cache written, no unit run) — lets other callers reuse the
 #                     warm-up logic without duplicating it
 #   CI              - when unset (a developer machine), the unit run gets
 #                     GODOT_MCP_RUNTIME=0 so it stays off the runtime channel
@@ -79,9 +78,11 @@ CACHE_FILE=".godot/global_script_class_cache.cfg"
 # threaded scan) with a process-death short-circuit → on death or timeout, warn,
 # dump the log tail, kill the remnant, and retry with a fresh log.
 # INVARIANT: MAX_BOOT_ATTEMPTS x BOOT_POLL_SECS + teardown overhead must stay
-# under the CI caller's 300s warm-up-step fuse (3 x 80s = 240s today), so an
-# all-attempts-fail still exits cleanly with forensics rather than being
-# fuse-killed — retune both together, never one alone. Teardown overhead is not
+# under the tightest caller's fuse: the server's behavioral composite gives the
+# warm-up 300s (3 x 80s = 240s today), and the static job's 10-minute step must
+# also hold validate_gdscript.sh's two passes. So an all-attempts-fail still exits
+# cleanly with forensics rather than being fuse-killed — retune them together,
+# never one alone. Teardown overhead is not
 # free and is part of THIS budget: the per-attempt kill_warmup_editor rounds
 # plus, on Windows, the kill-verify loop and the dead-owner grace window
 # (LINGER_GRACE_SECS) below each spend real seconds against the same fuse. The
