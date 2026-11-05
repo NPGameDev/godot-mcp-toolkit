@@ -5,7 +5,7 @@ extends Node
 ##
 ## The composer adds the installer beside the update check runner, whose newer,
 ## undismissed version it follows. When the install mode, the consent gate, the
-## trusted keys and the install guards allow it, the installer downloads the release's
+## embedded trust document and the install guards allow it, the installer downloads the release's
 ## manifest and signature and verifies them ([constant AVAILABLE]); then, on the
 ## user's word, it downloads the zip, checks it against the manifest and stages it
 ## ([constant READY]). The editor's next exit applies it (see
@@ -180,7 +180,7 @@ func note_text() -> String:
 	return _floor_note if _floor_version == _version else ""
 
 
-## Whether the last check failed, so the badge offers the download by hand.
+## Whether the last check failed, so the badge says why.
 func check_failed() -> bool:
 	return not _check_failure.is_empty()
 
@@ -188,6 +188,12 @@ func check_failed() -> bool:
 ## Whether a click on Update can retry the check that failed.
 func can_retry_check() -> bool:
 	return UpdateCheckFailure.can_retry(_check_failure)
+
+
+## Whether the check that failed was refused on security grounds, so the badge offers no
+## download of the release it refused.
+func security_check_failed() -> bool:
+	return _check_failure == UpdateCheckFailure.SECURITY
 
 
 ## The installed toolkit files that differ from the installed release's list.
@@ -531,7 +537,7 @@ func _on_fetched(outcome: Dictionary) -> void:
 			_keep_only_verified()
 			_fail(_fetch_problem(outcome))
 		else:
-			_fail_check(UpdateCheckFailure.of_fetch(outcome), _fetch_problem(outcome))
+			_fail_check(UpdateCheckFailure.of_release_file(outcome), _fetch_problem(outcome))
 		return
 	match waiting:
 		_WAITING_MANIFEST:
@@ -630,12 +636,18 @@ func _fail(reason: String) -> void:
 	_set_state(IDLE)
 
 
-# A check that failed leaves the links and says why, clicked or not; `reason` is for the log.
+# A check that failed says why, clicked or not; `reason` is for the log. The one exception is a
+# release not ready at a start nobody clicked: its files can simply be still on their way, so it
+# leaves the plain offer, with nothing to dismiss by reflex, and a later start verifies again.
 func _fail_check(kind: String, reason: String) -> void:
 	UpdateFolder.log_line("%s: %s" % [_version, reason], _update_folder)
+	var waits_quietly := kind == UpdateCheckFailure.NOT_READY and not _user_asked
 	var note := UpdateCheckFailure.message(kind, _walk.store() if _walk != null else "")
 	_walk = null
 	_user_asked = false
+	if waits_quietly:
+		_set_state(IDLE)
+		return
 	_set_state(IDLE, kind, note)
 
 

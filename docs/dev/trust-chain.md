@@ -75,9 +75,16 @@ The installer runs that fetch just before it verifies a newer release and on eac
 An up-to-date client asks for nothing, an empty embedded document means no walk, and a release an
 earlier session kept is offered at a start without a request. No walk runs while an update is staged.
 A 404 ends the chain. A timeout, a 5xx, a TLS failure, an off-list redirect or an invalid document
-leaves the badge's links with a sentence saying what failed. A click retries now and a new start
-retries; there is no timer. A document with no release keys does not stop the walk, because only the
-next document can lift the emergency stop.
+leaves the badge with a sentence saying what failed. A click retries now and a new start
+retries; there is no timer. A 404 on the release's own manifest or signature comes after the walk.
+At a start nobody clicked it stays quiet: the log records it, the badge keeps the plain offer with no
+sentence and no Update, and a later start verifies again, so Update appears once the assets are up.
+An editor left open does not check that version again until its next start or a newer version.
+Only when a click reaches that 404, as a retry after another failure can, the badge says "This release
+isn't ready to install from the editor yet. Try Update again later." and Update stays clickable. A
+security failure shows no "Download from GitHub": the sentence says the update won't install, and
+the button would open the release just refused. The other failures keep it. A document with no
+release keys does not stop the walk, because only the next document can lift the emergency stop.
 
 ## Rotating a release key
 
@@ -181,9 +188,17 @@ The last command must print `vX.Y.Z`.
 ### What clients see
 
 - A client that holds `trust-8` trusts the new key and refuses the old one.
-- An update staged earlier and signed by the old key is refused at the exit, with "the update is
-  not signed by a key this toolkit trusts", and its stage and zip are deleted. The user has to start
-  the update again, for the new release.
+- An update staged earlier and signed by the old key is refused at the exit only when this machine's
+  store already holds the new document. The installer runs no walk while a release is staged, so on
+  a machine with no other project walking, a stage verified before the rotation installs at exit.
+  A refusal reads "the update is not signed by a key this toolkit trusts", and its stage and zip are
+  deleted. A start that finds the key dropped before any exit says the same.
+- Neither notice offers a download: a hand download checks no signature, and in a leak
+  `/releases/latest` can be the old key's release too. Each says "The toolkit offers the next
+  release once it is published and checked." The next release comes through the ordinary check. The
+  security-check message shows no GitHub button either, since it would open the release just
+  refused; its store button stays. When the Asset Store lists the refused version, that button is
+  enabled and opens the store's listing, a separate artifact this chain does not check.
 - A client behind on the old latest refuses that release from the moment it holds `trust-8` until
   the new one is out. That gap fails safe.
 - A machine that installs the release by hand starts from the `trust-8` it embeds, so it never

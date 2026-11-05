@@ -8,8 +8,8 @@ extends PanelContainer
 ## check runner and update installer report and is hidden while there is nothing to
 ## show (no newer version, the version dismissed, or the check turned off). A minor
 ## or patch release gets a blue panel; a major release a green one with a bold title
-## and an editor icon. It offers two places to get the version and a close button
-## that hides it until a newer one.[br]
+## and an editor icon. It offers two places to get the version (only the Asset Store
+## after a failed security check) and a close button that hides it until a newer one.[br]
 ## [br]
 ## When the installer has a verified release, the badge adds Update; once the
 ## release is staged, Restart now and Don't install, and the line saying the
@@ -28,6 +28,7 @@ extends PanelContainer
 ## reply.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
+const UpdateApplier = Modules.UpdateApplier
 const UpdateCheck = Modules.UpdateCheck
 const UpdateCheckRunner = Modules.UpdateCheckRunner
 const UpdateInstaller = Modules.UpdateInstaller
@@ -62,6 +63,7 @@ const _UPDATE_SERVER_QUESTION := "Update the server to %s"
 const _AVAILABLE_TOAST := "Godot MCP Toolkit %s is available. Update it from the MCP Toolkit dock."
 const _READY_TOAST := "Godot MCP Toolkit %s installs when you close the editor."
 const _NOT_INSTALLED_TEXT := "%s. Version %s is still installed. Install log: %s"
+const _NEXT_RELEASE_TEXT := "The toolkit offers the next release once it is published and checked."
 const _RESTART_TOOLTIP := "Saves the open scenes and restarts the editor, which installs the update on its way out."
 
 # The main-screen tab the 4.7+ editor names its store.
@@ -267,6 +269,8 @@ func _render_install_state() -> void:
 			or (check_failed and _installer.can_retry_check())
 	_update_btn.text = _RETRY_TEXT if state == UpdateInstaller.FAILED else _UPDATE_TEXT
 	_github_btn.text = _DOWNLOAD_TEXT if check_failed else _GITHUB_TEXT
+	# The sentence says it won't install, and this button would open the release it refused.
+	_github_btn.visible = not (check_failed and _installer.security_check_failed())
 	_restart_btn.visible = state == UpdateInstaller.READY
 	_discard_btn.visible = state == UpdateInstaller.READY
 	_update_mcp_json_btn.visible = false
@@ -284,8 +288,13 @@ func _render_notice(notice: Dictionary) -> void:
 	if updated:
 		_set_status(_SERVER_CHANGED_TEXT % VersionUtils.COMPATIBLE_SERVER_VERSION if mcp_json_behind else "")
 	else:
-		_set_status(_NOT_INSTALLED_TEXT % [_sentence(str(notice.get("reason", ""))),
-				str(notice.get("from_version", "")), _installer.log_path()])
+		var reason := str(notice.get("reason", ""))
+		var status := _NOT_INSTALLED_TEXT % [_sentence(reason), str(notice.get("from_version", "")), _installer.log_path()]
+		# A hand download checks no signature, and in a leak the latest release can be the
+		# old key's too, so this notice points at the toolkit's own check and offers no link.
+		if reason == UpdateApplier.UNTRUSTED_SIGNATURE:
+			status += "\n" + _NEXT_RELEASE_TEXT
+		_set_status(status)
 	_dismiss_btn.tooltip_text = _NOTICE_DISMISS_TOOLTIP
 	tooltip_text = ""
 	_github_btn.text = _WHATS_NEW_TEXT

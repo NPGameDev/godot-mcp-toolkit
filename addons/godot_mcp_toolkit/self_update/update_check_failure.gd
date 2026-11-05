@@ -2,8 +2,10 @@
 extends RefCounted
 ## What stopped the toolkit checking an update, and what the badge says about it.
 ##
-## A check is the walk along the trust chain and the verify of the release's manifest. Each
-## failure leaves the badge's links in place, and the user decides from the sentence here.
+## A check is the walk along the trust chain and the verify of the release's manifest. The
+## user decides from the sentence here. The badge keeps its GitHub link beside every kind but
+## [constant SECURITY], whose sentence says the update won't install. The installer shows
+## [constant NOT_READY] only when a click reaches it.
 
 # Direct preloads: core/modules.gd does not list this folder's scripts.
 const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_chain.gd")
@@ -12,6 +14,8 @@ const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_ch
 const UNREACHABLE := "unreachable"
 ## GitHub answered with something other than the file.
 const GITHUB_ERROR := "github_error"
+## The release has no manifest or no signature on GitHub yet.
+const NOT_READY := "not_ready"
 ## A document, a signature or a redirect that does not hold.
 const SECURITY := "security"
 ## The store could not keep a document.
@@ -31,6 +35,15 @@ static func of_fetch(outcome: Dictionary) -> String:
 	if result == HTTPRequest.RESULT_SUCCESS or result == HTTPRequest.RESULT_REDIRECT_LIMIT_REACHED:
 		return GITHUB_ERROR
 	return UNREACHABLE
+
+
+## The kind of failure a not-ok outcome is for a release's manifest or signature. A release
+## can be published before these two files are, so GitHub's 404 on either means not yet.
+static func of_release_file(outcome: Dictionary) -> String:
+	var answered_missing := int(outcome["result"]) == HTTPRequest.RESULT_SUCCESS and int(outcome["code"]) == 404
+	if answered_missing and str(outcome["refusal"]).is_empty():
+		return NOT_READY
+	return of_fetch(outcome)
 
 
 ## The kind of failure an outcome of [method TrustChain.accept] other than
@@ -57,6 +70,8 @@ static func message(kind: String, store_folder: String = "") -> String:
 			return "Couldn't reach GitHub to check this update. Check your connection and click Update to try again. The toolkit also tries again the next time you open the editor."
 		GITHUB_ERROR:
 			return "GitHub isn't responding. Try Update again in a few minutes. The toolkit also tries again the next time you open the editor."
+		NOT_READY:
+			return "This release isn't ready to install from the editor yet. Try Update again later."
 		SECURITY:
 			return "This update failed its security check, so it won't install. Your connection isn't the problem. The toolkit checks again the next time you open the editor."
 		STORE_WRITE:

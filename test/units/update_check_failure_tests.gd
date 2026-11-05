@@ -10,6 +10,7 @@ const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_ch
 
 static func run(testing: Testing) -> void:
 	_test_kind_of_a_fetch(testing)
+	_test_kind_of_a_release_file(testing)
 	_test_kind_of_an_accept(testing)
 	_test_what_a_click_can_retry(testing)
 	_test_messages(testing)
@@ -40,6 +41,19 @@ static func _test_kind_of_a_fetch(testing: Testing) -> void:
 	print("")
 
 
+static func _test_kind_of_a_release_file(testing: Testing) -> void:
+	testing.begin("Update check failure: the kind of a failed manifest or signature fetch")
+	testing.eq(UpdateCheckFailure.of_release_file(_outcome(HTTPRequest.RESULT_SUCCESS, 404)), "not_ready", "HTTP 404 → not ready")
+	for code: int in [403, 410, 500]:
+		testing.eq(UpdateCheckFailure.of_release_file(_outcome(HTTPRequest.RESULT_SUCCESS, code)), "github_error", "HTTP %d → GitHub's error" % code)
+	testing.eq(UpdateCheckFailure.of_release_file(_outcome(HTTPRequest.RESULT_TIMEOUT, 0)), "unreachable", "a timeout → unreachable")
+	testing.eq(UpdateCheckFailure.of_release_file(_outcome(HTTPRequest.RESULT_SUCCESS, 404, "an off-list hop")), "security",
+			"a refused hop → the security check, whatever the code says")
+	testing.eq(UpdateCheckFailure.of_fetch(_outcome(HTTPRequest.RESULT_SUCCESS, 404)), "github_error",
+			"any other file's 404 → GitHub's error")
+	print("")
+
+
 static func _test_kind_of_an_accept(testing: Testing) -> void:
 	testing.begin("Update check failure: the kind of a refused document")
 	testing.eq(UpdateCheckFailure.of_accept(TrustChain.INVALID), "security", "invalid → the security check")
@@ -51,7 +65,7 @@ static func _test_kind_of_an_accept(testing: Testing) -> void:
 
 static func _test_what_a_click_can_retry(testing: Testing) -> void:
 	testing.begin("Update check failure: a click retries all but a missing data folder")
-	for kind: String in ["unreachable", "github_error", "security", "store_write"]:
+	for kind: String in ["unreachable", "github_error", "not_ready", "security", "store_write"]:
 		testing.ok(UpdateCheckFailure.can_retry(kind), "%s → a click can retry" % kind)
 	testing.ok(not UpdateCheckFailure.can_retry("no_data_folder"), "no data folder → a click cannot help")
 	testing.ok(not UpdateCheckFailure.can_retry(""), "no failure → nothing to retry")
@@ -76,5 +90,8 @@ static func _test_messages(testing: Testing) -> void:
 	testing.eq(UpdateCheckFailure.message("no_data_folder"),
 			"This update can't install here because your system doesn't set %s, so the toolkit has nowhere to save its update security data. Set that variable and reopen the editor." % variable,
 			"no data folder → names this system's variable")
+	testing.eq(UpdateCheckFailure.message("not_ready"),
+			"This release isn't ready to install from the editor yet. Try Update again later.",
+			"a release with no manifest yet → try again later")
 	testing.eq(UpdateCheckFailure.message(""), "", "no failure → no sentence")
 	print("")

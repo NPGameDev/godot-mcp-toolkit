@@ -22,6 +22,8 @@ const _FRAME_LIMIT := 2400
 # A request reaches the listener well inside these, as the rows that do make one show.
 const _QUIET_FRAMES := 120
 const _UNTRUSTED := "the update is not signed by a key this toolkit trusts"
+const _NOT_READY_OPENING := "This release isn't ready to install from the editor yet."
+const _LOGGED_404 := "(result 0, HTTP 404)"
 
 
 static func run(testing: Testing, tree: SceneTree) -> void:
@@ -39,6 +41,9 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_store_write(testing, tree)
 	await _test_no_store(testing, tree)
 	await _test_manifest_server_error(testing, tree)
+	await _test_manifest_404(testing, tree)
+	await _test_signature_404(testing, tree)
+	await _test_manifest_500_is_not_a_missing_release(testing, tree)
 	await _test_signature_by_an_unlisted_key(testing, tree)
 	await _test_emergency_stop_ends_the_check(testing, tree)
 	await _test_emergency_stop_can_be_lifted(testing, tree)
@@ -176,6 +181,86 @@ static func _expect_failed_check(testing: Testing, measured: Dictionary, kind: S
 	testing.ok(int(measured["start_requests"]) > 0, "a new start → a new request at the listener")
 
 
+# How many 404s on a release's own files the install log holds; the chain's own 404 logs nothing.
+static func _logged_404s(log_path: String) -> int:
+	if not FileAccess.file_exists(log_path):
+		return 0
+	return FileAccess.get_file_as_string(log_path).count(_LOGGED_404)
+
+
+# Starts the installer on `world` and measures a start that meets a 404 on the manifest or the
+# signature: what it leaves, that nothing retries on its own, and a new start. Everything the test
+# made is gone when this returns, so the assertions run on the measures.
+static func _measure_unclicked_404(world: Dictionary, server: UpdateFixtures.LoopbackReleaseServer, tree: SceneTree) -> Dictionary:
+	var previous_host := _set_host(server.host())
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var log_path := installer.log_path()
+	var measured := {"logged": await _poll_until(func() -> bool: return _logged_404s(log_path) == 1, [server], tree)}
+	measured["state"] = installer.state()
+	measured["note"] = installer.note_text()
+	measured["check_failed"] = installer.check_failed()
+	measured["can_retry"] = installer.can_retry_check()
+	measured["names"] = _names(server)
+
+	var after_failure := server.connections()
+	(nodes["runner"] as UpdateCheckRunner).state_changed.emit()
+	await _poll_frames([server], tree)
+	measured["unasked_requests"] = server.connections() - after_failure
+
+	(nodes["installer"] as Node).free()
+	(nodes["runner"] as Node).free()
+	var before_start := server.connections()
+	nodes = UpdateFixtures.start_world(world, tree)
+	await _poll_until(func() -> bool: return _logged_404s(log_path) == 2, [server], tree)
+	measured["start_requests"] = server.connections() - before_start
+	_end(world, nodes)
+	server.stop()
+	_restore_host(previous_host)
+	return measured
+
+
+static func _expect_quiet_404(testing: Testing, measured: Dictionary) -> void:
+	testing.ok(measured["logged"], "the 404 reaches the log in time")
+	testing.eq(measured["state"], "idle", "and the installer goes idle")
+	testing.eq(measured["note"], "", "with no note")
+	testing.ok(not measured["check_failed"], "and no failed check")
+	testing.ok(not measured["can_retry"], "so no click to offer")
+	testing.eq(measured["unasked_requests"], 0, "no timer and no report from the runner retries it")
+
+
+# A 503 on the first document gives the click a failure to retry; the click then meets a listener
+# holding `assets`. Everything the test made is gone when this returns.
+static func _measure_clicked_404(world: Dictionary, assets: Dictionary, tree: SceneTree) -> Dictionary:
+	var failing := UpdateFixtures.LoopbackReleaseServer.new({})
+	failing.redirect("/" + _document_name(2), 503, "")
+	var missing := UpdateFixtures.LoopbackReleaseServer.new(assets)
+	var previous_host := _set_host(failing.host())
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var failed := func() -> bool: return installer.check_failed()
+	await _poll_until(failed, [failing], tree)
+	_set_host(missing.host())
+	installer.install()
+	var measured := {"on_time": await _poll_until(failed, [missing], tree)}
+	measured["state"] = installer.state()
+	measured["note"] = installer.note_text()
+	measured["can_retry"] = installer.can_retry_check()
+	measured["names"] = _names(missing)
+	_end(world, nodes)
+	failing.stop()
+	missing.stop()
+	_restore_host(previous_host)
+	return measured
+
+
+static func _expect_clicked_404(testing: Testing, measured: Dictionary) -> void:
+	testing.ok(measured["on_time"], "a click after another failure → the check fails in time")
+	testing.eq(measured["state"], "idle", "and the installer goes idle")
+	testing.ok(str(measured["note"]).begins_with(_NOT_READY_OPENING), "with the release's own sentence")
+	testing.ok(measured["can_retry"], "and a click can retry")
+
+
 static func _test_walk_accepts_until_a_404(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Trust walk: documents are taken until a 404, and the release they trust verifies")
 	# Only the walk trusts this release's key, since the embedded document lists another.
@@ -288,6 +373,8 @@ static func _test_tls_failure(testing: Testing, tree: SceneTree) -> void:
 	var measured: Dictionary = await _measure_failed_check(
 			_world("tls"), [server], server.host().replace("http://", "https://"), tree)
 	_expect_failed_check(testing, measured, UpdateCheckFailure.UNREACHABLE)
+	testing.ok(str(measured["log"]).contains("(result %d," % HTTPRequest.RESULT_TLS_HANDSHAKE_ERROR),
+			"and the engine's result is the failed handshake, which a timeout or a refused connection is not")
 	print("")
 
 
@@ -336,7 +423,7 @@ static func _test_store_write(testing: Testing, tree: SceneTree) -> void:
 	server.stop()
 	_restore_host(previous_host)
 	testing.ok(on_time, "the check fails in time")
-	testing.eq(note, UpdateCheckFailure.message(UpdateCheckFailure.STORE_WRITE, ProjectSettings.globalize_path(blocked_store)),
+	testing.ok(note.begins_with("Couldn't save update security data to %s." % ProjectSettings.globalize_path(blocked_store)),
 			"the note names the store's folder")
 	testing.ok(can_retry, "a click can retry")
 	testing.ok(click_requests > 0, "with a new request at the listener")
@@ -365,7 +452,7 @@ static func _test_no_store(testing: Testing, tree: SceneTree) -> void:
 	server.stop()
 	_restore_host(previous_host)
 	testing.eq(state, "idle", "the start → idle")
-	testing.eq(note, UpdateCheckFailure.message(UpdateCheckFailure.NO_DATA_FOLDER), "with the data folder's sentence")
+	testing.ok(note.begins_with("This update can't install here because your system doesn't set "), "with the data folder's sentence")
 	testing.ok(not can_retry, "a click cannot help")
 	testing.eq(state_after_click, "idle", "and a click changes nothing")
 	testing.eq(total, 0, "no request reaches the listener")
@@ -379,6 +466,46 @@ static func _test_manifest_server_error(testing: Testing, tree: SceneTree) -> vo
 	var measured: Dictionary = await _measure_failed_check(_world("manifest_error"), [server], server.host(), tree)
 	_expect_failed_check(testing, measured, UpdateCheckFailure.GITHUB_ERROR)
 	testing.eq(measured["names"], [_document_name(2), ReleaseAssets.manifest_name(_VERSION)], "after the chain's 404")
+	print("")
+
+
+static func _test_manifest_404(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Trust walk: a 404 on the manifest is quiet at a start, and a click that reaches it says the release isn't ready")
+	var names := [_document_name(2), ReleaseAssets.manifest_name(_VERSION)]
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var quiet: Dictionary = await _measure_unclicked_404(_world("manifest_404"), server, tree)
+	_expect_quiet_404(testing, quiet)
+	testing.eq(quiet["names"], names, "the chain's 404 ends the walk, not the check")
+	testing.eq(quiet["start_requests"], 2, "a new start → the chain and the manifest asked for anew")
+	var clicked: Dictionary = await _measure_clicked_404(_world("manifest_404_click"), {}, tree)
+	_expect_clicked_404(testing, clicked)
+	testing.eq(clicked["names"], names, "the click → the chain and the manifest asked for anew")
+	print("")
+
+
+static func _test_signature_404(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Trust walk: a 404 on the signature is quiet at a start, and a click that reaches it says the release isn't ready")
+	var names := [_document_name(2), ReleaseAssets.manifest_name(_VERSION), ReleaseAssets.signature_name(_VERSION)]
+	var assets := _release(UpdateFixtures.key())
+	assets.erase(ReleaseAssets.signature_name(_VERSION))
+	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
+	var quiet: Dictionary = await _measure_unclicked_404(_world("signature_404"), server, tree)
+	_expect_quiet_404(testing, quiet)
+	testing.eq(quiet["names"], names, "after the manifest came")
+	testing.eq(quiet["start_requests"], 3, "a new start → all three asked for anew")
+	var clicked: Dictionary = await _measure_clicked_404(_world("signature_404_click"), assets, tree)
+	_expect_clicked_404(testing, clicked)
+	testing.eq(clicked["names"], names, "the click → all three asked for anew")
+	print("")
+
+
+static func _test_manifest_500_is_not_a_missing_release(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Trust walk: a 500 on the manifest still reads as GitHub's error")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	server.redirect("/" + ReleaseAssets.manifest_name(_VERSION), 500, "")
+	var measured: Dictionary = await _measure_failed_check(_world("manifest_500"), [server], server.host(), tree)
+	_expect_failed_check(testing, measured, UpdateCheckFailure.GITHUB_ERROR)
+	testing.ok(str(measured["note"]).begins_with("GitHub isn't responding."), "in GitHub's sentence")
 	print("")
 
 
@@ -423,7 +550,7 @@ static func _test_emergency_stop_can_be_lifted(testing: Testing, tree: SceneTree
 		server.stop()
 		_restore_host(previous_host)
 		testing.ok(on_time, "a stop %s → the release verifies once it is lifted" % label)
-		testing.eq(_names(server)[0], _document_name(lifting_version), "a stop %s → the walk asks for the next document" % label)
+		testing.eq(_names(server).slice(0, 1), [_document_name(lifting_version)], "a stop %s → the walk asks for the next document" % label)
 	print("")
 
 
@@ -446,7 +573,7 @@ static func _test_stale_note_goes_with_the_next_walk(testing: Testing, tree: Sce
 	_end(world, nodes)
 	server.stop()
 	_restore_host(previous_host)
-	testing.eq(note_before, UpdateCheckFailure.message(UpdateCheckFailure.GITHUB_ERROR), "1.9.0's check fails with a note")
+	testing.ok(note_before.begins_with("GitHub isn't responding."), "1.9.0's check fails with a note")
 	testing.eq(version, "1.10.0", "the runner reports 1.10.0 → the installer moves on")
 	testing.eq(note_during, "", "and the note is gone while the new walk runs")
 	testing.ok(not failed_during, "as is the failure")
@@ -510,7 +637,7 @@ static func _test_click_drops_the_key_of_a_kept_release(testing: Testing, tree: 
 	testing.eq(_names(server), [_document_name(2), _document_name(3), ReleaseAssets.manifest_name(_VERSION),
 			ReleaseAssets.signature_name(_VERSION)], "the walk, then the release fetched anew, and no zip request")
 	testing.eq(state, "idle", "the installer goes idle")
-	testing.eq(note, UpdateCheckFailure.message(UpdateCheckFailure.SECURITY), "with the security sentence")
+	testing.ok(note.begins_with("This update failed its security check, so it won't install."), "with the security sentence")
 	testing.ok(not zip_left, "and no zip is on disk")
 	print("")
 

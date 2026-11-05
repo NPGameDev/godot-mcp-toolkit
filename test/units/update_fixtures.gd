@@ -416,8 +416,9 @@ class LoopbackReleaseServer extends RefCounted:
 	func hold(path_end: String) -> void:
 		_held_path_ends.append(path_end)
 
-	# Answers whatever arrives with bytes that are no TLS record, then hangs up, which is what
-	# a TLS client meets at a plain listener.
+	# Answers whatever arrives with bytes that are no TLS record, which is what a TLS client meets
+	# at a plain listener. It takes what the client sent and stays connected: a hang-up with those
+	# bytes unread reaches the engine as a failure to connect, not as a failed handshake.
 	func break_handshakes() -> void:
 		_breaks_handshakes = true
 
@@ -431,10 +432,8 @@ class LoopbackReleaseServer extends RefCounted:
 			peer.poll()
 			if _breaks_handshakes:
 				if peer.get_available_bytes() > 0:
+					peer.get_data(peer.get_available_bytes())
 					peer.put_data("plain text".to_utf8_buffer())
-					peer.disconnect_from_host()
-					_peers.remove_at(index)
-					_requests.remove_at(index)
 				continue
 			_requests[index] += peer.get_utf8_string(peer.get_available_bytes())
 			if not _requests[index].contains("\r\n\r\n"):
