@@ -21,6 +21,7 @@ static func run(testing: Testing) -> void:
 	_test_restaged(testing)
 	_test_write_that_fails(testing)
 	_test_clear(testing)
+	_test_remove_and_exists(testing)
 
 
 static func _empty() -> Dictionary:
@@ -239,4 +240,24 @@ static func _test_clear(testing: Testing) -> void:
 	testing.ok(ignore_kept, "the ignore files → kept")
 	testing.ok(backup_kept_again, "clearing with no journal → the backup still kept")
 	testing.ok(not DirAccess.dir_exists_absolute(absolute), "clearing a folder that vanished → nothing happens")
+	print("")
+
+
+static func _test_remove_and_exists(testing: Testing) -> void:
+	testing.begin("Update journal: removing it alone, and whether one is there")
+	var folder := UpdateFixtures.scratch("journal_remove")
+	var absolute := ProjectSettings.globalize_path(folder)
+	var exists_before := UpdateJournal.exists(folder)
+	_write_text(folder, "not a journal")
+	var exists_untrusted := UpdateJournal.exists(folder)
+	UpdateJournal.write({"state": "verified", "from": "1.1.0", "to": "1.2.0"}, folder)
+	FolderFiles.write_checked(absolute.path_join("1.2.0/a.json"), "a".to_utf8_buffer())
+	UpdateJournal.remove(folder)
+	var exists_after := UpdateJournal.exists(folder)
+	var version_kept := FileAccess.file_exists(absolute.path_join("1.2.0/a.json"))
+	UpdateFixtures.remove(folder)
+	testing.ok(not exists_before, "no file → no journal")
+	testing.ok(exists_untrusted, "a file that does not parse → still there")
+	testing.ok(not exists_after, "removed → gone")
+	testing.ok(version_kept, "and the version folder stays")
 	print("")

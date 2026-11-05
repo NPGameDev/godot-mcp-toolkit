@@ -9,7 +9,9 @@ extends Node
 ## manifest and signature and verifies them ([constant AVAILABLE]); then, on the
 ## user's word, it downloads the zip, checks it against the manifest and stages it
 ## ([constant READY]). The editor's next exit applies it (see
-## [code]update_applier.gd[/code]); nothing here writes the addon folder.[br]
+## [code]update_applier.gd[/code]); nothing here writes the addon folder. While a release
+## is staged, [method version] names it, whichever newer version the runner reports, and
+## nothing newer is fetched.[br]
 ## [br]
 ## A verified manifest and a staged zip are kept in the update folder (see
 ## [code]update_folder.gd[/code]), so an editor start finds them again without a request. Failures before the user asked are
@@ -94,7 +96,7 @@ var _user_asked: bool = false
 # tries again.
 var _verify_tried: String = ""
 # The version this session verified or downloaded itself, as opposed to one picked up
-# from a record an earlier session left.
+# from what an earlier session left.
 var _found_version: String = ""
 
 
@@ -174,7 +176,7 @@ func log_path() -> String:
 
 
 ## Whether this session verified or downloaded [method version] itself, rather than
-## picking it up from a record an earlier session left.
+## picking it up from what an earlier session left.
 func found_this_session() -> bool:
 	return not _version.is_empty() and _found_version == _version
 
@@ -241,59 +243,129 @@ func _evaluate() -> void:
 	if _state == FAILED and newer == _version:
 		return
 	var record := UpdateJournal.read(_update_folder)
+	# The staged release stands, whichever newer one the runner reports: the editor's exit
+	# installs it, and the newer one is offered at the next start.
+	if record["state"] == UpdateJournal.STAGED and not newer.is_empty() and _install_allowed(record["to"]):
+		_version = record["to"]
+		if _restore_record(record, newer):
+			return
+		record = UpdateJournal.read(_update_folder)
+	var record_state: String = record["state"]
 	if newer.is_empty() or not _install_allowed(newer):
-		if record["state"] == UpdateJournal.VERIFIED or record["state"] == UpdateJournal.STAGED:
+		# A journal this version cannot read stays with its files, as it does at a settle:
+		# a later version may have written it.
+		if record_state == UpdateJournal.VERIFIED or record_state == UpdateJournal.STAGED or not UpdateJournal.exists(_update_folder):
 			UpdateJournal.clear(_update_folder)
 		_version = newer
 		_set_state(IDLE)
 		return
 	_version = newer
-	if record["to"] == newer and _restore_record(record):
+	if record["to"] == newer and _restore_record(record, newer):
+		return
+	if record_state.is_empty() and _restore_kept(newer):
 		return
 	if _verify_tried != newer:
 		_start_verify(newer)
 
 
-# Whether the gates let `newer` be installed from the editor; sets _guard_note when
+# Whether the gates let `version` be installed from the editor; sets _guard_note when
 # a guard is the reason.
-func _install_allowed(newer: String) -> bool:
+func _install_allowed(version: String) -> bool:
 	_guard_note = ""
 	if not Consent.may_install_updates(install_mode()) or ReleaseSignature.chain(_options).release_keys().is_empty():
 		return false
-	if _runner.is_major():
+	var installed := _installed_version()
+	if UpdateCheck.is_major_bump(installed, version):
 		return false
 	var refusal := InstallGuards.refusal(_guard_facts if not _guard_facts.is_empty() else InstallGuards.facts())
 	if not refusal.is_empty():
 		_guard_note = InstallGuards.describe(refusal)
 		return false
-	return UpdateCheck.is_newer(_installed_version(), newer)
+	return UpdateCheck.is_newer(installed, version)
 
 
-# Picks up a verified or staged record of the version the runner reports, after
-# checking its files again. Returns whether it did.
-func _restore_record(record: Dictionary) -> bool:
+# Picks up the release the journal names, which _version already holds, after checking
+# its files again. Returns whether that decided the state; if not, the record is gone and
+# the caller goes on to `newer`, the version the runner reports.
+func _restore_record(record: Dictionary, newer: String) -> bool:
 	var version: String = record["to"]
-	var folder := UpdateFolder.version_folder(version, _update_folder)
-	var manifest_bytes := FileAccess.get_file_as_bytes(folder.path_join(ReleaseAssets.manifest_name(version)))
-	var signature := FileAccess.get_file_as_bytes(folder.path_join(ReleaseAssets.signature_name(version)))
-	if not ReleaseSignature.is_trusted(manifest_bytes, signature, null, _options):
+	# A verified journal stands for a download that never finished, so it goes with
+	# whatever that left, as it does at a settle.
+	var kept: Dictionary = {} if record["state"] == UpdateJournal.VERIFIED else _read_kept(version)
+	if kept.is_empty():
 		UpdateJournal.clear(_update_folder)
+		_set_state(IDLE)
 		return false
-	var manifest := ReleaseManifest.parse(manifest_bytes.get_string_from_utf8(), version)
-	if not str(manifest["error"]).is_empty():
-		UpdateJournal.clear(_update_folder)
-		return false
-	_manifest = manifest
-	_manifest_bytes = manifest_bytes
-	_changed_files = record["changed_files"]
+	var manifest: Dictionary = kept["manifest"]
+	var restored_state := AVAILABLE
 	if record["state"] == UpdateJournal.STAGED:
-		var archive := ProjectSettings.globalize_path(folder.path_join(ReleaseAssets.archive_name(version)))
+		var archive := ProjectSettings.globalize_path(UpdateFolder.archive_path(version, _update_folder))
 		if FolderFiles.hash_of_file(archive) == str(manifest["archive_sha256"]):
-			_set_state(READY)
+			restored_state = READY
+		elif not _keep_only_verified():
+			_fail("could not delete a staged zip that no longer matches its manifest")
 			return true
-		_write_record(UpdateJournal.VERIFIED)
+		elif version != newer:
+			_set_state(IDLE)
+			return false
+	_manifest = manifest
+	_manifest_bytes = kept["bytes"]
+	_changed_files = record["changed_files"]
+	_set_state(restored_state)
+	return true
+
+
+# Offers the release an earlier session verified, whose manifest and signature wait in
+# the update folder with no journal. Returns whether they answered for `version`, so
+# nothing needs fetching.
+func _restore_kept(version: String) -> bool:
+	var kept := _read_kept(version)
+	if kept.is_empty():
+		return false
+	var manifest: Dictionary = kept["manifest"]
+	if not ReleaseManifest.supports_engine(manifest, VersionUtils.get_engine_version_pair()):
+		_note_engine_floor(manifest)
+		return true
+	# Hashing the addon folder is the slow part, and every settings change lands here.
+	if kept["bytes"] != _manifest_bytes:
+		_changed_files = _locally_changed_files()
+	_manifest = manifest
+	_manifest_bytes = kept["bytes"]
 	_set_state(AVAILABLE)
 	return true
+
+
+# The update folder's manifest of `version`, checked again: {"manifest": what
+# ReleaseManifest.parse returns, "bytes": its text}, or an empty dictionary when it or
+# its signature is missing or does not check out.
+func _read_kept(version: String) -> Dictionary:
+	var folder := UpdateFolder.version_folder(version, _update_folder)
+	var manifest_path := folder.path_join(ReleaseAssets.manifest_name(version))
+	var signature_path := folder.path_join(ReleaseAssets.signature_name(version))
+	if not FileAccess.file_exists(manifest_path) or not FileAccess.file_exists(signature_path):
+		return {}
+	var manifest_bytes := FileAccess.get_file_as_bytes(manifest_path)
+	var signature := FileAccess.get_file_as_bytes(signature_path)
+	if not ReleaseSignature.is_trusted(manifest_bytes, signature, null, _options):
+		return {}
+	var manifest := ReleaseManifest.parse(manifest_bytes.get_string_from_utf8(), version)
+	if not str(manifest["error"]).is_empty():
+		return {}
+	return {"manifest": manifest, "bytes": manifest_bytes}
+
+
+# Drops what a download or a stage left, back to the verified manifest and signature
+# with no journal. The journal goes last and only when the rest is gone: while it stands,
+# the next start deals with whatever this could not delete. Returns whether the journal
+# went; a caller already failing for another reason has nothing to add.
+func _keep_only_verified() -> bool:
+	var archive := ProjectSettings.globalize_path(UpdateFolder.archive_path(_version, _update_folder))
+	if FileAccess.file_exists(archive) and DirAccess.remove_absolute(archive) != OK:
+		return false
+	if not FolderFiles.remove_tree(ProjectSettings.globalize_path(UpdateFolder.stage_folder(_update_folder))):
+		return false
+	UpdateJournal.remove(_update_folder)
+	return not UpdateJournal.exists(_update_folder)
 
 
 func _start_verify(version: String) -> void:
@@ -304,6 +376,12 @@ func _start_verify(version: String) -> void:
 
 
 func _download_archive() -> void:
+	# The journal comes before the first byte: a kill mid-download leaves a partial zip,
+	# and only this record makes the next start clear it. The settler clears a verified
+	# journal with its folder at every start, so nothing writes one earlier.
+	if not UpdateFolder.ensure_ignore_files(_update_folder) or not _write_record(UpdateJournal.VERIFIED):
+		_fail("could not write to the update folder")
+		return
 	var folder := ProjectSettings.globalize_path(UpdateFolder.version_folder(_version, _update_folder))
 	DirAccess.make_dir_recursive_absolute(folder)
 	_set_state(DOWNLOADING)
@@ -319,6 +397,8 @@ func _send(asset: String, waiting: int, size_limit: int, target_file: String, ti
 	var error := _http.request(url, HttpIdentity.request_headers(), HTTPClient.METHOD_GET)
 	_waiting = waiting if error == OK else _WAITING_NONE
 	if error != OK:
+		if waiting == _WAITING_ARCHIVE:
+			_keep_only_verified()
 		_fail("the download could not start (error %d)" % error)
 
 
@@ -330,8 +410,7 @@ func _on_request_completed(
 	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
 		# Up to Godot 4.6, HTTPRequest leaves what it wrote of a failed download.
 		if waiting == _WAITING_ARCHIVE:
-			DirAccess.remove_absolute(ProjectSettings.globalize_path(
-					UpdateFolder.version_folder(_version, _update_folder).path_join(ReleaseAssets.archive_name(_version))))
+			_keep_only_verified()
 		_fail("the download failed (result %d, HTTP %d)" % [result, response_code])
 		return
 	match waiting:
@@ -353,55 +432,71 @@ func _on_signature(signature: PackedByteArray) -> void:
 		_fail(str(manifest["error"]))
 		return
 	if not ReleaseManifest.supports_engine(manifest, VersionUtils.get_engine_version_pair()):
-		_floor_note = "Version %s needs Godot %s or newer." % [_version, manifest["min_godot"]]
-		_floor_version = _version
-		_user_asked = false
-		_set_state(IDLE)
+		_note_engine_floor(manifest)
 		return
 	_manifest = manifest
-	var addon := ProjectSettings.globalize_path(_addon_folder)
-	_changed_files = InstallPlan.plan(
-			ReleaseFileList.read_installed(addon), FolderFiles.hashes(addon))["changed"]
+	_changed_files = _locally_changed_files()
+	# What a download of another release left goes. A staged release is never cleared
+	# here: it stands until the editor's exit installs it.
+	if UpdateJournal.read(_update_folder)["state"] == UpdateJournal.VERIFIED:
+		UpdateJournal.clear(_update_folder)
 	var folder := UpdateFolder.version_folder(_version, _update_folder)
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(folder))
-	if not FolderFiles.write_checked(ProjectSettings.globalize_path(folder.path_join(ReleaseAssets.manifest_name(_version))), _manifest_bytes) \
+	if not UpdateFolder.ensure_ignore_files(_update_folder) \
+			or not FolderFiles.write_checked(ProjectSettings.globalize_path(folder.path_join(ReleaseAssets.manifest_name(_version))), _manifest_bytes) \
 			or not FolderFiles.write_checked(ProjectSettings.globalize_path(folder.path_join(ReleaseAssets.signature_name(_version))), signature):
 		_fail("could not keep the verified manifest")
 		return
-	_write_record(UpdateJournal.VERIFIED)
 	_found_version = _version
 	_set_state(AVAILABLE)
 	if _user_asked:
 		_download_archive()
 
 
+func _note_engine_floor(manifest: Dictionary) -> void:
+	_floor_note = "Version %s needs Godot %s or newer." % [_version, manifest["min_godot"]]
+	_floor_version = _version
+	_user_asked = false
+	_set_state(IDLE)
+
+
+# The installed toolkit files that differ from the installed release's list.
+func _locally_changed_files() -> PackedStringArray:
+	var addon := ProjectSettings.globalize_path(_addon_folder)
+	return InstallPlan.plan(ReleaseFileList.read_installed(addon), FolderFiles.hashes(addon))["changed"]
+
+
 func _on_archive() -> void:
-	var archive := ProjectSettings.globalize_path(
-			UpdateFolder.version_folder(_version, _update_folder).path_join(ReleaseAssets.archive_name(_version)))
+	var archive := ProjectSettings.globalize_path(UpdateFolder.archive_path(_version, _update_folder))
 	if FolderFiles.hash_of_file(archive) != str(_manifest["archive_sha256"]):
-		DirAccess.remove_absolute(archive)
+		_keep_only_verified()
 		_fail("the downloaded archive does not match the manifest")
 		return
 	var layout := ReleaseArchive.inspect(archive, _version)
 	if not str(layout["error"]).is_empty():
-		DirAccess.remove_absolute(archive)
+		_keep_only_verified()
 		_fail(str(layout["error"]))
 		return
-	_write_record(UpdateJournal.STAGED)
+	if not _write_record(UpdateJournal.STAGED):
+		_fail("could not write to the update folder")
+		return
 	_user_asked = false
 	_found_version = _version
 	_set_state(READY)
 
 
-func _write_record(state: String) -> void:
-	UpdateJournal.write({
+# Returns whether the journal now holds the record.
+func _write_record(state: String) -> bool:
+	var written := UpdateJournal.write({
 		"state": state,
 		"to": _version,
 		"from": _installed_version(),
 		"compatible_server": VersionUtils.COMPATIBLE_SERVER_VERSION,
 		"changed_files": _changed_files,
 	}, _update_folder)
-	UpdateFolder.log_line("%s %s" % [state, _version], _update_folder)
+	if written:
+		UpdateFolder.log_line("%s %s" % [state, _version], _update_folder)
+	return written
 
 
 # A failure the user asked to see goes to FAILED; any other leaves the badge as links.

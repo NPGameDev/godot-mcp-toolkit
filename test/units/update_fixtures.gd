@@ -16,6 +16,9 @@ const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/up
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
 
+## Where the installer reads the host that stands in for GitHub.
+const HOST_ENV := "GODOT_MCP_UPDATE_CHECK_HOST"
+
 ## The journal the 1.2.0 toolkit writes. 1.2.0's code stays on users' machines and writes
 ## this for a later release to read, so this text never changes: if a test against it
 ## fails, the change that broke it needs a bridge release.
@@ -226,6 +229,31 @@ static func stage(
 			"compatible_server": "1.1.0"}, update_folder)
 
 
+## Keeps a verified release of [param version] in [param update_folder] as the installer
+## does while it waits for the user: the manifest and its signature by [param signing_key],
+## with no journal, zip or stage. Returns the zip's bytes, for a test that serves them.
+static func keep_verified(
+		update_folder: String, version: String, files: Dictionary, signing_key: CryptoKey,
+		min_godot: String = "4.2") -> PackedByteArray:
+	var assets := release_assets(version, files, signing_key, min_godot)
+	var absolute := ProjectSettings.globalize_path(UpdateFolder.version_folder(version, update_folder))
+	for asset_name: String in [ReleaseAssets.manifest_name(version), ReleaseAssets.signature_name(version)]:
+		FolderFiles.write_checked(absolute.path_join(asset_name), assets[asset_name])
+	return assets[ReleaseAssets.archive_name(version)]
+
+
+## Whether the update folder of [param world] holds [param file_name] of [param version].
+static func has_release_file(world: Dictionary, version: String, file_name: String) -> bool:
+	return FileAccess.file_exists(UpdateFolder.version_folder(version, str(world["updates"])).path_join(file_name))
+
+
+## Edits the installed file [param path] of [param world], so it differs from the addon's
+## release file list.
+static func edit_installed_file(world: Dictionary, path: String) -> void:
+	FolderFiles.write_checked(ProjectSettings.globalize_path(str(world["addon"])).path_join(path),
+			"edited by hand".to_utf8_buffer())
+
+
 ## Makes the file [param file_name] in [param folder] undeletable, or deletable again when
 ## [param blocked] is false: a read-only file blocks its delete on Windows, a read-only
 ## parent folder does elsewhere.
@@ -331,12 +359,13 @@ static func end_world(world: Dictionary, nodes: Dictionary) -> void:
 ## The files a GitHub release of [param version] serves to the installer: its zip
 ## holding [param files], the manifest, and the manifest's signature by
 ## [param signing_key]; asset name to bytes, for [LoopbackReleaseServer].
-static func release_assets(version: String, files: Dictionary, signing_key: CryptoKey) -> Dictionary:
+static func release_assets(
+		version: String, files: Dictionary, signing_key: CryptoKey, min_godot: String = "4.2") -> Dictionary:
 	var zip_path := scratch("release_assets_%s.zip" % version)
 	write_zip(zip_path, release_entries(version, files))
 	var archive_bytes := FileAccess.get_file_as_bytes(zip_path)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(zip_path))
-	var manifest := manifest_text(version, archive_bytes).to_utf8_buffer()
+	var manifest := manifest_text(version, archive_bytes, min_godot).to_utf8_buffer()
 	return {
 		ReleaseAssets.archive_name(version): archive_bytes,
 		ReleaseAssets.manifest_name(version): manifest,
@@ -354,6 +383,7 @@ class LoopbackReleaseServer extends RefCounted:
 	var _assets := {}
 	var _peers: Array[StreamPeerTCP] = []
 	var _requests: Array[String] = []
+	var _connections := 0
 
 	func _init(assets: Dictionary) -> void:
 		_assets = assets
@@ -362,10 +392,16 @@ class LoopbackReleaseServer extends RefCounted:
 	func host() -> String:
 		return "http://127.0.0.1:%d" % _server.get_local_port()
 
+	# How many connections [method poll] has taken so far. The server closes each after
+	# one answer, so this also counts the requests.
+	func connections() -> int:
+		return _connections
+
 	func poll() -> void:
 		while _server.is_connection_available():
 			_peers.append(_server.take_connection())
 			_requests.append("")
+			_connections += 1
 		for index in range(_peers.size() - 1, -1, -1):
 			var peer := _peers[index]
 			peer.poll()

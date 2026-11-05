@@ -205,15 +205,23 @@ func refresh() -> void:
 	if _showing_notice:
 		_render_notice(notice)
 		return
-	_shown_version = _runner.badge_version() if _runner != null else ""
+	_shown_version = _version_to_show()
 	visible = not _shown_version.is_empty()
 	if not visible:
 		return
 	_render_version()
 
 
+# A staged release is what the editor's exit installs, so it is what the badge is about,
+# whichever newer version the runner reports.
+func _version_to_show() -> String:
+	if _installer != null and _installer.state() == UpdateInstaller.READY:
+		return _installer.version()
+	return _runner.badge_version() if _runner != null else ""
+
+
 func _render_version() -> void:
-	var major := _runner.is_major()
+	var major := _runner.is_major() and _shown_version == _runner.badge_version()
 	add_theme_stylebox_override("panel", _major_style if major else _minor_style)
 	_major_icon.visible = major
 	_set_title((_MAJOR_TITLE if major else _MINOR_TITLE) % _shown_version, major)
