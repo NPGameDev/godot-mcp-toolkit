@@ -14,6 +14,8 @@ extends RefCounted
 ##   text.[br]
 ## - [code]check_box[/code]: String, optional; a checkbox with this label under the
 ##   text, showing and applying the step's setting.[br]
+## - [code]install_choice[/code]: bool, optional; show the install mode choice under
+##   the text.[br]
 ## [br]
 ## A spec describes its step alone; the wizard fits it to its place in a run.
 
@@ -103,7 +105,7 @@ static func updates() -> Dictionary:
 			"At most once a day, the toolkit asks GitHub whether a newer version is out. "
 			+ "If one is, it also asks the Asset Store whether it lists that version yet. "
 			+ "When there's a newer version, a closable badge at the top of the MCP Toolkit "
-			+ "dock links to it. The toolkit never installs anything by itself.\n\n"
+			+ "dock links to it. Whether the toolkit may install it is the next step.\n\n"
 			+ "These requests carry no identifier and nothing about your project. Untick "
 			+ "the box below and the toolkit sends no requests at all.\n\n"
 			+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
@@ -112,6 +114,27 @@ static func updates() -> Dictionary:
 		"ok_label": NEXT_LABEL,
 		"buttons": [{"label": "Back", "action": BACK_ACTION}],
 		"check_box": "Check for updates",
+	}
+
+
+## The install step's spec: what installing an update downloads, checks and
+## changes, with the three install modes as a choice the wizard builds.
+static func update_install() -> Dictionary:
+	return {
+		"text": (
+			"The toolkit can install its own updates. It downloads a new version from the "
+			+ "toolkit's GitHub releases, checks the maintainer's signature, and replaces the "
+			+ "files in res://addons/godot_mcp_toolkit when you close the editor. A copy of the "
+			+ "version you have is kept until the new one starts. Major versions, and versions "
+			+ "that need a newer Godot, are only linked.\n\n"
+			+ "The new files show up in version control: commit them, so everyone on the "
+			+ "project runs the same version. This needs the update check above to be on.\n\n"
+			+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
+			+ "It's saved in project.godot, so it applies to everyone who works on this "
+			+ "project."),
+		"ok_label": NEXT_LABEL,
+		"buttons": [{"label": "Back", "action": BACK_ACTION}],
+		"install_choice": true,
 	}
 
 

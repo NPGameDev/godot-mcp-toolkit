@@ -15,6 +15,10 @@ const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_wr
 const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autoload_registration.gd")
 const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
+const UpdateApplier = Modules.UpdateApplier
+const PendingUpdate = Modules.PendingUpdate
+const UpdateInstaller = Modules.UpdateInstaller
+const UpdatePrompt := preload("res://addons/godot_mcp_toolkit/ui/update/update_prompt.gd")
 
 # The Handle that owns the composed collaborator graph and frees it in dispose().
 # PluginComposer.compose() builds it; the orchestrator drives it and calls
@@ -23,10 +27,14 @@ var _handle = null
 
 var _tool_menu: ToolMenu = null
 var _wizard: OnboardingWizard = null
+var _update_prompt: UpdatePrompt = null
 # Set by _enable_plugin(), which the editor calls only for a mid-session enable, and
 # synchronously after _enter_tree, so the deferred _check_onboarding() sees it. A
 # plugin loaded at editor start never gets the call.
 var _enabled_mid_session: bool = false
+# Set by _disable_plugin(), which the editor calls just before _exit_tree on a
+# disable, so the exit does not install a staged update into a plugin being removed.
+var _disabling: bool = false
 
 
 func _enter_tree() -> void:
@@ -91,6 +99,20 @@ func _check_onboarding() -> void:
 	var show_optional := SetupSteps.shows_optional_steps(EditorInterface.get_editor_settings())
 	_wizard.show_run(SetupSteps.plan_run(
 			unseen, unseen.size() < all_ids.size(), show_optional, not _enabled_mid_session, false))
+	_show_update_prompt_if_due()
+
+
+# The ask mode's editor-start window, when the installer holds a verified release.
+# It waits for a start the setup wizard leaves free, and never follows a mid-session
+# enable.
+func _show_update_prompt_if_due() -> void:
+	if _enabled_mid_session or _handle == null or _wizard == null or _wizard.is_open():
+		return
+	var installer: UpdateInstaller = _handle.update_installer()
+	if installer == null or not installer.prompt_due():
+		return
+	_update_prompt = UpdatePrompt.new()
+	_update_prompt.show_for(installer)
 
 
 func _on_setup_step_seen(step_id: StringName) -> void:
@@ -140,6 +162,9 @@ func _exit_tree() -> void:
 	if _wizard != null:
 		_wizard.teardown()
 		_wizard = null
+	if _update_prompt != null:
+		_update_prompt.teardown()
+		_update_prompt = null
 
 	# The editor-settings watch (the EditorSettings singleton outlives this plugin).
 	var editor_settings := EditorInterface.get_editor_settings()
@@ -156,6 +181,11 @@ func _exit_tree() -> void:
 	if _handle != null:
 		_handle.dispose()
 		_handle = null
+
+	# A staged update is written now, once the graph is gone and while nothing can
+	# reload the files under a running toolkit (rationale in UpdateApplier).
+	if not _disabling:
+		UpdateApplier.apply_pending()
 
 	# Plugin reference — clear last (teardown symmetry with _enter_tree).
 	Modules.EditorAccess.clear_plugin()
@@ -177,6 +207,10 @@ func _enable_plugin() -> void:
 
 
 func _disable_plugin() -> void:
+	_disabling = true
+	# A disable removes the toolkit: drop a staged update with its files.
+	PendingUpdate.clear()
+
 	AutoloadRegistration.unregister(self)
 
 	# Scrub the project-local mcp_toolkit/* ProjectSettings unconditionally —

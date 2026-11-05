@@ -17,6 +17,7 @@ const WELCOME := &"welcome"
 const MCP_JSON := &"mcp_json"
 const OPTIONAL_STEPS := &"optional_steps"
 const UPDATES := &"updates"
+const UPDATE_INSTALL := &"update_install"
 const DOCK := &"dock"
 
 ## The EditorSettings key (bool, default [code]true[/code]) that shows the optional
@@ -30,6 +31,7 @@ const _TABLE := [
 	[MCP_JSON, true],
 	[OPTIONAL_STEPS, false],
 	[UPDATES, true],
+	[UPDATE_INSTALL, true],
 	[DOCK, false],
 ]
 

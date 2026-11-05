@@ -76,6 +76,7 @@ const ReleaseFileListTests := preload("res://test/units/release_file_list_tests.
 const InstallPlanTests := preload("res://test/units/install_plan_tests.gd")
 const InstallGuardsTests := preload("res://test/units/install_guards_tests.gd")
 const InstallModeTests := preload("res://test/units/install_mode_tests.gd")
+const SettingsRegistrationTests := preload("res://test/units/settings_registration_tests.gd")
 const StageStepperTests := preload("res://test/units/stage_stepper_tests.gd")
 const UpdateFolderTests := preload("res://test/units/update_folder_tests.gd")
 const UpdateFolderGuardTests := preload("res://test/units/update_folder_guard_tests.gd")
@@ -83,6 +84,9 @@ const UpdateJournalTests := preload("res://test/units/update_journal_tests.gd")
 const FolderFilesTests := preload("res://test/units/folder_files_tests.gd")
 const UpdateApplierTests := preload("res://test/units/update_applier_tests.gd")
 const UpdateSettlerTests := preload("res://test/units/update_settler_tests.gd")
+const UpdateInstallerTests := preload("res://test/units/update_installer_tests.gd")
+const UpdatePromptTests := preload("res://test/units/update_prompt_tests.gd")
+const DockUpdateBadgeTests := preload("res://test/units/dock_update_badge_tests.gd")
 const SetupWizardTests := preload("res://test/units/setup_wizard_tests.gd")
 const SetupWizardStepSpecTests := preload("res://test/units/setup_wizard_step_spec_tests.gd")
 const ExtensionCatalogFetcherTests := preload("res://test/units/extension_catalog_fetcher_tests.gd")
@@ -166,6 +170,7 @@ func _init() -> void:
 	InstallPlanTests.run(testing)
 	InstallGuardsTests.run(testing)
 	InstallModeTests.run(testing)
+	SettingsRegistrationTests.run(testing)
 	StageStepperTests.run(testing)
 	UpdateFolderTests.run(testing)
 	await UpdateFolderGuardTests.run(testing)  # each tool case awaits registry.call_command → coroutine
@@ -173,6 +178,9 @@ func _init() -> void:
 	FolderFilesTests.run(testing)
 	UpdateApplierTests.run(testing)
 	UpdateSettlerTests.run(testing)
+	await UpdateInstallerTests.run(testing, self)  # waits for a live tree → coroutine
+	UpdatePromptTests.run(testing)
+	await DockUpdateBadgeTests.run(testing, self)  # waits for a live tree → coroutine
 	await SetupWizardTests.run(testing, self)  # the run-ending groups await frames → coroutine
 	SetupWizardStepSpecTests.run(testing)
 	await ExtensionCatalogFetcherTests.run(testing, self)  # the in-tree group awaits a frame → coroutine

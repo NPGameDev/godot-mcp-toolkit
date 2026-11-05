@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
-## ProjectSettings registration for the limits, concurrency, audit, server-pin and
-## update-check keys.
+## ProjectSettings registration for the limits, concurrency, audit, server-pin,
+## update-check and install-mode keys.
 ##
 ## Called once at plugin startup to ensure mcp_toolkit/* keys appear
 ## in the Project Settings inspector with correct types and defaults, and the
@@ -11,6 +11,7 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const ResponseLimits = Modules.ResponseLimits
 const ServerPinPolicy = Modules.ServerPinPolicy
 const UpdateCheck = Modules.UpdateCheck
+const InstallMode = Modules.InstallMode
 
 # Keys earlier versions stored and this one no longer writes. Each entry is
 # removable at 2.0.0.
@@ -94,10 +95,13 @@ static func _register_server() -> void:
 		false)
 
 
-# Basic: a privacy switch belongs where users see it without Advanced Settings.
+# Basic: a privacy switch belongs where users see it without Advanced Settings, and
+# so does the choice that lets the toolkit change its own files.
 static func _register_updates() -> void:
 	_register_basic_bool(UpdateCheck.SETTING, true,
 		"Checks GitHub at most once a day for a newer toolkit version, then the Asset Store if one exists, and shows a badge in the dock. The requests carry no identifier and nothing about your project.")
+	_register_basic(InstallMode.SETTING, TYPE_STRING, InstallMode.DEFAULT, PROPERTY_HINT_ENUM,
+		",".join(PackedStringArray(InstallMode.VALUES)))
 
 
 static func _register_basic_bool(key: String, default_value: bool, description: String) -> void:

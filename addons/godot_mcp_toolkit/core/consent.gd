@@ -13,6 +13,7 @@ extends RefCounted
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
 const SetupStepTracker := preload("res://addons/godot_mcp_toolkit/core/setup_step_tracker.gd")
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
+const InstallMode := preload("res://addons/godot_mcp_toolkit/update/install_mode.gd")
 
 # Injected readers for tests; an invalid Callable reads the real source.
 # () -> bool: the project's update check toggle.
@@ -30,7 +31,7 @@ static func set_readers(toggle_reader: Callable, seen_reader: Callable) -> void:
 	_seen_reader = seen_reader
 
 
-## Read the project setting and the setup step tracker again.
+## Read the project settings and the setup step tracker again.
 static func reset_readers() -> void:
 	set_readers(Callable(), Callable())
 
@@ -40,6 +41,15 @@ static func reset_readers() -> void:
 ## explains the check has been seen.
 static func may_check_for_updates() -> bool:
 	return _update_toggle_on() and _has_seen(SetupSteps.UPDATES)
+
+
+## Whether the toolkit may download and install its own updates in [param mode], the
+## project's [code]mcp_toolkit/updates/install_mode[/code]: it may check for them, the
+## setup step that explains installing has been seen, and [param mode] is
+## [code]ask[/code] or [code]automatic[/code].
+static func may_install_updates(mode: String) -> bool:
+	return (may_check_for_updates() and _has_seen(SetupSteps.UPDATE_INSTALL)
+			and (mode == InstallMode.ASK or mode == InstallMode.AUTOMATIC))
 
 
 static func _update_toggle_on() -> bool:

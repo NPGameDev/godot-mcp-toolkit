@@ -358,10 +358,7 @@ func _on_pin_button_pressed() -> void:
 			question = "Restore the recommended server (%s)" % _pin_target
 		_:
 			return
-	var body := ("%s in .mcp.json?\n\nOnly the %s entry changes; other servers and your env keys are kept.\n"
-		+ "Restart your MCP client afterwards — the first launch after a version change downloads the server.") % [
-			question, MCPJsonSync.get_own_entry_key()]
-	_write_flow.write(false, _on_mcp_json_write_result, body)
+	_write_flow.write(false, _on_mcp_json_write_result, MCPJsonWriteFlow.server_change_body(question))
 
 
 # Result sink this panel supplies to the shared write flow — maps the
