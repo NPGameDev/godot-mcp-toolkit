@@ -43,8 +43,9 @@ will not hang your terminal.
 
 Two rules:
 
-- **The first argument is the Godot binary, not a file to check.** If you pass a
-  `.gd` path as the first argument, Godot cannot start and the script exits 2.
+- **The first argument is the Godot binary, not a file to check.** With
+  `GODOT_BIN` unset, a `.gd` path as the first argument cannot start Godot and
+  the script exits 2; with `GODOT_BIN` set, the first argument is ignored.
   Pass the binary (or set `GODOT_BIN`); the script always validates the whole
   project.
 - **One instance at a time.** Two Godot processes opening the same project fight

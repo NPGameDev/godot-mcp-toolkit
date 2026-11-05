@@ -12,9 +12,11 @@
 # project's root runs the editor pass alone and says so.
 #
 # Usage: ./scripts/test_framework/validate_gdscript.sh [godot-binary-path]
-# The first argument is the binary; a .gd path there exits 2.
-# Exit 0 = clean, Exit 1 = script errors found, Exit 2 = setup error: the warm-up
-# failed, Godot never started, or the per-file pass reported no verdict.
+# The first argument is the binary, read only when GODOT_BIN is unset; a .gd path
+# there exits 2.
+# Exit 0 = clean, Exit 1 = script errors found, Exit 2 = setup error: not run from
+# a project root, the warm-up failed, Godot never started, or the per-file pass
+# reported no verdict.
 #
 # Environment variables:
 #   GODOT_BIN              - Godot binary (default: first arg, or "godot")
@@ -56,8 +58,9 @@ ERRORS_FOUND=0
 # --- Warm-up: the class cache -----------------------------------------------
 # Godot 4.3 writes the cache only when its threaded scan ends, so pass 1's
 # frame-count quit can beat the write, and pass 2 then fails on every class_name.
-# The warm-up polls for the file instead. It runs on any version with no cache,
-# and a stale cache needs nothing: pass 1's scan picks up new classes.
+# The warm-up polls for the file instead. It runs on any version with no cache.
+# A stale cache gets no warm-up: one held with a new class_name and a script
+# typed on it.
 if [ ! -f "$CACHE_FILE" ]; then
   if ! GODOT_BIN="$GODOT_BIN" GODOT_WARM_ONLY=1 bash "$SCRIPT_DIR/run_units_cold.sh"; then
     echo "ERROR: the class-cache warm-up failed, so nothing was validated" >&2
@@ -81,7 +84,9 @@ echo "Pass 1 exit code: $PASS1_EXIT"
 # 126 and 127 mean Godot never started. Every other code stays unenforced, since
 # 134 and 139 appear on good runs: the output below is the verdict.
 if [ "$PASS1_EXIT" -eq 126 ] || [ "$PASS1_EXIT" -eq 127 ]; then
-  echo "ERROR: Godot never started: '$GODOT_BIN' is not a binary that can run" >&2
+  # The output holds the real reason: a missing timeout, a loader error.
+  echo "$PASS1_OUTPUT" >&2
+  echo "ERROR: Godot could not start: running '$GODOT_BIN' under timeout exited $PASS1_EXIT" >&2
   exit 2
 fi
 

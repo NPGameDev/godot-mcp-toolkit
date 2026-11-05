@@ -107,6 +107,7 @@ case "${run}" in
         ;;
       crash) exit 139 ;;
       no_summary) echo 'check_all_scripts: scanning 169 .gd files' ;;
+      indented_fail) echo '  FAIL: res://x.gd' ;;
       error_no_summary)
         echo 'SCRIPT ERROR: Parse Error: seeded'
         exit 1
@@ -145,12 +146,25 @@ new_project() {
 }
 
 # Runs the validator in PROJECT and sets OUT, STATUS and CALLS (the stub's runs, in
-# order, space-separated).
-run_validator() {
+# order, space-separated). The first argument is "keep" or "unset" for GODOT_BIN in
+# the validator's environment; the rest go to the validator.
+run_validator_with_bin() {
+  local bin_env="$1"
+  shift
   : > "${STUB_CALLS}"
-  OUT="$(cd "${PROJECT}" && bash "${VALIDATOR}" "$@" 2>&1)" && STATUS=0 || STATUS=$?
+  OUT="$(
+    cd "${PROJECT}"
+    [[ "${bin_env}" == "unset" ]] && unset GODOT_BIN
+    bash "${VALIDATOR}" "$@" 2>&1
+  )" && STATUS=0 || STATUS=$?
   CALLS="$(tr '\n' ' ' < "${STUB_CALLS}")"
 }
+
+run_validator() { run_validator_with_bin keep "$@"; }
+
+# Runs with GODOT_BIN absent from the environment, so a binary given as the first
+# argument reaches the warm-up only through the validator's own hand-down.
+run_validator_no_bin_env() { run_validator_with_bin unset "$@"; }
 
 echo "── the plain run ──"
 new_project
@@ -161,7 +175,7 @@ check "warm tree: no warm-up, then both passes" equals "${CALLS}" "pass1 pass2 "
 
 echo "── the warm-up ──"
 new_project cold
-GODOT_BIN="" run_validator "${STUB}"
+run_validator_no_bin_env "${STUB}"
 check "cold tree, binary as the first argument: exits 0" equals "${STATUS}" "0"
 check "cold tree: warm-up, then both passes" equals "${CALLS}" "warmup pass1 pass2 "
 check "cold tree: the warm-up reports its cache" contains "${OUT}" "cache written: yes"
@@ -181,7 +195,7 @@ check "script absent: pass 2 never runs" equals "${CALLS}" "pass1 "
 new_project no-runner
 STUB_PASS1=error_then_noise run_validator
 check "script absent: pass 1's error still exits 1" equals "${STATUS}" "1"
-for mode in crash no_summary error_no_summary; do
+for mode in crash no_summary indented_fail error_no_summary; do
   new_project
   STUB_PASS2="${mode}" run_validator
   check "${mode}: exits 2" equals "${STATUS}" "2"
@@ -209,17 +223,31 @@ for code in 134 139; do
   check "exit ${code}: exits 0" equals "${STATUS}" "0"
   check "exit ${code}: printed in the log" contains "${OUT}" "Pass 1 exit code: ${code}"
 done
-new_project
+# Pass 2's script is absent in the cases a warm pass 1 decides alone, so the exit 2
+# comes from the 126/127 rule and not from pass 2's no-verdict check.
+new_project no-runner
 GODOT_BIN="${WORK}/no-such-godot" run_validator
 check "missing binary: exits 2" equals "${STATUS}" "2"
 check "missing binary: does not read RESULT: PASS" lacks "${OUT}" "RESULT: PASS"
 for tree in warm cold; do
-  new_project "${tree}"
-  : > "${PROJECT}/some_script.gd"
-  GODOT_BIN="" run_validator "${PROJECT}/some_script.gd"
+  if [[ "${tree}" == "warm" ]]; then
+    new_project warm no-runner
+  else
+    new_project cold
+  fi
+  # Run as the binary, the file lacks an execute bit and exits 126 on Linux; on Windows
+  # every file counts as executable, so its body supplies the same exit.
+  echo 'exit 126' > "${PROJECT}/some_script.gd"
+  run_validator_no_bin_env "${PROJECT}/some_script.gd"
   check "a .gd first argument, ${tree} tree: exits 2" equals "${STATUS}" "2"
   check "a .gd first argument, ${tree} tree: does not read RESULT: PASS" lacks "${OUT}" "RESULT: PASS"
 done
+new_project
+: > "${PROJECT}/some_script.gd"
+run_validator "${PROJECT}/some_script.gd"
+check "a .gd first argument beside GODOT_BIN: exits 0" equals "${STATUS}" "0"
+check "a .gd first argument beside GODOT_BIN: reads RESULT: PASS" contains "${OUT}" "RESULT: PASS"
+check "a .gd first argument beside GODOT_BIN: the argument is ignored" equals "${CALLS}" "pass1 pass2 "
 
 echo "── an error ahead of more than a pipe buffer ──"
 new_project

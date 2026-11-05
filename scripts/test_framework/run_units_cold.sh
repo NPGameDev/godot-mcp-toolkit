@@ -32,8 +32,7 @@
 # is unreliable (benign headless warnings), so it is never consulted.
 #
 # Same script runs locally (in a 4.2 Linux container) and in CI, GODOT_BIN-
-# parameterized exactly like validate_gdscript.sh — zero drift. CI's warm-up
-# steps and validate_gdscript.sh's cold-tree warm-up call it with GODOT_WARM_ONLY.
+# parameterized exactly like validate_gdscript.sh — zero drift.
 #
 # Usage: ./scripts/test_framework/run_units_cold.sh [godot-binary-path]
 # Exit 0 = all units passed, 1 = unit failures or a runtime script error,
