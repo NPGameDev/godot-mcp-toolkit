@@ -38,6 +38,15 @@ static func chain(source: Dictionary = {}) -> TrustChain:
 			str(source.get("trust_store", TrustChain.store_folder())))
 
 
+## Whether this release embeds a readable trust document. It reads no store, so it is cheap
+## enough for every evaluation, and it stays true under a document that lists no release key,
+## since only a walk to the next document can lift that stop. [param source] is what
+## [method chain] takes.
+static func has_chain(source: Dictionary = {}) -> bool:
+	var embedded := str(source.get("trust_document", EmbeddedTrustDocument.DOCUMENT))
+	return str(TrustChain.read_embedded(embedded)["error"]).is_empty()
+
+
 ## Whether [param signature] is a valid signature over [param message] by one of
 ## [param trusted_keys], each a PEM public key. A key that does not load counts as
 ## no key; an empty list accepts nothing.

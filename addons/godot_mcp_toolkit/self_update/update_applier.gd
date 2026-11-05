@@ -44,6 +44,8 @@ const STEP_CHECKED := "checked"
 const STEP_APPLYING := "applying"
 const STEP_LIVE_MOVED := "live_moved"
 const STEP_STAGE_MOVED := "stage_moved"
+## The reason a release whose signature the chain no longer trusts is not installed.
+const UNTRUSTED_SIGNATURE := "the update is not signed by a key this toolkit trusts"
 
 
 ## Applies the staged update, if there is one.
@@ -149,7 +151,7 @@ static func check_release(
 	var manifest_bytes := FileAccess.get_file_as_bytes(release_folder.path_join(ReleaseAssets.manifest_name(version)))
 	var signature := FileAccess.get_file_as_bytes(release_folder.path_join(ReleaseAssets.signature_name(version)))
 	if not ReleaseSignature.is_trusted(manifest_bytes, signature, options.get("public_keys"), options):
-		return _problem("the update is not signed by a key this toolkit trusts")
+		return _problem(UNTRUSTED_SIGNATURE)
 	var manifest := ReleaseManifest.parse(manifest_bytes.get_string_from_utf8(), version)
 	if not str(manifest["error"]).is_empty():
 		return _problem(str(manifest["error"]))

@@ -287,6 +287,11 @@ func has_store() -> bool:
 	return not _store.is_empty()
 
 
+## The absolute folder documents are written to, empty without a store.
+func store() -> String:
+	return _store
+
+
 ## The version of the latest document, or 0 when there is no chain.
 func version() -> int:
 	return int(_current.get("version", 0))

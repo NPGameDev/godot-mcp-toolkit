@@ -212,7 +212,7 @@ static func _test_cut_download_leaves_no_partial_zip(testing: Testing, tree: Sce
 	var installer: UpdateInstaller = nodes["installer"]
 	var record_before: String = UpdateJournal.read(world["updates"])["state"]
 	installer.install()
-	var record_during: String = UpdateJournal.read(world["updates"])["state"]
+	var record_during := ""
 	var peer: StreamPeerTCP = null
 	var request := ""
 	var frames_since_file := -1
@@ -228,6 +228,15 @@ static func _test_cut_download_leaves_no_partial_zip(testing: Testing, tree: Sce
 		if not request.contains("\r\n\r\n"):
 			request += peer.get_utf8_string(peer.get_available_bytes())
 			if request.contains("\r\n\r\n"):
+				# The click's walk asks for the next trust document first, and the chain ends there.
+				if request.get_slice(" ", 1).ends_with(ReleaseAssets.trust_document_name(2)):
+					peer.put_data("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_utf8_buffer())
+					peer.disconnect_from_host()
+					peer = null
+					request = ""
+					continue
+				# The journal is written once the walk is over, just before the zip's request.
+				record_during = UpdateJournal.read(world["updates"])["state"]
 				peer.put_data(("HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n"
 						% archive_bytes.size()).to_utf8_buffer())
 				peer.put_data(archive_bytes.slice(0, archive_bytes.size() / 2))
@@ -296,7 +305,7 @@ static func _test_found_this_session(testing: Testing, tree: SceneTree) -> void:
 
 
 # One start verifies the release over a loopback listener; the next finds what it kept.
-# The first start's two connections show the listener sees requests, so the second's
+# The first start's three connections show the listener sees requests, so the second's
 # zero means none were sent.
 static func _test_start_offers_kept_release_without_requests(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: a start offers a kept release without fetching it again")
@@ -333,7 +342,7 @@ static func _test_start_offers_kept_release_without_requests(testing: Testing, t
 	else:
 		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
 	testing.ok(frames < 1200, "the first start verifies within 1200 frames")
-	testing.eq(first_connections, 2, "the first start → the manifest and the signature fetched")
+	testing.eq(first_connections, 3, "the first start → the chain's 404, the manifest and the signature fetched")
 	testing.eq(record, "", "and no journal written")
 	testing.ok(ignored, "the kept files sit under the folder's ignore files")
 	testing.eq(state, "available", "the next start → available at once")
@@ -461,6 +470,11 @@ static func _test_staged_release_stands(testing: Testing, tree: SceneTree) -> vo
 		server.poll()
 		await tree.process_frame
 	(nodes["runner"] as UpdateCheckRunner).state_changed.emit()
+	for _frame: int in range(120):
+		server.poll()
+		await tree.process_frame
+	# A click runs no walk while an update is staged.
+	installer.install()
 	for _frame: int in range(120):
 		server.poll()
 		await tree.process_frame
@@ -676,5 +690,5 @@ static func _test_redirects_every_engine_must_follow(testing: Testing, tree: Sce
 		else:
 			OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
 		testing.eq(state, "available", "%d on the manifest and signature → verified" % code)
-		testing.eq(connections, 4, "%d → each file's redirect and the file" % code)
+		testing.eq(connections, 5, "%d → the chain's 404, then each file's redirect and the file" % code)
 	print("")

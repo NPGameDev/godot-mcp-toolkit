@@ -71,6 +71,14 @@ The chain has no network of its own. The owner of the fetch asks `next_version()
 file and hands its bytes to `accept()`. Checking a signature only reads files, so the applier can
 verify at the editor's exit, offline, from what the store holds.
 
+The installer runs that fetch just before it verifies a newer release and on each click on Update.
+An up-to-date client asks for nothing, an empty embedded document means no walk, and a release an
+earlier session kept is offered at a start without a request. No walk runs while an update is staged.
+A 404 ends the chain. A timeout, a 5xx, a TLS failure, an off-list redirect or an invalid document
+leaves the badge's links with a sentence saying what failed. A click retries now and a new start
+retries; there is no timer. A document with no release keys does not stop the walk, because only the
+next document can lift the emergency stop.
+
 ## Rotating a release key
 
 The examples go from `trust-7` to `trust-8` and publish release `X.Y.Z`. Run them from the repo root.

@@ -39,6 +39,7 @@ const _MAJOR_TITLE := "Godot MCP Toolkit %s is out. It's a major release, so see
 const _UPDATED_TITLE := "Godot MCP Toolkit was updated to %s."
 const _FAILED_TITLE := "Godot MCP Toolkit %s was not installed."
 const _GITHUB_TEXT := "Get it on GitHub"
+const _DOWNLOAD_TEXT := "Download from GitHub"
 const _WHATS_NEW_TEXT := "What's new"
 const _STORE_TEXT := "Get it on the Asset Store"
 const _STORE_UNLISTED_TEXT := "Asset Store (not listed yet)"
@@ -261,8 +262,11 @@ func _render_install_state() -> void:
 		_:
 			status = _installer.note_text() if about_shown else ""
 	_set_status(status)
-	_update_btn.visible = state == UpdateInstaller.AVAILABLE or state == UpdateInstaller.FAILED
+	var check_failed: bool = about_shown and state == UpdateInstaller.IDLE and _installer.check_failed()
+	_update_btn.visible = state == UpdateInstaller.AVAILABLE or state == UpdateInstaller.FAILED \
+			or (check_failed and _installer.can_retry_check())
 	_update_btn.text = _RETRY_TEXT if state == UpdateInstaller.FAILED else _UPDATE_TEXT
+	_github_btn.text = _DOWNLOAD_TEXT if check_failed else _GITHUB_TEXT
 	_restart_btn.visible = state == UpdateInstaller.READY
 	_discard_btn.visible = state == UpdateInstaller.READY
 	_update_mcp_json_btn.visible = false

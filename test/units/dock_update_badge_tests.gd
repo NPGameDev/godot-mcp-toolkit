@@ -13,7 +13,10 @@ const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
+const TrustFixtures := preload("res://test/units/trust_fixtures.gd")
 
 const _HOST_ENV := "GODOT_MCP_UPDATE_CHECK_HOST"
 
@@ -59,6 +62,9 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_toast_once_for_verified(testing, tree)
 	await _test_no_toast_for_shown_release(testing, tree)
 	await _test_no_toast_for_restored_release(testing, tree)
+	await _test_failed_check_keeps_the_links(testing, tree)
+	await _test_no_data_folder_offers_only_the_link(testing, tree)
+	_test_key_dropped_after_staging_shows(testing, tree)
 
 
 # A world with a running installer and a badge in the tree. Returns the nodes
@@ -437,4 +443,98 @@ static func _test_no_toast_for_restored_release(testing: Testing, tree: SceneTre
 	_end(world, nodes)
 	testing.eq(state, "available", "the kept release → available after the badge entered")
 	testing.eq(toasts.size(), 0, "and no toast")
+	print("")
+
+
+static func _test_failed_check_keeps_the_links(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a failed check says why, keeps the download link and offers Update")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	server.redirect("/" + ReleaseAssets.trust_document_name(2), 503, "")
+	var previous_host := _set_host(server.host())
+	var world := UpdateFixtures.begin_world("badge_failed_check", "1.9.0", "ask", "1.1.0")
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var installer: UpdateInstaller = nodes["installer"]
+	var frames := 0
+	while not installer.check_failed() and frames < 1200:
+		server.poll()
+		await tree.process_frame
+		frames += 1
+	var status := _text(badge, "Status")
+	var update_shown := _shown(badge, "UpdateButton")
+	var update_text := _text(badge, "UpdateButton")
+	var link_shown := _shown(badge, "GitHubButton")
+	var link_text := _text(badge, "GitHubButton")
+	var before_click := server.connections()
+	_press(badge, "UpdateButton")
+	var status_on_click := _text(badge, "Status")
+	var link_on_click := _text(badge, "GitHubButton")
+	frames = 0
+	while not installer.check_failed() and frames < 1200:
+		server.poll()
+		await tree.process_frame
+		frames += 1
+	var click_requests := server.connections() - before_click
+	var status_after_click := _text(badge, "Status")
+	_end(world, nodes)
+	server.stop()
+	_restore_host(previous_host)
+	var github_sentence := "GitHub isn't responding. Try Update again in a few minutes. The toolkit also tries again the next time you open the editor."
+	testing.eq(status, github_sentence, "the status line says what failed")
+	testing.ok(update_shown, "Update stays on offer")
+	testing.eq(update_text, "Update", "and reads Update")
+	testing.ok(link_shown, "the link stays")
+	testing.eq(link_text, "Download from GitHub", "and reads Download from GitHub")
+	testing.eq(status_on_click, "Downloading 1.9.0…", "a click → the status line shows it running")
+	testing.eq(link_on_click, "Get it on GitHub", "and the link reads as usual again")
+	testing.eq(click_requests, 1, "the click → a new request at the listener")
+	testing.eq(status_after_click, github_sentence, "a second failure → the same sentence")
+	print("")
+
+
+# "." is what the data folder comes to with no HOME or APPDATA. The world's own store goes back
+# before _end, since end_world deletes whatever folder the options name.
+static func _test_no_data_folder_offers_only_the_link(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: with no data folder only the download link is on offer")
+	var world := UpdateFixtures.begin_world("badge_no_store", "1.9.0", "ask", "1.1.0")
+	var options: Dictionary = world["options"]
+	var store: String = options["trust_store"]
+	options["trust_store"] = "."
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	await tree.process_frame
+	var status := _text(badge, "Status")
+	var update_shown := _shown(badge, "UpdateButton")
+	var link_shown := _shown(badge, "GitHubButton")
+	var link_text := _text(badge, "GitHubButton")
+	options["trust_store"] = store
+	_end(world, nodes)
+	testing.ok(status.begins_with("This update can't install here because your system doesn't set "),
+			"the status line says what is missing")
+	testing.ok(not update_shown, "Update is not offered, since a click cannot help")
+	testing.ok(link_shown, "the link stays")
+	testing.eq(link_text, "Download from GitHub", "and reads Download from GitHub")
+	print("")
+
+
+static func _test_key_dropped_after_staging_shows(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a key dropped after staging shows plainly at the next start")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := _set_host(server.host())
+	var world := UpdateFixtures.begin_world("badge_key_dropped", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var store := ProjectSettings.globalize_path(str((world["options"] as Dictionary)["trust_store"]))
+	var document := TrustFixtures.file_of(
+			TrustFixtures.body(2, [TrustFixtures.root_key()], 1, [UpdateFixtures.other_key()]), [TrustFixtures.root_key()])
+	FolderFiles.write_checked(store.path_join(ReleaseAssets.trust_document_name(2)), document)
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var title := _text(badge, "Title")
+	var status := _text(badge, "Status")
+	_end(world, nodes)
+	server.stop()
+	_restore_host(previous_host)
+	testing.eq(title, "Godot MCP Toolkit 1.9.0 was not installed.", "the title names the release")
+	testing.ok(status.begins_with("The update is not signed by a key this toolkit trusts. Version 1.1.0 is still installed."),
+			"the status line gives the reason in plain words")
 	print("")

@@ -385,6 +385,10 @@ class LoopbackReleaseServer extends RefCounted:
 	var _peers: Array[StreamPeerTCP] = []
 	var _requests: Array[String] = []
 	var _connections := 0
+	var _paths: Array[String] = []
+	var _held_path_ends: Array[String] = []
+	var _held_peers: Array[StreamPeerTCP] = []
+	var _breaks_handshakes := false
 
 	func _init(assets: Dictionary) -> void:
 		_assets = assets
@@ -404,6 +408,19 @@ class LoopbackReleaseServer extends RefCounted:
 	func redirect(path_end: String, status: int, location: String) -> void:
 		_redirects[path_end] = {"status": status, "location": location}
 
+	# The path of each request answered or held so far, in the order they arrived.
+	func paths() -> Array[String]:
+		return _paths.duplicate()
+
+	# Leaves a request whose path ends in `path_end` unanswered, so the client's timeout ends it.
+	func hold(path_end: String) -> void:
+		_held_path_ends.append(path_end)
+
+	# Answers whatever arrives with bytes that are no TLS record, then hangs up, which is what
+	# a TLS client meets at a plain listener.
+	func break_handshakes() -> void:
+		_breaks_handshakes = true
+
 	func poll() -> void:
 		while _server.is_connection_available():
 			_peers.append(_server.take_connection())
@@ -412,20 +429,41 @@ class LoopbackReleaseServer extends RefCounted:
 		for index in range(_peers.size() - 1, -1, -1):
 			var peer := _peers[index]
 			peer.poll()
+			if _breaks_handshakes:
+				if peer.get_available_bytes() > 0:
+					peer.put_data("plain text".to_utf8_buffer())
+					peer.disconnect_from_host()
+					_peers.remove_at(index)
+					_requests.remove_at(index)
+				continue
 			_requests[index] += peer.get_utf8_string(peer.get_available_bytes())
 			if not _requests[index].contains("\r\n\r\n"):
 				continue
-			_answer(peer, _requests[index].get_slice(" ", 1))
-			peer.disconnect_from_host()
+			var path := _requests[index].get_slice(" ", 1)
+			_paths.append(path)
+			if _is_held(path):
+				_held_peers.append(peer)
+			else:
+				_answer(peer, path)
+				peer.disconnect_from_host()
 			_peers.remove_at(index)
 			_requests.remove_at(index)
 
 	func stop() -> void:
 		for peer in _peers:
 			peer.disconnect_from_host()
+		for peer in _held_peers:
+			peer.disconnect_from_host()
 		_peers.clear()
+		_held_peers.clear()
 		_requests.clear()
 		_server.stop()
+
+	func _is_held(path: String) -> bool:
+		for path_end: String in _held_path_ends:
+			if path.ends_with(path_end):
+				return true
+		return false
 
 	func _answer(peer: StreamPeerTCP, path: String) -> void:
 		for path_end: String in _redirects:
