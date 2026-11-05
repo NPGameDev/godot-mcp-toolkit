@@ -84,6 +84,7 @@ const UpdateJournalTests := preload("res://test/units/update_journal_tests.gd")
 const FolderFilesTests := preload("res://test/units/folder_files_tests.gd")
 const UpdateApplierTests := preload("res://test/units/update_applier_tests.gd")
 const UpdateSettlerTests := preload("res://test/units/update_settler_tests.gd")
+const UpdateDownloaderTests := preload("res://test/units/update_downloader_tests.gd")
 const UpdateInstallerTests := preload("res://test/units/update_installer_tests.gd")
 const UpdatePromptTests := preload("res://test/units/update_prompt_tests.gd")
 const DockUpdateBadgeTests := preload("res://test/units/dock_update_badge_tests.gd")
@@ -178,6 +179,7 @@ func _init() -> void:
 	FolderFilesTests.run(testing)
 	UpdateApplierTests.run(testing)
 	UpdateSettlerTests.run(testing)
+	await UpdateDownloaderTests.run(testing, self)  # fetches through loopback listeners → coroutine
 	await UpdateInstallerTests.run(testing, self)  # waits for a live tree → coroutine
 	UpdatePromptTests.run(testing)
 	await DockUpdateBadgeTests.run(testing, self)  # waits for a live tree → coroutine

@@ -32,9 +32,9 @@ README's privacy line; the setting is listed in `contract.md` (C22).
 
 ## Pointing the check at a local server
 
-Set `GODOT_MCP_UPDATE_CHECK_HOST` in the editor's environment to a scheme and host, for example
-`http://127.0.0.1:8123`, before you start the editor. It replaces the scheme and host of both
-request URLs and keeps their paths, so the local server answers
+Set `GODOT_MCP_UPDATE_CHECK_HOST` in the editor's environment to a scheme and loopback host, for
+example `http://127.0.0.1:8123`, before you start the editor; `localhost` and `[::1]` work too, and
+any other value is ignored. It replaces the scheme and host of both request URLs and keeps their paths, so the local server answers
 `/repos/NPGameDev/godot-mcp-toolkit/releases/latest` with `{"tag_name": "vX.Y.Z"}` and
 `/api/v1/releases/npgamedev/godot-mcp-toolkit/` with a JSON array of
 `{"version": "X.Y.Z", "stable": true}` entries. A value that does not start with `http://` or

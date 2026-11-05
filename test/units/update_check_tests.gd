@@ -27,6 +27,7 @@ static func run(testing) -> void:
 	_test_malformed_input_is_silent(testing)
 	_test_due_state(testing)
 	_test_requests(testing)
+	_test_host_variable_takes_loopback_only(testing)
 	_test_catalog_request(testing)
 	_test_release_page_url(testing)
 	_test_runner_state_bytes(testing)
@@ -245,6 +246,27 @@ static func _test_requests(testing) -> void:
 	testing.eq(UpdateCheck.github_request("file:///tmp")["url"],
 			"https://api.github.com/repos/NPGameDev/godot-mcp-toolkit/releases/latest",
 			"a non-http scheme is ignored")
+	print("")
+
+
+# The variable exists for a local test server, so no value of it may send a user's requests
+# off the machine, credentials that hide another host included.
+static func _test_host_variable_takes_loopback_only(testing) -> void:
+	testing.begin("Update check: the host variable takes a loopback address only")
+	var fallback := "https://api.github.com"
+	for loopback: String in ["http://127.0.0.1:8123", "https://127.0.0.1:8123", "http://127.0.0.1",
+			"http://localhost:8123", "http://[::1]:8123"]:
+		testing.eq(UpdateCheck.resolve_host(loopback, fallback), loopback, "%s → used" % loopback)
+	testing.eq(UpdateCheck.resolve_host(" http://localhost:8123/ ", fallback), "http://localhost:8123",
+			"spaces and a trailing slash → dropped")
+	for other: String in ["https://example.com", "http://example.com:8123", "http://github.com",
+			"http://127.0.0.1.example.com", "http://localhost.example.com:8123",
+			"http://127.0.0.1@example.com", "http://localhost:8123@example.com",
+			"http://127.0.0.1:8123/path", "http://127.0.0.1:port", "HTTP://127.0.0.1:8123", ""]:
+		testing.eq(UpdateCheck.resolve_host(other, fallback), fallback, "%s → ignored" % other)
+	testing.eq(UpdateCheck.github_request("https://example.com")["url"],
+			"https://api.github.com/repos/NPGameDev/godot-mcp-toolkit/releases/latest",
+			"a host off the machine → the request stays on GitHub")
 	print("")
 
 

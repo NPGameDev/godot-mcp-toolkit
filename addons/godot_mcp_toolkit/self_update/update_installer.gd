@@ -16,7 +16,8 @@ extends Node
 ## A verified manifest and a staged zip are kept in the update folder (see
 ## [code]update_folder.gd[/code]), so an editor start finds them again without a request. Failures before the user asked are
 ## silent, like the update check's; after a click on Update they show in the badge.
-## Every URL is built from the version (see [code]release_assets.gd[/code]).
+## Every URL is built from the version (see [code]release_assets.gd[/code]), and a reply can
+## redirect it only to the hosts [code]update_downloader.gd[/code] allows.
 
 ## Emitted when anything the badge or the prompt shows may have changed.
 signal state_changed
@@ -24,7 +25,6 @@ signal state_changed
 # Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
-const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
 const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
@@ -39,6 +39,7 @@ const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/rel
 const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
+const UpdateDownloader := preload("res://addons/godot_mcp_toolkit/self_update/update_downloader.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 
 ## [method state] values. [constant IDLE]: nothing to install, the badge links only.
@@ -74,7 +75,7 @@ var _options: Dictionary = {}
 var _project_settings: Object = ProjectSettings
 # The install guards' facts, or an empty dictionary to read them from the project.
 var _guard_facts: Dictionary = {}
-var _http: HTTPRequest = null
+var _downloader: UpdateDownloader = null
 var _waiting: int = _WAITING_NONE
 var _state: String = IDLE
 var _version: String = ""
@@ -116,9 +117,9 @@ func _init(runner: UpdateCheckRunner, options: Dictionary = {}) -> void:
 
 
 func _ready() -> void:
-	_http = HTTPRequest.new()
-	_http.request_completed.connect(_on_request_completed)
-	add_child(_http)
+	_downloader = UpdateDownloader.new()
+	_downloader.finished.connect(_on_fetched)
+	add_child(_downloader)
 	_settle_last_update()
 	if _runner != null:
 		_runner.state_changed.connect(_evaluate)
@@ -131,8 +132,8 @@ func _exit_tree() -> void:
 		_runner.state_changed.disconnect(_evaluate)
 	if ProjectSettings.settings_changed.is_connected(_evaluate):
 		ProjectSettings.settings_changed.disconnect(_evaluate)
-	if _http != null:
-		_http.cancel_request()
+	if _downloader != null:
+		_downloader.cancel()
 	_waiting = _WAITING_NONE
 
 
@@ -390,11 +391,8 @@ func _download_archive() -> void:
 
 
 func _send(asset: String, waiting: int, size_limit: int, target_file: String, timeout: float) -> void:
-	_http.download_file = target_file
-	_http.body_size_limit = size_limit
-	_http.timeout = timeout
 	var url := ReleaseAssets.download_url(OS.get_environment(UpdateCheck.HOST_ENV), _version, asset)
-	var error := _http.request(url, HttpIdentity.request_headers(), HTTPClient.METHOD_GET)
+	var error := _downloader.fetch(url, size_limit, timeout, target_file)
 	_waiting = waiting if error == OK else _WAITING_NONE
 	if error != OK:
 		if waiting == _WAITING_ARCHIVE:
@@ -402,23 +400,21 @@ func _send(asset: String, waiting: int, size_limit: int, target_file: String, ti
 		_fail("the download could not start (error %d)" % error)
 
 
-func _on_request_completed(
-		result: int, response_code: int, _headers: PackedStringArray, body: PackedByteArray) -> void:
+func _on_fetched(outcome: Dictionary) -> void:
 	var waiting := _waiting
 	_waiting = _WAITING_NONE
-	_http.download_file = ""
-	if result != HTTPRequest.RESULT_SUCCESS or response_code != 200:
-		# Up to Godot 4.6, HTTPRequest leaves what it wrote of a failed download.
+	if not bool(outcome["ok"]):
 		if waiting == _WAITING_ARCHIVE:
 			_keep_only_verified()
-		_fail("the download failed (result %d, HTTP %d)" % [result, response_code])
+		var refusal := str(outcome["refusal"])
+		_fail(refusal if not refusal.is_empty() else "the download failed (result %d, HTTP %d)" % [int(outcome["result"]), int(outcome["code"])])
 		return
 	match waiting:
 		_WAITING_MANIFEST:
-			_manifest_bytes = body
+			_manifest_bytes = outcome["body"]
 			_send(ReleaseAssets.signature_name(_version), _WAITING_SIGNATURE, ReleaseSignature.MAX_BYTES, "", _MANIFEST_TIMEOUT_SEC)
 		_WAITING_SIGNATURE:
-			_on_signature(body)
+			_on_signature(outcome["body"])
 		_WAITING_ARCHIVE:
 			_on_archive()
 
@@ -511,9 +507,8 @@ func _fail(reason: String) -> void:
 
 
 func _cancel() -> void:
-	if _http != null:
-		_http.cancel_request()
-		_http.download_file = ""
+	if _downloader != null:
+		_downloader.cancel()
 	_waiting = _WAITING_NONE
 	_user_asked = false
 

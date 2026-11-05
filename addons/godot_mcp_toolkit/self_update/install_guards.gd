@@ -10,8 +10,8 @@ extends RefCounted
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
-## The contributor-only environment variable that lets a headless editor install,
-## for the integration tests. Set to [code]1[/code].
+## The test-only environment variable that lets a headless editor install, for the
+## integration tests. Set to [code]1[/code]; nothing outside a test should set it.
 const HEADLESS_OVERRIDE_ENV := "GODOT_MCP_UPDATE_ALLOW_HEADLESS"
 
 ## [method refusal] results.

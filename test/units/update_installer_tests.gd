@@ -2,8 +2,9 @@
 extends RefCounted
 ## Unit tests for the update installer: the notice an apply leaves for the next start,
 ## picking up a kept or staged release, the gates that keep it idle, giving an update up,
-## and a failed or killed download, served by a loopback listener. A download that succeeds
-## runs in the update flow integration test (scripts/test_framework/update_flow.sh).
+## and a failed, killed or redirected download, served by a loopback listener. A download
+## that succeeds runs in the update flow integration test
+## (scripts/test_framework/update_flow.sh).
 
 const Testing := preload("res://test/units/testing.gd")
 const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
@@ -34,6 +35,9 @@ static func run(testing, tree: SceneTree) -> void:
 	_test_staged_zip_that_will_not_delete(testing, tree)
 	await _test_staged_release_stands(testing, tree)
 	await _test_stage_failing_its_check_gives_way(testing, tree)
+	await _test_off_list_redirect_of_the_zip(testing, tree)
+	await _test_off_list_redirect_during_a_verify(testing, tree)
+	await _test_redirects_every_engine_must_follow(testing, tree)
 
 
 # With no stand-in in its options, the installer reads the project setting. Restored
@@ -560,4 +564,117 @@ static func _test_stage_failing_its_check_gives_way(testing: Testing, tree: Scen
 	testing.eq(signature_state, "available", "the newer release → verified and offered")
 	testing.eq(signature_version, "1.9.0", "about the newer version")
 	testing.eq(signature_record, "", "the staged journal goes")
+	print("")
+
+
+# The first listener is the host variable's address. The second serves the zip on another
+# port, so a request reaching it means the hop was followed: an unreachable host would also
+# end in a failure, which alone proves nothing. The credentials form connects to the second
+# listener wherever the engine reads the URL itself.
+static func _test_off_list_redirect_of_the_zip(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a zip redirected off the list is refused")
+	var zip_name := ReleaseAssets.archive_name("1.9.0")
+	for form: String in ["http://127.0.0.1:%d/", "http://github.com@127.0.0.1:%d/"]:
+		var world := UpdateFixtures.begin_world("installer_off_list_zip", "1.9.0", "ask", "1.1.0")
+		var archive_bytes := UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+		var second := UpdateFixtures.LoopbackReleaseServer.new({zip_name: archive_bytes})
+		var first := UpdateFixtures.LoopbackReleaseServer.new({})
+		first.redirect("/" + zip_name, 302, (form % int(second.host().get_slice(":", 2))) + zip_name)
+		var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
+		OS.set_environment(UpdateFixtures.HOST_ENV, first.host())
+		var nodes := UpdateFixtures.start_world(world, tree)
+		var installer: UpdateInstaller = nodes["installer"]
+		installer.install()
+		var frames := 0
+		while installer.state() == "downloading" and frames < 1200:
+			first.poll()
+			second.poll()
+			await tree.process_frame
+			frames += 1
+		second.poll()
+		var state := installer.state()
+		var second_hits := second.connections()
+		var zip_left := UpdateFixtures.has_release_file(world, "1.9.0", zip_name)
+		UpdateFixtures.end_world(world, nodes)
+		first.stop()
+		second.stop()
+		if previous_host.is_empty():
+			OS.unset_environment(UpdateFixtures.HOST_ENV)
+		else:
+			OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+		testing.eq(second_hits, 0, "%s → no request reaches it" % form)
+		testing.eq(state, "failed", "%s → the click's download fails" % form)
+		testing.ok(not zip_left, "%s → no zip stays" % form)
+	print("")
+
+
+static func _test_off_list_redirect_during_a_verify(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a manifest redirected off the list is refused")
+	var assets := UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+	var second := UpdateFixtures.LoopbackReleaseServer.new(assets)
+	var first := UpdateFixtures.LoopbackReleaseServer.new({})
+	for asset_name: String in [ReleaseAssets.manifest_name("1.9.0"), ReleaseAssets.signature_name("1.9.0")]:
+		first.redirect("/" + asset_name, 302, second.host() + "/" + asset_name)
+	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
+	OS.set_environment(UpdateFixtures.HOST_ENV, first.host())
+	var world := UpdateFixtures.begin_world("installer_off_list_verify", "1.9.0", "ask", "1.1.0")
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var changes := [0]
+	installer.state_changed.connect(func() -> void: changes[0] += 1)
+	var frames := 0
+	while changes[0] == 0 and frames < 1200:
+		first.poll()
+		second.poll()
+		await tree.process_frame
+		frames += 1
+	second.poll()
+	var state := installer.state()
+	var second_hits := second.connections()
+	UpdateFixtures.end_world(world, nodes)
+	first.stop()
+	second.stop()
+	if previous_host.is_empty():
+		OS.unset_environment(UpdateFixtures.HOST_ENV)
+	else:
+		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	testing.eq(second_hits, 0, "the second listener → no request reaches it")
+	testing.eq(state, "idle", "and with no click, the badge stays links only")
+	print("")
+
+
+# 303, 307 and 308 are plain replies to the engine up to 4.6, so only the toolkit's own
+# following gets past them there.
+static func _test_redirects_every_engine_must_follow(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a 303, 307 or 308 is followed")
+	var assets := UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+	for code: int in [303, 307, 308]:
+		var moved := {}
+		for asset_name: String in assets:
+			moved["moved-" + asset_name] = assets[asset_name]
+		var server := UpdateFixtures.LoopbackReleaseServer.new(moved)
+		for asset_name: String in assets:
+			server.redirect("/" + asset_name, code, "%s/moved-%s" % [server.host(), asset_name])
+		var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
+		OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+		var world := UpdateFixtures.begin_world("installer_redirect_%d" % code, "1.9.0", "ask", "1.1.0")
+		var nodes := UpdateFixtures.start_world(world, tree)
+		var installer: UpdateInstaller = nodes["installer"]
+		var changes := [0]
+		installer.state_changed.connect(func() -> void: changes[0] += 1)
+		var frames := 0
+		while changes[0] == 0 and frames < 1200:
+			server.poll()
+			await tree.process_frame
+			frames += 1
+		var state := installer.state()
+		var connections := server.connections()
+		UpdateFixtures.end_world(world, nodes)
+		server.stop()
+		if previous_host.is_empty():
+			OS.unset_environment(UpdateFixtures.HOST_ENV)
+		else:
+			OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+		testing.eq(state, "available", "%d on the manifest and signature → verified" % code)
+		testing.eq(connections, 4, "%d → each file's redirect and the file" % code)
 	print("")

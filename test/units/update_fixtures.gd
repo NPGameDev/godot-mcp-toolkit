@@ -381,6 +381,7 @@ static func release_assets(
 class LoopbackReleaseServer extends RefCounted:
 	var _server := TCPServer.new()
 	var _assets := {}
+	var _redirects := {}
 	var _peers: Array[StreamPeerTCP] = []
 	var _requests: Array[String] = []
 	var _connections := 0
@@ -396,6 +397,12 @@ class LoopbackReleaseServer extends RefCounted:
 	# one answer, so this also counts the requests.
 	func connections() -> int:
 		return _connections
+
+	# Answers a request whose path ends in `path_end` with `status` pointing at `location`,
+	# before any asset; an empty location sends no Location header. The reply has a small
+	# body, as a real redirect does.
+	func redirect(path_end: String, status: int, location: String) -> void:
+		_redirects[path_end] = {"status": status, "location": location}
 
 	func poll() -> void:
 		while _server.is_connection_available():
@@ -421,6 +428,14 @@ class LoopbackReleaseServer extends RefCounted:
 		_server.stop()
 
 	func _answer(peer: StreamPeerTCP, path: String) -> void:
+		for path_end: String in _redirects:
+			if path.ends_with(path_end):
+				var hop: Dictionary = _redirects[path_end]
+				var location := str(hop["location"])
+				var location_header := "" if location.is_empty() else "Location: %s\r\n" % location
+				peer.put_data(("HTTP/1.1 %d Moved\r\n%sContent-Length: 5\r\nConnection: close\r\n\r\nmoved"
+						% [int(hop["status"]), location_header]).to_utf8_buffer())
+				return
 		for asset_name: String in _assets:
 			if path.ends_with("/" + asset_name):
 				var body: PackedByteArray = _assets[asset_name]
