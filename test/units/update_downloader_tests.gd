@@ -64,7 +64,9 @@ static func _test_hosts_the_rule_refuses(testing: Testing) -> void:
 		"http://github.com/a.zip",
 		"http://objects.githubusercontent.com/a.zip",
 		"ftp://github.com/a.zip",
-		"//github.com/a.zip",
+		# Built at run time: the language server checks every string literal as a file path,
+		# and on Windows a leading "//" is a network path whose lookup blocks the editor.
+		"/" + "/github.com/a.zip",
 		"github.com/a.zip",
 		"/a.zip",
 		"",
