@@ -7,10 +7,10 @@ extends Node
 ## undismissed version it follows. When the install mode, the consent gate, the
 ## embedded trust document and the install guards allow it, the installer downloads the release's
 ## manifest and signature and verifies them ([constant AVAILABLE]); then, on the
-## user's word, it downloads the zip, checks it against the manifest and stages it
-## ([constant READY]). The editor's next exit applies it (see
-## [code]update_applier.gd[/code]); nothing here writes the addon folder. While a release
-## is staged, [method version] names it, whichever newer version the runner reports, and
+## user's word, it downloads the zip, checks it against the manifest and stages it a few
+## files a frame ([constant PREPARING], then [constant READY]). The editor's next exit
+## applies it (see [code]update_applier.gd[/code]); nothing here writes the addon folder.
+## While a release is staged, [method version] names it, whichever newer version the runner reports, and
 ## nothing newer is fetched.[br]
 ## [br]
 ## A verified manifest and a staged zip are kept in the update folder (see
@@ -39,7 +39,9 @@ const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const UpdateSettler := preload("res://addons/godot_mcp_toolkit/self_update/update_settler.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
-const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
+const StageRunner := preload("res://addons/godot_mcp_toolkit/self_update/stage_runner.gd")
+const StageStepper := preload("res://addons/godot_mcp_toolkit/self_update/stage_stepper.gd")
+const UpdateLifecycle := preload("res://addons/godot_mcp_toolkit/self_update/update_lifecycle.gd")
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/release_manifest.gd")
 const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
@@ -56,6 +58,8 @@ const IDLE := "idle"
 const AVAILABLE := "available"
 ## A click on Update is running: the trust documents, then the zip.
 const DOWNLOADING := "downloading"
+## The zip checked out and is being unpacked into the stage.
+const PREPARING := "preparing"
 ## The zip is staged; the editor's next exit installs it.
 const READY := "ready"
 ## The last attempt the user asked for failed; [method error_text] says why.
@@ -74,6 +78,7 @@ const _WAITING_MANIFEST := 1
 const _WAITING_SIGNATURE := 2
 const _WAITING_ARCHIVE := 3
 const _WAITING_TRUST_DOCUMENT := 4
+const _WAITING_STAGE := 5
 
 var _runner: UpdateCheckRunner = null
 var _update_folder: String = UpdateFolder.FOLDER
@@ -85,6 +90,9 @@ var _project_settings: Object = ProjectSettings
 # The install guards' facts, or an empty dictionary to read them from the project.
 var _guard_facts: Dictionary = {}
 var _downloader: UpdateDownloader = null
+var _stage_runner: StageRunner = null
+# Decided once: whether this editor is headless does not change while it runs.
+var _stays_out: bool = false
 var _waiting: int = _WAITING_NONE
 var _state: String = IDLE
 var _version: String = ""
@@ -99,6 +107,7 @@ var _manifest := {}
 var _manifest_bytes := PackedByteArray()
 # The last apply's result, shown until the user closes it.
 var _notice := {}
+var _settled := {}
 # Whether the running attempt came from a click, so its failure is shown.
 var _user_asked: bool = false
 # The version this session already tried to verify, so a failure is not retried on
@@ -121,11 +130,13 @@ var _check_timeout_sec: float = _MANIFEST_TIMEOUT_SEC
 ## [code]update_folder[/code], [code]addon_folder[/code], [code]trust_document[/code] and
 ## [code]trust_store[/code] (the shape [method ReleaseSignature.chain] takes),
 ## [code]guard_facts[/code] (the shape [method InstallGuards.facts] returns),
-## [code]project_settings[/code] (a stand-in [method InstallMode.read] accepts) and
-## [code]check_timeout_sec[/code] (each request of a check).
+## [code]project_settings[/code] (a stand-in [method InstallMode.read] accepts),
+## [code]check_timeout_sec[/code] (each request of a check) and
+## [code]stage_budget_ms[/code] (each frame's staging).
 func _init(runner: UpdateCheckRunner, options: Dictionary = {}) -> void:
 	_runner = runner
 	_options = options
+	_stays_out = UpdateLifecycle.stays_out(options)
 	_check_timeout_sec = float(options.get("check_timeout_sec", _MANIFEST_TIMEOUT_SEC))
 	_update_folder = str(options.get("update_folder", UpdateFolder.FOLDER))
 	_addon_folder = str(options.get("addon_folder", InstallGuards.ADDON_FOLDER))
@@ -137,6 +148,9 @@ func _ready() -> void:
 	_downloader = UpdateDownloader.new()
 	_downloader.finished.connect(_on_fetched)
 	add_child(_downloader)
+	_stage_runner = StageRunner.new(int(_options.get("stage_budget_ms", StageStepper.BUDGET_MS)))
+	_stage_runner.finished.connect(_on_staged)
+	add_child(_stage_runner)
 	_settle_last_update()
 	if _runner != null:
 		_runner.state_changed.connect(_evaluate)
@@ -151,11 +165,13 @@ func _exit_tree() -> void:
 		ProjectSettings.settings_changed.disconnect(_evaluate)
 	if _downloader != null:
 		_downloader.cancel()
+	if _stage_runner != null:
+		_stage_runner.cancel()
 	_waiting = _WAITING_NONE
 
 
 ## One of [constant IDLE], [constant AVAILABLE], [constant DOWNLOADING],
-## [constant READY] or [constant FAILED].
+## [constant PREPARING], [constant READY] or [constant FAILED].
 func state() -> String:
 	return _state
 
@@ -224,6 +240,13 @@ func notice() -> Dictionary:
 	return _notice
 
 
+## What the settle at this editor's start found: what [method UpdateSettler.settle] returns,
+## or an empty dictionary when this editor stays out of the update folder. Unlike
+## [method notice] it holds every report, the waiting one and its reason included.
+func settled() -> Dictionary:
+	return _settled
+
+
 ## Stops showing the last apply's result.
 func clear_notice() -> void:
 	_notice = {}
@@ -273,6 +296,13 @@ func _evaluate() -> void:
 	if _waiting != _WAITING_NONE:
 		return
 	var newer: String = _runner.badge_version() if _runner != null else ""
+	# The gates below would clear what a journal and a kept manifest hold, and an update
+	# waiting for its real exit must outlive a build or an import.
+	if _stays_out:
+		_guard_note = InstallGuards.describe(InstallGuards.HEADLESS)
+		_version = newer
+		_set_state(IDLE)
+		return
 	# A failure the user saw stays until they act on it.
 	if _state == FAILED and newer == _version:
 		return
@@ -598,10 +628,18 @@ func _on_archive() -> void:
 		_keep_only_verified()
 		_fail("the downloaded archive does not match the manifest")
 		return
-	var layout := ReleaseArchive.inspect(archive, _version)
-	if not str(layout["error"]).is_empty():
+	_waiting = _WAITING_STAGE
+	# The run exists before the state says so: a handler of that state can discard the update,
+	# and the discard has to find something to cancel.
+	_stage_runner.start(_version, _update_folder)
+	_set_state(PREPARING)
+
+
+func _on_staged(outcome: Dictionary) -> void:
+	_waiting = _WAITING_NONE
+	if str(outcome["state"]) != StageStepper.DONE:
 		_keep_only_verified()
-		_fail(str(layout["error"]))
+		_fail(str(outcome["reason"]))
 		return
 	if not _write_record(UpdateJournal.STAGED):
 		_fail("could not write to the update folder")
@@ -654,6 +692,8 @@ func _fail_check(kind: String, reason: String) -> void:
 func _cancel() -> void:
 	if _downloader != null:
 		_downloader.cancel()
+	if _stage_runner != null:
+		_stage_runner.cancel()
 	_waiting = _WAITING_NONE
 	_walk = null
 	_user_asked = false
@@ -662,17 +702,17 @@ func _cancel() -> void:
 # Settles what the editor's last exit left and turns a result worth showing into the
 # notice.
 func _settle_last_update() -> void:
-	var settled := UpdateSettler.settle(_options)
-	var report := str(settled["report"])
+	_settled = UpdateLifecycle.settle_at_start(_options)
+	var report := str(_settled.get("report", ""))
 	if report != UpdateSettler.UPDATED and report != UpdateSettler.FAILED:
 		return
 	var updated := report == UpdateSettler.UPDATED
 	_notice = {
 		"kind": NOTICE_UPDATED if updated else NOTICE_FAILED,
-		"version": settled["to"],
-		"from_version": settled["from"],
-		"reason": settled["reason"],
-		"server_changed": updated and settled["compatible_server"] != VersionUtils.COMPATIBLE_SERVER_VERSION,
+		"version": _settled["to"],
+		"from_version": _settled["from"],
+		"reason": _settled["reason"],
+		"server_changed": updated and _settled["compatible_server"] != VersionUtils.COMPATIBLE_SERVER_VERSION,
 	}
 
 

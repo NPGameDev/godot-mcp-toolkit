@@ -42,10 +42,17 @@ static func facts(addon_path: String = ADDON_FOLDER) -> Dictionary:
 	var in_repository := false
 	for marker in _REPOSITORY_MARKERS:
 		in_repository = in_repository or FileAccess.file_exists(marker)
+	var read := headless_facts()
+	read[TOOLKIT_REPOSITORY] = in_repository
+	read[LINKED_FOLDER] = FolderFiles.is_link(ProjectSettings.globalize_path(addon_path))
+	read[VERSION_CONTROL_FOLDER] = FileAccess.file_exists(git_path) or DirAccess.dir_exists_absolute(git_path)
+	return read
+
+
+## The two [method facts] the headless rule looks at, without the walk and the process the
+## others can cost: [code]headless[/code] and [code]headless_allowed[/code].
+static func headless_facts() -> Dictionary:
 	return {
-		TOOLKIT_REPOSITORY: in_repository,
-		LINKED_FOLDER: FolderFiles.is_link(ProjectSettings.globalize_path(addon_path)),
-		VERSION_CONTROL_FOLDER: FileAccess.file_exists(git_path) or DirAccess.dir_exists_absolute(git_path),
 		HEADLESS: VersionUtils.is_headless(),
 		"headless_allowed": OS.get_environment(HEADLESS_OVERRIDE_ENV) == "1",
 	}
@@ -61,9 +68,14 @@ static func refusal(guard_facts: Dictionary) -> String:
 		return LINKED_FOLDER
 	if bool(guard_facts.get(VERSION_CONTROL_FOLDER, false)):
 		return VERSION_CONTROL_FOLDER
-	if bool(guard_facts.get(HEADLESS, false)) and not bool(guard_facts.get("headless_allowed", false)):
+	if headless_refused(guard_facts):
 		return HEADLESS
 	return ""
+
+
+## Whether [param guard_facts] describe a headless editor without the test override.
+static func headless_refused(guard_facts: Dictionary) -> bool:
+	return bool(guard_facts.get(HEADLESS, false)) and not bool(guard_facts.get("headless_allowed", false))
 
 
 ## The sentence that explains the refusal [param reason] to the user.

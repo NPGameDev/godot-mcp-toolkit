@@ -255,7 +255,7 @@ func _render_install_state() -> void:
 			var changed: PackedStringArray = _installer.changed_files()
 			if not changed.is_empty():
 				status = _CHANGED_TEXT % changed.size()
-		UpdateInstaller.DOWNLOADING:
+		UpdateInstaller.DOWNLOADING, UpdateInstaller.PREPARING:
 			status = _DOWNLOADING_TEXT % _shown_version
 		UpdateInstaller.READY:
 			status = _READY_TEXT % _shown_version

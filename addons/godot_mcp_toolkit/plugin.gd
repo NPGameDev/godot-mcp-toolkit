@@ -15,9 +15,9 @@ const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_wr
 const AutoloadRegistration := preload("res://addons/godot_mcp_toolkit/core/autoload_registration.gd")
 const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
-const UpdateApplier = Modules.UpdateApplier
 const UpdateJournal = Modules.UpdateJournal
 const UpdateInstaller = Modules.UpdateInstaller
+const UpdateLifecycle := preload("res://addons/godot_mcp_toolkit/self_update/update_lifecycle.gd")
 const UpdatePrompt := preload("res://addons/godot_mcp_toolkit/ui/update/update_prompt.gd")
 
 # The Handle that owns the composed collaborator graph and frees it in dispose().
@@ -185,7 +185,7 @@ func _exit_tree() -> void:
 	# A staged update is written now, once the graph is gone and while nothing can
 	# reload the files under a running toolkit (rationale in UpdateApplier).
 	if not _disabling:
-		UpdateApplier.apply_pending()
+		UpdateLifecycle.apply_at_exit()
 
 	# Plugin reference — clear last (teardown symmetry with _enter_tree).
 	Modules.EditorAccess.clear_plugin()

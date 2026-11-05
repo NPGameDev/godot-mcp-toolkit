@@ -2,18 +2,25 @@
 extends RefCounted
 ## Unit tests for the update installer: the notice an apply leaves for the next start,
 ## picking up a kept or staged release, the gates that keep it idle, giving an update up,
-## and a failed, killed or redirected download, served by a loopback listener. A download
-## that succeeds runs in the update flow integration test
-## (scripts/test_framework/update_flow.sh).
+## a download failed, killed or redirected, one that stages over frames, and a headless
+## start, all served by a loopback listener where they download.
 
 const Testing := preload("res://test/units/testing.gd")
 const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
+const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
+const UpdateLifecycle := preload("res://addons/godot_mcp_toolkit/self_update/update_lifecycle.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
+const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
+const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
+
+const _STAGED_FILES := {"core/a.gd": "new a", "core/b.gd": "new b", "core/c.gd": "new c"}
+# Far more frames than a loopback download and a small stage need, so a stuck run fails the case.
+const _MAX_FRAMES := 1200
 
 
 static func run(testing, tree: SceneTree) -> void:
@@ -35,6 +42,18 @@ static func run(testing, tree: SceneTree) -> void:
 	_test_staged_zip_that_will_not_delete(testing, tree)
 	await _test_staged_release_stands(testing, tree)
 	await _test_stage_failing_its_check_gives_way(testing, tree)
+	await _test_click_stages_and_the_exit_applies(testing, tree)
+	await _test_preparing_spans_frames(testing, tree)
+	await _test_runner_signal_during_a_stage(testing, tree)
+	await _test_zip_that_fails_its_list(testing, tree)
+	await _test_discard_during_a_stage(testing, tree)
+	await _test_discard_from_the_preparing_handler(testing, tree)
+	await _test_leaving_the_tree_during_a_stage(testing, tree)
+	_test_settled(testing, tree)
+	_test_headless_start_keeps_a_journal(testing, tree, "1.9.0")
+	_test_headless_start_keeps_a_journal(testing, tree, "")
+	_test_headless_start_keeps_a_kept_release(testing, tree)
+	_test_headless_override_reads_ready(testing, tree)
 	await _test_off_list_redirect_of_the_zip(testing, tree)
 	await _test_off_list_redirect_during_a_verify(testing, tree)
 	await _test_redirects_every_engine_must_follow(testing, tree)
@@ -578,6 +597,367 @@ static func _test_stage_failing_its_check_gives_way(testing: Testing, tree: Scen
 	testing.eq(signature_state, "available", "the newer release → verified and offered")
 	testing.eq(signature_version, "1.9.0", "about the newer version")
 	testing.eq(signature_record, "", "the staged journal goes")
+	print("")
+
+
+# A world whose 1.9.0 waits for the word, its zip served by a listener. Each frame stages
+# one file, so a case can act between them.
+static func _begin_click(purpose: String, tree: SceneTree) -> Dictionary:
+	var world := UpdateFixtures.begin_world(purpose, "1.9.0", "ask", "1.1.0")
+	var archive := UpdateFixtures.keep_verified(world["updates"], "1.9.0", _STAGED_FILES, UpdateFixtures.key())
+	return _serve(world, archive, tree)
+
+
+static func _serve(world: Dictionary, archive: PackedByteArray, tree: SceneTree) -> Dictionary:
+	(world["options"] as Dictionary)["stage_budget_ms"] = 0
+	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.archive_name("1.9.0"): archive})
+	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
+	OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+	var nodes := UpdateFixtures.start_world(world, tree)
+	return {"world": world, "nodes": nodes, "server": server, "previous_host": previous_host}
+
+
+static func _end_click(click: Dictionary) -> void:
+	UpdateFixtures.end_world(click["world"], click["nodes"])
+	(click["server"] as UpdateFixtures.LoopbackReleaseServer).stop()
+	var previous_host := str(click["previous_host"])
+	if previous_host.is_empty():
+		OS.unset_environment(UpdateFixtures.HOST_ENV)
+	else:
+		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+
+
+static func _installer_of(click: Dictionary) -> UpdateInstaller:
+	return (click["nodes"] as Dictionary)["installer"]
+
+
+# Clicks Update and serves the download until the state moves on from it.
+static func _click_and_download(click: Dictionary, tree: SceneTree) -> void:
+	var installer := _installer_of(click)
+	var server: UpdateFixtures.LoopbackReleaseServer = click["server"]
+	installer.install()
+	var frames := 0
+	while installer.state() == "downloading" and frames < _MAX_FRAMES:
+		server.poll()
+		await tree.process_frame
+		frames += 1
+
+
+static func _wait_past_preparing(installer: UpdateInstaller, tree: SceneTree) -> void:
+	var frames := 0
+	while installer.state() == "preparing" and frames < _MAX_FRAMES:
+		await tree.process_frame
+		frames += 1
+
+
+static func _record_state(world: Dictionary) -> String:
+	return UpdateJournal.read(str(world["updates"]))["state"]
+
+
+static func _has_stage(world: Dictionary) -> bool:
+	return DirAccess.dir_exists_absolute(ProjectSettings.globalize_path(UpdateFolder.stage_folder(str(world["updates"]))))
+
+
+static func _has_zip(world: Dictionary) -> bool:
+	return UpdateFixtures.has_release_file(world, "1.9.0", ReleaseAssets.archive_name("1.9.0"))
+
+
+static func _has_manifest(world: Dictionary) -> bool:
+	return UpdateFixtures.has_release_file(world, "1.9.0", ReleaseAssets.manifest_name("1.9.0"))
+
+
+static func _test_click_stages_and_the_exit_applies(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a click stages the release and the exit applies it")
+	var world := UpdateFixtures.begin_world("installer_click", "1.9.0", "ask", "1.1.0")
+	# The release names a server other than this toolkit's, so the journal shows which one it keeps.
+	var assets := UpdateFixtures.release_assets("1.9.0", _STAGED_FILES, UpdateFixtures.key())
+	var archive: PackedByteArray = assets[ReleaseAssets.archive_name("1.9.0")]
+	var fields: Dictionary = JSON.parse_string(UpdateFixtures.manifest_text("1.9.0", archive))
+	fields["compatible_server"] = "0.9.0"
+	var manifest := JSON.stringify(fields).to_utf8_buffer()
+	var kept := ProjectSettings.globalize_path(UpdateFolder.version_folder("1.9.0", str(world["updates"])))
+	FolderFiles.write_checked(kept.path_join(ReleaseAssets.manifest_name("1.9.0")), manifest)
+	FolderFiles.write_checked(kept.path_join(ReleaseAssets.signature_name("1.9.0")),
+			UpdateFixtures.signature_of(manifest, UpdateFixtures.key()))
+	var click := _serve(world, archive, tree)
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	var after_download := installer.state()
+	await _wait_past_preparing(installer, tree)
+	var after_stage := installer.state()
+	var found := installer.found_this_session()
+	var journal := UpdateJournal.read(str(world["updates"]))
+	var applied := UpdateLifecycle.apply_at_exit(world["options"])
+	var installed := UpdateApplier.installed_version(ProjectSettings.globalize_path(str(world["addon"])))
+	_end_click(click)
+	testing.eq(after_download, "preparing", "the zip arrives → preparing")
+	testing.eq(after_stage, "ready", "the stage is whole → ready")
+	testing.ok(found, "and found this session")
+	testing.eq(journal["state"], "staged", "the journal says staged")
+	testing.eq(journal["compatible_server"], VersionUtils.COMPATIBLE_SERVER_VERSION,
+			"and keeps the server version of the toolkit doing the staging")
+	testing.eq(applied.get("state", ""), "applied", "the exit → applied")
+	testing.eq(installed, "1.9.0", "the addon folder is the new version")
+	print("")
+
+
+static func _test_preparing_spans_frames(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: staging takes frames, with a verified journal until it ends")
+	var click := _begin_click("installer_frames", tree)
+	var world: Dictionary = click["world"]
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	var journal_during := _record_state(world)
+	var frames := 0
+	while installer.state() == "preparing" and frames < _MAX_FRAMES:
+		await tree.process_frame
+		frames += 1
+	var final_state := installer.state()
+	_end_click(click)
+	# Five files at one a frame; the frame the zip arrived on may already have written one.
+	testing.ok(frames >= 4, "the state stays preparing over the frames the five files take")
+	testing.eq(journal_during, "verified", "while it runs the journal says verified")
+	testing.eq(final_state, "ready", "and it ends ready")
+	print("")
+
+
+static func _test_runner_signal_during_a_stage(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: the update check's signal does not interrupt a stage")
+	var click := _begin_click("installer_signal", tree)
+	var world: Dictionary = click["world"]
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	var before := installer.state()
+	((click["nodes"] as Dictionary)["runner"] as UpdateCheckRunner).state_changed.emit()
+	var after_signal := installer.state()
+	var journal_after_signal := _record_state(world)
+	await _wait_past_preparing(installer, tree)
+	var final_state := installer.state()
+	var final_journal := _record_state(world)
+	_end_click(click)
+	testing.eq(before, "preparing", "the signal comes while preparing")
+	testing.eq(after_signal, "preparing", "the state does not move")
+	testing.eq(journal_after_signal, "verified", "the journal stays")
+	testing.eq(final_state, "ready", "and the stage still ends ready")
+	testing.eq(final_journal, "staged", "with a staged journal")
+	print("")
+
+
+# The zip matches its signed manifest, so only the list inside it can refuse it.
+static func _test_zip_that_fails_its_list(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a zip that fails its own list leaves only the manifest")
+	var world := UpdateFixtures.begin_world("installer_list", "1.9.0", "ask", "1.1.0")
+	var entries := UpdateFixtures.release_entries("1.9.0", _STAGED_FILES)
+	entries["addons/godot_mcp_toolkit/core/b.gd"] = "not what the list says"
+	var zip_path := UpdateFixtures.scratch("installer_list.zip")
+	UpdateFixtures.write_zip(zip_path, entries)
+	var archive := FileAccess.get_file_as_bytes(zip_path)
+	UpdateFixtures.remove(zip_path)
+	var manifest := UpdateFixtures.manifest_text("1.9.0", archive).to_utf8_buffer()
+	var kept := ProjectSettings.globalize_path(UpdateFolder.version_folder("1.9.0", str(world["updates"])))
+	FolderFiles.write_checked(kept.path_join(ReleaseAssets.manifest_name("1.9.0")), manifest)
+	FolderFiles.write_checked(kept.path_join(ReleaseAssets.signature_name("1.9.0")),
+			UpdateFixtures.signature_of(manifest, UpdateFixtures.key()))
+	var click := _serve(world, archive, tree)
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	await _wait_past_preparing(installer, tree)
+	var state := installer.state()
+	var error := installer.error_text()
+	var record := _record_state(world)
+	var stage_left := _has_stage(world)
+	var zip_left := _has_zip(world)
+	var manifest_left := _has_manifest(world)
+	_end_click(click)
+	testing.eq(state, "failed", "the click's failure → failed")
+	testing.eq(error, "the archive's core/b.gd does not match its file list", "and it says which file")
+	testing.eq(record, "", "no journal")
+	testing.ok(not stage_left, "no stage")
+	testing.ok(not zip_left, "no zip")
+	testing.ok(manifest_left, "the manifest stays for the next start")
+	print("")
+
+
+static func _test_discard_during_a_stage(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: giving an update up while it stages")
+	var click := _begin_click("installer_discard_stage", tree)
+	var world: Dictionary = click["world"]
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	await tree.process_frame
+	await tree.process_frame
+	var state_before := installer.state()
+	var stage_before := _has_stage(world)
+	installer.discard()
+	var state_after := installer.state()
+	for _frame: int in range(8):
+		await tree.process_frame
+	var state_later := installer.state()
+	# The file itself: a record about no version reads as no journal, yet it is one.
+	var journal_left := UpdateJournal.exists(str(world["updates"]))
+	var stage_left := _has_stage(world)
+	var zip_left := _has_zip(world)
+	var badge := ((click["nodes"] as Dictionary)["runner"] as UpdateCheckRunner).badge_version()
+	_end_click(click)
+	testing.eq(state_before, "preparing", "the discard comes while preparing")
+	testing.ok(stage_before, "with part of a stage written")
+	testing.eq(state_after, "idle", "discard → idle")
+	testing.eq(state_later, "idle", "and nothing finishes later")
+	testing.ok(not journal_left, "no journal")
+	testing.ok(not stage_left, "no stage")
+	testing.ok(not zip_left, "no zip")
+	testing.eq(badge, "", "the version → dismissed until a newer one")
+	print("")
+
+
+# The dock can react to the state by giving the update up, in the same call that starts the
+# stage, so the run has to exist by then or it outlives the discard.
+static func _test_discard_from_the_preparing_handler(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a handler of the preparing state can give the update up")
+	var click := _begin_click("installer_discard_handler", tree)
+	var world: Dictionary = click["world"]
+	var installer := _installer_of(click)
+	# Holds "discarded" once the handler's discard returns, then each state change after it.
+	var after_discard := []
+	installer.state_changed.connect(func() -> void:
+		if not after_discard.is_empty():
+			after_discard.append(installer.state())
+		elif installer.state() == "preparing":
+			installer.discard()
+			after_discard.append("discarded"))
+	await _click_and_download(click, tree)
+	for _frame: int in range(8):
+		await tree.process_frame
+	var state := installer.state()
+	var journal_left := UpdateJournal.exists(str(world["updates"]))
+	var stage_left := _has_stage(world)
+	_end_click(click)
+	testing.eq(state, "idle", "the discard stands")
+	testing.ok(not journal_left, "no journal")
+	testing.ok(not stage_left, "and no stage appears afterwards")
+	testing.eq(after_discard, ["discarded"], "and no run the discard missed changes the state later")
+	print("")
+
+
+# The installer leaves the tree as the editor closes, so its exit and the next start see what
+# leaving left.
+static func _test_leaving_the_tree_during_a_stage(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: leaving the tree during a stage installs nothing")
+	var click := _begin_click("installer_leave", tree)
+	var world: Dictionary = click["world"]
+	var options: Dictionary = world["options"]
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	await tree.process_frame
+	await tree.process_frame
+	var state_before := installer.state()
+	var stage_before := _has_stage(world)
+	tree.root.remove_child(installer)
+	var stage_after := _has_stage(world)
+	var applied := UpdateLifecycle.apply_at_exit(options)
+	var installed := UpdateApplier.installed_version(ProjectSettings.globalize_path(str(world["addon"])))
+	var settled := UpdateLifecycle.settle_at_start(options)
+	var record := _record_state(world)
+	var zip_left := _has_zip(world)
+	_end_click(click)
+	testing.eq(state_before, "preparing", "it leaves while preparing")
+	testing.ok(stage_before, "with part of a stage written")
+	testing.ok(not stage_after, "leaving → no stage")
+	testing.eq(applied, {"state": "", "reason": ""}, "the exit → applies nothing")
+	testing.eq(installed, "1.1.0", "the addon folder stays as it was")
+	testing.eq(settled.get("report", "none"), "", "the next start → nothing to show")
+	testing.eq(record, "", "and it clears the journal")
+	testing.ok(not zip_left, "and the zip")
+	print("")
+
+
+static func _test_settled(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: what the start's settle found")
+	var world := UpdateFixtures.begin_world("installer_settled_waiting", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var journal := UpdateJournal.read(str(world["updates"]))
+	journal["reason"] = "could not rename the addon folder"
+	journal["attempts"] = 1
+	UpdateJournal.write(journal, str(world["updates"]))
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var waiting := (nodes["installer"] as UpdateInstaller).settled()
+	var waiting_notice := (nodes["installer"] as UpdateInstaller).notice()
+	UpdateFixtures.end_world(world, nodes)
+	world = UpdateFixtures.begin_world("installer_settled_updated", "1.9.0", "ask", "1.9.0")
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0"}, world["updates"])
+	nodes = UpdateFixtures.start_world(world, tree)
+	var updated := (nodes["installer"] as UpdateInstaller).settled()
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(waiting.get("report", ""), "waiting", "a stage that waits → reported as waiting")
+	testing.eq(waiting.get("reason", ""), "could not rename the addon folder", "with why the last exit postponed it")
+	testing.eq(waiting_notice, {}, "which is no notice")
+	testing.eq(updated.get("report", ""), "updated", "an applied record the editor now runs → reported as updated")
+	testing.eq(updated.get("to", ""), "1.9.0", "about that version")
+	print("")
+
+
+# A staged release and either what the runner reports or nothing at all: both paths through
+# the installer's gates clear a journal in an editor that may not install.
+static func _test_headless_start_keeps_a_journal(testing: Testing, tree: SceneTree, latest: String) -> void:
+	testing.begin("Update installer: a headless start keeps a journal, newer version '%s'" % latest)
+	var world := UpdateFixtures.begin_world("installer_headless_" + latest.replace(".", "_"), latest, "ask", "1.1.0")
+	(world["options"] as Dictionary)["guard_facts"] = {"headless": true}
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var journal_path := str(world["updates"]).path_join("journal.json")
+	var journal_before := FileAccess.get_file_as_bytes(journal_path)
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var state := installer.state()
+	var version := installer.version()
+	var note := installer.note_text()
+	var settled := installer.settled()
+	var journal_after := FileAccess.get_file_as_bytes(journal_path)
+	var stage_left := _has_stage(world)
+	var zip_left := _has_zip(world)
+	var manifest_left := _has_manifest(world)
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(state, "idle", "the state is idle")
+	testing.eq(version, latest, "about what the runner reports")
+	testing.eq(note, "A headless editor never installs updates.", "and the guard's sentence is the note")
+	testing.eq(settled, {}, "no settle ran")
+	testing.ok(not journal_before.is_empty(), "there is a journal to keep")
+	testing.eq(journal_after, journal_before, "the journal's bytes are unchanged")
+	testing.ok(stage_left, "the stage stays")
+	testing.ok(zip_left, "the zip stays")
+	testing.ok(manifest_left, "the manifest stays")
+	print("")
+
+
+static func _test_headless_start_keeps_a_kept_release(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a headless start keeps a verified release with no journal")
+	var world := UpdateFixtures.begin_world("installer_headless_kept", "1.9.0", "ask", "1.1.0")
+	(world["options"] as Dictionary)["guard_facts"] = {"headless": true}
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var state := (nodes["installer"] as UpdateInstaller).state()
+	var manifest_left := _has_manifest(world)
+	var signature_left := UpdateFixtures.has_release_file(world, "1.9.0", ReleaseAssets.signature_name("1.9.0"))
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(state, "idle", "the state is idle")
+	testing.ok(manifest_left, "the manifest stays")
+	testing.ok(signature_left, "the signature stays")
+	print("")
+
+
+static func _test_headless_override_reads_ready(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: the override lets a headless editor read a staged release")
+	var world := UpdateFixtures.begin_world("installer_headless_override", "1.9.0", "ask", "1.1.0")
+	(world["options"] as Dictionary)["guard_facts"] = {"headless": true, "headless_allowed": true}
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var state := installer.state()
+	var note := installer.note_text()
+	var report := str(installer.settled().get("report", "none"))
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(state, "ready", "a staged release → ready")
+	testing.eq(note, "", "with no note")
+	testing.eq(report, "waiting", "and the settle ran")
 	print("")
 
 

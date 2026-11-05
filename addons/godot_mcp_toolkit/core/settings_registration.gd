@@ -1,7 +1,7 @@
 @tool
 extends RefCounted
 ## ProjectSettings registration for the limits, concurrency, audit, server-pin,
-## update-check and install-mode keys.
+## update-check, install-mode and update-backup keys.
 ##
 ## Called once at plugin startup to ensure mcp_toolkit/* keys appear
 ## in the Project Settings inspector with correct types and defaults, and the
@@ -12,6 +12,7 @@ const ResponseLimits = Modules.ResponseLimits
 const ServerPinPolicy = Modules.ServerPinPolicy
 const UpdateCheck = Modules.UpdateCheck
 const InstallMode = Modules.InstallMode
+const UpdateSettler := preload("res://addons/godot_mcp_toolkit/self_update/update_settler.gd")
 
 # Keys earlier versions stored and this one no longer writes. Each entry is
 # removable at 2.0.0.
@@ -102,6 +103,7 @@ static func _register_updates() -> void:
 		"Checks GitHub at most once a day for a newer toolkit version, then the Asset Store if one exists, and shows a badge in the dock. The requests carry no identifier and nothing about your project.")
 	_register_basic(InstallMode.SETTING, TYPE_STRING, InstallMode.DEFAULT, PROPERTY_HINT_ENUM,
 		",".join(PackedStringArray(InstallMode.VALUES)))
+	_register_basic(UpdateSettler.KEEP_BACKUP_SETTING, TYPE_BOOL, true, PROPERTY_HINT_NONE, "")
 
 
 static func _register_basic_bool(key: String, default_value: bool, description: String) -> void:

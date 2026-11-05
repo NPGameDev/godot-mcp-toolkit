@@ -77,7 +77,9 @@ const InstallPlanTests := preload("res://test/units/install_plan_tests.gd")
 const InstallGuardsTests := preload("res://test/units/install_guards_tests.gd")
 const InstallModeTests := preload("res://test/units/install_mode_tests.gd")
 const SettingsRegistrationTests := preload("res://test/units/settings_registration_tests.gd")
+const StageRunnerTests := preload("res://test/units/stage_runner_tests.gd")
 const StageStepperTests := preload("res://test/units/stage_stepper_tests.gd")
+const UpdateLifecycleTests := preload("res://test/units/update_lifecycle_tests.gd")
 const UpdateFolderTests := preload("res://test/units/update_folder_tests.gd")
 const UpdateFolderGuardTests := preload("res://test/units/update_folder_guard_tests.gd")
 const UpdateJournalTests := preload("res://test/units/update_journal_tests.gd")
@@ -175,6 +177,8 @@ func _init() -> void:
 	InstallModeTests.run(testing)
 	SettingsRegistrationTests.run(testing)
 	StageStepperTests.run(testing)
+	await StageRunnerTests.run(testing, self)  # one file a frame in a live tree → coroutine
+	UpdateLifecycleTests.run(testing)
 	UpdateFolderTests.run(testing)
 	await UpdateFolderGuardTests.run(testing)  # each tool case awaits registry.call_command → coroutine
 	UpdateJournalTests.run(testing)
