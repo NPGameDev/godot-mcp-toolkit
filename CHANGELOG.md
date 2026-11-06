@@ -14,20 +14,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unpacked a few files at a time and swapped in at editor exit by two folder renames under
   one journal, and the next start settles what a kill left. A kill between the two
   renames leaves no toolkit to start, with both copies whole in the update folder;
-  recovering from that comes later. No part of the plugin calls any of this yet, so this
-  version never updates itself.
+  recovering from that comes later.
 - The toolkit can install its own updates. A new setup step asks whether it may,
   and Project Settings → Mcp Toolkit → Updates → Install Mode keeps the answer:
-  `ask` (the default) asks at the next editor start, `automatic` installs without
-  asking, and `manual` keeps the dock's links only. An update is downloaded from
-  the toolkit's GitHub release, installed only when the maintainer's signature on
-  its manifest checks out, and written when you close or restart the editor, with
-  a backup restored if a write fails. The dock's badge offers Update, Restart now
-  and Don't install, and after the next start says what happened, with a button to
-  update `.mcp.json` when the toolkit wrote it for another server. A release
-  found during the session also gets a toast. Major releases,
-  and releases that need a newer Godot, are only linked. Releases now ship an
-  update manifest beside the zip.
+  `ask` (the default) offers each new release on the dock's badge, and `manual`
+  keeps the dock's links only. In `ask`, the editor can also offer a release in a
+  dialog when it starts, with Update, Later and Skip this version. Nothing
+  downloads until you click Update. The update comes from the toolkit's GitHub
+  release and installs only when the maintainer's signature on its manifest checks
+  out. The toolkit prepares it a few files at a time, then swaps it in when you
+  close or restart the editor. If the swap can't finish, the current version stays
+  and the update waits for the next close. Keep Backup, under the same heading,
+  keeps the previous version until the next update is staged; turn it off to
+  delete that copy once the update installs. Major releases, releases that need a
+  newer Godot, and a toolkit folder that is a link or a git checkout get links
+  only. Releases now ship an update manifest beside the zip.
+- When an update is ready, Godot 4.4 and later restart on their own if no script
+  has unsaved edits, no game is running and no open scene is untitled. Otherwise
+  the badge says what to save and offers Restart and Not now, and Not now leaves a
+  Restart now button. Don't install deletes the download and hides that version
+  until a newer one. × hides a ready update's badge until the next start, and the
+  update still installs when you close the editor. After the next start the badge
+  says what happened, with Release notes, and with an Update .mcp.json button when
+  the new version is tested with another server than the one the toolkit wrote
+  into `.mcp.json`. What's in this update, on the badge and in the dialog, opens
+  the release's changelog. A release found during the session also gets a toast.
 
 ### Changed
 

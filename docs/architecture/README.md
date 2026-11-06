@@ -508,7 +508,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd" data-verified="1278cbd" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd" data-verified="99583ba" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -531,10 +531,14 @@ flowchart TD
     composer --> start["server.start() + register in registry"]
     composer --> ui["write flow + dialog presenter<br/>(shared UI · ADR 0016)"]
     composer --> upd["update check runner<br/>(plugin child · read by the dock's badge)"]
+    composer --> inst["update installer<br/>(plugin child · follows the check runner ·<br/>settles the last exit at start · driven by the badge)"]
+    upd -->|"newer version"| inst
     composer --> dock["dock UI"]
+    plugin -->|"ask mode, at an editor start the wizard leaves free"| prompt["update prompt"]
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
+    plugin -.->|"_exit_tree after dispose, unless disabling"| apply["UpdateLifecycle.apply_at_exit()<br/>(swaps a staged update in · never in a headless editor)"]
 ```
-*Figure 10 — plugin composition root · verified 1278cbd*
+*Figure 10 — plugin composition root · verified 99583ba*
 
 The composer builds in a behaviour-critical order: registry and server first, then the
 debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
@@ -542,8 +546,10 @@ extensions and their hot-reload watcher, the export-strip plugin and the remote-
 the user-path monitor (which re-homes `user://` paths when the project is
 renamed), the playtest-end detector, the server start + registry registration, then the shared
 `.mcp.json` write-flow + dialog presenter, the update check runner (a plugin child that checks for a
-newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), and
-finally the dock. The write-flow and dialog
+newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), the
+update installer (a plugin child built after the runner because it follows the runner's newer version;
+in `_ready` it settles what the editor's last exit left, and the badge drives its
+download and staging), and finally the dock. The write-flow and dialog
 presenter are **injected** into the dock, the tool menu, and the onboarding wizard alike — the
 dock consumes them like any other UI surface rather than acting as a service locator for them
 ([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
@@ -552,7 +558,7 @@ dock, the presenter reads `.mcp.json` the way the badge does). `dispose()` rever
 `PlaytestCommands.clear_session_tracker()`, the reverse of handing the debug-session tracker to `PlaytestCommands.register`; it drops the tracker only after the debugger plugin, the debugger log reader and the remote-deploy detector that hold it are gone, and last clears the response limits' env
 overrides (`core/response_limits.gd`), static state that would otherwise outlive a plugin reload;
 teardown uses **immediate (not deferred)
-`free()`** throughout — for the dock control, the update check runner, the dialog presenter's dialogs, and the server, and
+`free()`** throughout — for the dock control, the update installer (before the runner it follows), the update check runner, the dialog presenter's dialogs, and the server, and
 (in `plugin.gd`'s own `_exit_tree`) for the tool menu and the onboarding wizard — so nothing
 outlives ObjectDB's exit-time leak check. The one exception is the `EditorDock` wrapper that holds
 the dock on 4.6+: it holds no GDScript, and the editor still reads a removed dock in a deferred
@@ -571,6 +577,16 @@ outlives the plugin. The project-wide `mcp_toolkit/server/version` key is regist
 ProjectSettings. Disabling the plugin (not a reload) scrubs every `mcp_toolkit/*` ProjectSettings key,
 that one included, and hands the machine-wide EditorSettings prompt, `local_path` among its keys, to a
 detached `DisableCleanupCoordinator` that outlives the plugin.
+
+`plugin.gd` also carries the self-update's two ends. After the deferred onboarding call, in the `ask`
+install mode, it opens the update prompt when the installer holds a verified release, unless the
+wizard is open or the plugin was enabled mid-session; and when the wizard reports its update-install
+step seen, it has the installer decide again, since the consent gate reads that step. At exit, once
+`dispose()` has freed the graph, `_exit_tree` calls `UpdateLifecycle.apply_at_exit()`, which swaps a
+staged update into the addon folder while nothing can reload those files. A headless editor neither
+settles nor applies (`self_update/update_lifecycle.gd`), and a disable skips the apply:
+`_disable_plugin()` sets a flag first and clears the update journal, so a staged update is dropped with
+its files instead of being installed into a plugin being removed.
 
 The debugger's session state lives in `transport/debug_session_tracker.gd`, a `RefCounted` the
 unit runner can build headless: whether a game is attached and stopped at a break, the error
