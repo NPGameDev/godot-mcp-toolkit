@@ -1,23 +1,28 @@
 @tool
 extends PanelContainer
-## Dock update badge: the closable notice that a newer toolkit version is published,
-## with the install actions the install mode allows, and the result of the last
-## install.
+## Dock update badge: the closable dock notice that puts what the update check runner
+## and the update installer report in front of the user, with the buttons that act on it.
 ##
-## A dock sub-panel, the dock's first child. It renders what the injected update
-## check runner and update installer report and is hidden while there is nothing to
-## show (no newer version, the version dismissed, or the check turned off). A minor
-## or patch release gets a blue panel; a major release a green one with a bold title
-## and an editor icon. It offers two places to get the version (only the Asset Store
-## after a failed security check) and a close button that hides it until a newer one.[br]
+## A dock sub-panel, the dock's first child. It shows a newer toolkit version with the
+## install actions the install mode allows, or the result of the last install, and is
+## hidden while there is nothing to show (no newer version, the version dismissed, or
+## the check turned off). Its status line comes from the badge status module, which
+## picks the line for each installer state; the badge renders it. A minor or patch
+## release gets a blue panel; a major release a green one with a bold title and an
+## editor icon. It offers What's in this update, which opens the version's changelog,
+## two places to get the version (only the Asset Store after a failed security
+## check) and a close button that hides it until a newer one. On a staged release
+## the close button hides it until the next editor start instead, and the exit still
+## installs it.[br]
 ## [br]
 ## When the installer has a verified release, the badge adds Update; once the
 ## release is staged, Restart now and Don't install, and the line saying the
-## editor's exit installs it. While the installer's ready view is open, the badge
-## shows that view instead: what a restart now would lose, Restart and Not now. A
-## release that becomes installable during the session is also announced once by a
-## toast. After an editor start that installed or failed to install a release, the
-## badge shows that result until it is closed, in place of the version notice; when
+## editor's exit installs it, with the reason when the last exit tried and could not.
+## While the installer's ready view is open, the badge shows that view instead: what a
+## restart now would lose, Restart and Not now. A release that becomes installable
+## during the session is also announced once by a toast. After an editor start that
+## installed or failed to install a release, the badge shows that result until it is
+## closed, in place of the version notice, with Release notes after an install; when
 ## the new version is tested with another server than the one this toolkit wrote
 ## into .mcp.json, the notice offers to update it.[br]
 ## [br]
@@ -30,14 +35,12 @@ extends PanelContainer
 ## reply.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
-const UpdateApplier = Modules.UpdateApplier
 const UpdateCheck = Modules.UpdateCheck
 const UpdateCheckRunner = Modules.UpdateCheckRunner
 const UpdateInstaller = Modules.UpdateInstaller
-const RestartGate = UpdateInstaller.RestartGate
-const EditorRestartProbe = UpdateInstaller.EditorRestartProbe
 const VersionUtils = Modules.VersionUtils
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+const DockUpdateBadgeStatus := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge_status.gd")
 
 const _MINOR_TITLE := "Godot MCP Toolkit %s is available."
 const _MAJOR_TITLE := "Godot MCP Toolkit %s is out. It's a major release, so see what's new before you update."
@@ -45,7 +48,8 @@ const _UPDATED_TITLE := "Godot MCP Toolkit was updated to %s."
 const _FAILED_TITLE := "Godot MCP Toolkit %s was not installed."
 const _GITHUB_TEXT := "Get it on GitHub"
 const _DOWNLOAD_TEXT := "Download from GitHub"
-const _WHATS_NEW_TEXT := "What's new"
+const _CHANGELOG_TEXT := "What's in this update"
+const _RELEASE_NOTES_TEXT := "Release notes"
 const _STORE_TEXT := "Get it on the Asset Store"
 const _STORE_UNLISTED_TEXT := "Asset Store (not listed yet)"
 const _STORE_UNLISTED_TOOLTIP := "The Asset Store doesn't list this version yet. Use GitHub for now, or check back later."
@@ -57,34 +61,13 @@ const _RESTART_VIEW_TEXT := "Restart"
 const _NOT_NOW_TEXT := "Not now"
 const _DISCARD_TEXT := "Don't install"
 const _DISMISS_TOOLTIP := "Hide until the next version."
+const _STAGED_DISMISS_TOOLTIP := "Hide until you next open the editor. The update still installs when you close it."
 const _NOTICE_DISMISS_TOOLTIP := "Close."
 const _LAST_CHECKED_TOOLTIP := "Last checked: %s. The toolkit checks at most once a day."
-const _DOWNLOADING_TEXT := "Downloading %s…"
-const _READY_TEXT := "%s installs when you close the editor. Restart now to install it at once."
-const _FAILED_TEXT := "Couldn't install: %s."
-const _CHANGED_TEXT := ("%d toolkit files were changed in this project; installing replaces them. "
-		+ "The toolkit keeps a copy of the current version until the next update is staged. "
-		+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.")
-const _READY_VIEW_TEXT := "%s is ready. It installs when you close the editor."
-const _READY_VIEW_HOW_TEXT := "To install it now, save your work and click Restart."
-const _RUNNING_GAME_TEXT := "Restart stops the running game."
-const _UNSAVED_SCRIPT_TEXT := "%s has unsaved edits. Save it, then click Restart."
-const _UNSAVED_SCRIPTS_TEXT := "%d scripts have unsaved edits: %s. Save them, then click Restart."
-# For an editor whose script tabs could not be paired with their files.
-const _UNNAMED_SCRIPT := "A script"
-const _UNNAMED_SCRIPTS_TEXT := "%d scripts have unsaved edits. Save them, then click Restart."
-const _UNTITLED_SCENE_TEXT := "1 open scene has never been saved."
-const _UNTITLED_SCENES_TEXT := "%d open scenes have never been saved."
-const _SCRIPTS_ONLY_TEXT := "The toolkit only checks scripts. Save scenes, shaders and other open work yourself."
-const _SCENES_NOT_ASKED_TEXT := ("Godot 4.2 and 4.3 don't ask about unsaved scenes when they restart, "
-		+ "so unsaved scene changes are lost. Save before you click Restart.")
-const _SERVER_CHANGED_TEXT := "It's tested with server %s, which .mcp.json doesn't run yet. Update .mcp.json, then restart your MCP client."
 const _UPDATE_MCP_JSON_TEXT := "Update .mcp.json"
 const _UPDATE_SERVER_QUESTION := "Update the server to %s"
 const _AVAILABLE_TOAST := "Godot MCP Toolkit %s is available. Update it from the MCP Toolkit dock."
 const _READY_TOAST := "Godot MCP Toolkit %s installs when you close the editor."
-const _NOT_INSTALLED_TEXT := "%s. Version %s is still installed. Install log: %s"
-const _NEXT_RELEASE_TEXT := "The toolkit offers the next release once it is published and checked."
 const _RESTART_TOOLTIP := "Restarts the editor, which installs the update on its way out. Save your work first."
 
 # The main-screen tab the 4.7+ editor names its store.
@@ -107,6 +90,9 @@ var _showing_notice: bool = false
 # The last version the badge showed as installable, so each release is announced
 # once, and never one the badge already showed.
 var _announced_version: String = ""
+# The staged version the close button hid. It lives only as long as the badge, so the
+# notice is back at the next editor start, when the exit has not installed it.
+var _hidden_staged_version: String = ""
 
 var _minor_style: StyleBoxFlat = null
 var _major_style: StyleBoxFlat = null
@@ -119,6 +105,7 @@ var _restart_btn: Button = null
 var _not_now_btn: Button = null
 var _discard_btn: Button = null
 var _update_mcp_json_btn: Button = null
+var _changelog_btn: Button = null
 var _github_btn: Button = null
 var _store_btn: Button = null
 var _dismiss_btn: Button = null
@@ -198,6 +185,7 @@ func _init(
 	_discard_btn = _add_button(buttons, "DiscardButton", _DISCARD_TEXT, _on_discard_pressed)
 	_update_mcp_json_btn = _add_button(
 			buttons, "UpdateMcpJsonButton", _UPDATE_MCP_JSON_TEXT, _on_update_mcp_json_pressed)
+	_changelog_btn = _add_button(buttons, "ChangelogButton", _CHANGELOG_TEXT, _on_changelog_pressed)
 	_github_btn = _add_button(buttons, "GitHubButton", _GITHUB_TEXT, _on_github_pressed)
 	_store_btn = _add_button(buttons, "AssetStoreButton", _STORE_TEXT, _on_store_pressed)
 
@@ -242,8 +230,17 @@ func refresh() -> void:
 # whichever newer version the runner reports.
 func _version_to_show() -> String:
 	if _installer != null and _installer.state() == UpdateInstaller.READY:
+		if _installer.version() == _hidden_staged_version:
+			return ""
 		return _installer.version()
 	return _runner.badge_version() if _runner != null else ""
+
+
+# Whether the version on display is the staged one, which the close button hides for
+# this session only.
+func _staged_on_display() -> bool:
+	return _installer != null and _installer.state() == UpdateInstaller.READY \
+			and _installer.version() == _shown_version
 
 
 func _render_version() -> void:
@@ -251,7 +248,8 @@ func _render_version() -> void:
 	add_theme_stylebox_override("panel", _major_style if major else _minor_style)
 	_major_icon.visible = major
 	_set_title((_MAJOR_TITLE if major else _MINOR_TITLE) % _shown_version, major)
-	_dismiss_btn.tooltip_text = _DISMISS_TOOLTIP
+	_dismiss_btn.tooltip_text = _STAGED_DISMISS_TOOLTIP if _staged_on_display() else _DISMISS_TOOLTIP
+	_changelog_btn.visible = true
 	_github_btn.text = _GITHUB_TEXT
 	_github_btn.visible = true
 	_store_btn.visible = true
@@ -273,21 +271,13 @@ func _render_install_state() -> void:
 	if not about_shown:
 		state = UpdateInstaller.IDLE
 	var view: Dictionary = _installer.ready_view() if state == UpdateInstaller.READY else {}
-	var status := ""
-	match state:
-		UpdateInstaller.AVAILABLE:
-			var changed: PackedStringArray = _installer.changed_files()
-			if not changed.is_empty():
-				status = _CHANGED_TEXT % changed.size()
-		UpdateInstaller.DOWNLOADING, UpdateInstaller.PREPARING:
-			status = _DOWNLOADING_TEXT % _shown_version
-		UpdateInstaller.READY:
-			status = _READY_TEXT % _shown_version if view.is_empty() else ready_view_text(_shown_version, view)
-		UpdateInstaller.FAILED:
-			status = _FAILED_TEXT % _installer.error_text()
-		_:
-			status = _installer.note_text() if about_shown else ""
-	_set_status(status)
+	var facts := {DockUpdateBadgeStatus.VIEW: view}
+	if about_shown:
+		facts[DockUpdateBadgeStatus.CHANGED] = _installer.changed_files().size()
+		facts[DockUpdateBadgeStatus.ERROR] = _installer.error_text()
+		facts[DockUpdateBadgeStatus.NOTE] = _installer.note_text()
+		facts[DockUpdateBadgeStatus.POSTPONED] = _installer.postponed_reason()
+	_set_status(DockUpdateBadgeStatus.install_line(state, _shown_version, facts))
 	var check_failed: bool = about_shown and state == UpdateInstaller.IDLE and _installer.check_failed()
 	_update_btn.visible = state == UpdateInstaller.AVAILABLE or state == UpdateInstaller.FAILED \
 			or (check_failed and _installer.can_retry_check())
@@ -312,19 +302,11 @@ func _render_notice(notice: Dictionary) -> void:
 	_set_title((_UPDATED_TITLE if updated else _FAILED_TITLE) % _shown_version, false)
 	var mcp_json_behind := updated and bool(notice.get("server_changed", false)) \
 			and _write_flow != null and _write_flow.written_entry_outdated()
-	if updated:
-		_set_status(_SERVER_CHANGED_TEXT % VersionUtils.COMPATIBLE_SERVER_VERSION if mcp_json_behind else "")
-	else:
-		var reason := str(notice.get("reason", ""))
-		var status := _NOT_INSTALLED_TEXT % [_sentence(reason), str(notice.get("from_version", "")), _installer.log_path()]
-		# A hand download checks no signature, and in a leak the latest release can be the
-		# old key's too, so this notice points at the toolkit's own check and offers no link.
-		if reason == UpdateApplier.UNTRUSTED_SIGNATURE:
-			status += "\n" + _NEXT_RELEASE_TEXT
-		_set_status(status)
+	_set_status(DockUpdateBadgeStatus.notice_line(notice, _installer.log_path(), mcp_json_behind))
 	_dismiss_btn.tooltip_text = _NOTICE_DISMISS_TOOLTIP
 	tooltip_text = ""
-	_github_btn.text = _WHATS_NEW_TEXT
+	_changelog_btn.visible = false
+	_github_btn.text = _RELEASE_NOTES_TEXT
 	_github_btn.visible = updated
 	_store_btn.visible = false
 	_update_btn.visible = false
@@ -382,6 +364,10 @@ func _on_mcp_json_written(ok: bool, message: String, severity: int, tooltip: Str
 
 
 func _on_installer_state_changed() -> void:
+	# The close button hides one staged update. Once that stage is gone, a later stage of
+	# the same version is one the user asked for again, so it shows.
+	if _installer.state() != UpdateInstaller.READY:
+		_hidden_staged_version = ""
 	refresh()
 	# Deferred, so a state the installer passes through on its way is not announced.
 	# A release an earlier session found gets no toast: the editor-start window
@@ -409,10 +395,12 @@ func _note_installable(announce: bool) -> void:
 		_toast.call(text)
 
 
+func _on_changelog_pressed() -> void:
+	_open_link(UpdateCheck.changelog_url(_shown_version))
+
+
 func _on_github_pressed() -> void:
-	var url := UpdateCheck.release_page_url(_shown_version)
-	if url.begins_with("https://"):
-		OS.shell_open(url)
+	_open_link(UpdateCheck.release_page_url(_shown_version))
 
 
 func _on_store_pressed() -> void:
@@ -429,48 +417,15 @@ func _on_dismiss_pressed() -> void:
 		return
 	if _shown_version.is_empty():
 		return
-	# Closing a staged update gives it up: the version stays hidden, nothing installs.
-	if _installer != null and _installer.state() == UpdateInstaller.READY and _installer.version() == _shown_version:
-		_installer.discard()
+	# The editor's exit still installs a staged update, so closing it only hides it for
+	# this session. Dismissing the version in the runner would keep the badge away after
+	# the next start too, and Don't install is the way to give the update up.
+	if _staged_on_display():
+		_hidden_staged_version = _shown_version
+		refresh()
 		return
 	if _runner != null:
 		_runner.dismiss(_shown_version)
-
-
-## The ready view's status lines for the staged [param version], from the installer's
-## [param view]: the probe's findings, each told on its own line, and whether this
-## editor's restart asks about unsaved scenes.
-static func ready_view_text(version: String, view: Dictionary) -> String:
-	var lines := PackedStringArray([_READY_VIEW_TEXT % version, _READY_VIEW_HOW_TEXT])
-	if bool(view.get(EditorRestartProbe.RUNNING_GAME, false)):
-		lines.append(_RUNNING_GAME_TEXT)
-	var unsaved: PackedStringArray = view.get(EditorRestartProbe.UNSAVED_SCRIPTS, PackedStringArray())
-	if not unsaved.is_empty():
-		lines.append(_unsaved_scripts_line(unsaved))
-	var untitled: int = int(view.get(EditorRestartProbe.UNTITLED_SCENES, 0))
-	if untitled == 1:
-		lines.append(_UNTITLED_SCENE_TEXT)
-	elif untitled > 1:
-		lines.append(_UNTITLED_SCENES_TEXT % untitled)
-	var scenes_asked: bool = bool(view.get(RestartGate.SCENES_ASKED, false))
-	lines.append(_SCRIPTS_ONLY_TEXT if scenes_asked else _SCENES_NOT_ASKED_TEXT)
-	return "\n".join(lines)
-
-
-# Names the scripts when the editor paired every tab with its file, and counts them
-# otherwise.
-static func _unsaved_scripts_line(unsaved: PackedStringArray) -> String:
-	var named := PackedStringArray()
-	for file_name: String in unsaved:
-		if not file_name.is_empty():
-			named.append(file_name)
-	if named.size() < unsaved.size():
-		if unsaved.size() == 1:
-			return _UNSAVED_SCRIPT_TEXT % _UNNAMED_SCRIPT
-		return _UNNAMED_SCRIPTS_TEXT % unsaved.size()
-	if named.size() == 1:
-		return _UNSAVED_SCRIPT_TEXT % named[0]
-	return _UNSAVED_SCRIPTS_TEXT % [named.size(), ", ".join(named)]
 
 
 static func _add_button(parent: Control, button_name: String, text: String, on_pressed: Callable) -> Button:
@@ -482,12 +437,11 @@ static func _add_button(parent: Control, button_name: String, text: String, on_p
 	return button
 
 
-# A reason from the installer or the applier starts lowercase; the badge shows it as
-# a sentence.
-static func _sentence(reason: String) -> String:
-	if reason.is_empty():
-		return "The update did not install"
-	return reason.left(1).to_upper() + reason.substr(1)
+# Opens a link built from the version on display; a version that names no release
+# gives an empty one, which opens nothing.
+static func _open_link(url: String) -> void:
+	if url.begins_with("https://"):
+		OS.shell_open(url)
 
 
 static func _editor_icon(editor_theme: Theme, icon_name: String) -> Texture2D:

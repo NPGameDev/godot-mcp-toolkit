@@ -12,7 +12,8 @@ extends RefCounted
 ## The list's file name inside the addon folder.
 const FILE_NAME := "release_files.sha256"
 
-# Direct preload: core/modules.gd does not list this folder's scripts.
+# Direct preload, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 
 

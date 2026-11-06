@@ -7,7 +7,8 @@ extends RefCounted
 ## host can be replaced for a loopback test server through the update check's
 ## contributor-only host variable, which accepts nothing else.
 
-# Direct preload: core/modules.gd does not list this folder's scripts.
+# Direct preload, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 
 const _DOWNLOAD_HOST := "https://github.com"

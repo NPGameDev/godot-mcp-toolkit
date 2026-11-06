@@ -6,7 +6,8 @@ extends RefCounted
 ## Outside a windowed editor, as in a unit test or a headless run, it finds nothing and
 ## never restarts. A test hands the installer a stand-in that extends this script.
 
-# Direct preload: core/modules.gd does not list this folder's scripts.
+# Direct preload, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
 ## [method findings] keys. The file names of the open scripts with unsaved edits, in tab

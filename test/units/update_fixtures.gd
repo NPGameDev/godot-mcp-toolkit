@@ -45,6 +45,10 @@ class ModeSettings extends RefCounted:
 	func _init(mode: String) -> void:
 		_mode = mode
 
+	## Changes the mode, as the user does in the project settings.
+	func set_mode(mode: String) -> void:
+		_mode = mode
+
 	func has_setting(key: String) -> bool:
 		return key == InstallMode.SETTING
 

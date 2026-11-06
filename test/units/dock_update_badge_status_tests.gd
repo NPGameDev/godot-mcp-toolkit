@@ -1,0 +1,80 @@
+@tool
+extends RefCounted
+## Unit tests for the dock update badge's status line: which line each installer state,
+## ready view finding and install notice adds. The rows pin which lines appear, not their
+## wording; the badge's own tests pin the wording the badge shows.
+
+const Testing := preload("res://test/units/testing.gd")
+const DockUpdateBadgeStatus := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge_status.gd")
+const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
+const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
+const EditorRestartProbe := preload("res://addons/godot_mcp_toolkit/self_update/editor_restart_probe.gd")
+const RestartGate := preload("res://addons/godot_mcp_toolkit/self_update/restart_gate.gd")
+
+const _REASON := "could not rename the addon folder"
+
+
+static func run(testing: Testing) -> void:
+	_test_download_and_stage_lines_differ(testing)
+	_test_postponed_reason(testing)
+	_test_ready_view_findings(testing)
+	_test_untrusted_notice_adds_a_line(testing)
+
+
+static func _test_download_and_stage_lines_differ(testing: Testing) -> void:
+	testing.begin("Badge status: the download and the stage each have their own line")
+	var downloading := DockUpdateBadgeStatus.install_line(UpdateInstaller.DOWNLOADING, "1.9.0", {})
+	var preparing := DockUpdateBadgeStatus.install_line(UpdateInstaller.PREPARING, "1.9.0", {})
+	testing.ok(not downloading.is_empty(), "downloading → a line")
+	testing.ok(not preparing.is_empty(), "preparing → a line")
+	testing.ok(downloading != preparing, "and the two differ")
+	print("")
+
+
+static func _test_postponed_reason(testing: Testing) -> void:
+	testing.begin("Badge status: a staged update the last exit left says why")
+	var view := {RestartGate.SCENES_ASKED: true}
+	var staged := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0", {})
+	var postponed := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0",
+			{DockUpdateBadgeStatus.POSTPONED: _REASON})
+	var in_view := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0",
+			{DockUpdateBadgeStatus.VIEW: view})
+	var postponed_in_view := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0",
+			{DockUpdateBadgeStatus.VIEW: view, DockUpdateBadgeStatus.POSTPONED: _REASON})
+	testing.ok(postponed.contains(_REASON), "a postponed update → the line names the reason")
+	testing.eq(postponed.split("\n").size(), staged.split("\n").size() + 1, "on a line of its own")
+	testing.ok(not staged.contains(_REASON), "no reason → no such line")
+	testing.ok(postponed_in_view.contains(_REASON), "the ready view open → the reason still shows")
+	testing.eq(postponed_in_view.split("\n").size(), in_view.split("\n").size() + 1, "under the view's lines")
+	print("")
+
+
+static func _test_ready_view_findings(testing: Testing) -> void:
+	testing.begin("Badge status: each ready view finding adds its line")
+	var asked := {RestartGate.SCENES_ASKED: true}
+	var base := DockUpdateBadgeStatus.ready_view_text("1.9.0", asked)
+	var game := DockUpdateBadgeStatus.ready_view_text("1.9.0",
+			{RestartGate.SCENES_ASKED: true, EditorRestartProbe.RUNNING_GAME: true})
+	var game_off := DockUpdateBadgeStatus.ready_view_text("1.9.0",
+			{RestartGate.SCENES_ASKED: true, EditorRestartProbe.RUNNING_GAME: false})
+	var unsaved := DockUpdateBadgeStatus.ready_view_text("1.9.0",
+			{RestartGate.SCENES_ASKED: true, EditorRestartProbe.UNSAVED_SCRIPTS: PackedStringArray(["a.gd"])})
+	var not_asked := DockUpdateBadgeStatus.ready_view_text("1.9.0", {RestartGate.SCENES_ASKED: false})
+	testing.eq(game.split("\n").size(), base.split("\n").size() + 1, "a running game → one more line")
+	testing.eq(game_off, base, "no running game → no such line")
+	testing.eq(unsaved.split("\n").size(), base.split("\n").size() + 1, "an unsaved script → one more line")
+	testing.ok(not_asked != base, "a restart that does not ask about scenes → a different line")
+	print("")
+
+
+static func _test_untrusted_notice_adds_a_line(testing: Testing) -> void:
+	testing.begin("Badge status: a release signed by an untrusted key points at the next release")
+	var untrusted := DockUpdateBadgeStatus.notice_line(
+			{"kind": UpdateInstaller.NOTICE_FAILED, "reason": UpdateApplier.UNTRUSTED_SIGNATURE,
+					"version": "1.9.0", "from_version": "1.1.0"},
+			"user://log.txt", false)
+	var other := DockUpdateBadgeStatus.notice_line(
+			{"kind": UpdateInstaller.NOTICE_FAILED, "reason": _REASON, "version": "1.9.0", "from_version": "1.1.0"},
+			"user://log.txt", false)
+	testing.eq(untrusted.split("\n").size(), other.split("\n").size() + 1, "an untrusted signature → one more line")
+	print("")

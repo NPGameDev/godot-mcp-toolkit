@@ -30,6 +30,7 @@ static func run(testing) -> void:
 	_test_host_variable_takes_loopback_only(testing)
 	_test_catalog_request(testing)
 	_test_release_page_url(testing)
+	_test_changelog_url(testing)
 	_test_runner_state_bytes(testing)
 
 
@@ -291,6 +292,16 @@ static func _test_release_page_url(testing) -> void:
 	testing.eq(UpdateCheck.release_page_url("1.2.0/../../evil"), "", "a non-version gives no link")
 	testing.eq(UpdateCheck.STORE_LISTING_URL, "https://store.godotengine.org/asset/npgamedev/godot-mcp-toolkit/",
 			"the store listing")
+	print("")
+
+
+static func _test_changelog_url(testing) -> void:
+	testing.begin("Update check: the changelog link is built locally")
+	testing.eq(UpdateCheck.changelog_url("1.2.0"),
+			"https://github.com/NPGameDev/godot-mcp-toolkit/blob/v1.2.0/CHANGELOG.md", "the changelog at a version's tag")
+	testing.eq(UpdateCheck.changelog_url("v1.2.0"),
+			"https://github.com/NPGameDev/godot-mcp-toolkit/blob/v1.2.0/CHANGELOG.md", "a v-prefixed version is normalized")
+	testing.eq(UpdateCheck.changelog_url("1.2.0/../../evil"), "", "a non-version gives no link")
 	print("")
 
 

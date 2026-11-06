@@ -1,9 +1,10 @@
 @tool
 extends RefCounted
 ## Unit tests for the update installer: the notice an apply leaves for the next start,
-## picking up a kept or staged release, the gates that keep it idle, giving an update up,
-## a download failed, killed or redirected, one that stages over frames and the restart or
-## ready view after it, and a headless start, all served by a loopback listener.
+## picking up a kept or staged release, the gates that keep it idle and the ones a stage
+## outlives, giving an update up, a download failed, killed or redirected, one that stages
+## over frames and the restart or ready view after it, why the last exit postponed it, and a
+## headless start, all served by a loopback listener.
 
 const Testing := preload("res://test/units/testing.gd")
 const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
@@ -16,6 +17,7 @@ const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/relea
 const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
+const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 
 const _STAGED_FILES := {"core/a.gd": "new a", "core/b.gd": "new b", "core/c.gd": "new c"}
@@ -53,7 +55,13 @@ static func run(testing, tree: SceneTree) -> void:
 	await _test_discard_during_a_stage(testing, tree)
 	await _test_discard_from_the_preparing_handler(testing, tree)
 	await _test_leaving_the_tree_during_a_stage(testing, tree)
+	_test_staged_outlives_no_newer_version(testing, tree)
+	_test_staged_outlives_the_check_turned_off(testing, tree)
+	_test_manual_mode_clears_a_staged_journal(testing, tree)
+	await _test_manual_mode_during_a_stage(testing, tree)
+	await _test_manual_mode_during_a_download(testing, tree)
 	_test_settled(testing, tree)
+	_test_postponed_reason(testing, tree)
 	_test_headless_start_keeps_a_journal(testing, tree, "1.9.0")
 	_test_headless_start_keeps_a_journal(testing, tree, "")
 	_test_headless_start_keeps_a_kept_release(testing, tree)
@@ -970,6 +978,121 @@ static func _test_leaving_the_tree_during_a_stage(testing: Testing, tree: SceneT
 	print("")
 
 
+# The runner reports the installed version, so it offers nothing newer.
+static func _test_staged_outlives_no_newer_version(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a staged journal outlives an empty newer version")
+	var world := UpdateFixtures.begin_world("installer_staged_no_newer", "1.1.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var newer := (nodes["runner"] as UpdateCheckRunner).badge_version()
+	var installer: UpdateInstaller = nodes["installer"]
+	var state := installer.state()
+	var version := installer.version()
+	var record := _record_state(world)
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(newer, "", "the runner offers no newer version")
+	testing.eq(state, "ready", "the staged release → still ready")
+	testing.eq(version, "1.9.0", "about the staged version")
+	testing.eq(record, "staged", "and its journal stays")
+	print("")
+
+
+static func _test_staged_outlives_the_check_turned_off(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a staged journal outlives the update check turned off")
+	var world := UpdateFixtures.begin_world("installer_staged_check_off", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	Consent.set_readers(func() -> bool: return false, func(_step_id: StringName) -> bool: return true)
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var state := installer.state()
+	var record := _record_state(world)
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(state, "ready", "the check off → the staged release is still ready")
+	testing.eq(record, "staged", "and its journal stays")
+	print("")
+
+
+static func _test_manual_mode_clears_a_staged_journal(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: the manual mode clears a staged journal")
+	var world := UpdateFixtures.begin_world("installer_staged_manual", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var before := installer.state()
+	((world["options"] as Dictionary)["project_settings"] as UpdateFixtures.ModeSettings).set_mode("manual")
+	installer.reevaluate()
+	var after := installer.state()
+	var journal_left := UpdateJournal.exists(str(world["updates"]))
+	var stage_left := _has_stage(world)
+	var badge := (nodes["runner"] as UpdateCheckRunner).badge_version()
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(before, "ready", "a staged release in the ask mode → ready")
+	testing.eq(after, "idle", "the mode set to manual → idle")
+	testing.ok(not journal_left, "no journal")
+	testing.ok(not stage_left, "no stage")
+	testing.eq(badge, "1.9.0", "the version is still offered as a link")
+	print("")
+
+
+static func _test_manual_mode_during_a_stage(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: the manual mode during a stage calls it off")
+	var world := UpdateFixtures.begin_world("installer_manual_stage", "1.9.0", "ask", "1.1.0")
+	var archive := UpdateFixtures.keep_verified(world["updates"], "1.9.0", _STAGED_FILES, UpdateFixtures.key())
+	var probe := UpdateFixtures.RestartProbeStandIn.new()
+	(world["options"] as Dictionary)["restart_probe"] = probe
+	var click := _serve(world, archive, tree)
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	var before := installer.state()
+	((world["options"] as Dictionary)["project_settings"] as UpdateFixtures.ModeSettings).set_mode("manual")
+	installer.reevaluate()
+	for _frame: int in range(8):
+		await tree.process_frame
+	var state := installer.state()
+	var journal_left := UpdateJournal.exists(str(world["updates"]))
+	var stage_left := _has_stage(world)
+	var badge := ((click["nodes"] as Dictionary)["runner"] as UpdateCheckRunner).badge_version()
+	_end_click(click)
+	testing.eq(before, "preparing", "the mode changes while preparing")
+	testing.eq(state, "idle", "→ idle, and nothing finishes later")
+	testing.ok(not journal_left, "no journal")
+	testing.ok(not stage_left, "no stage")
+	testing.eq(probe.restarts, 0, "no restart")
+	testing.eq(badge, "1.9.0", "the version is not dismissed")
+	print("")
+
+
+# The server is polled only after the mode changes, so the zip request is still open when
+# it does; the frames served after it show that nothing the request brings back finishes.
+static func _test_manual_mode_during_a_download(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: the manual mode during a download calls it off")
+	var click := _begin_click("installer_manual_download", tree)
+	var world: Dictionary = click["world"]
+	var installer := _installer_of(click)
+	var server: UpdateFixtures.LoopbackReleaseServer = click["server"]
+	installer.install()
+	var before := installer.state()
+	((world["options"] as Dictionary)["project_settings"] as UpdateFixtures.ModeSettings).set_mode("manual")
+	installer.reevaluate()
+	for _frame: int in range(60):
+		server.poll()
+		await tree.process_frame
+	var state := installer.state()
+	var journal_left := UpdateJournal.exists(str(world["updates"]))
+	var stage_left := _has_stage(world)
+	var version_folder_left := DirAccess.dir_exists_absolute(
+			ProjectSettings.globalize_path(UpdateFolder.version_folder("1.9.0", str(world["updates"]))))
+	var badge := ((click["nodes"] as Dictionary)["runner"] as UpdateCheckRunner).badge_version()
+	_end_click(click)
+	testing.eq(before, "downloading", "the mode changes while downloading")
+	testing.eq(state, "idle", "→ idle, and nothing finishes later")
+	testing.ok(not journal_left, "no journal")
+	testing.ok(not stage_left, "no stage")
+	testing.ok(not version_folder_left, "no version folder")
+	testing.eq(badge, "1.9.0", "the version is not dismissed")
+	print("")
+
+
 static func _test_settled(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: what the start's settle found")
 	var world := UpdateFixtures.begin_world("installer_settled_waiting", "1.9.0", "ask", "1.1.0")
@@ -993,6 +1116,52 @@ static func _test_settled(testing: Testing, tree: SceneTree) -> void:
 	testing.eq(updated.get("report", ""), "updated", "an applied record the editor now runs → reported as updated")
 	testing.eq(updated.get("to", ""), "1.9.0", "about that version")
 	print("")
+
+
+static func _test_postponed_reason(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: why the last exit left the staged update waiting")
+	var world := UpdateFixtures.begin_world("installer_postponed", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var journal := UpdateJournal.read(str(world["updates"]))
+	journal["reason"] = "could not rename the addon folder"
+	journal["attempts"] = 1
+	UpdateJournal.write(journal, str(world["updates"]))
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var postponed := _postponed_reason_of(nodes["installer"])
+	UpdateFixtures.end_world(world, nodes)
+
+	world = UpdateFixtures.begin_world("installer_postponed_fresh", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	nodes = UpdateFixtures.start_world(world, tree)
+	var fresh_state := (nodes["installer"] as UpdateInstaller).state()
+	var fresh := _postponed_reason_of(nodes["installer"])
+	UpdateFixtures.end_world(world, nodes)
+
+	world = UpdateFixtures.begin_world("installer_postponed_headless", "1.9.0", "ask", "1.1.0")
+	(world["options"] as Dictionary)["guard_facts"] = {"headless": true}
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	journal = UpdateJournal.read(str(world["updates"]))
+	journal["reason"] = "could not rename the addon folder"
+	journal["attempts"] = 1
+	UpdateJournal.write(journal, str(world["updates"]))
+	nodes = UpdateFixtures.start_world(world, tree)
+	var headless_settled := (nodes["installer"] as UpdateInstaller).settled()
+	var headless := _postponed_reason_of(nodes["installer"])
+	UpdateFixtures.end_world(world, nodes)
+
+	testing.eq(postponed, "could not rename the addon folder", "an exit that tried and failed → its reason")
+	testing.eq(fresh_state, "ready", "a stage no exit has tried yet → ready")
+	testing.eq(fresh, "", "with no reason")
+	testing.eq(headless_settled, {}, "a headless start runs no settle")
+	testing.eq(headless, "", "so there is no reason")
+	print("")
+
+
+# Called by name, so an installer without the method fails the case, not the whole file.
+static func _postponed_reason_of(installer: UpdateInstaller) -> String:
+	if not installer.has_method("postponed_reason"):
+		return "no postponed_reason()"
+	return str(installer.call("postponed_reason"))
 
 
 # A staged release and either what the runner reports or nothing at all: both paths through

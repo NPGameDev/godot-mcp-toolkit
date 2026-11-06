@@ -17,7 +17,7 @@ const SetupSteps = Modules.SetupSteps
 const SetupStepTracker = Modules.SetupStepTracker
 const UpdateJournal = Modules.UpdateJournal
 const UpdateInstaller = Modules.UpdateInstaller
-const UpdateLifecycle := preload("res://addons/godot_mcp_toolkit/self_update/update_lifecycle.gd")
+const UpdateLifecycle = Modules.UpdateLifecycle
 const UpdatePrompt := preload("res://addons/godot_mcp_toolkit/ui/update/update_prompt.gd")
 
 # The Handle that owns the composed collaborator graph and frees it in dispose().

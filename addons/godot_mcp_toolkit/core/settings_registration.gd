@@ -12,7 +12,7 @@ const ResponseLimits = Modules.ResponseLimits
 const ServerPinPolicy = Modules.ServerPinPolicy
 const UpdateCheck = Modules.UpdateCheck
 const InstallMode = Modules.InstallMode
-const UpdateSettler := preload("res://addons/godot_mcp_toolkit/self_update/update_settler.gd")
+const UpdateSettler = Modules.UpdateSettler
 
 # Keys earlier versions stored and this one no longer writes. Each entry is
 # removable at 2.0.0.

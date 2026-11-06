@@ -9,7 +9,8 @@ extends Node
 ## [method StageStepper.advance] returns. A run that [method cancel] stopped never emits it.
 signal finished(outcome: Dictionary)
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preload, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const StageStepper := preload("res://addons/godot_mcp_toolkit/self_update/stage_stepper.gd")
 
 var _stepper: StageStepper = null

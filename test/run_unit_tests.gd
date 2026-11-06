@@ -93,6 +93,7 @@ const UpdateCheckFailureTests := preload("res://test/units/update_check_failure_
 const UpdateTrustWalkTests := preload("res://test/units/update_trust_walk_tests.gd")
 const UpdatePromptTests := preload("res://test/units/update_prompt_tests.gd")
 const DockUpdateBadgeTests := preload("res://test/units/dock_update_badge_tests.gd")
+const DockUpdateBadgeStatusTests := preload("res://test/units/dock_update_badge_status_tests.gd")
 const SetupWizardTests := preload("res://test/units/setup_wizard_tests.gd")
 const SetupWizardStepSpecTests := preload("res://test/units/setup_wizard_step_spec_tests.gd")
 const ExtensionCatalogFetcherTests := preload("res://test/units/extension_catalog_fetcher_tests.gd")
@@ -193,6 +194,7 @@ func _init() -> void:
 	await UpdateTrustWalkTests.run(testing, self)  # fetches through loopback listeners → coroutine
 	UpdatePromptTests.run(testing)
 	await DockUpdateBadgeTests.run(testing, self)  # waits for a live tree → coroutine
+	DockUpdateBadgeStatusTests.run(testing)
 	await SetupWizardTests.run(testing, self)  # the run-ending groups await frames → coroutine
 	SetupWizardStepSpecTests.run(testing)
 	await ExtensionCatalogFetcherTests.run(testing, self)  # the in-tree group awaits a frame → coroutine

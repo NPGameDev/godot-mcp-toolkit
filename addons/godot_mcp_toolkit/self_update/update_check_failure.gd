@@ -7,7 +7,8 @@ extends RefCounted
 ## [constant SECURITY], whose sentence says the update won't install. The installer shows
 ## [constant NOT_READY] only when a click reaches it.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preload, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_chain.gd")
 
 ## No answer: no connection, no name, a timeout or a failed TLS handshake.

@@ -47,8 +47,8 @@ static func _test_deletes_other_files(testing) -> void:
 
 
 static func _test_whats_new(testing) -> void:
-	testing.begin("Update prompt: What's in this update opens the release page")
+	testing.begin("Update prompt: What's in this update opens the changelog")
 	testing.eq(UpdatePrompt.WHATS_NEW_LABEL, "What's in this update", "the button's label")
-	testing.eq(UpdatePrompt.whats_new_url("1.2.0"), "https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v1.2.0",
-			"1.2.0 → its release page")
+	testing.eq(UpdatePrompt.whats_new_url("1.2.0"), "https://github.com/NPGameDev/godot-mcp-toolkit/blob/v1.2.0/CHANGELOG.md",
+			"1.2.0 → its changelog")
 	print("")

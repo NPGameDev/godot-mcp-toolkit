@@ -51,19 +51,26 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await tree.process_frame
 	_test_available(testing, tree)
 	_test_available_with_changed_files(testing, tree)
+	_test_changelog_on_every_offer(testing, tree)
 	_test_close_hides_version(testing, tree)
 	_test_update_shows_download(testing, tree)
 	await _test_failed_download_offers_retry(testing, tree)
 	_test_ready(testing, tree)
 	_test_not_now_closes_the_ready_view(testing, tree)
 	_test_ready_while_newer_is_out(testing, tree)
-	_test_close_gives_up_staged(testing, tree)
+	await _test_stage_shows_its_own_state_text(testing, tree)
+	_test_postponed_update_says_why(testing, tree)
+	_test_headless_start_shows_no_reason(testing, tree)
+	_test_close_hides_staged_for_the_session(testing, tree)
+	_test_closed_staged_stays_hidden(testing, tree)
+	_test_closed_staged_shows_once_staged_again(testing, tree)
 	_test_notice_updated(testing, tree)
 	_test_notice_offers_mcp_json_update(testing, tree)
 	_test_notice_failed(testing, tree)
 	await _test_toast_once_for_verified(testing, tree)
 	await _test_no_toast_for_shown_release(testing, tree)
 	await _test_no_toast_for_restored_release(testing, tree)
+	await _test_click_on_link_only_announces_once(testing, tree)
 	await _test_failed_check_keeps_the_links(testing, tree)
 	await _test_no_data_folder_offers_no_update(testing, tree)
 	_test_key_dropped_after_staging_shows(testing, tree)
@@ -208,6 +215,36 @@ static func _test_available_with_changed_files(testing: Testing, tree: SceneTree
 	print("")
 
 
+# The manual mode keeps no release, so its badge only links.
+static func _test_changelog_on_every_offer(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: What's in this update shows whenever a version is offered")
+	var world := UpdateFixtures.begin_world("badge_changelog_link_only", "1.9.0", "manual", "1.1.0")
+	var nodes := _start(world, tree)
+	var link_only_visible := (nodes["badge"] as Control).visible
+	var link_only_update := _shown(nodes["badge"], "UpdateButton")
+	var link_only_changelog := _changelog_label(nodes["badge"])
+	_end(world, nodes)
+
+	world = UpdateFixtures.begin_world("badge_changelog_available", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+	nodes = _start(world, tree)
+	var available_update := _shown(nodes["badge"], "UpdateButton")
+	var available_changelog := _changelog_label(nodes["badge"])
+	_end(world, nodes)
+
+	testing.ok(link_only_visible and not link_only_update, "the manual mode → a badge with links only")
+	testing.eq(link_only_changelog, "What's in this update", "a link-only badge → What's in this update")
+	testing.ok(available_update, "a verified release → Update")
+	testing.eq(available_changelog, "What's in this update", "and What's in this update beside it")
+	print("")
+
+
+# The changelog button's label while it shows, or "" when it is hidden or missing.
+static func _changelog_label(badge: Node) -> String:
+	var button := _child(badge, "ChangelogButton") as Button
+	return button.text if button != null and button.visible else ""
+
+
 static func _test_close_hides_version(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: closing the version notice hides it until a newer version")
 	var world := UpdateFixtures.begin_world("badge_close", "1.9.0", "ask", "1.1.0")
@@ -273,7 +310,7 @@ static func _test_failed_download_offers_retry(testing: Testing, tree: SceneTree
 
 
 static func _test_ready(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("Update badge: a staged release offers Restart now and Don't install")
+	testing.begin("Update badge: a staged release offers Restart and Don't install")
 	var world := UpdateFixtures.begin_world("badge_ready", "1.9.0", "ask", "1.1.0")
 	# A windowed 4.5 editor with nothing unsaved, so the ready view's lines hold on every engine.
 	world["options"]["restart_probe"] = UpdateFixtures.RestartProbeStandIn.new()
@@ -289,7 +326,7 @@ static func _test_ready(testing: Testing, tree: SceneTree) -> void:
 			+ "To install it now, save your work and click Restart.\n"
 			+ "The toolkit only checks scripts. Save scenes, shaders and other open work yourself.",
 			"the status line says the editor's exit installs it")
-	testing.ok(restart_shown and discard_shown, "a staged release → Restart now and Don't install")
+	testing.ok(restart_shown and discard_shown, "a staged release → Restart and Don't install")
 	testing.ok(not update_shown, "and no Update")
 	print("")
 
@@ -346,15 +383,91 @@ static func _test_ready_while_newer_is_out(testing: Testing, tree: SceneTree) ->
 
 	testing.ok(status.begins_with("1.8.0 "), "the status line names the staged version")
 	testing.ok(title.contains("1.8.0"), "and so does the title")
-	testing.ok(restart_shown and discard_shown, "Restart now and Don't install")
+	testing.ok(restart_shown and discard_shown, "Restart and Don't install")
 	testing.ok(not update_shown, "and no Update")
 	testing.ok(major_title.contains("1.8.0"), "a major release out → the title still names the staged version")
 	testing.ok(not major_icon_shown, "with no major icon")
 	print("")
 
 
-static func _test_close_gives_up_staged(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("Update badge: closing a staged release gives it up")
+# Each frame stages one file, so the stage spans frames the badge renders. An unsaved
+# script keeps the stage's end on the ready view instead of a restart.
+static func _test_stage_shows_its_own_state_text(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: the stage shows its own state text")
+	var world := UpdateFixtures.begin_world("badge_preparing", "1.9.0", "ask", "1.1.0")
+	var archive := UpdateFixtures.keep_verified(world["updates"], "1.9.0",
+			{"core/a.gd": "new", "core/b.gd": "new", "core/c.gd": "new"}, UpdateFixtures.key())
+	var probe := UpdateFixtures.RestartProbeStandIn.new()
+	probe.unsaved_scripts = PackedStringArray(["a.gd"])
+	var options: Dictionary = world["options"]
+	options["restart_probe"] = probe
+	options["stage_budget_ms"] = 0
+	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.archive_name("1.9.0"): archive})
+	var previous_host := _set_host(server.host())
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var installer: UpdateInstaller = nodes["installer"]
+	# Connected after the badge, so each entry is the line the badge has just rendered.
+	var status_by_state := {}
+	var record := func() -> void:
+		if not status_by_state.has(installer.state()):
+			status_by_state[installer.state()] = _text(badge, "Status")
+	installer.state_changed.connect(record)
+	_press(badge, "UpdateButton")
+	var frames := await _serve_until(server, installer, "ready", tree)
+	installer.state_changed.disconnect(record)
+	_end(world, nodes)
+	server.stop()
+	_restore_host(previous_host)
+	testing.ok(frames < 1200, "the release is staged within 1200 frames")
+	testing.ok(status_by_state.has("downloading") and status_by_state.has("preparing"),
+			"the badge rendered both the download and the stage")
+	testing.ok(str(status_by_state.get("preparing", "")) != str(status_by_state.get("downloading", "")),
+			"the stage's status line differs from the download's")
+	print("")
+
+
+# A staged update whose journal says the last exit tried once, as the applier leaves it.
+static func _postponed_world(purpose: String) -> Dictionary:
+	var world := UpdateFixtures.begin_world(purpose, "1.9.0", "ask", "1.1.0")
+	(world["options"] as Dictionary)["restart_probe"] = UpdateFixtures.RestartProbeStandIn.new()
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var journal := UpdateJournal.read(str(world["updates"]))
+	journal["reason"] = "could not rename the addon folder"
+	journal["attempts"] = 1
+	UpdateJournal.write(journal, str(world["updates"]))
+	return world
+
+
+static func _test_postponed_update_says_why(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a postponed update says why at the next start")
+	var world := _postponed_world("badge_postponed")
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var state := (nodes["installer"] as UpdateInstaller).state()
+	var status := _text(badge, "Status")
+	var discard_shown := _shown(badge, "DiscardButton")
+	_end(world, nodes)
+	testing.eq(state, "ready", "the update is still staged")
+	testing.ok(status.contains("could not rename the addon folder"), "the status line names why the exit left it")
+	testing.ok(discard_shown, "and Don't install is offered")
+	print("")
+
+
+# A headless editor runs no settle, so it has no reason to show.
+static func _test_headless_start_shows_no_reason(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a headless start shows no postponed reason")
+	var world := _postponed_world("badge_postponed_headless")
+	(world["options"] as Dictionary)["guard_facts"] = {"headless": true}
+	var nodes := _start(world, tree)
+	var status := _text(nodes["badge"], "Status")
+	_end(world, nodes)
+	testing.ok(not status.contains("could not rename the addon folder"), "no reason on the badge")
+	print("")
+
+
+static func _test_close_hides_staged_for_the_session(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: closing a staged release hides it for this session")
 	var world := UpdateFixtures.begin_world("badge_close_staged", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
 	var nodes := _start(world, tree)
@@ -363,10 +476,56 @@ static func _test_close_gives_up_staged(testing: Testing, tree: SceneTree) -> vo
 	var state := (nodes["installer"] as UpdateInstaller).state()
 	var record_state: String = UpdateJournal.read(world["updates"])["state"]
 	var visible := (badge as Control).visible
+	var badge_version := (nodes["runner"] as UpdateCheckRunner).badge_version()
+	nodes = _restart(world, nodes, tree)
+	var visible_after_restart := (nodes["badge"] as Control).visible
 	_end(world, nodes)
-	testing.eq(state, "idle", "close → the installer gives the release up")
-	testing.eq(record_state, "", "the staged record → deleted")
+	testing.eq(state, "ready", "close → the release stays staged")
+	testing.eq(record_state, "staged", "the staged record stays")
 	testing.ok(not visible, "and the badge hides")
+	testing.eq(badge_version, "1.9.0", "the runner keeps 1.9.0 offered")
+	testing.ok(visible_after_restart, "the next editor start shows the badge again")
+	print("")
+
+
+static func _test_closed_staged_stays_hidden(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a closed staged release stays hidden when the installer reports again")
+	var world := UpdateFixtures.begin_world("badge_close_staged_change", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var installer: UpdateInstaller = nodes["installer"]
+	_press(badge, "DismissButton")
+	installer.state_changed.emit()
+	var state := installer.state()
+	var visible := (badge as Control).visible
+	_end(world, nodes)
+	testing.eq(state, "ready", "the release is still staged")
+	testing.ok(not visible, "a state change after close → the badge stays hidden")
+	print("")
+
+
+# Deleting the staged zip stands in for any way the closed stage goes; staging the same
+# version again stands in for the user's next Update.
+static func _test_closed_staged_shows_once_staged_again(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a closed staged release shows again once it is staged again")
+	var world := UpdateFixtures.begin_world("badge_close_staged_again", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var installer: UpdateInstaller = nodes["installer"]
+	_press(badge, "DismissButton")
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(UpdateFolder.archive_path("1.9.0", world["updates"])))
+	installer.reevaluate()
+	var state_after_loss := installer.state()
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	installer.reevaluate()
+	var state := installer.state()
+	var visible := (badge as Control).visible
+	_end(world, nodes)
+	testing.eq(state_after_loss, "available", "the staged zip gone → the release is no longer staged")
+	testing.eq(state, "ready", "staged again → ready")
+	testing.ok(visible, "a new stage of the closed version → the badge shows again")
 	print("")
 
 
@@ -385,12 +544,15 @@ static func _test_notice_updated(testing: Testing, tree: SceneTree) -> void:
 	var store_shown := _shown(badge, "AssetStoreButton")
 	var status_shown := _shown(badge, "Status")
 	var mcp_json_shown := _shown(badge, "UpdateMcpJsonButton")
+	var changelog := _child(badge, "ChangelogButton")
+	var changelog_hidden := changelog != null and not changelog.visible
 	_press(badge, "DismissButton")
 	var visible_after_close := (badge as Control).visible
 	_end(world, nodes)
 	testing.eq(title, "Godot MCP Toolkit was updated to 1.9.0.", "the title names the installed version")
 	testing.ok(link_shown, "the release notes link shows")
-	testing.eq(link_text, "What's new", "and reads What's new")
+	testing.eq(link_text, "Release notes", "and reads Release notes")
+	testing.ok(changelog_hidden, "What's in this update hidden")
 	testing.ok(not store_shown, "no Asset Store link")
 	testing.ok(not status_shown and not mcp_json_shown, "the same server → no .mcp.json line or button")
 	testing.ok(not visible_after_close, "close → the notice goes")
@@ -518,6 +680,51 @@ static func _test_no_toast_for_restored_release(testing: Testing, tree: SceneTre
 	_end(world, nodes)
 	testing.eq(state, "available", "the kept release → available after the badge entered")
 	testing.eq(toasts.size(), 0, "and no toast")
+	print("")
+
+
+# The first check fails, so the badge has only its links and a retry. The click's check
+# verifies the release and goes straight on to the download, so the release is never
+# announced as available, only once it is staged. An unsaved script keeps the stage's end
+# on the ready view instead of a restart.
+static func _test_click_on_link_only_announces_once(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a click that verifies a link-only release announces once that the exit installs it")
+	var failing_server := UpdateFixtures.LoopbackReleaseServer.new({})
+	failing_server.redirect("/" + ReleaseAssets.trust_document_name(2), 503, "")
+	var release_server := UpdateFixtures.LoopbackReleaseServer.new(
+			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
+	var previous_host := _set_host(failing_server.host())
+	var world := UpdateFixtures.begin_world("badge_toast_click", "1.9.0", "ask", "1.1.0")
+	var probe := UpdateFixtures.RestartProbeStandIn.new()
+	probe.unsaved_scripts = PackedStringArray(["a.gd"])
+	(world["options"] as Dictionary)["restart_probe"] = probe
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var installer: UpdateInstaller = nodes["installer"]
+	var toasts: Array = (nodes["toasts"] as _ToastLog).messages
+	await _poll_until_failed(installer, failing_server, tree)
+	var failed := installer.check_failed()
+	var toasts_before_click := toasts.size()
+	_set_host(release_server.host())
+	_press(badge, "UpdateButton")
+	var frames := await _serve_until(release_server, installer, "ready", tree)
+	var state := installer.state()
+	var after_stage: Array = toasts.duplicate()
+	installer.state_changed.emit()
+	await tree.process_frame
+	var toasts_after_repeat := toasts.size()
+	_end(world, nodes)
+	failing_server.stop()
+	release_server.stop()
+	_restore_host(previous_host)
+	testing.ok(failed, "the first check fails → the badge only links")
+	testing.eq(toasts_before_click, 0, "and no toast")
+	testing.ok(frames < 1200, "the click's release is staged within 1200 frames")
+	testing.eq(state, "ready", "the click → the release staged")
+	testing.eq(after_stage.size(), 1, "the staged release → one toast")
+	testing.ok(after_stage.size() == 1 and str(after_stage[0]).contains("1.9.0"), "naming the release")
+	testing.eq(toasts_after_repeat, 1, "another change about the same release → no second toast")
+	testing.eq(probe.restarts, 0, "and the editor never restarted")
 	print("")
 
 

@@ -12,7 +12,7 @@ extends RefCounted
 ## A journal it does not trust reads as none and stays, with its stage, until the next
 ## staging replaces them.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
 const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")

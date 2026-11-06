@@ -5,15 +5,15 @@ extends RefCounted
 ## Shown once per editor start in the ask mode, when the update installer holds a
 ## verified release and the setup wizard is not open. Update installs it, Later asks
 ## again at the next start, and Skip this version hides it until a newer one. What's
-## in this update opens the release page and leaves the window open. A release found
-## during a session gets the dock badge only: a window in the middle of someone's work
-## would be in the way.
+## in this update opens the version's changelog and leaves the window open. A release
+## found during a session gets the dock badge only: a window in the middle of someone's
+## work would be in the way.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const UpdateCheck = Modules.UpdateCheck
 const UpdateInstaller = Modules.UpdateInstaller
 
-## The label of the button that opens the release page.
+## The label of the button that opens the changelog.
 const WHATS_NEW_LABEL := "What's in this update"
 
 const _TITLE := "Godot MCP Toolkit update"
@@ -89,10 +89,10 @@ static func text_for(
 	return text + _CHANGED_TEXT % [changed_files.size(), "\n".join(listed)]
 
 
-## The release page What's in this update opens for [param version], built locally from
+## The changelog What's in this update opens for [param version], built locally from
 ## the version, or an empty string for a version that names no release.
 static func whats_new_url(version: String) -> String:
-	return UpdateCheck.release_page_url(version)
+	return UpdateCheck.changelog_url(version)
 
 
 func _on_confirmed() -> void:

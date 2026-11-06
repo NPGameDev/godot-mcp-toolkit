@@ -8,7 +8,7 @@ extends RefCounted
 ## the apply, and the update folder stays as it found it. The override in
 ## [constant InstallGuards.HEADLESS_OVERRIDE_ENV] lets the integration tests through.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
 const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
 const UpdateSettler := preload("res://addons/godot_mcp_toolkit/self_update/update_settler.gd")

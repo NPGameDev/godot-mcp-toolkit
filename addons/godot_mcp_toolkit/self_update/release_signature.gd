@@ -7,7 +7,8 @@ extends RefCounted
 ## A signature from any key the latest trust document lists counts; see
 ## [code]trust_chain.gd[/code].
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const EmbeddedTrustDocument := preload("res://addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd")
 const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_chain.gd")

@@ -11,7 +11,9 @@ extends Node
 ## files a frame ([constant PREPARING], then [constant READY]). The editor's next exit
 ## applies it (see [code]update_applier.gd[/code]); nothing here writes the addon folder.
 ## While a release is staged, [method version] names it, whichever newer version the runner reports, and
-## nothing newer is fetched.[br]
+## nothing newer is fetched. A staged release whose files still check out stays until
+## [method discard] or the [code]manual[/code] install mode deletes it; that mode also calls
+## off a download or a stage that is running.[br]
 ## [br]
 ## A verified manifest and a staged zip are kept in the update folder (see
 ## [code]update_folder.gd[/code]), so an editor start finds them again without a request.[br]
@@ -282,6 +284,17 @@ func settled() -> Dictionary:
 	return _settled
 
 
+## Why the editor's last exit left the staged update uninstalled, while that update is
+## still [constant READY] and named by [method version]; an empty string otherwise, and when
+## the exit has not tried to install it yet.
+func postponed_reason() -> String:
+	if _state != READY or str(_settled.get("report", "")) != UpdateSettler.WAITING:
+		return ""
+	if str(_settled.get("to", "")) != _version:
+		return ""
+	return str(_settled.get("reason", ""))
+
+
 ## Stops showing the last apply's result.
 func clear_notice() -> void:
 	_notice = {}
@@ -307,11 +320,7 @@ func install() -> void:
 ## Gives up [method version]: deletes what was downloaded and hides the version until
 ## a newer one.
 func discard() -> void:
-	_cancel()
-	UpdateJournal.clear(_update_folder)
-	if _runner != null and not _version.is_empty():
-		_runner.dismiss(_version)
-	_set_state(IDLE)
+	_withdraw(_version)
 
 
 ## Restarts the editor, whose exit installs the staged update, unless a script has unsaved
@@ -326,7 +335,10 @@ func restart_now() -> void:
 # doing, and starts it.
 func _evaluate() -> void:
 	if _waiting != _WAITING_NONE:
-		return
+		# The manual mode calls off a running download or stage; anything else waits for it.
+		if install_mode() != InstallMode.MANUAL:
+			return
+		_withdraw()
 	var newer: String = _runner.badge_version() if _runner != null else ""
 	# The gates below would clear what a journal and a kept manifest hold, and an update
 	# waiting for its real exit must outlive a build or an import.
@@ -339,9 +351,13 @@ func _evaluate() -> void:
 	if _state == FAILED and newer == _version:
 		return
 	var record := UpdateJournal.read(_update_folder)
-	# The staged release stands, whichever newer one the runner reports: the editor's exit
-	# installs it, and the newer one is offered at the next start.
-	if record["state"] == UpdateJournal.STAGED and not newer.is_empty() and _install_allowed(record["to"]):
+	if record["state"] == UpdateJournal.STAGED and install_mode() == InstallMode.MANUAL:
+		UpdateJournal.clear(_update_folder)
+		record = UpdateJournal.read(_update_folder)
+	# The staged release stands, whichever newer one the runner reports, or none: the editor's
+	# exit installs it, and the newer one is offered at the next start.
+	# It skips the gates below, as the exit checks the guards, the trust and the version order again.
+	if record["state"] == UpdateJournal.STAGED:
 		_version = record["to"]
 		if _restore_record(record, newer):
 			return
@@ -730,6 +746,16 @@ func _fail_check(kind: String, reason: String) -> void:
 		_set_state(IDLE)
 		return
 	_set_state(IDLE, kind, note)
+
+
+# Calls off what is running and deletes what was downloaded, then dismisses
+# `dismissed_version` at the runner, if one is given, before the state goes back to IDLE.
+func _withdraw(dismissed_version: String = "") -> void:
+	_cancel()
+	UpdateJournal.clear(_update_folder)
+	if _runner != null and not dismissed_version.is_empty():
+		_runner.dismiss(dismissed_version)
+	_set_state(IDLE)
 
 
 func _cancel() -> void:

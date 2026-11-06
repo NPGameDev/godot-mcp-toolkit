@@ -20,7 +20,8 @@ extends Node
 ## from any other failure. [code]refusal[/code] is why a redirect was not followed, or empty.
 signal finished(outcome: Dictionary)
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity.gd")
 

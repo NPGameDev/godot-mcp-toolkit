@@ -52,6 +52,8 @@ const _STORE_HOST := "https://store.godotengine.org"
 # The trailing slash is required: without it the store answers with a redirect.
 const _STORE_PATH := "/api/v1/releases/npgamedev/godot-mcp-toolkit/"
 const _RELEASE_PAGE_PREFIX := "https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v"
+const _CHANGELOG_PREFIX := "https://github.com/NPGameDev/godot-mcp-toolkit/blob/v"
+const _CHANGELOG_FILE := "/CHANGELOG.md"
 # The whole value: anything after the host but a port, credentials above all, can move the
 # request elsewhere.
 const _LOOPBACK_ORIGIN_PATTERN := "^https?://(?:127\\.0\\.0\\.1|localhost|\\[::1\\])(?::[0-9]{1,5})?\\z"
@@ -250,6 +252,17 @@ static func release_page_url(version: String) -> String:
 	if normalized.is_empty():
 		return ""
 	return _RELEASE_PAGE_PREFIX + normalized
+
+
+## The changelog at [param version]'s release tag, built locally from the version alone.
+##
+## Returns an empty string when [param version] is not a stable version, as
+## [method release_page_url] does.
+static func changelog_url(version: String) -> String:
+	var normalized := _normalize(version)
+	if normalized.is_empty():
+		return ""
+	return _CHANGELOG_PREFIX + normalized + _CHANGELOG_FILE
 
 
 # The parsed value of text, or null when it is not valid JSON. A JSON instance
