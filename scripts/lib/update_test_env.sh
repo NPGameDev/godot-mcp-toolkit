@@ -98,7 +98,13 @@ ut_embed_trust() {
   document="$(cat "${folder}/trust-1.json")"
   rm -f "${folder}/trust-1.json"
   rmdir "${folder}"
-  printf '%s\n' "${text/"${empty}"/"const DOCUMENT := '${document}'"}" > "${target}"
+  # PROBE: what the old expression writes on this runner's bash.
+  echo "[PROBE] BASH_VERSION=${BASH_VERSION}" >&2
+  printf '%s\n' "${text/"${empty}"/"const DOCUMENT := '${document}'"}" | grep -n 'DOCUMENT :=' | cut -c1-60 | sed 's/^/[PROBE] old: /' >&2
+  # Split around the placeholder: bash before 4.3 keeps the quotes of a ${x/p/"r"} replacement.
+  local before="${text%%"${empty}"*}" after="${text#*"${empty}"}"
+  printf '%s%s%s\n' "${before}" "const DOCUMENT := '${document}'" "${after}" > "${target}"
+  grep -n 'DOCUMENT :=' "${target}" | cut -c1-60 | sed 's/^/[PROBE] new: /' >&2
 }
 
 ut_install_old_toolkit() {
