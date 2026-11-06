@@ -98,7 +98,9 @@ ut_embed_trust() {
   document="$(cat "${folder}/trust-1.json")"
   rm -f "${folder}/trust-1.json"
   rmdir "${folder}"
-  printf '%s\n' "${text/"${empty}"/"const DOCUMENT := '${document}'"}" > "${target}"
+  # Split around the placeholder: macOS's bash 3.2 keeps the quotes of a quoted ${x/p/"r"} replacement.
+  local before="${text%%"${empty}"*}" after="${text#*"${empty}"}"
+  printf '%s%s%s\n' "${before}" "const DOCUMENT := '${document}'" "${after}" > "${target}"
 }
 
 ut_install_old_toolkit() {

@@ -11,6 +11,10 @@
 # no Python installed downloads and installs one, so no case may ever run a
 # WindowsApps stand-in.
 #
+# It also checks that ut_embed_trust (scripts/lib/update_test_env.sh) writes the
+# embedded trust document as a const line under the rules of macOS's bash 3.2, run
+# here as BASH_COMPAT=42; this part needs openssl.
+#
 # Usage: bash scripts/test_update_test_env.sh   (from anywhere)
 # Exit 0 = all passed, 1 = a check failed.
 
@@ -43,6 +47,8 @@ equals() { [[ "$1" == "$2" ]]; }
 contains() { [[ "$1" == *"$2"* ]]; }
 is_empty() { [[ -z "$1" ]]; }
 no_file() { [[ ! -e "$1" ]]; }
+has_line() { grep -qE "$2" <<< "$1"; }
+lacks_line() { ! grep -qE "$2" <<< "$1"; }
 
 MARKER="${WORK}/alias-ran"
 
@@ -126,6 +132,26 @@ check "with only WindowsApps on the PATH it fails" equals "${STATUS}" 1
 check "unrun" no_file "${MARKER}"
 check "naming UT_PYTHON" contains "${ERR}" "UT_PYTHON"
 check "and why WindowsApps is skipped" contains "${ERR}" "WindowsApps"
+
+echo "ut_embed_trust"
+
+# Bash before 4.3, macOS's /bin/bash among them, keeps the quotes of a quoted ${x/p/"r"}
+# replacement; BASH_COMPAT=42 gives a newer bash the same rule, which the child checks
+# on itself first so the case cannot pass on a bash that ignores it.
+EMBED="${WORK}/embed"
+mkdir -p "${EMBED}/addon/self_update"
+cp "${REPO_ROOT}/addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd" "${EMBED}/addon/self_update/"
+STATUS=0
+OUT="$(BASH_COMPAT=42 bash -c '
+  x=a
+  [[ "${x/a/"b"}" == "\"b\"" ]] && echo "old quote rule"
+  source "$1" && ut_make_key "$2/key.pem" && ut_embed_trust "$2/addon" "$2/key.pem" "$2/key.pub.pem"
+' _ "${REPO_ROOT}/scripts/lib/update_test_env.sh" "${EMBED}" 2> "${WORK}/err")" || STATUS=$?
+EMBEDDED="$(cat "${EMBED}/addon/self_update/embedded_trust_document.gd")"
+check "the child bash keeps the replacement's quotes, as bash 3.2 does" equals "${OUT}" "old quote rule"
+check "and the document is embedded" equals "${STATUS}" 0
+check "as a const line" has_line "${EMBEDDED}" "^const DOCUMENT := '\{"
+check "with no quotes around it" lacks_line "${EMBEDDED}" '^"const DOCUMENT'
 
 echo
 echo "${PASSED} passed, ${FAILED} failed"
