@@ -3,17 +3,21 @@
 # The self-update's swap in real editors: kills at each step, a clean update, a scan in
 # flight at exit, a real git repository and a linked folder, each on a scratch project.
 #
-# Nothing in the shipped plugin calls the applier or the settler, so a test-only
-# plugin (plugin/driver_plugin.gd) brings the calls: at start it settles, at exit it
-# applies, and it can kill the editor at one of the steps the applier names. Each session
-# is one real editor start and exit, closed by a close request sent from inside it. The
-# run grades what that left: the plugin's notes, the journal and the folders on disk,
-# never an exit code.
+# The toolkit settles at its start and applies at its exit. A test-only plugin
+# (plugin/driver_plugin.gd) records what the toolkit's start settled, once it has, and
+# applies before the toolkit's exit does. Godot 4.3 and later exit the enabled plugins in
+# the order project.godot lists them, and 4.2 in the reverse, so the driver is listed first
+# on 4.3+ and last on 4.2. Its apply can kill the editor at one of the steps the applier
+# names; when it runs, the toolkit's exit finds nothing staged. Each session is one real
+# editor start and exit, closed by a close request sent from inside it. The run grades
+# what that left: the plugin's notes, the journal and the folders on disk, never an exit
+# code.
 #
 # Both versions are built by scripts/build-plugin-release.sh; B is signed by
 # scripts/sign-release.sh with a throwaway key, so staging runs a really built zip through
-# the name rules. A is this checkout's version; B is one patch newer. Each carries a file
-# the other lacks, and A also gets a file by hand, the one a release never lists.
+# the name rules. Both embed a trust document naming that key, so each toolkit trusts the
+# release the run signed. A is this checkout's version; B is one patch newer. Each carries
+# a file the other lacks, and A also gets a file by hand, the one a release never lists.
 #
 # Legs (default: all of them):
 #   k1     kill with the journal at applying; the next start settles, the next exit retries
@@ -43,6 +47,10 @@ set -uo pipefail
 GODOT_BIN="${GODOT_BIN:-godot}"
 SESSION_TIMEOUT="${APPLY_KILL_SESSION_TIMEOUT:-300}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=../../scripts/lib/release_files.sh
+source "$REPO_ROOT/scripts/lib/release_files.sh"
+# shellcheck source=../../scripts/lib/update_test_env.sh
+source "$REPO_ROOT/scripts/lib/update_test_env.sh"
 OUT="${APPLY_KILL_OUT:-$(mktemp -d)}"
 mkdir -p "$OUT"
 OUT="$(cd "$OUT" && pwd)"
@@ -51,6 +59,9 @@ PROJECT_NAME="ApplyKillDriver"
 ADDON="addons/godot_mcp_toolkit"
 UPDATES="addons/.godot_mcp_toolkit_update"
 DRIVER_DIR=".kill_driver"
+# Where B's assets wait until the driver moves them into the update folder: the toolkit
+# clears that folder at start when no journal names a release.
+RELEASE_DIR="$DRIVER_DIR/release"
 ONLY_IN_A="driver_only_in_a.txt"
 ONLY_IN_B="driver_only_in_b.txt"
 HAND_ADDED="driver_added_by_hand.txt"
@@ -158,7 +169,7 @@ session() {
 
 # A release of <version> built by the real script in a throwaway copy of this checkout.
 # The copy gets a commit of its own, since the manifest's expiry reads HEAD's time.
-build_release() { # <version> <file only this version has> <out folder>
+build_release() { # <version> <file only this version has> <out folder> <private key> <public key>
   local version="$1" only_here="$2" out="$3" tree="$OUT/build/$1"
   mkdir -p "$tree/addons" "$out"
   cp -r "$REPO_ROOT/$ADDON" "$tree/addons/" || return 1
@@ -166,6 +177,7 @@ build_release() { # <version> <file only this version has> <out folder>
   # A checkout an editor has opened holds .import files; a release's clean checkout has none.
   find "$tree/addons" -name '*.import' -delete
   rm -f "$tree/$ADDON/release_files.sha256"
+  ut_embed_trust "$tree/$ADDON" "$4" "$5" || return 1
   sed -i -E "s/^version=\"[^\"]*\"/version=\"$version\"/" "$tree/$ADDON/plugin.cfg"
   printf 'only in %s\n' "$version" > "$tree/$ADDON/$only_here"
   git -C "$tree" init -q || return 1
@@ -177,25 +189,24 @@ build_release() { # <version> <file only this version has> <out folder>
 
 # The editor's own settings and the toolkit's first-run wizard, seen already.
 seed_editor_home() {
-  local minor settings='[gd_resource type="EditorSettings" format=3]
+  local settings='[gd_resource type="EditorSettings" format=3]
 
 [resource]
 interface/editor/single_window_mode = true
 interface/editor/editor_language = "en"
 '
-  minor="$("$GODOT_BIN" --version 2>/dev/null | tr -d '\r' | head -1 | cut -d. -f1,2)"
-  [ -n "$minor" ] || die "$GODOT_BIN --version printed nothing"
-  GODOT_MINOR="$minor"
   mkdir -p "$EDITOR_CONFIG" "$EDITOR_USER_DATA/addons/godot_mcp_toolkit"
   printf '%s' "$settings" > "$EDITOR_CONFIG/editor_settings-4.tres"
-  printf '%s' "$settings" > "$EDITOR_CONFIG/editor_settings-$minor.tres"
+  printf '%s' "$settings" > "$EDITOR_CONFIG/editor_settings-$GODOT_MINOR.tres"
   printf '%s' '{"format": 1, "seen": ["welcome", "mcp_json", "optional_steps", "updates", "dock"]}' \
     > "$EDITOR_USER_DATA/addons/godot_mcp_toolkit/mcp_onboarding_shown_v001"
 }
 
 # Builds and signs both releases, then makes the project every leg starts from: A
-# installed and warmed, one windowed session behind it, B's assets in the update folder
-# as a download leaves them, and the stage made by the real stepper in a real editor.
+# installed and warmed, one windowed session behind it, B's assets put in the update folder
+# by the driver once the toolkit has started, as a download leaves them, and the stage made
+# by the real stepper in a real editor. That editor is killed at its exit, before the
+# toolkit's exit can install the stage.
 prepare_template() {
   local releases="$OUT/releases"
   LEG="setup"
@@ -206,13 +217,14 @@ prepare_template() {
   A_VERSION="$(sed -nE 's/^version="([^"]*)".*/\1/p' "$REPO_ROOT/$ADDON/plugin.cfg" | tr -d '\r')"
   [ -n "$A_VERSION" ] || die "no version in $ADDON/plugin.cfg"
   B_VERSION="${A_VERSION%.*}.$((${A_VERSION##*.} + 1))"
-  echo "=== Build: A $A_VERSION, B $B_VERSION ==="
-  build_release "$A_VERSION" "$ONLY_IN_A" "$releases" || die "could not build $A_VERSION"
-  build_release "$B_VERSION" "$ONLY_IN_B" "$releases" || die "could not build $B_VERSION"
-
   local private_key="$OUT/release_key.pem" public_key="$OUT/release_key.pub.pem"
   openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 -out "$private_key" 2>/dev/null || die "could not make a key"
   openssl pkey -in "$private_key" -pubout -out "$public_key" || die "could not read the key's public half"
+
+  echo "=== Build: A $A_VERSION, B $B_VERSION ==="
+  build_release "$A_VERSION" "$ONLY_IN_A" "$releases" "$private_key" "$public_key" || die "could not build $A_VERSION"
+  build_release "$B_VERSION" "$ONLY_IN_B" "$releases" "$private_key" "$public_key" || die "could not build $B_VERSION"
+
   # sign-release.sh reads a passphrase line from a pipe even for a plain key.
   echo unused | bash "$REPO_ROOT/scripts/sign-release.sh" \
     "$releases/godot-mcp-toolkit-$B_VERSION.update.json" "$private_key" "$public_key" > /dev/null \
@@ -227,6 +239,13 @@ prepare_template() {
   cp -r "$REPO_ROOT/test/apply_kill_driver/plugin" "$PROJECT/addons/apply_kill_driver"
   mkdir -p "$PROJECT/$DRIVER_DIR"
   cp "$public_key" "$PROJECT/$DRIVER_DIR/public_key.pem"
+  # The order that makes the driver exit before the toolkit (see the header).
+  local toolkit_cfg="\"res://$ADDON/plugin.cfg\"" driver_cfg='"res://addons/apply_kill_driver/plugin.cfg"' enabled
+  if [ "$GODOT_MINOR" = "4.2" ]; then
+    enabled="$toolkit_cfg, $driver_cfg"
+  else
+    enabled="$driver_cfg, $toolkit_cfg"
+  fi
   cat > "$PROJECT/project.godot" <<EOF
 config_version=5
 
@@ -236,7 +255,7 @@ config/name="$PROJECT_NAME"
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/apply_kill_driver/plugin.cfg", "res://$ADDON/plugin.cfg")
+enabled=PackedStringArray($enabled)
 EOF
   seed_editor_home
 
@@ -251,9 +270,9 @@ EOF
   check "A's toolkit reports A" "$(note first_start toolkit_version)" "$A_VERSION"
   check "the icon has its .import before any swap" "$(exists "$ADDON/$ICON_IMPORT")" "present"
 
-  mkdir -p "$PROJECT/$UPDATES/$B_VERSION"
-  cp "$releases/godot-mcp-toolkit-$B_VERSION."* "$PROJECT/$UPDATES/$B_VERSION/"
-  session stage "stage=1" "from=$A_VERSION" "to=$B_VERSION"
+  mkdir -p "$PROJECT/$RELEASE_DIR"
+  cp "$releases/godot-mcp-toolkit-$B_VERSION."* "$PROJECT/$RELEASE_DIR/"
+  session stage "stage=1" "from=$A_VERSION" "to=$B_VERSION" "kill_at_exit=1"
   check "the built zip passes the name rules and stages whole" "$(note stage stage_state)" "done"
   check "the stepper wrote every listed file" "$(note stage stage_written)" "$(note stage stage_total)"
   check "the stage equals the zip" "$(tree_digest "$PROJECT/$UPDATES/stage")" "$(tree_digest "$B_TREE")"
@@ -414,6 +433,7 @@ scan_row() { # <seed folder, relative to the project>
   echo "  record: after the apply: $(note apply scanning_after_apply); the apply took $(note apply apply_ms) ms"
   echo "  record: apply_state=$apply_state reason=$(note apply apply_reason) journal=$(journal_state) editor_exit=$(note apply editor_exit)"
   echo "  record: live version $live_after_apply; stage $stage_after_apply; error lines in the closing log: $errors"
+  echo "  record: the install log's applies of $B_VERSION: $(grep -F "apply $B_VERSION:" "$LEG_LOGS/apply.install.log" 2>/dev/null | paste -sd'|' -)"
 
   session next_start settle=1 wait_toolkit=1 apply=1
   session after settle=1 wait_toolkit=1
@@ -514,6 +534,8 @@ leg_link() {
 
 [ -f "$REPO_ROOT/project.godot" ] || die "cannot find the repository root from $0"
 command -v "$GODOT_BIN" > /dev/null 2>&1 || die "no Godot binary: $GODOT_BIN"
+GODOT_MINOR="$("$GODOT_BIN" --version 2>/dev/null | tr -d '\r' | head -1 | cut -d. -f1,2)"
+[ -n "$GODOT_MINOR" ] || die "$GODOT_BIN --version printed nothing"
 
 LEGS="${*:-$ALL_LEGS}"
 for leg in $LEGS; do

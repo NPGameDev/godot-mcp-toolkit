@@ -10,18 +10,21 @@
 #   ut_os                               print linux, macos or windows
 #   ut_timeout_bin                      print this OS's GNU timeout command
 #   ut_python_bin                       print a command that runs Python 3, or fail
-#   ut_set_read_only <file> true|false  Windows only: set or clear <file>'s
-#                                       read-only attribute, so a write to it fails
 #   ut_previous_version <version>       print the version one step older within the
 #                                       same major, or nothing for a major release,
 #                                       which the toolkit only ever links to
 #   ut_make_key <name.pem>              write an RSA key and its public half,
 #                                       <name>.pub.pem
-#   ut_install_old_toolkit <repo-root> <addon-dir> <version> <public-pem> <own-file>
+#   ut_embed_trust <addon-dir> <private-pem> <public-pem>
+#                                       make the toolkit at <addon-dir> trust <public-pem>:
+#                                       a first trust document with it as the root and
+#                                       the release key, signed by <private-pem>, becomes
+#                                       the document the toolkit embeds
+#   ut_install_old_toolkit <repo-root> <addon-dir> <version> <private-pem> <public-pem> <own-file>
 #                                       copy this tree's toolkit to <addon-dir> at
-#                                       <version>, trusting <public-pem>, holding a
-#                                       file named <own-file> no release has, with its
-#                                       release file list
+#                                       <version>, trusting <public-pem> (ut_embed_trust),
+#                                       holding a file named <own-file> no release has,
+#                                       with its release file list
 #   ut_warm <godot> <project> <log>     boot a headless editor on <project>, up to three
 #                                       times, until it has written the global class
 #                                       cache, which Godot 4.2 needs before the plugin
@@ -69,12 +72,6 @@ ut_python_bin() {
   return 1
 }
 
-# NTFS ignores chmod. The read-only attribute makes a write to the file fail while it
-# still reads, so an apply backs it up and then fails to write it.
-ut_set_read_only() {
-  powershell -NoProfile -Command "Set-ItemProperty -LiteralPath '$(cygpath -w "$1")' -Name IsReadOnly -Value \$$2"
-}
-
 ut_previous_version() {
   local major minor patch
   IFS=. read -r major minor patch <<< "$1"
@@ -90,20 +87,37 @@ ut_make_key() {
   openssl pkey -in "$1" -pubout -out "${1%.pem}.pub.pem"
 }
 
+# The embedded document is read without its signatures, but a signed one is what a
+# release ships, so the toolkit under test reads the same shape. trust-document.sh's
+# sign reads a passphrase line from a pipe even for a plain key.
+ut_embed_trust() {
+  local addon="$1" private_pem="$2" public_pem="$3"
+  local tool target="${addon}/self_update/embedded_trust_document.gd" empty='const DOCUMENT := ""'
+  tool="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/trust-document.sh"
+  local text
+  text="$(cat "${target}")" || return 1
+  if [[ "${text}" != *"${empty}"* ]]; then
+    echo "ERROR: ${target} does not hold an empty document" >&2
+    return 1
+  fi
+  local folder
+  folder="$(mktemp -d "$(dirname "${private_pem}")/trust.XXXXXX")" || return 1
+  bash "${tool}" build --first --add-root "${public_pem}" --add-release "${public_pem}" --out "${folder}" > /dev/null \
+    && echo unused | bash "${tool}" sign "${folder}/trust-1.json" "${private_pem}" > /dev/null \
+    || { echo "ERROR: could not build and sign a trust document" >&2; return 1; }
+  local document
+  document="$(cat "${folder}/trust-1.json")"
+  rm -f "${folder}/trust-1.json"
+  rmdir "${folder}"
+  printf '%s\n' "${text/"${empty}"/"const DOCUMENT := '${document}'"}" > "${target}"
+}
+
 ut_install_old_toolkit() {
-  local repo_root="$1" addon="$2" version="$3" public_pem="$4" own_file="$5"
+  local repo_root="$1" addon="$2" version="$3" private_pem="$4" public_pem="$5" own_file="$6"
   mkdir -p "$(dirname "${addon}")"
   cp -r "${repo_root}/addons/godot_mcp_toolkit" "${addon}"
   sed -i.bak -E "s/^version=\"[^\"]+\"/version=\"${version}\"/" "${addon}/plugin.cfg" && rm -f "${addon}/plugin.cfg.bak"
-  local key_entry
-  key_entry="$(bash "${repo_root}/scripts/sign-release.sh" --key-entry "${public_pem}")"
-  "$(ut_python_bin)" - "${addon}/update/trusted_release_keys.gd" "${key_entry}" <<'PY'
-import sys
-path, entry = sys.argv[1], sys.argv[2]
-text = open(path).read()
-assert "const PUBLIC_KEYS := []" in text
-open(path, "w").write(text.replace("const PUBLIC_KEYS := []", "const PUBLIC_KEYS := [\n" + entry + "\n]"))
-PY
+  ut_embed_trust "${addon}" "${private_pem}" "${public_pem}" || return 1
   echo "a file only the installed version has" > "${addon}/${own_file}"
   rf_write_list "${addon}"
 }

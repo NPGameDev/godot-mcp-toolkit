@@ -217,7 +217,8 @@ jobs:
   # ── Self-update flow ─────────────────────────────────────────────────────────
   # The toolkit's self-update end to end, on scratch projects (update_flow.sh): the
   # release this tree builds installs over the previous version at an editor's exit,
-  # a failed write rolls back, an untrusted signature and the repository guard stage
+  # closed by a quit or through its window, a toolkit folder that cannot move leaves
+  # the update waiting, an untrusted signature and the repository guard stage
   # nothing, and a disable installs nothing. Headless with the contributor-only
   # GODOT_MCP_UPDATE_ALLOW_HEADLESS, against a local server in place of GitHub. The
   # floor's two boundaries: 4.2 frees plugins at exit differently from 4.3+.

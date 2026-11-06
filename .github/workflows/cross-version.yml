@@ -280,8 +280,9 @@ jobs:
   # editors with a window on a virtual display, the update badge and the editor's own
   # dialogs pressed by a test-only plugin (test/update_gui_driver/). The floor's
   # update-flow job proves the install itself headless; this proves what a user clicks.
-  # 4.2.0 and 4.7.0 are the support boundaries; 4.5.0 is the first minor that asks
-  # about unsaved scripts on a restart. Same triggers as the GDScript tier above.
+  # 4.2.0 and 4.7.0 are the support boundaries; 4.4 is the first minor that restarts
+  # on its own. The unsaved and untitled scenarios run on every minor. Same triggers
+  # as the GDScript tier above.
   update-gui:
     needs: changes
     if: >
@@ -293,7 +294,7 @@ jobs:
       contains(github.event.head_commit.message, '[run-cross-version-ci]') ||
       contains(github.event.head_commit.message, '[run-all-platforms-ci]'))
     runs-on: ubuntu-latest
-    # Fuse: the seven scenarios take about 15 min on a workstation; at 45 min an
+    # Fuse: the eight scenarios take about 15 min on a workstation; at 45 min an
     # editor boot is hung.
     timeout-minutes: 45
     strategy:

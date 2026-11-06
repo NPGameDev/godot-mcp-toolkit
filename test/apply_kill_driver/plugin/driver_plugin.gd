@@ -17,6 +17,10 @@ extends EditorPlugin
 enum _Phase { WAIT_FOR_SCAN, STAGE, WAIT_FOR_TOOLKIT, CLOSING }
 
 const _DRIVER_FOLDER := "res://.kill_driver"
+# The release's assets as a download leaves them, moved into the update folder only once
+# the toolkit has started: its start clears that folder when no journal names a release.
+const _RELEASE_FOLDER := _DRIVER_FOLDER + "/release"
+const _UPDATE_FOLDER := "res://addons/.godot_mcp_toolkit_update"
 const _TOOLKIT_FOLDER := "res://addons/godot_mcp_toolkit"
 const _SELF_UPDATE_FOLDER := _TOOLKIT_FOLDER + "/self_update"
 const _ICON_PATH := _TOOLKIT_FOLDER + "/icon.svg"
@@ -43,6 +47,7 @@ var _settled_since_ms := -1
 var _stepper: RefCounted = null
 var _longest_step_usec := 0
 var _scan_called_usec := 0
+var _settle_pending := false
 # Held from the start: the swap moves the files these came from.
 var _applier: GDScript = null
 
@@ -60,8 +65,7 @@ func _enter_tree() -> void:
 		return
 	if _flag("apply"):
 		_applier = load(_self_update_script("update_applier.gd"))
-	if _flag("settle"):
-		_settle()
+	_settle_pending = _flag("settle")
 
 
 func _process(_delta: float) -> void:
@@ -69,6 +73,10 @@ func _process(_delta: float) -> void:
 	if now - _started_ms > _WATCHDOG_MS:
 		_note("watchdog_kill", str(_phase))
 		OS.kill(OS.get_process_id())
+		return
+	# The session moves on only once it holds what the toolkit's start settled.
+	if _settle_pending:
+		_note_settled_once_over(now)
 		return
 	match _phase:
 		_Phase.WAIT_FOR_SCAN:
@@ -94,6 +102,12 @@ func _exit_tree() -> void:
 		return
 	var entered_usec := Time.get_ticks_usec()
 	_note("exit_tree_reached", "1")
+	# The toolkit's exit comes after this one and would install the stage this session made;
+	# the session that makes the legs' template has to leave it staged.
+	if _flag("kill_at_exit"):
+		_note("killed_at_exit", "1")
+		OS.kill(OS.get_process_id())
+		return
 	if _applier == null:
 		return
 	if _flag("scan_at_close"):
@@ -121,13 +135,21 @@ func _on_step(step: String) -> void:
 		_note("survived_kill", step)
 
 
-func _settle() -> void:
-	var settler: GDScript = load(_self_update_script("update_settler.gd"))
-	var result: Dictionary = settler.call("settle", {"public_keys": [_public_key]})
-	_note("settle_report", str(result["report"]))
-	_note("settle_from", str(result["from"]))
-	_note("settle_to", str(result["to"]))
-	_note("settle_reason", str(result["reason"]))
+# What the toolkit's own start settled; a second settle here would read only what the first
+# left. Depending on the engine version this plugin starts before or after the toolkit, so
+# the read waits for the toolkit's result. Past the wait limit the notes are written empty.
+func _note_settled_once_over(now: int) -> void:
+	var result: Dictionary = {}
+	var installer := _toolkit_installer()
+	if installer != null:
+		result = installer.call("settled")
+	if result.is_empty() and now - _started_ms <= _WAIT_LIMIT_MS:
+		return
+	_settle_pending = false
+	_note("settle_report", str(result.get("report", "")))
+	_note("settle_from", str(result.get("from", "")))
+	_note("settle_to", str(result.get("to", "")))
+	_note("settle_reason", str(result.get("reason", "")))
 
 
 func _scan_has_settled(now: int) -> bool:
@@ -140,12 +162,22 @@ func _scan_has_settled(now: int) -> bool:
 
 
 func _begin_stage() -> void:
+	_place_release(str(_session["to"]))
 	var stepper_script: GDScript = load(_self_update_script("stage_stepper.gd"))
 	_stepper = stepper_script.new()
 	var started_usec := Time.get_ticks_usec()
 	var outcome: Dictionary = _stepper.call("begin", str(_session["to"]))
 	_note("stage_begin_ms", str((Time.get_ticks_usec() - started_usec) / 1000))
 	_finish_stage_if_over(outcome, Time.get_ticks_msec())
+
+
+# A copy the stepper finds incomplete fails the stage, which the driver grades.
+func _place_release(version: String) -> void:
+	var from := ProjectSettings.globalize_path(_RELEASE_FOLDER)
+	var to := ProjectSettings.globalize_path(_UPDATE_FOLDER.path_join(version))
+	DirAccess.make_dir_recursive_absolute(to)
+	for file_name: String in DirAccess.get_files_at(from):
+		DirAccess.copy_absolute(from.path_join(file_name), to.path_join(file_name))
 
 
 func _advance_stage(now: int) -> void:
@@ -201,6 +233,17 @@ func _toolkit_plugin() -> EditorPlugin:
 		if script != null and script.resource_path == _TOOLKIT_FOLDER.path_join("plugin.gd"):
 			return sibling as EditorPlugin
 	return null
+
+
+func _toolkit_installer() -> Object:
+	var toolkit := _toolkit_plugin()
+	if toolkit == null:
+		return null
+	var handle: Variant = toolkit.get("_handle")
+	if not handle is Object:
+		return null
+	var installer: Variant = (handle as Object).call("update_installer")
+	return installer as Object
 
 
 func _icon_is_imported() -> bool:
