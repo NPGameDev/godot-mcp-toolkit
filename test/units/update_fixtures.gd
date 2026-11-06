@@ -15,6 +15,7 @@ const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/upd
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
+const EditorRestartProbe := preload("res://addons/godot_mcp_toolkit/self_update/editor_restart_probe.gd")
 
 ## Where the installer reads the host that stands in for GitHub.
 const HOST_ENV := "GODOT_MCP_UPDATE_CHECK_HOST"
@@ -49,6 +50,36 @@ class ModeSettings extends RefCounted:
 
 	func get_setting(key: String) -> Variant:
 		return _mode if key == InstallMode.SETTING else null
+
+
+## A stand-in for the editor the restart gate asks: it reports what a case sets and counts
+## the restarts it is asked for. It starts as a windowed 4.5 editor with nothing unsaved.
+class RestartProbeStandIn extends EditorRestartProbe:
+	var unsaved_scripts := PackedStringArray()
+	var running_game: bool = false
+	var untitled_scenes: int = 0
+	var version: String = "4.5"
+	var scanning: bool = false
+	var restarts: int = 0
+
+	func findings() -> Dictionary:
+		return {
+			UNSAVED_SCRIPTS: unsaved_scripts,
+			RUNNING_GAME: running_game,
+			UNTITLED_SCENES: untitled_scenes,
+		}
+
+	func engine_version() -> String:
+		return version
+
+	func can_restart() -> bool:
+		return true
+
+	func is_scanning() -> bool:
+		return scanning
+
+	func restart() -> void:
+		restarts += 1
 
 
 static var _key: CryptoKey = null

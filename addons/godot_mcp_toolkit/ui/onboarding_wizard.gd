@@ -57,6 +57,8 @@ var _latest_box: CheckBox = null
 var _check_box: CheckBox = null
 # The install step's choices, by install mode; empty on any other step.
 var _install_boxes := {}
+# Where the install step reads and saves the install mode; a test swaps in a stand-in.
+var _project_settings: Object = ProjectSettings
 # Built on first use, so a wizard made without an editor never reaches for one.
 var _settings: SetupStepSettings = null
 
@@ -304,7 +306,8 @@ func _add_choice(box: VBoxContainer, group: ButtonGroup, label: String, descript
 
 
 # The install step's body: its text, wrapped, then the install modes as exclusive
-# check boxes, preselected from the project setting.
+# check boxes, preselected from the project setting, and a line saying so: Next keeps
+# the box ticked, so a project already set to manual stays manual.
 func _build_install_choice(text: String) -> VBoxContainer:
 	var box := VBoxContainer.new()
 	var intro := Label.new()
@@ -317,8 +320,11 @@ func _build_install_choice(text: String) -> VBoxContainer:
 			"When a new version is out, the editor asks at its next start. One click installs it.")
 	_install_boxes[InstallMode.MANUAL] = _add_choice(box, group, "Don't install",
 			"The dock only links to new versions.")
-	var current := InstallMode.read(ProjectSettings)
+	var current := InstallMode.read(_project_settings)
 	(_install_boxes[current] as CheckBox).button_pressed = true
+	var source := Label.new()
+	source.text = "This is the project's current setting."
+	box.add_child(source)
 	return box
 
 
@@ -326,7 +332,7 @@ func _build_install_choice(text: String) -> VBoxContainer:
 func _apply_install_choice() -> void:
 	for mode in _install_boxes:
 		if (_install_boxes[mode] as CheckBox).button_pressed:
-			var error := InstallMode.save(ProjectSettings, str(mode))
+			var error := InstallMode.save(_project_settings, str(mode))
 			if error != OK:
 				push_warning("[MCP] could not save project.godot (err %d): the install mode applies to this session only" % error)
 			return

@@ -55,6 +55,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_update_shows_download(testing, tree)
 	await _test_failed_download_offers_retry(testing, tree)
 	_test_ready(testing, tree)
+	_test_not_now_closes_the_ready_view(testing, tree)
 	_test_ready_while_newer_is_out(testing, tree)
 	_test_close_gives_up_staged(testing, tree)
 	_test_notice_updated(testing, tree)
@@ -200,7 +201,9 @@ static func _test_available_with_changed_files(testing: Testing, tree: SceneTree
 	var nodes := _start(world, tree)
 	var status := _text(nodes["badge"], "Status")
 	_end(world, nodes)
-	testing.eq(status, "1 toolkit files were changed in this project; installing replaces them (a copy is kept until the new version starts).",
+	testing.eq(status, "1 toolkit files were changed in this project; installing replaces them. "
+			+ "The toolkit keeps a copy of the current version until the next update is staged. "
+			+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.",
 			"one changed file → the status line counts it")
 	print("")
 
@@ -272,6 +275,8 @@ static func _test_failed_download_offers_retry(testing: Testing, tree: SceneTree
 static func _test_ready(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a staged release offers Restart now and Don't install")
 	var world := UpdateFixtures.begin_world("badge_ready", "1.9.0", "ask", "1.1.0")
+	# A windowed 4.5 editor with nothing unsaved, so the ready view's lines hold on every engine.
+	world["options"]["restart_probe"] = UpdateFixtures.RestartProbeStandIn.new()
 	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
@@ -280,10 +285,37 @@ static func _test_ready(testing: Testing, tree: SceneTree) -> void:
 	var discard_shown := _shown(badge, "DiscardButton")
 	var update_shown := _shown(badge, "UpdateButton")
 	_end(world, nodes)
-	testing.eq(status, "1.9.0 installs when you close the editor. Restart now to install it at once.",
+	testing.eq(status, "1.9.0 is ready. It installs when you close the editor.\n"
+			+ "To install it now, save your work and click Restart.\n"
+			+ "The toolkit only checks scripts. Save scenes, shaders and other open work yourself.",
 			"the status line says the editor's exit installs it")
 	testing.ok(restart_shown and discard_shown, "a staged release → Restart now and Don't install")
 	testing.ok(not update_shown, "and no Update")
+	print("")
+
+
+static func _test_not_now_closes_the_ready_view(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: Not now closes the ready view and keeps Restart")
+	var world := UpdateFixtures.begin_world("badge_not_now", "1.9.0", "ask", "1.1.0")
+	var probe := UpdateFixtures.RestartProbeStandIn.new()
+	world["options"]["restart_probe"] = probe
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var not_now_at_start := _shown(badge, "NotNowButton")
+	var restart_text_at_start := _text(badge, "RestartButton")
+	_press(badge, "NotNowButton")
+	var not_now_after := _shown(badge, "NotNowButton")
+	var restart_after := _shown(badge, "RestartButton")
+	var discard_after := _shown(badge, "DiscardButton")
+	var view_after := (nodes["installer"] as UpdateInstaller).ready_view()
+	_end(world, nodes)
+	testing.ok(not_now_at_start, "a staged release found at a start → Not now shown")
+	testing.eq(restart_text_at_start, "Restart", "beside Restart, the button the view's lines name")
+	testing.ok(not not_now_after, "Not now → Not now hidden")
+	testing.ok(view_after.is_empty(), "and the installer's ready view closed")
+	testing.ok(restart_after and discard_after, "Restart and Don't install still shown")
+	testing.eq(probe.restarts, 0, "and the editor never restarted")
 	print("")
 
 

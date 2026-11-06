@@ -2,8 +2,8 @@
 extends RefCounted
 ## Unit tests for the update installer: the notice an apply leaves for the next start,
 ## picking up a kept or staged release, the gates that keep it idle, giving an update up,
-## a download failed, killed or redirected, one that stages over frames, and a headless
-## start, all served by a loopback listener where they download.
+## a download failed, killed or redirected, one that stages over frames and the restart or
+## ready view after it, and a headless start, all served by a loopback listener.
 
 const Testing := preload("res://test/units/testing.gd")
 const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
@@ -43,6 +43,10 @@ static func run(testing, tree: SceneTree) -> void:
 	await _test_staged_release_stands(testing, tree)
 	await _test_stage_failing_its_check_gives_way(testing, tree)
 	await _test_click_stages_and_the_exit_applies(testing, tree)
+	_test_staged_at_start_opens_the_ready_view(testing, tree)
+	await _test_click_and_stage_restarts(testing, tree)
+	await _test_leaving_the_tree_during_a_scan(testing, tree)
+	_test_restart_refused_while_a_script_is_unsaved(testing, tree)
 	await _test_preparing_spans_frames(testing, tree)
 	await _test_runner_signal_during_a_stage(testing, tree)
 	await _test_zip_that_fails_its_list(testing, tree)
@@ -698,6 +702,101 @@ static func _test_click_stages_and_the_exit_applies(testing: Testing, tree: Scen
 			"and keeps the server version of the toolkit doing the staging")
 	testing.eq(applied.get("state", ""), "applied", "the exit → applied")
 	testing.eq(installed, "1.9.0", "the addon folder is the new version")
+	print("")
+
+
+static func _test_staged_at_start_opens_the_ready_view(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a staged release found at start opens the ready view")
+	var world := UpdateFixtures.begin_world("installer_ready_view", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var probe := UpdateFixtures.RestartProbeStandIn.new()
+	(world["options"] as Dictionary)["restart_probe"] = probe
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var state := installer.state()
+	var view_open := not installer.ready_view().is_empty()
+	installer.close_ready_view()
+	var view_closed := installer.ready_view().is_empty()
+	var state_after_close := installer.state()
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(state, "ready", "the staged release → ready")
+	testing.ok(view_open, "with the ready view open")
+	testing.eq(probe.restarts, 0, "4.5, nothing found → still no restart")
+	testing.ok(view_closed, "Not now closes the view")
+	testing.eq(state_after_close, "ready", "and the release stays ready")
+	print("")
+
+
+static func _test_click_and_stage_restarts(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: a click that stages on a clear 4.5 editor restarts it")
+	var world := UpdateFixtures.begin_world("installer_click_restart", "1.9.0", "ask", "1.1.0")
+	var archive := UpdateFixtures.keep_verified(world["updates"], "1.9.0", _STAGED_FILES, UpdateFixtures.key())
+	# A file the release does not list, which the install deletes and the prompt warns about.
+	UpdateFixtures.edit_installed_file(world, "notes.txt")
+	var probe := UpdateFixtures.RestartProbeStandIn.new()
+	(world["options"] as Dictionary)["restart_probe"] = probe
+	var click := _serve(world, archive, tree)
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	var before_stage := probe.restarts
+	await _wait_past_preparing(installer, tree)
+	var state := installer.state()
+	var view_empty := installer.ready_view().is_empty()
+	var discarded := installer.discarded_files()
+	_end_click(click)
+	testing.eq(discarded, PackedStringArray(["notes.txt"]), "a file the release does not list → reported as deleted")
+	testing.eq(before_stage, 0, "no restart before the stage is whole")
+	testing.eq(state, "ready", "the stage is whole → ready")
+	testing.eq(probe.restarts, 1, "and the editor restarts once")
+	testing.ok(view_empty, "with no ready view")
+	print("")
+
+
+static func _test_leaving_the_tree_during_a_scan(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: leaving the tree while a scan holds the restart calls it off")
+	var world := UpdateFixtures.begin_world("installer_leave_scan", "1.9.0", "ask", "1.1.0")
+	var archive := UpdateFixtures.keep_verified(world["updates"], "1.9.0", _STAGED_FILES, UpdateFixtures.key())
+	var probe := UpdateFixtures.RestartProbeStandIn.new()
+	probe.scanning = true
+	(world["options"] as Dictionary)["restart_probe"] = probe
+	var click := _serve(world, archive, tree)
+	var installer := _installer_of(click)
+	await _click_and_download(click, tree)
+	await _wait_past_preparing(installer, tree)
+	var state := installer.state()
+	tree.root.remove_child(installer)
+	probe.scanning = false
+	for _frame: int in 3:
+		await tree.process_frame
+	_end_click(click)
+	testing.eq(state, "ready", "staged while a scan runs → ready")
+	testing.eq(probe.restarts, 0, "left the tree, then the scan ends → no restart")
+	print("")
+
+
+static func _test_restart_refused_while_a_script_is_unsaved(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: Restart is refused while a script is unsaved")
+	var world := UpdateFixtures.begin_world("installer_restart_refused", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var probe := UpdateFixtures.RestartProbeStandIn.new()
+	probe.unsaved_scripts = PackedStringArray(["player.gd"])
+	(world["options"] as Dictionary)["restart_probe"] = probe
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	installer.close_ready_view()
+	installer.restart_now()
+	var refused := probe.restarts
+	var shown: PackedStringArray = installer.ready_view().get(probe.UNSAVED_SCRIPTS, PackedStringArray())
+	probe.unsaved_scripts = PackedStringArray()
+	installer.restart_now()
+	var open_before_discard := not installer.ready_view().is_empty()
+	installer.discard()
+	var closed_by_discard := installer.ready_view().is_empty()
+	UpdateFixtures.end_world(world, nodes)
+	testing.eq(refused, 0, "an unsaved script → no restart")
+	testing.eq(shown, PackedStringArray(["player.gd"]), "the ready view opens again and names it")
+	testing.eq(probe.restarts, 1, "the script saved, Restart → one restart")
+	testing.ok(open_before_discard and closed_by_discard, "Don't install leaves ready → the ready view closes")
 	print("")
 
 

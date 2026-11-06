@@ -124,9 +124,10 @@ static func update_install() -> Dictionary:
 		"text": (
 			"The toolkit can install its own updates. It downloads a new version from the "
 			+ "toolkit's GitHub releases, checks the maintainer's signature, and replaces the "
-			+ "files in res://addons/godot_mcp_toolkit when you close the editor. A copy of the "
-			+ "version you have is kept until the new one starts. Major versions, and versions "
-			+ "that need a newer Godot, are only linked.\n\n"
+			+ "files in res://addons/godot_mcp_toolkit when you close the editor. The toolkit "
+			+ "keeps a copy of the current version until the next update is staged. If Keep "
+			+ "Backup is off in Project Settings, it deletes the copy once the update installs. "
+			+ "Major versions, and versions that need a newer Godot, are only linked.\n\n"
 			+ "The new files show up in version control: commit them, so everyone on the "
 			+ "project runs the same version. This needs the update check above to be on.\n\n"
 			+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "

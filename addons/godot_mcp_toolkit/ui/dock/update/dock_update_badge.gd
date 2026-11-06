@@ -13,11 +13,13 @@ extends PanelContainer
 ## [br]
 ## When the installer has a verified release, the badge adds Update; once the
 ## release is staged, Restart now and Don't install, and the line saying the
-## editor's exit installs it. A release that becomes installable during the session
-## is also announced once by a toast. After an editor start that installed or failed
-## to install a release, the badge shows that result until it is closed, in place of
-## the version notice; when the new version is tested with another server than the
-## one this toolkit wrote into .mcp.json, the notice offers to update it.[br]
+## editor's exit installs it. While the installer's ready view is open, the badge
+## shows that view instead: what a restart now would lose, Restart and Not now. A
+## release that becomes installable during the session is also announced once by a
+## toast. After an editor start that installed or failed to install a release, the
+## badge shows that result until it is closed, in place of the version notice; when
+## the new version is tested with another server than the one this toolkit wrote
+## into .mcp.json, the notice offers to update it.[br]
 ## [br]
 ## "Get it on the Asset Store" switches to the editor's Asset Store tab where the
 ## editor has one (Godot 4.7+), confirmed through
@@ -32,6 +34,8 @@ const UpdateApplier = Modules.UpdateApplier
 const UpdateCheck = Modules.UpdateCheck
 const UpdateCheckRunner = Modules.UpdateCheckRunner
 const UpdateInstaller = Modules.UpdateInstaller
+const RestartGate = UpdateInstaller.RestartGate
+const EditorRestartProbe = UpdateInstaller.EditorRestartProbe
 const VersionUtils = Modules.VersionUtils
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 
@@ -49,6 +53,8 @@ const _STORE_TAB_TOAST := "Search for \"Godot MCP Toolkit\" in the Asset Store t
 const _UPDATE_TEXT := "Update"
 const _RETRY_TEXT := "Try again"
 const _RESTART_TEXT := "Restart now"
+const _RESTART_VIEW_TEXT := "Restart"
+const _NOT_NOW_TEXT := "Not now"
 const _DISCARD_TEXT := "Don't install"
 const _DISMISS_TOOLTIP := "Hide until the next version."
 const _NOTICE_DISMISS_TOOLTIP := "Close."
@@ -56,7 +62,22 @@ const _LAST_CHECKED_TOOLTIP := "Last checked: %s. The toolkit checks at most onc
 const _DOWNLOADING_TEXT := "Downloading %s…"
 const _READY_TEXT := "%s installs when you close the editor. Restart now to install it at once."
 const _FAILED_TEXT := "Couldn't install: %s."
-const _CHANGED_TEXT := "%d toolkit files were changed in this project; installing replaces them (a copy is kept until the new version starts)."
+const _CHANGED_TEXT := ("%d toolkit files were changed in this project; installing replaces them. "
+		+ "The toolkit keeps a copy of the current version until the next update is staged. "
+		+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.")
+const _READY_VIEW_TEXT := "%s is ready. It installs when you close the editor."
+const _READY_VIEW_HOW_TEXT := "To install it now, save your work and click Restart."
+const _RUNNING_GAME_TEXT := "Restart stops the running game."
+const _UNSAVED_SCRIPT_TEXT := "%s has unsaved edits. Save it, then click Restart."
+const _UNSAVED_SCRIPTS_TEXT := "%d scripts have unsaved edits: %s. Save them, then click Restart."
+# For an editor whose script tabs could not be paired with their files.
+const _UNNAMED_SCRIPT := "A script"
+const _UNNAMED_SCRIPTS_TEXT := "%d scripts have unsaved edits. Save them, then click Restart."
+const _UNTITLED_SCENE_TEXT := "1 open scene has never been saved."
+const _UNTITLED_SCENES_TEXT := "%d open scenes have never been saved."
+const _SCRIPTS_ONLY_TEXT := "The toolkit only checks scripts. Save scenes, shaders and other open work yourself."
+const _SCENES_NOT_ASKED_TEXT := ("Godot 4.2 and 4.3 don't ask about unsaved scenes when they restart, "
+		+ "so unsaved scene changes are lost. Save before you click Restart.")
 const _SERVER_CHANGED_TEXT := "It's tested with server %s, which .mcp.json doesn't run yet. Update .mcp.json, then restart your MCP client."
 const _UPDATE_MCP_JSON_TEXT := "Update .mcp.json"
 const _UPDATE_SERVER_QUESTION := "Update the server to %s"
@@ -64,7 +85,7 @@ const _AVAILABLE_TOAST := "Godot MCP Toolkit %s is available. Update it from the
 const _READY_TOAST := "Godot MCP Toolkit %s installs when you close the editor."
 const _NOT_INSTALLED_TEXT := "%s. Version %s is still installed. Install log: %s"
 const _NEXT_RELEASE_TEXT := "The toolkit offers the next release once it is published and checked."
-const _RESTART_TOOLTIP := "Saves the open scenes and restarts the editor, which installs the update on its way out."
+const _RESTART_TOOLTIP := "Restarts the editor, which installs the update on its way out. Save your work first."
 
 # The main-screen tab the 4.7+ editor names its store.
 const _STORE_SCREEN := "Asset Store"
@@ -95,6 +116,7 @@ var _title: Label = null
 var _status: Label = null
 var _update_btn: Button = null
 var _restart_btn: Button = null
+var _not_now_btn: Button = null
 var _discard_btn: Button = null
 var _update_mcp_json_btn: Button = null
 var _github_btn: Button = null
@@ -172,6 +194,7 @@ func _init(
 	_update_btn = _add_button(buttons, "UpdateButton", _UPDATE_TEXT, _on_update_pressed)
 	_restart_btn = _add_button(buttons, "RestartButton", _RESTART_TEXT, _on_restart_pressed)
 	_restart_btn.tooltip_text = _RESTART_TOOLTIP
+	_not_now_btn = _add_button(buttons, "NotNowButton", _NOT_NOW_TEXT, _on_not_now_pressed)
 	_discard_btn = _add_button(buttons, "DiscardButton", _DISCARD_TEXT, _on_discard_pressed)
 	_update_mcp_json_btn = _add_button(
 			buttons, "UpdateMcpJsonButton", _UPDATE_MCP_JSON_TEXT, _on_update_mcp_json_pressed)
@@ -249,6 +272,7 @@ func _render_install_state() -> void:
 	var about_shown: bool = _installer != null and _installer.version() == _shown_version
 	if not about_shown:
 		state = UpdateInstaller.IDLE
+	var view: Dictionary = _installer.ready_view() if state == UpdateInstaller.READY else {}
 	var status := ""
 	match state:
 		UpdateInstaller.AVAILABLE:
@@ -258,7 +282,7 @@ func _render_install_state() -> void:
 		UpdateInstaller.DOWNLOADING, UpdateInstaller.PREPARING:
 			status = _DOWNLOADING_TEXT % _shown_version
 		UpdateInstaller.READY:
-			status = _READY_TEXT % _shown_version
+			status = _READY_TEXT % _shown_version if view.is_empty() else ready_view_text(_shown_version, view)
 		UpdateInstaller.FAILED:
 			status = _FAILED_TEXT % _installer.error_text()
 		_:
@@ -272,6 +296,9 @@ func _render_install_state() -> void:
 	# The sentence says it won't install, and this button would open the release it refused.
 	_github_btn.visible = not (check_failed and _installer.security_check_failed())
 	_restart_btn.visible = state == UpdateInstaller.READY
+	# The view's lines say "click Restart", so the button they name reads the same.
+	_restart_btn.text = _RESTART_TEXT if view.is_empty() else _RESTART_VIEW_TEXT
+	_not_now_btn.visible = not view.is_empty()
 	_discard_btn.visible = state == UpdateInstaller.READY
 	_update_mcp_json_btn.visible = false
 
@@ -302,6 +329,7 @@ func _render_notice(notice: Dictionary) -> void:
 	_store_btn.visible = false
 	_update_btn.visible = false
 	_restart_btn.visible = false
+	_not_now_btn.visible = false
 	_discard_btn.visible = false
 	_update_mcp_json_btn.visible = mcp_json_behind
 
@@ -326,6 +354,11 @@ func _on_update_pressed() -> void:
 func _on_restart_pressed() -> void:
 	if _installer != null:
 		_installer.restart_now()
+
+
+func _on_not_now_pressed() -> void:
+	if _installer != null:
+		_installer.close_ready_view()
 
 
 func _on_discard_pressed() -> void:
@@ -402,6 +435,42 @@ func _on_dismiss_pressed() -> void:
 		return
 	if _runner != null:
 		_runner.dismiss(_shown_version)
+
+
+## The ready view's status lines for the staged [param version], from the installer's
+## [param view]: the probe's findings, each told on its own line, and whether this
+## editor's restart asks about unsaved scenes.
+static func ready_view_text(version: String, view: Dictionary) -> String:
+	var lines := PackedStringArray([_READY_VIEW_TEXT % version, _READY_VIEW_HOW_TEXT])
+	if bool(view.get(EditorRestartProbe.RUNNING_GAME, false)):
+		lines.append(_RUNNING_GAME_TEXT)
+	var unsaved: PackedStringArray = view.get(EditorRestartProbe.UNSAVED_SCRIPTS, PackedStringArray())
+	if not unsaved.is_empty():
+		lines.append(_unsaved_scripts_line(unsaved))
+	var untitled: int = int(view.get(EditorRestartProbe.UNTITLED_SCENES, 0))
+	if untitled == 1:
+		lines.append(_UNTITLED_SCENE_TEXT)
+	elif untitled > 1:
+		lines.append(_UNTITLED_SCENES_TEXT % untitled)
+	var scenes_asked: bool = bool(view.get(RestartGate.SCENES_ASKED, false))
+	lines.append(_SCRIPTS_ONLY_TEXT if scenes_asked else _SCENES_NOT_ASKED_TEXT)
+	return "\n".join(lines)
+
+
+# Names the scripts when the editor paired every tab with its file, and counts them
+# otherwise.
+static func _unsaved_scripts_line(unsaved: PackedStringArray) -> String:
+	var named := PackedStringArray()
+	for file_name: String in unsaved:
+		if not file_name.is_empty():
+			named.append(file_name)
+	if named.size() < unsaved.size():
+		if unsaved.size() == 1:
+			return _UNSAVED_SCRIPT_TEXT % _UNNAMED_SCRIPT
+		return _UNNAMED_SCRIPTS_TEXT % unsaved.size()
+	if named.size() == 1:
+		return _UNSAVED_SCRIPT_TEXT % named[0]
+	return _UNSAVED_SCRIPTS_TEXT % [named.size(), ", ".join(named)]
 
 
 static func _add_button(parent: Control, button_name: String, text: String, on_pressed: Callable) -> Button:

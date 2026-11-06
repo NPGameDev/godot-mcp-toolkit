@@ -53,9 +53,10 @@ const _UPDATES_TEXT := (
 const _UPDATE_INSTALL_TEXT := (
 	"The toolkit can install its own updates. It downloads a new version from the "
 	+ "toolkit's GitHub releases, checks the maintainer's signature, and replaces the "
-	+ "files in res://addons/godot_mcp_toolkit when you close the editor. A copy of the "
-	+ "version you have is kept until the new one starts. Major versions, and versions "
-	+ "that need a newer Godot, are only linked.\n\n"
+	+ "files in res://addons/godot_mcp_toolkit when you close the editor. The toolkit "
+	+ "keeps a copy of the current version until the next update is staged. If Keep "
+	+ "Backup is off in Project Settings, it deletes the copy once the update installs. "
+	+ "Major versions, and versions that need a newer Godot, are only linked.\n\n"
 	+ "The new files show up in version control: commit them, so everyone on the "
 	+ "project runs the same version. This needs the update check above to be on.\n\n"
 	+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
@@ -90,6 +91,7 @@ static func run(testing) -> void:
 	_test_mcp_json_specs(testing)
 	_test_pin_choice_control(testing)
 	_test_install_choice_control(testing)
+	_test_install_choice_keeps_the_project_setting(testing)
 
 
 static func _test_step_specs(testing) -> void:
@@ -215,11 +217,42 @@ static func _test_install_choice_control(testing) -> void:
 		["Label", "      " + _ASK_DETAIL],
 		["CheckBox", "Don't install"],
 		["Label", "      " + _MANUAL_DETAIL],
+		["Label", "This is the project's current setting."],
 	]
 	testing.eq(shapes["<null>"], {"rows": rows, "pressed": [true, false]}, "no setting → Ask checked")
 	testing.eq(shapes["automatic"], {"rows": rows, "pressed": [false, true]}, "the retired automatic → Don't install checked")
 	testing.eq(shapes["manual"], {"rows": rows, "pressed": [false, true]}, "manual → Don't install checked")
 	testing.eq(shapes["sometimes"], {"rows": rows, "pressed": [false, true]}, "an unknown value → Don't install checked")
+	print("")
+
+
+# The step starts from the project's stored mode and Next keeps it, so a project committed
+# to manual is never switched to ask by someone clicking through the wizard.
+static func _test_install_choice_keeps_the_project_setting(testing) -> void:
+	testing.begin("Setup wizard: the install step preselects the project's mode and Next keeps it")
+	var pressed := {}
+	var saves := {}
+	var stored := {}
+	for setting: Variant in [null, "manual", "ask"]:
+		var store := _SettingsStore.new()
+		if setting != null:
+			store.values[_INSTALL_MODE_SETTING] = setting
+		var wizard := OnboardingWizard.new(null, null, null, null)
+		# Seeds the store; the step's builder and Next's handler are called directly
+		# because the wizard's dialog needs the editor.
+		wizard._project_settings = store
+		var box: VBoxContainer = wizard._build_install_choice("the step text")
+		pressed[str(setting)] = _describe(box)["pressed"]
+		wizard._apply_install_choice()
+		saves[str(setting)] = store.saves
+		stored[str(setting)] = store.values.get(_INSTALL_MODE_SETTING)
+		box.free()
+	testing.eq(pressed["<null>"], [true, false], "unset → Ask checked")
+	testing.eq(pressed["manual"], [false, true], "manual → Don't install checked")
+	testing.eq(pressed["ask"], [true, false], "ask → Ask checked")
+	testing.eq(stored["manual"], "manual", "Next on a committed manual → still manual")
+	testing.eq(saves["manual"], 0, "with no save")
+	testing.eq(saves["ask"], 0, "Next on ask → no save")
 	print("")
 
 
@@ -238,3 +271,22 @@ static func _describe(box: VBoxContainer) -> Dictionary:
 		else:
 			rows.append([child.get_class(), ""])
 	return {"rows": rows, "pressed": pressed}
+
+
+# A project-settings store that counts its saves.
+class _SettingsStore extends RefCounted:
+	var values := {}
+	var saves: int = 0
+
+	func has_setting(key: String) -> bool:
+		return values.has(key)
+
+	func get_setting(key: String) -> Variant:
+		return values.get(key)
+
+	func set_setting(key: String, value: Variant) -> void:
+		values[key] = value
+
+	func save() -> Error:
+		saves += 1
+		return OK

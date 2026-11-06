@@ -117,6 +117,12 @@ func _show_update_prompt_if_due() -> void:
 
 func _on_setup_step_seen(step_id: StringName) -> void:
 	SetupStepTracker.mark_seen(step_id)
+	# The consent gate reads the seen step, so the installer decides again now rather than
+	# at the next settings change.
+	if step_id == SetupSteps.UPDATE_INSTALL and _handle != null:
+		var installer: UpdateInstaller = _handle.update_installer()
+		if installer != null:
+			installer.reevaluate()
 
 
 # The dock's Setup Wizard button: a run of every step, whatever has been seen. The

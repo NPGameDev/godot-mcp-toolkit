@@ -22,6 +22,9 @@ extends Node
 ## click retries it ([method can_retry_check]). A failed download after a click goes to
 ## [constant FAILED]. While an update is staged no check runs.[br]
 ## [br]
+## When staging ends, the restart gate (see [code]restart_gate.gd[/code]) restarts the
+## editor or opens the ready view, which [method ready_view] reports.[br]
+## [br]
 ## Every URL is built from the version (see [code]release_assets.gd[/code]), and a reply can
 ## redirect it only to the hosts [code]update_downloader.gd[/code] allows.
 
@@ -51,6 +54,8 @@ const UpdateDownloader := preload("res://addons/godot_mcp_toolkit/self_update/up
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const UpdateCheckFailure := preload("res://addons/godot_mcp_toolkit/self_update/update_check_failure.gd")
 const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_chain.gd")
+const RestartGate := preload("res://addons/godot_mcp_toolkit/self_update/restart_gate.gd")
+const EditorRestartProbe := preload("res://addons/godot_mcp_toolkit/self_update/editor_restart_probe.gd")
 
 ## [method state] values. [constant IDLE]: nothing to install, the badge links only.
 const IDLE := "idle"
@@ -91,6 +96,7 @@ var _project_settings: Object = ProjectSettings
 var _guard_facts: Dictionary = {}
 var _downloader: UpdateDownloader = null
 var _stage_runner: StageRunner = null
+var _restart_gate: RestartGate = null
 # Decided once: whether this editor is headless does not change while it runs.
 var _stays_out: bool = false
 var _waiting: int = _WAITING_NONE
@@ -103,6 +109,8 @@ var _guard_note: String = ""
 var _floor_note: String = ""
 var _floor_version: String = ""
 var _changed_files := PackedStringArray()
+# The files in the addon folder that the release does not list, which an install deletes.
+var _discarded_files := PackedStringArray()
 var _manifest := {}
 var _manifest_bytes := PackedByteArray()
 # The last apply's result, shown until the user closes it.
@@ -131,8 +139,9 @@ var _check_timeout_sec: float = _MANIFEST_TIMEOUT_SEC
 ## [code]trust_store[/code] (the shape [method ReleaseSignature.chain] takes),
 ## [code]guard_facts[/code] (the shape [method InstallGuards.facts] returns),
 ## [code]project_settings[/code] (a stand-in [method InstallMode.read] accepts),
-## [code]check_timeout_sec[/code] (each request of a check) and
-## [code]stage_budget_ms[/code] (each frame's staging).
+## [code]check_timeout_sec[/code] (each request of a check),
+## [code]stage_budget_ms[/code] (each frame's staging) and [code]restart_probe[/code]
+## (a stand-in for [code]editor_restart_probe.gd[/code]).
 func _init(runner: UpdateCheckRunner, options: Dictionary = {}) -> void:
 	_runner = runner
 	_options = options
@@ -142,6 +151,9 @@ func _init(runner: UpdateCheckRunner, options: Dictionary = {}) -> void:
 	_addon_folder = str(options.get("addon_folder", InstallGuards.ADDON_FOLDER))
 	_guard_facts = options.get("guard_facts", {})
 	_project_settings = options.get("project_settings", ProjectSettings)
+	var probe: EditorRestartProbe = options.get("restart_probe", null)
+	_restart_gate = RestartGate.new(probe if probe != null else EditorRestartProbe.new())
+	_restart_gate.view_changed.connect(_on_view_changed)
 
 
 func _ready() -> void:
@@ -167,6 +179,7 @@ func _exit_tree() -> void:
 		_downloader.cancel()
 	if _stage_runner != null:
 		_stage_runner.cancel()
+	_restart_gate.cancel()
 	_waiting = _WAITING_NONE
 
 
@@ -215,6 +228,28 @@ func security_check_failed() -> bool:
 ## The installed toolkit files that differ from the installed release's list.
 func changed_files() -> PackedStringArray:
 	return _changed_files
+
+
+## The files in the addon folder that the release does not list: installing deletes them.
+## Read while an update is offered; a staged update found at an editor start leaves it empty.
+func discarded_files() -> PackedStringArray:
+	return _discarded_files
+
+
+## The ready view while it is open (the shape [code]restart_gate.gd[/code]'s view returns),
+## or an empty dictionary.
+func ready_view() -> Dictionary:
+	return _restart_gate.view()
+
+
+## Closes the ready view; the staged update still installs when the editor closes.
+func close_ready_view() -> void:
+	_restart_gate.close_view()
+
+
+## Decides again what the installer should be doing, as a settings change does.
+func reevaluate() -> void:
+	_evaluate()
 
 
 ## The project's install mode, read live.
@@ -279,15 +314,12 @@ func discard() -> void:
 	_set_state(IDLE)
 
 
-## Saves the scenes and restarts the editor, whose exit installs the staged update.
-## The restart is deferred so it runs outside the caller: the editor frees its
-## plugins while it exits, and a plugin function still on the stack would crash it.
-## When Godot asks about unsaved scripts and the user cancels, nothing is installed.
+## Restarts the editor, whose exit installs the staged update, unless a script has unsaved
+## edits: then the ready view opens and says so. Nothing is saved first.
 func restart_now() -> void:
 	if _state != READY:
 		return
-	EditorInterface.save_all_scenes()
-	EditorInterface.call_deferred("restart_editor", false)
+	_restart_gate.restart()
 
 
 # Decides, from the runner's version and the gates, what the installer should be
@@ -381,7 +413,10 @@ func _restore_record(record: Dictionary, newer: String) -> bool:
 	_manifest = manifest
 	_manifest_bytes = kept["bytes"]
 	_changed_files = record["changed_files"]
+	var found_at_start := restored_state == READY and _state != READY
 	_set_state(restored_state)
+	if found_at_start:
+		_restart_gate.show_view()
 	return true
 
 
@@ -398,7 +433,7 @@ func _restore_kept(version: String) -> bool:
 		return true
 	# Hashing the addon folder is the slow part, and every settings change lands here.
 	if kept["bytes"] != _manifest_bytes:
-		_changed_files = _locally_changed_files()
+		_read_local_changes()
 	_manifest = manifest
 	_manifest_bytes = kept["bytes"]
 	_set_state(AVAILABLE)
@@ -591,7 +626,7 @@ func _on_signature(signature: PackedByteArray) -> void:
 		_note_engine_floor(manifest)
 		return
 	_manifest = manifest
-	_changed_files = _locally_changed_files()
+	_read_local_changes()
 	# What a download of another release left goes. A staged release is never cleared
 	# here: it stands until the editor's exit installs it.
 	if UpdateJournal.read(_update_folder)["state"] == UpdateJournal.VERIFIED:
@@ -616,10 +651,13 @@ func _note_engine_floor(manifest: Dictionary) -> void:
 	_set_state(IDLE)
 
 
-# The installed toolkit files that differ from the installed release's list.
-func _locally_changed_files() -> PackedStringArray:
+# Reads which installed toolkit files differ from the installed release's list, and which
+# files the list does not name, from one hash of the addon folder.
+func _read_local_changes() -> void:
 	var addon := ProjectSettings.globalize_path(_addon_folder)
-	return InstallPlan.plan(ReleaseFileList.read_installed(addon), FolderFiles.hashes(addon))["changed"]
+	var plan := InstallPlan.plan(ReleaseFileList.read_installed(addon), FolderFiles.hashes(addon))
+	_changed_files = plan["changed"]
+	_discarded_files = plan["discarded"]
 
 
 func _on_archive() -> void:
@@ -647,6 +685,11 @@ func _on_staged(outcome: Dictionary) -> void:
 	_user_asked = false
 	_found_version = _version
 	_set_state(READY)
+	_restart_gate.after_staging()
+
+
+func _on_view_changed() -> void:
+	state_changed.emit()
 
 
 # Returns whether the journal now holds the record.
@@ -728,4 +771,6 @@ func _set_state(state: String, check_failure: String = "", check_note: String = 
 	_check_note = check_note
 	if state != FAILED:
 		_error = ""
+	if state != READY:
+		_restart_gate.cancel()
 	state_changed.emit()
