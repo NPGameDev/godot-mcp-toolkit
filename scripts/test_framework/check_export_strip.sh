@@ -48,14 +48,18 @@
 # Needs GNU sed (Linux CI, Git Bash): the preset is rewritten with `sed -i`.
 # Environment variables:
 #   GODOT_BIN        - Godot binary (default: "godot")
-#   PYTHON           - Python 3 interpreter (default: python3)
+#   PYTHON           - Python 3 interpreter, checked as UT_PYTHON is (default:
+#                      UT_PYTHON, else python3 or python on the PATH, never one in
+#                      a WindowsApps folder; scripts/lib/python_bin.sh)
 #   EXPORT_STRIP_OUT - folder for the packs and logs (default: a new temp folder)
 # Exit 0 = every mode clean, 1 = a leak or a failed export, 2 = setup error.
 
 set -uo pipefail
 
 GODOT_BIN="${GODOT_BIN:-godot}"
-PYTHON="${PYTHON:-python3}"
+# shellcheck source=../lib/python_bin.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib/python_bin.sh"
+PYTHON="$(UT_PYTHON="${PYTHON:-${UT_PYTHON:-}}" ut_python_bin)" || { echo "ERROR: Python 3 is required" >&2; exit 2; }
 PRESET="CLI Test Build Windows"
 PRESETS_FILE="export_presets.cfg"
 ADDON_PREFIX="res://addons/godot_mcp_toolkit/"

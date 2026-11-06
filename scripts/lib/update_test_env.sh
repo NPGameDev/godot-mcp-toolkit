@@ -5,11 +5,11 @@
 # (headless) and scripts/test_framework/update_gui.sh (an editor with a window).
 #
 # Sourced, never run, after scripts/lib/release_files.sh. Runs under bash on Linux,
-# macOS and Windows (Git Bash).
+# macOS and Windows (Git Bash). Sources scripts/lib/python_bin.sh, so ut_python_bin
+# is defined too.
 #
 #   ut_os                               print linux, macos or windows
 #   ut_timeout_bin                      print this OS's GNU timeout command
-#   ut_python_bin                       print a command that runs Python 3, or fail
 #   ut_previous_version <version>       print the version one step older within the
 #                                       same major, or nothing for a major release,
 #                                       which the toolkit only ever links to
@@ -39,6 +39,9 @@
 #                                       zip, manifest and signature) ask for; serve it
 #                                       through GODOT_MCP_UPDATE_CHECK_HOST
 
+# shellcheck source=python_bin.sh
+source "$(dirname "${BASH_SOURCE[0]}")/python_bin.sh"
+
 ut_os() {
   case "$(uname -s)" in
     MINGW* | MSYS* | CYGWIN*) echo windows ;;
@@ -56,20 +59,6 @@ ut_timeout_bin() {
     macos) echo gtimeout ;;
     *) echo timeout ;;
   esac
-}
-
-# The Windows runner names Python 3 `python`, and a `python3` there can be the
-# Microsoft Store's stub, which runs nothing.
-ut_python_bin() {
-  local candidate
-  for candidate in python3 python; do
-    if command -v "${candidate}" >/dev/null 2>&1 \
-      && "${candidate}" -c 'import sys; sys.exit(sys.version_info[0] != 3)' 2>/dev/null; then
-      echo "${candidate}"
-      return 0
-    fi
-  done
-  return 1
 }
 
 ut_previous_version() {

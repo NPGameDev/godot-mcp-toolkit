@@ -83,6 +83,11 @@ jobs:
       - name: Validator script test
         run: bash scripts/test_validator.sh
 
+      # How the harnesses pick their Python, against stand-in interpreters: one in
+      # a WindowsApps folder is never run (no Python, no Godot, no network).
+      - name: Harness Python script test
+        run: bash scripts/test_update_test_env.sh
+
   # The same tests on the tools macOS ships: LibreSSL and BSD's. They live in /usr/bin,
   # and an earlier PATH entry can hold Homebrew's OpenSSL instead, so the job puts
   # /usr/bin first and fails unless openssl really is LibreSSL. It runs the check's zip

@@ -37,7 +37,9 @@
 #   UPDATE_GUI_KEEP        set to 1 to keep the scratch folder for forensics
 #   UPDATE_GUI_ARTIFACTS   a folder to copy each scenario's screenshots and logs into
 #   XVFB_BIN, XDOTOOL_BIN  the Xvfb and xdotool binaries (default: found on PATH)
-# Needs python3, openssl, zip, Xvfb, xdotool and an OpenGL driver Xvfb can serve
+#   UT_PYTHON              the Python 3 to run (default: python3 or python on the
+#                          PATH, never one in a WindowsApps folder)
+# Needs Python 3, openssl, zip, Xvfb, xdotool and an OpenGL driver Xvfb can serve
 # (Mesa). Runs everything under a scratch HOME, so the machine's own registry and
 # editor settings are never touched. On Windows (Git Bash) the editors open on the
 # desktop instead, and the quit scenario, which needs xdotool, is skipped.
@@ -55,7 +57,8 @@ source "${REPO_ROOT}/scripts/lib/release_files.sh"
 source "${REPO_ROOT}/scripts/lib/update_test_env.sh"
 
 OS="$(ut_os)"
-TOOLS=(python3 openssl zip unzip)
+PYTHON_BIN="$(ut_python_bin)" || { echo "ERROR: Python 3 is required" >&2; exit 2; }
+TOOLS=(openssl zip unzip)
 [[ "${OS}" == windows ]] || TOOLS+=("${XVFB_BIN}" "${XDOTOOL_BIN}")
 for tool in "${TOOLS[@]}"; do
   command -v "${tool}" >/dev/null 2>&1 || { echo "ERROR: ${tool} is required" >&2; exit 2; }
@@ -189,7 +192,7 @@ EOF
 ut_warm "${GODOT_BIN}" "${TEMPLATE}" "${WORK}/warm.log" \
   || { tail -30 "${WORK}/warm.log"; echo "ERROR: warm-up wrote no class cache" >&2; exit 2; }
 
-PORT="$(python3 -c 'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+PORT="$("${PYTHON_BIN}" -c'import socket; s = socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 export GODOT_MCP_EDITOR_PORT="$(( PORT % 1000 + 31000 ))"
 export GODOT_MCP_UPDATE_CHECK_HOST="http://127.0.0.1:${PORT}"
 
@@ -210,7 +213,7 @@ prepare() {
   ut_mark_setup_seen "${USER_DIR}"
   ut_stage_release "${dir}/server" "${tag}" "${NEW_VERSION}" "${RELEASE_ZIP}" "${RELEASE_MANIFEST}" "${WORK}/trusted.pem"
   [[ -n "${SERVER_PID}" ]] && kill "${SERVER_PID}" 2>/dev/null
-  python3 -m http.server "${PORT}" --bind 127.0.0.1 --directory "${dir}/server" > "${dir}/server.log" 2>&1 &
+  "${PYTHON_BIN}" -m http.server "${PORT}" --bind 127.0.0.1 --directory "${dir}/server" > "${dir}/server.log" 2>&1 &
   SERVER_PID=$!
   sleep 1
 }

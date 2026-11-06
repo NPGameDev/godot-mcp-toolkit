@@ -34,6 +34,8 @@
 #   UPDATE_FLOW_KEEP  set to 1 to keep the scratch folder for forensics
 #   UPDATE_FLOW_SKIP_BUILD  set to 1 to test the zip and manifest already in
 #                     dist-plugin/ instead of building them (the release workflow)
+#   UT_PYTHON         the Python 3 to run (default: python3 or python on the PATH,
+#                     never one in a WindowsApps folder)
 # Needs Python 3 (the HTTP server), openssl, GNU timeout (gtimeout on macOS) and,
 # unless UPDATE_FLOW_SKIP_BUILD is set, zip. Runs everything under a scratch HOME
 # (and, on Windows, a scratch %APPDATA%, where Godot keeps its files there), so the
