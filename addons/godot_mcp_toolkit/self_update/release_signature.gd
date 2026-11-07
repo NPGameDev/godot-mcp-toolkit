@@ -7,7 +7,8 @@ extends RefCounted
 ## A signature from any key the latest trust document lists counts; see
 ## [code]trust_chain.gd[/code].
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const EmbeddedTrustDocument := preload("res://addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd")
 const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_chain.gd")
@@ -36,6 +37,15 @@ static func chain(source: Dictionary = {}) -> TrustChain:
 	return TrustChain.new(
 			str(source.get("trust_document", EmbeddedTrustDocument.DOCUMENT)),
 			str(source.get("trust_store", TrustChain.store_folder())))
+
+
+## Whether this release embeds a readable trust document. It reads no store, so it is cheap
+## enough for every evaluation, and it stays true under a document that lists no release key,
+## since only a walk to the next document can lift that stop. [param source] is what
+## [method chain] takes.
+static func has_chain(source: Dictionary = {}) -> bool:
+	var embedded := str(source.get("trust_document", EmbeddedTrustDocument.DOCUMENT))
+	return str(TrustChain.read_embedded(embedded)["error"]).is_empty()
 
 
 ## Whether [param signature] is a valid signature over [param message] by one of

@@ -15,7 +15,8 @@ extends RefCounted
 ## [code]git stash -a[/code] can delete it at any moment: no code here assumes the folder
 ## survives from one call to the next.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 

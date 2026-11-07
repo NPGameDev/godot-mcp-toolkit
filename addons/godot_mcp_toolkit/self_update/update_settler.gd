@@ -12,7 +12,7 @@ extends RefCounted
 ## A journal it does not trust reads as none and stays, with its stage, until the next
 ## staging replaces them.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
 const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
@@ -125,6 +125,7 @@ static func _settle_not_applied(
 	var check := UpdateApplier.check_release(to_version, addon_folder, update_folder, options)
 	if not str(check["error"]).is_empty():
 		return _clear_and_report(journal, str(check["error"]), update_folder)
+	var started_msec := Time.get_ticks_msec()
 	var problem := _restage(to_version, update_folder)
 	if not problem.is_empty():
 		return _clear_and_report(journal, problem, update_folder)
@@ -134,7 +135,8 @@ static func _settle_not_applied(
 	journal["restaged"] = true
 	if not UpdateJournal.write(journal, update_folder):
 		return _clear_and_report(journal, "could not write the journal", update_folder)
-	_log(journal, "staged again from the zip", update_folder)
+	# The re-stage holds up the editor's start, so the log keeps what it cost.
+	_log(journal, "staged again from the zip in %d ms" % (Time.get_ticks_msec() - started_msec), update_folder)
 	return _waiting(journal)
 
 

@@ -16,7 +16,8 @@ extends RefCounted
 ## cannot read, still installs. An older toolkit reads a later manifest's additions the same
 ## way: a key it does not know is ignored.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")

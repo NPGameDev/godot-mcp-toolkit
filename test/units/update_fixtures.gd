@@ -1,8 +1,9 @@
 @tool
 extends RefCounted
 ## Fixture builders the self-update tests share: a signing key made once per run,
-## release zips written with ZIPPacker, signed manifests, installed addon folders and
-## staged updates, all under scratch folders named with the process id.
+## release zips written with ZIPPacker, signed manifests, installed addon folders,
+## staged updates, installer scenarios and a loopback server for the release's
+## downloads, all under scratch folders named with the process id.
 
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
@@ -10,6 +11,14 @@ const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
+const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
+const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
+const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
+const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
+const EditorRestartProbe := preload("res://addons/godot_mcp_toolkit/self_update/editor_restart_probe.gd")
+
+## Where the installer reads the host that stands in for GitHub.
+const HOST_ENV := "GODOT_MCP_UPDATE_CHECK_HOST"
 
 ## The journal the 1.2.0 toolkit writes. 1.2.0's code stays on users' machines and writes
 ## this for a later release to read, so this text never changes: if a test against it
@@ -207,6 +216,31 @@ static func stage(
 			"compatible_server": "1.1.0"}, update_folder)
 
 
+## Keeps a verified release of [param version] in [param update_folder] as the installer
+## does while it waits for the user: the manifest and its signature by [param signing_key],
+## with no journal, zip or stage. Returns the zip's bytes, for a test that serves them.
+static func keep_verified(
+		update_folder: String, version: String, files: Dictionary, signing_key: CryptoKey,
+		min_godot: String = "4.2") -> PackedByteArray:
+	var assets := release_assets(version, files, signing_key, min_godot)
+	var absolute := ProjectSettings.globalize_path(UpdateFolder.version_folder(version, update_folder))
+	for asset_name: String in [ReleaseAssets.manifest_name(version), ReleaseAssets.signature_name(version)]:
+		FolderFiles.write_checked(absolute.path_join(asset_name), assets[asset_name])
+	return assets[ReleaseAssets.archive_name(version)]
+
+
+## Whether the update folder of [param world] holds [param file_name] of [param version].
+static func has_release_file(world: Dictionary, version: String, file_name: String) -> bool:
+	return FileAccess.file_exists(UpdateFolder.version_folder(version, str(world["updates"])).path_join(file_name))
+
+
+## Edits the installed file [param path] of [param world], so it differs from the addon's
+## release file list.
+static func edit_installed_file(world: Dictionary, path: String) -> void:
+	FolderFiles.write_checked(ProjectSettings.globalize_path(str(world["addon"])).path_join(path),
+			"edited by hand".to_utf8_buffer())
+
+
 ## Makes the file [param file_name] in [param folder] undeletable, or deletable again when
 ## [param blocked] is false: a read-only file blocks its delete on Windows, a read-only
 ## parent folder does elsewhere.
@@ -244,3 +278,266 @@ static func stage_tampered(
 	file.seek_end()
 	file.store_8(0)
 	file.close()
+
+
+## One installer scenario's world: the update check runner's cache naming
+## [param latest], consent given, the install mode [param mode], a scratch addon at
+## [param installed], a scratch update folder, and the installer's options. The
+## runner's cache path is fixed, so its file is saved here and put back by
+## [method end_world].
+static func begin_world(purpose: String, latest: String, mode: String, installed: String) -> Dictionary:
+	var cache_path := ProjectSettings.globalize_path(UpdateCheckRunner.STATE_PATH)
+	var saved_cache: Variant = FileAccess.get_file_as_bytes(cache_path) if FileAccess.file_exists(cache_path) else null
+	DirAccess.make_dir_recursive_absolute(cache_path.get_base_dir())
+	var cache := FileAccess.open(cache_path, FileAccess.WRITE)
+	# A check made now is not due, so the runner sends nothing.
+	cache.store_string(JSON.stringify({"last_check": int(Time.get_unix_time_from_system()),
+			"latest_version": latest, "store_listed": false, "dismissed_version": ""}))
+	cache.close()
+	Consent.set_readers(func() -> bool: return true, func(_step_id: StringName) -> bool: return true)
+	var addon := scratch(purpose + "_addon")
+	var updates := scratch(purpose + "_updates")
+	make_addon(addon, installed, {"core/a.gd": "a"})
+	# Loaded, not preloaded: trust_fixtures.gd preloads this file.
+	var trust_fixtures: GDScript = load("res://test/units/trust_fixtures.gd")
+	var trust_document: String = trust_fixtures.call("first_document", [key()])
+	return {
+		"cache_path": cache_path,
+		"saved_cache": saved_cache,
+		"addon": addon,
+		"updates": updates,
+		"options": {
+			"addon_folder": addon,
+			"update_folder": updates,
+			"trust_document": trust_document,
+			"trust_store": scratch(purpose + "_trust"),
+			"guard_facts": {"toolkit_repository": false},
+			"project_settings": ModeSettings.new(mode),
+		},
+	}
+
+
+## A runner and an installer for [param world]; the installer joins [param tree]'s root.
+static func start_world(world: Dictionary, tree: SceneTree) -> Dictionary:
+	var runner := UpdateCheckRunner.new()
+	var installer := UpdateInstaller.new(runner, world["options"])
+	tree.root.add_child(installer)
+	return {"runner": runner, "installer": installer}
+
+
+## Frees what [method start_world] made, resets consent, deletes the scratch folders
+## and puts the runner's cache back.
+static func end_world(world: Dictionary, nodes: Dictionary) -> void:
+	(nodes["installer"] as Node).free()
+	(nodes["runner"] as Node).free()
+	Consent.reset_readers()
+	remove(str(world["addon"]))
+	remove(str(world["updates"]))
+	remove(str((world["options"] as Dictionary)["trust_store"]))
+	var cache_path: String = world["cache_path"]
+	if world["saved_cache"] == null:
+		DirAccess.remove_absolute(cache_path)
+	else:
+		var file := FileAccess.open(cache_path, FileAccess.WRITE)
+		file.store_buffer(world["saved_cache"])
+		file.close()
+
+
+## Points [constant HOST_ENV] at [param host], so the installer's and the downloader's
+## fetches go there instead of GitHub. Returns the value it held, for [method restore_host].
+static func set_host(host: String) -> String:
+	var previous := OS.get_environment(HOST_ENV)
+	OS.set_environment(HOST_ENV, host)
+	return previous
+
+
+## Puts [constant HOST_ENV] back to [param previous], the value [method set_host] returned;
+## an empty one unsets it, as it was before.
+static func restore_host(previous: String) -> void:
+	if previous.is_empty():
+		OS.unset_environment(HOST_ENV)
+	else:
+		OS.set_environment(HOST_ENV, previous)
+
+
+## The files a GitHub release of [param version] serves to the installer: its zip
+## holding [param files], the manifest, and the manifest's signature by
+## [param signing_key]; asset name to bytes, for [LoopbackReleaseServer].
+static func release_assets(
+		version: String, files: Dictionary, signing_key: CryptoKey, min_godot: String = "4.2") -> Dictionary:
+	var zip_path := scratch("release_assets_%s.zip" % version)
+	write_zip(zip_path, release_entries(version, files))
+	var archive_bytes := FileAccess.get_file_as_bytes(zip_path)
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(zip_path))
+	var manifest := manifest_text(version, archive_bytes, min_godot).to_utf8_buffer()
+	return {
+		ReleaseAssets.archive_name(version): archive_bytes,
+		ReleaseAssets.manifest_name(version): manifest,
+		ReleaseAssets.signature_name(version): signature_of(manifest, signing_key),
+	}
+
+
+## A stand-in for [ProjectSettings] that holds only the install mode.
+class ModeSettings extends RefCounted:
+	var _mode: String
+
+	func _init(mode: String) -> void:
+		_mode = mode
+
+	## Changes the mode, as the user does in the project settings.
+	func set_mode(mode: String) -> void:
+		_mode = mode
+
+	func has_setting(key: String) -> bool:
+		return key == InstallMode.SETTING
+
+	func get_setting(key: String) -> Variant:
+		return _mode if key == InstallMode.SETTING else null
+
+
+## A stand-in for the editor the restart gate asks: it reports what a case sets and counts
+## the restarts it is asked for. It starts as a windowed 4.5 editor with nothing unsaved.
+class RestartProbeStandIn extends EditorRestartProbe:
+	var unsaved_scripts := PackedStringArray()
+	var running_game: bool = false
+	var untitled_scenes: int = 0
+	var version: String = "4.5"
+	var scanning: bool = false
+	var restarts: int = 0
+
+	func findings() -> Dictionary:
+		return {
+			UNSAVED_SCRIPTS: unsaved_scripts,
+			RUNNING_GAME: running_game,
+			UNTITLED_SCENES: untitled_scenes,
+		}
+
+	func engine_version() -> String:
+		return version
+
+	func can_restart() -> bool:
+		return true
+
+	func is_scanning() -> bool:
+		return scanning
+
+	func restart() -> void:
+		restarts += 1
+
+
+## A loopback HTTP server standing in for GitHub's release downloads, for the
+## installer cases that verify or download during the session. It answers each GET
+## with the asset whose name ends the request path, or 404, and closes the
+## connection. It serves only while [method poll] runs, once per frame; point
+## GODOT_MCP_UPDATE_CHECK_HOST at [method host].
+class LoopbackReleaseServer extends RefCounted:
+	var _server := TCPServer.new()
+	var _assets := {}
+	var _redirects := {}
+	var _peers: Array[StreamPeerTCP] = []
+	var _requests: Array[String] = []
+	var _connections := 0
+	var _paths: Array[String] = []
+	var _held_path_ends: Array[String] = []
+	var _held_peers: Array[StreamPeerTCP] = []
+	var _breaks_handshakes := false
+
+	func _init(assets: Dictionary) -> void:
+		_assets = assets
+		# A case whose listener never opened would read its zero requests as a pass.
+		var error := _server.listen(0, "127.0.0.1")
+		if error != OK:
+			push_error("The loopback release server could not listen (error %d)." % error)
+
+	## The base URL to put in [constant HOST_ENV].
+	func host() -> String:
+		return "http://127.0.0.1:%d" % _server.get_local_port()
+
+	## How many connections [method poll] has taken so far. The server closes each after
+	## one answer, so this also counts the requests.
+	func connections() -> int:
+		return _connections
+
+	## Answers a request whose path ends in [param path_end] with [param status] pointing at
+	## [param location], before any asset; an empty location sends no Location header. The
+	## reply has a small body, as a real redirect does.
+	func redirect(path_end: String, status: int, location: String) -> void:
+		_redirects[path_end] = {"status": status, "location": location}
+
+	## The path of each request answered or held so far, in the order they arrived.
+	func paths() -> Array[String]:
+		return _paths.duplicate()
+
+	## Leaves a request whose path ends in [param path_end] unanswered, so the client's
+	## timeout ends it.
+	func hold(path_end: String) -> void:
+		_held_path_ends.append(path_end)
+
+	## Answers whatever arrives with bytes that are no TLS record, which is what a TLS client
+	## meets at a plain listener. It takes what the client sent and stays connected: a hang-up
+	## with those bytes unread reaches the engine as a failure to connect, not as a failed
+	## handshake.
+	func break_handshakes() -> void:
+		_breaks_handshakes = true
+
+	## Takes the connections waiting and answers each request whose headers have all
+	## arrived. A case calls it once per frame; between calls nothing is answered.
+	func poll() -> void:
+		while _server.is_connection_available():
+			_peers.append(_server.take_connection())
+			_requests.append("")
+			_connections += 1
+		for index: int in range(_peers.size() - 1, -1, -1):
+			var peer: StreamPeerTCP = _peers[index]
+			peer.poll()
+			if _breaks_handshakes:
+				if peer.get_available_bytes() > 0:
+					peer.get_data(peer.get_available_bytes())
+					peer.put_data("plain text".to_utf8_buffer())
+				continue
+			_requests[index] += peer.get_utf8_string(peer.get_available_bytes())
+			if not _requests[index].contains("\r\n\r\n"):
+				continue
+			var path := _requests[index].get_slice(" ", 1)
+			_paths.append(path)
+			if _is_held(path):
+				_held_peers.append(peer)
+			else:
+				_answer(peer, path)
+				peer.disconnect_from_host()
+			_peers.remove_at(index)
+			_requests.remove_at(index)
+
+	## Hangs up on every connection, held ones included, and closes the listener.
+	func stop() -> void:
+		for peer: StreamPeerTCP in _peers:
+			peer.disconnect_from_host()
+		for peer: StreamPeerTCP in _held_peers:
+			peer.disconnect_from_host()
+		_peers.clear()
+		_held_peers.clear()
+		_requests.clear()
+		_server.stop()
+
+	func _is_held(path: String) -> bool:
+		for path_end: String in _held_path_ends:
+			if path.ends_with(path_end):
+				return true
+		return false
+
+	func _answer(peer: StreamPeerTCP, path: String) -> void:
+		for path_end: String in _redirects:
+			if path.ends_with(path_end):
+				var hop: Dictionary = _redirects[path_end]
+				var location := str(hop["location"])
+				var location_header := "" if location.is_empty() else "Location: %s\r\n" % location
+				peer.put_data(("HTTP/1.1 %d Moved\r\n%sContent-Length: 5\r\nConnection: close\r\n\r\nmoved"
+						% [int(hop["status"]), location_header]).to_utf8_buffer())
+				return
+		for asset_name: String in _assets:
+			if path.ends_with("/" + asset_name):
+				var body: PackedByteArray = _assets[asset_name]
+				peer.put_data(("HTTP/1.1 200 OK\r\nContent-Length: %d\r\nConnection: close\r\n\r\n" % body.size()).to_utf8_buffer())
+				peer.put_data(body)
+				return
+		peer.put_data("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_utf8_buffer())

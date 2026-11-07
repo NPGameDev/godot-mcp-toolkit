@@ -9,7 +9,8 @@ extends RefCounted
 ## never named as discarded: an engine-generated [code].import[/code] file, which the engine
 ## makes again, and the list itself, which leaves itself out and comes back with the release.
 
-# Direct preload: core/modules.gd does not list this folder's scripts.
+# Direct preload, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 
 const _ENGINE_FILE_SUFFIX := ".import"

@@ -319,8 +319,10 @@ wizard's `updates` step.
 
 **Update badge**
 The closable dock notice that a newer version is published (`ui/dock/update/dock_update_badge.gd`).
-It points at the release on GitHub and the Asset Store; it never downloads or installs anything.
-Closing it hides it until a newer version.
+It points at the release on GitHub and the Asset Store. When the install mode is `ask` and the
+installer has verified the release, it also offers Update, which downloads the release and prepares it
+for the editor's next exit to install (`self_update/update_installer.gd`). Closing the notice hides it
+until a newer version.
 
 ---
 
@@ -350,7 +352,9 @@ the setting off hides unseen optional steps. Required steps show whatever that s
 **Seen steps**
 The set of setup steps the user has seen, per project. A step is seen once the user leaves it with
 Next or Done (or a button that moves on), or closes the wizard with × on it; × also counts the
-optional steps the run had not reached. "Remind me later" counts nothing.
+optional steps the run had not reached. Each step's close policy (`ClosePolicy` in
+`core/setup_steps.gd`) can turn that off: × leaves `update_install` unseen, so the wizard asks for
+the install mode again at the next editor start. "Remind me later" counts nothing.
 
 **Setup step tracker**
 The one reader and writer of the seen steps, kept in

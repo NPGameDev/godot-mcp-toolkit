@@ -10,9 +10,10 @@ extends RefCounted
 ## [br]
 ## A step counts as seen once the user leaves it: with Next or Done, or with a
 ## button that moves on ("Write .mcp.json", "Open Info"). Closing the dialog with ×
-## also counts the open step and every optional step of the run not reached yet;
-## required steps not reached stay unseen. "Remind me later", on the step a run
-## opens on, closes the dialog and counts nothing.
+## also counts the open step and every optional step of the run not reached yet,
+## except a step whose close policy keeps it unseen (the install step); required
+## steps not reached stay unseen. "Remind me later", on the step a run opens on,
+## closes the dialog and counts nothing.
 
 ## Emitted when the user leaves the step [param step_id] in a way that counts it as
 ## seen. Emitted again for a step left a second time after Back.
@@ -26,6 +27,7 @@ const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_wr
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
 const SetupStepSettings := preload("res://addons/godot_mcp_toolkit/ui/setup_step_settings.gd")
 const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")
+const InstallMode = Modules.InstallMode
 
 const _TITLE := "MCP Toolkit — Setup Wizard (%d of %d)"
 const _NEXT_LABEL := StepSpecs.NEXT_LABEL
@@ -54,6 +56,10 @@ var _content: Control = null
 var _pinned_box: CheckBox = null
 var _latest_box: CheckBox = null
 var _check_box: CheckBox = null
+# The install step's choices, by install mode; empty on any other step.
+var _install_boxes := {}
+# Where the install step reads and saves the install mode; a test swaps in a stand-in.
+var _project_settings: Object = ProjectSettings
 # Built on first use, so a wizard made without an editor never reaches for one.
 var _settings: SetupStepSettings = null
 
@@ -79,6 +85,11 @@ func show_run(steps: Array[StringName]) -> void:
 	var dialog := _open_run(steps)
 	EditorInterface.get_base_control().add_child(dialog)
 	dialog.popup_centered()
+
+
+## Whether a run's dialog is open.
+func is_open() -> bool:
+	return _dialog != null and is_instance_valid(_dialog)
 
 
 ## Use [param settings] for the checkbox steps instead of the project's and the
@@ -175,6 +186,8 @@ func _spec_for_step(step_id: StringName) -> Dictionary:
 		return StepSpecs.optional_steps()
 	if step_id == SetupSteps.UPDATES:
 		return StepSpecs.updates()
+	if step_id == SetupSteps.UPDATE_INSTALL:
+		return StepSpecs.update_install()
 	if step_id == SetupSteps.DOCK:
 		return StepSpecs.dock_overview(_reveal_dock)
 	return {}
@@ -235,6 +248,10 @@ func _show_step(dialog: AcceptDialog) -> void:
 		dialog.dialog_text = ""
 		_content = _build_pin_choice(text)
 		dialog.add_child(_content)
+	elif bool(spec.get("install_choice", false)):
+		dialog.dialog_text = ""
+		_content = _build_install_choice(text)
+		dialog.add_child(_content)
 	elif spec.has("check_box"):
 		dialog.dialog_text = ""
 		_content = _build_check_box(text, str(spec.get("check_box", "")), step_id)
@@ -289,6 +306,40 @@ func _add_choice(box: VBoxContainer, group: ButtonGroup, label: String, descript
 	return choice
 
 
+# The install step's body: its text, wrapped, then the install modes as exclusive
+# check boxes, preselected from the project setting, and a line saying so: Next keeps
+# the box ticked, so a project already set to manual stays manual.
+func _build_install_choice(text: String) -> VBoxContainer:
+	var box := VBoxContainer.new()
+	var intro := Label.new()
+	intro.text = text
+	intro.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	intro.custom_minimum_size = Vector2(_WRAP_WIDTH, 0)
+	box.add_child(intro)
+	var group := ButtonGroup.new()
+	_install_boxes[InstallMode.ASK] = _add_choice(box, group, "Ask before installing (recommended)",
+			"When a new version is out, the dock's badge offers it, and the editor asks at its next "
+			+ "start. One click downloads it; it installs when the editor restarts or closes.")
+	_install_boxes[InstallMode.MANUAL] = _add_choice(box, group, "Don't install",
+			"The dock only links to new versions.")
+	var current := InstallMode.read(_project_settings)
+	(_install_boxes[current] as CheckBox).button_pressed = true
+	var source := Label.new()
+	source.text = "This is the project's current setting."
+	box.add_child(source)
+	return box
+
+
+# Saves the picked install mode to project.godot when it changed.
+func _apply_install_choice() -> void:
+	for mode in _install_boxes:
+		if (_install_boxes[mode] as CheckBox).button_pressed:
+			var error := InstallMode.save(_project_settings, str(mode))
+			if error != OK:
+				push_warning("[MCP] could not save project.godot (err %d): the install mode applies to this session only" % error)
+			return
+
+
 # A checkbox step's body: its text, wrapped, then the box ticked from the step's
 # setting as it is now.
 func _build_check_box(text: String, label: String, step_id: StringName) -> VBoxContainer:
@@ -326,6 +377,7 @@ func _clear_content_refs() -> void:
 	_pinned_box = null
 	_latest_box = null
 	_check_box = null
+	_install_boxes = {}
 
 
 # -- Navigation ---------------------------------------------------------------
@@ -346,6 +398,8 @@ func _on_confirmed(dialog: AcceptDialog) -> void:
 			_write_flow.write()
 	if _check_box != null:
 		_settings_store().apply(step_id, _check_box.button_pressed)
+	if not _install_boxes.is_empty():
+		_apply_install_choice()
 	_leave_step(dialog)
 
 

@@ -11,12 +11,26 @@ extends RefCounted
 ## A required step is one the user loses something by skipping, so it comes back at
 ## every editor start until it has been seen. The other steps are optional: the
 ## machine-wide [constant SHOW_OPTIONAL_STEPS_SETTING] hides the optional steps a
-## later toolkit adds.
+## later toolkit adds.[br]
+## [br]
+## Each step also carries its [enum ClosePolicy]: what closing the wizard with ×
+## does to it.
+
+## What closing the wizard with × does to a step: the step open at the time, or an
+## optional step the run has not reached.
+enum ClosePolicy {
+	## Count the step as seen.
+	MARK_SEEN,
+	## Leave the step unseen, as if the run had not reached it. For a step whose
+	## choice the user must make: a closed dialog is not an answer.
+	KEEP_UNSEEN,
+}
 
 const WELCOME := &"welcome"
 const MCP_JSON := &"mcp_json"
 const OPTIONAL_STEPS := &"optional_steps"
 const UPDATES := &"updates"
+const UPDATE_INSTALL := &"update_install"
 const DOCK := &"dock"
 
 ## The EditorSettings key (bool, default [code]true[/code]) that shows the optional
@@ -24,13 +38,16 @@ const DOCK := &"dock"
 ## machine, and required steps show whatever its value.
 const SHOW_OPTIONAL_STEPS_SETTING := "mcp_toolkit/setup_wizard/show_optional_steps"
 
-# The table, in display order: [id, required].
+# The table, in display order: [id, required, close policy].
 const _TABLE := [
-	[WELCOME, true],
-	[MCP_JSON, true],
-	[OPTIONAL_STEPS, false],
-	[UPDATES, true],
-	[DOCK, false],
+	[WELCOME, true, ClosePolicy.MARK_SEEN],
+	[MCP_JSON, true, ClosePolicy.MARK_SEEN],
+	[OPTIONAL_STEPS, false, ClosePolicy.MARK_SEEN],
+	[UPDATES, true, ClosePolicy.MARK_SEEN],
+	# The install mode gates what the toolkit may install, so × must not stand in
+	# for the user's choice.
+	[UPDATE_INSTALL, true, ClosePolicy.KEEP_UNSEEN],
+	[DOCK, false, ClosePolicy.MARK_SEEN],
 ]
 
 
@@ -49,6 +66,16 @@ static func is_required(step_id: StringName) -> bool:
 		if row[0] == step_id:
 			return bool(row[1])
 	return false
+
+
+## What closing the wizard with × does to the step [param step_id]. Returns
+## [constant ClosePolicy.MARK_SEEN] for an id the table does not hold.
+static func close_policy(step_id: StringName) -> ClosePolicy:
+	for row in _TABLE:
+		if row[0] == step_id:
+			var policy: ClosePolicy = row[2]
+			return policy
+	return ClosePolicy.MARK_SEEN
 
 
 ## Whether [param editor_settings] shows the optional steps. Returns its
@@ -97,14 +124,19 @@ static func plan_button_run() -> Array[StringName]:
 
 ## The steps that closing a run with × records as seen: the step [param index] of
 ## [param run] that was open, and every optional step of the run not in
-## [param visited]. Required steps the user never reached stay unseen, so they come
-## back at the next editor start.
+## [param visited], leaving out each step whose [method close_policy] is
+## [constant ClosePolicy.KEEP_UNSEEN]. Required steps the user never reached stay
+## unseen too, so they come back at the next editor start.
 static func seen_on_close(
 		run: Array[StringName], index: int, visited: Array[StringName]) -> Array[StringName]:
-	var seen: Array[StringName] = []
+	var closed: Array[StringName] = []
 	if index >= 0 and index < run.size():
-		seen.append(run[index])
+		closed.append(run[index])
 	for step_id in run:
-		if not visited.has(step_id) and not is_required(step_id) and not seen.has(step_id):
+		if not visited.has(step_id) and not is_required(step_id) and not closed.has(step_id):
+			closed.append(step_id)
+	var seen: Array[StringName] = []
+	for step_id in closed:
+		if close_policy(step_id) == ClosePolicy.MARK_SEEN:
 			seen.append(step_id)
 	return seen

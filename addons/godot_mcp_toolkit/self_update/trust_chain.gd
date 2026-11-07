@@ -22,7 +22,8 @@ extends RefCounted
 ## A client that stays on a release keeps its copy of this script for good, so the format and
 ## the caps below can never change.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
@@ -285,6 +286,11 @@ func _init(embedded_document: String, store: String) -> void:
 ## document, and the user needs to hear what to set.
 func has_store() -> bool:
 	return not _store.is_empty()
+
+
+## The absolute folder documents are written to, empty without a store.
+func store() -> String:
+	return _store
 
 
 ## The version of the latest document, or 0 when there is no chain.

@@ -1,10 +1,11 @@
 @tool
 extends RefCounted
 ## Pinning tests for the setup wizard's step copy: every step's spec dictionary,
-## verbatim, as the wizard's dispatch returns it, and the .mcp.json step's pin-choice
-## control for each pin mode. Each spec is compared whole: every string, label,
-## action and flag is the wizard's observable output.
+## verbatim, as the wizard's dispatch returns it, the .mcp.json step's pin-choice
+## control for each pin mode, and the install step's mode choice. Each spec is compared
+## whole: every string, label, action and flag is the wizard's observable output.
 
+const Testing := preload("res://test/units/testing.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
@@ -44,12 +45,31 @@ const _OPTIONAL_STEPS_TEXT := (
 const _UPDATES_TEXT := (
 	"At most once a day, the toolkit asks GitHub whether a newer version is out. If one "
 	+ "is, it also asks the Asset Store whether it lists that version yet. When there's a "
-	+ "newer version, a closable badge at the top of the MCP Toolkit dock links to it. The "
-	+ "toolkit never installs anything by itself.\n\n"
+	+ "newer version, a closable badge at the top of the MCP Toolkit dock links to it. "
+	+ "Whether the toolkit may install it is the next step.\n\n"
 	+ "These requests carry no identifier and nothing about your project. Untick the box "
 	+ "below and the toolkit sends no requests at all.\n\n"
 	+ "You can change this later in Project Settings under Mcp Toolkit > Updates. It's "
 	+ "saved in project.godot, so it applies to everyone who works on this project.")
+const _UPDATE_INSTALL_TEXT := (
+	"The toolkit can install its own updates. It downloads a new version from the "
+	+ "toolkit's GitHub releases, checks the maintainer's signature, and replaces the "
+	+ "files in res://addons/godot_mcp_toolkit when you close the editor. The toolkit "
+	+ "keeps a copy of the current version until the next update is staged. If Keep "
+	+ "Backup is off in Project Settings, it deletes the copy once the update installs. "
+	+ "Major versions, and versions that need a newer Godot, are only linked.\n\n"
+	+ "The new files show up in version control: commit them, so everyone on the "
+	+ "project runs the same version. This needs the update check (Project Settings > "
+	+ "Mcp Toolkit > Updates) to be on.\n\n"
+	+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
+	+ "It's saved in project.godot, so it applies to everyone who works on this "
+	+ "project.\n\n"
+	+ "Closing this window with × isn't an answer: until you choose here, the wizard "
+	+ "asks again at each editor start.")
+const _ASK_DETAIL := ("When a new version is out, the dock's badge offers it, and the editor asks at "
+	+ "its next start. One click downloads it; it installs when the editor restarts or closes.")
+const _MANUAL_DETAIL := "The dock only links to new versions."
+const _INSTALL_MODE_SETTING := "mcp_toolkit/updates/install_mode"
 const _DOCK_TEXT := (
 	"The MCP Toolkit dock is in the bottom panel (next to Output and Debugger). "
 	+ "From here you can:\n\n"
@@ -75,6 +95,8 @@ static func run(testing) -> void:
 	_test_step_specs(testing)
 	_test_mcp_json_specs(testing)
 	_test_pin_choice_control(testing)
+	_test_install_choice_control(testing)
+	_test_install_choice_keeps_the_project_setting(testing)
 
 
 static func _test_step_specs(testing) -> void:
@@ -97,6 +119,12 @@ static func _test_step_specs(testing) -> void:
 		"buttons": [{"label": "Back", "action": "back"}],
 		"check_box": "Check for updates",
 	}, "updates")
+	testing.eq(wizard._spec_for_step(SetupSteps.UPDATE_INSTALL), {
+		"text": _UPDATE_INSTALL_TEXT,
+		"ok_label": "Next",
+		"buttons": [{"label": "Back", "action": "back"}],
+		"install_choice": true,
+	}, "update_install")
 	var dock: Dictionary = wizard._spec_for_step(SetupSteps.DOCK)
 	var on_enter: Variant = dock.get("on_enter")
 	testing.ok(on_enter is Callable, "dock → an on_enter that reveals the dock")
@@ -174,6 +202,70 @@ static func _test_pin_choice_control(testing) -> void:
 	print("")
 
 
+# The install step's two modes, the stored one checked; a value that is not a mode,
+# automatic among them, reads as manual, so nothing installs on a typo.
+static func _test_install_choice_control(testing: Testing) -> void:
+	testing.begin("Setup wizard: the install-choice control per mode")
+	var had_value: bool = ProjectSettings.has_setting(_INSTALL_MODE_SETTING)
+	var previous: Variant = ProjectSettings.get_setting(_INSTALL_MODE_SETTING) if had_value else null
+	var shapes := {}
+	for setting: Variant in [null, "automatic", "manual", "sometimes"]:
+		ProjectSettings.set_setting(_INSTALL_MODE_SETTING, setting)
+		var wizard := OnboardingWizard.new(null, null, null, null)
+		var box: VBoxContainer = wizard._build_install_choice("the step text")
+		shapes[str(setting)] = _describe(box)
+		box.free()
+	ProjectSettings.set_setting(_INSTALL_MODE_SETTING, previous if had_value else null)
+	var rows := [
+		["Label", "the step text"],
+		["CheckBox", "Ask before installing (recommended)"],
+		["Label", "      " + _ASK_DETAIL],
+		["CheckBox", "Don't install"],
+		["Label", "      " + _MANUAL_DETAIL],
+		["Label", "This is the project's current setting."],
+	]
+	testing.eq(shapes["<null>"], {"rows": rows, "pressed": [true, false]}, "no setting → Ask checked")
+	testing.eq(shapes["automatic"], {"rows": rows, "pressed": [false, true]}, "automatic, which is not a mode → Don't install checked")
+	testing.eq(shapes["manual"], {"rows": rows, "pressed": [false, true]}, "manual → Don't install checked")
+	testing.eq(shapes["sometimes"], {"rows": rows, "pressed": [false, true]}, "an unknown value → Don't install checked")
+	print("")
+
+
+# The step starts from the project's stored mode and Next keeps it, so a project committed
+# to manual is never switched to ask by someone clicking through the wizard. Each run is
+# the install step alone, opened outside the tree: Next ends it, and the dialog frees
+# itself.
+static func _test_install_choice_keeps_the_project_setting(testing: Testing) -> void:
+	testing.begin("Setup wizard: the install step preselects the project's mode and Next keeps it")
+	var steps: Array[StringName] = [SetupSteps.UPDATE_INSTALL]
+	var pressed := {}
+	var saves := {}
+	var stored := {}
+	for setting: Variant in [null, "manual", "ask"]:
+		var store := _SettingsStore.new()
+		if setting != null:
+			store.values[_INSTALL_MODE_SETTING] = setting
+		var wizard := OnboardingWizard.new(null, null, null, null)
+		# Seeds the store the install step reads and saves; opens the run without the
+		# editor, as the setup wizard tests do.
+		wizard._project_settings = store
+		var dialog := wizard._open_run(steps)
+		pressed[str(setting)] = _describe(_content_of(dialog))["pressed"]
+		dialog.get_ok_button().pressed.emit()
+		saves[str(setting)] = store.saves
+		stored[str(setting)] = store.values.get(_INSTALL_MODE_SETTING)
+	testing.eq(pressed["<null>"], [true, false], "unset → Ask checked")
+	testing.eq(pressed["manual"], [false, true], "manual → Don't install checked")
+	testing.eq(pressed["ask"], [true, false], "ask → Ask checked")
+	testing.eq(stored["<null>"], null, "Next on unset → still unset, since ask is the default")
+	testing.eq(saves["<null>"], 0, "Next on unset → no save")
+	testing.eq(stored["manual"], "manual", "Next on a committed manual → still manual")
+	testing.eq(saves["manual"], 0, "with no save")
+	testing.eq(stored["ask"], "ask", "Next on ask → still ask")
+	testing.eq(saves["ask"], 0, "Next on ask → no save")
+	print("")
+
+
 # Each child as [class, text], plus the pressed state of each check box in order.
 static func _describe(box: VBoxContainer) -> Dictionary:
 	var rows := []
@@ -189,3 +281,31 @@ static func _describe(box: VBoxContainer) -> Dictionary:
 		else:
 			rows.append([child.get_class(), ""])
 	return {"rows": rows, "pressed": pressed}
+
+
+# The step's body, which the wizard adds to the dialog. The dialog's own label and
+# buttons are internal children, which get_children() leaves out.
+static func _content_of(dialog: AcceptDialog) -> VBoxContainer:
+	for child: Node in dialog.get_children():
+		if child is VBoxContainer:
+			return child as VBoxContainer
+	return null
+
+
+# A project-settings store that counts its saves.
+class _SettingsStore extends RefCounted:
+	var values := {}
+	var saves: int = 0
+
+	func has_setting(key: String) -> bool:
+		return values.has(key)
+
+	func get_setting(key: String) -> Variant:
+		return values.get(key)
+
+	func set_setting(key: String, value: Variant) -> void:
+		values[key] = value
+
+	func save() -> Error:
+		saves += 1
+		return OK

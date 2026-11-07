@@ -4,10 +4,10 @@ extends RefCounted
 ## journal.
 ##
 ## [method apply_pending] belongs in [code]_exit_tree[/code], on every exit that is not a
-## disable. Changing the files while the editor runs would let its focus-in rescan
-## hot-reload new code onto state the old code built, and changing them before a restart
-## could leave them swapped under a running editor when a save dialog holds the restart;
-## at exit nothing reloads them. An editor ended by a signal or a crash skips the call,
+## disable, through [code]update_lifecycle.gd[/code]. Changing the files while the editor
+## runs would let its focus-in rescan hot-reload new code onto state the old code built,
+## and changing them before a restart could leave them swapped under a running editor
+## when a save dialog holds the restart; at exit nothing reloads them. An editor ended by a signal or a crash skips the call,
 ## and the update waits for the next exit.[br]
 ## [br]
 ## What the stage must hold comes from what is signed: signature → manifest → the zip's
@@ -23,7 +23,7 @@ extends RefCounted
 ## Once shipped, this code installs the next release on machines nothing can patch, so it
 ## stays this small: the journal, the checks, two renames and the undo.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
@@ -44,6 +44,8 @@ const STEP_CHECKED := "checked"
 const STEP_APPLYING := "applying"
 const STEP_LIVE_MOVED := "live_moved"
 const STEP_STAGE_MOVED := "stage_moved"
+## The reason a release whose signature the chain no longer trusts is not installed.
+const UNTRUSTED_SIGNATURE := "the update is not signed by a key this toolkit trusts"
 
 
 ## Applies the staged update, if there is one.
@@ -149,7 +151,7 @@ static func check_release(
 	var manifest_bytes := FileAccess.get_file_as_bytes(release_folder.path_join(ReleaseAssets.manifest_name(version)))
 	var signature := FileAccess.get_file_as_bytes(release_folder.path_join(ReleaseAssets.signature_name(version)))
 	if not ReleaseSignature.is_trusted(manifest_bytes, signature, options.get("public_keys"), options):
-		return _problem("the update is not signed by a key this toolkit trusts")
+		return _problem(UNTRUSTED_SIGNATURE)
 	var manifest := ReleaseManifest.parse(manifest_bytes.get_string_from_utf8(), version)
 	if not str(manifest["error"]).is_empty():
 		return _problem(str(manifest["error"]))

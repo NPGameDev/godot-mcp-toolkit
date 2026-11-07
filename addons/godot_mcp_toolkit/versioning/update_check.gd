@@ -19,9 +19,11 @@ const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity
 ## The Project Settings toggle. Off means no request at all.
 const SETTING := "mcp_toolkit/updates/check_for_updates"
 
-## Contributor-only environment variable. Set to [code]http://host:port[/code] (or
-## [code]https://…[/code]), it replaces the scheme and host of both request URLs,
-## never the links the badge opens.
+## Test-only environment variable. Set to a loopback origin on 127.0.0.1, localhost or
+## ::1, such as [code]http://127.0.0.1:port[/code], it replaces the scheme and host of
+## the update check's requests and of the self-update's trust documents, manifest,
+## signature and zip, never the links the badge opens. Any other value is ignored, so the
+## variable can point requests only at a loopback name.
 const HOST_ENV := "GODOT_MCP_UPDATE_CHECK_HOST"
 
 ## The shortest gap between two checks of one project, in seconds.
@@ -51,6 +53,11 @@ const _STORE_HOST := "https://store.godotengine.org"
 # The trailing slash is required: without it the store answers with a redirect.
 const _STORE_PATH := "/api/v1/releases/npgamedev/godot-mcp-toolkit/"
 const _RELEASE_PAGE_PREFIX := "https://github.com/NPGameDev/godot-mcp-toolkit/releases/tag/v"
+const _CHANGELOG_PREFIX := "https://github.com/NPGameDev/godot-mcp-toolkit/blob/v"
+const _CHANGELOG_FILE := "/CHANGELOG.md"
+# The whole value: anything after the host but a port, credentials above all, can move the
+# request elsewhere.
+const _LOOPBACK_ORIGIN_PATTERN := "^https?://(?:127\\.0\\.0\\.1|localhost|\\[::1\\])(?::[0-9]{1,5})?\\z"
 
 
 ## Whether the [constant SETTING] toggle is on in [param project_settings]. Returns
@@ -228,13 +235,13 @@ static func store_request(env_host: String) -> Dictionary:
 
 
 ## The scheme and host a request goes to: [param env_host] without a trailing slash
-## when it starts with [code]http://[/code] or [code]https://[/code], else
-## [param default_host].
+## when it is [code]http[/code] or [code]https[/code] on a loopback address, optionally
+## with a port, else [param default_host].
 static func resolve_host(env_host: String, default_host: String) -> String:
-	var host := env_host.strip_edges()
-	if not (host.begins_with("http://") or host.begins_with("https://")):
-		return default_host
-	return host.rstrip("/")
+	var host := env_host.strip_edges().rstrip("/")
+	var loopback := RegEx.new()
+	loopback.compile(_LOOPBACK_ORIGIN_PATTERN)
+	return host if loopback.search(host) != null else default_host
 
 
 ## The GitHub release page of [param version], built locally from the version alone.
@@ -246,6 +253,17 @@ static func release_page_url(version: String) -> String:
 	if normalized.is_empty():
 		return ""
 	return _RELEASE_PAGE_PREFIX + normalized
+
+
+## The changelog at [param version]'s release tag, built locally from the version alone.
+##
+## Returns an empty string when [param version] is not a stable version, as
+## [method release_page_url] does.
+static func changelog_url(version: String) -> String:
+	var normalized := _normalize(version)
+	if normalized.is_empty():
+		return ""
+	return _CHANGELOG_PREFIX + normalized + _CHANGELOG_FILE
 
 
 # The parsed value of text, or null when it is not valid JSON. A JSON instance

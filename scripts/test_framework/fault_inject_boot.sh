@@ -39,6 +39,8 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WARM_SCRIPT="$SCRIPT_DIR/run_units_cold.sh"
 TOOLKIT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+# shellcheck source=../lib/python_bin.sh
+source "$TOOLKIT_ROOT/scripts/lib/python_bin.sh"
 COMPOSITE="${1:-$TOOLKIT_ROOT/../godot-mcp-server/.github/actions/cross-version-behavioral/action.yml}"
 
 is_windows() { case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) return 0 ;; *) return 1 ;; esac; }
@@ -271,8 +273,8 @@ else
 fi
 
 # ── Composite boot-step cases (extracted from the server action.yml) ────────────
-if [ -f "$COMPOSITE" ] && command -v python >/dev/null 2>&1; then
-  python - "$COMPOSITE" "$SCRATCH/boot.sh" "$(is_windows && echo windows || echo linux)" <<'PY'
+if [ -f "$COMPOSITE" ] && PYTHON_BIN="$(ut_python_bin)"; then
+  "$PYTHON_BIN" - "$COMPOSITE" "$SCRATCH/boot.sh" "$(is_windows && echo windows || echo linux)" <<'PY'
 import re, sys
 ay, out, osval = sys.argv[1], sys.argv[2], sys.argv[3]
 lines = open(ay, encoding="utf-8").read().splitlines()
@@ -344,7 +346,7 @@ PY
   kill_port 6550; kill_port 6551
   cp "$SCRATCH/fake_die.sh" "$SCRATCH/bin/godot"; chmod +x "$SCRATCH/bin/godot"  # restore
 else
-  record "C1-C4 composite boot-step cases" SKIP "composite YAML or python not available ($COMPOSITE)"
+  record "C1-C4 composite boot-step cases" SKIP "composite YAML or Python 3 not available ($COMPOSITE)"
 fi
 
 echo "=============================================================="

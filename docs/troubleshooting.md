@@ -299,6 +299,27 @@ Related upstream reports:
 [godotengine/godot#103305](https://github.com/godotengine/godot/issues/103305)
 (a headless run still loads the editor layout).
 
+### The toolkit is gone after an update
+
+**Symptom:** after you closed the editor to install a toolkit update,
+`addons/godot_mcp_toolkit/` is missing and the plugin no longer loads.
+
+**Cause:** the update moves the installed toolkit aside, then moves the new one
+in. If the editor was killed between the two moves, or the second move failed
+and so did moving the old version back, the old version is left in the update
+folder's backup.
+
+**Fix:** close Godot and work in your file manager, since the editor hides the
+update folder:
+
+1. Move `addons/.godot_mcp_toolkit_update/backup-<version>/` back to
+   `addons/godot_mcp_toolkit/`, where `<version>` is the version you had.
+2. Delete `addons/.godot_mcp_toolkit_update/journal.json`, so the next start
+   does not take the half-finished swap for an update waiting to install.
+3. Open the project again.
+
+`install.log` in the same folder says which step failed.
+
 ## Still stuck?
 
 Open an issue on

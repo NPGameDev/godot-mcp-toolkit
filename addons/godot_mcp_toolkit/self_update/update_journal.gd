@@ -3,10 +3,12 @@ extends RefCounted
 ## The update journal: the one source of truth for an update in progress.
 ##
 ## It lives at [code]journal.json[/code] in the update folder (see
-## [code]update_folder.gd[/code]). Its [code]state[/code] moves [constant VERIFIED] (the
-## manifest and its signature are kept) → [constant STAGED] (the release is unpacked; the
-## editor's next exit swaps it in) → [constant APPLYING] (the swap has begun) → one of
-## [constant APPLIED] or [constant NOT_APPLIED], which the next start settles.[br]
+## [code]update_folder.gd[/code]). Its [code]state[/code] moves [constant VERIFIED] (a
+## download has begun; a start that finds this clears what the download left) →
+## [constant STAGED] (the release is unpacked; the editor's next exit swaps it in) →
+## [constant APPLYING] (the swap has begun) → one of [constant APPLIED] or
+## [constant NOT_APPLIED], which the next start settles. A verified manifest and signature
+## that wait for the user's word have no journal.[br]
 ## [br]
 ## Shape: [code]{"format": 1, "state": "…", "from": "X.Y.Z", "to": "X.Y.Z",
 ## "backup": "backup-X.Y.Z", "expected_tree_hash": "…", "compatible_server": "X.Y.Z",
@@ -19,7 +21,7 @@ extends RefCounted
 ## are ignored. With the editor's safe save off, a kill mid-write leaves text that does
 ## not parse, which reads as no journal.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
@@ -117,7 +119,17 @@ static func clear(folder: String = UpdateFolder.FOLDER) -> void:
 	for folder_name in UpdateFolder.subfolders(folder):
 		if not UpdateFolder.is_backup_name(folder_name):
 			FolderFiles.remove_tree(absolute.path_join(folder_name))
-	DirAccess.remove_absolute(absolute.path_join(_FILE_NAME))
+	remove(folder)
+
+
+## Deletes the journal alone: the folders [method clear] would delete stay.
+static func remove(folder: String = UpdateFolder.FOLDER) -> void:
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(folder).path_join(_FILE_NAME))
+
+
+## Whether [param folder] holds a journal file, one [method read] can trust or not.
+static func exists(folder: String = UpdateFolder.FOLDER) -> bool:
+	return FileAccess.file_exists(folder.path_join(_FILE_NAME))
 
 
 static func _no_journal() -> Dictionary:
