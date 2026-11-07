@@ -1,14 +1,13 @@
 @tool
 extends Node
-## Verifies and stages the toolkit updates the install mode allows, and reports what
-## the last apply did.
+## Drives one toolkit update from the runner's newer version to a stage the exit installs.
 ##
 ## The composer adds the installer beside the update check runner, whose newer,
 ## undismissed version it follows. When the install mode, the consent gate, the
-## embedded trust document and the install guards allow it, the installer downloads the release's
-## manifest and signature and verifies them ([constant AVAILABLE]); then, on the
-## user's word, it downloads the zip, checks it against the manifest and stages it a few
-## files a frame ([constant PREPARING], then [constant READY]). The editor's next exit
+## embedded trust document and the install guards allow it, the installer has the release's
+## manifest and signature verified (see [code]release_verifier.gd[/code]) and offers it
+## ([constant AVAILABLE]); then, on the user's word, it downloads the zip, checks it against
+## the manifest and stages it a few files a frame ([constant PREPARING], then [constant READY]). The editor's next exit
 ## applies it (see [code]update_applier.gd[/code]); nothing here writes the addon folder.
 ## While a release is staged, [method version] names it, whichever newer version the runner reports, and
 ## nothing newer is fetched. A staged release whose files still check out stays until
@@ -16,19 +15,20 @@ extends Node
 ## off a download or a stage that is running.[br]
 ## [br]
 ## A verified manifest and a staged zip are kept in the update folder (see
-## [code]update_folder.gd[/code]), so an editor start finds them again without a request.[br]
+## [code]update_folder.gd[/code] and [code]kept_release.gd[/code]), so an editor start finds
+## them again without a request. The last apply's result is shown as a notice (see
+## [code]update_notice.gd[/code]).[br]
 ## [br]
-## Just before a verify, and on every click on Update, the installer fetches the trust
-## documents this machine lacks, one at a time, until a 404 or the chain's cap for one walk.
-## A failed check leaves [constant IDLE] with [method note_text] saying what failed, and a
-## click retries it ([method can_retry_check]). A failed download after a click goes to
+## Just before a verify, and on every click on Update, the verifier walks the trust chain,
+## fetching the trust documents this machine lacks. A failed check leaves [constant IDLE]
+## with [method note_text] saying what failed, and a click retries it ([method can_retry_check]). A failed download after a click goes to
 ## [constant FAILED]. While an update is staged no check runs.[br]
 ## [br]
 ## When staging ends, the restart gate (see [code]restart_gate.gd[/code]) restarts the
 ## editor or opens the ready view, which [method ready_view] reports.[br]
 ## [br]
-## Every URL is built from the version (see [code]release_assets.gd[/code]), and a reply can
-## redirect it only to the hosts [code]update_downloader.gd[/code] allows.
+## The zip's URL is built from the version (see [code]release_assets.gd[/code]), and a reply
+## can redirect it only to the hosts [code]update_downloader.gd[/code] allows.
 
 ## Emitted when anything the badge or the prompt shows may have changed.
 signal state_changed
@@ -50,12 +50,14 @@ const UpdateLifecycle := preload("res://addons/godot_mcp_toolkit/self_update/upd
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/release_manifest.gd")
 const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
+const ReleaseVerifier := preload("res://addons/godot_mcp_toolkit/self_update/release_verifier.gd")
+const KeptRelease := preload("res://addons/godot_mcp_toolkit/self_update/kept_release.gd")
+const UpdateNotice := preload("res://addons/godot_mcp_toolkit/self_update/update_notice.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
 const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/update_applier.gd")
 const UpdateDownloader := preload("res://addons/godot_mcp_toolkit/self_update/update_downloader.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const UpdateCheckFailure := preload("res://addons/godot_mcp_toolkit/self_update/update_check_failure.gd")
-const TrustChain := preload("res://addons/godot_mcp_toolkit/self_update/trust_chain.gd")
 const RestartGate := preload("res://addons/godot_mcp_toolkit/self_update/restart_gate.gd")
 const EditorRestartProbe := preload("res://addons/godot_mcp_toolkit/self_update/editor_restart_probe.gd")
 
@@ -73,19 +75,17 @@ const READY := "ready"
 const FAILED := "failed"
 
 ## [method notice] kinds.
-const NOTICE_UPDATED := "updated"
-const NOTICE_FAILED := "failed"
+const NOTICE_UPDATED := UpdateNotice.UPDATED
+const NOTICE_FAILED := UpdateNotice.FAILED
 
 const _MANIFEST_TIMEOUT_SEC := 15.0
 const _ARCHIVE_TIMEOUT_SEC := 120.0
 
-# Which reply the HTTPRequest waits for.
+# What the installer waits for.
 const _WAITING_NONE := 0
-const _WAITING_MANIFEST := 1
-const _WAITING_SIGNATURE := 2
-const _WAITING_ARCHIVE := 3
-const _WAITING_TRUST_DOCUMENT := 4
-const _WAITING_STAGE := 5
+const _WAITING_VERIFIER := 1
+const _WAITING_ARCHIVE := 2
+const _WAITING_STAGE := 3
 
 var _runner: UpdateCheckRunner = null
 var _update_folder: String = UpdateFolder.FOLDER
@@ -99,6 +99,7 @@ var _guard_facts: Dictionary = {}
 # What InstallGuards.facts() read the first time a gate asked, when _guard_facts is empty.
 var _session_facts: Dictionary = {}
 var _downloader: UpdateDownloader = null
+var _verifier: ReleaseVerifier = null
 var _stage_runner: StageRunner = null
 var _restart_gate: RestartGate = null
 # Decided once: whether this editor is headless does not change while it runs.
@@ -129,8 +130,6 @@ var _verify_tried: String = ""
 # The version this session verified or downloaded itself, as opposed to one picked up
 # from what an earlier session left.
 var _found_version: String = ""
-# The chain the running walk moves along; its cap counts per instance.
-var _walk: TrustChain = null
 # The last check's failure (an UpdateCheckFailure kind) and its sentence.
 var _check_failure: String = ""
 var _check_note: String = ""
@@ -164,6 +163,12 @@ func _ready() -> void:
 	_downloader = UpdateDownloader.new()
 	_downloader.finished.connect(_on_fetched)
 	add_child(_downloader)
+	_verifier = ReleaseVerifier.new(_options, _check_timeout_sec)
+	_verifier.walked.connect(_on_walked)
+	_verifier.manifest_received.connect(_on_manifest_received)
+	_verifier.verified.connect(_on_verified)
+	_verifier.failed.connect(_on_verify_failed)
+	add_child(_verifier)
 	_stage_runner = StageRunner.new(int(_options.get("stage_budget_ms", StageStepper.BUDGET_MS)))
 	_stage_runner.finished.connect(_on_staged)
 	add_child(_stage_runner)
@@ -181,6 +186,8 @@ func _exit_tree() -> void:
 		ProjectSettings.settings_changed.disconnect(_evaluate)
 	if _downloader != null:
 		_downloader.cancel()
+	if _verifier != null:
+		_verifier.cancel()
 	if _stage_runner != null:
 		# A stage the cancel could not delete keeps its verified journal, and the next
 		# start's settle clears that journal with its folders.
@@ -274,9 +281,8 @@ func found_this_session() -> bool:
 	return not _version.is_empty() and _found_version == _version
 
 
-## The last apply's result while it is shown: [code]{"kind": NOTICE_UPDATED or
-## NOTICE_FAILED, "version", "from_version", "reason", "server_changed": bool}[/code],
-## or an empty dictionary.
+## The last apply's result while it is shown, in the shape [code]update_notice.gd[/code]
+## builds, or an empty dictionary.
 func notice() -> Dictionary:
 	return _notice
 
@@ -434,9 +440,9 @@ func _restore_record(record: Dictionary, newer: String) -> bool:
 	var version: String = record["to"]
 	# A verified journal stands for a download that never finished, so it goes with
 	# whatever that left, as it does at a settle.
-	var kept: Dictionary = {} if record["state"] == UpdateJournal.VERIFIED else _read_kept(version)
+	var kept: Dictionary = {} if record["state"] == UpdateJournal.VERIFIED else KeptRelease.read(version, _update_folder, _options)
 	if kept.is_empty():
-		if record["state"] == UpdateJournal.STAGED and _kept_signature_refused(version):
+		if record["state"] == UpdateJournal.STAGED and KeptRelease.signature_refused(version, _update_folder, _options):
 			_notice_not_installed(record, UpdateApplier.UNTRUSTED_SIGNATURE)
 		UpdateJournal.clear(_update_folder)
 		_set_state(IDLE)
@@ -467,7 +473,7 @@ func _restore_record(record: Dictionary, newer: String) -> bool:
 # the update folder with no journal. Returns whether they answered for `version`, so
 # nothing needs fetching.
 func _restore_kept(version: String) -> bool:
-	var kept := _read_kept(version)
+	var kept := KeptRelease.read(version, _update_folder, _options)
 	if kept.is_empty():
 		return false
 	var manifest: Dictionary = kept["manifest"]
@@ -483,48 +489,11 @@ func _restore_kept(version: String) -> bool:
 	return true
 
 
-# The update folder's manifest of `version`, checked again: {"manifest": what
-# ReleaseManifest.parse returns, "bytes": its text}, or an empty dictionary when it or
-# its signature is missing or does not check out.
-func _read_kept(version: String) -> Dictionary:
-	var folder := UpdateFolder.version_folder(version, _update_folder)
-	var manifest_path := folder.path_join(ReleaseAssets.manifest_name(version))
-	var signature_path := folder.path_join(ReleaseAssets.signature_name(version))
-	if not FileAccess.file_exists(manifest_path) or not FileAccess.file_exists(signature_path):
-		return {}
-	var manifest_bytes := FileAccess.get_file_as_bytes(manifest_path)
-	var signature := FileAccess.get_file_as_bytes(signature_path)
-	if not ReleaseSignature.is_trusted(manifest_bytes, signature, null, _options):
-		return {}
-	var manifest := ReleaseManifest.parse(manifest_bytes.get_string_from_utf8(), version)
-	if not str(manifest["error"]).is_empty():
-		return {}
-	return {"manifest": manifest, "bytes": manifest_bytes}
-
-
-# Whether the update folder holds the manifest and signature of `version` and the chain no
-# longer trusts that signature, as when a key was dropped after the release was staged.
-func _kept_signature_refused(version: String) -> bool:
-	var folder := UpdateFolder.version_folder(version, _update_folder)
-	var manifest_path := folder.path_join(ReleaseAssets.manifest_name(version))
-	var signature_path := folder.path_join(ReleaseAssets.signature_name(version))
-	if not FileAccess.file_exists(manifest_path) or not FileAccess.file_exists(signature_path):
-		return false
-	return not ReleaseSignature.is_trusted(
-			FileAccess.get_file_as_bytes(manifest_path), FileAccess.get_file_as_bytes(signature_path), null, _options)
-
-
 # The notice for a staged release the exit will not install, the one the exit's own refusal
 # reaches through a settle.
 func _notice_not_installed(record: Dictionary, reason: String) -> void:
 	UpdateFolder.log_line("%s: %s" % [record["to"], reason], _update_folder)
-	_notice = {
-		"kind": NOTICE_FAILED,
-		"version": record["to"],
-		"from_version": record["from"],
-		"reason": reason,
-		"server_changed": false,
-	}
+	_notice = UpdateNotice.not_installed(str(record["to"]), str(record["from"]), reason)
 
 
 # Drops what a download or a stage left, back to the verified manifest and signature
@@ -552,47 +521,16 @@ func _start_walk() -> void:
 	# A note about an earlier check says nothing about this one.
 	if check_failed():
 		_set_state(_state)
-	_walk = ReleaseSignature.chain(_options)
-	if not _walk.has_store():
-		_fail_check(UpdateCheckFailure.NO_DATA_FOLDER, "the data folder is not an absolute path")
-		return
-	_fetch_next_document()
-
-
-func _fetch_next_document() -> void:
-	var number := _walk.next_version()
-	if number == 0:
-		_end_walk()
-		return
-	var url := ReleaseAssets.trust_document_url(OS.get_environment(UpdateCheck.HOST_ENV), number)
-	if _downloader.fetch(url, TrustChain.MAX_FILE_BYTES, _check_timeout_sec) != OK:
-		_fail_check(UpdateCheckFailure.UNREACHABLE, "the fetch of trust document %d could not start" % number)
-		return
-	_waiting = _WAITING_TRUST_DOCUMENT
-
-
-func _on_trust_document(outcome: Dictionary) -> void:
-	if bool(outcome["ok"]):
-		var accepted := _walk.accept(outcome["body"])
-		if str(accepted["outcome"]) == TrustChain.ACCEPTED:
-			_fetch_next_document()
-		else:
-			_fail_check(UpdateCheckFailure.of_accept(str(accepted["outcome"])), str(accepted["reason"]))
-	elif UpdateCheckFailure.is_missing(outcome):
-		_end_walk()
-	else:
-		_fail_check(UpdateCheckFailure.of_fetch(outcome), _fetch_problem(outcome))
+	_waiting = _WAITING_VERIFIER
+	_verifier.walk()
 
 
 # The walk moved the chain, so what was verified before it is verified again. A kept release
 # that no longer holds is fetched anew, and its own signature then decides.
-func _end_walk() -> void:
-	if _walk.release_keys().is_empty():
-		_fail_check(UpdateCheckFailure.SECURITY, "the latest trust document lists no release key")
-		return
-	_walk = null
+func _on_walked() -> void:
+	_waiting = _WAITING_NONE
 	if not _manifest.is_empty():
-		var kept := _read_kept(_version)
+		var kept := KeptRelease.read(_version, _update_folder, _options)
 		if not kept.is_empty():
 			_manifest = kept["manifest"]
 			_manifest_bytes = kept["bytes"]
@@ -600,12 +538,17 @@ func _end_walk() -> void:
 			return
 		_manifest = {}
 		_manifest_bytes = PackedByteArray()
-	_send(ReleaseAssets.manifest_name(_version), _WAITING_MANIFEST, ReleaseManifest.MAX_BYTES, "", _check_timeout_sec)
+	_waiting = _WAITING_VERIFIER
+	_verifier.fetch(_version)
 
 
-static func _fetch_problem(outcome: Dictionary) -> String:
-	var refusal := str(outcome["refusal"])
-	return refusal if not refusal.is_empty() else "the download failed (result %d, HTTP %d)" % [int(outcome["result"]), int(outcome["code"])]
+func _on_manifest_received(manifest_bytes: PackedByteArray) -> void:
+	_manifest_bytes = manifest_bytes
+
+
+func _on_verify_failed(kind: String, reason: String) -> void:
+	_waiting = _WAITING_NONE
+	_fail_check(kind, reason)
 
 
 func _download_archive() -> void:
@@ -618,53 +561,26 @@ func _download_archive() -> void:
 	var folder := ProjectSettings.globalize_path(UpdateFolder.version_folder(_version, _update_folder))
 	DirAccess.make_dir_recursive_absolute(folder)
 	_set_state(DOWNLOADING)
-	_send(ReleaseAssets.archive_name(_version), _WAITING_ARCHIVE, int(_manifest["archive_size"]),
-			folder.path_join(ReleaseAssets.archive_name(_version)), _ARCHIVE_TIMEOUT_SEC)
-
-
-func _send(asset: String, waiting: int, size_limit: int, target_file: String, timeout: float) -> void:
-	var url := ReleaseAssets.download_url(OS.get_environment(UpdateCheck.HOST_ENV), _version, asset)
-	var error := _downloader.fetch(url, size_limit, timeout, target_file)
-	_waiting = waiting if error == OK else _WAITING_NONE
+	var url := ReleaseAssets.download_url(OS.get_environment(UpdateCheck.HOST_ENV), _version, ReleaseAssets.archive_name(_version))
+	var error := _downloader.fetch(url, int(_manifest["archive_size"]), _ARCHIVE_TIMEOUT_SEC,
+			folder.path_join(ReleaseAssets.archive_name(_version)))
+	_waiting = _WAITING_ARCHIVE if error == OK else _WAITING_NONE
 	if error != OK:
-		if waiting == _WAITING_ARCHIVE:
-			_keep_only_verified()
-			_fail("the download could not start (error %d)" % error)
-		else:
-			_fail_check(UpdateCheckFailure.UNREACHABLE, "the download could not start (error %d)" % error)
+		_keep_only_verified()
+		_fail("the download could not start (error %d)" % error)
 
 
 func _on_fetched(outcome: Dictionary) -> void:
-	var waiting := _waiting
 	_waiting = _WAITING_NONE
-	if waiting == _WAITING_TRUST_DOCUMENT:
-		_on_trust_document(outcome)
-		return
 	if not bool(outcome["ok"]):
-		if waiting == _WAITING_ARCHIVE:
-			_keep_only_verified()
-			_fail(_fetch_problem(outcome))
-		else:
-			_fail_check(UpdateCheckFailure.of_release_file(outcome), _fetch_problem(outcome))
+		_keep_only_verified()
+		_fail(ReleaseVerifier.fetch_problem(outcome))
 		return
-	match waiting:
-		_WAITING_MANIFEST:
-			_manifest_bytes = outcome["body"]
-			_send(ReleaseAssets.signature_name(_version), _WAITING_SIGNATURE, ReleaseSignature.MAX_BYTES, "", _check_timeout_sec)
-		_WAITING_SIGNATURE:
-			_on_signature(outcome["body"])
-		_WAITING_ARCHIVE:
-			_on_archive()
+	_on_archive()
 
 
-func _on_signature(signature: PackedByteArray) -> void:
-	if not ReleaseSignature.is_trusted(_manifest_bytes, signature, null, _options):
-		_fail_check(UpdateCheckFailure.SECURITY, "version %s is not signed by a trusted key" % _version)
-		return
-	var manifest := ReleaseManifest.parse(_manifest_bytes.get_string_from_utf8(), _version)
-	if not str(manifest["error"]).is_empty():
-		_fail_check(UpdateCheckFailure.SECURITY, str(manifest["error"]))
-		return
+func _on_verified(manifest: Dictionary, signature: PackedByteArray) -> void:
+	_waiting = _WAITING_NONE
 	if not ReleaseManifest.supports_engine(manifest, VersionUtils.get_engine_version_pair()):
 		_note_engine_floor(manifest)
 		return
@@ -766,8 +682,7 @@ func _fail(reason: String) -> void:
 func _fail_check(kind: String, reason: String) -> void:
 	UpdateFolder.log_line("%s: %s" % [_version, reason], _update_folder)
 	var waits_quietly := kind == UpdateCheckFailure.NOT_READY and not _user_asked
-	var note := UpdateCheckFailure.message(kind, _walk.store() if _walk != null else "")
-	_walk = null
+	var note := UpdateCheckFailure.message(kind, _verifier.store())
 	_user_asked = false
 	if waits_quietly:
 		_set_state(IDLE)
@@ -788,12 +703,13 @@ func _withdraw(dismissed_version: String = "") -> void:
 func _cancel() -> void:
 	if _downloader != null:
 		_downloader.cancel()
+	if _verifier != null:
+		_verifier.cancel()
 	if _stage_runner != null:
 		# A stage the cancel could not delete gets a second try from the journal clear that
 		# follows a cancel.
 		_stage_runner.cancel()
 	_waiting = _WAITING_NONE
-	_walk = null
 	_user_asked = false
 
 
@@ -804,14 +720,7 @@ func _settle_last_update() -> void:
 	var report := str(_settled.get("report", ""))
 	if report != UpdateSettler.UPDATED and report != UpdateSettler.FAILED:
 		return
-	var updated := report == UpdateSettler.UPDATED
-	_notice = {
-		"kind": NOTICE_UPDATED if updated else NOTICE_FAILED,
-		"version": _settled["to"],
-		"from_version": _settled["from"],
-		"reason": _settled["reason"],
-		"server_changed": updated and _settled["compatible_server"] != VersionUtils.COMPATIBLE_SERVER_VERSION,
-	}
+	_notice = UpdateNotice.of_settle(_settled, report == UpdateSettler.UPDATED)
 
 
 # The version in the addon folder's plugin.cfg: the running toolkit's, since the

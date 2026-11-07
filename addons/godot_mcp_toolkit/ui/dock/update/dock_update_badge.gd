@@ -38,6 +38,7 @@ const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const UpdateCheck = Modules.UpdateCheck
 const UpdateCheckRunner = Modules.UpdateCheckRunner
 const UpdateInstaller = Modules.UpdateInstaller
+const UpdateNotice = UpdateInstaller.UpdateNotice
 const VersionUtils = Modules.VersionUtils
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const DockUpdateBadgeStatus := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge_status.gd")
@@ -306,12 +307,12 @@ func _render_install_state() -> void:
 
 func _render_notice(notice: Dictionary) -> void:
 	visible = true
-	var updated := str(notice.get("kind", "")) == UpdateInstaller.NOTICE_UPDATED
-	_shown_version = str(notice.get("version", ""))
+	var updated := str(notice.get(UpdateNotice.KIND, "")) == UpdateNotice.UPDATED
+	_shown_version = str(notice.get(UpdateNotice.VERSION, ""))
 	add_theme_stylebox_override("panel", _minor_style if updated else _failed_style)
 	_major_icon.visible = false
 	_set_title((_UPDATED_TITLE if updated else _FAILED_TITLE) % _shown_version, false)
-	var mcp_json_behind := updated and bool(notice.get("server_changed", false)) \
+	var mcp_json_behind := updated and bool(notice.get(UpdateNotice.SERVER_CHANGED, false)) \
 			and _write_flow != null and _write_flow.written_entry_outdated()
 	_set_status(DockUpdateBadgeStatus.notice_line(notice, _installer.log_path(), mcp_json_behind))
 	_dismiss_btn.tooltip_text = _NOTICE_DISMISS_TOOLTIP

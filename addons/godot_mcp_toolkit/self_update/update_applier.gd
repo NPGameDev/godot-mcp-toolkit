@@ -27,7 +27,7 @@ extends RefCounted
 const ContentHash := preload("res://addons/godot_mcp_toolkit/self_update/content_hash.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
-const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
+const KeptRelease := preload("res://addons/godot_mcp_toolkit/self_update/kept_release.gd")
 const ReleaseManifest := preload("res://addons/godot_mcp_toolkit/self_update/release_manifest.gd")
 const ReleaseSignature := preload("res://addons/godot_mcp_toolkit/self_update/release_signature.gd")
 const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/release_archive.gd")
@@ -147,9 +147,9 @@ static func check_release(
 	if not refusal.is_empty():
 		return _problem(InstallGuards.describe(refusal))
 
-	var release_folder := UpdateFolder.version_folder(version, update_folder)
-	var manifest_bytes := FileAccess.get_file_as_bytes(release_folder.path_join(ReleaseAssets.manifest_name(version)))
-	var signature := FileAccess.get_file_as_bytes(release_folder.path_join(ReleaseAssets.signature_name(version)))
+	var kept := KeptRelease.files(version, update_folder)
+	var manifest_bytes: PackedByteArray = kept.get("manifest", PackedByteArray())
+	var signature: PackedByteArray = kept.get("signature", PackedByteArray())
 	if not ReleaseSignature.is_trusted(manifest_bytes, signature, options.get("public_keys"), options):
 		return _problem(UNTRUSTED_SIGNATURE)
 	var manifest := ReleaseManifest.parse(manifest_bytes.get_string_from_utf8(), version)

@@ -10,6 +10,7 @@ extends RefCounted
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const UpdateApplier = Modules.UpdateApplier
 const UpdateInstaller = Modules.UpdateInstaller
+const UpdateNotice = UpdateInstaller.UpdateNotice
 const RestartGate = UpdateInstaller.RestartGate
 const EditorRestartProbe = UpdateInstaller.EditorRestartProbe
 const VersionUtils = Modules.VersionUtils
@@ -111,10 +112,10 @@ static func ready_view_text(version: String, view: Dictionary, retry: bool = fal
 ## log at [param log_path]; an installed one says nothing unless [param server_line]
 ## is set, when .mcp.json runs another server than the one the new version is tested with.
 static func notice_line(notice: Dictionary, log_path: String, server_line: bool) -> String:
-	if str(notice.get("kind", "")) == UpdateInstaller.NOTICE_UPDATED:
+	if str(notice.get(UpdateNotice.KIND, "")) == UpdateNotice.UPDATED:
 		return _SERVER_CHANGED_TEXT % VersionUtils.COMPATIBLE_SERVER_VERSION if server_line else ""
-	var reason := str(notice.get("reason", ""))
-	var line := _NOT_INSTALLED_TEXT % [_sentence(reason), str(notice.get("from_version", "")), log_path]
+	var reason := str(notice.get(UpdateNotice.REASON, ""))
+	var line := _NOT_INSTALLED_TEXT % [_sentence(reason), str(notice.get(UpdateNotice.FROM_VERSION, "")), log_path]
 	# A hand download checks no signature, and in a leak the latest release can be the
 	# old key's too, so this notice points at the toolkit's own check and offers no link.
 	if reason == UpdateApplier.UNTRUSTED_SIGNATURE:
