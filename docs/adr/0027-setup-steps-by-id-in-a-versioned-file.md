@@ -33,6 +33,11 @@ user leaves it.**
   later", on the step a run opens on, records nothing, so the run comes back at the
   next editor start. Recording a step when it is displayed would record the step
   behind a "Remind me later".
+
+  *Amended 2026-11-07:* each step now carries what × does to it (`ClosePolicy` in
+  `core/setup_steps.gd`). Every step but `update_install` keeps the rule above;
+  × leaves `update_install` unseen, because closing the window is not consent to
+  install updates, so the wizard asks again at the next editor start.
 - **Required steps come back.** A step is required when skipping it costs the user
   something: `welcome` (what the toolkit can do to the project), `mcp_json` (without
   it the client cannot find the toolkit) and `updates` (the update check waits for

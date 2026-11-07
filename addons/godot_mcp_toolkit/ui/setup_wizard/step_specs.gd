@@ -133,7 +133,9 @@ static func update_install() -> Dictionary:
 			+ "Mcp Toolkit > Updates) to be on.\n\n"
 			+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
 			+ "It's saved in project.godot, so it applies to everyone who works on this "
-			+ "project."),
+			+ "project.\n\n"
+			+ "Closing this window with × isn't an answer: until you choose here, the wizard "
+			+ "asks again at each editor start."),
 		"ok_label": NEXT_LABEL,
 		"buttons": [{"label": "Back", "action": BACK_ACTION}],
 		"install_choice": true,

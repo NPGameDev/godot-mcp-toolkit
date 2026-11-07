@@ -10,9 +10,10 @@ extends RefCounted
 ## [br]
 ## A step counts as seen once the user leaves it: with Next or Done, or with a
 ## button that moves on ("Write .mcp.json", "Open Info"). Closing the dialog with ×
-## also counts the open step and every optional step of the run not reached yet;
-## required steps not reached stay unseen. "Remind me later", on the step a run
-## opens on, closes the dialog and counts nothing.
+## also counts the open step and every optional step of the run not reached yet,
+## except a step whose close policy keeps it unseen (the install step); required
+## steps not reached stay unseen. "Remind me later", on the step a run opens on,
+## closes the dialog and counts nothing.
 
 ## Emitted when the user leaves the step [param step_id] in a way that counts it as
 ## seen. Emitted again for a step left a second time after Back.

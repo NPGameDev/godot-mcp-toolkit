@@ -56,6 +56,7 @@ const _UPDATES_TEXT := (
 
 static func run(testing, tree: SceneTree) -> void:
 	_test_step_table(testing)
+	_test_close_policy(testing)
 	_test_tracker_file_shapes(testing)
 	_test_tracker_format_rules(testing)
 	_test_tracker_written_bytes(testing)
@@ -92,6 +93,21 @@ static func _test_step_table(testing) -> void:
 	testing.ok(SetupSteps.is_required(&"update_install"), "update_install is required")
 	testing.ok(not SetupSteps.is_required(&"dock"), "dock is optional")
 	testing.ok(not SetupSteps.is_required(&"no_such_step"), "an unknown id is not required")
+	print("")
+
+
+# × keeps the install step unseen and counts every other step; seen_on_close reads
+# the policy from the table, so these rows and its rows break together.
+static func _test_close_policy(testing) -> void:
+	testing.begin("Setup steps: what × does to each step")
+	for step_id: StringName in SetupSteps.all_ids():
+		var expected := SetupSteps.ClosePolicy.MARK_SEEN
+		if step_id == &"update_install":
+			expected = SetupSteps.ClosePolicy.KEEP_UNSEEN
+		testing.eq(SetupSteps.close_policy(step_id), expected, "%s → %s" % [
+			step_id, "keep unseen" if expected == SetupSteps.ClosePolicy.KEEP_UNSEEN else "mark seen"])
+	testing.eq(SetupSteps.close_policy(&"no_such_step"), SetupSteps.ClosePolicy.MARK_SEEN,
+			"an unknown id → mark seen")
 	print("")
 
 
@@ -259,6 +275,11 @@ static func _test_seen_on_close(testing) -> void:
 	testing.eq(SetupSteps.seen_on_close(_ids([&"optional_steps", &"updates"]), 0, _ids([&"optional_steps"])),
 			_ids([&"optional_steps"]), "× on a missed-steps run's first step leaves the required one unseen")
 	testing.eq(SetupSteps.seen_on_close(_ids([]), 0, _ids([])), _ids([]), "× with no run records nothing")
+	var through_install := _ids([&"welcome", &"mcp_json", &"optional_steps", &"updates", &"update_install"])
+	testing.eq(SetupSteps.seen_on_close(all_ids, 4, through_install), _ids([&"dock"]),
+			"× on update_install → only the unvisited dock; the install step stays unseen")
+	testing.eq(SetupSteps.seen_on_close(_ids([&"update_install"]), 0, _ids([&"update_install"])), _ids([]),
+			"× on a missed-steps run of the install step alone records nothing")
 	print("")
 
 
@@ -409,6 +430,20 @@ static func _test_run_endings(testing, tree: SceneTree) -> void:
 	dialog = opened["dialog"]
 	dialog.canceled.emit()
 	testing.eq(opened["seen"], [&"optional_steps"], "× before a required step leaves it unseen")
+	await _settle(tree)
+
+	opened = _open(tree, _ids([&"updates", &"update_install", &"dock"]), _settings(_Store.new(), _Store.new()))
+	dialog = opened["dialog"]
+	# Seeds the install step's store, so its choice reads and would write a stand-in.
+	var install_store := _Store.new()
+	opened["wizard"]._project_settings = install_store
+	dialog.get_ok_button().pressed.emit()
+	testing.eq(dialog.title, "MCP Toolkit — Setup Wizard (2 of 3)", "Next reaches the install step")
+	dialog.canceled.emit()
+	testing.eq(opened["seen"], [&"updates", &"dock"],
+			"× on update_install → it stays unseen, the unvisited dock is recorded")
+	testing.eq(install_store.writes, [], "× on update_install writes no install mode")
+	testing.ok(opened["wizard"]._dialog == null, "× on update_install closes the wizard")
 	await _settle(tree)
 
 	opened = _open(tree, run, _settings(_Store.new(), _Store.new()))
