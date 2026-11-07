@@ -2,8 +2,9 @@
 # scripts/test_update_test_env.sh
 # Tests how ut_python_bin (scripts/lib/python_bin.sh, which update_test_env.sh
 # sources) picks the Python the test harnesses run, against stand-in interpreters
-# only, with no Python, no Godot and no network. Each case runs on a PATH of scratch folders alone, so no real
-# interpreter, and no real Microsoft Store alias, can be found or run.
+# only, with no Python, no Godot and no network. Each case runs on a PATH of scratch
+# folders alone, so no real interpreter, and no real Microsoft Store alias, can be
+# found or run.
 #
 # A stand-in under a folder named WindowsApps plays the Store's app-execution alias:
 # it writes a marker file when run and answers as a Python 3 would, so a resolver

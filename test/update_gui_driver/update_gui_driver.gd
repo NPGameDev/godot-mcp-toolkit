@@ -224,7 +224,7 @@ func _save_probe_script() -> bool:
 	var saved := false
 	for menu: MenuButton in EditorInterface.get_script_editor().find_children("*", "MenuButton", true, false):
 		var popup := menu.get_popup()
-		for index in popup.item_count:
+		for index: int in popup.item_count:
 			if popup.get_item_text(index) == _SAVE_SCRIPT_ITEM:
 				popup.id_pressed.emit(popup.get_item_id(index))
 				saved = true
@@ -309,6 +309,10 @@ func _press(button: Button) -> void:
 
 func _write_restart_marker() -> void:
 	var file := FileAccess.open(_RESTART_MARKER, FileAccess.WRITE)
+	if file == null:
+		push_error("[UPDATE-GUI] could not write %s: error %d"
+				% [_RESTART_MARKER, FileAccess.get_open_error()])
+		return
 	file.store_string("1")
 	file.close()
 
@@ -350,7 +354,7 @@ func _wait_for(condition: Callable, seconds: float = _WAIT_SEC) -> bool:
 
 
 func _frames(count: int) -> void:
-	for index in count:
+	for _index: int in count:
 		await get_tree().process_frame
 
 
@@ -360,6 +364,10 @@ func _record(key: String, value: Variant) -> void:
 	if _results_path.is_empty():
 		return
 	var file := FileAccess.open(_results_path, FileAccess.READ_WRITE if FileAccess.file_exists(_results_path) else FileAccess.WRITE)
+	if file == null:
+		push_error("[UPDATE-GUI] could not write %s: error %d"
+				% [_results_path, FileAccess.get_open_error()])
+		return
 	file.seek_end()
 	file.store_line(line)
 	file.close()

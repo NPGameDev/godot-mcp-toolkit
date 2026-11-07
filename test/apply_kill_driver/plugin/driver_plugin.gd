@@ -69,6 +69,10 @@ func _enter_tree() -> void:
 
 
 func _process(_delta: float) -> void:
+	# NOTIFICATION_READY turns processing back on for a script that defines _process, so
+	# the set_process(false) in _enter_tree does not hold.
+	if _session.is_empty():
+		return
 	var now := Time.get_ticks_msec()
 	if now - _started_ms > _WATCHDOG_MS:
 		_note("watchdog_kill", str(_phase))
@@ -252,7 +256,8 @@ func _icon_is_imported() -> bool:
 	return load(_ICON_PATH) is Texture2D
 
 
-# A close request sent to the editor node alone and deferred, the way a real one arrives.
+# A deferred close request sent to the editor node alone, where the editor acts on it. A
+# real one reaches every node in the window.
 func _close(now: int) -> void:
 	_enter_phase(_Phase.CLOSING, now)
 	_note("closing", "1")

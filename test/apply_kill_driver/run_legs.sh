@@ -90,6 +90,9 @@ else
   EDITOR_USER_DATA="$EDITOR_HOME/.local/share/godot/app_userdata/$PROJECT_NAME"
   GUI_ARGS=(--rendering-driver opengl3 --audio-driver Dummy)
 fi
+# The setup steps are seen, so the toolkit may check for updates and fetch a release. Its
+# requests go to a loopback port nothing listens on, and fail there, never reaching GitHub.
+EDITOR_ENV+=("GODOT_MCP_UPDATE_CHECK_HOST=http://127.0.0.1:9")
 
 FAILED=0
 LEG=""
@@ -154,7 +157,7 @@ session() {
   printf '%s\n' "id=$id" "$@" > "$PROJECT/$DRIVER_DIR/session.txt"
   echo "  session $id: $*"
   local started="$SECONDS" editor_exit=0
-  env "${EDITOR_ENV[@]}" timeout -k 10 "$SESSION_TIMEOUT" \
+  env "${EDITOR_ENV[@]}" "$(ut_timeout_bin)" -k 10 "$SESSION_TIMEOUT" \
     "$GODOT_BIN" ${GUI_ARGS[@]+"${GUI_ARGS[@]}"} --editor --path "$PROJECT" \
     > "$LEG_LOGS/$id.log" 2>&1 < /dev/null || editor_exit=$?
   rm -f "$PROJECT/$DRIVER_DIR/session.txt"
@@ -187,7 +190,8 @@ build_release() { # <version> <file only this version has> <out folder> <private
   rm -rf "$tree"
 }
 
-# The editor's own settings and the toolkit's first-run wizard, seen already.
+# The editor's own settings, and every setup step the toolkit's wizard shows marked seen,
+# so no session opens the wizard.
 seed_editor_home() {
   local settings='[gd_resource type="EditorSettings" format=3]
 
@@ -195,11 +199,10 @@ seed_editor_home() {
 interface/editor/single_window_mode = true
 interface/editor/editor_language = "en"
 '
-  mkdir -p "$EDITOR_CONFIG" "$EDITOR_USER_DATA/addons/godot_mcp_toolkit"
+  mkdir -p "$EDITOR_CONFIG"
   printf '%s' "$settings" > "$EDITOR_CONFIG/editor_settings-4.tres"
   printf '%s' "$settings" > "$EDITOR_CONFIG/editor_settings-$GODOT_MINOR.tres"
-  printf '%s' '{"format": 1, "seen": ["welcome", "mcp_json", "optional_steps", "updates", "dock"]}' \
-    > "$EDITOR_USER_DATA/addons/godot_mcp_toolkit/mcp_onboarding_shown_v001"
+  ut_mark_setup_seen "$EDITOR_USER_DATA"
 }
 
 # Builds and signs both releases, then makes the project every leg starts from: A

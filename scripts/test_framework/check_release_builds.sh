@@ -7,7 +7,8 @@
 # the zip's own size and hash, each of which must match its own zip. The zips' bytes
 # differ (compression and timestamps), which the toolkit never compares, and so do
 # their folder entries: zip -r writes one per folder and the PowerShell build none,
-# and the toolkit's archive check skips them (update/release_archive.gd).
+# and the toolkit's archive check skips them
+# (addons/godot_mcp_toolkit/self_update/release_archive.gd).
 #
 # Usage: scripts/test_framework/check_release_builds.sh
 # Exit 0 = the builds agree, 1 = they differ, 2 = setup error.

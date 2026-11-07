@@ -4,8 +4,8 @@
 #
 # The release under test is the zip and update manifest build-plugin-release.sh
 # writes from this tree. The installed toolkit is the same tree one version older
-# within the same major, trusting a key made for the run, with its release file list and one file only it
-# has. A local HTTP server answers the update check's and the installer's requests
+# within the same major, trusting a key made for the run, with its release file list
+# and one file only it has. A local HTTP server answers the update check's and the installer's requests
 # in place of GitHub and the Asset Store (GODOT_MCP_UPDATE_CHECK_HOST). Each leg
 # boots a headless editor (GODOT_MCP_UPDATE_ALLOW_HEADLESS=1) with the consent seen
 # and the ask mode. A test-only plugin (test/update_driver/) clicks Update once the
@@ -38,7 +38,7 @@
 #                     never one in a WindowsApps folder)
 # Needs Python 3 (the HTTP server), openssl, GNU timeout (gtimeout on macOS) and,
 # unless UPDATE_FLOW_SKIP_BUILD is set, zip. Runs everything under a scratch HOME
-# (and, on Windows, a scratch %APPDATA%, where Godot keeps its files there), so the
+# (and, on Windows, a scratch %APPDATA%, where Godot keeps its files), so the
 # machine's own registry and editor settings are never touched. Runs on Linux, macOS
 # and Windows (Git Bash). The rollback leg makes the addons folder read-only; NTFS
 # ignores chmod, so on Windows a process holds a file in the toolkit open instead, which
@@ -48,7 +48,15 @@
 set -uo pipefail
 
 GODOT_BIN="${GODOT_BIN:-${1:-godot}}"
-LEGS="${UPDATE_FLOW_LEGS:-full close rollback untrusted repository disable}"
+ALL_LEGS="full close rollback untrusted repository disable"
+LEGS="${UPDATE_FLOW_LEGS:-${ALL_LEGS}}"
+# A mistyped name would boot an editor, match no leg's checks, and pass.
+for leg in ${LEGS}; do
+  case " ${ALL_LEGS} " in
+    *" ${leg} "*) ;;
+    *) echo "ERROR: no such leg: ${leg} (legs: ${ALL_LEGS})" >&2; exit 2 ;;
+  esac
+done
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # shellcheck source=../lib/release_files.sh
 source "${REPO_ROOT}/scripts/lib/release_files.sh"
@@ -185,6 +193,12 @@ release_toolkit() {
   HOLD_PID=""
 }
 
+stop_server() {
+  kill "${SERVER_PID}" 2>/dev/null
+  wait "${SERVER_PID}" 2>/dev/null
+  SERVER_PID=""
+}
+
 # ── One leg ─────────────────────────────────────────────────────────────────
 run_leg() {
   LEG="$1"
@@ -226,7 +240,7 @@ run_leg() {
 
   local timeout=90 disable=0 close=quit
   case "${LEG}" in
-    rollback) hold_toolkit "${project}" "${dir}" || { fail "could not stop the toolkit's folder from moving"; return; } ;;
+    rollback) hold_toolkit "${project}" "${dir}" || { fail "could not stop the toolkit's folder from moving"; stop_server; return; } ;;
     untrusted | repository) timeout=25 ;;
     disable) disable=1 ;;
     close) close=window ;;
@@ -238,7 +252,7 @@ run_leg() {
     UPDATE_DRIVER_CLICK=1 UPDATE_DRIVER_CLOSE="${close}" \
     "${TIMEOUT_BIN}" 180 "${GODOT_BIN}" --headless --editor --path "${project}" > "${dir}/boot1.log" 2>&1
   local boot1_status=$?
-  kill "${SERVER_PID}" 2>/dev/null; wait "${SERVER_PID}" 2>/dev/null; SERVER_PID=""
+  stop_server
 
   local installed journal log backup
   installed="$(sed -nE 's/^version="([^"]+)".*/\1/p' "${addon}/plugin.cfg" | tr -d '\r')"
@@ -294,6 +308,7 @@ run_leg() {
       grep -qF "[UPDATE-DRIVER] disabled the toolkit" "${dir}/boot1.log" && pass "the toolkit was disabled after staging" || fail "the toolkit was not disabled"
       [[ "${installed}" == "${OLD_VERSION}" && ! -e "${journal}" ]] && pass "nothing was installed and the staged update is gone" || fail "the disable installed or kept the update"
       ;;
+    *) fail "unknown leg ${LEG}" ;;
   esac
 }
 

@@ -63,7 +63,8 @@ func _click_update() -> void:
 	installer.call("install")
 
 
-# A close request sent to the editor node alone and deferred, the way a real one arrives.
+# A deferred close request sent to the editor node alone, where the editor acts on it. A
+# real one reaches every node in the window.
 func _close() -> void:
 	if _close_by_window:
 		print("[UPDATE-DRIVER] closing through the window")

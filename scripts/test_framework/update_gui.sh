@@ -39,10 +39,11 @@
 #   XVFB_BIN, XDOTOOL_BIN  the Xvfb and xdotool binaries (default: found on PATH)
 #   UT_PYTHON              the Python 3 to run (default: python3 or python on the
 #                          PATH, never one in a WindowsApps folder)
-# Needs Python 3, openssl, zip, Xvfb, xdotool and an OpenGL driver Xvfb can serve
-# (Mesa). Runs everything under a scratch HOME, so the machine's own registry and
-# editor settings are never touched. On Windows (Git Bash) the editors open on the
-# desktop instead, and the quit scenario, which needs xdotool, is skipped.
+# Needs Python 3, openssl, Xvfb, xdotool, an OpenGL driver Xvfb can serve (Mesa) and,
+# unless UPDATE_GUI_SKIP_BUILD is set, zip. Runs everything under a scratch HOME, so
+# the machine's own registry and editor settings are never touched. On Windows (Git
+# Bash) the editors open on the desktop instead, and the quit scenario, which needs
+# xdotool, is skipped.
 
 set -uo pipefail
 
@@ -58,7 +59,8 @@ source "${REPO_ROOT}/scripts/lib/update_test_env.sh"
 
 OS="$(ut_os)"
 PYTHON_BIN="$(ut_python_bin)" || { echo "ERROR: Python 3 is required" >&2; exit 2; }
-TOOLS=(openssl zip unzip)
+TOOLS=(openssl)
+[[ "${UPDATE_GUI_SKIP_BUILD:-0}" == 1 ]] || TOOLS+=(zip)
 [[ "${OS}" == windows ]] || TOOLS+=("${XVFB_BIN}" "${XDOTOOL_BIN}")
 for tool in "${TOOLS[@]}"; do
   command -v "${tool}" >/dev/null 2>&1 || { echo "ERROR: ${tool} is required" >&2; exit 2; }
@@ -175,7 +177,8 @@ done
 ut_make_key "${WORK}/trusted.pem"
 TEMPLATE="${WORK}/template"
 ut_install_old_toolkit "${REPO_ROOT}" "${TEMPLATE}/addons/godot_mcp_toolkit" "${OLD_VERSION}" \
-  "${WORK}/trusted.pem" "${WORK}/trusted.pub.pem" "update_gui_old_only.txt"
+  "${WORK}/trusted.pem" "${WORK}/trusted.pub.pem" "update_gui_old_only.txt" \
+  || { echo "ERROR: could not install the old toolkit" >&2; exit 2; }
 cp -r "${REPO_ROOT}/test/update_gui_driver" "${TEMPLATE}/addons/update_gui_driver"
 printf 'extends Node\n' > "${TEMPLATE}/probe_script.gd"
 cat > "${TEMPLATE}/project.godot" <<'EOF'
@@ -212,10 +215,24 @@ prepare() {
   [[ -n "${USER_DIR}" ]] || { fail "could not read the project's user folder"; return 1; }
   ut_mark_setup_seen "${USER_DIR}"
   ut_stage_release "${dir}/server" "${tag}" "${NEW_VERSION}" "${RELEASE_ZIP}" "${RELEASE_MANIFEST}" "${WORK}/trusted.pem"
-  [[ -n "${SERVER_PID}" ]] && kill "${SERVER_PID}" 2>/dev/null
-  "${PYTHON_BIN}" -m http.server "${PORT}" --bind 127.0.0.1 --directory "${dir}/server" > "${dir}/server.log" 2>&1 &
+  # The scenario's server takes the port the last one held, so that one is gone first.
+  if [[ -n "${SERVER_PID}" ]]; then
+    kill "${SERVER_PID}" 2>/dev/null
+    wait "${SERVER_PID}" 2>/dev/null
+  fi
+  "${PYTHON_BIN}" -u -m http.server "${PORT}" --bind 127.0.0.1 --directory "${dir}/server" > "${dir}/server.log" 2>&1 &
   SERVER_PID=$!
-  sleep 1
+  # The editor's first request comes within seconds of its boot, so the editor boots
+  # only once the server answers.
+  local ready=0
+  for _ in $(seq 1 50); do
+    if "${PYTHON_BIN}" -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:${PORT}/repos/NPGameDev/godot-mcp-toolkit/releases/latest', timeout=1)" 2>/dev/null; then
+      ready=1
+      break
+    fi
+    sleep 0.2
+  done
+  [[ ${ready} -eq 1 ]] || { fail "the local server did not answer within 10 s"; return 1; }
 }
 
 # One editor boot playing `step`; waits for it and for the editor a restart starts
@@ -259,7 +276,16 @@ boot() {
   wait "${pid}"
   [[ -f "${dir}/watchdog_${step}" ]] || fail "the ${step} boot hung past 400 s"
   rm -f "${dir}/watchdog_${step}"
-  for _ in $(seq 1 300); do editors running "--path $(native_path "${dir}")/project" || break; sleep 1; done
+  local editor_pattern still_running=1
+  editor_pattern="--path $(native_path "${dir}")/project"
+  for _ in $(seq 1 300); do
+    editors running "${editor_pattern}" || { still_running=0; break; }
+    sleep 1
+  done
+  if [[ ${still_running} -eq 1 ]]; then
+    fail "the editor after the ${step} boot still ran after 300 s"
+    editors stop "${editor_pattern}"
+  fi
   local crashes_after
   crashes_after="$(grep -c "Program crashed with signal" "${dir}/boot.log" 2>/dev/null)"
   (( ${crashes_after:-0} > ${crashes_before:-0} )) && fail "the ${step} boot crashed (backtrace in boot.log)"
@@ -346,6 +372,12 @@ for SCENARIO in ${SCENARIOS}; do
         && -f "${kept}/${NEW_VERSION}/godot-mcp-toolkit-${NEW_VERSION}.update.json.sig" && ! -e "${kept}/journal.json" ]] \
         && pass "a: the verified manifest is kept for the next start, with no journal" \
         || fail "a: no kept manifest and signature, or a journal was written"
+      if ls "${kept}/${NEW_VERSION}"/*.zip > /dev/null 2>&1 \
+        || grep -qF "godot-mcp-toolkit-${NEW_VERSION}.zip" "${WORK}/${SCENARIO}/server.log"; then
+        fail "a: the release's zip was asked for without a click"
+      else
+        pass "a: the release's zip was never asked for"
+      fi
       boot b
       expect b window_shown true
       expect b pressed true
@@ -358,6 +390,13 @@ for SCENARIO in ${SCENARIOS}; do
       boot d
       expect d window_shown false
       expect d badge_visible false
+      # The window and the badge stay away because the user skipped the release the
+      # check found, not because the check found nothing.
+      cache="${USER_DIR}/addons/godot_mcp_toolkit/update_check_cache.json"
+      grep -qE "\"latest_version\":[[:space:]]*\"${NEW_VERSION}\"" "${cache}" 2>/dev/null \
+        && grep -qE "\"dismissed_version\":[[:space:]]*\"${NEW_VERSION}\"" "${cache}" \
+        && pass "d: the check knows ${NEW_VERSION} and the user skipped it" \
+        || fail "d: the check's cache does not hold ${NEW_VERSION} as found and skipped"
       expect_installed "${OLD_VERSION}"
       ;;
     unsaved)

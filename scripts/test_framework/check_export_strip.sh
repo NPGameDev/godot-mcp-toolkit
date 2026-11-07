@@ -59,7 +59,9 @@ set -uo pipefail
 GODOT_BIN="${GODOT_BIN:-godot}"
 # shellcheck source=../lib/python_bin.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib/python_bin.sh"
-PYTHON="$(UT_PYTHON="${PYTHON:-${UT_PYTHON:-}}" ut_python_bin)" || { echo "ERROR: Python 3 is required" >&2; exit 2; }
+# PYTHON reaches ut_python_bin as UT_PYTHON, and its errors name UT_PYTHON either way.
+PYTHON="$(UT_PYTHON="${PYTHON:-${UT_PYTHON:-}}" ut_python_bin)" \
+  || { echo "ERROR: Python 3 is required; set PYTHON (or UT_PYTHON) to a Python 3 interpreter" >&2; exit 2; }
 PRESET="CLI Test Build Windows"
 PRESETS_FILE="export_presets.cfg"
 ADDON_PREFIX="res://addons/godot_mcp_toolkit/"
