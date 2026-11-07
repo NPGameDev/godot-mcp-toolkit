@@ -3,9 +3,9 @@ extends RefCounted
 ## What stopped the toolkit checking an update, and what the badge says about it.
 ##
 ## A check is the walk along the trust chain and the verify of the release's manifest. The
-## user decides from the sentence here. The badge keeps its GitHub link beside every kind but
-## [constant SECURITY], whose sentence says the update won't install. The installer shows
-## [constant NOT_READY] only when a click reaches it.
+## user decides from the sentence here. The badge keeps its GitHub and Asset Store links beside
+## every kind but [constant SECURITY], whose sentence says the update won't install. The
+## installer shows [constant NOT_READY] only when a click reaches it.
 
 # Direct preload, not core/modules.gd: the aggregator preloads the installer,
 # which reaches this file.

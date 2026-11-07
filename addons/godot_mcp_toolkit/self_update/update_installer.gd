@@ -307,9 +307,12 @@ func prompt_due() -> bool:
 	return _state == AVAILABLE and install_mode() == InstallMode.ASK
 
 
-## Downloads and stages [method version], on the user's word.
+## Downloads and stages [method version], on the user's word, when the gates allow it.
 func install() -> void:
 	if _state != AVAILABLE and _state != FAILED and not can_retry_check():
+		return
+	# A click can arrive after a gate closed and before the badge redraws.
+	if not _install_allowed(_version):
 		return
 	_user_asked = true
 	_verify_tried = _version
@@ -347,8 +350,9 @@ func _evaluate() -> void:
 		_version = newer
 		_set_state(IDLE)
 		return
-	# A failure the user saw stays until they act on it.
-	if _state == FAILED and newer == _version:
+	# A failure the user saw stays until they act on it, while the gates still allow the
+	# install; a gate that closes clears it to IDLE below.
+	if _state == FAILED and newer == _version and _install_allowed(newer):
 		return
 	var record := UpdateJournal.read(_update_folder)
 	if record["state"] == UpdateJournal.STAGED and install_mode() == InstallMode.MANUAL:

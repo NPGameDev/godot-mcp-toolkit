@@ -196,9 +196,9 @@ The last command must print `vX.Y.Z`.
 - Neither notice offers a download: a hand download checks no signature, and in a leak
   `/releases/latest` can be the old key's release too. Each says "The toolkit offers the next
   release once it is published and checked." The next release comes through the ordinary check. The
-  security-check message shows no GitHub button either, since it would open the release just
-  refused; its store button stays. When the Asset Store lists the refused version, that button is
-  enabled and opens the store's listing, a separate artifact this chain does not check.
+  security-check message shows neither the GitHub button nor the store button: the first would open
+  the release just refused, and the store's copy is a separate artifact this chain does not check,
+  so the badge offers no unverified copy of the release.
 - A client behind on the old latest refuses that release from the moment it holds `trust-8` until
   the new one is out. That gap fails safe.
 - A machine that installs the release by hand starts from the `trust-8` it embeds, so it never

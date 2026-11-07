@@ -60,6 +60,7 @@ static func run(testing, tree: SceneTree) -> void:
 	_test_manual_mode_clears_a_staged_journal(testing, tree)
 	await _test_manual_mode_during_a_stage(testing, tree)
 	await _test_manual_mode_during_a_download(testing, tree)
+	await _test_try_again_follows_the_gates(testing, tree)
 	_test_settled(testing, tree)
 	_test_postponed_reason(testing, tree)
 	_test_headless_start_keeps_a_journal(testing, tree, "1.9.0")
@@ -1091,6 +1092,87 @@ static func _test_manual_mode_during_a_download(testing: Testing, tree: SceneTre
 	testing.ok(not version_folder_left, "no version folder")
 	testing.eq(badge, "1.9.0", "the version is not dismissed")
 	print("")
+
+
+# Each leg leaves a click failed in the ask mode, then closes one gate. The real project
+# setting is restored before the assertions, so a failure never leaves it changed.
+static func _test_try_again_follows_the_gates(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: Try again follows the gates")
+	var real_world := UpdateFixtures.begin_world("installer_retry_setting", "1.9.0", "ask", "1.1.0")
+	(real_world["options"] as Dictionary).erase("project_settings")
+	var had_mode := ProjectSettings.has_setting(InstallMode.SETTING)
+	var previous_mode: Variant = ProjectSettings.get_setting(InstallMode.SETTING) if had_mode else null
+	ProjectSettings.set_setting(InstallMode.SETTING, "ask")
+	var real_click: Dictionary = await _begin_failed_click(real_world, tree)
+	var real_failed := _installer_of(real_click).state()
+	ProjectSettings.set_setting(InstallMode.SETTING, "manual")
+	# The engine sends settings_changed deferred.
+	for _frame: int in range(2):
+		await tree.process_frame
+	var real_after := _installer_of(real_click).state()
+	ProjectSettings.set_setting(InstallMode.SETTING, previous_mode)
+	_end_click(real_click)
+
+	var manual_world := UpdateFixtures.begin_world("installer_retry_manual", "1.9.0", "ask", "1.1.0")
+	var manual_click: Dictionary = await _begin_failed_click(manual_world, tree)
+	((manual_world["options"] as Dictionary)["project_settings"] as UpdateFixtures.ModeSettings).set_mode("manual")
+	var manual_requests: int = await _requests_on_retry(manual_click, tree)
+	var manual_record := _record_state(manual_world)
+	var manual_stage := _has_stage(manual_world)
+	var manual_zip := _has_zip(manual_world)
+	_end_click(manual_click)
+
+	var unseen_world := UpdateFixtures.begin_world("installer_retry_unseen", "1.9.0", "ask", "1.1.0")
+	var unseen_click: Dictionary = await _begin_failed_click(unseen_world, tree)
+	Consent.set_readers(func() -> bool: return true, func(_step_id: StringName) -> bool: return false)
+	var unseen_requests: int = await _requests_on_retry(unseen_click, tree)
+	var unseen_record := _record_state(unseen_world)
+	var unseen_stage := _has_stage(unseen_world)
+	var unseen_zip := _has_zip(unseen_world)
+	_end_click(unseen_click)
+
+	var kept_world := UpdateFixtures.begin_world("installer_retry_kept", "1.9.0", "ask", "1.1.0")
+	var kept_click: Dictionary = await _begin_failed_click(kept_world, tree)
+	_installer_of(kept_click).reevaluate()
+	var kept_state := _installer_of(kept_click).state()
+	_end_click(kept_click)
+
+	testing.eq(real_failed, "failed", "the project setting at ask → the click fails")
+	testing.eq(real_after, "idle", "the project setting turned to manual → the failure clears to idle")
+	testing.eq(manual_requests, 0, "the manual mode → Try again sends no request")
+	testing.eq(manual_record, "", "the manual mode → Try again writes no journal")
+	testing.ok(not manual_stage, "the manual mode → Try again stages nothing")
+	testing.ok(not manual_zip, "the manual mode → Try again downloads no zip")
+	testing.eq(unseen_requests, 0, "the setup step unseen → Try again sends no request")
+	testing.eq(unseen_record, "", "the setup step unseen → Try again writes no journal")
+	testing.ok(not unseen_stage, "the setup step unseen → Try again stages nothing")
+	testing.ok(not unseen_zip, "the setup step unseen → Try again downloads no zip")
+	testing.eq(kept_state, "failed", "the ask mode kept → the failure stays after a re-evaluation")
+	print("")
+
+
+# Clicks Update on a kept 1.9.0 whose zip the server 404s, and waits for the failure.
+# Returns the click, for _end_click.
+static func _begin_failed_click(world: Dictionary, tree: SceneTree) -> Dictionary:
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", _STAGED_FILES, UpdateFixtures.key())
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
+	OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var click := {"world": world, "nodes": nodes, "server": server, "previous_host": previous_host}
+	await _click_and_download(click, tree)
+	return click
+
+
+# Clicks Try again and serves 120 frames. Returns how many requests the click sent.
+static func _requests_on_retry(click: Dictionary, tree: SceneTree) -> int:
+	var server: UpdateFixtures.LoopbackReleaseServer = click["server"]
+	var before := server.connections()
+	_installer_of(click).install()
+	for _frame: int in range(120):
+		server.poll()
+		await tree.process_frame
+	return server.connections() - before
 
 
 static func _test_settled(testing: Testing, tree: SceneTree) -> void:

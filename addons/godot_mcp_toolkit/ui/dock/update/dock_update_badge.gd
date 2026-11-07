@@ -10,10 +10,10 @@ extends PanelContainer
 ## picks the line for each installer state; the badge renders it. A minor or patch
 ## release gets a blue panel; a major release a green one with a bold title and an
 ## editor icon. It offers What's in this update, which opens the version's changelog,
-## two places to get the version (only the Asset Store after a failed security
-## check) and a close button that hides it until a newer one. On a staged release
-## the close button hides it until the next editor start instead, and the exit still
-## installs it.[br]
+## two places to get the version (neither after a failed security check) and a
+## close button that hides it until a newer one, giving up a download or a stage under
+## way. On a staged release the close button hides it until the next editor start
+## instead, and the exit still installs it.[br]
 ## [br]
 ## When the installer has a verified release, the badge adds Update; once the
 ## release is staged, Restart now and Don't install, and the line saying the
@@ -243,6 +243,14 @@ func _staged_on_display() -> bool:
 			and _installer.version() == _shown_version
 
 
+# Whether the installer is downloading or staging the version on display.
+func _attempt_on_display() -> bool:
+	if _installer == null or _installer.version() != _shown_version:
+		return false
+	var state: String = _installer.state()
+	return state == UpdateInstaller.DOWNLOADING or state == UpdateInstaller.PREPARING
+
+
 func _render_version() -> void:
 	var major := _runner.is_major() and _shown_version == _runner.badge_version()
 	add_theme_stylebox_override("panel", _major_style if major else _minor_style)
@@ -283,8 +291,11 @@ func _render_install_state() -> void:
 			or (check_failed and _installer.can_retry_check())
 	_update_btn.text = _RETRY_TEXT if state == UpdateInstaller.FAILED else _UPDATE_TEXT
 	_github_btn.text = _DOWNLOAD_TEXT if check_failed else _GITHUB_TEXT
-	# The sentence says it won't install, and this button would open the release it refused.
-	_github_btn.visible = not (check_failed and _installer.security_check_failed())
+	var refused: bool = check_failed and _installer.security_check_failed()
+	# The sentence says it won't install; these would open the release it refused or the
+	# store's copy of it, which the chain did not check.
+	_github_btn.visible = not refused
+	_store_btn.visible = not refused
 	_restart_btn.visible = state == UpdateInstaller.READY
 	# The view's lines say "click Restart", so the button they name reads the same.
 	_restart_btn.text = _RESTART_TEXT if view.is_empty() else _RESTART_VIEW_TEXT
@@ -423,6 +434,11 @@ func _on_dismiss_pressed() -> void:
 	if _staged_on_display():
 		_hidden_staged_version = _shown_version
 		refresh()
+		return
+	# Closing during an attempt gives the attempt up, so the close keeps its word: hidden
+	# until the next version. discard() also dismisses the version at the runner.
+	if _attempt_on_display():
+		_installer.discard()
 		return
 	if _runner != null:
 		_runner.dismiss(_shown_version)

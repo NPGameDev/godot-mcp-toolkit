@@ -54,7 +54,9 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_changelog_on_every_offer(testing, tree)
 	_test_close_hides_version(testing, tree)
 	_test_update_shows_download(testing, tree)
+	await _test_close_during_download_gives_it_up(testing, tree)
 	await _test_failed_download_offers_retry(testing, tree)
+	await _test_try_again_gone_under_manual(testing, tree)
 	_test_ready(testing, tree)
 	_test_not_now_closes_the_ready_view(testing, tree)
 	_test_ready_while_newer_is_out(testing, tree)
@@ -279,6 +281,41 @@ static func _test_update_shows_download(testing: Testing, tree: SceneTree) -> vo
 	print("")
 
 
+# The frames run on past the close, at least 60 and until the attempt settles, so a
+# download or a stage that went on would show.
+static func _test_close_during_download_gives_it_up(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: closing it during a download gives the download up")
+	var world := UpdateFixtures.begin_world("badge_close_download", "1.9.0", "ask", "1.1.0")
+	var archive := UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+	(world["options"] as Dictionary)["restart_probe"] = UpdateFixtures.RestartProbeStandIn.new()
+	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.archive_name("1.9.0"): archive})
+	var previous_host := _set_host(server.host())
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var installer: UpdateInstaller = nodes["installer"]
+	_press(badge, "UpdateButton")
+	var pressed_state := installer.state()
+	_press(badge, "DismissButton")
+	var frames := 0
+	while frames < 600 and (frames < 60 or installer.state() == "downloading" or installer.state() == "preparing"):
+		server.poll()
+		await tree.process_frame
+		frames += 1
+	var state := installer.state()
+	var record: String = UpdateJournal.read(str(world["updates"]))["state"]
+	var zip_left := UpdateFixtures.has_release_file(world, "1.9.0", ReleaseAssets.archive_name("1.9.0"))
+	var badge_version := (nodes["runner"] as UpdateCheckRunner).badge_version()
+	_end(world, nodes)
+	server.stop()
+	_restore_host(previous_host)
+	testing.eq(pressed_state, "downloading", "Update → the download starts")
+	testing.eq(state, "idle", "close during the download → idle, and nothing stages later")
+	testing.eq(record, "", "and no journal")
+	testing.ok(not zip_left, "and no zip")
+	testing.eq(badge_version, "", "and the runner hides 1.9.0 from now on")
+	print("")
+
+
 # A server holding no assets answers the zip request with a 404, so the failure arrives
 # in a few frames; a refused port would take the engine's 30 s connect timeout.
 static func _test_failed_download_offers_retry(testing: Testing, tree: SceneTree) -> void:
@@ -306,6 +343,42 @@ static func _test_failed_download_offers_retry(testing: Testing, tree: SceneTree
 	testing.ok(update_shown, "a failed download → the button shows again")
 	testing.eq(button_text, "Try again", "and reads Try again")
 	testing.ok(status.begins_with("Couldn't install: the download failed"), "the status line says the download failed")
+	print("")
+
+
+# The download fails as in _test_failed_download_offers_retry; the press after the mode change
+# reaches the handler although the button is hidden, as a click raced against the change would.
+static func _test_try_again_gone_under_manual(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: the manual mode takes Try again away")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := _set_host(server.host())
+	var world := UpdateFixtures.begin_world("badge_retry_manual", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var installer: UpdateInstaller = nodes["installer"]
+	_press(badge, "UpdateButton")
+	var frames := 0
+	while installer.state() == "downloading" and frames < 600:
+		server.poll()
+		await tree.process_frame
+		frames += 1
+	var failed_state := installer.state()
+	((world["options"] as Dictionary)["project_settings"] as UpdateFixtures.ModeSettings).set_mode("manual")
+	installer.reevaluate()
+	var retry_shown := _shown(badge, "UpdateButton")
+	var before_press := server.connections()
+	_press(badge, "UpdateButton")
+	for _frame: int in range(60):
+		server.poll()
+		await tree.process_frame
+	var press_requests := server.connections() - before_press
+	_end(world, nodes)
+	server.stop()
+	_restore_host(previous_host)
+	testing.eq(failed_state, "failed", "the download fails first")
+	testing.ok(not retry_shown, "the mode set to manual → no Try again")
+	testing.eq(press_requests, 0, "the mode set to manual → a press sends no request")
 	print("")
 
 
@@ -923,12 +996,14 @@ static func _test_unreachable_keeps_the_link(testing: Testing, tree: SceneTree) 
 	var status := _text(nodes["badge"], "Status")
 	var link_shown := _shown(nodes["badge"], "GitHubButton")
 	var link_text := _text(nodes["badge"], "GitHubButton")
+	var store_shown := _shown(nodes["badge"], "AssetStoreButton")
 	_end(world, nodes)
 	server.stop()
 	_restore_host(previous_host)
 	testing.ok(status.begins_with("Couldn't reach GitHub to check this update."), "the status line says what failed")
 	testing.ok(link_shown, "the link stays")
 	testing.eq(link_text, "Download from GitHub", "and reads Download from GitHub")
+	testing.ok(store_shown, "a failed reach → the store button stays")
 	print("")
 
 
@@ -974,9 +1049,11 @@ static func _test_security_failure_hides_the_link(testing: Testing, tree: SceneT
 	var status := _text(badge, "Status")
 	var update_shown := _shown(badge, "UpdateButton")
 	var link_shown := _shown(badge, "GitHubButton")
+	var store_at_start := _shown(badge, "AssetStoreButton")
 	_press(badge, "UpdateButton")
 	await _poll_until_failed(installer, server, tree)
 	var link_shown_after_click := _shown(badge, "GitHubButton")
+	var store_after_click := _shown(badge, "AssetStoreButton")
 	_end(world, nodes)
 	server.stop()
 	_restore_host(previous_host)
@@ -985,6 +1062,8 @@ static func _test_security_failure_hides_the_link(testing: Testing, tree: SceneT
 	testing.ok(update_shown, "Update stays on offer")
 	testing.ok(not link_shown, "at a start → no link")
 	testing.ok(not link_shown_after_click, "after a click that fails the same way → no link")
+	testing.ok(not store_at_start, "at a start → no store button")
+	testing.ok(not store_after_click, "after a click that fails the same way → no store button")
 	print("")
 
 
