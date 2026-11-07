@@ -15,6 +15,7 @@ extends RefCounted
 ## run() is a coroutine: the run-ending groups open the wizard's dialog in the
 ## runner's tree and await a frame, so the runner must [code]await[/code] it.
 
+const Testing := preload("res://test/units/testing.gd")
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
 const SetupStepTracker := preload("res://addons/godot_mcp_toolkit/core/setup_step_tracker.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
@@ -268,7 +269,7 @@ static func _test_seen_on_close(testing) -> void:
 	var all_ids := SetupSteps.all_ids()
 	testing.eq(SetupSteps.seen_on_close(all_ids, 0, _ids([&"welcome"])),
 			_ids([&"welcome", &"optional_steps", &"dock"]),
-			"× on welcome in a first run → welcome and the optional steps; mcp_json and updates stay unseen")
+			"× on welcome in a first run → welcome and the optional steps; mcp_json, updates and update_install stay unseen")
 	var visited := _ids([&"welcome", &"mcp_json", &"optional_steps", &"updates"])
 	testing.eq(SetupSteps.seen_on_close(all_ids, 3, visited), _ids([&"updates", &"dock"]),
 			"× on updates → updates and the unvisited dock")
@@ -300,20 +301,23 @@ static func _test_consent_gate(testing) -> void:
 
 # Installing needs everything checking needs, plus the install step seen and a mode
 # that installs; every other combination stays manual.
-static func _test_install_consent_gate(testing) -> void:
+static func _test_install_consent_gate(testing: Testing) -> void:
 	testing.begin("Consent gate: may install updates")
-	for check_allowed in [true, false]:
-		for install_seen in [true, false]:
-			for mode in ["manual", "ask", "automatic", "bogus"]:
+	var results: Array[Array] = []
+	for check_allowed: bool in [true, false]:
+		for install_seen: bool in [true, false]:
+			for mode: String in ["manual", "ask", "automatic", "bogus"]:
 				Consent.set_readers(
 						func() -> bool: return check_allowed,
 						func(step_id: StringName) -> bool:
 							return check_allowed if step_id == &"updates" else install_seen and step_id == &"update_install")
 				var expected: bool = check_allowed and install_seen and mode == "ask"
-				testing.eq(Consent.may_install_updates(mode), expected,
+				results.append([Consent.may_install_updates(mode), expected,
 						"check %s, install step %s, mode %s" % [
-							"allowed" if check_allowed else "off", "seen" if install_seen else "unseen", mode])
+							"allowed" if check_allowed else "off", "seen" if install_seen else "unseen", mode]])
 	Consent.reset_readers()
+	for result: Array in results:
+		testing.eq(result[0], result[1], str(result[2]))
 	print("")
 
 

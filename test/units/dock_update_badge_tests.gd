@@ -21,8 +21,6 @@ const UpdateApplier := preload("res://addons/godot_mcp_toolkit/self_update/updat
 const UpdateFixtures := preload("res://test/units/update_fixtures.gd")
 const TrustFixtures := preload("res://test/units/trust_fixtures.gd")
 
-const _HOST_ENV := "GODOT_MCP_UPDATE_CHECK_HOST"
-
 
 # Records the toasts the badge sends through the dock's sink.
 class _ToastLog extends RefCounted:
@@ -126,13 +124,15 @@ static func _restart(world: Dictionary, nodes: Dictionary, tree: SceneTree) -> D
 	return _start(world, tree)
 
 
+# Returns whether the check failed in time.
 static func _poll_until_failed(
-		installer: UpdateInstaller, server: UpdateFixtures.LoopbackReleaseServer, tree: SceneTree) -> void:
+		installer: UpdateInstaller, server: UpdateFixtures.LoopbackReleaseServer, tree: SceneTree) -> bool:
 	var frames := 0
 	while not installer.check_failed() and frames < 1200:
 		server.poll()
 		await tree.process_frame
 		frames += 1
+	return installer.check_failed()
 
 
 # An unclicked 404 changes nothing on screen, so the log is the one sign that it came. Returns
@@ -169,19 +169,6 @@ static func _shown(badge: Node, child_name: String) -> bool:
 
 static func _press(badge: Node, child_name: String) -> void:
 	(_child(badge, child_name) as Button).pressed.emit()
-
-
-static func _set_host(host: String) -> String:
-	var previous := OS.get_environment(_HOST_ENV)
-	OS.set_environment(_HOST_ENV, host)
-	return previous
-
-
-static func _restore_host(previous: String) -> void:
-	if previous.is_empty():
-		OS.unset_environment(_HOST_ENV)
-	else:
-		OS.set_environment(_HOST_ENV, previous)
 
 
 static func _test_available(testing: Testing, tree: SceneTree) -> void:
@@ -273,7 +260,7 @@ static func _test_close_hides_version(testing: Testing, tree: SceneTree) -> void
 static func _test_update_shows_download(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: pressing Update shows the download")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_download", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	var nodes := _start(world, tree)
@@ -283,7 +270,7 @@ static func _test_update_shows_download(testing: Testing, tree: SceneTree) -> vo
 	var update_shown := _shown(badge, "UpdateButton")
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(status, "Downloading 1.9.0…", "Update → the status line shows the download")
 	testing.ok(not update_shown, "while downloading → no Update")
 	print("")
@@ -297,7 +284,7 @@ static func _test_close_during_download_gives_it_up(testing: Testing, tree: Scen
 	var archive := UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	(world["options"] as Dictionary)["restart_probe"] = UpdateFixtures.RestartProbeStandIn.new()
 	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.archive_name("1.9.0"): archive})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
 	var installer: UpdateInstaller = nodes["installer"]
@@ -315,7 +302,7 @@ static func _test_close_during_download_gives_it_up(testing: Testing, tree: Scen
 	var badge_version := (nodes["runner"] as UpdateCheckRunner).badge_version()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(pressed_state, "downloading", "Update → the download starts")
 	testing.eq(state, "idle", "close during the download → idle, and nothing stages later")
 	testing.eq(record, "", "and no journal")
@@ -329,7 +316,7 @@ static func _test_close_during_download_gives_it_up(testing: Testing, tree: Scen
 static func _test_failed_download_offers_retry(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a failed download offers Try again")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_retry", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	var nodes := _start(world, tree)
@@ -346,7 +333,7 @@ static func _test_failed_download_offers_retry(testing: Testing, tree: SceneTree
 	var status := _text(badge, "Status")
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(frames < 600, "the failure arrives within 600 frames")
 	testing.ok(update_shown, "a failed download → the button shows again")
 	testing.eq(button_text, "Try again", "and reads Try again")
@@ -359,7 +346,7 @@ static func _test_failed_download_offers_retry(testing: Testing, tree: SceneTree
 static func _test_try_again_gone_under_manual(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: the manual mode takes Try again away")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_retry_manual", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	var nodes := _start(world, tree)
@@ -383,7 +370,7 @@ static func _test_try_again_gone_under_manual(testing: Testing, tree: SceneTree)
 	var press_requests := server.connections() - before_press
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(failed_state, "failed", "the download fails first")
 	testing.ok(not retry_shown, "the mode set to manual → no Try again")
 	testing.eq(press_requests, 0, "the mode set to manual → a press sends no request")
@@ -395,7 +382,7 @@ static func _test_try_again_gone_under_manual(testing: Testing, tree: SceneTree)
 static func _test_refused_try_again_redraws(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a Try again the consent gate refuses goes away")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_retry_refused", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	var nodes := _start(world, tree)
@@ -419,7 +406,7 @@ static func _test_refused_try_again_redraws(testing: Testing, tree: SceneTree) -
 	var state := installer.state()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(failed_state, "failed", "the download fails first")
 	testing.eq(press_requests, 0, "the setup step unseen → a press sends no request")
 	testing.ok(not retry_shown, "and Try again is gone after the press")
@@ -478,7 +465,7 @@ static func _test_not_now_closes_the_ready_view(testing: Testing, tree: SceneTre
 static func _test_ready_while_newer_is_out(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a staged release shows whichever newer version is out")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_ready_newer", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.8.0", {"core/a.gd": "older"}, "1.1.0", UpdateFixtures.key())
 	var nodes := _start(world, tree)
@@ -497,7 +484,7 @@ static func _test_ready_while_newer_is_out(testing: Testing, tree: SceneTree) ->
 	var major_icon_shown := _shown(nodes["badge"], "MajorIcon")
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 
 	testing.ok(status.begins_with("1.8.0 "), "the status line names the staged version")
 	testing.ok(title.contains("1.8.0"), "and so does the title")
@@ -521,7 +508,7 @@ static func _test_stage_shows_its_own_state_text(testing: Testing, tree: SceneTr
 	options["restart_probe"] = probe
 	options["stage_budget_ms"] = 0
 	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.archive_name("1.9.0"): archive})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
 	var installer: UpdateInstaller = nodes["installer"]
@@ -536,7 +523,7 @@ static func _test_stage_shows_its_own_state_text(testing: Testing, tree: SceneTr
 	installer.state_changed.disconnect(record)
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(frames < 1200, "the release is staged within 1200 frames")
 	testing.ok(status_by_state.has("downloading") and status_by_state.has("preparing"),
 			"the badge rendered both the download and the stage")
@@ -753,7 +740,7 @@ static func _test_toast_once_for_verified(testing: Testing, tree: SceneTree) -> 
 	testing.begin("Update badge: a release verified during the session is announced once")
 	var server := UpdateFixtures.LoopbackReleaseServer.new(
 			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_toast_verified", "1.9.0", "ask", "1.1.0")
 	var nodes := _start(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
@@ -764,7 +751,7 @@ static func _test_toast_once_for_verified(testing: Testing, tree: SceneTree) -> 
 	var after_repeat: Array = (nodes["toasts"] as _ToastLog).messages.duplicate()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(frames < 1200, "the release is verified within 1200 frames")
 	testing.eq(first, ["Godot MCP Toolkit 1.9.0 is available. Update it from the MCP Toolkit dock."],
 			"a release verified during the session → one toast naming it")
@@ -813,7 +800,7 @@ static func _test_click_on_link_only_announces_once(testing: Testing, tree: Scen
 	failing_server.redirect("/" + ReleaseAssets.trust_document_name(2), 503, "")
 	var release_server := UpdateFixtures.LoopbackReleaseServer.new(
 			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
-	var previous_host := _set_host(failing_server.host())
+	var previous_host := UpdateFixtures.set_host(failing_server.host())
 	var world := UpdateFixtures.begin_world("badge_toast_click", "1.9.0", "ask", "1.1.0")
 	var probe := UpdateFixtures.RestartProbeStandIn.new()
 	probe.unsaved_scripts = PackedStringArray(["a.gd"])
@@ -822,10 +809,9 @@ static func _test_click_on_link_only_announces_once(testing: Testing, tree: Scen
 	var badge: Node = nodes["badge"]
 	var installer: UpdateInstaller = nodes["installer"]
 	var toasts: Array = (nodes["toasts"] as _ToastLog).messages
-	await _poll_until_failed(installer, failing_server, tree)
-	var failed := installer.check_failed()
+	var failed: bool = await _poll_until_failed(installer, failing_server, tree)
 	var toasts_before_click := toasts.size()
-	_set_host(release_server.host())
+	UpdateFixtures.set_host(release_server.host())
 	_press(badge, "UpdateButton")
 	var frames := await _serve_until(release_server, installer, "ready", tree)
 	var state := installer.state()
@@ -836,7 +822,7 @@ static func _test_click_on_link_only_announces_once(testing: Testing, tree: Scen
 	_end(world, nodes)
 	failing_server.stop()
 	release_server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(failed, "the first check fails → the badge only links")
 	testing.eq(toasts_before_click, 0, "and no toast")
 	testing.ok(frames < 1200, "the click's release is staged within 1200 frames")
@@ -852,7 +838,7 @@ static func _test_failed_check_keeps_the_links(testing: Testing, tree: SceneTree
 	testing.begin("Update badge: a failed check says why, keeps the download link and offers Update")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
 	server.redirect("/" + ReleaseAssets.trust_document_name(2), 503, "")
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_failed_check", "1.9.0", "ask", "1.1.0")
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
@@ -880,7 +866,7 @@ static func _test_failed_check_keeps_the_links(testing: Testing, tree: SceneTree
 	var status_after_click := _text(badge, "Status")
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	var github_opening := "GitHub isn't responding."
 	testing.ok(status.begins_with(github_opening), "the status line says what failed")
 	testing.ok(update_shown, "Update stays on offer")
@@ -922,7 +908,7 @@ static func _test_no_data_folder_offers_no_update(testing: Testing, tree: SceneT
 static func _test_key_dropped_after_staging_shows(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a key dropped after staging shows plainly at the next start")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_key_dropped", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
 	var store := ProjectSettings.globalize_path(str((world["options"] as Dictionary)["trust_store"]))
@@ -935,7 +921,7 @@ static func _test_key_dropped_after_staging_shows(testing: Testing, tree: SceneT
 	var status := _text(badge, "Status")
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(title, "Godot MCP Toolkit 1.9.0 was not installed.", "the title names the release")
 	testing.ok(status.begins_with("The update is not signed by a key this toolkit trusts. Version 1.1.0 is still installed."),
 			"the status line gives the reason in plain words")
@@ -945,7 +931,7 @@ static func _test_key_dropped_after_staging_shows(testing: Testing, tree: SceneT
 static func _test_release_not_ready_keeps_update(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a 404 on the manifest is quiet at a start, and a click that reaches it says so and keeps Update")
 	var empty_server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(empty_server.host())
+	var previous_host := UpdateFixtures.set_host(empty_server.host())
 	var world := UpdateFixtures.begin_world("badge_not_ready", "1.9.0", "ask", "1.1.0")
 	var nodes := _start(world, tree)
 	var logged: bool = await _poll_until_logged_404(nodes["installer"], empty_server, tree)
@@ -960,15 +946,15 @@ static func _test_release_not_ready_keeps_update(testing: Testing, tree: SceneTr
 	var failing_server := UpdateFixtures.LoopbackReleaseServer.new({})
 	failing_server.redirect("/" + ReleaseAssets.trust_document_name(2), 503, "")
 	var missing_server := UpdateFixtures.LoopbackReleaseServer.new({})
-	_set_host(failing_server.host())
+	UpdateFixtures.set_host(failing_server.host())
 	world = UpdateFixtures.begin_world("badge_not_ready_click", "1.9.0", "ask", "1.1.0")
 	nodes = _start(world, tree)
 	var badge: Node = nodes["badge"]
 	var installer: UpdateInstaller = nodes["installer"]
-	await _poll_until_failed(installer, failing_server, tree)
-	_set_host(missing_server.host())
+	var start_failed: bool = await _poll_until_failed(installer, failing_server, tree)
+	UpdateFixtures.set_host(missing_server.host())
 	_press(badge, "UpdateButton")
-	await _poll_until_failed(installer, missing_server, tree)
+	var click_failed: bool = await _poll_until_failed(installer, missing_server, tree)
 	var status := _text(badge, "Status")
 	var update_shown := _shown(badge, "UpdateButton")
 	var update_disabled := (_child(badge, "UpdateButton") as Button).disabled
@@ -976,19 +962,22 @@ static func _test_release_not_ready_keeps_update(testing: Testing, tree: SceneTr
 	var link_text := _text(badge, "GitHubButton")
 	var before_click := missing_server.connections()
 	_press(badge, "UpdateButton")
-	await _poll_until_failed(installer, missing_server, tree)
+	var second_click_failed: bool = await _poll_until_failed(installer, missing_server, tree)
 	var click_requests := missing_server.connections() - before_click
 	var status_after_click := _text(badge, "Status")
 	_end(world, nodes)
 	failing_server.stop()
 	missing_server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(logged, "an unclicked 404 → the log has it")
 	testing.ok(not quiet_status_shown, "an unclicked 404 → no sentence")
 	testing.ok(not quiet_update_shown, "an unclicked 404 → no Update")
 	testing.ok(not quiet_failed, "an unclicked 404 → not a failed check")
 	testing.ok(quiet_link_shown, "an unclicked 404 → the link stays")
 	testing.eq(quiet_link_text, "Get it on GitHub", "an unclicked 404 → and reads as usual")
+	testing.ok(start_failed, "a start whose check fails → the check fails within 1200 frames")
+	testing.ok(click_failed, "a click that reaches the 404 → its check fails within 1200 frames")
+	testing.ok(second_click_failed, "a second click, still missing → its check fails within 1200 frames")
 	var opening := "This release isn't ready to install from the editor yet."
 	testing.ok(status.begins_with(opening), "a click that reaches the 404 → the status line says the release isn't ready")
 	testing.ok(update_shown and not update_disabled, "Update stays clickable")
@@ -1002,14 +991,14 @@ static func _test_release_not_ready_keeps_update(testing: Testing, tree: SceneTr
 static func _test_release_offered_once_its_assets_are_up(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: after an unclicked 404, a new start offers Update once the assets are up")
 	var empty_server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(empty_server.host())
+	var previous_host := UpdateFixtures.set_host(empty_server.host())
 	var world := UpdateFixtures.begin_world("badge_assets_up", "1.9.0", "ask", "1.1.0")
 	var nodes := _start(world, tree)
-	await _poll_until_logged_404(nodes["installer"], empty_server, tree)
+	var logged: bool = await _poll_until_logged_404(nodes["installer"], empty_server, tree)
 	var update_before := _shown(nodes["badge"], "UpdateButton")
 	var full_server := UpdateFixtures.LoopbackReleaseServer.new(
 			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
-	_set_host(full_server.host())
+	UpdateFixtures.set_host(full_server.host())
 	nodes = _restart(world, nodes, tree)
 	var installer: UpdateInstaller = nodes["installer"]
 	var frames := 0
@@ -1023,7 +1012,8 @@ static func _test_release_offered_once_its_assets_are_up(testing: Testing, tree:
 	_end(world, nodes)
 	empty_server.stop()
 	full_server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
+	testing.ok(logged, "the assets missing → the log has the 404")
 	testing.ok(not update_before, "the assets missing → no Update")
 	testing.ok(update_after, "the assets up, a new start → Update")
 	testing.ok(not status_shown, "and no sentence")
@@ -1035,18 +1025,19 @@ static func _test_unreachable_keeps_the_link(testing: Testing, tree: SceneTree) 
 	testing.begin("Update badge: a check that can't reach GitHub keeps the download link")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
 	server.hold("/" + ReleaseAssets.trust_document_name(2))
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_unreachable", "1.9.0", "ask", "1.1.0")
 	(world["options"] as Dictionary)["check_timeout_sec"] = 0.2
 	var nodes := _start(world, tree)
-	await _poll_until_failed(nodes["installer"], server, tree)
+	var failed: bool = await _poll_until_failed(nodes["installer"], server, tree)
 	var status := _text(nodes["badge"], "Status")
 	var link_shown := _shown(nodes["badge"], "GitHubButton")
 	var link_text := _text(nodes["badge"], "GitHubButton")
 	var store_shown := _shown(nodes["badge"], "AssetStoreButton")
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
+	testing.ok(failed, "a held request → the check times out and fails within 1200 frames")
 	testing.ok(status.begins_with("Couldn't reach GitHub to check this update."), "the status line says what failed")
 	testing.ok(link_shown, "the link stays")
 	testing.eq(link_text, "Download from GitHub", "and reads Download from GitHub")
@@ -1061,7 +1052,7 @@ static func _test_store_write_keeps_the_link(testing: Testing, tree: SceneTree) 
 	var document := TrustFixtures.file_of(
 			TrustFixtures.body(2, [TrustFixtures.root_key()], 1, [UpdateFixtures.key()]), [TrustFixtures.root_key()])
 	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.trust_document_name(2): document})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_store_write", "1.9.0", "ask", "1.1.0")
 	var options: Dictionary = world["options"]
 	var store: String = options["trust_store"]
@@ -1069,7 +1060,7 @@ static func _test_store_write_keeps_the_link(testing: Testing, tree: SceneTree) 
 	FolderFiles.write_checked(ProjectSettings.globalize_path(blocked_store), "a file".to_utf8_buffer())
 	options["trust_store"] = blocked_store
 	var nodes := _start(world, tree)
-	await _poll_until_failed(nodes["installer"], server, tree)
+	var failed: bool = await _poll_until_failed(nodes["installer"], server, tree)
 	var status := _text(nodes["badge"], "Status")
 	var link_shown := _shown(nodes["badge"], "GitHubButton")
 	var link_text := _text(nodes["badge"], "GitHubButton")
@@ -1077,7 +1068,8 @@ static func _test_store_write_keeps_the_link(testing: Testing, tree: SceneTree) 
 	_end(world, nodes)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(blocked_store))
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
+	testing.ok(failed, "a store that can't be written → the check fails within 1200 frames")
 	testing.ok(status.begins_with("Couldn't save update security data to "), "the status line says what failed")
 	testing.ok(link_shown, "the link stays")
 	testing.eq(link_text, "Download from GitHub", "and reads Download from GitHub")
@@ -1087,26 +1079,31 @@ static func _test_store_write_keeps_the_link(testing: Testing, tree: SceneTree) 
 static func _test_security_failure_hides_the_link(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a failed security check offers no download link, at a start or after a click")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.trust_document_name(2): "not a document".to_utf8_buffer()})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_security", "1.9.0", "ask", "1.1.0")
 	var nodes := _start(world, tree)
 	var badge: Node = nodes["badge"]
 	var installer: UpdateInstaller = nodes["installer"]
-	await _poll_until_failed(installer, server, tree)
+	var start_failed: bool = await _poll_until_failed(installer, server, tree)
 	var status := _text(badge, "Status")
 	var update_shown := _shown(badge, "UpdateButton")
 	var link_shown := _shown(badge, "GitHubButton")
 	var store_at_start := _shown(badge, "AssetStoreButton")
+	var before_click := server.connections()
 	_press(badge, "UpdateButton")
-	await _poll_until_failed(installer, server, tree)
+	var click_failed: bool = await _poll_until_failed(installer, server, tree)
+	var click_requests := server.connections() - before_click
 	var link_shown_after_click := _shown(badge, "GitHubButton")
 	var store_after_click := _shown(badge, "AssetStoreButton")
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
+	testing.ok(start_failed, "at a start → the check fails within 1200 frames")
 	testing.ok(status.begins_with("This update failed its security check, so it won't install."),
 			"the status line says it won't install")
 	testing.ok(update_shown, "Update stays on offer")
+	testing.eq(click_requests, 1, "a click → the chain asked for anew")
+	testing.ok(click_failed, "and its check fails within 1200 frames")
 	testing.ok(not link_shown, "at a start → no link")
 	testing.ok(not link_shown_after_click, "after a click that fails the same way → no link")
 	testing.ok(not store_at_start, "at a start → no store button")
@@ -1117,13 +1114,13 @@ static func _test_security_failure_hides_the_link(testing: Testing, tree: SceneT
 static func _test_security_sentence_repeats_until_closed(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: the security sentence shows again at each start until closed, and closing covers that version only")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.trust_document_name(2): "not a document".to_utf8_buffer()})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("badge_security_again", "1.9.0", "ask", "1.1.0")
 	var nodes := _start(world, tree)
-	await _poll_until_failed(nodes["installer"], server, tree)
+	var first_failed: bool = await _poll_until_failed(nodes["installer"], server, tree)
 	var first_status := _text(nodes["badge"], "Status")
 	nodes = _restart(world, nodes, tree)
-	await _poll_until_failed(nodes["installer"], server, tree)
+	var second_failed: bool = await _poll_until_failed(nodes["installer"], server, tree)
 	var second_status := _text(nodes["badge"], "Status")
 	var second_title := _text(nodes["badge"], "Title")
 	_press(nodes["badge"], "DismissButton")
@@ -1135,13 +1132,15 @@ static func _test_security_sentence_repeats_until_closed(testing: Testing, tree:
 	state["latest_version"] = "1.10.0"
 	FolderFiles.write_checked(str(world["cache_path"]), JSON.stringify(state).to_utf8_buffer())
 	nodes = _restart(world, nodes, tree)
-	await _poll_until_failed(nodes["installer"], server, tree)
+	var newer_failed: bool = await _poll_until_failed(nodes["installer"], server, tree)
 	var newer_title := _text(nodes["badge"], "Title")
 	var newer_status := _text(nodes["badge"], "Status")
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	var opening := "This update failed its security check, so it won't install."
+	testing.ok(first_failed and second_failed and newer_failed,
+			"each start's check fails within 1200 frames")
 	testing.ok(first_status.begins_with(opening), "the first start → the sentence")
 	testing.ok(second_status.begins_with(opening), "a second start with no click → the sentence again")
 	testing.eq(second_title, "Godot MCP Toolkit 1.9.0 is available.", "about the same version")
@@ -1158,7 +1157,7 @@ static func _test_key_dropped_notice_offers_no_download(testing: Testing, tree: 
 	for through_exit: bool in [true, false]:
 		var label := "after the exit's refusal" if through_exit else "at a start that finds it"
 		var server := UpdateFixtures.LoopbackReleaseServer.new({})
-		var previous_host := _set_host(server.host())
+		var previous_host := UpdateFixtures.set_host(server.host())
 		var world := UpdateFixtures.begin_world("badge_link_exit" if through_exit else "badge_link_start", "1.9.0", "ask", "1.1.0")
 		UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
 		var store := ProjectSettings.globalize_path(str((world["options"] as Dictionary)["trust_store"]))
@@ -1174,7 +1173,7 @@ static func _test_key_dropped_notice_offers_no_download(testing: Testing, tree: 
 		var link_shown := _shown(badge, "GitHubButton")
 		_end(world, nodes)
 		server.stop()
-		_restore_host(previous_host)
+		UpdateFixtures.restore_host(previous_host)
 		testing.eq(title, "Godot MCP Toolkit 1.9.0 was not installed.", "%s → the notice names the release" % label)
 		testing.ok(not link_shown, "%s → no link" % label)
 		testing.ok(status.contains("The toolkit offers the next release once it is published and checked."),

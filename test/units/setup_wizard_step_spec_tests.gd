@@ -1,10 +1,11 @@
 @tool
 extends RefCounted
 ## Pinning tests for the setup wizard's step copy: every step's spec dictionary,
-## verbatim, as the wizard's dispatch returns it, and the .mcp.json step's pin-choice
-## control for each pin mode. Each spec is compared whole: every string, label,
-## action and flag is the wizard's observable output.
+## verbatim, as the wizard's dispatch returns it, the .mcp.json step's pin-choice
+## control for each pin mode, and the install step's mode choice. Each spec is compared
+## whole: every string, label, action and flag is the wizard's observable output.
 
+const Testing := preload("res://test/units/testing.gd")
 const OnboardingWizard := preload("res://addons/godot_mcp_toolkit/ui/onboarding_wizard.gd")
 const StepSpecs := preload("res://addons/godot_mcp_toolkit/ui/setup_wizard/step_specs.gd")
 const SetupSteps := preload("res://addons/godot_mcp_toolkit/core/setup_steps.gd")
@@ -202,13 +203,13 @@ static func _test_pin_choice_control(testing) -> void:
 
 
 # The install step's two modes, the stored one checked; a value that is not a mode,
-# the retired automatic among them, reads as manual, so nothing installs on a typo.
-static func _test_install_choice_control(testing) -> void:
+# automatic among them, reads as manual, so nothing installs on a typo.
+static func _test_install_choice_control(testing: Testing) -> void:
 	testing.begin("Setup wizard: the install-choice control per mode")
 	var had_value: bool = ProjectSettings.has_setting(_INSTALL_MODE_SETTING)
 	var previous: Variant = ProjectSettings.get_setting(_INSTALL_MODE_SETTING) if had_value else null
 	var shapes := {}
-	for setting in [null, "automatic", "manual", "sometimes"]:
+	for setting: Variant in [null, "automatic", "manual", "sometimes"]:
 		ProjectSettings.set_setting(_INSTALL_MODE_SETTING, setting)
 		var wizard := OnboardingWizard.new(null, null, null, null)
 		var box: VBoxContainer = wizard._build_install_choice("the step text")
@@ -224,16 +225,19 @@ static func _test_install_choice_control(testing) -> void:
 		["Label", "This is the project's current setting."],
 	]
 	testing.eq(shapes["<null>"], {"rows": rows, "pressed": [true, false]}, "no setting → Ask checked")
-	testing.eq(shapes["automatic"], {"rows": rows, "pressed": [false, true]}, "the retired automatic → Don't install checked")
+	testing.eq(shapes["automatic"], {"rows": rows, "pressed": [false, true]}, "automatic, which is not a mode → Don't install checked")
 	testing.eq(shapes["manual"], {"rows": rows, "pressed": [false, true]}, "manual → Don't install checked")
 	testing.eq(shapes["sometimes"], {"rows": rows, "pressed": [false, true]}, "an unknown value → Don't install checked")
 	print("")
 
 
 # The step starts from the project's stored mode and Next keeps it, so a project committed
-# to manual is never switched to ask by someone clicking through the wizard.
-static func _test_install_choice_keeps_the_project_setting(testing) -> void:
+# to manual is never switched to ask by someone clicking through the wizard. Each run is
+# the install step alone, opened outside the tree: Next ends it, and the dialog frees
+# itself.
+static func _test_install_choice_keeps_the_project_setting(testing: Testing) -> void:
 	testing.begin("Setup wizard: the install step preselects the project's mode and Next keeps it")
+	var steps: Array[StringName] = [SetupSteps.UPDATE_INSTALL]
 	var pressed := {}
 	var saves := {}
 	var stored := {}
@@ -242,20 +246,22 @@ static func _test_install_choice_keeps_the_project_setting(testing) -> void:
 		if setting != null:
 			store.values[_INSTALL_MODE_SETTING] = setting
 		var wizard := OnboardingWizard.new(null, null, null, null)
-		# Seeds the store; the step's builder and Next's handler are called directly
-		# because the wizard's dialog needs the editor.
+		# Seeds the store the install step reads and saves; opens the run without the
+		# editor, as the setup wizard tests do.
 		wizard._project_settings = store
-		var box: VBoxContainer = wizard._build_install_choice("the step text")
-		pressed[str(setting)] = _describe(box)["pressed"]
-		wizard._apply_install_choice()
+		var dialog := wizard._open_run(steps)
+		pressed[str(setting)] = _describe(_content_of(dialog))["pressed"]
+		dialog.get_ok_button().pressed.emit()
 		saves[str(setting)] = store.saves
 		stored[str(setting)] = store.values.get(_INSTALL_MODE_SETTING)
-		box.free()
 	testing.eq(pressed["<null>"], [true, false], "unset → Ask checked")
 	testing.eq(pressed["manual"], [false, true], "manual → Don't install checked")
 	testing.eq(pressed["ask"], [true, false], "ask → Ask checked")
+	testing.eq(stored["<null>"], null, "Next on unset → still unset, since ask is the default")
+	testing.eq(saves["<null>"], 0, "Next on unset → no save")
 	testing.eq(stored["manual"], "manual", "Next on a committed manual → still manual")
 	testing.eq(saves["manual"], 0, "with no save")
+	testing.eq(stored["ask"], "ask", "Next on ask → still ask")
 	testing.eq(saves["ask"], 0, "Next on ask → no save")
 	print("")
 
@@ -275,6 +281,15 @@ static func _describe(box: VBoxContainer) -> Dictionary:
 		else:
 			rows.append([child.get_class(), ""])
 	return {"rows": rows, "pressed": pressed}
+
+
+# The step's body, which the wizard adds to the dialog. The dialog's own label and
+# buttons are internal children, which get_children() leaves out.
+static func _content_of(dialog: AcceptDialog) -> VBoxContainer:
+	for child: Node in dialog.get_children():
+		if child is VBoxContainer:
+			return child as VBoxContainer
+	return null
 
 
 # A project-settings store that counts its saves.

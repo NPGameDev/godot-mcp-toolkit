@@ -175,8 +175,9 @@ static func _test_staged_record(testing: Testing, tree: SceneTree) -> void:
 
 
 # The major release is kept verified, so with its gate open the start offers it at once and
-# needs no request. Every world fetches from the listener, so a gate that let a verify through
-# never reaches GitHub.
+# needs no request. Every world fetches from the listener, so none reaches GitHub; the major
+# world also counts the listener's connections, so a major gate that let a verify through
+# fails its row. The manual and guarded worlds are checked by their state alone.
 static func _test_gates(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: the gates keep it idle")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
