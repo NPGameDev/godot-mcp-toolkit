@@ -91,6 +91,9 @@ const UpdateInstallerTests := preload("res://test/units/update_installer_tests.g
 const RestartGateTests := preload("res://test/units/restart_gate_tests.gd")
 const UpdateCheckFailureTests := preload("res://test/units/update_check_failure_tests.gd")
 const UpdateTrustWalkTests := preload("res://test/units/update_trust_walk_tests.gd")
+const KeptReleaseTests := preload("res://test/units/kept_release_tests.gd")
+const UpdateNoticeTests := preload("res://test/units/update_notice_tests.gd")
+const ReleaseVerifierTests := preload("res://test/units/release_verifier_tests.gd")
 const UpdatePromptTests := preload("res://test/units/update_prompt_tests.gd")
 const DockUpdateBadgeTests := preload("res://test/units/dock_update_badge_tests.gd")
 const DockUpdateBadgeStatusTests := preload("res://test/units/dock_update_badge_status_tests.gd")
@@ -192,6 +195,9 @@ func _init() -> void:
 	await RestartGateTests.run(testing, self)  # a scan holds a restart across frames → coroutine
 	UpdateCheckFailureTests.run(testing)
 	await UpdateTrustWalkTests.run(testing, self)  # fetches through loopback listeners → coroutine
+	KeptReleaseTests.run(testing)
+	UpdateNoticeTests.run(testing)
+	await ReleaseVerifierTests.run(testing, self)  # fetches through loopback listeners → coroutine
 	UpdatePromptTests.run(testing)
 	await DockUpdateBadgeTests.run(testing, self)  # waits for a live tree → coroutine
 	DockUpdateBadgeStatusTests.run(testing)
