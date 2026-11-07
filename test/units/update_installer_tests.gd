@@ -61,6 +61,7 @@ static func run(testing, tree: SceneTree) -> void:
 	await _test_manual_mode_during_a_stage(testing, tree)
 	await _test_manual_mode_during_a_download(testing, tree)
 	await _test_try_again_follows_the_gates(testing, tree)
+	await _test_cancel_lets_the_journal_go(testing, tree)
 	_test_settled(testing, tree)
 	_test_postponed_reason(testing, tree)
 	_test_headless_start_keeps_a_journal(testing, tree, "1.9.0")
@@ -1149,6 +1150,51 @@ static func _test_try_again_follows_the_gates(testing: Testing, tree: SceneTree)
 	testing.ok(not unseen_zip, "the setup step unseen → Try again downloads no zip")
 	testing.eq(kept_state, "failed", "the ask mode kept → the failure stays after a re-evaluation")
 	print("")
+
+
+# The server holds the zip's request, so the download is under way when cancel() runs. The
+# held request gets no reply, so this row cannot show the Windows lock on a zip being written
+# that the cancel exists for; it pins that the cancel ends the download and a journal clear
+# then leaves nothing.
+static func _test_cancel_lets_the_journal_go(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: cancel() calls off a download before the journal clears")
+	var click := _begin_click("installer_cancel_download", tree)
+	var world: Dictionary = click["world"]
+	var installer := _installer_of(click)
+	var server: UpdateFixtures.LoopbackReleaseServer = click["server"]
+	var archive_name := ReleaseAssets.archive_name("1.9.0")
+	server.hold("/" + archive_name)
+	installer.install()
+	var frames := 0
+	while not _requested(server, archive_name) and frames < _MAX_FRAMES:
+		server.poll()
+		await tree.process_frame
+		frames += 1
+	var before := installer.state()
+	var journal_before := UpdateJournal.exists(str(world["updates"]))
+	installer.cancel()
+	UpdateJournal.clear(str(world["updates"]))
+	var connections_after_cancel := server.connections()
+	for _frame: int in range(30):
+		server.poll()
+		await tree.process_frame
+	var new_connections := server.connections() - connections_after_cancel
+	var journal_left := UpdateJournal.exists(str(world["updates"]))
+	var zip_left := _has_zip(world)
+	_end_click(click)
+	testing.eq(before, "downloading", "the zip's request is held while downloading")
+	testing.ok(journal_before, "with a journal")
+	testing.ok(not journal_left, "cancel(), then a journal clear → no journal")
+	testing.ok(not zip_left, "and no zip")
+	testing.eq(new_connections, 0, "and nothing is requested after the cancel")
+	print("")
+
+
+static func _requested(server: UpdateFixtures.LoopbackReleaseServer, path_end: String) -> bool:
+	for path: String in server.paths():
+		if path.ends_with(path_end):
+			return true
+	return false
 
 
 # Clicks Update on a kept 1.9.0 whose zip the server 404s, and waits for the failure.

@@ -41,10 +41,16 @@ static func of_fetch(outcome: Dictionary) -> String:
 ## The kind of failure a not-ok outcome is for a release's manifest or signature. A release
 ## can be published before these two files are, so GitHub's 404 on either means not yet.
 static func of_release_file(outcome: Dictionary) -> String:
-	var answered_missing := int(outcome["result"]) == HTTPRequest.RESULT_SUCCESS and int(outcome["code"]) == 404
-	if answered_missing and str(outcome["refusal"]).is_empty():
+	if is_missing(outcome):
 		return NOT_READY
 	return of_fetch(outcome)
+
+
+## Whether a not-ok [signal UpdateDownloader.finished] outcome is GitHub saying the file is
+## not there: a 404 on a reply the downloader did not refuse.
+static func is_missing(outcome: Dictionary) -> bool:
+	return int(outcome["result"]) == HTTPRequest.RESULT_SUCCESS and int(outcome["code"]) == 404 \
+			and str(outcome["refusal"]).is_empty()
 
 
 ## The kind of failure an outcome of [method TrustChain.accept] other than
@@ -68,13 +74,13 @@ static func can_retry(kind: String) -> bool:
 static func message(kind: String, store_folder: String = "") -> String:
 	match kind:
 		UNREACHABLE:
-			return "Couldn't reach GitHub to check this update. Check your connection and click Update to try again. The toolkit also tries again the next time you open the editor."
+			return "Couldn't reach GitHub to check this update. Check your connection and click Update to try again. Unless you close this message, the toolkit also tries again the next time you open the editor."
 		GITHUB_ERROR:
-			return "GitHub isn't responding. Try Update again in a few minutes. The toolkit also tries again the next time you open the editor."
+			return "GitHub isn't responding. Try Update again in a few minutes. Unless you close this message, the toolkit also tries again the next time you open the editor."
 		NOT_READY:
 			return "This release isn't ready to install from the editor yet. Try Update again later."
 		SECURITY:
-			return "This update failed its security check, so it won't install. Your connection isn't the problem. The toolkit checks again the next time you open the editor."
+			return "This update failed its security check, so it won't install. Your connection isn't the problem. Unless you close this message, the toolkit checks again the next time you open the editor."
 		STORE_WRITE:
 			return "Couldn't save update security data to %s. Make sure you can write to that folder, then click Update to try again." % store_folder
 		NO_DATA_FOLDER:

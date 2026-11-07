@@ -17,6 +17,7 @@ const _REASON := "could not rename the addon folder"
 static func run(testing: Testing) -> void:
 	_test_download_and_stage_lines_differ(testing)
 	_test_postponed_reason(testing)
+	_test_postponed_says_it_tries_again(testing)
 	_test_ready_view_findings(testing)
 	_test_untrusted_notice_adds_a_line(testing)
 
@@ -46,6 +47,28 @@ static func _test_postponed_reason(testing: Testing) -> void:
 	testing.ok(not staged.contains(_REASON), "no reason → no such line")
 	testing.ok(postponed_in_view.contains(_REASON), "the ready view open → the reason still shows")
 	testing.eq(postponed_in_view.split("\n").size(), in_view.split("\n").size() + 1, "under the view's lines")
+	print("")
+
+
+static func _test_postponed_says_it_tries_again(testing: Testing) -> void:
+	testing.begin("Badge status: a postponed update's first line says the exit tries again")
+	var view := {RestartGate.SCENES_ASKED: true}
+	var postponed := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0",
+			{DockUpdateBadgeStatus.POSTPONED: _REASON})
+	var postponed_in_view := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0",
+			{DockUpdateBadgeStatus.VIEW: view, DockUpdateBadgeStatus.POSTPONED: _REASON})
+	var staged := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0", {})
+	var in_view := DockUpdateBadgeStatus.install_line(UpdateInstaller.READY, "1.9.0",
+			{DockUpdateBadgeStatus.VIEW: view})
+	testing.eq(postponed.split("\n")[0],
+			"1.9.0 tries to install again when you close the editor. Restart now to install it at once.",
+			"the view closed → the line says the exit tries again")
+	testing.eq(postponed_in_view.split("\n")[0], "1.9.0 is ready. It tries to install again when you close the editor.",
+			"the ready view open → its first line says so too")
+	testing.eq(staged.split("\n")[0], "1.9.0 installs when you close the editor. Restart now to install it at once.",
+			"not postponed → the line says the exit installs it")
+	testing.eq(in_view.split("\n")[0], "1.9.0 is ready. It installs when you close the editor.",
+			"not postponed, the view open → so does the view")
 	print("")
 
 

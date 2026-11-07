@@ -96,6 +96,8 @@ var _options: Dictionary = {}
 var _project_settings: Object = ProjectSettings
 # The install guards' facts, or an empty dictionary to read them from the project.
 var _guard_facts: Dictionary = {}
+# What InstallGuards.facts() read the first time a gate asked, when _guard_facts is empty.
+var _session_facts: Dictionary = {}
 var _downloader: UpdateDownloader = null
 var _stage_runner: StageRunner = null
 var _restart_gate: RestartGate = null
@@ -180,6 +182,8 @@ func _exit_tree() -> void:
 	if _downloader != null:
 		_downloader.cancel()
 	if _stage_runner != null:
+		# A stage the cancel could not delete keeps its verified journal, and the next
+		# start's settle clears that journal with its folders.
 		_stage_runner.cancel()
 	_restart_gate.cancel()
 	_waiting = _WAITING_NONE
@@ -311,8 +315,11 @@ func prompt_due() -> bool:
 func install() -> void:
 	if _state != AVAILABLE and _state != FAILED and not can_retry_check():
 		return
-	# A click can arrive after a gate closed and before the badge redraws.
+	# A click can arrive after a gate closed and before the badge redraws. Not every gate
+	# change sends a signal the installer hears (the seen setup steps live in a file), so the refusal
+	# re-evaluates, and the badge redraws without the button.
 	if not _install_allowed(_version):
+		_evaluate()
 		return
 	_user_asked = true
 	_verify_tried = _version
@@ -324,6 +331,11 @@ func install() -> void:
 ## a newer one.
 func discard() -> void:
 	_withdraw(_version)
+
+
+## Calls off a running download or stage and leaves the journal as it is.
+func cancel() -> void:
+	_cancel()
 
 
 ## Restarts the editor, whose exit installs the staged update, unless a script has unsaved
@@ -397,11 +409,22 @@ func _install_allowed(version: String) -> bool:
 	var installed := _installed_version()
 	if UpdateCheck.is_major_bump(installed, version):
 		return false
-	var refusal := InstallGuards.refusal(_guard_facts if not _guard_facts.is_empty() else InstallGuards.facts())
+	var refusal := InstallGuards.refusal(_install_guard_facts())
 	if not refusal.is_empty():
 		_guard_note = InstallGuards.describe(refusal)
 		return false
 	return UpdateCheck.is_newer(installed, version)
+
+
+# The guard facts, read once for this installer's life: on 4.2 the link fact costs a process
+# launch, and every gate check reads them. The editor's exit reads every guard again before it
+# installs, so a guard that turns on mid-session still stops the install there.
+func _install_guard_facts() -> Dictionary:
+	if not _guard_facts.is_empty():
+		return _guard_facts
+	if _session_facts.is_empty():
+		_session_facts = InstallGuards.facts()
+	return _session_facts
 
 
 # Picks up the release the journal names, which _version already holds, after checking
@@ -555,7 +578,7 @@ func _on_trust_document(outcome: Dictionary) -> void:
 			_fetch_next_document()
 		else:
 			_fail_check(UpdateCheckFailure.of_accept(str(accepted["outcome"])), str(accepted["reason"]))
-	elif int(outcome["result"]) == HTTPRequest.RESULT_SUCCESS and int(outcome["code"]) == 404:
+	elif UpdateCheckFailure.is_missing(outcome):
 		_end_walk()
 	else:
 		_fail_check(UpdateCheckFailure.of_fetch(outcome), _fetch_problem(outcome))
@@ -766,6 +789,8 @@ func _cancel() -> void:
 	if _downloader != null:
 		_downloader.cancel()
 	if _stage_runner != null:
+		# A stage the cancel could not delete gets a second try from the journal clear that
+		# follows a cancel.
 		_stage_runner.cancel()
 	_waiting = _WAITING_NONE
 	_walk = null

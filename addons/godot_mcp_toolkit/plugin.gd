@@ -214,7 +214,12 @@ func _enable_plugin() -> void:
 
 func _disable_plugin() -> void:
 	_disabling = true
-	# A disable removes the toolkit: drop a staged update with its files.
+	# A disable removes the toolkit: drop a staged update with its files. A download holds
+	# the zip open, and on Windows an open file will not delete, so it is called off first.
+	if _handle != null:
+		var installer: UpdateInstaller = _handle.update_installer()
+		if installer != null:
+			installer.cancel()
 	UpdateJournal.clear()
 
 	AutoloadRegistration.unregister(self)

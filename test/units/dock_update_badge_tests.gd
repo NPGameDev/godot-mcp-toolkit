@@ -8,6 +8,7 @@ extends RefCounted
 const Testing := preload("res://test/units/testing.gd")
 const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
 const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
+const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
@@ -57,6 +58,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_close_during_download_gives_it_up(testing, tree)
 	await _test_failed_download_offers_retry(testing, tree)
 	await _test_try_again_gone_under_manual(testing, tree)
+	await _test_refused_try_again_redraws(testing, tree)
 	_test_ready(testing, tree)
 	_test_not_now_closes_the_ready_view(testing, tree)
 	_test_ready_while_newer_is_out(testing, tree)
@@ -382,6 +384,43 @@ static func _test_try_again_gone_under_manual(testing: Testing, tree: SceneTree)
 	print("")
 
 
+# Swapping the consent readers sends no signal, so only the refused press can tell the badge
+# that Try again is gone.
+static func _test_refused_try_again_redraws(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a Try again the consent gate refuses goes away")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := _set_host(server.host())
+	var world := UpdateFixtures.begin_world("badge_retry_refused", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+	var nodes := _start(world, tree)
+	var badge: Node = nodes["badge"]
+	var installer: UpdateInstaller = nodes["installer"]
+	_press(badge, "UpdateButton")
+	var frames := 0
+	while installer.state() == "downloading" and frames < 600:
+		server.poll()
+		await tree.process_frame
+		frames += 1
+	var failed_state := installer.state()
+	Consent.set_readers(func() -> bool: return true, func(_step_id: StringName) -> bool: return false)
+	var before_press := server.connections()
+	_press(badge, "UpdateButton")
+	for _frame: int in range(60):
+		server.poll()
+		await tree.process_frame
+	var press_requests := server.connections() - before_press
+	var retry_shown := _shown(badge, "UpdateButton")
+	var state := installer.state()
+	_end(world, nodes)
+	server.stop()
+	_restore_host(previous_host)
+	testing.eq(failed_state, "failed", "the download fails first")
+	testing.eq(press_requests, 0, "the setup step unseen → a press sends no request")
+	testing.ok(not retry_shown, "and Try again is gone after the press")
+	testing.eq(state, "idle", "and the installer is idle")
+	print("")
+
+
 static func _test_ready(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: a staged release offers Restart and Don't install")
 	var world := UpdateFixtures.begin_world("badge_ready", "1.9.0", "ask", "1.1.0")
@@ -524,6 +563,8 @@ static func _test_postponed_update_says_why(testing: Testing, tree: SceneTree) -
 	testing.eq(state, "ready", "the update is still staged")
 	testing.ok(status.contains("could not rename the addon folder"), "the status line names why the exit left it")
 	testing.ok(discard_shown, "and Don't install is offered")
+	testing.ok(status.begins_with("1.9.0 is ready. It tries to install again when you close the editor."),
+			"a postponed update → the first line says the exit tries again")
 	print("")
 
 

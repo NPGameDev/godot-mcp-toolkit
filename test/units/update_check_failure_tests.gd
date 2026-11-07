@@ -75,13 +75,13 @@ static func _test_what_a_click_can_retry(testing: Testing) -> void:
 static func _test_messages(testing: Testing) -> void:
 	testing.begin("Update check failure: the sentence for each kind")
 	testing.eq(UpdateCheckFailure.message("unreachable"),
-			"Couldn't reach GitHub to check this update. Check your connection and click Update to try again. The toolkit also tries again the next time you open the editor.",
+			"Couldn't reach GitHub to check this update. Check your connection and click Update to try again. Unless you close this message, the toolkit also tries again the next time you open the editor.",
 			"unreachable → check the connection")
 	testing.eq(UpdateCheckFailure.message("github_error"),
-			"GitHub isn't responding. Try Update again in a few minutes. The toolkit also tries again the next time you open the editor.",
+			"GitHub isn't responding. Try Update again in a few minutes. Unless you close this message, the toolkit also tries again the next time you open the editor.",
 			"GitHub's error → try again in a few minutes")
 	testing.eq(UpdateCheckFailure.message("security"),
-			"This update failed its security check, so it won't install. Your connection isn't the problem. The toolkit checks again the next time you open the editor.",
+			"This update failed its security check, so it won't install. Your connection isn't the problem. Unless you close this message, the toolkit checks again the next time you open the editor.",
 			"the security check → it won't install")
 	testing.eq(UpdateCheckFailure.message("store_write", "C:/data/trust"),
 			"Couldn't save update security data to C:/data/trust. Make sure you can write to that folder, then click Update to try again.",

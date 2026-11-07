@@ -29,12 +29,14 @@ const POSTPONED := "postponed"
 const _DOWNLOADING_TEXT := "Downloading %s…"
 const _PREPARING_TEXT := "Preparing %s…"
 const _READY_TEXT := "%s installs when you close the editor. Restart now to install it at once."
+const _READY_RETRY_TEXT := "%s tries to install again when you close the editor. Restart now to install it at once."
 const _POSTPONED_TEXT := "When the editor last closed, the update didn't install: %s."
 const _FAILED_TEXT := "Couldn't install: %s."
 const _CHANGED_TEXT := ("%d toolkit files were changed in this project; installing replaces them. "
 		+ "The toolkit keeps a copy of the current version until the next update is staged. "
 		+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.")
 const _READY_VIEW_TEXT := "%s is ready. It installs when you close the editor."
+const _READY_VIEW_RETRY_TEXT := "%s is ready. It tries to install again when you close the editor."
 const _READY_VIEW_HOW_TEXT := "To install it now, save your work and click Restart."
 const _RUNNING_GAME_TEXT := "Restart stops the running game."
 const _UNSAVED_SCRIPT_TEXT := "%s has unsaved edits. Save it, then click Restart."
@@ -75,9 +77,11 @@ static func install_line(state: String, version: String, facts: Dictionary) -> S
 
 ## The ready view's status lines for the staged [param version], from the installer's
 ## [param view]: the probe's findings, each told on its own line, and whether this
-## editor's restart asks about unsaved scenes.
-static func ready_view_text(version: String, view: Dictionary) -> String:
-	var lines := PackedStringArray([_READY_VIEW_TEXT % version, _READY_VIEW_HOW_TEXT])
+## editor's restart asks about unsaved scenes. [param retry] is set when the editor's last
+## exit already tried to install it, so the first line says the next exit tries again.
+static func ready_view_text(version: String, view: Dictionary, retry: bool = false) -> String:
+	var first := _READY_VIEW_RETRY_TEXT if retry else _READY_VIEW_TEXT
+	var lines := PackedStringArray([first % version, _READY_VIEW_HOW_TEXT])
 	if bool(view.get(EditorRestartProbe.RUNNING_GAME, false)):
 		lines.append(_RUNNING_GAME_TEXT)
 	var unsaved: PackedStringArray = view.get(EditorRestartProbe.UNSAVED_SCRIPTS, PackedStringArray())
@@ -113,9 +117,14 @@ static func notice_line(notice: Dictionary, log_path: String, server_line: bool)
 # left it uninstalled when it did.
 static func _ready_line(version: String, facts: Dictionary) -> String:
 	var view: Dictionary = facts.get(VIEW, {})
-	var line := _READY_TEXT % version if view.is_empty() else ready_view_text(version, view)
 	var postponed := str(facts.get(POSTPONED, ""))
-	if not postponed.is_empty():
+	var retry := not postponed.is_empty()
+	var line := ""
+	if not view.is_empty():
+		line = ready_view_text(version, view, retry)
+	else:
+		line = (_READY_RETRY_TEXT if retry else _READY_TEXT) % version
+	if retry:
 		line += "\n" + _POSTPONED_TEXT % postponed
 	return line
 
