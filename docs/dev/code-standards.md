@@ -793,6 +793,14 @@ input-validation boundary breach — reject, don't open, anything outside the al
 the OS handler, not the editor, decides what a non-`http` scheme does; the allowlist keeps an
 untrusted link from steering it.*
 
+### 8.14 Toolkit windows are non-exclusive
+
+**Every toolkit window sets `exclusive = false`** (an `AcceptDialog` is exclusive by default). A
+window that must be exclusive moves every child it did not create back under the editor's base
+control before it is freed or hidden. *Rationale: on Godot 4.4 and later the editor reparents its own
+progress and save-confirmation dialogs under the last exclusive window shown. Freeing that window
+frees them too, and the editor later uses or frees them, which can crash it.*
+
 ---
 
 ## 9. Unit-test code
@@ -1210,3 +1218,4 @@ tooling). The **plugin** rows apply to **addon** files only — test scripts are
 - [ ] Version-gated calls use `has_method()` + `call()`; no `Callable` formed from a bare static-method reference (4.2 binds it to a NIL `self` → silent abort + typed-default return); compares go through the version utility; teardown frees with `free()` (RefCounted subsystems just null'd); failed `TCPServer.listen()` → `stop()` + null + fresh instance; listener/scene I/O stays deferred + throttled; response sends check `send_text` + central size-guard ([§8.3](#83-cross-version-compatibility)–[§8.9](#89-check-the-send_text-return--oversized-websocket-frames-drop-wholesale))
 - [ ] `plugin.cfg` only the documented fields; folder id unchanged; shipped files reference no unshipped paths; `.uid`/`.import` sidecars shipped, never stripped or git-ignored ([§8.12](#812-asset-library-shipping-hygiene))
 - [ ] Any `OS.shell_open` / OS handoff of a data-derived URL allowlists the scheme (http/https) ([§8.13](#813-validate-a-data-derived-urls-scheme-before-osshell_open))
+- [ ] Every toolkit window sets `exclusive = false`; one that must be exclusive moves every child it did not create back to the editor's base control before it is freed or hidden ([§8.14](#814-toolkit-windows-are-non-exclusive))

@@ -4,11 +4,11 @@ extends RefCounted
 ##
 ## Every name and URL is built here from the version or the trust document's number
 ## alone, never taken from a reply, as the update check's badge links are. The scheme and
-## host can be replaced for a local test server through the update check's
-## contributor-only host variable; the manifest's signature makes another host harmless,
-## and a trust document's signatures do the same for its file.
+## host can be replaced for a loopback test server through the update check's
+## test-only host variable, which accepts nothing else.
 
-# Direct preload: core/modules.gd does not list this folder's scripts.
+# Direct preload, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 
 const _DOWNLOAD_HOST := "https://github.com"

@@ -83,6 +83,11 @@ jobs:
       - name: Validator script test
         run: bash scripts/test_validator.sh
 
+      # How the harnesses pick their Python, against stand-in interpreters: one in
+      # a WindowsApps folder is never run (no Python, no Godot, no network).
+      - name: Harness Python script test
+        run: bash scripts/test_update_test_env.sh
+
   # The same tests on the tools macOS ships: LibreSSL and BSD's. They live in /usr/bin,
   # and an earlier PATH entry can hold Homebrew's OpenSSL instead, so the job puts
   # /usr/bin first and fails unless openssl really is LibreSSL. It runs the check's zip
@@ -213,6 +218,55 @@ jobs:
         with:
           godot-version: ${{ matrix.godot-version }}
           use-dotnet: false
+
+  # ── Self-update flow ─────────────────────────────────────────────────────────
+  # The toolkit's self-update end to end, on scratch projects (update_flow.sh): the
+  # release this tree builds installs over the previous version at an editor's exit,
+  # closed by a quit or through its window, a toolkit folder that cannot move leaves
+  # the update waiting, an untrusted signature and the repository guard stage
+  # nothing, and a disable installs nothing. Headless with the test-only
+  # GODOT_MCP_UPDATE_ALLOW_HEADLESS, against a local server in place of GitHub. The
+  # floor's two boundaries: 4.2 frees plugins at exit differently from 4.3+.
+  update-flow:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    # Fuse: the six legs take a few minutes — at 15 min a boot is hung.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        godot-version: ["4.2.0", "4.7.0"]
+    name: "Update flow (GDScript editor · Godot ${{ matrix.godot-version }})"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Godot
+        # pinned to v2.4.1 — update tag manually after reviewing changelogs
+        uses: chickensoft-games/setup-godot@v2.4.1
+        with:
+          version: ${{ matrix.godot-version }}
+          use-dotnet: false
+
+      - name: Run the update flow
+        run: bash scripts/test_framework/update_flow.sh godot
+
+  # ── Release builds agree ─────────────────────────────────────────────────────
+  # The bash and PowerShell release builds write the same release: the same zip
+  # entries with the same bytes, the same release file list, and manifests that
+  # agree on all but the zip's own size and hash (check_release_builds.sh). Editor-
+  # free; the runner's PowerShell 7 runs the .ps1 the maintainer may build with.
+  release-builds:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    name: "Release builds agree (bash · PowerShell)"
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare the two release builds
+        run: bash scripts/test_framework/check_release_builds.sh
 
   # ── Manifest-diff regression ─────────────────────────────────────────────────
   # Lightweight, editor-free drift gate: per supported version, dump the REAL
@@ -406,7 +460,7 @@ jobs:
   # because a `paths:`-skipped required check would deadlock as pending.
   floor-ok:
     name: "Toolkit floor OK"
-    needs: [changes, docs-check, release-files-macos, trust-documents-reader, gdscript-check, unit-tests, manifest-diff, export-strip, apply-kill]
+    needs: [changes, docs-check, release-files-macos, trust-documents-reader, gdscript-check, unit-tests, update-flow, release-builds, manifest-diff, export-strip, apply-kill]
     if: always()
     runs-on: ubuntu-latest
     steps:

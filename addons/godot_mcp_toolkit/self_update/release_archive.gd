@@ -23,7 +23,8 @@ extends RefCounted
 ## one is refused by every older toolkit, and breaking one on purpose needs a bridge
 ## release first.
 
-# Direct preloads: core/modules.gd does not list this folder's scripts.
+# Direct preloads, not core/modules.gd: the aggregator preloads the installer,
+# which reaches this file.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 
