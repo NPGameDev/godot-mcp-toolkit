@@ -508,7 +508,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd" data-verified="99583ba" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd" data-verified="c78b428" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -538,7 +538,7 @@ flowchart TD
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
     plugin -.->|"_exit_tree after dispose, unless disabling"| apply["UpdateLifecycle.apply_at_exit()<br/>(swaps a staged update in · never in a headless editor)"]
 ```
-*Figure 10 — plugin composition root · verified 99583ba*
+*Figure 10 — plugin composition root · verified c78b428*
 
 The composer builds in a behaviour-critical order: registry and server first, then the
 debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
@@ -549,7 +549,9 @@ renamed), the playtest-end detector, the server start + registry registration, t
 newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), the
 update installer (a plugin child built after the runner because it follows the runner's newer version;
 in `_ready` it settles what the editor's last exit left, and the badge drives its
-download and staging), and finally the dock. The write-flow and dialog
+download and staging; its own child, the release verifier (`self_update/release_verifier.gd`), walks
+the trust chain and checks a release's manifest and signature, and goes when the installer is freed),
+and finally the dock. The write-flow and dialog
 presenter are **injected** into the dock, the tool menu, and the onboarding wizard alike — the
 dock consumes them like any other UI surface rather than acting as a service locator for them
 ([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
@@ -580,7 +582,9 @@ detached `DisableCleanupCoordinator` that outlives the plugin.
 
 `plugin.gd` also carries the self-update's two ends. After the deferred onboarding call, in the `ask`
 install mode, it opens the update prompt when the installer holds a verified release, unless the
-wizard is open or the plugin was enabled mid-session; and when the wizard reports its update-install
+wizard is open or the plugin was enabled mid-session. The prompt is a non-exclusive window: on 4.4+
+the editor reparents its own progress and save dialogs under the last exclusive window, and closing
+that window would free them with it. When the wizard reports its update-install
 step seen, it has the installer decide again, since the consent gate reads that step. At exit, once
 `dispose()` has freed the graph, `_exit_tree` calls `UpdateLifecycle.apply_at_exit()`, which swaps a
 staged update into the addon folder while nothing can reload those files. A headless editor neither
