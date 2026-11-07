@@ -27,7 +27,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_not_found_stays_a_plain_failure(testing, tree)
 	await _test_size_limit(testing, tree)
 	await _test_target_file(testing, tree)
-	_test_refused_start(testing, tree)
+	await _test_refused_start(testing, tree)
 
 
 static func _test_hosts_the_rule_allows(testing: Testing) -> void:
@@ -282,9 +282,11 @@ static func _test_target_file(testing: Testing, tree: SceneTree) -> void:
 	testing.eq(written, _BODY, "the file holds the final body, not the redirect's")
 	testing.eq(to_nothing.get("ok"), true, "an empty final reply → succeeds")
 	testing.ok(not left_after_empty, "and the redirect's own body is not left as the file")
-	testing.eq(to_gone.get("code"), 404, "a 404 after a redirect → fails")
+	testing.eq(to_gone.get("ok"), false, "a 404 after a redirect → fails")
+	testing.eq(to_gone.get("code"), 404, "with the 404")
 	testing.ok(not left_after_gone, "and no file stays")
-	testing.eq(to_elsewhere.get("refusal"), UpdateDownloader.REFUSED_HOST, "a refused hop → fails")
+	testing.eq(to_elsewhere.get("ok"), false, "a refused hop → fails")
+	testing.eq(to_elsewhere.get("refusal"), UpdateDownloader.REFUSED_HOST, "with the host refusal")
 	testing.ok(not left_after_refusal, "and no file stays")
 	print("")
 
@@ -297,15 +299,19 @@ static func _test_refused_start(testing: Testing, tree: SceneTree) -> void:
 	OS.unset_environment(UpdateFixtures.HOST_ENV)
 	var downloader := UpdateDownloader.new()
 	tree.root.add_child(downloader)
+	var reports := [0]
+	downloader.finished.connect(func(_outcome: Dictionary) -> void: reports[0] += 1)
 	var error := downloader.fetch(server.host() + "/final", 1024, 5.0)
+	# A deferred report would land within this frame.
+	await tree.process_frame
 	server.poll()
 	downloader.free()
 	var hits := server.connections()
 	server.stop()
-	if not previous_host.is_empty():
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(error, ERR_UNAUTHORIZED, "loopback with no host variable → refused")
 	testing.eq(hits, 0, "and nothing sent")
+	testing.eq(reports[0], 0, "and no finished signal follows")
 	print("")
 
 
@@ -322,8 +328,7 @@ static func _redirect_chain(redirects: int) -> UpdateFixtures.LoopbackReleaseSer
 # Runs one fetch with the host variable set to `env_host`, polling `servers`, and returns its
 # outcome, or an empty dictionary when none came within the frame limit.
 static func _fetch(tree: SceneTree, servers: Array, env_host: String, url: String, size_limit: int, target_file: String = "") -> Dictionary:
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, env_host)
+	var previous_host := UpdateFixtures.set_host(env_host)
 	var downloader := UpdateDownloader.new()
 	tree.root.add_child(downloader)
 	var outcomes: Array[Dictionary] = []
@@ -339,10 +344,7 @@ static func _fetch(tree: SceneTree, servers: Array, env_host: String, url: Strin
 	for server: UpdateFixtures.LoopbackReleaseServer in servers:
 		server.poll()
 	downloader.free()
-	if previous_host.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	return outcomes[0] if not outcomes.is_empty() else {}
 
 

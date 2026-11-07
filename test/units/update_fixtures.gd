@@ -38,54 +38,6 @@ const PINNED_1_2_0_JOURNAL := """{
 	"to": "1.2.0"
 }"""
 
-## A stand-in for [ProjectSettings] that holds only the install mode.
-class ModeSettings extends RefCounted:
-	var _mode: String
-
-	func _init(mode: String) -> void:
-		_mode = mode
-
-	## Changes the mode, as the user does in the project settings.
-	func set_mode(mode: String) -> void:
-		_mode = mode
-
-	func has_setting(key: String) -> bool:
-		return key == InstallMode.SETTING
-
-	func get_setting(key: String) -> Variant:
-		return _mode if key == InstallMode.SETTING else null
-
-
-## A stand-in for the editor the restart gate asks: it reports what a case sets and counts
-## the restarts it is asked for. It starts as a windowed 4.5 editor with nothing unsaved.
-class RestartProbeStandIn extends EditorRestartProbe:
-	var unsaved_scripts := PackedStringArray()
-	var running_game: bool = false
-	var untitled_scenes: int = 0
-	var version: String = "4.5"
-	var scanning: bool = false
-	var restarts: int = 0
-
-	func findings() -> Dictionary:
-		return {
-			UNSAVED_SCRIPTS: unsaved_scripts,
-			RUNNING_GAME: running_game,
-			UNTITLED_SCENES: untitled_scenes,
-		}
-
-	func engine_version() -> String:
-		return version
-
-	func can_restart() -> bool:
-		return true
-
-	func is_scanning() -> bool:
-		return scanning
-
-	func restart() -> void:
-		restarts += 1
-
-
 static var _key: CryptoKey = null
 static var _other_key: CryptoKey = null
 
@@ -391,6 +343,23 @@ static func end_world(world: Dictionary, nodes: Dictionary) -> void:
 		file.close()
 
 
+## Points [constant HOST_ENV] at [param host], so the installer's and the downloader's
+## fetches go there instead of GitHub. Returns the value it held, for [method restore_host].
+static func set_host(host: String) -> String:
+	var previous := OS.get_environment(HOST_ENV)
+	OS.set_environment(HOST_ENV, host)
+	return previous
+
+
+## Puts [constant HOST_ENV] back to [param previous], the value [method set_host] returned;
+## an empty one unsets it, as it was before.
+static func restore_host(previous: String) -> void:
+	if previous.is_empty():
+		OS.unset_environment(HOST_ENV)
+	else:
+		OS.set_environment(HOST_ENV, previous)
+
+
 ## The files a GitHub release of [param version] serves to the installer: its zip
 ## holding [param files], the manifest, and the manifest's signature by
 ## [param signing_key]; asset name to bytes, for [LoopbackReleaseServer].
@@ -406,6 +375,54 @@ static func release_assets(
 		ReleaseAssets.manifest_name(version): manifest,
 		ReleaseAssets.signature_name(version): signature_of(manifest, signing_key),
 	}
+
+
+## A stand-in for [ProjectSettings] that holds only the install mode.
+class ModeSettings extends RefCounted:
+	var _mode: String
+
+	func _init(mode: String) -> void:
+		_mode = mode
+
+	## Changes the mode, as the user does in the project settings.
+	func set_mode(mode: String) -> void:
+		_mode = mode
+
+	func has_setting(key: String) -> bool:
+		return key == InstallMode.SETTING
+
+	func get_setting(key: String) -> Variant:
+		return _mode if key == InstallMode.SETTING else null
+
+
+## A stand-in for the editor the restart gate asks: it reports what a case sets and counts
+## the restarts it is asked for. It starts as a windowed 4.5 editor with nothing unsaved.
+class RestartProbeStandIn extends EditorRestartProbe:
+	var unsaved_scripts := PackedStringArray()
+	var running_game: bool = false
+	var untitled_scenes: int = 0
+	var version: String = "4.5"
+	var scanning: bool = false
+	var restarts: int = 0
+
+	func findings() -> Dictionary:
+		return {
+			UNSAVED_SCRIPTS: unsaved_scripts,
+			RUNNING_GAME: running_game,
+			UNTITLED_SCENES: untitled_scenes,
+		}
+
+	func engine_version() -> String:
+		return version
+
+	func can_restart() -> bool:
+		return true
+
+	func is_scanning() -> bool:
+		return scanning
+
+	func restart() -> void:
+		restarts += 1
 
 
 ## A loopback HTTP server standing in for GitHub's release downloads, for the
@@ -427,43 +444,51 @@ class LoopbackReleaseServer extends RefCounted:
 
 	func _init(assets: Dictionary) -> void:
 		_assets = assets
-		_server.listen(0, "127.0.0.1")
+		# A case whose listener never opened would read its zero requests as a pass.
+		var error := _server.listen(0, "127.0.0.1")
+		if error != OK:
+			push_error("The loopback release server could not listen (error %d)." % error)
 
+	## The base URL to put in [constant HOST_ENV].
 	func host() -> String:
 		return "http://127.0.0.1:%d" % _server.get_local_port()
 
-	# How many connections [method poll] has taken so far. The server closes each after
-	# one answer, so this also counts the requests.
+	## How many connections [method poll] has taken so far. The server closes each after
+	## one answer, so this also counts the requests.
 	func connections() -> int:
 		return _connections
 
-	# Answers a request whose path ends in `path_end` with `status` pointing at `location`,
-	# before any asset; an empty location sends no Location header. The reply has a small
-	# body, as a real redirect does.
+	## Answers a request whose path ends in [param path_end] with [param status] pointing at
+	## [param location], before any asset; an empty location sends no Location header. The
+	## reply has a small body, as a real redirect does.
 	func redirect(path_end: String, status: int, location: String) -> void:
 		_redirects[path_end] = {"status": status, "location": location}
 
-	# The path of each request answered or held so far, in the order they arrived.
+	## The path of each request answered or held so far, in the order they arrived.
 	func paths() -> Array[String]:
 		return _paths.duplicate()
 
-	# Leaves a request whose path ends in `path_end` unanswered, so the client's timeout ends it.
+	## Leaves a request whose path ends in [param path_end] unanswered, so the client's
+	## timeout ends it.
 	func hold(path_end: String) -> void:
 		_held_path_ends.append(path_end)
 
-	# Answers whatever arrives with bytes that are no TLS record, which is what a TLS client meets
-	# at a plain listener. It takes what the client sent and stays connected: a hang-up with those
-	# bytes unread reaches the engine as a failure to connect, not as a failed handshake.
+	## Answers whatever arrives with bytes that are no TLS record, which is what a TLS client
+	## meets at a plain listener. It takes what the client sent and stays connected: a hang-up
+	## with those bytes unread reaches the engine as a failure to connect, not as a failed
+	## handshake.
 	func break_handshakes() -> void:
 		_breaks_handshakes = true
 
+	## Takes the connections waiting and answers each request whose headers have all
+	## arrived. A case calls it once per frame; between calls nothing is answered.
 	func poll() -> void:
 		while _server.is_connection_available():
 			_peers.append(_server.take_connection())
 			_requests.append("")
 			_connections += 1
-		for index in range(_peers.size() - 1, -1, -1):
-			var peer := _peers[index]
+		for index: int in range(_peers.size() - 1, -1, -1):
+			var peer: StreamPeerTCP = _peers[index]
 			peer.poll()
 			if _breaks_handshakes:
 				if peer.get_available_bytes() > 0:
@@ -483,10 +508,11 @@ class LoopbackReleaseServer extends RefCounted:
 			_peers.remove_at(index)
 			_requests.remove_at(index)
 
+	## Hangs up on every connection, held ones included, and closes the listener.
 	func stop() -> void:
-		for peer in _peers:
+		for peer: StreamPeerTCP in _peers:
 			peer.disconnect_from_host()
-		for peer in _held_peers:
+		for peer: StreamPeerTCP in _held_peers:
 			peer.disconnect_from_host()
 		_peers.clear()
 		_held_peers.clear()

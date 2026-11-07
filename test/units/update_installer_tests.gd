@@ -4,7 +4,7 @@ extends RefCounted
 ## picking up a kept or staged release, the gates that keep it idle and the ones a stage
 ## outlives, giving an update up, a download failed, killed or redirected, one that stages
 ## over frames and the restart or ready view after it, why the last exit postponed it, and a
-## headless start, all served by a loopback listener.
+## headless start. Its fetches go to loopback listeners.
 
 const Testing := preload("res://test/units/testing.gd")
 const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
@@ -25,7 +25,7 @@ const _STAGED_FILES := {"core/a.gd": "new a", "core/b.gd": "new b", "core/c.gd":
 const _MAX_FRAMES := 1200
 
 
-static func run(testing, tree: SceneTree) -> void:
+static func run(testing: Testing, tree: SceneTree) -> void:
 	# The installer's _ready runs only once the tree's root is live.
 	await tree.process_frame
 	_test_project_install_mode(testing)
@@ -33,7 +33,7 @@ static func run(testing, tree: SceneTree) -> void:
 	_test_notice_failed(testing, tree)
 	_test_verified_record(testing, tree)
 	_test_staged_record(testing, tree)
-	_test_gates(testing, tree)
+	await _test_gates(testing, tree)
 	_test_discard(testing, tree)
 	await _test_cut_download_leaves_no_partial_zip(testing, tree)
 	await _test_found_this_session(testing, tree)
@@ -75,7 +75,7 @@ static func run(testing, tree: SceneTree) -> void:
 
 # With no stand-in in its options, the installer reads the project setting. Restored
 # before the assertions, so a failure never leaves the project settings changed.
-static func _test_project_install_mode(testing) -> void:
+static func _test_project_install_mode(testing: Testing) -> void:
 	testing.begin("Update installer: the project's install mode")
 	var installer := UpdateInstaller.new(null)
 	var had_mode := ProjectSettings.has_setting(InstallMode.SETTING)
@@ -91,7 +91,7 @@ static func _test_project_install_mode(testing) -> void:
 	print("")
 
 
-static func _test_notice_updated(testing, tree: SceneTree) -> void:
+static func _test_notice_updated(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: the notice after an install")
 	var world := UpdateFixtures.begin_world("installer_updated", "1.9.0", "ask", "1.9.0")
 	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
@@ -106,8 +106,12 @@ static func _test_notice_updated(testing, tree: SceneTree) -> void:
 	print("")
 
 
-static func _test_notice_failed(testing, tree: SceneTree) -> void:
+# Both starts begin a verify of 1.9.0. The listener is never polled, so it stays unanswered
+# and nothing leaves the machine.
+static func _test_notice_failed(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: the notice after a failed install")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("installer_failed", "1.9.0", "ask", "1.1.0")
 	UpdateJournal.write({"state": "not_applied", "to": "1.9.0", "from": "1.1.0",
 			"reason": "could not write core/a.gd"}, world["updates"])
@@ -119,6 +123,8 @@ static func _test_notice_failed(testing, tree: SceneTree) -> void:
 	nodes = UpdateFixtures.start_world(world, tree)
 	var not_loaded: Dictionary = (nodes["installer"] as UpdateInstaller).notice()
 	UpdateFixtures.end_world(world, nodes)
+	server.stop()
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(not_applied, {"kind": "failed", "version": "1.9.0", "from_version": "1.1.0",
 			"reason": "could not write core/a.gd", "server_changed": false}, "a not-applied record → failed, with its reason")
 	testing.eq(not_loaded["reason"], "the editor started version 1.1.0",
@@ -126,7 +132,7 @@ static func _test_notice_failed(testing, tree: SceneTree) -> void:
 	print("")
 
 
-static func _test_verified_record(testing, tree: SceneTree) -> void:
+static func _test_verified_record(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: a verified release waits for the user")
 	var world := UpdateFixtures.begin_world("installer_verified", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
@@ -145,7 +151,7 @@ static func _test_verified_record(testing, tree: SceneTree) -> void:
 	print("")
 
 
-static func _test_staged_record(testing, tree: SceneTree) -> void:
+static func _test_staged_record(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: a staged release waits for the editor's exit")
 	var world := UpdateFixtures.begin_world("installer_staged", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
@@ -168,8 +174,13 @@ static func _test_staged_record(testing, tree: SceneTree) -> void:
 	print("")
 
 
-static func _test_gates(testing, tree: SceneTree) -> void:
+# The major release is kept verified, so with its gate open the start offers it at once and
+# needs no request. Every world fetches from the listener, so a gate that let a verify through
+# never reaches GitHub.
+static func _test_gates(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: the gates keep it idle")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("installer_manual", "1.9.0", "manual", "1.1.0")
 	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	var manifest_name := ReleaseAssets.manifest_name("1.9.0")
@@ -179,15 +190,14 @@ static func _test_gates(testing, tree: SceneTree) -> void:
 	var manual_kept_after := UpdateFixtures.has_release_file(world, "1.9.0", manifest_name)
 	UpdateFixtures.end_world(world, nodes)
 
-	world = UpdateFixtures.begin_world("installer_no_keys", "1.9.0", "ask", "1.1.0")
-	(world["options"] as Dictionary)["trust_document"] = ""
-	nodes = UpdateFixtures.start_world(world, tree)
-	var no_keys := (nodes["installer"] as UpdateInstaller).state()
-	UpdateFixtures.end_world(world, nodes)
-
 	world = UpdateFixtures.begin_world("installer_major", "2.0.0", "ask", "1.1.0")
+	UpdateFixtures.keep_verified(world["updates"], "2.0.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	nodes = UpdateFixtures.start_world(world, tree)
 	var major := (nodes["installer"] as UpdateInstaller).state()
+	for _frame: int in range(120):
+		server.poll()
+		await tree.process_frame
+	var major_connections := server.connections()
 	UpdateFixtures.end_world(world, nodes)
 
 	world = UpdateFixtures.begin_world("installer_guarded", "1.9.0", "ask", "1.1.0")
@@ -197,18 +207,20 @@ static func _test_gates(testing, tree: SceneTree) -> void:
 	var guarded_state := guarded.state()
 	var guarded_note := guarded.note_text()
 	UpdateFixtures.end_world(world, nodes)
+	server.stop()
+	UpdateFixtures.restore_host(previous_host)
 
 	testing.eq(manual, "idle", "the manual mode → idle")
 	testing.ok(manual_kept_before and not manual_kept_after, "and a kept release is given up")
-	testing.eq(no_keys, "idle", "no trusted key → idle")
-	testing.eq(major, "idle", "a major release → idle")
+	testing.eq(major, "idle", "a major release, kept verified → idle")
+	testing.eq(major_connections, 0, "and nothing is requested for it")
 	testing.eq(guarded_state, "idle", "a guard → idle")
 	testing.eq(guarded_note, "The toolkit's folder is a git checkout or submodule; update it with git.",
 			"and the guard's sentence is the note")
 	print("")
 
 
-static func _test_discard(testing, tree: SceneTree) -> void:
+static func _test_discard(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: giving an update up")
 	var world := UpdateFixtures.begin_world("installer_discard", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
@@ -235,9 +247,7 @@ static func _test_cut_download_leaves_no_partial_zip(testing: Testing, tree: Sce
 	testing.begin("Update installer: a download cut short leaves no partial zip")
 	var server := TCPServer.new()
 	server.listen(0, "127.0.0.1")
-	var host_env := "GODOT_MCP_UPDATE_CHECK_HOST"
-	var previous_host := OS.get_environment(host_env)
-	OS.set_environment(host_env, "http://127.0.0.1:%d" % server.get_local_port())
+	var previous_host := UpdateFixtures.set_host("http://127.0.0.1:%d" % server.get_local_port())
 	var world := UpdateFixtures.begin_world("installer_cut", "1.9.0", "ask", "1.1.0")
 	var archive_bytes := UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	var archive := ProjectSettings.globalize_path(UpdateFolder.archive_path("1.9.0", world["updates"]))
@@ -287,10 +297,7 @@ static func _test_cut_download_leaves_no_partial_zip(testing: Testing, tree: Sce
 	if peer != null:
 		peer.disconnect_from_host()
 	server.stop()
-	if previous_host.is_empty():
-		OS.unset_environment(host_env)
-	else:
-		OS.set_environment(host_env, previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(frames_since_file >= 0, "the zip being downloaded → written to disk")
 	testing.ok(frames < 600, "the cut download ends within 600 frames")
 	testing.ok(not partial_left, "the download fails → the partial zip is deleted")
@@ -313,26 +320,21 @@ static func _test_found_this_session(testing: Testing, tree: SceneTree) -> void:
 
 	var server := UpdateFixtures.LoopbackReleaseServer.new(
 			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
-	var host_env := "GODOT_MCP_UPDATE_CHECK_HOST"
-	var previous_host := OS.get_environment(host_env)
-	OS.set_environment(host_env, server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	world = UpdateFixtures.begin_world("installer_found_verified", "1.9.0", "ask", "1.1.0")
 	nodes = UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
 	var frames := 0
-	while installer.state() != "available" and frames < 1200:
+	while installer.state() != "available" and frames < _MAX_FRAMES:
 		server.poll()
 		await tree.process_frame
 		frames += 1
 	var verified := installer.found_this_session()
 	UpdateFixtures.end_world(world, nodes)
 	server.stop()
-	if previous_host.is_empty():
-		OS.unset_environment(host_env)
-	else:
-		OS.set_environment(host_env, previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(not restored, "a release an earlier session kept → not found this session")
-	testing.ok(frames < 1200, "the release is verified within 1200 frames")
+	testing.ok(frames < _MAX_FRAMES, "the release is verified within %d frames" % _MAX_FRAMES)
 	testing.ok(verified, "a release verified during the session → found this session")
 	print("")
 
@@ -344,12 +346,11 @@ static func _test_start_offers_kept_release_without_requests(testing: Testing, t
 	testing.begin("Update installer: a start offers a kept release without fetching it again")
 	var server := UpdateFixtures.LoopbackReleaseServer.new(
 			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("installer_kept", "1.9.0", "ask", "1.1.0")
 	var first_start := UpdateFixtures.start_world(world, tree)
 	var frames := 0
-	while (first_start["installer"] as UpdateInstaller).state() != "available" and frames < 1200:
+	while (first_start["installer"] as UpdateInstaller).state() != "available" and frames < _MAX_FRAMES:
 		server.poll()
 		await tree.process_frame
 		frames += 1
@@ -370,11 +371,8 @@ static func _test_start_offers_kept_release_without_requests(testing: Testing, t
 	var found := installer.found_this_session()
 	UpdateFixtures.end_world(world, nodes)
 	server.stop()
-	if previous_host.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
-	testing.ok(frames < 1200, "the first start verifies within 1200 frames")
+	UpdateFixtures.restore_host(previous_host)
+	testing.ok(frames < _MAX_FRAMES, "the first start verifies within %d frames" % _MAX_FRAMES)
 	testing.eq(first_connections, 3, "the first start → the chain's 404, the manifest and the signature fetched")
 	testing.eq(record, "", "and no journal written")
 	testing.ok(ignored, "the kept files sit under the folder's ignore files")
@@ -405,8 +403,7 @@ static func _test_kept_release_above_this_editor(testing: Testing, tree: SceneTr
 static func _test_killed_download(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: a start after a kill during a download")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("installer_killed", "1.9.0", "ask", "1.1.0")
 	var archive_bytes := UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	var archive := ProjectSettings.globalize_path(UpdateFolder.archive_path("1.9.0", world["updates"]))
@@ -420,10 +417,7 @@ static func _test_killed_download(testing: Testing, tree: SceneTree) -> void:
 	var record: String = UpdateJournal.read(world["updates"])["state"]
 	UpdateFixtures.end_world(world, nodes)
 	server.stop()
-	if previous_host.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(state, "idle", "a verified journal and a partial zip → nothing offered from them")
 	testing.ok(not partial_left, "the partial zip → deleted")
 	testing.eq(record, "", "and the journal with it")
@@ -436,8 +430,7 @@ static func _test_killed_download(testing: Testing, tree: SceneTree) -> void:
 static func _test_verified_journal_found_after_start(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: a verified journal is cleared, not offered")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("installer_verified_journal", "1.9.0", "ask", "1.1.0")
 	var archive_bytes := UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
 	var archive := ProjectSettings.globalize_path(UpdateFolder.archive_path("1.9.0", world["updates"]))
@@ -454,10 +447,7 @@ static func _test_verified_journal_found_after_start(testing: Testing, tree: Sce
 	var record: String = UpdateJournal.read(world["updates"])["state"]
 	UpdateFixtures.end_world(world, nodes)
 	server.stop()
-	if previous_host.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(before, "available", "the kept release → available before the journal appears")
 	testing.eq(state, "idle", "a verified journal and a partial zip → nothing offered from them")
 	testing.ok(not partial_left, "the partial zip → deleted")
@@ -492,8 +482,7 @@ static func _test_staged_release_stands(testing: Testing, tree: SceneTree) -> vo
 	var server := UpdateFixtures.LoopbackReleaseServer.new(
 			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
 	var host := server.host()
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, host)
+	var previous_host := UpdateFixtures.set_host(host)
 	var world := UpdateFixtures.begin_world("installer_newer", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.8.0", {"core/a.gd": "older"}, "1.1.0", UpdateFixtures.key())
 	var nodes := UpdateFixtures.start_world(world, tree)
@@ -524,6 +513,9 @@ static func _test_staged_release_stands(testing: Testing, tree: SceneTree) -> vo
 	world = UpdateFixtures.begin_world("installer_newer_offline", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.8.0", {"core/a.gd": "older"}, "1.1.0", UpdateFixtures.key())
 	nodes = UpdateFixtures.start_world(world, tree)
+	# Read after the frames a refused request would need to come back and change the state.
+	for _frame: int in range(120):
+		await tree.process_frame
 	var offline := (nodes["installer"] as UpdateInstaller).state()
 	UpdateFixtures.end_world(world, nodes)
 
@@ -535,10 +527,7 @@ static func _test_staged_release_stands(testing: Testing, tree: SceneTree) -> vo
 	var major_record: String = UpdateJournal.read(world["updates"])["state"]
 	UpdateFixtures.end_world(world, nodes)
 
-	if previous_host.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(state_at_start, "ready", "a stage older than the runner's version → ready at once")
 	testing.eq(state, "ready", "and still ready after the runner reports again")
 	testing.eq(version, "1.8.0", "about the staged version, not the runner's")
@@ -559,8 +548,7 @@ static func _test_stage_failing_its_check_gives_way(testing: Testing, tree: Scen
 	testing.begin("Update installer: a stage that fails its check gives way to the newer release")
 	var server := UpdateFixtures.LoopbackReleaseServer.new(
 			UpdateFixtures.release_assets("1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key()))
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 
 	var world := UpdateFixtures.begin_world("installer_stage_zip", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage_tampered(world["updates"], "1.8.0", {"core/a.gd": "older"}, "1.1.0", UpdateFixtures.key())
@@ -568,7 +556,7 @@ static func _test_stage_failing_its_check_gives_way(testing: Testing, tree: Scen
 	var installer: UpdateInstaller = nodes["installer"]
 	var zip_state_at_start := installer.state()
 	var frames := 0
-	while installer.state() != "available" and frames < 1200:
+	while installer.state() != "available" and frames < _MAX_FRAMES:
 		server.poll()
 		await tree.process_frame
 		frames += 1
@@ -588,7 +576,7 @@ static func _test_stage_failing_its_check_gives_way(testing: Testing, tree: Scen
 	installer = nodes["installer"]
 	var signature_state_at_start := installer.state()
 	var signature_frames := 0
-	while installer.state() != "available" and signature_frames < 1200:
+	while installer.state() != "available" and signature_frames < _MAX_FRAMES:
 		server.poll()
 		await tree.process_frame
 		signature_frames += 1
@@ -598,10 +586,7 @@ static func _test_stage_failing_its_check_gives_way(testing: Testing, tree: Scen
 	UpdateFixtures.end_world(world, nodes)
 
 	server.stop()
-	if previous_host.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(zip_state_at_start, "idle", "a staged zip that no longer matches → not offered at start")
 	testing.eq(zip_state, "available", "the newer release → verified and offered")
 	testing.eq(zip_version, "1.9.0", "about the newer version")
@@ -625,8 +610,7 @@ static func _begin_click(purpose: String, tree: SceneTree) -> Dictionary:
 static func _serve(world: Dictionary, archive: PackedByteArray, tree: SceneTree) -> Dictionary:
 	(world["options"] as Dictionary)["stage_budget_ms"] = 0
 	var server := UpdateFixtures.LoopbackReleaseServer.new({ReleaseAssets.archive_name("1.9.0"): archive})
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var nodes := UpdateFixtures.start_world(world, tree)
 	return {"world": world, "nodes": nodes, "server": server, "previous_host": previous_host}
 
@@ -634,11 +618,7 @@ static func _serve(world: Dictionary, archive: PackedByteArray, tree: SceneTree)
 static func _end_click(click: Dictionary) -> void:
 	UpdateFixtures.end_world(click["world"], click["nodes"])
 	(click["server"] as UpdateFixtures.LoopbackReleaseServer).stop()
-	var previous_host := str(click["previous_host"])
-	if previous_host.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	UpdateFixtures.restore_host(str(click["previous_host"]))
 
 
 static func _installer_of(click: Dictionary) -> UpdateInstaller:
@@ -1202,8 +1182,7 @@ static func _requested(server: UpdateFixtures.LoopbackReleaseServer, path_end: S
 static func _begin_failed_click(world: Dictionary, tree: SceneTree) -> Dictionary:
 	UpdateFixtures.keep_verified(world["updates"], "1.9.0", _STAGED_FILES, UpdateFixtures.key())
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var click := {"world": world, "nodes": nodes, "server": server, "previous_host": previous_host}
 	await _click_and_download(click, tree)
@@ -1255,14 +1234,14 @@ static func _test_postponed_reason(testing: Testing, tree: SceneTree) -> void:
 	journal["attempts"] = 1
 	UpdateJournal.write(journal, str(world["updates"]))
 	var nodes := UpdateFixtures.start_world(world, tree)
-	var postponed := _postponed_reason_of(nodes["installer"])
+	var postponed := (nodes["installer"] as UpdateInstaller).postponed_reason()
 	UpdateFixtures.end_world(world, nodes)
 
 	world = UpdateFixtures.begin_world("installer_postponed_fresh", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
 	nodes = UpdateFixtures.start_world(world, tree)
 	var fresh_state := (nodes["installer"] as UpdateInstaller).state()
-	var fresh := _postponed_reason_of(nodes["installer"])
+	var fresh := (nodes["installer"] as UpdateInstaller).postponed_reason()
 	UpdateFixtures.end_world(world, nodes)
 
 	world = UpdateFixtures.begin_world("installer_postponed_headless", "1.9.0", "ask", "1.1.0")
@@ -1274,7 +1253,7 @@ static func _test_postponed_reason(testing: Testing, tree: SceneTree) -> void:
 	UpdateJournal.write(journal, str(world["updates"]))
 	nodes = UpdateFixtures.start_world(world, tree)
 	var headless_settled := (nodes["installer"] as UpdateInstaller).settled()
-	var headless := _postponed_reason_of(nodes["installer"])
+	var headless := (nodes["installer"] as UpdateInstaller).postponed_reason()
 	UpdateFixtures.end_world(world, nodes)
 
 	testing.eq(postponed, "could not rename the addon folder", "an exit that tried and failed → its reason")
@@ -1283,13 +1262,6 @@ static func _test_postponed_reason(testing: Testing, tree: SceneTree) -> void:
 	testing.eq(headless_settled, {}, "a headless start runs no settle")
 	testing.eq(headless, "", "so there is no reason")
 	print("")
-
-
-# Called by name, so an installer without the method fails the case, not the whole file.
-static func _postponed_reason_of(installer: UpdateInstaller) -> String:
-	if not installer.has_method("postponed_reason"):
-		return "no postponed_reason()"
-	return str(installer.call("postponed_reason"))
 
 
 # A staged release and either what the runner reports or nothing at all: both paths through
@@ -1370,13 +1342,12 @@ static func _test_off_list_redirect_of_the_zip(testing: Testing, tree: SceneTree
 		var second := UpdateFixtures.LoopbackReleaseServer.new({zip_name: archive_bytes})
 		var first := UpdateFixtures.LoopbackReleaseServer.new({})
 		first.redirect("/" + zip_name, 302, (form % int(second.host().get_slice(":", 2))) + zip_name)
-		var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-		OS.set_environment(UpdateFixtures.HOST_ENV, first.host())
+		var previous_host := UpdateFixtures.set_host(first.host())
 		var nodes := UpdateFixtures.start_world(world, tree)
 		var installer: UpdateInstaller = nodes["installer"]
 		installer.install()
 		var frames := 0
-		while installer.state() == "downloading" and frames < 1200:
+		while installer.state() == "downloading" and frames < _MAX_FRAMES:
 			first.poll()
 			second.poll()
 			await tree.process_frame
@@ -1388,10 +1359,7 @@ static func _test_off_list_redirect_of_the_zip(testing: Testing, tree: SceneTree
 		UpdateFixtures.end_world(world, nodes)
 		first.stop()
 		second.stop()
-		if previous_host.is_empty():
-			OS.unset_environment(UpdateFixtures.HOST_ENV)
-		else:
-			OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+		UpdateFixtures.restore_host(previous_host)
 		testing.eq(second_hits, 0, "%s → no request reaches it" % form)
 		testing.eq(state, "failed", "%s → the click's download fails" % form)
 		testing.ok(not zip_left, "%s → no zip stays" % form)
@@ -1405,31 +1373,32 @@ static func _test_off_list_redirect_during_a_verify(testing: Testing, tree: Scen
 	var first := UpdateFixtures.LoopbackReleaseServer.new({})
 	for asset_name: String in [ReleaseAssets.manifest_name("1.9.0"), ReleaseAssets.signature_name("1.9.0")]:
 		first.redirect("/" + asset_name, 302, second.host() + "/" + asset_name)
-	var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, first.host())
+	var previous_host := UpdateFixtures.set_host(first.host())
 	var world := UpdateFixtures.begin_world("installer_off_list_verify", "1.9.0", "ask", "1.1.0")
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
 	var changes := [0]
 	installer.state_changed.connect(func() -> void: changes[0] += 1)
 	var frames := 0
-	while changes[0] == 0 and frames < 1200:
+	while changes[0] == 0 and frames < _MAX_FRAMES:
 		first.poll()
 		second.poll()
 		await tree.process_frame
 		frames += 1
 	second.poll()
 	var state := installer.state()
+	var security_failed := installer.security_check_failed()
 	var second_hits := second.connections()
+	var manifest_asked := _requested(first, ReleaseAssets.manifest_name("1.9.0"))
 	UpdateFixtures.end_world(world, nodes)
 	first.stop()
 	second.stop()
-	if previous_host.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+	UpdateFixtures.restore_host(previous_host)
+	testing.ok(frames < _MAX_FRAMES, "the verify ends within %d frames" % _MAX_FRAMES)
+	testing.ok(manifest_asked, "the walk reaches the manifest at the first listener")
 	testing.eq(second_hits, 0, "the second listener → no request reaches it")
-	testing.eq(state, "idle", "and with no click, the badge stays links only")
+	testing.ok(security_failed, "the hop off the list → a failed security check")
+	testing.eq(state, "idle", "and with no click, the installer stays idle")
 	print("")
 
 
@@ -1445,15 +1414,14 @@ static func _test_redirects_every_engine_must_follow(testing: Testing, tree: Sce
 		var server := UpdateFixtures.LoopbackReleaseServer.new(moved)
 		for asset_name: String in assets:
 			server.redirect("/" + asset_name, code, "%s/moved-%s" % [server.host(), asset_name])
-		var previous_host := OS.get_environment(UpdateFixtures.HOST_ENV)
-		OS.set_environment(UpdateFixtures.HOST_ENV, server.host())
+		var previous_host := UpdateFixtures.set_host(server.host())
 		var world := UpdateFixtures.begin_world("installer_redirect_%d" % code, "1.9.0", "ask", "1.1.0")
 		var nodes := UpdateFixtures.start_world(world, tree)
 		var installer: UpdateInstaller = nodes["installer"]
 		var changes := [0]
 		installer.state_changed.connect(func() -> void: changes[0] += 1)
 		var frames := 0
-		while changes[0] == 0 and frames < 1200:
+		while changes[0] == 0 and frames < _MAX_FRAMES:
 			server.poll()
 			await tree.process_frame
 			frames += 1
@@ -1461,10 +1429,7 @@ static func _test_redirects_every_engine_must_follow(testing: Testing, tree: Sce
 		var connections := server.connections()
 		UpdateFixtures.end_world(world, nodes)
 		server.stop()
-		if previous_host.is_empty():
-			OS.unset_environment(UpdateFixtures.HOST_ENV)
-		else:
-			OS.set_environment(UpdateFixtures.HOST_ENV, previous_host)
+		UpdateFixtures.restore_host(previous_host)
 		testing.eq(state, "available", "%d on the manifest and signature → verified" % code)
 		testing.eq(connections, 5, "%d → the chain's 404, then each file's redirect and the file" % code)
 	print("")

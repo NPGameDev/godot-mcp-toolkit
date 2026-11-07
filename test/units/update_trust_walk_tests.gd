@@ -49,6 +49,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_emergency_stop_can_be_lifted(testing, tree)
 	await _test_stale_note_goes_with_the_next_walk(testing, tree)
 	await _test_cap_on_one_walk(testing, tree)
+	await _test_walk_of_exactly_the_cap(testing, tree)
 	await _test_click_drops_the_key_of_a_kept_release(testing, tree)
 	await _test_click_moves_a_kept_release_to_a_new_key(testing, tree)
 	_test_key_dropped_found_at_a_start(testing, tree)
@@ -86,19 +87,6 @@ static func _store_document(world: Dictionary, version: int, bytes: PackedByteAr
 	FolderFiles.write_checked(store.path_join(_document_name(version)), bytes)
 
 
-static func _set_host(host: String) -> String:
-	var previous := OS.get_environment(UpdateFixtures.HOST_ENV)
-	OS.set_environment(UpdateFixtures.HOST_ENV, host)
-	return previous
-
-
-static func _restore_host(previous: String) -> void:
-	if previous.is_empty():
-		OS.unset_environment(UpdateFixtures.HOST_ENV)
-	else:
-		OS.set_environment(UpdateFixtures.HOST_ENV, previous)
-
-
 # Serves `servers` each frame until `condition` holds. Returns whether it did in time.
 static func _poll_until(condition: Callable, servers: Array, tree: SceneTree) -> bool:
 	var frames := 0
@@ -130,7 +118,7 @@ static func _names(server: UpdateFixtures.LoopbackReleaseServer) -> Array:
 # is gone when this returns, so the assertions run on the measures.
 static func _measure_failed_check(world: Dictionary, servers: Array, host: String, tree: SceneTree) -> Dictionary:
 	var server: UpdateFixtures.LoopbackReleaseServer = servers[0]
-	var previous_host := _set_host(host)
+	var previous_host := UpdateFixtures.set_host(host)
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
 	var failed := func() -> bool: return installer.check_failed()
@@ -164,7 +152,7 @@ static func _measure_failed_check(world: Dictionary, servers: Array, host: Strin
 	_end(world, nodes)
 	for each: UpdateFixtures.LoopbackReleaseServer in servers:
 		each.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	return measured
 
 
@@ -192,7 +180,7 @@ static func _logged_404s(log_path: String) -> int:
 # signature: what it leaves, that nothing retries on its own, and a new start. Everything the test
 # made is gone when this returns, so the assertions run on the measures.
 static func _measure_unclicked_404(world: Dictionary, server: UpdateFixtures.LoopbackReleaseServer, tree: SceneTree) -> Dictionary:
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
 	var log_path := installer.log_path()
@@ -216,7 +204,7 @@ static func _measure_unclicked_404(world: Dictionary, server: UpdateFixtures.Loo
 	measured["start_requests"] = server.connections() - before_start
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	return measured
 
 
@@ -235,12 +223,12 @@ static func _measure_clicked_404(world: Dictionary, assets: Dictionary, tree: Sc
 	var failing := UpdateFixtures.LoopbackReleaseServer.new({})
 	failing.redirect("/" + _document_name(2), 503, "")
 	var missing := UpdateFixtures.LoopbackReleaseServer.new(assets)
-	var previous_host := _set_host(failing.host())
+	var previous_host := UpdateFixtures.set_host(failing.host())
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
 	var failed := func() -> bool: return installer.check_failed()
 	await _poll_until(failed, [failing], tree)
-	_set_host(missing.host())
+	UpdateFixtures.set_host(missing.host())
 	installer.install()
 	var measured := {"on_time": await _poll_until(failed, [missing], tree)}
 	measured["state"] = installer.state()
@@ -250,7 +238,7 @@ static func _measure_clicked_404(world: Dictionary, assets: Dictionary, tree: Sc
 	_end(world, nodes)
 	failing.stop()
 	missing.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	return measured
 
 
@@ -267,7 +255,7 @@ static func _test_walk_accepts_until_a_404(testing: Testing, tree: SceneTree) ->
 	var assets := _release(UpdateFixtures.other_key())
 	assets[_document_name(2)] = _document(2, [UpdateFixtures.other_key()])
 	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("accepts")
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
@@ -276,7 +264,7 @@ static func _test_walk_accepts_until_a_404(testing: Testing, tree: SceneTree) ->
 	var note := installer.note_text()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(on_time, "the rotated key's release verifies in time")
 	testing.eq(_names(server), [_document_name(2), _document_name(3), ReleaseAssets.manifest_name(_VERSION),
 			ReleaseAssets.signature_name(_VERSION)], "the documents first, then the manifest and signature")
@@ -286,11 +274,11 @@ static func _test_walk_accepts_until_a_404(testing: Testing, tree: SceneTree) ->
 
 
 static func _test_no_request_when_nothing_is_newer(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("Trust walk: an up-to-date client asks for nothing")
+	testing.begin("Trust walk: a toolkit on the latest version asks for nothing")
 	var assets := _release(UpdateFixtures.key())
 	assets[_document_name(2)] = _document(2, [UpdateFixtures.key()])
 	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("current", _VERSION)
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
@@ -302,7 +290,7 @@ static func _test_no_request_when_nothing_is_newer(testing: Testing, tree: Scene
 	var total := server.connections()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(at_start, 0, "the start → no request at the listener")
 	testing.eq(total, 0, "and a stray click → none either")
 	testing.eq(state, "idle", "the installer stays idle")
@@ -314,7 +302,7 @@ static func _test_no_request_with_an_empty_embedded_document(testing: Testing, t
 	var assets := _release(UpdateFixtures.key())
 	assets[_document_name(2)] = _document(2, [UpdateFixtures.key()])
 	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("empty_embedded")
 	(world["options"] as Dictionary)["trust_document"] = ""
 	var nodes := UpdateFixtures.start_world(world, tree)
@@ -328,7 +316,7 @@ static func _test_no_request_with_an_empty_embedded_document(testing: Testing, t
 	var total := server.connections()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(at_start, 0, "the start → no request at the listener")
 	testing.eq(total, 0, "and a click → none either")
 	testing.eq(state, "idle", "the installer stays idle")
@@ -403,7 +391,7 @@ static func _test_invalid_document(testing: Testing, tree: SceneTree) -> void:
 static func _test_store_write(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Trust walk: a store that cannot be written names its folder")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({_document_name(2): _document(2, [UpdateFixtures.key()])})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("store_write")
 	var blocked_store := UpdateFixtures.scratch("walk_store_is_a_file")
 	FolderFiles.write_checked(ProjectSettings.globalize_path(blocked_store), "a file".to_utf8_buffer())
@@ -421,7 +409,7 @@ static func _test_store_write(testing: Testing, tree: SceneTree) -> void:
 	_end(world, nodes)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(blocked_store))
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(on_time, "the check fails in time")
 	testing.ok(note.begins_with("Couldn't save update security data to %s." % ProjectSettings.globalize_path(blocked_store)),
 			"the note names the store's folder")
@@ -435,7 +423,7 @@ static func _test_store_write(testing: Testing, tree: SceneTree) -> void:
 static func _test_no_store(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Trust walk: no data folder asks for nothing and offers no retry")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({_document_name(2): _document(2, [UpdateFixtures.key()])})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("no_store")
 	(world["options"] as Dictionary)["trust_store"] = "."
 	var nodes := UpdateFixtures.start_world(world, tree)
@@ -450,7 +438,7 @@ static func _test_no_store(testing: Testing, tree: SceneTree) -> void:
 	var total := server.connections()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(state, "idle", "the start → idle")
 	testing.ok(note.begins_with("This update can't install here because your system doesn't set "), "with the data folder's sentence")
 	testing.ok(not can_retry, "a click cannot help")
@@ -537,7 +525,7 @@ static func _test_emergency_stop_can_be_lifted(testing: Testing, tree: SceneTree
 		var assets := _release(UpdateFixtures.key())
 		assets[_document_name(lifting_version)] = _document(lifting_version, [UpdateFixtures.key()])
 		var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
-		var previous_host := _set_host(server.host())
+		var previous_host := UpdateFixtures.set_host(server.host())
 		var world := _world("lift_" + label)
 		if embedded:
 			(world["options"] as Dictionary)["trust_document"] = TrustFixtures.first_document([])
@@ -548,7 +536,7 @@ static func _test_emergency_stop_can_be_lifted(testing: Testing, tree: SceneTree
 		var on_time: bool = await _poll_until(func() -> bool: return installer.state() == "available", [server], tree)
 		_end(world, nodes)
 		server.stop()
-		_restore_host(previous_host)
+		UpdateFixtures.restore_host(previous_host)
 		testing.ok(on_time, "a stop %s → the release verifies once it is lifted" % label)
 		testing.eq(_names(server).slice(0, 1), [_document_name(lifting_version)], "a stop %s → the walk asks for the next document" % label)
 	print("")
@@ -558,7 +546,7 @@ static func _test_stale_note_goes_with_the_next_walk(testing: Testing, tree: Sce
 	testing.begin("Trust walk: a new version's walk drops the last check's note")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
 	server.redirect("/" + _document_name(2), 503, "")
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("stale_note")
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
@@ -572,7 +560,7 @@ static func _test_stale_note_goes_with_the_next_walk(testing: Testing, tree: Sce
 	var failed_during := installer.check_failed()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(note_before.begins_with("GitHub isn't responding."), "1.9.0's check fails with a note")
 	testing.eq(version, "1.10.0", "the runner reports 1.10.0 → the installer moves on")
 	testing.eq(note_during, "", "and the note is gone while the new walk runs")
@@ -586,7 +574,7 @@ static func _test_cap_on_one_walk(testing: Testing, tree: SceneTree) -> void:
 	for version: int in range(2, 35):
 		assets[_document_name(version)] = _document(version, [UpdateFixtures.key()])
 	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("cap")
 	var nodes := UpdateFixtures.start_world(world, tree)
 	var installer: UpdateInstaller = nodes["installer"]
@@ -597,7 +585,7 @@ static func _test_cap_on_one_walk(testing: Testing, tree: SceneTree) -> void:
 	var all_names := _names(server)
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	var expected_first := []
 	for version: int in range(2, 34):
 		expected_first.append(_document_name(version))
@@ -610,12 +598,44 @@ static func _test_cap_on_one_walk(testing: Testing, tree: SceneTree) -> void:
 	print("")
 
 
+# The cap's edge: with exactly as many documents as one walk takes, that walk cannot see the
+# chain end, so the click's walk starts at the 404.
+static func _test_walk_of_exactly_the_cap(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Trust walk: 32 hosted documents fill one walk, and a click meets the 404")
+	var assets := _release(UpdateFixtures.key())
+	for version: int in range(2, 34):
+		assets[_document_name(version)] = _document(version, [UpdateFixtures.key()])
+	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
+	var previous_host := UpdateFixtures.set_host(server.host())
+	var world := _world("cap_edge")
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var installer: UpdateInstaller = nodes["installer"]
+	var verified: bool = await _poll_until(func() -> bool: return installer.state() == "available", [server], tree)
+	var first_walk := _names(server)
+	installer.install()
+	var staged: bool = await _poll_until(func() -> bool: return installer.state() == "ready", [server], tree)
+	var all_names := _names(server)
+	_end(world, nodes)
+	server.stop()
+	UpdateFixtures.restore_host(previous_host)
+	var expected_first := []
+	for version: int in range(2, 34):
+		expected_first.append(_document_name(version))
+	expected_first.append_array([ReleaseAssets.manifest_name(_VERSION), ReleaseAssets.signature_name(_VERSION)])
+	testing.ok(verified, "the first walk ends in a verified release, in time")
+	testing.eq(first_walk, expected_first, "32 hosted → trust-2 to trust-33, then the manifest and signature")
+	testing.ok(staged, "the click stages the release, in time")
+	testing.eq(all_names.slice(first_walk.size()), [_document_name(34), ReleaseAssets.archive_name(_VERSION)],
+			"the click meets the 404 at trust-34, then fetches the zip")
+	print("")
+
+
 static func _test_click_drops_the_key_of_a_kept_release(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Trust walk: a kept release whose key a click's walk drops is not downloaded")
 	var assets := _release(UpdateFixtures.key())
 	assets[_document_name(2)] = _document(2, [UpdateFixtures.other_key()])
 	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("kept_dropped")
 	UpdateFixtures.keep_verified(world["updates"], _VERSION, {"core/a.gd": "new"}, UpdateFixtures.key())
 	var nodes := UpdateFixtures.start_world(world, tree)
@@ -630,7 +650,7 @@ static func _test_click_drops_the_key_of_a_kept_release(testing: Testing, tree: 
 	var zip_left := UpdateFixtures.has_release_file(world, _VERSION, ReleaseAssets.archive_name(_VERSION))
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(state_at_start, "available", "the start offers the kept release")
 	testing.eq(requests_at_start, 0, "with no request")
 	testing.ok(failed, "the click's check fails in time")
@@ -647,7 +667,7 @@ static func _test_click_moves_a_kept_release_to_a_new_key(testing: Testing, tree
 	var assets := _release(UpdateFixtures.other_key())
 	assets[_document_name(2)] = _document(2, [UpdateFixtures.other_key()])
 	var server := UpdateFixtures.LoopbackReleaseServer.new(assets)
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("kept_moved")
 	UpdateFixtures.keep_verified(world["updates"], _VERSION, {"core/a.gd": "new"}, UpdateFixtures.key())
 	var nodes := UpdateFixtures.start_world(world, tree)
@@ -656,7 +676,7 @@ static func _test_click_moves_a_kept_release_to_a_new_key(testing: Testing, tree
 	var staged: bool = await _poll_until(func() -> bool: return installer.state() == "ready", [server], tree)
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.ok(staged, "the click stages the release, in time")
 	testing.eq(_names(server), [_document_name(2), _document_name(3), ReleaseAssets.manifest_name(_VERSION),
 			ReleaseAssets.signature_name(_VERSION), ReleaseAssets.archive_name(_VERSION)],
@@ -667,7 +687,7 @@ static func _test_click_moves_a_kept_release_to_a_new_key(testing: Testing, tree
 static func _test_key_dropped_found_at_a_start(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Trust walk: a key dropped after staging shows at the next start, before any exit")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("staged_dropped")
 	UpdateFixtures.stage(world["updates"], _VERSION, {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
 	_store_document(world, 2, _document(2, [UpdateFixtures.other_key()]))
@@ -678,13 +698,13 @@ static func _test_key_dropped_found_at_a_start(testing: Testing, tree: SceneTree
 	var logged := FileAccess.get_file_as_string((nodes["installer"] as UpdateInstaller).log_path())
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(notice.get("kind", ""), UpdateInstaller.NOTICE_FAILED, "the release → reported as not installed")
 	testing.eq(notice.get("version", ""), _VERSION, "about the staged version")
 	testing.eq(notice.get("from_version", ""), "1.1.0", "and the one still installed")
 	testing.eq(notice.get("reason", ""), _UNTRUSTED, "with the reason in plain words")
 	testing.ok(not bool(notice.get("server_changed", true)), "and no offer about the server")
-	testing.ok(state != "ready", "nothing stays ready to install")
+	testing.eq(state, "idle", "nothing stays ready to install")
 	testing.eq(record, "", "and the journal goes")
 	testing.ok(logged.contains(_UNTRUSTED), "and the log says why")
 	print("")
@@ -695,7 +715,7 @@ static func _test_key_dropped_found_at_a_start(testing: Testing, tree: SceneTree
 static func _test_missing_signature_is_no_key_notice(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Trust walk: a stage missing its signature file reports no dropped key")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("staged_no_signature")
 	UpdateFixtures.stage(world["updates"], _VERSION, {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
 	var folder := UpdateFolder.version_folder(_VERSION, str(world["updates"]))
@@ -704,7 +724,7 @@ static func _test_missing_signature_is_no_key_notice(testing: Testing, tree: Sce
 	var notice: Dictionary = (nodes["installer"] as UpdateInstaller).notice()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(notice, {}, "no notice")
 	print("")
 
@@ -712,7 +732,7 @@ static func _test_missing_signature_is_no_key_notice(testing: Testing, tree: Sce
 static func _test_key_dropped_found_at_the_exit(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Trust walk: a key dropped before the exit shows at the next start")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
-	var previous_host := _set_host(server.host())
+	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := _world("exit_dropped")
 	UpdateFixtures.stage(world["updates"], _VERSION, {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
 	_store_document(world, 2, _document(2, [UpdateFixtures.other_key()]))
@@ -721,7 +741,7 @@ static func _test_key_dropped_found_at_the_exit(testing: Testing, tree: SceneTre
 	var notice: Dictionary = (nodes["installer"] as UpdateInstaller).notice()
 	_end(world, nodes)
 	server.stop()
-	_restore_host(previous_host)
+	UpdateFixtures.restore_host(previous_host)
 	testing.eq(applied["state"], "not_applied", "the exit refuses the release")
 	testing.eq(notice.get("kind", ""), UpdateInstaller.NOTICE_FAILED, "the next start → reported as not installed")
 	testing.eq(notice.get("reason", ""), _UNTRUSTED, "with the exit's reason in plain words")
