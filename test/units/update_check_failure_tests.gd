@@ -78,7 +78,7 @@ static func _test_messages(testing: Testing) -> void:
 			"Couldn't reach GitHub to check this update. Check your connection and click Update to try again. Unless you close this message, the toolkit also tries again the next time you open the editor.",
 			"unreachable → check the connection")
 	testing.eq(UpdateCheckFailure.message("github_error"),
-			"GitHub isn't responding. Try Update again in a few minutes. Unless you close this message, the toolkit also tries again the next time you open the editor.",
+			"GitHub replied, but not with the file the toolkit asked for. Try Update again in a few minutes. Unless you close this message, the toolkit also tries again the next time you open the editor.",
 			"GitHub's error → try again in a few minutes")
 	testing.eq(UpdateCheckFailure.message("security"),
 			"This update failed its security check, so it won't install. Your connection isn't the problem. Unless you close this message, the toolkit checks again the next time you open the editor.",

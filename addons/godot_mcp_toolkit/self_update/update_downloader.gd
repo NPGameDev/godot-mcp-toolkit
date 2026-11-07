@@ -29,9 +29,9 @@ const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity
 const MAX_REDIRECTS := 5
 
 ## The [code]refusal[/code] of a hop [method hop_refusal] turns down, and what it returns.
-const REFUSED_HOST := "the download redirected to a host the toolkit does not trust"
+const REFUSED_HOST := "the download was redirected to a host the toolkit does not trust"
 ## The [code]refusal[/code] of a redirect past [constant MAX_REDIRECTS].
-const REFUSED_TOO_MANY := "the download redirected too many times"
+const REFUSED_TOO_MANY := "the download was redirected too many times"
 
 const _RELEASE_HOST := "github.com"
 const _ASSET_HOST_SUFFIX := ".githubusercontent.com"

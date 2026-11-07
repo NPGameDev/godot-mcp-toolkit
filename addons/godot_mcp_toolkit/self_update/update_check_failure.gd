@@ -76,7 +76,7 @@ static func message(kind: String, store_folder: String = "") -> String:
 		UNREACHABLE:
 			return "Couldn't reach GitHub to check this update. Check your connection and click Update to try again. Unless you close this message, the toolkit also tries again the next time you open the editor."
 		GITHUB_ERROR:
-			return "GitHub isn't responding. Try Update again in a few minutes. Unless you close this message, the toolkit also tries again the next time you open the editor."
+			return "GitHub replied, but not with the file the toolkit asked for. Try Update again in a few minutes. Unless you close this message, the toolkit also tries again the next time you open the editor."
 		NOT_READY:
 			return "This release isn't ready to install from the editor yet. Try Update again later."
 		SECURITY:

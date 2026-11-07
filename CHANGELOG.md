@@ -13,22 +13,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#125](https://github.com/NPGameDev/godot-mcp-toolkit/pull/125). A verified release can be
   unpacked a few files at a time and swapped in at editor exit by two folder renames under
   one journal, and the next start settles what a kill left. A kill between the two
-  renames leaves no toolkit to start, with both copies whole in the update folder;
-  recovering from that comes later.
+  renames leaves no toolkit to start, with both copies whole in the update folder.
+  The toolkit can't recover from that on its own yet; the troubleshooting guide's
+  [The toolkit is gone after an update](docs/troubleshooting.md#the-toolkit-is-gone-after-an-update)
+  gives the steps to do it by hand.
 - The toolkit can install its own updates. A new setup step asks whether it may,
   and Project Settings → Mcp Toolkit → Updates → Install Mode keeps the answer:
   `ask` (the default) offers each new release on the dock's badge, and `manual`
   keeps the dock's links only. In `ask`, the editor can also offer a release in a
   dialog when it starts, with Update, Later and Skip this version. The dialog
-  doesn't block the rest of the editor. The update's
-  zip downloads only when you click Update; before that the toolkit fetches only
-  what it needs to check the release: any trust document it lacks, then the
-  release's manifest and signature. The update comes from the toolkit's GitHub
-  release and installs only when the maintainer's signature on its manifest
-  checks out. The toolkit prepares it a few files at a time, then swaps it in
-  when you close or restart the editor. If the swap can't finish, the
-  current version stays and the update waits for the next close. If even moving
-  the current version back fails, it is left in the update folder's backup; see
+  doesn't block the rest of the editor. The update's zip downloads only when you
+  click Update; before that the toolkit fetches only what it needs to check the
+  release: any trust document it lacks, then the release's manifest and
+  signature. The update comes from the toolkit's GitHub release and installs only
+  when the maintainer's signature on its manifest checks out. The toolkit
+  prepares it a few files at a time, then swaps it in when you close or restart
+  the editor. If the swap can't finish, the current version stays and the update
+  waits for the next close. If moving the current version back fails too, that
+  version is left in the update folder's backup; see
   "The toolkit is gone after an update" in the troubleshooting guide. Keep
   Backup, under the same heading, keeps the previous version until the next
   update is staged; turn it off to delete that copy once the update installs.
@@ -43,8 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   update's badge until the next start, and the update still installs when you
   close the editor. After the next start the badge says what happened, with
   Release notes after an install, and with an Update .mcp.json button when the
-  new version is tested with another server than the one the toolkit wrote into
-  `.mcp.json`. What's in this update, on the badge and in the dialog, opens
+  new version is tested with a different server from the one the toolkit wrote
+  into `.mcp.json`. What's in this update, on the badge and in the dialog, opens
   the release's changelog. A release found during the session also gets a toast.
 
 ### Changed

@@ -336,7 +336,7 @@ static func _test_timeout(testing: Testing, tree: SceneTree) -> void:
 
 
 static func _test_server_error(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("Trust walk: a 503 ends in GitHub isn't responding")
+	testing.begin("Trust walk: a 503 ends in GitHub's error reply")
 	var server := UpdateFixtures.LoopbackReleaseServer.new(_release(UpdateFixtures.key()))
 	server.redirect("/" + _document_name(2), 503, "")
 	var measured: Dictionary = await _measure_failed_check(_world("server_error"), [server], server.host(), tree)
@@ -346,7 +346,7 @@ static func _test_server_error(testing: Testing, tree: SceneTree) -> void:
 
 
 static func _test_rate_limit(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("Trust walk: a 429 ends in GitHub isn't responding")
+	testing.begin("Trust walk: a 429 ends in GitHub's error reply")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
 	server.redirect("/" + _document_name(2), 429, "")
 	var measured: Dictionary = await _measure_failed_check(_world("rate_limit"), [server], server.host(), tree)
@@ -493,7 +493,7 @@ static func _test_manifest_500_is_not_a_missing_release(testing: Testing, tree: 
 	server.redirect("/" + ReleaseAssets.manifest_name(_VERSION), 500, "")
 	var measured: Dictionary = await _measure_failed_check(_world("manifest_500"), [server], server.host(), tree)
 	_expect_failed_check(testing, measured, UpdateCheckFailure.GITHUB_ERROR)
-	testing.ok(str(measured["note"]).begins_with("GitHub isn't responding."), "in GitHub's sentence")
+	testing.ok(str(measured["note"]).begins_with("GitHub replied, but not with the file the toolkit asked for."), "in GitHub's sentence")
 	print("")
 
 
@@ -561,7 +561,7 @@ static func _test_stale_note_goes_with_the_next_walk(testing: Testing, tree: Sce
 	_end(world, nodes)
 	server.stop()
 	UpdateFixtures.restore_host(previous_host)
-	testing.ok(note_before.begins_with("GitHub isn't responding."), "1.9.0's check fails with a note")
+	testing.ok(note_before.begins_with("GitHub replied, but not with the file the toolkit asked for."), "1.9.0's check fails with a note")
 	testing.eq(version, "1.10.0", "the runner reports 1.10.0 → the installer moves on")
 	testing.eq(note_during, "", "and the note is gone while the new walk runs")
 	testing.ok(not failed_during, "as is the failure")

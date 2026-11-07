@@ -64,8 +64,8 @@ const _UPDATE_INSTALL_TEXT := (
 	+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
 	+ "It's saved in project.godot, so it applies to everyone who works on this "
 	+ "project.\n\n"
-	+ "Closing this window with × isn't an answer: until you choose here, the wizard "
-	+ "asks again at each editor start.")
+	+ "If you close this window with ×, the wizard asks again at each editor start "
+	+ "until you choose here.")
 const _ASK_DETAIL := ("When a new version is out, the dock's badge offers it, and the editor asks at "
 	+ "its next start. One click downloads it; it installs when the editor restarts or closes.")
 const _MANUAL_DETAIL := "The dock only links to new versions."

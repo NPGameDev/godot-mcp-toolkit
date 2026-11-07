@@ -867,7 +867,7 @@ static func _test_failed_check_keeps_the_links(testing: Testing, tree: SceneTree
 	_end(world, nodes)
 	server.stop()
 	UpdateFixtures.restore_host(previous_host)
-	var github_opening := "GitHub isn't responding."
+	var github_opening := "GitHub replied, but not with the file the toolkit asked for."
 	testing.ok(status.begins_with(github_opening), "the status line says what failed")
 	testing.ok(update_shown, "Update stays on offer")
 	testing.eq(update_text, "Update", "and reads Update")

@@ -18,10 +18,10 @@ const WHATS_NEW_LABEL := "What's in this update"
 
 const _TITLE := "Godot MCP Toolkit update"
 const _TEXT := ("Godot MCP Toolkit %s is available. Install it now?\n\n"
-		+ "Update downloads it from the toolkit's GitHub releases, then installs it when the "
-		+ "editor restarts or closes; Godot 4.4 and later restart on their own when no script "
+		+ "Update downloads it from the toolkit's GitHub releases. The update installs when the "
+		+ "editor restarts or closes, and Godot 4.4 and later restart on their own when no script "
 		+ "has unsaved edits, no game is running and no open scene is untitled. Save your work "
-		+ "first: a restart you start from the dock stops a running game and can't "
+		+ "first: restarting from the dock stops a running game and can't "
 		+ "ask about every unsaved file.\n\n"
 		+ "The new files show up in version control; commit them so everyone on the project "
 		+ "runs the same version.")

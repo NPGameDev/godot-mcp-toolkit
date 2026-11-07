@@ -306,8 +306,8 @@ Related upstream reports:
 
 **Cause:** the update moves the installed toolkit aside, then moves the new one
 in. If the editor was killed between the two moves, or the second move failed
-and so did moving the old version back, the old version is left in the update
-folder's backup.
+and moving the old version back failed too, the old version is left in the
+update folder's backup.
 
 **Fix:** close Godot and work in your file manager, since the editor hides the
 update folder:
