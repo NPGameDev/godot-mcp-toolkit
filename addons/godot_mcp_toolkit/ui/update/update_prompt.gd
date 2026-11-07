@@ -18,18 +18,20 @@ const WHATS_NEW_LABEL := "What's in this update"
 
 const _TITLE := "Godot MCP Toolkit update"
 const _TEXT := ("Godot MCP Toolkit %s is available. Install it now?\n\n"
-		+ "Update downloads it from the toolkit's GitHub releases, then restarts the editor "
-		+ "to install it. Save your work first: the restart stops a running game and can't "
+		+ "Update downloads it from the toolkit's GitHub releases, then installs it when the "
+		+ "editor restarts or closes; Godot 4.4 and later restart on their own when nothing "
+		+ "needs saving. Save your work first: the restart stops a running game and can't "
 		+ "ask about every unsaved file.\n\n"
 		+ "The new files show up in version control; commit them so everyone on the project "
 		+ "runs the same version.")
 const _DELETES_OTHER_FILES_TEXT := ("\n\nInstalling replaces the whole addon folder and "
 		+ "deletes any other files you added to it.")
-# The file list goes last: at up to nine lines, it would split the sentences around it.
-const _CHANGED_TEXT := ("\n\nThe toolkit keeps a copy of the current version until the next "
+const _KEPT_COPY_TEXT := ("\n\nThe toolkit keeps a copy of the current version until the next "
 		+ "update is staged. If Keep Backup is off in Project Settings, it deletes the copy "
-		+ "once this update installs.\n\n"
-		+ "%d toolkit files were changed in this project, and installing replaces them:\n%s")
+		+ "once this update installs.\n\n")
+# The file list goes last: at up to nine lines, it would split the sentences around it.
+const _CHANGED_FILE_TEXT := "1 toolkit file was changed in this project, and installing replaces it:\n%s"
+const _CHANGED_FILES_TEXT := "%d toolkit files were changed in this project, and installing replaces them:\n%s"
 const _SKIP_ACTION := "skip"
 const _WHATS_NEW_ACTION := "whats_new"
 # How many changed files the window names before it stops listing.
@@ -86,7 +88,10 @@ static func text_for(
 		listed.append("  " + changed_files[index])
 	if changed_files.size() > _LISTED_CHANGES:
 		listed.append("  …")
-	return text + _CHANGED_TEXT % [changed_files.size(), "\n".join(listed)]
+	var names := "\n".join(listed)
+	if changed_files.size() == 1:
+		return text + _KEPT_COPY_TEXT + _CHANGED_FILE_TEXT % names
+	return text + _KEPT_COPY_TEXT + _CHANGED_FILES_TEXT % [changed_files.size(), names]
 
 
 ## The changelog What's in this update opens for [param version], built locally from

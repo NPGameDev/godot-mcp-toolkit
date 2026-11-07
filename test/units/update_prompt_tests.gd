@@ -8,11 +8,14 @@ extends RefCounted
 const UpdatePrompt := preload("res://addons/godot_mcp_toolkit/ui/update/update_prompt.gd")
 
 const _TEXT := ("Godot MCP Toolkit 1.2.0 is available. Install it now?\n\n"
-		+ "Update downloads it from the toolkit's GitHub releases, then restarts the editor "
-		+ "to install it. Save your work first: the restart stops a running game and can't "
+		+ "Update downloads it from the toolkit's GitHub releases, then installs it when the "
+		+ "editor restarts or closes; Godot 4.4 and later restart on their own when nothing "
+		+ "needs saving. Save your work first: the restart stops a running game and can't "
 		+ "ask about every unsaved file.\n\n"
 		+ "The new files show up in version control; commit them so everyone on the project "
 		+ "runs the same version.")
+const _KEPT_COPY_TEXT := ("\n\nThe toolkit keeps a copy of the current version until the next update is staged. "
+		+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.")
 
 
 static func run(testing) -> void:
@@ -24,11 +27,12 @@ static func run(testing) -> void:
 static func _test_text(testing) -> void:
 	testing.begin("Update prompt: the window's text")
 	testing.eq(UpdatePrompt.text_for("1.2.0", PackedStringArray()), _TEXT, "no changed files → the version and what installing does")
-	testing.eq(UpdatePrompt.text_for("1.2.0", PackedStringArray(["core/a.gd"])), _TEXT
-			+ "\n\nThe toolkit keeps a copy of the current version until the next update is staged. "
-			+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs."
-			+ "\n\n1 toolkit files were changed in this project, and installing replaces them:\n  core/a.gd",
+	testing.eq(UpdatePrompt.text_for("1.2.0", PackedStringArray(["core/a.gd"])), _TEXT + _KEPT_COPY_TEXT
+			+ "\n\n1 toolkit file was changed in this project, and installing replaces it:\n  core/a.gd",
 			"one changed file → named")
+	testing.eq(UpdatePrompt.text_for("1.2.0", PackedStringArray(["core/a.gd", "core/b.gd"])), _TEXT + _KEPT_COPY_TEXT
+			+ "\n\n2 toolkit files were changed in this project, and installing replaces them:\n  core/a.gd\n  core/b.gd",
+			"two changed files → counted and named")
 	var nine := PackedStringArray()
 	for index: int in 9:
 		nine.append("f%d.gd" % index)

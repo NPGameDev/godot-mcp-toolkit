@@ -32,8 +32,9 @@ const _READY_TEXT := "%s installs when you close the editor. Restart now to inst
 const _READY_RETRY_TEXT := "%s tries to install again when you close the editor. Restart now to install it at once."
 const _POSTPONED_TEXT := "When the editor last closed, the update didn't install: %s."
 const _FAILED_TEXT := "Couldn't install: %s."
-const _CHANGED_TEXT := ("%d toolkit files were changed in this project; installing replaces them. "
-		+ "The toolkit keeps a copy of the current version until the next update is staged. "
+const _CHANGED_FILE_TEXT := "1 toolkit file was changed in this project; installing replaces it. "
+const _CHANGED_FILES_TEXT := "%d toolkit files were changed in this project; installing replaces them. "
+const _KEPT_COPY_TEXT := ("The toolkit keeps a copy of the current version until the next update is staged. "
 		+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.")
 const _READY_VIEW_TEXT := "%s is ready. It installs when you close the editor."
 const _READY_VIEW_RETRY_TEXT := "%s is ready. It tries to install again when you close the editor."
@@ -46,7 +47,7 @@ const _UNNAMED_SCRIPT := "A script"
 const _UNNAMED_SCRIPTS_TEXT := "%d scripts have unsaved edits. Save them, then click Restart."
 const _UNTITLED_SCENE_TEXT := "1 open scene has never been saved."
 const _UNTITLED_SCENES_TEXT := "%d open scenes have never been saved."
-const _SCRIPTS_ONLY_TEXT := "The toolkit only checks scripts. Save scenes, shaders and other open work yourself."
+const _SCRIPTS_ONLY_TEXT := "The toolkit only refuses a restart for unsaved scripts. Save scenes, shaders and other open work yourself."
 const _SCENES_NOT_ASKED_TEXT := ("Godot 4.2 and 4.3 don't ask about unsaved scenes when they restart, "
 		+ "so unsaved scene changes are lost. Save before you click Restart.")
 const _SERVER_CHANGED_TEXT := "It's tested with server %s, which .mcp.json doesn't run yet. Update .mcp.json, then restart your MCP client."
@@ -63,7 +64,11 @@ static func install_line(state: String, version: String, facts: Dictionary) -> S
 	match state:
 		UpdateInstaller.AVAILABLE:
 			var changed: int = int(facts.get(CHANGED, 0))
-			return _CHANGED_TEXT % changed if changed > 0 else ""
+			if changed == 1:
+				return _CHANGED_FILE_TEXT + _KEPT_COPY_TEXT
+			if changed > 1:
+				return (_CHANGED_FILES_TEXT % changed) + _KEPT_COPY_TEXT
+			return ""
 		UpdateInstaller.DOWNLOADING:
 			return _DOWNLOADING_TEXT % version
 		UpdateInstaller.PREPARING:
@@ -79,6 +84,10 @@ static func install_line(state: String, version: String, facts: Dictionary) -> S
 ## [param view]: the probe's findings, each told on its own line, and whether this
 ## editor's restart asks about unsaved scenes. [param retry] is set when the editor's last
 ## exit already tried to install it, so the first line says the next exit tries again.
+##
+## On 4.2 and 4.3, Restart loses the unsaved edits of a scene that has a file, and the
+## probe can't see them: those versions have no call that reports a scene's unsaved
+## edits. Only the line that says the restart doesn't ask about scenes warns about them.
 static func ready_view_text(version: String, view: Dictionary, retry: bool = false) -> String:
 	var first := _READY_VIEW_RETRY_TEXT if retry else _READY_VIEW_TEXT
 	var lines := PackedStringArray([first % version, _READY_VIEW_HOW_TEXT])

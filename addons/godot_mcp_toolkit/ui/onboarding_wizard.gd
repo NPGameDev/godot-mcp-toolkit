@@ -317,7 +317,8 @@ func _build_install_choice(text: String) -> VBoxContainer:
 	box.add_child(intro)
 	var group := ButtonGroup.new()
 	_install_boxes[InstallMode.ASK] = _add_choice(box, group, "Ask before installing (recommended)",
-			"When a new version is out, the editor asks at its next start. One click installs it.")
+			"When a new version is out, the dock's badge offers it, and the editor asks at its next "
+			+ "start. One click downloads it; it installs when the editor restarts or closes.")
 	_install_boxes[InstallMode.MANUAL] = _add_choice(box, group, "Don't install",
 			"The dock only links to new versions.")
 	var current := InstallMode.read(_project_settings)

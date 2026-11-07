@@ -7,6 +7,7 @@ extends RefCounted
 
 const Testing := preload("res://test/units/testing.gd")
 const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
+const DockUpdateBadgeStatus := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge_status.gd")
 const UpdateInstaller := preload("res://addons/godot_mcp_toolkit/self_update/update_installer.gd")
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/update_check_runner.gd")
@@ -212,10 +213,15 @@ static func _test_available_with_changed_files(testing: Testing, tree: SceneTree
 	var nodes := _start(world, tree)
 	var status := _text(nodes["badge"], "Status")
 	_end(world, nodes)
-	testing.eq(status, "1 toolkit files were changed in this project; installing replaces them. "
+	testing.eq(status, "1 toolkit file was changed in this project; installing replaces it. "
 			+ "The toolkit keeps a copy of the current version until the next update is staged. "
 			+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.",
 			"one changed file → the status line counts it")
+	testing.eq(DockUpdateBadgeStatus.install_line(UpdateInstaller.AVAILABLE, "1.9.0", {DockUpdateBadgeStatus.CHANGED: 2}),
+			"2 toolkit files were changed in this project; installing replaces them. "
+			+ "The toolkit keeps a copy of the current version until the next update is staged. "
+			+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.",
+			"two changed files → the plural line")
 	print("")
 
 
@@ -436,7 +442,7 @@ static func _test_ready(testing: Testing, tree: SceneTree) -> void:
 	_end(world, nodes)
 	testing.eq(status, "1.9.0 is ready. It installs when you close the editor.\n"
 			+ "To install it now, save your work and click Restart.\n"
-			+ "The toolkit only checks scripts. Save scenes, shaders and other open work yourself.",
+			+ "The toolkit only refuses a restart for unsaved scripts. Save scenes, shaders and other open work yourself.",
 			"the status line says the editor's exit installs it")
 	testing.ok(restart_shown and discard_shown, "a staged release → Restart and Don't install")
 	testing.ok(not update_shown, "and no Update")

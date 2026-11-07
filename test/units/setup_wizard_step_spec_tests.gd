@@ -58,11 +58,13 @@ const _UPDATE_INSTALL_TEXT := (
 	+ "Backup is off in Project Settings, it deletes the copy once the update installs. "
 	+ "Major versions, and versions that need a newer Godot, are only linked.\n\n"
 	+ "The new files show up in version control: commit them, so everyone on the "
-	+ "project runs the same version. This needs the update check above to be on.\n\n"
+	+ "project runs the same version. This needs the update check (Project Settings > "
+	+ "Mcp Toolkit > Updates) to be on.\n\n"
 	+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
 	+ "It's saved in project.godot, so it applies to everyone who works on this "
 	+ "project.")
-const _ASK_DETAIL := "When a new version is out, the editor asks at its next start. One click installs it."
+const _ASK_DETAIL := ("When a new version is out, the dock's badge offers it, and the editor asks at "
+	+ "its next start. One click downloads it; it installs when the editor restarts or closes.")
 const _MANUAL_DETAIL := "The dock only links to new versions."
 const _INSTALL_MODE_SETTING := "mcp_toolkit/updates/install_mode"
 const _DOCK_TEXT := (

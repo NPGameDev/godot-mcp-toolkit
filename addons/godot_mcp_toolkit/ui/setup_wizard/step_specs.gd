@@ -118,7 +118,7 @@ static func updates() -> Dictionary:
 
 
 ## The install step's spec: what installing an update downloads, checks and
-## changes, with the three install modes as a choice the wizard builds.
+## changes, with the two install modes as a choice the wizard builds.
 static func update_install() -> Dictionary:
 	return {
 		"text": (
@@ -129,7 +129,8 @@ static func update_install() -> Dictionary:
 			+ "Backup is off in Project Settings, it deletes the copy once the update installs. "
 			+ "Major versions, and versions that need a newer Godot, are only linked.\n\n"
 			+ "The new files show up in version control: commit them, so everyone on the "
-			+ "project runs the same version. This needs the update check above to be on.\n\n"
+			+ "project runs the same version. This needs the update check (Project Settings > "
+			+ "Mcp Toolkit > Updates) to be on.\n\n"
 			+ "You can change this later in Project Settings under Mcp Toolkit > Updates. "
 			+ "It's saved in project.godot, so it applies to everyone who works on this "
 			+ "project."),
