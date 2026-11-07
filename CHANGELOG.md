@@ -21,10 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   keeps the dock's links only. In `ask`, the editor can also offer a release in a
   dialog when it starts, with Update, Later and Skip this version. The update's
   zip downloads only when you click Update; before that the toolkit fetches only
-  the release's manifest and signature to check it. The update comes from the
-  toolkit's GitHub release and installs only when the maintainer's signature on
-  its manifest checks out. The toolkit prepares it a few files at a time, then
-  swaps it in when you close or restart the editor. If the swap can't finish, the
+  what it needs to check the release: any trust document it lacks, then the
+  release's manifest and signature. The update comes from the toolkit's GitHub
+  release and installs only when the maintainer's signature on its manifest
+  checks out. The toolkit prepares it a few files at a time, then swaps it in
+  when you close or restart the editor. If the swap can't finish, the
   current version stays and the update waits for the next close. If even moving
   the current version back fails, it is left in the update folder's backup; see
   "The toolkit is gone after an update" in the troubleshooting guide. Keep

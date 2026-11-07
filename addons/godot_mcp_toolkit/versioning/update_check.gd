@@ -20,7 +20,7 @@ const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity
 const SETTING := "mcp_toolkit/updates/check_for_updates"
 
 ## Test-only environment variable. Set to a loopback origin on 127.0.0.1, localhost or
-## ::1, such as [code]http://127.0.0.1:port[/code], it replaces the scheme and host of
+## [::1], such as [code]http://127.0.0.1:port[/code], it replaces the scheme and host of
 ## the update check's requests and of the self-update's trust documents, manifest,
 ## signature and zip, never the links the badge opens. Any other value is ignored, so the
 ## variable can point requests only at a loopback name.

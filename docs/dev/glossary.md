@@ -322,7 +322,8 @@ The closable dock notice that a newer version is published (`ui/dock/update/dock
 It points at the release on GitHub and the Asset Store. When the install mode is `ask` and the
 installer has verified the release, it also offers Update, which downloads the release and prepares it
 for the editor's next exit to install (`self_update/update_installer.gd`). Closing the notice hides it
-until a newer version.
+until a newer version; on a release already prepared, it hides it until the next editor start, and
+the exit still installs it.
 
 ---
 

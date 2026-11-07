@@ -7,10 +7,11 @@ extends Node
 ## embedded trust document and the install guards allow it, the installer has the release's
 ## manifest and signature verified (see [code]release_verifier.gd[/code]) and offers it
 ## ([constant AVAILABLE]); then, on the user's word, it downloads the zip, checks it against
-## the manifest and stages it a few files a frame ([constant PREPARING], then [constant READY]). The editor's next exit
-## applies it (see [code]update_applier.gd[/code]); nothing here writes the addon folder.
-## While a release is staged, [method version] names it, whichever newer version the runner reports, and
-## nothing newer is fetched. A staged release whose files still check out stays until
+## the manifest and stages it a few files a frame ([constant PREPARING], then
+## [constant READY]). The editor's next exit applies it (see [code]update_applier.gd[/code]);
+## nothing here writes the addon folder. While a release is staged, [method version] names
+## it, whichever newer version the runner reports, and nothing newer is fetched. A staged
+## release whose files still check out stays until
 ## [method discard] or the [code]manual[/code] install mode deletes it; that mode also calls
 ## off a download or a stage that is running.[br]
 ## [br]
@@ -21,8 +22,9 @@ extends Node
 ## [br]
 ## Just before a verify, and on every click on Update, the verifier walks the trust chain,
 ## fetching the trust documents this machine lacks. A failed check leaves [constant IDLE]
-## with [method note_text] saying what failed, and a click retries it ([method can_retry_check]). A failed download after a click goes to
-## [constant FAILED]. While an update is staged no check runs.[br]
+## with [method note_text] saying what failed, and a click retries it
+## ([method can_retry_check]). A failed download after a click goes to [constant FAILED].
+## While an update is staged no check runs.[br]
 ## [br]
 ## When staging ends, the restart gate (see [code]restart_gate.gd[/code]) restarts the
 ## editor or opens the ready view, which [method ready_view] reports.[br]
