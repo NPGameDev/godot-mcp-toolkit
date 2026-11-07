@@ -45,14 +45,25 @@ var _dialog: ConfirmationDialog = null
 ## Shows the window for [param installer]'s release over the editor. Does nothing
 ## while a window from this prompt is open.
 func show_for(installer: UpdateInstaller) -> void:
-	if _dialog != null and is_instance_valid(_dialog):
+	if _is_open():
 		return
 	_installer = installer
+	open_under(EditorInterface.get_base_control(), text_for(
+			installer.version(), installer.changed_files(), not installer.discarded_files().is_empty()))
+
+
+## Builds the window with [param text] under [param parent] and pops it up centred.
+## Does nothing while a window from this prompt is open. Returns the new window, which
+## this prompt frees when it closes or tears down, or null when one was already open.
+func open_under(parent: Node, text: String) -> ConfirmationDialog:
+	if _is_open():
+		return null
 	var dialog := ConfirmationDialog.new()
 	dialog.title = _TITLE
-	dialog.dialog_text = text_for(
-			installer.version(), installer.changed_files(), not installer.discarded_files().is_empty())
+	dialog.dialog_text = text
 	dialog.dialog_autowrap = true
+	# Godot 4.4+ parents editor dialogs under an exclusive window; freeing it frees them.
+	dialog.exclusive = false
 	dialog.min_size = Vector2i(520, 0)
 	dialog.ok_button_text = "Update"
 	dialog.cancel_button_text = "Later"
@@ -62,14 +73,15 @@ func show_for(installer: UpdateInstaller) -> void:
 	dialog.canceled.connect(_close)
 	dialog.custom_action.connect(_on_custom_action)
 	_dialog = dialog
-	EditorInterface.get_base_control().add_child(dialog)
+	parent.add_child(dialog)
 	dialog.popup_centered()
+	return dialog
 
 
 ## Frees the window at once, for plugin teardown: a deferred free would hold it past
 ## the editor's exit-time leak check.
 func teardown() -> void:
-	if _dialog != null and is_instance_valid(_dialog):
+	if _is_open():
 		_dialog.free()
 	_dialog = null
 	_installer = null
@@ -101,6 +113,10 @@ static func whats_new_url(version: String) -> String:
 	return UpdateCheck.changelog_url(version)
 
 
+func _is_open() -> bool:
+	return _dialog != null and is_instance_valid(_dialog)
+
+
 func _on_confirmed() -> void:
 	if _installer != null:
 		_installer.install()
@@ -123,6 +139,6 @@ func _on_custom_action(action: StringName) -> void:
 # Runs inside the dialog's own signal, where an immediate free would delete the
 # emitter mid-emission.
 func _close() -> void:
-	if _dialog != null and is_instance_valid(_dialog):
+	if _is_open():
 		_dialog.queue_free()
 	_dialog = null

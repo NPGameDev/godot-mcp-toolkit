@@ -19,7 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and Project Settings → Mcp Toolkit → Updates → Install Mode keeps the answer:
   `ask` (the default) offers each new release on the dock's badge, and `manual`
   keeps the dock's links only. In `ask`, the editor can also offer a release in a
-  dialog when it starts, with Update, Later and Skip this version. The update's
+  dialog when it starts, with Update, Later and Skip this version. The dialog
+  doesn't block the rest of the editor. The update's
   zip downloads only when you click Update; before that the toolkit fetches only
   what it needs to check the release: any trust document it lacks, then the
   release's manifest and signature. The update comes from the toolkit's GitHub

@@ -1,9 +1,10 @@
 @tool
 extends RefCounted
 ## Unit tests for the editor-start update window: its text (the version, the deleted-files
-## warning, and the changed files it names up to its limit) and the label and link of its
-## What's in this update button. The window itself needs the editor: the update GUI suite
-## (test/update_gui_driver/, run by scripts/test_framework/update_gui.sh) covers it.
+## warning, and the changed files it names up to its limit), the label and link of its
+## What's in this update button, and that the shown window never takes the editor's
+## dialogs under it. Its buttons need the editor: the update GUI suite
+## (test/update_gui_driver/, run by scripts/test_framework/update_gui.sh) covers them.
 
 const Testing := preload("res://test/units/testing.gd")
 const UpdatePrompt := preload("res://addons/godot_mcp_toolkit/ui/update/update_prompt.gd")
@@ -20,10 +21,11 @@ const _KEPT_COPY_TEXT := ("\n\nThe toolkit keeps a copy of the current version u
 		+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.")
 
 
-static func run(testing: Testing) -> void:
+static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_text(testing)
 	_test_deletes_other_files(testing)
 	_test_whats_new(testing)
+	_test_never_adopts_editor_dialogs(testing, tree)
 
 
 static func _test_text(testing: Testing) -> void:
@@ -57,4 +59,17 @@ static func _test_whats_new(testing: Testing) -> void:
 	testing.eq(UpdatePrompt.WHATS_NEW_LABEL, "What's in this update", "the button's label")
 	testing.eq(UpdatePrompt.whats_new_url("1.2.0"), "https://github.com/NPGameDev/godot-mcp-toolkit/blob/v1.2.0/CHANGELOG.md",
 			"1.2.0 → its changelog")
+	print("")
+
+
+# The editor reparents its progress and save dialogs under the last exclusive window,
+# and closing the prompt frees whatever is under it.
+static func _test_never_adopts_editor_dialogs(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update prompt: the shown window never takes the editor's dialogs under it")
+	var prompt := UpdatePrompt.new()
+	var dialog := prompt.open_under(tree.root, "text")
+	testing.ok(dialog.visible, "the window is shown")
+	testing.ok(tree.root.get_last_exclusive_window() != dialog,
+			"the shown prompt never becomes the window the editor parents its dialogs under")
+	prompt.teardown()
 	print("")

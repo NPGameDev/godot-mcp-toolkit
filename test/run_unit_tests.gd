@@ -198,7 +198,7 @@ func _init() -> void:
 	KeptReleaseTests.run(testing)
 	UpdateNoticeTests.run(testing)
 	await ReleaseVerifierTests.run(testing, self)  # fetches through loopback listeners → coroutine
-	UpdatePromptTests.run(testing)
+	UpdatePromptTests.run(testing, self)
 	await DockUpdateBadgeTests.run(testing, self)  # waits for a live tree → coroutine
 	DockUpdateBadgeStatusTests.run(testing)
 	await SetupWizardTests.run(testing, self)  # the run-ending groups await frames → coroutine
