@@ -72,8 +72,9 @@ file and hands its bytes to `accept()`. Checking a signature only reads files, s
 verify at the editor's exit, offline, from what the store holds.
 
 The installer runs that fetch just before it verifies a newer release and on each click on Update.
-An up-to-date client asks for nothing, an empty embedded document means no walk, and a release an
-earlier session kept is offered at a start without a request. No walk runs while an update is staged.
+An up-to-date client makes one request, for the document after its latest, and the 404 ends the walk.
+An empty embedded document means no walk, and a release an earlier session kept is offered at a start
+without a request. No walk runs while an update is staged.
 A 404 ends the chain. A timeout, a 5xx, a TLS failure, an off-list redirect or an invalid document
 leaves the badge with a sentence saying what failed. A click retries now and a new start
 retries; there is no timer. A 404 on the release's own manifest or signature comes after the walk.
@@ -280,7 +281,7 @@ The caps are in `trust_chain.gd`, where each comment ends in "Permanent". This t
 
 The download path is fixed the same way. Each client builds it from the number alone, as
 `/NPGameDev/godot-mcp-toolkit/releases/download/trust-N/trust-N.json` on `https://github.com`. A
-contributor-only variable can replace the host for a local test server, and a document's signatures
+test-only variable can replace the host for a local test server, and a document's signatures
 make another host harmless.
 
 `build` writes only the fields it knows, and warns when it drops one from the previous document. Before
@@ -306,6 +307,11 @@ rotating past a document with a new field, teach the script that field, or the n
 - **With no absolute data folder there is no store.** With no `APPDATA` or `HOME`, Godot can answer `.`, the
   working directory, which could be the project. The client then writes nothing and takes no document, so
   its chain ends at the embedded one.
+- **The exit does not re-read the install mode.** The click on Update was the consent, and Don't install,
+  or switching to `manual` in the editor, takes it back before the exit. The exit checks the guards, the
+  trust and the version order again, and a refusal there gives its reason at the next start.
+- **The exit does not wait for a file scan.** On Windows, a plain close during a scan can fail the first
+  rename, which leaves the update waiting for the next close.
 
 ## Going back
 

@@ -585,8 +585,9 @@ step seen, it has the installer decide again, since the consent gate reads that 
 `dispose()` has freed the graph, `_exit_tree` calls `UpdateLifecycle.apply_at_exit()`, which swaps a
 staged update into the addon folder while nothing can reload those files. A headless editor neither
 settles nor applies (`self_update/update_lifecycle.gd`), and a disable skips the apply:
-`_disable_plugin()` sets a flag first and clears the update journal, so a staged update is dropped with
-its files instead of being installed into a plugin being removed.
+`_disable_plugin()` sets a flag first, has the installer call off a running download or stage, then
+clears the update journal, so a staged update is dropped with its files instead of being installed
+into a plugin being removed.
 
 The debugger's session state lives in `transport/debug_session_tracker.gd`, a `RefCounted` the
 unit runner can build headless: whether a game is attached and stopped at a break, the error

@@ -97,7 +97,8 @@ static func _register_server() -> void:
 
 
 # Basic: a privacy switch belongs where users see it without Advanced Settings, and
-# so does the choice that lets the toolkit change its own files.
+# so do the choice that lets the toolkit change its own files and whether an update
+# keeps the version it replaced.
 static func _register_updates() -> void:
 	_register_basic_bool(UpdateCheck.SETTING, true,
 		"Checks GitHub at most once a day for a newer toolkit version, then the Asset Store if one exists, and shows a badge in the dock. The requests carry no identifier and nothing about your project.")

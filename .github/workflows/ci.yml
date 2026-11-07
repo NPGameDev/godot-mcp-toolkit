@@ -224,14 +224,14 @@ jobs:
   # release this tree builds installs over the previous version at an editor's exit,
   # closed by a quit or through its window, a toolkit folder that cannot move leaves
   # the update waiting, an untrusted signature and the repository guard stage
-  # nothing, and a disable installs nothing. Headless with the contributor-only
+  # nothing, and a disable installs nothing. Headless with the test-only
   # GODOT_MCP_UPDATE_ALLOW_HEADLESS, against a local server in place of GitHub. The
   # floor's two boundaries: 4.2 frees plugins at exit differently from 4.3+.
   update-flow:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ubuntu-latest
-    # Fuse: the five legs take a few minutes — at 15 min a boot is hung.
+    # Fuse: the six legs take a few minutes — at 15 min a boot is hung.
     timeout-minutes: 15
     strategy:
       fail-fast: false

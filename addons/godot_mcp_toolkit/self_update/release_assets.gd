@@ -5,7 +5,7 @@ extends RefCounted
 ## Every name and URL is built here from the version or the trust document's number
 ## alone, never taken from a reply, as the update check's badge links are. The scheme and
 ## host can be replaced for a loopback test server through the update check's
-## contributor-only host variable, which accepts nothing else.
+## test-only host variable, which accepts nothing else.
 
 # Direct preload, not core/modules.gd: the aggregator preloads the installer,
 # which reaches this file.

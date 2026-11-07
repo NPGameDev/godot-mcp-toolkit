@@ -232,7 +232,7 @@ jobs:
       contains(github.event.head_commit.message, '[run-cross-version-ci]') ||
       contains(github.event.head_commit.message, '[run-all-platforms-ci]'))
     runs-on: ${{ matrix.os }}
-    # Fuse: the five legs take a few minutes on Linux, longer on a macOS or Windows
+    # Fuse: the six legs take a few minutes on Linux, longer on a macOS or Windows
     # runner; at 30 min a boot is hung.
     timeout-minutes: 30
     strategy:
@@ -280,9 +280,9 @@ jobs:
   # editors with a window on a virtual display, the update badge and the editor's own
   # dialogs pressed by a test-only plugin (test/update_gui_driver/). The floor's
   # update-flow job proves the install itself headless; this proves what a user clicks.
-  # 4.2.0 and 4.7.0 are the support boundaries; 4.4 is the first minor that restarts
-  # on its own. The unsaved and untitled scenarios run on every minor. Same triggers
-  # as the GDScript tier above.
+  # 4.2.0 and 4.7.0 are the support boundaries, and 4.5.0 stands for the minors from
+  # 4.4 that restart on their own. All eight scenarios run on each listed version.
+  # Same triggers as the GDScript tier above.
   update-gui:
     needs: changes
     if: >

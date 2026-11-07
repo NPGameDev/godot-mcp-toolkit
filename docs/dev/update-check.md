@@ -34,9 +34,9 @@ README's privacy line; the setting is listed in `contract.md` (C22).
 
 Set `GODOT_MCP_UPDATE_CHECK_HOST` in the editor's environment to a scheme and loopback host, for
 example `http://127.0.0.1:8123`, before you start the editor; `localhost` and `[::1]` work too, and
-any other value is ignored. It replaces the scheme and host of both request URLs and keeps their paths, so the local server answers
-`/repos/NPGameDev/godot-mcp-toolkit/releases/latest` with `{"tag_name": "vX.Y.Z"}` and
-`/api/v1/releases/npgamedev/godot-mcp-toolkit/` with a JSON array of
-`{"version": "X.Y.Z", "stable": true}` entries. A value that does not start with `http://` or
-`https://` is ignored. The badge's links still point at GitHub and the Asset Store, so a local
-server can change only the version the badge shows.
+any other value is ignored. It replaces the scheme and host of the check's request URLs and keeps
+their paths, so the local server answers `/repos/NPGameDev/godot-mcp-toolkit/releases/latest` with
+`{"tag_name": "vX.Y.Z"}` and `/api/v1/releases/npgamedev/godot-mcp-toolkit/` with a JSON array of
+`{"version": "X.Y.Z", "stable": true}` entries. It redirects the self-update's downloads the same
+way: the trust documents, the manifest, the signature and the zip
+(`self_update/release_assets.gd`). The badge's links still point at GitHub and the Asset Store.

@@ -1,15 +1,17 @@
 @tool
 extends RefCounted
-## Decides whether a staged update restarts the editor at once or waits in the dock's
-## ready view, and runs the restart.
+## Decides when a staged update may restart the editor: at once when staging ends, or
+## later from the dock's ready view.
 ##
-## Godot 4.4 and later ask about unsaved scenes when the editor restarts; 4.2 and 4.3 do
-## not, and no version asks about every unsaved file. So when staging ends, the editor
-## restarts on its own only on 4.4 or later, and only when the probe finds nothing a
-## restart would lose: no script with unsaved edits, no running game and no scene that
-## was never saved. Anything else opens the ready view, where Restart checks again and
-## refuses while a script is unsaved. A staged update found at an editor start opens the
-## ready view and never restarts.[br]
+## Godot 4.4 and later ask about unsaved scenes when the editor restarts. Only when no
+## scene is unsaved do they ask about modified resources, and only when no resource is
+## unsaved either do they ask about the script and shader tabs. 4.2 and 4.3 ask nothing:
+## their restart goes straight to the exit. An unsaved script can therefore be lost on
+## every version, so Restart refuses while a script is unsaved. When staging ends, the
+## editor restarts on its own only on 4.4 or later, and only when the probe finds no
+## script with unsaved edits, no running game and no scene that was never saved.
+## Anything else opens the ready view, where Restart checks again. A staged update found
+## at an editor start opens the ready view and never restarts.[br]
 ## [br]
 ## Every restart first waits for the editor's file scan to end: on Windows the swap's
 ## first rename has failed under a running scan. A scan that outlasts the wait opens the

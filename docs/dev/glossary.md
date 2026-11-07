@@ -319,8 +319,10 @@ wizard's `updates` step.
 
 **Update badge**
 The closable dock notice that a newer version is published (`ui/dock/update/dock_update_badge.gd`).
-It points at the release on GitHub and the Asset Store; it never downloads or installs anything.
-Closing it hides it until a newer version.
+It points at the release on GitHub and the Asset Store. When the install mode is `ask` and the
+installer has verified the release, it also offers Update, which downloads the release and prepares it
+for the editor's next exit to install (`self_update/update_installer.gd`). Closing the notice hides it
+until a newer version.
 
 ---
 

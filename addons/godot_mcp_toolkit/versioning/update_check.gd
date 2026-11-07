@@ -19,10 +19,11 @@ const HttpIdentity := preload("res://addons/godot_mcp_toolkit/core/http_identity
 ## The Project Settings toggle. Off means no request at all.
 const SETTING := "mcp_toolkit/updates/check_for_updates"
 
-## Contributor-only environment variable. Set to a loopback address such as
-## [code]http://127.0.0.1:port[/code], it replaces the scheme and host of both request
-## URLs, never the links the badge opens. Any other value is ignored, so the variable
-## cannot send a user's requests off the machine.
+## Test-only environment variable. Set to a loopback origin on 127.0.0.1, localhost or
+## ::1, such as [code]http://127.0.0.1:port[/code], it replaces the scheme and host of
+## the update check's requests and of the self-update's trust documents, manifest,
+## signature and zip, never the links the badge opens. Any other value is ignored, so the
+## variable can point requests only at a loopback name.
 const HOST_ENV := "GODOT_MCP_UPDATE_CHECK_HOST"
 
 ## The shortest gap between two checks of one project, in seconds.

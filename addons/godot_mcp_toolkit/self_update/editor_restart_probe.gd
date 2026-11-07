@@ -74,8 +74,9 @@ static func _unsaved_scripts() -> PackedStringArray:
 
 
 # A scene never saved has a root with no file path. From 4.7 the path list also holds
-# the empty tab the editor opens with, which has no root and would count as untitled,
-# so the roots are read wherever the editor lists them.
+# the empty tab the editor opens with, which has no root and would count as untitled.
+# So from 4.5, where the editor lists the roots, the roots are read; before 4.5 the path
+# list skips a tab with no root, and it is read instead.
 static func _untitled_scenes() -> int:
 	var count := 0
 	if EditorInterface.has_method("get_open_scene_roots"):

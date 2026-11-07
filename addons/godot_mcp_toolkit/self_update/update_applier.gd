@@ -5,9 +5,9 @@ extends RefCounted
 ##
 ## [method apply_pending] belongs in [code]_exit_tree[/code], on every exit that is not a
 ## disable, through [code]update_lifecycle.gd[/code]. Changing the files while the editor
-## runs would let its focus-in rescan hot-reload new code onto state the old code built, and changing them before a restart
-## could leave them swapped under a running editor when a save dialog holds the restart;
-## at exit nothing reloads them. An editor ended by a signal or a crash skips the call,
+## runs would let its focus-in rescan hot-reload new code onto state the old code built,
+## and changing them before a restart could leave them swapped under a running editor
+## when a save dialog holds the restart; at exit nothing reloads them. An editor ended by a signal or a crash skips the call,
 ## and the update waits for the next exit.[br]
 ## [br]
 ## What the stage must hold comes from what is signed: signature → manifest → the zip's

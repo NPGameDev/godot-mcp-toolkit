@@ -305,8 +305,8 @@ func clear_notice() -> void:
 	state_changed.emit()
 
 
-## Whether the editor-start window should ask about [method version]: the mode asks,
-## the release is verified, and nothing was changed by hand.
+## Whether the editor-start window should ask about [method version]: the mode asks
+## and the release is verified. The window names any toolkit files changed by hand.
 func prompt_due() -> bool:
 	return _state == AVAILABLE and install_mode() == InstallMode.ASK
 

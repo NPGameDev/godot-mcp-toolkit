@@ -259,8 +259,8 @@ class Handle:
 	func dialog_presenter() -> ToolkitDialogPresenter:
 		return _dialog_presenter
 
-	## The update installer (the orchestrator asks it whether the editor-start
-	## update window is due).
+	## The update installer, which verifies and stages the toolkit's own updates and
+	## says whether the editor-start update window is due.
 	func update_installer() -> UpdateInstaller:
 		return _update_installer
 
