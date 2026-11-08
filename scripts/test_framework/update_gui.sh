@@ -29,10 +29,14 @@
 #                and its Undo puts the pin back
 #   server_edit  a pin equal to what the installed toolkit recommends, with no record of
 #                a write, moves the same way; then .mcp.json is edited by hand: Undo
-#                leaves the edit and goes
+#                leaves the edit, and Undo and the moved line go
 #   server_hand  a .mcp.json set by hand: the pin stays and nothing is said
 #   server_prompt  a pin equal only to this machine's last write: the editor-start window
 #                says it will move, and Later moves nothing
+#   server_readonly  a read-only .mcp.json. On Windows the move's write fails: the notice
+#                says so and offers Update .mcp.json, the file keeps its bytes, and no
+#                write is recorded. On Linux and macOS the engine's safe save renames over
+#                the file, which a missing write bit does not stop, so the pin moves
 #   server_gap  an MCP server connects, older and then newer than the recommended
 #                version: the dock's status panel says so, and follows a setting that
 #                changes with no server event. The MCP server is this test's own
@@ -60,7 +64,7 @@
 set -uo pipefail
 
 GODOT_BIN="${GODOT_BIN:-${1:-godot}}"
-SCENARIOS="${UPDATE_GUI_SCENARIOS:-restart later unsaved untitled quit server server_edit server_hand server_prompt server_gap major}"
+SCENARIOS="${UPDATE_GUI_SCENARIOS:-restart later unsaved untitled quit server server_edit server_hand server_prompt server_readonly server_gap major}"
 XVFB_BIN="${XVFB_BIN:-Xvfb}"
 XDOTOOL_BIN="${XDOTOOL_BIN:-xdotool}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -523,6 +527,7 @@ for SCENARIO in ${SCENARIOS}; do
       expect a update_mcp_json_visible false
       expect_recorded_move a mcp_json_moved
       expect a undo_visible_after false
+      expect a status_after ""
       if [[ "${SCENARIO}" == server ]]; then
         expect_mcp_json_runs "${OLD_SERVER}"
       else
@@ -555,6 +560,41 @@ for SCENARIO in ${SCENARIOS}; do
       expect b pressed true
       expect_mcp_json_runs "${OLD_SERVER}"
       expect_installed "${OLD_VERSION}"
+      ;;
+    server_readonly)
+      prepare ask "${NEW_VERSION}" || continue
+      pin_old_server recommended_only
+      project="${WORK}/${SCENARIO}/project"
+      cp "${project}/.mcp.json" "${WORK}/${SCENARIO}/mcp_json_before"
+      if [[ "${OS}" == windows ]]; then
+        attrib.exe +R "$(cygpath -w "${project}/.mcp.json")"
+      else
+        chmod a-w "${project}/.mcp.json"
+      fi
+      boot a
+      expect a offer_status "${PIN_PREVIEW_LINE}"
+      expect a step after_restart
+      expect a notice_shown true
+      if [[ "${OS}" == windows ]]; then
+        expect_contains a status "but .mcp.json couldn't be updated: Failed to write .mcp.json"
+        expect a update_mcp_json_visible true
+        expect a undo_visible false
+        cmp -s "${project}/.mcp.json" "${WORK}/${SCENARIO}/mcp_json_before" \
+          && pass "a: .mcp.json keeps its bytes" || fail "a: .mcp.json changed"
+        grep -qF "last_written_server_spec" "${project}/.godot/editor/project_metadata.cfg" 2>/dev/null \
+          && fail "a: a write was recorded" || pass "a: no write recorded"
+        attrib.exe -R "$(cygpath -w "${project}/.mcp.json")"
+      else
+        expect a status "${PIN_MOVED_LINE}"
+        expect a update_mcp_json_visible false
+        expect a undo_visible true
+        expect_mcp_json_runs "${COMPATIBLE_SERVER}"
+        grep -qF "last_written_server_spec=\"npx:${COMPATIBLE_SERVER}\"" "${project}/.godot/editor/project_metadata.cfg" 2>/dev/null \
+          && pass "a: the write is recorded" || fail "a: the write is not recorded"
+      fi
+      leftovers="$(ls -A "${project}" | grep -E '^\.mc.*\.tmp$|^\.mcp\.json-')"
+      [[ -z "${leftovers}" ]] && pass "a: no temp file left" || fail "a: temp files left: ${leftovers}"
+      expect_installed "${NEW_VERSION}"
       ;;
     server_gap)
       prepare ask "${NEW_VERSION}" || continue

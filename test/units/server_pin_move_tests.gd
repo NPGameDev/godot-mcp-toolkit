@@ -67,6 +67,10 @@ static func run(testing: Testing) -> void:
 	_test_failed_write_leaves_the_file(testing)
 	_test_undo_puts_the_pin_back(testing)
 	_test_undo_after_a_hand_edit_writes_nothing(testing)
+	_test_undo_refuses_an_edit_that_keeps_the_server(testing)
+	_test_runs_moved_server_follows_the_entry(testing)
+	_test_fixed_malformed_file_keeps_the_retry(testing)
+	_test_changed_pin_ends_the_retry(testing)
 	_test_undo_without_a_move_does_nothing(testing)
 	_test_undone_update_does_not_move_again(testing)
 	_test_preview(testing)
@@ -153,6 +157,17 @@ static func _store(path: String, bytes: PackedByteArray) -> void:
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	file.store_buffer(bytes)
 	file.close()
+
+
+# `document` as text with the toolkit's entry given another arg before its last and a
+# field of its own, so it keeps its server.
+static func _with_entry_edits(document: Dictionary) -> String:
+	var servers: Dictionary = document["mcpServers"]
+	var entry: Dictionary = servers["godot-mcp-toolkit"]
+	var args: Array = entry["args"]
+	args.insert(0, "--user-arg")
+	entry["user_field"] = "1"
+	return JSON.stringify(document)
 
 
 static func _test_moves_a_pin_it_owns(testing: Testing) -> void:
@@ -379,6 +394,85 @@ static func _test_undo_after_a_hand_edit_writes_nothing(testing: Testing) -> voi
 	testing.eq([report.calls, report.ok, report.message, report.severity],
 			[1, false, "MCP: .mcp.json changed since the update, so it was left as it is.", 1],
 			"one warning saying the file was left")
+	print("")
+
+
+# The classification reads the last arg, so these edits keep the server; Undo rebuilds
+# the entry, which would drop them.
+static func _test_undo_refuses_an_edit_that_keeps_the_server(testing: Testing) -> void:
+	testing.begin("Server pin move: Undo refuses an edit that keeps the server, and leaves it")
+	var saved := install_project(document_at(_OLD))
+	var pin_move := PinMoveStandIn.new()
+	pin_move.follow_update(updated())
+	var edited := _with_entry_edits(mcp_json_document())
+	_store(MCPJsonSync.get_mcp_json_path(), edited.to_utf8_buffer())
+	var spec := MCPJsonSync.get_server_spec()
+	var can_undo := pin_move.can_undo()
+	var report := _Report.new()
+	pin_move.undo(Callable(report, "take"))
+	var after := mcp_json_text()
+	restore_project(saved)
+	testing.eq(spec, "npx:" + VersionUtils.COMPATIBLE_SERVER_VERSION, "the edit → still runs the moved server")
+	testing.ok(not can_undo, "and no Undo")
+	testing.eq(after, edited, "Undo → the added arg and field kept")
+	testing.eq(pin_move.undone_for, "", "the update → not marked undone")
+	testing.eq([report.calls, report.ok, report.severity], [1, false, 1], "one warning")
+	print("")
+
+
+static func _test_runs_moved_server_follows_the_entry(testing: Testing) -> void:
+	testing.begin("Server pin move: the entry runs the moved server until it names another")
+	var saved := install_project(document_at(_OLD))
+	var pin_move := PinMoveStandIn.new()
+	var before_move := pin_move.runs_moved_server()
+	pin_move.follow_update(updated())
+	var after_move := pin_move.runs_moved_server()
+	_store(MCPJsonSync.get_mcp_json_path(), _with_entry_edits(mcp_json_document()).to_utf8_buffer())
+	var after_edit := pin_move.runs_moved_server()
+	_store(MCPJsonSync.get_mcp_json_path(), document_at(_HAND_SET).to_utf8_buffer())
+	var after_new_pin := pin_move.runs_moved_server()
+	restore_project(saved)
+	testing.ok(not before_move, "nothing moved → no")
+	testing.ok(after_move, "after the move → yes")
+	testing.ok(after_edit, "an edit that keeps the server → yes")
+	testing.ok(not after_new_pin, "a pin set by hand → no")
+	print("")
+
+
+# The malformed file's line tells the user to fix the file and then click the button, so
+# the fix itself must not take the button away.
+static func _test_fixed_malformed_file_keeps_the_retry(testing: Testing) -> void:
+	testing.begin("Server pin move: fixing a malformed .mcp.json keeps the retry until the entry is at the target")
+	var saved := install_project("{ \"mcpServers\": { not json")
+	var pin_move := PinMoveStandIn.new()
+	pin_move.follow_update(updated())
+	_store(MCPJsonSync.get_mcp_json_path(), document_at(_OLD).to_utf8_buffer())
+	var fixed := pin_move.can_retry()
+	_store(MCPJsonSync.get_mcp_json_path(), document_at(_HAND_SET).to_utf8_buffer())
+	var fixed_at_another := pin_move.can_retry()
+	_store(MCPJsonSync.get_mcp_json_path(), document_at(VersionUtils.COMPATIBLE_SERVER_VERSION).to_utf8_buffer())
+	var at_target := pin_move.can_retry()
+	restore_project(saved)
+	testing.ok(fixed, "the file fixed at the old server → retry")
+	testing.ok(fixed_at_another, "the file fixed at another server → retry")
+	testing.ok(not at_target, "the entry at the target → no retry")
+	print("")
+
+
+# A file that parsed had a pin the move read, so changing that pin is the user's answer.
+static func _test_changed_pin_ends_the_retry(testing: Testing) -> void:
+	testing.begin("Server pin move: a failed write of a pin the move read ends when that pin changes")
+	var saved := install_project(document_at(_OLD))
+	UpdateFixtures.set_read_only(MCPJsonSync.get_mcp_json_path(), true)
+	var pin_move := PinMoveStandIn.new()
+	pin_move.follow_update(updated())
+	UpdateFixtures.set_read_only(MCPJsonSync.get_mcp_json_path(), false)
+	var unchanged := pin_move.can_retry()
+	_store(MCPJsonSync.get_mcp_json_path(), document_at(_HAND_SET).to_utf8_buffer())
+	var changed := pin_move.can_retry()
+	restore_project(saved)
+	testing.ok(unchanged, "the pin the move found → retry")
+	testing.ok(not changed, "another pin → no retry")
 	print("")
 
 

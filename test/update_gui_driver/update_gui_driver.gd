@@ -54,9 +54,9 @@ func _play() -> void:
 	_record("step", step)
 	_record("toolkit_version", _toolkit_version())
 	match "%s/%s" % [_scenario, step]:
-		"restart/a", "server/a", "server_edit/a", "server_hand/a":
+		"restart/a", "server/a", "server_edit/a", "server_hand/a", "server_readonly/a":
 			await _install_then_restart()
-		"restart/after_restart", "quit/b", "unsaved/after_restart", "server_hand/after_restart":
+		"restart/after_restart", "quit/b", "unsaved/after_restart", "server_hand/after_restart", "server_readonly/after_restart":
 			await _read_updated_notice()
 		"server/after_restart":
 			await _read_updated_notice()
@@ -130,6 +130,7 @@ func _undo_pin_move() -> void:
 	_press(_badge_button("UndoPinMoveButton"))
 	await _frames(60)
 	_record("undo_visible_after", _shown("UndoPinMoveButton"))
+	_record("status_after", _badge_status())
 
 
 # What a user's edit does: the entry runs another server, and nothing tells the toolkit.

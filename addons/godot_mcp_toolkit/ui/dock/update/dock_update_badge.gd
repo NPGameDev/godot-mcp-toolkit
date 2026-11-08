@@ -25,9 +25,9 @@ extends PanelContainer
 ## installed or failed to install a release, the badge shows that result until it is
 ## closed, in place of the version notice, with Release notes after an install. When the
 ## install moved the toolkit's server pin in .mcp.json (see
-## [code]ui/mcp_json/server_pin_move.gd[/code]), the notice says so and offers Undo while
-## the entry is unchanged; when the move's write failed, it says why and offers Update
-## .mcp.json.[br]
+## [code]ui/mcp_json/server_pin_move.gd[/code]), the notice says so while the entry runs
+## the moved server, and offers Undo while the file's text is unchanged since the move;
+## when the move's write failed, it says why and offers Update .mcp.json.[br]
 ## [br]
 ## "Get it on the Asset Store" switches to the editor's Asset Store tab where the
 ## editor has one (Godot 4.7+), confirmed through
@@ -346,14 +346,17 @@ func _render_notice(notice: Dictionary) -> void:
 
 
 # The pin move outcome the notice reports: the move after an install that changed the
-# recommended server, or its failed write while writing the entry is still the fix;
-# an empty dictionary otherwise.
+# recommended server while the entry still runs what the move wrote, or its failed write
+# while writing the entry is still the fix; an empty dictionary otherwise.
 func _pin_move_to_report(notice: Dictionary) -> Dictionary:
 	if _pin_move == null or str(notice.get(UpdateNotice.KIND, "")) != UpdateNotice.UPDATED \
 			or not bool(notice.get(UpdateNotice.SERVER_CHANGED, false)):
 		return {}
 	var outcome := _pin_move.outcome()
-	if str(outcome["state"]) == ServerPinMove.WRITE_FAILED and not _pin_move.can_retry():
+	var state := str(outcome["state"])
+	if state == ServerPinMove.WRITE_FAILED and not _pin_move.can_retry():
+		return {}
+	if state == ServerPinMove.MOVED and not _pin_move.runs_moved_server():
 		return {}
 	return outcome
 
@@ -397,7 +400,7 @@ func _on_update_mcp_json_pressed() -> void:
 
 
 # A done Undo re-renders through its report; a refused one reports ok = false, which
-# does not, so this re-render is what hides Undo once the entry changed.
+# does not, so this re-render is what hides Undo once the file changed.
 func _on_undo_pin_move_pressed() -> void:
 	if _pin_move == null:
 		return

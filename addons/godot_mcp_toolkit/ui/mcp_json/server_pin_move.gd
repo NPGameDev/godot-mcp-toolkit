@@ -6,8 +6,9 @@ extends RefCounted
 ## entry to the version the running toolkit recommends, if the pin policy says the pin is
 ## the toolkit's to move (see [code]ServerPinPolicy.pin_move_target[/code]). The move
 ## needs no confirmation: the user started the update, and the update notice says what
-## changed and offers [method undo] while the entry is still the one the move wrote. A
-## write that fails leaves the file as it was.[br]
+## changed and offers [method undo] while the file's text is what the move wrote. A write
+## that fails reports it, records nothing and does not count as a move; the notice says
+## why.[br]
 ## [br]
 ## One instance lives for one editor start and holds that start's outcome. Built by the
 ## composer, which connects it to the installer's settle before the installer runs it.
@@ -24,7 +25,7 @@ const NONE := ""
 ## The entry now runs [code]to_spec[/code].
 const MOVED := "moved"
 ## The move's write failed, or the file is not valid JSON; [code]error[/code] says why
-## and the file is unchanged.
+## and nothing was recorded as written.
 const WRITE_FAILED := "write_failed"
 ## The user undid the move.
 const UNDONE := "undone"
@@ -33,9 +34,8 @@ const _UNDONE_TEXT := "MCP: .mcp.json runs server %s again."
 const _UNDO_REFUSED_TEXT := "MCP: .mcp.json changed since the update, so it was left as it is."
 const _PREVIEW_TEXT := "This also changes the MCP server in .mcp.json from %s to %s. Restart your AI client after the update."
 
-# Where the Undo marker lives: editor project metadata, machine-local like the
-# last-write record.
-const _MARKER_SECTION := "mcp_toolkit"
+# The Undo marker's key in editor project metadata, machine-local like the last-write
+# record and in its section.
 const _MARKER_KEY := "pin_move_undone_for"
 
 var _state: String = NONE
@@ -44,6 +44,8 @@ var _to_spec: String = ""
 var _error: String = ""
 # The toolkit version the move belongs to, which an Undo marks.
 var _update_version: String = ""
+# The file's text right after the move, which an Undo needs unchanged.
+var _moved_text: String = ""
 
 
 ## Moves the pin after the start's settle. [param settled] is what
@@ -91,16 +93,28 @@ func outcome() -> Dictionary:
 	}
 
 
-## True while the pin is moved and the file's entry is still the one the move wrote, so
-## an Undo loses no later edit.
+## True while the pin is moved and the file's text is still what the move wrote, so an
+## Undo, which rebuilds the entry, loses no later edit.
 func can_undo() -> bool:
+	return _state == MOVED and MCPJsonSync.read_text() == _moved_text
+
+
+## True while the pin is moved and the file's entry still runs the server the move wrote,
+## whatever else changed in the file.
+func runs_moved_server() -> bool:
 	return _state == MOVED and MCPJsonSync.get_server_spec() == _to_spec
 
 
-## True while the move's write failed and the file's entry is still the one the move
-## found, so writing the entry is still the fix.
+## True while the move's write failed and writing the entry is still the fix: the entry
+## is still the one the move found, or, when the file did not parse then, the entry does
+## not run the target yet, so fixing the file keeps the retry its message promises.
 func can_retry() -> bool:
-	return _state == WRITE_FAILED and MCPJsonSync.get_server_spec() == _from_spec
+	if _state != WRITE_FAILED:
+		return false
+	var on_disk := MCPJsonSync.get_server_spec()
+	if _from_spec == ServerPinPolicy.SPEC_UNKNOWN:
+		return on_disk != _to_spec
+	return on_disk == _from_spec
 
 
 ## Writes the entry's server back to the one the move replaced, when [method can_undo].
@@ -162,13 +176,13 @@ func local_server_path() -> String:
 
 ## The toolkit version whose pin move the user undid on this machine, or "".
 func read_undone_for() -> String:
-	return str(EditorInterface.get_editor_settings().get_project_metadata(_MARKER_SECTION, _MARKER_KEY, ""))
+	return str(EditorInterface.get_editor_settings().get_project_metadata(MCPJsonWriteFlow.METADATA_SECTION, _MARKER_KEY, ""))
 
 
 ## Marks the pin move of toolkit [param version] as undone on this machine, so a
 ## second report of the same update does not move the pin again.
 func record_undone_for(version: String) -> void:
-	EditorInterface.get_editor_settings().set_project_metadata(_MARKER_SECTION, _MARKER_KEY, version)
+	EditorInterface.get_editor_settings().set_project_metadata(MCPJsonWriteFlow.METADATA_SECTION, _MARKER_KEY, version)
 
 
 # Holds the move of update `update_version` from `from_spec` to `to_spec`, with the
@@ -179,6 +193,7 @@ func _hold_outcome(update_version: String, from_spec: String, to_spec: String, r
 	_to_spec = to_spec
 	if bool(report["ok"]):
 		_state = MOVED
+		_moved_text = MCPJsonSync.read_text()
 		return
 	_state = WRITE_FAILED
 	_error = str(report["message"])

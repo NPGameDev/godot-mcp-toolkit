@@ -48,13 +48,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dialog, opens the release's changelog. A release found during the session also
   gets a toast.
 - After a self-update, the toolkit moves the MCP server version in `.mcp.json` to
-  the one the new version is tested with. The pin moves when it is the version the
-  previous toolkit recommended, or the one the toolkit last wrote on this machine,
-  and the project doesn't set `mcp_toolkit/server/version`. The update notice says
-  what changed and has an Undo. If `.mcp.json` can't be written, the notice says
-  why and offers Update .mcp.json. When a pin would move, the update window and the
-  dock's badge say so before you click Update. The dock also warns when the connected
-  server isn't the recommended version.
+  the one the new version is tested with. The pin moves when it is an exact version
+  that the previous toolkit recommended or that the toolkit last wrote on this
+  machine, no local server path is set, and the project doesn't set
+  `mcp_toolkit/server/version`. The update notice says what changed and has an Undo.
+  If `.mcp.json` can't be written, the notice says why and offers Update .mcp.json.
+  When the release names its server version and a pin would move, the update window
+  and the dock's badge say so before you click Update. The dock also warns when the
+  connected server is older than the recommended version, and when it is newer and a
+  newer toolkit is known, unless the project sets a server version or uses a local
+  server.
 
 ### Changed
 

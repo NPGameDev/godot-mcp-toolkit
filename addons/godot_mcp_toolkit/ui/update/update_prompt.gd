@@ -7,9 +7,9 @@ extends RefCounted
 ## again at the next start, and Skip this version hides it until a newer one. What's
 ## in this update opens the version's changelog and leaves the window open. A release
 ## found during a session gets the dock badge only: a window in the middle of someone's
-## work would be in the way. When installing would move the toolkit's server pin in
-## .mcp.json, the window says so; there is nothing to choose, as the notice after the
-## install offers Undo.
+## work would be in the way. When the release names its server version and installing
+## would move the toolkit's server pin in .mcp.json, the window says so; there is nothing
+## to choose, as the notice after the install offers Undo.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const UpdateCheck = Modules.UpdateCheck
@@ -46,7 +46,8 @@ var _dialog: ConfirmationDialog = null
 
 
 ## Shows the window for [param installer]'s release over the editor. Does nothing
-## while a window from this prompt is open.
+## while a window from this prompt is open. [param pin_move] is this start's .mcp.json
+## pin move, which supplies the line about the pin, or [code]null[/code] for no line.
 func show_for(installer: UpdateInstaller, pin_move: ServerPinMove = null) -> void:
 	if _is_open():
 		return

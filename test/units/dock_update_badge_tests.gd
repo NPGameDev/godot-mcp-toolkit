@@ -71,7 +71,9 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_notice_updated(testing, tree)
 	_test_notice_reports_pin_move(testing, tree)
 	_test_notice_hides_undo_after_a_hand_edit(testing, tree)
+	_test_notice_keeps_the_line_after_an_edit_that_keeps_the_server(testing, tree)
 	_test_notice_failed_pin_write_offers_button(testing, tree)
+	_test_notice_keeps_the_button_for_a_fixed_malformed_file(testing, tree)
 	_test_notice_failed(testing, tree)
 	await _test_toast_once_for_verified(testing, tree)
 	await _test_no_toast_for_shown_release(testing, tree)
@@ -829,10 +831,10 @@ static func _test_notice_reports_pin_move(testing: Testing, tree: SceneTree) -> 
 	print("")
 
 
-# A hand edit after the move takes Undo away at the next render; a click that reaches
-# the handler anyway is refused and leaves the edit.
+# A hand edit naming another server takes the moved line and Undo away at the next
+# render; a click that reaches the handler anyway is refused and leaves the edit.
 static func _test_notice_hides_undo_after_a_hand_edit(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("Update badge: a hand edit after the pin move hides Undo and a late Undo writes nothing")
+	testing.begin("Update badge: a hand edit after the pin move hides the line and Undo and a late Undo writes nothing")
 	var saved := ServerPinMoveTests.install_project(ServerPinMoveTests.document_at("0.0.1"))
 	var world := UpdateFixtures.begin_world("badge_server_hand_edit", "1.1.0", "ask", "1.9.0")
 	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
@@ -844,7 +846,7 @@ static func _test_notice_hides_undo_after_a_hand_edit(testing: Testing, tree: Sc
 	file.close()
 	var hand_edited := ServerPinMoveTests.mcp_json_text()
 	badge.refresh()
-	var status := _text(badge, "Status")
+	var status_shown := _shown(badge, "Status")
 	var undo_shown := _shown(badge, "UndoPinMoveButton")
 	# A hidden button's signal stands in for a click that raced the re-render.
 	_press(badge, "UndoPinMoveButton")
@@ -853,13 +855,36 @@ static func _test_notice_hides_undo_after_a_hand_edit(testing: Testing, tree: Sc
 	_end(world, nodes)
 	ServerPinMoveTests.restore_project(saved)
 
-	var compatible := VersionUtils.COMPATIBLE_SERVER_VERSION
-	testing.eq(status, ".mcp.json now runs MCP server %s instead of 0.0.1. Restart your AI client to use it." % compatible,
-			"a hand edit after the move → the moved line stays")
+	testing.ok(not status_shown, "a hand edit naming another server → the moved line goes")
 	testing.ok(not undo_shown, "and Undo is hidden")
 	testing.eq(toasts, ["MCP: .mcp.json changed since the update, so it was left as it is."],
 			"a late Undo → the refused toast")
 	testing.eq(after, hand_edited, "and the hand edit kept")
+	print("")
+
+
+# The line is still true while the entry runs the moved server, but Undo would lose the
+# edit, so only the line stays.
+static func _test_notice_keeps_the_line_after_an_edit_that_keeps_the_server(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: an edit that keeps the moved server keeps the line and hides Undo")
+	var saved := ServerPinMoveTests.install_project(ServerPinMoveTests.document_at("0.0.1"))
+	var world := UpdateFixtures.begin_world("badge_server_field_edit", "1.1.0", "ask", "1.9.0")
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
+			"compatible_server": "0.0.1"}, world["updates"])
+	var nodes := _start_with_pin_move(world, tree, ServerPinMoveTests.PinMoveStandIn.new())
+	var badge: DockUpdateBadge = nodes["badge"]
+	var edited := ServerPinMoveTests.mcp_json_text().replace("\"other-server\"", "\"another-server\": {}, \"other-server\"")
+	_write_mcp_json(edited)
+	badge.refresh()
+	var status := _text(badge, "Status")
+	var undo_shown := _shown(badge, "UndoPinMoveButton")
+	_end(world, nodes)
+	ServerPinMoveTests.restore_project(saved)
+
+	var compatible := VersionUtils.COMPATIBLE_SERVER_VERSION
+	testing.eq(status, ".mcp.json now runs MCP server %s instead of 0.0.1. Restart your AI client to use it." % compatible,
+			"the moved line stays")
+	testing.ok(not undo_shown, "and Undo is hidden")
 	print("")
 
 
@@ -904,6 +929,38 @@ static func _test_notice_failed_pin_write_offers_button(testing: Testing, tree: 
 	testing.eq(ServerPinMoveTests.entry_package(written), "@npgamedev/godot-mcp-server@" + compatible,
 			"the file → runs the recommended server")
 	testing.ok(not update_shown_after and not status_shown_after, "after the write → no line and no button")
+	print("")
+
+
+# The line says to fix the file and then click the button, and any project-setting change
+# re-renders the notice, so the fix must not take the button away first.
+static func _test_notice_keeps_the_button_for_a_fixed_malformed_file(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: fixing a malformed .mcp.json keeps Update .mcp.json until it is pressed")
+	var saved := ServerPinMoveTests.install_project("{ \"mcpServers\": { not json")
+	var world := UpdateFixtures.begin_world("badge_server_fixed_file", "1.1.0", "ask", "1.9.0")
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
+			"compatible_server": "0.0.1"}, world["updates"])
+	var nodes := _start_with_pin_move(world, tree, ServerPinMoveTests.PinMoveStandIn.new(), _WriteFlowStandIn.new())
+	var badge: DockUpdateBadge = nodes["badge"]
+	var update_shown_malformed := _shown(badge, "UpdateMcpJsonButton")
+	_write_mcp_json(ServerPinMoveTests.document_at("0.0.1"))
+	badge.refresh()
+	var status_fixed := _text(badge, "Status")
+	var update_shown_fixed := _shown(badge, "UpdateMcpJsonButton")
+	_press(badge, "UpdateMcpJsonButton")
+	var written := ServerPinMoveTests.mcp_json_document()
+	var update_shown_after := _shown(badge, "UpdateMcpJsonButton")
+	var status_shown_after := _shown(badge, "Status")
+	_end(world, nodes)
+	ServerPinMoveTests.restore_project(saved)
+
+	var compatible := VersionUtils.COMPATIBLE_SERVER_VERSION
+	testing.ok(update_shown_malformed, "a malformed file → Update .mcp.json shows")
+	testing.ok(status_fixed.ends_with("Fix the file, then click Update .mcp.json."), "the file fixed → the line stays")
+	testing.ok(update_shown_fixed, "and the button stays")
+	testing.eq(ServerPinMoveTests.entry_package(written), "@npgamedev/godot-mcp-server@" + compatible,
+			"pressing it → the file runs the recommended server")
+	testing.ok(not update_shown_after and not status_shown_after, "and the line and the button go")
 	print("")
 
 
