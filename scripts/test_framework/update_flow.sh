@@ -15,11 +15,14 @@
 #
 # Legs (UPDATE_FLOW_LEGS, default all):
 #   full        the release is installed: the next start runs it, the dropped file
-#               is gone, the journal is deleted and the backup of the old version kept
+#               is gone, the journal is deleted and the backup of the old version kept,
+#               and the server pin in .mcp.json moved to the release's recommended
+#               version with the user's env key and the other server kept
 #   close       as full, with the editor closed the way its window's close button
-#               does rather than by a quit
+#               does rather than by a quit, and no .mcp.json
 #   rollback    the installed toolkit cannot be moved aside: the old version still
-#               runs and the staged update waits for the next exit
+#               runs, the staged update waits for the next exit and the server pin
+#               in .mcp.json stays
 #   untrusted   the manifest is signed by another key: nothing is staged
 #   repository  the project holds the toolkit repository's marker: the installer
 #               says why and asks for nothing
@@ -120,6 +123,10 @@ if [[ -z "${OLD_VERSION}" ]]; then
   exit 0
 fi
 OLD_ONLY_FILE="update_flow_old_only.txt"
+COMPATIBLE_SERVER="$(sed -nE 's/^const COMPATIBLE_SERVER_VERSION := "([^"]+)".*/\1/p' \
+  "${REPO_ROOT}/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd" | tr -d '\r')"
+# A server no release recommends, for the installed toolkit of the legs with a .mcp.json.
+OLD_SERVER="0.0.1"
 
 # ── Keys ────────────────────────────────────────────────────────────────────
 ut_make_key "${WORK}/trusted.pem"
@@ -218,6 +225,13 @@ run_leg() {
   local signer="${WORK}/trusted.pem"
   [[ "${LEG}" == untrusted ]] && signer="${WORK}/other.pem"
   ut_stage_release "${server}" "${NEW_VERSION}" "${NEW_VERSION}" "${RELEASE_ZIP}" "${RELEASE_MANIFEST}" "${signer}"
+  # The toolkit wrote this pin and recommends it, so an update that arrives moves it.
+  # Done before the rollback leg locks the addons folder.
+  if [[ "${LEG}" == full || "${LEG}" == rollback ]]; then
+    ut_recommend_server "${addon}" "${OLD_SERVER}"
+    ut_write_mcp_json "${project}" "${OLD_SERVER}"
+    ut_record_last_write "${project}" "${OLD_SERVER}"
+  fi
 
   # A port of the leg's own: a server an earlier leg left behind holds no port this one
   # needs (on Windows, kill may not reach the Python process Git Bash started).
@@ -283,6 +297,12 @@ run_leg() {
       [[ ! -e "${addon}/${OLD_ONLY_FILE}" ]] && pass "the file the release dropped is gone" || fail "the dropped file is still there"
       grep -q "apply ${NEW_VERSION}: applied" "${log}" && pass "the install log says applied" || fail "the install log does not say applied"
       [[ ! -e "${journal}" && -f "${backup}/plugin.cfg" ]] && pass "the journal is deleted and the old version's backup kept" || fail "the journal is left or the backup is gone"
+      if [[ "${LEG}" == full ]]; then
+        grep -qF "@npgamedev/godot-mcp-server@${COMPATIBLE_SERVER}\"" "${project}/.mcp.json" \
+          && pass ".mcp.json runs server ${COMPATIBLE_SERVER}" || fail ".mcp.json does not run server ${COMPATIBLE_SERVER}"
+        grep -qF "GODOT_MCP_TEST_KEEP" "${project}/.mcp.json" && grep -qF "other-server" "${project}/.mcp.json" \
+          && pass ".mcp.json keeps the env key and the other server" || fail ".mcp.json lost the env key or the other server"
+      fi
       ;;
     rollback)
       grep -qF "apply ${NEW_VERSION}: staged (could not move the installed toolkit" "${log}" \
@@ -291,6 +311,8 @@ run_leg() {
       [[ -e "${addon}/${OLD_ONLY_FILE}" ]] && pass "the old version's own file is still there" || fail "the old version's own file is missing"
       [[ -f "${project}/addons/.godot_mcp_toolkit_update/stage/plugin.cfg" && ! -e "${backup}" ]] \
         && pass "the stage is intact and no backup was made" || fail "the stage is gone or a backup was made"
+      grep -qF "@npgamedev/godot-mcp-server@${OLD_SERVER}\"" "${project}/.mcp.json" \
+        && pass ".mcp.json still runs server ${OLD_SERVER}" || fail ".mcp.json no longer runs server ${OLD_SERVER}"
       ;;
     untrusted)
       grep -qF "[UPDATE-DRIVER] timeout waiting for staged" "${dir}/boot1.log" && pass "nothing was staged" || fail "the driver did not time out"

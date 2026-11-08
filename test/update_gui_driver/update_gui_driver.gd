@@ -13,7 +13,11 @@ const _TOOLKIT_CONFIG := "res://addons/godot_mcp_toolkit/plugin.cfg"
 const _PROBE_SCRIPT := "res://probe_script.gd"
 const _PROBE_EDIT := "# an unsaved edit"
 const _START_WINDOW_TEXT := "is available. Install it now?"
-const _MCP_JSON_CONFIRM_TEXT := "in .mcp.json?"
+const _MCP_JSON_PATH := "res://.mcp.json"
+const _TOOLKIT_PLUGIN := "res://addons/godot_mcp_toolkit/plugin.gd"
+const _SERVER_VERSION_SETTING := "mcp_toolkit/server/version"
+# Long enough for several of the dock's one-second ticks.
+const _DOCK_TICK_WAIT_SEC := 15.0
 # The ready view's lines for the probe script's edit and for one scene never saved.
 const _VIEW_SCRIPT_TEXT := "probe_script.gd has unsaved edits"
 const _VIEW_SCENE_TEXT := "1 open scene has never been saved."
@@ -28,6 +32,8 @@ const _NO_RESTART_FRAMES := 300
 var _scenario: String = ""
 var _results_path: String = ""
 var _shots_folder: String = ""
+# The server_gap scenario's connection to the toolkit's own listener.
+var _peer: WebSocketPeer = null
 
 
 func _enter_tree() -> void:
@@ -48,17 +54,28 @@ func _play() -> void:
 	_record("step", step)
 	_record("toolkit_version", _toolkit_version())
 	match "%s/%s" % [_scenario, step]:
-		"restart/a", "server/a", "server_hand/a":
+		"restart/a", "server/a", "server_edit/a", "server_hand/a":
 			await _install_then_restart()
 		"restart/after_restart", "quit/b", "unsaved/after_restart", "server_hand/after_restart":
 			await _read_updated_notice()
 		"server/after_restart":
 			await _read_updated_notice()
-			await _update_mcp_json()
+			_record("mcp_json_moved", _mcp_json_text())
+			await _undo_pin_move()
+		"server_edit/after_restart":
+			await _read_updated_notice()
+			_record("mcp_json_moved", _mcp_json_text())
+			_edit_pin_by_hand()
+			await _undo_pin_move()
 		"later/a":
 			_record("available", await _wait_for(_shown.bind("UpdateButton")))
-		"later/b":
+		"server_prompt/a":
+			_record("available", await _wait_for(_shown.bind("UpdateButton")))
+			_record("offer_status", _badge_status())
+		"later/b", "server_prompt/b":
 			await _answer_start_window("Later")
+		"server_gap/a":
+			await _read_version_gap()
 		"later/c":
 			await _answer_start_window("Skip this version")
 		"later/d":
@@ -84,6 +101,7 @@ func _play() -> void:
 # own once staging ends; earlier ones open the ready view, whose Restart this presses.
 func _install_then_restart() -> void:
 	_record("available", await _wait_for(_shown.bind("UpdateButton")))
+	_record("offer_status", _badge_status())
 	_write_restart_marker()
 	_press(_badge_button("UpdateButton"))
 	# A restart frees this plugin during the wait; reaching its end means none came.
@@ -103,22 +121,119 @@ func _read_updated_notice() -> void:
 	_record("notice_shown", await _wait_for(_notice_says_updated))
 	_record("title", _badge_text("Title"))
 	_record("whats_new_visible", _shown("GitHubButton"))
-	_record("status", _badge_text("Status") if _shown("Status") else "")
+	_record("status", _badge_status())
 	_record("update_mcp_json_visible", _shown("UpdateMcpJsonButton"))
+	_record("undo_visible", _shown("UndoPinMoveButton"))
 
 
-func _update_mcp_json() -> void:
-	_press(_badge_button("UpdateMcpJsonButton"))
-	await _wait_for(_dialog_open.bind(_MCP_JSON_CONFIRM_TEXT), 30.0)
-	var confirm := _dialog_with(_MCP_JSON_CONFIRM_TEXT)
-	_record("confirm_shown", confirm != null)
-	if confirm == null:
-		return
-	await _shot("server_confirm")
-	_press(confirm.get_ok_button())
+func _undo_pin_move() -> void:
+	_press(_badge_button("UndoPinMoveButton"))
 	await _frames(60)
-	_record("update_mcp_json_visible_after", _shown("UpdateMcpJsonButton"))
-	_record("mcp_json", FileAccess.get_file_as_string("res://.mcp.json").replace("\n", " ").replace("\t", ""))
+	_record("undo_visible_after", _shown("UndoPinMoveButton"))
+
+
+# What a user's edit does: the entry runs another server, and nothing tells the toolkit.
+func _edit_pin_by_hand() -> void:
+	var pin := RegEx.create_from_string("godot-mcp-server@[^\"]+")
+	var edited := pin.sub(FileAccess.get_file_as_string(_MCP_JSON_PATH),
+			"godot-mcp-server@" + OS.get_environment("UPDATE_GUI_HAND_SERVER"))
+	var file := FileAccess.open(_MCP_JSON_PATH, FileAccess.WRITE)
+	if file == null:
+		push_error("[UPDATE-GUI] could not write %s: error %d"
+				% [_MCP_JSON_PATH, FileAccess.get_open_error()])
+		return
+	file.store_string(edited)
+	file.close()
+
+
+# Connects to the toolkit's listener as an MCP server on each side of the recommended
+# version. The check has found a newer toolkit by then, which a newer server's line
+# names. The setting changes with no server event, so only the dock's tick can repaint.
+func _read_version_gap() -> void:
+	_record("available", await _wait_for(_shown.bind("UpdateButton")))
+	var connected: bool = await _connect_as_server(OS.get_environment("UPDATE_GUI_OLDER_SERVER"))
+	_record("older_connected", connected)
+	if not connected:
+		return
+	_record("older_line", _compat_line())
+	connected = await _connect_as_server(OS.get_environment("UPDATE_GUI_NEWER_SERVER"))
+	_record("newer_connected", connected)
+	if not connected:
+		return
+	_record("newer_line", _compat_line())
+	await _shot("server_gap_line")
+	# Each wait ends at once if the line already is what it waits for, so these records
+	# show the line was there to hide and which line came back.
+	_record("line_before_setting", _compat_line())
+	ProjectSettings.set_setting(_SERVER_VERSION_SETTING, "latest")
+	_record("hidden_by_setting", await _wait_for(_compat_line_gone, _DOCK_TICK_WAIT_SEC))
+	ProjectSettings.set_setting(_SERVER_VERSION_SETTING, "")
+	_record("back_without_setting", await _wait_for(_compat_line_back, _DOCK_TICK_WAIT_SEC))
+	_record("line_after_setting", _compat_line())
+	_peer.close()
+
+
+# Opens a connection to the toolkit's listener and authenticates with the session token,
+# reporting `version` as the server's. Returns whether the toolkit took the version.
+func _connect_as_server(version: String) -> bool:
+	var server: Object = _toolkit_server()
+	if server == null:
+		return false
+	if _peer != null:
+		_peer.close()
+	_peer = WebSocketPeer.new()
+	var error := _peer.connect_to_url("ws://127.0.0.1:%d" % int(server.call("get_bound_port")))
+	if error != OK or not await _wait_for(_peer_open, 30.0):
+		return false
+	var token := FileAccess.get_file_as_string(str(server.call("get_published_token_path")))
+	_peer.send_text(JSON.stringify({"auth": token, "server_version": version}))
+	return await _wait_for(_toolkit_reports.bind(server, version), 30.0)
+
+
+func _peer_open() -> bool:
+	_peer.poll()
+	return _peer.get_ready_state() == WebSocketPeer.STATE_OPEN
+
+
+func _toolkit_reports(server: Object, version: String) -> bool:
+	_peer.poll()
+	var compat: Dictionary = server.call("get_peer_compat")
+	return str(compat.get("server_version", "")) == version
+
+
+func _compat_line_gone() -> bool:
+	_peer.poll()
+	return _compat_line().is_empty()
+
+
+func _compat_line_back() -> bool:
+	_peer.poll()
+	return not _compat_line().is_empty()
+
+
+# The dock's line about the connected server's version, or "" while it is hidden. The
+# status panel holding the label sits inside the dock, like the badge.
+func _compat_line() -> String:
+	var badge := _badge()
+	var dock := badge.get_parent() if badge != null else null
+	var label := dock.find_child("CompatLabel", true, false) as Label if dock != null else null
+	return label.text if label != null and label.visible else ""
+
+
+# The toolkit's editor server, reached through the graph its plugin composed.
+func _toolkit_server() -> Object:
+	for sibling: Node in get_parent().get_children():
+		var script: Script = sibling.get_script()
+		if script == null or script.resource_path != _TOOLKIT_PLUGIN:
+			continue
+		var handle: Variant = sibling.get("_handle")
+		if handle is Object:
+			return (handle as Object).call("server") as Object
+	return null
+
+
+func _mcp_json_text() -> String:
+	return FileAccess.get_file_as_string(_MCP_JSON_PATH).replace("\n", " ").replace("\t", "")
 
 
 func _answer_start_window(button_text: String) -> void:
@@ -127,6 +242,7 @@ func _answer_start_window(button_text: String) -> void:
 	_record("window_shown", window != null)
 	if window == null:
 		return
+	_record("window_pin_line", _line_naming_mcp_json(window.dialog_text))
 	await _shot("%s_window" % _scenario)
 	var pressed := false
 	for button: Button in window.find_children("*", "Button", true, false):
@@ -281,6 +397,18 @@ func _badge_text(child_name: String) -> String:
 		return (child as Label).text
 	if child is Button:
 		return (child as Button).text
+	return ""
+
+
+func _badge_status() -> String:
+	return _badge_text("Status") if _shown("Status") else ""
+
+
+# The window's own wording never names the file, so only the pin's line can match.
+static func _line_naming_mcp_json(text: String) -> String:
+	for line: String in text.split("\n"):
+		if line.contains(".mcp.json"):
+			return line
 	return ""
 
 
