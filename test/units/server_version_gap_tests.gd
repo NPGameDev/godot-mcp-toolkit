@@ -14,6 +14,8 @@ const _NEWER_TOOLKIT := "1.3.0"
 
 static func run(testing: Testing) -> void:
 	_test_state_table(testing)
+	_test_recommended_comes_from_the_caller(testing)
+	_test_prerelease_recommended_says_nothing(testing)
 	_test_line_names_the_versions(testing)
 
 
@@ -48,6 +50,26 @@ static func _test_state_table(testing: Testing) -> void:
 		var actual: String = ServerVersionGap.state(str(row[1]), str(row[2]), _RECOMMENDED, str(row[3]), str(row[4]))
 		var expected := str(row[5])
 		testing.eq(actual, expected, "%s → %s" % [row[0], expected if not expected.is_empty() else "nothing"])
+	print("")
+
+
+# Far above the toolkit's own constant, so a state read from the constant gets both rows
+# wrong: it would call each of these servers newer.
+static func _test_recommended_comes_from_the_caller(testing: Testing) -> void:
+	testing.begin("Server version gap: the recommended version passed in decides, not the toolkit's constant")
+	var at_it := ServerVersionGap.state(PeerCompat.STATE_OK, "99.0.0", "99.0.0", _NEWER_TOOLKIT, "")
+	var below_it := ServerVersionGap.state(PeerCompat.STATE_OK, "98.0.0", "99.0.0", _NEWER_TOOLKIT, "")
+	testing.eq(at_it, ServerVersionGap.NONE, "a server at the version passed in → nothing")
+	testing.eq(below_it, ServerVersionGap.SERVER_OLDER, "a server below it → older")
+	print("")
+
+
+static func _test_prerelease_recommended_says_nothing(testing: Testing) -> void:
+	testing.begin("Server version gap: a prerelease recommended version compares as nothing")
+	var below := ServerVersionGap.state(PeerCompat.STATE_OK, "1.1.1", "1.2.0-beta", _NEWER_TOOLKIT, "")
+	var above := ServerVersionGap.state(PeerCompat.STATE_OK, "1.3.0", "1.2.0-beta", _NEWER_TOOLKIT, "")
+	testing.eq(below, ServerVersionGap.NONE, "a server below it → nothing")
+	testing.eq(above, ServerVersionGap.NONE, "a server above it → nothing")
 	print("")
 
 

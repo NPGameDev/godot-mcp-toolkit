@@ -58,10 +58,15 @@ static func _test_pin_move_line_only_when_a_pin_moves(testing: Testing, tree: Sc
 	ServerPinMoveTests.restore_project(saved)
 	saved = ServerPinMoveTests.install_project(ServerPinMoveTests.document_at("0.0.9"))
 	var hand_set := UpdatePrompt.offer_text(installer, pin_move)
+	pin_move.last_written = "npx:0.0.9"
+	var by_last_write := UpdatePrompt.offer_text(installer, pin_move)
+	pin_move.last_written = ""
 	ServerPinMoveTests.restore_project(saved)
 	saved = ServerPinMoveTests.install_project(ServerPinMoveTests.document_at(compatible))
 	ProjectSettings.set_setting(ServerPinPolicy.SERVER_VERSION_SETTING, "latest")
 	var by_setting := UpdatePrompt.offer_text(installer, pin_move)
+	ProjectSettings.set_setting(ServerPinPolicy.SERVER_VERSION_SETTING, "1.2.3")
+	var by_named_version := UpdatePrompt.offer_text(installer, pin_move)
 	ProjectSettings.set_setting(ServerPinPolicy.SERVER_VERSION_SETTING, "")
 	var by_local := ServerPinMoveTests.PinMoveStandIn.new()
 	by_local.local_path = "/dev/godot-mcp-server/dist/index.js"
@@ -79,7 +84,10 @@ static func _test_pin_move_line_only_when_a_pin_moves(testing: Testing, tree: Sc
 	testing.ok(compatible in movable and _OFFERED_SERVER in movable, "naming the server now and the one it moves to")
 	testing.eq(no_pin_move, base, "no pin move → the base text")
 	testing.eq(hand_set, base, "a pin set by hand → the base text")
+	testing.eq(by_last_write.split("\n\n").size(), base.split("\n\n").size() + 1, "the same pin as this machine's last write → one more paragraph")
+	testing.ok("0.0.9" in by_last_write and _OFFERED_SERVER in by_last_write, "naming that pin and the server it moves to")
 	testing.eq(by_setting, base, "a version setting → the base text")
+	testing.eq(by_named_version, base, "a setting naming a version → the base text")
 	testing.eq(local, base, "a local server path → the base text")
 	testing.eq(unversioned, base, "an entry with no version → the base text")
 	print("")

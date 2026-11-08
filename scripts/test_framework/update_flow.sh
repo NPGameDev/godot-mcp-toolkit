@@ -123,8 +123,7 @@ if [[ -z "${OLD_VERSION}" ]]; then
   exit 0
 fi
 OLD_ONLY_FILE="update_flow_old_only.txt"
-COMPATIBLE_SERVER="$(sed -nE 's/^const COMPATIBLE_SERVER_VERSION := "([^"]+)".*/\1/p' \
-  "${REPO_ROOT}/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd" | tr -d '\r')"
+COMPATIBLE_SERVER="$(cs_current "${REPO_ROOT}")"
 # A server no release recommends, for the installed toolkit of the legs with a .mcp.json.
 OLD_SERVER="0.0.1"
 

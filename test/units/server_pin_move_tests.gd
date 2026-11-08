@@ -62,6 +62,7 @@ static func run(testing: Testing) -> void:
 	_test_hand_set_pin_stays(testing)
 	_test_version_setting_keeps_the_pin(testing)
 	_test_entry_at_the_target_stays(testing)
+	_test_no_file_or_no_entry_stays(testing)
 	_test_malformed_file_is_a_failed_write(testing)
 	_test_malformed_file_stays_when_the_pin_would(testing)
 	_test_failed_write_leaves_the_file(testing)
@@ -261,7 +262,7 @@ static func _test_entry_at_the_target_stays(testing: Testing) -> void:
 	var saved := install_project(document_at(compatible))
 	var moved_before := mcp_json_text()
 	var already := PinMoveStandIn.new()
-	already.last_written = "npx:" + _OLD
+	already.last_written = "npx:" + compatible
 	already.follow_update(updated())
 	var moved_after := mcp_json_text()
 	_store(MCPJsonSync.get_mcp_json_path(), document_at(_HAND_SET).to_utf8_buffer())
@@ -277,6 +278,36 @@ static func _test_entry_at_the_target_stays(testing: Testing) -> void:
 	testing.eq(same_after, same_before, "the same recommended server before and after → file bytes unchanged")
 	testing.eq(str(same_server.outcome()["state"]), "", "and no outcome")
 	testing.eq(same_server.recorded, [], "and nothing recorded")
+	print("")
+
+
+# Each case has a write on record, so only the missing entry keeps the pin.
+static func _test_no_file_or_no_entry_stays(testing: Testing) -> void:
+	testing.begin("Server pin move: a missing .mcp.json or a file with no toolkit entry is left, with no line")
+	var saved := install_project("")
+	var path := MCPJsonSync.get_mcp_json_path()
+	DirAccess.remove_absolute(path)
+	var no_file := PinMoveStandIn.new()
+	no_file.last_written = "npx:" + _OLD
+	no_file.follow_update(updated())
+	var no_file_created := FileAccess.file_exists(path)
+	var no_file_preview := no_file.preview("9.9.9")
+	var no_entry_text := JSON.stringify({"mcpServers": {"other-server": {"command": "other"}}})
+	_store(path, no_entry_text.to_utf8_buffer())
+	var no_entry := PinMoveStandIn.new()
+	no_entry.last_written = "npx:" + _OLD
+	no_entry.follow_update(updated())
+	var no_entry_after := mcp_json_text()
+	var no_entry_preview := no_entry.preview("9.9.9")
+	restore_project(saved)
+	testing.ok(not no_file_created, "no file → none created")
+	testing.eq(str(no_file.outcome()["state"]), "", "and no outcome")
+	testing.eq(no_file.recorded, [], "and nothing recorded")
+	testing.eq(no_file_preview, {}, "and no line before the click")
+	testing.eq(no_entry_after, no_entry_text, "no toolkit entry → file bytes unchanged")
+	testing.eq(str(no_entry.outcome()["state"]), "", "and no outcome")
+	testing.eq(no_entry.recorded, [], "and nothing recorded")
+	testing.eq(no_entry_preview, {}, "and no line before the click")
 	print("")
 
 
@@ -332,8 +363,11 @@ static func _test_malformed_file_stays_when_the_pin_would(testing: Testing) -> v
 	print("")
 
 
+# With safe save off, as in a headless run, a read-only file stops the write at open. An
+# editor's safe save on Linux or macOS renames over the file instead, which the
+# server_readonly scenario of update_gui.sh covers.
 static func _test_failed_write_leaves_the_file(testing: Testing) -> void:
-	testing.begin("Server pin move: a write that fails leaves the file and reports why")
+	testing.begin("Server pin move: a write stopped at open leaves the file and reports why")
 	var saved := install_project(document_at(_OLD))
 	var before := mcp_json_text()
 	UpdateFixtures.set_read_only(MCPJsonSync.get_mcp_json_path(), true)
@@ -344,7 +378,7 @@ static func _test_failed_write_leaves_the_file(testing: Testing) -> void:
 	var can_retry := pin_move.can_retry()
 	var can_undo := pin_move.can_undo()
 	restore_project(saved)
-	testing.eq(after, before, "a read-only file → bytes unchanged")
+	testing.eq(after, before, "a read-only file, stopped at open → bytes unchanged")
 	testing.eq(str(outcome["state"]), "write_failed", "the outcome → write failed")
 	testing.ok(str(outcome["error"]).begins_with("Failed to write .mcp.json"), "with the write's reason")
 	testing.eq(pin_move.recorded, [], "nothing recorded")
@@ -524,9 +558,14 @@ static func _test_preview(testing: Testing) -> void:
 	var local := by_local.preview("9.9.9")
 	ProjectSettings.set_setting(ServerPinPolicy.SERVER_VERSION_SETTING, "latest")
 	var by_setting := pin_move.preview("9.9.9")
+	ProjectSettings.set_setting(ServerPinPolicy.SERVER_VERSION_SETTING, "1.2.3")
+	var by_named_version := pin_move.preview("9.9.9")
 	ProjectSettings.set_setting(ServerPinPolicy.SERVER_VERSION_SETTING, "")
 	_store(MCPJsonSync.get_mcp_json_path(), document_at(_HAND_SET).to_utf8_buffer())
 	var hand_set := pin_move.preview("9.9.9")
+	pin_move.last_written = "npx:" + _HAND_SET
+	var by_last_write := pin_move.preview("9.9.9")
+	pin_move.last_written = ""
 	var bare := document_at(compatible).replace(_PKG + "@" + compatible, _PKG)
 	_store(MCPJsonSync.get_mcp_json_path(), bare.to_utf8_buffer())
 	var unversioned := pin_move.preview("9.9.9")
@@ -536,7 +575,9 @@ static func _test_preview(testing: Testing) -> void:
 	testing.eq(same, {}, "the same recommended version → none")
 	testing.eq(local, {}, "a local server path → none")
 	testing.eq(by_setting, {}, "a version setting → none")
+	testing.eq(by_named_version, {}, "a setting naming a version → none")
 	testing.eq(hand_set, {}, "a pin set by hand → none")
+	testing.eq(by_last_write, {"from": _HAND_SET, "to": "9.9.9"}, "the same pin as this machine's last write → from and to")
 	testing.eq(unversioned, {}, "an entry with no version → none")
 	testing.eq(after, bare, "a preview → writes nothing")
 	print("")

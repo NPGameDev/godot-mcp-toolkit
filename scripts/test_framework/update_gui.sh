@@ -16,7 +16,7 @@
 #   later        the editor-start window: Later brings it back at the next start, Skip
 #                this version hides the version, and a .mcp.json set by hand adds no
 #                line to it
-#   unsaved     a script edited before Update: the ready view opens, Restart refuses
+#   unsaved      a script edited before Update: the ready view opens, Restart refuses
 #                while the edit is unsaved, Not now collapses the view, and once the
 #                script is saved Restart installs the release
 #   untitled     a scene that was never saved: the ready view opens and the editor does
@@ -37,7 +37,7 @@
 #                says so and offers Update .mcp.json, the file keeps its bytes, and no
 #                write is recorded. On Linux and macOS the engine's safe save renames over
 #                the file, which a missing write bit does not stop, so the pin moves
-#   server_gap  an MCP server connects, older and then newer than the recommended
+#   server_gap   an MCP server connects, older and then newer than the recommended
 #                version: the dock's status panel says so, and follows a setting that
 #                changes with no server event. The MCP server is this test's own
 #                WebSocket client, since the job runs no real one
@@ -155,8 +155,7 @@ if [[ -z "${OLD_VERSION}" ]]; then
   exit 0
 fi
 NEXT_MAJOR="$(( ${NEW_VERSION%%.*} + 1 )).0.0"
-COMPATIBLE_SERVER="$(sed -nE 's/^const COMPATIBLE_SERVER_VERSION := "([^"]+)".*/\1/p' \
-  "${REPO_ROOT}/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd" | tr -d '\r')"
+COMPATIBLE_SERVER="$(cs_current "${REPO_ROOT}")"
 # A server no release pins, for the installed toolkit of the .mcp.json scenarios.
 OLD_SERVER="0.0.1"
 # What the installed toolkit recommends when the pin must not count as its recommended
@@ -395,13 +394,15 @@ pin_old_server() {
     recommended_only)
       ut_recommend_server "${project}/addons/godot_mcp_toolkit" "${OLD_SERVER}"
       ;;
-    last_write_only | by_hand)
+    last_write_only)
+      ut_recommend_server "${project}/addons/godot_mcp_toolkit" "${OTHER_RECOMMENDED}"
+      ut_record_last_write "${project}" "${OLD_SERVER}"
+      ;;
+    by_hand)
       ut_recommend_server "${project}/addons/godot_mcp_toolkit" "${OTHER_RECOMMENDED}"
       ;;
-  esac
-  case "${mode}" in
-    last_write_only)
-      ut_record_last_write "${project}" "${OLD_SERVER}"
+    *)
+      fail "pin_old_server: no mode ${mode}"
       ;;
   esac
 }

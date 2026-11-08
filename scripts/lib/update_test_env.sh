@@ -52,6 +52,8 @@
 
 # shellcheck source=python_bin.sh
 source "$(dirname "${BASH_SOURCE[0]}")/python_bin.sh"
+# shellcheck source=compatible_server.sh
+source "$(dirname "${BASH_SOURCE[0]}")/compatible_server.sh"
 
 ut_os() {
   case "$(uname -s)" in
@@ -163,9 +165,8 @@ ut_stage_release() {
 
 ut_recommend_server() {
   local addon="$1" version="$2"
-  sed -i.bak -E "s/^const COMPATIBLE_SERVER_VERSION := \"[^\"]+\"/const COMPATIBLE_SERVER_VERSION := \"${version}\"/" \
-    "${addon}/versioning/mcp_version_utils.gd" \
-    && rm -f "${addon}/versioning/mcp_version_utils.gd.bak"
+  # The addon sits at <project>/addons/<id>, the root cs_rewrite resolves its files from.
+  cs_rewrite "$(dirname "$(dirname "${addon}")")" "${version}" || return 1
   rf_write_list "${addon}"
 }
 
