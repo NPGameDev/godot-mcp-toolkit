@@ -3,8 +3,8 @@ extends RefCounted
 ## Unit tests for the dock's update badge, driven through its named buttons and labels
 ## with a real update check runner and installer: the version notice and its install
 ## row in each installer state, closing it, the notice after an install, the .mcp.json pin
-## move it reports with Undo or a failed write, and the toast for a release that becomes
-## installable mid-session.
+## move it announces and reports with Undo or a failed write, and the toast for a release
+## that becomes installable mid-session.
 
 const Testing := preload("res://test/units/testing.gd")
 const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
@@ -16,6 +16,7 @@ const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const ServerPinPolicy := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_policy.gd")
 const ServerPinMoveTests := preload("res://test/units/server_pin_move_tests.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
@@ -49,6 +50,8 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await tree.process_frame
 	_test_available(testing, tree)
 	_test_available_with_changed_files(testing, tree)
+	_test_available_says_a_pin_would_move(testing, tree)
+	_test_pin_line_goes_with_the_offer(testing, tree)
 	_test_changelog_on_every_offer(testing, tree)
 	_test_close_hides_version(testing, tree)
 	_test_update_shows_download(testing, tree)
@@ -224,6 +227,90 @@ static func _test_available_with_changed_files(testing: Testing, tree: SceneTree
 			+ "If Keep Backup is off in Project Settings, it deletes the copy once this update installs.",
 			"two changed files → the plural line")
 	print("")
+
+
+# Through a real installer holding a verified release that recommends another server,
+# and a real pin move reading the project's .mcp.json. The rows pin whether the line
+# shows and the versions it names, not its wording.
+static func _test_available_says_a_pin_would_move(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: the offer says so only when a pin would move")
+	var compatible := VersionUtils.COMPATIBLE_SERVER_VERSION
+	var offered := "9.9.9"
+	var saved := ServerPinMoveTests.install_project(ServerPinMoveTests.document_at(compatible))
+	var world := UpdateFixtures.begin_world("badge_pin_preview", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key(), "4.2", offered)
+	var pin_move := ServerPinMoveTests.PinMoveStandIn.new()
+	var nodes := _start_with_pin_move(world, tree, pin_move)
+	var badge: DockUpdateBadge = nodes["badge"]
+	var movable_shown := _shown(badge, "Status")
+	var movable := _text(badge, "Status")
+	var update_shown := _shown(badge, "UpdateButton")
+
+	_write_mcp_json(ServerPinMoveTests.document_at("0.0.9"))
+	badge.refresh()
+	var hand_set_shown := _shown(badge, "Status")
+	_write_mcp_json(ServerPinMoveTests.document_at(compatible))
+	ProjectSettings.set_setting(ServerPinPolicy.SERVER_VERSION_SETTING, "latest")
+	badge.refresh()
+	var by_setting_shown := _shown(badge, "Status")
+	ProjectSettings.set_setting(ServerPinPolicy.SERVER_VERSION_SETTING, "")
+	pin_move.local_path = "/dev/godot-mcp-server/dist/index.js"
+	badge.refresh()
+	var by_local_shown := _shown(badge, "Status")
+	pin_move.local_path = ""
+	_write_mcp_json(ServerPinMoveTests.document_at(compatible).replace(
+			ServerPinPolicy.RELEASE_PACKAGE + "@" + compatible, ServerPinPolicy.RELEASE_PACKAGE))
+	badge.refresh()
+	var unversioned_shown := _shown(badge, "Status")
+	_end(world, nodes)
+	ServerPinMoveTests.restore_project(saved)
+
+	testing.ok(movable_shown, "a pin that would move → a status line")
+	testing.ok(compatible in movable and offered in movable, "naming the server now and the one it moves to")
+	testing.ok(update_shown, "and Update stays")
+	testing.ok(not hand_set_shown, "a pin set by hand → no line")
+	testing.ok(not by_setting_shown, "a version setting → no line")
+	testing.ok(not by_local_shown, "a local server path → no line")
+	testing.ok(not unversioned_shown, "an entry with no version → no line")
+	print("")
+
+
+# The line adds to the offer's other status text, leaves with the offer, and the click
+# stays a one-click install: the status shows the download, and no window opens.
+static func _test_pin_line_goes_with_the_offer(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: the pin line joins the offer's status and leaves with the offer")
+	var compatible := VersionUtils.COMPATIBLE_SERVER_VERSION
+	var saved := ServerPinMoveTests.install_project(ServerPinMoveTests.document_at(compatible))
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := UpdateFixtures.set_host(server.host())
+	var world := UpdateFixtures.begin_world("badge_pin_preview_click", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key(), "4.2", "9.9.9")
+	UpdateFixtures.edit_installed_file(world, "core/a.gd")
+	var nodes := _start_with_pin_move(world, tree, ServerPinMoveTests.PinMoveStandIn.new())
+	var badge: DockUpdateBadge = nodes["badge"]
+	var offer_lines := _text(badge, "Status").split("\n").size()
+	var base_lines := DockUpdateBadgeStatus.install_line(UpdateInstaller.AVAILABLE, "1.9.0",
+			{DockUpdateBadgeStatus.CHANGED: 1}).split("\n").size()
+	var windows_before := tree.root.get_child_count()
+	_press(badge, "UpdateButton")
+	var windows_after := tree.root.get_child_count()
+	var state := (nodes["installer"] as UpdateInstaller).state()
+	var downloading_lines := _text(badge, "Status").split("\n").size()
+	_end(world, nodes)
+	server.stop()
+	UpdateFixtures.restore_host(previous_host)
+	ServerPinMoveTests.restore_project(saved)
+	testing.eq(offer_lines, base_lines + 1, "a changed file and a pin that would move → one more line")
+	testing.eq(state, UpdateInstaller.DOWNLOADING, "Update → the download starts on that click")
+	testing.eq(windows_after, windows_before, "and opens no window")
+	testing.eq(downloading_lines, 1, "the download → its own line, without the pin line")
+	print("")
+
+
+static func _write_mcp_json(text: String) -> void:
+	var file := FileAccess.open(MCPJsonSync.get_mcp_json_path(), FileAccess.WRITE)
+	file.store_string(text)
+	file.close()
 
 
 # The manual mode keeps no release, so its badge only links.

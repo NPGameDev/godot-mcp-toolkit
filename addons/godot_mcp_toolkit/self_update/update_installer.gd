@@ -317,6 +317,15 @@ func clear_notice() -> void:
 	state_changed.emit()
 
 
+## The MCP server version the release on offer recommends, as [code]X.Y.Z[/code], from
+## its verified manifest. An empty string when no verified release is held for
+## [method version] or its manifest names no server.
+func offered_compatible_server() -> String:
+	if str(_manifest.get("version", "")) != _version:
+		return ""
+	return str(_manifest.get("compatible_server", ""))
+
+
 ## Whether the editor-start window should ask about [method version]: the mode asks
 ## and the release is verified. The window names any toolkit files changed by hand.
 func prompt_due() -> bool:

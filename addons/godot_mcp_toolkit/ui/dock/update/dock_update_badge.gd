@@ -15,7 +15,8 @@ extends PanelContainer
 ## way. On a staged release the close button hides it until the next editor start
 ## instead, and the exit still installs it.[br]
 ## [br]
-## When the installer has a verified release, the badge adds Update; once the
+## When the installer has a verified release, the badge adds Update, and says so when
+## installing would move the toolkit's server pin in .mcp.json; once the
 ## release is staged, Restart now and Don't install, and the line saying the
 ## editor's exit installs it, with the reason when the last exit tried and could not.
 ## While the installer's ready view is open, the badge shows that view instead: what a
@@ -297,6 +298,8 @@ func _render_install_state() -> void:
 		facts[DockUpdateBadgeStatus.ERROR] = _installer.error_text()
 		facts[DockUpdateBadgeStatus.NOTE] = _installer.note_text()
 		facts[DockUpdateBadgeStatus.POSTPONED] = _installer.postponed_reason()
+		if state == UpdateInstaller.AVAILABLE and _pin_move != null:
+			facts[DockUpdateBadgeStatus.PIN_PREVIEW] = _pin_move.preview(_installer.offered_compatible_server())
 	_set_status(DockUpdateBadgeStatus.install_line(state, _shown_version, facts))
 	var check_failed: bool = about_shown and state == UpdateInstaller.IDLE and _installer.check_failed()
 	_update_btn.visible = state == UpdateInstaller.AVAILABLE or state == UpdateInstaller.FAILED \

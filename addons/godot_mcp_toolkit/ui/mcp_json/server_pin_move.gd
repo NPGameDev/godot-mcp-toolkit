@@ -31,6 +31,7 @@ const UNDONE := "undone"
 
 const _UNDONE_TEXT := "MCP: .mcp.json runs server %s again."
 const _UNDO_REFUSED_TEXT := "MCP: .mcp.json changed since the update, so it was left as it is."
+const _PREVIEW_TEXT := "This also changes the MCP server in .mcp.json from %s to %s. Restart your AI client after the update."
 
 # Where the Undo marker lives: editor project metadata, machine-local like the
 # last-write record.
@@ -134,6 +135,14 @@ func preview(new_recommended: String) -> Dictionary:
 	if target.is_empty():
 		return {}
 	return {"from": _version_of(on_disk), "to": new_recommended}
+
+
+## The sentence telling the user what a click on Update would do to the pin, for
+## [param pin_preview], what [method preview] returned; an empty string when it is empty.
+static func preview_line(pin_preview: Dictionary) -> String:
+	if pin_preview.is_empty():
+		return ""
+	return _PREVIEW_TEXT % [str(pin_preview.get("from", "")), str(pin_preview.get("to", ""))]
 
 
 ## The server spec this machine last wrote into the project's .mcp.json, or "".

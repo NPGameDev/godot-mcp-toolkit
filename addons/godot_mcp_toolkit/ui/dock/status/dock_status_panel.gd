@@ -22,6 +22,10 @@ extends VBoxContainer
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const RegistryClient = Modules.RegistryClient
 const DockThemeOverride = Modules.DockThemeOverride
+const UpdateCheckRunner = Modules.UpdateCheckRunner
+const VersionUtils = Modules.VersionUtils
+const ServerPinPolicy = Modules.ServerPinPolicy
+const ServerVersionGap := preload("res://addons/godot_mcp_toolkit/ui/dock/status/server_version_gap.gd")
 
 # Shared label colors: amber for any warning state, gray for idle/informational.
 const _WARN_COLOR := Color(1.0, 0.8, 0.2)
@@ -36,6 +40,8 @@ const _RUNTIME_REACH_GRACE_MS := 10000
 # Server is read for every label (listening/port/peer/runtime/LSP); held so the
 # refreshers can repaint without the dock re-passing it.
 var _server: Node = null
+# Says whether a newer toolkit is known, which decides the line for a newer server.
+var _update_check: UpdateCheckRunner = null
 
 # Status labels — built once in _init(), mutated by the refreshers below.
 var _status_label: Label = null
@@ -48,16 +54,20 @@ var _lsp_label: Label = null
 # hidden until active.
 var _port_warning_label: Label = null
 # Below-floor warning — the connected MCP server or this toolkit is below the other's
-# declared floor. Repainted by refresh_compat() from the server's get_peer_compat();
-# hidden otherwise.
+# declared floor — or else the line about a server that differs from the recommended
+# version. Repainted by refresh_compat() from the server's get_peer_compat(); hidden
+# otherwise.
 var _compat_label: Label = null
 # First tick (ms) at which the current playtest was seen running — drives the
 # runtime label's waiting→not-reachable escalation. -1 while no playtest runs.
 var _playtest_seen_ms: int = -1
 
 
-func _init(server: Node) -> void:
+## [param update_check] is the update check runner, which says whether a newer toolkit
+## is known, or [code]null[/code] when none is.
+func _init(server: Node, update_check: UpdateCheckRunner = null) -> void:
 	_server = server
+	_update_check = update_check
 
 	var status_row := HBoxContainer.new()
 	add_child(status_row)
@@ -84,6 +94,7 @@ func _init(server: Node) -> void:
 	# Below-floor warning — also under the status row: the connection works, but one
 	# side needs updating or pinning, and the console line is easy to miss.
 	_compat_label = Label.new()
+	_compat_label.name = "CompatLabel"
 	_compat_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_compat_label.add_theme_color_override("font_color", _WARN_COLOR)
 	_compat_label.add_theme_font_size_override("font_size", 12)
@@ -159,8 +170,11 @@ func refresh() -> void:
 
 
 ## Show the below-floor warning while the connected MCP server or this toolkit is
-## below the other's declared floor, from the server's get_peer_compat(); hide it
-## otherwise. The dock routes server.compat_status_changed here.
+## below the other's declared floor, from the server's get_peer_compat(); otherwise the
+## line about a server that differs from the recommended version (see
+## [code]server_version_gap.gd[/code]); hide it when neither applies. The dock routes
+## server.compat_status_changed here and polls it on its 1s timer, since a settings change
+## or a new update check result moves the line with no server event.
 func refresh_compat() -> void:
 	if _compat_label == null:
 		return
@@ -168,8 +182,9 @@ func refresh_compat() -> void:
 	if _server != null and _server.has_method("get_peer_compat"):
 		compat = _server.get_peer_compat()
 	var below_floor := str(compat.get("state", "")).ends_with("_below_floor")
-	_compat_label.visible = below_floor
-	_compat_label.text = "⚠️ " + str(compat.get("message", "")) if below_floor else ""
+	var line := str(compat.get("message", "")) if below_floor else _version_gap_line(compat)
+	_compat_label.visible = not line.is_empty()
+	_compat_label.text = "⚠️ " + line if not line.is_empty() else ""
 
 
 ## Repaint the runtime label from the playtest/runtime-port state. Called on the
@@ -264,6 +279,16 @@ func set_peer_count(peer_count: int) -> void:
 func set_activity(text: String) -> void:
 	if _activity_label != null:
 		_activity_label.text = text
+
+
+# The line about the connected server's version in the verdict `compat`, or "".
+func _version_gap_line(compat: Dictionary) -> String:
+	var server_version := str(compat.get("server_version", ""))
+	var recommended := VersionUtils.COMPATIBLE_SERVER_VERSION
+	var newer_toolkit: String = _update_check.latest_known_version() if _update_check != null else ""
+	var gap := ServerVersionGap.state(str(compat.get("state", "")), server_version, recommended,
+			newer_toolkit, ServerPinPolicy.read_version_setting())
+	return ServerVersionGap.line(gap, server_version, recommended, newer_toolkit)
 
 
 # Show or hide the not-listening warning from the server's get_port_warning()

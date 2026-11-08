@@ -7,11 +7,14 @@ extends RefCounted
 ## again at the next start, and Skip this version hides it until a newer one. What's
 ## in this update opens the version's changelog and leaves the window open. A release
 ## found during a session gets the dock badge only: a window in the middle of someone's
-## work would be in the way.
+## work would be in the way. When installing would move the toolkit's server pin in
+## .mcp.json, the window says so; there is nothing to choose, as the notice after the
+## install offers Undo.
 
 const Modules := preload("res://addons/godot_mcp_toolkit/core/modules.gd")
 const UpdateCheck = Modules.UpdateCheck
 const UpdateInstaller = Modules.UpdateInstaller
+const ServerPinMove := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd")
 
 ## The label of the button that opens the changelog.
 const WHATS_NEW_LABEL := "What's in this update"
@@ -44,12 +47,11 @@ var _dialog: ConfirmationDialog = null
 
 ## Shows the window for [param installer]'s release over the editor. Does nothing
 ## while a window from this prompt is open.
-func show_for(installer: UpdateInstaller) -> void:
+func show_for(installer: UpdateInstaller, pin_move: ServerPinMove = null) -> void:
 	if _is_open():
 		return
 	_installer = installer
-	open_under(EditorInterface.get_base_control(), text_for(
-			installer.version(), installer.changed_files(), not installer.discarded_files().is_empty()))
+	open_under(EditorInterface.get_base_control(), offer_text(installer, pin_move))
 
 
 ## Builds the window with [param text] under [param parent] and pops it up centred.
@@ -87,13 +89,27 @@ func teardown() -> void:
 	_installer = null
 
 
+## The window's text for the release [param installer] offers. [param pin_move] is this
+## start's pin move, which adds a line when installing would move the .mcp.json pin, or
+## [code]null[/code] for no line.
+static func offer_text(installer: UpdateInstaller, pin_move: ServerPinMove = null) -> String:
+	var pin_preview: Dictionary = pin_move.preview(installer.offered_compatible_server()) if pin_move != null else {}
+	return text_for(installer.version(), installer.changed_files(),
+			not installer.discarded_files().is_empty(), pin_preview)
+
+
 ## The window's text for [param version] when [param changed_files] were changed by
 ## hand, warning that installing deletes other files when [param deletes_other_files].
+## [param pin_preview] is what [code]ServerPinMove.preview[/code] returned; a non-empty
+## one adds the line about the .mcp.json pin.
 static func text_for(
-		version: String, changed_files: PackedStringArray, deletes_other_files: bool = false) -> String:
+		version: String, changed_files: PackedStringArray, deletes_other_files: bool = false,
+		pin_preview: Dictionary = {}) -> String:
 	var text := _TEXT % version
 	if deletes_other_files:
 		text += _DELETES_OTHER_FILES_TEXT
+	if not pin_preview.is_empty():
+		text += "\n\n" + ServerPinMove.preview_line(pin_preview)
 	if changed_files.is_empty():
 		return text
 	var listed := PackedStringArray()

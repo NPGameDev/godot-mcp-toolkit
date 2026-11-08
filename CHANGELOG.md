@@ -52,7 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   previous toolkit recommended, or the one the toolkit last wrote on this machine,
   and the project doesn't set `mcp_toolkit/server/version`. The update notice says
   what changed and has an Undo. If `.mcp.json` can't be written, the notice says
-  why and offers Update .mcp.json.
+  why and offers Update .mcp.json. When a pin would move, the update window and the
+  dock's badge say so before you click Update. The dock also warns when the connected
+  server isn't the recommended version.
 
 ### Changed
 

@@ -99,6 +99,15 @@ func badge_version() -> String:
 			str(_state[UpdateCheck.STATE_DISMISSED_VERSION]))
 
 
+## The newest toolkit version the check has found as [code]X.Y.Z[/code], dismissed or
+## not; an empty string when the toggle is off or nothing newer than the installed
+## version was found.
+func latest_known_version() -> String:
+	if not _enabled:
+		return ""
+	return UpdateCheck.version_to_show(_installed_version, str(_state[UpdateCheck.STATE_LATEST_VERSION]), "")
+
+
 ## Whether [method badge_version] is a new major version.
 func is_major() -> bool:
 	return UpdateCheck.is_major_bump(_installed_version, badge_version())

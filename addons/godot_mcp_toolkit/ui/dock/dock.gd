@@ -135,7 +135,7 @@ func _build_ui() -> void:
 
 	# Server-status labels (listening/peer/runtime/LSP/activity) — own sub-panel.
 	# The dock routes server signals to it for label updates; it reads the server.
-	_status_panel = DockStatusPanel.new(_server)
+	_status_panel = DockStatusPanel.new(_server, _update_check)
 	sc.add_child(_status_panel)
 
 	# .mcp.json health panel — the shared missing/malformed/read-only warning sits
@@ -315,12 +315,14 @@ func _on_port_status_changed() -> void:
 
 
 # 1s poll — one timer fans out to the runtime label (playtest port discovery /
-# playtest end) AND the .mcp.json panel's file-validity refresh (file presence /
-# malformed → button mode + warning). Both are live FACTs safe to poll; read-only
-# stays server-synced (see _on_client_connected), never on this timer.
+# playtest end), the server version line (a settings change or a new check result
+# moves it with no server event) AND the .mcp.json panel's file-validity refresh (file
+# presence / malformed → button mode + warning). All are live FACTs safe to poll;
+# read-only stays server-synced (see _on_client_connected), never on this timer.
 func _on_runtime_timer_timeout() -> void:
 	if _status_panel != null:
 		_status_panel.refresh_runtime()
+		_status_panel.refresh_compat()
 	if _mcp_json_panel != null:
 		_mcp_json_panel.refresh()
 

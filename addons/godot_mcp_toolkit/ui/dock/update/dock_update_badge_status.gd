@@ -15,6 +15,7 @@ const RestartGate = UpdateInstaller.RestartGate
 const EditorRestartProbe = UpdateInstaller.EditorRestartProbe
 const VersionUtils = Modules.VersionUtils
 const ServerPinMove := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd")
+const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 
 ## The [param facts] key for the number of toolkit files the project changed, an int.
 const CHANGED := "changed"
@@ -27,6 +28,9 @@ const VIEW := "view"
 ## The [param facts] key for why the editor's last exit left the staged update uninstalled,
 ## a String.
 const POSTPONED := "postponed"
+## The [param facts] key for what [code]ServerPinMove.preview[/code] returned for the
+## release on offer, a Dictionary.
+const PIN_PREVIEW := "pin_preview"
 
 const _DOWNLOADING_TEXT := "Downloading %s…"
 const _PREPARING_TEXT := "Preparing %s…"
@@ -54,24 +58,21 @@ const _SCENES_NOT_ASKED_TEXT := ("Godot 4.2 and 4.3 don't ask about unsaved scen
 		+ "so unsaved scene changes are lost. Save before you click Restart.")
 const _PIN_MOVED_TEXT := ".mcp.json now runs MCP server %s instead of %s. Restart your AI client to use it."
 const _PIN_WRITE_FAILED_TEXT := "This version is tested with MCP server %s, but .mcp.json couldn't be updated: %s. Fix the file, then click Update .mcp.json."
+const _PIN_FILE_MALFORMED_TEXT := ("This version is tested with MCP server %s, but .mcp.json couldn't be updated because "
+		+ "it isn't valid JSON, or its mcpServers isn't an object. Fix the file, then click Update .mcp.json.")
 const _NOT_INSTALLED_TEXT := "%s. Version %s is still installed. Install log: %s"
 const _NEXT_RELEASE_TEXT := "The toolkit offers the next release once it is published and checked."
 
 
 ## The status line for [param version] in the installer's [param state], one of the
 ## [code]UpdateInstaller[/code] state names. [param facts] holds what the state's line
-## needs, under [constant CHANGED], [constant ERROR], [constant NOTE], [constant VIEW] and
-## [constant POSTPONED]; a missing key reads as empty. Returns an empty string when the
-## state has nothing to say.
+## needs, under [constant CHANGED], [constant ERROR], [constant NOTE], [constant VIEW],
+## [constant POSTPONED] and [constant PIN_PREVIEW]; a missing key reads as empty. Returns
+## an empty string when the state has nothing to say.
 static func install_line(state: String, version: String, facts: Dictionary) -> String:
 	match state:
 		UpdateInstaller.AVAILABLE:
-			var changed: int = int(facts.get(CHANGED, 0))
-			if changed == 1:
-				return _CHANGED_FILE_TEXT + _KEPT_COPY_TEXT
-			if changed > 1:
-				return (_CHANGED_FILES_TEXT % changed) + _KEPT_COPY_TEXT
-			return ""
+			return _offer_line(facts)
 		UpdateInstaller.DOWNLOADING:
 			return _DOWNLOADING_TEXT % version
 		UpdateInstaller.PREPARING:
@@ -132,8 +133,27 @@ static func _pin_move_line(pin_move: Dictionary) -> String:
 		ServerPinMove.MOVED:
 			return _PIN_MOVED_TEXT % [str(pin_move.get("to_version", "")), str(pin_move.get("from_version", ""))]
 		ServerPinMove.WRITE_FAILED:
-			return _PIN_WRITE_FAILED_TEXT % [VersionUtils.COMPATIBLE_SERVER_VERSION, str(pin_move.get("error", ""))]
+			var reason := str(pin_move.get("error", ""))
+			# This reason carries its own "fix it" instruction, which the other line repeats.
+			if reason == MCPJsonSync.MALFORMED_MESSAGE:
+				return _PIN_FILE_MALFORMED_TEXT % VersionUtils.COMPATIBLE_SERVER_VERSION
+			return _PIN_WRITE_FAILED_TEXT % [VersionUtils.COMPATIBLE_SERVER_VERSION, reason]
 	return ""
+
+
+# The offered release's lines: the changed files it would replace, and the pin it would
+# move.
+static func _offer_line(facts: Dictionary) -> String:
+	var lines := PackedStringArray()
+	var changed: int = int(facts.get(CHANGED, 0))
+	if changed == 1:
+		lines.append(_CHANGED_FILE_TEXT + _KEPT_COPY_TEXT)
+	elif changed > 1:
+		lines.append((_CHANGED_FILES_TEXT % changed) + _KEPT_COPY_TEXT)
+	var pin_preview: Dictionary = facts.get(PIN_PREVIEW, {})
+	if not pin_preview.is_empty():
+		lines.append(ServerPinMove.preview_line(pin_preview))
+	return "\n".join(lines)
 
 
 # The staged update's line, or the ready view while it is open, then why the last exit

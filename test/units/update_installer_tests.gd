@@ -32,6 +32,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_notice_updated(testing, tree)
 	_test_notice_failed(testing, tree)
 	_test_verified_record(testing, tree)
+	_test_offered_compatible_server(testing, tree)
 	_test_staged_record(testing, tree)
 	await _test_gates(testing, tree)
 	_test_discard(testing, tree)
@@ -130,6 +131,31 @@ static func _test_notice_failed(testing: Testing, tree: SceneTree) -> void:
 			"reason": "could not write core/a.gd", "server_changed": false}, "a not-applied record → failed, with its reason")
 	testing.eq(not_loaded["reason"], "the editor started version 1.1.0",
 			"an applied record the editor does not run → failed, naming the version it runs")
+	print("")
+
+
+static func _test_offered_compatible_server(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: the server the offered release recommends")
+	var world := UpdateFixtures.begin_world("installer_offered_server", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key(), "4.2", "9.9.9")
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var named := (nodes["installer"] as UpdateInstaller).offered_compatible_server()
+	UpdateFixtures.end_world(world, nodes)
+
+	world = UpdateFixtures.begin_world("installer_offered_no_server", "1.9.0", "ask", "1.1.0")
+	UpdateFixtures.keep_verified(world["updates"], "1.9.0", {"core/a.gd": "new"}, UpdateFixtures.key())
+	nodes = UpdateFixtures.start_world(world, tree)
+	var unnamed := (nodes["installer"] as UpdateInstaller).offered_compatible_server()
+	UpdateFixtures.end_world(world, nodes)
+
+	world = UpdateFixtures.begin_world("installer_offered_nothing", "", "ask", "1.1.0")
+	nodes = UpdateFixtures.start_world(world, tree)
+	var nothing := (nodes["installer"] as UpdateInstaller).offered_compatible_server()
+	UpdateFixtures.end_world(world, nodes)
+
+	testing.eq(named, "9.9.9", "a verified manifest naming a server → that server")
+	testing.eq(unnamed, "", "a verified manifest naming none → empty")
+	testing.eq(nothing, "", "no release on offer → empty")
 	print("")
 
 

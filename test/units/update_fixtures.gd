@@ -166,16 +166,22 @@ static func remove_scenario(scenario: Dictionary) -> void:
 	remove(str(scenario["updates"]))
 
 
-## The manifest text for a zip of [param archive_bytes] at [param version].
-static func manifest_text(version: String, archive_bytes: PackedByteArray, min_godot: String = "4.2") -> String:
-	return JSON.stringify({
+## The manifest text for a zip of [param archive_bytes] at [param version]. It names a
+## recommended server only when [param compatible_server] is set, as the key is optional.
+static func manifest_text(
+		version: String, archive_bytes: PackedByteArray, min_godot: String = "4.2",
+		compatible_server: String = "") -> String:
+	var manifest := {
 		"format": 1,
 		"version": version,
 		"archive": ReleaseAssets.archive_name(version),
 		"archive_size": archive_bytes.size(),
 		"archive_sha256": ContentHash.of_bytes(archive_bytes),
 		"min_godot": min_godot,
-	})
+	}
+	if not compatible_server.is_empty():
+		manifest["compatible_server"] = compatible_server
+	return JSON.stringify(manifest)
 
 
 ## Makes [param link] a link to the folder [param target], both absolute: a junction on
@@ -219,10 +225,11 @@ static func stage(
 ## Keeps a verified release of [param version] in [param update_folder] as the installer
 ## does while it waits for the user: the manifest and its signature by [param signing_key],
 ## with no journal, zip or stage. Returns the zip's bytes, for a test that serves them.
+## The manifest names [param compatible_server] when it is set.
 static func keep_verified(
 		update_folder: String, version: String, files: Dictionary, signing_key: CryptoKey,
-		min_godot: String = "4.2") -> PackedByteArray:
-	var assets := release_assets(version, files, signing_key, min_godot)
+		min_godot: String = "4.2", compatible_server: String = "") -> PackedByteArray:
+	var assets := release_assets(version, files, signing_key, min_godot, compatible_server)
 	var absolute := ProjectSettings.globalize_path(UpdateFolder.version_folder(version, update_folder))
 	for asset_name: String in [ReleaseAssets.manifest_name(version), ReleaseAssets.signature_name(version)]:
 		FolderFiles.write_checked(absolute.path_join(asset_name), assets[asset_name])
@@ -362,14 +369,16 @@ static func restore_host(previous: String) -> void:
 
 ## The files a GitHub release of [param version] serves to the installer: its zip
 ## holding [param files], the manifest, and the manifest's signature by
-## [param signing_key]; asset name to bytes, for [LoopbackReleaseServer].
+## [param signing_key]; asset name to bytes, for [LoopbackReleaseServer]. The manifest
+## names [param compatible_server] when it is set.
 static func release_assets(
-		version: String, files: Dictionary, signing_key: CryptoKey, min_godot: String = "4.2") -> Dictionary:
+		version: String, files: Dictionary, signing_key: CryptoKey, min_godot: String = "4.2",
+		compatible_server: String = "") -> Dictionary:
 	var zip_path := scratch("release_assets_%s.zip" % version)
 	write_zip(zip_path, release_entries(version, files))
 	var archive_bytes := FileAccess.get_file_as_bytes(zip_path)
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(zip_path))
-	var manifest := manifest_text(version, archive_bytes, min_godot).to_utf8_buffer()
+	var manifest := manifest_text(version, archive_bytes, min_godot, compatible_server).to_utf8_buffer()
 	return {
 		ReleaseAssets.archive_name(version): archive_bytes,
 		ReleaseAssets.manifest_name(version): manifest,

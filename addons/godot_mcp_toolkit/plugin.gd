@@ -112,7 +112,7 @@ func _show_update_prompt_if_due() -> void:
 	if installer == null or not installer.prompt_due():
 		return
 	_update_prompt = UpdatePrompt.new()
-	_update_prompt.show_for(installer)
+	_update_prompt.show_for(installer, _handle.pin_move())
 
 
 func _on_setup_step_seen(step_id: StringName) -> void:

@@ -19,6 +19,7 @@ static func run(testing) -> void:
 	_test_classification_table(testing)
 	_test_nudge_table(testing)
 	_test_pin_move_target(testing)
+	_test_allows_pin_move(testing)
 	_test_read_version_setting(testing)
 
 
@@ -149,6 +150,29 @@ static func _test_pin_move_target(testing) -> void:
 				str(row[4]), str(row[5]), str(row[6]))
 		var expected := str(row[7])
 		testing.eq(target, expected, "%s → %s" % [row[0], expected if not expected.is_empty() else "stays"])
+	print("")
+
+
+# Each row: what the case is, the old and the new recommended version, the version
+# setting, the local server path, and whether a move is allowed.
+static func _test_allows_pin_move(testing) -> void:
+	testing.begin("Server pin policy: what allows a move, whatever the entry")
+	var rows := [
+		["a new exact version, nothing set", "1.1.2", "1.2.0", "", "", true],
+		["no old recommended", "", "1.2.0", "", "", true],
+		["a prerelease new version", "1.1.2", "1.3.0-beta.1", "", "", true],
+		["a setting of only spaces", "1.1.2", "1.2.0", "  ", "", true],
+		["setting latest", "1.1.2", "1.2.0", "latest", "", false],
+		["setting a version", "1.1.2", "1.2.0", "1.0.5", "", false],
+		["a local server path", "1.1.2", "1.2.0", "", _LOCAL, false],
+		["the same version", "1.2.0", "1.2.0", "", "", false],
+		["a new tag", "1.1.2", "latest", "", "", false],
+		["a new version that is not exact", "1.1.2", "1.2", "", "", false],
+		["no new version", "1.1.2", "", "", "", false],
+	]
+	for row: Array in rows:
+		var allowed: bool = ServerPinPolicy.allows_pin_move(str(row[1]), str(row[2]), str(row[3]), str(row[4]))
+		testing.eq(allowed, bool(row[5]), "%s → %s" % [row[0], "allowed" if bool(row[5]) else "not allowed"])
 	print("")
 
 
