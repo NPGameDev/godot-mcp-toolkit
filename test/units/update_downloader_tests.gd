@@ -64,8 +64,7 @@ static func _test_hosts_the_rule_refuses(testing: Testing) -> void:
 		"http://github.com/a.zip",
 		"http://objects.githubusercontent.com/a.zip",
 		"ftp://github.com/a.zip",
-		# Built at run time: the language server checks every string literal as a file path,
-		# and on Windows a leading "//" is a network path whose lookup blocks the editor.
+		# Split so the language server never looks it up: see network_path_literals_tests.gd.
 		"/" + "/github.com/a.zip",
 		"github.com/a.zip",
 		"/a.zip",
@@ -169,7 +168,7 @@ static func _test_relative_location(testing: Testing, tree: SceneTree) -> void:
 	var second_hits := second.connections()
 	first.stop()
 	second.stop()
-	testing.eq(scheme_relative.get("refusal"), UpdateDownloader.REFUSED_HOST, "//host/path → refused")
+	testing.eq(scheme_relative.get("refusal"), UpdateDownloader.REFUSED_HOST, "a scheme-relative path → refused")
 	testing.eq(second_hits, 0, "and no request reaches that host")
 	print("")
 
