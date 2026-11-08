@@ -106,8 +106,9 @@ func _ready() -> void:
 	# calls exit early on null widgets. Re-run now that UI exists.
 	_refresh_status()
 	# One 1s timer, fanned out in _on_runtime_timer_timeout to the runtime label
-	# (playtest port discovery / playtest end) and the .mcp.json panel's file-validity
-	# refresh; read-only stays server-synced (see _on_client_connected), never polled.
+	# (playtest port discovery / playtest end), the server version line (compat
+	# refresh) and the .mcp.json panel's file-validity refresh; read-only stays
+	# server-synced (see _on_client_connected), never polled.
 	_runtime_timer = Timer.new()
 	_runtime_timer.wait_time = 1.0
 	_runtime_timer.timeout.connect(_on_runtime_timer_timeout)

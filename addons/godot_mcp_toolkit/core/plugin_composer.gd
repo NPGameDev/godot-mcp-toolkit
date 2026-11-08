@@ -119,7 +119,7 @@ static func compose(
 	handle._dialog_presenter = dialog_presenter
 
 	# The update check runs whether or not the dock is shown, so it is a plugin
-	# child the dock's badge reads, never a dock behavior.
+	# child the dock's badge and status panel read, never a dock behavior.
 	var update_check := UpdateCheckRunner.new()
 	update_check.name = "MCPUpdateCheck"
 	plugin.add_child(update_check)
@@ -239,7 +239,7 @@ class Handle:
 	var _dock_host: Object = null  # EditorDock wrapper on 4.6+; null on ≤4.5 (control is its own handle)
 	var _write_flow: MCPJsonWriteFlow = null  # Shared .mcp.json confirm-then-write flow
 	var _dialog_presenter: ToolkitDialogPresenter = null  # Editor-global dialogs (info + catalog)
-	var _update_check: Node = null  # Update check runner, read by the dock's badge
+	var _update_check: Node = null  # Update check runner, read by the dock's badge and status panel
 	var _update_installer: UpdateInstaller = null  # Stages updates the install mode allows; the badge drives it
 	var _pin_move: ServerPinMove = null  # This start's .mcp.json pin move after an update
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)

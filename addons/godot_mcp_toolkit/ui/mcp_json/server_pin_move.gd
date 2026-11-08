@@ -24,7 +24,7 @@ const UpdateSettler := preload("res://addons/godot_mcp_toolkit/self_update/updat
 const NONE := ""
 ## The entry now runs [code]to_spec[/code].
 const MOVED := "moved"
-## The move's write failed, or the file is not valid JSON; [code]error[/code] says why
+## The move's write failed, or the file is malformed; [code]error[/code] says why
 ## and nothing was recorded as written.
 const WRITE_FAILED := "write_failed"
 ## The user undid the move.
@@ -51,7 +51,7 @@ var _moved_text: String = ""
 ## Moves the pin after the start's settle. [param settled] is what
 ## [code]UpdateSettler.settle[/code] returned; only an
 ## [code]UpdateSettler.UPDATED[/code] report can move the pin, and not one whose move
-## the user already undid on this machine. A file that is not valid JSON hides its pin,
+## the user already undid on this machine. A malformed file hides its pin,
 ## so when nothing but the entry would keep the pin it is a failed write: nothing is
 ## written and the user is asked to fix the file.
 func follow_update(settled: Dictionary) -> void:
@@ -106,7 +106,7 @@ func runs_moved_server() -> bool:
 
 
 ## True while the move's write failed and writing the entry is still the fix: the entry
-## is still the one the move found, or, when the file did not parse then, the entry does
+## is still the one the move found, or, when the file was malformed then, the entry does
 ## not run the target yet, so fixing the file keeps the retry its message promises.
 func can_retry() -> bool:
 	if _state != WRITE_FAILED:
