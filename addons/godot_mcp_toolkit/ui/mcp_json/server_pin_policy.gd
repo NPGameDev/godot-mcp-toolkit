@@ -156,9 +156,38 @@ static func nudge_state(on_disk: String, last_written: String, desired: String) 
 	if not toolkit_written:
 		return NUDGE_FOREIGN
 	var floating := same_spec(on_disk, SPEC_NPX_BARE)
-	var desired_exact := (desired.begins_with(SPEC_NPX_PREFIX)
-			and _is_exact_version(desired.substr(SPEC_NPX_PREFIX.length())))
-	return NUDGE_UNPINNED if floating and desired_exact else NUDGE_DIFFERS
+	return NUDGE_UNPINNED if floating and _is_exact_npx(desired) else NUDGE_DIFFERS
+
+
+## The spec a self-update moves the file's server entry to, or "" when it stays.
+## [param on_disk] and [param last_written] are classifications as in
+## [method nudge_state]; [param old_recommended] and [param new_recommended] are the
+## server versions the previous and the running toolkit recommend, [param
+## version_setting] is the [constant SERVER_VERSION_SETTING] value and [param
+## dev_path] the machine's local server path.
+##
+## The entry moves only when the setting is empty, no local server path is set (a
+## write would emit the node form, not a pin), the new version is exact and differs
+## from the old, and the entry is an npx entry at an exact version that equals the
+## old recommended version or this machine's last write. A floating, ranged, local
+## or unreadable entry is not a pin, so it stays; a project that wants to hold a
+## version back sets the setting. An empty [param old_recommended] rules out only
+## the first of the two matches.
+## Returns [constant SPEC_NPX_PREFIX] + [param new_recommended] when the entry moves.
+static func pin_move_target(on_disk: String, last_written: String, old_recommended: String,
+		new_recommended: String, version_setting: String, dev_path: String) -> String:
+	if pin_mode(version_setting) != MODE_PINNED or not dev_path.is_empty():
+		return ""
+	if not _is_exact_version(new_recommended) or new_recommended == old_recommended:
+		return ""
+	if not _is_exact_npx(on_disk):
+		return ""
+	var target := SPEC_NPX_PREFIX + new_recommended
+	if on_disk == target:
+		return ""
+	var was_recommended := not old_recommended.is_empty() and on_disk == SPEC_NPX_PREFIX + old_recommended
+	var was_written := not last_written.is_empty() and on_disk == last_written
+	return target if was_recommended or was_written else ""
 
 
 static func _classify_package_arg(arg: String) -> String:
@@ -171,3 +200,8 @@ static func _classify_package_arg(arg: String) -> String:
 
 static func _is_exact_version(version: String) -> bool:
 	return _exact_version.search(version) != null
+
+
+# True iff the classification spec is an npx entry at one exact version.
+static func _is_exact_npx(spec: String) -> bool:
+	return spec.begins_with(SPEC_NPX_PREFIX) and _is_exact_version(spec.substr(SPEC_NPX_PREFIX.length()))

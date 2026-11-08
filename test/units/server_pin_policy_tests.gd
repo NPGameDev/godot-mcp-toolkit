@@ -3,7 +3,8 @@ extends RefCounted
 ## Pinning tests for the server-pin policy: the setting key and the mode, spec and
 ## nudge words its callers compare against, the package spec each kind of setting
 ## value resolves to, the classification of every entry shape, the nudge for each
-## drift case, and the setting read. Each row is the policy's observable output.
+## drift case, the pin a self-update moves, and the setting read. Each row is the
+## policy's observable output.
 
 const ServerPinPolicy := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_policy.gd")
 
@@ -17,6 +18,7 @@ static func run(testing) -> void:
 	_test_package_spec_table(testing)
 	_test_classification_table(testing)
 	_test_nudge_table(testing)
+	_test_pin_move_target(testing)
 	_test_read_version_setting(testing)
 
 
@@ -114,6 +116,39 @@ static func _test_nudge_table(testing) -> void:
 	for row in rows:
 		testing.eq(ServerPinPolicy.nudge_state(str(row[0]), str(row[1]), str(row[2])), str(row[3]),
 				"%s / record %s / desired %s → %s" % [row[0], JSON.stringify(str(row[1])), row[2], row[3]])
+	print("")
+
+
+# Each row: what the case is, the spec on disk, the last-written record, the old
+# and the new recommended version, the version setting, the local server path, and
+# the spec the entry moves to ("" when it stays).
+static func _test_pin_move_target(testing) -> void:
+	testing.begin("Server pin policy: which pin a self-update moves")
+	var rows := [
+		["entry is the old recommended version", "npx:1.1.2", "", "1.1.2", "1.2.0", "", "", "npx:1.2.0"],
+		["entry is this machine's last write", "npx:1.1.0", "npx:1.1.0", "1.1.2", "1.2.0", "", "", "npx:1.2.0"],
+		["hand-set other exact version", "npx:1.0.9", "npx:1.1.0", "1.1.2", "1.2.0", "", "", ""],
+		["setting latest", "npx:1.1.2", "npx:1.1.2", "1.1.2", "1.2.0", "latest", "", ""],
+		["setting 1.0.5", "npx:1.1.2", "npx:1.1.2", "1.1.2", "1.2.0", "1.0.5", "", ""],
+		["local server entry", "local:" + _LOCAL, "local:" + _LOCAL, "1.1.2", "1.2.0", "", "", ""],
+		["entry with no version", "npx-bare", "npx-bare", "1.1.2", "1.2.0", "", "", ""],
+		["entry at latest", "npx:latest", "npx:latest", "1.1.2", "1.2.0", "", "", ""],
+		["entry at a range", "npx:^1.1", "npx:^1.1", "1.1.2", "1.2.0", "", "", ""],
+		["entry the policy cannot read", "unknown", "", "1.1.2", "1.2.0", "", "", ""],
+		["no old recommended, entry not the last write", "npx:1.1.2", "npx:1.1.0", "", "1.2.0", "", "", ""],
+		["no old recommended, entry is the last write", "npx:1.1.0", "npx:1.1.0", "", "1.2.0", "", "", "npx:1.2.0"],
+		["old recommended equals the new", "npx:1.1.0", "npx:1.1.0", "1.2.0", "1.2.0", "", "", ""],
+		["entry already at the new version", "npx:1.2.0", "npx:1.2.0", "1.1.2", "1.2.0", "", "", ""],
+		["new recommended is a tag", "npx:1.1.2", "", "1.1.2", "latest", "", "", ""],
+		["new recommended is not exact", "npx:1.1.2", "", "1.1.2", "1.2", "", "", ""],
+		["local server path set", "npx:1.1.2", "npx:1.1.2", "1.1.2", "1.2.0", "", _LOCAL, ""],
+		["prerelease new recommended", "npx:1.1.2", "", "1.1.2", "1.3.0-beta.1", "", "", "npx:1.3.0-beta.1"],
+	]
+	for row in rows:
+		var target: String = ServerPinPolicy.pin_move_target(str(row[1]), str(row[2]), str(row[3]),
+				str(row[4]), str(row[5]), str(row[6]))
+		var expected := str(row[7])
+		testing.eq(target, expected, "%s → %s" % [row[0], expected if not expected.is_empty() else "stays"])
 	print("")
 
 

@@ -337,10 +337,13 @@ static func get_desired_spec(local_path_setting: String = "") -> String:
 ## [param local_path_setting] is the machine's local server path setting ("" for
 ## none). After a successful write and before on_result, [param on_written] (when
 ## valid) receives (spec: String): the written entry's classification (see
-## [code]ServerPinPolicy.classify_server_entry[/code]).
+## [code]ServerPinPolicy.classify_server_entry[/code]). A non-empty [param
+## package_spec] is written in the npx form in place of the spec the setting resolves
+## to, whatever the local server path (see [method _build_entry]).
 static func write_from_template(
 		force_overwrite: bool, on_result: Callable,
-		local_path_setting: String = "", on_written: Callable = Callable()) -> void:
+		local_path_setting: String = "", on_written: Callable = Callable(),
+		package_spec: String = "") -> void:
 	if not FileAccess.file_exists(_TEMPLATE_PATH):
 		on_result.call(false, "Template not found: " + _TEMPLATE_PATH, 2, "")
 		return
@@ -354,7 +357,7 @@ static func write_from_template(
 		on_result.call(false, ".mcp.json already has a different entry — update not confirmed", 1, dest)
 		return
 	var previous_spec := ServerPinPolicy.classify_server_entry(_read_file_entry(true))
-	var entry := _build_entry(local_path_setting)
+	var entry := _build_entry(local_path_setting, package_spec)
 	var written_spec := ServerPinPolicy.classify_server_entry(entry)
 	var error := _store(dest, _content_with(entry))
 	if error != OK:
@@ -462,11 +465,16 @@ static func _stringify_canonical(value: Variant) -> String:
 ## per-OS command/args, and the env layered so an existing file's user keys are
 ## preserved (see merge_server_env) with the builder-owned keys applied last (see
 ## apply_owned_env). Callable with no argument: that is the entry a machine with no
-## local path setting writes.
-static func _build_entry(local_path_setting: String = "") -> Dictionary:
-	var dev_server_path := resolve_machine_dev_path(local_path_setting)
-	var package_spec := ServerPinPolicy.resolve_package_spec(
-			ServerPinPolicy.read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION)
+## local path setting writes. A non-empty [param explicit_spec] is the npm package
+## spec to run instead, always in the npx form: the setting and the local server
+## path are not read.
+static func _build_entry(local_path_setting: String = "", explicit_spec: String = "") -> Dictionary:
+	var dev_server_path := ""
+	var package_spec := explicit_spec
+	if explicit_spec.is_empty():
+		dev_server_path = resolve_machine_dev_path(local_path_setting)
+		package_spec = ServerPinPolicy.resolve_package_spec(
+				ServerPinPolicy.read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION)
 	var entry := build_server_entry(OS.get_name(), dev_server_path, package_spec)
 	# The template base guarantees GODOT_MCP_CONFIG_VERSION; the file's own entry's
 	# env is preserved so a rewrite never strips a user's GODOT_MCP_* keys. The

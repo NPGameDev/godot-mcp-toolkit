@@ -10,7 +10,8 @@ extends RefCounted
 ## mutating its inputs. The file-level write is covered against a
 ## fixture .mcp.json at the project root (restored afterwards): other servers and
 ## top-level keys survive (MCPJsonSync.merge_document), a malformed file is never
-## written, and a confirm is due only for a differing toolkit entry.
+## written, a confirm is due only for a differing toolkit entry, and a write given an
+## explicit package spec runs that spec.
 
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 
@@ -41,6 +42,7 @@ static func run(testing) -> void:
 	_test_foreign_godot_mcp_server_survives_write(testing)
 	_test_recognisable_alternate_key_is_reused(testing)
 	_test_global_install_entry_is_reused_with_its_env(testing)
+	_test_write_with_explicit_spec_keeps_env_and_siblings(testing)
 
 
 # macOS release: bare npx — same shape as Linux. A GUI-launched client resolves the
@@ -400,6 +402,41 @@ static func _test_global_install_entry_is_reused_with_its_env(testing) -> void:
 	testing.eq(key, "godot-mcp", "own key is the entry's key")
 	testing.eq(servers.keys(), ["godot-mcp"], "replaced in place, no second entry")
 	testing.eq(str(env.get("GODOT_MCP_EDITOR_PORT", "")), "6561", "env pin carried")
+	print("")
+
+
+# A write given an explicit package spec runs that spec instead of the one the
+# setting resolves to, and keeps everything else a rewrite keeps: the user's env
+# key, the sibling server and the builder-owned offline key for an exact version.
+static func _test_write_with_explicit_spec_keeps_env_and_siblings(testing) -> void:
+	testing.begin("write_from_template — an explicit package spec, env and siblings kept")
+	var sibling := {"command": "other"}
+	var prior: Variant = _install_fixture(JSON.stringify({"mcpServers": {
+		"godot-mcp-toolkit": {
+			"command": "npx",
+			"args": ["-y", _PKG + "@1.1.2"],
+			"env": {"GODOT_MCP_CONFIG_VERSION": "1", "GODOT_MCP_TEST_KEEP": "1"},
+		},
+		"other-server": sibling,
+	}}))
+	var report := {"ok": false, "written": ""}
+	var sink := func(ok: bool, _message: String, _severity: int, _tooltip: String) -> void:
+		report["ok"] = ok
+	var on_written := func(spec: String) -> void:
+		report["written"] = spec
+	MCPJsonSync.write_from_template(true, sink, "", on_written, _PKG + "@0.0.1")
+	var document := _parse_document(FileAccess.get_file_as_string(MCPJsonSync.get_mcp_json_path()))
+	_restore_fixture(prior)
+	var servers: Dictionary = document.get("mcpServers", {})
+	var entry: Dictionary = servers.get("godot-mcp-toolkit", {})
+	var args: Array = entry.get("args", [])
+	var env: Dictionary = entry.get("env", {})
+	testing.ok(bool(report["ok"]), "write reports ok")
+	testing.eq(str(args.back()) if not args.is_empty() else "", _PKG + "@0.0.1", "args end with the explicit spec")
+	testing.eq(str(report["written"]), "npx:0.0.1", "the written classification is the explicit spec's")
+	testing.eq(str(env.get("GODOT_MCP_TEST_KEEP", "")), "1", "the user's env key kept")
+	testing.eq(str(env.get("npm_config_prefer_offline", "")), "true", "an exact spec sets prefer-offline")
+	testing.eq(servers.get("other-server", {}), sibling, "sibling server kept")
 	print("")
 
 
