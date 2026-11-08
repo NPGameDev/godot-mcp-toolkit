@@ -44,10 +44,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deletes the download and hides that version until a newer one. × hides a ready
   update's badge until the next start, and the update still installs when you
   close the editor. After the next start the badge says what happened, with
-  Release notes after an install, and with an Update .mcp.json button when the
-  new version is tested with a different server from the one the toolkit wrote
-  into `.mcp.json`. What's in this update, on the badge and in the dialog, opens
-  the release's changelog. A release found during the session also gets a toast.
+  Release notes after an install. What's in this update, on the badge and in the
+  dialog, opens the release's changelog. A release found during the session also
+  gets a toast.
+- After a self-update, the toolkit moves the MCP server version in `.mcp.json` to
+  the one the new version is tested with. The pin moves when it is the version the
+  previous toolkit recommended, or the one the toolkit last wrote on this machine,
+  and the project doesn't set `mcp_toolkit/server/version`. The update notice says
+  what changed and has an Undo. If `.mcp.json` can't be written, the notice says
+  why and offers Update .mcp.json.
 
 ### Changed
 

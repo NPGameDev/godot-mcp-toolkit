@@ -34,6 +34,10 @@ extends Node
 
 ## Emitted when anything the badge or the prompt shows may have changed.
 signal state_changed
+## Emitted once per start, when the installer enters the tree, after the settle and
+## before the first [signal state_changed]. [param settled] is what [method settled]
+## returns, whatever its report.
+signal update_settled(settled: Dictionary)
 
 # Direct preloads, not core/modules.gd: the aggregator preloads this file.
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
@@ -720,9 +724,9 @@ func _cancel() -> void:
 func _settle_last_update() -> void:
 	_settled = UpdateLifecycle.settle_at_start(_options)
 	var report := str(_settled.get("report", ""))
-	if report != UpdateSettler.UPDATED and report != UpdateSettler.FAILED:
-		return
-	_notice = UpdateNotice.of_settle(_settled, report == UpdateSettler.UPDATED)
+	if report == UpdateSettler.UPDATED or report == UpdateSettler.FAILED:
+		_notice = UpdateNotice.of_settle(_settled, report == UpdateSettler.UPDATED)
+	update_settled.emit(_settled)
 
 
 # The version in the addon folder's plugin.cfg: the running toolkit's, since the

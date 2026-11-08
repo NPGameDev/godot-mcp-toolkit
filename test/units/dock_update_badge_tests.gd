@@ -2,8 +2,9 @@
 extends RefCounted
 ## Unit tests for the dock's update badge, driven through its named buttons and labels
 ## with a real update check runner and installer: the version notice and its install
-## row in each installer state, closing it, the notice after an install, the offer to
-## update .mcp.json, and the toast for a release that becomes installable mid-session.
+## row in each installer state, closing it, the notice after an install, the .mcp.json pin
+## move it reports with Undo or a failed write, and the toast for a release that becomes
+## installable mid-session.
 
 const Testing := preload("res://test/units/testing.gd")
 const DockUpdateBadge := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge.gd")
@@ -14,6 +15,8 @@ const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/up
 const UpdateFolder := preload("res://addons/godot_mcp_toolkit/self_update/update_folder.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
+const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
+const ServerPinMoveTests := preload("res://test/units/server_pin_move_tests.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 const ReleaseAssets := preload("res://addons/godot_mcp_toolkit/self_update/release_assets.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
@@ -30,20 +33,15 @@ class _ToastLog extends RefCounted:
 		messages.append(message)
 
 
-# The write flow reads the project's own .mcp.json and this machine's record of it,
-# and confirms through editor dialogs, none of which a headless run has; this
-# stand-in answers whether the written entry is outdated and records the writes.
+# The write flow confirms through editor dialogs and records the write in the editor's
+# project metadata, neither of which a headless run has; this stand-in records the
+# confirmation text and writes as if the user confirmed.
 class _WriteFlowStandIn extends MCPJsonWriteFlow:
-	var other_server := true
 	var confirm_bodies: Array = []
-
-	func written_entry_outdated() -> bool:
-		return other_server
 
 	func write(_force_overwrite: bool = false, on_result: Callable = Callable(), confirm_body: String = "") -> void:
 		confirm_bodies.append(confirm_body)
-		other_server = false
-		on_result.call(true, "MCP: .mcp.json written", 0, "")
+		MCPJsonSync.write_from_template(true, on_result)
 
 
 static func run(testing: Testing, tree: SceneTree) -> void:
@@ -68,7 +66,9 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_closed_staged_stays_hidden(testing, tree)
 	_test_closed_staged_shows_once_staged_again(testing, tree)
 	_test_notice_updated(testing, tree)
-	_test_notice_offers_mcp_json_update(testing, tree)
+	_test_notice_reports_pin_move(testing, tree)
+	_test_notice_hides_undo_after_a_hand_edit(testing, tree)
+	_test_notice_failed_pin_write_offers_button(testing, tree)
 	_test_notice_failed(testing, tree)
 	await _test_toast_once_for_verified(testing, tree)
 	await _test_no_toast_for_shown_release(testing, tree)
@@ -97,6 +97,20 @@ static func _start(world: Dictionary, tree: SceneTree, write_flow: MCPJsonWriteF
 	nodes["badge"] = badge
 	nodes["toasts"] = toasts
 	return nodes
+
+
+# As _start, with the pin move wired to the installer's settle the way the composer
+# wires it, before the installer enters the tree.
+static func _start_with_pin_move(world: Dictionary, tree: SceneTree, pin_move: ServerPinMoveTests.PinMoveStandIn,
+		write_flow: MCPJsonWriteFlow = null) -> Dictionary:
+	var runner := UpdateCheckRunner.new()
+	var installer := UpdateInstaller.new(runner, world["options"])
+	installer.update_settled.connect(pin_move.follow_update)
+	tree.root.add_child(installer)
+	var toasts := _ToastLog.new()
+	var badge := DockUpdateBadge.new(runner, installer, write_flow, Callable(toasts, "add"), pin_move)
+	tree.root.add_child(badge)
+	return {"runner": runner, "installer": installer, "badge": badge, "toasts": toasts}
 
 
 # The badge enters the tree first and the installer after it, so whatever the
@@ -651,6 +665,7 @@ static func _test_notice_updated(testing: Testing, tree: SceneTree) -> void:
 	var store_shown := _shown(badge, "AssetStoreButton")
 	var status_shown := _shown(badge, "Status")
 	var mcp_json_shown := _shown(badge, "UpdateMcpJsonButton")
+	var undo_shown := _shown(badge, "UndoPinMoveButton")
 	var changelog := _child(badge, "ChangelogButton")
 	var changelog_hidden := changelog != null and not changelog.visible
 	_press(badge, "DismissButton")
@@ -662,46 +677,146 @@ static func _test_notice_updated(testing: Testing, tree: SceneTree) -> void:
 	testing.ok(changelog_hidden, "What's in this update hidden")
 	testing.ok(not store_shown, "no Asset Store link")
 	testing.ok(not status_shown and not mcp_json_shown, "the same server → no .mcp.json line or button")
+	testing.ok(not undo_shown, "and no Undo")
 	testing.ok(not visible_after_close, "close → the notice goes")
 	print("")
 
 
-static func _test_notice_offers_mcp_json_update(testing: Testing, tree: SceneTree) -> void:
-	testing.begin("Update badge: the notice offers to update .mcp.json while the entry it wrote is outdated")
+# The installer's settle reports the update, the pin move follows it, and the badge
+# reports the move; Undo writes the old server back to the project's .mcp.json.
+static func _test_notice_reports_pin_move(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: the notice reports the moved .mcp.json pin and undoes it")
+	var saved := ServerPinMoveTests.install_project(ServerPinMoveTests.document_at("0.0.1"))
 	var world := UpdateFixtures.begin_world("badge_server", "1.1.0", "ask", "1.9.0")
 	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
 			"compatible_server": "0.0.1"}, world["updates"])
 	var write_flow := _WriteFlowStandIn.new()
-	var nodes := _start(world, tree, write_flow)
+	var pin_move := ServerPinMoveTests.PinMoveStandIn.new()
+	var nodes := _start_with_pin_move(world, tree, pin_move, write_flow)
 	var badge: Node = nodes["badge"]
 	var status := _text(badge, "Status")
-	var button_shown := _shown(badge, "UpdateMcpJsonButton")
-	_press(badge, "UpdateMcpJsonButton")
+	var undo_shown := _shown(badge, "UndoPinMoveButton")
+	var undo_tooltip := _child(badge, "UndoPinMoveButton").tooltip_text
+	var update_shown := _shown(badge, "UpdateMcpJsonButton")
+	var moved := ServerPinMoveTests.mcp_json_document()
+	_press(badge, "UndoPinMoveButton")
 	var toasts: Array = (nodes["toasts"] as _ToastLog).messages
-	var shown_after_write := _shown(badge, "UpdateMcpJsonButton")
+	var undone := ServerPinMoveTests.mcp_json_document()
+	var undo_shown_after := _shown(badge, "UndoPinMoveButton")
+	var status_shown_after := _shown(badge, "Status")
 	_end(world, nodes)
 
-	world = UpdateFixtures.begin_world("badge_server_current", "1.1.0", "ask", "1.9.0")
+	ServerPinMoveTests.restore_project(saved)
+	saved = ServerPinMoveTests.install_project(ServerPinMoveTests.document_at("0.0.9"))
+	var hand_set_before := ServerPinMoveTests.mcp_json_text()
+	world = UpdateFixtures.begin_world("badge_server_hand_set", "1.1.0", "ask", "1.9.0")
 	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
 			"compatible_server": "0.0.1"}, world["updates"])
-	var current_flow := _WriteFlowStandIn.new()
-	current_flow.other_server = false
-	nodes = _start(world, tree, current_flow)
-	var current_status_shown := _shown(nodes["badge"], "Status")
-	var current_button_shown := _shown(nodes["badge"], "UpdateMcpJsonButton")
+	nodes = _start_with_pin_move(world, tree, ServerPinMoveTests.PinMoveStandIn.new(), write_flow)
+	var hand_set_status_shown := _shown(nodes["badge"], "Status")
+	var hand_set_buttons_shown := _shown(nodes["badge"], "UndoPinMoveButton") \
+			or _shown(nodes["badge"], "UpdateMcpJsonButton")
+	var hand_set_after := ServerPinMoveTests.mcp_json_text()
 	_end(world, nodes)
+	ServerPinMoveTests.restore_project(saved)
 
 	var compatible := VersionUtils.COMPATIBLE_SERVER_VERSION
-	testing.eq(status, "It's tested with server %s, which .mcp.json doesn't run yet. Update .mcp.json, then restart your MCP client." % compatible,
-			"a new server and an outdated written entry → the status line says so")
-	testing.ok(button_shown, "and Update .mcp.json shows")
+	testing.eq(status, ".mcp.json now runs MCP server %s instead of 0.0.1. Restart your AI client to use it." % compatible,
+			"a moved pin → the status line names both servers")
+	testing.eq(ServerPinMoveTests.entry_package(moved), "@npgamedev/godot-mcp-server@" + compatible,
+			"the file → runs the recommended server before any click")
+	testing.ok(ServerPinMoveTests.keeps_the_rest(moved), "with the user's env key and the other server kept")
+	testing.ok(undo_shown, "Undo shows")
+	testing.eq(undo_tooltip, "Put .mcp.json back to server 0.0.1. Only works until the file is changed.",
+			"and its tooltip names the old server")
+	testing.ok(not update_shown, "Update .mcp.json hidden")
+	testing.eq(write_flow.confirm_bodies, [], "the move → no confirmation")
+	testing.eq(toasts, ["MCP: .mcp.json runs server 0.0.1 again."], "Undo → a toast naming the old server")
+	testing.eq(ServerPinMoveTests.entry_package(undone), "@npgamedev/godot-mcp-server@0.0.1",
+			"and the file runs the old server again")
+	testing.ok(ServerPinMoveTests.keeps_the_rest(undone), "with the user's env key and the other server kept")
+	testing.ok(not undo_shown_after and not status_shown_after, "after Undo → no line and no Undo")
+	testing.eq(hand_set_after, hand_set_before, "a pin set by hand → file bytes unchanged")
+	testing.ok(not hand_set_status_shown and not hand_set_buttons_shown,
+			"and the notice has no .mcp.json line or button")
+	print("")
+
+
+# A hand edit after the move takes Undo away at the next render; a click that reaches
+# the handler anyway is refused and leaves the edit.
+static func _test_notice_hides_undo_after_a_hand_edit(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a hand edit after the pin move hides Undo and a late Undo writes nothing")
+	var saved := ServerPinMoveTests.install_project(ServerPinMoveTests.document_at("0.0.1"))
+	var world := UpdateFixtures.begin_world("badge_server_hand_edit", "1.1.0", "ask", "1.9.0")
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
+			"compatible_server": "0.0.1"}, world["updates"])
+	var nodes := _start_with_pin_move(world, tree, ServerPinMoveTests.PinMoveStandIn.new())
+	var badge: DockUpdateBadge = nodes["badge"]
+	var file := FileAccess.open(MCPJsonSync.get_mcp_json_path(), FileAccess.WRITE)
+	file.store_string(ServerPinMoveTests.document_at("0.0.9"))
+	file.close()
+	var hand_edited := ServerPinMoveTests.mcp_json_text()
+	badge.refresh()
+	var status := _text(badge, "Status")
+	var undo_shown := _shown(badge, "UndoPinMoveButton")
+	# A hidden button's signal stands in for a click that raced the re-render.
+	_press(badge, "UndoPinMoveButton")
+	var toasts: Array = (nodes["toasts"] as _ToastLog).messages
+	var after := ServerPinMoveTests.mcp_json_text()
+	_end(world, nodes)
+	ServerPinMoveTests.restore_project(saved)
+
+	var compatible := VersionUtils.COMPATIBLE_SERVER_VERSION
+	testing.eq(status, ".mcp.json now runs MCP server %s instead of 0.0.1. Restart your AI client to use it." % compatible,
+			"a hand edit after the move → the moved line stays")
+	testing.ok(not undo_shown, "and Undo is hidden")
+	testing.eq(toasts, ["MCP: .mcp.json changed since the update, so it was left as it is."],
+			"a late Undo → the refused toast")
+	testing.eq(after, hand_edited, "and the hand edit kept")
+	print("")
+
+
+# The move's write fails on a read-only file; once the user fixes the file, Update
+# .mcp.json writes it through the shared flow, with its confirmation.
+static func _test_notice_failed_pin_write_offers_button(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a failed pin move write offers Update .mcp.json")
+	var saved := ServerPinMoveTests.install_project(ServerPinMoveTests.document_at("0.0.1"))
+	var path := MCPJsonSync.get_mcp_json_path()
+	UpdateFixtures.set_read_only(path, true)
+	var world := UpdateFixtures.begin_world("badge_server_failed_write", "1.1.0", "ask", "1.9.0")
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
+			"compatible_server": "0.0.1"}, world["updates"])
+	var write_flow := _WriteFlowStandIn.new()
+	var nodes := _start_with_pin_move(world, tree, ServerPinMoveTests.PinMoveStandIn.new(), write_flow)
+	var badge: Node = nodes["badge"]
+	var status := _text(badge, "Status")
+	var update_shown := _shown(badge, "UpdateMcpJsonButton")
+	var undo_shown := _shown(badge, "UndoPinMoveButton")
+	UpdateFixtures.set_read_only(path, false)
+	_press(badge, "UpdateMcpJsonButton")
+	var toasts: Array = (nodes["toasts"] as _ToastLog).messages
+	var written := ServerPinMoveTests.mcp_json_document()
+	var update_shown_after := _shown(badge, "UpdateMcpJsonButton")
+	var status_shown_after := _shown(badge, "Status")
+	_end(world, nodes)
+	ServerPinMoveTests.restore_project(saved)
+
+	var compatible := VersionUtils.COMPATIBLE_SERVER_VERSION
+	testing.ok(status.begins_with("This version is tested with MCP server %s, but .mcp.json couldn't be updated: Failed to write .mcp.json" % compatible),
+			"a failed write → the status line names the server and the reason")
+	testing.ok(status.ends_with(". Fix the file, then click Update .mcp.json."), "and says what to do")
+	testing.ok(update_shown, "Update .mcp.json shows")
+	testing.ok(not undo_shown, "no Undo")
 	testing.eq(write_flow.confirm_bodies.size(), 1, "pressing it → one write through the shared flow")
 	testing.ok(str(write_flow.confirm_bodies[0]).begins_with("Update the server to %s in .mcp.json?" % compatible),
 			"whose confirmation names the server")
-	testing.eq(toasts, ["MCP: .mcp.json written"], "the write's report → a toast")
-	testing.ok(not shown_after_write, "after the write → the button goes")
-	testing.ok(not current_status_shown and not current_button_shown,
-			"a new server and no outdated written entry → no line or button")
+	testing.eq(toasts.size(), 1, "the write's report → a toast")
+	testing.eq(toasts[0] if not toasts.is_empty() else "",
+			"MCP: .mcp.json written — restart your MCP client; the first launch after a version change downloads the server",
+			"saying the file was written and the client needs a restart")
+	testing.eq(ServerPinMoveTests.entry_package(written), "@npgamedev/godot-mcp-server@" + compatible,
+			"the file → runs the recommended server")
+	testing.ok(not update_shown_after and not status_shown_after, "after the write → no line and no button")
 	print("")
 
 

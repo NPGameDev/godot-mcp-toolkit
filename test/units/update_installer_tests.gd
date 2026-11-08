@@ -63,6 +63,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_try_again_follows_the_gates(testing, tree)
 	await _test_cancel_lets_the_journal_go(testing, tree)
 	_test_settled(testing, tree)
+	_test_update_settled_signal(testing, tree)
 	_test_postponed_reason(testing, tree)
 	_test_headless_start_keeps_a_journal(testing, tree, "1.9.0")
 	_test_headless_start_keeps_a_journal(testing, tree, "")
@@ -1223,6 +1224,31 @@ static func _test_settled(testing: Testing, tree: SceneTree) -> void:
 	testing.eq(waiting_notice, {}, "which is no notice")
 	testing.eq(updated.get("report", ""), "updated", "an applied record the editor now runs → reported as updated")
 	testing.eq(updated.get("to", ""), "1.9.0", "about that version")
+	print("")
+
+
+static func _test_update_settled_signal(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update installer: the start's settle is announced once, before the first state change")
+	var world := UpdateFixtures.begin_world("installer_settled_signal", "1.9.0", "ask", "1.9.0")
+	UpdateJournal.write({"state": "applied", "to": "1.9.0", "from": "1.1.0",
+			"compatible_server": "0.0.1"}, world["updates"])
+	var runner := UpdateCheckRunner.new()
+	var installer := UpdateInstaller.new(runner, world["options"])
+	var events: Array = []
+	installer.update_settled.connect(func(settled: Dictionary) -> void: events.append(["settled", settled]))
+	installer.state_changed.connect(func() -> void: events.append(["state_changed"]))
+	tree.root.add_child(installer)
+	var settled := installer.settled()
+	UpdateFixtures.end_world(world, {"runner": runner, "installer": installer})
+	var settled_events := events.filter(func(event: Array) -> bool: return event[0] == "settled")
+	testing.eq(settled_events.size(), 1, "one announcement")
+	testing.eq(events[0][0] if not events.is_empty() else "", "settled", "before any state change")
+	testing.ok(events.slice(1).any(func(event: Array) -> bool: return event[0] == "state_changed"),
+			"and a state change follows it")
+	testing.eq(settled_events[0][1] if not settled_events.is_empty() else {}, settled,
+			"carrying what settled() returns")
+	testing.eq(str(settled.get("report", "")), "updated", "an installed update → its updated report")
+	testing.eq(str(settled.get("compatible_server", "")), "0.0.1", "with the server the old toolkit recommended")
 	print("")
 
 

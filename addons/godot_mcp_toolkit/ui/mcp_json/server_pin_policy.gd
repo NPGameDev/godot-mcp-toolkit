@@ -176,9 +176,7 @@ static func nudge_state(on_disk: String, last_written: String, desired: String) 
 ## Returns [constant SPEC_NPX_PREFIX] + [param new_recommended] when the entry moves.
 static func pin_move_target(on_disk: String, last_written: String, old_recommended: String,
 		new_recommended: String, version_setting: String, dev_path: String) -> String:
-	if pin_mode(version_setting) != MODE_PINNED or not dev_path.is_empty():
-		return ""
-	if not _is_exact_version(new_recommended) or new_recommended == old_recommended:
+	if not allows_pin_move(old_recommended, new_recommended, version_setting, dev_path):
 		return ""
 	if not _is_exact_npx(on_disk):
 		return ""
@@ -188,6 +186,17 @@ static func pin_move_target(on_disk: String, last_written: String, old_recommend
 	var was_recommended := not old_recommended.is_empty() and on_disk == SPEC_NPX_PREFIX + old_recommended
 	var was_written := not last_written.is_empty() and on_disk == last_written
 	return target if was_recommended or was_written else ""
+
+
+## True when everything [method pin_move_target] checks besides the entry allows a
+## move: [param version_setting] is empty, [param dev_path] is empty, and
+## [param new_recommended] is an exact version that differs from
+## [param old_recommended]. The parameters are those of [method pin_move_target].
+static func allows_pin_move(old_recommended: String, new_recommended: String,
+		version_setting: String, dev_path: String) -> bool:
+	if pin_mode(version_setting) != MODE_PINNED or not dev_path.is_empty():
+		return false
+	return _is_exact_version(new_recommended) and new_recommended != old_recommended
 
 
 static func _classify_package_arg(arg: String) -> String:

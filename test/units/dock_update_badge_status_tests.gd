@@ -95,9 +95,9 @@ static func _test_untrusted_notice_adds_a_line(testing: Testing) -> void:
 	var untrusted := DockUpdateBadgeStatus.notice_line(
 			{"kind": UpdateInstaller.NOTICE_FAILED, "reason": UpdateApplier.UNTRUSTED_SIGNATURE,
 					"version": "1.9.0", "from_version": "1.1.0"},
-			"user://log.txt", false)
+			"user://log.txt", {})
 	var other := DockUpdateBadgeStatus.notice_line(
 			{"kind": UpdateInstaller.NOTICE_FAILED, "reason": _REASON, "version": "1.9.0", "from_version": "1.1.0"},
-			"user://log.txt", false)
+			"user://log.txt", {})
 	testing.eq(untrusted.split("\n").size(), other.split("\n").size() + 1, "an untrusted signature → one more line")
 	print("")
