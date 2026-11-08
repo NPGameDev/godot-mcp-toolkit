@@ -50,9 +50,10 @@ static func _test_quoted_and_trailing_separator_entries(testing) -> void:
 			"a drive root joins as C:/node.exe, not C://node.exe")
 	testing.eq(_resolve("c:\\tools", ["c:/tools/node.exe"]), "c:/tools/node.exe",
 			"a lowercase drive letter is a fixed location")
+	# Split so the language server never looks it up: see network_path_literals_tests.gd.
 	testing.eq(
-			_resolve("\\\\build\\share\\bin\\", ["//build/share/bin/node.exe"]),
-			"//build/share/bin/node.exe",
+			_resolve("\\" + "\\build\\share\\bin\\", ["/" + "/build/share/bin/node.exe"]),
+			"/" + "/build/share/bin/node.exe",
 			"a network share entry is a fixed location")
 	print("")
 

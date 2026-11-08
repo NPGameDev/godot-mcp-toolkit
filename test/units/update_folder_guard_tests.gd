@@ -102,7 +102,8 @@ static func _test_guard_refuses_forms_refused_anywhere(testing: Testing) -> void
 		"/addons/.godot_mcp_toolkit_update/journal.json",
 		"C:/project/addons/.godot_mcp_toolkit_update/journal.json",
 		"C:\\project\\addons\\.godot_mcp_toolkit_update\\journal.json",
-		"\\\\server\\share\\addons\\.godot_mcp_toolkit_update\\journal.json",
+		# Split so the language server never looks it up: see network_path_literals_tests.gd.
+		"\\" + "\\server\\share\\addons\\.godot_mcp_toolkit_update\\journal.json",
 		global_path,
 		global_path.replace("/", "\\"),
 		"res://addons/GODOT_~1/journal.json",

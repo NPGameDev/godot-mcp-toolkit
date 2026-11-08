@@ -46,7 +46,8 @@ static func _test_file_guard(testing) -> void:
 	testing.ok(FileGuard.resolve_safe("res://../escape.gd").get("error") != null, "resolve_safe traversal → denied")
 	testing.ok(FileGuard.resolve_safe("/etc/passwd").get("error") != null, "resolve_safe abs-unix → denied")
 	testing.ok(FileGuard.resolve_safe("C:/Windows/x").get("error") != null, "resolve_safe drive-letter → denied")
-	testing.ok(FileGuard.resolve_safe("\\\\server\\share\\x").get("error") != null, "resolve_safe UNC → denied")
+	# Split so the language server never looks it up: see network_path_literals_tests.gd.
+	testing.ok(FileGuard.resolve_safe("\\" + "\\server\\share\\x").get("error") != null, "resolve_safe UNC → denied")
 	testing.ok(FileGuard.resolve_safe("random/x.gd").get("error") != null, "resolve_safe non-prefix → denied")
 	testing.ok(FileGuard.resolve_safe("").get("error") != null, "resolve_safe empty → denied")
 	# save_path multi-prefix outlier (res:// OR user://screenshots/).
