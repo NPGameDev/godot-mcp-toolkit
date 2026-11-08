@@ -308,19 +308,56 @@ side: set it on the run you want to keep out, not in `.mcp.json`.
 client starts a server this toolkit was tested with. There are two modes:
 
 - **Pinned** (the default) runs the server version this toolkit was tested with.
-  When you update the toolkit, the next **Write .mcp.json** moves you to the
-  server version the new toolkit was tested with.
+  A self-update moves the pin to the server version the new toolkit was tested
+  with (see [After a self-update](#after-a-self-update)). So does the next
+  **Write .mcp.json** after an update that left the pin where it was.
 - **Latest** runs the newest server release every time the client starts it. You
   get server fixes as soon as they ship, and you may see a version warning until
   you update the toolkit too.
 
 The MCP dock's `.mcp.json` panel shows which server the file runs, with one button
 that switches between the two (**Use latest** / **Pin to …**). The setup wizard's
-`.mcp.json` step offers the same choice. Either way, the toolkit asks before it
-changes `.mcp.json`, and it only touches its own entry. If the file was written by
+`.mcp.json` step offers the same choice. These offers ask before they change
+`.mcp.json`, and they only touch the toolkit's own entry. If the file was written by
 an older toolkit, or by this one for another version, the panel turns amber and
 offers to update it. If you set the version by hand, the panel offers to restore
-the recommended one and leaves the file alone until you press the button.
+the recommended one, and that offer leaves the file alone until you press the
+button.
+
+### After a self-update
+
+You started the update, so the toolkit moves its pin without asking. The pin moves
+to the version the new toolkit was tested with when it is an exact version that the
+previous toolkit recommended, or that the toolkit last wrote on this machine.
+
+The entry stays as it is when:
+
+- the project sets `mcp_toolkit/server/version`, which is the lasting way to hold a
+  version back
+- a local server path is set
+- the entry names no version, a range or a tag
+- you set the version by hand to anything else
+
+When the release names its server version and the pin would move, the update window
+and the dock's badge say so before you click **Update**. After the install, the update
+notice names both servers. Restart your AI client to use the new one.
+
+The notice also has an **Undo**, which lasts for this editor start, until you close
+the notice, and only while the file is unchanged since the move. The move rebuilds the
+entry for this OS, like any write: other servers, top-level keys and your env keys
+stay, but any other field or arg in the entry is dropped, and Undo doesn't restore
+those. If the write fails, the notice says why and offers **Update .mcp.json**. On
+Linux and macOS, `chmod a-w` doesn't stop the write, because Godot's safe save renames
+a new file over the old one.
+
+### Version line in the dock
+
+When the connected server isn't the version this toolkit recommends, the dock says so
+and what to do: restart your AI client, or update the pin. An older server always gets
+the line. A newer one gets it only when the update check has found a newer toolkit.
+There is no line when the project sets a server version, when the file runs a local
+server, or for a version the toolkit can't compare, such as a prerelease. The line is
+only advice: the toolkit never refuses a server over it.
 
 ### `mcp_toolkit/server/version` — default empty
 

@@ -14,6 +14,8 @@ const UpdateNotice = UpdateInstaller.UpdateNotice
 const RestartGate = UpdateInstaller.RestartGate
 const EditorRestartProbe = UpdateInstaller.EditorRestartProbe
 const VersionUtils = Modules.VersionUtils
+const ServerPinMove := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd")
+const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
 
 ## The [param facts] key for the number of toolkit files the project changed, an int.
 const CHANGED := "changed"
@@ -26,6 +28,9 @@ const VIEW := "view"
 ## The [param facts] key for why the editor's last exit left the staged update uninstalled,
 ## a String.
 const POSTPONED := "postponed"
+## The [param facts] key for what [code]ServerPinMove.preview[/code] returned for the
+## release on offer, a Dictionary.
+const PIN_PREVIEW := "pin_preview"
 
 const _DOWNLOADING_TEXT := "Downloading %s…"
 const _PREPARING_TEXT := "Preparing %s…"
@@ -51,25 +56,23 @@ const _UNTITLED_SCENES_TEXT := "%d open scenes have never been saved."
 const _SCRIPTS_ONLY_TEXT := "The toolkit only refuses a restart for unsaved scripts. Save scenes, shaders and other open work yourself."
 const _SCENES_NOT_ASKED_TEXT := ("Godot 4.2 and 4.3 don't ask about unsaved scenes when they restart, "
 		+ "so unsaved scene changes are lost. Save before you click Restart.")
-const _SERVER_CHANGED_TEXT := "It's tested with server %s, which .mcp.json doesn't run yet. Update .mcp.json, then restart your MCP client."
+const _PIN_MOVED_TEXT := ".mcp.json now runs MCP server %s instead of %s. Restart your AI client to use it."
+const _PIN_WRITE_FAILED_TEXT := "This version is tested with MCP server %s, but .mcp.json couldn't be updated: %s. Fix the file, then click Update .mcp.json."
+const _PIN_FILE_MALFORMED_TEXT := ("This version is tested with MCP server %s, but .mcp.json couldn't be updated because "
+		+ "it isn't valid JSON, or its mcpServers isn't an object. Fix the file, then click Update .mcp.json.")
 const _NOT_INSTALLED_TEXT := "%s. Version %s is still installed. Install log: %s"
 const _NEXT_RELEASE_TEXT := "The toolkit offers the next release once it is published and checked."
 
 
 ## The status line for [param version] in the installer's [param state], one of the
 ## [code]UpdateInstaller[/code] state names. [param facts] holds what the state's line
-## needs, under [constant CHANGED], [constant ERROR], [constant NOTE], [constant VIEW] and
-## [constant POSTPONED]; a missing key reads as empty. Returns an empty string when the
-## state has nothing to say.
+## needs, under [constant CHANGED], [constant ERROR], [constant NOTE], [constant VIEW],
+## [constant POSTPONED] and [constant PIN_PREVIEW]; a missing key reads as empty. Returns
+## an empty string when the state has nothing to say.
 static func install_line(state: String, version: String, facts: Dictionary) -> String:
 	match state:
 		UpdateInstaller.AVAILABLE:
-			var changed: int = int(facts.get(CHANGED, 0))
-			if changed == 1:
-				return _CHANGED_FILE_TEXT + _KEPT_COPY_TEXT
-			if changed > 1:
-				return (_CHANGED_FILES_TEXT % changed) + _KEPT_COPY_TEXT
-			return ""
+			return _offer_line(facts)
 		UpdateInstaller.DOWNLOADING:
 			return _DOWNLOADING_TEXT % version
 		UpdateInstaller.PREPARING:
@@ -109,11 +112,13 @@ static func ready_view_text(version: String, view: Dictionary, retry: bool = fal
 
 ## The status line under the last install's result, from the installer's
 ## [param notice]. A failed install names its reason, the version kept and the install
-## log at [param log_path]; an installed one says nothing unless [param server_line]
-## is set, when .mcp.json runs another server than the one the new version is tested with.
-static func notice_line(notice: Dictionary, log_path: String, server_line: bool) -> String:
+## log at [param log_path]. An installed one says what the .mcp.json pin move did, from
+## [param pin_move], an outcome in the shape [code]ServerPinMove.outcome[/code] returns:
+## the server it moved to, or why its write failed. Any other outcome, or an empty
+## dictionary, says nothing.
+static func notice_line(notice: Dictionary, log_path: String, pin_move: Dictionary) -> String:
 	if str(notice.get(UpdateNotice.KIND, "")) == UpdateNotice.UPDATED:
-		return _SERVER_CHANGED_TEXT % VersionUtils.COMPATIBLE_SERVER_VERSION if server_line else ""
+		return _pin_move_line(pin_move)
 	var reason := str(notice.get(UpdateNotice.REASON, ""))
 	var line := _NOT_INSTALLED_TEXT % [_sentence(reason), str(notice.get(UpdateNotice.FROM_VERSION, "")), log_path]
 	# A hand download checks no signature, and in a leak the latest release can be the
@@ -121,6 +126,34 @@ static func notice_line(notice: Dictionary, log_path: String, server_line: bool)
 	if reason == UpdateApplier.UNTRUSTED_SIGNATURE:
 		line += "\n" + _NEXT_RELEASE_TEXT
 	return line
+
+
+static func _pin_move_line(pin_move: Dictionary) -> String:
+	match str(pin_move.get("state", ServerPinMove.NONE)):
+		ServerPinMove.MOVED:
+			return _PIN_MOVED_TEXT % [str(pin_move.get("to_version", "")), str(pin_move.get("from_version", ""))]
+		ServerPinMove.WRITE_FAILED:
+			var reason := str(pin_move.get("error", ""))
+			# This reason carries its own "fix it" instruction, which the other line repeats.
+			if reason == MCPJsonSync.MALFORMED_MESSAGE:
+				return _PIN_FILE_MALFORMED_TEXT % VersionUtils.COMPATIBLE_SERVER_VERSION
+			return _PIN_WRITE_FAILED_TEXT % [VersionUtils.COMPATIBLE_SERVER_VERSION, reason]
+	return ""
+
+
+# The offered release's lines: the changed files it would replace, and the pin it would
+# move.
+static func _offer_line(facts: Dictionary) -> String:
+	var lines := PackedStringArray()
+	var changed: int = int(facts.get(CHANGED, 0))
+	if changed == 1:
+		lines.append(_CHANGED_FILE_TEXT + _KEPT_COPY_TEXT)
+	elif changed > 1:
+		lines.append((_CHANGED_FILES_TEXT % changed) + _KEPT_COPY_TEXT)
+	var pin_preview: Dictionary = facts.get(PIN_PREVIEW, {})
+	if not pin_preview.is_empty():
+		lines.append(ServerPinMove.preview_line(pin_preview))
+	return "\n".join(lines)
 
 
 # The staged update's line, or the ready view while it is open, then why the last exit

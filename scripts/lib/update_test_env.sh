@@ -38,9 +38,22 @@
 #                                       Store listing) and the installer (<version>'s
 #                                       zip, manifest and signature) ask for; serve it
 #                                       through GODOT_MCP_UPDATE_CHECK_HOST
+#   ut_recommend_server <addon-dir> <version>
+#                                       make the toolkit at <addon-dir> recommend MCP
+#                                       server <version>, with its release file list
+#   ut_write_mcp_json <project> <version>
+#                                       write a .mcp.json whose toolkit entry runs server
+#                                       <version>, with a user's env key
+#                                       (GODOT_MCP_TEST_KEEP) and another server
+#                                       (other-server) beside it
+#   ut_record_last_write <project> <version>
+#                                       record server <version> as this machine's last
+#                                       write into the project's .mcp.json
 
 # shellcheck source=python_bin.sh
 source "$(dirname "${BASH_SOURCE[0]}")/python_bin.sh"
+# shellcheck source=compatible_server.sh
+source "$(dirname "${BASH_SOURCE[0]}")/compatible_server.sh"
 
 ut_os() {
   case "$(uname -s)" in
@@ -148,4 +161,23 @@ ut_stage_release() {
   printf '[]' > "${server}/api/v1/releases/npgamedev/godot-mcp-toolkit/index.html"
   cp "${zip}" "${manifest}" "${download}/"
   openssl dgst -sha256 -sign "${signing_pem}" -out "${download}/$(basename "${manifest}").sig" "${manifest}"
+}
+
+ut_recommend_server() {
+  local addon="$1" version="$2"
+  # The addon sits at <project>/addons/<id>, the root cs_rewrite resolves its files from.
+  cs_rewrite "$(dirname "$(dirname "${addon}")")" "${version}" || return 1
+  rf_write_list "${addon}"
+}
+
+ut_write_mcp_json() {
+  local project="$1" version="$2"
+  printf '{\n\t"mcpServers": {\n\t\t"godot-mcp-toolkit": {\n\t\t\t"command": "npx",\n\t\t\t"args": ["-y", "@npgamedev/godot-mcp-server@%s"],\n\t\t\t"env": {"GODOT_MCP_CONFIG_VERSION": "1", "GODOT_MCP_TEST_KEEP": "1", "npm_config_prefer_offline": "true"}\n\t\t},\n\t\t"other-server": {"command": "other"}\n\t}\n}\n' \
+    "${version}" > "${project}/.mcp.json"
+}
+
+ut_record_last_write() {
+  local project="$1" version="$2"
+  mkdir -p "${project}/.godot/editor"
+  printf '\n[mcp_toolkit]\n\nlast_written_server_spec="npx:%s"\n' "${version}" >> "${project}/.godot/editor/project_metadata.cfg"
 }

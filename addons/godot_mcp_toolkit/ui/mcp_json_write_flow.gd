@@ -20,16 +20,17 @@ extends RefCounted
 ## this script must never enter the runtime autoload's preload closure.
 
 const MCPJsonSync := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_sync.gd")
-const ServerPinPolicy := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_policy.gd")
 const DockConfirm := preload("res://addons/godot_mcp_toolkit/ui/dock/dock_confirm.gd")
 
 ## The EditorSettings key for a local server build's dist/index.js on this
 ## machine. Machine-level, so it never reaches project.godot.
 const LOCAL_PATH_SETTING := "mcp_toolkit/server/local_path"
 
-# Where the last written server spec is recorded: editor project metadata, which
-# stays on this machine.
-const _RECORD_SECTION := "mcp_toolkit"
+## The editor project metadata section for what the toolkit records about .mcp.json.
+## Project metadata stays on this machine.
+const METADATA_SECTION := "mcp_toolkit"
+
+# The last written server spec's key in that section.
 const _RECORD_KEY := "last_written_server_spec"
 
 
@@ -52,7 +53,7 @@ func write(force_overwrite: bool = false, on_result: Callable = Callable(), conf
 	var report := func(ok: bool, message: String, severity: int, tooltip: String) -> void:
 		if on_result.is_valid():
 			on_result.call(ok, message, severity, tooltip)
-	var record_section := _RECORD_SECTION
+	var record_section := METADATA_SECTION
 	var record_key := _RECORD_KEY
 	var record := func(spec: String) -> void:
 		EditorInterface.get_editor_settings().set_project_metadata(record_section, record_key, spec)
@@ -93,17 +94,6 @@ func write(force_overwrite: bool = false, on_result: Callable = Callable(), conf
 	MCPJsonSync.write_from_template(force_overwrite, report, local_path, record)
 
 
-## Whether .mcp.json holds an entry this machine's toolkit wrote that names another
-## server than a write would set now: the case the dock's .mcp.json section offers to
-## update ([code]ServerPinPolicy.NUDGE_DIFFERS[/code]). False for a missing or
-## unreadable file, an entry set by hand, and a floating entry, which already runs
-## the newest server.
-func written_entry_outdated() -> bool:
-	var nudge := ServerPinPolicy.nudge_state(MCPJsonSync.get_server_spec(), read_last_written_spec(),
-			MCPJsonSync.get_desired_spec(read_local_path_setting()))
-	return nudge == ServerPinPolicy.NUDGE_DIFFERS
-
-
 ## The confirmation text for a write that changes the server entry, for
 ## [param question] such as "Update the server to 1.2.0".
 static func server_change_body(question: String) -> String:
@@ -132,4 +122,10 @@ static func uses_local_server() -> bool:
 ## The server spec (see [code]ServerPinPolicy.classify_server_entry[/code]) this machine
 ## last wrote into the project's .mcp.json, or "" when it has not written one.
 static func read_last_written_spec() -> String:
-	return str(EditorInterface.get_editor_settings().get_project_metadata(_RECORD_SECTION, _RECORD_KEY, ""))
+	return str(EditorInterface.get_editor_settings().get_project_metadata(METADATA_SECTION, _RECORD_KEY, ""))
+
+
+## Records [param spec] as the server spec this machine last wrote into the project's
+## .mcp.json, for a write made outside [method write].
+static func record_written_spec(spec: String) -> void:
+	EditorInterface.get_editor_settings().set_project_metadata(METADATA_SECTION, _RECORD_KEY, spec)

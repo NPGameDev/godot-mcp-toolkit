@@ -15,16 +15,19 @@ extends PanelContainer
 ## way. On a staged release the close button hides it until the next editor start
 ## instead, and the exit still installs it.[br]
 ## [br]
-## When the installer has a verified release, the badge adds Update; once the
+## When the installer has a verified release, the badge adds Update, and says so when
+## installing would move the toolkit's server pin in .mcp.json; once the
 ## release is staged, Restart now and Don't install, and the line saying the
 ## editor's exit installs it, with the reason when the last exit tried and could not.
 ## While the installer's ready view is open, the badge shows that view instead: what a
 ## restart now would lose, Restart and Not now. A release that becomes installable
 ## during the session is also announced once by a toast. After an editor start that
 ## installed or failed to install a release, the badge shows that result until it is
-## closed, in place of the version notice, with Release notes after an install; when
-## the new version is tested with another server than the one this toolkit wrote
-## into .mcp.json, the notice offers to update it.[br]
+## closed, in place of the version notice, with Release notes after an install. When the
+## install moved the toolkit's server pin in .mcp.json (see
+## [code]ui/mcp_json/server_pin_move.gd[/code]), the notice says so while the entry runs
+## the moved server, and offers Undo while the file's text is unchanged since the move;
+## when the move's write failed, it says why and offers Update .mcp.json.[br]
 ## [br]
 ## "Get it on the Asset Store" switches to the editor's Asset Store tab where the
 ## editor has one (Godot 4.7+), confirmed through
@@ -42,6 +45,7 @@ const UpdateNotice = UpdateInstaller.UpdateNotice
 const VersionUtils = Modules.VersionUtils
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const DockUpdateBadgeStatus := preload("res://addons/godot_mcp_toolkit/ui/dock/update/dock_update_badge_status.gd")
+const ServerPinMove := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd")
 
 const _MINOR_TITLE := "Godot MCP Toolkit %s is available."
 const _MAJOR_TITLE := "Godot MCP Toolkit %s is out. It's a major release, so see what's new before you update."
@@ -67,6 +71,8 @@ const _NOTICE_DISMISS_TOOLTIP := "Close."
 const _LAST_CHECKED_TOOLTIP := "Last checked: %s. The toolkit checks at most once a day."
 const _UPDATE_MCP_JSON_TEXT := "Update .mcp.json"
 const _UPDATE_SERVER_QUESTION := "Update the server to %s"
+const _UNDO_PIN_MOVE_TEXT := "Undo"
+const _UNDO_PIN_MOVE_TOOLTIP := "Put .mcp.json back to server %s. Only works until the file is changed."
 const _AVAILABLE_TOAST := "Godot MCP Toolkit %s is available. Update it from the MCP Toolkit dock."
 const _READY_TOAST := "Godot MCP Toolkit %s installs when you close the editor."
 const _RESTART_TOOLTIP := "Restarts the editor, which installs the update on its way out. Save your work first."
@@ -82,6 +88,7 @@ const _TEXT_COLOR := Color(0.95, 0.95, 0.95)
 var _runner: UpdateCheckRunner = null
 var _installer: UpdateInstaller = null
 var _write_flow: MCPJsonWriteFlow = null
+var _pin_move: ServerPinMove = null
 # Dock-supplied toast sink (msg, severity, tooltip), so the badge needs no toaster.
 var _toast: Callable = Callable()
 # The version on display; the close button dismisses exactly this one.
@@ -106,6 +113,7 @@ var _restart_btn: Button = null
 var _not_now_btn: Button = null
 var _discard_btn: Button = null
 var _update_mcp_json_btn: Button = null
+var _undo_pin_move_btn: Button = null
 var _changelog_btn: Button = null
 var _github_btn: Button = null
 var _store_btn: Button = null
@@ -116,14 +124,16 @@ var _bold_font: Font = null
 
 ## [param installer] may be [code]null[/code]: the badge then only links, as before
 ## the installer existed. [param write_flow] is the shared .mcp.json write flow, or
-## [code]null[/code] to leave .mcp.json to the dock's section.
+## [code]null[/code] to leave .mcp.json to the dock's section. [param pin_move] is this
+## start's .mcp.json pin move, or [code]null[/code] when the notice reports none.
 func _init(
 		runner: UpdateCheckRunner, installer: UpdateInstaller, write_flow: MCPJsonWriteFlow,
-		toast: Callable) -> void:
+		toast: Callable, pin_move: ServerPinMove = null) -> void:
 	_runner = runner
 	_installer = installer
 	_write_flow = write_flow
 	_toast = toast
+	_pin_move = pin_move
 	name = "UpdateBadge"
 	visible = false
 	# Outside the editor, as in a headless run, EditorInterface is unavailable; the
@@ -186,6 +196,8 @@ func _init(
 	_discard_btn = _add_button(buttons, "DiscardButton", _DISCARD_TEXT, _on_discard_pressed)
 	_update_mcp_json_btn = _add_button(
 			buttons, "UpdateMcpJsonButton", _UPDATE_MCP_JSON_TEXT, _on_update_mcp_json_pressed)
+	_undo_pin_move_btn = _add_button(
+			buttons, "UndoPinMoveButton", _UNDO_PIN_MOVE_TEXT, _on_undo_pin_move_pressed)
 	_changelog_btn = _add_button(buttons, "ChangelogButton", _CHANGELOG_TEXT, _on_changelog_pressed)
 	_github_btn = _add_button(buttons, "GitHubButton", _GITHUB_TEXT, _on_github_pressed)
 	_store_btn = _add_button(buttons, "AssetStoreButton", _STORE_TEXT, _on_store_pressed)
@@ -286,6 +298,8 @@ func _render_install_state() -> void:
 		facts[DockUpdateBadgeStatus.ERROR] = _installer.error_text()
 		facts[DockUpdateBadgeStatus.NOTE] = _installer.note_text()
 		facts[DockUpdateBadgeStatus.POSTPONED] = _installer.postponed_reason()
+		if state == UpdateInstaller.AVAILABLE and _pin_move != null:
+			facts[DockUpdateBadgeStatus.PIN_PREVIEW] = _pin_move.preview(_installer.offered_compatible_server())
 	_set_status(DockUpdateBadgeStatus.install_line(state, _shown_version, facts))
 	var check_failed: bool = about_shown and state == UpdateInstaller.IDLE and _installer.check_failed()
 	_update_btn.visible = state == UpdateInstaller.AVAILABLE or state == UpdateInstaller.FAILED \
@@ -303,6 +317,7 @@ func _render_install_state() -> void:
 	_not_now_btn.visible = not view.is_empty()
 	_discard_btn.visible = state == UpdateInstaller.READY
 	_update_mcp_json_btn.visible = false
+	_undo_pin_move_btn.visible = false
 
 
 func _render_notice(notice: Dictionary) -> void:
@@ -312,9 +327,9 @@ func _render_notice(notice: Dictionary) -> void:
 	add_theme_stylebox_override("panel", _minor_style if updated else _failed_style)
 	_major_icon.visible = false
 	_set_title((_UPDATED_TITLE if updated else _FAILED_TITLE) % _shown_version, false)
-	var mcp_json_behind := updated and bool(notice.get(UpdateNotice.SERVER_CHANGED, false)) \
-			and _write_flow != null and _write_flow.written_entry_outdated()
-	_set_status(DockUpdateBadgeStatus.notice_line(notice, _installer.log_path(), mcp_json_behind))
+	var pin_move := _pin_move_to_report(notice)
+	var pin_state := str(pin_move.get("state", ServerPinMove.NONE))
+	_set_status(DockUpdateBadgeStatus.notice_line(notice, _installer.log_path(), pin_move))
 	_dismiss_btn.tooltip_text = _NOTICE_DISMISS_TOOLTIP
 	tooltip_text = ""
 	_changelog_btn.visible = false
@@ -325,7 +340,25 @@ func _render_notice(notice: Dictionary) -> void:
 	_restart_btn.visible = false
 	_not_now_btn.visible = false
 	_discard_btn.visible = false
-	_update_mcp_json_btn.visible = mcp_json_behind
+	_update_mcp_json_btn.visible = pin_state == ServerPinMove.WRITE_FAILED and _write_flow != null
+	_undo_pin_move_btn.visible = pin_state == ServerPinMove.MOVED and _pin_move.can_undo()
+	_undo_pin_move_btn.tooltip_text = _UNDO_PIN_MOVE_TOOLTIP % str(pin_move.get("from_version", ""))
+
+
+# The pin move outcome the notice reports: the move after an install that changed the
+# recommended server while the entry still runs what the move wrote, or its failed write
+# while writing the entry is still the fix; an empty dictionary otherwise.
+func _pin_move_to_report(notice: Dictionary) -> Dictionary:
+	if _pin_move == null or str(notice.get(UpdateNotice.KIND, "")) != UpdateNotice.UPDATED \
+			or not bool(notice.get(UpdateNotice.SERVER_CHANGED, false)):
+		return {}
+	var outcome := _pin_move.outcome()
+	var state := str(outcome["state"])
+	if state == ServerPinMove.WRITE_FAILED and not _pin_move.can_retry():
+		return {}
+	if state == ServerPinMove.MOVED and not _pin_move.runs_moved_server():
+		return {}
+	return outcome
 
 
 func _set_title(text: String, bold: bool) -> void:
@@ -366,7 +399,16 @@ func _on_update_mcp_json_pressed() -> void:
 				_UPDATE_SERVER_QUESTION % VersionUtils.COMPATIBLE_SERVER_VERSION))
 
 
-# The write flow's (ok, message, severity, tooltip) report: a toast, and on success
+# A done Undo re-renders through its report; a refused one reports ok = false, which
+# does not, so this re-render is what hides Undo once the file changed.
+func _on_undo_pin_move_pressed() -> void:
+	if _pin_move == null:
+		return
+	_pin_move.undo(_on_mcp_json_written)
+	refresh()
+
+
+# A .mcp.json write's (ok, message, severity, tooltip) report: a toast, and on success
 # the notice drops its server line.
 func _on_mcp_json_written(ok: bool, message: String, severity: int, tooltip: String) -> void:
 	if _toast.is_valid():

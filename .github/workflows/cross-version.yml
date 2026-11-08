@@ -281,7 +281,7 @@ jobs:
   # dialogs pressed by a test-only plugin (test/update_gui_driver/). The floor's
   # update-flow job proves the install itself headless; this proves what a user clicks.
   # 4.2.0 and 4.7.0 are the support boundaries, and 4.5.0 stands for the minors from
-  # 4.4 that restart on their own. All eight scenarios run on each listed version.
+  # 4.4 that restart on their own. All twelve scenarios run on each listed version.
   # Same triggers as the GDScript tier above.
   update-gui:
     needs: changes
@@ -294,8 +294,7 @@ jobs:
       contains(github.event.head_commit.message, '[run-cross-version-ci]') ||
       contains(github.event.head_commit.message, '[run-all-platforms-ci]'))
     runs-on: ubuntu-latest
-    # Fuse: the eight scenarios take about 15 min on a workstation; at 45 min an
-    # editor boot is hung.
+    # Fuse: at 45 min an editor boot is hung.
     timeout-minutes: 45
     strategy:
       fail-fast: false

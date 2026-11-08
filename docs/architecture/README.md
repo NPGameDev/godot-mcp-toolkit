@@ -508,7 +508,7 @@ identity (name/path pairs + the `autoload/<name>` = `*<path>` derivation) lives 
 leaf (`core/autoload_identity.gd`) that both the registration module and the export-strip plugin
 preload, so the two share one SSOT without coupling to each other.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd" data-verified="c78b428" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/plugin.gd addons/godot_mcp_toolkit/core/plugin_composer.gd addons/godot_mcp_toolkit/core/autoload_registration.gd addons/godot_mcp_toolkit/core/autoload_identity.gd addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd addons/godot_mcp_toolkit/transport/builtin_command_registration.gd addons/godot_mcp_toolkit/transport/mcp_server.gd addons/godot_mcp_toolkit/transport/debug_session_tracker.gd addons/godot_mcp_toolkit/transport/debug_bridge.gd addons/godot_mcp_toolkit/core/remote_deploy_detector.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_lifecycle.gd addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd" data-verified="f2687ab" -->
 ```mermaid
 flowchart TD
     plugin["plugin.gd<br/>_enter_tree / _exit_tree (thin)"]
@@ -530,15 +530,19 @@ flowchart TD
     composer --> detect["PlaytestEndDetector"]
     composer --> start["server.start() + register in registry"]
     composer --> ui["write flow + dialog presenter<br/>(shared UI · ADR 0016)"]
-    composer --> upd["update check runner<br/>(plugin child · read by the dock's badge)"]
+    composer --> upd["update check runner<br/>(plugin child · read by the dock's badge and status panel)"]
     composer --> inst["update installer<br/>(plugin child · follows the check runner ·<br/>settles the last exit at start · driven by the badge)"]
     upd -->|"newer version"| inst
+    composer --> pin["server pin move<br/>(RefCounted · holds this start's outcome)"]
+    inst -->|"update_settled, connected before it enters the tree"| pin
     composer --> dock["dock UI"]
+    pin -->|"outcome and Undo for the badge's notice · preview line"| dock
     plugin -->|"ask mode, at an editor start the wizard leaves free"| prompt["update prompt"]
+    pin -->|"preview line"| prompt
     plugin -.->|"_exit_tree → Handle.dispose() — reverse order"| composer
     plugin -.->|"_exit_tree after dispose, unless disabling"| apply["UpdateLifecycle.apply_at_exit()<br/>(swaps a staged update in · never in a headless editor)"]
 ```
-*Figure 10 — plugin composition root · verified c78b428*
+*Figure 10 — plugin composition root · verified f2687ab*
 
 The composer builds in a behaviour-critical order: registry and server first, then the
 debug-session tracker and the debugger plugin that feeds it, then all built-in commands, then
@@ -546,12 +550,17 @@ extensions and their hot-reload watcher, the export-strip plugin and the remote-
 the user-path monitor (which re-homes `user://` paths when the project is
 renamed), the playtest-end detector, the server start + registry registration, then the shared
 `.mcp.json` write-flow + dialog presenter, the update check runner (a plugin child that checks for a
-newer toolkit version whether or not the dock is shown, and that the dock's update badge reads), the
+newer toolkit version whether or not the dock is shown, and that the dock's update badge and status
+panel read), the
 update installer (a plugin child built after the runner because it follows the runner's newer version;
 in `_ready` it settles what the editor's last exit left, and the badge drives its
 download and staging; its own child, the release verifier (`self_update/release_verifier.gd`), walks
 the trust chain and checks a release's manifest and signature, and goes when the installer is freed),
-and finally the dock. The write-flow and dialog
+the server pin move (`ui/mcp_json/server_pin_move.gd`, a `RefCounted` that moves the toolkit's own
+`.mcp.json` pin after an update, C11 in the [contract](../dev/contract.md); the composer connects it to the
+installer's `update_settled` before the installer enters the tree, so the pin has moved before the
+badge first renders the update notice),
+and finally the dock, which receives the pin move for that notice and its offer's preview line. The write-flow and dialog
 presenter are **injected** into the dock, the tool menu, and the onboarding wizard alike — the
 dock consumes them like any other UI surface rather than acting as a service locator for them
 ([ADR 0016](#14-key-decisions-adrs)). One link runs back: once its UI is built, the dock hands the
@@ -582,7 +591,8 @@ detached `DisableCleanupCoordinator` that outlives the plugin.
 
 `plugin.gd` also carries the self-update's two ends. After the deferred onboarding call, in the `ask`
 install mode, it opens the update prompt when the installer holds a verified release, unless the
-wizard is open or the plugin was enabled mid-session. The prompt is a non-exclusive window: on 4.4+
+wizard is open or the plugin was enabled mid-session, and passes it the handle's pin move, which
+supplies the prompt's line about the pin. The prompt is a non-exclusive window: on 4.4+
 the editor reparents its own progress and save dialogs under the last exclusive window, and closing
 that window would free them with it. When the wizard reports its update-install
 step seen, it has the installer decide again, since the consent gate reads that step. At exit, once

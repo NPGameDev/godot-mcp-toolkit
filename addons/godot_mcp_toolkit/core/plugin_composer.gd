@@ -24,6 +24,7 @@ const MCPServer := preload("res://addons/godot_mcp_toolkit/transport/mcp_server.
 const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
+const ServerPinMove := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd")
 const UpdateCheckRunner = Modules.UpdateCheckRunner
 const UpdateInstaller = Modules.UpdateInstaller
 const ExtensionLoader := preload("res://addons/godot_mcp_toolkit/extensions/extension_loader.gd")
@@ -118,7 +119,7 @@ static func compose(
 	handle._dialog_presenter = dialog_presenter
 
 	# The update check runs whether or not the dock is shown, so it is a plugin
-	# child the dock's badge reads, never a dock behavior.
+	# child the dock's badge and status panel read, never a dock behavior.
 	var update_check := UpdateCheckRunner.new()
 	update_check.name = "MCPUpdateCheck"
 	plugin.add_child(update_check)
@@ -128,14 +129,19 @@ static func compose(
 	# before it.
 	var update_installer := UpdateInstaller.new(update_check)
 	update_installer.name = "MCPUpdateInstaller"
+	# The installer settles in _ready; connected before it enters the tree, so the pin
+	# has moved before the badge first renders the update notice.
+	var pin_move := ServerPinMove.new()
+	update_installer.update_settled.connect(pin_move.follow_update)
 	plugin.add_child(update_installer)
 	handle._update_installer = update_installer
+	handle._pin_move = pin_move
 
 	# -- Toolkit dock (bottom panel on ≤4.5, EditorDock on 4.6+; DockHost owns the seam) --
 	var dock: Control = preload("res://addons/godot_mcp_toolkit/ui/dock/dock.tscn").instantiate()
 	dock.bind(
 			server, Modules.Audit.get_log_path(), write_flow, dialog_presenter, update_check,
-			update_installer, on_setup_wizard_requested)
+			update_installer, on_setup_wizard_requested, pin_move)
 	handle._dock = dock
 	handle._dock_host = DockHost.add(plugin, dock, "MCP Toolkit")
 
@@ -221,6 +227,7 @@ class Handle:
 	const DockHost := preload("res://addons/godot_mcp_toolkit/core/dock_host.gd")
 	const MCPJsonWriteFlow := preload("res://addons/godot_mcp_toolkit/ui/mcp_json_write_flow.gd")
 	const ToolkitDialogPresenter := preload("res://addons/godot_mcp_toolkit/ui/toolkit_dialog_presenter.gd")
+	const ServerPinMove := preload("res://addons/godot_mcp_toolkit/ui/mcp_json/server_pin_move.gd")
 	const PlaytestCommands := preload("res://addons/godot_mcp_toolkit/commands/playtest/playtest_commands.gd")
 	const PlaytestEndDetector := preload("res://addons/godot_mcp_toolkit/core/playtest_end_detector.gd")
 
@@ -232,8 +239,9 @@ class Handle:
 	var _dock_host: Object = null  # EditorDock wrapper on 4.6+; null on ≤4.5 (control is its own handle)
 	var _write_flow: MCPJsonWriteFlow = null  # Shared .mcp.json confirm-then-write flow
 	var _dialog_presenter: ToolkitDialogPresenter = null  # Editor-global dialogs (info + catalog)
-	var _update_check: Node = null  # Update check runner, read by the dock's badge
+	var _update_check: Node = null  # Update check runner, read by the dock's badge and status panel
 	var _update_installer: UpdateInstaller = null  # Stages updates the install mode allows; the badge drives it
+	var _pin_move: ServerPinMove = null  # This start's .mcp.json pin move after an update
 	var _extension_watcher: RefCounted = null  # Live hot-reload watcher (ExtensionLoader)
 	var _debug_bridge: DebugBridge = null  # EditorDebuggerPlugin for debug.* commands
 	var _session_tracker: DebugSessionTracker = null  # The latest debugger session's state
@@ -263,6 +271,11 @@ class Handle:
 	## says whether the editor-start update window is due.
 	func update_installer() -> UpdateInstaller:
 		return _update_installer
+
+	## This start's .mcp.json server pin move, which the update notice reports and
+	## the editor-start update window previews.
+	func pin_move() -> ServerPinMove:
+		return _pin_move
 
 	## The dock host — the EditorDock wrapper on 4.6+, null on ≤4.5. The reveal
 	## façade (plugin.reveal_dock) passes it back to DockHost.reveal.
@@ -315,6 +328,8 @@ class Handle:
 		if _update_installer != null:
 			_update_installer.free()
 			_update_installer = null
+		# Pin move — RefCounted, connected only to the installer freed above; drop it.
+		_pin_move = null
 
 		# Update check — a plugin child holding a timer and an HTTPRequest; free()
 		# it immediately for the same leak-check reason (its _exit_tree cancels the

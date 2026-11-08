@@ -9,10 +9,11 @@ extends RefCounted
 ## on Windows; a local server path emits the node form). The npx form runs the
 ## package spec the server pin policy picks from the project's version setting
 ## ([code]ui/mcp_json/server_pin_policy.gd[/code]). The file stays user-owned for
-## edits; the plugin writes it only on explicit user action (the dock's /
-## Tools-menu's "Write .mcp.json"). A write replaces only the toolkit's own server
-## entry: it keeps the file's other servers and top-level keys and the existing
-## entry's env keys, and it never replaces a file that is not valid JSON.
+## edits; the plugin writes it only on explicit user action, or when a self-update the
+## user started moves the toolkit's own pin ([code]ui/mcp_json/server_pin_move.gd[/code]).
+## A write replaces only the toolkit's own server entry: it keeps the file's other
+## servers and top-level keys and the existing entry's env keys, except the ones the
+## builder owns, and it never replaces a file that is not valid JSON.
 ##
 ## UI-free by design: the write reports its outcome through an injected
 ## on_result Callable so the update-confirmation dialog stays in the
@@ -74,6 +75,11 @@ static func get_mcp_json_path() -> String:
 
 static func has_mcp_json() -> bool:
 	return FileAccess.file_exists(get_mcp_json_path())
+
+
+## The file's text as it is now, or "" when it is missing or can't be read.
+static func read_text() -> String:
+	return FileAccess.get_file_as_string(get_mcp_json_path())
 
 
 static func get_all_env_vars() -> Dictionary:
@@ -330,17 +336,21 @@ static func get_desired_spec(local_path_setting: String = "") -> String:
 ## confirm" report (defensive — the shared write flow pre-checks via
 ## needs_overwrite_confirm()); otherwise build the OS-aware content (see
 ## build_server_entry and merge_document — every other server and top-level key is
-## kept) and report success (info, with the destination as the tooltip) or the open
-## failure (error). The success message asks for a client restart when the server
-## spec changed. UI-free: no dialog, no EditorInterface, no toast.
+## kept) and report success (info, with the destination as the tooltip) or the failed
+## write, a refused, unopened or unchanged file (error; see [method _store]). The
+## success message asks for a client restart when the server spec changed. UI-free: no
+## dialog, no EditorInterface, no toast.
 ##
 ## [param local_path_setting] is the machine's local server path setting ("" for
 ## none). After a successful write and before on_result, [param on_written] (when
 ## valid) receives (spec: String): the written entry's classification (see
-## [code]ServerPinPolicy.classify_server_entry[/code]).
+## [code]ServerPinPolicy.classify_server_entry[/code]). A non-empty [param
+## package_spec] is written in the npx form in place of the spec the setting resolves
+## to, whatever the local server path (see [method _build_entry]).
 static func write_from_template(
 		force_overwrite: bool, on_result: Callable,
-		local_path_setting: String = "", on_written: Callable = Callable()) -> void:
+		local_path_setting: String = "", on_written: Callable = Callable(),
+		package_spec: String = "") -> void:
 	if not FileAccess.file_exists(_TEMPLATE_PATH):
 		on_result.call(false, "Template not found: " + _TEMPLATE_PATH, 2, "")
 		return
@@ -354,7 +364,7 @@ static func write_from_template(
 		on_result.call(false, ".mcp.json already has a different entry — update not confirmed", 1, dest)
 		return
 	var previous_spec := ServerPinPolicy.classify_server_entry(_read_file_entry(true))
-	var entry := _build_entry(local_path_setting)
+	var entry := _build_entry(local_path_setting, package_spec)
 	var written_spec := ServerPinPolicy.classify_server_entry(entry)
 	var error := _store(dest, _content_with(entry))
 	if error != OK:
@@ -366,13 +376,22 @@ static func write_from_template(
 	on_result.call(true, _WRITTEN_RESTART_MESSAGE if changed else _WRITTEN_MESSAGE, 0, "Wrote to " + dest)
 
 
-## Writes [param content] to [param dest]. Returns OK, or the open error.
+## Writes [param content] to [param dest]. Returns OK, ERR_FILE_NO_PERMISSION for a
+## target with the read-only attribute, the open error, or ERR_FILE_CANT_WRITE when the
+## file does not hold [param content] afterwards. In an editor, safe save
+## ([code]filesystem/on_save/safe_save_on_backup_then_rename[/code]) swaps the file in
+## inside [code]FileAccess.close()[/code], which returns nothing, so a failed swap shows
+## only in the file itself.
 static func _store(dest: String, content: String) -> int:
+	if FileAccess.file_exists(dest) and FileAccess.get_read_only_attribute(dest):
+		return ERR_FILE_NO_PERMISSION
 	var file := FileAccess.open(dest, FileAccess.WRITE)
 	if file == null:
 		return FileAccess.get_open_error()
 	file.store_string(content)
 	file.close()
+	if FileAccess.get_file_as_bytes(dest) != content.to_utf8_buffer():
+		return ERR_FILE_CANT_WRITE
 	return OK
 
 
@@ -462,11 +481,16 @@ static func _stringify_canonical(value: Variant) -> String:
 ## per-OS command/args, and the env layered so an existing file's user keys are
 ## preserved (see merge_server_env) with the builder-owned keys applied last (see
 ## apply_owned_env). Callable with no argument: that is the entry a machine with no
-## local path setting writes.
-static func _build_entry(local_path_setting: String = "") -> Dictionary:
-	var dev_server_path := resolve_machine_dev_path(local_path_setting)
-	var package_spec := ServerPinPolicy.resolve_package_spec(
-			ServerPinPolicy.read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION)
+## local path setting writes. A non-empty [param explicit_spec] is the npm package
+## spec to run instead, always in the npx form: the setting and the local server
+## path are not read.
+static func _build_entry(local_path_setting: String = "", explicit_spec: String = "") -> Dictionary:
+	var dev_server_path := ""
+	var package_spec := explicit_spec
+	if explicit_spec.is_empty():
+		dev_server_path = resolve_machine_dev_path(local_path_setting)
+		package_spec = ServerPinPolicy.resolve_package_spec(
+				ServerPinPolicy.read_version_setting(), VersionUtils.COMPATIBLE_SERVER_VERSION)
 	var entry := build_server_entry(OS.get_name(), dev_server_path, package_spec)
 	# The template base guarantees GODOT_MCP_CONFIG_VERSION; the file's own entry's
 	# env is preserved so a rewrite never strips a user's GODOT_MCP_* keys. The

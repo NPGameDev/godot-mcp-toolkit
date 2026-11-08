@@ -14,7 +14,8 @@
 #                the release is staged, 4.2 and 4.3 open the ready view and its Restart
 #                restarts; the next editor runs the release and says so
 #   later        the editor-start window: Later brings it back at the next start, Skip
-#                this version hides the version
+#                this version hides the version, and a .mcp.json set by hand adds no
+#                line to it
 #   unsaved      a script edited before Update: the ready view opens, Restart refuses
 #                while the edit is unsaved, Not now collapses the view, and once the
 #                script is saved Restart installs the release
@@ -22,9 +23,24 @@
 #                not restart; its exit installs the release
 #   quit         Update, then the editor's quit shortcut closes the window, and that
 #                exit installs the release
-#   server       the release is tested with another server than the one the toolkit
-#                wrote into .mcp.json: the notice offers to update .mcp.json, and does
-#   server_hand  the same with a .mcp.json set by hand: no offer
+#   server       the release recommends another server than the one the toolkit wrote
+#                into .mcp.json: the badge says the pin will move, the update moves it
+#                and keeps the user's env key and the other server, the notice says so,
+#                and its Undo puts the pin back
+#   server_edit  a pin equal to what the installed toolkit recommends, with no record of
+#                a write, moves the same way; then .mcp.json is edited by hand: Undo
+#                leaves the edit, and Undo and the moved line go
+#   server_hand  a .mcp.json set by hand: the pin stays and nothing is said
+#   server_prompt  a pin equal only to this machine's last write: the editor-start window
+#                says it will move, and Later moves nothing
+#   server_readonly  a read-only .mcp.json. On Windows the move's write fails: the notice
+#                says so and offers Update .mcp.json, the file keeps its bytes, and no
+#                write is recorded. On Linux and macOS the engine's safe save renames over
+#                the file, which a missing write bit does not stop, so the pin moves
+#   server_gap   an MCP server connects, older and then newer than the recommended
+#                version: the dock's status panel says so, and follows a setting that
+#                changes with no server event. The MCP server is this test's own
+#                WebSocket client, since the job runs no real one
 #   major        a major release: the badge only links
 #
 # Usage: scripts/test_framework/update_gui.sh [godot-binary]
@@ -48,7 +64,7 @@
 set -uo pipefail
 
 GODOT_BIN="${GODOT_BIN:-${1:-godot}}"
-SCENARIOS="${UPDATE_GUI_SCENARIOS:-restart later unsaved untitled quit server server_hand major}"
+SCENARIOS="${UPDATE_GUI_SCENARIOS:-restart later unsaved untitled quit server server_edit server_hand server_prompt server_readonly server_gap major}"
 XVFB_BIN="${XVFB_BIN:-Xvfb}"
 XDOTOOL_BIN="${XDOTOOL_BIN:-xdotool}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -139,10 +155,20 @@ if [[ -z "${OLD_VERSION}" ]]; then
   exit 0
 fi
 NEXT_MAJOR="$(( ${NEW_VERSION%%.*} + 1 )).0.0"
-COMPATIBLE_SERVER="$(sed -nE 's/^const COMPATIBLE_SERVER_VERSION := "([^"]+)".*/\1/p' \
-  "${REPO_ROOT}/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")"
+COMPATIBLE_SERVER="$(cs_current "${REPO_ROOT}")"
 # A server no release pins, for the installed toolkit of the .mcp.json scenarios.
 OLD_SERVER="0.0.1"
+# What the installed toolkit recommends when the pin must not count as its recommended
+# version: a pin equal to that version is the toolkit's own and moves.
+OTHER_RECOMMENDED="0.0.2"
+PIN_PREVIEW_LINE="This also changes the MCP server in .mcp.json from ${OLD_SERVER} to ${COMPATIBLE_SERVER}. Restart your AI client after the update."
+PIN_MOVED_LINE=".mcp.json now runs MCP server ${COMPATIBLE_SERVER} instead of ${OLD_SERVER}. Restart your AI client to use it."
+# The server_edit scenario's hand edit, and the versions the server_gap scenario's MCP
+# servers report around the version its installed toolkit recommends. These pass the
+# toolkit's floors and differ from that version by a patch.
+export UPDATE_GUI_HAND_SERVER="0.0.9"
+GAP_RECOMMENDED="1.5.5"
+export UPDATE_GUI_OLDER_SERVER="1.5.4" UPDATE_GUI_NEWER_SERVER="1.5.6"
 ENGINE_MINOR="$("${GODOT_BIN}" --version | cut -d. -f1-2)"
 
 # ── The virtual display and the editor settings ─────────────────────────────
@@ -302,6 +328,35 @@ expect() {
   fi
 }
 
+# Passes when what the step recorded under `key` holds `text`.
+expect_contains() {
+  local step="$1" key="$2" text="$3"
+  if grep -F "${SCENARIO} ${key}=" "${WORK}/${SCENARIO}/results_${step}.txt" 2>/dev/null | grep -qF -- "${text}"; then
+    pass "${step}: ${key} holds ${text}"
+  else
+    fail "${step}: ${key} does not hold ${text} (recorded: $(grep -F "${SCENARIO} ${key}=" "${WORK}/${SCENARIO}/results_${step}.txt" 2>/dev/null | tr '\n' ' '))"
+  fi
+}
+
+# Passes when the project's .mcp.json runs server `version` and still holds the user's
+# env key and the other server.
+expect_mcp_json_runs() {
+  local version="$1" file="${WORK}/${SCENARIO}/project/.mcp.json"
+  grep -qF "@npgamedev/godot-mcp-server@${version}\"" "${file}" \
+    && pass ".mcp.json runs server ${version}" || fail ".mcp.json does not run server ${version}"
+  grep -qF "GODOT_MCP_TEST_KEEP" "${file}" && grep -qF "other-server" "${file}" \
+    && pass ".mcp.json keeps the env key and the other server" || fail ".mcp.json lost the env key or the other server"
+}
+
+# Passes when the step recorded the pin move in `key`: the release's recommended server,
+# with the user's env key and the other server kept.
+expect_recorded_move() {
+  local step="$1" key="$2"
+  expect_contains "${step}" "${key}" "@npgamedev/godot-mcp-server@${COMPATIBLE_SERVER}\""
+  expect_contains "${step}" "${key}" "GODOT_MCP_TEST_KEEP"
+  expect_contains "${step}" "${key}" "other-server"
+}
+
 # Passes when the step recorded nothing under `key`.
 expect_absent() {
   local step="$1" key="$2"
@@ -325,21 +380,31 @@ expect_installed() {
   [[ "${installed}" == "$1" ]] && pass "plugin.cfg reads $1" || fail "plugin.cfg reads '${installed}', not $1"
 }
 
-# The installed toolkit of the .mcp.json scenarios pins OLD_SERVER, which .mcp.json
-# runs; `record` says whether this machine's toolkit wrote that entry.
+# .mcp.json runs OLD_SERVER. The pin is the toolkit's to move when the installed toolkit
+# recommends that server or this machine's last write names it, so each mode sets those
+# two facts:
+#   recommended_only  recommends it, with no last write
+#   last_write_only   recommends another server, and the last write names it
+#   by_hand           recommends another server, with no last write, so the pin stays
 pin_old_server() {
-  local record="$1"
+  local mode="$1"
   local project="${WORK}/${SCENARIO}/project"
-  sed -i.bak -E "s/^const COMPATIBLE_SERVER_VERSION := \"[^\"]+\"/const COMPATIBLE_SERVER_VERSION := \"${OLD_SERVER}\"/" \
-    "${project}/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd" \
-    && rm -f "${project}/addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd.bak"
-  rf_write_list "${project}/addons/godot_mcp_toolkit"
-  printf '{\n\t"mcpServers": {\n\t\t"godot-mcp-toolkit": {\n\t\t\t"command": "npx",\n\t\t\t"args": ["-y", "@npgamedev/godot-mcp-server@%s"],\n\t\t\t"env": {"GODOT_MCP_CONFIG_VERSION": "1", "npm_config_prefer_offline": "true"}\n\t\t}\n\t}\n}\n' \
-    "${OLD_SERVER}" > "${project}/.mcp.json"
-  if [[ "${record}" == written ]]; then
-    mkdir -p "${project}/.godot/editor"
-    printf '\n[mcp_toolkit]\n\nlast_written_server_spec="npx:%s"\n' "${OLD_SERVER}" >> "${project}/.godot/editor/project_metadata.cfg"
-  fi
+  ut_write_mcp_json "${project}" "${OLD_SERVER}"
+  case "${mode}" in
+    recommended_only)
+      ut_recommend_server "${project}/addons/godot_mcp_toolkit" "${OLD_SERVER}"
+      ;;
+    last_write_only)
+      ut_recommend_server "${project}/addons/godot_mcp_toolkit" "${OTHER_RECOMMENDED}"
+      ut_record_last_write "${project}" "${OLD_SERVER}"
+      ;;
+    by_hand)
+      ut_recommend_server "${project}/addons/godot_mcp_toolkit" "${OTHER_RECOMMENDED}"
+      ;;
+    *)
+      fail "pin_old_server: no mode ${mode}"
+      ;;
+  esac
 }
 
 # ── Scenarios ───────────────────────────────────────────────────────────────
@@ -380,11 +445,14 @@ for SCENARIO in ${SCENARIOS}; do
       fi
       boot b
       expect b window_shown true
+      expect b window_pin_line ""
       expect b pressed true
       expect b window_after false
       expect b update_visible true
+      pin_old_server by_hand
       boot c
       expect c window_shown true
+      expect c window_pin_line ""
       expect c pressed true
       expect c badge_visible false
       boot d
@@ -444,24 +512,108 @@ for SCENARIO in ${SCENARIOS}; do
       boot b
       expect b notice_shown true
       ;;
-    server | server_hand)
+    server | server_edit)
       prepare ask "${NEW_VERSION}" || continue
-      if [[ "${SCENARIO}" == server ]]; then pin_old_server written; else pin_old_server by_hand; fi
+      if [[ "${SCENARIO}" == server ]]; then
+        pin_old_server last_write_only
+      else
+        pin_old_server recommended_only
+      fi
       boot a
+      expect a offer_status "${PIN_PREVIEW_LINE}"
       expect a step after_restart
       expect a notice_shown true
+      expect a status "${PIN_MOVED_LINE}"
+      expect a undo_visible true
+      expect a update_mcp_json_visible false
+      expect_recorded_move a mcp_json_moved
+      expect a undo_visible_after false
+      expect a status_after ""
       if [[ "${SCENARIO}" == server ]]; then
-        expect a status "It's tested with server ${COMPATIBLE_SERVER}, which .mcp.json doesn't run yet. Update .mcp.json, then restart your MCP client."
-        expect a update_mcp_json_visible true
-        expect a confirm_shown true
-        expect a update_mcp_json_visible_after false
-        grep -qF "@npgamedev/godot-mcp-server@${COMPATIBLE_SERVER}\"" "${WORK}/server/project/.mcp.json" \
-          && pass ".mcp.json runs server ${COMPATIBLE_SERVER}" || fail ".mcp.json does not run server ${COMPATIBLE_SERVER}"
+        expect_mcp_json_runs "${OLD_SERVER}"
       else
-        expect a status ""
-        expect a update_mcp_json_visible false
+        expect_mcp_json_runs "${UPDATE_GUI_HAND_SERVER}"
       fi
       expect_installed "${NEW_VERSION}"
+      ;;
+    server_hand)
+      prepare ask "${NEW_VERSION}" || continue
+      pin_old_server by_hand
+      boot a
+      expect a offer_status ""
+      expect a step after_restart
+      expect a notice_shown true
+      expect a status ""
+      expect a update_mcp_json_visible false
+      expect a undo_visible false
+      expect_mcp_json_runs "${OLD_SERVER}"
+      expect_installed "${NEW_VERSION}"
+      ;;
+    server_prompt)
+      prepare ask "${NEW_VERSION}" || continue
+      pin_old_server last_write_only
+      boot a
+      expect a available true
+      expect a offer_status "${PIN_PREVIEW_LINE}"
+      boot b
+      expect b window_shown true
+      expect b window_pin_line "${PIN_PREVIEW_LINE}"
+      expect b pressed true
+      expect_mcp_json_runs "${OLD_SERVER}"
+      expect_installed "${OLD_VERSION}"
+      ;;
+    server_readonly)
+      prepare ask "${NEW_VERSION}" || continue
+      pin_old_server recommended_only
+      project="${WORK}/${SCENARIO}/project"
+      cp "${project}/.mcp.json" "${WORK}/${SCENARIO}/mcp_json_before"
+      if [[ "${OS}" == windows ]]; then
+        attrib.exe +R "$(cygpath -w "${project}/.mcp.json")"
+      else
+        chmod a-w "${project}/.mcp.json"
+      fi
+      boot a
+      expect a offer_status "${PIN_PREVIEW_LINE}"
+      expect a step after_restart
+      expect a notice_shown true
+      if [[ "${OS}" == windows ]]; then
+        expect_contains a status "but .mcp.json couldn't be updated: Failed to write .mcp.json"
+        expect a update_mcp_json_visible true
+        expect a undo_visible false
+        cmp -s "${project}/.mcp.json" "${WORK}/${SCENARIO}/mcp_json_before" \
+          && pass "a: .mcp.json keeps its bytes" || fail "a: .mcp.json changed"
+        grep -qF "last_written_server_spec" "${project}/.godot/editor/project_metadata.cfg" 2>/dev/null \
+          && fail "a: a write was recorded" || pass "a: no write recorded"
+        attrib.exe -R "$(cygpath -w "${project}/.mcp.json")"
+      else
+        expect a status "${PIN_MOVED_LINE}"
+        expect a update_mcp_json_visible false
+        expect a undo_visible true
+        expect_mcp_json_runs "${COMPATIBLE_SERVER}"
+        grep -qF "last_written_server_spec=\"npx:${COMPATIBLE_SERVER}\"" "${project}/.godot/editor/project_metadata.cfg" 2>/dev/null \
+          && pass "a: the write is recorded" || fail "a: the write is not recorded"
+      fi
+      leftovers="$(ls -A "${project}" | grep -E '^\.mc.*\.tmp$|^\.mcp\.json-')"
+      [[ -z "${leftovers}" ]] && pass "a: no temp file left" || fail "a: temp files left: ${leftovers}"
+      expect_installed "${NEW_VERSION}"
+      ;;
+    server_gap)
+      prepare ask "${NEW_VERSION}" || continue
+      ut_recommend_server "${WORK}/${SCENARIO}/project/addons/godot_mcp_toolkit" "${GAP_RECOMMENDED}"
+      boot a
+      expect a available true
+      expect a older_connected true
+      expect_contains a older_line "MCP server ${UPDATE_GUI_OLDER_SERVER} is older than ${GAP_RECOMMENDED}"
+      expect a newer_connected true
+      # Only the update check runner the dock hands the panel knows this version.
+      expect_contains a newer_line "MCP server ${UPDATE_GUI_NEWER_SERVER} is newer than ${GAP_RECOMMENDED}"
+      expect_contains a newer_line "Update the toolkit to ${NEW_VERSION}"
+      # Nothing but the dock's one-second tick repaints the line for a setting.
+      expect_contains a line_before_setting "MCP server ${UPDATE_GUI_NEWER_SERVER} is newer than ${GAP_RECOMMENDED}"
+      expect a hidden_by_setting true
+      expect a back_without_setting true
+      expect_contains a line_after_setting "MCP server ${UPDATE_GUI_NEWER_SERVER} is newer than ${GAP_RECOMMENDED}"
+      expect_installed "${OLD_VERSION}"
       ;;
     major)
       prepare ask "${NEXT_MAJOR}" || continue
