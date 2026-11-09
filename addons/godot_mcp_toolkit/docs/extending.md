@@ -1086,9 +1086,11 @@ Requirements for distribution:
 5. If the base toolkit is not installed, `extends MCPToolkitExtension` fails
    at parse time — a clear error signal, not silent failure
 
-**AssetLib update safety:** Extensions live outside the toolkit's addon
-directory, so AssetLib updates to `godot-mcp-toolkit` never touch your
-extension files.
+**Keep extensions out of the toolkit's folder.** An update replaces
+`addons/godot_mcp_toolkit/` whole, whether the toolkit installs it or you do,
+and any file you put there is lost. An extension in its own
+`addons/<your_addon>/` folder is never touched by a toolkit update (see
+[self-update.md](self-update.md)).
 
 ### Getting listed in the extension catalog
 

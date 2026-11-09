@@ -36,7 +36,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   update is staged; turn it off to delete that copy once the update installs.
   Major releases, releases that need a newer Godot, and a toolkit folder that is
   a link or a git checkout get links only. Releases now ship an update manifest
-  beside the zip.
+  beside the zip, and the zip's addon folder holds `release_files.sha256`, the
+  SHA-256 of every file in the release in `sha256sum` format, so
+  `sha256sum -c release_files.sha256` checks an installed copy.
 - When an update has just been prepared in this session, Godot 4.4 and later
   restart on their own if no script has unsaved edits, no game is running and no
   open scene is untitled. Otherwise the badge says what to save and offers

@@ -51,9 +51,9 @@ Linux), so a tracked copy would differ between machines. The shipped
 
 The toolkit can install its own updates when the project allows it (Project
 Settings → Mcp Toolkit → Updates → Install Mode, asked once in the setup wizard).
-It installs only releases whose update manifest is signed by the maintainer's key,
-and writes them when the editor closes. Otherwise, update by hand: close the
-editor, delete `addons/godot_mcp_toolkit/`, and extract the new zip as above.
+The shipped [self-update guide](addons/godot_mcp_toolkit/docs/self-update.md) says
+what it downloads, writes and asks. To update by hand, follow the
+[README's install step](README.md#1-install-the-plugin).
 
 ## End-user plugin install (Asset Library, once submitted)
 
