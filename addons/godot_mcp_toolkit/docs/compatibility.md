@@ -186,6 +186,16 @@ script identity (even across stale/phantom tabs); with an external editor the to
   them here.
 - `animationtree_list` enumerates state-machine nodes fully (`get_node_list` is 4.5+).
 
+### Installing toolkit updates (all versions)
+
+The toolkit writes a staged update while the editor closes, on every supported
+version. Restart now in the dock saves the open scenes and restarts the editor.
+On Godot 4.5 and later an unsaved script makes Godot ask whether to save it first,
+and Cancel leaves the update staged for the next close; 4.2, 4.3 and 4.4 save the
+script without asking. On 4.2 a toolkit folder that is a link to another place is
+not detected, since the check needs Godot 4.3; keep a linked folder's install mode
+at `manual` there.
+
 ### EditorFileSystem indexing (all versions)
 
 File-mutating commands (`script_write`, `resource_write`, `scene_create`,

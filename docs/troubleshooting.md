@@ -266,6 +266,23 @@ See the C# section of the shipped
 [`compatibility.md`](../addons/godot_mcp_toolkit/docs/compatibility.md) for
 version requirements and details.
 
+### An update did not install, or the toolkit stopped loading after one
+
+The dock's badge says why after the next editor start, and the full story is in
+`user://addons/godot_mcp_toolkit/update/install.log` (Project → Open User Data
+Folder). A failed write restores the previous version by itself. If the badge
+says some files were not restored, or the toolkit no longer loads at all after an
+update, close the editor and copy the files from
+`user://addons/godot_mcp_toolkit/update/backup/` back over
+`res://addons/godot_mcp_toolkit/`, or reinstall the previous release's zip from
+GitHub. A version that needs a newer Godot is never installed by the toolkit; the
+badge names the Godot it needs.
+
+To stop the toolkit from installing updates, set Project Settings → Mcp Toolkit →
+Updates → Install Mode to `manual`. An editor that was killed (not closed) keeps a
+staged update and installs it at the next normal close; disabling the plugin drops
+it.
+
 ### Windows: a headless CLI export never returns
 
 **Symptom:** `godot --headless … --export-release` (or `--export-debug`) writes

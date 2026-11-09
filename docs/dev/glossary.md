@@ -369,7 +369,8 @@ at an editor start, nothing on a mid-session enable (`SetupSteps.plan_run`).
 **Consent gate**
 What the toolkit may do on its own, decided from the user's settings and the setup steps they have
 seen (`core/consent.gd`). The update check runs only when its setting is on and the `updates` step
-has been seen. Distinct from tool permissions, which govern what an MCP client may ask for.
+has been seen; installing an update also needs the `update_install` step seen and an install mode
+that installs. Distinct from tool permissions, which govern what an MCP client may ask for.
 
 ---
 

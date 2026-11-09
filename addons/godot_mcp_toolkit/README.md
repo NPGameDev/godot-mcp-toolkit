@@ -6,7 +6,7 @@ scenes, edit scripts, inspect nodes, and run playtests inside your editor.
 The plugin is half the stack: the companion npm package
 `@npgamedev/godot-mcp-server` is the bridge your assistant actually talks to.
 
-Everything runs locally. Nothing leaves your machine. The one exception is update checks: at most once a day the toolkit asks GitHub whether a newer version is published (and, when one is, asks the Asset Store whether it lists it yet), and the Extensions dialog fetches its catalog from GitHub when you open it. These requests carry no identifier and nothing about your project; the servers see only your IP address, as with any download. Turn the update check off in Project Settings under Mcp Toolkit > Updates (`mcp_toolkit/updates/check_for_updates`).
+Everything runs locally. Nothing leaves your machine. The one exception is update checks: at most once a day the toolkit asks GitHub whether a newer version is published (and, when one is, asks the Asset Store whether it lists it yet), and the Extensions dialog fetches its catalog from GitHub when you open it. These requests carry no identifier and nothing about your project; the servers see only your IP address, as with any download. Turn the update check off in Project Settings under Mcp Toolkit > Updates (`mcp_toolkit/updates/check_for_updates`). If you let the toolkit install its updates (a setup step asks, and `mcp_toolkit/updates/install_mode` keeps the answer), it also downloads a new version's signed manifest and zip from the same GitHub release, and installs them when you close the editor.
 
 ## Quick start
 

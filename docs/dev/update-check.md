@@ -1,8 +1,9 @@
-# Update check: contributor notes
+# Update check and self-update: contributor notes
 
-The dock's update badge comes from a small check the toolkit runs on its own. This note says how it
-works and how to point it at a local server while you work on it. Users read about it in the
-README's privacy line; the setting is listed in `contract.md` (C22).
+The dock's update badge comes from a small check the toolkit runs on its own, and the toolkit can
+install the release it finds. This note says how both work and how to point them at a local server
+while you work on them. Users read about them in the README's privacy line; the settings are listed
+in `contract.md` (C22), and the decision record is ADR 0029.
 
 ## How it runs
 

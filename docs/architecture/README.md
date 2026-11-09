@@ -121,6 +121,7 @@ below:
 | `extensions/` | third-party extension discovery, loading, hot-reload | [§8](#8-extension-system) |
 | `registry/` + `registry/store/` | multi-instance discovery (`projects.json`) | [§9](#9-multi-project-registry) |
 | `security/` | auth token, path guard, audit log, untrusted-content wrapping | [§10](#10-security--trust-boundaries) |
+| `update/` | the self-update: verify, stage, apply at editor exit (ADR 0029) | [§7](#7-plugin-lifecycle) |
 | `paths/`, `logging/`, `scene/`, `versioning/`, `ui/` | supporting services and the dock | throughout |
 
 ---
@@ -890,6 +891,7 @@ ones most relevant to this document:
 | [0018](../adr/0018-macos-launch-minimize.md) | Minimize the macOS `.mcp.json` emission — revert to bare npx (supersedes 0017) | [§3](#3-transport--connection), [§7](#7-plugin-lifecycle) |
 | [0027](../adr/0027-setup-steps-by-id-in-a-versioned-file.md) | Setup steps keyed by id, recorded when left, in a versioned file | [§7](#7-plugin-lifecycle) |
 | [0028](../adr/0028-order-export-strip-before-gdscript-tokenizer.md) | Order the export strip before the GDScript tokenizer (supersedes 0006) | [§2](#2-the-editorruntime-split), [§12](#12-distribution) |
+| [0029](../adr/0029-self-update-applies-at-editor-exit.md) | The toolkit installs its own updates at editor exit, from a signed manifest (Proposed) | [§7](#7-plugin-lifecycle) |
 
 ---
 
