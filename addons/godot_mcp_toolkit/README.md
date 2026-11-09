@@ -6,7 +6,7 @@ scenes, edit scripts, inspect nodes, and run playtests inside your editor.
 The plugin is half the stack: the companion npm package
 `@npgamedev/godot-mcp-server` is the bridge your assistant actually talks to.
 
-Everything runs locally. Nothing leaves your machine. The one exception is update checks: at most once a day the toolkit asks GitHub whether a newer version is published (and, when one is, asks the Asset Store whether it lists it yet), and the Extensions dialog fetches its catalog from GitHub when you open it. These requests carry no identifier and nothing about your project; the servers see only your IP address, as with any download. Turn the update check off in Project Settings under Mcp Toolkit > Updates (`mcp_toolkit/updates/check_for_updates`). If you let the toolkit install its updates (a setup step asks, and `mcp_toolkit/updates/install_mode` keeps the answer), it also downloads a new version's signed manifest and zip from the same GitHub release, and installs them when you close the editor.
+Everything runs locally. Nothing leaves your machine. The one exception is update checks: at most once a day the toolkit asks GitHub whether a newer version is published (and, when one is, asks the Asset Store whether it lists it yet), and the Extensions dialog fetches its catalog from GitHub when you open it. These requests carry no identifier and nothing about your project; the servers see only your IP address, as with any download. Turn the update check off in Project Settings under Mcp Toolkit > Updates (`mcp_toolkit/updates/check_for_updates`). If you let the toolkit install its updates (a setup step asks, and `mcp_toolkit/updates/install_mode` keeps the answer), a newer version also makes it ask GitHub for any new trust document and for that release's manifest and signature, to check the release. The zip downloads only after you click Update, and the update installs when you close or restart the editor. [self-update.md](docs/self-update.md) has the details.
 
 ## Quick start
 
@@ -70,6 +70,8 @@ Shipped with this addon, in `addons/godot_mcp_toolkit/docs/`:
   worktrees side by side.
 - [advanced_configuration.md](docs/advanced_configuration.md) — ports,
   limits, environment variables, macOS specifics.
+- [self-update.md](docs/self-update.md) — what an update downloads and
+  writes, when, and what the toolkit asks first.
 
 The addon also bundles [agent skills](docs/companion-skills.md) — a workflow
 skill and an extension-authoring skill — in
@@ -85,8 +87,11 @@ On the web:
 
 ## Updating
 
-To update, delete `addons/godot_mcp_toolkit/` before installing the new
-version. Installing over it leaves removed files and `.uid` sidecars behind.
+The toolkit can install its own updates; see
+[self-update.md](docs/self-update.md). To update by hand, delete
+`addons/godot_mcp_toolkit/` before installing the new version. Installing over
+it leaves removed files and `.uid` sidecars behind. Any file you keep in that
+folder is lost to an update, whether you or the toolkit installs it.
 
 ## Uninstalling
 

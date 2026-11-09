@@ -25,6 +25,8 @@ into your project; everything else lives here on GitHub.
   (shipped) — ports, limits, environment variables, and platform-specific setup.
 - [Multi-instance](../addons/godot_mcp_toolkit/docs/multi-instance.md) (shipped)
   — running several editors or git worktrees side by side.
+- [Self-update](../addons/godot_mcp_toolkit/docs/self-update.md) (shipped) —
+  what an update downloads and writes, when, and what the toolkit asks first.
 
 ## Extend it
 
