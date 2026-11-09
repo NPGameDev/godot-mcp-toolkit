@@ -145,7 +145,7 @@ concurrency:
 # [run-cross-version-ci] (the bump IS the tested integration event); override ad-hoc via
 # the sibling-ref dispatch input.
 env:
-  SIBLING_PIN_SERVER: "3d0d01742d6bc77890510995fe1bef1e72615a46"
+  SIBLING_PIN_SERVER: "31114985266c4a2e56aa3f1806ffb1e450c7a4b9"
 
 jobs:
   # A pull request that only changes *.md files skips every behavioral
@@ -504,7 +504,15 @@ jobs:
               windows) runner="windows-latest"; os_label="Windows" ;;
               *)       continue ;;
             esac
-            for version in $versions; do
+            # macOS runs 4.5.2 beside 4.5.0, in both languages. On 4.5.0 the iOS and
+            # visionOS export plugins start a device poll thread on macOS only, and it can
+            # call a pure virtual while the editor destroys them, so the editor aborts at
+            # start or exit with `Pure virtual function called!`; Godot 4.5.1 fixed it
+            # (upstream 41acf6a75d). The composite passes a 4.5.0 job whose every boot
+            # died on that crash, so 4.5.2 keeps the minor tested then.
+            os_versions="$versions"
+            if [ "$os_key" = "macos" ] && [[ " $versions " == *" 4.5.0 "* ]]; then os_versions="$(norm "$versions 4.5.2")"; fi
+            for version in $os_versions; do
               case "$version" in 4.2*|4.3*) tfm="net6.0" ;; *) tfm="net8.0" ;; esac
               for language in $languages; do
                 # 4.2.2 is a GDScript row, as on Linux: it covers the reload path the
