@@ -391,12 +391,13 @@ the same signal are left untouched. No action needed on 4.3.
 before the set (a no-op off Godot 4.3) so it can't reintroduce the crash — see
 [extending.md](extending.md).
 
-### Editor crash at startup on macOS (Godot 4.5.0 engine issue)
+### Editor crash at startup or exit on macOS (Godot 4.5.0 engine issue)
 
 On macOS, **Godot 4.5.0** can abort while the editor starts or while it quits,
 printing `libc++abi: Pure virtual function called!` (the terminal or crash report
-shows `Abort trap: 6`). It occurs with or without this toolkit, in both the
-standard and the .NET (mono) builds. Nothing the toolkit runs triggers it at start.
+shows `Abort trap: 6`). It is an engine bug, not caused by this toolkit: it also
+happens in an empty project with no addons. It has been seen in both the standard
+and the .NET (mono) builds. Nothing the toolkit runs triggers it at start.
 
 At start, it only happens while the editor rebuilds its help cache. That is the
 first launch after installing 4.5.0, the first launch after the cache
@@ -406,7 +407,7 @@ after running a different 4.5 build (for example switching between the standard 
 can hit it too. It is a race, so it does not fire every time. Once one launch gets
 through, the cache is saved and later launches skip the rebuild.
 
-At exit, it has been seen in the .NET editor as it quits.
+It has also been seen as the .NET editor quits.
 
 The cause is an engine bug in the iOS/visionOS export platform's device-poll thread,
 fixed in Godot **4.5.1**. **Use 4.5.2.** On 4.5.0, launch the editor again; at
