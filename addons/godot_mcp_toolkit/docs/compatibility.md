@@ -393,25 +393,28 @@ before the set (a no-op off Godot 4.3) so it can't reintroduce the crash — see
 
 ### Editor crash at startup on macOS (Godot 4.5.0 engine issue)
 
-On macOS, **Godot 4.5.0** can abort while the editor starts, printing
-`libc++abi: Pure virtual function called!` (the terminal or crash report shows
-`Abort trap: 6`). It happens before any plugin loads, so it occurs with or without
-this toolkit, in both the standard and the .NET (mono) builds.
+On macOS, **Godot 4.5.0** can abort while the editor starts or while it quits,
+printing `libc++abi: Pure virtual function called!` (the terminal or crash report
+shows `Abort trap: 6`). It occurs with or without this toolkit, in both the
+standard and the .NET (mono) builds. Nothing the toolkit runs triggers it at start.
 
-It only happens while the editor rebuilds its help cache. That is the first launch
-after installing 4.5.0, the first launch after the cache
+At start, it only happens while the editor rebuilds its help cache. That is the
+first launch after installing 4.5.0, the first launch after the cache
 (`~/Library/Caches/Godot/editor_doc_cache-4.5.res`) is deleted, and the first launch
 after running a different 4.5 build (for example switching between the standard and
 .NET editors). Headless `--import` and `--export-*` runs that start from a cold cache
 can hit it too. It is a race, so it does not fire every time. Once one launch gets
 through, the cache is saved and later launches skip the rebuild.
 
+At exit, it has been seen in the .NET editor as it quits.
+
 The cause is an engine bug in the iOS/visionOS export platform's device-poll thread,
-fixed in Godot **4.5.1**. **Use 4.5.1 or later.** On 4.5.0, launch the editor again;
-one successful launch saves the cache. Upstream reports:
+fixed in Godot **4.5.1**. **Use 4.5.2.** On 4.5.0, launch the editor again; at
+start, one successful launch saves the cache. Upstream reports:
 [#111416](https://github.com/godotengine/godot/issues/111416),
 [#110634](https://github.com/godotengine/godot/issues/110634); fix:
-[#110485](https://github.com/godotengine/godot/pull/110485) (cherry-picked for 4.5.1).
+[#110485](https://github.com/godotengine/godot/pull/110485), cherry-picked for 4.5.1
+as [41acf6a75d](https://github.com/godotengine/godot/commit/41acf6a75d522405d5f25aee96914b240190d408).
 
 ## UI surface compatibility matrix
 
