@@ -39,7 +39,7 @@ static func run(testing: Testing) -> void:
 	_test_toolkit_entry(testing, actions)
 
 
-# An update in flight in a scratch folder: the update folder with [param journal_text] as its
+# An update in flight in a scratch folder: the update folder with journal_text as its
 # journal, and an addon folder beside it, not made yet.
 static func _scenario(purpose: String, journal_text: String) -> Dictionary:
 	var root := UpdateFixtures.scratch(purpose)
@@ -56,7 +56,7 @@ static func _scenario(purpose: String, journal_text: String) -> Dictionary:
 	}
 
 
-# A toolkit folder at [param folder] whose plugin.cfg names [param version].
+# A toolkit folder whose plugin.cfg names the given version.
 static func _write_toolkit(folder: String, version: String) -> void:
 	FolderFiles.write_checked(folder.path_join("plugin.cfg"), UpdateFixtures.plugin_config(version).to_utf8_buffer())
 	FolderFiles.write_checked(folder.path_join("core/a.gd"), ("# " + version).to_utf8_buffer())
@@ -125,7 +125,7 @@ static func _test_file_facts(testing: Testing, actions: GDScript) -> void:
 	print("")
 
 
-# Writes a stage holding [param files] and the list of their hashes. Returns the list's hash.
+# Writes a stage holding files and the list of their hashes. Returns the list's hash.
 static func _write_stage(stage: String, files: Dictionary) -> String:
 	var listed := {}
 	for path: String in files:
@@ -329,7 +329,7 @@ static func _test_restore_after_rename_out(testing: Testing, actions: GDScript) 
 	print("")
 
 
-# A copy of every file under [param from] at [param to]: the disk as a crash at that moment
+# A copy of every file in one folder into another: the disk as a crash at that moment
 # leaves it.
 static func _copy_files(from: String, to: String) -> void:
 	for path: String in FolderFiles.list(from):

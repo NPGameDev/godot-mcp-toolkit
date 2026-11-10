@@ -15,6 +15,7 @@ const _OTHER_SERVER := "0.9.0"
 static func run(testing: Testing) -> void:
 	_test_settle_of_an_installed_release(testing)
 	_test_settle_of_a_failed_release(testing)
+	_test_settle_of_a_restored_release(testing)
 	_test_not_installed(testing)
 
 
@@ -53,6 +54,21 @@ static func _test_settle_of_a_failed_release(testing: Testing) -> void:
 		"reason": "a file was locked",
 		"server_changed": false,
 	}, "failed, staged with another server → failed with its reason, server unchanged")
+	print("")
+
+
+static func _test_settle_of_a_restored_release(testing: Testing) -> void:
+	testing.begin("Update notice: a release the recovery plugin took back is marked restored")
+	var settled := _settled(VersionUtils.COMPATIBLE_SERVER_VERSION, "version 1.9.0 did not load in Godot 4.2")
+	settled["restored"] = true
+	testing.eq(UpdateNotice.of_settle(settled, false), {
+		"kind": "failed",
+		"version": "1.9.0",
+		"from_version": "1.1.0",
+		"reason": "version 1.9.0 did not load in Godot 4.2",
+		"server_changed": false,
+		"restored": true,
+	}, "restored → failed, with the settle's reason and the restored mark")
 	print("")
 
 

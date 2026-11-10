@@ -1,8 +1,9 @@
 @tool
 extends EditorExportPlugin
-## Auto-strips godot_mcp_toolkit addon files, the self-update's folder, GDScript
-## extensions, and res://.mcp.json from exported builds. C# extensions compile into
-## .NET assemblies and cannot be stripped per-class — see docs/extending.md.
+## Auto-strips godot_mcp_toolkit addon files, the self-update's and the recovery
+## plugin's folders, GDScript extensions, and res://.mcp.json from exported builds. C#
+## extensions compile into .NET assemblies and cannot be stripped per-class — see
+## docs/extending.md.
 ## Registered by plugin.gd; prevents MCP code shipping in game PCKs.
 ##
 ## The strip holds in every Script Export Mode because its plugin name sorts
@@ -89,6 +90,11 @@ func _export_file(path: String, _type: String, _features: PackedStringArray) -> 
 	# a scene that references one fails at load. These paths stay out of the leak flags,
 	# which describe the live addon.
 	if FileGuard.is_update_folder(path):
+		skip()
+		return
+	# The recovery plugin is editor-only and lives in a dot-folder of its own while an
+	# update is in flight, so the same dependency-walk gap applies.
+	if FileGuard.is_recovery_folder(path):
 		skip()
 		return
 	if path == _MCP_JSON_PATH:

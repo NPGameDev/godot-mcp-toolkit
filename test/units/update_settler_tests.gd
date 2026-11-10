@@ -19,6 +19,8 @@ const _RELEASE := {"core/a.gd": "new a", "core/b.gd": "new b"}
 const _OLD_BACKUP := "backup-1.0.0"
 const _KEEP_BACKUP := "mcp_toolkit/updates/keep_backup"
 const _NOT_WHOLE := "the stage or its zip is not whole"
+# The applying time the apply-window rows stamp; each row's start is this plus its age.
+const _APPLYING_AT := 1794300000
 
 
 static func run(testing: Testing) -> void:
@@ -31,6 +33,8 @@ static func run(testing: Testing) -> void:
 	_test_applying_at_from_stage_not_whole(testing)
 	_test_applying_at_another_version(testing)
 	_test_applying_missing(testing)
+	_test_applying_still_running(testing)
+	_test_applying_ended(testing)
 	_test_verified(testing)
 	_test_staged_at_to_or_later(testing)
 	_test_staged_older_whole(testing)
@@ -41,7 +45,9 @@ static func run(testing: Testing) -> void:
 	_test_applied_at_to(testing)
 	_test_applied_at_another_version(testing)
 	_test_applied_missing(testing)
+	_test_applied_after_an_unfinished_restore(testing)
 	_test_not_applied_zip_gone(testing)
+	_test_not_applied_restored(testing)
 	_test_not_applied_restages(testing)
 	_test_not_applied_check_fails(testing)
 	_test_not_applied_reads_the_chain(testing)
@@ -74,12 +80,27 @@ static func _staged(purpose: String, state: String, installed_version: String = 
 	return scenario
 
 
-# What a real swap leaves, the journal then set to `state`.
+# What a real swap leaves, the journal then set to `state`. Its applying time is an hour
+# back, so the settle takes the swap as ended rather than still running.
 static func _swapped(purpose: String, state: String) -> Dictionary:
 	var scenario := _staged(purpose, UpdateJournal.STAGED)
 	UpdateApplier.apply_pending(scenario["options"])
+	_set_applying_at(scenario, int(Time.get_unix_time_from_system()) - 3600)
 	_set_state(scenario, state)
 	return scenario
+
+
+static func _set_applying_at(scenario: Dictionary, unix_time: int) -> void:
+	var journal := UpdateJournal.read(scenario["updates"])
+	journal["applying_at"] = unix_time
+	UpdateJournal.write(journal, scenario["updates"])
+
+
+# The scenario's options for a settle that takes `now` as the Unix time.
+static func _at(scenario: Dictionary, now: int) -> Dictionary:
+	var options: Dictionary = (scenario["options"] as Dictionary).duplicate()
+	options["now"] = now
+	return options
 
 
 # What a stage mismatch at the exit leaves: no stage, the zip kept, a reason.
@@ -312,6 +333,57 @@ static func _test_applying_missing(testing: Testing) -> void:
 	print("")
 
 
+# A start within a minute of the applier's stamp, either way, may come while another
+# editor's exit is still swapping the folders.
+static func _test_applying_still_running(testing: Testing) -> void:
+	testing.begin("Update settler: applying, stamped within a minute either way: an apply is in progress")
+	var rechecks := {10: 51, 60: 1, -10: 71, -60: 121}
+	for age: int in rechecks:
+		var scenario := _swapped("settle_running_%d" % age, UpdateJournal.APPLYING)
+		_set_applying_at(scenario, _APPLYING_AT)
+		var journal_path := str(scenario["updates_path"]).path_join("journal.json")
+		var before := FileAccess.get_file_as_string(journal_path)
+		var result := UpdateSettler.settle(_at(scenario, _APPLYING_AT + age))
+		var after := FileAccess.get_file_as_string(journal_path)
+		var left := _left(scenario)
+		UpdateFixtures.remove_scenario(scenario)
+		testing.eq(result["report"], "applying", "%d s → an apply is in progress" % age)
+		testing.eq(result.get("recheck_sec", -1), rechecks[age], "%d s → settle again once the minute is past" % age)
+		testing.eq(after, before, "%d s → the journal untouched" % age)
+		testing.eq(left, _left_as("applying", false, true, "1.2.0"), "%d s → every folder as it was" % age)
+
+	var between := _staged("settle_running_between", UpdateJournal.APPLYING)
+	_set_applying_at(between, _APPLYING_AT)
+	DirAccess.rename_absolute(str(between["addon_path"]), str(between["updates_path"]).path_join("backup-1.1.0"))
+	var between_result := UpdateSettler.settle(_at(between, _APPLYING_AT + 10))
+	var between_left := _left(between)
+	UpdateFixtures.remove_scenario(between)
+	testing.eq(between_result["report"], "applying", "the live folder away between the renames → in progress too")
+	testing.eq(between_left, _left_as("applying", true, true, ""), "and nothing is touched")
+	print("")
+
+
+static func _test_applying_ended(testing: Testing) -> void:
+	testing.begin("Update settler: applying, stamped over a minute either way, or never: settled at once")
+	for age: int in [61, -61]:
+		var scenario := _swapped("settle_ended_%d" % age, UpdateJournal.APPLYING)
+		_set_applying_at(scenario, _APPLYING_AT)
+		var result := UpdateSettler.settle(_at(scenario, _APPLYING_AT + age))
+		var left := _left(scenario)
+		UpdateFixtures.remove_scenario(scenario)
+		testing.eq(result["report"], UpdateSettler.UPDATED, "%d s → the swap ended, so the update is reported" % age)
+		testing.eq(left, _left_as("", false, false, "1.2.0"), "%d s → and the journal and the zip go" % age)
+
+	var unstamped := _swapped("settle_unstamped", UpdateJournal.APPLYING)
+	var journal := UpdateJournal.read(unstamped["updates"])
+	journal.erase("applying_at")
+	UpdateJournal.write(journal, unstamped["updates"])
+	var unstamped_result := UpdateSettler.settle(_at(unstamped, _APPLYING_AT))
+	UpdateFixtures.remove_scenario(unstamped)
+	testing.eq(unstamped_result["report"], UpdateSettler.UPDATED, "no applying time, as an older applier writes → settled at once")
+	print("")
+
+
 static func _test_verified(testing: Testing) -> void:
 	testing.begin("Update settler: verified, any live folder")
 	for installed: String in ["1.1.0", "1.2.0"]:
@@ -457,6 +529,25 @@ static func _test_applied_missing(testing: Testing) -> void:
 	print("")
 
 
+# A restore that put the backup back but ended before its journal write leaves the journal
+# applied over the version the update came from.
+static func _test_applied_after_an_unfinished_restore(testing: Testing) -> void:
+	testing.begin("Update settler: applied, the backup put back in place of the release")
+	var scenario := _swapped("settle_applied_put_back", UpdateJournal.APPLIED)
+	var updates_path := str(scenario["updates_path"])
+	DirAccess.rename_absolute(str(scenario["addon_path"]), updates_path.path_join("broken-1.2.0"))
+	DirAccess.rename_absolute(updates_path.path_join("backup-1.1.0"), str(scenario["addon_path"]))
+	var result := UpdateSettler.settle(scenario["options"])
+	var left := _left(scenario)
+	var broken_gone := not UpdateFixtures.scenario_has_folder(scenario, "broken-1.2.0")
+	UpdateFixtures.remove_scenario(scenario)
+	testing.eq(result["report"], UpdateSettler.FAILED, "reported as not installed, never as updated")
+	testing.eq(result["reason"], "the editor started version 1.1.0", "naming the version put back")
+	testing.eq(left, _left_as("", false, false, "1.1.0"), "the journal and the zip go")
+	testing.ok(broken_gone, "and so does the release that did not load")
+	print("")
+
+
 static func _test_not_applied_zip_gone(testing: Testing) -> void:
 	testing.begin("Update settler: not applied, the zip gone")
 	var scenario := _mismatched("settle_no_zip")
@@ -467,6 +558,25 @@ static func _test_not_applied_zip_gone(testing: Testing) -> void:
 	testing.eq(result["report"], UpdateSettler.FAILED, "reported")
 	testing.eq(result["reason"], "the stage does not match the release", "with the journal's reason")
 	testing.eq(left, _left_as("", false, false, "1.1.0"), "the journal goes, the backup stays")
+	print("")
+
+
+# The recovery plugin put the old version back over a release that did not load. The zip is
+# still there, and staging it again would only fail the same way.
+static func _test_not_applied_restored(testing: Testing) -> void:
+	testing.begin("Update settler: not applied after a restore: reported, never staged again")
+	var scenario := _mismatched("settle_restored")
+	var journal := UpdateJournal.read(scenario["updates"])
+	journal["reason"] = "version 1.2.0 did not load in Godot 4.2"
+	journal["restored"] = true
+	UpdateJournal.write(journal, scenario["updates"])
+	var result := UpdateSettler.settle(scenario["options"])
+	var left := _left(scenario)
+	UpdateFixtures.remove_scenario(scenario)
+	testing.eq(result, {"report": "failed", "from": "1.1.0", "to": "1.2.0",
+			"reason": "version 1.2.0 did not load in Godot 4.2", "attempts": 0, "compatible_server": "1.1.0",
+			"restored": true}, "failed, carrying that the release was put back")
+	testing.eq(left, _left_as("", false, false, "1.1.0"), "the journal and the zip go, no stage is made, the backup stays")
 	print("")
 
 

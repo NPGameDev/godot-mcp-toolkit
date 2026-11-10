@@ -48,7 +48,7 @@ static func _shared(record: Dictionary) -> Dictionary:
 	return shared
 
 
-# Both readers' records of the journal text [param text], in a folder of its own.
+# Both readers' records of the given journal text, in a folder of its own.
 static func _read_both(reader: GDScript, purpose: String, text: String) -> Array[Dictionary]:
 	var folder := UpdateFixtures.scratch(purpose)
 	_write_journal(folder, text)
@@ -161,7 +161,7 @@ static func _test_plugin_version(testing: Testing, reader: GDScript) -> void:
 	print("")
 
 
-# A journal as the reader returns it; applying_at only when [param applying_at] is set.
+# A journal as the reader returns it; applying_at only when that argument is set.
 static func _journal(state: String, applying_at: int = -1) -> Dictionary:
 	var journal := {"state": state, "from": "1.1.0", "to": "1.2.0", "backup": "backup-1.1.0",
 			"expected_tree_hash": PINNED_HASH}
@@ -352,7 +352,7 @@ static func _test_stays_out(testing: Testing, reader: GDScript) -> void:
 	print("")
 
 
-# Writes a stage holding [param files] and the list of their hashes. Returns the list's hash.
+# Writes a stage holding files and the list of their hashes. Returns the list's hash.
 static func _write_stage(stage: String, files: Dictionary) -> String:
 	var listed := {}
 	for path: String in files:

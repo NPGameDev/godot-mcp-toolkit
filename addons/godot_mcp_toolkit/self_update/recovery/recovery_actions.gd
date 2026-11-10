@@ -280,7 +280,7 @@ static func _reach(on_step: Callable, step: String) -> void:
 		on_step.call(step)
 
 
-# Writes [param changes] over the journal and reads it back. Every other key stays as it
+# Writes changes over the journal and reads it back. Every other key stays as it
 # is, those a later version adds included. Returns whether the file now holds it.
 static func _write_journal(update_folder: String, changes: Dictionary) -> bool:
 	var path := ProjectSettings.globalize_path(update_folder).path_join(_JOURNAL_FILE)
@@ -302,7 +302,7 @@ static func _write_journal(update_folder: String, changes: Dictionary) -> bool:
 	return FileAccess.get_file_as_string(path) == text
 
 
-# Whether [param folder] is a link, as far as this engine can tell: DirAccess.is_link from
+# Whether folder is a link, as far as this engine can tell: DirAccess.is_link from
 # 4.3, else `test -L` on Unix and `fsutil reparsepoint query` on Windows, one process per
 # call. Anything but a clear "not a link" counts as one, and so does a parent that does not
 # open.

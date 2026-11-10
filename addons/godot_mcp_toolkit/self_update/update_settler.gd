@@ -34,20 +34,29 @@ const WAITING := "waiting"
 const UPDATED := "updated"
 ## The update did not install, and its [code]reason[/code] says why.
 const FAILED := "failed"
+## Another editor's exit may still be applying the update, so nothing was settled;
+## [code]recheck_sec[/code] says when to settle again.
+const APPLYING := "applying"
 
 const _STAGE_NOT_WHOLE := "the stage or its zip is not whole"
+# How long after the applier's stamp, either way, an apply may still be running. The
+# recovery plugin waits on the same window.
+const _APPLY_WINDOW_SEC := 60
 
 
 ## Settles the update folder.
 ##
 ## [param options] replaces what this reads, for tests, under the names
-## [method UpdateApplier.apply_pending] takes.[br]
+## [method UpdateApplier.apply_pending] takes, plus [code]now[/code] (the Unix time).[br]
 ## [br]
 ## Returns [code]{"report": String, "from": String, "to": String, "reason": String,
 ## "attempts": int, "compatible_server": String}[/code]: [constant NOTHING],
-## [constant WAITING], [constant UPDATED] or [constant FAILED], then the journal's fields,
-## since the journal may be gone by the time this returns. [code]reason[/code] is set on a
-## failure, and on a wait that an exit has already postponed.[br]
+## [constant WAITING], [constant UPDATED], [constant FAILED] or [constant APPLYING], then
+## the journal's fields, since the journal may be gone by the time this returns.
+## [code]reason[/code] is set on a failure, and on a wait that an exit has already
+## postponed. [constant APPLYING] adds [code]"recheck_sec": int[/code] and leaves the
+## folder untouched. A failure after the recovery plugin put the old version back adds
+## [code]"restored": true[/code].[br]
 ## [br]
 ## The one re-stage runs to its end inside this call, one [StageStepper] step after
 ## another. It finishes once per update, while the editor is starting; a kill before it
@@ -63,6 +72,13 @@ static func settle(options: Dictionary = {}) -> Dictionary:
 		return _clear_quietly(journal, "a kill before staging finished", update_folder)
 	if state == UpdateJournal.NOT_APPLIED:
 		return _settle_not_applied(journal, addon_folder, update_folder, options)
+	# Checked before the live folder is read, which a running apply may have renamed away.
+	if state == UpdateJournal.APPLYING:
+		var recheck_sec := _seconds_to_wait(journal, int(options.get("now", Time.get_unix_time_from_system())))
+		if recheck_sec > 0:
+			var report := _report(APPLYING, journal, "")
+			report["recheck_sec"] = recheck_sec
+			return report
 
 	var installed := UpdateApplier.installed_version(addon_folder)
 	# A folder with no readable version cannot run the toolkit: most likely a kill between
@@ -120,6 +136,10 @@ static func _settle_updated(journal: Dictionary, update_folder: String) -> Dicti
 static func _settle_not_applied(
 		journal: Dictionary, addon_folder: String, update_folder: String, options: Dictionary) -> Dictionary:
 	var to_version := str(journal["to"])
+	# The recovery plugin put the old version back because this release did not load: a
+	# re-stage would fail the same way.
+	if bool(journal.get("restored", false)):
+		return _clear_and_report(journal, str(journal["reason"]), update_folder)
 	if bool(journal.get("restaged", false)) or not FileAccess.file_exists(_archive(journal, update_folder)):
 		return _clear_and_report(journal, str(journal["reason"]), update_folder)
 	var check := UpdateApplier.check_release(to_version, addon_folder, update_folder, options)
@@ -200,7 +220,7 @@ static func _log(journal: Dictionary, line: String, update_folder: String) -> vo
 
 
 static func _report(report: String, journal: Dictionary, reason: String) -> Dictionary:
-	return {
+	var result := {
 		"report": report,
 		"from": journal["from"],
 		"to": journal["to"],
@@ -208,3 +228,18 @@ static func _report(report: String, journal: Dictionary, reason: String) -> Dict
 		"attempts": journal["attempts"],
 		"compatible_server": journal["compatible_server"],
 	}
+	if report == FAILED and bool(journal.get("restored", false)):
+		result["restored"] = true
+	return result
+
+
+# Seconds until an apply stamped in `journal` is past its window, measured from `now`; 0 when
+# it already is. A journal with no applying time comes from an applier that writes none, so
+# no apply is known to run.
+static func _seconds_to_wait(journal: Dictionary, now: int) -> int:
+	if not journal.has("applying_at"):
+		return 0
+	var age := now - int(journal["applying_at"])
+	if age > _APPLY_WINDOW_SEC or age < -_APPLY_WINDOW_SEC:
+		return 0
+	return _APPLY_WINDOW_SEC + 1 - age

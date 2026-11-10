@@ -34,6 +34,7 @@ static func run(testing: Testing) -> void:
 	_test_recovery_entry_missing(testing)
 	_test_recovery_entry_read_last(testing)
 	_test_project_file_unreadable(testing)
+	_test_project_file_by_default(testing)
 	_test_addon_folder_cannot_move(testing)
 	_test_stage_mismatches(testing)
 	_test_second_mismatch(testing)
@@ -428,6 +429,24 @@ static func _test_project_file_unreadable(testing: Testing) -> void:
 				"%s → postponed, with the reason" % label)
 		testing.eq(journal["attempts"], 1, "%s → one attempt counted" % label)
 		testing.ok(version == "1.1.0" and stage_kept, "%s → nothing moved" % label)
+	print("")
+
+
+# Without the option the apply reads the project's own project.godot, which in the test
+# project enables only the toolkit, so the apply waits.
+static func _test_project_file_by_default(testing: Testing) -> void:
+	testing.begin("Update applier: the project's own project.godot by default")
+	var scenario := _staged("apply_default_project_file")
+	var options: Dictionary = scenario["options"]
+	options.erase("project_file")
+	var result := UpdateApplier.apply_pending(options)
+	var journal := UpdateJournal.read(scenario["updates"])
+	var version := _version(scenario["addon"])
+	var stage_kept := UpdateFixtures.scenario_has_folder(scenario, "stage")
+	UpdateFixtures.remove_scenario(scenario)
+	testing.eq(result, {"state": "staged", "reason": "the recovery plugin is not enabled"}, "postponed, with the reason")
+	testing.eq(journal["attempts"], 1, "one attempt counted")
+	testing.ok(version == "1.1.0" and stage_kept, "nothing moved")
 	print("")
 
 

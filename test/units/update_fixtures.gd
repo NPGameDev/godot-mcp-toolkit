@@ -16,6 +16,7 @@ const UpdateCheckRunner := preload("res://addons/godot_mcp_toolkit/versioning/up
 const Consent := preload("res://addons/godot_mcp_toolkit/core/consent.gd")
 const InstallMode := preload("res://addons/godot_mcp_toolkit/self_update/install_mode.gd")
 const EditorRestartProbe := preload("res://addons/godot_mcp_toolkit/self_update/editor_restart_probe.gd")
+const RecoveryFiles := preload("res://addons/godot_mcp_toolkit/self_update/recovery_files.gd")
 
 ## Where the installer reads the host that stands in for GitHub.
 const HOST_ENV := "GODOT_MCP_UPDATE_CHECK_HOST"
@@ -367,7 +368,8 @@ static func stage_tampered(
 ## One installer scenario's world: the update check runner's cache naming
 ## [param latest], consent given, the install mode [param mode], a scratch addon at
 ## [param installed], a scratch update folder, a scratch project file whose saved plugins
-## hold the recovery plugin, and the installer's options. The
+## hold the recovery plugin, a [RecoveryStandIn] for the recovery plugin's files, and the
+## installer's options. The
 ## runner's cache path is fixed, so its file is saved here and put back by
 ## [method end_world].
 static func begin_world(purpose: String, latest: String, mode: String, installed: String) -> Dictionary:
@@ -389,6 +391,8 @@ static func begin_world(purpose: String, latest: String, mode: String, installed
 	# Loaded, not preloaded: trust_fixtures.gd preloads this file.
 	var trust_fixtures: GDScript = load("res://test/units/trust_fixtures.gd")
 	var trust_document: String = trust_fixtures.call("first_document", [key()])
+	var recovery := RecoveryStandIn.new()
+	recovery.update_folder = updates
 	return {
 		"cache_path": cache_path,
 		"saved_cache": saved_cache,
@@ -403,6 +407,7 @@ static func begin_world(purpose: String, latest: String, mode: String, installed
 			"trust_store": scratch(purpose + "_trust"),
 			"guard_facts": {"toolkit_repository": false},
 			"project_settings": ModeSettings.new(mode),
+			"recovery": recovery,
 		},
 	}
 
@@ -516,6 +521,30 @@ class RestartProbeStandIn extends EditorRestartProbe:
 
 	func restart() -> void:
 		restarts += 1
+
+
+## A stand-in for the recovery plugin's files, so a case writes no plugin and saves no
+## project file. It counts the installs and removes it is asked for and keeps the state
+## the journal in [member update_folder] held at each install; each install returns
+## [member failure], and [member in_place] is what [method is_in_place] reports.
+class RecoveryStandIn extends RecoveryFiles:
+	var update_folder: String = ""
+	var failure: String = ""
+	var in_place: bool = true
+	var installs: int = 0
+	var removes: int = 0
+	var journal_states := PackedStringArray()
+
+	func install() -> String:
+		installs += 1
+		journal_states.append(str(UpdateJournal.read(update_folder)["state"]))
+		return failure
+
+	func remove() -> void:
+		removes += 1
+
+	func is_in_place() -> bool:
+		return in_place
 
 
 ## A loopback HTTP server standing in for GitHub's release downloads, for the

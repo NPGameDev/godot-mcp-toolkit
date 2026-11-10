@@ -66,6 +66,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	await _test_stage_shows_its_own_state_text(testing, tree)
 	_test_postponed_update_says_why(testing, tree)
 	_test_headless_start_shows_no_reason(testing, tree)
+	_test_unsaved_recovery_plugin_shows(testing, tree)
 	_test_close_hides_staged_for_the_session(testing, tree)
 	_test_closed_staged_stays_hidden(testing, tree)
 	_test_closed_staged_shows_once_staged_again(testing, tree)
@@ -78,6 +79,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_notice_stopped_pin_write_offers_button(testing, tree)
 	_test_notice_keeps_the_button_for_a_fixed_malformed_file(testing, tree)
 	_test_notice_failed(testing, tree)
+	_test_notice_restored(testing, tree)
 	await _test_toast_once_for_verified(testing, tree)
 	await _test_no_toast_for_shown_release(testing, tree)
 	await _test_no_toast_for_restored_release(testing, tree)
@@ -723,6 +725,29 @@ static func _test_headless_start_shows_no_reason(testing: Testing, tree: SceneTr
 	print("")
 
 
+# The start puts back a recovery plugin the staged update needs, and here the project file
+# refuses its saved entry.
+static func _test_unsaved_recovery_plugin_shows(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a staged update whose recovery plugin could not be saved says so")
+	var world := UpdateFixtures.begin_world("badge_recovery_unsaved", "1.9.0", "ask", "1.1.0")
+	(world["options"] as Dictionary)["restart_probe"] = UpdateFixtures.RestartProbeStandIn.new()
+	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var recovery: UpdateFixtures.RecoveryStandIn = (world["options"] as Dictionary)["recovery"]
+	recovery.in_place = false
+	recovery.failure = "project.godot could not be saved"
+	var nodes := _start(world, tree)
+	var state := (nodes["installer"] as UpdateInstaller).state()
+	var status := _text(nodes["badge"], "Status")
+	_end(world, nodes)
+	testing.eq(state, "ready", "the update is still staged")
+	testing.ok(status.begins_with("1.9.0 is ready. It installs when you close the editor."),
+			"the staged update's line comes first")
+	testing.ok(status.ends_with(
+			"\nThe update may not install when you close the editor: project.godot could not be saved."),
+			"and a last line says project.godot could not be saved")
+	print("")
+
+
 static func _test_close_hides_staged_for_the_session(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update badge: closing a staged release hides it for this session")
 	var world := UpdateFixtures.begin_world("badge_close_staged", "1.9.0", "ask", "1.1.0")
@@ -1077,6 +1102,39 @@ static func _test_notice_failed(testing: Testing, tree: SceneTree) -> void:
 	testing.eq(status, "Could not write core/a.gd. Version 1.1.0 is still installed. Install log: %s" % UpdateFolder.log_path(world["updates"]),
 			"the status line gives the reason as a sentence, the version kept and the log")
 	testing.ok(not link_shown, "no release notes link")
+	print("")
+
+
+# The recovery plugin put 1.1.0 back over a 1.9.0 that did not load. The start dismisses
+# 1.9.0, so the badge stops offering a release that would fail the same way. The control
+# world's failure was not a restore and keeps 1.9.0 offered.
+static func _test_notice_restored(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Update badge: a release the recovery plugin took back is reported and no longer offered")
+	var server := UpdateFixtures.LoopbackReleaseServer.new({})
+	var previous_host := UpdateFixtures.set_host(server.host())
+	var world := UpdateFixtures.begin_world("badge_restored", "1.9.0", "ask", "1.1.0")
+	UpdateJournal.write({"state": "not_applied", "to": "1.9.0", "from": "1.1.0",
+			"reason": "version 1.9.0 did not load in Godot 4.2", "restored": true}, world["updates"])
+	var nodes := _start(world, tree)
+	var status := _text(nodes["badge"], "Status")
+	var offered := (nodes["runner"] as UpdateCheckRunner).badge_version()
+	var state := (nodes["installer"] as UpdateInstaller).state()
+	_end(world, nodes)
+	var control := UpdateFixtures.begin_world("badge_not_restored", "1.9.0", "ask", "1.1.0")
+	UpdateJournal.write({"state": "not_applied", "to": "1.9.0", "from": "1.1.0",
+			"reason": "could not write core/a.gd"}, control["updates"])
+	var control_nodes := _start(control, tree)
+	var control_offered := (control_nodes["runner"] as UpdateCheckRunner).badge_version()
+	_end(control, control_nodes)
+	server.stop()
+	UpdateFixtures.restore_host(previous_host)
+	testing.eq(status, ("Version 1.9.0 did not load in Godot 4.2, so 1.1.0 was put back and is installed. See "
+			+ "\"The toolkit is off after an update\" in the troubleshooting guide (docs/troubleshooting.md). "
+			+ "Install log: %s") % UpdateFolder.log_path(world["updates"]),
+			"the status line says what was put back, the troubleshooting steps and the log")
+	testing.eq(offered, "", "the restored release is dismissed, so the badge no longer offers it")
+	testing.eq(state, "idle", "and the installer offers nothing")
+	testing.eq(control_offered, "1.9.0", "a failure the recovery plugin did not restore → still offered")
 	print("")
 
 

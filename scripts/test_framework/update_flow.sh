@@ -159,14 +159,16 @@ ut_warm "${GODOT_BIN}" "${TEMPLATE}" "${WORK}/warm.log" \
 
 # ── The rollback leg's lock ─────────────────────────────────────────────────
 # The exit's first rename moves the toolkit's folder aside. A read-only addons folder
-# refuses it on Linux and macOS, so the update folder is made first: it cannot be made
-# in a read-only folder later. NTFS ignores chmod but refuses to rename a folder while a
-# file in it is open, so on Windows a Python process holds one open until its flag file
-# goes, or for ten minutes at most.
+# refuses it on Linux and macOS, so the update folder and the recovery plugin's folder are
+# made first: staging writes into both, and neither can be made in a read-only folder
+# later. NTFS ignores chmod but refuses to rename a folder while a file in it is open, so
+# on Windows a Python process holds one open until its flag file goes, or for ten minutes
+# at most.
 hold_toolkit() {
   local project="$1" dir="$2"
   if [[ "${OS}" != windows ]]; then
-    mkdir -p "${project}/addons/.godot_mcp_toolkit_update" && chmod a-w "${project}/addons"
+    mkdir -p "${project}/addons/.godot_mcp_toolkit_update" "${project}/addons/.godot_mcp_toolkit_recovery" \
+      && chmod a-w "${project}/addons"
     return
   fi
   HOLD_FLAG="${dir}/hold.flag"

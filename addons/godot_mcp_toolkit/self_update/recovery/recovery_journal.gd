@@ -264,7 +264,7 @@ static func _is_hex_digest(text: String) -> bool:
 	return true
 
 
-# Every file under [param folder], hidden ones included, mapped to its SHA-256; an
+# Every file under folder, hidden ones included, mapped to its SHA-256; an
 # unreadable file maps to an empty string.
 static func _hashes(folder: String) -> Dictionary:
 	var result := {}
