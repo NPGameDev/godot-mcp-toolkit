@@ -112,8 +112,8 @@ everyone on the project shares, so it has to stay visible.
   git
 - any version, in a headless editor
 
-The editor checks these again when it closes, along with the signature and that the
-version is newer, before it moves anything.
+When it closes, the editor checks again the signature, that the version is newer, the
+Godot it needs, and the last four rules above.
 
 ## Unsaved work
 

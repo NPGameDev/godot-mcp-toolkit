@@ -98,8 +98,9 @@ To build the plugin zip by hand:
 
 It produces `dist-plugin/godot-mcp-toolkit-<version>.zip`, whose top-level entry
 is `addons/godot_mcp_toolkit/` (no repo-root noise) and which carries the release
-file list `release_files.sha256`, and `dist-plugin/godot-mcp-toolkit-<version>.update.json`,
-the unsigned update manifest the toolkit's self-update reads (ADR 0029). Each new
+file list `release_files.sha256`. It also writes
+`dist-plugin/godot-mcp-toolkit-<version>.update.json`, the unsigned update manifest
+the toolkit's self-update reads (ADR 0029). Each new
 version is a new AssetLib submission (checklist below).
 
 ---

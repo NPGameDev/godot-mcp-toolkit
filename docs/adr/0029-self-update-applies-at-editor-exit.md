@@ -25,7 +25,7 @@ Measured on 2026-10-26 with toolkit 1.0.4 replaced by 1.1.0 inside a running edi
   members are empty, and `_init`, `_enter_tree` and `_enable_plugin` do not run again. 1.1.0's
   code then ran on the graph 1.0.4's `compose()` built, logging a dock error on every refresh,
   and disabling the plugin afterwards crashed the editor (signal 11) on every version from 4.3.
-  4.2.0 did not reload at all; 4.2.2 reloads a changed script that compiles.
+  Godot 4.2 (the patch was not recorded) did not reload at all.
 - **Writing, then disabling and enabling the plugin.** Only `plugin.gd` loaded anew; the scripts
   it preloads came from the cache, and `compose()` failed with the wrong argument count (4.2 and
   4.7.2). No server came up.
@@ -86,7 +86,7 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
   (`self_update/install_guards.gd`). Those stay links. The exit checks the guards, the signature
   and the version order again before it renames anything.
 - **Signing is offline.** The maintainer signs each release's manifest by hand, against a
-  draft release, with a key kept off GitHub; no workflow ever holds a signing key. Where the
+  draft release, with a key kept off GitHub; no workflow ever holds a trusted release key. Where the
   keys are kept is in [Custody](../dev/trust-chain.md#custody).
 - **The trust chain.** A release embeds a trust document listing root keys and release keys;
   a release key signs manifests, and root keys sign the next document. The client walks each

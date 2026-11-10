@@ -285,8 +285,8 @@ these messages:
   answered with an error. Click **Update** again in a few minutes.
 - **"This release isn't ready to install from the editor yet."** The release is
   out, but its update manifest or signature isn't on GitHub yet. Click
-  **Update** later. If you didn't click, the badge only offers the update and
-  checks again the next time you open the editor.
+  **Update** later. If you didn't click, the badge keeps its links and checks
+  again the next time you open the editor.
 - **"This update failed its security check, so it won't install."** A trust
   document, the release's signature, its manifest or a download's redirect
   didn't pass the check. Your connection isn't the cause. This message has no
@@ -392,9 +392,9 @@ update folder:
    does not take the half-finished update for an update waiting to install.
 3. Open the project again.
 4. If you opened the project on Godot 4.2 while the folder was missing, turn
-   the plugin back on in **Project Settings → Plugins**. Godot 4.2 drops a
-   missing plugin from the enabled list and saves that. Godot 4.3 and later
-   keep it enabled.
+   the plugin back on in **Project Settings → Plugins**. If the plugin is off after you reopen the project, turn it back on in Project
+   Settings → Plugins. When the plugin's folder is missing, Godot 4.2 saves the
+   plugin's removal from the enabled list; in testing, 4.3 and 4.7 did not.
 
 `install.log` in the same folder says which step failed.
 

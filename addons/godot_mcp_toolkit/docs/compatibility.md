@@ -136,8 +136,7 @@ script identity (even across stale/phantom tabs); with an external editor the to
   override, retries can keep failing until a later release fixes this. Godot 4.2.2
   removes this delay. With more than one editor open on 4.2.0 or 4.2.1, the
   multi-editor advice above has you set `GODOT_MCP_LSP_PORT`, so a first call that
-  times out there can keep failing on retry; on 4.2.2 the delay that causes the
-  timeout is gone.
+  times out there can keep failing on retry. Godot 4.2.2 avoids it.
 - **`animationtree_list` — node enumeration needs 4.5+ (4.2–4.4).**
   `AnimationNodeStateMachine.get_node_list()` is a 4.5+ script API, so on 4.2–4.4
   `animationtree_list` returns `nodes: []` and summaries report `nodes_count: 0`.
