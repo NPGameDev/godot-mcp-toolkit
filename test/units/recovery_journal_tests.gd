@@ -1,8 +1,8 @@
 @tool
 extends RefCounted
 ## Unit tests for the recovery plugin's journal reader and decision: it reads every pinned
-## journal as UpdateJournal does and rejects what that rejects, its decision table, when it
-## stays out of an editor, and when a stage may roll forward.
+## journal as UpdateJournal does and rejects what that rejects, its decision table, when a
+## restart is awaited, when it stays out of an editor, and when a stage may roll forward.
 
 const Testing := preload("res://test/units/testing.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
@@ -31,6 +31,8 @@ static func run(testing: Testing) -> void:
 	_test_decide_live_version(testing, reader)
 	_test_decide_finishes_restore(testing, reader)
 	_test_decide_removes_itself(testing, reader)
+	_test_decide_enabled_but_not_started(testing, reader)
+	_test_awaits_restart(testing, reader)
 	_test_stays_out(testing, reader)
 	_test_stage_matches(testing, reader)
 
@@ -207,8 +209,8 @@ static func _test_decide_never(testing: Testing, reader: GDScript) -> void:
 	var restored := _journal("not_applied")
 	restored["restored"] = true
 	testing.eq(_decision(reader, restored, _facts(), now), _act("none"), "not applied and restored → none")
-	testing.eq(_decision(reader, _journal("applied"), _facts({"toolkit_enabled": true}), now), _act("none"),
-			"applied with the toolkit enabled → none")
+	testing.eq(_decision(reader, _journal("applied"), _facts({"toolkit_enabled": true, "live_version": "1.1.0"}), now),
+			_act("none"), "applied with the toolkit enabled and the old version live → none")
 	testing.eq(_decision(reader, _journal("applied"), _facts({"stays_out": true}), now), _act("none"),
 			"applied in an editor it stays out of → none")
 	testing.eq(_decision(reader, aged, _facts({"toolkit_enabled": true}), now), _act("none"),
@@ -322,6 +324,46 @@ static func _test_decide_removes_itself(testing: Testing, reader: GDScript) -> v
 			{"action": "wait", "seconds": 51}, "a young applying, no addon folder → wait, not remove")
 	testing.eq(_decision(reader, _journal("applied"), gone, now), _act("restore"),
 			"applied, no addon folder → restore, not remove")
+	print("")
+
+
+# An editor that enabled the toolkit from a stale class cache and never started it, with the
+# version the journal went to live: only a restart loads it.
+static func _test_decide_enabled_but_not_started(testing: Testing, reader: GDScript) -> void:
+	testing.begin("Recovery decision: applied with the toolkit enabled and its new version live → one more restart")
+	var now := APPLYING_AT + 1000
+	var applied := _journal("applied")
+	var enabled := _facts({"toolkit_enabled": true})
+	testing.eq(_decision(reader, applied, enabled, now), _act("restart_needed"),
+			"applied with the toolkit enabled, the new version live → restart needed")
+	var asked := _facts({"toolkit_enabled": true, "restart_asked": true})
+	testing.eq(_decision(reader, applied, asked, now), _act("manual"),
+			"the same with the restart already asked for → manual")
+	testing.eq(_decision(reader, applied, _facts({"toolkit_enabled": true, "live_version": "1.3.0"}), now),
+			_act("none"), "the toolkit enabled, another version live → none")
+	testing.eq(_decision(reader, applied, _facts({"toolkit_enabled": true, "live_version": ""}), now),
+			_act("none"), "the toolkit enabled, no readable version → none")
+	testing.eq(_decision(reader, applied, _facts({"toolkit_enabled": true, "addon_present": false}), now),
+			_act("none"), "the toolkit enabled, no addon folder → none")
+	testing.eq(_decision(reader, applied, _facts({"toolkit_enabled": true, "stays_out": true}), now),
+			_act("none"), "the toolkit enabled, in an editor it stays out of → none")
+	print("")
+
+
+static func _awaits_restart(reader: GDScript, journal: Dictionary) -> Variant:
+	var awaits: Variant = reader.call("awaits_restart", journal)
+	return awaits
+
+
+static func _test_awaits_restart(testing: Testing, reader: GDScript) -> void:
+	testing.begin("Recovery journal: a restart is awaited while an update is applying, applied or restored")
+	var restored := _journal("not_applied")
+	restored["restored"] = true
+	testing.eq(_awaits_restart(reader, restored), true, "not applied and restored → true")
+	testing.eq(_awaits_restart(reader, _journal("applied")), true, "applied → true")
+	testing.eq(_awaits_restart(reader, _journal("applying", APPLYING_AT)), true, "applying → true")
+	for state: String in ["", "verified", "staged", "not_applied"]:
+		testing.eq(_awaits_restart(reader, _journal(state)), false, "state '%s' → false" % state)
 	print("")
 
 

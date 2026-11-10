@@ -27,10 +27,12 @@
 # Legs (default: all of them):
 #   k1     kill with the journal at applying; the next start settles, the next exit retries
 #   k2     kill between the renames; the next start's recovery plugin moves the whole stage
-#          in, and the toolkit it enables settles the update
+#          in and asks for a restart, answered Later, and the start after that settles the
+#          update
 #   k2_tampered
-#          the same kill, then a stage file changed; the recovery plugin moves A back, and
-#          A's settle reports the stage not whole
+#          the same kill, then a stage file changed; the recovery plugin moves A back and
+#          asks for a restart, answered Later, and A's settle in the start after that
+#          reports the stage not whole
 #   k3     kill after the swap; the next start settles it as applied
 #   clean  A to B with no copy-back; the toolkit starts on B and its icon reimports
 #   scan   a scan requested in the same frame as the close, its walk inside the folder the
@@ -44,7 +46,9 @@
 #          dialog is answered Later, and the start after that runs A
 #   stale_cache
 #          a clean swap to B under A's class cache, which names a class_name script B's
-#          plugin.gd needs where A kept it; the recovery plugin leaves B alone and B runs
+#          plugin.gd needs where A kept it. From Godot 4.3 B runs at once; on 4.2 the
+#          recovery plugin asks for one more restart, answered Later, and the start after
+#          that runs B
 #   held   the toolkit's folder cannot be moved: the apply waits, staged, with nothing
 #          moved, and once the hold goes the next exit applies
 #
@@ -284,10 +288,16 @@ toolkit_entry() { # "saved" when project.godot names the toolkit, else "not save
   if [ "$(text_of "$PROJECT/project.godot" | grep -cF "$TOOLKIT_CFG")" != 0 ]; then echo saved; else echo "not saved"; fi
 }
 
-# The recovery plugin's enable of the toolkit leads to its own disable, which frees it; a
-# call still running in it then prints one of these.
+# The toolkit's start disables the recovery plugin, and the editor frees a disabled plugin
+# at once; a call still running in it then prints one of these.
 check_no_freed_instance() { # <session>
   check "the log names no freed instance" "$(grep -acE 'previously freed|freed instance' "$LEG_LOGS/$1.log")" "0"
+}
+
+# A toolkit enabled in a session whose first scan did not register its classes fails to
+# compile, and the editor prints one of these.
+check_no_compile_error() { # <session>
+  check "the log names no compile error" "$(grep -acE 'Parse Error|Compilation failed' "$LEG_LOGS/$1.log")" "0"
 }
 
 # What a start that found no toolkit left, for a reader of a run where nothing set it right.
@@ -586,44 +596,76 @@ kill_between_renames() {
 }
 
 # The settler sits in the folder that is gone, so the start finds no toolkit. The recovery
-# plugin, outside that folder, moves the whole stage in and enables the toolkit, and the
-# toolkit's start settles the update.
+# plugin, outside that folder, moves the whole stage in and asks for a restart: that start's
+# first scan found no toolkit folder, so the toolkit's classes load only at the next one.
+# The user answers Later, and the start after that settles the update.
 leg_k2() {
   begin_leg k2
   kill_between_renames
 
   backdate_applying
-  session next_start settle=1 wait_toolkit=1
+  session next_start press_later=1
   check "the next start finds no toolkit" "$(note next_start toolkit_folder_present)" "false"
-  check_updated_on_b next_start
+  check "the recovery plugin's dialog says what it did" "$(note next_start recovery_dialog_text)" \
+    "The update to version $B_VERSION stopped partway, and it is now finished. Restart the editor to load it.\\n\\nUntil the restart, the toolkit stays off."
+  check "the dialog was answered Later" "$(note next_start later_pressed)" "1"
+  check "the toolkit stays off" "$(note next_start toolkit_enabled)" "false"
+  check_no_compile_error next_start
   check "the live folder is B, whole" "$(tree_digest "$PROJECT/$ADDON")" "$(tree_digest "$B_TREE")"
-  check "the recovery plugin enables the toolkit" "$(note next_start toolkit_enabled)" "true"
+  check "the journal says applied" "$(journal_state)" "applied"
   check "project.godot keeps the toolkit's entry" "$(toolkit_entry)" "saved"
-  check_recovery_removed
+  check "the recovery folder stays for the next start" "$(exists "$RECOVERY")" "present"
+  check "project.godot keeps the recovery plugin's entry" "$(recovery_entry)" "saved"
   check_no_freed_instance next_start
   record_after_start next_start
+
+  session after settle=1 wait_toolkit=1
+  check_updated_on_b after
+  check "the toolkit is enabled" "$(note after toolkit_enabled)" "true"
+  check "the live folder is B, whole" "$(tree_digest "$PROJECT/$ADDON")" "$(tree_digest "$B_TREE")"
+  check "project.godot keeps the toolkit's entry" "$(toolkit_entry)" "saved"
+  check_no_compile_error after
+  check_recovery_removed
+  check_no_freed_instance after
 }
 
-# A stage that is not whole is never moved in: the recovery plugin puts A back, and A's
-# start settles the update as failed.
+# A stage that is not whole is never moved in: the recovery plugin puts A back and asks for
+# a restart, the user answers Later, and A's start after that settles the update as failed.
 leg_k2_tampered() {
   begin_leg k2_tampered
   kill_between_renames
   printf 'changed after the kill\n' >> "$PROJECT/$UPDATES/stage/$ONLY_IN_B"
 
   backdate_applying
-  session next_start settle=1 wait_toolkit=1
+  session next_start press_later=1
+  check "the next start finds no toolkit" "$(note next_start toolkit_folder_present)" "false"
+  check "the recovery plugin's dialog says what it did" "$(note next_start recovery_dialog_text)" \
+    "The update to version $B_VERSION stopped partway and could not be finished, so $A_VERSION was put back. Restart the editor to load it.\\n\\nUntil the restart, the toolkit stays off."
+  check "the dialog was answered Later" "$(note next_start later_pressed)" "1"
+  check "the toolkit stays off" "$(note next_start toolkit_enabled)" "false"
+  check_no_compile_error next_start
   check "the live folder is A, whole" "$(tree_digest "$PROJECT/$ADDON")" "$A_DIGEST"
   check "the backup went back in place" "$(exists "$UPDATES/backup-$A_VERSION")" "absent"
-  check "the toolkit reached its loaded state" "$(note next_start toolkit_loaded)" "true"
-  check "the recovery plugin enables the toolkit" "$(note next_start toolkit_enabled)" "true"
+  check "the journal still says applying" "$(journal_state)" "applying"
   check "project.godot keeps the toolkit's entry" "$(toolkit_entry)" "saved"
-  check "the running toolkit reports A" "$(note next_start toolkit_version)" "$A_VERSION"
-  check "settle reports the failure" "$(note next_start settle_report)" "failed"
-  check "the failure names the stage" "$(note next_start settle_reason)" "the stage or its zip is not whole"
-  check "the journal is gone" "$(exists "$UPDATES/journal.json")" "absent"
-  check_recovery_removed
+  check "the recovery folder stays for the next start" "$(exists "$RECOVERY")" "present"
+  check "project.godot keeps the recovery plugin's entry" "$(recovery_entry)" "saved"
   check_no_freed_instance next_start
+  record_after_start next_start
+
+  session after settle=1 wait_toolkit=1
+  check "the toolkit reached its loaded state" "$(note after toolkit_loaded)" "true"
+  check "the toolkit is enabled" "$(note after toolkit_enabled)" "true"
+  check "the running toolkit reports A" "$(note after toolkit_version)" "$A_VERSION"
+  check "settle reports the failure" "$(note after settle_report)" "failed"
+  check "the failure names the stage" "$(note after settle_reason)" "the stage or its zip is not whole"
+  check "the live folder is A, whole" "$(tree_digest "$PROJECT/$ADDON")" "$A_DIGEST"
+  check "the backup went back in place" "$(exists "$UPDATES/backup-$A_VERSION")" "absent"
+  check "the journal is gone" "$(exists "$UPDATES/journal.json")" "absent"
+  check "project.godot keeps the toolkit's entry" "$(toolkit_entry)" "saved"
+  check_no_compile_error after
+  check_recovery_removed
+  check_no_freed_instance after
 }
 
 leg_k3() {
@@ -845,28 +887,49 @@ leg_broken() {
 }
 
 # A clean swap to B under the class cache A's editor left, which names a class_name script
-# in a folder B no longer has, while B's plugin.gd needs that class to compile. B loads
-# once the start's scan names the class where B keeps it, so the recovery plugin must
-# leave it alone.
+# in a folder B no longer has, while B's plugin.gd needs that class to compile. From Godot
+# 4.3 the start's first scan names the class where B keeps it before any plugin starts, so
+# B runs at once and the recovery plugin leaves it alone. Godot 4.2 starts the plugins
+# before that scan, so B stays enabled but never starts: the recovery plugin asks for one
+# more restart and moves nothing, the user answers Later, and the start after that runs B.
 leg_stale_cache() {
   begin_leg stale_cache "$OUT/unstaged"
   write_moved_class "$PROJECT/$ADDON/$CLASS_IN_A" || die "could not write the class into A"
   stage_release "$OUT/releases_moved" "$B_MOVED_TREE"
   check "the class cache names the class in A's folder" "$(class_cache_names "$CLASS_IN_A")" "yes"
-  local a_digest
+  local a_digest runs_b=next_start
   a_digest="$(tree_digest "$PROJECT/$ADDON")"
 
   session apply apply=1
   check "the apply finished" "$(note apply apply_state)" "applied"
   check "the class cache still names A's folder after the swap" "$(class_cache_names "$CLASS_IN_A")" "yes"
 
-  session next_start settle=1 wait_toolkit=1
-  check "the recovery plugin is enabled at the start" "$(note next_start recovery_enabled)" "true"
-  check "settle reports the update" "$(note next_start settle_report)" "updated"
+  if [ "$GODOT_MINOR" = "4.2" ]; then
+    session next_start press_later=1
+    check "the recovery plugin is enabled at the start" "$(note next_start recovery_enabled)" "true"
+    check "the recovery plugin's dialog asks for one more restart" "$(note next_start recovery_dialog_text)" \
+      "Version $B_VERSION is installed, and Godot $GODOT_MINOR needs one more restart to load it.\\n\\nUntil the restart, the toolkit does not run."
+    check "the dialog was answered Later" "$(note next_start later_pressed)" "1"
+    check "the toolkit is enabled" "$(note next_start toolkit_enabled)" "true"
+    check "B's toolkit never started" "$(note next_start toolkit_loaded)" "false"
+    check "the recovery plugin left B in place" "$(tree_digest "$PROJECT/$ADDON")" "$(tree_digest "$B_MOVED_TREE")"
+    check "the backup holds A, whole" "$(tree_digest "$PROJECT/$UPDATES/backup-$A_VERSION")" "$a_digest"
+    check "the journal says applied" "$(journal_state)" "applied"
+    check "the recovery folder stays for the next start" "$(exists "$RECOVERY")" "present"
+    check "the class cache names the class in B's folder" "$(class_cache_names "$CLASS_IN_B")" "yes"
+    record_after_start next_start
+    runs_b=after
+    session after settle=1 wait_toolkit=1
+    check_no_compile_error after
+  else
+    session next_start settle=1 wait_toolkit=1
+  fi
+  check "the recovery plugin is enabled at the start" "$(note "$runs_b" recovery_enabled)" "true"
+  check "settle reports the update" "$(note "$runs_b" settle_report)" "updated"
   check "B is on disk" "$(live_version)" "$B_VERSION"
-  check "the toolkit reached its loaded state" "$(note next_start toolkit_loaded)" "true"
-  check "the running toolkit reports B" "$(note next_start toolkit_version)" "$B_VERSION"
-  check "the toolkit is enabled" "$(note next_start toolkit_enabled)" "true"
+  check "the toolkit reached its loaded state" "$(note "$runs_b" toolkit_loaded)" "true"
+  check "the running toolkit reports B" "$(note "$runs_b" toolkit_version)" "$B_VERSION"
+  check "the toolkit is enabled" "$(note "$runs_b" toolkit_enabled)" "true"
   check "the recovery plugin left B in place" "$(tree_digest "$PROJECT/$ADDON")" "$(tree_digest "$B_MOVED_TREE")"
   check "the backup holds A, whole" "$(tree_digest "$PROJECT/$UPDATES/backup-$A_VERSION")" "$a_digest"
   check "the journal is gone" "$(exists "$UPDATES/journal.json")" "absent"

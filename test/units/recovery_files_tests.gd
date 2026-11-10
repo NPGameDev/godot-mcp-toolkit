@@ -26,6 +26,7 @@ static func run(testing: Testing, tree: SceneTree) -> void:
 	_test_stays_while_an_update_is_on_its_way(testing, tree)
 	_test_missing_entry_is_installed_again(testing, tree)
 	_test_project_file_that_will_not_save(testing, tree)
+	_test_landed_update_keeps_no_recovery_plugin(testing, tree)
 
 
 static func _test_leftover_goes(testing: Testing, tree: SceneTree) -> void:
@@ -128,6 +129,28 @@ static func _test_project_file_that_will_not_save(testing: Testing, tree: SceneT
 	testing.eq(note, "The update may not install when you close the editor: project.godot could not be saved.",
 			"the note → project.godot could not be saved")
 	testing.ok(install_log.contains("1.9.0: project.godot could not be saved"), "and the install log says it too")
+	print("")
+
+
+# An applied journal whose delete failed after the settle reported the update: the running
+# toolkit is the version it names, so the recovery plugin has nothing to put back.
+static func _test_landed_update_keeps_no_recovery_plugin(testing: Testing, tree: SceneTree) -> void:
+	testing.begin("Recovery files: an applied journal naming the running version keeps no recovery plugin")
+	var world := _real_world("recovery_landed")
+	_leave_recovery_plugin(world)
+	UpdateJournal.write({"state": UpdateJournal.APPLIED, "to": "1.1.0", "from": "1.0.0", "compatible_server": "1.1.0",
+			"reason": ""}, str(world["updates"]))
+	var updates_path := ProjectSettings.globalize_path(str(world["updates"]))
+	UpdateFixtures.block_delete(updates_path, "journal.json", true)
+	var nodes := UpdateFixtures.start_world(world, tree)
+	var folder_left := _has_folder(world)
+	var entries := _saved_entries(world)
+	var state := str(UpdateJournal.read(str(world["updates"]))["state"])
+	UpdateFixtures.block_delete(updates_path, "journal.json", false)
+	_end(world, nodes)
+	testing.eq(state, "applied", "the journal will not delete, so it still says applied")
+	testing.ok(not folder_left, "the folder goes")
+	testing.eq(entries, PackedStringArray(_ONLY_THE_TOOLKIT), "only the toolkit's entry stays saved")
 	print("")
 
 

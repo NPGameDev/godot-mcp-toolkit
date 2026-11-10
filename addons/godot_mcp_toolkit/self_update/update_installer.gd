@@ -789,7 +789,11 @@ func _on_apply_window_passed() -> void:
 func _reconcile_recovery() -> void:
 	var journal := UpdateJournal.read(_update_folder)
 	var state := str(journal["state"])
-	if state not in [UpdateJournal.STAGED, UpdateJournal.APPLYING, UpdateJournal.APPLIED]:
+	# An applied journal naming the running version outlives the settle only when its delete
+	# failed. Nothing is left to put back, and the recovery plugin would take this running
+	# toolkit for one enabled but never started.
+	var landed := state == UpdateJournal.APPLIED and str(journal["to"]) == _installed_version()
+	if landed or state not in [UpdateJournal.STAGED, UpdateJournal.APPLYING, UpdateJournal.APPLIED]:
 		_recovery.remove()
 	elif not _recovery.is_in_place():
 		_install_recovery(str(journal["to"]))

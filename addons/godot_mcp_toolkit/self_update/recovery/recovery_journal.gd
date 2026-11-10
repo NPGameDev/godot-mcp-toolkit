@@ -27,6 +27,9 @@ const FINISH_RESTORE := "finish_restore"
 const REMOVE_SELF := "remove_self"
 ## [method decide]'s [code]action[/code]: show the manual steps.
 const MANUAL := "manual"
+## [method decide]'s [code]action[/code]: ask for a restart that loads the version already
+## in place.
+const RESTART_NEEDED := "restart_needed"
 
 const _FORMAT := 1
 const _JOURNAL_FILE := "journal.json"
@@ -107,13 +110,18 @@ static func plugin_version(cfg_path: String) -> String:
 ## exists), [code]live_version[/code] (its [code]plugin.cfg[/code] version, empty when
 ## unreadable), [code]backup_present[/code] (the journal's backup folder exists),
 ## [code]stage_whole[/code] (what [method stage_matches] says) and
-## [code]broken_present[/code] (the journal's [code]broken-<to>[/code] folder exists), all
-## bools but the version. A missing [code]stays_out[/code] or [code]toolkit_enabled[/code]
-## reads as true, so the answer is [constant NONE].[br]
+## [code]broken_present[/code] (the journal's [code]broken-<to>[/code] folder exists) and
+## [code]restart_asked[/code] (an earlier start asked for a restart into [code]to[/code]),
+## all bools but the version. A missing [code]stays_out[/code] or
+## [code]toolkit_enabled[/code] reads as true, a missing [code]restart_asked[/code] as
+## false.[br]
 ## [br]
-## It acts only on an [code]applying[/code] journal more than 60 s old or more than 60 s
-## ahead, or an [code]applied[/code] one, in an editor it does not stay out of where the
-## toolkit is not enabled. With the toolkit's folder gone, an [code]applying[/code] journal
+## In an editor it stays out of, the answer is [constant NONE]. Where the toolkit is
+## enabled, only an [code]applied[/code] journal with the version it went [code]to[/code]
+## live gets an answer: the toolkit was enabled but never started, so a restart is asked for
+## once and the manual steps come after that. Otherwise it acts only on an
+## [code]applying[/code] journal more than 60 s old or more than 60 s ahead, or an
+## [code]applied[/code] one. With the toolkit's folder gone, an [code]applying[/code] journal
 ## rolls the whole stage forward, else the backup back, and an [code]applied[/code] one
 ## restores from the backup. With the folder present, either state restores only over the
 ## version it was going [code]to[/code]. Over the version it came [code]from[/code] beside
@@ -127,8 +135,10 @@ static func plugin_version(cfg_path: String) -> String:
 ## Returns [code]{"action": String, "seconds": int}[/code]: one of the action constants,
 ## and for [constant WAIT] the seconds until the journal leaves the 60 s window, else 0.
 static func decide(journal: Dictionary, facts: Dictionary, now: int) -> Dictionary:
-	if bool(facts.get("stays_out", true)) or bool(facts.get("toolkit_enabled", true)):
+	if bool(facts.get("stays_out", true)):
 		return _verdict(NONE)
+	if bool(facts.get("toolkit_enabled", true)):
+		return _verdict(_enabled_but_not_started(journal, facts))
 	var state := str(journal.get("state", ""))
 	var addon_present := bool(facts.get("addon_present", true))
 	if state != _APPLYING and state != _APPLIED:
@@ -142,6 +152,14 @@ static func decide(journal: Dictionary, facts: Dictionary, now: int) -> Dictiona
 		if not addon_present:
 			return _verdict(ROLL_BACK if bool(facts.get("backup_present", false)) else MANUAL)
 	return _verdict(_restore_or_not(journal, facts, addon_present))
+
+
+## Whether [param journal] (the shape [method read] returns) still waits on a restart to
+## load the toolkit: it says [code]restored[/code], [code]applying[/code] or
+## [code]applied[/code]. The toolkit's own settle at that restart clears or rewrites it.
+static func awaits_restart(journal: Dictionary) -> bool:
+	var state := str(journal.get("state", ""))
+	return bool(journal.get("restored", false)) or state == _APPLYING or state == _APPLIED
 
 
 ## Whether the recovery plugin stays out of this editor: [param headless], or
@@ -200,6 +218,21 @@ static func _seconds_to_wait(journal: Dictionary, now: int) -> int:
 	if age > _APPLY_WINDOW_SEC or age < -_APPLY_WINDOW_SEC:
 		return 0
 	return _APPLY_WINDOW_SEC + 1 - age
+
+
+# An enabled toolkit settles the journal as it starts, so an applied journal with its version
+# live means the editor enabled the toolkit and could not start it. Godot 4.2 does that when
+# the update moved a global class: it enables plugins before its first scan, with the classes
+# the old version's class cache names, and that scan writes the cache the next start needs.
+# The one other cause is another editor's apply landing in this start's first seconds, and a
+# restart is still the right advice then. The restart is asked for once, since a second such
+# start has a cause a restart does not fix. Nothing is moved, since the version in place is the one the restart is for.
+static func _enabled_but_not_started(journal: Dictionary, facts: Dictionary) -> String:
+	var live_version := str(facts.get("live_version", ""))
+	if (str(journal.get("state", "")) != _APPLIED or not bool(facts.get("addon_present", true))
+			or live_version.is_empty() or live_version != str(journal.get("to", ""))):
+		return NONE
+	return MANUAL if bool(facts.get("restart_asked", false)) else RESTART_NEEDED
 
 
 # The live folder is put back only over the version that did not load: over the version

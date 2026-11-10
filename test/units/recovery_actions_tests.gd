@@ -2,8 +2,8 @@
 extends RefCounted
 ## Unit tests for the recovery plugin's file actions: rolling an interrupted apply forward or
 ## back, putting the backup back over a version that did not load at each point a crash can
-## leave it, deleting a tree without following a link, and keeping the toolkit's entry in the
-## enabled plugins.
+## leave it, deleting a tree without following a link, keeping the toolkit's entry in the
+## enabled plugins, and marking that a restart was asked for.
 
 const Testing := preload("res://test/units/testing.gd")
 const UpdateJournal := preload("res://addons/godot_mcp_toolkit/self_update/update_journal.gd")
@@ -37,6 +37,7 @@ static func run(testing: Testing) -> void:
 	_test_restore_keeps_broken_until_from_is_live(testing, actions)
 	_test_remove_tree_link(testing, actions)
 	_test_toolkit_entry(testing, actions)
+	_test_restart_asked_marker(testing, actions)
 
 
 # An update in flight in a scratch folder: the update folder with journal_text as its
@@ -507,4 +508,23 @@ static func _test_toolkit_entry(testing: Testing, actions: GDScript) -> void:
 	testing.eq(holds, true, "the saved list holds the toolkit → true")
 	testing.eq(lacks, false, "the saved list lacks the entry → false")
 	testing.eq(no_file, false, "no project file → false")
+	print("")
+
+
+static func _test_restart_asked_marker(testing: Testing, actions: GDScript) -> void:
+	testing.begin("Recovery actions: the marker that a restart was asked for names its version")
+	var folder := UpdateFixtures.scratch("recovery_restart_asked")
+	var absolute := ProjectSettings.globalize_path(folder)
+	DirAccess.make_dir_recursive_absolute(absolute)
+	var before_mark: Variant = actions.call("restart_asked", folder, "1.2.0")
+	var marked: Variant = actions.call("mark_restart_asked", folder, "1.2.0")
+	var marker_written := FileAccess.file_exists(absolute.path_join("restart_asked"))
+	var asked: Variant = actions.call("restart_asked", folder, "1.2.0")
+	var other_version: Variant = actions.call("restart_asked", folder, "1.3.0")
+	UpdateFixtures.remove(folder)
+	testing.eq(before_mark, false, "no marker file → false")
+	testing.eq(marked, true, "marking → true")
+	testing.ok(marker_written, "the marker is restart_asked in the given folder")
+	testing.eq(asked, true, "the marked version → true")
+	testing.eq(other_version, false, "another version → false")
 	print("")

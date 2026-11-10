@@ -1,7 +1,8 @@
 @tool
 extends RefCounted
 ## The recovery plugin's file actions: it moves an interrupted update's folders into place,
-## puts the backup back over a version that did not load, and edits the enabled plugins list.
+## puts the backup back over a version that did not load, edits the enabled plugins list, and
+## records a restart it asked for.
 ##
 ## Like [code]recovery_journal.gd[/code], it runs from a copy outside the addon folder at a
 ## start where that folder may not load, so it loads nothing from it. It repeats the
@@ -41,6 +42,7 @@ const _BROKEN_PREFIX := "broken-"
 const _APPLYING := "applying"
 const _APPLIED := "applied"
 const _NOT_APPLIED := "not_applied"
+const _RESTART_MARKER := "restart_asked"
 # JSON reads every number as a float, and the journal holds these as whole numbers.
 const _WHOLE_NUMBER_FIELDS := ["format", "attempts", "applying_at"]
 
@@ -210,6 +212,30 @@ static func remove_tree(folder: String) -> bool:
 	return not DirAccess.dir_exists_absolute(folder)
 
 
+## Records in [param folder] that a restart into [param version] was asked for, so a later
+## start can tell it already asked. The marker is a file named [code]restart_asked[/code]
+## holding the version.[br]
+## [br]
+## Returns whether the file now holds [param version].
+static func mark_restart_asked(folder: String, version: String) -> bool:
+	var path := _restart_marker(folder)
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_string(version)
+	file.close()
+	return FileAccess.get_file_as_string(path) == version
+
+
+## Whether [param folder] holds the marker [method mark_restart_asked] writes, naming
+## [param version]. A marker for another version, or none, reads as false.
+static func restart_asked(folder: String, version: String) -> bool:
+	var path := _restart_marker(folder)
+	if version.is_empty() or not FileAccess.file_exists(path):
+		return false
+	return FileAccess.get_file_as_string(path).strip_edges() == version
+
+
 ## [param enabled] (an enabled plugins list) with the toolkit's entry appended when it is
 ## missing and [param addon_folder] holds the toolkit's [code]plugin.cfg[/code]. An entry
 ## for a folder that is not there would only be dropped again at the next start.
@@ -256,6 +282,10 @@ static func _backup(update_folder: String, journal: Dictionary) -> String:
 # Where a restore sets the version that did not load aside.
 static func _broken(update_folder: String, journal: Dictionary) -> String:
 	return ProjectSettings.globalize_path(update_folder).path_join(_BROKEN_PREFIX + str(journal.get("to", "")))
+
+
+static func _restart_marker(folder: String) -> String:
+	return ProjectSettings.globalize_path(folder).path_join(_RESTART_MARKER)
 
 
 # The last steps of a restore, once the backup is the live folder.
