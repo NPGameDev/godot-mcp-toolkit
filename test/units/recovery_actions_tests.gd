@@ -461,6 +461,9 @@ static func _test_remove_tree_link(testing: Testing, actions: GDScript) -> void:
 		FolderFiles.remove_tree(root)
 		print("")
 		return
+	# Godot 4.2 on Unix removes a folder with rmdir, which fails on a symlink, so there the
+	# link and the folder holding it stay.
+	var engine_keeps_links := OS.get_name() != "Windows" and not DirAccess.open(root).has_method("is_link")
 	var removed: Variant = actions.call("remove_tree", tree)
 	var kept := FolderFiles.list(target)
 	var tree_gone := not DirAccess.dir_exists_absolute(tree)
@@ -468,9 +471,6 @@ static func _test_remove_tree_link(testing: Testing, actions: GDScript) -> void:
 	FolderFiles.remove_tree(root)
 	testing.eq(kept, PackedStringArray(["kept.txt", "sub/kept.txt"]), "the link's target keeps every file")
 	testing.eq(removed, tree_gone, "the result says whether the tree went")
-	# Godot 4.2 on Unix removes a folder with rmdir, which fails on a symlink, so there the
-	# link and the folder holding it stay.
-	var engine_keeps_links := OS.get_name() != "Windows" and not DirAccess.open(root).has_method("is_link")
 	testing.ok(tree_gone or engine_keeps_links, "the tree goes where the engine removes a link as a link")
 	print("")
 
