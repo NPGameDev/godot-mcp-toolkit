@@ -304,9 +304,9 @@ static func _node_is_class(node: Node, type_name: String) -> bool:
 	# Custom (class_name) scripts — match the script's resource_path against the
 	# global class list. Script.get_global_name() is 4.3+, so this stays 4.2-safe
 	# (same pattern as editor_helpers.class_descends_from).
-	var script := node.get_script()
-	if script != null and script is Script:
-		var script_path := (script as Script).resource_path
+	var script: Script = node.get_script()
+	if script != null:
+		var script_path := script.resource_path
 		if script_path != "":
 			for entry in ProjectSettings.get_global_class_list():
 				if String(entry.get("path", "")) == script_path:

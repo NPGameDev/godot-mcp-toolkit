@@ -138,6 +138,11 @@ ut_install_old_toolkit "${REPO_ROOT}" "${TEMPLATE}/addons/godot_mcp_toolkit" "${
   || { echo "ERROR: could not install the old toolkit" >&2; exit 2; }
 cp -r "${REPO_ROOT}/test/update_driver" "${TEMPLATE}/addons/update_driver"
 
+# The [debug] block checks the addons' scripts with every warning at its default
+# level, as a project that opts in does: a default that is an error (inference on a
+# Variant) stops the toolkit loading there. 4.2-4.5 read exclude_addons; 4.6 converts it
+# into directory_rules (1 is Include), and the second key states the same rule for a
+# build without the conversion.
 cat > "${TEMPLATE}/project.godot" <<'EOF'
 config_version=5
 
@@ -152,6 +157,13 @@ enabled=PackedStringArray("res://addons/godot_mcp_toolkit/plugin.cfg", "res://ad
 [mcp_toolkit]
 
 updates/install_mode="ask"
+
+[debug]
+
+gdscript/warnings/exclude_addons=false
+gdscript/warnings/directory_rules={
+"res://addons": 1
+}
 EOF
 # run_units_cold.sh has the full story of the class cache Godot 4.2 needs.
 ut_warm "${GODOT_BIN}" "${TEMPLATE}" "${WORK}/warm.log" \

@@ -303,7 +303,7 @@ static func _cmd_scene_delete(parameters: Dictionary) -> Dictionary:
 
 	# Attempt to close the editor tab before deleting the file.
 	var tab_result := await Helpers.close_scene_tab_safe(file_path)
-	var tab_closed := tab_result.get("closed", false)
+	var tab_closed: bool = tab_result.get("closed", false)
 	var warnings: Array[String] = []
 
 	if not tab_closed:
@@ -634,7 +634,7 @@ static func _cmd_scene_instantiate(server: Node, parameters: Dictionary) -> Dict
 	var transform_raw = parameters.get("transform", {})
 	var transform: Dictionary = transform_raw if typeof(transform_raw) == TYPE_DICTIONARY else {}
 
-	var target_name := as_name if as_name != "" else packed.get_state().get_node_name(0)
+	var target_name: String = as_name if as_name != "" else String(packed.get_state().get_node_name(0))
 	if parent_node.has_node(NodePath(target_name)):
 		if as_name != "":
 			# Explicit name — idempotent return.
