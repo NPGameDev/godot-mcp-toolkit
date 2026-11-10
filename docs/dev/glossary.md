@@ -307,7 +307,9 @@ profile.
 
 ## Update vocabulary
 
-How this project names the way users hear about a new toolkit version.
+How this project names the way users hear about a new toolkit version and the way the toolkit
+installs it. User docs say "install" and "update"; "swap", "settle" and "apply" stay in dev docs and
+code. ADR 0029 has the decisions, and `docs/dev/trust-chain.md` the keys.
 
 **Update check**
 The toolkit's at-most-daily read of the latest published version (GitHub's latest release, then
@@ -324,6 +326,103 @@ installer has verified the release, it also offers Update, which downloads the r
 so the editor's next exit installs it (`self_update/update_installer.gd`). Closing the notice hides it
 until a newer version. For a release that is already prepared, closing it hides it only until the next
 editor start, and the release still installs when the editor exits.
+
+**Self-update**
+The toolkit replacing its own **addon folder** with a newer release that a **release key** signed. On
+the user's click the installer downloads the release and stages it (`self_update/update_installer.gd`),
+the editor's next exit swaps it in (`self_update/update_applier.gd`, run through
+`self_update/update_lifecycle.gd`), and the next start settles what the exit left
+(`self_update/update_settler.gd`). Nothing changes the addon folder while the editor runs, and a
+headless editor neither applies nor settles.
+_Avoid_: auto-update (no mode installs without a click), hot-patch.
+
+**Addon folder**
+`addons/godot_mcp_toolkit/`, which belongs to the release. Every update, the self-update and a manual
+one alike, replaces it whole and copies nothing back, so a file kept there is lost. Neither the toolkit
+nor a user keeps a file there (`code-standards.md` §8.15); an extension lives in its own addon's
+folder.
+_Avoid_: plugin directory, install folder.
+
+**Install mode**
+The project setting `mcp_toolkit/updates/install_mode` (`self_update/install_mode.gd`), kept in
+`project.godot` because which version a project runs is the team's choice. `manual` only links to a new
+version. `ask`, the default, offers a verified release in the **update badge** and in a window at an
+editor start, and downloads it only when the user clicks Update. A missing key reads as `ask` and any
+other value as `manual`. Every mode acts as `manual` until the **consent gate** allows installing. A
+major release, or one that needs a newer Godot, gets links only in either mode.
+_Avoid_: update mode.
+
+**Staged update**
+A verified release unpacked into the **update folder**'s `stage/`, a few files a frame
+(`self_update/stage_stepper.gd`), and waiting for the editor's next exit to swap it in. Staging never
+touches the **addon folder**. A staged update stays until that exit installs it, the user clicks Don't
+install, or the install mode turns `manual`.
+_Avoid_: pending update, downloaded update.
+
+**Update journal**
+`journal.json` in the **update folder** (`self_update/update_journal.gd`), the one record of where a
+self-update stands. Its state moves `verified` (a download has begun) → `staged` → `applying` (written
+before the first rename) → `applied` or `not_applied`, which the next start settles. Its keys only
+grow, so a newer toolkit always reads an older one's journal.
+_Avoid_: pending update record, marker.
+
+**Update backup**
+`backup-<version>/` in the **update folder**: the whole addon folder the swap moved aside. It stays
+until the next update is staged; with `mcp_toolkit/updates/keep_backup` off, the start after a
+successful update deletes the update folder, backup included (`self_update/update_settler.gd`).
+_Avoid_: rollback copy, snapshot.
+
+**Update folder**
+`addons/.godot_mcp_toolkit_update/` (`self_update/update_folder.gd`), the one folder a self-update keeps
+everything in: the **update journal**, `install.log`, a `<version>/` folder with the zip, the manifest
+and its signature, the **staged update** and the **update backup**. Its leading dot keeps it out of the
+engine's scan, the exporter's folder walk and the Plugins list; its own `.gitignore` and `.p4ignore`
+hold `*`, and a `.gdignore` covers other tools. A version-control clean such as `git clean -fdX` can
+delete it at any moment, so no step assumes it survives.
+_Avoid_: update cache, temp folder, `user://` staging.
+
+**Ready view**
+The **update badge**'s view that a **staged update** waits for a restart (`self_update/restart_gate.gd`,
+drawn by `ui/dock/update/dock_update_badge.gd`). It names what a restart would lose (scripts with
+unsaved edits, a running game, scenes never saved) and offers Restart and Not now. Restart refuses
+while a script is unsaved, and the view never saves anything. It opens when staging ends, unless
+Godot 4.4 or later finds nothing to lose and restarts on its own, and at an editor start that finds a
+staged update.
+_Avoid_: restart prompt, install dialog.
+
+**Release file list**
+`release_files.sha256` in a release's **addon folder** (`self_update/release_file_list.gd`): one
+`<sha256>  <path>` line per file, the format `sha256sum -c` checks, leaving itself out. The stage must
+hold exactly what the zip's list names, and the installed folder's list shows the files changed by hand
+(`self_update/install_plan.gd`).
+_Avoid_: inventory, per-file manifest.
+
+**Trust document**
+A numbered, signed `trust-N.json` naming the current **root keys**, how many of them must sign the next
+document, and the current **release keys** (`self_update/trust_chain.gd`). Each release embeds one
+(`self_update/embedded_trust_document.gd`); later ones are hosted beside the releases, and each machine
+keeps the ones it fetched in `<data folder>/godot_mcp_toolkit/trust/`. Each later document is signed by
+a threshold of the roots before it and a threshold of its own.
+_Avoid_: key list, keyring.
+
+**Root key**
+An offline key that signs only **trust documents**, never a release, and so decides which root and
+release keys come next.
+_Avoid_: master key, recovery key.
+
+**Release key**
+A key that signs a release's update manifest, trusted while the latest **trust document** this machine
+holds lists it (`self_update/release_signature.gd`). Replacing one, for a new device or after a leak, is
+the same act: the next document stops listing it.
+_Avoid_: signing key (bare), trusted release key.
+
+**Pin move**
+After a self-update installs, the toolkit moving its own `.mcp.json` entry to the new toolkit's
+`COMPATIBLE_SERVER_VERSION` without asking, since the user started the update
+(`ui/mcp_json/server_pin_move.gd`; `contract.md` C11). It moves only an `npx` entry pinned at the old
+recommended version or at this machine's last write, with the server version setting empty and no local
+server path; a pin set by hand stays. The update notice offers Undo for that editor start.
+_Avoid_: silent rewrite, auto-pin.
 
 ---
 

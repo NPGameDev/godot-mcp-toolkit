@@ -121,7 +121,7 @@ below:
 | `extensions/` | third-party extension discovery, loading, hot-reload | [§8](#8-extension-system) |
 | `registry/` + `registry/store/` | multi-instance discovery (`projects.json`) | [§9](#9-multi-project-registry) |
 | `security/` | auth token, path guard, audit log, untrusted-content wrapping | [§10](#10-security--trust-boundaries) |
-| `update/` | the self-update: verify, stage, apply at editor exit (ADR 0029) | [§7](#7-plugin-lifecycle) |
+| `self_update/` | the self-update: the trust chain and the release check, the download and the stage, the swap at editor exit and the settle at the next start (ADR 0029) | [§7](#7-plugin-lifecycle) |
 | `paths/`, `logging/`, `scene/`, `versioning/`, `ui/` | supporting services and the dock | throughout |
 
 ---

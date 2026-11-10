@@ -29,7 +29,7 @@ Measured on 2026-10-26 with toolkit 1.0.4 replaced by 1.1.0 inside a running edi
 - **Writing, then disabling and enabling the plugin.** Only `plugin.gd` loaded anew; the scripts
   it preloads came from the cache, and `compose()` failed with the wrong argument count (4.2 and
   4.7.2). No server came up.
-- **Writing, then `restart_editor`.** Clean while no dialog intervenes. From 4.4 the restart asks
+- **Writing, then `restart_editor`.** Clean as long as no dialog comes up. From 4.4 the restart asks
   about unsaved work: an unsaved script opens "Save changes to the following script(s)?", the
   editor stays up on the new files, and the next focus-in reloads them as above. 4.2 and 4.3
   restart without asking.
@@ -67,7 +67,7 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
   the stage into its place. A failed second rename renames the backup back. The next start reads
   the journal and reports the result (`self_update/update_settler.gd`). An editor ended by a
   signal skips `_exit_tree`, and the update waits for the next normal exit.
-  The residual risk: a kill in the 0–7 ms between the two renames leaves no installed folder,
+  One risk remains: a kill in the 0 to 7 ms between the two renames leaves no installed folder,
   with the old and new copies both whole in the update folder. Recovery from that is by hand
   ([troubleshooting](../troubleshooting.md)), and a `git clean -fdX` in that state deletes both
   copies, so the toolkit has to be reinstalled.
@@ -131,13 +131,13 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
 - **Writing the release file by file at exit, with a backup copy.** A lab on Godot 4.2.0, 4.3
   and 4.7 on Windows, macOS and Linux killed the editor at each step of both strategies. Its worst
   case for the file-by-file write left the installed folder mixed between the two versions after
-  a window of 148–2057 ms over 380 files, with the only full copy of the old version lost. The two
-  renames' worst case is the 0–7 ms window above, with both copies whole.
+  a window of 148 to 2057 ms over 380 files, with the only full copy of the old version lost. The
+  two renames' worst case is the 0 to 7 ms window above, with both copies whole.
 - **Installing without asking.** It was built as an `automatic` mode and removed: an update
   must stay visible to whoever works in the project.
 - **Applying at the next start, before the plugin loads.** `plugin.gd` preloads the rest of the
   toolkit at parse time, so the old files are loaded before any code could swap them; it would
-  need a loader plugin with no preloads, and the exit hook already avoids the problem.
+  need a loader plugin with no preloads, and applying at exit does not have the problem.
 - **A checksum without a signature.** A hash published in the same release only proves the
   download matches the release; whoever can change the release can change both.
 - **Signing in a workflow, with the key as an environment secret.** It saves the manual step,
@@ -148,7 +148,7 @@ plugin's `_exit_tree` when the editor exits for any reason other than a disable.
 
 - **A release that installs but does not load cannot be undone from inside,** since the updater
   is part of what failed. The six-minor release gate, the manifest's Godot floor and the backup,
-  with its troubleshooting entry, are the mitigation.
+  with its troubleshooting entry, limit the damage.
 - **The first release that ships the installer updates itself from then on;** older installs
   update by hand once.
 - **A stolen release key, with access to the repository, reaches the clients that have not yet

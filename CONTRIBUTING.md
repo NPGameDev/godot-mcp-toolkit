@@ -110,7 +110,12 @@ contributor-facing summary.
   compressed binary-token modes (Text only on 4.2), with an uncommitted extension probe and a dummy
   `.mcp.json`, and fails if the pack lists a toolkit script, the probe or
   `.mcp.json` (`scripts/test_framework/check_export_strip.sh`), or anything from a seeded
-  self-update folder. The **apply kill** job (`apply-kill`) runs the self-update's swap in
+  self-update folder. The **update flow** job (`update-flow`) runs the self-update end
+  to end on scratch projects on 4.2.0 and 4.7.0, headless, against a local server in
+  place of GitHub (`scripts/test_framework/update_flow.sh`). The **release builds** job
+  (`release-builds`) checks that the bash and PowerShell release builds write the same
+  release (`scripts/test_framework/check_release_builds.sh`). The **apply kill** job
+  (`apply-kill`) runs the self-update's swap in
   real editors on 4.2.0 and 4.7.0, killing them at each step
   (`test/apply_kill_driver/run_legs.sh`). A single aggregate job,
   **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
@@ -120,11 +125,11 @@ contributor-facing summary.
   matrix** — GDScript-editor and .NET/mono-editor, Godot **4.2 through 4.7** —
   boots a real headless editor and round-trips the complete smoke + flows suites
   through the WebSocket bridge, plus a **dispatch-integration** leg on one row and
-  a mono-editor unit leg on the two boundary flavors (4.2.0 + 4.7.0), the
-  **update flow** on every minor on Linux and on 4.7.0 on macOS and Windows
-  (`update-flow-platforms`), and the **update GUI** job (`update-gui`, 4.2.0 + 4.5.0 + 4.7.0): the self-update's
-  interface in editors with a window on a virtual display
-  (`scripts/test_framework/update_gui.sh`). It does not
+  a mono-editor unit leg on the two boundary flavors (4.2.0 + 4.7.0). With the
+  GDScript tier's triggers it also runs the **update flow** on every minor on Linux
+  and on 4.7.0 on macOS and Windows (`update-flow-platforms`), and the **update GUI**
+  job (`update-gui`, 4.2.0 + 4.5.0 + 4.7.0): the self-update's interface in editors
+  with a window on a virtual display (`scripts/test_framework/update_gui.sh`). It does not
   run on a plain push. Trigger it by putting **`[run-cross-version-ci]`** in your
   commit message, via **`workflow_dispatch`** (optionally with a `sibling-ref`
   override), or automatically as part of a release (below).
@@ -132,11 +137,13 @@ contributor-facing summary.
   matrix (the zip job `needs:` it — a cross-version regression can never ship),
   then builds the plugin zip and its update manifest, **install-smokes the actual
   artifact** (unzips it into a scratch project and boots a headless editor to prove
-  the plugin enables), **update-smokes** it (installs it over the previous version
-  through the self-update, `UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`), and
-  uploads the zip and the manifest as a GitHub Release. The workflow does not sign
-  the manifest; until a signature by a trusted key sits beside it, the toolkit
-  offers the release as links only. You can rehearse the whole path without
+  the plugin enables), checks the booted tree against the zip's release file list
+  and the manifest (`scripts/check_release_files.sh`), **update-smokes** it (installs
+  it through the self-update over the same tree one version older,
+  `UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`), and uploads the zip and the
+  manifest as a GitHub Release. The workflow does not sign the manifest; until a
+  signature by a trusted release key sits beside it, the toolkit offers the release
+  as links only. You can rehearse the whole path without
   releasing by running `release.yml` via **`workflow_dispatch`** — it is a
   **dry-run** by default (everything runs; the Release upload is skipped).
 

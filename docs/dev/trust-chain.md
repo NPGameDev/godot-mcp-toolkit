@@ -279,10 +279,21 @@ The caps are in `trust_chain.gd`, where each comment ends in "Permanent". This t
 | Key expiry | None | Nothing reads a `not_after`. | A later client can enforce one. 1.2.0 trusts a key until a document drops it. |
 | Signatures on a release | One is enough | A manifest has one `.sig`, and any listed key counts. | A later client can ask for more. 1.2.0 accepts one, so one stolen release key is enough until it is dropped. |
 
-The download path is fixed the same way. Each client builds it from the number alone, as
-`/NPGameDev/godot-mcp-toolkit/releases/download/trust-N/trust-N.json` on `https://github.com`. A
-test-only variable can replace the host for a local test server, and a document's signatures
-make another host harmless.
+Where a client downloads from is fixed the same way, compiled into `release_assets.gd` and
+`update_downloader.gd`:
+
+| What | Value | For someone who stays on 1.2.0 |
+|---|---|---|
+| Host of every first request | `https://github.com` | Every file must stay reachable there. |
+| Hosts a redirect may reach | `github.com`, or a subdomain of `githubusercontent.com` other than `raw.githubusercontent.com` and its subdomains, over HTTPS, at most 5 hops | A release asset served from anywhere else is refused. |
+| Paths | `/NPGameDev/godot-mcp-toolkit/releases/download/trust-N/trust-N.json` and `/NPGameDev/godot-mcp-toolkit/releases/download/v<version>/<asset>` | Every document and release must stay at these paths. |
+| Asset names | `trust-N.json`, `godot-mcp-toolkit-<version>.zip`, `godot-mcp-toolkit-<version>.update.json` and `godot-mcp-toolkit-<version>.update.json.sig` | A release must publish these exact names. |
+
+Each name is built from the document's number or the version alone, never taken from a reply. A
+test-only variable, `GODOT_MCP_UPDATE_CHECK_HOST`, can replace the scheme and host with a loopback
+address and nothing else. A server there can serve only what the keys signed: it can withhold the
+next document, which ends the walk, or a release's files, which stops that install, but it cannot
+add a key or make a release the chain does not trust install.
 
 `build` writes only the fields it knows, and warns when it drops one from the previous document. Before
 rotating past a document with a new field, teach the script that field, or the next document loses it.

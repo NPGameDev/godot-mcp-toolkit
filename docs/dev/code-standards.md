@@ -801,6 +801,24 @@ control before it is freed or hidden. *Rationale: on Godot 4.4 and later the edi
 progress and save-confirmation dialogs under the last exclusive window shown. Freeing that window
 frees them too, and the editor later uses or frees them, which can crash it.*
 
+### 8.15 The toolkit never writes into its own folder
+
+**The toolkit never creates or keeps a file in `addons/godot_mcp_toolkit/`.** State goes in
+`user://`, the project settings, the editor settings, or the self-update's own folder
+`addons/.godot_mcp_toolkit_update/`. *Rationale: the addon folder belongs to the release. Every
+update, the self-update and a manual one alike, replaces the folder whole and copies nothing back,
+so a file written there is lost at the next update (ADR 0029).*
+
+- **At release time,** the release workflow's **Verify release files** step imports the built zip
+  in a scratch project after the install-smoke boot, then fails the release on any file the release
+  file list does not name, other than the engine's `*.import` files
+  (`scripts/check_release_files.sh`). A `.uid` the engine mints for a shipped file that lacks one
+  fails it too.
+- **At run time,** the file guards keep MCP tools out of the folder: `FileGuard.is_toolkit_source`
+  (`security/file_guard.gd`) matches it under any spelling the filesystem resolves to it, and
+  `resolve_safe` refuses it for reads and writes alike. They refuse the update folder too
+  (`is_update_folder`), which only the self-update writes.
+
 ---
 
 ## 9. Unit-test code
@@ -989,7 +1007,7 @@ subdomain child folders. The addon root holds only the entry point, `plugin.gd`.
 | `paths/` | `project_paths.gd` | `project_key`, `user_path_monitor`, `lsp_publisher` |
 | `logging/` | — | `log_buffer`, `log_helpers` |
 | `versioning/` | `mcp_version_utils.gd` | `engine_setting_names`, `nodejs_check`, `stale_instance_hint`, `update_check`, `update_check_runner` |
-| `update/` | `update_installer.gd` | `update_applier`, `pending_update`, `install_mode`, `install_guards`, `install_plan`, `release_manifest`, `release_signature`, `trusted_release_keys`, `release_archive`, `release_assets`, `release_file_list`, `folder_files`, `content_hash` |
+| `self_update/` | `update_installer.gd` (one update, from the offer to the stage); `update_lifecycle.gd` runs the start's settle and the exit's apply | the check: `release_verifier`, `update_downloader`, `release_assets`, `release_manifest`, `release_signature`, `trust_chain`, `embedded_trust_document`, `update_check_failure`, `kept_release`; the stage: `stage_runner`, `stage_stepper`, `release_archive`, `release_file_list`, `install_plan`, `folder_files`, `content_hash`; the swap: `update_applier`, `update_settler`, `update_journal`, `update_folder`, `update_notice`; the rules: `install_mode`, `install_guards`, `restart_gate`, `editor_restart_probe` |
 | `runtime/` | `mcp_runtime_server.gd` (the runtime autoload) | — |
 
 `plugin.gd` is a thin orchestrator: lifecycle (`_enter_tree`/`_exit_tree`/`_enable_plugin`/
@@ -1220,3 +1238,4 @@ tooling). The **plugin** rows apply to **addon** files only — test scripts are
 - [ ] `plugin.cfg` only the documented fields; folder id unchanged; shipped files reference no unshipped paths; `.uid`/`.import` sidecars shipped, never stripped or git-ignored ([§8.12](#812-asset-library-shipping-hygiene))
 - [ ] Any `OS.shell_open` / OS handoff of a data-derived URL allowlists the scheme (http/https) ([§8.13](#813-validate-a-data-derived-urls-scheme-before-osshell_open))
 - [ ] Every toolkit window sets `exclusive = false`; one that must be exclusive moves every child it did not create back to the editor's base control before it is freed or hidden ([§8.14](#814-toolkit-windows-are-non-exclusive))
+- [ ] Nothing creates or keeps a file in `addons/godot_mcp_toolkit/`; state goes in `user://`, the settings or the update folder ([§8.15](#815-the-toolkit-never-writes-into-its-own-folder))

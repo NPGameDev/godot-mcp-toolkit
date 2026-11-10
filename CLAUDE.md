@@ -188,10 +188,12 @@ instead — listen-side only. See `addons/godot_mcp_toolkit/docs/advanced_config
   the Command Palette (Ctrl+Shift+P → "MCP").
 - **Update badge and self-update** — the dock's first child shows a newer toolkit
   release (a daily check). When Project Settings → Mcp Toolkit → Updates → Install
-  Mode allows it (`ask`, the default, or `automatic`; asked once in the setup
-  wizard), the toolkit downloads a release whose manifest the maintainer signed
-  and installs it while the editor closes, restoring a backup if a write fails
-  (ADR 0029). An install changes `res://addons/godot_mcp_toolkit/`; commit it.
+  Mode is `ask` (the default; `manual` only links, and the setup wizard asks once),
+  the badge offers a release whose update manifest a trusted release key signed.
+  Update downloads it and stages it in `addons/.godot_mcp_toolkit_update/`; the
+  editor's next exit swaps it in by two renames, keeping the old folder as a backup
+  (`self_update/`, ADR 0029). An install replaces `res://addons/godot_mcp_toolkit/`
+  whole, so a project that tracks that folder sees the update as changed files.
 - **Read-only badge** — when `GODOT_MCP_READ_ONLY=1` is set in `.mcp.json`,
   the dock displays a yellow badge.
 - **Response limits** — configurable in the dock's "Security & Response Limits" section.
@@ -363,7 +365,11 @@ quick operational facts only.
   only on 4.2), and fails if the parsed pack listing carries a toolkit script,
   the probe or
   `.mcp.json` or anything from a seeded self-update folder;
-  `scripts/test_framework/check_export_strip.sh`), and the `apply-kill` job (4.2 and
+  `scripts/test_framework/check_export_strip.sh`), the `update-flow` job (4.2 and
+  4.7: the self-update end to end on scratch projects, headless, against a local
+  server; `scripts/test_framework/update_flow.sh`), the `release-builds` job (the
+  bash and PowerShell release builds write the same release;
+  `scripts/test_framework/check_release_builds.sh`), and the `apply-kill` job (4.2 and
   4.7: the self-update's swap in real editors, killed at each step;
   `test/apply_kill_driver/run_legs.sh`). An aggregate
   **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
@@ -378,25 +384,28 @@ quick operational facts only.
   the editor launch; a dispatch-integration leg rides the 4.7.0 row) AND a
   **.NET/mono-editor** tier (the server's C# fixture with this addon injected,
   4.2–4.7). A companion opt-in `mono-units` leg runs the unit suite on the
-  .NET editor's two boundary flavors (4.2.0 + 4.7.0), an `update-flow-platforms`
-  leg (the update flow on 4.2–4.7 on Linux and on 4.7.0 on macOS and Windows,
-  where the PowerShell build makes the zip), and an `update-gui` leg
-  (4.2.0 + 4.5.0 + 4.7.0) plays the self-update's interface in editors with a
-  window under Xvfb (`scripts/test_framework/update_gui.sh`, driven by the
-  test-only plugin `test/update_gui_driver/`). The server repo runs the
-  same two-editor matrix for its own changes.
+  .NET editor's two boundary flavors (4.2.0 + 4.7.0). Two self-update jobs run
+  with the GDScript tier's triggers: `update-flow-platforms` runs the update flow
+  on 4.2–4.7 on Linux and on 4.7.0 on macOS and Windows (on Windows the
+  PowerShell build makes the zip), and `update-gui` (4.2.0 + 4.5.0 + 4.7.0) plays
+  the self-update's interface in editors with a window under Xvfb
+  (`scripts/test_framework/update_gui.sh`, driven by the test-only plugin
+  `test/update_gui_driver/`). The server repo runs the same two-editor matrix
+  for its own changes.
 - **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push; GATES
   on the deep behavioral tier (`behavioral: uses: cross-version.yml` +
   `needs:`), then validates tag matches `plugin.cfg` version, builds the
   plugin zip and its `.update.json` manifest via
   `scripts/build-plugin-release.sh`, install-smokes the zip (unzip into a
   scratch project, headless 4.7.0 boot, assert `[MCPServer] listening`),
-  update-smokes it (`UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`: the built
-  zip installs over the previous version, signed with a key made for the run),
-  and uploads the zip and the manifest as GitHub Release artifacts. The
-  workflow does not sign the manifest; until a signature by a trusted key sits
-  beside it, the toolkit offers the release as links only. `workflow_dispatch` runs the whole
-  chain as a **dry-run** (upload skipped).
+  checks the booted tree against the zip's release file list and the manifest
+  (`scripts/check_release_files.sh`), update-smokes it
+  (`UPDATE_FLOW_SKIP_BUILD=1 UPDATE_FLOW_LEGS=full`: the built zip installs over
+  the same tree one version older, signed with a key made for the run), and
+  uploads the zip and the manifest as GitHub Release artifacts. The workflow
+  does not sign the manifest; until a signature by a trusted release key sits
+  beside it, the toolkit offers the release as links only. `workflow_dispatch`
+  runs the whole chain as a **dry-run** (upload skipped).
 
 ## Dogfood setup (this repo)
 
