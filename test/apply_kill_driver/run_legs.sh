@@ -45,6 +45,8 @@
 #   stale_cache
 #          a clean swap to B under A's class cache, which names a class_name script B's
 #          plugin.gd needs where A kept it; the recovery plugin leaves B alone and B runs
+#   held   the toolkit's folder cannot be moved: the apply waits, staged, with nothing
+#          moved, and once the hold goes the next exit applies
 #
 # Usage: bash test/apply_kill_driver/run_legs.sh [leg...]
 #   (needs a display: xvfb-run on Linux. Runs on Linux, macOS and in Git Bash on Windows.)
@@ -53,6 +55,9 @@
 #   APPLY_KILL_OUT             - folder for everything this run writes (default: a new
 #                                temp folder); logs/ under it holds the evidence
 #   APPLY_KILL_SESSION_TIMEOUT - seconds one editor session gets (default: 300)
+#   UT_PYTHON                  - the Python 3 that holds a file open in the held leg on
+#                                Windows (default: python3 or python on the PATH, never
+#                                one in a WindowsApps folder)
 # Exit 0 = every leg passed, 1 = a leg failed, 2 = setup error. The last line printed is
 # the verdict, so a caller can tell a finished run from one that died.
 
@@ -97,7 +102,7 @@ MOVED_CLASS_USE="static func driver_moved_class() -> $MOVED_CLASS_NAME:"
 CLASS_IN_A="driver_class_in_a"
 CLASS_IN_B="driver_class_in_b"
 CLASS_CACHE=".godot/global_script_class_cache.cfg"
-ALL_LEGS="k1 k2 k2_tampered k3 clean scan scan_beside git link broken stale_cache"
+ALL_LEGS="k1 k2 k2_tampered k3 clean scan scan_beside git link broken stale_cache held"
 SCAN_SEED="driver_scan_seed"
 SCAN_SEED_FOLDERS=100
 SCAN_SEED_FILES=30
@@ -149,6 +154,10 @@ B_TREE=""
 B_BROKEN_TREE=""
 B_MOVED_TREE=""
 A_DIGEST=""
+HELD_FOLDER=""
+HOLD_PYTHON=""
+HOLD_FLAG=""
+HOLD_PID=""
 
 die() {
   echo "ERROR: $1" >&2
@@ -257,6 +266,14 @@ applying_at() {
 check_recovery_removed() {
   check "the recovery folder is gone" "$(exists "$RECOVERY")" "absent"
   check "project.godot no longer names the recovery plugin" "$(recovery_entry)" "not saved"
+}
+
+journal_reason() {
+  text_of "$PROJECT/$UPDATES/journal.json" | sed -nE 's/.*"reason": *"([^"]*)".*/\1/p'
+}
+
+journal_attempts() {
+  text_of "$PROJECT/$UPDATES/journal.json" | sed -nE 's/.*"attempts": *([0-9]+).*/\1/p'
 }
 
 journal_restored() { # "true" when the journal records a restore
@@ -856,6 +873,98 @@ leg_stale_cache() {
   check_recovery_removed
 }
 
+# The swap's first rename moves the toolkit's folder from addons/ into the update folder,
+# which needs addons/ writable, so a read-only addons folder refuses it on Linux and macOS.
+# NTFS ignores chmod but refuses to rename a folder while a file in it is open, so on
+# Windows <python> holds one open until its flag file goes, or until a session's timeout
+# and a minute more have passed. Returns 1 when nothing holds.
+hold_toolkit() { # <python: Windows only>
+  if [ "$ON_WINDOWS" != 1 ]; then
+    # Staging made the recovery plugin's folder; in a read-only addons folder nothing could.
+    if [ ! -d "$PROJECT/$RECOVERY" ]; then
+      echo "the recovery plugin's folder is missing before the hold" >&2
+      return 1
+    fi
+    chmod a-w "$PROJECT/addons" || return 1
+    HELD_FOLDER="$PROJECT/addons"
+    # Root writes through a read-only folder, so for root nothing would hold.
+    if [ -w "$HELD_FOLDER" ]; then
+      release_toolkit
+      echo "the addons folder stays writable after chmod a-w; is this run root?" >&2
+      return 1
+    fi
+    return 0
+  fi
+  HOLD_FLAG="$OUT/hold.flag"
+  "$1" -c '
+import os, sys, time
+held = open(sys.argv[1], "rb")
+open(sys.argv[2], "w").close()
+deadline = time.time() + float(sys.argv[3])
+while os.path.exists(sys.argv[2]) and time.time() < deadline:
+    time.sleep(0.2)
+' "$(cygpath -w "$PROJECT/$ADDON/$ONLY_IN_A")" "$(cygpath -w "$HOLD_FLAG")" "$((SESSION_TIMEOUT + 60))" &
+  HOLD_PID=$!
+  for _ in $(seq 1 50); do
+    [ -f "$HOLD_FLAG" ] && return 0
+    sleep 0.2
+  done
+  release_toolkit
+  return 1
+}
+
+# Ends the hold, whichever kind holds; does nothing when none does.
+release_toolkit() {
+  if [ -n "$HELD_FOLDER" ]; then
+    chmod u+w "$HELD_FOLDER"
+    HELD_FOLDER=""
+  fi
+  if [ -n "$HOLD_PID" ]; then
+    rm -f "$HOLD_FLAG"
+    wait "$HOLD_PID" 2>/dev/null
+    HOLD_PID=""
+    HOLD_FLAG=""
+  fi
+}
+
+# A toolkit folder that cannot be moved is something that may pass by itself: the exit's
+# apply waits with the journal staged and nothing moved, and once the hold goes the next
+# exit applies.
+leg_held() {
+  begin_leg held
+  # A run that ends inside the session still lets go of the folder.
+  trap release_toolkit EXIT
+  hold_toolkit "$HOLD_PYTHON" || die "could not hold the toolkit's folder"
+  session held apply=1
+  release_toolkit
+  trap - EXIT
+  check "the apply waits" "$(note held apply_state)" "staged"
+  check "the wait names the move" "$(note held apply_reason)" \
+    "could not move the installed toolkit to backup-$A_VERSION"
+  check "the apply stopped at the first rename" "$(steps_of held)" "checked,applying"
+  check "the journal says staged" "$(journal_state)" "staged"
+  check "the journal keeps the reason" "$(journal_reason)" \
+    "could not move the installed toolkit to backup-$A_VERSION"
+  check "the journal holds no applying time" "$(applying_at)" ""
+  check "the live folder is still A" "$(tree_digest "$PROJECT/$ADDON")" "$A_DIGEST"
+  check "no backup was taken" "$(exists "$UPDATES/backup-$A_VERSION")" "absent"
+  check "the stage is whole" "$(tree_digest "$PROJECT/$UPDATES/stage")" "$(tree_digest "$B_TREE")"
+  check "the recovery folder stays" "$(exists "$RECOVERY")" "present"
+  check "project.godot keeps the recovery plugin's entry" "$(recovery_entry)" "saved"
+  # The toolkit's own exit comes after the driver's apply and tries again.
+  echo "  record: the journal counts $(journal_attempts) attempts; the install log's applies of $B_VERSION: $(grep -F "apply $B_VERSION:" "$LEG_LOGS/held.install.log" 2>/dev/null | paste -sd'|' -)"
+
+  session next_start settle=1 apply=1
+  check "settle reports the update waiting" "$(note next_start settle_report)" "waiting"
+  check "the next exit applies" "$(note next_start apply_state)" "applied"
+  check "it walked every step" "$(steps_of next_start)" "checked,applying,live_moved,stage_moved"
+  check "the journal says applied" "$(journal_state)" "applied"
+
+  session after settle=1 wait_toolkit=1
+  check_updated_on_b after
+  check_recovery_removed
+}
+
 [ -f "$REPO_ROOT/project.godot" ] || die "cannot find the repository root from $0"
 command -v "$GODOT_BIN" > /dev/null 2>&1 || die "no Godot binary: $GODOT_BIN"
 GODOT_MINOR="$("$GODOT_BIN" --version 2>/dev/null | tr -d '\r' | head -1 | cut -d. -f1,2)"
@@ -868,6 +977,10 @@ for leg in $LEGS; do
     *) die "no such leg: $leg (legs: $ALL_LEGS)" ;;
   esac
 done
+# Found before the template's sessions, so a missing Python stops the run at its start.
+if [ "$ON_WINDOWS" = 1 ] && [[ " $LEGS " == *" held "* ]]; then
+  HOLD_PYTHON="$(ut_python_bin)" || die "the held leg needs Python 3 on Windows"
+fi
 
 prepare_template
 for leg in $LEGS; do

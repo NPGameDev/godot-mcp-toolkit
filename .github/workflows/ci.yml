@@ -412,7 +412,7 @@ jobs:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
     runs-on: ${{ matrix.os }}
-    # Fuse: 29 editor sessions per row, each ended from inside within 240s if it hangs.
+    # Fuse: 32 editor sessions per row, each ended from inside within 240s if it hangs.
     timeout-minutes: 60
     strategy:
       fail-fast: false
