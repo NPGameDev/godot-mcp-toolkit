@@ -38,6 +38,66 @@ const PINNED_1_2_0_JOURNAL := """{
 	"to": "1.2.0"
 }"""
 
+## The journal the 1.2.0 applier leaves when an exit ends between its two renames: the
+## state and its Unix time. The recovery plugin reads it with its own code, so this text
+## never changes either.
+const PINNED_1_2_0_APPLYING_JOURNAL := """{
+	"applying_at": 1794300000,
+	"attempts": 1,
+	"backup": "backup-1.1.0",
+	"changed_files": [
+		"core/a.gd"
+	],
+	"compatible_server": "1.1.0",
+	"expected_tree_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+	"format": 1,
+	"from": "1.1.0",
+	"reason": "",
+	"state": "applying",
+	"to": "1.2.0"
+}"""
+
+## The journal the 1.2.0 applier leaves when both renames ran: the applying time stays.
+## The recovery plugin reads it with its own code, so this text never changes either.
+const PINNED_1_2_0_APPLIED_JOURNAL := """{
+	"applying_at": 1794300000,
+	"attempts": 1,
+	"backup": "backup-1.1.0",
+	"changed_files": [
+		"core/a.gd"
+	],
+	"compatible_server": "1.1.0",
+	"expected_tree_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+	"format": 1,
+	"from": "1.1.0",
+	"reason": "",
+	"state": "applied",
+	"to": "1.2.0"
+}"""
+
+## The journal a restore leaves after the new version did not load: not applied, with the
+## mark of the restore. Both readers must agree on it, so this text never changes either.
+const PINNED_1_2_0_RESTORED_JOURNAL := """{
+	"applying_at": 1794300000,
+	"attempts": 1,
+	"backup": "backup-1.1.0",
+	"changed_files": [
+		"core/a.gd"
+	],
+	"compatible_server": "1.1.0",
+	"expected_tree_hash": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+	"format": 1,
+	"from": "1.1.0",
+	"reason": "version 1.2.0 did not load in Godot 4.5",
+	"restored": true,
+	"state": "not_applied",
+	"to": "1.2.0"
+}"""
+
+## The saved entries of the toolkit and of the recovery plugin, as the editor lists them.
+const TOOLKIT_PLUGIN_ENTRY := "res://addons/godot_mcp_toolkit/plugin.cfg"
+const RECOVERY_PLUGIN_ENTRY := "res://addons/.godot_mcp_toolkit_recovery/plugin.cfg"
+
 static var _key: CryptoKey = null
 static var _other_key: CryptoKey = null
 
@@ -134,20 +194,26 @@ static func make_addon(folder: String, version: String, files: Dictionary) -> vo
 
 
 ## A scratch addon at [param installed_version] holding [param installed_files], and the
-## scenario around it: the addon and update folders, their absolute forms and the options
-## that point an apply or a settle at them. The update folder is not created here.
+## scenario around it: the addon and update folders, their absolute forms, a project file
+## whose saved plugins hold the recovery plugin, and the options that point an apply or a
+## settle at them. The update folder is not created here.
 static func make_scenario(purpose: String, installed_version: String, installed_files: Dictionary) -> Dictionary:
 	var addon := scratch(purpose + "_addon")
 	var updates := scratch(purpose + "_updates")
+	var project := scratch(purpose + "_project")
 	make_addon(addon, installed_version, installed_files)
+	var project_file := project.path_join("project.godot")
+	write_project_file(project_file, PackedStringArray([TOOLKIT_PLUGIN_ENTRY, RECOVERY_PLUGIN_ENTRY]))
 	return {
 		"addon": addon,
 		"updates": updates,
+		"project": project,
 		"addon_path": ProjectSettings.globalize_path(addon),
 		"updates_path": ProjectSettings.globalize_path(updates),
 		"options": {
 			"addon_folder": addon,
 			"update_folder": updates,
+			"project_file": project_file,
 			"engine_version": "4.7",
 			"public_keys": [public_pem(key())],
 			"guard_facts": {},
@@ -155,15 +221,26 @@ static func make_scenario(purpose: String, installed_version: String, installed_
 	}
 
 
+## Writes a project file at [param path] whose saved plugins are [param enabled], as the
+## editor saves them.
+static func write_project_file(path: String, enabled: PackedStringArray) -> void:
+	var quoted := PackedStringArray()
+	for entry: String in enabled:
+		quoted.append("\"%s\"" % entry)
+	var text := "config_version=5\n\n[editor_plugins]\n\nenabled=PackedStringArray(%s)\n" % ", ".join(quoted)
+	FolderFiles.write_checked(ProjectSettings.globalize_path(path), text.to_utf8_buffer())
+
+
 ## Whether the folder [param relative] exists in the update folder of [param scenario].
 static func scenario_has_folder(scenario: Dictionary, relative: String) -> bool:
 	return DirAccess.dir_exists_absolute(str(scenario["updates_path"]).path_join(relative))
 
 
-## Deletes the addon and update folders of [param scenario].
+## Deletes the addon, update and project folders of [param scenario].
 static func remove_scenario(scenario: Dictionary) -> void:
 	remove(str(scenario["addon"]))
 	remove(str(scenario["updates"]))
+	remove(str(scenario["project"]))
 
 
 ## The manifest text for a zip of [param archive_bytes] at [param version]. It names a
@@ -289,7 +366,8 @@ static func stage_tampered(
 
 ## One installer scenario's world: the update check runner's cache naming
 ## [param latest], consent given, the install mode [param mode], a scratch addon at
-## [param installed], a scratch update folder, and the installer's options. The
+## [param installed], a scratch update folder, a scratch project file whose saved plugins
+## hold the recovery plugin, and the installer's options. The
 ## runner's cache path is fixed, so its file is saved here and put back by
 ## [method end_world].
 static func begin_world(purpose: String, latest: String, mode: String, installed: String) -> Dictionary:
@@ -304,7 +382,10 @@ static func begin_world(purpose: String, latest: String, mode: String, installed
 	Consent.set_readers(func() -> bool: return true, func(_step_id: StringName) -> bool: return true)
 	var addon := scratch(purpose + "_addon")
 	var updates := scratch(purpose + "_updates")
+	var project := scratch(purpose + "_project")
 	make_addon(addon, installed, {"core/a.gd": "a"})
+	var project_file := project.path_join("project.godot")
+	write_project_file(project_file, PackedStringArray([TOOLKIT_PLUGIN_ENTRY, RECOVERY_PLUGIN_ENTRY]))
 	# Loaded, not preloaded: trust_fixtures.gd preloads this file.
 	var trust_fixtures: GDScript = load("res://test/units/trust_fixtures.gd")
 	var trust_document: String = trust_fixtures.call("first_document", [key()])
@@ -313,9 +394,11 @@ static func begin_world(purpose: String, latest: String, mode: String, installed
 		"saved_cache": saved_cache,
 		"addon": addon,
 		"updates": updates,
+		"project": project,
 		"options": {
 			"addon_folder": addon,
 			"update_folder": updates,
+			"project_file": project_file,
 			"trust_document": trust_document,
 			"trust_store": scratch(purpose + "_trust"),
 			"guard_facts": {"toolkit_repository": false},
@@ -340,6 +423,7 @@ static func end_world(world: Dictionary, nodes: Dictionary) -> void:
 	Consent.reset_readers()
 	remove(str(world["addon"]))
 	remove(str(world["updates"]))
+	remove(str(world["project"]))
 	remove(str((world["options"] as Dictionary)["trust_store"]))
 	var cache_path: String = world["cache_path"]
 	if world["saved_cache"] == null:

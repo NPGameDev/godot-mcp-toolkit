@@ -14,7 +14,10 @@ extends RefCounted
 ## "backup": "backup-X.Y.Z", "expected_tree_hash": "…", "compatible_server": "X.Y.Z",
 ## "changed_files": [...], "reason": "…", "attempts": N}[/code]. [code]"restaged": true[/code]
 ## joins them only after the one re-stage a stage that did not match gets; a later mismatch
-## then gives up.[br]
+## then gives up. [code]"applying_at": N[/code], the Unix time of the write that said
+## applying, joins them from that write until a postpone returns the journal to staged, so
+## a start can tell an apply still running from one a kill ended. [code]"restored": true[/code] joins a [constant NOT_APPLIED] journal
+## whose backup was put back because the new version did not load.[br]
 ## [br]
 ## One version's code writes this file and the next version's reads it, so the keys only
 ## grow and [constant FORMAT] stays; raising it needs a bridge release first. Unknown keys
@@ -85,6 +88,12 @@ static func read(folder: String = UpdateFolder.FOLDER) -> Dictionary:
 	var restaged: Variant = stored.get("restaged", false)
 	if restaged is bool and bool(restaged):
 		record["restaged"] = true
+	var applying_at: Variant = stored.get("applying_at", null)
+	if (applying_at is float or applying_at is int) and int(applying_at) >= 0:
+		record["applying_at"] = int(applying_at)
+	var restored: Variant = stored.get("restored", false)
+	if restored is bool and bool(restored):
+		record["restored"] = true
 	var changed := PackedStringArray()
 	var stored_changed: Variant = stored.get("changed_files", [])
 	if stored_changed is Array:
@@ -105,6 +114,10 @@ static func write(record: Dictionary, folder: String = UpdateFolder.FOLDER) -> b
 	stored["attempts"] = int(record.get("attempts", 0))
 	if bool(record.get("restaged", false)):
 		stored["restaged"] = true
+	if record.has("applying_at"):
+		stored["applying_at"] = int(record["applying_at"])
+	if bool(record.get("restored", false)):
+		stored["restored"] = true
 	var path := ProjectSettings.globalize_path(folder).path_join(_FILE_NAME)
 	return FolderFiles.write_checked(path, JSON.stringify(stored, "\t").to_utf8_buffer())
 

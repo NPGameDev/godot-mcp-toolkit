@@ -377,6 +377,9 @@ static func _test_applier_takes_the_stage(testing: Testing) -> void:
 	testing.begin("Stage stepper: the applier takes what it wrote")
 	var addon := UpdateFixtures.scratch("stepper_apply_addon")
 	var folder := UpdateFixtures.scratch("stepper_apply_updates")
+	var project := UpdateFixtures.scratch("stepper_apply_project")
+	var project_file := project.path_join("project.godot")
+	UpdateFixtures.write_project_file(project_file, PackedStringArray([UpdateFixtures.RECOVERY_PLUGIN_ENTRY]))
 	UpdateFixtures.make_addon(addon, "1.1.0", {"core/a.gd": "old a"})
 	UpdateFixtures.stage(folder, _VERSION, _FILES, "1.1.0", UpdateFixtures.key(), UpdateJournal.VERIFIED)
 	FolderFiles.remove_tree(_stage_path(folder))
@@ -390,6 +393,7 @@ static func _test_applier_takes_the_stage(testing: Testing) -> void:
 	var applied := UpdateApplier.apply_pending({
 		"addon_folder": addon,
 		"update_folder": folder,
+		"project_file": project_file,
 		"engine_version": "4.7",
 		"public_keys": [UpdateFixtures.public_pem(UpdateFixtures.key())],
 		"guard_facts": {},
@@ -397,6 +401,7 @@ static func _test_applier_takes_the_stage(testing: Testing) -> void:
 	var live := FileAccess.get_file_as_string(ProjectSettings.globalize_path(addon).path_join("core/a.gd"))
 	UpdateFixtures.remove(addon)
 	UpdateFixtures.remove(folder)
+	UpdateFixtures.remove(project)
 	testing.eq(staged["state"], "done", "the stage → done")
 	testing.eq(journal_while_staging, "verified", "the journal stays the caller's to write")
 	testing.eq(applied, {"state": "applied", "reason": ""}, "the swap → applied")

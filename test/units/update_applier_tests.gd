@@ -30,6 +30,11 @@ static func run(testing: Testing) -> void:
 	_test_failed_second_rename(testing)
 	_test_failed_undo(testing)
 	_test_failed_applying_write(testing)
+	_test_applying_at(testing)
+	_test_recovery_entry_missing(testing)
+	_test_recovery_entry_read_last(testing)
+	_test_project_file_unreadable(testing)
+	_test_addon_folder_cannot_move(testing)
 	_test_stage_mismatches(testing)
 	_test_second_mismatch(testing)
 	_test_vanished(testing)
@@ -296,6 +301,177 @@ static func _test_failed_applying_write(testing: Testing) -> void:
 	testing.eq(state, "staged", "the journal never said applying")
 	testing.eq(version, "1.1.0", "nothing moved")
 	testing.ok(stage_kept, "the stage stays")
+	print("")
+
+
+# The journal's own text, so the test sees the file a later start reads, not a record.
+static func _stored_journal(updates_path: String) -> Dictionary:
+	var stored: Variant = JSON.parse_string(FileAccess.get_file_as_string(updates_path.path_join("journal.json")))
+	if stored is Dictionary:
+		return stored
+	return {}
+
+
+static func _test_applying_at(testing: Testing) -> void:
+	testing.begin("Update applier: the applying journal carries its time")
+	var scenario := _staged("apply_applying_at")
+	var updates_path := str(scenario["updates_path"])
+	var options: Dictionary = scenario["options"]
+	var stored_at_applying := {}
+	options["on_step"] = func(step: String) -> void:
+		if step == UpdateApplier.STEP_APPLYING:
+			stored_at_applying.merge(_stored_journal(updates_path))
+	var before := int(Time.get_unix_time_from_system())
+	var result := UpdateApplier.apply_pending(options)
+	var after := int(Time.get_unix_time_from_system())
+	UpdateFixtures.remove_scenario(scenario)
+	var applying_at: Variant = stored_at_applying.get("applying_at", null)
+	var is_number := applying_at is float or applying_at is int
+	testing.eq(result["state"], "applied", "the apply finishes")
+	testing.eq(stored_at_applying.get("state", ""), "applying", "the journal says applying")
+	testing.ok(is_number, "with applying_at, a number")
+	testing.ok(is_number and int(applying_at) >= before - 5 and int(applying_at) <= after + 5,
+			"holding the Unix time of the write, within 5 s")
+	print("")
+
+
+static func _test_recovery_entry_missing(testing: Testing) -> void:
+	testing.begin("Update applier: no saved recovery plugin entry")
+	var scenario := _staged("apply_no_recovery_entry")
+	var options: Dictionary = scenario["options"]
+	UpdateFixtures.write_project_file(str(options["project_file"]),
+			PackedStringArray([UpdateFixtures.TOOLKIT_PLUGIN_ENTRY]))
+	var seen := []
+	options["on_step"] = func(step: String) -> void:
+		seen.append(step)
+	var result := UpdateApplier.apply_pending(options)
+	var journal := UpdateJournal.read(scenario["updates"])
+	var version := _version(scenario["addon"])
+	var stage_kept := UpdateFixtures.scenario_has_folder(scenario, "stage")
+	var backup_made := UpdateFixtures.scenario_has_folder(scenario, "backup-1.1.0")
+	UpdateFixtures.remove_scenario(scenario)
+	testing.eq(result, {"state": "staged", "reason": "the recovery plugin is not enabled"}, "postponed, with the reason")
+	testing.eq(journal["state"], "staged", "the journal stays staged")
+	testing.eq(journal["attempts"], 1, "one attempt counted")
+	testing.eq(seen, [], "no step reached: the journal never said applying")
+	testing.eq(version, "1.1.0", "the live folder stays")
+	testing.ok(stage_kept and not backup_made, "the stage stays, and no backup is made")
+	print("")
+
+
+# The entry is read only once the release and its stage hold, so a release that must be
+# refused is refused, not postponed to the next exit.
+static func _test_recovery_entry_read_last(testing: Testing) -> void:
+	testing.begin("Update applier: no saved recovery plugin entry, and a release that must be refused")
+	var cases := {
+		"a guard": {
+			"change": func(_scenario: Dictionary) -> void: pass,
+			"options": {"guard_facts": {"headless": true}},
+			"reason": "A headless editor never installs updates.",
+		},
+		"an untrusted signature": {
+			"change": func(_scenario: Dictionary) -> void: pass,
+			"options": {"public_keys": [UpdateFixtures.public_pem(UpdateFixtures.other_key())]},
+			"reason": "the update is not signed by a key this toolkit trusts",
+		},
+		"a stage that does not match": {
+			"change": func(scenario: Dictionary) -> void:
+				FolderFiles.write_checked(str(scenario["updates_path"]).path_join("stage/core/a.gd"), "evil".to_utf8_buffer()),
+			"options": {},
+			"reason": "the stage does not match the release",
+		},
+	}
+	var index := 0
+	for label: String in cases:
+		var refusal: Dictionary = cases[label]
+		var scenario := _staged("apply_entry_read_last_%d" % index)
+		index += 1
+		var options: Dictionary = scenario["options"]
+		UpdateFixtures.write_project_file(str(options["project_file"]),
+				PackedStringArray([UpdateFixtures.TOOLKIT_PLUGIN_ENTRY]))
+		var extra_options: Dictionary = refusal["options"]
+		options.merge(extra_options, true)
+		var change: Callable = refusal["change"]
+		change.call(scenario)
+		var result := _apply_quietly(options)
+		var journal := UpdateJournal.read(scenario["updates"])
+		var version := _version(scenario["addon"])
+		UpdateFixtures.remove_scenario(scenario)
+		testing.eq(result, {"state": "not_applied", "reason": str(refusal["reason"])},
+				"%s → not applied, with its reason" % label)
+		testing.eq(journal["state"], "not_applied", "%s → the journal says not applied" % label)
+		testing.eq(version, "1.1.0", "%s → the live folder stays" % label)
+	print("")
+
+
+static func _test_project_file_unreadable(testing: Testing) -> void:
+	testing.begin("Update applier: a project file that cannot be read")
+	var cases := {
+		"no project file": func(project_file: String) -> void:
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(project_file)),
+		"a project file that does not parse": func(project_file: String) -> void:
+			FolderFiles.write_checked(ProjectSettings.globalize_path(project_file), "[editor_plugins\nenabled=(".to_utf8_buffer()),
+	}
+	var index := 0
+	for label: String in cases:
+		var scenario := _staged("apply_unreadable_project_%d" % index)
+		index += 1
+		var options: Dictionary = scenario["options"]
+		var change: Callable = cases[label]
+		change.call(str(options["project_file"]))
+		var result := _apply_quietly(options)
+		var journal := UpdateJournal.read(scenario["updates"])
+		var version := _version(scenario["addon"])
+		var stage_kept := UpdateFixtures.scenario_has_folder(scenario, "stage")
+		UpdateFixtures.remove_scenario(scenario)
+		testing.eq(result, {"state": "staged", "reason": "the recovery plugin is not enabled"},
+				"%s → postponed, with the reason" % label)
+		testing.eq(journal["attempts"], 1, "%s → one attempt counted" % label)
+		testing.ok(version == "1.1.0" and stage_kept, "%s → nothing moved" % label)
+	print("")
+
+
+# A read-only mount: everything checks out, and the first rename is the step that fails. A
+# read-only parent refuses the move on Linux and macOS; NTFS ignores that bit but refuses to
+# rename a folder while a file in it is open.
+static func _test_addon_folder_cannot_move(testing: Testing) -> void:
+	testing.begin("Update applier: an addon folder that cannot move")
+	var scenario := _staged("apply_addon_held")
+	var parent := UpdateFixtures.scratch("apply_addon_held_parent")
+	var addon := parent.path_join("godot_mcp_toolkit")
+	var parent_path := ProjectSettings.globalize_path(parent)
+	var addon_path := ProjectSettings.globalize_path(addon)
+	UpdateFixtures.make_addon(addon, "1.1.0", {"core/a.gd": "old a"})
+	var options: Dictionary = scenario["options"]
+	options["addon_folder"] = addon
+	var unix := OS.get_name() != "Windows"
+	var held: FileAccess = null
+	if unix:
+		FileAccess.set_unix_permissions(parent_path, FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_EXECUTE_OWNER)
+	else:
+		held = FileAccess.open(addon_path.path_join("plugin.cfg"), FileAccess.READ)
+	var result := _apply_quietly(options)
+	if unix:
+		FileAccess.set_unix_permissions(parent_path,
+				FileAccess.UNIX_READ_OWNER | FileAccess.UNIX_WRITE_OWNER | FileAccess.UNIX_EXECUTE_OWNER)
+	elif held != null:
+		held.close()
+	var journal_text := FileAccess.get_file_as_string(str(scenario["updates_path"]).path_join("journal.json"))
+	var journal := UpdateJournal.read(scenario["updates"])
+	var version := _version(addon)
+	var stage_kept := UpdateFixtures.scenario_has_folder(scenario, "stage")
+	var backup_made := UpdateFixtures.scenario_has_folder(scenario, "backup-1.1.0")
+	UpdateFixtures.remove(parent)
+	UpdateFixtures.remove_scenario(scenario)
+	testing.ok(unix or held != null, "the hold is in place")
+	testing.eq(result, {"state": "staged", "reason": "could not move the installed toolkit to backup-1.1.0"},
+			"postponed, with the reason")
+	testing.eq(journal["state"], "staged", "the journal goes back to staged")
+	testing.eq(journal["attempts"], 1, "one attempt counted")
+	testing.ok(not journal_text.is_empty() and not journal_text.contains("applying_at"),
+			"and the time of the applying write is gone")
+	testing.eq(version, "1.1.0", "the live folder stays")
+	testing.ok(stage_kept and not backup_made, "the stage stays, and no backup is made")
 	print("")
 
 

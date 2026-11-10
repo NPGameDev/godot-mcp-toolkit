@@ -34,6 +34,7 @@ const ReleaseArchive := preload("res://addons/godot_mcp_toolkit/self_update/rele
 const ReleaseFileList := preload("res://addons/godot_mcp_toolkit/self_update/release_file_list.gd")
 const InstallGuards := preload("res://addons/godot_mcp_toolkit/self_update/install_guards.gd")
 const FolderFiles := preload("res://addons/godot_mcp_toolkit/self_update/folder_files.gd")
+const RecoveryFiles := preload("res://addons/godot_mcp_toolkit/self_update/recovery_files.gd")
 const UpdateCheck := preload("res://addons/godot_mcp_toolkit/versioning/update_check.gd")
 const VersionUtils := preload("res://addons/godot_mcp_toolkit/versioning/mcp_version_utils.gd")
 
@@ -46,6 +47,9 @@ const STEP_LIVE_MOVED := "live_moved"
 const STEP_STAGE_MOVED := "stage_moved"
 ## The reason a release whose signature the chain no longer trusts is not installed.
 const UNTRUSTED_SIGNATURE := "the update is not signed by a key this toolkit trusts"
+## The reason an apply waits while the saved project file does not enable the recovery
+## plugin.
+const RECOVERY_NOT_ENABLED := "the recovery plugin is not enabled"
 
 
 ## Applies the staged update, if there is one.
@@ -55,11 +59,17 @@ const UNTRUSTED_SIGNATURE := "the update is not signed by a key this toolkit tru
 ## [code]guard_facts[/code] (the shape [method InstallGuards.facts] returns), and what the
 ## signature is checked against: [code]trust_document[/code] and [code]trust_store[/code]
 ## (the shape [method ReleaseSignature.chain] takes), or [code]public_keys[/code], which skips
-## the chain. [code]on_step[/code] is a [Callable] called with each step's name as it is
-## reached, so a test can act or a driver can kill there.[br]
+## the chain. [code]project_file[/code] is the project file whose saved plugins must enable
+## the recovery plugin ([code]res://project.godot[/code] by default). [code]on_step[/code] is
+## a [Callable] called with each step's name as it is reached, so a test can act or a driver
+## can kill there.[br]
+## [br]
+## The journal that says applying also holds [code]applying_at[/code], the Unix time of that
+## write, so a start can tell an apply in progress from one a kill ended.[br]
 ## [br]
 ## What cannot apply today leaves one of two states. Something that may pass by itself (a
-## held file, a backup in the way) stays [code]staged[/code], with its [code]reason[/code]
+## held file, a backup in the way, a recovery plugin the saved project file does not enable)
+## stays [code]staged[/code], with its [code]reason[/code]
 ## and one more of [code]attempts[/code], and every exit retries. A failed check writes
 ## [code]not_applied[/code]: a stage that does not match loses the stage and keeps the zip
 ## for one re-stage, and anything else, or a second mismatch, loses the zip too.[br]
@@ -96,6 +106,8 @@ static func apply_pending(options: Dictionary = {}) -> Dictionary:
 	var backup_problem := _clear_backup_path(backup, addon_folder)
 	if not backup_problem.is_empty():
 		return _postpone(journal, backup_problem, update_folder)
+	if not _recovery_entry_saved(options):
+		return _postpone(journal, RECOVERY_NOT_ENABLED, update_folder)
 
 	_reach_step(STEP_CHECKED, options, update_folder)
 	# The folder can vanish at any moment, and no journal means nothing is in progress.
@@ -105,6 +117,7 @@ static func apply_pending(options: Dictionary = {}) -> Dictionary:
 		return _stage_mismatch(journal, stage, update_folder)
 
 	journal["state"] = UpdateJournal.APPLYING
+	journal["applying_at"] = int(Time.get_unix_time_from_system())
 	journal["reason"] = ""
 	if not UpdateJournal.write(journal, update_folder):
 		return _postpone(journal, "could not write the journal", update_folder)
@@ -192,6 +205,19 @@ static func _clear_backup_path(backup: String, addon_folder: String) -> String:
 	return ""
 
 
+# The recovery plugin puts the backup back when the new version does not load, and the
+# editor starts only the plugins project.godot saved, so the entry is read from the file on
+# disk, never from the settings in memory. A file that does not load counts as no entry.
+static func _recovery_entry_saved(options: Dictionary) -> bool:
+	var project := ConfigFile.new()
+	if project.load(str(options.get("project_file", "res://project.godot"))) != OK:
+		return false
+	var enabled: Variant = project.get_value("editor_plugins", "enabled", PackedStringArray())
+	if not (enabled is PackedStringArray or enabled is Array):
+		return false
+	return RecoveryFiles.PLUGIN_CFG in enabled
+
+
 static func _reach_step(step: String, options: Dictionary, update_folder: String) -> void:
 	UpdateFolder.log_line("apply step: %s" % step, update_folder)
 	var on_step: Callable = options.get("on_step", Callable())
@@ -237,6 +263,9 @@ static func _refuse(journal: Dictionary, reason: String, update_folder: String) 
 static func _finish(journal: Dictionary, state: String, reason: String, update_folder: String) -> Dictionary:
 	journal["state"] = state
 	journal["reason"] = reason
+	# A staged journal is not an apply in progress, so it carries no applying time.
+	if state == UpdateJournal.STAGED:
+		journal.erase("applying_at")
 	var written := UpdateJournal.write(journal, update_folder)
 	var log_parts := [
 		journal["to"],
