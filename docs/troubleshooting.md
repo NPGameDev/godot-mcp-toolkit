@@ -391,10 +391,10 @@ update folder:
 2. Delete `addons/.godot_mcp_toolkit_update/journal.json`, so the next start
    does not take the half-finished update for an update waiting to install.
 3. Open the project again.
-4. If you opened the project on Godot 4.2 while the folder was missing, turn
-   the plugin back on in **Project Settings → Plugins**. If the plugin is off after you reopen the project, turn it back on in Project
-   Settings → Plugins. When the plugin's folder is missing, Godot 4.2 saves the
-   plugin's removal from the enabled list; in testing, 4.3 and 4.7 did not.
+4. If the plugin is off after you reopen the project, turn it back on in
+   **Project Settings → Plugins**. When the plugin's folder is missing, Godot
+   4.2 saves the plugin's removal from the enabled list; in testing, 4.3 and
+   4.7 did not.
 
 `install.log` in the same folder says which step failed.
 
