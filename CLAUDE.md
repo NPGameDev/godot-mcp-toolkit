@@ -374,11 +374,14 @@ quick operational facts only.
   `test/apply_kill_driver/run_legs.sh`). An aggregate
   **`Toolkit floor OK`** gate `needs:` every floor job — it is the only name
   that ever becomes a required check (never an individual matrix row).
-- **Cross-version** (`.github/workflows/cross-version.yml`) — opt-in
-  behavioral matrix (manual dispatch, `[run-cross-version-ci]` in the commit
-  message, or a release via `workflow_call`), all against the **pinned**
+- **Cross-version** (`.github/workflows/cross-version.yml`) — behavioral
+  matrix that runs on every pull request against `main` that changes more than
+  `*.md` files (with the macOS/Windows grid, gated by **`Platform matrix OK`**),
+  and otherwise on a manual dispatch, `[run-cross-version-ci]` in a push's commit
+  message, or a release via `workflow_call`; a plain push to `main` skips it. All
+  of it runs against the **pinned**
   server sibling via the shared language-parameterized composite in the server
-  repo. Hosts BOTH behavioral tiers, so a toolkit opt-in proves the full
+  repo. Hosts BOTH behavioral tiers, so a toolkit run proves the full
   GDScript+.NET contract: a **GDScript-editor** tier (dogfood project, full
   smoke + flows per minor, 4.2–4.7; the 4.2 leg warms the class cache before
   the editor launch; a dispatch-integration leg rides the 4.7.0 row) AND a

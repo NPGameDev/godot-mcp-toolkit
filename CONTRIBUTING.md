@@ -121,7 +121,7 @@ contributor-facing summary.
   **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
   required check binds to, never an individual matrix row. Green floor is a merge
   precondition.
-- **Deep tier — opt-in** (`cross-version.yml`). The full **two-editor behavioral
+- **Deep tier — every code pull request** (`cross-version.yml`). The full **two-editor behavioral
   matrix** — GDScript-editor and .NET/mono-editor, Godot **4.2 through 4.7** —
   boots a real headless editor and round-trips the complete smoke + flows suites
   through the WebSocket bridge, plus a **dispatch-integration** leg on one row and
@@ -129,8 +129,11 @@ contributor-facing summary.
   GDScript tier's triggers it also runs the **update flow** on every minor on Linux
   and on 4.7.0 on macOS and Windows (`update-flow-platforms`), and the **update GUI**
   job (`update-gui`, 4.2.0 + 4.5.0 + 4.7.0): the self-update's interface in editors
-  with a window on a virtual display (`scripts/test_framework/update_gui.sh`). It does not
-  run on a plain push. Trigger it by putting **`[run-cross-version-ci]`** in your
+  with a window on a virtual display (`scripts/test_framework/update_gui.sh`). It runs
+  on every pull request against `main` that changes more than `*.md` files, with
+  the macOS and Windows grid, and **`Platform matrix OK`** is its required check;
+  the mono-editor unit leg is the exception and stays opt-in. It does not run on a
+  plain push. Otherwise, trigger it by putting **`[run-cross-version-ci]`** in your
   commit message, via **`workflow_dispatch`** (optionally with a `sibling-ref`
   override), or automatically as part of a release (below).
 - **Release** (`release.yml`). A **`v*` tag push** first runs the deep behavioral
@@ -148,10 +151,10 @@ contributor-facing summary.
   **dry-run** by default (everything runs; the Release upload is skipped).
 
 The behavioral tier is **mirrored in both repos** (toolkit and server): each side
-runs the full two-editor matrix against a pinned SHA of the other, so an opt-in run
-in either repo proves the whole GDScript + .NET contract for that repo's change. It
-is opt-in only and driven by one shared composite action, so the mirror costs
-nothing when idle and cannot drift between the two repos.
+runs the full two-editor matrix against a pinned SHA of the other, so a run in
+either repo proves the whole GDScript + .NET contract for that repo's change. It
+runs on code pull requests and on demand, and one shared composite action drives
+it, so the mirror cannot drift between the two repos.
 
 ## Dependency policy
 
