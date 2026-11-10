@@ -6,8 +6,12 @@ nav_order: 2
 
 # Godot MCP Toolkit — Architecture
 
-> **Architecture as of `8a1496e`** — the runtime-autoload
-> identity/registration was split out of the plugin orchestrator into a pure-const leaf
+> **Architecture as of `3a34324`** — the toolkit installs its own updates: the `self_update/`
+> domain checks a release against its signed update manifest and the trust chain, stages it in
+> the update folder `addons/.godot_mcp_toolkit_update/`, and swaps it into the addon folder at
+> the editor's exit ([ADR 0029](#14-key-decisions-adrs); [§7](#7-plugin-lifecycle),
+> [§10](#10-security--trust-boundaries), [§12](#12-distribution)). Before that, at `8a1496e`, the
+> runtime-autoload identity/registration was split out of the plugin orchestrator into a pure-const leaf
 > (`core/autoload_identity.gd`) plus a behaviour module (`core/autoload_registration.gd`),
 > shared with the export-strip domain ([ADR 0013](#14-key-decisions-adrs)); listen ports gained
 > deterministic env-driven pin/band config (`transport/port_config.gd`, bind-exact-or-fail;
@@ -20,8 +24,7 @@ nav_order: 2
 > baseline unchanged from the cohesion refactor (thin orchestrators over
 > single-responsibility children; DDD domain folders such as `commands/`, `contract/`,
 > `transport/`, `registry/`, `extensions/`; the `Modules` preload registry + the `EditorAccess`
-> facade). Latest change — macOS `.mcp.json` emission reverted to bare npx (ADR 0018
-> supersedes 0017).
+> facade); `self_update/` is one more such domain.
 
 This document explains how the toolkit is built, for users and contributors who want to
 understand it without reading all 113 GDScript files. It covers the major subsystems and
@@ -745,7 +748,7 @@ The toolkit assumes a **single local user with a human at the editor**; the boun
 localhost + token, not a defence against an adversary who can already write project files.
 Within that model, several layers keep an LLM's requests honest.
 
-<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd" data-verified="f63ae30" -->
+<!-- data-depicts="addons/godot_mcp_toolkit/security/auth.gd addons/godot_mcp_toolkit/security/file_guard.gd addons/godot_mcp_toolkit/security/audit.gd addons/godot_mcp_toolkit/security/untrusted.gd addons/godot_mcp_toolkit/security/scrubber.gd addons/godot_mcp_toolkit/transport/mcp_toolkit_command_registry.gd addons/godot_mcp_toolkit/self_update/release_signature.gd addons/godot_mcp_toolkit/self_update/trust_chain.gd addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd addons/godot_mcp_toolkit/self_update/release_manifest.gd addons/godot_mcp_toolkit/self_update/release_file_list.gd addons/godot_mcp_toolkit/self_update/release_archive.gd addons/godot_mcp_toolkit/self_update/release_assets.gd addons/godot_mcp_toolkit/self_update/update_downloader.gd addons/godot_mcp_toolkit/self_update/install_guards.gd addons/godot_mcp_toolkit/self_update/install_mode.gd addons/godot_mcp_toolkit/self_update/update_installer.gd addons/godot_mcp_toolkit/self_update/update_applier.gd addons/godot_mcp_toolkit/core/consent.gd" data-verified="ea9923f" -->
 ```mermaid
 flowchart TD
     llm["LLM-authored request"] --> token{"valid token?<br/>(first frame)"}
@@ -757,7 +760,7 @@ flowchart TD
     deny --> handler["command handler"]
     handler --> wrap["read paths → Untrusted.wrap + Scrubber.scrub"]
 ```
-*Figure 13 — request trust boundaries · verified f63ae30*
+*Figure 13 — request trust boundaries · verified ea9923f*
 
 - **FileGuard** (`security/file_guard.gd`) is the path keystone: `resolve_safe` confines writes
   to `res://` (rejecting `..` traversal and absolute OS paths via a globalize → simplify →
@@ -794,6 +797,35 @@ flowchart TD
   breakout). Console text, a running game's log and save-file text also run through
   `Scrubber`, which redacts secrets before they reach the LLM; script text is never scrubbed.
   This applies to read paths only, never to writes or binary.
+- **The self-update** ([ADR 0029](#14-key-decisions-adrs)) is the one path that writes what it
+  downloads into the project, and what it writes is the toolkit's own code, so it trusts the
+  signature, not the host. A release counts only when its update manifest is signed by a release
+  key the latest trust document lists (`self_update/release_signature.gd`). The chain starts at
+  the document the installed release embeds (`self_update/embedded_trust_document.gd`); each next
+  document must be signed by enough of the previous one's root keys, and the ones accepted are
+  stored per machine in the OS's data folder, outside the project, and verified again from the
+  embedded one on every load (`self_update/trust_chain.gd`; the procedures are in
+  [`docs/dev/trust-chain.md`](../dev/trust-chain.md)). The manifest pins the zip by size and
+  SHA-256 and names the oldest Godot the release runs on (`self_update/release_manifest.gd`); the
+  file list inside the zip, `release_files.sha256`, says what the stage must hold
+  (`self_update/release_file_list.gd`), and `self_update/release_archive.gd` refuses a zip with an
+  entry outside the addon folder or a file the list does not name. Every URL is built from the
+  version or the document's number alone (`self_update/release_assets.gd`), and
+  `self_update/update_downloader.gd` follows each redirect by hand, over HTTPS, only to
+  `github.com` or a `githubusercontent.com` host other than `raw.githubusercontent.com`, at most
+  five hops; that narrows where a request goes, while the signature and hash decide what is used.
+  The installer offers to install a release, rather than link to it, only when the consent gate allows it (`may_install_updates` in
+  `core/consent.gd`: the update check may run, the setup step that explains installing has been
+  seen, and `mcp_toolkit/updates/install_mode` reads `ask`, `self_update/install_mode.gd`) and the
+  installed release embeds a readable trust document; the zip downloads only once the user clicks
+  Update. A major release never installs, nor does one that needs a
+  newer Godot, nor any into the toolkit's own repository, a linked addon folder, a git checkout or
+  submodule, or a headless editor (`self_update/install_guards.gd`,
+  `self_update/update_installer.gd`). At the editor's exit the applier checks again, offline and
+  from the stored chain, the guards, the signature, the engine floor, the zip's hash, that the
+  version is newer and the zip's layout against its list, before its two renames
+  (`self_update/update_applier.gd`). The tools cannot reach the staged files: FileGuard refuses
+  the update folder, above.
 
 ---
 
@@ -823,7 +855,18 @@ The two repos ship through **different channels** so users never fetch what they
 - **Toolkit** → the **Godot Asset Library** (the GitHub archive) plus a GitHub-Releases zip
   built by `scripts/build-plugin-release.{ps1,sh}`. The package contains **only** the
   `addons/godot_mcp_toolkit/` subtree — which is why this `docs/` folder, the ADRs, and the dev
-  docs never reach end users. `plugin.cfg` declares the version and the `plugin.gd` entry point;
+  docs never reach end users. The Releases zip also holds the release file list,
+  `addons/godot_mcp_toolkit/release_files.sha256` (one SHA-256 and path per file, sorted, in the
+  format `sha256sum -c` checks), and the release publishes the **update manifest**,
+  `godot-mcp-toolkit-<version>.update.json`, beside it: the manifest pins the zip by size and
+  SHA-256 and names the oldest Godot it runs on. Both build scripts write the two
+  (`scripts/lib/release_files.sh` for the bash one), but only the bash build's manifest, the one
+  `.github/workflows/release.yml` builds, is ever signed. The workflow checks the booted tree
+  against the list and the manifest against the zip (`scripts/check_release_files.sh`), then
+  attaches the zip and the manifest to the GitHub Release; the maintainer adds the signature,
+  `godot-mcp-toolkit-<version>.update.json.sig`, with `scripts/sign-release.sh`, outside the
+  workflow. The self-update reads all three ([§10](#10-security--trust-boundaries)).
+  `plugin.cfg` declares the version and the `plugin.gd` entry point;
   `icon.png` at the repo root is the Asset Library listing icon, and the repo-root `icon.svg` is the
   dogfood project's own icon (`project.godot` `config/icon`). The addon carries a separate
   `addons/godot_mcp_toolkit/icon.svg`, which is the one that ships inside the package.
