@@ -268,20 +268,77 @@ version requirements and details.
 
 ### An update did not install, or the toolkit stopped loading after one
 
-The dock's badge says why after the next editor start, and the full story is in
-`user://addons/godot_mcp_toolkit/update/install.log` (Project → Open User Data
-Folder). A failed write restores the previous version by itself. If the badge
-says some files were not restored, or the toolkit no longer loads at all after an
-update, close the editor and copy the files from
-`user://addons/godot_mcp_toolkit/update/backup/` back over
-`res://addons/godot_mcp_toolkit/`, or reinstall the previous release's zip from
-GitHub. A version that needs a newer Godot is never installed by the toolkit; the
-badge names the Godot it needs.
+The update badge in the dock says what went wrong. Every step and every failure
+also goes to `addons/.godot_mcp_toolkit_update/install.log`. The editor hides
+that folder, so open it in your file manager. The shipped
+[`self-update.md`](../addons/godot_mcp_toolkit/docs/self-update.md) says what an
+update downloads and writes, and when.
+
+**When a check fails.** The toolkit checks a release before it offers it, and
+again each time you click **Update**. If a check fails, the badge shows one of
+these messages:
+
+- **"Couldn't reach GitHub to check this update."** There was no answer: no
+  connection, a timeout, or a failed TLS handshake. Check your connection, then
+  click **Update**.
+- **"GitHub replied, but not with the file the toolkit asked for."** GitHub
+  answered with an error. Click **Update** again in a few minutes.
+- **"This release isn't ready to install from the editor yet."** The release is
+  out, but its update manifest or signature isn't on GitHub yet. Click
+  **Update** later. If you didn't click, the badge only offers the update and
+  checks again the next time you open the editor.
+- **"This update failed its security check, so it won't install."** A trust
+  document, the release's signature, its manifest or a download's redirect
+  didn't pass the check. Your connection isn't the cause. This message has no
+  GitHub or Asset Store button, because those would get you the release the
+  check just refused. Wait for the next release. If the message comes back on
+  the next one, report it privately as [`SECURITY.md`](../SECURITY.md)
+  describes.
+- **"Couldn't save update security data to *folder*."** The toolkit couldn't
+  write a trust document to the folder the message names. Make that folder
+  writable, then click **Update**.
+- **"This update can't install here because your system doesn't set APPDATA"**
+  (Windows) **or "HOME"** (macOS and Linux). The toolkit keeps its trust
+  documents in your user data folder, and Godot finds that folder through this
+  variable. Without it, the toolkit has nowhere to keep them, so it installs
+  nothing. Set the variable where the editor gets its environment, then reopen
+  the editor. This message has no **Update** button, since a click can't
+  change it.
+
+The first two messages and the security one end by saying the toolkit checks
+again the next time you open the editor, unless you close the message.
+
+**After you click Update.** If the download or the unpacking fails, the badge
+says "Couldn't install:" and the reason. Click **Try again**.
+
+**When the editor closes.** The update installs while the editor closes. If it
+couldn't, the badge says why at the next start:
+
+- **"When the editor last closed, the update didn't install:"** and a reason.
+  Something got in the way that may clear by itself, such as a file another
+  program held open. The update stays ready and tries again at every close.
+- **"Godot MCP Toolkit *version* was not installed."** The last check before
+  the install refused it. The line below names the reason, the version still
+  installed and the install log. When the reason is that the update isn't
+  signed by a key this toolkit trusts, the badge offers no download, and the
+  toolkit offers the next release once it is published and checked.
+
+If `addons/godot_mcp_toolkit/` is missing after an update, see
+[The toolkit is gone after an update](#the-toolkit-is-gone-after-an-update). If
+the new version is there but doesn't load, close the editor and reinstall the
+previous release's zip from GitHub. Until the next update is ready, the version
+an update replaced also stays in
+`addons/.godot_mcp_toolkit_update/backup-<version>/`, unless **Keep Backup** is
+off.
+
+A version that needs a newer Godot is never installed by the toolkit; the badge
+names the Godot it needs.
 
 To stop the toolkit from installing updates, set Project Settings → Mcp Toolkit →
-Updates → Install Mode to `manual`. An editor that was killed (not closed) keeps a
-staged update and installs it at the next normal close; disabling the plugin drops
-it.
+Updates → Install Mode to `manual`, which also deletes an update waiting to
+install. **Don't install** on the badge deletes that one update. An editor that
+was killed (not closed) keeps a staged update and installs it at the next normal
+close; disabling the plugin drops it.
 
 ### Windows: a headless CLI export never returns
 
@@ -332,10 +389,35 @@ update folder:
 1. Move `addons/.godot_mcp_toolkit_update/backup-<version>/` back to
    `addons/godot_mcp_toolkit/`, where `<version>` is the version you had.
 2. Delete `addons/.godot_mcp_toolkit_update/journal.json`, so the next start
-   does not take the half-finished swap for an update waiting to install.
+   does not take the half-finished update for an update waiting to install.
 3. Open the project again.
+4. If you opened the project on Godot 4.2 while the folder was missing, turn
+   the plugin back on in **Project Settings → Plugins**. Godot 4.2 drops a
+   missing plugin from the enabled list and saves that. Godot 4.3 and later
+   keep it enabled.
 
 `install.log` in the same folder says which step failed.
+
+If `git clean -fdX` or `git clean -fdx` ran while the folder was missing, it
+deleted the update folder, with the backup and the new version in it.
+Reinstall the toolkit from the release zip.
+
+### A cloud-synced project folder (OneDrive, Google Drive)
+
+A sync client can hold the toolkit's files open while the editor closes and an
+update moves the addon folder. The toolkit has been tested against a held file,
+but not with a sync client running:
+
+- If a held file stops the update before anything moves, the badge says "When
+  the editor last closed, the update didn't install:" and the update tries
+  again at the next close.
+- If the addon folder is missing after the editor closed, follow
+  [The toolkit is gone after an update](#the-toolkit-is-gone-after-an-update).
+- On Windows, an addon folder that is a cloud placeholder counts as a link, so
+  no update installs from the editor. Install updates by hand there.
+
+To avoid the risk, pause syncing before you close the editor to install an
+update.
 
 ## Still stuck?
 
