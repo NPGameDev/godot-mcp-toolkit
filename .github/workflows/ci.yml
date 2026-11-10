@@ -403,21 +403,32 @@ jobs:
         run: bash ./scripts/test_framework/check_export_strip.sh res://export_strip_probe.gd $MODES
 
   # ── The self-update's swap in real editors ───────────────────────────────────
-  # Kills an editor at each step of the swap and grades the next start, on the floor
-  # and ceiling versions; run_legs.sh names its legs. It sits in the floor, not the
-  # opt-in deep tier, because no other job runs the swap on a real folder. Xvfb serves
-  # the editor's OpenGL through Mesa's software renderer.
+  # Kills an editor at each step of the swap and grades the next start, on every
+  # supported minor version on Linux and macOS; run_legs.sh names its legs. It sits in
+  # the floor, not the opt-in deep tier, because no other job runs the swap on a real
+  # folder. On Linux Xvfb serves the editor's OpenGL through Mesa's software renderer;
+  # macOS has a display.
   apply-kill:
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
-    runs-on: ubuntu-latest
-    # Fuse: about twenty editor sessions, each ended from inside within 240s if it hangs.
-    timeout-minutes: 30
+    runs-on: ${{ matrix.os }}
+    # Fuse: 29 editor sessions per row, each ended from inside within 240s if it hangs.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
-        godot-version: ["4.2.0", "4.7.0"]
-    name: "Apply kill legs (real editor · Godot ${{ matrix.godot-version }})"
+        os: [ubuntu-latest, macos-latest]
+        godot-version: ["4.2.0", "4.3.0", "4.4.0", "4.5.0", "4.6.0", "4.7.0"]
+        # On macOS Godot 4.5.0 can abort at an editor's start or exit with `Pure virtual
+        # function called!` (an export plugin's device poll thread; fixed in 4.5.1), so
+        # macOS runs 4.5.2 in its place.
+        exclude:
+          - os: macos-latest
+            godot-version: "4.5.0"
+        include:
+          - os: macos-latest
+            godot-version: "4.5.2"
+    name: "Apply kill legs (real editor · ${{ matrix.os }} · Godot ${{ matrix.godot-version }})"
     steps:
       - uses: actions/checkout@v7
 
@@ -428,8 +439,14 @@ jobs:
           version: ${{ matrix.godot-version }}
           use-dotnet: false
 
-      - name: Install a virtual display
+      - name: Install a virtual display (Linux)
+        if: ${{ runner.os == 'Linux' }}
         run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri
+
+      # run_legs.sh calls GNU timeout, which macOS names gtimeout (coreutils).
+      - name: Provide gtimeout (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        run: command -v gtimeout >/dev/null 2>&1 || brew install coreutils
 
       # The verdict is the script's last line, so a run that died before it never passes.
       - name: Run the legs
@@ -438,14 +455,18 @@ jobs:
           APPLY_KILL_OUT: ${{ runner.temp }}/apply-kill
         run: |
           set -o pipefail
-          xvfb-run -a -s "-screen 0 1600x1000x24" bash test/apply_kill_driver/run_legs.sh 2>&1 | tee "${RUNNER_TEMP}/apply-kill.log"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a -s "-screen 0 1600x1000x24" bash test/apply_kill_driver/run_legs.sh 2>&1 | tee "${RUNNER_TEMP}/apply-kill.log"
+          else
+            bash test/apply_kill_driver/run_legs.sh 2>&1 | tee "${RUNNER_TEMP}/apply-kill.log"
+          fi
           tail -1 "${RUNNER_TEMP}/apply-kill.log" | grep -q '^apply kill legs: PASS'
 
       - name: Upload the evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v5
         with:
-          name: apply-kill-${{ matrix.godot-version }}
+          name: apply-kill-${{ runner.os }}-${{ matrix.godot-version }}
           path: ${{ runner.temp }}/apply-kill/logs
           if-no-files-found: warn
           retention-days: 14

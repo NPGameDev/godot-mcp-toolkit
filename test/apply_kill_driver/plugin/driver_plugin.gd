@@ -24,6 +24,10 @@ const _UPDATE_FOLDER := "res://addons/.godot_mcp_toolkit_update"
 const _TOOLKIT_FOLDER := "res://addons/godot_mcp_toolkit"
 const _SELF_UPDATE_FOLDER := _TOOLKIT_FOLDER + "/self_update"
 const _ICON_PATH := _TOOLKIT_FOLDER + "/icon.svg"
+const _RECOVERY_CFG := "res://addons/.godot_mcp_toolkit_recovery/plugin.cfg"
+# The title the recovery plugin's dialogs share with the toolkit's update prompt; the legs
+# that press Later run with the toolkit unloaded, so only the recovery dialog can match.
+const _RECOVERY_DIALOG_TITLE := "Godot MCP Toolkit update"
 const _STAGED := "staged"
 const _STEPPER_DONE := "done"
 const _STEPPER_RUNNING := "running"
@@ -48,6 +52,7 @@ var _stepper: RefCounted = null
 var _longest_step_usec := 0
 var _scan_called_usec := 0
 var _settle_pending := false
+var _later_pressed := false
 # Held from the start: the swap moves the files these came from.
 var _applier: GDScript = null
 
@@ -60,12 +65,15 @@ func _enter_tree() -> void:
 	_started_ms = Time.get_ticks_msec()
 	_public_key = FileAccess.get_file_as_string(_DRIVER_FOLDER.path_join("public_key.pem")).replace("\r", "")
 	_note("session_started", "1")
+	_note("recovery_enabled", str(EditorInterface.is_plugin_enabled(_RECOVERY_CFG)))
 	_note("toolkit_folder_present", str(FileAccess.file_exists(_self_update_script("update_settler.gd"))))
+	# Set even with the toolkit's folder gone: the recovery plugin may put a toolkit back and
+	# enable it later in this session, and that toolkit's start settles too.
+	_settle_pending = _flag("settle")
 	if not FileAccess.file_exists(_self_update_script("update_settler.gd")):
 		return
 	if _flag("apply"):
 		_applier = load(_self_update_script("update_applier.gd"))
-	_settle_pending = _flag("settle")
 
 
 func _process(_delta: float) -> void:
@@ -154,6 +162,7 @@ func _note_settled_once_over(now: int) -> void:
 	_note("settle_from", str(result.get("from", "")))
 	_note("settle_to", str(result.get("to", "")))
 	_note("settle_reason", str(result.get("reason", "")))
+	_note("settle_restored", str(result.get("restored", false)))
 
 
 func _scan_has_settled(now: int) -> bool:
@@ -191,7 +200,8 @@ func _advance_stage(now: int) -> void:
 	_finish_stage_if_over(outcome, now)
 
 
-# Writes the journal the stepper's caller would once the stage is whole; the stepper writes none.
+# Writes the journal the stepper's caller would once the stage is whole, and installs the
+# recovery plugin as that caller does; the stepper does neither.
 func _finish_stage_if_over(outcome: Dictionary, now: int) -> void:
 	var state := str(outcome["state"])
 	if state == _STEPPER_RUNNING:
@@ -205,15 +215,54 @@ func _finish_stage_if_over(outcome: Dictionary, now: int) -> void:
 		var journal_script: GDScript = load(_self_update_script("update_journal.gd"))
 		var record := {"state": _STAGED, "from": str(_session["from"]), "to": str(_session["to"]), "backup": ""}
 		_note("journal_written", str(journal_script.call("write", record)))
+		_install_recovery()
 	_enter_phase(_Phase.WAIT_FOR_TOOLKIT, now)
+
+
+# The installer puts the recovery plugin in place once a stage is whole, and the apply at
+# exit postpones without it.
+func _install_recovery() -> void:
+	var files_script: GDScript = load(_self_update_script("recovery_files.gd"))
+	var files: RefCounted = files_script.new()
+	var failure := str(files.call("install"))
+	_note("recovery_failure", failure)
+	_note("recovery_installed", str(failure.is_empty()))
 
 
 func _toolkit_wait_is_over(now: int) -> bool:
 	if now - _phase_started_ms > _WAIT_LIMIT_MS:
 		return true
+	if _flag("press_later") and not _press_later_once_shown():
+		return false
 	if _flag("wait_import") and not _icon_is_imported():
 		return false
 	return not _flag("wait_toolkit") or _toolkit_is_loaded()
+
+
+# Answers the recovery plugin's restore dialog as a user who restarts later would: notes its
+# text, its line breaks written as \n so the note stays one line, then presses Later.
+# Returns whether Later has been pressed.
+func _press_later_once_shown() -> bool:
+	if _later_pressed:
+		return true
+	var dialog := _recovery_dialog()
+	if dialog == null:
+		return false
+	_note("recovery_dialog_text", dialog.dialog_text.replace("\n", "\\n"))
+	dialog.get_cancel_button().pressed.emit()
+	_later_pressed = true
+	_note("later_pressed", "1")
+	return true
+
+
+func _recovery_dialog() -> ConfirmationDialog:
+	for child: Node in EditorInterface.get_base_control().get_children():
+		if not child is ConfirmationDialog:
+			continue
+		var dialog: ConfirmationDialog = child
+		if dialog.visible and dialog.title == _RECOVERY_DIALOG_TITLE:
+			return dialog
+	return null
 
 
 func _note_toolkit() -> void:
