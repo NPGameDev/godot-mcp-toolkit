@@ -58,6 +58,8 @@ const _UPDATE_INSTALL_TEXT := (
 	+ "keeps a copy of the current version until the next update is staged. If Keep "
 	+ "Backup is off in Project Settings, it deletes the copy once the update installs. "
 	+ "Major versions, and versions that need a newer Godot, are only linked.\n\n"
+	+ "What an update downloads and writes, and when, is in:\n"
+	+ "  addons/godot_mcp_toolkit/docs/self-update.md\n\n"
 	+ "The new files show up in version control: commit them, so everyone on the "
 	+ "project runs the same version. This needs the update check (Project Settings > "
 	+ "Mcp Toolkit > Updates) to be on.\n\n"
@@ -97,6 +99,7 @@ static func run(testing) -> void:
 	_test_pin_choice_control(testing)
 	_test_install_choice_control(testing)
 	_test_install_choice_keeps_the_project_setting(testing)
+	_test_update_install_names_its_page(testing)
 
 
 static func _test_step_specs(testing) -> void:
@@ -263,6 +266,18 @@ static func _test_install_choice_keeps_the_project_setting(testing: Testing) -> 
 	testing.eq(saves["manual"], 0, "with no save")
 	testing.eq(stored["ask"], "ask", "Next on ask → still ask")
 	testing.eq(saves["ask"], 0, "Next on ask → no save")
+	print("")
+
+
+# The install step asks for consent, so it names the shipped page that says what an
+# update downloads and writes, and that page must ship at the path it names.
+static func _test_update_install_names_its_page(testing: Testing) -> void:
+	testing.begin("Setup wizard: the install step names the shipped self-update page")
+	var text := str(StepSpecs.update_install()["text"])
+	testing.ok(text.contains("addons/godot_mcp_toolkit/docs/self-update.md"),
+			"the step's text names addons/godot_mcp_toolkit/docs/self-update.md")
+	testing.ok(FileAccess.file_exists("res://addons/godot_mcp_toolkit/docs/self-update.md"),
+			"the page it names exists")
 	print("")
 
 
