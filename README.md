@@ -9,7 +9,7 @@
 
 AI-assisted Godot development through the [Model Context Protocol](https://modelcontextprotocol.io). This addon turns the Godot 4.2+ editor into an MCP server. Your AI coding assistant can create scenes, edit scripts, inspect nodes, run playtests, and read the results back, all inside the editor while you watch. The companion npm package [`@npgamedev/godot-mcp-server`](https://github.com/NPGameDev/godot-mcp-server) is the bridge your assistant talks to.
 
-> Runs fully locally. No telemetry, no cloud services, no account. Nothing leaves your machine. The one exception is update checks: at most once a day the toolkit asks GitHub whether a newer version is published (and, when one is, asks the Asset Store whether it lists it yet), and the Extensions dialog fetches its catalog from GitHub when you open it. These requests carry no identifier and nothing about your project; the servers see only your IP address, as with any download. Turn the update check off in Project Settings under Mcp Toolkit > Updates (`mcp_toolkit/updates/check_for_updates`).
+> Runs fully locally. No telemetry, no cloud services, no account. Nothing leaves your machine. The one exception is update checks: at most once a day the toolkit asks GitHub whether a newer version is published (and, when one is, asks the Asset Store whether it lists it yet), and the Extensions dialog fetches its catalog from GitHub when you open it. These requests carry no identifier and nothing about your project; the servers see only your IP address, as with any download. Turn the update check off in Project Settings under Mcp Toolkit > Updates (`mcp_toolkit/updates/check_for_updates`). If you let the toolkit install its updates (a setup step asks, and `mcp_toolkit/updates/install_mode` keeps the answer), a newer version also makes it ask GitHub for any new trust document and for that release's manifest and signature, to check the release. The zip downloads only after you click Update, and the update installs when you close or restart the editor. The shipped [self-update guide](addons/godot_mcp_toolkit/docs/self-update.md) has the details.
 >
 > This is an independent community project, not affiliated with or endorsed by the Godot Foundation or Anthropic.
 >
@@ -46,7 +46,7 @@ Tested primarily with [Claude Code](https://docs.anthropic.com/en/docs/claude-co
   Godot 4.2–4.6: download the zip from the store page, then install it with the AssetLib tab's Import… button.
 - **Manual:** download from [GitHub Releases](https://github.com/NPGameDev/godot-mcp-toolkit/releases), extract into your project's `addons/` directory.
 
-To update, delete `addons/godot_mcp_toolkit/` before installing the new version, since installing over it leaves removed files and `.uid` sidecars behind.
+The toolkit can install its own updates; the shipped [self-update guide](addons/godot_mcp_toolkit/docs/self-update.md) says what it downloads and writes. To update by hand, delete `addons/godot_mcp_toolkit/` before installing the new version, since installing over it leaves removed files and `.uid` sidecars behind. Any file you keep in that folder is lost to an update, whether you or the toolkit installs it.
 
 ### 2. Enable it
 
@@ -193,7 +193,7 @@ CI fails the build if any of these numbers drift: **113 tools** (34 always-on + 
 The default posture is localhost-only, token-authenticated, and auditable:
 
 - **Session auth.** A random 64-character hex token is generated on every plugin start. The MCP server reads it from disk automatically, and unauthorized WebSocket connections are rejected.
-- **Filesystem sandbox.** All file operations are restricted to `res://` by default. `FileGuard` blocks path traversal (`..`), absolute OS paths, and paths that resolve outside the boundary after lexical canonicalization, and it denies the plugin's own source directory. (Canonicalization is lexical, not OS-symlink resolution.)
+- **Filesystem sandbox.** All file operations are restricted to `res://` by default. `FileGuard` blocks path traversal (`..`), absolute OS paths, and paths that resolve outside the boundary after lexical canonicalization, and it denies the plugin's own source directory and the self-update's folder, `addons/.godot_mcp_toolkit_update/`. (Canonicalization is lexical, not OS-symlink resolution.)
 - **Read-only mode and per-tool control.** Set `GODOT_MCP_READ_ONLY=1` in `.mcp.json` and the MCP server hides every mutating tool (code execution, method calls, `user://` writes, all `destructiveHint` tools) from the agent. That is a server-side guarantee, independent of the editor. For finer control, block individual high-risk tools through your agent's own permission system (for example, `.claude/settings.json` deny rules). See the shipped [security recommendations](addons/godot_mcp_toolkit/docs/security-recommendations.md).
 - **Audit log.** Every tool call is logged with an ISO-8601 timestamp and parameter hash. Append-only, per-write flush for crash safety, configurable max size.
 - **Response caps.** Script reads and WebSocket buffers are size-limited to prevent accidental exfiltration of large files.
@@ -303,7 +303,7 @@ Nothing. Runs fully locally, no telemetry, no cloud services, no account.
 - [Tool reference](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/tool-reference/README.md) (server repo, generated) and [token efficiency](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/token-efficiency.md): the measured context cost of the tool surface.
 - [Companion-skill efficiency](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/companion-skill-efficiency.md) (server repo): the measured build-time savings from the bundled workflow skill.
 - [Client setup](https://github.com/NPGameDev/godot-mcp-server/blob/main/docs/mcp-clients.md): per-client configuration beyond Claude Code.
-- Shipped with the addon: [compatibility](addons/godot_mcp_toolkit/docs/compatibility.md), [security recommendations](addons/godot_mcp_toolkit/docs/security-recommendations.md), [extending](addons/godot_mcp_toolkit/docs/extending.md), [bundled agent skills](addons/godot_mcp_toolkit/docs/companion-skills.md), [multi-instance](addons/godot_mcp_toolkit/docs/multi-instance.md), [advanced configuration](addons/godot_mcp_toolkit/docs/advanced_configuration.md).
+- Shipped with the addon: [compatibility](addons/godot_mcp_toolkit/docs/compatibility.md), [security recommendations](addons/godot_mcp_toolkit/docs/security-recommendations.md), [extending](addons/godot_mcp_toolkit/docs/extending.md), [bundled agent skills](addons/godot_mcp_toolkit/docs/companion-skills.md), [multi-instance](addons/godot_mcp_toolkit/docs/multi-instance.md), [advanced configuration](addons/godot_mcp_toolkit/docs/advanced_configuration.md), [self-update](addons/godot_mcp_toolkit/docs/self-update.md).
 
 ## Contributing
 

@@ -69,6 +69,71 @@ resolve with parse errors. Run `validate_gdscript.sh` first — it writes the ca
 when the cache is missing — or open the editor once. Same one-process-at-a-time
 rule as above.
 
+## Self-update flow (headless, a few minutes)
+
+`scripts/test_framework/update_flow.sh` runs the toolkit's self-update end to end
+on scratch projects: it builds the release from your tree and installs it over the
+same tree one version older through a local server, at an exit by a quit and by the
+window's close. It also checks that a toolkit folder that cannot be moved leaves the
+update waiting, that an untrusted signature and the toolkit's own repository stage
+nothing, and that a disable installs nothing. It needs Python 3,
+openssl, GNU `timeout` (`gtimeout` on macOS, from coreutils) and zip, and runs
+under a scratch `HOME` (and a scratch `%APPDATA%` on Windows), so your own editor
+settings and registry are untouched. It runs on Linux, macOS and Windows (Git
+Bash). Git Bash has no zip, so on Windows build the release with
+`scripts/build-plugin-release.ps1` first and set `UPDATE_FLOW_SKIP_BUILD=1`. CI
+runs it on Godot 4.2.0 and 4.7.0 in the floor, and on every minor and on macOS and
+Windows in `cross-version.yml`.
+
+```bash
+bash scripts/test_framework/update_flow.sh /path/to/godot
+UPDATE_FLOW_LEGS="full rollback" UPDATE_FLOW_KEEP=1 bash scripts/test_framework/update_flow.sh godot
+```
+
+## Release builds (no Godot, about a minute)
+
+`scripts/test_framework/check_release_builds.sh` runs the bash and the PowerShell
+release builds and checks that they write the same release: the same zip entries
+with the same bytes, the same release file list, and manifests that agree on all
+but the zip's own size and hash. It needs PowerShell 7 (`pwsh`), zip and Python 3.
+CI runs it in the floor.
+
+```bash
+bash scripts/test_framework/check_release_builds.sh
+```
+
+## Self-update interface (editor with a window, about 15 minutes)
+
+`scripts/test_framework/update_gui.sh` plays what a user clicks: the update badge's
+buttons and the restart once the update is staged, the editor-start window (Later,
+Skip this version), the ready view with an unsaved script or a scene never saved,
+an exit by the editor's quit shortcut, the server pin's move and its Undo in
+`.mcp.json`, and a major release. It runs editors with a window on a virtual
+display (Xvfb), with a test-only plugin (`test/update_gui_driver/`) pressing the
+buttons, and needs Python 3, openssl, `Xvfb`, `xdotool`, Mesa and zip.
+`UPDATE_GUI_ARTIFACTS` copies the screenshots and logs out. CI runs it on Godot
+4.2.0, 4.5.0 and 4.7.0 in `cross-version.yml`.
+
+```bash
+bash scripts/test_framework/update_gui.sh /path/to/godot
+UPDATE_GUI_SCENARIOS="restart server" UPDATE_GUI_ARTIFACTS=/tmp/update-gui bash scripts/test_framework/update_gui.sh godot
+```
+
+## Self-update swap under a kill (editor with a window)
+
+`test/apply_kill_driver/run_legs.sh` runs the swap the editor's exit makes in real
+editors and kills one at each step, then checks what the next start makes of it.
+It also runs a clean update, a file scan in flight at the exit, a real git
+repository and a linked addon folder. It builds both releases with
+`scripts/build-plugin-release.sh` and signs one with a key made for the run, so it
+needs zip and openssl, and a display (`xvfb-run` on Linux). It runs on Linux and in
+Git Bash on Windows. CI runs it on Godot 4.2.0 and 4.7.0 in
+the floor.
+
+```bash
+GODOT_BIN=/path/to/godot xvfb-run -a bash test/apply_kill_driver/run_legs.sh
+```
+
 ## Tool sweep (interactive, editor required)
 
 The sweep exercises every registered tool end-to-end from an MCP client: happy

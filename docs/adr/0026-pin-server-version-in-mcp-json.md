@@ -72,6 +72,14 @@ otherwise.**
   machine-local and never committed, so a teammate's toolkit sees a hand-set file
   as hand-set.
 
+  *Amended 2026-11-10:* one rewrite now happens without a confirmation. After a
+  toolkit update the user started has installed, the toolkit moves its own pin to
+  the new release's recommended version, with a notice and Undo, when the version
+  setting is empty, no local server path is set and the entry names the old
+  recommended version or this machine's last write. A pin set by hand stays
+  ([ADR 0029](0029-self-update-applies-at-editor-exit.md), C11 in the
+  [contract](../dev/contract.md)).
+
 ## Considered and rejected
 
 - **Record the last-written spec in `project.godot`.** A committed record would

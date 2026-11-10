@@ -128,6 +128,8 @@ static func update_install() -> Dictionary:
 			+ "keeps a copy of the current version until the next update is staged. If Keep "
 			+ "Backup is off in Project Settings, it deletes the copy once the update installs. "
 			+ "Major versions, and versions that need a newer Godot, are only linked.\n\n"
+			+ "What an update downloads and writes, and when, is in:\n"
+			+ "  addons/godot_mcp_toolkit/docs/self-update.md\n\n"
 			+ "The new files show up in version control: commit them, so everyone on the "
 			+ "project runs the same version. This needs the update check (Project Settings > "
 			+ "Mcp Toolkit > Updates) to be on.\n\n"

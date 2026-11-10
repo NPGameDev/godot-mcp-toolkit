@@ -73,6 +73,24 @@ Some folders are refused even where they lead somewhere else:
 An export also leaves out, without a warning, any folder from the first three
 items that is a spelling of the toolkit's source folder.
 
+## Self-update
+
+The toolkit can install its own updates, after you click **Update**, and only
+a release signed by a key it trusts. [`self-update.md`](self-update.md) says
+what it downloads, what it writes and where, and what it asks you first.
+
+The file tools refuse the update folder,
+`res://addons/.godot_mcp_toolkit_update/`, the same way they refuse the
+toolkit's source folder.
+
+`execute_code` is different. In the editor it evaluates its expression with the
+editor's own objects in reach, and the file guard doesn't apply to it. Through
+those objects it can reach the code that installs an update and the server pin
+in `.mcp.json`.
+That is expected: an agent that updates the toolkit because you asked it to is
+using the tool as intended. If you don't want an agent to reach either one,
+block `execute_code` as shown below.
+
 ## Built-in read-only mode
 
 For users who want a read-only session without configuring per-tool blocking,

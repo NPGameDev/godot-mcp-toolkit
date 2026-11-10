@@ -33,7 +33,7 @@ All MCP tools work on Godot 4.2+ unless noted below.
 | `script_write` | 4.2 | `.gd` inline diagnostics (`valid`/`diagnostics`) on all versions. On 4.2.2 and later, a `.gd` that compiles is reloaded in the editor after the write, and after its undo and redo, so the nodes already running it run the new code (`script_edit` too). On 4.2.0 and 4.2.1 the toolkit reloads nothing (an in-place reload there can crash the editor, see below): the nodes keep the old code until the editor relaunches, and a write over an existing `.gd` that compiles carries a stale-instance `hint` that says so. A `.gd` that does not compile is written but the toolkit does not load it: on Godot 4.2–4.3 and on a 4.5+ headless editor, the nodes keep the code they had. On 4.4+ with an editor window, and on 4.4 headless, the editor's own reload of the changed file can still apply the broken source to the nodes running it, until the file is fixed. Undoing a write restores the file's previous content, or deletes a file the write created |
 | `node_set_script` | 4.2 | Reloads a `.gd` whose file changed since the editor loaded it, so every node running it, old or new, runs the code on disk; the toolkit's own scripts are never reloaded. On 4.2.0 and 4.2.1 it reloads nothing and sets the version the editor already has (see `script_write`). A file that does not compile is not loaded: when the file changed since the editor loaded it and does not compile, the response carries `valid: false` and a `hint` that says so and points at `script_check`, and the node runs the version the editor already had (unless the editor had already reloaded that broken source by itself; see `script_write`). Undoing `node_set_script` restores the node's previous script, not the file's previous content |
 | `node_call_method` | 4.2 | On **< 4.4**, an `INVALID_METHOD` whose method exists on the node's on-disk `.gd` (a stale live instance, after the file changed outside the toolkit) carries a stale-instance `hint` (set the script again, or on 4.2.0 and 4.2.1, where that does not reload it, relaunch the editor); a genuine typo does not. 4.4+ hot-reloads on a **display** editor, so the call just succeeds — but a **4.4+ headless** editor never re-instantiates the reloaded node, so the stale `hint` fires there too (headless wording: set the script again or relaunch a display editor) |
-| `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see [multi-instance.md](multi-instance.md)) |
+| `lsp_*` (diagnostics, symbols, hover, completion, definition, references) | 4.2 | LSP works on 4.2+. **Multi-editor conflict detection is degraded < 4.5**: the cross-project root-mismatch check needs 4.5+, so on 4.2–4.4 give each editor a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see [multi-instance.md](multi-instance.md)). On 4.2.0 and 4.2.1 the first call can time out, and with that port set its retries can keep failing (see [Degraded behavior](#degraded-behavior-by-version)) |
 | `editor_get_console` | 4.2 | Captures runtime output (errors/warnings/prints) on all versions. **Editor parse errors** (from `editor_refresh` recompiling a script) surface only on **4.5+** (the Logger API hooks editor diagnostics); on **4.2–4.4** a default editor launch does NOT write them to `godot.log`, so neither `source="buffer"` nor `source="file"` can return them — use `script_check` or the `script_write` inline diagnostics instead. From 4.3, an editor launched with `--log-file user://logs/godot.log` writes its own errors to that file, so both sources can return them (see [Degraded behavior](#degraded-behavior-by-version)). Multi-line errors that ARE captured (`SCRIPT ERROR: …` + `   at: <script>.gd:LINE`) are leveled as a unit, so a filename + `level_filter:["error"]` query finds the location line. 4.5+ uses the synchronous Logger (one entry per error, zero-latency) |
 | `animationtree_edit` | 4.2 | All ops work on 4.2+ (set_root, add/remove_node, add/remove_transition, set_property; transitions enumerate on all versions) |
 | `animationtree_list` | 4.2 | Listing works on 4.2+, but **node enumeration is 4.5+:** `AnimationNodeStateMachine.get_node_list()` is a 4.5 script API (absent 4.2-4.4), so on 4.2-4.4 `animationtree_list` returns `nodes: []` and `nodes_count` reads 0 (node *operations* via `animationtree_edit` add/remove/has still work; only listing existing nodes is unavailable). 4.5+ enumerates nodes fully |
@@ -128,6 +128,16 @@ script identity (even across stale/phantom tabs); with an external editor the to
   cannot detect a foreign or near-simultaneous holder of LSP port 6005, so each
   editor must use a distinct `--lsp-port` + `GODOT_MCP_LSP_PORT` (see
   [multi-instance.md](multi-instance.md)).
+- **First LSP call on 4.2.0 and 4.2.1.** In a project with many scripts, the first
+  `lsp_*` call of an editor session can return `LSP_UNAVAILABLE` after 10 s,
+  because the editor is still sending its reply. This is more likely when the
+  editor is unfocused. Call it again: in testing, the retry succeeded in under a
+  second. If you set `GODOT_MCP_LSP_PORT` or the server's own `--lsp-port`
+  override, retries can keep failing until a later release fixes this. Godot 4.2.2
+  removes this delay. With more than one editor open on 4.2.0 or 4.2.1, the
+  multi-editor advice above has you set `GODOT_MCP_LSP_PORT`, so a first call that
+  times out there can keep failing on retry. On 4.2.2 the first call does not
+  time out this way.
 - **`animationtree_list` — node enumeration needs 4.5+ (4.2–4.4).**
   `AnimationNodeStateMachine.get_node_list()` is a 4.5+ script API, so on 4.2–4.4
   `animationtree_list` returns `nodes: []` and summaries report `nodes_count: 0`.
@@ -185,6 +195,24 @@ script identity (even across stale/phantom tabs); with an external editor the to
   `godot.log` file logging does not in a default launch, so `editor_get_console` surfaces
   them here.
 - `animationtree_list` enumerates state-machine nodes fully (`get_node_list` is 4.5+).
+
+### Installing toolkit updates
+
+An update installs when the editor closes or restarts, on every supported version,
+and the toolkit saves nothing for you. **Restart** refuses while a script has unsaved
+edits. What differs by version:
+
+- **Godot 4.4 and later** restart on their own once an update is ready, when no
+  script has unsaved edits, no game is running and no open scene is untitled. Their
+  restart asks about unsaved scenes.
+- **Godot 4.2 and 4.3** never restart on their own: you click **Restart**. Their
+  restart doesn't ask about unsaved scenes, so save first.
+- **Godot 4.2** has no engine call that tells a link from a folder, so the toolkit
+  asks `test -L` (Linux, macOS) or `fsutil` (Windows). When the answer isn't a clear
+  "not a link", it installs nothing.
+
+What an update downloads and writes, and the rest of its limits, are in
+[self-update.md](self-update.md).
 
 ### EditorFileSystem indexing (all versions)
 
@@ -446,6 +474,11 @@ its export plugins in name order and stops at the first one that skips or remaps
 it. The strip's name sorts before the
 built-in GDScript plugin, so it removes addon and extension scripts before that
 plugin can compile them to `.gdc`.
+
+The self-update's folder, `res://addons/.godot_mcp_toolkit_update/`, never ships
+either. The exporter's folder walk skips it because its name starts with a dot, and
+the strip removes any of its files that a resource references, so a scene that
+references one fails to load in the exported game.
 
 The plugin still warns when addon or extension scripts never reach it. Unless the
 preset already excludes them, another export plugin that sorts earlier (an

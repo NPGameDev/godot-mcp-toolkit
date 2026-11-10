@@ -58,6 +58,32 @@ to mitigate prompt injection from file contents.
 `127.0.0.1` only. Nothing listens on a network interface, and nothing is ever
 exposed to the network.
 
+**Self-update:** the toolkit installs a new version of itself only when the
+project allows it (`mcp_toolkit/updates/install_mode`, asked in the setup
+wizard), and only after you click **Update**. It installs only a release whose
+update manifest is signed by a release key that the latest trust document
+lists. The first trust document is embedded in each release, in
+`addons/godot_mcp_toolkit/self_update/embedded_trust_document.gd`. Later ones
+download from this repository's `trust-N` releases and count only when enough
+of the previous document's root keys signed them. They are kept once per
+machine in `godot_mcp_toolkit/trust/` inside the OS's user data folder. The
+manifest pins the zip by size and SHA-256. Every download URL is built from the
+version or the document's number, and a redirect may lead only to `github.com`
+or a `githubusercontent.com` host other than `raw.githubusercontent.com`. The
+test-only variable `GODOT_MCP_UPDATE_CHECK_HOST`
+moves these downloads too, not only the update check, but it accepts only a
+loopback address, and a server there can serve only releases the maintainer
+signed. The addon folder is replaced while the editor closes, and if the new
+folder can't be moved in, the old one goes back. The file tools refuse the
+update folder, `res://addons/.godot_mcp_toolkit_update/`, as they refuse the
+toolkit's own. The chain's main limit is a stolen release key: until a machine
+has fetched the trust document that drops it, that machine still trusts the
+key, so whoever holds it and can publish to this repository's releases can
+ship a release the machine accepts. Major releases, and releases that need a newer Godot, are never installed this
+way. See ADR 0029, the shipped
+[`self-update.md`](addons/godot_mcp_toolkit/docs/self-update.md) and
+[`docs/dev/trust-chain.md`](docs/dev/trust-chain.md).
+
 ## What no setting can promise
 
 A Godot project is a code-execution environment: the engine runs GDScript, and

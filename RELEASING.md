@@ -184,9 +184,11 @@ When you push a `v*` tag:
    tarball), `publint` (lints the package for publish-time footguns), and
    generated-docs freshness (both `docs:api` **and** `docs:tools`, so a stale
    tool reference reddens the gate). Then `npm publish` + a GitHub Release.
-3. **Toolkit:** the release zip is built, and a **zip install-smoke** boots a
-   headless 4.7 editor against the unzipped artifact. Then a GitHub Release with
-   the zip attached.
+3. **Toolkit:** the release zip and its update manifest are built, and a **zip
+   install-smoke** boots a headless 4.7 editor against the unzipped artifact. The
+   booted tree is checked against the zip's release file list and the manifest,
+   and an **update-smoke** installs the zip through the self-update. Then a
+   GitHub Release with the zip and the update manifest attached.
 
 The publish / GH-Release / zip steps `needs:` the behavioral job, so they run
 **only** if the matrix is green.
@@ -361,8 +363,10 @@ these). Run them **from a maintainer machine**, never scripted in CI.
 deleting a release burns its tag name forever — and rollback becomes
 patch-forward only.)
 
-**AssetLib / Asset Store.** Submit an **edit** repointing the Download Commit at
-the previous or fixed SHA.
+**AssetLib / Asset Store.** On the legacy AssetLib, submit an **edit**
+repointing the Download Commit at the previous or fixed SHA. The Asset Store
+takes an uploaded zip, so upload the fixed release's CI-built zip as a new
+version.
 
 **Independent-versioning consequence.** A botched release patches **only its own
 repo** — each side versions independently. The sibling is dragged in **only** if
@@ -382,12 +386,14 @@ transition:
   Godot 4.2–4.6 still browse the *legacy* AssetLib tab in-editor, so keep the
   listing current while it accepts submissions.
 
-For a release **update** on either surface, submit a new **Version** with the new
-full **Download Commit SHA** (the toolkit's tagged commit — `git rev-parse
-vX.Y.Z`). A legacy AssetLib edit re-enters moderation and can take days; plan for
-that latency. The `release.sh` script prints the three form values (version,
-Download Commit SHA, zip name `godot-mcp-toolkit-<ver>.zip`) at tag time so the
-submission is transcription, not archaeology.
+For a release **update**, the Asset Store takes a new **Version** with the
+CI-built zip uploaded (the one attached to the GitHub Release, never a local
+build), and the legacy AssetLib takes an edit with the new full **Download
+Commit SHA** (the toolkit's tagged commit — `git rev-parse vX.Y.Z`). A legacy
+AssetLib edit re-enters moderation and can take days; plan for that latency.
+The `release.sh` script prints the three form values (version, Download Commit
+SHA, zip name `godot-mcp-toolkit-<ver>.zip`) at tag time so the submission is
+transcription, not archaeology.
 
 Both listing descriptions quote tool counts, and nothing in CI checks them — the
 catalogue gate guards the code, not store copy. Re-run `godot-mcp-server
