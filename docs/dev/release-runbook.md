@@ -279,10 +279,11 @@ commands as Phase 4, with the gate dispositions file and the pin flag:
 
 The toolkit script takes a version, the pin flag, `--dry-run` and the three non-interactive flags;
 `--verify` and `--with-sibling` are server-side. The gated workflow builds the zip and its update
-manifest, install-smokes the zip into a scratch project, update-smokes it over the previous version
-with a key made for the run, and attaches both to the GH Release. The workflow does not sign the
-manifest; until a signature by a trusted key sits beside it, the toolkit offers the release as links
-only (ADR 0029).
+manifest, install-smokes the zip into a scratch project, checks the booted tree against the zip's
+release file list and the manifest, update-smokes the zip over the same tree one version older with a
+key made for the run, and attaches the zip and the manifest to the GH Release. The workflow does not
+sign the manifest; until a signature by a trusted release key sits beside it, the toolkit offers the
+release as links only (ADR 0029).
 
 The script prints the asset submission values at tag time (version, download commit SHA, zip name).
 Keep them on screen.
