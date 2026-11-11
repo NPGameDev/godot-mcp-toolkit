@@ -52,12 +52,13 @@ Godot's file system dock, the exporter and the Plugins list skip a folder whose 
 starts with a dot. The toolkit's export strip also leaves the folder out of exports,
 and the toolkit's MCP tools refuse to read or write it.
 
-**The addon folder, `res://addons/godot_mcp_toolkit/`.** Nothing writes it while the
-editor runs. When the editor closes or restarts, the toolkit checks the ready
-update again (the signature, the manifest, the zip's hash and the list of files in
-the zip), moves the current addon folder to `backup-<version>/` and moves `stage/`
-into its place. If the second move fails, the backup goes back where it was and the
-update waits for the next close.
+**The addon folder, `res://addons/godot_mcp_toolkit/`.** The toolkit writes it only
+when the editor closes or restarts. It then checks the ready update again (the
+signature, the manifest, the zip's hash and the list of files in the zip), moves the
+current addon folder to `backup-<version>/` and moves `stage/` into its place. If the
+second move fails, the backup goes back where it was and the update waits for the
+next close. The recovery plugin may also move a version into place at the next start
+(see [If an update doesn't load](#if-an-update-doesnt-load)).
 
 After a successful update, the next start deletes the download and the stage. The
 backup stays until the next update is ready. Turn off **Keep Backup**
@@ -71,7 +72,9 @@ addon folder, so it can still run at the next start when the new version doesn't
 [If an update doesn't load](#if-an-update-doesnt-load)). Like the update folder, it is
 hidden from the editor, kept out of exports, refused by the MCP tools, and carries its
 own `.gitignore` and `.p4ignore`. The start that reports the update's result deletes
-the folder and the entry, and so does turning the toolkit off. If `project.godot`
+the folder and the entry, and so does turning the toolkit off. An update dropped
+before it installs, for example when you discard it or switch to `manual`, leaves
+them in place until the next start, which deletes them. If `project.godot`
 can't be saved, the update doesn't install, and the dock says why.
 
 **The trust documents.** These are a few KB each, named `trust-<number>.json`, and
@@ -203,8 +206,8 @@ own.
 
 With any other version control, ignore `addons/.godot_mcp_toolkit_update/` in your
 project's own rules, or turn off **Keep Backup** so a successful update leaves
-nothing behind. Ignore `addons/.godot_mcp_toolkit_recovery/` the same way: it exists
-only while an update is on its way in.
+nothing behind. Ignore `addons/.godot_mcp_toolkit_recovery/` the same way: it comes
+and goes with updates.
 
 Because the folder is ignored, `git clean -fdX`, `git clean -fdx` and `git stash -a`
 delete it, along with any update that is waiting and the backup.

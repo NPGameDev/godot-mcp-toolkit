@@ -69,7 +69,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   toolkit's scripts asks for one more restart instead of leaving the toolkit silently
   off. While an update is in progress, a hidden `addons/.godot_mcp_toolkit_recovery/`
   folder and its `project.godot` entry appear; both go once the update is done. The MCP
-  file tools refuse paths inside that folder, and exports leave it out.
+  file tools refuse paths inside that folder, and exports leave it out. Recovery covers
+  updates installed by 1.2.0 and later; the update to 1.2.0 itself is not covered.
 
 ### Changed
 

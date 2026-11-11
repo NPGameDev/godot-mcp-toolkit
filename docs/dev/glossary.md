@@ -377,9 +377,9 @@ A second, hidden editor plugin that exists only while a **self-update** is in fl
 until the next start settles it, in `addons/.godot_mcp_toolkit_recovery/`
 (`self_update/recovery/recovery_plugin.gd`). When the new version does not load, or a kill left no
 addon folder, it puts the **update backup** back or moves the **staged update** in, and asks for a
-restart. It loads nothing from the **addon folder**. It never ships as its own folder (staging copies
-it from its template in the addon folder, `self_update/recovery_files.gd`) and an update never replaces
-it.
+restart. It loads nothing from the **addon folder**. It never ships as its own folder (staging
+copies it from its template in the addon folder, `self_update/recovery_files.gd`), and the swap
+never touches its folder: each staging writes the copy again from the template.
 _Avoid_: guard, update guard (an install guard is a case where the toolkit refuses to install),
 watchdog, sidecar.
 

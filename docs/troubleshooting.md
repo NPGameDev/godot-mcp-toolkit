@@ -413,10 +413,12 @@ While the entry is in `project.godot`:
   next close.
 
 **Its dialogs.** A dialog titled "Godot MCP Toolkit update" comes up a few
-seconds after the editor opens. The rest of the editor stays usable while it's
-open. **Restart now** restarts the editor. **Later**, Esc or the close button
-leaves the toolkit off until you restart, and the next start loads it. Turning
-other plugins on or off before then doesn't drop the toolkit's entry.
+seconds after the editor opens. If the editor was killed during an update and
+opened again at once, it can take up to about a minute. The rest of the editor
+stays usable while it's open. **Restart now** restarts the editor. **Later**,
+Esc or the close button leaves the toolkit off until you restart, and the next
+start loads it. Turning other plugins on or off before then doesn't drop the
+toolkit's entry.
 
 - **"Version *X* did not load in Godot *Y*, so *Z* was put back."** The new
   version didn't load, for example because one of its scripts doesn't parse in
@@ -455,7 +457,7 @@ nothing. It comes when:
 - the editor was killed between the two moves and neither the new version nor
   the backup could be moved into place;
 - the new version didn't load and there is no backup to put back (deleted by
-  hand or by `git clean`), or putting it back failed partway;
+  hand), or putting it back failed partway;
 - `addons/godot_mcp_toolkit/` holds a version other than the two the update
   names, or holds *Z* while the update records *X* as installed;
 - on Godot 4.2, the start after "one more restart" still finds the toolkit not
@@ -463,7 +465,8 @@ nothing. It comes when:
 
 Two cases get no dialog at all, and also need the manual steps: a new version
 that loads but misbehaves, and a start where the recovery plugin wasn't there
-(`project.godot` reverted, as above).
+(`project.godot` reverted, as above, or its folder deleted by `git clean`, as
+below).
 
 #### Manual steps
 
@@ -482,15 +485,17 @@ step of the update did.
    `broken-<version>/` folder beside it, so the next start doesn't take the
    half-finished update for one in progress.
 4. Open the project. If the toolkit is off, turn it back on in **Project
-   Settings → Plugins**. When the plugin's folder is missing, Godot 4.2 saves
-   the plugin's removal from the enabled list; in testing, 4.3 and 4.7 did not.
+   Settings → Plugins**. When a start finds the plugin's folder missing, Godot
+   4.2 saves the plugin's removal from the enabled list; in testing, 4.3 and 4.7
+   did not.
 
 Once the toolkit runs with no update in progress, it deletes the recovery
 plugin's folder and entry.
 
 If `git clean -fdX` or `git clean -fdx` ran while the toolkit's folder was
 missing, it deleted the update folder, with the backup and the new version in
-it. Reinstall the toolkit from the release zip.
+it. It also deleted the recovery plugin's folder, so no dialog comes. Reinstall
+the toolkit from the release zip.
 
 ### A cloud-synced project folder (OneDrive, Google Drive)
 

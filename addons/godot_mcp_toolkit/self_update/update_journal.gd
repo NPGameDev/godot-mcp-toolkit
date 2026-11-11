@@ -16,8 +16,9 @@ extends RefCounted
 ## joins them only after the one re-stage a stage that did not match gets; a later mismatch
 ## then gives up. [code]"applying_at": N[/code], the Unix time of the write that said
 ## applying, joins them from that write until a postpone returns the journal to staged, so
-## a start can tell an apply still running from one a kill ended. [code]"restored": true[/code] joins a [constant NOT_APPLIED] journal
-## whose backup was put back because the new version did not load.[br]
+## a start can tell an apply still running from one a kill ended.
+## [code]"restored": true[/code] joins a [constant NOT_APPLIED] journal whose backup was put
+## back because the new version did not load.[br]
 ## [br]
 ## One version's code writes this file and the next version's reads it, so the keys only
 ## grow and [constant FORMAT] stays; raising it needs a bridge release first. Unknown keys

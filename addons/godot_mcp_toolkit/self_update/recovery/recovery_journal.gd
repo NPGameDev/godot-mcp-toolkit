@@ -109,7 +109,7 @@ static func plugin_version(cfg_path: String) -> String:
 ## says), [code]toolkit_enabled[/code], [code]addon_present[/code] (the toolkit's folder
 ## exists), [code]live_version[/code] (its [code]plugin.cfg[/code] version, empty when
 ## unreadable), [code]backup_present[/code] (the journal's backup folder exists),
-## [code]stage_whole[/code] (what [method stage_matches] says) and
+## [code]stage_whole[/code] (what [method stage_matches] says),
 ## [code]broken_present[/code] (the journal's [code]broken-<to>[/code] folder exists) and
 ## [code]restart_asked[/code] (an earlier start asked for a restart into [code]to[/code]),
 ## all bools but the version. A missing [code]stays_out[/code] or
@@ -226,7 +226,8 @@ static func _seconds_to_wait(journal: Dictionary, now: int) -> int:
 # the old version's class cache names, and that scan writes the cache the next start needs.
 # The one other cause is another editor's apply landing in this start's first seconds, and a
 # restart is still the right advice then. The restart is asked for once, since a second such
-# start has a cause a restart does not fix. Nothing is moved, since the version in place is the one the restart is for.
+# start has a cause a restart does not fix. Nothing is moved, since the version in place is
+# the one the restart is for.
 static func _enabled_but_not_started(journal: Dictionary, facts: Dictionary) -> String:
 	var live_version := str(facts.get("live_version", ""))
 	if (str(journal.get("state", "")) != _APPLIED or not bool(facts.get("addon_present", true))

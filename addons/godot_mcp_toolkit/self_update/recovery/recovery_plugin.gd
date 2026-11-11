@@ -200,8 +200,8 @@ func _show_manual(journal: Dictionary) -> void:
 	_show_dialog(AcceptDialog.new(), _MANUAL_TEXT % [journal["from"], journal["to"]])
 
 
-# One dialog, not exclusive, so the editor stays usable. A ConfirmationDialog's OK restarts the editor;
-# every other way out (Later, Esc, the close button) only closes it.
+# One dialog, not exclusive, so the editor stays usable. A ConfirmationDialog's OK restarts
+# the editor; every other way out (Later, Esc, the close button) only closes it.
 func _show_dialog(dialog: AcceptDialog, text: String) -> void:
 	dialog.exclusive = false
 	dialog.title = _TITLE

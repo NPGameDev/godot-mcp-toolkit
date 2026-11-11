@@ -24,15 +24,18 @@ const PLUGIN_CFG := "res://addons/.godot_mcp_toolkit_recovery/plugin.cfg"
 ## The project setting that lists the enabled editor plugins.
 const ENABLED_SETTING := "editor_plugins/enabled"
 
-## What [method restore] returns: the backup is the toolkit's folder; nothing moved, since
-## the journal or the live folder is not one a restore is for; a step failed.
+## What [method restore] returns: the backup is the toolkit's folder.
 const RESTORED := "restored"
+## What [method restore] returns: nothing moved, since the journal or the live folder is
+## not one a restore is for.
 const REFUSED := "refused"
+## What [method restore] returns: a step failed.
 const FAILED := "failed"
 
-## The steps [method restore] names to its [code]on_step[/code]: the live folder is aside;
-## the backup is now the live folder.
+## The step [method restore] names to its [code]on_step[/code]: the live folder is aside.
 const STEP_RENAMED_OUT := "renamed_out"
+## The step [method restore] names to its [code]on_step[/code]: the backup is now the live
+## folder.
 const STEP_RENAMED_IN := "renamed_in"
 
 const _JOURNAL_FILE := "journal.json"

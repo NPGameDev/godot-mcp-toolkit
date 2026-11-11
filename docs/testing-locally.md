@@ -128,11 +128,12 @@ repository, a linked addon folder, a release that does not load, a stale class
 cache, and a toolkit folder held so it cannot move (`held`). The script's header
 names every leg; pass leg names to run only those. It builds both releases with
 `scripts/build-plugin-release.sh` and signs one with a key made for the run, so it
-needs zip and openssl, and a display (`xvfb-run` on Linux). It runs on Linux,
-macOS and in Git Bash on Windows. On Linux and macOS the `held` leg makes
-`addons/` read-only; on Windows it holds a toolkit file open with Python 3, which
-`UT_PYTHON` names when it isn't `python3` or `python` on the PATH. CI runs it on
-Godot 4.2 through 4.7, on Linux and macOS, in the floor.
+needs zip, openssl, GNU `timeout` (`gtimeout` on macOS, from coreutils) and a
+display (`xvfb-run` on Linux). It runs on Linux, macOS and in Git Bash on Windows.
+On Linux and macOS the `held` leg makes `addons/` read-only; on Windows it holds
+a toolkit file open with Python 3, which `UT_PYTHON` names when it isn't `python3`
+or `python` on the PATH. CI runs it on Godot 4.2 through 4.7, on Linux and macOS,
+in the floor.
 
 ```bash
 GODOT_BIN=/path/to/godot xvfb-run -a bash test/apply_kill_driver/run_legs.sh
