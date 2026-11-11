@@ -13,10 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   [#125](https://github.com/NPGameDev/godot-mcp-toolkit/pull/125). A verified release can be
   unpacked a few files at a time and swapped in at editor exit by two folder renames under
   one journal, and the next start settles what a kill left. A kill between the two
-  renames leaves no toolkit to start, with both copies whole in the update folder.
-  The toolkit can't recover from that on its own yet; the troubleshooting guide's
-  [The toolkit is gone after an update](docs/troubleshooting.md#the-toolkit-is-gone-after-an-update)
-  gives the steps to do it by hand.
+  renames leaves no toolkit to start, with both copies whole in the update folder;
+  the next start finishes it or puts the previous version back (see the entry
+  below), and the troubleshooting guide's
+  [The toolkit is off after an update](docs/troubleshooting.md#the-toolkit-is-off-after-an-update)
+  gives the steps for what it can't.
 - The toolkit can install its own updates. A new setup step asks whether it may,
   and Project Settings → Mcp Toolkit → Updates → Install Mode keeps the answer:
   `ask` (the default) offers each new release on the dock's badge, and `manual`
@@ -31,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the editor. If the swap can't finish, the current version stays and the update
   waits for the next close. If moving the current version back fails too, that
   version is left in the update folder's backup; see
-  "The toolkit is gone after an update" in the troubleshooting guide. Keep
+  "The toolkit is off after an update" in the troubleshooting guide. Keep
   Backup, under the same heading, keeps the previous version until the next
   update is staged; turn it off to delete that copy once the update installs.
   Major releases, releases that need a newer Godot, and a toolkit folder that is
@@ -61,12 +62,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   connected server is older than the recommended version, and when it is newer and a
   newer toolkit is known, unless the project sets a server version or uses a local
   server.
+- Self-update: if an update installs a version Godot cannot load, the next editor start
+  puts the previous version back by itself and asks you to restart. If the editor is
+  killed in the middle of an update, the next start finishes it or puts the previous
+  version back, then asks you to restart. On Godot 4.2, an update that moves one of the
+  toolkit's scripts asks for one more restart instead of leaving the toolkit silently
+  off. While an update is in progress, a hidden `addons/.godot_mcp_toolkit_recovery/`
+  folder and its `project.godot` entry appear; both go once the update is done. The MCP
+  file tools refuse paths inside that folder, and exports leave it out.
 
 ### Changed
 
 - The file guard refuses paths in `res://addons/.godot_mcp_toolkit_update/`, the folder
   reserved for the self-update, and exports leave it out. A scene that references a file
   in that folder fails to load in the exported game.
+
+### Fixed
+
+- The toolkit now loads in a project that checks addon scripts for GDScript warnings
+  (Exclude Addons off on Godot 4.2 to 4.5, or `res://addons` set to Include in Directory
+  Rules on 4.6+): seven variables typed from a Variant value, which Godot treats as an
+  error by default, stopped it compiling.
 
 ## [1.1.2] - 2026-10-29
 

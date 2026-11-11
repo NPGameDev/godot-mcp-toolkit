@@ -116,7 +116,8 @@ contributor-facing summary.
   (`release-builds`) checks that the bash and PowerShell release builds write the same
   release (`scripts/test_framework/check_release_builds.sh`). The **apply kill** job
   (`apply-kill`) runs the self-update's swap in
-  real editors on 4.2.0 and 4.7.0, killing them at each step
+  real editors on 4.2 through 4.7, on Linux and macOS, killing them at each step,
+  with the recovery plugin's legs and a held toolkit folder
   (`test/apply_kill_driver/run_legs.sh`). A single aggregate job,
   **`Toolkit floor OK`**, `needs:` the whole floor — that one name is what a
   required check binds to, never an individual matrix row. Green floor is a merge

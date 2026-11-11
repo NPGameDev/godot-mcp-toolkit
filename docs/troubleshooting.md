@@ -323,11 +323,10 @@ couldn't, the badge says why at the next start:
   signed by a key this toolkit trusts, the badge offers no download, and the
   toolkit offers the next release once it is published and checked.
 
-If `addons/godot_mcp_toolkit/` is missing after an update, see
-[The toolkit is gone after an update](#the-toolkit-is-gone-after-an-update). If
-the new version is there but doesn't load, close the editor and reinstall the
-previous release's zip from GitHub. Until the next update is ready, the version
-an update replaced also stays in
+If the reason is "the recovery plugin is not enabled", or the toolkit is off or
+missing after an update, see
+[The toolkit is off after an update](#the-toolkit-is-off-after-an-update).
+Until the next update is ready, the version an update replaced also stays in
 `addons/.godot_mcp_toolkit_update/backup-<version>/`, unless **Keep Backup** is
 off.
 
@@ -373,34 +372,125 @@ Related upstream reports:
 [godotengine/godot#103305](https://github.com/godotengine/godot/issues/103305)
 (a headless run still loads the editor layout).
 
-### The toolkit is gone after an update
+### The toolkit is off after an update
 
-**Symptom:** after you closed the editor to install a toolkit update,
-`addons/godot_mcp_toolkit/` is missing and the plugin no longer loads.
+An update installs while the editor closes: the toolkit moves the installed
+version aside as a backup, then moves the new one in. If the editor is killed
+between those two moves, `addons/godot_mcp_toolkit/` is missing at the next
+start. If the new version doesn't load in your Godot, the editor turns the
+toolkit off. Neither start can run the toolkit's own code, so a second, small
+plugin handles these cases: the recovery plugin.
 
-**Cause:** the update moves the installed toolkit aside, then moves the new one
-in. If the editor was killed between the two moves, or the second move failed
-and moving the old version back failed too, the old version is left in the
-update folder's backup.
+**The recovery plugin.** When an update is ready to install, the toolkit copies
+the recovery plugin into `addons/.godot_mcp_toolkit_recovery/` and adds
+`res://addons/.godot_mcp_toolkit_recovery/plugin.cfg` to the enabled plugins in
+`project.godot`. Godot sorts that list when it saves it, so other entries may
+change order. The folder's name starts with a dot, so the FileSystem dock and
+the Plugins list don't show it, and its own `.gitignore` and `.p4ignore` keep
+its files out of version control. The MCP file tools refuse paths in it, and
+exports leave it out. The recovery plugin loads nothing from
+`addons/godot_mcp_toolkit/`, so it runs even when the toolkit can't. It acts
+only when the toolkit didn't start after an update, and never in a headless
+editor or a command-line run that exports, imports, quits or runs a script. The
+start that reports the update's result deletes the folder and the entry, and
+turning the toolkit off deletes them too.
 
-**Fix:** close Godot and work in your file manager, since the editor hides the
-update folder:
+While the entry is in `project.godot`:
 
-1. Move `addons/.godot_mcp_toolkit_update/backup-<version>/` back to
-   `addons/godot_mcp_toolkit/`, where `<version>` is the version you had.
-2. Delete `addons/.godot_mcp_toolkit_update/journal.json`, so the next start
-   does not take the half-finished update for an update waiting to install.
-3. Open the project again.
-4. If the plugin is off after you reopen the project, turn it back on in
-   **Project Settings → Plugins**. When the plugin's folder is missing, Godot
-   4.2 saves the plugin's removal from the enabled list; in testing, 4.3 and
-   4.7 did not.
+- If you commit `project.godot`, a teammate's editor, which has no such folder,
+  prints `Addon 'res://addons/.godot_mcp_toolkit_recovery/plugin.cfg' failed to
+  load. No directory found. Removing from enabled plugins.` The warning is
+  harmless.
+- If you revert `project.godot` after the update installed and before the next
+  start, the recovery plugin doesn't run at that start. If the toolkit is off
+  then, follow the [manual steps](#manual-steps) below.
+- If `project.godot` can't be saved (it's read-only, or Perforce hasn't checked
+  it out), the dock says "The update may not install when you close the editor:
+  project.godot could not be saved." The update then doesn't install, and the
+  next start says "When the editor last closed, the update didn't install: the
+  recovery plugin is not enabled." Make `project.godot` writable and open the
+  editor again: the toolkit adds the entry back, and the update installs at the
+  next close.
 
-`install.log` in the same folder says which step failed.
+**Its dialogs.** A dialog titled "Godot MCP Toolkit update" comes up a few
+seconds after the editor opens. The rest of the editor stays usable while it's
+open. **Restart now** restarts the editor. **Later**, Esc or the close button
+leaves the toolkit off until you restart, and the next start loads it. Turning
+other plugins on or off before then doesn't drop the toolkit's entry.
 
-If `git clean -fdX` or `git clean -fdx` ran while the folder was missing, it
-deleted the update folder, with the backup and the new version in it.
-Reinstall the toolkit from the release zip.
+- **"Version *X* did not load in Godot *Y*, so *Z* was put back."** The new
+  version didn't load, for example because one of its scripts doesn't parse in
+  your Godot. The recovery plugin moved it aside, moved the backup into
+  `addons/godot_mcp_toolkit/` and deleted the version that failed. After the
+  restart the dock says "Version *X* did not load in Godot *Y*, so *Z* was put
+  back and is installed.", names this section and the install log, and doesn't
+  offer *X* again until a newer version is out. No backup is left, since the
+  backup is now the installed toolkit. Please report the failed version, with
+  your Godot version and the install log, on
+  [GitHub](https://github.com/NPGameDev/godot-mcp-toolkit/issues).
+- **"The update to version *X* stopped partway, and it is now finished."** The
+  editor was killed between the two moves. The new version was still whole in
+  the update folder, matching the release's signed file list, so the recovery
+  plugin moved it into place. After the restart the dock reports the update as
+  installed.
+- **"The update to version *X* stopped partway and could not be finished, so *Z*
+  was put back."** The same kill, but the new version's files no longer matched
+  the signed list, or couldn't be moved, so the recovery plugin moved the
+  backup back in. After the restart the dock says what became of the update.
+- **"Version *X* is installed, and Godot *Y* needs one more restart to load
+  it."** In practice this is Godot 4.2. It starts plugins before its first file
+  scan, using the script class list the previous version left, so an update
+  that moves a script with a `class_name` can keep the new version from
+  starting once. That scan fixes the list, and the restart loads the toolkit.
+  Nothing was moved. This dialog comes once per version: if the start after it
+  still finds the toolkit not running, the manual dialog below comes instead.
+
+If a dialog ends with "project.godot could not be saved, so after the restart
+turn the toolkit on in Project Settings > Plugins.", do that after the restart.
+
+**The manual dialog.** "The toolkit update from *Z* to *X* left the toolkit off,
+and the editor cannot set it right by itself." It points here, and moves
+nothing. It comes when:
+
+- the editor was killed between the two moves and neither the new version nor
+  the backup could be moved into place;
+- the new version didn't load and there is no backup to put back (deleted by
+  hand or by `git clean`), or putting it back failed partway;
+- `addons/godot_mcp_toolkit/` holds a version other than the two the update
+  names, or holds *Z* while the update records *X* as installed;
+- on Godot 4.2, the start after "one more restart" still finds the toolkit not
+  running. The Output panel names the script error that stops it.
+
+Two cases get no dialog at all, and also need the manual steps: a new version
+that loads but misbehaves, and a start where the recovery plugin wasn't there
+(`project.godot` reverted, as above).
+
+#### Manual steps
+
+Close Godot and work in your file manager, since the editor hides both dot
+folders. `install.log` in `addons/.godot_mcp_toolkit_update/` says what each
+step of the update did.
+
+1. If `addons/.godot_mcp_toolkit_update/` holds `backup-<version>/`, that is the
+   whole version you had before the update. Move `addons/godot_mcp_toolkit/`, if
+   it's there, out of the project or delete it, then move `backup-<version>/` to
+   `addons/godot_mcp_toolkit/`.
+2. If there is no backup, download the release zip of the version you want from
+   [GitHub](https://github.com/NPGameDev/godot-mcp-toolkit/releases) and unzip
+   it so its `addons/godot_mcp_toolkit/` replaces yours.
+3. Delete `addons/.godot_mcp_toolkit_update/journal.json`, and any
+   `broken-<version>/` folder beside it, so the next start doesn't take the
+   half-finished update for one in progress.
+4. Open the project. If the toolkit is off, turn it back on in **Project
+   Settings → Plugins**. When the plugin's folder is missing, Godot 4.2 saves
+   the plugin's removal from the enabled list; in testing, 4.3 and 4.7 did not.
+
+Once the toolkit runs with no update in progress, it deletes the recovery
+plugin's folder and entry.
+
+If `git clean -fdX` or `git clean -fdx` ran while the toolkit's folder was
+missing, it deleted the update folder, with the backup and the new version in
+it. Reinstall the toolkit from the release zip.
 
 ### A cloud-synced project folder (OneDrive, Google Drive)
 
@@ -411,8 +501,9 @@ but not with a sync client running:
 - If a held file stops the update before anything moves, the badge says "When
   the editor last closed, the update didn't install:" and the update tries
   again at the next close.
-- If the addon folder is missing after the editor closed, follow
-  [The toolkit is gone after an update](#the-toolkit-is-gone-after-an-update).
+- If the toolkit is off or its folder is missing after the editor closed,
+  follow
+  [The toolkit is off after an update](#the-toolkit-is-off-after-an-update).
 - On Windows, an addon folder that is a cloud placeholder counts as a link, so
   no update installs from the editor. Install updates by hand there.
 
