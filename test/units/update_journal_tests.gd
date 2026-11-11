@@ -228,6 +228,7 @@ static func _test_applying_at_and_restored(testing: Testing) -> void:
 	var unset := UpdateJournal.read(folder)
 	UpdateFixtures.remove(folder)
 	testing.eq(timed.get("applying_at", -1), 1794300000, "applying_at written → read back as an integer")
+	testing.eq(typeof(timed.get("applying_at", -1.0)), TYPE_INT, "of the integer type, never a float")
 	testing.eq(restored.get("restored", false), true, "restored written true → read true")
 	testing.ok(not unset_text.contains("applying_at") and not unset_text.contains("restored"),
 			"neither set → neither in the file")

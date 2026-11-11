@@ -219,6 +219,17 @@ static func _test_decide_never(testing: Testing, reader: GDScript) -> void:
 			_act("none"), "an aged applying in an editor it stays out of → none")
 	testing.eq(_decision(reader, _journal(""), _facts({"stays_out": true, "addon_present": false}), now),
 			_act("none"), "no journal and no addon folder, in an editor it stays out of → none")
+	var unknown_stays_out := _facts()
+	unknown_stays_out.erase("stays_out")
+	testing.eq(_decision(reader, _journal("applied"), unknown_stays_out, now), _act("none"),
+			"applied with no stays_out fact → none, as in an editor it stays out of")
+	var old_live := _facts({"live_version": "1.1.0"})
+	testing.eq(_decision(reader, _journal("applied"), old_live, now), _act("manual"),
+			"the control: applied, the toolkit off, the old version live → manual")
+	var unknown_enabled := old_live.duplicate()
+	unknown_enabled.erase("toolkit_enabled")
+	testing.eq(_decision(reader, _journal("applied"), unknown_enabled, now), _act("none"),
+			"the same with no toolkit_enabled fact → none, as with the toolkit enabled")
 	print("")
 
 

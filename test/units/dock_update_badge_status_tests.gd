@@ -105,7 +105,7 @@ static func _test_ready_note(testing: Testing) -> void:
 	print("")
 
 
-# A staged update is already in, so why the editor cannot install a newer one says nothing
+# The update is already staged, so why the editor cannot install a newer one says nothing
 # about it.
 static func _test_ready_shows_no_install_note(testing: Testing) -> void:
 	testing.begin("Badge status: a staged update's line leaves out why the editor cannot install")

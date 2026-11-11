@@ -7,8 +7,8 @@
 # (plugin/driver_plugin.gd) records what the toolkit's start settled, once it has, and
 # applies before the toolkit's exit does. Godot 4.3 and later exit the enabled plugins in
 # the order project.godot lists them, and 4.2 in the reverse, so the driver is listed first
-# on 4.3+ and last on 4.2. Every save of that list sorts it, which on 4.2 puts the driver
-# after the toolkit, so the template writes the 4.2 order back after staging's save. Its
+# on 4.3+ and last on 4.2. Every save of that list sorts it, which on 4.2 makes the driver
+# exit after the toolkit, so the template writes the 4.2 order back after staging's save. Its
 # apply can kill the editor at one of the steps the applier names; when it runs, the
 # toolkit's exit finds nothing staged. Each session is one real editor start and exit,
 # closed by a close request sent from inside it. The run grades what that left: the
@@ -289,7 +289,8 @@ toolkit_entry() { # "saved" when project.godot names the toolkit, else "not save
 }
 
 # The toolkit's start disables the recovery plugin, and the editor frees a disabled plugin
-# at once; a call still running in it then prints one of these.
+# at once; a call still running in it then prints one of these. The k2 and k2_tampered legs
+# run this check, in the session the recovery plugin acts in and in the one after it.
 check_no_freed_instance() { # <session>
   check "the log names no freed instance" "$(grep -acE 'previously freed|freed instance' "$LEG_LOGS/$1.log")" "0"
 }
@@ -612,6 +613,7 @@ leg_k2() {
   check "the toolkit stays off" "$(note next_start toolkit_enabled)" "false"
   check_no_compile_error next_start
   check "the live folder is B, whole" "$(tree_digest "$PROJECT/$ADDON")" "$(tree_digest "$B_TREE")"
+  check "the backup is still whole" "$(tree_digest "$PROJECT/$UPDATES/backup-$A_VERSION")" "$A_DIGEST"
   check "the journal says applied" "$(journal_state)" "applied"
   check "project.godot keeps the toolkit's entry" "$(toolkit_entry)" "saved"
   check "the recovery folder stays for the next start" "$(exists "$RECOVERY")" "present"

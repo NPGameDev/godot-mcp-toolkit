@@ -67,13 +67,11 @@ func _enter_tree() -> void:
 	_note("session_started", "1")
 	_note("recovery_enabled", str(EditorInterface.is_plugin_enabled(_RECOVERY_CFG)))
 	_note("toolkit_folder_present", str(FileAccess.file_exists(_self_update_script("update_settler.gd"))))
-	# Set even with the toolkit's folder gone, where the notes come out empty: a toolkit the
-	# recovery plugin puts back starts only at the next session.
-	_settle_pending = _flag("settle")
 	if not FileAccess.file_exists(_self_update_script("update_settler.gd")):
 		return
 	if _flag("apply"):
 		_applier = load(_self_update_script("update_applier.gd"))
+	_settle_pending = _flag("settle")
 
 
 func _process(_delta: float) -> void:

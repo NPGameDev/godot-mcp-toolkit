@@ -1328,20 +1328,25 @@ static func _test_update_settled_signal(testing: Testing, tree: SceneTree) -> vo
 	print("")
 
 
-# Another editor's exit stamped the journal applying 56 s ago, so the settle waits a few
-# seconds and runs again; the cap leaves a slow machine room past that. A change the runner reports meanwhile starts nothing.
+# Another editor's exit stamped the journal applying a minute before the start's clock, so
+# the settle waits the window's last second and runs again. The clock moves past the window
+# before that recheck; the cap leaves a slow machine room past the one-second timer. A
+# change the runner reports meanwhile starts nothing.
 static func _test_settle_waits_for_a_running_apply(testing: Testing, tree: SceneTree) -> void:
 	testing.begin("Update installer: an apply still running at the start is settled once it is past")
 	var server := UpdateFixtures.LoopbackReleaseServer.new({})
 	var previous_host := UpdateFixtures.set_host(server.host())
 	var world := UpdateFixtures.begin_world("installer_apply_running", "1.9.0", "ask", "1.1.0")
 	UpdateFixtures.stage(world["updates"], "1.9.0", {"core/a.gd": "new"}, "1.1.0", UpdateFixtures.key())
+	var start_time := int(Time.get_unix_time_from_system())
 	var journal := UpdateJournal.read(str(world["updates"]))
 	journal["state"] = "applying"
-	journal["applying_at"] = int(Time.get_unix_time_from_system()) - 56
+	journal["applying_at"] = start_time - 60
 	UpdateJournal.write(journal, str(world["updates"]))
+	var options: Dictionary = world["options"]
+	options["now"] = start_time
 	var runner := UpdateCheckRunner.new()
-	var installer := UpdateInstaller.new(runner, world["options"])
+	var installer := UpdateInstaller.new(runner, options)
 	var announced: Array = []
 	installer.update_settled.connect(func(settled: Dictionary) -> void: announced.append(settled))
 	tree.root.add_child(installer)
@@ -1350,7 +1355,9 @@ static func _test_settle_waits_for_a_running_apply(testing: Testing, tree: Scene
 	var state_while_waiting := installer.state()
 	var journal_while_waiting := str(UpdateJournal.read(str(world["updates"]))["state"])
 	var announced_while_waiting := announced.size()
-	var deadline := Time.get_ticks_msec() + 8000
+	# The installer holds this same options dictionary, so its recheck reads the moved clock.
+	options["now"] = start_time + 61
+	var deadline := Time.get_ticks_msec() + 3000
 	while announced.is_empty() and Time.get_ticks_msec() < deadline:
 		await tree.process_frame
 	var settled := installer.settled()

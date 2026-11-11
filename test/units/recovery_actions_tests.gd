@@ -115,6 +115,17 @@ static func _test_file_facts(testing: Testing, actions: GDScript) -> void:
 	testing.eq(staged, {"addon_present": false, "live_version": "", "backup_present": false, "stage_whole": true,
 			"broken_present": false}, "applying, no addon folder, the whole stage → the stage whole")
 
+	var changed := _scenario("recovery_facts_changed", UpdateFixtures.PINNED_1_2_0_APPLYING_JOURNAL)
+	var changed_journal := journal.duplicate()
+	changed_journal["expected_tree_hash"] = _write_stage(str(changed["stage"]),
+			{"plugin.cfg": UpdateFixtures.plugin_config("1.2.0")})
+	FolderFiles.write_checked(str(changed["stage"]).path_join("plugin.cfg"),
+			UpdateFixtures.plugin_config("1.3.0").to_utf8_buffer())
+	var altered: Dictionary = actions.call("file_facts", changed_journal, str(changed["update"]), str(changed["addon"]))
+	UpdateFixtures.remove(str(changed["root"]))
+	testing.eq(altered, {"addon_present": false, "live_version": "", "backup_present": false, "stage_whole": false,
+			"broken_present": false}, "applying, no addon folder, a staged file changed since → the stage not whole")
+
 	var crashed := _scenario("recovery_facts_broken", UpdateFixtures.PINNED_1_2_0_APPLIED_JOURNAL)
 	_write_toolkit(str(crashed["addon"]), "1.1.0")
 	_write_toolkit(str(crashed["broken"]), "1.2.0")

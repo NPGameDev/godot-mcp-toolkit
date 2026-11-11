@@ -369,9 +369,8 @@ static func stage_tampered(
 ## [param latest], consent given, the install mode [param mode], a scratch addon at
 ## [param installed], a scratch update folder, a scratch project file whose saved plugins
 ## hold the recovery plugin, a [RecoveryStandIn] for the recovery plugin's files, and the
-## installer's options. The
-## runner's cache path is fixed, so its file is saved here and put back by
-## [method end_world].
+## installer's options. The runner's cache path is fixed, so its file is saved here and put
+## back by [method end_world].
 static func begin_world(purpose: String, latest: String, mode: String, installed: String) -> Dictionary:
 	var cache_path := ProjectSettings.globalize_path(UpdateCheckRunner.STATE_PATH)
 	var saved_cache: Variant = FileAccess.get_file_as_bytes(cache_path) if FileAccess.file_exists(cache_path) else null

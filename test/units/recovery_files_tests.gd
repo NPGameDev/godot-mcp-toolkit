@@ -17,6 +17,8 @@ const _ONLY_THE_TOOLKIT := [UpdateFixtures.TOOLKIT_PLUGIN_ENTRY]
 const _BOTH_PLUGINS := [UpdateFixtures.RECOVERY_PLUGIN_ENTRY, UpdateFixtures.TOOLKIT_PLUGIN_ENTRY]
 # The order the world's project file starts with.
 const _BOTH_AS_WRITTEN := [UpdateFixtures.TOOLKIT_PLUGIN_ENTRY, UpdateFixtures.RECOVERY_PLUGIN_ENTRY]
+# A file the template does not ship, so only the leftover folder holds it.
+const _LEFTOVER_ONLY := "left_by_an_earlier_update.txt"
 
 
 static func run(testing: Testing, tree: SceneTree) -> void:
@@ -63,12 +65,15 @@ static func _test_stays_while_an_update_is_on_its_way(testing: Testing, tree: Sc
 			_write_journal(world, state)
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(str(world["addon"])).path_join("plugin.cfg"))
 		var nodes := UpdateFixtures.start_world(world, tree)
-		seen[state] = [_has_folder(world), _saved_entries(world), str(UpdateJournal.read(str(world["updates"]))["state"])]
+		seen[state] = [_has_folder(world), _saved_entries(world), str(UpdateJournal.read(str(world["updates"]))["state"]),
+				_has_leftover_file(world)]
 		_end(world, nodes)
 	for state: String in seen:
 		var folder_left: bool = seen[state][0]
+		var leftover_file_left: bool = seen[state][3]
 		testing.eq(seen[state][2], state, "%s → the settle leaves the journal %s" % [state, state])
 		testing.ok(folder_left, "%s → the folder stays" % state)
+		testing.ok(leftover_file_left, "%s → the folder is never deleted on the way" % state)
 		testing.eq(seen[state][1], PackedStringArray(_BOTH_AS_WRITTEN), "%s → its entry stays saved" % state)
 	print("")
 
@@ -182,10 +187,16 @@ static func _has_folder(world: Dictionary) -> bool:
 
 
 # What an earlier update left: the folder, and the saved entry the world's project file
-# already holds.
+# already holds. The folder also holds a file the template does not, which is there only
+# while the folder was never deleted.
 static func _leave_recovery_plugin(world: Dictionary) -> void:
-	FolderFiles.write_checked(ProjectSettings.globalize_path(_folder(world)).path_join("plugin.cfg"),
-			"[plugin]\n".to_utf8_buffer())
+	var folder := ProjectSettings.globalize_path(_folder(world))
+	FolderFiles.write_checked(folder.path_join("plugin.cfg"), "[plugin]\n".to_utf8_buffer())
+	FolderFiles.write_checked(folder.path_join(_LEFTOVER_ONLY), "left\n".to_utf8_buffer())
+
+
+static func _has_leftover_file(world: Dictionary) -> bool:
+	return FileAccess.file_exists(ProjectSettings.globalize_path(_folder(world)).path_join(_LEFTOVER_ONLY))
 
 
 static func _write_journal(world: Dictionary, state: String) -> void:
