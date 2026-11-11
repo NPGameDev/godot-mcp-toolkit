@@ -193,8 +193,9 @@ When you push a `v*` tag:
    and an **update-smoke** installs the zip through the self-update. Then a
    GitHub Release with the zip and the update manifest attached.
 
-The publish / GH-Release / zip steps `needs:` the behavioral job and the `floor` job (`ci.yml`
-with the macOS apply-kill rows), so they run **only** if both are green.
+The publish / GH-Release / zip steps `needs:` the behavioral job and the `floor`
+job (`ci.yml` with the macOS apply-kill rows), so they run **only** if both are
+green.
 
 **Push with an explicit refspec** — `git push origin main vX.Y.Z`. Do not use
 `git push --follow-tags`: that flag pushes *every* reachable unpushed annotated
@@ -204,9 +205,9 @@ tag, so a stray experimental `v*` tag would ride along and fire the release gate
 
 **Before creating a tag, rehearse the release workflow.** Trigger `release.yml`
 via `workflow_dispatch` with its `dry-run` input left at its default (`true`).
-This runs everything — the called behavioral matrix and the whole floor, and the package-shape /
-zip-build gates — but skips `npm publish` and GH-Release creation. Require it
-green before you cut the tag.
+This runs everything — the called behavioral matrix and the whole floor, and the
+package-shape / zip-build gates — but skips `npm publish` and GH-Release
+creation. Require it green before you cut the tag.
 
 **Re-run escape hatch.** If a tag push fails transiently *after* the tag is
 created, the deliberate recovery is to **dispatch `release.yml` on the tag ref

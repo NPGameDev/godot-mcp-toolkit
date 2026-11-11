@@ -401,8 +401,8 @@ quick operational facts only.
 - **Release** (`.github/workflows/release.yml`) — runs on `v*` tag push; GATES
   on the deep behavioral tier (`behavioral: uses: cross-version.yml`) and the
   whole floor with the macOS apply-kill rows (`floor: uses: ci.yml`,
-  `macos-kill: true`), both in `needs:`, then validates tag matches `plugin.cfg` version, builds the
-  plugin zip and its `.update.json` manifest via
+  `macos-kill: true`), both in `needs:`, then validates tag matches `plugin.cfg`
+  version, builds the plugin zip and its `.update.json` manifest via
   `scripts/build-plugin-release.sh`, install-smokes the zip (unzip into a
   scratch project, headless 4.7.0 boot, assert `[MCPServer] listening`),
   checks the booted tree against the zip's release file list and the manifest
